@@ -5,12 +5,14 @@
   Let it go (a release, after asking). A name let go, lost or lapsed shows its state alone.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import { untrack } from 'svelte';
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { Actions } from './actions.svelte.ts';
   import { ask } from './ask.svelte.ts';
-  import { MsgError, t, text } from '../i18n.ts';
+  import { msg, MsgError, t, text } from '../i18n.ts';
   import type { NamesConn, TitleView, ZonePoint } from '../names.ts';
   import { pageNames } from './areas/names.svelte.ts';
   import { MAX_POINTS, parseTarget, targetName, titleState } from './names-view.ts';
@@ -42,7 +44,7 @@
   }
   const save = () => runner.run('', () => pageNames.setZone(conn, v.name, points()));
   async function letGo() {
-    const sure = await ask.confirm(t('network:NameEntry.release.confirm', { name: v.name }), {
+    const sure = await ask.confirm(msg('network:NameEntry.release.confirm', { name: v.name }), {
       ok: t('network:NameEntry.release'),
       danger: true,
     });
@@ -87,7 +89,7 @@
         {/if}
       </div>
     {/each}
-    <Note>{t('network:NameEntry.note', { name: v.name })}</Note>
+    <Note><T k="network:NameEntry.note" params={{ name: v.name }} /></Note>
     <div class="actions">
       <Button
         data-action="add-label"
@@ -105,7 +107,7 @@
       <Button variant="primary" data-action="save-zone" onclick={save}>{t('network:NameEntry.save')}</Button>
       <Button variant="danger" data-action="release" onclick={letGo}>{t('network:NameEntry.release')}</Button>
     </div>
-    {#if runner.error}<Note tone="error">{runner.error.text}</Note>{/if}
+    {#if runner.error}<Note tone="error"><ErrorText error={runner.error} /></Note>{/if}
   {/if}
 </div>
 

@@ -10,7 +10,8 @@
   import ConnectionEditButton from './ConnectionEditButton.svelte';
   import Note from './ui/Note.svelte';
   import Step from './ui/Step.svelte';
-  import { msg, t, text, type Msg } from '../i18n.ts';
+  import T from './T.svelte';
+  import { msg, t, type Msg } from '../i18n.ts';
   import { preselect, type Connection } from './connections.ts';
   import type { Flow } from './net-wizard.ts';
   import type { PageNetwork } from './net-live.ts';
@@ -49,14 +50,14 @@
       c.tailcat?.exit ? msg('network:NetPickStep.kind.tailcatExit') : msg('network:NetPickStep.kind.tailcatServe'),
   };
   /** A connection's line under its name: its kind, and the machine that has it, if one does. */
-  function lineOf(c: Connection) {
+  function lineOf(c: Connection): Msg {
     const k = KINDS[c.kind](c);
     const kind = c.ephemeral ? msg('network:NetPickStep.kind.ephemeral', { kind: k }) : k;
-    if (!net.held.has(c.id)) return text(kind);
+    if (!net.held.has(c.id)) return kind;
     const holder = holders[c.id];
     return holder
-      ? t('network:NetPickStep.kind.held', { kind, holder })
-      : t('network:NetPickStep.kind.heldElsewhere', { kind });
+      ? msg('network:NetPickStep.kind.held', { kind, holder })
+      : msg('network:NetPickStep.kind.heldElsewhere', { kind });
   }
 
   /** A connection is chosen: the dialog's Attach shows. */
@@ -106,7 +107,7 @@
       }}
       {@attach keep(c.id)}
     >
-      {lineOf(c)}
+      <T m={lineOf(c)} />
       {#snippet after()}
         <ConnectionEditButton
           connection={c}

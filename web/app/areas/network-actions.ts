@@ -37,7 +37,7 @@ type NetPage = Pick<
 
 /** The question before a connection held by another tab's machine is used here. */
 const useHere = (e: HeldError) =>
-  ask.confirm(t('network:network-actions.held.useHere', { held: e.msg }), {
+  ask.confirm(msg('network:network-actions.held.useHere', { held: e.msg }), {
     title: t('network:network-actions.held.title'),
     ok: t('network:network-actions.useHere'),
   });
@@ -173,8 +173,8 @@ export class NetworkActions {
   async #deleteNames(c: Connection, names: string[], on: string[]) {
     const exported = await this.#net.conns.exportKey(c);
     const question = on.length
-      ? t('network:network-actions.delete.names.on', { name: c.name, names, count: names.length, machines: on })
-      : t('network:network-actions.delete.names', { name: c.name, names, count: names.length });
+      ? msg('network:network-actions.delete.names.on', { name: c.name, names, count: names.length, machines: on })
+      : msg('network:network-actions.delete.names', { name: c.name, names, count: names.length });
     const ok = t('network:network-actions.delete.ok');
     const title = t('network:network-actions.delete.title');
     return (await ask.prompt(question, exported, { title, ok, danger: true })) !== undefined;
@@ -184,11 +184,11 @@ export class NetworkActions {
     const what = await this.#deleteWhat(c);
     const question = what
       ? on.length
-        ? t('network:network-actions.delete.confirm.on.what', { name: c.name, machines: on, what })
-        : t('network:network-actions.delete.confirm.what', { name: c.name, what })
+        ? msg('network:network-actions.delete.confirm.on.what', { name: c.name, machines: on, what })
+        : msg('network:network-actions.delete.confirm.what', { name: c.name, what })
       : on.length
-        ? t('network:network-actions.delete.confirm.on', { name: c.name, machines: on })
-        : t('network:network-actions.delete.confirm', { name: c.name });
+        ? msg('network:network-actions.delete.confirm.on', { name: c.name, machines: on })
+        : msg('network:network-actions.delete.confirm', { name: c.name });
     const ok = t('network:network-actions.delete.ok');
     return ask.confirm(question, { title: t('network:network-actions.delete.title'), ok, danger: true });
   }
@@ -197,7 +197,7 @@ export class NetworkActions {
   async logoutConnection(c: Connection) {
     const net = this.#net;
     const logOut = (e: HeldError) =>
-      ask.confirm(t('network:network-actions.held.logOut', { held: e.msg }), {
+      ask.confirm(msg('network:network-actions.held.logOut', { held: e.msg }), {
         title: t('network:network-actions.held.title'),
         ok: t('network:network-actions.logOut'),
         danger: true,
@@ -218,7 +218,7 @@ export class NetworkActions {
     const net = this.#net;
     const r = c.room;
     const ok = t('network:network-actions.newName.ok');
-    if (!(await ask.confirm(t('network:network-actions.newName.confirm', { name: c.name }), { ok, danger: true })))
+    if (!(await ask.confirm(msg('network:network-actions.newName.confirm', { name: c.name }), { ok, danger: true })))
       return false;
     await net.conns.newRoomKey({ ...c, room: r });
     return true;
@@ -237,7 +237,9 @@ export class NetworkActions {
       const tc = c.tailcat;
       if (!tc) return undefined;
       const ok = t('network:network-actions.newAddress.ok');
-      if (!(await ask.confirm(t('network:network-actions.newAddress.confirm', { name: c.name }), { ok, danger: true })))
+      if (
+        !(await ask.confirm(msg('network:network-actions.newAddress.confirm', { name: c.name }), { ok, danger: true }))
+      )
         return undefined;
       // An ephemeral connection's identity is in the page's memory: a new one; a stored one's is made again at its next serve.
       if (c.ephemeral) await net.conns.put({ ...c, tailcat: { ...tc, identity: newTailcatIdentity() } });

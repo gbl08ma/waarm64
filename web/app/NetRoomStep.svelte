@@ -55,6 +55,8 @@
   const conns = $derived(net.connections);
   /** The room connections whose key a new one may share: the stored ones (an ephemeral one's key is gone with its tab). */
   const keys = $derived(conns.filter((c) => c.kind === 'room' && !c.ephemeral));
+  /** A choice of another connection's key (an <option> holds only text). */
+  const sameKeyAs = (name: string) => t('network:NetRoomStep.room.key.of', { name });
 
   export function begin() {
     const r = flow.editing?.room;
@@ -210,7 +212,9 @@
         mono
       />
       <Note size="md">
-        {exported ? t('network:NetRoomStep.room.exportKey.note') : t('network:NetRoomStep.room.exportKey.none')}
+        {#if exported}<T k="network:NetRoomStep.room.exportKey.note" />{:else}{t(
+            'network:NetRoomStep.room.exportKey.none',
+          )}{/if}
       </Note>
     {:else}
       {#if step === 'roomCreate'}
@@ -243,8 +247,7 @@
         <select id="net-room-key" bind:value={keyOf}>
           <option value="">{t('network:NetRoomStep.room.key.new')}</option>
           <option value={PASTE}>{t('network:NetRoomStep.room.key.paste')}</option>
-          {#each keys as k (k.id)}<option value={k.id}>{t('network:NetRoomStep.room.key.of', { name: k.name })}</option
-            >{/each}
+          {#each keys as k (k.id)}<option value={k.id}>{sameKeyAs(k.name)}</option>{/each}
         </select>
       </Field>
       {#if keyOf === PASTE}
@@ -258,7 +261,9 @@
         />
       {/if}
       <Note size="md">
-        {keyOf === PASTE ? t('network:NetRoomStep.room.key.paste.note') : t('network:NetRoomStep.room.key.note')}
+        {#if keyOf === PASTE}<T k="network:NetRoomStep.room.key.paste.note" />{:else}{t(
+            'network:NetRoomStep.room.key.note',
+          )}{/if}
       </Note>
     {/if}
   </Disclosure>

@@ -105,7 +105,7 @@
         readonly
         copy
       />
-      <Note size="md">{t('network:NetDetails.tailnet.note')}</Note>
+      <Note size="md"><T k="network:NetDetails.tailnet.note" /></Note>
     {:else if c.kind === 'tailcat'}
       {#if v.served}
         <ValueField
@@ -148,7 +148,7 @@
         </T>
       </Note>
       <NetLocalInstall prefix="net-details-local" open={v.phase !== 'connected'} />
-      <Note size="md">{t('network:NetDetails.local.link')}</Note>
+      <Note size="md"><T k="network:NetDetails.local.link" /></Note>
     {:else if c.kind === 'room' && c.room}
       {#if v.room}
         <ValueField
