@@ -19,7 +19,9 @@ Wave 2 (after wave 1 merges; touches the whole catalog):
 Then: out-of-context review of the whole change, fix loops, the full CI set.
 
 ## State
-- netfolders and home merged into main locally (not pushed: CI pending). Waiting on idle, storage.
-- To fix later: tools/screens.ts crashes in its seed (`shapeNow` reads `.map` of undefined, size-actions.ts:119),
-  seen on main by the home lane.
-- After merge, CI set: ci.sh, ci-debian.sh, ci-machines.sh, ci-audio.sh (a helper changed), ci-net.sh.
+- Wave 1 (idle, storage, netfolders, home) merged into main locally, 1b9c4906; ci.sh running on it, then ci-debian
+  --platform, ci-machines, ci-audio, ci-net, ci-graphics. Push after green. Lane screenshots: bench/results/local/qa/.
+- Wave 2 (refs) running from d9189c7a (branch qa-refs).
+- To check in review: the storage lane's snapshot warning is the Snapshot button's tooltip plus the notice after a
+  kept snapshot; a crashed (kernel panic) machine keeps running on purpose (idle lane); tools/screens.ts crashes in
+  its seed (size-actions.ts:119 `shapeNow`), pre-existing, maybe fixed by refs.
