@@ -4,7 +4,7 @@
 // appears or goes, rather than moving), or with no key (the Home page's own error), comes and goes its own way
 // (`arrive`): a floating one slides down from above the page, over the toolbar, and back up when it goes (a message
 // from waarm64, not from the guest under it); one in the page's column unfolds and folds (`slide`). With
-// `prefers-reduced-motion`, a plain fade. The key is an attribute, kept current by the template, rather than the
+// `prefers-reduced-motion`, a plain fade, a move between two places too. The key is an attribute, kept current by the template, rather than the
 // transition's parameter: a parameter from a prop is a derived that nothing reads until the outro, and by then its
 // effect is being destroyed and Svelte doesn't compute it (`derived_inert`: the first time, the floating bar left
 // with no key, and nothing moved).
@@ -39,9 +39,28 @@ function arrive(node: Element, intro: boolean): TransitionConfig {
 
 const [send, receive] = crossfade({ duration: DURATION, fallback: (node, _params, intro) => arrive(node, intro) });
 
+/**
+ * The ids in `node` (its own too): a bar that leaves gives them up, so the one that comes in its place is the only one
+ * with them (`#message-text`, the tests' handle); one that comes back (its outro reversed) takes them again.
+ */
+function ids(node: HTMLElement, leaving: boolean) {
+  for (const el of [node, ...node.querySelectorAll<HTMLElement>(leaving ? '[id]' : '[data-left-id]')]) {
+    if (leaving && el.id) {
+      el.dataset.leftId = el.id;
+      el.removeAttribute('id');
+    } else if (!leaving && el.dataset.leftId !== undefined) {
+      el.id = el.dataset.leftId;
+      delete el.dataset.leftId;
+    }
+  }
+}
+
 const keyed =
   (fn: typeof send, intro: boolean) =>
   (node: HTMLElement): TransitionConfig | (() => TransitionConfig) => {
+    ids(node, !intro);
+    // With reduced motion, a bar moving to another place fades out of one and into the other.
+    if (prefersReducedMotion.current) return fade(node, { duration: DURATION });
     const key = node.dataset.crossfade;
     return key === undefined ? arrive(node, intro) : fn(node, { key });
   };
@@ -55,6 +74,9 @@ export const receiveKeyed = keyed(receive, true);
 export function leaveInPlace(node: HTMLElement, banner: boolean): TransitionConfig {
   if (!banner) return {};
   const r = node.getBoundingClientRect();
+  const was = node.getAttribute('style');
+  /** The page's own style again: it comes back while it leaves (its `{#if}` true again: Svelte resumes it). */
+  const back = () => (was === null ? node.removeAttribute('style') : node.setAttribute('style', was));
   Object.assign(node.style, {
     position: 'fixed',
     top: `${r.top}px`,
@@ -63,5 +85,12 @@ export function leaveInPlace(node: HTMLElement, banner: boolean): TransitionConf
     height: `${r.height}px`,
     zIndex: '0',
   });
-  return { duration: DURATION, css: (t) => `opacity: ${t}` };
+  return {
+    duration: DURATION,
+    css: (t) => `opacity: ${t}`,
+    // Svelte calls `tick(1, 0)` as it reverses the outro (its animation cancelled), and on each frame while it runs.
+    tick: (t) => {
+      if (t === 1 && !node.getAnimations().some((a) => a.playState === 'running')) back();
+    },
+  };
 }
