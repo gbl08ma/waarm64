@@ -981,7 +981,7 @@ vCPU workers start after, at the first run) and `total` (from the worker's start
 with which `checkCrc` and RAM's share of `crc`, `unpack` and `apply` are the workers' sums (CPU time, up to `pool` times
 their phase's wall).
 
-**Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
+**Load snapshot** › [From a file…](ui:toolbar:LoadSnapshotMenu.load.file) (the toolbar's menu; also the Snapshots tab's [Restore from a file…](ui:snapshots:Snapshots.restoreFile)), and a snapshot
 file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WAARMSNP`). The page reads the
 header (`readHeader`, web/snapshot-file.ts) before it asks anything, and refuses at once, with the
 machine running on: a file that isn't a snapshot or whose header is damaged, a snapshot of another

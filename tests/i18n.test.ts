@@ -42,6 +42,10 @@ test('references: names and the page\'s elements, drawn by T, dropped from words
   assert.match(referenceProblems('Start <name>the {{machine}}</name>', 'Its title.', icons).join(), /holds one parameter/);
   assert.match(referenceProblems('On its <ui-wifi>Network</ui-wifi> tab', 'A note.', icons).join(), /no icon wifi/);
   assert.deepEqual(referenceProblems('On its <ui-network>Network</ui-network> tab', 'A note.', icons), []);
+  // A menu path is a pill per element, the › between them outside: never one pill.
+  assert.match(referenceProblems('Use <ui>Add a disk… › A blank disk</ui>.', 'A note.', icons).join(), /a pill per element/);
+  assert.match(referenceProblems('In the <ui-network>Network › Log out</ui-network>.', 'A note.', icons).join(), /a pill per element/);
+  assert.deepEqual(referenceProblems('Use <ui-network>Network</ui-network> › <ui>Log out</ui>.', 'A note.', icons), []);
   // A marker is closed, by its own closer, and holds no other ('<port>' as text reads as one).
   assert.match(referenceProblems('Looks like ws://127.0.0.1:<port>/<token>.', 'An error.', icons).join(), /<port> isn't closed/);
   assert.match(referenceProblems('A <code>b</ui> c', 'A note.', icons).join(), /<\/ui> closes no marker|<code> isn't closed/);
