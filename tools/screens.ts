@@ -147,7 +147,7 @@ async function seed(page: Page): Promise<Seed> {
     await store.put('machines', m);
     const bare = await createMachine(store, { name: 'Bare', network: false, usb: false });
     // Two kept snapshots: one of the machine as it is, one orphaned (made when it had another size).
-    const { shape, hash } = await actions.shapeNow(m, new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d])));
+    const { shape, hash } = await actions.shapeNow(m, new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d])), await store.all('overlays'));
     const pins: unknown[] = [];
     await store.put('snapshots', { id: newId(), machine: m.id, name: 'Logged in', created: now - 3600_000, bytes: 412 << 20, shape, shapeHash: hash, pins });
     await store.put('snapshots', { id: newId(), machine: m.id, name: 'Old size', created: now - 86400_000, bytes: 380 << 20, shape: { ...shape, ramMiB: 1024 }, shapeHash: 'orphaned', pins });
