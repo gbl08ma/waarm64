@@ -96,9 +96,11 @@ published next to its disk and snapshot:
 }
 ```
 
-- **The store** is a JSON list of definitions' URLs (`vmdisks.tny.im/store.json`), rendered as cards (name, summary,
-  thumbnail, download size, what it needs: 3D, Vulkan, RAM). Anyone can host a definition, and `#demo=<url>` opens one
-  from elsewhere (with a warning when it isn't ours).
+- **The store** is one JSON file (`vmdisks.tny.im/store.json`) that holds its definitions inline: one request, and
+  every card (name, summary, thumbnail, download size, what it needs: 3D, Vulkan, RAM) renders at once. A definition
+  is a KB or two, so dozens of demos still make a small file. Its relative URLs (disks, snapshot, thumbnail) resolve
+  against the store's URL, so a demo's files sit beside it. A standalone definition file is the same object on its
+  own: anyone can host one, and `#demo=<url>` opens it from elsewhere (with a warning when it isn't ours).
 - **The snapshot** is fetched whole, chunked like a disk image, into the same expiring Storage Bucket as the disk's
   blocks (backlog.md "A public demo…"). It must be a **template** (`tools/snapshot-template.ts`: the guest agent
   renews entropy, the machine id and the SSH keys at the restore), and it pins its disk by the chunked image's `id`,
