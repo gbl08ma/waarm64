@@ -190,7 +190,7 @@ behind its back. With the arm, node 1 runs at 1.0–1.6× node 0's time, which i
 costs on every path: a physical-to-host table for `Mem` and every DMA, finding cold memory-0 pages, and a stop of every
 vCPU for each move in parallel SMP.
 
-**Tests.** `tests/jit-diff.test.ts` runs the load and store classes with the MMU on, at EL1, on data in spill memory 1
+**Tests.** `tests/jit-diff-suite.ts` runs the load and store classes with the MMU on, at EL1, on data in spill memory 1
 (the arm) and 2 (the helper), an interpreter VM against a JIT-check VM, and checks that a warm load on memory 1 makes
 no helper call while one on memory 2 makes one each time. Planted: the arm naming memory 0 (every class touching
 spill data fails), and one access each left on memory 0 (LD1's lane load, STXP's W pair: those classes fail). The

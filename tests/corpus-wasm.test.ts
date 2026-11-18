@@ -14,7 +14,7 @@ import { coreImports } from '../web/vm.ts';
 import { jitVariantSkip } from './jit-variants.ts';
 import { CODE, DATA, DATA_SIZE, REGS, initialState, parseFile } from '../tools/corpus/corpus.ts';
 
-// `WAARM64_CORE` (a path from the repo's root): another core, such as the polled test core (tests/jit-diff.test.ts).
+// `WAARM64_CORE` (a path from the repo's root): another core, such as the polled test core (tests/jit-diff-suite.ts).
 const WASM = new URL(`../${process.env.WAARM64_CORE ?? 'target/wasm32-unknown-unknown/release/waarm64_core.wasm'}`, import.meta.url);
 const DIR = new URL('corpus/', import.meta.url);
 const RAM = Number(DATA) + DATA_SIZE;

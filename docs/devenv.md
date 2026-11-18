@@ -124,7 +124,7 @@ scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/rele
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)
 WAARM64_CORPUS=dp_imm,dp_reg node --test tests/corpus-wasm.test.ts   # corpus groups only (fast JIT iteration)
-node --test tests/jit-diff.test.ts                                 # JIT vs interpreter on random words (WAARM64_JIT_DIFF=<n>)
+node --test tests/jit-diff-[1-4].test.ts                           # JIT vs interpreter on random words (WAARM64_JIT_DIFF=<n>)
 WAARM64_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts   # long lockstep (CI runs 20M)
 WAARM64_DISTROS=alpine,alpine-user scripts/ci.sh   # which distro tests run (default: the current Alpine images; Debian is ci-debian.sh's)
 WAARM64_INTERP=1 node --test tests/boot-node*.test.ts     # also the long guests' interpreter runs in Node
