@@ -440,7 +440,8 @@ copies by nonce **and round** (the three rounds share a nonce).
   server holds it; unchecked, it only orders a contest), and an item: none (it holds no owner for the id), the owning
   chain's last entry with its anchor and header and the zone, or "too big" (past `REPLY_MAX`, 4 KiB of item: the user's
   value until a dev VM session measures what the default relays forward; the replies are 1.3 to 4.1 KB on the wire,
-  *estimate*).
+  *estimate*), which carries that last entry alone, without the zone, so it holds something checkable (review 3,
+  finding 2: a bare "too big" from a made-up server, free to forge, forced a contest that fetched every one).
   1. **`share`**, at the spread that last brought one to eight replies in this room (6 the first time; past eight, 3
      bits narrower next time, up to 15), then 3 bits wider at 0.4 s, then everyone at 1 s, while nothing counts.
      Three rounds whatever the start: a room found at "everyone" sends "everyone" again at 0.4 and 1 s, which a server
@@ -450,7 +451,7 @@ copies by nonce **and round** (the three rounds share a nonce).
      covering now; the zone: the owner's, this name's, its signature), never for who sent it. An entry is checked whole
      once a lookup however many replies carry it; its anchor with each copy (a forged anchor on a copied entry mustn't
      refuse the honest copy); a reply that fails a check is dropped and **counts for nothing**: only a reply that held
-     (an item, none, or too big) is a reply. There is no limit on how many are let in, only the checks' budget a turn
+     (an item, none, or a too big whose entry held) is a reply. There is no limit on how many are let in, only the checks' budget a turn
      (24 units, as a server's) and the relays' (`LOOKUP_EVENTS_PER_SECOND` a relay).
   3. **At the first reply**, unless its round asked everyone: one more ask, **`dissent`**, `shown` naming the best
      item checked so far as it would be kept: 8 bytes of `SHA-256` (tagged `waarm64/names/shown`) over its owner key,
@@ -465,18 +466,25 @@ copies by nonce **and round** (the three rounds share a nonce).
        history (one key, one owner); what is kept starts from that entry's time;
      - none, from at least one server: **NXDOMAIN, 60 s, twice as long each time after while the name stays unknown,
        to 10 minutes** (forgotten once its wait has passed as long again unasked);
-     - two or more owner keys, or an item too big: a **contest**. Every replier is listed by its `since`; the member
+     - two or more owner keys, or one shown only by items too big (its zone is fetched): a **contest**. Every replier
+       is listed by its `since` (of one owner key, the 32 with the earliest `since` are kept); the member
        sends **`fetch`** (`shown` the first 8 bytes of one replier's names key) to the earliest, 8 at a time, a replier
        whose key already has a run checked as old as it claims skipped, and lets in handshakes from those names keys
        only. The server named calls back and sends the owning chain's whole run (`items`, as `history`), checked as
        a `history` is, a slice a turn. It stops once nothing is in flight and the best run checked (by "Who owns a
-       name" over every run that held) is older than every `since` left; the owner is that best. A liar about `since`
-       costs a fetch and loses (`liars_since_cost_a_fetch_each_and_lose`); a contest with no run that held gives no
-       answer (the next query asks again).
+       name" over every run that held) is older than every `since` left, or **10 s after it started**
+       (`CONTEST_FOR`); the owner is that best, only if every key shown is settled: its run checked, or each of its
+       repliers claiming a run younger than the best. A liar about `since` costs a fetch and loses
+       (`liars_since_cost_a_fetch_each_and_lose`); a contest with no run that held, or with a key unsettled (its
+       repliers made up, crowding out its real holder, or out of time), gives no answer (the next query asks again),
+       never another owner's (`a_contest_crowded_by_forged_repliers_ends_in_time_and_never_for_another_owner`). So
+       forged repliers hold a contest 10 s at most; a contest needs a second live chain of the name (a registration)
+       or a key shown only too big, and forged copies of the owner's entry from made-up servers then cost that name
+       its answer, not its owner.
      - silence through the last round, 2.5 s after the first: **nobody serves** (30 s, doubling to 10 minutes, reset
        by a reply), unless a reply counted in the last minute (the room's reply budgets were spent: a guest asking
        many names at once): then the query gets the resolver's SERVFAIL, and the next asks again.
-  5. **A reply up to 3 s after the decision** is still checked: another owner key (or an item too big) starts a
+  5. **A reply up to 3 s after the decision** is still checked: another owner key (or a key shown only too big) starts a
      contest, and what is kept changes if the newcomer's run is older (`Kept::offer`); a name decided none takes an
      owner that comes late.
   Asks go out at 4 a second at most (rounds, dissents, fetches). Measured on the bus (`member_tests.rs`): 128 and
@@ -611,7 +619,8 @@ copies by nonce **and round** (the three rounds share a nonce).
 - **Asks** (R3, `Server::on_ask`), once its first sync is done: a `share` whose rank (the plain draw over its live
   names' owner keys; no live name: only "everyone") falls in the share, and a `dissent` when it holds an owner for the
   id and its (owner key, last entry, zone) isn't what `shown` names (any owner for zeros; R3a), are replied: the owning chain's last entry with its
-  anchor and header, and the zone (`owner_answer`, nothing held), or none, or "too big" past `REPLY_MAX`; the reply
+  anchor and header, and the zone (`owner_answer`, nothing held), or none, or "too big" past `REPLY_MAX` (the last entry
+  alone); the reply
   counts the name as asked for. A reply proves nothing of the replier, so a server's share is its own to keep. Replies
   have **budgets of their own**: 2 a second (`REPLIES_PER_SECOND`), 16 a minute under one reply tag
   (`REPLIES_PER_TAG`), once a nonce, apart from "who serves?"'s answers and the call backs, so neither starves the
@@ -919,7 +928,8 @@ names.
 | Show the owner's own records in the sample, stale: its last entry with an old zone or none, or an entry a renewal behind | registrations | nothing, while one honest holder of the newest hears the `dissent`: `shown` names the entry and the zone with the key, so that holder differs and replies, and the member keeps the latest entry and the best zone (R3a, `the_owners_own_records_shown_stale_dont_silence_the_dissent`) |
 | Show the owner's last entry before its release (public, alive by its own time) | registrations | holders of the release hold no owner, so they don't dissent, and a reply can't carry a release: the member keeps the released owner, even against the name's next owner (whose dissent starts a contest the old run wins, the fetched runs carrying no release), until its refresh 5 minutes on ends it. docs/backlog.md |
 | Hold many younger claims on one name, each lying about `since` | a registration on that name each, every term | that name's first lookups run a contest: a `fetch` and a run's check a liar, 8 at a time; the owner still wins |
-| Junk replies under an asker's tag (it reads the tag's inputs in the ask) | events | a failed check each; no place taken from anyone |
+| Junk replies under an asker's tag (it reads the tag's inputs in the ask) | events | a failed check each; no place taken from anyone; "too big" carries a checkable entry (review 3); copies of real entries from made-up servers narrow the next lookup's first spread at most (its rounds widen to everyone) |
+| Copies of an owner's entry from made-up servers claiming `since` 0, in a contest | events, and a registration on that name for the contest | the name's first lookups give no answer for 10 s each (`CONTEST_FOR`); never another owner |
 | Forged asks that make servers reply | one event | every holder replies once (a `dissent` with a made-up `shown`, a `share` at spread 0): bounded by 2 replies a second a server and 16 a minute a tag; with hundreds of servers, megabytes a second onto public relays (backlog) |
 | Keep honest dissent away by spending servers' reply budgets | forged asks at every server's 2 a second, sustained | members take what the attacker shows for names they don't keep, while it lasts. Loud; the budget is apart from "who serves?"'s |
 | Serve a member's refresh, and leave names out or serve an old zone | registrations (the plain draw) | a stale zone or a release unseen for 15 minutes at most, before the member redraws; never another owner (a kept chain yields only to an older run) |

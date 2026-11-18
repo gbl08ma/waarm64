@@ -1491,6 +1491,126 @@ fn junk_replies_take_no_place() {
     assert_eq!(bus.m.kept[&alpha.id].zone, alpha.zone, "the owner's zone");
 }
 
+/// Review 3's finding 2: "too big" replies, forged by anyone who knows the room's ID (no registration), each from a
+/// made-up server claiming `since` 0, forced a contest that fetched every one of them (5 s each, 8 at once). A "too
+/// big" now carries the last entry: forged with a broken one it is refused; with the owner's own, copied, it shows the
+/// owner's key, whose zone an item already brought, so nothing is fetched.
+#[test]
+fn forged_too_big_replies_dont_stall_a_first_lookup() {
+    let mut b = Bitcoin::new(ROOM, 49);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let real = alpha.entries.last().unwrap().clone();
+    for copied in [false, true] {
+        let mut junk = Vec::new();
+        for k in 0..40u32 {
+            let mut server = [0x55; 32];
+            server[..4].copy_from_slice(&k.to_le_bytes());
+            let mut w = real.clone();
+            if !copied {
+                w.entry.sig[(k % 64) as usize] ^= 1;
+            }
+            junk.push(Reply {
+                nonce: [0; 16],
+                server,
+                region: 0,
+                since: 0,
+                item: super::wire::ReplyItem::TooBig(Box::new(Item {
+                    id: alpha.id,
+                    entries: vec![w],
+                    zone: None,
+                })),
+            });
+        }
+        let s0 = serving(&mut b, 1, &[&alpha]);
+        let mut bus = Bus::new(vec![s0], member());
+        bus.junk = junk;
+        let (a, took) = bus.resolve("alpha");
+        eprintln!(
+            "40 forged too-big replies a round (copied {copied}): {a:?} in {took:?}, {} fetches",
+            bus.m.stats.fetches
+        );
+        assert_eq!(a, Answer::Node([0xa1; 32]), "copied {copied}");
+        assert_eq!(bus.m.stats.fetches, 0, "copied {copied}: nothing fetched");
+        assert_eq!(bus.m.kept[&alpha.id].zone, alpha.zone);
+    }
+}
+
+/// Review 3's finding 2, in a contest (impostors' real back-orders, each on a server of its own): forged replies
+/// copying a key's entry from made-up servers, each claiming `since` 0, crowd out its real holder, and every fetch of
+/// them waits its 5 s. With one impostor whose run is checked, the owner's run unchecked gives no answer, never the
+/// impostor's; with four, every key crowded (fetching them all would take 25 s), the contest ends within its time.
+#[test]
+fn a_contest_crowded_by_forged_repliers_ends_in_time_and_never_for_another_owner() {
+    let mut b = Bitcoin::new(ROOM, 50);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    for impostors in [1u8, 4] {
+        let mut shown = vec![alpha.clone()];
+        for k in 0..impostors {
+            shown.push(title(
+                &mut b,
+                66 + k,
+                "alpha",
+                10,
+                &[],
+                [0x66; 32],
+                [0x66; 32],
+            ));
+        }
+        let mut junk = Vec::new();
+        // The owner's key crowded (40 copies, past what a contest fetches in its time; `since` 1, after the impostor's
+        // lie); with four impostors, every key (8 copies each).
+        let crowded = if impostors == 1 { 1 } else { shown.len() };
+        for (k, it) in shown.iter().take(crowded).enumerate() {
+            for j in 0..if impostors == 1 { 40 } else { 8u32 } {
+                let mut server = [0x55; 32];
+                server[..4].copy_from_slice(&(k as u32 * 64 + j).to_le_bytes());
+                junk.push(Reply {
+                    nonce: [0; 16],
+                    server,
+                    region: 0,
+                    since: (impostors == 1) as u32,
+                    item: super::wire::ReplyItem::Item(Box::new(Item {
+                        id: alpha.id,
+                        entries: vec![it.entries.last().unwrap().clone()],
+                        zone: it.zone.clone(),
+                    })),
+                });
+            }
+        }
+        let mut servers: Vec<Server> = (shown.iter().enumerate())
+            .map(|(k, it)| serving(&mut b, 1 + k as u8, &[it]))
+            .collect();
+        if impostors == 1 {
+            // The impostor's own server claims the earliest run of all, so its run is checked first.
+            servers[1].lie_since = Some(0);
+        }
+        let mut bus = Bus::new(servers, member());
+        bus.junk = junk;
+        let start = bus.now;
+        let (a, _) = bus.resolve("alpha");
+        assert_ne!(a, Answer::Node([0x66; 32]), "{impostors} impostors");
+        while bus.m.firsts() > 0 && bus.now - start < Duration::from_secs(60) {
+            bus.advance(Duration::from_millis(100));
+            let (now, unix) = (bus.now, bus.unix());
+            assert_ne!(
+                bus.m.query("alpha", now, unix, false),
+                Answer::Node([0x66; 32]),
+                "{impostors} impostors: never an impostor"
+            );
+        }
+        let took = bus.now - start;
+        eprintln!(
+            "a contest of {impostors} impostors crowded by forged repliers: over in {took:?}, {} fetches",
+            bus.m.stats.fetches
+        );
+        assert!(
+            took <= Duration::from_secs(14), // CONTEST_FOR (10 s), the first round and the wait for the decision
+            "{impostors} impostors: {took:?}"
+        );
+        assert!(!bus.m.kept.contains_key(&alpha.id), "nothing taken");
+    }
+}
+
 /// R3a: liars that are the whole of a first lookup's sample reply with the owner's own records, all public and valid,
 /// but not the newest: its last entry with an old zone, with none, or a renewal behind (in its grace, so it doesn't
 /// resolve). The dissent names what was shown, the entry and the zone with the key, so the one honest holder of the

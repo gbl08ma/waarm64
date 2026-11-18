@@ -1392,7 +1392,10 @@ impl Server {
         let since = self.lie_since.filter(|_| item.is_some()).unwrap_or(since);
         let item = match item {
             None => ReplyItem::None,
-            Some(it) if it.encode().len() > self.reply_max => ReplyItem::TooBig,
+            // Past the bound: the last entry alone, so the reply holds something checkable.
+            Some(it) if it.encode().len() > self.reply_max => {
+                ReplyItem::TooBig(Box::new(Item { zone: None, ..it }))
+            }
             Some(it) => ReplyItem::Item(Box::new(it)),
         };
         self.stats.replied += 1;

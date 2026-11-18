@@ -3041,7 +3041,17 @@ fn an_item_past_the_reply_bound_is_left_out() {
     )
     .0
     .unwrap();
-    assert_eq!(r.item, ReplyItem::TooBig, "{size} bytes past {}", size - 1);
+    // The last entry alone, without the zone: something a member can check.
+    assert_eq!(
+        r.item,
+        ReplyItem::TooBig(Box::new(Item {
+            zone: None,
+            ..*it.clone()
+        })),
+        "{size} bytes past {}",
+        size - 1
+    );
+    assert_eq!(super::wire::Reply::decode(&r.encode()).unwrap(), r);
     // And a member refuses a reply whose item is past REPLY_MAX at the wire.
     let big = super::wire::Reply {
         item: ReplyItem::Item(Box::new(Item {
