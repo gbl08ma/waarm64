@@ -107,6 +107,11 @@ pub const ANSWERS_PER_KEY: usize = 4;
 const ANSWERS_PER_KEY_WINDOW: Duration = Duration::from_secs(60);
 pub const SYNC_EVERY: Duration = Duration::from_secs(300);
 const SYNC_JITTER_MS: u64 = 30_000;
+/// A round whose runs brought names is followed by the next this soon (and up to a third more at random), at most
+/// [`QUICK_ROUNDS`] in a row: servers that started together converge in a few of these, not in rounds of 5 minutes
+/// (N6a: twenty servers held 3,100 to 3,700 of 5,000 names a minute in, then nothing until the next round).
+pub const QUICK_ROUND: Duration = Duration::from_secs(30);
+pub const QUICK_ROUNDS: u32 = 8;
 /// A range this small (on the answering side) is listed.
 pub const LIST_MAX: u32 = 64;
 /// Sync requests in flight to one partner.
@@ -626,6 +631,9 @@ pub struct Server {
     last_unix: u64,
     /// The round's runs are over: synced once what they brought is verified.
     round_over: bool,
+    /// Names the round's sync changed (from its runs and `have`s), and the quick rounds in a row so far.
+    round_brought: usize,
+    quick: u32,
     /// What it asks outside the room: blocks checked, renewals finished ([`outside`]).
     out: outside::Outside,
     /// The tests' lying server: names it never keeps (so never lists or serves).
@@ -712,6 +720,8 @@ impl Server {
             now: Instant::now(),
             last_unix: unix,
             round_over: false,
+            round_brought: 0,
+            quick: 0,
             out: outside::Outside::default(),
             #[cfg(test)]
             refuse: BTreeSet::new(),
@@ -987,6 +997,17 @@ impl Server {
                 self.log("synced: answering questions".into());
             }
             self.synced = true;
+            // A round that brought names: the next soon, while there is more to find (a few in a row at most).
+            if self.round_brought > 0 && self.quick < QUICK_ROUNDS {
+                self.quick += 1;
+                let jitter =
+                    u64::from_le_bytes(random()) % (QUICK_ROUND.as_millis() as u64 / 3 + 1);
+                let soon = now + QUICK_ROUND + Duration::from_millis(jitter);
+                self.next_round = Some(self.next_round.map_or(soon, |t| t.min(soon)));
+            } else if self.round_brought == 0 {
+                self.quick = 0;
+            }
+            self.round_brought = 0;
         }
         // Our question's rounds, its choice, or nobody.
         if let Some(a) = &self.ask {
@@ -2150,6 +2171,10 @@ impl Server {
             }
         }
         if changed {
+            // Sync's (a run's `get`, a `have`'s), not a `put`: counted for the round's next ([`QUICK_ROUND`]).
+            if matches!(job.from, Some((_, None))) {
+                self.round_brought += 1;
+            }
             self.stored(&id);
             let source = job.from.map(|(p, _)| p);
             self.tell(id, source);

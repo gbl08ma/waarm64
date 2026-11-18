@@ -229,6 +229,9 @@ fn twenty_servers_converge() {
         n.server(0).reg.bytes
     );
     assert!(nodes.iter().all(|i| n.server(*i).synced));
+    // NAMES loop 6b: a round whose runs brought names is followed by the next within a minute, not at the round's 5
+    // (N6a: twenty servers started at once held 3,100 to 3,700 of 5,000 names a minute in, then nothing for 5 minutes).
+    assert!(took <= Duration::from_secs(180), "converged in {took:?}");
     let nodes_keys: Vec<[u8; 32]> = (1..=20).map(public).collect();
     assert!(
         n.by_keys

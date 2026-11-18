@@ -1134,6 +1134,33 @@ fn servers_that_start_together_find_each_other_within_seconds() {
     }
 }
 
+/// Quick rounds (a round that brought names is followed by the next within a minute) are a few in a row at most: a
+/// partner that always has something new doesn't keep a server asking every 30 s.
+#[test]
+fn quick_rounds_are_a_few_in_a_row() {
+    let mut b = Bitcoin::new(ROOM, 53);
+    let mk = |b: &mut Bitcoin, k: u8, n: &str| {
+        let (key, item) = b.title(k, n, t(20), &[t(4)], [k; 32]);
+        Server::new(ROOM, cfg(vec![Title { key, item }]), T)
+    };
+    let (s0, s1) = (mk(&mut b, 1, "alpha"), mk(&mut b, 2, "bravo"));
+    let mut bus = Bus::new(vec![s0, s1]);
+    // Server 1 gets a new name every 20 s (its owner's put, say), for 30 minutes.
+    let mut k = 0u32;
+    while bus.now < bus.t0 + Duration::from_secs(1800) {
+        let (_, it) = b.title(3, &format!("fresh{k}"), t(20), &[t(4)], [3; 32]);
+        k += 1;
+        let unix = bus.unix();
+        assert!(bus.s[1].load(&record(&it, unix), unix));
+        bus.advance(Duration::from_secs(20));
+    }
+    let rounds = bus.s[0].stats.rounds;
+    eprintln!("a partner with a new name every 20 s: {rounds} rounds in 30 minutes");
+    // 8 quick rounds (~5 minutes), then one every 5 minutes: ~13; each every 30 to 40 s would be ~50.
+    assert!(rounds <= 18, "{rounds} rounds in 30 minutes");
+    assert!(rounds >= 9, "{rounds} rounds: the quick ones came");
+}
+
 #[test]
 fn an_entry_held_takes_a_new_anchor_only_when_earlier() {
     let mut b = Bitcoin::new(ROOM, 13);
