@@ -2466,8 +2466,12 @@ fn a_block_both_explorers_deny_is_refused_with_its_anchors() {
     bus.advance(Duration::from_secs(60));
     let id = forged.id;
     // While the explorers can't be reached, the forged anchors count on their headers' work, as a member's do.
+    // Put to both servers: a server isn't told of what was put by it (the putter holds it, as an owner's agent does),
+    // so server 1 would hear of the name only at its next sync, a round's jitter either side of server 0's check.
     bus.svc.as_mut().unwrap().explorers_down = [true, true];
     assert_eq!(bus.put(1, 0, forged.clone()), Msg::Taken);
+    assert_eq!(bus.put(0, 1, forged.clone()), Msg::Taken);
+    assert!(bus.s.iter().all(|s| s.reg.get(&id).is_some()));
     bus.advance(Duration::from_secs(10));
     assert_eq!(
         bus.s[0].resolve("forged", "forged", bus.unix()),
@@ -2679,6 +2683,10 @@ fn block_checks_are_paced_newest_first_and_load_back() {
     bus.advance(Duration::from_secs(30));
     let n = checks(&bus).len();
     assert!((9..=11).contains(&n), "{n} checks in 30 s, one every 3 s");
+    // Past the servers' first sync (a round, its jitter up to 6 s, after the 30 s nobody answered): it brings server
+    // 1's block, an arrival newer than one put before it.
+    bus.advance(Duration::from_secs(15));
+    let n = checks(&bus).len();
     // A new arrival goes first.
     let unix = bus.unix();
     let item = late.visit(&mut b, bus.svc.as_mut().unwrap(), unix);
