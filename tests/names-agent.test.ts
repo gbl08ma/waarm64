@@ -496,6 +496,40 @@ test('Let it go wins over a renewal the room finished: one browser renews, the o
   assert.equal(j.verdict, 'none', 'the renewed copy shown the release: nobody owns it');
 });
 
+test('a name registered again counts its zones past the earlier tenure\'s, which the same owner key signed (the final review, finding 9)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });
+  const c = conn('conn-again');
+  await aged(cal, agent, c, 'again', nowS() - 5 * DAY);
+  for (const k of ['11', '22', '33', '44']) await agent.setZone(c, 'again', point(k.repeat(32)));
+  const seqOf = async () => BigInt((await statusOf(backend, (await store.titles(c.identityKey))[0])).zone!.seq);
+  const old = await seqOf();
+  // The same title in another browser, which pointed it elsewhere more often still.
+  const bundle = await exportNames(store, c.identityKey);
+  const b = await testAgent({ publish: fakePublish() });
+  const cb = conn('conn-again-b');
+  await importNames(b.store, cb.identityKey, bundle!);
+  for (const k of ['55', '66', '77']) await b.agent.setZone(cb, 'again', point(k.repeat(32)));
+  const elsewhere = BigInt((await statusOf(b.backend, (await b.store.titles(cb.identityKey))[0])).zone!.seq);
+  assert.ok(elsewhere > old);
+  // Let go, then registered again: the same secret, room and name, so the same owner key signs the new claim's zone.
+  await agent.release(c, 'again');
+  cal.mine(7);
+  await agent.pass(c.identityKey);
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'released');
+  // Hours on (a release takes that long to be anchored), seven zones in a second notwithstanding.
+  const real = Date.now;
+  Date.now = () => real() + 3 * 3600_000;
+  try {
+    await agent.register(c, 'again', point('88'.repeat(32)));
+  } finally {
+    Date.now = real;
+  }
+  const now = await seqOf();
+  assert.ok(now >> 32n > old >> 32n, `the new claim's zone counts past this copy's old one (${now >> 32n}, ${old >> 32n})`);
+  assert.ok(now >> 32n > elsewhere >> 32n, `and past another copy's (${now >> 32n}, ${elsewhere >> 32n})`);
+});
+
 test('an export pasted into a connection that has an owners\' secret already: its titles keep their own (review 2, finding 11)', { skip, timeout: 60_000 }, async () => {
   const log: string[] = [];
   // Browser B's connection holds a name of its own, so it has a secret.

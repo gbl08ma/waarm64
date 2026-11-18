@@ -920,7 +920,12 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   copies share a branch with a chance of 2^-32 a pair, and only then could they make two zones with one `seq` (which
   would reuse a seal's key: "Names nobody lists"). Why 32 bits (N4d): with N4c's one byte, a branch drawn at each paste
   would collide one pair in 256; one given out by the exporter can't tell two pastes of one export apart. The zone's
-  version byte is 2, items' 3 and an export's names' `v` 2 since (pre-release: older ones are refused).
+  version byte is 2, items' 3 and an export's names' `v` 2 since (pre-release: older ones are refused). **A
+  registration starts `n` at the Unix time** (past the old record's, if any): a name registered again after it was
+  let go, lost or lapsed is signed by the same owner key (one a secret, room and name), and the earlier tenure's zones,
+  public and signed by that key, would otherwise outrank the new claim's until the agent counted past them (the final
+  review's finding 9). The time is past any count a copy of the old title reached elsewhere, short of more than one
+  zone a second over a whole tenure; 32 bits hold it until 2106.
 - **The services are compiled in** (web/names.ts `CALENDARS`, the module's order and URLs, and `EXPLORERS`,
   blockstream.info's and mempool.space's Esplora APIs): the agent fetches nothing else (its `get` refuses another URL;
   so does `serviceFetch`, through which a room's worker fetches what its server asks: "Outside the room"),

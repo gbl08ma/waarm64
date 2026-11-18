@@ -352,9 +352,13 @@ export class NamesAgent {
     void (globalThis.navigator as Navigator | undefined)?.storage?.persist?.().catch(() => false);
     const have = await this.store.get(c.identityKey, room, name);
     if (have && !have.lost && !have.released && (await this.view(have)).state !== 'lapsed') throw new NamesError('Held');
+    // The zones' count starts past the old record's and at the Unix time: a name registered again (let go, lost or
+    // lapsed) is signed by the same owner key (one a secret, room and name), and the earlier tenure's zones, public and
+    // signed by it, mustn't outrank the new claim's (the final review, finding 9). The time puts it past a count that
+    // another copy of the old title reached too (one a second at most; 32 bits hold it until 2106).
     const t: TitleRecord = {
       identityKey: c.identityKey, room, link: c.link, name, item: '', stamps: {}, collect: {}, points,
-      zone: { n: 0, branch: newBranch() }, made: Date.now(),
+      zone: { n: Math.max(have?.zone.n ?? 0, nowS()), branch: newBranch() }, made: Date.now(),
     };
     await this.store.put(t);
     const k = titleKey(t);
