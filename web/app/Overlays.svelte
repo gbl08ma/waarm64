@@ -1,7 +1,8 @@
 <!--
   A disk's overlays (docs/machines.md §4): a dialog over the Machines page, opened by Overlays… on a disk in the Disks pane or
   on a machine's Disks tab. Each overlay with what it holds of the size its guest sees, when it was made and the machines that write to it; Rename,
-  Delete, Resize… (ResizeDisk.svelte, over this dialog), Merge into the disk (a stored disk) and Export. Export's steps
+  Delete, Resize… (ResizeDisk.svelte, over this dialog), Merge into the disk (a stored or a blank disk: docs/machines.md
+  §4.4) and Export. Export's steps
   (ExportSteps.svelte) take the dialog's place, the list the step before them (Back). Which overlay a machine uses is chosen on its Disks tab.
 -->
 <script lang="ts">
@@ -20,7 +21,8 @@
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { bytesText } from './bytes.ts';
-  import { deleteOverlay, mergeCosts, mergeIntoDisk, renameOverlay } from './disks.ts';
+  import { deleteOverlay, renameOverlay } from './disks.ts';
+  import { mergeEffect, mergeIntoDisk } from './merge.ts';
   import type { ExportMode, ExportStepsApi } from './export.ts';
   import { inBar, page } from './page.ts';
 
@@ -94,22 +96,23 @@
     );
   }
   async function merge(o: OverlayRecord) {
-    const others = await mergeCosts(store, o.id);
-    const pinned = new Set([`disks/${disk.id}`, `overlays/${o.id}`, ...others.map((x) => `overlays/${x.id}`)]);
-    const snaps = (await store.all('snapshots')).filter((s) => s.pins.some((p) => p.overlay && pinned.has(p.overlay)));
+    const effect = await mergeEffect(store, o.id);
+    if (!effect) return;
+    const { how, others, size, snapshots } = effect;
     const deleted = others.length
       ? msg('disks:Overlays.merge.others', {
           list: others.map((x) => msg('disks:Overlays.merge.other', { name: x.name, size: bytesText(x.bytes) })),
         })
       : undefined;
-    const orphaned = snaps.length ? msg('disks:Overlays.merge.snapshots', { count: snaps.length }) : undefined;
-    if (
-      !(await ask.confirm(
-        t('disks:Overlays.merge.confirm', { overlay: o.name, disk: disk.name, others: deleted, snapshots: orphaned }),
-        { ok: t('disks:Overlays.merge.ok'), danger: others.length > 0 },
-      ))
-    )
-      return;
+    const orphaned = snapshots.length ? msg('disks:Overlays.merge.snapshots', { count: snapshots.length }) : undefined;
+    const words = { overlay: o.name, disk: disk.name, others: deleted, snapshots: orphaned };
+    const question =
+      how === 'grow'
+        ? t('disks:Overlays.merge.confirm.grow', { overlay: o.name, disk: disk.name, size, snapshots: orphaned })
+        : how === 'convert'
+          ? t('disks:Overlays.merge.confirm.blank', { ...words, size })
+          : t('disks:Overlays.merge.confirm', words);
+    if (!(await ask.confirm(question, { ok: t('disks:Overlays.merge.ok'), danger: others.length > 0 }))) return;
     await run(t('disks:Overlays.busy.merge'), () =>
       mergeIntoDisk(store, o.id).catch((e: unknown) => {
         throw new MsgError('disks:Overlays.failed.merge', {}, { cause: e });
@@ -164,10 +167,12 @@
               title={t('disks:Overlays.resizeButton.title')}
               data-action="resize-overlay">{t('disks:Overlays.resizeButton')}</Button
             >
-            {#if disk.kind === 'stored'}<Button
+            {#if disk.kind === 'stored' || disk.kind === 'blank'}<Button
                 icon="git-merge"
                 onclick={() => merge(o)}
-                title={t('disks:Overlays.mergeButton.title')}
+                title={disk.kind === 'blank'
+                  ? t('disks:Overlays.mergeButton.title.blank')
+                  : t('disks:Overlays.mergeButton.title')}
                 data-action="merge-overlay">{t('disks:Overlays.mergeButton')}</Button
               >{/if}
             <Button

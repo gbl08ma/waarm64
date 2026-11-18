@@ -1,18 +1,11 @@
 // What the page does with disks and their overlays (docs/machines.md §3, §4): a disk's bytes for a machine or a
 // job (`diskRef`), the overlays as named variants of a base (new, rename, switch, delete, refreshed from their meta
-// after a machine stops), changes loaded into a new overlay, a file imported into the browser as a stored disk, an
-// overlay merged into its stored disk. Records go through web/app/store.ts (a record after its bytes, deleted before
-// them); bytes are touched in workers (sync access handles). Nothing here asks the user: the Machines page confirms first.
+// after a machine stops), changes loaded into a new overlay, a file imported into the browser as a stored disk, the
+// disk worker's jobs (`diskJob`; an overlay merged into its disk is web/app/merge.ts). Records go through
+// web/app/store.ts (a record after its bytes, deleted before them); bytes are touched in workers (sync access handles).
+// Nothing here asks the user: the Machines page confirms first.
 import { fromWire, MsgError } from '../msg.ts';
-import {
-  locksInUse,
-  mergeLock,
-  overlayBytes,
-  overlayLock,
-  overlayMeta,
-  removeOverlay,
-  writeOwnSize,
-} from '../overlay.ts';
+import { locksInUse, overlayBytes, overlayLock, overlayMeta, removeOverlay, writeOwnSize } from '../overlay.ts';
 import { sizeSeen, type GrowMark } from './disk-size.ts';
 import type { DiskJob, DiskJobResult } from './disk-worker.ts';
 import { runImport } from './import.ts';
@@ -213,14 +206,22 @@ export async function loadChangesInto(
   });
 }
 
-/** Runs a disk job in its worker; resolves to its result. */
 /** Field `what` of a job's reply, which that job always sends. */
 function sent<T>(v: T | undefined, what: string): T {
   if (v === undefined) throw new Error(`the disk worker's reply has no ${what}`);
   return v;
 }
 
-function job(j: DiskJob, progress?: (fraction: number) => void) {
+/** Runs a disk job in its worker; resolves to its result. */
+export async function diskJob(
+  j: DiskJob,
+  progress?: (fraction: number) => void,
+): Promise<Extract<DiskJobResult, { type: 'done' }>> {
+  // Node has no Worker (the tests): a merge runs here, on the same in-memory files.
+  if (typeof Worker === 'undefined' && j.type === 'merge') {
+    const { mergeOverlay } = await import('../stored.ts');
+    return { type: 'done', blocks: await mergeOverlay(j.disk, j.overlay, j.identity, j.size) };
+  }
   return new Promise<Extract<DiskJobResult, { type: 'done' }>>((resolve, reject) => {
     const w = new Worker(new URL('./disk-worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent<DiskJobResult>) => {
@@ -240,7 +241,7 @@ function job(j: DiskJob, progress?: (fraction: number) => void) {
 
 /** What a file will take stored in the browser (machines.md §4.4: a qcow2's allocated clusters), with its virtual size. */
 export async function estimateStored(file: File) {
-  const r = await job({ type: 'estimate', file });
+  const r = await diskJob({ type: 'estimate', file });
   return { size: sent(r.size, 'size'), format: r.format as 'raw' | 'qcow2', estimate: sent(r.estimate, 'estimate') };
 }
 
@@ -255,7 +256,7 @@ export async function importStored(
   return store.writing(async () => {
     let r;
     try {
-      r = await job({ type: 'import', file, path: diskDir(id), identity: canonical(identity) }, progress);
+      r = await diskJob({ type: 'import', file, path: diskDir(id), identity: canonical(identity) }, progress);
     } catch (e) {
       await store.files.remove(diskDir(id)).catch(() => undefined); // tidying up: the failure thrown is the one to report
       throw e;
@@ -275,61 +276,4 @@ export async function importStored(
     await store.put('disks', d);
     return d;
   });
-}
-
-/**
- * Merges overlay `overlay` into its stored disk (§4.4): every other overlay of the disk is deleted (they were over the
- * old bytes), then the overlay's record, then its blocks go into the disk and its files away (in the worker, resumed
- * at the disk's next opening if interrupted). Machines that had the deleted overlays chosen are left without one.
- * The caller confirmed (it lists `mergeCosts`). Returns the blocks merged.
- */
-export async function mergeIntoDisk(store: Store, overlay: string): Promise<number> {
-  const o = await store.get('overlays', overlay);
-  if (!o) throw new MsgError('disks:disks.overlayGone');
-  const d = await store.get('disks', o.disk);
-  if (d?.kind !== 'stored') throw new MsgError('disks:disks.onlyStored');
-  // Held to the end: the disk surface's jobs wait for it (web/overlay.ts `mergeLock`).
-  return navigator.locks.request(mergeLock(diskDir(d.id)), () => merge(store, o, d));
-}
-
-/** `mergeIntoDisk`'s work, under its lock. */
-async function merge(store: Store, o: OverlayRecord, d: DiskRecord) {
-  const others = (await store.overlaysOf(d.id)).filter((x) => x.id !== o.id);
-  for (const x of [o, ...others])
-    if (await inUse(overlayDir(x.id))) throw new MsgError('disks:disks.overlayNamedRunning', { name: x.name });
-  if (await inUse(diskDir(d.id))) throw new MsgError('disks:disks.diskRunning');
-  for (const x of others) await deleteOverlay(store, x.id);
-  for (const m of await store.all('machines')) {
-    if (!m.attachments.some((a) => a.overlay === o.id)) continue;
-    for (const a of m.attachments) if (a.overlay === o.id) a.overlay = undefined;
-    await store.put('machines', { ...m, modified: Date.now() });
-  }
-  const size = await growForMerge(store, d, o);
-  await store.forget('overlays', o.id); // the record only: the worker deletes the files once their blocks are in the disk
-  const r = await job({
-    type: 'merge',
-    disk: diskDir(d.id),
-    overlay: overlayDir(o.id),
-    identity: identityOf(d),
-    size,
-  });
-  await refreshStored(store, d.id);
-  return r.blocks ?? 0;
-}
-
-/**
- * A grown overlay grows its stored disk to its size before it is merged (§4.5; its grow mark goes with it), so that a
- * merge resumed at the disk's next opening copies at that size. The size merged at.
- */
-async function growForMerge(store: Store, d: DiskRecord, o: OverlayRecord) {
-  const size = Math.max(d.size, o.size ?? 0);
-  if (size > d.size)
-    await store.put('disks', { ...d, size, made: d.made ?? d.size, ...(o.grow ? { grow: o.grow } : {}) });
-  return size;
-}
-
-/** What a merge of `overlay` deletes: the disk's other overlays (with their sizes). */
-export async function mergeCosts(store: Store, overlay: string) {
-  const o = await store.get('overlays', overlay);
-  return o ? (await store.overlaysOf(o.disk)).filter((x) => x.id !== o.id) : [];
 }

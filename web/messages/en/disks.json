@@ -447,15 +447,15 @@
     "message": "A machine using this overlay is running, in this tab or another. Power it off first.",
     "note": "Detail of an error on the Machines page (Disks), under Disks.failed.delete, when an overlay can't be deleted: a machine (in this tab or another) has it open."
   },
-  "disks.onlyStored": {
-    "message": "Only an overlay of a disk stored in this browser can be merged into it.",
-    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.merge, when Merge into the disk is asked of a disk that isn't stored in this browser."
+  "merge.onlyStored": {
+    "message": "Only an overlay of a disk stored in this browser, or of a blank disk, can be merged into it.",
+    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.merge, when Merge into the disk is asked of a disk that isn't stored in this browser nor blank."
   },
-  "disks.overlayNamedRunning": {
+  "merge.overlayNamedRunning": {
     "message": "A machine using the overlay {{name}} is running. Power it off first.",
     "note": "Detail of an error on the Machines page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the overlay, or another overlay of the disk the merge deletes, open. {{name}} is that overlay's name."
   },
-  "disks.diskRunning": {
+  "merge.diskRunning": {
     "message": "A machine using this disk is running. Power it off first.",
     "note": "Detail of an error on the Machines page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the stored disk itself open."
   },
@@ -991,6 +991,14 @@
     "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk.{{others}}{{snapshots}}",
     "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks (OK in red when it deletes other overlays). {{overlay}} is the overlay's name, {{disk}} the stored disk's; {{others}} is Overlays.merge.others or nothing, {{snapshots}} Overlays.merge.snapshots or nothing."
   },
+  "Overlays.merge.confirm.blank": {
+    "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk, which will then be stored in this browser, at {{size, bytes}}.{{others}}{{snapshots}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks of a blank disk's overlay that has been written to (OK in red when it deletes other overlays): the blank disk becomes a disk stored in the browser holding the overlay's blocks. {{overlay}} is the overlay's name, {{disk}} the blank disk's, {{size}} the disk's size after (the overlay's, if it was grown); {{others}} is Overlays.merge.others or nothing, {{snapshots}} Overlays.merge.snapshots or nothing."
+  },
+  "Overlays.merge.confirm.grow": {
+    "message": "Merge {{overlay}} into {{disk}}? Nothing has been written to the overlay: the disk will be {{size, bytes}}, as the overlay is, and the overlay will be deleted.{{snapshots}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks of a blank disk's overlay that nothing was ever written to (e.g. one made by resizing the disk on a machine): the blank disk takes the overlay's size and stays blank. {{overlay}} is the overlay's name, {{disk}} the blank disk's, {{size}} the disk's size after; {{snapshots}} is Overlays.merge.snapshots or nothing."
+  },
   "Overlays.merge.ok": {
     "message": "Merge",
     "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirm button of the question before an overlay is merged into its stored disk."
@@ -1022,6 +1030,10 @@
   "Overlays.mergeButton.title": {
     "message": "Write this overlay's changes into the disk's base image, stored in this browser. Merging deletes the disk's other overlays.",
     "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Merge into the disk."
+  },
+  "Overlays.mergeButton.title.blank": {
+    "message": "Make this overlay part of the blank disk: the disk takes its size and, if anything was written to it, its changes (the disk is then stored in this browser, and its other overlays are deleted).",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Merge into the disk on an overlay of a blank disk."
   },
   "Overlays.mergeButton": {
     "message": "Merge into the disk",
