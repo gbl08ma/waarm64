@@ -143,6 +143,33 @@ What it has that the local helper hasn't:
   needed: Alpine's repositories have been HTTPS by default for years, and apk checks every package's signature
   either way. Later demos add their own rules with their own notes, each the owner's call: PyPI and
   `files.pythonhosted.org` for `pip`, Debian's `deb.debian.org`, Arch's mirror, and so on.
+- **The protocol: the local helper's, plus a control channel.** The local helper's `waarm64-net.v1` is binary
+  messages only: Ethernet frames in QEMU's framing, a 4-byte length before each frame (docs/networking/local-helper.md
+  "The page's side"). Its only signals are three close codes on a refused handshake: 4001 (version), 4003 (origin),
+  4004 (token). The public helper speaks **`waarm64-demonet.v1`**, which keeps that framing and adds what a shared
+  server must say:
+  - **Text messages are control, binary messages are frames.** v1 never sends text, so neither side can confuse the
+    two, and frames never wait behind control. Each text message is one JSON object with a `type`. It carries **codes
+    and numbers, never words**: the page renders them from the catalog (CLAUDE.md, docs/i18n.md).
+  - **From the server:** `hello` once at the start (the lane rules in force: the per-IP rate, connection and byte
+    budgets, whether the slow lane is on); `budget` when a threshold is crossed (80%, 100%) and on request, with
+    `used`, `limit` and `resets` (a UTC time) for the fast lane and for the slow one; `lane` when this visitor's
+    full-speed budget is spent and its traffic moves to the slow lane, or stops when that's off; `refused`,
+    rate-limited, naming a destination that's neither listed nor allowed by the slow lane (`name`, `port`,
+    `reason`: `not-listed`, `port`, `private`), so the page can say why `curl` failed; `notice` for the owner's
+    maintenance announcements (a code and a time: `restart-at`).
+  - **From the page:** `budget?`, to ask.
+  - **New close codes**, each sent after a final text message that says the same thing with its numbers: 4008 (too
+    many guests from this address), 4009 (the server is full), 4010 (today's budget is spent and there's no slow
+    lane; `resets` in the message before), 4011 (going down for maintenance; reconnect after the time given). Like
+    v1's, they complete the handshake first, so a browser reports the code rather than 1006.
+  - **What the guest sees** when a budget runs out: new connections are refused at once (a TCP reset, or ICMP
+    "administratively prohibited" for UDP), never left hanging. Open ones either go on in the slow lane or are reset.
+    The gateway also answers `http://<gateway>/status` with the same numbers as plain text, so `curl` inside the
+    guest can tell, and the motd mentions it.
+  - **On the page:** the message bar shows a budget crossed or spent, with when it resets; the machine's Network
+    status shows the lane it's in. Refused destinations show only as a count, with the last few names, so they don't
+    become noise.
 - **The slow lane** (the user, 2026-11-18): a setting, **off by default**, that lets a guest reach destinations off
   the list over a heavily throttled connection, as JSLinux's VPN does (40 kB/s and 2 connections per IP there). With it
   on:
