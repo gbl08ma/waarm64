@@ -55,8 +55,14 @@ function check(): number {
   for (const t of tests) if (heavy.has(t) && isTopic(t)) errors.push(`${t} is both heavy and topic-only`);
   // The timings of the last scripts/ci.sh (tools/test-timings.ts): a smoke file grown slow, a topic file that ran.
   const path = 'target/ci/timings.json';
-  if (existsSync(path)) {
-    const { date, files } = JSON.parse(readFileSync(path, 'utf8')) as { date: string; files: Record<string, { s: number; tests: number; skipped: number }> };
+  let timings: { date: string; files: Record<string, { s: number; tests: number; skipped: number }> } | undefined;
+  try {
+    if (existsSync(path)) timings = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    warnings.push(`${path} doesn't read (${(e as Error).message}): no timings checked`);
+  }
+  if (timings) {
+    const { date, files } = timings;
     for (const [t, { s, tests: n, skipped }] of Object.entries(files)) {
       if (!heavy.has(t) && !isTopic(t) && s > HEAVY_SECONDS) warnings.push(`${t} took ${s.toFixed(0)} s in scripts/ci.sh (${date.slice(0, 10)}): past the smoke set's ${HEAVY_SECONDS} s, make it heavy in its area`);
       if (isTopic(t) && skipped < n) warnings.push(`${t} ran ${n - skipped} test(s) in scripts/ci.sh: not topic-only`);

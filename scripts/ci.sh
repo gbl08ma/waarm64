@@ -74,10 +74,15 @@ native_log=$ci_group_logs/native.log
 native > "$native_log" 2>&1 &
 native_pid=$!
 # npm test's files, with each file's wall time written to target/ci/timings.json (tools/test-timings.ts: tests/areas.ts's
-# check keeps the fast lane's smoke set to the quick files from it).
+# check keeps the fast lane's smoke set to the quick files from it). A test without its own timeout fails after 10 min
+# (the longest here take ~100 s): a hang then names its test instead of holding the step until the run's timeout.
+# WAARM64_JS_JOBS=N runs N files at a time instead of node's default (7 here): 4 was ~38 s slower and peaked ~1.9 GiB
+# lower (2026-11-18), for a host with less memory.
 mkdir -p target/ci
-step js tests;    js=0; node --disable-warning=ExperimentalWarning --test --test-reporter=spec --test-reporter-destination=stdout \
-  --test-reporter=./tools/test-timings.ts --test-reporter-destination=target/ci/timings.json 'tests/**/*.test.ts' || js=$?
+step js tests;    js=0; node --disable-warning=ExperimentalWarning --test --test-timeout=600000 ${WAARM64_JS_JOBS:+--test-concurrency=$WAARM64_JS_JOBS} --test-reporter=spec --test-reporter-destination=stdout \
+  --test-reporter=./tools/test-timings.ts --test-reporter-destination=target/ci/timings.json.new 'tests/**/*.test.ts' || js=$?
+# The reporter writes only at the end: a cancelled step leaves an empty file, which doesn't replace the last timings.
+if [[ -s target/ci/timings.json.new ]]; then mv target/ci/timings.json.new target/ci/timings.json; fi
 step 'native guest-image tests (ran beside the JS tests)'
 native_rc=0; wait "$native_pid" || native_rc=$?
 cat "$native_log"

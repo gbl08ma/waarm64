@@ -51,20 +51,53 @@ decisions in §11).
   `watchGenerations` failed the old test, not the new).
 - The commit with ci-net's 2 slots and the flake's fix passed the fast lane (115 s) and ci.sh (712 s, peak 8.4 GiB;
   its JS step 620 s against 581 in the 635 s run: one run each, so no trend yet).
-- **Not run yet:** the topic scripts other than ci-net since they gained the lock line, and the lock with two sessions'
-  real runs at once (checked with small scripts only).
+- **ci.sh's JS step at 4 files at a time, against the default 7** (one session, alternated, `WAARM64_JS_JOBS`; logs
+  `bench/results/local/ci/js{4,def}-*`): at 4, 684 and 672 s (peaks 6.6, 6.7 GiB); the default, 640 and 640 s (8.4,
+  8.7 GiB). The default stays: ~38 s faster, the arms apart; 4 saves ~1.9 GiB (the knob stays for a smaller host).
+  The window's 492 s at 4 doesn't carry over: in ci.sh the native group shares the cores.
+- **A hang and its fix:** one default round sat idle in `tests/browser.test.ts` from ~6 min until its 1500 s timeout
+  (an idle event loop waiting on Chromium; 5/5 alone passed). ci.sh and the fast lane now give each test without its
+  own timeout 10 min (`--test-timeout`; the longest take ~100 s), so a hang fails by name. The cancelled run had left
+  `target/ci/timings.json` empty and the next ci.sh failed its areas check: ci.sh writes `timings.json.new` and keeps
+  the last good file; the check warns on an unreadable one (docs/testing.md "A test file that never ends").
+- **A flake seen once:** spin.test.ts's IPI round trip, median 2,121 µs for 1,000 (in docs/backlog.md "Parallel SMP";
+  0/20 alone or loaded).
+- The commit with these passed the fast lane (89 s) and ci.sh except that flake (640 s, before two comment and `if` tidy-ups). **Not run yet:** the topic scripts other than ci-net
+  since they gained the lock line, and the lock with two sessions' real runs at once (checked with small scripts only).
+- **The Debian tests classified** (a static read; the table, with file:line: `bench/results/local/ci/debian-tests.md`).
+  ~48 Debian boots in 29 files: the boot is the subject in 6 files (14 boots: page-debian, page-disk, page-stored,
+  page-surface-debian, page-usb-keyboard, page-machines' reboot); one real boot and the rest not in 3 (page-power,
+  page-folders, net-guest: 4 boots stay, 6 don't need to); Debian but not its boot in 16 (21 boots); only Linux or no OS
+  in 3 (start: the firmware's first output, any UEFI disk; page-ram: needs tmpfs and the balloon's page reporting;
+  page-quota). A restore takes 1.0–1.3 s against ~52 s for a first boot (qa/ci-debian-2.log): ~25–50 s a boot.
+  - **Buildroot rarely replaces Debian here:** the Buildroot guest is BusyBox with no init system, systemd, vsock, USB,
+    X11 or EFI, the agent runs only on firmware machines (worker-start.ts:51), and stored machines are always the uefi
+    machine. The faster guests stay worth it for the Alpine and exact-step runs (plan §11.6), not these.
+  - **What a snapshot must match:** a transient one, the machine's name and its device list (worker-header.ts:75;
+    ncpus and RAM come from the file); a stored one, the shape hash (shape.ts `shapeOf`: each disk's serial is its
+    attachment's id, `newId()` in every test now, so fixed ids are needed to share). A transient snapshot never loads
+    on a stored machine nor the reverse. A restore gets no agent pieces (worker-start.ts:51).
+  - **Families:** the default transient (`ncpus=2&view=both`: page-agent, page-power's first boot, page-template,
+    page-network ×2, page-room ×2), the netguest harness's shapes (ci-net: `bootVm` has a `restore` option the
+    harness doesn't use), one aligned stored shape, and one-offs (`usb=1`, `split=`, page-venus before any Venus
+    context, docs/devices.md "Snapshots").
+  - **Unconfirmed:** page-agent's agent-restart step needs a boot; page-room would restore two identical guests (same
+    machine-id, DHCP identity); page-incognito counts the boot's own disk reads; net-guest's test 2 takes its leases
+    at boot; a `?disk=` URL machine's restore check (page-clipboard*).
 
 ## Next, in order
 
-1. **ci.sh's JS step at `--test-concurrency=4`** (or 5): the window ran the files at 4 in 492 s against the step's
-   581 s at 7, so fewer at once may be faster in ci.sh too, the native group beside it (~500 s) included. One ci.sh run
-   each at 4 and the default, alternated; and its peak (7.9 GiB now) should drop.
-2. **The Actions shards** (plan §6, plan-only while the repo is private): from `window-files.jsonl`'s times and peaks.
-3. **The booted-Debian snapshot fixture** for the Debian tests that don't test booting.
-4. **Guests:** which Debian tests need only a Linux guest (purpose-built Buildroot guests, cached by config hash); a
-   Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility runs without
-   fixed steps.
-5. **The end:** T3 measured, docs/testing.md authoritative, the plan's outcome moved there; GitHub Actions stays the
+1. **The booted-Debian snapshot fixture, ci-net first** (the user's priority): ~760 of its ~950 slot-seconds can come
+   from a fixture (net-guest 2–4, net-local, net-tailcat, net-tailnet, page-network, page-room). A helper made once per
+   key (the Debian image's `.inputs` key, the core's `snapshot_version`, the shape, and what the page passes at boot:
+   credentials, SMBIOS, the DT, EDK2, the agent binary, or the B tests stop checking them) under a lock beside
+   `tests/debian-lock.ts`, so parallel files make it once: `target/ci/debian-booted-<shape>.waarm64snap`. Measure a
+   script before and after. Then the default transient family (ci-debian), then the stored shape (ci-machines).
+2. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
+   runs without fixed steps; page-ram and start onto a small guest (above).
+3. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from
+   `window-files.jsonl`'s times and peaks.
+4. **The end:** T3 measured, docs/testing.md authoritative, the plan's outcome moved there; GitHub Actions stays the
    plan's §6 until the repo is public.
 
 ## Open questions

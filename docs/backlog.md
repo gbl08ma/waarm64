@@ -1258,6 +1258,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the estimate counts guest RAM whole (12-19% over the renderer's median from a snapshot) and misses a flush's
   garbage at its spikes (one 10 s sample 1.8 GB over, with the flushed epoch counted for 30 s); a calibration with 1 vCPU, a 2D machine and a longer session;
   what a user's crash mark says once one is seen.
+- **`tests/spin.test.ts`'s IPI round trip over its bound once** (`scripts/ci.sh`, 2026-11-18, the plain JIT's run with
+  the default chunk; 1 in 6 ci.sh runs that day, 0 in 20 alone or beside 8 busy cores): median 2,121 µs for a 1,000 µs
+  bound. The slow shapes sat at 2,121–2,195 µs while the rest took 4–13 µs (a few 7–12 ms): a cluster, not load's
+  spread, as if a wake-up waited for a ~2 ms timer. Unknown which wait (the vCPU's idle `Atomics.wait`, its yield
+  through `waitAsync`); the log: `bench/results/local/ci/jsdef-3-ci.log`. Next time it shows, the same shapes' numbers
+  say whether it's the same cluster.
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 

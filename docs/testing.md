@@ -1002,6 +1002,12 @@ yields through a `MessageChannel` every 2 ms of work and keeps listening on it, 
 yield and waited on the doorbell for good, its port keeping the process up. It re-checks the close after the yield and
 closes the port on every way out; `tests/devices.test.ts` closes in that window.
 
+`scripts/ci.sh` and `scripts/ci-fast.sh` give each test without its own `timeout` 10 minutes (`--test-timeout`; ci.sh's
+longest take ~100 s): a test that hangs fails by name and the file goes on, where it once held ci.sh's JS step for the
+run's whole timeout without a word of where (`tests/browser.test.ts`, 2026-11-18, once in six runs, an idle event loop
+waiting on Chromium; not reproduced alone). Its timings reporter writes only at the end, so ci.sh writes
+`target/ci/timings.json.new` and keeps the last good file when a step is cancelled.
+
 ## Out-of-context reviews
 
 Loops review their own work with a context full of their own theory; a fresh reader finds what they miss (VK3,

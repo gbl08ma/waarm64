@@ -75,7 +75,7 @@ rust_pid=$!
 mkdir -p target/ci
 js=0
 env -u WAARM64_DISTROS -u WAARM64_LONG_TESTS WAARM64_PARALLEL_RUNS=1 WAARM64_JIT_DIFF=512 \
-  "${node[@]}" --test --test-concurrency="${WAARM64_FAST_JOBS:-4}" \
+  "${node[@]}" --test --test-timeout=600000 --test-concurrency="${WAARM64_FAST_JOBS:-4}" \
   --test-reporter=spec --test-reporter-destination=stdout \
   --test-reporter=./tools/test-timings.ts --test-reporter-destination=target/ci/fast-timings.json "${TESTS[@]}" || js=$?
 rust_rc=0; wait "$rust_pid" || rust_rc=$?
