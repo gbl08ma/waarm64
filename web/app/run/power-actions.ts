@@ -50,7 +50,7 @@ export class PowerActions {
   }
   /** True while a snapshot is being written (after saying so) or the machine is being switched: a disk's Export, Open disk and the like wait for it. */
   busy() {
-    if (power.saving) void ask.alert(t('snapshots:power-actions.busy'));
+    if (power.saving) this.#d.messages.notify(msg('snapshots:power-actions.busy'), 'warn');
     return power.busy;
   }
 

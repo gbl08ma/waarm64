@@ -9,7 +9,8 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
-import { answerAsks, type Question } from './page-ask.ts';
+import { answerAsks, barSays, type Question } from './page-ask.ts';
+import { words } from './words.ts';
 
 let browser: Browser;
 let base: string;
@@ -163,9 +164,9 @@ test('finding 9: a ramdisk grown in another tab makes a kept snapshot another sh
     const { page: p } = await import('/web/app/page.ts' as string);
     await p.restoreKept(sid);
   }, sid);
-  const cant = asked.find((q) => q.kind === 'alert');
-  assert.ok(cant, `refused, said why; asked: ${JSON.stringify(asked)}`);
-  assert.ok(cant.text.startsWith(t('snapshots:snapshot-restore.restore.otherShape', { name: 'Kept', machine: 'With a ramdisk', why: '' }).split('(')[0]), cant.text);
+  // Refused, said why in the message bar (no dialog: nothing to decide).
+  await barSays(page, new RegExp(`^${t('snapshots:snapshot-restore.restore.cant')}$`), words('snapshots:snapshot-restore.restore.otherShape', { name: 'Kept', machine: 'With a ramdisk' }, { start: true }));
+  assert.deepEqual(asked, [], 'nothing asked');
   assert.equal((await starts(page)).length, 1, 'nothing started');
   await context.close();
 });

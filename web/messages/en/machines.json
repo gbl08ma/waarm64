@@ -536,7 +536,7 @@
     "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Home page, Disks tab), and in the error when the URL is added anyway. Here: the request for a chunked image's first piece failed. {{needs}}: urlcheck.corsHint."
   },
   "urlcheck.slow": {
-    "message": "The guest reads the disk over the network as it needs it. What it reads is cached in this browser, so later boots read that part from here. A chunked image whose manifest lists a boot's reads (tools/disk-trace.ts) boots the first time about as fast as a file. To keep the whole disk, download the image and add it with <ui>Add a disk… › A file, copied into this browser</ui>.",
+    "message": "The guest reads the disk over the network as it needs it. What it reads is cached in this browser, so later boots read that part from here. A chunked image whose manifest lists a boot's reads (tools/disk-trace.ts) boots the first time about as fast as a file. To keep the whole disk, download the image and add it with <ui>Add a disk…</ui> › <ui>A file, copied into this browser</ui>.",
     "note": "Note beside a URL disk (Home page, Disks tab) and after a URL checks out in Add a disk: how a disk over the network is read. The tool's path stays as it is. The <ui> marker frames the Add a disk menu path as the page's element."
   },
   "MachinesPage.state.running": {
@@ -1136,7 +1136,7 @@
     "note": "Export wizard opened from the page's own machine (Home page): the small note under the formats. <code>…</code> wraps a guest command, shown as code (it stays as it is)."
   },
   "PagePane.importChanges.title": {
-    "message": "Import a changes file made from this disk with <ui>Export… › Changes only</ui> (qcow2). Its changes replace the ones kept in this browser.",
+    "message": "Import a changes file made from this disk with <ui>Export…</ui> › <ui>Changes only</ui> (qcow2). Its changes replace the ones kept in this browser.",
     "note": "Home page, the page's own machine, Disks tab: tooltip of Import changes…. The <ui> marker quotes the Export wizard's path."
   },
   "PagePane.importChanges": {

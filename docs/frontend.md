@@ -208,7 +208,13 @@ run through one runner (`actions.svelte.ts` `Actions`: `run(what, f)` says what 
 `error`, as usb-ports.ts `errorView` words it; `ErrorWords.svelte` shows it, a USB attach's problems with their
 remedies): a dialog or a menu makes its own, the Home page's panes and tabs share the page's (`act`, shown in its
 bar and its error banner). **Sizes are in binary units**
-everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
+everywhere on the page (KiB, MiB, GiB, TiB: `bytes.ts` `bytesText`), as the sizes users enter are. A size typed is
+one field, `ui/SizeField.svelte`: a number and its unit's list (MiB and GiB, TiB too for a blank disk), bound to bytes
+(rounded up to a whole MiB; `size-input.ts`), checked against its least and most (said under it, the dialog's button
+off meanwhile); the caller converts from bytes as it needs: Add a disk's Blank and Ramdisk (at most `MAX_RESIZE`, the
+largest a disk grows to), the Resize dialog (whose larger-than-now and most are `resizeCosts`' refusals). RAM is a
+slider in MiB (Settings), and RAM's split (memory 0 and the nodes, a list) is typed in MiB, as the address's `?split=`
+is.
 
 **Styles** are the components': each `<style>` is scoped to the component that writes it and reaches only its own
 markup (and the markup it passes to a child as a snippet, which is still its own), never a child's insides. What every
@@ -394,8 +400,26 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 
 ## Dialogs and the message bar
 
-**Questions** are the page's own dialogs, not the browser's `confirm`, `alert` and `prompt`: `ask.confirm`,
-`ask.alert` and `ask.prompt` (`ask.svelte.ts`) queue a question and resolve when it's answered; `Ask.svelte` shows the
+**Where the page says something** is one rule:
+- **A modal dialog when the user must decide or answer something**: a question (`ask.confirm`, `ask.prompt`, below:
+  what it will do and its cost, OK or Cancel), a wait the user may cut short (`ask.wait`), a form or a wizard (Add a
+  disk, Resize, a connection's wizard).
+- **Inline in the open dialog when the error belongs to its own form**: what's typed refused (a size, a URL's
+  check), an action of the dialog that failed (each dialog's own `Actions` runner, `ErrorText.svelte` in its notes):
+  the dialog stays open, the user fixes it there. A menu's or a pane's panel that runs its own action shows its error
+  in it the same way (the toolbar's Network menu, a machine's Network tab).
+- **The message bar for everything else**: an action's outcome (a snapshot kept, a disk saved), its failure, and a
+  blocker for an action the user asked for, with nothing to choose (a snapshot that can't be restored onto the disks
+  as they are, a file that isn't a snapshot or a changes file, a machine running in another tab, a snapshot being
+  saved): `Messages.notify` (`info` for something done, `warn` for a refusal, `error` for a failure), and `inBar` for
+  an action from a control with no place of its own. Over the Home page that is its banner (below). There is no
+  OK-only alert: a notice in a dialog stopped the user for nothing to decide (the restore's refusal was one, until the
+  user's QA, 2026-11-18).
+- **What stops the machine** (it failed, it waits for a disk) is the bar's state (`setState`, "Errors" below), with
+  its actions.
+
+**Questions** are the page's own dialogs, not the browser's `confirm` and `prompt`: `ask.confirm` and `ask.prompt`
+(`ask.svelte.ts`) queue a question and resolve when it's answered; `Ask.svelte` shows the
 first in a modal `<dialog id="ask">` (a title, the text, OK and Cancel with the action's own words; one that loses
 data has its OK drawn as a warning; Esc is Cancel). `ask.wait` is a wait its caller ends (`close`), with one button
 drawn as a warning (`skipped`): the guest's clean shutdown before a change (devices.md "Power off and restart from the
@@ -981,9 +1005,9 @@ vCPU workers start after, at the first run) and `total` (from the worker's start
 with which `checkCrc` and RAM's share of `crc`, `unpack` and `apply` are the workers' sums (CPU time, up to `pool` times
 their phase's wall).
 
-**Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
+**Load snapshot** › [From a file…](ui:toolbar:LoadSnapshotMenu.load.file) (the toolbar's menu; also the Snapshots tab's [Restore from a file…](ui:snapshots:Snapshots.restoreFile)), and a snapshot
 file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WAARMSNP`). The page reads the
-header (`readHeader`, web/snapshot-file.ts) before it asks anything, and refuses at once, with the
+header (`readHeader`, web/snapshot-file.ts) before it asks anything, and refuses at once in the message bar, with the
 machine running on: a file that isn't a snapshot or whose header is damaged, a snapshot of another
 machine (`?machine=` differs), and one taken on another disk by name (the header's `disk`, for a
 disk opened with Open disk… or `?disk=`; the user opens that disk first). Then a confirmation says

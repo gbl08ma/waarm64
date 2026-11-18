@@ -1,5 +1,7 @@
-// The page's questions and notices (docs/frontend.md "Dialogs"): in-page dialogs instead of the browser's confirm, alert
-// and prompt, shown one at a time by Ask.svelte (`<dialog id="ask">`). Each resolves when answered; Esc is Cancel.
+// The page's questions (docs/frontend.md "Dialogs and the message bar"): in-page dialogs instead of the browser's confirm
+// and prompt, shown one at a time by Ask.svelte (`<dialog id="ask">`). Each resolves when answered; Esc is Cancel. Only
+// what the user must decide or answer is asked: an outcome or a refusal, with nothing to choose, is the message bar's
+// (`Messages.notify`), so there is no alert.
 // The words are the caller's: rendered (`t(…)`, web/i18n.ts), a message (`msg(…)`), drawn with its names' and the
 // page's elements' markers (T.svelte), or an error's (`describe(e)`: its headline and causes, drawn as ErrorText draws
 // them); the defaults are the catalog's.
@@ -11,7 +13,7 @@ export type Title = string | Msg;
 export type Words = Title | Described;
 
 export type Question = {
-  kind: 'confirm' | 'alert' | 'prompt' | 'wait';
+  kind: 'confirm' | 'prompt' | 'wait';
   title: Title;
   text: Words;
   ok: string;
@@ -73,17 +75,6 @@ export const ask = {
       danger: o.danger ?? false,
       value: '',
     }) as Promise<boolean>,
-  /** A notice: OK only. */
-  alert: (text: Words, o: Options = {}) =>
-    show({
-      kind: 'alert',
-      title: o.title ?? t('common:ask.title'),
-      text,
-      ok: o.ok ?? t('common:ask.ok'),
-      cancel: '',
-      danger: false,
-      value: '',
-    }).then(() => undefined),
   /** OK or Cancel, which the caller can also take down (`close`: as a Cancel, `answer` false). */
   closableConfirm(text: Words, o: Options = {}): { answer: Promise<boolean>; close(): void } {
     let q: Question | undefined;

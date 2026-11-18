@@ -9,6 +9,7 @@ import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
+import { MAX_RESIZE } from '../web/app/resize.ts';
 
 const DEMO = { format: 'waarm64-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: 'demo' };
 let browser: Browser;
@@ -88,7 +89,10 @@ async function addDisk(page: Page, source: string, fields: Record<string, string
     await page.locator('[data-action=add-disk-open]').click();
     await page.locator(`#add-disk [data-source=${source}]`).click();
   }
-  for (const [k, v] of Object.entries(fields)) await page.locator(`#add-disk [data-field=${k}]`).fill(v);
+  for (const [k, v] of Object.entries(fields)) {
+    const f = page.locator(`#add-disk [data-field=${k}]`);
+    await (k.endsWith('-unit') ? f.selectOption(v) : f.fill(v));
+  }
   await page.locator('#add-disk [data-action=add-disk]').click();
 }
 /** Waits for the machine's `n`-th disk in the modal; on a timeout, says the modal's error. */
@@ -138,9 +142,9 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await page.locator('#add-disk .error', { hasText: words('machines:urlcheck.noAnswer', { needs: t('machines:urlcheck.corsHint') }) }).waitFor();
   await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` }, true);
   await disk(page, 0);
-  await addDisk(page, 'blank', { size: '64' });
+  await addDisk(page, 'blank', { 'size-unit': 'MiB', size: '64' });
   await disk(page, 1);
-  await addDisk(page, 'ramdisk', { size: '32' });
+  await addDisk(page, 'ramdisk', { 'size-unit': 'MiB', size: '32' });
   await disk(page, 2);
   // A disk with an overlay (New empty) has Export…, a wizard: the changes or the whole disk, then the format (raw for the
   // whole disk only), Back between them; a blank disk has no changes of its own and starts at the format.
@@ -240,7 +244,7 @@ test('a machine edited on the Home page while it is off on this page starts as i
   await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:power-actions.noDisks').source, { timeout: 10_000 });
   await page.click('#machines-open');
   await m.locator('[data-tab=disks]').click();
-  await addDisk(page, 'blank', { size: '64' });
+  await addDisk(page, 'blank', { 'size-unit': 'MiB', size: '64' });
   await disk(page, 0);
   assert.equal(await m.locator('[data-action=start]').isEnabled(), true);
   await m.locator('[data-action=start]').click();
@@ -249,6 +253,52 @@ test('a machine edited on the Home page while it is off on this page starts as i
   // The floating bar's words (the Home page, closing, may still be fading out with its own banner).
   // (A floating bar leaving keeps its words for its 250 ms: the words gone, not at once.)
   await page.waitForFunction((src) => !new RegExp(src).test(document.querySelector('#message #message-text')?.textContent ?? ''), words('disks:power-actions.noDisks').source, { timeout: 5_000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("Add a disk's size (ui/SizeField.svelte): a number and its unit, the same size across a unit's change, refused empty or past the most, the disk made that size", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await modal(page).locator('[data-action=new-machine]').click();
+  const m = modal(page).locator('section.machine[data-selected]');
+  await m.locator('[data-tab=disks]').click();
+  await page.locator('[data-action=add-disk-open]').click();
+  await page.locator('#add-disk [data-source=blank]').click();
+  const d = page.locator('#add-disk');
+  const [amount, unit, add] = [d.locator('[data-field=size]'), d.locator('[data-field=size-unit]'), d.locator('[data-action=add-disk]')];
+  assert.deepEqual([await amount.inputValue(), await unit.inputValue()], ['1', 'GiB'], 'a GiB to start with');
+  // A unit's change keeps the size: 1 GiB is 1024 MiB.
+  await unit.selectOption('MiB');
+  assert.equal(await amount.inputValue(), '1024');
+  // Empty: said under it, and Add is off.
+  await amount.fill('');
+  assert.equal(await d.locator('[data-size-problem]').textContent(), t('common:SizeField.empty'));
+  assert.equal(await add.isDisabled(), true);
+  // Past the most (the largest the page grows a disk to), in TiB.
+  await unit.selectOption('TiB');
+  await amount.fill('9');
+  assert.equal(await d.locator('[data-size-problem]').textContent(), t('common:SizeField.large', { max: MAX_RESIZE }));
+  assert.equal(await add.isDisabled(), true);
+  // 1.5 GiB: no problem, and the disk is made that size.
+  await unit.selectOption('GiB');
+  await amount.fill('1.5');
+  assert.equal(await d.locator('[data-size-problem]').count(), 0);
+  await add.click();
+  await disk(page, 0);
+  const sizes = await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const disks = await store.all('disks');
+    store.close();
+    return disks.map((x: { size: number }) => x.size);
+  });
+  assert.deepEqual(sizes, [1536 * 2 ** 20]);
   assert.deepEqual(errors, []);
   await context.close();
 });

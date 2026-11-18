@@ -112,7 +112,7 @@
     "note": "A HID collection without a name of its own, placed in the problem \"The guest doesn't get the device's {{what}} part…\". {{usage}} is its usage page and usage in hex, e.g. 000c:0001."
   },
   "usb-problems.protectedInterface.hid": {
-    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. To pass its HID part through, use <ui>Add a device… › A HID device (WebHID)</ui> instead. A keyboard's keys and a mouse's pointer can't be passed through either way; your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. To pass its HID part through, use <ui>Add a device…</ui> › <ui>A HID device (WebHID)</ui> instead. A keyboard's keys and a mouse's pointer can't be passed through either way; your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
     "note": "A problem under a WebUSB device attached with part of it left out (Home page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-problems.class.*), read as a plural (\"audio interfaces\"). This variant is for a HID interface: it says where to go instead (the menu path is the Add a USB device wizard's words). The <ui> marker frames that path as the page's element."
   },
   "usb-problems.protectedInterface.disk": {

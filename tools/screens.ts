@@ -388,16 +388,6 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
     await shot(page, 'ask-confirm');
     await page.click('#ask [data-answer=cancel]');
   });
-  await state('ask-alert', async () => {
-    await page.evaluate(async () => {
-      const { ask } = await import('/web/app/ask.svelte.ts' as string);
-      const { t } = await import('/web/i18n.ts' as string);
-      void ask.alert(t('machines:MachinesPage.otherTab'));
-    });
-    await page.locator('#ask[open]').waitFor();
-    await shot(page, 'ask-alert');
-    await page.click('#ask [data-answer=ok]');
-  });
   await state('dialog-add-usb', async () => {
     await tab(page, machine, 'usb');
     await page.click('[data-action=add-usb]');

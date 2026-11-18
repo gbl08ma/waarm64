@@ -206,6 +206,7 @@ export function referenceProblems(message: string, note: string, icons?: Readonl
     const [, tag, inner] = m;
     if (tag === 'name' && !/^\{\{\s*\w+\s*\}\}$/.test(inner)) out.push(`<name>${inner}</name>: a <name> holds one parameter, the name, and nothing else`);
     if (tag.startsWith('ui-') && icons && !icons.has(tag.slice(3))) out.push(`<${tag}>: no icon ${tag.slice(3)} in web/app/icons.ts`);
+    if (tag.startsWith('ui') && inner.includes('›')) out.push(`<${tag}>${inner}</${tag}>: a menu path is a pill per element, the › between them outside (<ui>Add a disk…</ui> › <ui>A blank disk</ui>; the icon on the first)`);
   }
   // Markers are pairs, one at a time (web/i18n.ts `parts`): a `<word>` left open swallows the words after it.
   let open: string | undefined;

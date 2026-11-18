@@ -93,7 +93,8 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 - **Errors**: a headline that says what failed, active and without a subject or period: [Couldn't load the snapshot](ui:snapshots:snapshot-restore.notSnapshot.title).
   Then the details, full sentences: what happened or why, then what the user can do. A message that is a cause
   (the details' line) is a full sentence too.
-- **Menu paths**: the items' own words joined with ›: "Add a disk… › A disk already in this browser".
+- **Menu paths**: the items' own words joined with ›, each item its own element: "<ui>Add a disk…</ui> › <ui>A disk
+  already in this browser</ui>" (i18n.md "Markers").
 - **Names someone gave** (a machine's, a disk's, an overlay's, a folder's…) are marked, never quoted: "Resize
   <name>{{name}}</name>", "Delete the overlay <name>{{name}}</name>?" (i18n.md "Markers"); the page draws them as
   names.

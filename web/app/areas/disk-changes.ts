@@ -2,7 +2,7 @@
 // disk is checked to be the one it was made over (its hash). A stored machine's disk takes it as a new overlay, which
 // it switches to (the one it has is kept); a transient machine's has what it wrote replaced. The machine on the page
 // stops while it's loaded, and starts again after.
-import { msg, MsgError, t } from '../../i18n.ts';
+import { msg, MsgError, t, type Msg } from '../../i18n.ts';
 import { overlayBytes } from '../../overlay.ts';
 import { changesHeader as readChangesHeader } from '../../qcow2.ts';
 import { ask } from '../ask.svelte.ts';
@@ -83,13 +83,13 @@ export class DiskChanges {
   /** Whether `file` can go into `into` (a changes file with its disk's hash, the machine not running elsewhere), said if not. */
   async #checked(file: File, into: Into) {
     if (into.m && !into.here && (await isRunning(into.m.id))) {
-      void ask.alert(msg('disks:disk-changes.changes.runsElsewhere', { name: into.m.name }));
+      this.#c.messages.notify(msg('disks:disk-changes.changes.runsElsewhere', { name: into.m.name }), 'warn');
       return false;
     }
     const info = await changesHeader(file);
-    if (!info) void ask.alert(msg('disks:disk-changes.changes.notChanges', { name: file.name }));
-    else if (!info.hash)
-      void ask.alert(msg('disks:disk-changes.changes.noHash', { name: file.name, backing: info.backingName }));
+    const says = (m: Msg) => this.#c.messages.notify(m, 'warn');
+    if (!info) says(msg('disks:disk-changes.changes.notChanges', { name: file.name }));
+    else if (!info.hash) says(msg('disks:disk-changes.changes.noHash', { name: file.name, backing: info.backingName }));
     return !!info?.hash;
   }
 

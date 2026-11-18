@@ -39,7 +39,7 @@ import { peaks } from './audio-tap.ts';
 import { sndDisk, toneWav } from './snd-disk.ts';
 import { GAP_FRAMES } from '../web/audio-ring.ts';
 import { levelToValue } from '../web/snd.ts';
-import { answerAsks } from './page-ask.ts';
+import { answerAsks, barSays } from './page-ask.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts, machine.ts `readiness`).
 // Debian's is agetty's prompt: it must be found wherever a drain puts it, also with a kernel line
@@ -263,8 +263,7 @@ for (let run = 1; run <= RUNS; run++) {
 
     // A snapshot of another machine is refused at once, before anything stops (written by Buildroot's page: only the header matters).
     await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.waarm64snap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
-    await page.waitForTimeout(1000);
-    assert.match(dialogs.at(-1)!, words('snapshots:snapshot-restore.load.otherMachine', { name: 'buildroot-header.waarm64snap', other: MACHINES.buildroot.label, otherId: 'buildroot', machine: t('machines:machine.debian'), id: 'debian' }, { start: true }));
+    await barSays(page, words('snapshots:snapshot-restore.load.otherMachine', { name: 'buildroot-header.waarm64snap', other: MACHINES.buildroot.label, otherId: 'buildroot', machine: t('machines:machine.debian'), id: 'debian' }, { start: true }));
     assert.notEqual(await stateOf(page), 'failed');
 
     // GRUB's menu counts 5 s from when it starts (~5 s after the boot manager did): `c` on the screen until it is stopped.

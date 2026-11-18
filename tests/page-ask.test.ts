@@ -57,14 +57,14 @@ test('a question taken down by its caller leaves the dialog, shown or queued', {
   await page.close();
 });
 
-test("an alert of an error draws it as the page draws errors: a message's names, a developer's words as code", { timeout: 30_000 }, async () => {
+test("a question whose words are an error draws them as the page draws errors: a message's names, a developer's words as code", { timeout: 30_000 }, async () => {
   const page = await browser.newPage();
   await page.goto(`${base}/web/app/`);
   await page.locator('#message-text').waitFor();
   const r = await page.evaluate(async () => {
     const { ask } = await import('/web/app/ask.svelte.ts' as string);
     const { describe, MsgError } = await import('/web/i18n.ts' as string);
-    void ask.alert(describe(new MsgError('disks:ResizeDisk.title', { name: 'disk-1' }, { cause: new Error('boom-1') })));
+    void ask.confirm(describe(new MsgError('disks:ResizeDisk.title', { name: 'disk-1' }, { cause: new Error('boom-1') })));
     const d = document.getElementById('ask')!;
     for (let i = 0; i < 100 && !d.querySelector('.ask-text code'); i++) await new Promise((res) => setTimeout(res, 20));
     return { name: d.querySelector('.ask-text .name')?.textContent, code: d.querySelector('.ask-text code')?.textContent, text: d.querySelector('.ask-text')?.textContent };

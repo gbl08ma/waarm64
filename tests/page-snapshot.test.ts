@@ -16,7 +16,7 @@ import { startServer } from '../tools/serve.ts';
 import { readHeader, SnapshotWriter } from '../web/snapshot-file.ts';
 import { coreStateVersion, storedCodec } from './snapshot-codecs.ts';
 import { PAGE_QUERY } from './page-query.ts';
-import { answerAsks } from './page-ask.ts';
+import { answerAsks, barSays } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { MACHINES } from '../web/app/machine.ts';
@@ -230,19 +230,16 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const junk = join(dir, 'junk.waarm64snap');
   writeFileSync(junk, Buffer.from('this is not a snapshot, only text'));
   await p2.setInputFiles('#load-snapshot-input', junk);
-  await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:snapshot-restore.notSnapshot', { name: 'junk.waarm64snap', why: t('snapshots:snapshot-file.notSnapshot') }, { start: true }));
+  await barSays(p2, new RegExp(`^${t('snapshots:snapshot-restore.notSnapshot.title')}$`), words('snapshots:snapshot-restore.notSnapshot', { name: 'junk.waarm64snap', why: t('snapshots:snapshot-file.notSnapshot') }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   // ... a snapshot of another machine, by the page (a real one on a Debian page, below, and a header-only one here) ...
   const other = await headerOnly('debian-header.waarm64snap', { machine: 'debian', label: MACHINES.debian.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', other);
-  await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:snapshot-restore.load.otherMachine', { name: 'debian-header.waarm64snap', other: MACHINES.debian.label, otherId: 'debian', machine: t('machines:machine.buildroot'), id: 'buildroot' }, { start: true }));
+  await barSays(p2, words('snapshots:snapshot-restore.load.otherMachine', { name: 'debian-header.waarm64snap', other: MACHINES.debian.label, otherId: 'debian', machine: t('machines:machine.buildroot'), id: 'buildroot' }, { start: true }));
   // ... one taken on another disk, by name ...
   const elsewhere = await headerOnly('other-disk.waarm64snap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: 'mine.qcow2', devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', elsewhere);
-  await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:snapshot-restore.load.otherDisk', { name: 'other-disk.waarm64snap', taken: t('disks:disk-actions.theDisk', { name: 'mine.qcow2' }), open: t('snapshots:snapshot-restore.ownDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
+  await barSays(p2, words('snapshots:snapshot-restore.load.otherDisk', { name: 'other-disk.waarm64snap', taken: t('disks:disk-actions.theDisk', { name: 'mine.qcow2' }), open: t('snapshots:snapshot-restore.ownDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   await onSerial(p2, 'echo ali""ve-$((6*7))\n');
   await shows(p2, /alive-42/);

@@ -4,7 +4,7 @@
 import type { Page } from 'playwright-core';
 
 /** A question as it opened: a prompt's `value` is its field's first text (one to copy, or to change). */
-export type Question = { kind: 'confirm' | 'alert' | 'prompt' | 'wait'; text: string; value?: string };
+export type Question = { kind: 'confirm' | 'prompt' | 'wait'; text: string; value?: string };
 let names = 0;
 
 /** Answers every question the page asks from now on (call it before `goto`; it also takes over a page already loaded). */
@@ -31,4 +31,16 @@ export async function answerAsks(page: Page, answer: (q: Question) => boolean | 
   };
   await page.addInitScript(watch, fn);
   if (page.url().startsWith('http')) await page.evaluate(watch, fn);
+}
+
+/**
+ * Waits for the message bar (or the Home page's banner, which shows its message there) to say `text` (its headline)
+ * and, if given, `details` (the lines under it): an outcome or a refusal the page says there, not in a dialog
+ * (docs/frontend.md "Dialogs and the message bar"). Fails with what the bar says.
+ */
+export async function barSays(page: Page, text: RegExp, details?: RegExp, timeout = 10_000) {
+  const said = () => page.evaluate(() => `${document.getElementById('message-text')?.textContent ?? ''} | ${document.getElementById('message-details')?.textContent ?? ''}`);
+  await page.waitForFunction(([t, d]) => new RegExp(t).test(document.getElementById('message-text')?.textContent ?? '')
+    && (d === null || new RegExp(d).test(document.getElementById('message-details')?.textContent ?? '')), [text.source, details?.source ?? null] as const, { timeout })
+    .catch(async (e: unknown) => { throw new Error(`${String(e)}; the bar says: ${await said()}`); });
 }

@@ -140,7 +140,7 @@
     "note": "Home page, Disks: names the disk in the detach confirmation (Disks.detach.confirm) when its record is missing."
   },
   "Disks.detach.confirm": {
-    "message": "Detach {{disk}} from <name>{{machine}}</name>? {{kept}} To delete it or to attach it again, to this or another machine, use <ui>Add a disk… › A disk already in this browser</ui>.",
+    "message": "Detach {{disk}} from <name>{{machine}}</name>? {{kept}} To delete it or to attach it again, to this or another machine, use <ui>Add a disk…</ui> › <ui>A disk already in this browser</ui>.",
     "note": "Home page, Disks: the confirmation that a disk's Detach asks. {{disk}} is a message: \"the disk <name>…</name>\" (disks:disk-actions.theDisk), or Disks.detach.theDisk when its record is missing, {{machine}} the machine's, {{kept}} one of Disks.detach.kept, Disks.detach.keptOverlays, Disks.detach.keptRamdisk. The <ui> marker frames the menu path's words as the page's elements."
   },
   "Disks.detach.title": {
@@ -244,7 +244,7 @@
     "note": "Home page, Disks: the button on a disk with overlays that opens its Overlays dialog (every overlay of the disk, with Rename, Delete, Merge into the disk and Export)."
   },
   "Disks.importChanges.title": {
-    "message": "A changes file of this disk (created via <ui>Export… › Changes only</ui>) becomes a new overlay, and the disk switches to it.",
+    "message": "A changes file of this disk (created via <ui>Export…</ui> › <ui>Changes only</ui>) becomes a new overlay, and the disk switches to it.",
     "note": "Home page, Disks: the tooltip of Import changes…. A tooltip: the <ui> marker isn't drawn there."
   },
   "Disks.importChanges": {
@@ -415,10 +415,6 @@
     "message": "Size",
     "note": "Add a disk wizard › Blank or Ramdisk: the label of the disk's size field."
   },
-  "AddDisk.size.unit": {
-    "message": "MiB",
-    "note": "Add a disk wizard › Blank or Ramdisk: the unit after the size field (mebibytes)."
-  },
   "AddDisk.readOnly.title": {
     "message": "The guest can read the disk but can't write to it, so it has no overlay. This is checked automatically when you select an .iso file.",
     "note": "Add a disk wizard › a file or a URL: the tooltip of the Read-only checkbox (checked by itself for a .iso file)."
@@ -500,7 +496,7 @@
     "note": "Error (message bar) of Import changes… when the file is a disk image rather than a changes file."
   },
   "changes.notOurs": {
-    "message": "This qcow2 file wasn't made by this web app's <ui>Export… › Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked. Its changes can't be imported.",
+    "message": "This qcow2 file wasn't made by this web app's <ui>Export…</ui> › <ui>Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked. Its changes can't be imported.",
     "note": "Error (message bar) of Import changes… when the qcow2 has a backing file but not the hash this web app's exports record. {{backing}} is the backing file's name it records."
   },
   "changes.otherSize": {
@@ -701,7 +697,7 @@
   },
   "disk-actions.changes.noDisk": {
     "message": "<name>{{name}}</name> holds changes to a disk. Open that disk first with <ui>Open disk…</ui>, then import the changes.",
-    "note": "Notice when a changes file (a disk's export of its changes) is opened or dropped on a page with no disk open; {{name}} is the file's name."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a changes file (a disk's export of its changes) is opened or dropped on a page with no disk open; {{name}} is the file's name."
   },
   "disk-actions.boot.confirm": {
     "message": "Boot from <name>{{name}}</name>? This will forcibly power off the machine and boot it again from this disk, so unsaved work in the guest will be lost. The changes made to the current disk are kept.",
@@ -713,15 +709,15 @@
   },
   "disk-changes.changes.runsElsewhere": {
     "message": "<name>{{name}}</name> is running in another tab. Power it off there first.",
-    "note": "Notice when changes are imported into a disk of a machine that runs in another tab; {{name}} is the machine's name."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when changes are imported into a disk of a machine that runs in another tab (nothing is imported); {{name}} is the machine's name."
   },
   "disk-changes.changes.notChanges": {
-    "message": "<name>{{name}}</name> isn't a changes file. Changes files are qcow2 files made by <ui>Export… › Changes only</ui>. To start a machine from a disk image, use <ui>Open disk…</ui>.",
-    "note": "Notice when a file imported as changes isn't a changes file; {{name}} is the file's name."
+    "message": "<name>{{name}}</name> isn't a changes file. Changes files are qcow2 files made by <ui>Export…</ui> › <ui>Changes only</ui>. To start a machine from a disk image, use <ui>Open disk…</ui>.",
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a file imported as changes isn't a changes file; {{name}} is the file's name."
   },
   "disk-changes.changes.noHash": {
-    "message": "<name>{{name}}</name> wasn't made by this web app's <ui>Export… › Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked and its changes can't be imported.",
-    "note": "Notice when a qcow2 imported as changes wasn't made by this web app; {{name}} is the file's name, {{backing}} the backing file it names."
+    "message": "<name>{{name}}</name> wasn't made by this web app's <ui>Export…</ui> › <ui>Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked and its changes can't be imported.",
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a qcow2 imported as changes wasn't made by this web app; {{name}} is the file's name, {{backing}} the backing file it names."
   },
   "disk-changes.changes.intoOverlay": {
     "message": "They will go into a new overlay of <name>{{disk}}</name>, and the machine will switch to it. The current overlay is kept.",
@@ -781,7 +777,7 @@
   },
   "disk-export.save.runsElsewhere": {
     "message": "<name>{{name}}</name> is running from this disk in another tab. Power it off there first.",
-    "note": "Notice when a disk is exported while a machine in another tab runs from it; {{name}} is the machine's name."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a disk is exported while a machine in another tab runs from it (nothing is written); {{name}} is the machine's name."
   },
   "disk-export.save.emptied": {
     "message": "The save dialog emptied <name>{{name}}</name>, the file this machine's disk reads from, so nothing was saved. The machine can't read its disk any more. Next time, save to a different file.",
@@ -1258,18 +1254,6 @@
   "ResizeDisk.size": {
     "message": "New size",
     "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the label of the new size's field (a number, and its unit beside it)."
-  },
-  "ResizeDisk.unit": {
-    "message": "Unit",
-    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the screen-reader name of the unit's list beside the new size's field."
-  },
-  "ResizeDisk.unit.mib": {
-    "message": "MiB",
-    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's mebibytes."
-  },
-  "ResizeDisk.unit.gib": {
-    "message": "GiB",
-    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's gibibytes."
   },
   "ResizeDisk.newSize": {
     "message": "It will be {{size, bytes}} (sizes are rounded up to a whole MiB).",
