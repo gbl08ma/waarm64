@@ -226,9 +226,17 @@ published next to its disk and snapshot:
   "A static copy"), and the page routes by hash (`#home`). So the store has both forms:
   - **`#demos`** works on every copy with no server setup, and a reload keeps it, as `#home` does.
   - **`vm.tny.im/demos`**, the address to share, is the same page served at a one-segment path. A one-segment path
-    keeps `./assets/…` resolving to `/assets/…`. The deployed Worker serves `index.html` there: an entry for `/demos`
-    in the static copy (a second `index.html`, or `not_found_handling: "single-page-application"`, which answers only
-    navigations), checked on `npm start`'s server too. A static copy without it still has `#demos`.
+    keeps `./assets/…` resolving to `/assets/…`. **A second copy of the page, `demos.html`** (the user, 2026-11-18),
+    written by `npm run dist` beside `index.html`. The Worker's `html_handling: "auto-trailing-slash"` serves
+    `demos.html` at `/demos` (and redirects `/demos.html` there), with no script and nothing billed. Not
+    `demos/index.html`: that is served at `/demos/`, with a trailing slash, where `./assets/` would point at
+    `/demos/assets/`. `npm start`'s and `npm run serve`'s servers answer `/demos` the same way. A static copy
+    elsewhere gets `/demos.html` too, or uses `#demos`.
+  - *Later, if path-style links are wanted* (`/demos/alpine-term`): a Worker script on the same project, run only
+    for those routes (`assets.run_worker_first: ["/demos/*"]`), so every other request stays a free static-asset
+    request. On the free plan the script's requests count toward 100,000 a day, and past that Cloudflare answers
+    error 1027 instead of billing. It would answer `index.html` with a `<base href="/">` (HTMLRewriter), so the
+    relative assets resolve from the root. Not needed for this track.
   - **Parameters go in the query, never the path,** so links stay one segment deep: `/demos?id=<id>` (`#demos?id=<id>`)
     opens our store's demo `<id>` at its interstitial. `/demos?store=<url>` shows another store's cards, and `&id=<id>`
     opens one of its demos. `?store=` also takes a single definition's URL: the file's `format`, `waarm64-store` or
