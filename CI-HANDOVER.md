@@ -92,12 +92,16 @@ decisions in §11).
   maker's disk without an overlay was read-only: the restore was refused as another machine (`vm.otherHardware`).
   net-guest alone 91 s from ~184 s of holds. Passed ci-net twice, the fast lane (108 s) and ci.sh (641 s).
 
+- **The page's own machine as a fixture** (`pageFixture`: Snapshot at the login prompt, Load snapshot): page-room's
+  two guests from one file (79 MiB, 30 s to make), its slot 141 → 110 s; same identity fine. ci-net 370 s at 2 slots
+  (slots full: 531 slot-seconds in 293 s), so **ci-net takes 3 slots: 294 s, peak 6.4 GiB** (one run). 531e8839 and
+  the slots' commit passed the fast lane (106 s) and ci-net; **not yet ci.sh** (run it before the push).
+
 ## Next, in order
 
-1. **The booted-Debian fixture, the rest:** the default transient family on the page's own machine (page-room's two
-   boots are ci-net's tail now: 141 s; page-network overlaps its boot with UI checks, less to gain), through the page's
-   Load snapshot (bench/snapshot-start.ts `loadSnapshotFile`); then ci-debian's B tests, then the stored shape
-   (ci-machines). The harness half is done (below).
+1. **The booted-Debian fixture, the rest:** the default family's other users on the page (page-agent: its
+   agent-restart step may need a boot; page-power's first boot; page-template), with `pageFixture`; page-network keeps
+   its boots (its reloads start the machine again); then ci-debian's B tests, then the stored shape (ci-machines).
 2. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
    runs without fixed steps; page-ram and start onto a small guest (above).
 3. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from
