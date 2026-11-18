@@ -26,7 +26,7 @@ equivalent) works with nothing configured.** At least one demo in the store must
 2. One click on **Alpine (terminal)** downloads a small snapshot (budget: ≤ 30 MB on the wire) and the first pieces of
    a chunked disk, resumes, and shows a `#` prompt already logged in. The budget is ≤ 5 s from the click to the prompt
    on a good connection with a cold cache. Nothing boots: it's a resume.
-3. The machine has a network adapter on the **demo's connection** (a Wisp server, §3). `apk add python3` works,
+3. The machine has a network adapter on the **demo network** (a hosted helper with an allowlist, §3). `apk add python3` works,
    `pip install` works, `curl https://…` works.
 4. The visitor can **keep** the machine (it becomes an ordinary stored machine on the Home page, with its overlay and a
    snapshot), or close the tab and lose nothing they cared about. Until they keep it, the demo machine is the tab's
@@ -34,21 +34,83 @@ equivalent) works with nothing configured.** At least one demo in the store must
 5. Every other demo in the store works the same way, with its own size shown on its card: the desktop (Arch, sway,
    Firefox), a 3D one (glmark2/vkcube/a game on virgl or Venus), Debian, and later others.
 
-## 3. A network that works out of the box (the decision to reopen)
+## 3. A network that works out of the box
 
-**What binds today:** plans/networking.md §1, "No v86 compatibility": v86's relay, Wisp and `fetch` adapters were
-dropped because the `fetch` adapter breaks on CORS and because "the relay and Wisp adapters need someone to run a
-server". plans/networking-local.md §1 repeats "Not WebSocket relays or Wisp" and "the user won't operate an open
-proxy". Changing either is the user's call. The user's message of 2026-11-18 is the reason to reopen them: a first demo
-whose network works out of the box needs a server somebody runs.
+**Reopened (the user, 2026-11-18).** plans/networking.md §1 ("No v86 compatibility") and plans/networking-local.md
+§1 ("Not WebSocket relays or Wisp") no longer rule out a hosted way out. The user's caveat: if we run our own
+server anyway, Wisp has no claim on us. Our own protocol, or **the local helper deployed on a server with a
+destination allowlist**, may be simpler. The other rule stands: no open proxy, so whatever we host is restricted to a
+list of destinations.
 
-**Wisp** (Mercury Workshop's protocol, also used by v86 and unkernel) multiplexes TCP and UDP *streams* over one
-WebSocket. It doesn't carry packets. So our guest's packets need a **TCP/IP endpoint in the page**: something that
-terminates the guest's TCP connections, its UDP and its DNS at the gateway, and opens one Wisp stream for each. Our
-gateway (`web/gateway.ts`) today does ARP, DHCP, DHCPv6 and NDP and forwards IP packets to a backend that has its own
-IP. Nothing in it terminates TCP.
+### 3.1 The two shapes
 
-The options, with a recommendation for each:
+| | **A. A hosted helper** (frames) | **B. A stream proxy** (Wisp or our own, e.g. on a Worker) |
+|---|---|---|
+| What crosses the WebSocket | the guest's Ethernet frames, as with the local helper today | TCP (and maybe UDP) streams opened by name |
+| Who runs TCP/IP | the server (gvisor-tap-vsock's netstack, in waarm64-net) | **the page**: a new TCP/IP endpoint at the gateway (smoltcp, or a port of unkernel's ~530-line `net.ts`) |
+| New page code | almost none: a `local` connection whose URL is `wss://` on a host of ours instead of loopback (no Local Network Access prompt) | the stack, DNS with fake addresses, the stream client, a new connection kind |
+| What the guest gets | everything the local helper gives: TCP, UDP (DNS, NTP, QUIC), ICMP, IPv6 where the server has it, a 1500 MTU | TCP only (UDP only with Wisp v2's extension where the server allows it), IPv4, DNS answered with fake addresses |
+| The allowlist | at the server's dial (below, §3.2): addresses from its own DNS, checked again against the TLS SNI or HTTP Host | by name in each CONNECT: trivial |
+| Hosting | a server we run (any small VPS, or the host behind static.gbl08ma.com), behind TLS | a Cloudflare Worker (or Durable Object), or the same server |
+| Interop | ours only | Wisp framing lets users point it at any Wisp server for unrestricted access |
+
+**Recommended: A.** It reuses what exists, gives the guest a real network (UDP and IPv6 too), and needs neither a
+TCP stack in the page nor smoltcp as a dependency. What it costs is a server to run, and the allowlist's work in the
+helper. B stays possible later as a "bring your own Wisp server" connection, for users who want their own unrestricted
+way out without installing the local helper.
+
+### 3.2 A: the helper on a server
+
+The helper is waarm64-net (its own repository). A `--public` mode differs from the local one in these ways:
+- **TLS and the origin:** behind a reverse proxy (Caddy) on `wss://`. Origin `https://vm.tny.im` only. No pairing
+  token: the demo's link is public, so the token proves nothing. Instead each source IP gets a budget (connections,
+  bytes a day, concurrent guests).
+- **One network per WebSocket, not one per helper.** The local helper puts every page on one switch. Strangers' guests
+  must not see each other, so each connection gets its own gateway and its own DHCP pool, or guest-to-guest frames are
+  dropped. The library supports several virtual networks (*to check* at what cost each).
+- **The allowlist, done at three points:**
+  1. **DNS:** the helper's resolver answers only names on the list (and their CNAME chains), and remembers, per
+     connection, each address it gave out with its name and TTL.
+  2. **The dial:** gvisor-tap-vsock's TCP and UDP forwarders dial through Go's `net.Dialer`. Ours refuses an address
+     this connection didn't get from (1), or a port not on the list (80 and 443, 53 to the helper itself, 123).
+  3. **The first bytes:** an allowed address is often a CDN's (Fastly serves both PyPI and Alpine's CDN, and thousands
+     of other sites), so the dial alone would let a guest reach every site on that CDN. The forwarder reads the TLS
+     ClientHello's SNI, or the HTTP request's Host, before it dials, and checks it against the list. ECH hides the
+     real name behind a public one, which isn't on the list, so it's refused. QUIC: refuse UDP 443, so clients fall
+     back to TCP.
+  
+  This is the "challenge" the user expected. It's about two hundred lines of Go around the library's forwarders, with
+  tests against a fake upstream.
+- **What the list holds:** the demos' package hosts (Alpine's CDN, PyPI and files.pythonhosted.org, Debian's, Arch's
+  mirror, GitHub's release and raw hosts, crates.io's, npm's registry), a time host, and a few test sites (so `curl`
+  has something to show). It's a file the server reloads. Editing it is the user's call each time.
+- **Logs:** counts per destination and budget refusals, no addresses kept past the budget's day.
+- **Cost:** bandwidth. A demo visitor's `apk add python3` is about 20 MB. One small VPS with a few TB a month covers a
+  launch.
+
+### 3.3 B on Cloudflare's free tier, for the record
+
+The user asked whether a Wisp proxy (or our own) fits the Workers free tier. From Cloudflare's docs (2026-11-18):
+- **A plain Worker:** 100,000 requests a day, but **10 ms of CPU per request** on the free plan. The docs don't say
+  how a long-lived WebSocket is metered (one request for its whole life, or per message). If it's per connection,
+  10 ms is a few MB of copying at best. *Unverified: it needs a test with `wrangler tail`.*
+- **A Durable Object** (on the free plan since the SQLite backend): each incoming WebSocket message resets the CPU
+  budget to 30 s, and incoming messages bill at 20:1 (outgoing ones are free, so downloads cost no requests). But an
+  open TCP socket keeps the object awake, and the free plan's **13,000 GB-s a day at 128 MB is ~29 object-hours a day**.
+  That's one object serving everyone around the clock (one location, one thread), or ~29 visitor-hours of
+  per-visitor objects. A launch day could pass that. On the $5 paid plan it doesn't matter.
+- **What blocks it regardless of the plan:** `connect()` **refuses Cloudflare's own address ranges**, so any
+  destination behind Cloudflare is unreachable (npm's registry among them). The docs also say "to connect to port 80
+  or 443 to make HTTP requests, use `fetch`". Whether raw TCP to 443 with the guest's own TLS works isn't stated
+  (`wisp-server-workers` existing suggests it does: *to test*). No UDP at all.
+- **And the terms:** proxying arbitrary visitors' traffic through an account is the kind of use that gets an account
+  looked at. With an allowlist it's narrower, but it should be read against Cloudflare's current terms before relying
+  on it.
+
+So B on a free Worker might work for a demo's `apk add`, with unknowns and a hard hole (Cloudflare-hosted
+destinations). A on a small server has no unknowns, only work.
+
+### 3.4 If B is built: what the others do, and the DNS
 
 - **What the others do** (2026-11-18, [../comparison.md](../comparison.md) §6): both v86 and unkernel terminate the
   guest's TCP in a hand-written JS stack. unkernel's `js/core/net.ts` is ~530 lines (MIT): ARP, DHCP, DNS for A
@@ -67,27 +129,17 @@ The options, with a recommendation for each:
   takes a hostname) and an allowlist by name. Literal addresses pass through when the server allows them. Other
   record types (AAAA, TXT, MX) get an empty answer, or DoH if something needs them. `net/ts`'s `dns.rs` already
   parses and builds messages.
-- **The server, and who runs it.** This is the user's decision. (a) **Our own Wisp server on a Cloudflare Worker**
-  (the user already deploys two Workers; `cloudflare:sockets` `connect()` opens outbound TCP), **restricted to a
-  destination allowlist** (the demos' package mirrors, PyPI, npm, crates.io, GitHub's release hosts, a few test hosts)
-  and to ports 80 and 443, with a per-IP rate and byte budget. That makes it a package proxy for the demos, not an open
-  proxy. Workers have limits: no UDP (so DNS goes over DoH), and outbound sockets can't reach some destinations,
-  Cloudflare's own addresses among them (to verify: §6). A `wisp-server-workers` exists (its license is
-  unverified), but the server side is small enough to write: a WebSocket, the framing, CONNECT, DATA, CONTINUE and
-  CLOSE. (b) A Wisp server on a VPS, with the same allowlist. The reference servers are copyleft: wisp-js is LGPL-3.0
-  or AGPL-3.0 (its README and org listing disagree), wisp-server-python AGPL-3.0, epoxy-server reported AGPL. Running
-  one unmodified as a service is fine, copying from it is not (CLAUDE.md "Licensing"), and it's one more thing to
-  operate. (c) A third party's public endpoint (`wisp.mercurywork.shop`, which v86 presets; `anura.pro`), or
-  unkernel's `wisp.pi0.io`, which only accepts known origins: no. That means their terms (none published), their
-  logs and their uptime. **Recommended: (a), with the
-  adapter speaking plain Wisp to any URL**, so a user can point it at their own server (wisp-server-python,
-  epoxy-server, a `wisp-js` server) for unrestricted access.
-- **Where it sits in our model.** A new connection kind, `wisp` (adapters.md §1 rule 2), with a URL. The demo's
-  definition attaches its adapter to a built-in "Demo network" connection. A stored machine can use either the demo
-  connection or one the user makes. It's the primary adapter like any other. IPv6: none at first. The gateway then
-  offers no default IPv6 route on it, as with any backend that can't route IPv6 (adapters.md §4).
-- **Inbound traffic:** none. Wisp has no listening sockets, so for that you use rooms, tailnets and the local helper,
-  which stay what they are.
+
+### 3.5 Either way
+
+- **Where it sits in our model:** A is a `local` connection with a hosted URL. The demo's definition attaches adapter 0 to a
+  built-in "Demo network" connection. B would be a new connection kind, `wisp`, with a URL.
+- **Inbound traffic:** none. A public helper forwards no ports, and Wisp has no listening sockets. Rooms, tailnets and
+  the local helper stay the way in.
+- **Snapshots:** the guest's connections don't survive a resume (the server's side is gone), which is fine for a demo
+  snapshotted at an idle prompt. A DHCP lease taken before the snapshot must still be valid, or renewed at the
+  resume: with A, each connection's network should hand out the same address to the same MAC (the demo's template
+  MAC), so the snapshot's lease stays right.
 
 ## 4. Demo store, templates and the definition format
 
@@ -104,7 +156,7 @@ published next to its disk and snapshot:
     "download": 24000000,                   // what the card shows, checked at publish time
     "view": "serial",                       // or "screen": the view it opens on
     "snapshot": { "manifest": "snap/manifest.json", "id": "<content id>" },
-    "network": "demo"                       // attach adapter 0 to the built-in Wisp connection
+    "network": "demo"                       // attach adapter 0 to the built-in demo network
   },
   "disks": [ { "kind": "url", "url": "https://vmdisks.tny.im/alpine-term/manifest.json", "id": "<chunked id>", "readOnly": false } ]
 }
@@ -156,14 +208,13 @@ published next to its disk and snapshot:
 0. **Measure the gap.** unkernel's and v86's demos against ours, by hand and in headless Chromium: time to prompt,
    bytes on the wire, `apk add python3` time, peak memory. These numbers feed [../comparison.md](../comparison.md) §3.
    No code.
-1. **Wisp adapter, Node first.** smoltcp in a wasm module beside the gateway; TCP, UDP and DNS to Wisp streams; a
-   local Wisp server in tests (a fixture we write in Node, to spec); `tests/` at the gateway level (a guest's TCP
-   connect, a transfer, a close, a reset, a DNS lookup) and an Alpine boot that runs `apk add` against a local
-   mirror.
-2. **The Worker.** The Wisp server on Cloudflare with the allowlist, the budgets and logs that keep no addresses.
-   Check which destinations `connect()` refuses (the mirrors' CDNs). Deploy only on the user's word.
-3. **The connection kind on the page.** `wisp` in the Network tab and the menu, the built-in "Demo network", words
-   in the catalog, the Debian network tests (`scripts/ci-net.sh`) extended to it.
+1. **The public helper** (waarm64-net, its own repository): `--public` with a network per WebSocket, the budgets,
+   and the allowlist at the resolver, the dial and the first bytes, tested against fake upstreams (an allowed name,
+   a name off the list, an allowed CDN address reached with another SNI or Host, ECH, UDP 443, a literal address).
+2. **Hosting it:** a server behind TLS (which host is the user's call), the list as a reloaded file, logs without
+   addresses. Deploy only on the user's word.
+3. **The page:** a built-in "Demo network" (a `local` connection with that URL, no pairing, no Local Network Access
+   prompt), its words in the catalog, and `scripts/ci-net.sh` against a public-mode helper on loopback.
 4. **The demo guest.** `images/build.sh alpine-demo`, its template snapshot, chunked and traced from the resume,
    with numbers.
 5. **The store and the definition's `demo` fields.** The interstitial, the cards, `#demo/<id>`, ephemeral until kept,
@@ -172,19 +223,15 @@ published next to its disk and snapshot:
 7. **Templates under New machine.**
 8. **Review, numbers, the comparison's numbers filled in, the docs.**
 
-**Needs the user's OK:** reopening plans/networking.md §1 and plans/networking-local.md §1 (Wisp; who runs the
-server; the allowlist's policy); smoltcp as a dependency; the definition format's new version; a new guest image and
+**Needs the user's OK:** A or B (§3.1); which server hosts the helper and the allowlist's contents; smoltcp as a
+dependency, only if B is built; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image and
 its hosting on vmdisks.tny.im; any deploy.
 
 ## 7. Open questions
 
-- Does the demo's Wisp server keep an allowlist for good, or open up for kept machines (no, by default: an open proxy
-  is what was ruled out)?
+- Does the hosted helper keep an allowlist for good, or open up for kept machines? No, by default: an open proxy is
+  what was ruled out.
 - Should the demo network also be offered to the user's own machines by default (a new machine's first adapter), or
   only to demos?
-- An `ip`-level alternative to Wisp: a WebSocket that carries packets to a server-side NAT (what the local helper is,
-  but hosted). It would be simpler for us (no stack in the page), but it's an open proxy by construction. Ruled out
-  unless the user wants it.
-- The snapshot of a template that has a live Wisp connection: the guest's TCP connections don't survive a resume (the
-  page's stack is new). That's fine for a demo snapshotted at an idle prompt. A kept machine's snapshot behaves like
-  one on any other backend.
+- B's unknowns, if it's ever wanted: how a plain Worker meters a long WebSocket's CPU, and whether `connect()` to 443
+  passes the guest's own TLS (§3.3).
