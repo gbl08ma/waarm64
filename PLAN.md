@@ -67,5 +67,5 @@ here changes, and that row stays one line: a name, a state with a date, and link
 
 ## Proposed, not started
 
-A preloaded image and snapshot loaded with the page (likely the Arch desktop guest); a catalog of hosted images; the
+The first demo: a demo store, template snapshots, a Wisp network ([plans/first-demo.md](docs/plans/first-demo.md), which takes in the preloaded image and the catalog of hosted images); the
 stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([backlog.md](docs/backlog.md)).

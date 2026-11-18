@@ -50,22 +50,36 @@ IP. Nothing in it terminates TCP.
 
 The options, with a recommendation for each:
 
+- **What the others do** (2026-11-18, [../comparison.md](../comparison.md) §6): both v86 and unkernel terminate the
+  guest's TCP in a hand-written JS stack. unkernel's `js/core/net.ts` is ~530 lines (MIT): ARP, DHCP, DNS for A
+  records, and TCP with MSS and window scaling, a 1–8 s RTO, go-back-N and zero-window probes. Its Wisp client
+  (`net-wisp.ts`) speaks Wisp v1, TCP only, with CONTINUE credits. v86's `fake_network.js` (BSD-2) sends one chunk at
+  a time, and we saw no retransmission or window there. Neither forwards the guest's UDP, and neither has IPv6.
 - **The stack.** (a) **smoltcp** in Rust wasm (0BSD, mature, no_std, used by many userspace VPNs), a new
-  dependency, which needs the user's OK; (b) port v86's JS stack (`src/browser/fake_network.js`, BSD-2: permissive,
-  so porting is allowed with an attribution row), which is small but slow and has known TCP gaps; (c) write our own
-  (no). **Recommended: (a).** It's the sans-I/O shape `net/ts` already has, it fits in the same worker, and it has
-  a real TCP (windows, retransmission, SACK-less but correct).
-- **DNS.** Answer in the page: the gateway is the guest's resolver. Resolve over Wisp's UDP to a public resolver where
-  the server allows UDP, else over DoH through a Wisp TCP stream. `net/ts`'s `dns.rs` already parses and builds
-  messages.
+  dependency, which needs the user's OK; (b) port unkernel's `net.ts` or v86's stack (MIT and BSD-2: porting is
+  allowed with an attribution row): small, but a minimal TCP; (c) write our own (no). **Recommended: (a).** It's
+  the sans-I/O shape `net/ts` already has, and it fits in the same worker. Its TCP is fuller (SACK-less, but
+  correct), and it does IPv6 for later.
+- **DNS: unkernel's trick, taken.** Wisp has no DNS of its own, and its CONNECT takes a *hostname*. So the gateway
+  answers the guest's A queries with fake addresses from a reserved range (unkernel uses 198.18.0.0/15; our echo
+  backend already leases from 198.18.0.x, so pick a range that doesn't collide). A TCP connect to one of those
+  addresses becomes a Wisp CONNECT to the name, and the server resolves it. That also fits a Worker (`connect()`
+  takes a hostname) and an allowlist by name. Literal addresses pass through when the server allows them. Other
+  record types (AAAA, TXT, MX) get an empty answer, or DoH if something needs them. `net/ts`'s `dns.rs` already
+  parses and builds messages.
 - **The server, and who runs it.** This is the user's decision. (a) **Our own Wisp server on a Cloudflare Worker**
   (the user already deploys two Workers; `cloudflare:sockets` `connect()` opens outbound TCP), **restricted to a
   destination allowlist** (the demos' package mirrors, PyPI, npm, crates.io, GitHub's release hosts, a few test hosts)
   and to ports 80 and 443, with a per-IP rate and byte budget. That makes it a package proxy for the demos, not an open
   proxy. Workers have limits: no UDP (so DNS goes over DoH), and outbound sockets can't reach some destinations,
-  Cloudflare's own addresses among them (to verify: §6). (b) A small Wisp server on a VPS (any
-  of the reference implementations), with the same allowlist. That's one more thing to operate. (c) A third party's
-  public Wisp endpoint: no, because it means their terms, their logs and their uptime. **Recommended: (a), with the
+  Cloudflare's own addresses among them (to verify: §6). A `wisp-server-workers` exists (its license is
+  unverified), but the server side is small enough to write: a WebSocket, the framing, CONNECT, DATA, CONTINUE and
+  CLOSE. (b) A Wisp server on a VPS, with the same allowlist. The reference servers are copyleft: wisp-js is LGPL-3.0
+  or AGPL-3.0 (its README and org listing disagree), wisp-server-python AGPL-3.0, epoxy-server reported AGPL. Running
+  one unmodified as a service is fine, copying from it is not (CLAUDE.md "Licensing"), and it's one more thing to
+  operate. (c) A third party's public endpoint (`wisp.mercurywork.shop`, which v86 presets; `anura.pro`), or
+  unkernel's `wisp.pi0.io`, which only accepts known origins: no. That means their terms (none published), their
+  logs and their uptime. **Recommended: (a), with the
   adapter speaking plain Wisp to any URL**, so a user can point it at their own server (wisp-server-python,
   epoxy-server, a `wisp-js` server) for unrestricted access.
 - **Where it sits in our model.** A new connection kind, `wisp` (adapters.md §1 rule 2), with a URL. The demo's
@@ -126,6 +140,10 @@ published next to its disk and snapshot:
   smaller and faster, and a snapshot hides the boot anyway. 256–512 MiB of RAM, so the snapshot's RAM is small (SNAPZ
   compresses zero and free pages away). The disk is a chunked image of ~100–200 MB, of which the resume touches little.
   Measure: the snapshot's size on the wire, click to prompt, `apk add python3` time.
+  What unkernel's demo does that this one should match: a shell's command-not-found hook that installs the package
+  for a missing command and runs it (BusyBox ash has no hook, so use a small wrapper; only `main` enabled at first and
+  `community` on demand, which unkernel says makes `apk` ~4× faster), and changes that survive a reload. For us
+  that's "Keep this machine", or keeping a demo's overlay until the visitor resets it: a choice for the kickoff.
 - **Buildroot**, as a fallback if Alpine's snapshot can't meet the budget: tiny, but no package manager. That makes it
   a worse match for "install as you type". Kept as a "boots in under a second" demo, not as the networked one.
 - **The desktop (Arch, sway, Firefox), resumed at the desktop.** The existing Desktop Demo, as a snapshot rather than a
