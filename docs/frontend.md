@@ -799,9 +799,14 @@ Worker → page:
 The machine runs without `idleLimitMs`: an idle guest may sleep as long as it likes.
 
 **A machine that stops by itself lets go of its workers.** At the states `off` (the guest's own power-off),
-`suspended`, `failed` and `crashed` (but a panic's: the guest runs on, and may reset), the page sends the worker
-`stop` and terminates it and the GPU worker as a stop does (`Runner.ended`, `Run.close`), though the run stays the
-page's until the next start: before, the worker lived on with the guest's RAM (1.3 GiB after Buildroot's power-off or
+`suspended`, `failed` and `crashed`, the page sends the worker `stop` and terminates it and the GPU worker as a stop
+does (`Runner.ended`, `Run.close`), though the run stays the page's until the next start. A panic's too, 2 s after
+its line (`PANIC_TAIL_MS`, for the rest of its trace): a panicked guest can't come back by itself, as it hangs
+(`panic=0`) or resets into a worker that ignores the reset (`panic=N`: the crash stays on show), so it kept a core
+busy, or its RAM, for as long as the tab was open. A save in progress ends first: the worker's `stop` waits for it (a staged file's copy goes
+on after the resume, while the guest runs and may power off), up to `SAVE_STOP_MS` (60 s, which the page's close waits
+too), and a save still in progress when the workers end fails ([The machine stopped before the save was
+done.](ui:snapshots:run.stopped)), so the toolbar doesn't stay saving. Before, the worker lived on with the guest's RAM (1.3 GiB after Buildroot's power-off or
 Suspend, of 1.36 GiB that `measureUserAgentSpecificMemory` counted) and its framebuffer's animation frames and status
 timer (2–8% of a core in its threads, and the compositor's frames). The canvas keeps the last frame the worker drew.
 The page also follows the host's game pads only while the machine runs with its USB controller (docs/usb.md "The

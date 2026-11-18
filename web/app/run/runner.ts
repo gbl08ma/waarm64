@@ -35,6 +35,9 @@ import { displayHandlers, gpuHandlers, ledEvent, workerHandlers } from './worker
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
 
+/** How long a panicked machine's workers are kept for the rest of its panic's output (the trace after the line), ms. */
+const PANIC_TAIL_MS = 2000;
+
 /** What the run takes of the other areas. */
 export type RunnerDeps = {
   machine: PageMachine;
@@ -300,12 +303,14 @@ export class Runner {
 
   /**
    * The run ended (off, crashed, suspended, failed): what it held goes. Its workers too, once the machine worker has
-   * closed the machine (`Run.close`), unless the guest panicked (its machine runs on: it may reset). The run stays the
-   * page's until the next stop, but a stopped machine's tab runs nothing and keeps none of its memory (its RAM, the
-   * framebuffer's animation frames, the status timer).
+   * closed the machine (`Run.close`); a panicked guest's after `PANIC_TAIL_MS`, for the rest of its panic's trace to
+   * reach the terminal: it can't come back by itself (it hangs, or its reset is ignored: the worker keeps the crash on
+   * show). The run stays the page's until the next stop, but a stopped machine's tab runs nothing and keeps none of its
+   * memory (its RAM, the framebuffer's animation frames, the status timer).
    */
   ended(r: Run, m: { problem?: Problem }) {
-    if (m.problem !== 'panic') void r.close();
+    if (m.problem === 'panic') setTimeout(() => void r.close(), PANIC_TAIL_MS);
+    else void r.close();
     this.d.alive.clear();
     r.usb?.close();
     // The screen lets go of the mouse (a stopped machine has nothing to give it to) and a click doesn't take it again; the next start's input takes the setting.

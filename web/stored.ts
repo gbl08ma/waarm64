@@ -127,7 +127,9 @@ function qcow2Allocated(src: Source) {
  * asks `makeRoom` for room first (`withRoom`).
  */
 export async function mergeOverlay(diskPath: string, overlayPath: string, identity: string, size: number, makeRoom?: () => Promise<boolean>) {
-  await resumeMerge(diskPath, size, makeRoom);
+  const was = (await overlayMeta(diskPath)).merging;
+  const resumed = await resumeMerge(diskPath, size, makeRoom);
+  if (was === overlayPath) return resumed; // its own merge, that failed partway: finished now
   const files = await openOverlay(diskPath, identity);
   try {
     const m = readMeta(files.meta);
@@ -138,12 +140,16 @@ export async function mergeOverlay(diskPath: string, overlayPath: string, identi
   }
 }
 
-/** Finishes a merge into stored disk `diskPath` that was interrupted (its meta names the overlay); nothing otherwise. */
+/**
+ * Finishes a merge into stored disk `diskPath` that was interrupted or failed (its meta names the overlay); nothing
+ * otherwise. The blocks it merged.
+ */
 export async function resumeMerge(diskPath: string, size: number, makeRoom?: () => Promise<boolean>) {
-  if (!(await overlayMeta(diskPath)).merging) return; // without opening it: readers may have it open
+  if (!(await overlayMeta(diskPath)).merging) return 0; // without opening it: readers may have it open
   const files = await openOverlay(diskPath, undefined);
   try {
-    if (readMeta(files.meta).merging) await copyIn(files, readMeta(files.meta).merging, size, makeRoom);
+    const merging = readMeta(files.meta).merging;
+    return merging ? await copyIn(files, merging, size, makeRoom) : 0;
   } finally {
     files.close();
   }

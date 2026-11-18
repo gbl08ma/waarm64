@@ -155,3 +155,17 @@ test("the header carries the bases; a file's are read back whole or not at all; 
   const effect = await mergeEffect(store, os2.id);
   assert.deepEqual(effect?.snapshots.map((x) => x.id), [s.id]);
 });
+
+test('a stored disk attached read-only with a leftover in-place mark is read, not written: a base; Read-only clears the mark', async () => {
+  const w = await world();
+  const { store } = w;
+  // B's attachment written in place, then made read-only before the mark was cleared (a record from before).
+  const C: MachineRecord = { ...w.B, id: w.B.id.replace(/^../, 'cc'), attachments: [{ ...w.B.attachments[0], readOnly: true, inPlace: true }] };
+  assert.deepEqual(await basesOf(C, (id) => (id === w.S.id ? w.S : undefined)), { [w.S.id]: 0 }, 'its guest reads S: its generation is a base');
+  // Ticking Read-only clears the mark (the box is hidden then: unticked, the disk is under an overlay again).
+  await store.put('machines', w.B);
+  const { editAttachment } = await import('../web/app/machines.ts');
+  await editAttachment(store, w.B, w.B.attachments[0].id, { readOnly: true });
+  const b = (await store.get('machines', w.B.id))!.attachments[0];
+  assert.deepEqual([b.readOnly, b.inPlace], [true, undefined]);
+});

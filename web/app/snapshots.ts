@@ -47,7 +47,8 @@ export async function basesOf(m: MachineRecord, disks: (id: string) => DiskRecor
   const out: Record<string, number> = {};
   for (const a of m.attachments) {
     const d = disks(a.disk);
-    if (d?.kind === 'stored' && !a.inPlace) out[d.id] = (await overlayMeta(diskDir(d.id))).generation;
+    // Written in place only when not read-only (as the device: web/app/run/page-disks.ts), a mark left or not.
+    if (d?.kind === 'stored' && !(a.inPlace && !a.readOnly)) out[d.id] = (await overlayMeta(diskDir(d.id))).generation;
   }
   return Object.keys(out).length ? out : undefined;
 }

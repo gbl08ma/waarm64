@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { msgOf } from '../web/msg.ts';
 import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
-import { openStored, zeroDisk } from '../web/stored.ts';
-import { identityOf } from '../web/app/disks.ts';
+import { openStored, openStoredForWriting, zeroDisk } from '../web/stored.ts';
+import { deleteOverlay, identityOf } from '../web/app/disks.ts';
 import { mergeEffect, mergeIntoDisk } from '../web/app/merge.ts';
 import { resize } from '../web/app/resize.ts';
 import { shapeOf, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
@@ -72,7 +72,7 @@ test("a blank disk resized on a machine, then its overlay merged: nothing was wr
   assert.deepEqual(effect.others, [], 'the other overlays stay: the disk still reads as zeros');
   assert.deepEqual(effect.snapshots.map((s) => s.id), [snapB.id], "B's guest would see 16 MiB: its snapshots at 8 MiB orphan; A's stay");
 
-  assert.equal(await mergeIntoDisk(store, changes), 0);
+  assert.equal(await mergeIntoDisk(store, changes, effect), 0);
   const d = (await store.get('disks', w.blank.id))!;
   assert.deepEqual([d.kind, d.size, d.identity], ['blank', 16 * MiB, w.blank.identity], 'blank, grown, its identity as made');
   assert.equal(await store.get('overlays', changes), undefined, 'the overlay is gone');
@@ -102,7 +102,7 @@ test('a blank disk with a written overlay merged becomes a stored disk of its bl
   assert.deepEqual(effect.others.map((o) => o.id), [w.ob.id]);
   assert.deepEqual(effect.snapshots.map((s) => s.id).sort(), [snapA.id, snapB.id].sort(), 'another disk to every machine that attaches it');
 
-  assert.equal(await mergeIntoDisk(store, changes), 2);
+  assert.equal(await mergeIntoDisk(store, changes, effect), 2);
   const d = (await store.get('disks', w.blank.id))!;
   assert.deepEqual([d.kind, d.size, d.identity], ['stored', 16 * MiB, { kind: 'stored', id: w.blank.id, bytes: 0 }]);
   assert.deepEqual(d.grow, { from: 8 * MiB, to: 16 * MiB }, "the overlay's grow mark");
@@ -124,7 +124,7 @@ test("a merge is refused for a URL disk's overlay, and while the overlay is open
   await store.put('disks', url);
   await store.put('overlays', { ...w.ob, id: 'ffff00000002', disk: url.id, identity: url.identity });
   assert.equal(await mergeEffect(store, 'ffff00000002'), undefined);
-  await assert.rejects(mergeIntoDisk(store, 'ffff00000002'), (e: unknown) => msgOf(e)?.key === 'disks:merge.onlyStored');
+  await assert.rejects(mergeIntoDisk(store, 'ffff00000002', { how: 'stored', others: [], size: MiB }), (e: unknown) => msgOf(e)?.key === 'disks:merge.onlyStored');
   // The overlay open (a machine runs on it): its lock is held.
   let release!: () => void;
   const held = new Promise<void>((r) => (release = r));
@@ -132,7 +132,113 @@ test("a merge is refused for a URL disk's overlay, and while the overlay is open
   const got = new Promise<void>((r) => (granted = r));
   void navigator.locks.request(`waarm64-overlay:${overlayDir(w.ob.id)}`, () => (granted(), held));
   await got;
-  await assert.rejects(mergeIntoDisk(store, w.ob.id), (e: unknown) => msgOf(e)?.key === 'disks:merge.overlayNamedRunning');
+  await assert.rejects(mergeIntoDisk(store, w.ob.id, (await mergeEffect(store, w.ob.id))!), (e: unknown) => msgOf(e)?.key === 'disks:merge.overlayNamedRunning');
   release();
   assert.ok(await store.get('overlays', w.ob.id), 'nothing was done');
+});
+
+/** Overlay `id`'s data file refuses its reads after the first `n` (a merge's copy fails partway); the call returned ends that. */
+async function failingReads(id: string, n: number) {
+  const f = await openOverlay(overlayDir(id), undefined, undefined, { readOnly: true });
+  const real = f.data.read.bind(f.data);
+  let left = n;
+  f.data.read = (buf, o) => {
+    if (left-- <= 0) throw new Error('the storage failed');
+    return real(buf, o);
+  };
+  f.close();
+  return () => void (f.data.read = real);
+}
+
+test("a blank disk's conversion that fails partway leaves the overlay as it was: its blocks, its record, its machines' choice; the disk blank; asked again, it is done", async () => {
+  const w = await world();
+  const { store } = w;
+  await scribble(w.ob.id, w.blank, 3, 0x5a);
+  await scribble(w.ob.id, w.blank, 1000, 0xa5);
+  assert.equal((await mergeEffect(store, w.ob.id))?.how, 'convert');
+  const restore = await failingReads(w.ob.id, 1);
+  await assert.rejects(mergeIntoDisk(store, w.ob.id, (await mergeEffect(store, w.ob.id))!));
+  restore();
+  assert.ok(await store.get('overlays', w.ob.id), "the overlay's record stays (the sweep would delete its files without it)");
+  assert.equal((await store.get('machines', w.B.id))!.attachments[0].overlay, w.ob.id, 'still chosen');
+  assert.equal((await store.get('disks', w.blank.id))!.kind, 'blank');
+  await assert.rejects(openOverlay(diskDir(w.blank.id), undefined, undefined, { readOnly: true }), /no overlay/, 'the half-made store is gone');
+  const o = await openOverlay(overlayDir(w.ob.id), undefined, undefined, { readOnly: true });
+  const v = overlay(zeroDisk(w.blank.size), o.data, o.map);
+  assert.deepEqual([v.block(3)?.[0], v.block(1000)?.[0]], [0x5a, 0xa5], 'its blocks are there');
+  o.close();
+
+  assert.equal(await mergeIntoDisk(store, w.ob.id, (await mergeEffect(store, w.ob.id))!), 2);
+  assert.equal((await store.get('disks', w.blank.id))!.kind, 'stored');
+  assert.equal(await store.get('overlays', w.ob.id), undefined);
+});
+
+test("a stored disk's merge that fails partway keeps the overlay's record (its files outlive the sweep) and the disk's mark; asked again, it is done", async () => {
+  const w = await world();
+  const { store } = w;
+  const size = 8 * MiB;
+  const sid = w.blank.id.replace(/^../, 'e5');
+  const d: DiskRecord = { id: sid, kind: 'stored', name: 'S', size, identity: { kind: 'stored', id: sid, bytes: 0 }, created: 0 };
+  await store.put('disks', d);
+  (await openStoredForWriting(diskDir(d.id), identityOf(d), size)).close();
+  const o: OverlayRecord = { ...w.ob, id: w.ob.id.replace(/^../, 'e6'), disk: d.id, identity: d.identity };
+  await store.put('overlays', o);
+  await scribble(o.id, d, 3, 0x5a);
+  await scribble(o.id, d, 1000, 0xa5);
+  const restore = await failingReads(o.id, 1);
+  await assert.rejects(mergeIntoDisk(store, o.id, (await mergeEffect(store, o.id))!));
+  restore();
+  assert.ok(await store.get('overlays', o.id), "the overlay's record stays");
+  assert.equal((await overlayMeta(diskDir(d.id))).merging, overlayDir(o.id), 'the disk is marked: it is never read half merged');
+  await assert.rejects(deleteOverlay(store, o.id), (e: unknown) => msgOf(e)?.key === 'disks:disks.overlayMerging', 'nor left half merged by a deletion');
+
+  assert.equal(await mergeIntoDisk(store, o.id, (await mergeEffect(store, o.id))!), 2);
+  assert.equal(await store.get('overlays', o.id), undefined);
+  const src = await openStored(diskDir(d.id), size);
+  assert.deepEqual([src.read(3 * 4096, 1)![0], src.read(1000 * 4096, 1)![0]], [0x5a, 0xa5]);
+  src.close();
+  assert.equal((await overlayMeta(diskDir(d.id))).merging, '');
+});
+
+test('a merge is refused when it is no longer the one confirmed: the overlay written meanwhile (a grow become a conversion), another overlay made', async () => {
+  const w = await world();
+  const { store } = w;
+  await resize(store, { machine: w.A.id, attachment: w.A.attachments[0].id }, 16 * MiB, { grow: true });
+  const changes = (await store.get('machines', w.A.id))!.attachments[0].overlay!;
+  const grow = (await mergeEffect(store, changes))!;
+  assert.equal(grow.how, 'grow');
+  await scribble(changes, w.blank, 3, 0x5a, 16 * MiB); // a machine ran on it in another tab
+  const changed = (e: unknown) => msgOf(e)?.key === 'disks:merge.changed';
+  await assert.rejects(mergeIntoDisk(store, changes, grow), changed);
+  assert.ok(await store.get('overlays', w.ob.id), "B's overlay, which a conversion deletes, stays");
+  assert.equal((await store.get('disks', w.blank.id))!.kind, 'blank');
+
+  const convert = (await mergeEffect(store, changes))!;
+  assert.deepEqual([convert.how, convert.others.map((x) => x.id)], ['convert', [w.ob.id]]);
+  const made: OverlayRecord = { ...w.ob, id: w.ob.id.replace(/^../, 'e7'), name: 'Made meanwhile' };
+  await store.put('overlays', made);
+  await assert.rejects(mergeIntoDisk(store, changes, convert), changed);
+  assert.ok(await store.get('overlays', made.id), 'the overlay not listed stays');
+  assert.ok(await store.get('overlays', w.ob.id));
+  assert.equal(await mergeIntoDisk(store, changes, (await mergeEffect(store, changes))!), 1, 'asked again, it is done');
+});
+
+test("a blank disk's grow by a merge is refused while a machine runs over another overlay of the disk (its guest would see the disk change size under it)", async () => {
+  const w = await world();
+  const { store } = w;
+  await resize(store, { machine: w.A.id, attachment: w.A.attachments[0].id }, 16 * MiB, { grow: true });
+  const changes = (await store.get('machines', w.A.id))!.attachments[0].overlay!;
+  const effect = (await mergeEffect(store, changes))!;
+  assert.equal(effect.how, 'grow');
+  // B runs over its overlay: its lock is held.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let granted!: () => void;
+  const got = new Promise<void>((r) => (granted = r));
+  void navigator.locks.request(`waarm64-overlay:${overlayDir(w.ob.id)}`, () => (granted(), held));
+  await got;
+  await assert.rejects(mergeIntoDisk(store, changes, effect), (e: unknown) => msgOf(e)?.key === 'disks:merge.overlayNamedRunning' && msgOf(e)?.params?.name === w.ob.name);
+  release();
+  assert.equal((await store.get('disks', w.blank.id))!.size, 8 * MiB, 'not grown');
+  assert.ok(await store.get('overlays', changes), 'nothing was done');
 });

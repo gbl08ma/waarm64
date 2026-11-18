@@ -431,6 +431,10 @@
     "message": "Load snapshot…",
     "note": "Button in the message bar (under the toolbar) after a snapshot was refused: it picks another snapshot file."
   },
+  "run.stopped": {
+    "message": "The machine stopped before the save was done.",
+    "note": "Error (message bar, under the toolbar) of a snapshot's save or a suspend when the machine stopped by itself (the guest powered off or crashed) while it was still being saved, and the save couldn't finish."
+  },
   "power-actions.busy": {
     "message": "A snapshot is being saved. Try again once it's done.",
     "note": "Notice (a dialog) when something that stops the machine (a disk's export, Open disk, a snapshot's load) is asked while a snapshot is written."

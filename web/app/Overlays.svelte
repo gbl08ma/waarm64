@@ -116,7 +116,7 @@
           : msg('disks:Overlays.merge.confirm', words);
     if (!(await ask.confirm(question, { ok: t('disks:Overlays.merge.ok'), danger: others.length > 0 }))) return;
     await run(t('disks:Overlays.busy.merge'), () =>
-      mergeIntoDisk(store, o.id).catch((e: unknown) => {
+      mergeIntoDisk(store, o.id, effect).catch((e: unknown) => {
         throw new MsgError('disks:Overlays.failed.merge', {}, { cause: e });
       }),
     );

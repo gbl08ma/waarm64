@@ -284,29 +284,40 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 - **The blk device writes through `WritableDisk`** (web/overlay.ts: `write`, `zero`, `discard`, `flush`, and
   `written`/`block`/`zeroed` for exports and snapshots); nothing above it assumes a base underneath. A stored disk
   opened for writing is the same block store over zeros, so **writing in place needed no new device code**, only
-  the attachment's choice.
+  the attachment's choice. Ticking Read-only clears it (the box is hidden then); an attachment marked both (a record
+  from before) is read, not written: the device, the snapshots' bases (§5.1) and the record's refresh after a run all
+  take written in place as `inPlace && !readOnly`.
 - **Locks:** under overlays a stored disk is read with read-only sync access handles under a shared Web Lock, so
   several machines can use it at once; writing it in place or merging into it takes the lock exclusively.
 - **A stored disk has a generation** (§3.3) as an overlay has; writing in place bumps it.
 - **Merging an overlay into its stored disk:** the machines using the disk are off (its lock); the confirmation names
   the other overlays that will be deleted and the snapshots it orphans. Then: the other overlays are deleted, the
   disk's generation is bumped and its `meta` names the overlay being merged, the overlay's blocks are written into
-  the disk (its zero blocks as zeros), the overlay is deleted, the marker removed (`mergeOverlay`). Interrupted, the
-  disk finishes the merge at its next opening (`resumeMerge`: writing the same blocks again is harmless) before
-  anything reads it; an overlay that can't be opened any more (gone, or its deletion, a file at a time in OPFS, cut
-  off) has had its blocks copied, and what is left of it is deleted.
+  the disk (its zero blocks as zeros), the overlay is deleted, the marker removed (`mergeOverlay`), and only then the
+  overlay's record. Interrupted, or failed partway (the storage full), the disk finishes the merge at its next opening
+  (`resumeMerge`: writing the same blocks again is harmless) before anything reads it, or at the next Merge into the
+  disk of the overlay: its record kept, the sweep keeps its files, and deleting it is refused (`disks.overlayMerging`:
+  part of it is in the disk already). An overlay that can't be opened any more (gone, or its deletion, a file at a time in OPFS, cut off)
+  has had its blocks copied, and what is left of it is deleted.
 - **A blank disk's overlay merged** (`web/app/merge.ts`; the user's QA, 2026-11-18: an overlay a resize on a machine
   made, §4.5, had no way into its disk): an overlay **nothing was ever written to** (its generation 0, read from its
   `meta` under the merge's lock) grows the blank disk to the overlay's size and is deleted; the disk stays blank, its
   identity keeps the size it was made with (as a stored disk's does), so its other overlays still fit it and stay, and
   a machine that had it chosen gets an empty one at the new size at its next start (its guest sees the same disk: its
-  snapshots stay). An overlay **written to** makes the blank disk a stored disk of its blocks at the overlay's size
+  snapshots stay); refused while a machine runs over any overlay of the disk (those without a size of their own see
+  the new size), as a resize is. An overlay **written to** makes the blank disk a stored disk of its blocks at the overlay's size
   (`convertBlank`: the stored disk's merge job into a block store that starts empty, then the record says `stored`
   with a stored disk's identity and the overlay's grow mark); its other overlays are deleted, as above, and the machines
-  that attach it see another disk (their snapshots orphan by the shape). The record is written after the copy: cut off
-  between, the disk is still blank and what the overlay held is lost with its record, as a stored disk's merge cut off
-  before its copy would lose it. The confirmation (`mergeEffect`) says which, the size, the overlays deleted and the
-  snapshots it orphans (for a grow: those of machines whose guest would see the disk at another size).
+  that attach it see another disk (their snapshots orphan by the shape); then the overlay's record goes and the
+  machines that had it chosen are left without one. A copy that fails (the storage full) leaves the overlay as it was
+  (its blocks, its record, its machines' choice), and the half-made block store is removed. The disk's record is
+  written after the copy, which deletes the overlay's files: cut off between, the disk is still blank and what the
+  overlay held is lost. The confirmation (`mergeEffect`) says which, the size, the overlays deleted and the
+  snapshots it orphans (for a grow: those of machines whose guest would see the disk at another size); under the
+  merge's lock, a merge that is no longer the one confirmed (another how or size: the overlay written meanwhile, by a
+  machine in another tab; or an overlay to delete the confirmation didn't list) is refused
+  ([The disk's overlays changed since you were asked (in another tab, or by a machine). Look again and merge it
+  again.](ui:disks:merge.changed)).
 - **Writing in place and snapshots:** a disk written in place has no earlier state to fork from. A kept snapshot pins
   the disk's generation and restores it only while it matches; otherwise a file carrying the whole disk forks it into
   an overlay, and one without is refused with the reason. **A downloaded snapshot can't be self-contained** without

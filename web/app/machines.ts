@@ -291,9 +291,10 @@ export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o
   return a;
 }
 
-/** Read-only or not (a blank disk or a ramdisk is always writable). */
+/** Read-only or not (a blank disk or a ramdisk is always writable); read-only, not written in place any more. */
 function setReadOnly(a: Attachment, disk: DiskRecord | undefined, readOnly: boolean) {
   if (!readOnly || (disk?.kind !== 'blank' && disk?.kind !== 'ramdisk')) a.readOnly = readOnly;
+  if (a.readOnly) a.inPlace = undefined;
 }
 
 /** Written in place (only a disk stored in the browser). */

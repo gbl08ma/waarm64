@@ -379,3 +379,20 @@ test("QA: a machine its guest powered off, or suspended, lets go of its workers 
   assert.equal((await settled(page, 120_000, 'off')).state, 'running');
   await ctx.close();
 });
+
+test("QA: a panicked machine lets go of its workers too (it can't come back by itself: the worker ignores its reset), the panic's trace kept on show", { skip, timeout: 120_000 }, async () => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await recordWorkers(page);
+  // Buildroot resets at once after its panic (panic=-1): the worker keeps the crash on show, and its RAM, unless closed.
+  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal&params=init=/nonexistent`);
+  assert.equal((await settled(page, 60_000)).state, 'crashed');
+  await page.waitForFunction(() => (window as unknown as { __workers: Workers }).__workers.filter((x) => /\/app\/worker\.ts/.test(x.url)).every((x) => x.terminated), null, { timeout: 15_000, polling: 100 });
+  assert.equal(await page.evaluate(() => document.body.dataset.state), 'crashed', 'still said crashed');
+  const shown = await page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
+  assert.match(shown, /Kernel panic - not syncing: Requested init \/nonexistent failed/);
+  // Started again: a new worker boots it.
+  await page.locator('#restart').click();
+  await page.waitForFunction(() => (window as unknown as { __workers: Workers }).__workers.filter((x) => /\/app\/worker\.ts/.test(x.url)).length === 2, null, { timeout: 10_000, polling: 50 });
+  await ctx.close();
+});
