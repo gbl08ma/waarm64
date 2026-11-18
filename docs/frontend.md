@@ -1048,7 +1048,7 @@ first, when a disk is written in place, whether the whole disk goes in, §4.4).
   snapshot moves to it). [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned) deletes them all after one confirmation with their total size.
   Saving changed settings warns that they orphan the snapshots. A kept snapshot that can **never** be restored
   (machines.md §5.1 "Unrestorable": a disk it depends on changed, another core's format; `unrestorable`, from the
-  records) shows as orphaned too, its reason in place of what differs, with neither Restore nor Make a machine like it
+  disks' files, read again every 2 s while the tab or the menu is shown) shows as orphaned too, its reason in place of what differs, with neither Restore nor Make a machine like it
   (a machine like it would have the same disks), and goes with Delete orphaned snapshots; Load snapshot disables it,
   its reason in the tooltip.
 - **Written in place, said where it's taken:** on a machine with a disk written in place, Snapshot's tooltip

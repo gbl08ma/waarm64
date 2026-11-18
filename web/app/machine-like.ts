@@ -4,8 +4,8 @@
 import { MsgError, t } from '../i18n.ts';
 import { withGrownOverlay } from './resize.ts';
 import { canonical, macsOf, newId, uniqueName, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
-import { moveSnapshot } from './snapshots.ts';
-import type { Store } from './store.ts';
+import { opfsDir } from '../overlay.ts';
+import { snapshotPath, type Store } from './store.ts';
 
 /**
  * A disk of a snapshot's shape the browser doesn't have, made again: a blank disk or ramdisk under its id, a URL disk
@@ -117,4 +117,22 @@ export async function machineLike(
   await store.put('machines', m);
   await moveSnapshot(store, snap.id, m.id);
   return m;
+}
+
+/** Moves kept snapshot `id` to machine `to` (its file, then its record). */
+async function moveSnapshot(store: Store, id: string, to: string) {
+  const s = await store.get('snapshots', id);
+  if (!s || s.machine === to) return;
+  const path = snapshotPath(s.machine, id);
+  const slash = path.lastIndexOf('/');
+  const name = path.slice(slash + 1);
+  const src = await (await opfsDir(path.slice(0, slash))).getFileHandle(name);
+  const dest = await opfsDir(`machines/${to}/snapshots`, true);
+  if (src.move) await src.move(dest);
+  else {
+    const w = await (await dest.getFileHandle(name, { create: true })).createWritable();
+    await (await src.getFile()).stream().pipeTo(w);
+    await store.files.remove(snapshotPath(s.machine, id));
+  }
+  await store.put('snapshots', { ...s, machine: to });
 }

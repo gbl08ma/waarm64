@@ -7,7 +7,7 @@
 // overlay, and one without is refused (§4.4). Nothing here asks the user; the page and the Home page confirm first.
 import { opfsDir, overlayMeta, storageFullError } from '../overlay.ts';
 import { makeRoom } from '../diskcache.ts';
-import { readHeader, SNAPSHOT_VERSION, type SnapshotHeader } from '../snapshot-file.ts';
+import { readHeader, SNAPSHOT_VERSION } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
 import type { GrowMark, OverlaySizes } from './disk-size.ts';
@@ -25,8 +25,9 @@ import {
   type MachineRecord,
   type Shape,
 } from './shape.ts';
-import { diskDir, overlayDir, snapshotPath, type SnapshotRecord, type Store } from './store.ts';
+import { overlayDir, type SnapshotRecord, type Store } from './store.ts';
 import { msg, MsgError, type Msg } from '../i18n.ts';
+import { basesIn, dependsOn, diskGenerations, inPlaceDisk, lost, RECORDED_FROM, type Lost } from './snapshot-lost.ts';
 
 /** The machine's shape and its hash as it would run now (its disks and overlays by id: an overlay's own size counts, §4.5). */
 export async function currentShape(
@@ -38,52 +39,37 @@ export async function currentShape(
   return { shape, hash: await shapeHash(shape) };
 }
 
-/**
- * The generations of the stored disks machine `m` reads, by disk id (§5.1 "Unrestorable"): those attached read-only or
- * under an overlay, from their files (one written in place is pinned instead). A running machine holds them open, so
- * none moves while it runs: a snapshot's are its start's. None: no such disk.
- */
-export async function basesOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined) {
-  const out: Record<string, number> = {};
-  for (const a of m.attachments) {
-    const d = disks(a.disk);
-    // Written in place only when not read-only (as the device: web/app/run/page-disks.ts), a mark left or not.
-    if (d?.kind === 'stored' && !(a.inPlace && !a.readOnly)) out[d.id] = (await overlayMeta(diskDir(d.id))).generation;
-  }
-  return Object.keys(out).length ? out : undefined;
+/** `lost`'s disk reasons in the lists' words (`unrestorable`) and the restore's (`refused`). */
+const LIST_WORDS = {
+  base: 'snapshots:snapshots.unrestorable.base',
+  inPlace: 'snapshots:snapshots.unrestorable.inPlace',
+} as const;
+const RESTORE_WORDS = { base: 'snapshots:snapshots.baseMoved', inPlace: 'snapshots:snapshots.writtenInPlace' } as const;
+
+/** Why `lost` says, in the restore's words (`restore`) or the lists'. */
+function said(why: Lost, name: (id: string) => string | undefined, restore: boolean): Msg {
+  if (why.why === 'version')
+    return restore
+      ? msg('snapshots:snapshot.otherVersion', { format: why.format, reads: SNAPSHOT_VERSION })
+      : msg('snapshots:snapshots.unrestorable.version');
+  // A stored disk it was taken over, moved since (written in place, merged into): its overlays' blocks, or what a
+  // read-only guest cached, are over other bytes now. A disk it pinned written in place: the bytes it pinned are gone.
+  return msg((restore ? RESTORE_WORDS : LIST_WORDS)[why.why], { disk: name(why.disk) ?? why.disk });
 }
 
 /**
- * The snapshot format a kept snapshot's record from before records kept theirs was written in, at most (`coreVersion`
- * absent): the core's then. One older than it can't restore either, but isn't told apart.
+ * Why kept snapshot `s` can never be restored onto its machine's disks (`lost`, in the lists' words): `generations`
+ * the stored disks' from their files (`watchGenerations`); disks without a record aren't checked.
  */
-const RECORDED_FROM = 6;
-
-/**
- * Why kept snapshot `s` can never be restored onto its machine's disks as the records have them (§5.1
- * "Unrestorable"), whatever is done to the machine: made by another core's snapshot format; a stored disk it was
- * taken over written in place or merged into since (`bases`); a disk it pinned written in place, moved on since, and
- * not in the file whole. None when nothing says so (its shape is checked apart: `orphaned`). From the records alone: a
- * disk's record lags its files while a machine writes it (`refreshStored` after the run), never ahead of them, so a
- * moved generation is one for good.
- */
-export function unrestorable(s: SnapshotRecord, disks: (id: string) => DiskRecord | undefined): Msg | undefined {
-  const version = s.coreVersion ?? RECORDED_FROM;
-  if (version !== SNAPSHOT_VERSION) return msg('snapshots:snapshots.unrestorable.version');
-  const moved = (id: string, generation: number) => {
-    const d = disks(id);
-    return d && (d.generation ?? 0) > generation ? d : undefined;
-  };
-  for (const [id, generation] of Object.entries(s.bases ?? {})) {
-    const d = moved(id, generation);
-    if (d) return msg('snapshots:snapshots.unrestorable.base', { disk: d.name });
-  }
-  for (const p of s.pins) {
-    if (!p.overlay?.startsWith('disks/') || p.blocks > 0) continue;
-    const d = moved(p.overlay.slice('disks/'.length), p.generation ?? 0);
-    if (d) return msg('snapshots:snapshots.unrestorable.inPlace', { disk: d.name });
-  }
-  return undefined;
+export function unrestorable(
+  s: SnapshotRecord,
+  disks: (id: string) => DiskRecord | undefined,
+  generations: ReadonlyMap<string, number>,
+): Msg | undefined {
+  const why = lost({ ...s, coreVersion: s.coreVersion ?? RECORDED_FROM }, (id) =>
+    disks(id) ? generations.get(id) : undefined,
+  );
+  return why && said(why, (id) => disks(id)?.name, false);
 }
 
 /** What a restore will do, in words for the confirmation, and how to make it so (`commit`). */
@@ -102,8 +88,11 @@ export type RestorePlan = {
   commit(replace: boolean): Promise<DiskPlan[]>;
 };
 
-/** `bases`: the stored disks' generations it was taken over (its header's: `basesOf`), where it says them. */
-type Snap = { name: string; key: string; pins: SnapshotDisk[]; bases?: Record<string, number> };
+/**
+ * `bases`: the stored disks' generations it was taken over (its header's: `basesOf`), where it says them;
+ * `coreVersion`: its header's (the core's snapshot format that wrote it).
+ */
+type Snap = { name: string; key: string; pins: SnapshotDisk[]; bases?: Record<string, number>; coreVersion?: number };
 /** What a restore plans with: the store, the machine and its disks, the snapshot, and the slots its pins name. */
 type Restoring = {
   store: Store;
@@ -113,6 +102,8 @@ type Restoring = {
   run: RunShape;
   bySlot: ReturnType<typeof slots>;
 };
+/** The generations `lost` judged by (`diskGenerations`), for the steps of the disks written in place. */
+type Generations = ReadonlyMap<string, number>;
 /** The shape the machine runs with (its display, and its devices: the address's over the record's). */
 type RunShape = { display: Display | 'none'; devices?: DeviceKind[] };
 /** What a pinned disk's overlay calls for. */
@@ -158,23 +149,24 @@ async function forkMark(store: Store, pinned: string, size: number): Promise<Gro
 }
 
 /** What pin `p` calls for as its overlay is on disk now: a step, or why the restore is refused. */
-async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }): Promise<Step | Msg> {
+async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }, generations: Generations): Promise<Step> {
   const at = (r.bySlot[p.slot] as (typeof r.bySlot)[number] | undefined)?.attachment;
   const a = at === undefined ? undefined : r.m.attachments[at];
   const d = a && r.disks.get(a.disk);
   if (!a || !d) throw new Error(`the snapshot pins a disk in slot ${p.slot} that ${r.m.name} doesn't have`);
   const step = { slot: p.slot, attachment: a.id, disk: d, size: p.size || d.size, pinned: p.overlay };
   const keep: Step = { ...step, action: 'keep', generation: p.generation };
-  const pinned = async () => (await overlayMeta(p.overlay)).generation === p.generation;
-  if (p.overlay.startsWith('disks/')) {
+  const inPlace = inPlaceDisk(p);
+  if (inPlace) {
     // Written in place: no earlier state to fork from. The disk as it was pinned, now under an overlay (the attachment
-    // no longer written in place), forks into an overlay over it that holds nothing (the file has none of its blocks).
-    if (a.inPlace && (await pinned())) return keep;
+    // no longer written in place), forks into an overlay over it that holds nothing (the file has none of its blocks);
+    // one moved on without the whole disk in the file was refused (`lost`).
+    if (a.inPlace && generations.get(inPlace) === (p.generation ?? 0)) return keep;
     if (p.blocks > 0) return { ...step, action: 'fork-whole' };
-    if (await pinned()) return forkStep(r, step, a.overlay);
-    return msg('snapshots:snapshots.writtenInPlace', { disk: d.name });
+    return forkStep(r, step, a.overlay);
   }
-  if (a.overlay && overlayDir(a.overlay) === p.overlay && (await pinned())) return keep;
+  if (a.overlay && overlayDir(a.overlay) === p.overlay && (await overlayMeta(p.overlay)).generation === p.generation)
+    return keep;
   return forkStep(r, step, a.overlay);
 }
 
@@ -191,22 +183,15 @@ async function forkStep(
   return { ...step, action, reuse: reuse?.id, generation: reuse?.generation, replaceable };
 }
 
-/** What each pinned disk's overlay calls for as the overlays are on disk now. */
-async function survey(r: Restoring) {
+/** What each pinned disk's overlay calls for as the overlays are on disk now, or why the restore is refused (`lost`). */
+async function survey(r: Restoring): Promise<{ steps: Step[]; refused?: Msg }> {
+  const generations = await diskGenerations(dependsOn([r.snap]));
+  const why = lost(r.snap, (id) => generations.get(id));
+  if (why) return { steps: [], refused: said(why, (id) => r.disks.get(id)?.name, true) };
   const steps: Step[] = [];
-  let refused: Msg | undefined;
-  // A stored disk it was taken over, moved since (written in place, merged into): its overlays' blocks, or what a
-  // read-only guest cached, are over other bytes now.
-  for (const [id, generation] of Object.entries(r.snap.bases ?? {}))
-    if ((await overlayMeta(diskDir(id))).generation !== generation)
-      refused = msg('snapshots:snapshots.baseMoved', { disk: r.disks.get(id)?.name ?? id });
-  for (const p of r.snap.pins) {
-    if (p.ram || !p.overlay) continue;
-    const s = await stepOf(r, { ...p, overlay: p.overlay });
-    if ('action' in s) steps.push(s);
-    else refused = s;
-  }
-  return { steps, refused };
+  for (const p of r.snap.pins)
+    if (!p.ram && p.overlay) steps.push(await stepOf(r, { ...p, overlay: p.overlay }, generations));
+  return { steps };
 }
 
 /** Makes step `s` so (a reused fork attached, the attached overlay written, or a new fork); its part of the worker's plan. */
@@ -305,32 +290,6 @@ export async function planRestore(
     refused: planned.refused,
     commit: (replace) => commit(r, asked, replace),
   };
-}
-
-/** Moves kept snapshot `id` to machine `to` (its file, then its record). */
-export async function moveSnapshot(store: Store, id: string, to: string) {
-  const s = await store.get('snapshots', id);
-  if (!s || s.machine === to) return;
-  const path = snapshotPath(s.machine, id);
-  const slash = path.lastIndexOf('/');
-  const name = path.slice(slash + 1);
-  const src = await (await opfsDir(path.slice(0, slash))).getFileHandle(name);
-  const dest = await opfsDir(`machines/${to}/snapshots`, true);
-  if (src.move) await src.move(dest);
-  else {
-    const w = await (await dest.getFileHandle(name, { create: true })).createWritable();
-    await (await src.getFile()).stream().pipeTo(w);
-    await store.files.remove(snapshotPath(s.machine, id));
-  }
-  await store.put('snapshots', { ...s, machine: to });
-}
-
-/** A header's `bases` (`basesOf`, written by the machine worker: web/app/worker-header.ts), where it has them whole. */
-export function basesIn(header: SnapshotHeader): Record<string, number> | undefined {
-  const b = header.bases;
-  if (!b || typeof b !== 'object' || Array.isArray(b)) return undefined;
-  const entries = Object.entries(b as Record<string, unknown>);
-  return entries.every(([, g]) => Number.isSafeInteger(g)) ? (b as Record<string, number>) : undefined;
 }
 
 /** Imports a snapshot file into machine `machine`'s kept snapshots (its header read first; one of another shape is kept, orphaned). */

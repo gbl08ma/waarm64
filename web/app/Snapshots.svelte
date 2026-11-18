@@ -21,6 +21,7 @@
   import { snapshotPath } from './store.ts';
   import { msg, t, text } from '../i18n.ts';
   import { importSnapshot, unrestorable } from './snapshots.ts';
+  import { dependsOn, watchGenerations } from './snapshot-lost.ts';
   import { machineLike } from './machine-like.ts';
   import { opfsDir } from '../overlay.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
@@ -59,8 +60,14 @@
   });
   /** Taken of the machine with another shape: a machine like it can be made (the change can be undone, too). */
   const otherShape = (s: SnapshotRecord) => !!now && s.shapeHash !== now.hash;
+  /**
+   * The stored disks' generations the kept snapshots depend on, from their files while the tab is shown (a machine
+   * writing one in place moves them long before its record: docs/machines.md §5.1 "Unrestorable").
+   */
+  let generations = $state.raw<ReadonlyMap<string, number>>(new Map());
+  $effect(() => watchGenerations(dependsOn(kept), (g) => (generations = g)));
   /** Why it can never be restored, whatever is done to the machine (docs/machines.md §5.1 "Unrestorable"), if so. */
-  const lost = (s: SnapshotRecord) => unrestorable(s, (id) => records.disks.get(id));
+  const lost = (s: SnapshotRecord) => unrestorable(s, (id) => records.disks.get(id), generations);
   const orphaned = (s: SnapshotRecord) => otherShape(s) || !!lost(s);
   const why = (s: SnapshotRecord) => {
     const gone = lost(s);
