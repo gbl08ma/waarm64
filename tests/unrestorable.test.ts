@@ -1,8 +1,8 @@
 // Kept snapshots that can never be restored (web/app/snapshots.ts `unrestorable`, docs/machines.md §5.1
-// "Unrestorable"), in Node over the store in memory and the overlays' in-memory files: from the records alone, a
-// snapshot of another core's format, one taken over a stored disk written in place or merged into since (`bases`), one
-// pinning a disk written in place that moved on (not in the file whole); and the restore's plan refusing the same, or
-// forking where the disk didn't move. The header carries the bases (web/app/worker-header.ts), and a merge's
+// "Unrestorable"), in Node over the store in memory and the overlays' in-memory files: from the disks' files (their
+// records lag them while a machine writes them), a snapshot of another core's format, one taken over a stored disk
+// written in place or merged into since (`bases`), one pinning a disk written in place that moved on (not in the file
+// whole); the restore's plan refusing exactly those (one judgment: `lost`), and forking where the disk didn't move. The header carries the bases (web/app/worker-header.ts), and a merge's
 // confirmation counts the snapshots over the disk.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -12,7 +12,8 @@ import { overlay } from '../web/overlay.ts';
 import { SNAPSHOT_VERSION } from '../web/snapshot-file.ts';
 import { identityOf } from '../web/app/disks.ts';
 import { mergeEffect } from '../web/app/merge.ts';
-import { basesIn, basesOf, planRestore, unrestorable } from '../web/app/snapshots.ts';
+import { planRestore, unrestorable } from '../web/app/snapshots.ts';
+import { basesIn, basesOf, dependsOn, diskGenerations } from '../web/app/snapshot-lost.ts';
 import { header } from '../web/app/worker-header.ts';
 import { slots, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
 import { diskDir, overlayDir, Store, type OverlayRecord, type SnapshotRecord } from '../web/app/store.ts';
@@ -46,14 +47,23 @@ async function world() {
   return { store, S, R, os, A, B, disks };
 }
 
-/** Writes a block of stored disk `d` in place (its generation moves, as a machine's run's would), and its record follows. */
-async function writeInPlace(store: Store, d: DiskRecord) {
+/**
+ * Writes a block of stored disk `d` in place (its generation moves, as a machine's run's would), and its record follows
+ * (`refresh`: as at the run's end; without, as while the machine still runs).
+ */
+async function writeInPlace(store: Store, d: DiskRecord, refresh = true) {
   const f = await openStoredForWriting(diskDir(d.id), identityOf(d), d.size);
   assert.ok(await overlay(zeroDisk(d.size), f.data, f.map, f.meta).write(0, new Uint8Array(4096).fill(1)));
   f.close();
   const { refreshStored } = await import('../web/app/disks.ts');
-  await refreshStored(store, d.id);
+  if (refresh) await refreshStored(store, d.id);
   return (await store.get('disks', d.id))!;
+}
+
+/** What the snapshot lists say of kept snapshot `s` (`unrestorable` over the disks' files, as Snapshots.svelte reads them). */
+async function listed(store: Store, s: SnapshotRecord) {
+  const ds = new Map((await store.all('disks')).map((d) => [d.id, d]));
+  return unrestorable(s, (id) => ds.get(id), await diskGenerations(dependsOn([s])));
 }
 
 const record = (machine: string, over: Partial<SnapshotRecord> = {}): SnapshotRecord => ({
@@ -68,13 +78,10 @@ const record = (machine: string, over: Partial<SnapshotRecord> = {}): SnapshotRe
   ...over,
 });
 
-test("from the records: another core's format, a stored disk moved under it, a disk written in place moved on (none of it whole)", async () => {
+test("from the disks' files: another core's format, a stored disk moved under it, a disk written in place moved on (none of it whole)", async () => {
   const w = await world();
   const { store } = w;
-  const lookup = async () => {
-    const ds = await w.disks();
-    return (id: string) => ds.get(id);
-  };
+  const get = (s: SnapshotRecord) => listed(store, s);
   // Its machine reads S under an overlay and R read-only: their generations at its start are its bases.
   const bases = await basesOf(w.A, (id) => (id === w.S.id ? w.S : id === w.R.id ? w.R : undefined));
   assert.deepEqual(bases, { [w.S.id]: 0, [w.R.id]: 0 });
@@ -83,22 +90,21 @@ test("from the records: another core's format, a stored disk moved under it, a d
   const overS = record(w.A.id, { bases, coreVersion: SNAPSHOT_VERSION });
   const inPlace = record(w.B.id, { pins: [{ slot: 0, overlay: diskDir(w.S.id), generation: 0, blocks: 0 }] });
   const whole = record(w.B.id, { pins: [{ slot: 0, overlay: diskDir(w.S.id), generation: 0, blocks: 1024 }] });
-  let get = await lookup();
-  assert.equal(unrestorable(overS, get), undefined);
-  assert.equal(unrestorable(inPlace, get), undefined, 'a record from before `coreVersion`: the format then, as now');
-  assert.equal(keyOf(unrestorable(record(w.A.id, { coreVersion: SNAPSHOT_VERSION - 1 }), get)), 'snapshots:snapshots.unrestorable.version');
+  assert.equal(await get(overS), undefined);
+  assert.equal(await get(inPlace), undefined, 'a record from before `coreVersion`: the format then, as now');
+  assert.equal(keyOf(await get(record(w.A.id, { coreVersion: SNAPSHOT_VERSION - 1 }))), 'snapshots:snapshots.unrestorable.version');
 
   // B writes S in place: every snapshot over S, A's under its overlay and B's own, is lost for good; the whole one isn't.
-  const moved = await writeInPlace(store, w.S);
-  assert.equal(moved.generation, 1);
-  get = await lookup();
-  const why = unrestorable(overS, get);
+  // Its record not refreshed yet (B still runs): the files say it, as the restore would refuse it now.
+  const moved = await writeInPlace(store, w.S, false);
+  assert.equal(moved.generation, 0, 'the record lags');
+  const why = await get(overS);
   assert.equal(keyOf(why), 'snapshots:snapshots.unrestorable.base');
   assert.equal(why?.params?.disk, 'System');
-  assert.equal(keyOf(unrestorable(inPlace, get)), 'snapshots:snapshots.unrestorable.inPlace');
-  assert.equal(unrestorable(whole, get), undefined, 'the file has the whole disk: it forks');
-  // A record behind its files (a machine writes it in place now) says nothing yet: only a moved record is for good.
-  assert.equal(unrestorable(record(w.B.id, { pins: [{ slot: 0, overlay: diskDir(w.S.id), generation: 5, blocks: 0 }] }), get), undefined);
+  assert.equal(keyOf(await get(inPlace)), 'snapshots:snapshots.unrestorable.inPlace');
+  assert.equal(await get(whole), undefined, 'the file has the whole disk: it forks');
+  // A snapshot taken during that run, after the disk's first write there: its pin is the files', the record's behind it.
+  assert.equal(await get(record(w.B.id, { pins: [{ slot: 0, overlay: diskDir(w.S.id), generation: 1, blocks: 0 }] })), undefined);
 });
 
 test("the restore's plan refuses a snapshot whose stored disk moved under it, and forks a disk pinned in place, unmoved, now under an overlay", async () => {
@@ -133,6 +139,46 @@ test("the restore's plan refuses a snapshot whose stored disk moved under it, an
   assert.equal(refused?.params?.disk, 'System');
   const again = await planRestore(store, (await store.get('machines', w.B.id))!, await w.disks(), { name: 's', key: 'kb2', pins: pinsB }, run);
   assert.equal(keyOf(again.refused), 'snapshots:snapshots.writtenInPlace');
+});
+
+test('the lists and the restore agree on every reason a snapshot is refused, before and after its disk moves, its record lagging', async () => {
+  const w = await world();
+  const { store } = w;
+  const slotOf = (m: MachineRecord, i: number) => slots({ nets: 0, display: '2d', attachments: m.attachments }).findIndex((s) => s.attachment === i);
+  const run = { display: '2d' as const, devices: [] };
+  const bases = await basesOf(w.A, (id) => (id === w.S.id ? w.S : w.R));
+  const pinA = { slot: slotOf(w.A, 0), identity: identityOf(w.S), size: 4 * MiB, blocks: 0, overlay: overlayDir(w.os.id), generation: 0 };
+  const pinB = (blocks: number) => ({ slot: slotOf(w.B, 0), identity: identityOf(w.S), size: 4 * MiB, blocks, overlay: diskDir(w.S.id), generation: 0 });
+  // The words each says a reason in: the list's, the restore's.
+  const words: Record<string, string> = {
+    'snapshots:snapshots.unrestorable.version': 'snapshots:snapshot.otherVersion',
+    'snapshots:snapshots.unrestorable.base': 'snapshots:snapshots.baseMoved',
+    'snapshots:snapshots.unrestorable.inPlace': 'snapshots:snapshots.writtenInPlace',
+  };
+  const underOverlay: MachineRecord = { ...w.B, attachments: [{ ...w.B.attachments[0], inPlace: undefined }] };
+  const cases = [
+    { name: 'over S under an overlay', m: w.A, pins: [pinA], bases },
+    { name: 'over S, of another format', m: w.A, pins: [pinA], bases, coreVersion: SNAPSHOT_VERSION + 1 },
+    { name: 'S in place', m: w.B, pins: [pinB(0)] },
+    { name: 'S in place, whole', m: w.B, pins: [pinB(1024)] },
+    { name: 'S in place, the attachment under an overlay since', m: underOverlay, pins: [pinB(0)] },
+  ];
+  const seen = new Set<string>();
+  let n = 0;
+  for (const moved of [false, true]) {
+    if (moved) await writeInPlace(store, w.S, false); // B runs: S's files move, its record doesn't yet
+    for (const c of cases) {
+      const pins = c.pins.map(({ slot, overlay, generation, blocks }) => ({ slot, overlay, generation, blocks }));
+      const rec = record(c.m.id, { pins, bases: c.bases, coreVersion: c.coreVersion ?? SNAPSHOT_VERSION });
+      const list = keyOf(await listed(store, rec));
+      const snap = { name: 's', key: `k${n++}`, pins: c.pins, bases: c.bases, coreVersion: rec.coreVersion };
+      const plan = await planRestore(store, c.m, await w.disks(), snap, run);
+      const what = `${c.name}${moved ? ', S moved' : ''}: the list says ${list}, the restore ${keyOf(plan.refused)}`;
+      assert.equal(list ? words[list] : undefined, keyOf(plan.refused), what);
+      if (list) seen.add(list);
+    }
+  }
+  assert.deepEqual([...seen].sort(), Object.keys(words).sort(), 'every reason came up');
 });
 
 test("the header carries the bases; a file's are read back whole or not at all; a merge into the disk counts the snapshots over it", async () => {

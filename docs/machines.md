@@ -447,13 +447,21 @@ The file's format, what the core saves and the page's toolbar and header fields:
   again; at the sizes the snapshot had: a grown overlay's as an empty overlay at that size, marked to grow; a ramdisk
   grown since as another of the old size; a stored disk grown since refused, as it can't be seen smaller) and [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned).
 - **Unrestorable** (the user's QA, 2026-11-18: a snapshot found unrestorable only at its restore wastes storage): a
-  kept snapshot that **no change to the machine can make restorable** shows as orphaned too, with its reason
-  (`unrestorable`, web/app/snapshots.ts, from the records alone: no file is read). The causes, all permanent:
+  kept snapshot that **no change to the machine can make restorable** shows as orphaned too, with its reason, before
+  any restore. The lists (the Snapshots tab, Load snapshot) and the restore (`planRestore`) judge with one function
+  (`lost`, web/app/snapshot-lost.ts; web/app/snapshots.ts `unrestorable` and the restore's refusal put it in their words),
+  over the stored disks' generations **read from their files** (`diskGenerations`: each disk's `meta`, a few bytes,
+  readable while a machine holds the disk open for writing), which the lists read when shown and every 2 s while they are
+  (`watchGenerations`). Not from the disk records: a record lags its files while a machine writes the disk in place
+  (the first write moves the files' generation; `refreshStored` reads it into the record at the run's stop), so a
+  list judged from the records said nothing during the run that moved the disk, while the restore, reading the files,
+  refused it (the user's QA, 2026-11-18; tests/page-unrestorable.test.ts, tests/unrestorable.test.ts "agree"). The
+  causes, all permanent:
   - **a disk written in place that moved on**, the snapshot without the whole disk (a kept one never has it): its pin's
-    generation is behind the disk record's. A generation only grows, so the bytes it pinned are gone. A disk record
-    lags its files while a machine writes it (`refreshStored` at the stop), never leads them, so only a moved record
-    counts. While the generation still matches, an attachment no longer written in place restores through a fork that
-    holds nothing over the unchanged disk (it used to be refused: that cause could be undone, and is gone).
+    generation isn't the disk's. A generation only grows, so the bytes it pinned are gone. While the generation still
+    matches, an attachment no longer written in place restores through a fork that holds nothing over the unchanged
+    disk (it used to be refused: that cause could be undone, and is gone). Nothing makes this unknowable beforehand;
+    an open list is at most one read (2 s) behind a guest's next write.
   - **a stored disk it was taken over** (read-only, or under an overlay) **written in place or merged into** since:
     the snapshot's overlay blocks, or what a read-only guest cached, are over other bytes. The page records the stored
     disks' generations at each start (`basesOf`: a running machine holds them open, nothing moves them while it runs)
@@ -462,7 +470,8 @@ The file's format, what the core saves and the page's toolbar and header fields:
     before `bases` aren't checked.
   - **another core's snapshot format** (`coreVersion`, against `SNAPSHOT_VERSION`, web/snapshot-file.ts, which
     tests/snapshot-plan.test.ts pins to the core's): a page updated with a new format reads none of the old (platform.md
-    "The snapshot file"). A record from before `coreVersion` counts as format 6.
+    "The snapshot file"). A record from before `coreVersion` counts as format 6. The restore checks the header's before
+    it stops the machine (`snapshot.otherVersion`), as the worker does again at the start.
 
   What can be undone stays the shape's orphaning: a setting or a disk changed back, the address's parameters, a
   browser without WebGL2. What isn't a cause: an overlay deleted or merged away (a kept snapshot carries its blocks and
@@ -552,7 +561,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
   hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
-  (the shape now, the restore's plan, `unrestorable`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
+  (the shape now, the restore's plan, `unrestorable`), `web/app/snapshot-lost.ts` (which snapshots can never be restored: `lost`, the disks' generations, `basesOf`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
   (a switch to an overlay of another size asked), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Home page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).

@@ -157,3 +157,105 @@ test('a kept snapshot of a disk written in place that moved on shows as orphaned
   assert.deepEqual(errors, []);
   await context.close();
 });
+
+/** The machine worker as a stand-in (tests/page-restore.test.ts's): a start is answered "off", a stop "stopped". */
+const standIn = (page: Page) => page.addInitScript(() => {
+  const Real = window.Worker;
+  window.Worker = class extends Real {
+    #fake: boolean;
+    constructor(url: string | URL, options?: WorkerOptions) {
+      super(url, options);
+      this.#fake = /\/app\/worker\.ts/.test(String(url));
+    }
+    postMessage(m: unknown, t?: unknown) {
+      if (!this.#fake) return super.postMessage(m as never, t as never);
+      const answer = (data: unknown) => setTimeout(() => this.onmessage?.(new MessageEvent('message', { data })));
+      const type = (m as { type?: string }).type;
+      if (type === 'start') answer({ type: 'state', state: 'off' });
+      if (type === 'stop') answer({ type: 'stopped' });
+    }
+  };
+});
+
+test('a kept snapshot of a disk written in place shows as unrestorable while a machine writes the disk (its record not refreshed yet), in the Snapshots tab and the Load snapshot menu, before any restore', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await standIn(page);
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  const ids = await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { attach, createMachine } = await import('/web/app/machines.ts' as string);
+    const { importStored, identityOf } = await import('/web/app/disks.ts' as string);
+    const store = await Store.open();
+    const m = await createMachine(store, { name: 'In place' });
+    const file = new File([await (await fetch('/tests/qcow2/data.raw')).arrayBuffer()], 'data.raw');
+    const s = await importStored(store, file, () => {});
+    const a = await attach(store, m, s);
+    const rec = await store.get('machines', m.id);
+    rec.attachments.find((x: { id: string }) => x.id === a.id).inPlace = true;
+    await store.put('machines', rec);
+    store.close();
+    return { m: m.id as string, s: s.id as string, generation: s.generation as number, identity: identityOf(s) as string, size: s.size as number };
+  });
+  await page.goto(`${base}/web/app/?m=${ids.m}`);
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
+  // Kept at the machine's shape now, pinning the disk in place at its generation (a kept snapshot hasn't the whole disk).
+  const sid = await page.evaluate(async ({ m, s, generation }) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { page: p } = await import('/web/app/page.ts' as string);
+    const { SNAPSHOT_VERSION } = await import('/web/snapshot-file.ts' as string);
+    const store = await Store.open();
+    const rec = await store.get('machines', m);
+    const disks = new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d]));
+    const { shape, hash } = await p.shapeNow(rec, disks, await store.all('overlays'));
+    const pins = [{ slot: shape.disks[0].slot, overlay: `disks/${s}`, generation, blocks: 0 }];
+    await store.put('snapshots', { id: 'eeeeeeeeeee3', machine: m, name: 'Kept', created: Date.now(), bytes: 1 << 20, shape, shapeHash: hash, pins, coreVersion: SNAPSHOT_VERSION });
+    store.close();
+    return 'eeeeeeeeeee3';
+  }, ids);
+  const item = page.locator(`#load-snapshot [data-snapshot="${sid}"]`);
+  await page.locator('#load-snapshot summary').click();
+  await item.waitFor();
+  assert.equal(await item.isDisabled(), false, 'the disk as pinned: it restores');
+  await page.locator('#load-snapshot summary').click(); // closed
+
+  // A machine (in another tab, or this page's guest) writes the disk in place and holds it open: its files moved on,
+  // its record is refreshed only at that run's stop.
+  const w = await page.evaluateHandle(() => new Worker('/tests/browser/overlay-worker.ts', { type: 'module' }));
+  const written = await w.evaluate((w, a) => new Promise<{ type: string; generation?: number; message?: string }>((resolve) => {
+    w.onmessage = (e) => resolve(e.data);
+    w.postMessage({ type: 'inPlace', name: `disks/${a.s}`, identity: a.identity, size: a.size });
+  }), ids);
+  assert.equal(written.type, 'written', written.message ?? '');
+  assert.equal(written.generation, ids.generation + 1);
+  const recorded = await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const d = await store.get('disks', id);
+    store.close();
+    return d.generation as number;
+  }, ids.s);
+  assert.equal(recorded, ids.generation, "the disk's record lags its files while the machine writes it");
+
+  const why = t('snapshots:snapshots.unrestorable.inPlace', { disk: 'data.raw' });
+  await page.locator('#load-snapshot summary').click();
+  await item.waitFor();
+  await page.waitForFunction((sid) => (document.querySelector(`#load-snapshot [data-snapshot="${sid}"]`) as HTMLButtonElement | null)?.disabled === true, sid, { timeout: 10_000, polling: 50 })
+    .catch(async (e) => { throw new Error(`${e}; its tooltip: ${await item.getAttribute('title')}`); });
+  assert.equal(await item.getAttribute('title'), t('toolbar:LoadSnapshotMenu.load.unrestorable.title', { why }));
+  await page.locator('#load-snapshot summary').click(); // closed
+
+  await page.click('#machines-open');
+  await modal(page).locator('[data-tab=snapshots]').click();
+  const card = modal(page).locator(`[data-snapshot=${sid}]`);
+  await card.locator('.orphan').waitFor({ timeout: 10_000 });
+  assert.equal(await card.locator('.orphan').textContent(), t('snapshots:Snapshots.orphaned', { why }));
+  assert.equal(await card.locator('[data-action=restore]').count(), 0, 'nothing restores it');
+  await shot(page, 'unrestorable-while-written');
+  await w.evaluate((w) => new Promise<void>((resolve) => { w.onmessage = () => resolve(); w.postMessage({ type: 'close' }); }));
+  assert.deepEqual(errors, []);
+  await context.close();
+});

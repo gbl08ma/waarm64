@@ -174,7 +174,7 @@ export type ToWorker =
        * the URLs of its URL disks by slot (a file restored elsewhere can make its machine). A snapshot whose shape hash
        * isn't this one is refused. Transient machines (the tests') have none: their snapshots are checked by devices.
        * `bases`: the generations of the stored disks it reads (read-only or under an overlay), by disk id
-       * (web/app/snapshots.ts `basesOf`), into the header: a restore is refused once one moved.
+       * (web/app/snapshot-lost.ts `basesOf`), into the header: a restore is refused once one moved.
        */
       about?: {
         name: string;

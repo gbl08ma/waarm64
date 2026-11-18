@@ -15,6 +15,7 @@
   import { power } from './areas/power.svelte.ts';
   import { inBar, page } from './page.ts';
   import { unrestorable } from './snapshots.ts';
+  import { dependsOn, watchGenerations } from './snapshot-lost.ts';
 
   const LATEST = 5;
   let open = $state(false);
@@ -36,16 +37,26 @@
       shown = false;
     };
   });
-  const latest = $derived(
+  const kept = $derived(
     records.snapshots
       .filter((s) => s.machine === current.id)
       .sort((a, b) => b.created - a.created)
-      .slice(0, LATEST)
-      .map((s) => ({
-        ...s,
-        orphaned: !!now && s.shapeHash !== now.hash,
-        lost: unrestorable(s, (id) => records.disks.get(id)),
-      })),
+      .slice(0, LATEST),
+  );
+  /**
+   * The stored disks' generations they depend on, from their files while the menu is open (a machine writing one in
+   * place moves them long before its record: docs/machines.md §5.1 "Unrestorable").
+   */
+  let generations = $state.raw<ReadonlyMap<string, number>>(new Map());
+  $effect(() => {
+    if (open) return watchGenerations(dependsOn(kept), (g) => (generations = g));
+  });
+  const latest = $derived(
+    kept.map((s) => ({
+      ...s,
+      orphaned: !!now && s.shapeHash !== now.hash,
+      lost: unrestorable(s, (id) => records.disks.get(id), generations),
+    })),
   );
   /** Closes the menu, then does `f`. */
   const then = (f: () => void) => () => {

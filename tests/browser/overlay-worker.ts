@@ -1,14 +1,23 @@
-// For tests/browser.test.ts and tests/page-disks.test.ts: opens and closes an OPFS overlay (web/overlay.ts), or sets its generation,
-// when asked, as a machine's device worker does, and says when (ms since the
-// epoch, comparable across workers).
-import { openOverlay, readMeta, writeMeta, type OverlayFiles } from '../../web/overlay.ts';
+// For tests/browser.test.ts, tests/page-disks.test.ts and tests/page-unrestorable.test.ts: opens and closes an OPFS
+// overlay (web/overlay.ts), sets its generation, or writes a stored disk in place and keeps it open (`inPlace`), when
+// asked, as a machine's device worker does, and says when (ms since the epoch, comparable across workers).
+import { openOverlay, overlay, readMeta, writeMeta, type OverlayFiles } from '../../web/overlay.ts';
+import { openStoredForWriting, zeroDisk } from '../../web/stored.ts';
 
 let files: OverlayFiles | undefined;
 const now = () => performance.timeOrigin + performance.now();
-self.onmessage = async (e: MessageEvent<{ type: 'open' | 'close' | 'meta'; name: string; waitMs?: number; generation?: number }>) => {
+type Ask = { type: 'open' | 'close' | 'meta' | 'inPlace'; name: string; waitMs?: number; generation?: number; identity?: string; size?: number };
+self.onmessage = async (e: MessageEvent<Ask>) => {
   const { type, name, waitMs } = e.data;
   try {
-    if (type === 'meta') {
+    if (type === 'inPlace') {
+      // Stored disk `name` opened for writing and a block written, held open as a running machine holds it.
+      files = await openStoredForWriting(name, e.data.identity!, e.data.size!);
+      const d = overlay(zeroDisk(e.data.size!), files.data, files.map, files.meta);
+      if (!(await d.write(0, new Uint8Array(4096).fill(1)))) throw new Error('the write failed');
+      d.flush();
+      self.postMessage({ type: 'written', generation: d.generation(), at: now() });
+    } else if (type === 'meta') {
       // Sets the generation of overlay (or stored disk) `name`, as machines that wrote it would have left it.
       const f = await openOverlay(name, undefined);
       writeMeta(f.meta, { ...readMeta(f.meta), generation: e.data.generation! });
