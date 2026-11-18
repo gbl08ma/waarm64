@@ -98,7 +98,8 @@ Layered, cheapest first:
   `display`; `network`, `gateway`, `net`, `devices`), and the sound device's (`snd`, the snd guest likewise).
 - **`scripts/ci-debian.sh`** boots Debian on the page: `page-debian`, `page-disk`, `start`'s run, `page-spill`, `page-ram`, ~5 min in the dev VM ("Debian boots" below). Three run at a time
   (`WAARM64_DEBIAN_SLOTS=3` in `tests/debian-lock.ts`: nothing else runs beside them there; `--platform` 455 s, peak
-  8.2 GiB, against 636 s at two, whose slots stayed full: 2026-11-18, one run each), so
+  8.2 GiB, against 636 s at two, whose slots stayed full; with the fixtures below, 382 s and 7.2 GiB: 2026-11-18, one
+  run each), so
   `page-debian`'s ~5 min is about its wall time (`WAARM64_DEBIAN_TIMES=1` prints each test's hold of a slot). `--platform` adds
   `page-usb-keyboard` (the built-in USB keyboard in the firmware), `page-usb-gamepad` (the game pad of ours from a faked Gamepad API, an Xbox 360 pad under `xpad` in Debian, its rumble), `page-clock` (the guest agent's clock through a snapshot,
   a resume and a load) and `page-clipboard` (clipboard sharing with sway; skipped without images/debian-sway/build.sh), ~7 min in all.

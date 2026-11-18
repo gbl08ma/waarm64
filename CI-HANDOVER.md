@@ -99,11 +99,18 @@ decisions in §11).
 - **A flake fixed:** the agent's tests' harness closed the page's socket with the agent's frames unread, which resets
   the agent's end (a read error, not the close: once in ci.sh); it shuts the page's end for writing now.
 
+- **More page fixtures** (docs/testing.md "Booted-Debian fixtures" has each test's before/after): page-power's first
+  boot, page-template, page-clock, page-spill, page-clipboard and -x11 (the sway image: `pageFixture` keys on the
+  query's `disk=`); the key takes the agent binary. page-agent keeps its boot (the agent's fw_cfg arrival). ci-debian
+  at 3 slots: `--platform` 636 → 455 s (slots), → **382 s** (fixtures), peak 7.2 GiB. 368ecbbe, 9e546e16 and 695f4336
+  passed ci-debian --platform and ci.sh (638 s).
+
 ## Next, in order
 
-1. **The booted-Debian fixture, the rest:** the default family's other users on the page (page-agent: its
-   agent-restart step may need a boot; page-power's first boot; page-template), with `pageFixture`; page-network keeps
-   its boots (its reloads start the machine again); then ci-debian's B tests, then the stored shape (ci-machines).
+1. **The booted-Debian fixture, the rest:** the stored shapes (ci-machines: page-snapshots, page-incognito (the cache
+   fills from the boot's reads: make the guest read), page-usb-guest and page-usb-gamepad's USB family, page-folders
+   test 2, page-machines' first boot); a stored snapshot matches by the shape hash, whose disk serials are `newId()`s
+   now (fixed ids needed). page-network keeps its boots.
 2. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
    runs without fixed steps; page-ram and start onto a small guest (above).
 3. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from
