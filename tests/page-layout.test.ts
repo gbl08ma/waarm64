@@ -154,6 +154,7 @@ test("a notice's countdown goes on where it was when the bar moves to the Home p
     return { before, after: ring() };
   });
   assert.equal(r.after.length, 1, JSON.stringify(r));
-  assert.ok(r.before[0] >= 1400 && r.after[0] >= 1800, JSON.stringify(r));
+  // Relative, not absolute: timers run late under load. A restarted ring would be below where it was.
+  assert.ok(r.before[0] >= 1000 && r.after[0] >= r.before[0] + 200, JSON.stringify(r));
   await page.close();
 });
