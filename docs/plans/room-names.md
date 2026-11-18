@@ -700,7 +700,8 @@ copies by nonce **and round** (the three rounds share a nonce).
     anyone relaying an honest entry with another height would have had its block refused, and an orphaned block,
     which "passes", is at no height. Not found (404) at both explorers: the block is **refused**, every anchor in it
     dropped from the registry (their entries count for nothing, so the chains they made settle again, stored and told
-    as any change), and remembered for a day, an anchor in it offered meanwhile refused at its check. One explorer's
+    as any change), and remembered for a day, an anchor in it offered meanwhile refused at its check, and one checked
+    before the refusal in a job still being verified dropped when the job is kept (review 3, finding 6). One explorer's
     word is enough: one denies and the other confirms, checked; one denies and the other can't be reached, asked again
     after 5 minutes, doubling to 6 hours. **Until a block is checked its anchors count** on their header's work, as a
     member's do, so names work with the explorers down. The pace: one check every 3 s at most (`Params::check_every_ms`),

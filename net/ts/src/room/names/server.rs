@@ -2069,7 +2069,14 @@ impl Server {
             job.checked.clear();
             job.item.zone = None;
         }
-        for s in job.checked {
+        for mut s in job.checked {
+            // An anchor offered while its block wasn't refused, the block refused since (a job of many turns): dropped,
+            // as the refusal dropped those held (review 3, finding 6).
+            if s.anchor()
+                .is_some_and(|a| self.out.refused(&a.header.hash()))
+            {
+                s.drop_anchor();
+            }
             h.name.insert(s);
         }
         h.settle(&self.params, unix);

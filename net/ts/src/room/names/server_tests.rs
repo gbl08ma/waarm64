@@ -1633,6 +1633,49 @@ fn a_peers_get_answers_keep_only_what_was_asked_in_a_bounded_queue() {
     assert!(s.jobs_len() <= JOBS_PER_PEER, "{} jobs", s.jobs_len());
 }
 
+/// Review 3's finding 6: a job longer than a turn's units has its first entries checked (their anchors offered while
+/// their block wasn't refused), then their block is refused (its anchors dropped from what is held), then the job is
+/// kept: its anchors in the refused block were kept with it, for a day. Now `keep` drops them.
+#[test]
+fn an_anchor_in_a_block_refused_while_its_job_was_checked_isnt_kept() {
+    let mut b = Bitcoin::new(ROOM, 54);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    s.synced = true;
+    while s.poll().is_some() {}
+    let renewals: Vec<u32> = (1..12).map(|k| t(40 - 3 * k)).collect();
+    let (_, long) = b.title(9, "longname", t(40), &renewals, [9; 32]);
+    assert!(long.entries.len() * 4 > super::server::UNITS_PER_TURN as usize);
+    let block = long.entries[0].anchor.as_ref().unwrap().1.hash();
+    assert_eq!(
+        long.entries
+            .iter()
+            .filter(|w| w.anchor.as_ref().unwrap().1.hash() == block)
+            .count(),
+        1,
+        "the claim's block is its own"
+    );
+    feed(&mut s, [0x44; 32], 1, 0, &Msg::Put(long.clone()), now);
+    s.tick(now, T); // the job's first slice: the claim checked, its anchor offered
+    let mut refusal = vec![super::server::BLOCK_RECORD, 2];
+    refusal.extend_from_slice(&T.to_le_bytes());
+    refusal.extend_from_slice(&block);
+    assert!(s.load(&refusal, T), "the block refused mid-job");
+    for _ in 0..100 {
+        s.tick(now, T);
+        while s.poll().is_some() {}
+    }
+    let held = s.reg.get(&long.id);
+    let kept = held.map_or(0, |h| {
+        (h.name.entries())
+            .filter(|e| e.anchor().is_some_and(|a| a.header.hash() == block))
+            .count()
+    });
+    assert_eq!(kept, 0, "no anchor in the refused block kept");
+}
+
 #[test]
 fn a_put_of_one_junk_entry_many_times_costs_one_check() {
     let mut b = Bitcoin::new(ROOM, 45);
