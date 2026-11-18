@@ -1754,8 +1754,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       its heap's high-water mark (dlmalloc never gives it back), so the sync's peak is what a tab keeps.
     - Done (N6b): **a room's servers that all start at once converge in rounds**: a round whose sync brought names is
       followed by the next 30 to 40 s on (8 in a row at most), so twenty servers through the fake DERP and relay
-      converge in 40 s (was 340 s). Not rerun on N6a's rig (20 servers of 250 names): the bus and the fake net say
-      it, the rig would give the minutes.
+      converge in 40 s (was 340 s); on N6a's rig (20 servers of 250 names) every server held all 5,000 within 296 s
+      (p50 125 s; was not all within 8 minutes).
+    - **Items of a `get` answer dropped for a full verify queue** (N6b's rig run: 1,933 log lines over 20 servers
+      converging, each item sent and dropped): a run's `get`s wait for room in the queue, but answers already in
+      flight (8 a run since N6b, and `have`'s) arrive past it. Counting a run's outstanding `get`s against the room
+      before sending would stop the waste; not measured whether the 8 gets made more of it than 4.
     - Done (N6b): **two servers that start within a second found each other only 30 s on**, for two reasons. (1) Each
       one's first question came while the other's was open and unsynced, and each refused the other: a server that
       refused a question for that now asks again within 1.5 to 3 s. (2) A server's first question went out before its

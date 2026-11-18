@@ -81,13 +81,17 @@ type FromChild =
   | { t: 'counts'; counts: Counts }
   | { t: 'store'; store: unknown }
   | { t: 'self'; key: string; address6: number[]; tag: string };
-type ToChild = { cmd: 'stop' };
+type ToChild = { cmd: 'stop' } | { cmd: 'start'; start: Start };
 
 type Start = { role: 'a' | 'b'; link: string; room: string; name: string; nodeKey?: string; store?: unknown; used: Counts; every: number; drop?: number; wasm: string };
 
 // ---- A child: one page ----
 if (what === 'child') {
-  const start = JSON.parse(process.argv[3]) as Start;
+  // Through IPC, not the command line: the agent's store holds the owners' secret, and a command line is anyone's to read.
+  const start = await new Promise<Start>((resolve) => {
+    const first = (c: ToChild) => { if (c.cmd === 'start') { process.off('message', first); resolve(c.start); } };
+    process.on('message', first);
+  });
   const send = (m: FromChild) => { try { process.send?.(m); } catch { /* the parent is gone */ } };
   const line = (ev: string, x: Record<string, unknown> = {}) => send({ t: 'line', line: { t: Date.now(), role: start.role, ev, ...x } });
   const counts: Counts = {};
@@ -350,7 +354,8 @@ if (what === 'run') {
   };
   const save = () => {
     const tmp = `${stateFile}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ ...state, base: state.base }));
+    // The agent's store holds the owners' secret: the owner's to read only.
+    writeFileSync(tmp, JSON.stringify({ ...state, base: state.base }), { mode: 0o600 });
     renameSync(tmp, stateFile);
   };
   const days = Number(o.days);
@@ -360,10 +365,11 @@ if (what === 'run') {
   const children: Partial<Record<'a' | 'b', ChildProcess>> = {};
   const spawnChild = (role: 'a' | 'b') => {
     const s: Start = { role, link: state.link, room: state.room, name: state.name, nodeKey: state.nodeKey, store: state.store, used: total(), every: Number(o.every), ...(role === 'a' && o.drop ? { drop: Number(o.drop) } : {}), wasm: o.wasm! };
-    const p = fork(new URL(import.meta.url).pathname, ['child', JSON.stringify(s)], { execArgv: ['--disable-warning=ExperimentalWarning', '--max-old-space-size=512'], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    const p = fork(new URL(import.meta.url).pathname, ['child', role], { execArgv: ['--disable-warning=ExperimentalWarning', '--max-old-space-size=512'], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
     let err = '';
     p.stderr?.on('data', (d: Buffer) => { err = (err + d.toString()).slice(-2000); });
     children[role] = p;
+    p.send({ cmd: 'start', start: s } satisfies ToChild);
     p.on('message', (m: FromChild) => {
       if (m.t === 'line') appendFileSync(logFile, `${JSON.stringify(m.line)}\n`);
       else if (m.t === 'counts') live[`${role}${p.pid}`] = m.counts;
