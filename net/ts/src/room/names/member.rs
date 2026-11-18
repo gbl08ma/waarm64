@@ -28,7 +28,7 @@
 //!   `history` from each, and the owner by "Who owns a name" over everything shown, which `Kept::offer` then takes or
 //!   refuses. **A refresh never sends an `ask`**: that would tell the room how long a name stays in use.
 //! - **What is kept**: each name resolved, its chain's last entry, the earliest time verified for that chain, the
-//!   zone and when servers last confirmed it, persisted (a record a name, version 2). It answers at once while its
+//!   zone and when servers last confirmed it, persisted (a record a name, version 3). It answers at once while its
 //!   chain is alive.
 //! - **The dialog's check**: `ids`, every id under one first byte ([`Member::ids`]), never an `ask`.
 
@@ -104,7 +104,7 @@ const MAX_NEGATIVE: usize = 1024;
 /// The most entries a server's answer may show to lead from a kept last entry to its release.
 const RELEASE_RUN: usize = 8;
 /// A member's record's version byte (a server's is 1: store.rs).
-const RECORD_VERSION: u8 = 2;
+const RECORD_VERSION: u8 = 3;
 
 /// What a member keeps of a name it resolved.
 #[derive(Debug, Clone)]
@@ -121,11 +121,12 @@ pub struct KeptName {
 }
 
 impl KeptName {
-    /// The stored record: its version byte, the earliest time, when it was checked, an item of the last entry and the
-    /// zone.
+    /// The stored record: its version byte, the earliest time, whether that is a claim's, when it was checked, an item
+    /// of the last entry and the zone.
     pub fn record(&self) -> Vec<u8> {
         let mut r = vec![RECORD_VERSION];
         r.extend_from_slice(&self.kept.earliest.to_le_bytes());
+        r.push(self.kept.whole as u8);
         r.extend_from_slice(&self.checked.to_le_bytes());
         r.extend(
             Item {
@@ -464,10 +465,10 @@ impl Member {
             || self.reqs.values().any(|(r, _)| matches!(r, Req::Put(_)))
     }
 
-    /// A stored record (a member's, version 2), streamed in at the start: verified when it was taken, so trusted. False
+    /// A stored record (a member's, version 3), streamed in at the start: verified when it was taken, so trusted. False
     /// for a record that isn't a member's or whose chain no longer covers `unix` (the page deletes it).
     pub fn load(&mut self, record: &[u8], unix: u64) -> bool {
-        let Some((earliest, checked, item)) = read_record(record) else {
+        let Some((earliest, whole, checked, item)) = read_record(record) else {
             return false;
         };
         let [w]: [WireEntry; 1] = match item.entries.try_into() {
@@ -491,6 +492,7 @@ impl Member {
             KeptName {
                 kept: Kept {
                     earliest: earliest.min(chain.seniority),
+                    whole: whole || chain.claimed,
                     chain,
                 },
                 last,
@@ -2121,13 +2123,18 @@ impl Member {
     }
 }
 
-/// A member's stored record read back: the earliest time, when it was checked, the item.
-fn read_record(b: &[u8]) -> Option<(u32, u64, Item)> {
+/// A member's stored record read back: the earliest time, whether it is a claim's, when it was checked, the item.
+fn read_record(b: &[u8]) -> Option<(u32, bool, u64, Item)> {
     let mut r = Rd::new(b);
     if r.u8().ok()? != RECORD_VERSION {
         return None;
     }
     let earliest = r.u32().ok()?;
+    let whole = match r.u8().ok()? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let checked = r.u64().ok()?;
-    Some((earliest, checked, Item::decode(r.rest()).ok()?))
+    Some((earliest, whole, checked, Item::decode(r.rest()).ok()?))
 }

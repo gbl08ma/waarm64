@@ -660,6 +660,15 @@ fn a_member_keeps_what_it_verified() {
         .owner(&p, now + DAY as u64)
         .unwrap();
     assert!(k3.offer(&branch, now + DAY as u64));
+    // Kept from A's renewal seen alone (a first lookup's last entry): its earliest time is no claim's, so B's
+    // back-order, claimed between A's claim and that renewal, doesn't replace it; A's run from its claim does continue
+    // it, and then the earliest time is the claim's.
+    let mut k4 = Kept::new(w.name("test123", &[&r1]).owner(&p, now).unwrap());
+    assert_eq!((k4.earliest, k4.whole), (T0 + 15 * DAY, false));
+    let imp_alone = w.name("test123", &[&imp]).owner(&p, now).unwrap();
+    assert!(!k4.offer(&imp_alone, now));
+    assert!(k4.offer(&full.owner(&p, now).unwrap(), now));
+    assert_eq!((k4.earliest, k4.whole), (T0, true));
 }
 
 // ---- Property: any order of merging the same chains, with any subsets of their anchors, gives

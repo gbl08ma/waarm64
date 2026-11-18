@@ -509,9 +509,15 @@ copies by nonce **and round** (the three rounds share a nonce).
   alone can't be compared (a renewal's time isn't its chain's seniority): an impostor claimed ten days ago beats the
   owner's renewal of four days ago until the owner's run shows its claim of twenty (`member_tests.rs`).
 - **What a member keeps**: each name it resolved, with its chain's last entry, the earliest entry time it ever verified
-  for that chain, the zone and when servers last confirmed it, persisted (a record a name, version 2: under 2 KB with a
-  wide zone; 1,024 names at most, the least asked for going first). While that chain covers now, another chain replaces
-  it only by showing a run that starts earlier. So a member that knew a name refuses an impersonator after a reset, with
+  for that chain and whether that time is the chain's claim's, the zone and when servers last confirmed it, persisted (a
+  record a name, version 3: under 2 KB with a wide zone; 1,024 names at most, the least asked for going first). While
+  that chain covers now, another chain replaces it only by showing a run that starts earlier than the kept claim. A
+  first lookup that saw one owner key keeps only its last entry, often a renewal, whose time is no claim's: until a run
+  from the kept chain's claim is seen (a refresh whose server shows it, through `history`), another key's run never
+  replaces it on seniority alone, as a back-order claimed between the owner's claim and its last renewal would look
+  older (review 3, finding 1; `a_back_order_doesnt_replace_a_kept_name_whose_claim_wasnt_seen`). The price: while no
+  claim of the kept chain was seen, a truly older chain of another key (the kept one a back-order taken uncontested,
+  renewed since) wins only once the kept chain's run from its claim is shown, or the kept chain stops covering. So a member that knew a name refuses an impersonator after a reset, with
   no rule of its own. (`chain.rs`, `Kept`: a run that holds the kept last entry continues it, the earliest time staying
   the lower; a copy of the kept chain cut short is nothing new; another branch of the same owner key starting no later
   replaces it, as a fork of one title is settled by the order; a run that holds neither, such as a renewal shown alone,

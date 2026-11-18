@@ -371,7 +371,7 @@ fn a_member_resolves_a_name_keeps_it_and_asks_again_after_five_minutes() {
     assert_eq!(bus.asks.len(), asks, "nothing asked");
     // Stored: a member made from the record answers at once, with no names client.
     let rec = bus.stored[&alpha.id].clone().unwrap();
-    assert_eq!(rec[0], 2, "a member's record");
+    assert_eq!(rec[0], 3, "a member's record");
     let mut m = member();
     assert!(m.load(&rec, bus.unix()));
     assert!(!m.load(&record(&alpha, T), bus.unix()), "not a server's");
@@ -475,6 +475,58 @@ fn a_kept_name_isnt_replaced_by_a_younger_chain() {
     // does not give").
     let mut fresh = Bus::new(vec![serving(&mut b, 5, &[&fake])], member());
     assert_eq!(fresh.resolve("alpha").0, Answer::Node([0x66; 32]));
+}
+
+/// Review 3's finding 1: a first lookup that saw one owner key kept only its last entry (a renewal 4 days back), so
+/// an impostor's back-order claimed 10 days ago, after the owner's claim but before that renewal, looked older. Shown
+/// alone by both servers of a refresh (junk registrations drawn, or a reset), it replaced the owner. What is kept now
+/// knows its earliest time wasn't verified from a claim: another key never replaces it on seniority alone.
+#[test]
+fn a_back_order_doesnt_replace_a_kept_name_whose_claim_wasnt_seen() {
+    let mut b = Bitcoin::new(ROOM, 47);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let fake = title(&mut b, 66, "alpha", 10, &[], [0x66; 32], [0x66; 32]);
+    let (s0, s1) = (serving(&mut b, 1, &[&alpha]), serving(&mut b, 2, &[&alpha]));
+    let mut bus = Bus::new(vec![s0, s1], member());
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    let kept = bus.m.kept[&alpha.id].clone();
+    assert_eq!(
+        kept.kept.earliest,
+        t(4),
+        "a first lookup sees the last entry"
+    );
+    assert!(!kept.kept.whole, "not from a claim");
+    // Stored and loaded back: still not from a claim.
+    let rec = bus.stored[&alpha.id].clone().unwrap();
+    let mut m = member();
+    assert!(m.load(&rec, bus.unix()));
+    assert!(!m.kept[&alpha.id].kept.whole);
+    // Both servers of the refresh hold only the impostor's chain.
+    let (s2, s3) = (serving(&mut b, 3, &[&fake]), serving(&mut b, 4, &[&fake]));
+    let mut m = std::mem::replace(&mut bus.m, member());
+    m.stop();
+    let mut bus = Bus::new(vec![s2, s3], m);
+    bus.advance(Duration::from_secs(KEPT_REFRESH + 1));
+    bus.resolve("alpha");
+    bus.advance(Duration::from_secs(2));
+    assert!(bus.m.stats.histories >= 2, "contested: history asked");
+    assert_eq!(
+        bus.resolve("alpha").0,
+        Answer::Node([0xa1; 32]),
+        "the owner stands"
+    );
+    assert_eq!(bus.m.kept[&alpha.id].kept, kept.kept, "what is kept stands");
+    // A refresh whose servers show the owner's run too: its claim is seen, and the earliest time is the claim's.
+    let (s4, s5) = (serving(&mut b, 5, &[&alpha]), serving(&mut b, 6, &[&fake]));
+    let mut m = std::mem::replace(&mut bus.m, member());
+    m.stop();
+    let mut bus = Bus::new(vec![s4, s5], m);
+    bus.advance(Duration::from_secs(2 * KEPT_REFRESH + 30)); // a new bus's clock starts again at T
+    bus.resolve("alpha");
+    bus.advance(Duration::from_secs(2));
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    let k = &bus.m.kept[&alpha.id].kept;
+    assert_eq!((k.earliest, k.whole), (t(20), true), "the owner's run seen");
 }
 
 /// One server lost the name, the other shows a younger chain against what the member keeps: the one answer isn't
@@ -1111,8 +1163,9 @@ fn a_history_is_checked_once_an_entry_in_slices() {
     // What the member keeps: alpha's owner.
     let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
     let last = alpha.entries.last().unwrap().clone();
-    let mut rec = vec![2u8];
+    let mut rec = vec![3u8];
     rec.extend_from_slice(&t(20).to_le_bytes());
+    rec.push(1); // the claim's time
     rec.extend_from_slice(&(T - KEPT_REFRESH - 10).to_le_bytes()); // checked a while ago: asked again
     rec.extend(
         Item {
@@ -1256,8 +1309,9 @@ fn a_lookup_being_checked_isnt_asked_again() {
 /// A member's record of `it`'s last entry and zone, confirmed at `checked`.
 fn kept_record(it: &Item, checked: u64) -> Vec<u8> {
     let last = it.entries.last().unwrap().clone();
-    let mut rec = vec![2u8];
+    let mut rec = vec![3u8];
     rec.extend_from_slice(&last.anchor.as_ref().unwrap().1.time().to_le_bytes());
+    rec.push(0); // its earliest time not a claim's
     rec.extend_from_slice(&checked.to_le_bytes());
     rec.extend(
         Item {

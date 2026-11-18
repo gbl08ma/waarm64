@@ -29,6 +29,8 @@ pub struct Chain {
     pub owner: [u8; 32],
     /// The time of the first entry of the run.
     pub seniority: u32,
+    /// The run's first entry is a claim: its seniority is the title's, not a renewal's seen alone.
+    pub claimed: bool,
     /// The cover's start: the seniority less `drift`, as a block's time may run that far ahead of a node's clock (a
     /// chain anchored in such a block is alive as soon as it can be checked).
     pub cover_start: u64,
@@ -294,6 +296,7 @@ fn chain(run: &[&Stamped], params: &Params) -> Chain {
         ids: run.iter().map(|s| s.id()).collect(),
         owner: first.entry.owner,
         seniority: t(first) as u32,
+        claimed: first.entry.kind == Kind::Claim,
         cover_start: t(first).saturating_sub(params.drift as u64),
         tie: tie.finalize().into(),
         cover_end,
@@ -311,20 +314,24 @@ fn chain(run: &[&Stamped], params: &Params) -> Chain {
 pub struct Kept {
     pub chain: Chain,
     pub earliest: u32,
+    /// `earliest` is a claim's time (a run from its claim was verified), not a renewal's seen alone.
+    pub whole: bool,
 }
 
 impl Kept {
     pub fn new(chain: Chain) -> Kept {
         Kept {
             earliest: chain.seniority,
+            whole: chain.claimed,
             chain,
         }
     }
 
     /// A chain shown for the name (verified, covering now): taken when it continues the one kept
     /// (it holds the kept last entry; the earliest time stays the lower), or replaces it: the kept
-    /// chain no longer covers now, the shown run starts earlier than anything verified for it, or
-    /// it is another branch of the same title (the same owner key) starting no later. True when
+    /// chain no longer covers now, the shown run starts earlier than the kept title's claim (while
+    /// no claim of it was seen, only a run of the same key does), or it is another branch of the
+    /// same title (the same owner key) starting no later. True when
     /// taken. A run that holds neither (a renewal shown alone, as a server answers `get`) is
     /// refused while the kept chain covers: the member asks for `history` and offers the run.
     pub fn offer(&mut self, c: &Chain, now: u64) -> bool {
@@ -336,11 +343,15 @@ impl Kept {
         }
         if c.ids.contains(&self.chain.last()) {
             self.earliest = self.earliest.min(c.seniority);
+            self.whole |= c.claimed;
             self.chain = c.clone();
             return true;
         }
+        // Another key's run starting earlier wins only against an earliest time that is a claim's: a renewal seen alone
+        // (a first lookup keeps the last entry) is no title's start, and a back-order claimed after the title's claim
+        // but before that renewal would look older (review 3, finding 1).
         let replace = !self.chain.covers(now)
-            || c.seniority < self.earliest
+            || c.seniority < self.earliest && (self.whole || c.owner == self.chain.owner)
             || c.owner == self.chain.owner && c.seniority <= self.earliest;
         if replace {
             *self = Kept::new(c.clone());
