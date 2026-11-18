@@ -95,7 +95,9 @@ decisions in §11).
 - **The page's own machine as a fixture** (`pageFixture`: Snapshot at the login prompt, Load snapshot): page-room's
   two guests from one file (79 MiB, 30 s to make), its slot 141 → 110 s; same identity fine. ci-net 370 s at 2 slots
   (slots full: 531 slot-seconds in 293 s), so **ci-net takes 3 slots: 294 s, peak 6.4 GiB** (one run). 531e8839 and
-  the slots' commit passed the fast lane (106 s) and ci-net; **not yet ci.sh** (run it before the push).
+  the slots' commit passed the fast lane (106 s) and ci-net, and with the agent flake's fix ci.sh (675 s).
+- **A flake fixed:** the agent's tests' harness closed the page's socket with the agent's frames unread, which resets
+  the agent's end (a read error, not the close: once in ci.sh); it shuts the page's end for writing now.
 
 ## Next, in order
 
