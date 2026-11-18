@@ -256,7 +256,7 @@
     "note": "The confirm button (drawn as a warning) of the question asked by the toolbar's Power off."
   },
   "power-actions.openDisk.prompt": {
-    "message": "Open a disk image to start the machine. It must be an arm64 Linux image that boots through UEFI: qcow2, raw, or an installer or live ISO. Use Open disk…, or drop the file on this web app. What the machine writes to the disk is kept in this browser, separately for each file.",
+    "message": "Open a disk image to start the machine. It must be an arm64 Linux image that boots through UEFI: qcow2, raw, or an installer or live ISO. Use <ui>Open disk…</ui>, or drop the file on this web app. What the machine writes to the disk is kept in this browser, separately for each file.",
     "note": "What the message bar (under the toolbar) says on a first visit, when the page's machine has no disk yet; an Open disk… button follows."
   },
   "power-actions.openDisk": {
@@ -500,7 +500,7 @@
     "note": "Error details: the cause under the headline machine:worker-fetch.noServer, on the line under it in the same place; what to check."
   },
   "worker-errors.diskInUse": {
-    "message": "Couldn't start {{machine}}",
+    "message": "Couldn't start <name>{{machine}}</name>",
     "note": "Error in the message bar (under the toolbar) when the machine's disk is open in another tab (Retry follows): the headline; why and what to do are the cause under it (machine:worker-errors.diskInUse.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."
   },
   "worker-errors.diskInUse.cause": {

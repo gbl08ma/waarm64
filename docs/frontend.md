@@ -421,7 +421,10 @@ the guest whose screen it covers. The Home page's banner (its own errors too) un
 message (`MessageBar.svelte`; `#message`, the wrapper that holds it, stays, with the `data-kind`, `data-snapshot` and
 `data-load` tools read), and a leaving bar keeps the last message's words: tests read the words with
 `getElementById('message-text')` rather than wait for an element that may not come, and a test that measures the bar
-waits for its animations to finish. Its
+waits for its animations to finish. Its words (`MessageWords.svelte`, in both places) are in the page's font: a
+headline that isn't a sentence (an error's) is bold, the details under it a line each, a message's names and the
+page's elements drawn as everywhere (i18n.md "Markers"); only a line that is a developer's text, an exception's own
+words from the browser or the core (`describe`'s `from`, `'raw'`), is code. Its
 words take the room its actions leave, which sit at the bar's far end. It has a close button, beside its words (which wrap with its actions)
 at the top right. A notice that leaves the machine as it was (`notify`) is `info` when something was
 done (a snapshot kept or saved; a suspended machine resumed; a disk saved, from this machine or another; changes

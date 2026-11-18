@@ -44,7 +44,7 @@
     "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlays, holding something, in its small line. {{count}} is how many, {{size}} what they hold together."
   },
   "DiskInfo.on": {
-    "message": "attached to {{machines}}",
+    "message": "attached to <name>{{machines}}</name>",
     "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line: the machines that have it. {{machines}} is their names, joined with commas."
   },
   "DiskInfo.onNone": {
@@ -832,7 +832,7 @@
     "note": "Export wizard opened from a machine's Disks tab: the small note under the formats."
   },
   "ExportSteps.title": {
-    "message": "Export “{{name}}”",
+    "message": "Export <name>{{name}}</name>",
     "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dialog's title on its first step (what goes in the file). {{name}} is the disk's name, or the overlay's."
   },
   "ExportSteps.title.changes": {
@@ -904,7 +904,7 @@
     "note": "Export wizard (opened from a machine's Disks tab or the page's machine): the button that closes the dialog without saving."
   },
   "Overlays.title": {
-    "message": "Overlays of {{disk}}",
+    "message": "Overlays of <name>{{disk}}</name>",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the dialog's title. {{disk}} is the disk's name."
   },
   "Overlays.note": {
@@ -956,7 +956,7 @@
     "note": "Home page: the error headline when an overlay's Rename fails; why is the detail under it."
   },
   "Overlays.delete.confirm": {
-    "message": "Delete the overlay {{name}}? This will delete the {{size}} of changes made on top of the base image.",
+    "message": "Delete the overlay <name>{{name}}</name>? This will delete the {{size}} of changes made on top of the base image.",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirmation (OK/Cancel, the OK in red) that an overlay's Delete asks. {{name}} is the overlay's name, {{size}} what it holds (e.g. \"12.0 MiB\")."
   },
   "Overlays.delete.ok": {
@@ -1220,7 +1220,7 @@
     "note": "Home page, a machine's Disks tab: the tooltip of Resize… on a writable disk."
   },
   "ResizeDisk.title": {
-    "message": "Resize {{name}}",
+    "message": "Resize <name>{{name}}</name>",
     "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the dialog's title. {{name}}: the disk's or the overlay's name."
   },
   "ResizeDisk.note": {

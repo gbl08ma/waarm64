@@ -144,7 +144,7 @@
   }
 </script>
 
-<Modal id="resize-disk" bind:this={dialog} title={t('disks:ResizeDisk.title', { name })} onclose={close}>
+<Modal id="resize-disk" bind:this={dialog} title={msg('disks:ResizeDisk.title', { name })} onclose={close}>
   <Note size="md">{t('disks:ResizeDisk.note')}</Note>
   {#if now !== undefined}<Note size="md" data-now
       >{held === undefined

@@ -8,7 +8,7 @@ import type { DiskRef } from './protocol.ts';
 export type ExportMode = 'changes' | 'qcow2' | 'raw';
 
 /** The Export wizard's steps (ExportSteps.svelte), as the dialog hosting them calls them (its `bind:this`). */
-export type ExportStepsApi = { title: () => string; canBack: () => boolean; back: () => boolean };
+export type ExportStepsApi = { title: () => string | Msg; canBack: () => boolean; back: () => boolean };
 
 /** Page → worker. */
 export type ExportRequest = {

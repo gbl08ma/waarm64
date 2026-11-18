@@ -8,7 +8,7 @@
   import type { Snippet } from 'svelte';
   import Choice from './ui/Choice.svelte';
   import Note from './ui/Note.svelte';
-  import { t } from '../i18n.ts';
+  import { msg, t, type Msg } from '../i18n.ts';
   import type { ExportMode } from './export.ts';
 
   type Props = {
@@ -29,10 +29,10 @@
   let step = $state<Step>(changes ? 'what' : 'whole');
 
   /** The dialog's title for this step. */
-  export function title() {
+  export function title(): string | Msg {
     if (step === 'changes') return t('disks:ExportSteps.title.changes');
     if (step === 'whole') return t('disks:ExportSteps.title.whole');
-    return t('disks:ExportSteps.title', { name });
+    return msg('disks:ExportSteps.title', { name });
   }
   /** Whether Back has a step to go to here (else it's the host's: close, or its own step before). */
   export function canBack() {

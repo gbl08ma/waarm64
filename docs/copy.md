@@ -94,9 +94,15 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
   Then the details, full sentences: what happened or why, then what the user can do. A message that is a cause
   (the details' line) is a full sentence too.
 - **Menu paths**: the items' own words joined with ›: "Add a disk… › A disk already in this browser".
-- **A toolbar button named in a sentence** may show its icon after its words, through a marker (`The <icon>clipboard
-  menu</icon> in the toolbar can pause the sharing…`: the words, then the icon); where only text fits (`plain()`), the
-  words stand alone. Other sentences that name toolbar buttons can take it later.
+- **Names someone gave** (a machine's, a disk's, an overlay's, a folder's…) are marked, never quoted: "Resize
+  <name>{{name}}</name>", "Delete the overlay <name>{{name}}</name>?" (i18n.md "Markers"); the page draws them as
+  names.
+- **The page's elements named in a sentence** (a button, a menu's item, a tab, a pane) are marked with their words as
+  the element says them: "use <ui>Edit connection…</ui> to paste it"; with their icon before them where they have
+  one: "on its <ui-network>Network</ui-network> tab or in the toolbar's <ui-network>Network</ui-network> menu", "on the
+  <ui-home>Home</ui-home> page". Only the element's own words are marked ("the toolbar's", "menu", "tab" stay
+  outside). The note on the clipboard sharing names the toolbar's clipboard menu with its icon after the words (its own
+  `<icon>` marker, written before these).
 - **Setup screens and wizards**: steps first, then the field they lead to. A choice the user makes is followed by
   numbered steps that end at its input, and a short note after only for consequences and warnings ("Keep the address
   to yourself, as it lets anyone use the connection."). No long explainer after a field.

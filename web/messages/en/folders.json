@@ -48,7 +48,7 @@
     "note": "Error on the Home page (Shared folders) when files are added, copied in or out, or the folder emptied while a machine has the folder."
   },
   "folders-page.inUseElsewhere": {
-    "message": "A machine in another tab is using {{name}}. Power that machine off first.",
+    "message": "A machine in another tab is using <name>{{name}}</name>. Power that machine off first.",
     "note": "Error on the Home page (Shared folders) when a folder a machine in another tab has is deleted. {{name}} is the folder's name."
   },
   "folders-live.detachFirst": {

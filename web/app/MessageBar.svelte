@@ -9,6 +9,7 @@
 <script lang="ts">
   import Button from './ui/Button.svelte';
   import ErrorBanner from './ui/ErrorBanner.svelte';
+  import MessageWords from './MessageWords.svelte';
   import { messageBar } from './areas/message-bar.svelte.ts';
   import { page } from './page.ts';
   import { t } from '../i18n.ts';
@@ -37,8 +38,7 @@
       dismissLabel={t('common:MessageBar.close')}
       ondismiss={() => page.dismiss()}
     >
-      <pre id="message-text">{messageBar.text}</pre>
-      {#if messageBar.details.length}<pre id="message-details">{messageBar.details.join('\n')}</pre>{/if}
+      <MessageWords />
       {#snippet actions()}
         {#each messageBar.actions as a (a)}<Button
             onclick={(e: MouseEvent & { currentTarget: HTMLButtonElement }) => a.run(e.currentTarget)}>{a.label}</Button
@@ -49,18 +49,6 @@
 </div>
 
 <style>
-  pre {
-    margin: 0;
-    white-space: pre-wrap;
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-  }
-  #message-text::first-line {
-    font-weight: var(--weight-bold);
-  }
-  #message-details {
-    opacity: 0.8;
-  }
   /* Positioned after the toolbar, so the bar passes over it as it comes and goes. */
   .message {
     position: relative;

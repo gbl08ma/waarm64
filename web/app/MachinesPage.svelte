@@ -22,6 +22,7 @@
   import StorageBar from './StorageBar.svelte';
   import Button from './ui/Button.svelte';
   import ErrorBanner from './ui/ErrorBanner.svelte';
+  import MessageWords from './MessageWords.svelte';
   import { leaveInPlace } from './ui/crossfade.ts';
   import Pane from './ui/Pane.svelte';
   import { untrack } from 'svelte';
@@ -159,8 +160,7 @@
           >{/each}
       {/snippet}
       {#if messageBar.text}
-        <pre id="message-text">{messageBar.text}</pre>
-        {#if messageBar.details.length}<pre id="message-details">{messageBar.details.join('\n')}</pre>{/if}
+        <MessageWords />
       {:else if runner.error}<ErrorWords error={runner.error} />
       {/if}
     </ErrorBanner>
@@ -253,17 +253,5 @@
     .panes {
       grid-template-columns: 1fr;
     }
-  }
-  #message-text {
-    margin: 0;
-    white-space: pre-wrap;
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-  }
-  #message-text::first-line {
-    font-weight: var(--weight-bold);
-  }
-  #message-details {
-    opacity: 0.8;
   }
 </style>

@@ -83,7 +83,7 @@
   }
   async function remove(o: OverlayRecord) {
     if (
-      !(await ask.confirm(t('disks:Overlays.delete.confirm', { name: o.name, size: bytesText(o.bytes) }), {
+      !(await ask.confirm(msg('disks:Overlays.delete.confirm', { name: o.name, size: bytesText(o.bytes) }), {
         ok: t('disks:Overlays.delete.ok'),
         danger: true,
       }))
@@ -124,7 +124,7 @@
 <Modal
   id="overlays"
   bind:this={dialog}
-  title={exporting ? (steps?.title() ?? '') : t('disks:Overlays.title', { disk: disk.name })}
+  title={exporting ? (steps?.title() ?? '') : msg('disks:Overlays.title', { disk: disk.name })}
   onclose={close}
   data-disk={disk.id}
 >

@@ -1,12 +1,16 @@
 // The page's questions and notices (docs/frontend.md "Dialogs"): in-page dialogs instead of the browser's confirm, alert
 // and prompt, shown one at a time by Ask.svelte (`<dialog id="ask">`). Each resolves when answered; Esc is Cancel.
-// The words are the caller's, rendered (`t(…)`, web/i18n.ts); the defaults are the catalog's.
-import { t } from '../i18n.ts';
+// The words are the caller's: rendered (`t(…)`, web/i18n.ts), or a message (`msg(…)`), drawn with its names' and the
+// page's elements' markers (T.svelte); the defaults are the catalog's.
+import { t, type Msg } from '../i18n.ts';
+
+/** A question's words: rendered, or a message. */
+export type Words = string | Msg;
 
 export type Question = {
   kind: 'confirm' | 'alert' | 'prompt' | 'wait';
-  title: string;
-  text: string;
+  title: Words;
+  text: Words;
   ok: string;
   cancel: string;
   /** The OK button does something that can't be undone (it's drawn as a warning). */
@@ -15,7 +19,7 @@ export type Question = {
   value: string;
   resolve(answer: boolean | string | undefined): void;
 };
-type Options = { title?: string; ok?: string; cancel?: string; danger?: boolean };
+type Options = { title?: Words; ok?: string; cancel?: string; danger?: boolean };
 
 export const asking = $state({ current: undefined as Question | undefined, serial: 0 });
 const queue: Question[] = [];
@@ -56,7 +60,7 @@ function takeDown(q: Question | undefined) {
 
 export const ask = {
   /** OK or Cancel. */
-  confirm: (text: string, o: Options = {}) =>
+  confirm: (text: Words, o: Options = {}) =>
     show({
       kind: 'confirm',
       title: o.title ?? t('common:ask.confirmTitle'),
@@ -67,7 +71,7 @@ export const ask = {
       value: '',
     }) as Promise<boolean>,
   /** A notice: OK only. */
-  alert: (text: string, o: Options = {}) =>
+  alert: (text: Words, o: Options = {}) =>
     show({
       kind: 'alert',
       title: o.title ?? t('common:ask.title'),
@@ -78,7 +82,7 @@ export const ask = {
       value: '',
     }).then(() => undefined),
   /** OK or Cancel, which the caller can also take down (`close`: as a Cancel, `answer` false). */
-  closableConfirm(text: string, o: Options = {}): { answer: Promise<boolean>; close(): void } {
+  closableConfirm(text: Words, o: Options = {}): { answer: Promise<boolean>; close(): void } {
     let q: Question | undefined;
     const answer = show(
       {
@@ -98,7 +102,7 @@ export const ask = {
    * A wait the caller ends (`close`): its one button (`ok`, drawn as a warning, not focused) resolves `skipped`; Esc
    * does nothing (Ask.svelte: taken down, it would leave no way to cut the wait short).
    */
-  wait(text: string, o: Options = {}): { skipped: Promise<void>; close(): void } {
+  wait(text: Words, o: Options = {}): { skipped: Promise<void>; close(): void } {
     let q: Question | undefined;
     const answered = show(
       {
@@ -118,7 +122,7 @@ export const ask = {
     };
   },
   /** A line of text, or undefined if cancelled (`danger`: OK does what can't be undone; the text is one to copy first). */
-  prompt: (text: string, value = '', o: Options = {}) =>
+  prompt: (text: Words, value = '', o: Options = {}) =>
     show({
       kind: 'prompt',
       title: o.title ?? t('common:ask.title'),

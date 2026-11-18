@@ -188,7 +188,34 @@ function waived(text: string, line: number) {
 }
 
 /** The checks on the catalog and the sources (everything but the docs and the workers' imports). */
-export function checkSources(raw: Catalogs, sources: Source[], o: { copyChecks?: (path: string) => boolean } = {}): Problem[] {
+/** Parameters that always carry a name someone gave: a machine's, machines', an overlay's, a shared folder's, a holder's. */
+const NAME_PARAMS = new Set(['machine', 'machines', 'overlay', 'folder', 'holder', 'connection']);
+/** A note that says a parameter is a name someone gave (`{{name}} is the machine's name`, `{{disk}}: the disk's name`). */
+const NAMED_IN_NOTE = /\{\{(\w+)\}\}(?: is| are|:|,)? (?:the |its |their |that )?(?:(?:machine|disk|overlay|folder|snapshot|connection|room|device|file|stored disk)(?:'s|s') )?(?:current )?names?\b/g;
+const REFERENCE_MARKER = /<(name|ui|ui-[a-z0-9-]+)>([^<]*)<\/\1>/g;
+
+/**
+ * What's wrong with a message's references (web/i18n.ts `REFERENCE`, docs/i18n.md "Markers"): a `<name>` holds one
+ * parameter and nothing else; a `<ui-…>` names an icon of web/app/icons.ts (`icons`, when known); a parameter that is a
+ * name someone gave (by its own name, or as the note describes it) is marked.
+ */
+export function referenceProblems(message: string, note: string, icons?: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  const marked = new Set<string>();
+  for (const m of message.matchAll(REFERENCE_MARKER)) {
+    const [, tag, inner] = m;
+    if (tag === 'name' && !/^\{\{\s*\w+\s*\}\}$/.test(inner)) out.push(`<name>${inner}</name>: a <name> holds one parameter, the name, and nothing else`);
+    if (tag.startsWith('ui-') && icons && !icons.has(tag.slice(3))) out.push(`<${tag}>: no icon ${tag.slice(3)} in web/app/icons.ts`);
+  }
+  // Every parameter inside a marker (a name in <code> is marked too).
+  for (const m of message.matchAll(/<([a-z][a-z0-9-]*)>([^<]*)<\/\1>/g)) for (const v of m[2].matchAll(/\{\{\s*(\w+)/g)) marked.add(v[1]);
+  const names = new Set([...varsOf(message)].filter((v) => NAME_PARAMS.has(v)));
+  for (const m of note.matchAll(NAMED_IN_NOTE)) if (varsOf(message).has(m[1])) names.add(m[1]);
+  for (const v of names) if (!marked.has(v)) out.push(`{{${v}}} is a name someone gave: <name>{{${v}}}</name> (docs/i18n.md "Markers"; a parameter that is a message, "the disk <name>…</name>", isn't one: say so in the note)`);
+  return out;
+}
+
+export function checkSources(raw: Catalogs, sources: Source[], o: { copyChecks?: (path: string) => boolean; icons?: ReadonlySet<string> } = {}): Problem[] {
   const problems: Problem[] = [];
   const catalogs = expanded(raw);
   const referenced = new Set<string>(); // keys a message says in its words (`$t(key)`)
@@ -212,6 +239,7 @@ export function checkSources(raw: Catalogs, sources: Source[], o: { copyChecks?:
         if (/\{\{/.test(to.message) || PLURAL.test(r![2])) say(file, 1, `${ns}:${k}: ${m[0]} names a message with parameters or plural forms: a reference says fixed words`);
         if (expand(to.message, raw).includes('$t(')) say(file, 1, `${ns}:${k}: ${m[0]} doesn't resolve (a reference to itself, or deeper than 8)`);
       }
+      for (const why of referenceProblems(e.message, e.note, o.icons)) say(file, 1, `${ns}:${k}: ${why}`);
       if (loneLine(expand(e.message, raw))) say(file, 1, `${ns}:${k}: a headline and a line under it in one message: the headline is a message, the line its cause (new MsgError(headline, …, { cause: new MsgError(…) }); docs/copy.md "The elements")`);
     }
   }
@@ -410,6 +438,19 @@ export function checkSources(raw: Catalogs, sources: Source[], o: { copyChecks?:
       }
     });
 
+    /** The keys a markup expression renders as text: `t(key…)`, in a conditional's branches or after `??`/`||`. */
+    const textKeys = (e: Node | undefined): string[] => {
+      if (!e) return [];
+      if (e.type === 'ConditionalExpression') return [...textKeys(e.consequent as Node), ...textKeys(e.alternate as Node)];
+      if (e.type === 'LogicalExpression') return [...textKeys(e.left as Node), ...textKeys(e.right as Node)];
+      if (e.type === 'CallExpression' && /^(t|text)$/.test(calleeName(e.callee as Node))) {
+        const k = keyNode((e.arguments as Node[])[0]);
+        return k ? [k] : [];
+      }
+      return [];
+    };
+    const hasReferences = (key: string) => (lookup(catalogs, key)?.words ?? []).some((w) => /<(name|ui|ui-[a-z0-9-]+)>/.test(w));
+
     // Svelte's markup: <T k="…" params={…}>, keys in its expressions, and its words.
     if (p.svelte) {
       walk(p.svelte.fragment, (n, parent) => {
@@ -417,8 +458,9 @@ export function checkSources(raw: Catalogs, sources: Source[], o: { copyChecks?:
           const attrs = n.attributes as Node[];
           const kAttr = attrs.find((a) => a.type === 'Attribute' && a.name === 'k');
           const v = kAttr && Array.isArray(kAttr.value) && (kAttr.value as Node[]).length === 1 && (kAttr.value as Node[])[0].type === 'Text' ? ((kAttr.value as Node[])[0].data as string) : undefined;
-          if (!v) say(src.path, at(n), '<T>: its k is a literal key');
-          else {
+          // `m={…}`: a message made elsewhere (its key and parameters checked where it's made).
+          if (!v && !attrs.some((a) => a.type === 'Attribute' && a.name === 'm')) say(src.path, at(n), '<T>: its k is a literal key');
+          else if (v) {
             const set = named.get(v) ?? new Set();
             set.add(stem);
             named.set(v, set);
@@ -440,6 +482,14 @@ export function checkSources(raw: Catalogs, sources: Source[], o: { copyChecks?:
             if (v.type === 'ExpressionTag') resultStrings(v.expression as Node, (lit) => { if (letters(stringOf(lit)!) && !waived(src.text, at(lit))) say(src.path, at(lit), `${n.name as string}: the words "${stringOf(lit)!.slice(0, 60)}" (a message)`); });
           }
           return false;
+        }
+        if (n.type === 'ExpressionTag' && parent?.type !== 'Attribute') {
+          for (const key of textKeys(n.expression as Node)) if (hasReferences(key)) say(src.path, at(n), `{t('${key}')}: its words mark names or the page's elements: draw it with <T k="${key}" params={…}> (docs/i18n.md "Markers")`);
+        }
+        if (n.type === 'Component' && n.name === 'Modal') {
+          const title = (n.attributes as Node[]).find((a) => a.type === 'Attribute' && a.name === 'title');
+          const expr = title && !Array.isArray(title.value) && title.value !== true ? ((title.value as Node).expression as Node) : undefined;
+          for (const key of expr ? textKeys(expr) : []) if (hasReferences(key)) say(src.path, at(title!), `title={t('${key}')}: its words mark names or the page's elements: title={msg('${key}', …)} (docs/i18n.md "Markers")`);
         }
         if (n.type === 'ExpressionTag' && parent?.type !== 'Attribute') {
           resultStrings(n.expression as Node, (lit) => { if (letters(stringOf(lit)!) && !waived(src.text, at(lit))) say(src.path, at(lit), `{…}: the words "${stringOf(lit)!.slice(0, 60)}" (a message)`); });
@@ -804,7 +854,8 @@ export function checkAll(root: string, o: { fixDocs?: boolean } = {}): Problem[]
   for (const ns of Object.keys(catalogs)) if (!new RegExp(`\\b${ns}\\b`).test(index.split('CATALOGS')[1] ?? '')) problems.push({ path: 'web/messages/en/index.ts', line: 1, text: `${ns}.json isn't in CATALOGS` });
   const rel = (p: string) => relative(root, p);
   const web = files(join(root, 'web'), (p) => /\.(ts|svelte)$/.test(p) && !/\.d\.ts$/.test(p) && !p.includes('/messages/')).map((p) => ({ path: rel(p), text: readFileSync(p, 'utf8') }));
-  problems.push(...checkSources(catalogs, web));
+  const icons = new Set([...readFileSync(join(root, 'web/app/icons.ts'), 'utf8').matchAll(/^\s+'?([a-z0-9-]+)'?: Icon[A-Z]/gm)].map((m) => m[1]));
+  problems.push(...checkSources(catalogs, web, { icons }));
   problems.push(...checkWorkers(root, web));
   const tests = files(join(root, 'tests'), (p) => /\.ts$/.test(p) && !/\.d\.ts$/.test(p)).map((p) => ({ path: rel(p), text: readFileSync(p, 'utf8') }));
   problems.push(...checkTests(catalogs, tests));
