@@ -1,6 +1,7 @@
 // The page's machine's USB as the toolbar's USB menu (web/app/UsbMenu.svelte) and the Home page's USB tab show it
 // (docs/usb.md "The page"): web/app/areas/usb-view.ts reads it again from the running machine's ports
 // (web/app/usb-live.ts), the host's devices and pads whenever any of them changes. The menu opens itself when called (an offer to answer).
+import { untrack } from 'svelte';
 import { Command } from '../command.ts';
 import type { EntryView } from '../usb-live.ts';
 import type { ProblemWords } from '../usb-problems.ts';
@@ -43,6 +44,15 @@ class Usb {
   /** Follows the page's machine: whether it has a controller, and runs. */
   follow(source: { on(): boolean; running(): boolean }) {
     this.#source = source;
+  }
+  /** Calls `f` with `running` now and at each change (the page's use of the Gamepad API follows it: web/app/areas/usb-actions.ts). */
+  watchRunning(f: (running: boolean) => void) {
+    $effect.root(() => {
+      $effect(() => {
+        const on = this.running;
+        untrack(() => f(on));
+      });
+    });
   }
   /** Makes an offer and opens the menu on it. */
   offer(o: Offer) {

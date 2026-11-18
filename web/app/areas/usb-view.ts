@@ -44,7 +44,8 @@ export class UsbView {
       const virtual = d.api === 'virtual';
       return { name: c.name, state: c.state, entry: c.entry, virtual, builtin: isKeyboard(c), pad: padOf(c), problems };
     });
-    usb.pads = listPads();
+    // Only while it runs (a pad attaches only then): a read makes Chromium poll the pads (web/app/areas/usb-actions.ts `listen`).
+    if (usb.running) usb.pads = listPads();
     const fed = (ports?.connectors ?? []).flatMap((c, i) => {
       const pad = padOf(c);
       return c?.state === 'attached' && pad !== undefined ? [[i, pad] as const] : [];

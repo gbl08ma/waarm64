@@ -58,16 +58,33 @@ export class UsbActions {
     };
   }
 
-  /** Follows the host: its game pads (a pad the browser loses is unplugged) and its devices plugged in and out. */
+  readonly #padCame = () => this.#view.refresh();
+  /** A pad the browser loses is unplugged. */
+  readonly #padWent = (ev: GamepadEvent) => {
+    const p = this.#m.run?.usb;
+    const index = ev.gamepad.index;
+    p?.connectors.forEach((c, i) => {
+      if (padOf(c) === index) void p.detach(i).catch(() => undefined); // it's gone either way
+    });
+    this.#view.refresh();
+  };
+
+  /**
+   * Follows the host: its game pads while the machine runs with its controller (a pad attaches only then), and its
+   * devices plugged in and out. Chromium polls the pads (a thread of the browser's, ~0.5% of a core) from the first
+   * gamepad listener or `getGamepads()` until the page's last gamepad listener goes: so the listeners go when the
+   * machine stops, and the pads are read only while it runs (UsbView.refresh), and an idle tab polls nothing.
+   */
   listen() {
-    addEventListener('gamepadconnected', () => this.#view.refresh());
-    addEventListener('gamepaddisconnected', (ev) => {
-      const p = this.#m.run?.usb;
-      const index = (ev as GamepadEvent).gamepad.index;
-      p?.connectors.forEach((c, i) => {
-        if (padOf(c) === index) void p.detach(i).catch(() => undefined); // it's gone either way
-      });
-      this.#view.refresh();
+    usb.watchRunning((on) => {
+      if (on) {
+        addEventListener('gamepadconnected', this.#padCame);
+        addEventListener('gamepaddisconnected', this.#padWent);
+        this.#view.refresh();
+      } else {
+        removeEventListener('gamepadconnected', this.#padCame);
+        removeEventListener('gamepaddisconnected', this.#padWent);
+      }
     });
     for (const api of ['usb', 'hid'] as const) {
       browserApi(api)?.addEventListener('connect', (ev) => void this.#connected(api, ev.device));

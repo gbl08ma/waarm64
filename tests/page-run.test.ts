@@ -308,3 +308,74 @@ test('finding 12: a run stopped while its start waits for the keyboard layout po
   assert.ok(second.includes('start'));
   await ctx.close();
 });
+
+test("QA: a machine its guest powered off, or suspended, lets go of its workers (an idle tab runs nothing, keeps no guest memory); the pads are polled only while it runs", { skip, timeout: 180_000 }, async () => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await answerAsks(page);
+  await recordWorkers(page);
+  await page.addInitScript(() => {
+    // The page's gamepad listeners and its reads of the pads: either makes Chromium poll the pads (a thread in the browser).
+    const pads = { listeners: new Set<string>(), reads: 0 };
+    (window as unknown as { __pads: typeof pads }).__pads = pads;
+    const [add, remove] = [window.addEventListener.bind(window), window.removeEventListener.bind(window)];
+    window.addEventListener = ((type: string, f: EventListener, o?: AddEventListenerOptions) => {
+      if (type.startsWith('gamepad')) pads.listeners.add(`${type} ${String(f)}`);
+      add(type, f, o);
+    }) as typeof window.addEventListener;
+    window.removeEventListener = ((type: string, f: EventListener, o?: EventListenerOptions) => {
+      if (type.startsWith('gamepad')) pads.listeners.delete(`${type} ${String(f)}`);
+      remove(type, f, o);
+    }) as typeof window.removeEventListener;
+    const read = Navigator.prototype.getGamepads;
+    Navigator.prototype.getGamepads = function () {
+      pads.reads++;
+      return read.call(this);
+    };
+  });
+  type Pads = { __pads: { listeners: Set<string>; reads: number } };
+  const machines = () => page.evaluate(() => (window as unknown as { __workers: Workers }).__workers.filter((x) => /\/app\/worker\.ts/.test(x.url)).map((x) => x.terminated));
+  const pads = () => page.evaluate(() => ({ listeners: (window as unknown as Pads).__pads.listeners.size, reads: (window as unknown as Pads).__pads.reads }));
+  const listening = () => page.waitForFunction(() => (window as unknown as Pads).__pads.listeners.size === 2, null, { timeout: 5_000 });
+  /** Waits until none of the machine workers is left running. */
+  const workersGone = () => page.waitForFunction(() => (window as unknown as { __workers: Workers }).__workers.filter((x) => /\/app\/worker\.ts/.test(x.url)).every((x) => x.terminated), null, { timeout: 10_000, polling: 100 });
+  const state = (s: string) => page.waitForFunction((s) => document.body.dataset.state === s, s, { timeout: 60_000, polling: 50 });
+
+  // No machine: the page neither listens for the pads nor reads them.
+  await page.goto(`${base}/web/app/`);
+  await state('idle');
+  await page.waitForTimeout(500);
+  assert.deepEqual(await pads(), { listeners: 0, reads: 0 });
+
+  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal&usb=1`);
+  assert.equal((await settled(page, 120_000)).state, 'running');
+  await listening();
+
+  // Suspended: the machine worker goes (its vCPUs, its RAM, the framebuffer's frames), and the pads aren't followed.
+  await page.locator('#suspend').click();
+  await state('suspended');
+  await workersGone();
+  const idle = await pads();
+  assert.equal(idle.listeners, 0, 'no gamepad listener on a suspended machine');
+  await page.waitForTimeout(1000);
+  assert.equal((await pads()).reads, idle.reads, 'no reads of the pads on a suspended machine');
+
+  // Start resumes it in a new worker; the guest's own power-off ends that one too.
+  await page.locator('#restart').click();
+  assert.equal((await settled(page, 60_000)).state, 'running');
+  assert.deepEqual(await machines(), [true, false]);
+  await listening();
+  await page.locator('.xterm').click();
+  await page.keyboard.type('poweroff -f\n', { delay: 10 });
+  await state('off');
+  await workersGone();
+  assert.equal((await pads()).listeners, 0, 'no gamepad listener on a machine powered off');
+
+  // Started again at once: the stop of a run already let go of doesn't wait for its worker's answer.
+  const t0 = Date.now();
+  await page.locator('#restart').click();
+  await page.waitForFunction(() => (window as unknown as { __workers: Workers }).__workers.filter((x) => /\/app\/worker\.ts/.test(x.url)).length === 3, null, { timeout: 10_000, polling: 20 });
+  assert.ok(Date.now() - t0 < 2000, `the new run started ${Date.now() - t0} ms after Start`);
+  assert.equal((await settled(page, 120_000, 'off')).state, 'running');
+  await ctx.close();
+});

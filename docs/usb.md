@@ -766,6 +766,10 @@ controller** (045e:028e), which Linux's `xpad` drives. The guest's rumble goes b
     page is open, so with none the menu says [Press a button on a game pad to list it here.](ui:usb:UsbMenu.pads.none)
   - The feed (`PadFeed`) polls the attached pads every 8 ms (`POLL_MS`) and sends a pad's state when it changed. While
     the page is hidden, or the pad is gone, it sends the pad at rest, so no button stays held in the guest.
+  - The page listens for the pads (`gamepadconnected`, `gamepaddisconnected`) and reads them only while the machine
+    runs with its controller (`usb.running`: a pad attaches only then); the listeners go when it stops. Chromium polls
+    the pads (a thread in the browser, ~0.5% of a core) from the first listener or `getGamepads()` until the last
+    listener is removed, so a tab without a running machine polls nothing (web/app/areas/usb-actions.ts `listen`).
   - `gamepaddisconnected` unplugs the game pad. Snapshot and Suspend treat it as any device: named in the question,
     unplugged, and attached again after a snapshot if the pad is still listed.
   - A pad isn't remembered with the machine, nor attached at start. No lock is taken, so two tabs can both attach

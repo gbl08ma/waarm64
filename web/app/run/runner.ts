@@ -4,7 +4,6 @@
 import { MsgError, t } from '../../i18n.ts';
 import type { PageAudio } from '../../audio.ts';
 import { attachInput, type EvdevEvent } from '../../input.ts';
-import { CLOSE_MS } from '../../devices.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../../gpu-worker.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
@@ -19,7 +18,7 @@ import type { PageFolders } from '../folders-live.ts';
 import type { Grab } from '../hooks.ts';
 import { resolveKeyboard } from '../keyboard.ts';
 import type { PageNetwork } from '../net-live.ts';
-import type { FromWorker, MachineConfig, Status, ToWorker } from '../protocol.ts';
+import type { FromWorker, MachineConfig, Problem, Status, ToWorker } from '../protocol.ts';
 import { onReady } from '../../vsock-device.ts';
 import type { UsbPorts } from '../usb-live.ts';
 import { gpuInitKnobs } from './knobs.ts';
@@ -299,8 +298,14 @@ export class Runner {
     }
   }
 
-  /** The run ended (off, crashed, suspended, failed): what it held goes. */
-  ended(r: Run) {
+  /**
+   * The run ended (off, crashed, suspended, failed): what it held goes. Its workers too, once the machine worker has
+   * closed the machine (`Run.close`), unless the guest panicked (its machine runs on: it may reset). The run stays the
+   * page's until the next stop, but a stopped machine's tab runs nothing and keeps none of its memory (its RAM, the
+   * framebuffer's animation frames, the status timer).
+   */
+  ended(r: Run, m: { problem?: Problem }) {
+    if (m.problem !== 'panic') void r.close();
     this.d.alive.clear();
     r.usb?.close();
     // The screen lets go of the mouse (a stopped machine has nothing to give it to) and a click doesn't take it again; the next start's input takes the setting.
@@ -339,18 +344,7 @@ export class Runner {
     r.input.detach();
     this.d.audio.detach();
     r.usb?.close();
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, CLOSE_MS + 1500);
-      r.worker.onmessage = (e: MessageEvent<FromWorker>) => {
-        if (e.data.type === 'stopped') {
-          clearTimeout(timer);
-          resolve();
-        }
-      };
-      r.worker.postMessage({ type: 'stop' } satisfies ToWorker);
-    });
-    r.worker.terminate();
-    r.gpu?.terminate();
+    await r.close();
     this.lock.drop();
     this.d.folders.end();
     this.d.agent.end();

@@ -1,6 +1,7 @@
 // One run of the machine (docs/frontend.md "The page's code"): its worker, input and ports, from a start to the next
 // stop. One machine at a time: a restart stops it and starts a new run (fresh memory, fresh ports, a fresh canvas).
 // What a run hears after another took its place is dropped in one place, `guard`.
+import { CLOSE_MS } from '../../devices.ts';
 import type { Input } from '../../input.ts';
 import type { UsbPorts } from '../usb-live.ts';
 import type { Sample } from '../statusbar-metrics.ts';
@@ -45,6 +46,7 @@ export class Run {
   /** The saves in progress, by id. */
   readonly #jobs = new Map<number, SnapshotJob>();
   #lastJob = 0;
+  #closed: Promise<void> | undefined;
 
   constructor(
     holder: RunHolder,
@@ -62,6 +64,30 @@ export class Run {
   /** It is the page's run (not one stopped, or replaced by a restart). A call, not a getter: it changes across awaits. */
   live() {
     return this.#holder.run === this;
+  }
+
+  /**
+   * Tells the machine worker to stop (it releases the backends and lands what its folders hold) and ends the run's
+   * workers once it says `stopped`, or after `CLOSE_MS` and 1.5 s more without it; once: at a stop, or when the machine
+   * stopped by itself (web/app/run/runner.ts `ended`).
+   */
+  close(): Promise<void> {
+    this.#closed ??= new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.worker.removeEventListener('message', heard);
+        this.worker.terminate();
+        this.gpu?.terminate();
+        resolve();
+      };
+      const timer = setTimeout(done, CLOSE_MS + 1500);
+      const heard = (e: MessageEvent<FromWorker>) => {
+        if (e.data.type === 'stopped') done();
+      };
+      this.worker.addEventListener('message', heard);
+      this.worker.postMessage({ type: 'stop' } satisfies ToWorker);
+    });
+    return this.#closed;
   }
 
   /** Posts save `m` with an id of its own: the worker's messages for it go to `job` until its end (done, error). */
