@@ -25,7 +25,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/protocol.ts` | the messages between the two (types only) |
 | the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts` (`shape-diff.ts`: what differs between two shapes, in words), `web/app/store.ts` (`store-backends.ts`: the records and files in memory, IndexedDB and OPFS) | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
-| `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Home page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
+| `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Home page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
 | `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Home page (below, "The Home page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
 | `web/app/actions.svelte.ts`, `ErrorWords.svelte`, `file-pickers.ts`, `FilePickers.svelte` | the components' action runner (busy, the error as the page shows it) and its error's view; the page's hidden file inputs and what opens them (below, "The page's code") |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
@@ -270,7 +270,7 @@ where the guest's agent can, both ask the guest first and show [Shutting down…
 devices.md "Power off and restart from the guest"), **[Suspend](ui:toolbar:Toolbar.suspend)**,
 **[Snapshot](ui:toolbar:Toolbar.snapshot)** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
 Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
-five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
+five latest kept snapshots, orphaned and unrestorable ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
 (Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **[Mouse lock](ui:statusbar:statusbar-kinds.kind.pointer)** (a menu: on or
 off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "[Mouse lock](ui:statusbar:statusbar-kinds.kind.pointer)"), [Full screen](ui:toolbar:Toolbar.fullscreen),
 **Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
@@ -475,7 +475,7 @@ Duplicate, Export the definition, Delete; then tabs:
   says so and its OK makes one, empty and named "Changes" as a start would, at the new size, and chooses it; the disk's line shows the size the guest sees (a grown overlay's). Overlays… opens the disk's
   **Overlays** dialog (`Overlays.svelte`, also from the Disks pane below): every overlay of the disk with what it holds of the size
   its guest sees, when it was made and the machines that write to it; Rename, Delete (a machine that wrote to it is left without one,
-  and makes a new one at its next boot), [Resize…](ui:disks:Overlays.resizeButton) (over the dialog), Merge into the disk (a stored disk) and Export… each (the Export wizard's steps take the dialog's place, the list being the step before them: Back from the first returns to it). [Add a disk…](ui:disks:Disks.add) opens a
+  and makes a new one at its next boot), [Resize…](ui:disks:Overlays.resizeButton) (over the dialog), Merge into the disk (a stored or a blank disk: machines.md §4.4) and Export… each (the Export wizard's steps take the dialog's place, the list being the step before them: Back from the first returns to it). [Add a disk…](ui:disks:Disks.add) opens a
   wizard (`AddDisk.svelte`; what it makes is `add-disk.ts`): the source first (**a disk already in this browser**, a file read where it is, a file
   copied into the browser, a URL, blank, a ramdisk), each explained, then its details and Read-only. A disk already
   in this browser is one another machine has or one detached (Detach keeps the disk and its overlays, and says so):
@@ -977,7 +977,7 @@ isn't asking now: bash printed them as `;1R;80R`).
 | `devices` | the device kinds in slot order (`shape.ts` `slots`: `rng`, `keyboard`, `tablet`, `net`, `gpu`, `snd`, `mouse`, `touch`, then a `blk` per disk); a restore refuses one whose list isn't the machine's now, naming both |
 | `cpu` | the vCPUs' optional features, of `rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`, `fcma`, `fp16`, `fhm` and `bf16` (docs/cpu.md; the page's `?<feature>=0` turns one off, `?i8mm=1`, `?fcma=1`, `?fp16=1`, `?fhm=1` and `?bf16=1` turn FEAT_I8MM, FEAT_FCMA, FEAT_FP16, FEAT_FHM and FEAT_BF16 on); a restore gives the machine the same, and a snapshot without the field (before ABI 35) none. A shape's hash leaves `sha3` out (it came after shapes), so snapshots kept before it still match their machine |
 | `serial` | the last ~4 KiB of serial output the worker posted, cut at a line start |
-| `name`, `shape`, `shapeHash`, `urls` | a stored machine's (format 2): its name, its shape and the shape's hash (a restore onto a machine whose hash is another is refused), and its URL disks' URLs by slot (a machine like it can be made again) |
+| `name`, `shape`, `shapeHash`, `urls`, `bases` | a stored machine's (format 2): its name, its shape and the shape's hash (a restore onto a machine whose hash is another is refused), and its URL disks' URLs by slot (a machine like it can be made again), and the generations of the stored disks it read, read-only or under an overlay, by disk id (a restore over one written since is refused: machines.md §5.1 "Unrestorable") |
 
 `disks` (`SnapshotDisk`, web/snapshot.ts) pins each writable disk: its slot, identity, size, the blocks the file
 carries, the overlay's path and its **generation** when the snapshot was taken (the device worker reports it while
@@ -1005,7 +1005,15 @@ first, when a disk is written in place, whether the whole disk goes in, §4.4).
   like it** (`machineLike`: the settings and disks from the shape, the disks the browser has attached again by
   identity, blank disks and ramdisks made again under their ids, the attachments under the snapshot's serials; the
   snapshot moves to it). [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned) deletes them all after one confirmation with their total size.
-  Saving changed settings warns that they orphan the snapshots.
+  Saving changed settings warns that they orphan the snapshots. A kept snapshot that can **never** be restored
+  (machines.md §5.1 "Unrestorable": a disk it depends on changed, another core's format; `unrestorable`, from the
+  records) shows as orphaned too, its reason in place of what differs, with neither Restore nor Make a machine like it
+  (a machine like it would have the same disks), and goes with Delete orphaned snapshots; Load snapshot disables it,
+  its reason in the tooltip.
+- **Written in place, said where it's taken:** on a machine with a disk written in place, Snapshot's tooltip
+  (`Toolbar.snapshot.title.inPlace`) and the notice
+  after a kept one (`snapshot-actions.kept.inPlace`) say that the snapshot restores only until the guest writes that
+  disk again (a kept snapshot pins the disk's generation without its blocks, §4.4).
 - **A restore never destroys a disk's state** (`planRestore`, web/app/snapshots.ts): per writable disk, an overlay
   that is the snapshot's pinned one at its pinned generation is **kept** (nothing written: the restore is RAM and
   state); one that moved on **forks**: a new overlay named after the snapshot gets its blocks and is attached, the old

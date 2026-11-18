@@ -19,4 +19,7 @@ Wave 2 (after wave 1 merges; touches the whole catalog):
 Then: out-of-context review of the whole change, fix loops, the full CI set.
 
 ## State
-Wave 1 starting.
+- netfolders and home merged into main locally (not pushed: CI pending). Waiting on idle, storage.
+- To fix later: tools/screens.ts crashes in its seed (`shapeNow` reads `.map` of undefined, size-actions.ts:119),
+  seen on main by the home lane.
+- After merge, CI set: ci.sh, ci-debian.sh, ci-machines.sh, ci-audio.sh (a helper changed), ci-net.sh.

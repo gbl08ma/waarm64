@@ -8,7 +8,7 @@ import { parseDevKnobs } from './dev-knobs.ts';
 import type { MachineConfig } from '../protocol.ts';
 import type { Run } from './run.ts';
 import { asRun, effectiveDisplay, resolveMachine, type RunDisplay } from './config.ts';
-import { currentShape } from '../snapshots.ts';
+import { basesOf, currentShape } from '../snapshots.ts';
 import { settings } from '../settings.ts';
 import { DEFAULT_SHARES_PATH } from '../shares-mount.ts';
 import type { Store } from '../store.ts';
@@ -249,7 +249,8 @@ export class PageMachine {
   /**
    * A stored machine as its snapshots describe it (protocol.ts `about`): its shape as `config` runs it (by default the
    * next start's: its size, devices and display as resolved, so a snapshot taken under the address's `?mouse=1` or
-   * `?ncpus=` says so) and its URL disks' URLs by slot.
+   * `?ncpus=` says so), its URL disks' URLs by slot, and the generations of the stored disks it reads (`basesOf`:
+   * none moves while it runs, so a snapshot's are the start's).
    */
   async about(config = this.config(0)) {
     const s = this.stored;
@@ -275,7 +276,13 @@ export class PageMachine {
       const rec = a && s.disks.get(a.disk);
       if (rec?.kind === 'url' && rec.url) urls[x.slot] = rec.url;
     }
-    return { name: s.record.name, shape, shapeHash: hash, urls };
+    return {
+      name: s.record.name,
+      shape,
+      shapeHash: hash,
+      urls,
+      bases: await basesOf(s.record, (id) => s.disks.get(id)),
+    };
   }
 
   /** The ramdisks' size, MiB: host memory the machine may take beside its RAM. */

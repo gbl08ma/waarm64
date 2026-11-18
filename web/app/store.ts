@@ -62,6 +62,17 @@ export type SnapshotRecord = {
   pins: Pin[];
   /** Its URL disks' URLs by slot (from the file's header): a machine like it can be made again. */
   urls?: Record<number, string>;
+  /**
+   * The generations of the stored disks it was taken over, by disk id: those read-only or under an overlay (one written
+   * in place is a pin). A disk's that moved since (written in place, merged into) leaves it unrestorable (machines.md
+   * §5.1 "Unrestorable"). Absent on a snapshot from before it was kept: not checked.
+   */
+  bases?: Record<string, number>;
+  /**
+   * The core's snapshot format that wrote it (its header's `coreVersion`); absent on a record from before it was kept,
+   * which was written by format 6 or older (`RECORDED_FROM`). Another format than this page's core reads can't restore.
+   */
+  coreVersion?: number;
 };
 
 export type Kinds = {

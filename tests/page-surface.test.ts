@@ -363,7 +363,7 @@ test("the window's reading of the files isn't a machine's: delete, resize and me
   await view(page, (x) => x.overlay === ids.x3 && x.size === 20 * MiB);
   const actions = await page.evaluate(async (x) => {
     const { Store } = await import('/web/app/store.ts' as string);
-    const { mergeIntoDisk } = await import('/web/app/disks.ts' as string);
+    const { mergeIntoDisk } = await import('/web/app/merge.ts' as string);
     const { resize } = await import('/web/app/resize.ts' as string);
     type E = { msg?: { key?: string }; cause?: { msg?: { key?: string } } };
     const why = (e: unknown) => String((e as E).cause?.msg?.key ?? (e as E).msg?.key ?? e);

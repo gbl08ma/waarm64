@@ -7,7 +7,7 @@
 // overlay, and one without is refused (§4.4). Nothing here asks the user; the page and the Home page confirm first.
 import { opfsDir, overlayMeta, storageFullError } from '../overlay.ts';
 import { makeRoom } from '../diskcache.ts';
-import { readHeader } from '../snapshot-file.ts';
+import { readHeader, SNAPSHOT_VERSION, type SnapshotHeader } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
 import type { GrowMark, OverlaySizes } from './disk-size.ts';
@@ -25,7 +25,7 @@ import {
   type MachineRecord,
   type Shape,
 } from './shape.ts';
-import { overlayDir, snapshotPath, type Store } from './store.ts';
+import { diskDir, overlayDir, snapshotPath, type SnapshotRecord, type Store } from './store.ts';
 import { msg, MsgError, type Msg } from '../i18n.ts';
 
 /** The machine's shape and its hash as it would run now (its disks and overlays by id: an overlay's own size counts, §4.5). */
@@ -36,6 +36,53 @@ export async function currentShape(
 ): Promise<{ shape: Shape; hash: string }> {
   const shape = shapeOf(m, disks, { ...opts, cpu: opts.cpu ?? CPU_DEFAULT });
   return { shape, hash: await shapeHash(shape) };
+}
+
+/**
+ * The generations of the stored disks machine `m` reads, by disk id (§5.1 "Unrestorable"): those attached read-only or
+ * under an overlay, from their files (one written in place is pinned instead). A running machine holds them open, so
+ * none moves while it runs: a snapshot's are its start's. None: no such disk.
+ */
+export async function basesOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined) {
+  const out: Record<string, number> = {};
+  for (const a of m.attachments) {
+    const d = disks(a.disk);
+    if (d?.kind === 'stored' && !a.inPlace) out[d.id] = (await overlayMeta(diskDir(d.id))).generation;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * The snapshot format a kept snapshot's record from before records kept theirs was written in, at most (`coreVersion`
+ * absent): the core's then. One older than it can't restore either, but isn't told apart.
+ */
+const RECORDED_FROM = 6;
+
+/**
+ * Why kept snapshot `s` can never be restored onto its machine's disks as the records have them (§5.1
+ * "Unrestorable"), whatever is done to the machine: made by another core's snapshot format; a stored disk it was
+ * taken over written in place or merged into since (`bases`); a disk it pinned written in place, moved on since, and
+ * not in the file whole. None when nothing says so (its shape is checked apart: `orphaned`). From the records alone: a
+ * disk's record lags its files while a machine writes it (`refreshStored` after the run), never ahead of them, so a
+ * moved generation is one for good.
+ */
+export function unrestorable(s: SnapshotRecord, disks: (id: string) => DiskRecord | undefined): Msg | undefined {
+  const version = s.coreVersion ?? RECORDED_FROM;
+  if (version !== SNAPSHOT_VERSION) return msg('snapshots:snapshots.unrestorable.version');
+  const moved = (id: string, generation: number) => {
+    const d = disks(id);
+    return d && (d.generation ?? 0) > generation ? d : undefined;
+  };
+  for (const [id, generation] of Object.entries(s.bases ?? {})) {
+    const d = moved(id, generation);
+    if (d) return msg('snapshots:snapshots.unrestorable.base', { disk: d.name });
+  }
+  for (const p of s.pins) {
+    if (!p.overlay?.startsWith('disks/') || p.blocks > 0) continue;
+    const d = moved(p.overlay.slice('disks/'.length), p.generation ?? 0);
+    if (d) return msg('snapshots:snapshots.unrestorable.inPlace', { disk: d.name });
+  }
+  return undefined;
 }
 
 /** What a restore will do, in words for the confirmation, and how to make it so (`commit`). */
@@ -54,7 +101,8 @@ export type RestorePlan = {
   commit(replace: boolean): Promise<DiskPlan[]>;
 };
 
-type Snap = { name: string; key: string; pins: SnapshotDisk[] };
+/** `bases`: the stored disks' generations it was taken over (its header's: `basesOf`), where it says them. */
+type Snap = { name: string; key: string; pins: SnapshotDisk[]; bases?: Record<string, number> };
 /** What a restore plans with: the store, the machine and its disks, the snapshot, and the slots its pins name. */
 type Restoring = {
   store: Store;
@@ -118,9 +166,11 @@ async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }): Prom
   const keep: Step = { ...step, action: 'keep', generation: p.generation };
   const pinned = async () => (await overlayMeta(p.overlay)).generation === p.generation;
   if (p.overlay.startsWith('disks/')) {
-    // Written in place: no earlier state to fork from.
+    // Written in place: no earlier state to fork from. The disk as it was pinned, now under an overlay (the attachment
+    // no longer written in place), forks into an overlay over it that holds nothing (the file has none of its blocks).
     if (a.inPlace && (await pinned())) return keep;
     if (p.blocks > 0) return { ...step, action: 'fork-whole' };
+    if (await pinned()) return forkStep(r, step, a.overlay);
     return msg('snapshots:snapshots.writtenInPlace', { disk: d.name });
   }
   if (a.overlay && overlayDir(a.overlay) === p.overlay && (await pinned())) return keep;
@@ -144,6 +194,11 @@ async function forkStep(
 async function survey(r: Restoring) {
   const steps: Step[] = [];
   let refused: Msg | undefined;
+  // A stored disk it was taken over, moved since (written in place, merged into): its overlays' blocks, or what a
+  // read-only guest cached, are over other bytes now.
+  for (const [id, generation] of Object.entries(r.snap.bases ?? {}))
+    if ((await overlayMeta(diskDir(id))).generation !== generation)
+      refused = msg('snapshots:snapshots.baseMoved', { disk: r.disks.get(id)?.name ?? id });
   for (const p of r.snap.pins) {
     if (p.ram || !p.overlay) continue;
     const s = await stepOf(r, { ...p, overlay: p.overlay });
@@ -269,6 +324,14 @@ export async function moveSnapshot(store: Store, id: string, to: string) {
   await store.put('snapshots', { ...s, machine: to });
 }
 
+/** A header's `bases` (`basesOf`, written by the machine worker: web/app/worker-header.ts), where it has them whole. */
+export function basesIn(header: SnapshotHeader): Record<string, number> | undefined {
+  const b = header.bases;
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return undefined;
+  const entries = Object.entries(b as Record<string, unknown>);
+  return entries.every(([, g]) => Number.isSafeInteger(g)) ? (b as Record<string, number>) : undefined;
+}
+
 /** Imports a snapshot file into machine `machine`'s kept snapshots (its header read first; one of another shape is kept, orphaned). */
 export async function importSnapshot(store: Store, machine: string, file: File) {
   const header = await readHeader(file);
@@ -313,6 +376,8 @@ export async function importSnapshot(store: Store, machine: string, file: File) 
       shapeHash: header.shapeHash as string,
       pins,
       urls: header.urls as Record<number, string> | undefined,
+      bases: basesIn(header),
+      coreVersion: header.coreVersion,
     };
     await store.put('snapshots', rec);
     return rec;

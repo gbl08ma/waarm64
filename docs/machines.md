@@ -41,7 +41,7 @@ What the Home page shows and does is [frontend.md](frontend.md) "Machines in the
     [remote-disks.md](remote-disks.md) and devices.md "Over HTTP".
 11. **A stored disk can take an overlay in place** ([Merge into the disk](ui:disks:Overlays.mergeButton)): the overlay's blocks are written into the
     stored disk, and **every other overlay of that disk is deleted** (they were over the old bytes); the
-    confirmation lists them.
+    confirmation lists them. A blank disk takes one too (§4.4 "A blank disk's overlay merged").
 12. **A stored disk can be written in place**, as an option per attachment: no overlay, the guest's writes go into
     the stored disk (§4.4).
 13. **No compatibility with the page before machines:** its overlays, Suspend files and snapshot files (those from
@@ -295,6 +295,18 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   disk finishes the merge at its next opening (`resumeMerge`: writing the same blocks again is harmless) before
   anything reads it; an overlay that can't be opened any more (gone, or its deletion, a file at a time in OPFS, cut
   off) has had its blocks copied, and what is left of it is deleted.
+- **A blank disk's overlay merged** (`web/app/merge.ts`; the user's QA, 2026-11-18: an overlay a resize on a machine
+  made, §4.5, had no way into its disk): an overlay **nothing was ever written to** (its generation 0, read from its
+  `meta` under the merge's lock) grows the blank disk to the overlay's size and is deleted; the disk stays blank, its
+  identity keeps the size it was made with (as a stored disk's does), so its other overlays still fit it and stay, and
+  a machine that had it chosen gets an empty one at the new size at its next start (its guest sees the same disk: its
+  snapshots stay). An overlay **written to** makes the blank disk a stored disk of its blocks at the overlay's size
+  (`convertBlank`: the stored disk's merge job into a block store that starts empty, then the record says `stored`
+  with a stored disk's identity and the overlay's grow mark); its other overlays are deleted, as above, and the machines
+  that attach it see another disk (their snapshots orphan by the shape). The record is written after the copy: cut off
+  between, the disk is still blank and what the overlay held is lost with its record, as a stored disk's merge cut off
+  before its copy would lose it. The confirmation (`mergeEffect`) says which, the size, the overlays deleted and the
+  snapshots it orphans (for a grow: those of machines whose guest would see the disk at another size).
 - **Writing in place and snapshots:** a disk written in place has no earlier state to fork from. A kept snapshot pins
   the disk's generation and restores it only while it matches; otherwise a file carrying the whole disk forks it into
   an overlay, and one without is refused with the reason. **A downloaded snapshot can't be self-contained** without
@@ -423,6 +435,30 @@ The file's format, what the core saves and the page's toolbar and header fields:
   from its shape, disks the browser has attached again by identity, blank disks and ramdisks made again, files picked
   again; at the sizes the snapshot had: a grown overlay's as an empty overlay at that size, marked to grow; a ramdisk
   grown since as another of the old size; a stored disk grown since refused, as it can't be seen smaller) and [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned).
+- **Unrestorable** (the user's QA, 2026-11-18: a snapshot found unrestorable only at its restore wastes storage): a
+  kept snapshot that **no change to the machine can make restorable** shows as orphaned too, with its reason
+  (`unrestorable`, web/app/snapshots.ts, from the records alone: no file is read). The causes, all permanent:
+  - **a disk written in place that moved on**, the snapshot without the whole disk (a kept one never has it): its pin's
+    generation is behind the disk record's. A generation only grows, so the bytes it pinned are gone. A disk record
+    lags its files while a machine writes it (`refreshStored` at the stop), never leads them, so only a moved record
+    counts. While the generation still matches, an attachment no longer written in place restores through a fork that
+    holds nothing over the unchanged disk (it used to be refused: that cause could be undone, and is gone).
+  - **a stored disk it was taken over** (read-only, or under an overlay) **written in place or merged into** since:
+    the snapshot's overlay blocks, or what a read-only guest cached, are over other bytes. The page records the stored
+    disks' generations at each start (`basesOf`: a running machine holds them open, nothing moves them while it runs)
+    into the run's `about`, the snapshot's header (`bases`) and a kept snapshot's record; a restore (`planRestore`) and a
+    resume (`sameOverlays`) refuse one whose disk moved (before, the restore forked over the new bytes). Snapshots from
+    before `bases` aren't checked.
+  - **another core's snapshot format** (`coreVersion`, against `SNAPSHOT_VERSION`, web/snapshot-file.ts, which
+    tests/snapshot-plan.test.ts pins to the core's): a page updated with a new format reads none of the old (platform.md
+    "The snapshot file"). A record from before `coreVersion` counts as format 6.
+
+  What can be undone stays the shape's orphaning: a setting or a disk changed back, the address's parameters, a
+  browser without WebGL2. What isn't a cause: an overlay deleted or merged away (a kept snapshot carries its blocks and
+  forks), a disk deleted (refused while attached; a detach is a shape change). Not detected: a URL disk's image
+  replaced under the same path and size without an `ETag` or `Last-Modified` (its identity can't tell). The toolbar's
+  Snapshot on a machine with a disk written in place says, in its tooltip and its notice, that the snapshot restores
+  only until that disk is written again (frontend.md "A stored machine's snapshots").
 
 ### 5.2 Save, keep, restore
 
@@ -454,13 +490,14 @@ The file's format, what the core saves and the page's toolbar and header fields:
   orphaned).
 - **A template** (`template: true` in the header, set only by `tools/snapshot-template.ts`, never by the page): its
   restore has the guest agent renew the guest's identity (devices.md "A template's identity").
-- The page's header is format 2: a stored machine's `name`, `shape`, `shapeHash` and URL disks' `urls`, and the pins
+- The page's header is format 2: a stored machine's `name`, `shape`, `shapeHash`, URL disks' `urls` and the stored disks' generations under it (`bases`, §5.1 "Unrestorable"), and the pins
   in `disks`; `web/snapshot-file.ts`'s container and the core's state are as for any snapshot.
 
 ### 5.3 Suspend
 
 A snapshot in the machine's `suspend` slot, without the overlays' blocks (they're in OPFS) and with the ramdisks'.
-It resumes only while every pin matches (the worker compares each overlay's generation, `overlayMeta`); a start drops
+It resumes only while every pin matches (the worker compares each overlay's generation, `overlayMeta`, and the stored
+disks' under them, the header's `bases`: §5.1 "Unrestorable"); a start drops
 it with a note otherwise. Switching an overlay, New empty, a merge, editing the machine or a boot all make it stale
 with no code of their own.
 
@@ -503,8 +540,8 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 ## 8. Where the code is
 
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
-  hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/snapshots.ts`
-  (the shape now, the restore's plan), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
+  hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
+  (the shape now, the restore's plan, `unrestorable`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
   (a switch to an overlay of another size asked), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Home page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
@@ -524,7 +561,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 ## 9. Tests
 
 docs/testing.md's "Machines as the unit" row: the store's ordering and sweep, the shape's hash, the ramdisk, stored
-disks (import, export under `qemu-img compare`, merge and its resume), growing a disk (tests/resize.test.ts; the page's Resize dialog from each place, tests/page-resize.test.ts), the generation and its epoch, the restore's
+disks (import, export under `qemu-img compare`, merge and its resume), a blank disk's overlay merged (tests/merge.test.ts, the dialog tests/page-unrestorable.test.ts), snapshots that can never be restored (tests/unrestorable.test.ts, the Snapshots tab tests/page-unrestorable.test.ts), growing a disk (tests/resize.test.ts; the page's Resize dialog from each place, tests/page-resize.test.ts), the generation and its epoch, the restore's
 plan, the Home page and the URL check, definitions across fresh profiles; on Debian (`scripts/ci-machines.sh`)
 several disks, a stored Debian, kept snapshots, forks, Suspend on pins, orphaning.
 

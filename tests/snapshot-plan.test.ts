@@ -13,7 +13,7 @@ import { lzCodec } from '../web/lz.ts';
 import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
 import { swapHeader } from '../web/ramdisk.ts';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
-import { SnapshotError } from '../web/snapshot-file.ts';
+import { SNAPSHOT_VERSION, SnapshotError } from '../web/snapshot-file.ts';
 import { bootVm, compileCore, type BootOptions } from '../web/vm.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
@@ -36,6 +36,11 @@ async function byteAt(name: string, b: number) {
   f.close();
   return bytes![0];
 }
+
+test("the page's SNAPSHOT_VERSION is the core's snapshot format (a kept snapshot of another shows as unrestorable)", async () => {
+  const codec = await lzCodec(await compileCore(WASM));
+  assert.equal(SNAPSHOT_VERSION, codec.snapshotVersion, 'web/snapshot-file.ts SNAPSHOT_VERSION follows core/src/snapshot.rs VERSION');
+});
 
 test('a snapshot pins generations and carries the ramdisk; a restore keeps, forks or replaces by plan', async () => {
   const module = await compileCore(WASM);

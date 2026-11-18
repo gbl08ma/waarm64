@@ -1,6 +1,7 @@
 <!--
   A machine's snapshots on the Home page (docs/machines.md §5): the ones kept in this browser, orphaned ones
-  marked with what differs (their shape isn't the machine's now); restore (on this page's machine), rename, download,
+  marked with what differs (their shape isn't the machine's now) or why they can never be restored (a disk they depend
+  on changed, another core's format: §5.1 "Unrestorable"); restore (on this page's machine), rename, download,
   delete, delete all orphaned, make a machine like an orphaned one; a file restored at once or kept; one saved to a
   file. The restore itself is the page's (web/app/areas/snapshot-restore.ts: it confirms the forks). Without `machine`, the page's
   transient machine: files only.
@@ -18,7 +19,7 @@
   import { shapeDiff } from './shape-diff.ts';
   import { snapshotPath } from './store.ts';
   import { t, text } from '../i18n.ts';
-  import { importSnapshot } from './snapshots.ts';
+  import { importSnapshot, unrestorable } from './snapshots.ts';
   import { machineLike } from './machine-like.ts';
   import { opfsDir } from '../overlay.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
@@ -55,13 +56,20 @@
       shown = false;
     };
   });
-  const orphaned = (s: SnapshotRecord) => !!now && s.shapeHash !== now.hash;
-  const why = (s: SnapshotRecord) =>
-    now
+  /** Taken of the machine with another shape: a machine like it can be made (the change can be undone, too). */
+  const otherShape = (s: SnapshotRecord) => !!now && s.shapeHash !== now.hash;
+  /** Why it can never be restored, whatever is done to the machine (docs/machines.md §5.1 "Unrestorable"), if so. */
+  const lost = (s: SnapshotRecord) => unrestorable(s, (id) => records.disks.get(id));
+  const orphaned = (s: SnapshotRecord) => otherShape(s) || !!lost(s);
+  const why = (s: SnapshotRecord) => {
+    const gone = lost(s);
+    if (gone) return text(gone);
+    return now
       ? shapeDiff(s.shape, now.shape)
           .map((m) => text(m))
           .join('; ')
       : '';
+  };
   const inPlace = $derived(!!machine?.attachments.some((a) => a.inPlace && !a.readOnly));
   /** The machine runs on this page: snapshots restore onto it, and it can save one. */
   const here = $derived(machine ? machine.id === current.id : true);
@@ -162,7 +170,9 @@
               </div>
             </div>
             {#snippet actions()}
-              {#if orphaned(s)}
+              {#if lost(s)}
+                <!-- Nothing restores it: a machine like it would have the same disks. -->
+              {:else if otherShape(s)}
                 <Button onclick={() => like(s)} title={t('snapshots:Snapshots.like.title')}
                   >{t('snapshots:Snapshots.like')}</Button
                 >

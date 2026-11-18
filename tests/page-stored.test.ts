@@ -181,9 +181,10 @@ test('a disk stored in the browser (2): an overlay merged into it, grown, then w
   const merged = await inStore(page, async ({ store, disks, a }: any) => {
     const m = await store.get('machines', a);
     const o = m.attachments[0].overlay;
-    const costs = (await disks.mergeCosts(store, o)).map((x: { name: string }) => x.name).sort();
+    const merging = await import('/web/app/merge.ts' as string);
+    const costs = (await merging.mergeCosts(store, o)).map((x: { name: string }) => x.name).sort();
     const before = (await store.get('disks', m.attachments[0].disk)).generation;
-    const blocks = await disks.mergeIntoDisk(store, o);
+    const blocks = await merging.mergeIntoDisk(store, o);
     const m2 = await store.get('machines', a);
     m2.attachments[0].inPlace = true;
     await store.put('machines', m2);
