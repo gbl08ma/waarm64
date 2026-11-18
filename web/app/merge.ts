@@ -23,8 +23,9 @@ async function mergeHow(d: DiskRecord, o: OverlayRecord) {
 
 /**
  * Merges overlay `overlay` into its disk (§4.4). Into a stored disk: every other overlay of the disk is deleted (they
- * were over the old bytes), then the overlay's record, then its blocks go into the disk and its files away (in the
- * worker, resumed at the disk's next opening if interrupted). Into a blank disk: an overlay never written to grows the
+ * were over the old bytes), then its blocks go into the disk and its files away (in the worker; failed or interrupted,
+ * the overlay's record stays and the disk's mark has the next merge of it, or the disk's next opening, finish it), then
+ * its record. Into a blank disk: an overlay never written to grows the
  * disk to its size and is deleted (the other overlays stay: the disk still reads as zeros); one written to makes the
  * disk a stored disk of its blocks (the other overlays deleted, as above). Machines that had the deleted overlays
  * chosen are left without one. The caller confirmed (it says `mergeEffect`). Returns the blocks merged.
@@ -66,42 +67,53 @@ async function merge(store: Store, o: OverlayRecord, d: DiskRecord) {
   const others = (await store.overlaysOf(d.id)).filter((x) => x.id !== o.id);
   await noneInUse(d, [o, ...others]);
   for (const x of others) await deleteOverlay(store, x.id);
-  await unchoose(store, o.id);
   if (d.kind === 'blank') return convertBlank(store, o, d);
   const size = await growForMerge(store, d, o);
-  await store.forget('overlays', o.id); // the record only: the worker deletes the files once their blocks are in the disk
-  const r = await diskJob({
-    type: 'merge',
-    disk: diskDir(d.id),
-    overlay: overlayDir(o.id),
-    identity: identityOf(d),
-    size,
-  });
-  await refreshStored(store, d.id);
-  return r.blocks ?? 0;
+  // The overlay's record stays until its blocks are in (the worker deletes its files then): failed or cut off partway,
+  // its files outlive the sweep, and the disk's mark has the next merge of it, or the disk's next opening, finish it.
+  try {
+    const r = await diskJob({
+      type: 'merge',
+      disk: diskDir(d.id),
+      overlay: overlayDir(o.id),
+      identity: identityOf(d),
+      size,
+    });
+    await store.forget('overlays', o.id);
+    await unchoose(store, o.id);
+    return r.blocks ?? 0;
+  } finally {
+    await refreshStored(store, d.id); // its generation moved at the mark
+  }
 }
 
 /**
- * Blank disk `d` made a stored disk of overlay `o`'s blocks (its other overlays deleted and `o` unchosen already): its
- * block store made at `disks/<id>` with the overlay merged into it (the job of a stored disk's merge, into a store that
- * starts empty), then its record says `stored`, with a stored disk's identity (the machines that attach it see another
- * disk: their snapshots orphan), the overlay's size and its grow mark. The record after the bytes: cut off before it,
- * the disk is still blank, and what the overlay held is lost with its record, as a stored disk's merge cut off before
- * its copy would lose it.
+ * Blank disk `d` made a stored disk of overlay `o`'s blocks (its other overlays deleted already): its block store made
+ * at `disks/<id>` with the overlay merged into it (the job of a stored disk's merge, into a store that starts empty),
+ * then its record says `stored`, with a stored disk's identity (the machines that attach it see another disk: their
+ * snapshots orphan), the overlay's size and its grow mark; then `o`'s record goes, and the machines that had it chosen
+ * are left without one. A copy that fails (the storage full) leaves the overlay as it was, and the half-made store is
+ * removed. The record after the bytes: cut off between the copy (which deletes the overlay's files) and the disk's
+ * record, the disk is still blank, and what the overlay held is lost.
  */
 async function convertBlank(store: Store, o: OverlayRecord, d: DiskRecord) {
   const size = Math.max(d.size, o.size ?? 0);
   const identity = { kind: 'stored' as const, id: d.id, bytes: 0 }; // as an import's: a stored disk is known by its id
   return store.writing(async () => {
     await removeOverlay(diskDir(d.id)); // what an earlier conversion, cut off, left
-    await store.forget('overlays', o.id); // the record only: the worker deletes the files once their blocks are in
-    const r = await diskJob({
-      type: 'merge',
-      disk: diskDir(d.id),
-      overlay: overlayDir(o.id),
-      identity: canonical(identity),
-      size,
-    });
+    let r;
+    try {
+      r = await diskJob({
+        type: 'merge',
+        disk: diskDir(d.id),
+        overlay: overlayDir(o.id),
+        identity: canonical(identity),
+        size,
+      });
+    } catch (e) {
+      await removeOverlay(diskDir(d.id)).catch(() => undefined); // tidying up: the failure thrown is the one to report
+      throw e;
+    }
     await store.put('disks', {
       ...d,
       kind: 'stored',
@@ -111,6 +123,8 @@ async function convertBlank(store: Store, o: OverlayRecord, d: DiskRecord) {
       bytes: await overlayBytes(diskDir(d.id)),
       ...(o.grow ? { grow: o.grow } : {}),
     });
+    await store.forget('overlays', o.id); // its files went with the copy
+    await unchoose(store, o.id);
     return r.blocks ?? 0;
   });
 }

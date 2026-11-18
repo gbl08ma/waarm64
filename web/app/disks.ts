@@ -119,6 +119,10 @@ export async function switchOverlay(store: Store, m: MachineRecord, attachment: 
  */
 export async function deleteOverlay(store: Store, id: string) {
   if (await inUse(overlayDir(id))) throw new MsgError('disks:disks.overlayRunning');
+  // A merge of it that failed partway (its disk marked): some of its blocks are in the disk already, the rest only here.
+  const o = await store.get('overlays', id);
+  if (o && (await overlayMeta(diskDir(o.disk))).merging === overlayDir(id))
+    throw new MsgError('disks:disks.overlayMerging');
   for (const m of await store.all('machines')) {
     if (!m.attachments.some((a) => a.overlay === id)) continue;
     for (const a of m.attachments) if (a.overlay === id) a.overlay = undefined;

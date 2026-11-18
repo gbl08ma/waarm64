@@ -451,6 +451,10 @@
     "message": "The overlay no longer exists or belongs to another disk.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.switch or .newOverlay, when the overlay chosen in a disk's Changes in list is gone or belongs to another disk."
   },
+  "disks.overlayMerging": {
+    "message": "A merge of this overlay into its disk didn't finish, and part of it is in the disk already. Merge it into the disk again to finish.",
+    "note": "Detail of an error on the Home page (Disks), under Disks.failed.delete (or a machine's Disks tab's reset), when the overlay can't be deleted: a Merge into the disk of it failed partway (e.g. the storage was full), and only a merge again finishes it."
+  },
   "disks.overlayRunning": {
     "message": "A machine using this overlay is running, in this tab or another. Power it off first.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.delete, when an overlay can't be deleted: a machine (in this tab or another) has it open."
