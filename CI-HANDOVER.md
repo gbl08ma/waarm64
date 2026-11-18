@@ -13,7 +13,7 @@ decisions in §11).
   exclusive waiter goes first). docs/testing.md "Tiers" holds the tiers and the change table (the per-script
   "must pass too when" sentences removed); CLAUDE.md's §10 drafts applied. The names flake (`waarm64_ts`, three
   tests failing ~1 in 6 lib runs under load) fixed by seeding `random()` per test in test builds.
-- ci.sh 937 s on 2026-11-18 (JS step 569 s from 261 s; the serial Rust steps before it are now ~230 s: rust test
+- 3a290c2c and 86d5dbf2 passed ci.sh (790 s; the topic scripts only gained the lock line, not run). ci.sh 937 s earlier that day (JS step 569 s from 261 s; the serial Rust steps before it are now ~230 s: rust test
   134, agent 18, testfloat 41).
 
 ## Next, in order
