@@ -1,7 +1,8 @@
 <!--
   The Network wizard (docs/networking/adapters.md §3.2), a dialog opened by web/app/areas/network.ts `openWizard`: attach a connection
   to a machine's adapter (one of the browser's, or a new one: New connection… first), make a new connection on its own,
-  or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay, a room's switches).
+  or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay, a room's switches),
+  opened on it or from the pick step's Edit… (then Save and Back return to the pick step, Cancel closes).
   The shell: the session, the steps' navigation, Keep (a new connection is kept in this browser unless it's off:
   ephemeral, gone when the page closes), the error and the submit; each step is a component with its own form
   (NetPickStep, NetKindStep, NetTailnetStep, NetTailcatStep, NetLocalStep, NetRoomPickStep, NetRoomStep;
@@ -37,6 +38,8 @@
   let step = $state<Step>('kind');
   let keep = $state(true);
   let editing = $state.raw<Connection>(); // raw: the record goes to the store whole (a deep proxy can't be cloned)
+  /** The edit was opened from the pick step (its Edit…): Save and Back return there. */
+  let editFromPick = $state(false);
   const runner = new Actions();
   const pickable = $derived(opened.mode === 'attach' && net.connections.length > 0);
   const here = $derived(opened.mode === 'attach' && !!opened.here);
@@ -79,7 +82,15 @@
     made: (c, key) => (opened.mode === 'attach' ? attach(c, key) : Promise.resolve(close())),
     edited: async (c) => {
       await page.netEdit(c);
-      close();
+      if (editFromPick) backToPick();
+      else close();
+    },
+    edit: (c) => {
+      editFromPick = true;
+      editing = c;
+      const to = EDIT_STEP[c.kind];
+      api(to)?.begin(); // the step's form takes the connection's values
+      show(to);
     },
     fail: (e) => runner.fail(e),
     go: (to) => show(to),
@@ -96,6 +107,7 @@
   function begin(o: Opened) {
     opened = o;
     keep = true;
+    editFromPick = false;
     editing = o.mode === 'edit' ? net.connections.find((c) => c.id === o.connection) : undefined;
     for (const s of [pick, kind, tailnet, tailcat, local, roomPick, room]) s?.begin();
     wizard?.open();
@@ -110,8 +122,17 @@
     runner.clear();
     api(to)?.enter();
   }
+  /** Ends an edit opened from the pick step: the step's form back to a new connection's, and the pick step shown. */
+  function backToPick() {
+    const from = step;
+    editing = undefined;
+    editFromPick = false;
+    api(from)?.begin();
+    show('pick');
+  }
   function goBack() {
-    if (step === 'kind') show('pick');
+    if (editFromPick) backToPick();
+    else if (step === 'kind') show('pick');
     else if (step === 'roomGlobal' || step === 'roomCreate' || step === 'roomJoin') show('roomPick');
     else show('kind');
   }
@@ -154,7 +175,7 @@
   const submitLabel = $derived(submitLabelOf());
   /** The steps that only choose have no Save; the pick step's shows once a connection is chosen. */
   const noSubmit = $derived(step === 'kind' || step === 'roomPick' || (step === 'pick' && !pick?.chosen()));
-  const noBack = $derived(!!editing || step === 'pick' || (step === 'kind' && !pickable));
+  const noBack = $derived((!!editing && !editFromPick) || step === 'pick' || (step === 'kind' && !pickable));
 </script>
 
 <Modal id="net-wizard" bodyId="net-form" bind:this={wizard} {title} auto={false} onsubmit={submit}>

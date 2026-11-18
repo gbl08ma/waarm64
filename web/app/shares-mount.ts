@@ -44,8 +44,10 @@ export function mountUnit(path: string): string {
   return out.join('');
 }
 
-/** The hand-made equivalent, for a guest without systemd 256. */
-export const SHARES_BY_HAND = `mount -t 9p -o trans=virtio,version=9p2000.L,cache=none ${SHARES_TAG} /mnt`;
+/** Where the hand-made mount puts the folders. */
+export const SHARES_BY_HAND_AT = '/mnt';
+/** The hand-made equivalent, for a guest without systemd 256 (the Folders menu's Details…, FoldersMount.svelte). */
+export const SHARES_BY_HAND = `mount -t 9p -o trans=virtio,version=9p2000.L,cache=none ${SHARES_TAG} ${SHARES_BY_HAND_AT}`;
 
 /** The credentials that have the guest automount the device at `path`. */
 export function sharesCredentials(path: string, description: string): Credential[] {

@@ -54,7 +54,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `Slider`: a number on a slider, notches under it at the suggested values (a pointer snaps to one nearby), the
      value in words beside it (a machine's vCPUs, RAM, JIT cache).
    - `Check`, `Radio`: a checkbox or a radio button and its words (`ref` binds Check's box).
-   - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line).
+   - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line; `after`: controls of its own inside
+     its frame at the end, a connection's Edit…).
    - `Step`: a wizard's step (a column, hidden unless `active`); `Steps`: numbered steps to follow; `Disclosure`: more
      of a form folded under a small line (Advanced).
    - `ErrorBanner`: the dismissible error, warning or notice bar, across the page or floating, with a notice's countdown (the message bar, the Machines page's error).

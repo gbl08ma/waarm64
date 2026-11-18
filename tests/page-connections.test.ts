@@ -14,7 +14,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { answerAsks } from './page-ask.ts';
-import { t } from '../web/i18n.ts';
+import { t, t as tWords } from '../web/i18n.ts';
 import { words } from './words.ts';
 
 const NO_CONNECTION = t('network:NetAdapter.noConnection');
@@ -127,6 +127,27 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await pageB.click('#net-setup');
   assert.equal(await pageB.locator('#net-step-pick').isVisible(), true);
   const choice = pageB.locator(`[data-connection="${t.id}"]`);
+  // Its Edit… (the Connections pane's) edits it in the wizard's place; Back, then Save, come back to the choice.
+  await pageB.click(`#net-pick-edit-${t.id}`);
+  assert.equal(await pageB.locator('#net-step-tailnet').isVisible(), true, 'the editor in the wizard');
+  assert.equal(await pageB.locator('#net-hostname').inputValue(), 'alpha');
+  assert.equal(await text(pageB, '#net-wizard-title'), tWords('network:NetWizard.title.edit', { name: t.name as string }));
+  await pageB.click('#net-back');
+  assert.equal(await pageB.locator('#net-step-pick').isVisible(), true, 'Back: the choice again');
+  assert.equal(await choice.getAttribute('aria-pressed'), 'true', 'the connection edited is chosen');
+  await pageB.click(`#net-pick-edit-${t.id}`);
+  await pageB.fill('#net-hostname', 'alpha-two');
+  await pageB.click('#net-connect');
+  await pageB.waitForFunction(() => !!document.getElementById('net-step-pick')?.checkVisibility(), null, { timeout: 10_000 });
+  assert.equal(await pageB.evaluate(() => (document.getElementById('net-wizard') as HTMLDialogElement).open), true, 'Save keeps the wizard open, at the choice');
+  assert.equal(((await records(pageB, 'connections'))[0].tailnet as { hostname: string }).hostname, 'alpha-two', 'saved');
+  assert.equal(await text(pageB, '#net-connect'), CONNECT, 'attaching again');
+  // New connection… after an edit: an empty form, not the edited connection's.
+  await pageB.click('#net-pick-new');
+  await pageB.click('#net-pick-tailnet');
+  assert.equal(await pageB.locator('#net-hostname').inputValue(), '', "a new connection's form");
+  await pageB.click('#net-back');
+  await pageB.click('#net-back');
   await pageB.waitForFunction(([id, src]) => new RegExp(src).test(document.querySelector(`[data-connection="${id}"]`)?.textContent ?? ''), [t.id, heldBy('Alpha').source], { timeout: 5_000 });
   await choice.click();
   assert.equal(await text(pageB, '#net-connect'), CONNECT);

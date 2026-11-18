@@ -1,11 +1,13 @@
 <!--
   The Network wizard's first step when attaching and the browser has connections (NetWizard.svelte): one of them (the
   one attached, else the one `preselect` picks), each with its kind and who holds it, or New connection…. A double
-  click attaches at once.
+  click attaches at once. Each connection's Edit… (ConnectionEditButton.svelte, as on the Connections pane) opens its
+  editor in the wizard's place; the editor's Save or Back comes back here (`flow.edit`).
 -->
 <script lang="ts">
   import type { Attachment } from 'svelte/attachments';
   import Choice from './ui/Choice.svelte';
+  import ConnectionEditButton from './ConnectionEditButton.svelte';
   import Note from './ui/Note.svelte';
   import Step from './ui/Step.svelte';
   import { msg, t, text, type Msg } from '../i18n.ts';
@@ -105,6 +107,16 @@
       {@attach keep(c.id)}
     >
       {lineOf(c)}
+      {#snippet after()}
+        <ConnectionEditButton
+          connection={c}
+          id={`net-pick-edit-${c.id}`}
+          onclick={() => {
+            picked = c.id;
+            flow.edit(c);
+          }}
+        />
+      {/snippet}
     </Choice>
   {/each}
 </Step>

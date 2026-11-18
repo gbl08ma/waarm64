@@ -1067,26 +1067,6 @@
     "message": "attached to no machine",
     "note": "Machines page, Connections: the end of a connection's line when no machine's adapter has it."
   },
-  "ConnectionsPane.connection.edit.tailnet": {
-    "message": "Change its hostname. A different control server needs a new connection.",
-    "note": "Machines page, Connections: tooltip of a tailnet connection's Edit… button."
-  },
-  "ConnectionsPane.connection.edit.local": {
-    "message": "Change the helper's link.",
-    "note": "Machines page, Connections: tooltip of a local helper connection's Edit… button."
-  },
-  "ConnectionsPane.connection.edit.tailcat": {
-    "message": "Change its server and relay.",
-    "note": "Machines page, Connections: tooltip of a tailcat connection's Edit… button."
-  },
-  "ConnectionsPane.connection.edit.room": {
-    "message": "Change whether this machine connects directly to members, and whether members can connect to it.",
-    "note": "Machines page, Connections: tooltip of a room connection's Edit… button."
-  },
-  "ConnectionsPane.connection.edit": {
-    "message": "Edit…",
-    "note": "Machines page, Connections: button on each connection that opens its settings in the connection wizard."
-  },
   "ConnectionsPane.busy.forgettingAddress": {
     "message": "Replacing the address",
     "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: a connection's New address."

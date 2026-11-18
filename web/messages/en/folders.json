@@ -192,12 +192,48 @@
     "note": "Button in the toolbar's Folders menu: opens the Folder wizard."
   },
   "FoldersMenu.where": {
-    "message": "The guest finds them in <path>{{path}}</path>. In a guest with a systemd older than version 256, mount them with this command: <command>…</command>",
-    "note": "Note at the bottom of the toolbar's Folders menu when this emulator mounts the folders. <path> is shown as code: the mount point {{path}} followed by /<name>; <command> is replaced by the mount command to type (its words here aren't shown)."
+    "message": "The guest finds them in <path>{{path}}</path>.",
+    "note": "Note at the bottom of the toolbar's Folders menu when this emulator mounts the folders. <path> is shown as code: the mount point {{path}} followed by /<name>. Details… follows it."
   },
   "FoldersMenu.where.byHand": {
-    "message": "Mount them in the guest with this command: <command>…</command>",
-    "note": "Note at the bottom of the toolbar's Folders menu when this emulator doesn't mount the folders (Mount shared folders in the guest is off). <command> is replaced by the mount command to type, shown as code (its words here aren't shown)."
+    "message": "The guest mounts them only by hand.",
+    "note": "Note at the bottom of the toolbar's Folders menu when this emulator doesn't mount the folders (Mount shared folders in the guest is off). Details… follows it, with the command."
+  },
+  "FoldersMenu.mount": {
+    "message": "Details…",
+    "note": "The toolbar's Folders menu: the small link-like button under the note on where the guest finds the folders; it opens a dialog on how the guest mounts them, with the command to mount them by hand."
+  },
+  "FoldersMenu.mount.title": {
+    "message": "Show how the guest mounts the folders, and the command to mount them by hand.",
+    "note": "The toolbar's Folders menu: the tooltip of Details… (under the note on where the guest finds the folders)."
+  },
+  "FoldersMount.title": {
+    "message": "Mounting the shared folders",
+    "note": "The dialog that says how the guest mounts the shared folders (opened by Details… in the toolbar's Folders menu): its title."
+  },
+  "FoldersMount.auto": {
+    "message": "At every boot, $t(common:product.name) has the guest's systemd mount the folders in <code>{{path}}</code>, each in a directory named after it, at their first access. The guest must be running systemd version 256 or above.",
+    "note": "The dialog that says how the guest mounts the shared folders (opened by Details… in the toolbar's Folders menu), when this emulator mounts the folders: where. <code> is shown as code; {{path}} is the machine's mount point."
+  },
+  "FoldersMount.byHand.older": {
+    "message": "In a guest with an older systemd, or without systemd, mount them as root with this command:",
+    "note": "The dialog that says how the guest mounts the shared folders (opened by Details… in the toolbar's Folders menu), when this emulator mounts the folders: the line over the command to mount them by hand (a field with a Copy button)."
+  },
+  "FoldersMount.off": {
+    "message": "Mount shared folders in the guest is off for this machine, so the guest doesn't mount the folders by itself.",
+    "note": "The dialog that says how the guest mounts the shared folders (opened by Details… in the toolbar's Folders menu), when this emulator doesn't mount the folders (the machine's Mount shared folders in the guest is off)."
+  },
+  "FoldersMount.byHand": {
+    "message": "Mount them as root with this command:",
+    "note": "The dialog that says how the guest mounts the shared folders (opened by Details… in the toolbar's Folders menu), when this emulator doesn't mount the folders: the line over the command to mount them by hand (a field with a Copy button)."
+  },
+  "FoldersMount.byHand.where": {
+    "message": "The folders are then in <code>{{path}}</code>, each in a directory named after it.",
+    "note": "The dialog that says how the guest mounts the shared folders (opened by Details… in the toolbar's Folders menu): under the command to mount them by hand. <code> is shown as code; {{path}} is where the command mounts them."
+  },
+  "FoldersMount.close": {
+    "message": "Close",
+    "note": "The dialog that says how the guest mounts the shared folders (opened by Details… in the toolbar's Folders menu): the button that closes it."
   },
   "FolderWizard.state.heldBy": {
     "message": "in use by {{holder}}",
