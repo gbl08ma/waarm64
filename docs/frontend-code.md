@@ -45,7 +45,10 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    of padding, at the weight around it (`--name-weight`). The words of the page's own elements named in a sentence (a
    button, a menu's item, a tab, a pane: `Open disk…`, `Edit connection…`) are framed faintly, like a small button
    (`--ui-ref-border`), with the element's icon before them where it has one (the Network tab, the toolbar's Network
-   menu, Home). Both are T.svelte's (the catalog's `<name>`, `<ui>`, `<ui-…>` markers: [i18n.md](i18n.md) "Markers"),
+   menu, Home). Neither grows its line, at any size of text: no vertical padding, the frame a shadow inside the pill
+   (`--ui-ref-frame`; a border's pixels past the font's box made the message bar's words scroll in fonts whose box
+   nearly fills the line, as Noto Sans's), the icon hung from a box of no height (`tests/page-layout.test.ts`, with a
+   font that tall). Both are T.svelte's (the catalog's `<name>`, `<ui>`, `<ui-…>` markers: [i18n.md](i18n.md) "Markers"),
    with tokens made of `currentColor`, so they take a bar's tone (the message bar) as they take a title's weight. Chosen
    over three others in screenshots of the Resize, Overlays, Delete and message bar screens
    (`node tools/screens.ts --css <file>`): a brighter semibold name vanished in titles, already semibold ("Resize

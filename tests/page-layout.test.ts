@@ -67,6 +67,65 @@ test('the message: one line of text centered on its buttons', async () => {
   await page.close();
 });
 
+/**
+ * A font as tall as some systems' `system-ui` (Noto Sans's ascent and descent, 1.36 em): its inline boxes nearly fill
+ * the page's line height, so a pill's frame past them overflowed the message's box (a scrollbar beside its words).
+ */
+const TALL_FONT = `@font-face { font-family: Tall; src: local('DejaVu Sans'), local('Noto Sans'), local('Liberation Sans'), local('Arial');
+  ascent-override: 107%; descent-override: 29%; line-gap-override: 0%; }
+:root { --font: Tall, system-ui, sans-serif; }`;
+
+test('the references in words: no pill overflows the message or makes its line taller, at any of the text sizes', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(`${base}/web/app/`);
+  await page.locator('#message:not([hidden]) #message-actions button').waitFor();
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  await page.addStyleTag({ content: TALL_FONT });
+  assert.ok(await page.evaluate(async () => (await document.fonts.load('14px Tall')).length > 0), 'the tall font loads');
+  /** The message's overflow, its lines' count and height, and the pills in it, at each text size. */
+  const measure = () =>
+    page.evaluate(async () => {
+      const out: string[] = [];
+      const body = document.getElementById('message-body')!;
+      const text = document.getElementById('message-text')!;
+      for (const size of ['xs', 'sm', 'md', 'base', 'lg']) {
+        text.style.fontSize = `var(--text-${size})`;
+        await new Promise((r) => requestAnimationFrame(r));
+        const lh = parseFloat(getComputedStyle(text).lineHeight);
+        // The lines: the distinct baselines (bottoms) of the words' own boxes, not their elements'.
+        const bottoms: number[] = [];
+        const walk = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+          const range = document.createRange();
+          range.selectNodeContents(n);
+          for (const r of range.getClientRects()) if (r.width) bottoms.push(r.bottom);
+        }
+        bottoms.sort((a, b) => a - b);
+        const lines = bottoms.filter((b, i) => !i || b - bottoms[i - 1] > lh / 2).length;
+        const pills = text.querySelectorAll('.ui, .name').length;
+        const height = text.getBoundingClientRect().height;
+        if (body.scrollHeight > body.clientHeight) out.push(`${size}: overflows by ${body.scrollHeight - body.clientHeight}px`);
+        if (Math.abs(height - lines * lh) > 0.5) out.push(`${size}: ${lines} lines of ${lh}px are ${height}px`);
+        if (!pills) out.push(`${size}: no pills`);
+      }
+      text.style.fontSize = '';
+      return out;
+    });
+  // The first visit's message (Open disk…), then messages with several pills: names, the page's elements, an icon.
+  assert.deepEqual(await measure(), [], 'the first message');
+  for (const m of [{ key: 'disks:changes.notChanges', params: { name: 'disk.qcow2' } }, { key: 'snapshots:snapshot-file.notSnapshot' }]) {
+    await page.evaluate(async (m) => {
+      const { Messages } = await import('/web/app/run/messages.ts' as string);
+      new Messages({ spec: {} }, () => undefined).notify(m);
+      await new Promise((r) => requestAnimationFrame(r));
+      // The bars' moves, not the notice's countdown (its ring's 15 s).
+      await Promise.all([...document.querySelectorAll('.banner')].flatMap((b) => b.getAnimations().map((a) => a.finished)));
+    }, m);
+    assert.deepEqual(await measure(), [], m.key);
+  }
+  await page.close();
+});
+
 test("the primitives: a form's buttons are one height (ui/Button.svelte), and the page's styles are the tokens'", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto(`${base}/web/app/`);

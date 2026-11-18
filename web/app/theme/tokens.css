@@ -52,7 +52,9 @@
   /* Words that refer to something in running text (web/app/T.svelte, docs/frontend-code.md §1 "Names and the page's
      elements in words"): a name someone gave (a machine's, a disk's, an overlay's…), and the words of an element of
      the page (a button, a tab, a menu), framed faintly like a small button. In a bar of a tone (the message bar) they
-     take its color. */
+     take its color. The frame is a shadow inside the pill, not a border: a border's pixels lie past the font's own
+     box, which nearly fills the line in some fonts, and grow the box that holds the words past its lines (a
+     scrollbar beside a message's words). */
   --name-fg: color-mix(in srgb, currentColor 88%, white);
   --name-weight: inherit;
   --name-bg: color-mix(in srgb, currentColor 9%, transparent);
@@ -60,6 +62,7 @@
   --ui-ref-fg: inherit;
   --ui-ref-bg: transparent;
   --ui-ref-border: color-mix(in srgb, currentColor 28%, transparent);
+  --ui-ref-frame: inset 0 0 0 1px var(--ui-ref-border);
 
   /* A state's light (the status bar, the network menu, the keyboard's LEDs). */
   --status-ok: #4cc38a;

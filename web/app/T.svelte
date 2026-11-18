@@ -33,7 +33,7 @@
     )(p.text)}{:else if p.tag === 'name'}<span class="name">{p.text}</span>{:else if p.tag === 'ui'}<span class="ui"
       >{p.text}</span
     >{:else if p.tag?.startsWith('ui-')}{@const icon = iconOf(p.tag)}<span class="ui"
-      >{#if icon}<span class="icon" aria-hidden="true"><Icon name={icon} size={13} /></span>{/if}{p.text}</span
+      >{#if icon}<span class="icon" aria-hidden="true"><Icon name={icon} size="0.9em" /></span>{/if}{p.text}</span
     >{:else if p.tag === 'code'}<code>{p.text}</code>{:else}{p.text}{/if}{/each}
 
 <style>
@@ -47,18 +47,24 @@
     padding: 0 var(--name-pad);
     box-decoration-break: clone;
   }
-  /* The words of an element of the page (a button, a tab, a menu): a faint frame, like a small button's. */
+  /* The words of an element of the page (a button, a tab, a menu): a faint frame, like a small button's. No pill makes
+     its line taller or the box around the words bigger, at any size of text: no vertical padding, the frame inside it
+     (`--ui-ref-frame`, a shadow), the icon a box of no height (below). */
   .ui {
     color: var(--ui-ref-fg);
     background: var(--ui-ref-bg);
-    border: 1px solid var(--ui-ref-border);
+    box-shadow: var(--ui-ref-frame);
     border-radius: var(--radius-sm);
     padding: 0 var(--space-2);
     box-decoration-break: clone;
   }
+  /* The icon, sized by the words (0.9 em) and hung from a box of no height raised 0.78 em above the baseline: it spans
+     0.78 em above to 0.12 em below it, inside any line of the page's line height, and adds nothing to the line's
+     height (an icon of its own height did, in small text). */
   .icon {
-    display: inline-flex;
-    vertical-align: -2px;
+    display: inline-block;
+    height: 0;
+    vertical-align: 0.78em;
     margin-right: var(--space-1);
   }
 </style>
