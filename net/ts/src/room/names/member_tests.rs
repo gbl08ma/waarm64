@@ -1869,3 +1869,57 @@ fn servers_held_are_redrawn_every_fifteen_minutes() {
         "the dialog's check and puts never ask the room"
     );
 }
+
+/// A guest asking several names at once: each lookup's rounds and its silence count from when its asks went out, not
+/// from its start (NAMES loop 6a: with 4 asks a second, 10 names asked at once in a room of one server timed their
+/// last rounds out while those asks still waited, so the member took the room for one nobody serves and answered
+/// NXDOMAIN for every name, for 30 s and then doubling).
+#[test]
+fn names_asked_at_once_wait_for_their_asks_to_go_out() {
+    let mut b = Bitcoin::new(ROOM, 82);
+    let items: Vec<Item> = (0..8u8)
+        .map(|i| {
+            title(
+                &mut b,
+                40,
+                &format!("many{i}"),
+                20,
+                &[4],
+                [i + 1; 32],
+                [1; 32],
+            )
+        })
+        .collect();
+    let refs: Vec<&Item> = items.iter().collect();
+    let mut bus = Bus::new(vec![serving(&mut b, 1, &refs)], member());
+    // A relay 0.8 s away: a round's replies come well after its ask left.
+    bus.delay[0] = Duration::from_millis(800);
+    let names: Vec<String> = (0..8).map(|i| format!("many{i}")).collect();
+    let mut done = [None; 8];
+    for (i, name) in names.iter().enumerate() {
+        let (now, unix) = (bus.now, bus.unix());
+        assert_eq!(bus.m.query(name, now, unix, true), Answer::Wait);
+        done[i] = None;
+    }
+    // As a guest's resolver: a SERVFAIL after 4 s, the query sent again (the server's 2 replies a second may leave one
+    // of the rounds that went together unanswered).
+    for k in 1..=3000 {
+        bus.advance(Duration::from_millis(10));
+        for (i, name) in names.iter().enumerate() {
+            let (now, unix) = (bus.now, bus.unix());
+            if done[i].is_none() {
+                let a = bus.m.query(name, now, unix, k % 400 == 0);
+                if a != Answer::Wait {
+                    done[i] = Some(a);
+                }
+            }
+        }
+    }
+    for (i, d) in done.iter().enumerate() {
+        assert_eq!(*d, Some(Answer::Node([i as u8 + 1; 32])), "{}", names[i]);
+    }
+    assert_eq!(
+        bus.m.stats.nobody, 0,
+        "nobody serves, said of a room that does"
+    );
+}

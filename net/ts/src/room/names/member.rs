@@ -274,11 +274,14 @@ struct Replier {
 
 /// A first lookup (room-names-r3.md "A first lookup").
 struct First {
-    started: Instant,
     /// The `share` ask's nonce (its rounds share it), the spreads of its rounds, how many went.
     nonce: [u8; 16],
     spreads: Vec<u8>,
     round: usize,
+    /// The rounds' asks that left (past [`ASKS_PER_SECOND`]), and when the last did: the next round and the silence
+    /// count from it, not from the start (NAMES loop 6a: names asked at once timed their rounds out in the queue).
+    sent: usize,
+    sent_at: Instant,
     /// When the first reply counted (an item that held, none, or too big), and the spread asked by then.
     first: Option<Instant>,
     spread_at_first: u8,
@@ -301,6 +304,21 @@ struct First {
     /// Entries checked whole (signature, proof of work) by id: each once, however many replies carry it (None: it
     /// failed). Anchors are checked with each copy: a forged anchor on a copied entry mustn't refuse the honest copy.
     entries: BTreeMap<[u8; 32], Option<Stamped>>,
+}
+
+impl First {
+    /// When the next round goes, or (every round gone) silence is taken for an answer: from when the last round's ask
+    /// left; None while one waits for the rate.
+    fn round_due(&self) -> Option<Instant> {
+        if self.sent < self.round || self.round == 0 {
+            return None;
+        }
+        let last = ROUND_AT[self.round - 1];
+        let next = ROUND_AT
+            .get(self.round)
+            .filter(|_| self.round < self.spreads.len());
+        Some(self.sent_at + next.map_or(GIVE_UP, |d| *d) - last)
+    }
 }
 
 /// A contest (two owner keys shown, or a key shown only by items too big for an event): runs fetched from repliers,
@@ -1453,10 +1471,11 @@ impl Member {
         self.firsts.insert(
             id,
             First {
-                started: now,
                 nonce,
                 spreads,
                 round: 0,
+                sent: 0,
+                sent_at: now,
                 first: None,
                 spread_at_first: 0,
                 share_count: 0,
@@ -1516,6 +1535,12 @@ impl Member {
             }
             let a = self.asks_out.pop_front().unwrap();
             self.asks_sent.push_back(now);
+            if a.mode == AskMode::Share
+                && let Some(f) = self.firsts.get_mut(&a.id).filter(|f| f.nonce == a.nonce)
+            {
+                f.sent += 1;
+                f.sent_at = now;
+            }
             self.stats.asks += 1;
             if a.mode == AskMode::Fetch {
                 self.stats.fetches += 1;
@@ -1568,10 +1593,7 @@ impl Member {
                 let checking = (!f.queue.is_empty()
                     || f.contest.as_ref().is_some_and(|c| !c.runs.is_empty()))
                 .then_some(self.now);
-                let round = (f.first.is_none()).then(|| match ROUND_AT.get(f.round) {
-                    Some(d) if f.round < f.spreads.len() => f.started + *d,
-                    _ => f.started + GIVE_UP,
-                });
+                let round = (f.first.is_none()).then(|| f.round_due()).flatten();
                 let fetch = (f.contest.as_ref())
                     .and_then(|c| c.flying.values().flatten().chain([&c.until]).min().copied());
                 let decide = f.decide_at.filter(|_| f.decided.is_none());
@@ -1873,10 +1895,12 @@ impl Member {
                 continue; // what came is checked first
             }
             if f.first.is_none() {
-                if f.round < f.spreads.len() && now >= f.started + ROUND_AT[f.round] {
-                    self.next_round(id, now);
-                } else if f.round >= f.spreads.len() && now >= f.started + GIVE_UP {
-                    self.silence(id, now);
+                if f.round_due().is_some_and(|t| now >= t) {
+                    if f.round < f.spreads.len() {
+                        self.next_round(id, now);
+                    } else {
+                        self.silence(id, now);
+                    }
                 }
                 continue;
             }
