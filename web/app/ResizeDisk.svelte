@@ -2,7 +2,7 @@
   Resize… (docs/machines.md §4.5): a dialog over the Home page that grows a stored disk, a ramdisk or an overlay,
   opened from the Disks pane (a disk's card, an overlay's row in Overlays…) and from a machine's Disks tab (its
   attachment's overlay, one made for it where it has none yet, its stored disk written in place or ramdisk). The size
-  now and what it holds, the new one (MiB or GiB, rounded up to
+  now and what it holds, the new one (a SizeField: MiB or GiB, rounded up to
   a whole MiB), the guest's growth at its next start (on by default; not for a ramdisk) and what `resizeCosts` says as
   the size is typed: the machines whose disk grows, a running one (the machine on this page powered off from here, as
   the page's other edits do), the snapshots it orphans, or why the size is refused.
@@ -16,6 +16,7 @@
   import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
+  import SizeField from './ui/SizeField.svelte';
   import T from './T.svelte';
   import type { Dialog } from './ui/dialog.ts';
   import { msg, t } from '../i18n.ts';
@@ -42,10 +43,6 @@
 
   const MiB = 1024 ** 2;
   const GiB = 1024 ** 3;
-  const UNITS = { MiB, GiB } as const;
-  type Unit = keyof typeof UNITS;
-  /** The spinner's steps by unit: 256 MiB, or 1 GiB. */
-  const STEP: Record<Unit, number> = { MiB: 256, GiB: 1 };
 
   let dialog: Dialog;
   /** The dialog's own runner: its errors show here (the page's bar is behind the dialog). */
@@ -54,11 +51,10 @@
   let now = $state<number>();
   /** What the overlay or stored disk holds now (none known: a ramdisk, a stored disk not read yet). */
   let held = $state<number>();
-  let amount = $state<number | null>(null);
-  let unit = $state<Unit>('GiB');
+  /** The new size typed (whole MiB, the guest's partitions being aligned to them; SizeField's), none while it isn't one. */
+  let bytes = $state<number>();
   let grow = $state(true);
-  /** The new size: whole MiB (the guest's partitions are aligned to them), rounded up. */
-  const size = $derived(amount && amount > 0 ? Math.ceil((amount * UNITS[unit]) / MiB) * MiB : 0);
+  const size = $derived(bytes ?? 0);
   let costs = $state.raw<ResizeCosts>();
   /** Why the size typed is refused (the refusal's cause), or the costs couldn't be read. */
   let refusal = $state<string>();
@@ -71,8 +67,8 @@
         now = n;
         held = h;
         // The next whole GiB past it (or 256 MiB under a GiB): a size that grows it.
-        unit = n >= GiB ? 'GiB' : 'MiB';
-        amount = Math.floor(n / UNITS[unit] / STEP[unit]) * STEP[unit] + STEP[unit];
+        const step = n >= GiB ? GiB : 256 * MiB;
+        bytes = (Math.floor(n / step) + 1) * step;
       },
       (e: unknown) => runner.fail(e),
     );
@@ -125,10 +121,6 @@
   });
   const ready = $derived(!!costs && !running.length && !runner.busy);
 
-  function setUnit(next: Unit) {
-    if (amount) amount = Math.round(((amount * UNITS[unit]) / UNITS[next]) * 1000) / 1000;
-    unit = next;
-  }
   async function powerOff(m: MachineRecord) {
     await act(t('disks:ResizeDisk.busy.powerOff'), async () => {
       await offFirst($state.snapshot(m));
@@ -159,19 +151,9 @@
         params={{ name: t('disks:page-disks.overlayName'), machine: machine ?? '' }}
       /></Note
     >{/if}
-  <Field label={t('disks:ResizeDisk.size')}
-    ><span class="line"
-      ><input type="number" min="1" step={STEP[unit]} bind:value={amount} data-field="resize-size" /><select
-        value={unit}
-        onchange={(e) => setUnit(e.currentTarget.value as Unit)}
-        data-field="resize-unit"
-        aria-label={t('disks:ResizeDisk.unit')}
-        ><option value="MiB">{t('disks:ResizeDisk.unit.mib')}</option><option value="GiB"
-          >{t('disks:ResizeDisk.unit.gib')}</option
-        ></select
-      ></span
-    ></Field
-  >
+  {#if now !== undefined}<Field label={t('disks:ResizeDisk.size')}
+      ><SizeField bind:bytes field="resize-size" unitField="resize-unit" /></Field
+    >{/if}
   {#if refusal}<Note tone="error" size="md" data-refusal role="alert">{refusal}</Note>{/if}
   {#if costs}
     <Note size="md" data-new>{t('disks:ResizeDisk.newSize', { size })}</Note>
@@ -203,14 +185,3 @@
     <Button variant="primary" disabled={!ready} onclick={ok} data-action="resize-ok">{t('disks:ResizeDisk.ok')}</Button>
   {/snippet}
 </Modal>
-
-<style>
-  .line {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-  .line input {
-    flex: 0 1 140px;
-  }
-</style>

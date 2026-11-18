@@ -205,7 +205,7 @@ test("Resize… on a machine's Disks tab: its overlay, its stored disk written i
     const f = await createDisk(store, { kind: 'url', url: '/tests/qcow2/deflate.qcow2', size: 1 << 20, bytes: 1 << 20, name: 'Disk F' });
     const fa = await attach(store, n, f);
     await store.put('machines', { ...(await store.get('machines', n.id)), attachments: [{ ...sa, inPlace: true }, fa] });
-    const url = (path: string) => makeDisk(store, m, { source: 'url', url: path, sizeMiB: 0 }, () => {}, () => {});
+    const url = (path: string) => makeDisk(store, m, { source: 'url', url: path, size: 0 }, () => {}, () => {});
     const u = await url('/tests/qcow2/deflate.qcow2');
     const ro = await url('/tests/qcow2/data.raw');
     const r = await createDisk(store, { kind: 'ramdisk', size: 4 << 20, name: 'Disk R' });

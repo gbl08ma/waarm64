@@ -208,7 +208,13 @@ run through one runner (`actions.svelte.ts` `Actions`: `run(what, f)` says what 
 `error`, as usb-ports.ts `errorView` words it; `ErrorWords.svelte` shows it, a USB attach's problems with their
 remedies): a dialog or a menu makes its own, the Home page's panes and tabs share the page's (`act`, shown in its
 bar and its error banner). **Sizes are in binary units**
-everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
+everywhere on the page (KiB, MiB, GiB, TiB: `bytes.ts` `bytesText`), as the sizes users enter are. A size typed is
+one field, `ui/SizeField.svelte`: a number and its unit's list (MiB and GiB, TiB too for a blank disk), bound to bytes
+(rounded up to a whole MiB; `size-input.ts`), checked against its least and most (said under it, the dialog's button
+off meanwhile); the caller converts from bytes as it needs: Add a disk's Blank and Ramdisk (at most `MAX_RESIZE`, the
+largest a disk grows to), the Resize dialog (whose larger-than-now and most are `resizeCosts`' refusals). RAM is a
+slider in MiB (Settings), and RAM's split (memory 0 and the nodes, a list) is typed in MiB, as the address's `?split=`
+is.
 
 **Styles** are the components': each `<style>` is scoped to the component that writes it and reaches only its own
 markup (and the markup it passes to a child as a snippet, which is still its own), never a child's insides. What every

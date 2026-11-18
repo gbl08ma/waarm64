@@ -78,6 +78,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `ErrorBanner`: the dismissible error, warning or notice bar, across the page or floating, with a notice's countdown (the message bar, the Home page's error).
    - `StatusDot`: a state's light.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
+   - `SizeField`: a size typed, a number and its binary unit, bound to bytes, with its least and most and why what's
+     typed isn't a size (Add a disk's Blank and Ramdisk, Resize).
    - `ValueField`: a value to copy or a secret to show, its Copy and Show icons inside the field (an address, a key, a
      link, a command; a pasted secret).
    - `BlockGrid`: a block map on a canvas (a defragmenter's squares: per cell a rim, a core inset in it, a flash, and

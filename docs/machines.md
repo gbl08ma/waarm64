@@ -225,7 +225,7 @@ changes; the drop-before-run discipline of the page before machines is kept besi
 - **Stored in the browser:** a file copied into OPFS (streamed, with progress, in `web/app/disk-worker.ts`; the
   confirmation says what it will take, that it duplicates the file, and that the browser's storage is where it goes)
   and converted on the way (§4.4). It never needs picking again and can be merged into and written in place.
-- **Blank:** a size; read as zeros (a `zero` source), always read-write, so it always has an overlay. Its export is
+- **Blank:** a size (in MiB, GiB or TiB, up to `MAX_RESIZE`'s 8 TiB, the largest a disk grows to); read as zeros (a `zero` source), always read-write, so it always has an overlay. Its export is
   the whole disk only ("changes only" over nothing means nothing).
 - **Ramdisk:** below.
 

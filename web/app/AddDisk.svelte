@@ -16,6 +16,7 @@
   import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
+  import SizeField from './ui/SizeField.svelte';
   import T from './T.svelte';
   import { Actions, type Act } from './actions.svelte.ts';
   import { makeDisk, type Picked, type Source } from './add-disk.ts';
@@ -25,6 +26,7 @@
   import type { OverlayRecord, Store } from './store.ts';
   import type { UrlCheck } from './urlcheck.ts';
   import type { IconName } from './icons.ts';
+  import { MAX_RESIZE } from './resize.ts';
 
   type Props = {
     store: Store;
@@ -84,7 +86,8 @@
   let source = $state<Source | undefined>();
   let url = $state('');
   let urlCheck = $state<UrlCheck | undefined>();
-  let sizeMiB = $state(1024);
+  /** A blank disk's or a ramdisk's size (SizeField's: none while what's typed isn't one). */
+  let size = $state<number | undefined>(2 ** 30);
   let readOnly = $state(false);
   let picked = $state<Picked | undefined>();
   /** A copy into the browser's progress, in words. */
@@ -92,6 +95,8 @@
   /** The dialog's own runner: its errors show here (the page's bar is behind the dialog); the page's `act` says what runs. */
   const runner = new Actions();
   const chosen = $derived(SOURCES.find((s) => s.kind === source));
+  /** A source whose disk is made the size typed. */
+  const sized = $derived(source === 'blank' || source === 'ramdisk');
 
   // The disks the browser has that this machine doesn't attach: with their overlays, and the machines that do.
   type Known = { disk: DiskRecord; overlays: OverlayRecord[]; users: MachineRecord[] };
@@ -151,7 +156,7 @@
         makeDisk(
           store,
           machine,
-          { source: s, url, picked, sizeMiB },
+          { source: s, url, picked, size: size ?? 0 },
           (c) => (urlCheck = c),
           (words) => (progress = words),
         ),
@@ -194,10 +199,15 @@
     {:else if source === 'file' || source === 'stored'}
       <AddDiskFile bind:picked bind:readOnly onfail={(e: unknown) => runner.fail(e)} />
     {:else}
+      <!-- A blank disk is sparse: up to the largest disk the page grows one to; a ramdisk takes memory as it's written. -->
       <Field label={t('disks:AddDisk.size')}
-        ><span class="line"
-          ><input type="number" min="1" bind:value={sizeMiB} data-field="size" /> {t('disks:AddDisk.size.unit')}</span
-        ></Field
+        ><SizeField
+          bind:bytes={size}
+          max={MAX_RESIZE}
+          units={source === 'blank' ? ['MiB', 'GiB', 'TiB'] : ['MiB', 'GiB']}
+          field="size"
+          unitField="size-unit"
+        /></Field
       >
     {/if}
     {#if source !== 'blank' && source !== 'ramdisk' && source !== 'known'}
@@ -218,19 +228,11 @@
   {/snippet}
   {#snippet buttons()}
     <Button type="button" onclick={() => dialog?.close()}>{t('disks:AddDisk.cancel')}</Button>
-    {#if source && source !== 'known'}<Button type="submit" variant="primary" data-action="add-disk"
-        >{t('disks:AddDisk.add')}</Button
+    {#if source && source !== 'known'}<Button
+        type="submit"
+        variant="primary"
+        disabled={sized && size === undefined}
+        data-action="add-disk">{t('disks:AddDisk.add')}</Button
       >{/if}
   {/snippet}
 </Modal>
-
-<style>
-  .line {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-  .line input {
-    flex: 0 1 140px;
-  }
-</style>

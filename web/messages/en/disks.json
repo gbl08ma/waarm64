@@ -415,10 +415,6 @@
     "message": "Size",
     "note": "Add a disk wizard › Blank or Ramdisk: the label of the disk's size field."
   },
-  "AddDisk.size.unit": {
-    "message": "MiB",
-    "note": "Add a disk wizard › Blank or Ramdisk: the unit after the size field (mebibytes)."
-  },
   "AddDisk.readOnly.title": {
     "message": "The guest can read the disk but can't write to it, so it has no overlay. This is checked automatically when you select an .iso file.",
     "note": "Add a disk wizard › a file or a URL: the tooltip of the Read-only checkbox (checked by itself for a .iso file)."
@@ -1258,18 +1254,6 @@
   "ResizeDisk.size": {
     "message": "New size",
     "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the label of the new size's field (a number, and its unit beside it)."
-  },
-  "ResizeDisk.unit": {
-    "message": "Unit",
-    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the screen-reader name of the unit's list beside the new size's field."
-  },
-  "ResizeDisk.unit.mib": {
-    "message": "MiB",
-    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's mebibytes."
-  },
-  "ResizeDisk.unit.gib": {
-    "message": "GiB",
-    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's gibibytes."
   },
   "ResizeDisk.newSize": {
     "message": "It will be {{size, bytes}} (sizes are rounded up to a whole MiB).",

@@ -86,5 +86,33 @@
   "FloatingWindow.resizeWidth": {
     "message": "Drag sideways to resize.",
     "note": "A window floating over the page whose height follows its width (the on-screen keyboard): the tooltip of the ↔ handle in its title bar, left of the close button, dragged to change its width (its height follows)."
+  },
+  "SizeField.unit": {
+    "message": "Unit",
+    "note": "A field where a size is typed, a number and its unit (Add a disk wizard › Blank or Ramdisk: the disk's size; the Resize dialog: the new size): the screen-reader name of the unit's list beside the number."
+  },
+  "SizeField.unit.MiB": {
+    "message": "MiB",
+    "note": "A field where a size is typed, a number and its unit (Add a disk wizard › Blank or Ramdisk: the disk's size; the Resize dialog: the new size): the unit list's mebibytes (1024 × 1024 bytes)."
+  },
+  "SizeField.unit.GiB": {
+    "message": "GiB",
+    "note": "A field where a size is typed, a number and its unit (Add a disk wizard › Blank or Ramdisk: the disk's size; the Resize dialog: the new size): the unit list's gibibytes (1024 MiB)."
+  },
+  "SizeField.unit.TiB": {
+    "message": "TiB",
+    "note": "A field where a size is typed, a number and its unit (Add a disk wizard › Blank or Ramdisk: the disk's size; the Resize dialog: the new size): the unit list's tebibytes (1024 GiB)."
+  },
+  "SizeField.empty": {
+    "message": "Enter a size larger than 0.",
+    "note": "A field where a size is typed, a number and its unit (Add a disk wizard › Blank or Ramdisk: the disk's size; the Resize dialog: the new size): the error under it while no size is typed (empty, not a number, 0 or less); the dialog's button stays off."
+  },
+  "SizeField.small": {
+    "message": "The size must be at least {{min, bytes}}.",
+    "note": "A field where a size is typed, a number and its unit (Add a disk wizard › Blank or Ramdisk: the disk's size; the Resize dialog: the new size): the error under it while the size typed is under the least it may be; the dialog's button stays off. {{min}} is that least."
+  },
+  "SizeField.large": {
+    "message": "The size can be at most {{max, bytes}}.",
+    "note": "A field where a size is typed, a number and its unit (Add a disk wizard › Blank or Ramdisk: the disk's size; the Resize dialog: the new size): the error under it while the size typed is past the most it may be; the dialog's button stays off. {{max}} is that most."
   }
 }

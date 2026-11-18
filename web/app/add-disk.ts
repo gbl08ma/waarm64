@@ -16,8 +16,8 @@ export type Source = 'known' | 'url' | 'file' | 'stored' | 'blank' | 'ramdisk';
 /** A file picked (with its handle, when the browser's picker gave one: a reload's resume asks only to allow it). */
 export type Picked = { file: File; handle?: FileSystemFileHandle };
 
-/** What the wizard's step gives for a source. */
-export type Details = { source: Exclude<Source, 'known'>; url: string; picked?: Picked; sizeMiB: number };
+/** What the wizard's step gives for a source (`size`: a blank disk's or a ramdisk's, in bytes). */
+export type Details = { source: Exclude<Source, 'known'>; url: string; picked?: Picked; size: number };
 
 /** A disk image's virtual size from its first bytes (a qcow2's header), else its length. */
 const virtualSize = (head: Uint8Array | undefined, bytes: number) =>
@@ -71,7 +71,7 @@ export async function makeDisk(
       return storeCopy(store, d.picked.file, onProgress);
     case 'blank':
     case 'ramdisk':
-      return createDisk(store, { kind: d.source, size: d.sizeMiB * 2 ** 20 });
+      return createDisk(store, { kind: d.source, size: d.size });
   }
 }
 
