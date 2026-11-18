@@ -5,13 +5,16 @@
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import T from './T.svelte';
   import { bootCard } from './areas/boot-card.svelte.ts';
   import { page } from './page.ts';
   import { t } from '../i18n.ts';
 </script>
 
 <div id="boot" hidden={!bootCard.shown}>
-  <div id="boot-title">{bootCard.title}</div>
+  <div id="boot-title">
+    {#if typeof bootCard.title === 'string'}{bootCard.title}{:else}<T m={bootCard.title} />{/if}
+  </div>
   {#if bootCard.progress === undefined}<progress id="boot-progress"></progress>{:else}<progress
       id="boot-progress"
       value={bootCard.progress}

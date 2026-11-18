@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describe, errorText, marked, parts, plain, said, t, text } from '../web/i18n.ts';
 import { devText, fromWire, msg, msgOf, MsgError, toWire } from '../web/msg.ts';
-import { checkDoc, checkSources, checkTests, loneLine, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
+import { checkDoc, checkSources, checkTests, loneLine, referenceProblems, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
 import { words } from './words.ts';
 import { CATALOGS } from '../web/messages/en/index.ts';
 
@@ -20,19 +20,54 @@ test('rendering: a key, its parameters, markers', () => {
   assert.ok(!where.some((p) => p.tag === 'x' || p.tag === 'dev'), JSON.stringify(where));
 });
 
+test('references: names and the page\'s elements, drawn by T, dropped from words as text', () => {
+  // As text the name stands alone, as the page's text reads it; cut for T, it's a piece of its own.
+  assert.equal(t('disks:ResizeDisk.title', { name: 'Changes' }), 'Resize Changes');
+  assert.deepEqual(marked('disks:ResizeDisk.title', { name: 'Changes' }), [{ text: 'Resize ' }, { tag: 'name', text: 'Changes' }]);
+  // A name with markers' look in it is a name.
+  assert.equal(t('disks:ResizeDisk.title', { name: '<ui>x</ui>' }), 'Resize <ui>x</ui>');
+  assert.deepEqual(marked('disks:ResizeDisk.title', { name: '<ui>x</ui>' }), [{ text: 'Resize ' }, { tag: 'name', text: '<ui>x</ui>' }]);
+  // A page element's words.
+  assert.ok(marked('machine:power-actions.openDisk.prompt').some((p) => p.tag === 'ui'));
+  assert.ok(!t('machine:power-actions.openDisk.prompt').includes('<'));
+  // A message as a parameter keeps its markers; a list in a <name> is a name per item.
+  assert.deepEqual(marked('disks:DiskInfo.on', { machines: ['A', 'B'] }).filter((p) => p.tag === 'name').map((p) => p.text), ['A', 'B']);
+  const inner = marked('machine:messages.progress', { phase: msg('disks:ResizeDisk.title', { name: 'Changes' }), percent: 5 });
+  assert.ok(inner.some((p) => p.tag === 'name' && p.text === 'Changes'), JSON.stringify(inner));
+  // The checks: a <name> holds one parameter; a name parameter is marked; a <ui-…> names an icon.
+  const icons = new Set(['network']);
+  assert.deepEqual(referenceProblems('Start <name>{{machine}}</name>', 'Its title.', icons), []);
+  assert.match(referenceProblems('Start {{machine}}', 'Its title.', icons).join(), /\{\{machine\}\} is a name someone gave/);
+  assert.match(referenceProblems('Delete {{name}}?', 'A question. {{name}} is the disk\'s name.', icons).join(), /\{\{name\}\} is a name/);
+  assert.match(referenceProblems('Start <name>the {{machine}}</name>', 'Its title.', icons).join(), /holds one parameter/);
+  assert.match(referenceProblems('On its <ui-wifi>Network</ui-wifi> tab', 'A note.', icons).join(), /no icon wifi/);
+  assert.deepEqual(referenceProblems('On its <ui-network>Network</ui-network> tab', 'A note.', icons), []);
+  // A message with references drawn as text in the markup, or as a dialog's title from t().
+  const found = checkSources({ x: { 'Thing.title': { message: 'Resize <name>{{name}}</name>', note: 'A dialog title: {{name}} is the disk\'s name.' } } }, [{
+    path: 'web/app/Thing.svelte',
+    text: `<script lang="ts">import { t } from '../i18n.ts';</script>
+<p>{t('x:Thing.title', { name: 'a' })}</p>
+<Modal title={t('x:Thing.title', { name: 'a' })} />
+<T k="x:Thing.title" params={{ name: 'a' }} />`,
+  }]).map((p) => `${p.line}: ${p.text}`).join('\n');
+  assert.match(found, /2: \{t\('x:Thing\.title'\)\}: .* draw it with <T/);
+  assert.match(found, /3: title=\{t\('x:Thing\.title'\)\}: .* title=\{msg/);
+  assert.doesNotMatch(found, /^4:/m);
+});
+
 test('errors: a headline and its causes as details, across postMessage', () => {
   const inner = new Error('the file ends early');
   const e = new MsgError('common:ask.cancel', undefined, { cause: inner });
   assert.equal(e.message, 'common:ask.cancel');
-  assert.deepEqual(describe(e), { headline: 'Cancel', details: ['the file ends early'] });
+  assert.deepEqual(describe(e), { headline: 'Cancel', details: ['the file ends early'], from: [msg('common:ask.cancel'), 'raw'] });
   const wire = structuredClone(toWire(Object.assign(e, { problem: 'snapshot' })));
   const back = fromWire(wire);
   assert.equal(msgOf(back)?.key, 'common:ask.cancel');
   assert.equal((back as Error & { problem?: string }).problem, 'snapshot');
-  assert.deepEqual(describe(wire), { headline: 'Cancel', details: ['the file ends early'] });
+  assert.deepEqual(describe(wire), { headline: 'Cancel', details: ['the file ends early'], from: [msg('common:ask.cancel'), 'raw'] });
   assert.equal(errorText(back), 'Cancel\nthe file ends early');
   assert.deepEqual(said('words'), { headline: 'words', details: [] });
-  assert.deepEqual(said(msg('common:ask.ok')), { headline: 'OK', details: [] });
+  assert.deepEqual(said(msg('common:ask.ok')), { headline: 'OK', details: [], from: [msg('common:ask.ok')] });
   assert.equal(devText(msg('a:b.c', { n: 2, m: msg('a:b.d') })), 'a:b.c {n=2, m=(a:b.d)}');
 });
 

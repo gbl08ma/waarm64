@@ -15,6 +15,7 @@
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
   import StatusDot from './ui/StatusDot.svelte';
+  import T from './T.svelte';
   import { t } from '../i18n.ts';
   import { TYPED } from '../agent-frame.ts';
   import { clipboard } from './areas/clipboard.svelte.ts';
@@ -88,7 +89,7 @@
   {:else if c.permission === 'granted' && !c.stopped}
     <Note id="clipboard-granted">{t('clipboard:ClipboardMenu.granted')}</Note>
   {/if}
-  {#if c.stopped}<Note tone="warn" id="clipboard-stopped">{t('clipboard:ClipboardMenu.stopped')}</Note>{/if}
+  {#if c.stopped}<Note tone="warn" id="clipboard-stopped"><T k="clipboard:ClipboardMenu.stopped" /></Note>{/if}
   <Check
     id="clipboard-on"
     checked={c.state !== 'paused'}
@@ -130,7 +131,7 @@
       {t('clipboard:ClipboardMenu.console.failed')}
     </Note>
   {:else if c.failed === 'graphics'}<Note tone="warn" id="clipboard-graphics">
-      {t('clipboard:ClipboardMenu.console.graphics')}
+      <T k="clipboard:ClipboardMenu.console.graphics" />
     </Note>{/if}
   {#if c.typed === TYPED.NOT_TEXT}<Note tone="warn" id="clipboard-not-text">
       {t('clipboard:ClipboardMenu.notText')}

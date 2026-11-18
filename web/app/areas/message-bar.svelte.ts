@@ -1,5 +1,6 @@
 // The message bar (web/app/App.svelte): a problem or a note, its details and what can be done about it. web/app/run/
 // messages.ts writes it (`Messages.show`).
+import type { Msg } from '../../i18n.ts';
 
 /** `info`: something done (a snapshot saved), a notice that closes itself; `warn` and `error` stay until closed. */
 export type MessageKind = 'error' | 'warn' | 'info';
@@ -13,6 +14,7 @@ export type Countdown = { ms: number; id: number; end: () => void };
 export const messageBar = $state<{
   text: string;
   details: string[];
+  from: readonly (Msg | 'raw' | undefined)[];
   kind: MessageKind;
   actions: Action[];
   countdown: Countdown | undefined;
@@ -23,6 +25,8 @@ export const messageBar = $state<{
   text: '',
   /** The message's details, one per line, under it (an error's causes: web/i18n.ts `describe`). */
   details: [],
+  /** What each line is, the headline's first, where it's known (web/i18n.ts `Described`): drawn by MessageWords.svelte. */
+  from: [],
   kind: 'warn',
   actions: [],
   /** A notice's countdown (none: the message stays until closed). */

@@ -5,9 +5,10 @@
 <script lang="ts">
   import Button from './ui/Button.svelte';
   import T from './T.svelte';
-  import { t } from '../i18n.ts';
+  import { t, type Msg } from '../i18n.ts';
 
-  let { line, onvisualize }: { line: string; onvisualize: () => void } = $props();
+  /** `line`: the line's words, or a message (its names drawn as T draws them). */
+  let { line, onvisualize }: { line: string | Msg; onvisualize: () => void } = $props();
 </script>
 
 <T k="disks:VisualizeLine.line" params={{ line }}

@@ -4,7 +4,7 @@
     "note": "Text of the prompt that renames a kept snapshot (The Home page, a machine's Snapshots tab, its Rename button), above the field with its current name."
   },
   "Snapshots.rename.title": {
-    "message": "Rename {{name}}",
+    "message": "Rename <name>{{name}}</name>",
     "note": "Title of the prompt that renames a kept snapshot; {{name}} is the snapshot's current name."
   },
   "Snapshots.rename.ok": {
@@ -16,7 +16,7 @@
     "note": "Shown at the top of the Home page (followed by “…”) while a snapshot's new name is saved (The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.delete.confirm": {
-    "message": "Delete the snapshot {{name}}? This will free {{size, bytes}} of storage in this browser.",
+    "message": "Delete the snapshot <name>{{name}}</name>? This will free {{size, bytes}} of storage in this browser.",
     "note": "Text of the confirmation before a kept snapshot is deleted (The Home page, a machine's Snapshots tab, its Delete button); {{name}} is the snapshot's name, {{size}} its file's size."
   },
   "Snapshots.delete.ok": {
@@ -64,8 +64,8 @@
     "note": "Cancel button of the question whether a snapshot file carries a disk written in place whole: the file gets the machine without the disk."
   },
   "Snapshots.none": {
-    "message": "No snapshots are stored in this browser. While the machine runs, the toolbar's Snapshot button takes one.",
-    "note": "Note in place of the list of snapshots (The Home page, a machine's Snapshots tab) when the machine has none kept; “Snapshot” is the toolbar's button."
+    "message": "No snapshots are stored in this browser. While the machine runs, the toolbar's <ui-history-toggle>Snapshot</ui-history-toggle> button takes one.",
+    "note": "Note in place of the list of snapshots (The Home page, a machine's Snapshots tab) when the machine has none kept; “Snapshot” is the toolbar's button. The <ui-history-toggle> marker shows the Snapshot button's icon before its words."
   },
   "Snapshots.meta": {
     "message": "{{when}} · {{size, bytes}}",
@@ -140,11 +140,11 @@
     "note": "Button under the list of snapshots (The Home page, a machine's Snapshots tab), while the machine runs on this page: saves its snapshot as a file to download."
   },
   "snapshots.writtenInPlace": {
-    "message": "The disk {{disk}} has been written in place since this snapshot was taken, and the snapshot doesn't include the whole disk. It can only be restored onto that disk as it was then.",
+    "message": "The disk <name>{{disk}}</name> has been written in place since this snapshot was taken, and the snapshot doesn't include the whole disk. It can only be restored onto that disk as it was then.",
     "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” in a notice when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk of the machine written in place (without an overlay) that has changed since."
   },
   "snapshots.baseMoved": {
-    "message": "The disk {{disk}}, stored in this browser, has been changed since this snapshot was taken (written in place, or an overlay merged into it). The snapshot can only be restored onto that disk as it was then.",
+    "message": "The disk <name>{{disk}}</name>, stored in this browser, has been changed since this snapshot was taken (written in place, or an overlay merged into it). The snapshot can only be restored onto that disk as it was then.",
     "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk stored in the browser that the machine read (read-only, or under an overlay) when the snapshot was taken, and that has been written to since."
   },
   "snapshots.unrestorable.version": {
@@ -152,11 +152,11 @@
     "note": "Home page, Snapshots tab (after “Orphaned:”), and the tooltip of a disabled snapshot in the toolbar's Load snapshot menu: why a kept snapshot can never be restored. Here: the page was updated since, and its emulator saves machines in another format."
   },
   "snapshots.unrestorable.base": {
-    "message": "the disk {{disk}} has been changed since (written in place, or an overlay merged into it)",
+    "message": "the disk <name>{{disk}}</name> has been changed since (written in place, or an overlay merged into it)",
     "note": "Home page, Snapshots tab (after “Orphaned:”), and the tooltip of a disabled snapshot in the toolbar's Load snapshot menu: why a kept snapshot can never be restored. {{disk}} is the name of a disk stored in the browser that the machine read when the snapshot was taken (read-only, or under an overlay), written to since."
   },
   "snapshots.unrestorable.inPlace": {
-    "message": "the disk {{disk}} is written in place and has changed since, and the snapshot doesn't include the whole disk",
+    "message": "the disk <name>{{disk}}</name> is written in place and has changed since, and the snapshot doesn't include the whole disk",
     "note": "Home page, Snapshots tab (after “Orphaned:”), and the tooltip of a disabled snapshot in the toolbar's Load snapshot menu: why a kept snapshot can never be restored. {{disk}} is the name of a disk of the machine written in place (without an overlay) that the guest wrote to after the snapshot."
   },
   "machine-like.storedDiskGone": {
@@ -168,7 +168,7 @@
     "note": "Error details: the cause under the headline snapshots:machine-like.storedDiskGone, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "machine-like.storedDiskGrown.cause": {
-    "message": "{{disk}} is stored in this browser and has grown since this snapshot was taken, and a disk can't be made smaller again.",
+    "message": "<name>{{disk}}</name> is stored in this browser and has grown since this snapshot was taken, and a disk can't be made smaller again.",
     "note": "Error details: the cause under the headline snapshots:machine-like.storedDiskGone (Create a machine like it, Home page, Snapshots tab), on the line under it: a disk the snapshot was taken with is stored in the browser and was resized (Resize…) to a larger size since. {{disk}}: the disk's name."
   },
   "machine-like.urlDisk": {
@@ -184,11 +184,11 @@
     "note": "Name given to a ramdisk that Create a machine like it makes again (the snapshot's machine had one); shown in the Home page's disk lists."
   },
   "machine-like.like": {
-    "message": "Like {{name}}",
-    "note": "Name of the machine Create a machine like it creates (Home page, Snapshots tab); {{name}} is the snapshot's name. A number is added if a machine has that name already."
+    "message": "Like <name>{{name}}</name>",
+    "note": "Name of the machine Create a machine like it creates (Home page, Snapshots tab); {{name}} is the snapshot's name. A number is added if a machine has that name already. Its words become the new machine's name, as text (the marker draws nothing there)."
   },
   "snapshots.notKept": {
-    "message": "Couldn't import {{file}}",
+    "message": "Couldn't import <name>{{file}}</name>",
     "note": "Error of Import a file… (Home page, Snapshots tab), shown under the page's header: the headline; why is the cause under it: the file has no description of its machine to keep it by (snapshots:snapshots.notKept.cause), or the browser's storage is full (disks:overlay.storageFull.numbers); {{file}} is the file's name."
   },
   "snapshots.notKept.cause": {
@@ -284,8 +284,8 @@
     "note": "A detail placed in the parentheses of “This snapshot is damaged (…).” (the error of a snapshot that can't be read, shown when it's restored or loaded): a compressed part unpacks to another size than it says."
   },
   "snapshot-file.notSnapshot": {
-    "message": "This file isn't a snapshot. Use Open disk… to start a machine from a disk image, or Import changes… on the Home page to load saved changes.",
-    "note": "Error when a file opened as a snapshot (Load snapshot…, Restore from a file…, Import a file…) isn't one; it names the toolbar's Open disk… and the Home page's Import changes… for the other kinds of file."
+    "message": "This file isn't a snapshot. Use <ui>Open disk…</ui> to start a machine from a disk image, or <ui>Import changes…</ui> on the <ui-home>Home</ui-home> page to load saved changes.",
+    "note": "Error when a file opened as a snapshot (Load snapshot…, Restore from a file…, Import a file…) isn't one; it names the toolbar's Open disk… and the Home page's Import changes… for the other kinds of file. The <ui-home> marker shows the Home button's icon before its words."
   },
   "snapshot-file.newerFormat": {
     "message": "This snapshot was made by a newer version of this web app. Its format is {{format}}, and this version reads formats up to {{reads}}. Reload this web app to get the latest version, or open the snapshot in the version that made it.",
@@ -320,11 +320,11 @@
     "note": "Error headline when a restore was planned to keep a disk's overlay as it was, but the guest wrote to that disk before the machine stopped; a new restore plans again (it then forks the disk)."
   },
   "snapshot.otherDisk": {
-    "message": "This snapshot was taken on another disk, {{was}}, and the disk here is {{here}}. A snapshot only continues on the disk it was taken on. Open that disk first with Open disk…, then load the snapshot.",
-    "note": "Error headline when a snapshot is loaded on a machine whose disk isn't the one it was taken on; {{was}} and {{here}} name the two disks (a file's name and date, or a URL's path); “Open disk…” is the toolbar's button."
+    "message": "This snapshot was taken on another disk, {{was}}, and the disk here is {{here}}. A snapshot only continues on the disk it was taken on. Open that disk first with <ui>Open disk…</ui>, then load the snapshot.",
+    "note": "Error headline when a snapshot is loaded on a machine whose disk isn't the one it was taken on; {{was}} and {{here}} say the two disks, each a message (snapshots:snapshot.diskFile, which marks the file's name) or a URL's path, so they aren't marked here; “Open disk…” is the toolbar's button."
   },
   "snapshot.diskFile": {
-    "message": "the file {{file}}, modified {{when}}",
+    "message": "the file <name>{{file}}</name>, modified {{when}}",
     "note": "A disk that is a local file, as the error of a snapshot taken on another disk names it; {{file}} is the file's name, {{when}} its last modification (date and time)."
   },
   "snapshot.damage.stateOrder": {
@@ -452,19 +452,19 @@
     "note": "The kind of file in the browser's save dialog of Save snapshot (a snapshot file, .waarm64snap)."
   },
   "snapshot-actions.saved": {
-    "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again.",
+    "message": "Saved the snapshot <name>{{name}}</name> ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again.",
     "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
   },
   "snapshot-actions.kept": {
-    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Home page.",
-    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
+    "message": "Saved the snapshot <name>{{name}}</name> in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the <ui-home>Home</ui-home> page.",
+    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused. The <ui-home> marker shows the Home button's icon before its words."
   },
   "snapshot-actions.kept.inPlace_one": {
-    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The disk {{disks}} is written in place, so the snapshot can be restored only until the machine writes to that disk again.",
+    "message": "Saved the snapshot <name>{{name}}</name> in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The disk <name>{{disks}}</name> is written in place, so the snapshot can be restored only until the machine writes to that disk again.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of a machine with one disk written in place (no overlay: the snapshot doesn't hold its blocks, so it restores only while the disk is as it was): {{name}} is the snapshot's name, {{size}} its size, {{seconds}} how long the machine was paused, {{disks}} the disk's name; {{count}} is 1."
   },
   "snapshot-actions.kept.inPlace_other": {
-    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The disks {{disks}} are written in place, so the snapshot can be restored only until the machine writes to one of them again.",
+    "message": "Saved the snapshot <name>{{name}}</name> in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The disks <name>{{disks}}</name> are written in place, so the snapshot can be restored only until the machine writes to one of them again.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of a machine with several disks written in place (no overlay: the snapshot doesn't hold their blocks, so it restores only while they are as they were): {{name}} is the snapshot's name, {{size}} its size, {{seconds}} how long the machine was paused, {{disks}} the disks' names, joined with commas; {{count}} is how many."
   },
   "snapshot-actions.runsOn.noFile": {
@@ -480,47 +480,51 @@
     "note": "What differs, in the parentheses of “… was taken of … with other settings or disks (…).”, when the snapshot doesn't describe its machine (another version of the page made it)."
   },
   "snapshot-restore.restore.otherShape": {
-    "message": "{{name}} was taken of {{machine}} with other settings or disks ({{why}}).\nTo use it, create a machine like it on the Home page, in this machine's Snapshots tab.",
-    "note": "Text of the notice when a snapshot is restored onto a machine with other settings or disks (the Home page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons)."
+    "message": "<name>{{name}}</name> was taken of <name>{{machine}}</name> with other settings or disks ({{why}}).\nTo use it, create a machine like it on the <ui-home>Home</ui-home> page, in this machine's <ui-history>Snapshots</ui-history> tab.",
+    "note": "Text of the notice when a snapshot is restored onto a machine with other settings or disks (the Home page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons). The <ui-home> and <ui-history> markers show the Home button's and the Snapshots tab's icons before their words."
   },
   "snapshot-restore.restore.cant": {
     "message": "Couldn't restore the snapshot",
     "note": "Title of the notice when a snapshot is of a machine with other settings or disks."
   },
   "snapshot-restore.restore.failed": {
-    "message": "Couldn't restore {{name}}",
+    "message": "Couldn't restore <name>{{name}}</name>",
     "note": "Error headline (a notice, or the message bar (under the toolbar)) when a snapshot's restore failed while its disks were prepared; {{name}} is the snapshot's name; why is the detail under it."
   },
   "snapshot-restore.restore.refused": {
-    "message": "Couldn't restore {{name}}",
+    "message": "Couldn't restore <name>{{name}}</name>",
     "note": "Dialog when a snapshot can't be restored onto the machine's disks as they are: the error headline; under it, the reason (e.g. snapshots:snapshots.writtenInPlace, a disk written in place moved on). {{name}} is the snapshot's name."
   },
   "snapshot-restore.restore.confirm": {
-    "message": "Restore {{name}}? The machine will continue from where the snapshot was taken.",
+    "message": "Restore <name>{{name}}</name>? The machine will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine isn't running and the snapshot has no date: {{name}} is the snapshot's name."
   },
   "snapshot-restore.restore.confirm.taken": {
-    "message": "Restore {{name}}, taken {{when}}? The machine will continue from where the snapshot was taken.",
+    "message": "Restore <name>{{name}}</name>, taken {{when}}? The machine will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine isn't running: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
   "snapshot-restore.restore.confirm.running": {
-    "message": "Restore {{name}}? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
+    "message": "Restore <name>{{name}}</name>? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine runs and the snapshot has no date: {{name}} is the snapshot's name."
   },
   "snapshot-restore.restore.confirm.takenRunning": {
-    "message": "Restore {{name}}, taken {{when}}? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
+    "message": "Restore <name>{{name}}</name>, taken {{when}}? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine runs: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
+  "snapshot-restore.restore.question": {
+    "message": "{{lines, lines}}",
+    "note": "The question asked before a snapshot is restored onto the machine kept in this browser, a line each: {{lines}} are its first line (snapshot-restore.restore.confirm…), then the line on the disks kept as they are (snapshot-restore.restore.kept), if any, and one per disk that forks (snapshot-restore.restore.fork…)."
+  },
   "snapshot-restore.restore.kept": {
-    "message": "These disks are as the snapshot left them and will be kept: {{disks}}.",
+    "message": "These disks are as the snapshot left them and will be kept: <name>{{disks}}</name>.",
     "note": "Line of the question asked before a snapshot is restored: the disks whose changes are as the snapshot left them (kept as they are); {{disks}} is their names."
   },
   "snapshot-restore.restore.fork.reused": {
-    "message": "{{disk}} will get back the overlay that an earlier restore of this snapshot made.",
+    "message": "<name>{{disk}}</name> will get back the overlay that an earlier restore of this snapshot made.",
     "note": "Line of the question asked before a snapshot is restored, for a disk that gets back the overlay an earlier restore of it made; {{disk}} is the disk's name."
   },
   "snapshot-restore.restore.fork.new": {
-    "message": "{{disk}} has changed since the snapshot, so the snapshot's state will go into a new overlay, attached in place of the current one. The current overlay will be kept as it is.",
+    "message": "<name>{{disk}}</name> has changed since the snapshot, so the snapshot's state will go into a new overlay, attached in place of the current one. The current overlay will be kept as it is.",
     "note": "Line of the question asked before a snapshot is restored, for a disk that changed since the snapshot; {{disk}} is the disk's name."
   },
   "snapshot-restore.restore.title": {
@@ -532,7 +536,7 @@
     "note": "The confirm button of the question asked before a snapshot is restored (drawn as a warning while the machine runs)."
   },
   "snapshot-restore.restore.keep.item": {
-    "message": "{{name}} ({{size, bytes}})",
+    "message": "<name>{{name}}</name> ({{size, bytes}})",
     "note": "An overlay in the question whether to keep the changes since a snapshot: {{name}} is its name, {{size}} what it holds."
   },
   "snapshot-restore.restore.keep_one": {
@@ -560,11 +564,11 @@
     "note": "The cancel button of the question whether to keep the changes made since a snapshot, for several overlays ({{count}}): they are replaced."
   },
   "snapshot-restore.ownDisk": {
-    "message": "{{machine}}'s own disk",
+    "message": "<name>{{machine}}</name>'s own disk",
     "note": "Names a test machine's own disk (its image) in the notice that a snapshot was taken on another disk; {{machine}} is the machine's name."
   },
   "snapshot-restore.notSnapshot": {
-    "message": "{{name}}\n{{why}}",
+    "message": "<name>{{name}}</name>\n{{why}}",
     "note": "Text of the notice when a file opened as a snapshot isn't one this page can load: {{name}} (the file's name) on its own line, then {{why}}, the reason."
   },
   "snapshot-restore.notSnapshot.title": {
@@ -572,43 +576,43 @@
     "note": "Title of the notice when a file opened as a snapshot isn't one this page can load."
   },
   "snapshot-restore.load.otherMachine": {
-    "message": "{{name}} is a snapshot of {{other}} (?machine={{otherId}}), but the machine open here is {{machine}} (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address.",
-    "note": "Notice when a snapshot file of another test machine is opened: {{name}} is the file's name, {{other}} and {{otherId}} its machine's name and id, {{machine}} and {{id}} the page's."
+    "message": "<name>{{name}}</name> is a snapshot of <name>{{other}}</name> (?machine={{otherId}}), but the machine open here is <name>{{machine}}</name> (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address.",
+    "note": "Notice when a snapshot file of another test machine is opened: {{name}} is the file's name, {{other}} is its machine's name and {{otherId}} that machine's id (?machine=), {{machine}} the page's machine's name and {{id}} its id."
   },
   "snapshot-restore.load.otherDisk": {
-    "message": "{{name}} was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Open that disk first with Open disk…, then load the snapshot.",
-    "note": "Notice when a snapshot file taken on another disk is opened: {{name}} is the file's name, {{taken}} the disk it was taken on, {{open}} the one open now."
+    "message": "<name>{{name}}</name> was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Open that disk first with <ui>Open disk…</ui>, then load the snapshot.",
+    "note": "Notice when a snapshot file taken on another disk is opened: {{name}} is the file's name, {{taken}} the disk it was taken on and {{open}} the one open now, each a message (“the disk <name>…</name>” or the machine's own disk) that marks its name itself."
   },
   "snapshot-restore.load.otherDisk.reload": {
-    "message": "{{name}} was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Reload this web app, which starts with the machine's own disk, then load the snapshot.",
-    "note": "Notice when a snapshot file taken on the machine's own disk is opened while another disk is: {{name}} is the file's name, {{taken}} the disk it was taken on, {{open}} the one open now."
+    "message": "<name>{{name}}</name> was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Reload this web app, which starts with the machine's own disk, then load the snapshot.",
+    "note": "Notice when a snapshot file taken on the machine's own disk is opened while another disk is: {{name}} is the file's name, {{taken}} the disk it was taken on and {{open}} the one open now, each a message (“the disk <name>…</name>” or the machine's own disk) that marks its name itself."
   },
   "snapshot-restore.load.confirm": {
-    "message": "Load the snapshot {{name}}? {{holds}} {{replaces}} {{lost}}",
+    "message": "Load the snapshot <name>{{name}}</name>? {{holds}} {{replaces}} {{lost}}",
     "note": "Text of the question asked before a snapshot file is loaded on a test machine: {{name}} is the file's name, then what it holds, what happens to the machine, and what happens to the disk's changes (each a sentence)."
   },
   "snapshot-restore.load.holds.cpus_one": {
-    "message": "It holds {{label}} ({{size, bytes}}, {{count}} vCPU).",
+    "message": "It holds <name>{{label}}</name> ({{size, bytes}}, {{count}} vCPU).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it has no date: {{label}} is its machine's name, {{size}} the file's size, {{count}} its vCPUs."
   },
   "snapshot-restore.load.holds.when.cpus_one": {
-    "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}, {{count}} vCPU).",
+    "message": "It holds <name>{{label}}</name> as it was on {{when}} ({{size, bytes}}, {{count}} vCPU).",
     "note": "What a snapshot file holds, in the question asked before it's loaded: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size, {{count}} its vCPUs."
   },
   "snapshot-restore.load.holds.cpus_other": {
-    "message": "It holds {{label}} ({{size, bytes}}, {{count}} vCPUs).",
+    "message": "It holds <name>{{label}}</name> ({{size, bytes}}, {{count}} vCPUs).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it has no date: {{label}} is its machine's name, {{size}} the file's size, {{count}} its vCPUs."
   },
   "snapshot-restore.load.holds.when.cpus_other": {
-    "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}, {{count}} vCPUs).",
+    "message": "It holds <name>{{label}}</name> as it was on {{when}} ({{size, bytes}}, {{count}} vCPUs).",
     "note": "What a snapshot file holds, in the question asked before it's loaded: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size, {{count}} its vCPUs."
   },
   "snapshot-restore.load.holds": {
-    "message": "It holds {{label}} ({{size, bytes}}).",
+    "message": "It holds <name>{{label}}</name> ({{size, bytes}}).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it says neither its date nor its vCPUs: {{label}} is its machine's name, {{size}} the file's size."
   },
   "snapshot-restore.load.holds.when": {
-    "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}).",
+    "message": "It holds <name>{{label}}</name> as it was on {{when}} ({{size, bytes}}).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it doesn't say its vCPUs: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size."
   },
   "snapshot-restore.load.replaces.running": {
@@ -621,11 +625,11 @@
   },
   "snapshot-restore.load.written": {
     "message": "Everything written to {{disk}} will be replaced by the snapshot's changes to the disk.",
-    "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} names the disk."
+    "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} is a message saying which disk (“the disk <name>…</name>”, or the machine's own disk), which marks the name itself."
   },
   "snapshot-restore.load.written.size": {
     "message": "Everything written to {{disk}} ({{size, bytes}}) will be replaced by the snapshot's changes to the disk.",
-    "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} names the disk, {{size}} what it has written."
+    "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} is a message saying which disk (“the disk <name>…</name>”, or the machine's own disk), which marks the name itself, {{size}} what it has written."
   },
   "snapshot-restore.load.title": {
     "message": "Load a snapshot",
@@ -637,75 +641,75 @@
   },
   "worker-header.otherShape": {
     "message": "Couldn't load {{name}}",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because the machine's settings or disks changed since: the headline; why and what to do are the cause under it (snapshots:worker-header.otherShape.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because the machine's settings or disks changed since: the headline; why and what to do are the cause under it (snapshots:worker-header.otherShape.cause); {{machine}} is the machine's name; {{name}} is a message: the file's name (snapshots:worker-start.file, which marks it), or “the suspended machine”."
   },
   "worker-header.otherShape.cause": {
-    "message": "It was taken of a machine with other settings or disks than {{machine}} has now. To use it, create a machine like it on the Home page (Snapshots tab).",
-    "note": "Error details: the cause under the headline snapshots:worker-header.otherShape, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
+    "message": "It was taken of a machine with other settings or disks than <name>{{machine}}</name> has now. To use it, create a machine like it on the <ui-home>Home</ui-home> page (<ui-history>Snapshots</ui-history> tab).",
+    "note": "Error details: the cause under the headline snapshots:worker-header.otherShape, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says. The <ui-home> and <ui-history> markers show the Home button's and the Snapshots tab's icons before their words."
   },
   "worker-header.otherMachine": {
     "message": "Couldn't load {{name}}",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because it is of another test machine: the headline; why and what to do are the cause under it (snapshots:worker-header.otherMachine.cause); {{other}} and {{otherId}} are its machine's name and id, {{machine}} and {{id}} the page's; {{name}} is the file's name, or “the suspended machine”."
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because it is of another test machine: the headline; why and what to do are the cause under it (snapshots:worker-header.otherMachine.cause); {{other}} and {{otherId}} are its machine's name and id, {{machine}} and {{id}} the page's; {{name}} is a message: the file's name (snapshots:worker-start.file, which marks it), or “the suspended machine”."
   },
   "worker-header.otherMachine.cause": {
-    "message": "It's a snapshot of {{other}} (?machine={{otherId}}), but this is {{machine}} (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address. Start boots {{machine}} normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-header.otherMachine, on the line under it in the same place; why and what to do. {{other}}, {{otherId}}, {{machine}}, {{id}}: as that entry's note says."
+    "message": "It's a snapshot of <name>{{other}}</name> (?machine={{otherId}}), but this is <name>{{machine}}</name> (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-header.otherMachine, on the line under it in the same place; why and what to do. {{other}}, {{otherId}}, {{machine}}, {{id}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-header.devicesUnknown": {
     "message": "Couldn't load {{name}}",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its devices can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.devicesUnknown.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its devices can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.devicesUnknown.cause); {{machine}} is the machine's name; {{name}} is a message: the file's name (snapshots:worker-start.file, which marks it), or “the suspended machine”."
   },
   "worker-header.devicesUnknown.cause": {
-    "message": "This version of this web app can't read its list of devices; another version may have made it. Start boots {{machine}} normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-header.devicesUnknown, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
+    "message": "This version of this web app can't read its list of devices; another version may have made it. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-header.devicesUnknown, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-header.otherDevices": {
     "message": "Couldn't load {{name}}",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its machine had other devices: the headline; why and what to do are the cause under it (snapshots:worker-header.otherDevices.cause); {{kinds}} are its devices, {{here}} the machine's, {{machine}} the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its machine had other devices: the headline; why and what to do are the cause under it (snapshots:worker-header.otherDevices.cause); {{kinds}} are its devices, {{here}} the machine's, {{machine}} the machine's name; {{name}} is a message: the file's name (snapshots:worker-start.file, which marks it), or “the suspended machine”."
   },
   "worker-header.otherDevices.cause": {
-    "message": "Its machine had other devices ({{kinds}}) than this one ({{here}}). Open this web app as that machine was started, with the same disks and network, or Start {{machine}} normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-header.otherDevices, on the line under it in the same place; why and what to do. {{kinds}}, {{here}}, {{machine}}: as that entry's note says."
+    "message": "Its machine had other devices ({{kinds}}) than this one ({{here}}). Open this web app as that machine was started, with the same disks and network, or <ui>Start</ui> <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-header.otherDevices, on the line under it in the same place; why and what to do. {{kinds}}, {{here}}, {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-header.cpus": {
     "message": "Couldn't load {{name}}",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its vCPU count can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.cpus.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its vCPU count can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.cpus.cause); {{machine}} is the machine's name; {{name}} is a message: the file's name (snapshots:worker-start.file, which marks it), or “the suspended machine”."
   },
   "worker-header.cpus.cause": {
-    "message": "Its vCPU count isn't readable. Start boots {{machine}} normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-header.cpus, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
+    "message": "Its vCPU count isn't readable. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-header.cpus, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-header.memory": {
     "message": "Couldn't load {{name}}",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its memory can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.memory.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its memory can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.memory.cause); {{machine}} is the machine's name; {{name}} is a message: the file's name (snapshots:worker-start.file, which marks it), or “the suspended machine”."
   },
   "worker-header.memory.cause": {
-    "message": "Its memory size isn't readable. Start boots {{machine}} normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-header.memory, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
+    "message": "Its memory size isn't readable. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-header.memory, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-header.features": {
     "message": "Couldn't load {{name}}",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its processor's features can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.features.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its processor's features can't be read: the headline; why and what to do are the cause under it (snapshots:worker-header.features.cause); {{machine}} is the machine's name; {{name}} is a message: the file's name (snapshots:worker-start.file, which marks it), or “the suspended machine”."
   },
   "worker-header.features.cause": {
-    "message": "This version of this web app can't read its processor's features; another version may have made it. Start boots {{machine}} normally.",
-    "note": "Error details: the cause under the headline snapshots:worker-header.features, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
+    "message": "This version of this web app can't read its processor's features; another version may have made it. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-header.features, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-errors.notRestored": {
     "message": "Couldn't restore the snapshot",
     "note": "Error headline in the message bar (under the toolbar) when a snapshot failed once its disk's changes were being written (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it, after its cause (snapshots:worker-errors.notRestored.cause) on the line under the headline."
   },
   "worker-errors.notRestored.cause": {
-    "message": "The machine didn't start, and its disk may hold part of the snapshot's changes. Start boots {{machine}} normally from what is there. To start over from the disk's image, reset the disk.",
-    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place; what happened. {{machine}}: as that entry's note says."
+    "message": "The machine didn't start, and its disk may hold part of the snapshot's changes. <ui>Start</ui> boots <name>{{machine}}</name> normally from what is there. To start over from the disk's image, reset the disk.",
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place; what happened. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-errors.notLoaded": {
     "message": "Couldn't load the snapshot",
     "note": "Error headline in the message bar (under the toolbar) when a snapshot file was refused before anything was touched (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it, after its cause (snapshots:worker-errors.notLoaded.cause) on the line under the headline."
   },
   "worker-errors.notLoaded.cause": {
-    "message": "Nothing was changed. The machine isn't running, and its disk is as it was. Start boots {{machine}} normally, and Load snapshot… tries another file.",
-    "note": "Error details: the cause under the headline snapshots:worker-errors.notLoaded, on the line under it in the same place; what happened. {{machine}}: as that entry's note says."
+    "message": "Nothing was changed. The machine isn't running, and its disk is as it was. <ui>Start</ui> boots <name>{{machine}}</name> normally, and <ui>Load snapshot…</ui> tries another file.",
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notLoaded, on the line under it in the same place; what happened. {{machine}}: as that entry's note says. <ui>Start</ui> and <ui>Load snapshot…</ui> are the message bar's buttons (snapshots:problems.startNormally, snapshots:problems.loadAgain)."
   },
   "worker-start.phase.checking": {
     "message": "Checking the snapshot",
@@ -714,6 +718,10 @@
   "worker-start.phase.restoring": {
     "message": "Restoring the machine",
     "note": "Line on the boot card and the machine's state in the status bar while a snapshot's machine is made."
+  },
+  "worker-start.file": {
+    "message": "<name>{{name}}</name>",
+    "note": "A snapshot file, as the errors of a snapshot refused before anything is touched name it (the snapshots:worker-header headlines, in place of “the suspended machine”): {{name}} is the file's name, drawn as a name."
   },
   "worker-snapshot.phase.freeing": {
     "message": "Freeing the guest's unused memory",
@@ -732,7 +740,7 @@
     "note": "The machine's state in the status bar after a snapshot to a file was written to the browser's storage during the pause, while it is copied into the chosen file, the machine already running on (a percentage may follow)."
   },
   "worker-stage.notCopied": {
-    "message": "The snapshot was taken, but copying it into {{name}} failed: the file has none of it, and nothing of it is left in the browser's storage.",
+    "message": "The snapshot was taken, but copying it into <name>{{name}}</name> failed: the file has none of it, and nothing of it is left in the browser's storage.",
     "note": "Error details under “Couldn't save the snapshot” (snapshots:worker-snapshot.notSaved) in the message bar (under the toolbar) when a snapshot written to the browser's storage during the pause couldn't be copied into the chosen file afterwards; {{name}} is the file's name; why is the detail under it."
   },
   "worker-snapshot.phase.finishing": {

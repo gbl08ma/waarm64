@@ -1,7 +1,7 @@
 // The machine's run (docs/frontend.md "The page's code"): a start makes the run's worker, channels and input, the GPU
 // worker on a 3D machine, and hands the machine worker its start message once the disks are open; a stop ends it.
 // The workers' and ports' messages go to web/app/run/worker-messages.ts's handlers.
-import { MsgError, t } from '../../i18n.ts';
+import { msg, MsgError } from '../../i18n.ts';
 import type { PageAudio } from '../../audio.ts';
 import { attachInput, type EvdevEvent } from '../../input.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
@@ -180,8 +180,8 @@ export class Runner {
     bootCard.line = '';
     bootCard.progress = undefined; // indeterminate until the sizes are known
     bootCard.title = snapshot
-      ? t('machine:runner.boot.loading', { name: snapshot.name })
-      : t('machine:runner.boot.starting', { machine: this.d.machine.spec.title });
+      ? msg('machine:runner.boot.loading', { name: snapshot.name })
+      : msg('machine:runner.boot.starting', { machine: this.d.machine.spec.title });
     this.d.messages.setState('loading');
   }
 

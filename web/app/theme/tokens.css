@@ -49,6 +49,18 @@
   --ok-bg: #12261a;
   --ok-border: #1f5232;
 
+  /* Words that refer to something in running text (web/app/T.svelte, docs/frontend-code.md §1 "Names and the page's
+     elements in words"): a name someone gave (a machine's, a disk's, an overlay's…), and the words of an element of
+     the page (a button, a tab, a menu), framed faintly like a small button. In a bar of a tone (the message bar) they
+     take its color. */
+  --name-fg: color-mix(in srgb, currentColor 88%, white);
+  --name-weight: inherit;
+  --name-bg: color-mix(in srgb, currentColor 9%, transparent);
+  --name-pad: 3px;
+  --ui-ref-fg: inherit;
+  --ui-ref-bg: transparent;
+  --ui-ref-border: color-mix(in srgb, currentColor 28%, transparent);
+
   /* A state's light (the status bar, the network menu, the keyboard's LEDs). */
   --status-ok: #4cc38a;
   --status-busy: #e0b341;

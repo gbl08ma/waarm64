@@ -10,10 +10,11 @@
   import Icon from './ui/Icon.svelte';
   import Note from './ui/Note.svelte';
   import MoveButtons from './MoveButtons.svelte';
+  import T from './T.svelte';
   import { kindText } from './connection-kind.ts';
   import type { Act } from './actions.svelte.ts';
   import type { Connection } from './connections.ts';
-  import { said, t } from '../i18n.ts';
+  import { msg, said, t } from '../i18n.ts';
   import type { Editing } from './machine-edit.svelte.ts';
   import { movedAdapter, withoutAdapter } from './machines.ts';
   import type { PageNetwork } from './net-live.ts';
@@ -45,18 +46,20 @@
   /** Its state on this page, when the machine is this page's. */
   const here = $derived(edit.draft.id === current.id && at >= 0 ? net.views()[at] : undefined);
   /** The connection's line: its name and kind, then its state here and whether it's the default way out. */
-  const line = $derived.by(() => {
-    const parts = [
-      c
-        ? t('machines:AdapterCard.adapter.connection', { name: c.name, kind: kindText(c) })
-        : t('machines:AdapterCard.adapter.noConnection'),
-    ];
+  const head = $derived(
+    c
+      ? msg('machines:AdapterCard.adapter.connection', { name: c.name, kind: kindText(c) })
+      : msg('machines:AdapterCard.adapter.noConnection'),
+  );
+  /** What follows the name and kind on that line, after a " · " each. */
+  const rest = $derived.by(() => {
+    const parts: string[] = [];
     if (here?.active) parts.push(said(here.view.text).headline, ...(here.view.details ?? []));
     const defaults = here && defaultsOf(here);
     if (defaults === 'both') parts.push(t('machines:AdapterCard.adapter.primary'));
     else if (defaults === 'v4') parts.push(t('machines:AdapterCard.adapter.primary4'));
     else if (defaults === 'v6') parts.push(t('machines:AdapterCard.adapter.primary6'));
-    return parts.join(' · ');
+    return parts.map((p) => ` · ${p}`).join('');
   });
 
   /** A room connection's names, each with the date it stops resolving unless renewed. */
@@ -77,9 +80,9 @@
     <div class="lines">
       <strong>{t('machines:AdapterCard.adapter', { n: index + 1 })}</strong>
       <Note inline class="meta">{t('machines:AdapterCard.adapter.mac', { mac: adapter.mac })}</Note>
-      <Note inline class="meta" data-connection-name>{line}</Note>
+      <Note inline class="meta" data-connection-name><T m={head} />{rest}</Note>
       {#if names.length}<Note inline class="meta" data-names
-          >{t('machines:AdapterCard.adapter.names', { names, count: names.length })}</Note
+          ><T k="machines:AdapterCard.adapter.names" params={{ names, count: names.length }} /></Note
         >{/if}
       {#if here?.note}<Note inline tone="warn" class="meta">{said(here.note).headline}</Note>{/if}
     </div>

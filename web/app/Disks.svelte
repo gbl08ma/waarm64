@@ -20,13 +20,14 @@
   import Overlays from './Overlays.svelte';
   import ResizeDisk from './ResizeDisk.svelte';
   import { ask } from './ask.svelte.ts';
-  import { msg, MsgError, t, text } from '../i18n.ts';
+  import { msg, MsgError, t } from '../i18n.ts';
   import type { Store, OverlayRecord } from './store.ts';
   import type { Attachment, DiskRecord, MachineRecord } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
   import { bytesText, editAttachment } from './machines.ts';
   import { newEmptyOverlay, switchOverlay } from './disks.ts';
   import { URL_SLOW } from './urlcheck.ts';
+  import T from './T.svelte';
   import { inBar, page } from './page.ts';
   import { diskKind } from './disk-kind.ts';
   import { attachmentTarget, type ResizeWhat } from './resize.ts';
@@ -100,8 +101,8 @@
           : msg('disks:Disks.detach.kept');
     if (
       !(await ask.confirm(
-        t('disks:Disks.detach.confirm', {
-          disk: d?.name ?? msg('disks:Disks.detach.theDisk'),
+        msg('disks:Disks.detach.confirm', {
+          disk: d ? msg('disks:disk-actions.theDisk', { name: d.name }) : msg('disks:Disks.detach.theDisk'),
           machine: machine.name,
           kept,
         }),
@@ -192,7 +193,7 @@
           >{t('disks:Disks.detach.button')}</Button
         >
       </div>
-      {#if d?.kind === 'url'}<div class="url-note"><Note>{text(URL_SLOW)}</Note></div>{/if}
+      {#if d?.kind === 'url'}<div class="url-note"><Note><T m={URL_SLOW} /></Note></div>{/if}
       {#if d && !a.readOnly && d.kind !== 'ramdisk' && !a.inPlace}
         <div class="overlays">
           <label

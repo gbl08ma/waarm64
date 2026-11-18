@@ -112,12 +112,12 @@
     "note": "A HID collection without a name of its own, placed in the problem \"The guest doesn't get the device's {{what}} part…\". {{usage}} is its usage page and usage in hex, e.g. 000c:0001."
   },
   "usb-problems.protectedInterface.hid": {
-    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. To pass its HID part through, use Add a device… › A HID device (WebHID) instead. A keyboard's keys and a mouse's pointer can't be passed through either way; your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
-    "note": "A problem under a WebUSB device attached with part of it left out (Home page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-problems.class.*), read as a plural (\"audio interfaces\"). This variant is for a HID interface: it says where to go instead (the menu path is the Add a USB device wizard's words)."
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. To pass its HID part through, use <ui>Add a device… › A HID device (WebHID)</ui> instead. A keyboard's keys and a mouse's pointer can't be passed through either way; your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
+    "note": "A problem under a WebUSB device attached with part of it left out (Home page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-problems.class.*), read as a plural (\"audio interfaces\"). This variant is for a HID interface: it says where to go instead (the menu path is the Add a USB device wizard's words). The <ui> marker frames that path as the page's element."
   },
   "usb-problems.protectedInterface.disk": {
-    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. Add a disk image to the machine's Disks instead.",
-    "note": "A problem under a WebUSB device attached with part of it left out (Home page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-problems.class.*), read as a plural (\"audio interfaces\"). This variant is for a mass storage interface."
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. Add a disk image to the machine's <ui-database>Disks</ui-database> instead.",
+    "note": "A problem under a WebUSB device attached with part of it left out (Home page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-problems.class.*), read as a plural (\"audio interfaces\"). This variant is for a mass storage interface. The <ui-database> marker shows a machine's Disks tab with its icon."
   },
   "usb-problems.protectedInterface.sound": {
     "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. Sound goes through the machine's own sound card instead, which can also record from your computer's microphone.",
@@ -248,7 +248,7 @@
     "note": "Error (message bar, Add a USB device) when a HID device is to be picked in a browser without WebHID."
   },
   "usb-live.notAttached": {
-    "message": "Couldn't attach {{name}}",
+    "message": "Couldn't attach <name>{{name}}</name>",
     "note": "Headline of an attach's error when the device worker said why (USB menu, Add a USB device, Home page's USB tab, message bar): the problems and their remedies follow under it. {{name}} is the device's name."
   },
   "usb-live.noAnswer": {
@@ -256,7 +256,7 @@
     "note": "Error when an attach or a detach got no answer from the running machine in time (USB menu, Home page's USB tab, message bar)."
   },
   "usb-live.connectorTaken": {
-    "message": "{{name}} is on connector {{connector}}. Detach it first.",
+    "message": "<name>{{name}}</name> is on connector {{connector}}. Detach it first.",
     "note": "Error when a device is attached on a connector another device is on (USB menu, Home page's USB tab). {{connector}} is the connector's number (from 1); {{name}} the device on it."
   },
   "usb-live.connectorInUse": {
@@ -324,15 +324,15 @@
     "note": "A remembered USB device's state, at the end of its line on the Home page's USB tab (lowercase, after ' · '): remembered, but this browser hasn't granted it (the machine came from another browser)."
   },
   "Usb.state.heldBy": {
-    "message": "held by {{holder}}",
+    "message": "held by <name>{{holder}}</name>",
     "note": "A remembered USB device's state on the Home page's USB tab: attached to another machine, in another tab. {{holder}} is that machine's name."
   },
   "Usb.forget.attached": {
-    "message": "Forget {{name}}? It will be detached first, and the guest will see it unplugged. If no other machine remembers it, this browser's permission to use it will be removed too.",
+    "message": "Forget <name>{{name}}</name>? It will be detached first, and the guest will see it unplugged. If no other machine remembers it, this browser's permission to use it will be removed too.",
     "note": "Question (confirm dialog) on the Home page's USB tab when Forget is clicked on a device attached to the running machine. {{name}} is the device's name."
   },
   "Usb.forget": {
-    "message": "Forget {{name}}? If no other machine remembers it, this browser's permission to use it will be removed too.",
+    "message": "Forget <name>{{name}}</name>? If no other machine remembers it, this browser's permission to use it will be removed too.",
     "note": "Question (confirm dialog) on the Home page's USB tab when Forget is clicked on a device not attached here. {{name}} is the device's name."
   },
   "Usb.forget.title": {
@@ -476,23 +476,23 @@
     "note": "Note on the Home page's USB tab, shown when the machine remembers identical devices without a serial number."
   },
   "Usb.note.otherTab": {
-    "message": "The machine is running in another tab; attach and detach devices there. Devices are plugged in and out while the machine runs, without orphaning its snapshots. Snapshot and Suspend ask, then unplug them first.",
-    "note": "Note at the bottom of the Home page's USB tab while the machine runs in another tab."
+    "message": "The machine is running in another tab; attach and detach devices there. Devices are plugged in and out while the machine runs, without orphaning its snapshots. <ui-history-toggle>Snapshot</ui-history-toggle> and <ui-zzz>Suspend</ui-zzz> ask, then unplug them first.",
+    "note": "Note at the bottom of the Home page's USB tab while the machine runs in another tab. The markers show the toolbar's Snapshot and Suspend buttons with their icons."
   },
   "Usb.note.stopped": {
-    "message": "Attach and detach devices while the machine runs in this tab, here or from the toolbar's USB menu. Devices are plugged in and out while the machine runs, without orphaning its snapshots. Snapshot and Suspend ask, then unplug them first.",
-    "note": "Note at the bottom of the Home page's USB tab while the machine isn't running."
+    "message": "Attach and detach devices while the machine runs in this tab, here or from the toolbar's <ui-usb>USB</ui-usb> menu. Devices are plugged in and out while the machine runs, without orphaning its snapshots. <ui-history-toggle>Snapshot</ui-history-toggle> and <ui-zzz>Suspend</ui-zzz> ask, then unplug them first.",
+    "note": "Note at the bottom of the Home page's USB tab while the machine isn't running. The markers show the toolbar's USB menu, Snapshot and Suspend buttons with their icons."
   },
   "Usb.note": {
-    "message": "Devices are plugged in and out while the machine runs, without orphaning its snapshots. Snapshot and Suspend ask, then unplug them first.",
-    "note": "Note at the bottom of the Home page's USB tab while the machine runs on this page."
+    "message": "Devices are plugged in and out while the machine runs, without orphaning its snapshots. <ui-history-toggle>Snapshot</ui-history-toggle> and <ui-zzz>Suspend</ui-zzz> ask, then unplug them first.",
+    "note": "Note at the bottom of the Home page's USB tab while the machine runs on this page. The markers show the toolbar's Snapshot and Suspend buttons with their icons."
   },
   "UsbMenu.why.unplugged": {
     "message": "The device isn't plugged in.",
     "note": "Tooltip of a remembered device's line in the toolbar's USB menu when it isn't plugged in (its checkbox is off)."
   },
   "UsbMenu.why.heldBy": {
-    "message": "{{holder}} is using the device.",
+    "message": "<name>{{holder}}</name> is using the device.",
     "note": "Tooltip of a remembered device's line in the USB menu when another machine, in another tab, has it. {{holder}} is that machine's name."
   },
   "UsbMenu.why.held": {
@@ -500,8 +500,8 @@
     "note": "Tooltip of a remembered device's line in the USB menu when another machine, in another tab that didn't say its name, has it."
   },
   "UsbMenu.why.ungranted": {
-    "message": "This browser has no permission to use the device yet. Allow it on the Home page's USB tab.",
-    "note": "Tooltip of a remembered device's line in the USB menu when this browser hasn't granted it (its checkbox is off)."
+    "message": "This browser has no permission to use the device yet. Allow it on the <ui-home>Home</ui-home> page's <ui-usb>USB</ui-usb> tab.",
+    "note": "Tooltip of a remembered device's line in the USB menu when this browser hasn't granted it (its checkbox is off). The markers show the Home button and a machine's USB tab with their icons."
   },
   "UsbMenu.where.detaching": {
     "message": "detaching…",
@@ -516,7 +516,7 @@
     "note": "Right side of an attached device's line in the toolbar's USB menu: the connector it is on. {{connector}} is its number (from 1)."
   },
   "UsbMenu.where.heldBy": {
-    "message": "in {{holder}}",
+    "message": "in <name>{{holder}}</name>",
     "note": "Right side of a device's line in the toolbar's USB menu when another machine has it. {{holder}} is that machine's name."
   },
   "UsbMenu.where.held": {
@@ -544,8 +544,8 @@
     "note": "Button of an offer at the top of the USB menu (a device plugged in, one unplugged, a permission to give): dismisses the offer."
   },
   "UsbMenu.problems": {
-    "message": "Part of the device doesn't reach the guest. Hover here, or see All USB settings… for details.",
-    "note": "Warning under an attached device in the toolbar's USB menu when part of it is kept from the guest; its tooltip lists what."
+    "message": "Part of the device doesn't reach the guest. Hover here, or see <ui>All USB settings…</ui> for details.",
+    "note": "Warning under an attached device in the toolbar's USB menu when part of it is kept from the guest; its tooltip lists what. <ui>All USB settings…</ui> is the menu's own item."
   },
   "UsbMenu.none": {
     "message": "No devices remembered yet.",
@@ -580,8 +580,8 @@
     "note": "Button in the toolbar's USB menu: opens the Home page's USB tab for this machine."
   },
   "UsbMenu.stopped": {
-    "message": "The machine isn't running. Devices marked At start that are plugged in will be attached when it starts.",
-    "note": "Hint at the bottom of the toolbar's USB menu while the machine isn't running."
+    "message": "The machine isn't running. Devices marked <ui>At start</ui> that are plugged in will be attached when it starts.",
+    "note": "Hint at the bottom of the toolbar's USB menu while the machine isn't running. <ui>At start</ui> is the USB tab's checkbox."
   },
   "AddUsb.usb": {
     "message": "A USB device (WebUSB)",
@@ -600,7 +600,7 @@
     "note": "Explanation under A HID device (WebHID), the second choice in the Add a USB device wizard."
   },
   "AddUsb.title": {
-    "message": "Add a USB device to {{name}}",
+    "message": "Add a USB device to <name>{{name}}</name>",
     "note": "Title of the Add a USB device wizard (a dialog from the USB menu or the Home page's USB tab). {{name}} is the machine's name."
   },
   "AddUsb.step.kind": {
@@ -640,7 +640,7 @@
     "note": "Error when a USB device is attached (the USB menu, the Home page's USB tab) while the machine isn't running in this tab."
   },
   "usb-attach.offer.gone": {
-    "message": "{{name}} was unplugged from connector {{connector}}. If it came back as another device, such as a bootloader after a firmware upload, pick that one to attach it on the same connector.",
+    "message": "<name>{{name}}</name> was unplugged from connector {{connector}}. If it came back as another device, such as a bootloader after a firmware upload, pick that one to attach it on the same connector.",
     "note": "An offer in the toolbar's USB menu when an attached device was unplugged (Pick it… follows); {{name}} is the device's name, {{connector}} its connector's number."
   },
   "usb-attach.offer.pick": {
@@ -648,31 +648,31 @@
     "note": "Button of the USB menu's offer after a device was unplugged: it opens the browser's chooser for the device that came back."
   },
   "usb-attach.detached": {
-    "message": "{{name}} was detached",
+    "message": "<name>{{name}}</name> was detached",
     "note": "Error headline in the message bar (under the toolbar) when an attached USB device was detached by an error; {{name}} is the device's name; the error is the detail under it."
   },
   "usb-attach.attachFailed": {
-    "message": "Couldn't attach {{name}}",
+    "message": "Couldn't attach <name>{{name}}</name>",
     "note": "Error headline in the message bar (under the toolbar) when a USB device couldn't be attached; {{name}} is the device's name; why is the detail under it."
   },
   "usb-attach.attachFailed.again": {
-    "message": "Couldn't attach {{name}} again",
+    "message": "Couldn't attach <name>{{name}}</name> again",
     "note": "Error headline in the message bar (under the toolbar) when a USB device detached for a snapshot couldn't be attached again; {{name}} is the device's name; why is the detail under it."
   },
   "usb-attach.held.left": {
-    "message": "{{name}} was left attached to {{who}}, in another tab.",
+    "message": "<name>{{name}}</name> was left attached to <name>{{who}}</name>, in another tab.",
     "note": "Notice in the message bar (under the toolbar) when a device attached at start is attached to another tab's machine (left there); {{name}} is the device's name, {{who}} that machine's."
   },
   "usb-attach.held.left.unknown": {
-    "message": "{{name}} was left attached to another machine, in another tab.",
+    "message": "<name>{{name}}</name> was left attached to another machine, in another tab.",
     "note": "Notice in the message bar (under the toolbar) when a device attached at start is attached to another tab's machine whose name isn't known; {{name}} is the device's name."
   },
   "usb-attach.held.confirm": {
-    "message": "Detach {{name}} from {{who}}, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
+    "message": "Detach <name>{{name}}</name> from <name>{{who}}</name>, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
     "note": "Text of the question asked when a USB device is attached here while another tab's machine has it; {{name}} is the device's name, {{who}} that machine's."
   },
   "usb-attach.held.confirm.unknown": {
-    "message": "Detach {{name}} from another machine, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
+    "message": "Detach <name>{{name}}</name> from another machine, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
     "note": "Text of the question asked when a USB device is attached here while another tab's machine, whose name isn't known, has it; {{name}} is the device's name."
   },
   "usb-attach.held.title": {
@@ -684,15 +684,15 @@
     "note": "The confirm button of the question asked when a USB device is attached here while another tab's machine has it."
   },
   "usb-attach.held.kept": {
-    "message": "Couldn't take {{name}} from {{who}}, in another tab",
+    "message": "Couldn't take <name>{{name}}</name> from <name>{{who}}</name>, in another tab",
     "note": "Error headline when another tab's machine didn't give up a USB device asked for here; {{who}} is that machine's name, {{name}} the device's."
   },
   "usb-attach.held.kept.unknown": {
-    "message": "Couldn't take {{name}} from the machine in another tab",
+    "message": "Couldn't take <name>{{name}}</name> from the machine in another tab",
     "note": "Error headline when another tab's machine, whose name isn't known, didn't give up a USB device asked for here; {{name}} is the device's name."
   },
   "usb-attach.taken": {
-    "message": "{{name}} was detached, because another machine took it.",
+    "message": "<name>{{name}}</name> was detached, because another machine took it.",
     "note": "Notice in the message bar (under the toolbar) when another tab's machine took a USB device from this one; {{name}} is the device's name."
   },
   "usb-attach.keyboardFailed": {
@@ -700,7 +700,7 @@
     "note": "Error headline in the message bar (under the toolbar) when the page's built-in USB keyboard (for the firmware and boot loaders) couldn't be attached; why is the detail under it."
   },
   "usb-attach.offer.ungranted": {
-    "message": "This browser has no permission to use {{name}} yet, because the machine was set up in another browser.",
+    "message": "This browser has no permission to use <name>{{name}}</name> yet, because the machine was set up in another browser.",
     "note": "An offer in the toolbar's USB menu for a remembered device the browser hasn't allowed (Allow… follows); {{name}} is the device's name."
   },
   "usb-attach.offer.allow": {
@@ -708,7 +708,7 @@
     "note": "Button of the USB menu's offer for a device without permission: it opens the browser's chooser for it."
   },
   "usb-actions.offer.plugged": {
-    "message": "{{name}} was plugged in.",
+    "message": "<name>{{name}}</name> was plugged in.",
     "note": "An offer in the toolbar's USB menu when a device was plugged into the computer; {{name}} is the device's name."
   },
   "usb-actions.offer.attach": {
@@ -720,7 +720,7 @@
     "note": "Button of the USB menu's offer for a device the machine doesn't remember that was plugged in: it attaches it and remembers it."
   },
   "usb-actions.offer.back": {
-    "message": "{{name}} just appeared where {{was}} was, on connector {{connector}}.",
+    "message": "<name>{{name}}</name> just appeared where <name>{{was}}</name> was, on connector {{connector}}.",
     "note": "An offer in the toolbar's USB menu when a device appeared right after an attached one was unplugged (a bootloader after a firmware upload); {{name}} is the new device's name, {{was}} the old one's, {{connector}} the connector's number."
   },
   "usb-actions.offer.there": {
@@ -728,24 +728,28 @@
     "note": "Button of the USB menu's offer for a device that appeared where another was: it attaches it on that connector."
   },
   "usb-attach.empty.list": {
-    "message": "{{first}} and {{last}}",
-    "note": "Several USB devices named in the question asked before a snapshot or Suspend: {{first}} is all of them but the last (joined with commas), {{last}} the last."
+    "message": "<name>{{first}}</name> and <name>{{last}}</name>",
+    "note": "Several USB devices named in the question asked before a snapshot or Suspend: {{first}}: the names of all of them but the last (joined with commas), {{last}}: the last one's name."
+  },
+  "usb-attach.empty.one": {
+    "message": "<name>{{name}}</name>",
+    "note": "One USB device named in the question asked before a snapshot or Suspend (usb-attach.empty.snapshot_one, usb-attach.empty.suspend_one): {{name}} is the device's name."
   },
   "usb-attach.empty.snapshot_one": {
     "message": "Taking a snapshot needs the USB ports empty. This will detach {{list}}, and the guest will see it unplugged; anything in progress with it, such as a copy or a firmware flash, will fail. It will be attached again once the snapshot is saved.",
-    "note": "Text of the question asked by Snapshot or Save snapshot while a USB device is attached; {{list}} is its name."
+    "note": "Text of the question asked by Snapshot or Save snapshot while a USB device is attached; {{list}}: a message (usb-attach.empty.one) that marks the device's name itself, so it isn't wrapped."
   },
   "usb-attach.empty.snapshot_other": {
     "message": "Taking a snapshot needs the USB ports empty. This will detach {{list}}, and the guest will see them unplugged; anything in progress with them, such as a copy or a firmware flash, will fail. They will be attached again once the snapshot is saved.",
-    "note": "Text of the question asked by Snapshot or Save snapshot while USB devices are attached; {{list}} is their names, {{count}} how many."
+    "note": "Text of the question asked by Snapshot or Save snapshot while USB devices are attached; {{list}}: a message (usb-attach.empty.list) that marks the devices' names itself, so it isn't wrapped, {{count}} how many."
   },
   "usb-attach.empty.suspend_one": {
-    "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see it unplugged; anything in progress with it, such as a copy or a firmware flash, will fail. If it is marked At start, it will be attached again when the machine resumes.",
-    "note": "Text of the question asked by Suspend while a USB device is attached; {{list}} is its name."
+    "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see it unplugged; anything in progress with it, such as a copy or a firmware flash, will fail. If it is marked <ui>At start</ui>, it will be attached again when the machine resumes.",
+    "note": "Text of the question asked by Suspend while a USB device is attached; {{list}}: a message (usb-attach.empty.one) that marks the device's name itself, so it isn't wrapped. <ui>At start</ui> is the USB tab's checkbox."
   },
   "usb-attach.empty.suspend_other": {
-    "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see them unplugged; anything in progress with them, such as a copy or a firmware flash, will fail. Those marked At start will be attached again when the machine resumes.",
-    "note": "Text of the question asked by Suspend while USB devices are attached; {{list}} is their names, {{count}} how many."
+    "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see them unplugged; anything in progress with them, such as a copy or a firmware flash, will fail. Those marked <ui>At start</ui> will be attached again when the machine resumes.",
+    "note": "Text of the question asked by Suspend while USB devices are attached; {{list}}: a message (usb-attach.empty.list) that marks the devices' names itself, so it isn't wrapped, {{count}} how many. <ui>At start</ui> is the USB tab's checkbox."
   },
   "usb-attach.empty.title": {
     "message": "Detach the USB devices?",

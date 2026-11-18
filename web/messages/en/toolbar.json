@@ -116,12 +116,12 @@
     "note": "Tooltip of a snapshot shown disabled in the toolbar's Load snapshot menu: the machine's settings or disks changed since it was taken."
   },
   "LoadSnapshotMenu.load.restore.title": {
-    "message": "Restore the snapshot {{name}}.",
+    "message": "Restore the snapshot <name>{{name}}</name>.",
     "note": "Tooltip of a snapshot in the toolbar's Load snapshot menu; a click restores it. {{name}} is the snapshot's name."
   },
   "LoadSnapshotMenu.load.none": {
-    "message": "No snapshots yet. Snapshot takes one.",
-    "note": "Line in the toolbar's Load snapshot menu when the machine has no snapshot kept; Snapshot is the toolbar's button that takes one."
+    "message": "No snapshots yet. <ui-history-toggle>Snapshot</ui-history-toggle> takes one.",
+    "note": "Line in the toolbar's Load snapshot menu when the machine has no snapshot kept; Snapshot is the toolbar's button that takes one. The <ui-history-toggle> marker shows the button's icon before its words."
   },
   "LoadSnapshotMenu.load.all": {
     "message": "All snapshots…",
@@ -360,8 +360,8 @@
     "note": "Button in the toolbar's Machine menu: restarts the machine with the size chosen."
   },
   "SizeMenu.size.hint": {
-    "message": "This size is kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.",
-    "note": "Fine print at the foot of the toolbar's Machine menu."
+    "message": "This size is kept in this browser. A suspended machine resumes with the size it had; <ui>Boot instead</ui> starts it from its disk with this one.",
+    "note": "Fine print at the foot of the toolbar's Machine menu. <ui>Boot instead</ui> is the message bar's button for a suspended machine (machine:problems.bootInstead)."
   },
   "size-actions.gpuLock.noWebgl2": {
     "message": "This browser has no WebGL2, so only 2D is available.",

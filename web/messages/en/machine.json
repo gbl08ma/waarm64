@@ -1,10 +1,10 @@
 {
   "page-disks.title.disk": {
-    "message": "{{machine}} · {{disk}}",
+    "message": "<name>{{machine}}</name> · <name>{{disk}}</name>",
     "note": "The toolbar's name of a machine opened from the page's address (not one kept in this browser) with a disk: {{machine}} is the machine's name (e.g. Debian 13), {{disk}} its disk's file name. Also how other tabs name it (a connection or a device it holds)."
   },
   "page-disks.title.noDisk": {
-    "message": "{{machine}} · no disk",
+    "message": "<name>{{machine}}</name> · no disk",
     "note": "The toolbar's name of a machine opened from the page's address that boots a disk of the user's and has none yet; {{machine}} is the machine's name."
   },
   "page-machine.noMachine": {
@@ -12,7 +12,7 @@
     "note": "Detail under “Couldn't open the machine” in the message bar (under the toolbar) when the page's address (`?m=`) names a machine that isn't kept in this browser; {{id}} is the id in the address."
   },
   "page-machine.noDisk": {
-    "message": "The machine {{name}} has a disk that isn't stored in this browser any more: {{id}}.",
+    "message": "The machine <name>{{name}}</name> has a disk that isn't stored in this browser any more: {{id}}.",
     "note": "Detail under “Couldn't open the machine” in the message bar (under the toolbar) when one of the machine's disks is gone from this browser; {{name}} is the machine's name, {{id}} the missing disk's id."
   },
   "messages.state.idle": {
@@ -100,15 +100,15 @@
     "note": "The confirm button (drawn as a warning) of the question asked by Boot instead."
   },
   "runner.boot.loading": {
-    "message": "Loading {{name}}",
+    "message": "Loading <name>{{name}}</name>",
     "note": "Title of the boot card (over the screen while a machine starts) when it starts from a snapshot file; {{name}} is the file's name."
   },
   "runner.boot.starting": {
-    "message": "Starting {{machine}}",
+    "message": "Starting <name>{{machine}}</name>",
     "note": "Title of the boot card (over the screen while a machine starts) while its files load; {{machine}} is the machine's name (e.g. AArch64 machine)."
   },
   "worker-messages.boot.booting": {
-    "message": "Booting {{machine}}",
+    "message": "Booting <name>{{machine}}</name>",
     "note": "Title of the boot card (over the screen while a machine starts) once the machine runs and boots; {{machine}} is the machine's name."
   },
   "worker-messages.boot.kernel": {
@@ -148,23 +148,23 @@
     "note": "Notice in the message bar (under the toolbar) after the page found the browser's storage full (disks:devices.storageFull) and had the guest trim its filesystems, when that made the disks' changes smaller. {{before}} and {{after}}: what they took before and after."
   },
   "grow-actions.grown": {
-    "message": "The guest grew {{disk}}: its partition and filesystem now take {{size, bytes}}.",
+    "message": "The guest grew <name>{{disk}}</name>: its partition and filesystem now take {{size, bytes}}.",
     "note": "Notice in the message bar (under the toolbar) when the guest agent answered the page's ask to grow a disk the Home page resized with \"Grow the partition and filesystem at the next start\" (disks:ResizeDisk.grow) on, when it grew the disk's last partition and its filesystem. {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the partition's size now."
   },
   "grow-actions.grownWhole": {
-    "message": "The guest grew {{disk}}'s filesystem to {{size, bytes}}.",
+    "message": "The guest grew <name>{{disk}}</name>'s filesystem to {{size, bytes}}.",
     "note": "Notice in the message bar (under the toolbar) when the guest agent answered the page's ask to grow a disk the Home page resized with \"Grow the partition and filesystem at the next start\" (disks:ResizeDisk.grow) on, when the disk has no partition table and the guest grew the filesystem that fills it. {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the disk's size."
   },
   "grow-actions.already": {
-    "message": "{{disk}} already fills its {{size, bytes}} in the guest: nothing was left to grow.",
+    "message": "<name>{{disk}}</name> already fills its {{size, bytes}} in the guest: nothing was left to grow.",
     "note": "Notice in the message bar (under the toolbar) when the guest agent answered the page's ask to grow a disk the Home page resized with \"Grow the partition and filesystem at the next start\" (disks:ResizeDisk.grow) on, when the disk's last partition and its filesystem reached the disk's end already (a grow done before). {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the partition's (or disk's) size."
   },
   "grow-actions.partOnly": {
-    "message": "The guest grew {{disk}}'s last partition to {{size, bytes}}, but not its filesystem",
+    "message": "The guest grew <name>{{disk}}</name>'s last partition to {{size, bytes}}, but not its filesystem",
     "note": "Headline of a notice in the message bar (under the toolbar) when the guest agent grew the last partition of a disk the Home page resized (disks:ResizeDisk.grow) but not the filesystem on it; why, and what the user can do, is the cause under it (machine:grow-actions.notMounted, .unsupported, .stacked, .failed, .failedAgain). {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the partition's size now."
   },
   "grow-actions.notGrown": {
-    "message": "The guest didn't grow {{disk}}",
+    "message": "The guest didn't grow <name>{{disk}}</name>",
     "note": "Headline of a notice in the message bar (under the toolbar) when the guest agent grew neither the last partition nor the filesystem of a disk the Home page resized (disks:ResizeDisk.grow); why, and what the user can do, is the cause under it (machine:grow-actions.badTable, .notLast, .notMounted, .unsupported, .stacked, .failed, .failedAgain). {{disk}}: the disk's name (as the machine's Disks tab names it)."
   },
   "grow-actions.notMounted": {
@@ -196,7 +196,7 @@
     "note": "Cause under machine:grow-actions.partOnly or .notGrown (message bar), the second time a grow failed in the guest: the page stops asking. {{errno}}: the guest's error number (Linux errno)."
   },
   "grow-actions.badRequest": {
-    "message": "The guest agent didn't understand the request to grow {{disk}} (it may be older or newer than this page), so nothing was grown. It's asked again at the machine's next start; once the agent and the page agree, the disk grows.",
+    "message": "The guest agent didn't understand the request to grow <name>{{disk}}</name> (it may be older or newer than this page), so nothing was grown. It's asked again at the machine's next start; once the agent and the page agree, the disk grows.",
     "note": "Notice in the message bar (under the toolbar), once per page load, when the guest agent answered the page's ask to grow a disk the Home page resized (disks:ResizeDisk.grow) by saying it couldn't read the ask: the agent in the guest and the page are of different versions. {{disk}}: the disk's name (as the machine's Disks tab names it)."
   },
   "runner.workerFailed": {
@@ -208,12 +208,12 @@
     "note": "Error headline in the message bar (under the toolbar) when something the page prepares before a machine starts (its shared folders, its keyboard layout) failed (Retry follows); the error is the detail under it."
   },
   "runner.runsElsewhere": {
-    "message": "Couldn't start {{name}}",
+    "message": "Couldn't start <name>{{name}}</name>",
     "note": "Error in the message bar (under the toolbar) when the machine to start already runs in another tab or window (Retry follows): the headline; what to do is the cause under it (machine:main.runsElsewhere.cause); {{name}} is the machine's name."
   },
   "runner.runsElsewhere.cause": {
-    "message": "It's running in another tab of this web app. Power it off there or close that tab, then Retry.",
-    "note": "Error details: the cause under the headline machine:main.runsElsewhere, on the line under it in the same place; what to do."
+    "message": "It's running in another tab of this web app. Power it off there or close that tab, then <ui>Retry</ui>.",
+    "note": "Error details: the cause under the headline machine:main.runsElsewhere, on the line under it in the same place; what to do. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
   "power-actions.cantOpen": {
     "message": "Couldn't open the machine",
@@ -256,7 +256,7 @@
     "note": "The confirm button (drawn as a warning) of the question asked by the toolbar's Power off."
   },
   "power-actions.openDisk.prompt": {
-    "message": "Open a disk image to start the machine. It must be an arm64 Linux image that boots through UEFI: qcow2, raw, or an installer or live ISO. Use Open disk…, or drop the file on this web app. What the machine writes to the disk is kept in this browser, separately for each file.",
+    "message": "Open a disk image to start the machine. It must be an arm64 Linux image that boots through UEFI: qcow2, raw, or an installer or live ISO. Use <ui>Open disk…</ui>, or drop the file on this web app. What the machine writes to the disk is kept in this browser, separately for each file.",
     "note": "What the message bar (under the toolbar) says on a first visit, when the page's machine has no disk yet; an Open disk… button follows."
   },
   "power-actions.openDisk": {
@@ -288,7 +288,7 @@
     "note": "The confirm button of the question asked by Start with N MiB of RAM when the machine has kept snapshots."
   },
   "memory-signal.crashed": {
-    "message": "{{name}}'s tab closed while it was running ({{when}}), most likely because the browser ran out of memory. The emulator counted about {{gib}} GiB in use ({{peak}} GiB at most), with {{ram}} MiB of guest RAM and a {{jit}} MiB JIT cache.\nA smaller JIT cache keeps less of the guest's code compiled; when the cache is full, the browser uses about six times its size for it. Less RAM leaves the guest less room.",
+    "message": "<name>{{name}}</name>'s tab closed while it was running ({{when}}), most likely because the browser ran out of memory. The emulator counted about {{gib}} GiB in use ({{peak}} GiB at most), with {{ram}} MiB of guest RAM and a {{jit}} MiB JIT cache.\nA smaller JIT cache keeps less of the guest's code compiled; when the cache is full, the browser uses about six times its size for it. Less RAM leaves the guest less room.",
     "note": "What the message bar (under the toolbar) says when the page opens a machine whose tab closed while it ran (buttons to start it smaller follow): {{name}} is the machine's name, {{when}} when it was last seen running, {{gib}} and {{peak}} the memory it used then and at most (GiB), {{ram}} its RAM and {{jit}} its JIT cache (MiB)."
   },
   "memory-signal.crashed.jit": {
@@ -352,7 +352,7 @@
     "note": "The confirm button of the question asked when a size is chosen in the toolbar's Machine menu."
   },
   "size-actions.settings.confirm": {
-    "message": "Restart {{name}} with its new settings? This will power it off immediately, like pulling the plug, and unsaved work in the guest will be lost.",
+    "message": "Restart <name>{{name}}</name> with its new settings? This will power it off immediately, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked when the Home page's Settings tab saves new settings for the machine running on the page; {{name}} is the machine's name."
   },
   "size-actions.settings.title": {
@@ -432,12 +432,12 @@
     "note": "Detail under “Couldn't resume the suspended machine” in the message bar (under the toolbar): a disk of the machine moved on since the suspend (a reset, a switch of overlay, a merge)."
   },
   "worker-start.vulkanSplit": {
-    "message": "Couldn't start {{machine}} with Vulkan",
+    "message": "Couldn't start <name>{{machine}}</name> with Vulkan",
     "note": "Error in the message bar (under the toolbar) when a machine with Vulkan has a memory split that leaves no room for Vulkan's memory (Retry follows): the headline; why and what to do are the cause under it (machine:worker-start.vulkanSplit.cause, or machine:worker-start.vulkanSplit.snapshot.cause for a snapshot); {{machine}} is the machine's name, {{why}} what is wrong with the split (a machines catalog message, lower case)."
   },
   "worker-start.vulkanSplit.cause": {
-    "message": "Its memory split doesn't work with Vulkan ({{why}}). Change the machine's memory on the Home page, or the split in the address, or turn Vulkan off for it.",
-    "note": "Error details: the cause under the headline machine:worker-start.vulkanSplit, on the line under it in the same place; why and what to do. {{why}}: as that entry's note says."
+    "message": "Its memory split doesn't work with Vulkan ({{why}}). Change the machine's memory on the <ui-home>Home</ui-home> page, or the split in the address, or turn Vulkan off for it.",
+    "note": "Error details: the cause under the headline machine:worker-start.vulkanSplit, on the line under it in the same place; why and what to do. {{why}}: as that entry's note says. The <ui-home> marker shows the Home button's icon before its words."
   },
   "worker-start.vulkanSplit.snapshot.cause": {
     "message": "The snapshot's memory split doesn't work with Vulkan ({{why}}). Turn Vulkan off for the machine, or start it without the snapshot.",
@@ -448,8 +448,8 @@
     "note": "Error headline in the message bar (under the toolbar) when the guest's kernel panicked (Show serial log and the like follow); the kernel's panic line is the detail under it, after its cause (machine:worker.panic.cause) on the line under the headline."
   },
   "worker.panic.cause": {
-    "message": "The serial log shows what led to it. Restart boots the machine again.",
-    "note": "Error details: the cause under the headline machine:worker.panic, on the line under it in the same place; what happened."
+    "message": "The serial log shows what led to it. <ui-refresh>Restart</ui-refresh> boots the machine again.",
+    "note": "Error details: the cause under the headline machine:worker.panic, on the line under it in the same place; what happened. <ui-refresh>Restart</ui-refresh> is the toolbar's Restart button, drawn with its icon."
   },
   "worker.resumed": {
     "message": "Resumed the suspended machine.",
@@ -484,12 +484,12 @@
     "note": "Error details: the cause under the headline machine:worker-fetch.noCore, on the line under it in the same place; why and what to do. {{why}}, {{path}}: as that entry's note says."
   },
   "worker-fetch.noImage": {
-    "message": "Couldn't load {{machine}}'s image",
+    "message": "Couldn't load <name>{{machine}}</name>'s image",
     "note": "Error in the message bar (under the toolbar) when a file of a test machine can't be fetched from the server (Retry follows): the headline; why and what to do are the cause under it (machine:worker-fetch.noImage.cause); {{machine}} is the machine's name, {{path}} the file's path in the repository, {{why}} what the server answered (HTTP and its status), {{prepare}} the command that builds it."
   },
   "worker-fetch.noImage.cause": {
-    "message": "The server answered {{why}} for {{path}}. Run {{prepare}}, then Retry.",
-    "note": "Error details: the cause under the headline machine:worker-fetch.noImage, on the line under it in the same place; why and what to do. {{why}}, {{path}}, {{prepare}}: as that entry's note says."
+    "message": "The server answered {{why}} for {{path}}. Run {{prepare}}, then <ui>Retry</ui>.",
+    "note": "Error details: the cause under the headline machine:worker-fetch.noImage, on the line under it in the same place; why and what to do. {{why}}, {{path}}, {{prepare}}: as that entry's note says. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
   "worker-fetch.noServer": {
     "message": "Couldn't load {{path}}",
@@ -500,15 +500,15 @@
     "note": "Error details: the cause under the headline machine:worker-fetch.noServer, on the line under it in the same place; what to check."
   },
   "worker-errors.diskInUse": {
-    "message": "Couldn't start {{machine}}",
+    "message": "Couldn't start <name>{{machine}}</name>",
     "note": "Error in the message bar (under the toolbar) when the machine's disk is open in another tab (Retry follows): the headline; why and what to do are the cause under it (machine:worker-errors.diskInUse.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."
   },
   "worker-errors.diskInUse.cause": {
-    "message": "Another tab or window of this web app is running the machine on the same disk, and the browser lets only one of them open it at a time. Close that tab, then Retry.",
-    "note": "Error details: the cause under the headline machine:worker-errors.diskInUse, on the line under it in the same place; why and what to do."
+    "message": "Another tab or window of this web app is running the machine on the same disk, and the browser lets only one of them open it at a time. Close that tab, then <ui>Retry</ui>.",
+    "note": "Error details: the cause under the headline machine:worker-errors.diskInUse, on the line under it in the same place; why and what to do. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
   "worker-errors.diskMismatch": {
-    "message": "Couldn't start {{machine}}",
+    "message": "Couldn't start <name>{{machine}}</name>",
     "note": "Error in the message bar (under the toolbar) when the changes kept for the machine's disk were made over another image (Reset disk… or Disks… follows): the headline; why and what to do are the cause under it (machine:worker-errors.diskMismatch.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."
   },
   "worker-errors.diskMismatch.cause": {
@@ -520,8 +520,8 @@
     "note": "Error in the message bar (under the toolbar) when the browser refused the machine's memory (Retry follows): the headline; what to do is the cause under it (machine:worker-errors.memory.cause); {{ram}} is the RAM; the browser's error is the detail under it."
   },
   "worker-errors.memory.cause": {
-    "message": "The browser refused {{ram}} MiB for the machine's RAM. Close other tabs, then Retry.",
-    "note": "Error details: the cause under the headline machine:worker-errors.memory, on the line under it in the same place; what to do. {{ram}}: as that entry's note says."
+    "message": "The browser refused {{ram}} MiB for the machine's RAM. Close other tabs, then <ui>Retry</ui>.",
+    "note": "Error details: the cause under the headline machine:worker-errors.memory, on the line under it in the same place; what to do. {{ram}}: as that entry's note says. <ui>Retry</ui> is the message bar's button (machine:problems.retry)."
   },
   "worker-errors.emulator": {
     "message": "The emulator stopped with an error",
@@ -556,8 +556,8 @@
     "note": "The machine's state in the status bar while Suspend writes its memory (a percentage may follow)."
   },
   "worker-snapshot.suspended": {
-    "message": "The machine is suspended, and its memory ({{size, bytes}}) is kept in this browser. Start resumes it where it was. Boot instead starts it from its disk, as after a power cut.",
-    "note": "Note in the message bar (under the toolbar) once the machine was suspended (Start and Boot instead follow); {{size}} is what its memory takes in this browser."
+    "message": "The machine is suspended, and its memory ({{size, bytes}}) is kept in this browser. <ui>Start</ui> resumes it where it was. <ui>Boot instead</ui> starts it from its disk, as after a power cut.",
+    "note": "Note in the message bar (under the toolbar) once the machine was suspended (Start and Boot instead follow); {{size}} is what its memory takes in this browser. The markers frame the message bar's buttons' words (machine:problems.resume, machine:problems.bootInstead)."
   },
   "worker-snapshot.suspend.failed": {
     "message": "Couldn't suspend the machine",
@@ -600,12 +600,12 @@
     "note": "Text of the question asked before opening another machine while this one runs, when its guest's agent (the page's program in the guest) can shut it down cleanly."
   },
   "size-actions.settings.confirm.soft": {
-    "message": "Restart {{name}} with its new settings? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
+    "message": "Restart <name>{{name}}</name> with its new settings? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
     "note": "Text of the question asked by the Settings tab's Save and restart while the machine runs, when its guest's agent can shut it down cleanly. {{name}} is the machine's name."
   },
   "power-actions.shuttingDown.refused": {
-    "message": "The guest didn't shut down (the message bar says why). Power off the machine now, like pulling the plug? Unsaved work in the guest will be lost. Cancel keeps it running, and the change isn't made.",
-    "note": "Question asked before a change on the Home page (a disk's export, new settings, another machine opened, an edit that needs the machine off) when the guest was asked to shut down and refused or didn't answer."
+    "message": "The guest didn't shut down (the message bar says why). Power off the machine now, like pulling the plug? Unsaved work in the guest will be lost. <ui>Cancel</ui> keeps it running, and the change isn't made.",
+    "note": "Question asked before a change on the Home page (a disk's export, new settings, another machine opened, an edit that needs the machine off) when the guest was asked to shut down and refused or didn't answer. <ui>Cancel</ui> is the question's own button (common:ask.cancel)."
   },
   "RamWindow.title": {
     "message": "RAM",

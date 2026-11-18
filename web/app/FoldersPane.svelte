@@ -12,8 +12,9 @@
   import Icon from './ui/Icon.svelte';
   import NameInput from './ui/NameInput.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { ask } from './ask.svelte.ts';
-  import { t } from '../i18n.ts';
+  import { msg, t } from '../i18n.ts';
   import { bytesText } from './bytes.ts';
   import type { PageFolders } from './folders-live.ts';
   import { addFiles, copyTree, emptyFolder, folderSize, topLevel, type Copying, type Entry } from './folder-files.ts';
@@ -102,7 +103,7 @@
   };
   async function empty(f: Folder) {
     if (
-      !(await ask.confirm(t('folders:FoldersPane.empty.question', { name: f.name }), {
+      !(await ask.confirm(msg('folders:FoldersPane.empty.question', { name: f.name }), {
         title: t('folders:FoldersPane.empty.title'),
         ok: t('folders:FoldersPane.empty.ok'),
         danger: true,
@@ -121,11 +122,11 @@
     const question =
       f.kind === 'opfs'
         ? count
-          ? t('folders:FoldersPane.delete.opfs.lose', { name, size, count, machines })
-          : t('folders:FoldersPane.delete.opfs', { name, size })
+          ? msg('folders:FoldersPane.delete.opfs.lose', { name, size, count, machines })
+          : msg('folders:FoldersPane.delete.opfs', { name, size })
         : count
-          ? t('folders:FoldersPane.delete.host.lose', { name, count, machines })
-          : t('folders:FoldersPane.delete.host', { name });
+          ? msg('folders:FoldersPane.delete.host.lose', { name, count, machines })
+          : msg('folders:FoldersPane.delete.host', { name });
     if (
       !(await ask.confirm(question, {
         title: t('folders:FoldersPane.delete.title'),
@@ -151,7 +152,7 @@
   }
 </script>
 
-<CardList empty={all.length ? undefined : t('folders:FoldersPane.none')}>
+<CardList empty={all.length ? undefined : msg('folders:FoldersPane.none')}>
   {#each all as f (f.id)}
     <Card data-folder={f.id} data-kind={f.kind}>
       <div class="line">
@@ -166,11 +167,10 @@
               void act(t('folders:FoldersPane.busy.renaming'), () => editFolderOf(folders, store, f, { name }))}
           />
           <Note inline
-            >{f.kind === 'host' ? t('folders:FoldersPane.kind.host') : t('folders:FoldersPane.kind.opfs')} · {users[
-              f.id
-            ]?.length
-              ? t('folders:FoldersPane.attachedTo', { machines: users[f.id] })
-              : t('folders:FoldersPane.attachedToNone')}{#if folders.held.has(f.id)}
+            >{f.kind === 'host' ? t('folders:FoldersPane.kind.host') : t('folders:FoldersPane.kind.opfs')} · {#if users[f.id]?.length}<T
+                k="folders:FoldersPane.attachedTo"
+                params={{ machines: users[f.id] }}
+              />{:else}{t('folders:FoldersPane.attachedToNone')}{/if}{#if folders.held.has(f.id)}
               · {t('folders:FoldersPane.heldElsewhere')}{/if}{#if folders.mine(f.id)}
               · {t('folders:FoldersPane.heldHere')}{/if}</Note
           >

@@ -1,6 +1,7 @@
 <!-- The page's questions (web/app/ask.svelte.ts): one modal dialog, the first queued question in it. -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import T from './T.svelte';
   import { answer, asking } from './ask.svelte.ts';
 
   let dialog: HTMLDialogElement;
@@ -38,8 +39,12 @@
         answer(true, text);
       }}
     >
-      <h2 id="ask-title">{q.title}</h2>
-      <p class="ask-text">{q.text}</p>
+      <h2 id="ask-title">
+        {#if typeof q.title === 'string'}{q.title}{:else}<T m={q.title} />{/if}
+      </h2>
+      <p class="ask-text">
+        {#if typeof q.text === 'string'}{q.text}{:else}<T m={q.text} />{/if}
+      </p>
       {#if q.kind === 'prompt'}<input bind:this={input} bind:value={text} spellcheck="false" autocomplete="off" />{/if}
       <div class="buttons">
         {#if q.kind !== 'alert' && q.kind !== 'wait'}<Button

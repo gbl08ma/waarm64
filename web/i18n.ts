@@ -92,7 +92,7 @@ export const copyEditor = {
     const s = shown[id];
     const was = s.words;
     // A message with markers is cut into pieces in the page (T.svelte): its new words show when it's drawn again.
-    if (!s.rich) s.words = unmarked(i18n.t(s.key, s.params) as string);
+    if (!s.rich) s.words = unmarked((i18n.t(s.key, s.params) as string).replace(REFERENCES, ''));
     return { was, now: s.words };
   },
 };
@@ -123,12 +123,54 @@ function param(v: Param): unknown {
   return v;
 }
 
-/** Message `m`'s words, with its parameters in place (and its markers, `<b>…</b>`, as they are: `plain` drops them). */
-export function text(m: Msg): string {
+/** A piece of a message's words: plain text (`tag` undefined) or the text a marker (`<tag>…</tag>`) wraps. */
+export type Piece = { tag?: string; text: string };
+
+/**
+ * The markers the page draws on its own wherever a message is drawn (T.svelte; docs/i18n.md "Markers"): a name
+ * someone gave (`<name>{{disk}}</name>`: a machine's, a disk's, an overlay's…), the words of an element of the page
+ * (`<ui>Edit connection…</ui>`: a button, a menu's item, a tab) and one shown with its icon before them
+ * (`<ui-network>Network</ui-network>`: the icon of web/app/icons.ts after `ui-`). Words as text (`t`, `text`) drop
+ * them: the name or the element's words stand alone, as they read in the page's text.
+ */
+export const REFERENCE = /^(name|ui|ui-[a-z0-9-]+)$/;
+const REFERENCES = /<\/?(?:name|ui|ui-[a-z0-9-]+)>/g;
+
+/** A value placed in a message's words, held out of them while i18next renders them (its `<…>` is never a marker). */
+type Hole = { text: string; pieces?: Piece[]; item?: boolean };
+const HOLE = /\u0001(\d+)\u0002/g;
+
+/** Message `key`'s words with `params` held as holes (`rich`: a message parameter's pieces kept), and the holes. */
+function holed(key: string, params: Params | undefined, rich: boolean): { words: string; holes: Hole[] } {
+  const holes: Hole[] = [];
+  const hole = (h: Hole) => `\u0001${holes.push(h) - 1}\u0002`;
+  const one = (v: Param, item?: boolean): unknown => {
+    if (isMsg(v)) return hole({ text: text(v), ...(rich ? { pieces: marked(v.key, v.params) } : {}), item });
+    const r = param(v);
+    // A string with `<` in it, held so it's never a marker; a list's items too, where the names in it are drawn one by one.
+    return (typeof r === 'string' && r.includes('<')) || (rich && item) ? hole({ text: String(r), item }) : r;
+  };
   const p: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(m.params ?? {})) p[k] = param(v);
-  const words = i18n.t(m.key, p) as string;
-  return COPY_EDITING ? mark(m.key, p, words) + words : words;
+  for (const [k, v] of Object.entries(params ?? {})) p[k] = Array.isArray(v) ? Items.from(v as Param[], (x) => String(one(x, true))) : one(v);
+  return { words: i18n.t(key, p) as string, holes };
+}
+const filled = (s: string, holes: Hole[]) => s.replace(HOLE, (_, i: string) => holes[Number(i)].text);
+
+/** The parameters as rendered (for the copy editor's record of a message). */
+function rendered(params: Params | undefined): Record<string, unknown> {
+  const p: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params ?? {})) p[k] = param(v);
+  return p;
+}
+
+/**
+ * Message `m`'s words, with its parameters in place: its names' and elements' markers dropped (the words as the page's
+ * text reads, T.svelte's included), its other markers (`<code>…</code>`) as they are (`plain` drops them).
+ */
+export function text(m: Msg): string {
+  const { words, holes } = holed(m.key, m.params, false);
+  const out = filled(words.replace(REFERENCES, ''), holes);
+  return COPY_EDITING ? mark(m.key, rendered(m.params), out) + out : out;
 }
 
 /** Message `key`'s words with `params`. */
@@ -141,28 +183,39 @@ export const plain = (s: string) => s.replace(MARKER, '');
 
 /**
  * Message `key`'s words with `params`, cut at its markers (T.svelte): the markers are the message's own, never a
- * parameter's (a path or a command with `<…>` in it stays text).
+ * parameter's (a path or a command with `<…>` in it stays text). A parameter that is a message keeps its own markers
+ * (its plain words take the marker around it, if any); a list in a `<name>` is a name per item, the commas between
+ * them plain.
  */
-export function marked(key: string, params?: Params): { tag?: string; text: string }[] {
-  const p: Record<string, unknown> = {};
-  const held: string[] = [];
-  for (const [k, v] of Object.entries(params ?? {})) {
-    const r = param(v);
-    const s = typeof r === 'number' || typeof r === 'boolean' || typeof r === 'bigint' ? undefined : String(r);
-    if (s !== undefined && s.includes('<')) {
-      p[k] = `\u0001${held.length}\u0002`;
-      held.push(s);
-    } else p[k] = r;
+export function marked(key: string, params?: Params): Piece[] {
+  const { words, holes } = holed(key, params, true);
+  const out: Piece[] = [];
+  const push = (tag: string | undefined, s: string) => {
+    if (!s) return;
+    const last = out.at(-1);
+    if (last && last.tag === tag) last.text += s;
+    else out.push(tag ? { tag, text: s } : { text: s });
+  };
+  for (const piece of parts(words)) {
+    const items = [...piece.text.matchAll(HOLE)].some((m) => holes[Number(m[1])].item);
+    const between = items && piece.tag === 'name' ? undefined : piece.tag;
+    let at = 0;
+    for (const m of piece.text.matchAll(HOLE)) {
+      push(between, piece.text.slice(at, m.index));
+      const h = holes[Number(m[1])];
+      if (h.pieces) for (const x of h.pieces) push(x.tag ?? piece.tag, x.text);
+      else push(piece.tag, h.text);
+      at = m.index + m[0].length;
+    }
+    push(between, piece.text.slice(at));
   }
-  const back = (s: string) => s.replace(/\u0001(\d+)\u0002/g, (_, i: string) => held[Number(i)]);
-  const pieces = parts(i18n.t(key, p) as string).map((x) => ({ ...x, text: back(x.text) }));
-  if (COPY_EDITING && pieces.length) pieces[0] = { ...pieces[0], text: mark(key, p, pieces.map((x) => x.text).join(''), true) + pieces[0].text };
-  return pieces;
+  if (COPY_EDITING && out.length) out[0] = { ...out[0], text: mark(key, rendered(params), out.map((x) => x.text).join(''), true) + out[0].text };
+  return out;
 }
 
 /** A message's words cut at its markers: plain text (`tag` undefined) and the text each `<tag>…</tag>` wraps. */
-export function parts(s: string): { tag?: string; text: string }[] {
-  const out: { tag?: string; text: string }[] = [];
+export function parts(s: string): Piece[] {
+  const out: Piece[] = [];
   let at = 0, open: string | undefined;
   for (const m of s.matchAll(MARKER)) {
     const [whole, close, tag] = m;
@@ -176,8 +229,13 @@ export function parts(s: string): { tag?: string; text: string }[] {
   return out;
 }
 
-/** An error's words: its headline (its own message), and its details (its causes', outermost first). */
-export type Described = { headline: string; details: string[] };
+/**
+ * An error's words: its headline (its own message), and its details (its causes', outermost first). `from` says what
+ * each line (the headline, then the details) is, where it's known: a message (drawn with its markers: T.svelte), or
+ * `'raw'`, a developer's text (an exception's own words, from the browser or the core: drawn as code). A line without
+ * one is words already rendered.
+ */
+export type Described = { headline: string; details: string[]; from?: readonly (Msg | 'raw' | undefined)[] };
 
 /**
  * What error `e` (an Error, a `MsgError`, a worker's `WireError`, a `Msg`, a string) says to the user: a message
@@ -186,14 +244,19 @@ export type Described = { headline: string; details: string[] };
 export function describe(e: unknown): Described {
   const err = isWire(e) ? fromWire(e) : e;
   const lines: string[] = [];
+  const from: (Msg | 'raw' | undefined)[] = [];
   let cur: unknown = err;
   for (let i = 0; cur !== undefined && cur !== null && i < 8; i++) {
     const m = isMsg(cur) ? cur : msgOf(cur);
     const said = m ? text(m) : cur instanceof Error ? cur.message : String(cur);
-    if (said && lines.at(-1) !== said) lines.push(said);
+    if (said && lines.at(-1) !== said) {
+      lines.push(said);
+      // A string is a developer's text too: words the page renders come as a message.
+      from.push(m ?? 'raw');
+    }
     cur = cur instanceof Error ? cur.cause : undefined;
   }
-  return { headline: lines[0] ?? '', details: lines.slice(1) };
+  return { headline: lines[0] ?? '', details: lines.slice(1), from };
 }
 
 /** What the page says somewhere (the message bar, a dialog): words already rendered, a message, an error. */

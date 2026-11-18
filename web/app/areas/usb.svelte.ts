@@ -3,6 +3,7 @@
 // (web/app/usb-live.ts), the host's devices and pads whenever any of them changes. The menu opens itself when called (an offer to answer).
 import { untrack } from 'svelte';
 import { Command } from '../command.ts';
+import type { Msg } from '../../msg.ts';
 import type { EntryView } from '../usb-live.ts';
 import type { ProblemWords } from '../usb-problems.ts';
 
@@ -18,7 +19,7 @@ export type ConnectorView = {
 };
 
 /** An offer the menu makes: a device that just appeared, one that left, a grant to give; `run` takes it. */
-export type Offer = { id: string; text: string; label: string; run: () => Promise<void> };
+export type Offer = { id: string; text: Msg; label: string; run: () => Promise<void> };
 
 class Usb {
   #source = $state.raw<{ on(): boolean; running(): boolean }>();

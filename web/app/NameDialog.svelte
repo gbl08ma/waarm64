@@ -14,7 +14,8 @@
   import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
-  import { t, text } from '../i18n.ts';
+  import T from './T.svelte';
+  import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
   import { network } from './areas/network.ts';
   import { pageNames, type NamesOf } from './areas/names.svelte.ts';
@@ -97,12 +98,15 @@
     </Field>
     {#if domain}
       <Note size="md" tone="dim" id="net-name-full">
-        {name
-          ? t('network:NameDialog.full', { full: `${name}.${domain}`, name })
-          : t('network:NameDialog.suffix', { domain })}
+        {#if name}<T k="network:NameDialog.full" params={{ full: `${name}.${domain}`, name }} />{:else}{t(
+            'network:NameDialog.suffix',
+            { domain },
+          )}{/if}
       </Note>
     {/if}
-    <Note size="md" {tone} id="net-name-check" data-check={check.state}>{said ? text(said) : ''}</Note>
+    <Note size="md" {tone} id="net-name-check" data-check={check.state}
+      >{#if said}<T m={said} />{/if}</Note
+    >
     <div class="notices" data-notices>
       <Note size="md" id="net-name-notice-find">{t('network:NameDialog.notice.find')}</Note>
       <Note size="md" id="net-name-notice-visit">{t('network:NameDialog.notice.visit')}</Note>

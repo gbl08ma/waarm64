@@ -52,8 +52,8 @@
     "note": "Fine print at the foot of the toolbar's Sound menu: the choices are remembered, and the browser's autoplay rule."
   },
   "Sound.mic.denied": {
-    "message": "The browser denied access to the microphone, so the machine records silence. Allow it in the site's settings, then turn Microphone off and on again.",
-    "note": "Fine print in the toolbar's Sound menu, shown when the machine records and the browser refused the page the microphone."
+    "message": "The browser denied access to the microphone, so the machine records silence. Allow it in the site's settings, then turn <ui>Microphone</ui> off and on again.",
+    "note": "Fine print in the toolbar's Sound menu, shown when the machine records and the browser refused the page the microphone. <ui>Microphone</ui> is the menu's checkbox Sound.mic."
   },
   "Sound.mic.asking": {
     "message": "The machine is recording, and the browser is asking for permission to use the microphone.",

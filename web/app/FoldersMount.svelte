@@ -38,7 +38,7 @@
     </Note>
     <Note size="md">{t('folders:FoldersMount.byHand.older')}</Note>
   {:else}
-    <Note size="md" id="folders-mount-off">{t('folders:FoldersMount.off')}</Note>
+    <Note size="md" id="folders-mount-off"><T k="folders:FoldersMount.off" /></Note>
     <Note size="md">{t('folders:FoldersMount.byHand')}</Note>
   {/if}
   <ValueField

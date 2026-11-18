@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import T from './T.svelte';
   import type { Picked } from './add-disk.ts';
   import { t } from '../i18n.ts';
   import { bytesText } from './machines.ts';
@@ -37,9 +38,10 @@
 <div class="line">
   <Button type="button" icon="file" onclick={pick}>{t('disks:AddDiskFile.pick')}</Button>
   <span data-field="picked">
-    {picked
-      ? t('disks:AddDiskFile.picked', { name: picked.file.name, size: bytesText(picked.file.size) })
-      : t('disks:AddDiskFile.picked.none')}
+    {#if picked}<T
+        k="disks:AddDiskFile.picked"
+        params={{ name: picked.file.name, size: bytesText(picked.file.size) }}
+      />{:else}{t('disks:AddDiskFile.picked.none')}{/if}
   </span>
 </div>
 <input type="file" hidden bind:this={fileInput} onchange={chosen} data-field="file" />

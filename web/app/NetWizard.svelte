@@ -23,7 +23,7 @@
   import NetTailnetStep from './NetTailnetStep.svelte';
   import { Actions } from './actions.svelte.ts';
   import type { Connection } from './connections.ts';
-  import { t } from '../i18n.ts';
+  import { msg, t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
   import { EDIT_STEP, MAKING_STEPS, type Flow, type Opened, type Step, type StepApi } from './net-wizard.ts';
   import { network } from './areas/network.ts';
@@ -166,7 +166,7 @@
     roomEdit: () => t('network:NetWizard.title.tailcat'),
     tailcat: () => t('network:NetWizard.title.tailcat'),
   };
-  const title = $derived(editing ? t('network:NetWizard.title.edit', { name: editing.name }) : TITLES[step]());
+  const title = $derived(editing ? msg('network:NetWizard.title.edit', { name: editing.name }) : TITLES[step]());
   function submitLabelOf() {
     if (editing) return t('network:NetWizard.save');
     if (opened.mode === 'new') return t('network:NetWizard.create');

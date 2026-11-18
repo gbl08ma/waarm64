@@ -28,12 +28,13 @@ export const progressText = (phase: string | Msg, f: number) =>
 /** An error's words with a line said after its headline (what the page did about it), its causes under them. */
 export function withNote(e: unknown, note: string): Described {
   const d = describe(e);
-  return { headline: `${d.headline}\n${note}`, details: d.details };
+  return { headline: `${d.headline}\n${note}`, details: d.details, from: [undefined, ...(d.from ?? []).slice(1)] };
 }
 /** Words a USB device's error adds under a headline (web/app/usb-problems.ts `errorLines`: its own, then its problems'). */
-export const usbDetails = (headline: string, err: unknown): Described => ({
-  headline,
+export const usbDetails = (headline: Msg, err: unknown): Described => ({
+  headline: text(headline),
   details: errorLines(err).split('\n'),
+  from: [headline],
 });
 /** Whether error `e` (or a cause of it) is a disk's overlay another tab has open (web/overlay.ts `problem`, the browser's lock). */
 export function inUse(e: unknown) {
@@ -76,6 +77,7 @@ export class Messages {
     const d = said(message);
     messageBar.text = d.headline;
     messageBar.details = d.details;
+    messageBar.from = d.from ?? [];
     messageBar.kind = kind;
     messageBar.actions = actions;
   }

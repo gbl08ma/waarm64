@@ -8,6 +8,7 @@
   import Menu from './ui/Menu.svelte';
   import Note from './ui/Note.svelte';
   import Slider from './ui/Slider.svelte';
+  import T from './T.svelte';
   import { t, text } from '../i18n.ts';
   import { CPU_SLIDER, numaNote, RAM_SLIDER } from './machine.ts';
   import { current } from './areas/current.svelte.ts';
@@ -47,5 +48,5 @@
     </Field>
   {/if}
   <Button id="machine-apply" onclick={apply}>{t('toolbar:SizeMenu.size.apply')}</Button>
-  <Note>{t('toolbar:SizeMenu.size.hint')}</Note>
+  <Note><T k="toolbar:SizeMenu.size.hint" /></Note>
 </Menu>

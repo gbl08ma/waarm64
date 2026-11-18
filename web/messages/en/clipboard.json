@@ -32,8 +32,8 @@
     "note": "The toolbar's clipboard menu: a note at its top while the browser allows reading the clipboard."
   },
   "ClipboardMenu.stopped": {
-    "message": "This browser gave this web app empty text several times while the clipboard held text, so the guest no longer gets what you copy when you reopen this web app. Paste with the keyboard while the guest's screen has the focus instead, or use Send the clipboard to the guest. This lasts until the machine starts again.",
-    "note": "The toolbar's clipboard menu: a note while the reads made each time the page gets the focus back stopped for the run, because the browser or the computer's system hid the clipboard's text from them (macOS can)."
+    "message": "This browser gave this web app empty text several times while the clipboard held text, so the guest no longer gets what you copy when you reopen this web app. Paste with the keyboard while the guest's screen has the focus instead, or use <ui>Send the clipboard to the guest</ui>. This lasts until the machine starts again.",
+    "note": "The toolbar's clipboard menu: a note while the reads made each time the page gets the focus back stopped for the run, because the browser or the computer's system hid the clipboard's text from them (macOS can). <ui>…</ui> frames the menu's item ClipboardMenu.send."
   },
   "ClipboardMenu.share": {
     "message": "Share the clipboard",
@@ -84,7 +84,7 @@
     "note": "The toolbar's clipboard menu: a note after Copy the console's text failed (the guest's program couldn't read the console or didn't answer, or the browser refused the write)."
   },
   "ClipboardMenu.console.graphics": {
-    "message": "The guest's console shows graphics, not text. Copy the screen takes a picture of it instead.",
+    "message": "The guest's console shows graphics, not text. <ui>Copy the screen</ui> takes a picture of it instead.",
     "note": "The toolbar's clipboard menu: a note after Copy the console's text found the guest's console showing graphics (a desktop runs on it). Copy the screen is ClipboardMenu.screen."
   },
   "ClipboardMenu.failed": {

@@ -9,15 +9,17 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
+  import T from '../T.svelte';
   import type { IconName } from '../icons.ts';
+  import { isMsg, type Msg } from '../../msg.ts';
 
-  type Tab<T extends string> = { id: T; icon: IconName; label: string };
+  type Tab<K extends string> = { id: K; icon: IconName; label: string };
   type Props = {
     /** What the pane shows (`data-selected`: a machine's id, `disks`, `about`…). */
     id: string;
     title: string;
-    /** The small line beside the title. */
-    meta?: string;
+    /** The small line beside the title (a message is drawn with its markers: T.svelte). */
+    meta?: string | Msg;
     /** Attributes of the small line (a test's `data-` hook). */
     metaAttrs?: Record<string, string>;
     /** The head's buttons, on the right. */
@@ -35,7 +37,10 @@
   <div class="head">
     <span class="title"
       ><h3>{title}</h3>
-      {#if meta !== undefined}<span class="meta" {...metaAttrs}>{meta}</span>{/if}</span
+      {#if isMsg(meta)}<span class="meta" {...metaAttrs}><T m={meta} /></span>{:else if meta !== undefined}<span
+          class="meta"
+          {...metaAttrs}>{meta}</span
+        >{/if}</span
     >
     {#if actions}{@render actions()}{/if}
   </div>

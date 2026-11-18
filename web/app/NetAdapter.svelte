@@ -16,6 +16,7 @@
   import StatusDot from './ui/StatusDot.svelte';
   import ValueField from './ui/ValueField.svelte';
   import NetNames from './NetNames.svelte';
+  import T from './T.svelte';
   import { Actions } from './actions.svelte.ts';
   import { t } from '../i18n.ts';
   import { MsgError } from '../msg.ts';
@@ -47,11 +48,9 @@
   const runner = new Actions();
   const act = (f: () => Promise<unknown>) => runner.run('', f);
 
-  const connection = $derived.by(() => {
-    if (!a.connection) return t('network:NetAdapter.noConnection');
-    if (a.connection.ephemeral) return t('network:NetAdapter.connection.ephemeral', { name: a.connection.name });
-    return a.connection.name;
-  });
+  /** An exit node's choice: its name, and whether it's offline (an <option> holds only text). */
+  const exitLabel = (e: { name: string; online: boolean }) =>
+    e.online ? e.name : t('network:NetAdapter.exitNode.offline', { name: e.name });
   const routes = $derived(v.subnets?.routes ?? []);
   const routesText = $derived(
     routes.length > 2
@@ -94,7 +93,12 @@
         <span class="light"><StatusDot tone={phaseTone(v.phase)} aria-hidden="true" /></span><span>{headingText}</span>
       </h3>
     {/if}
-    <Note id={`net-conn${s}`}>{connection}</Note>
+    <Note id={`net-conn${s}`}
+      >{#if !a.connection}{t('network:NetAdapter.noConnection')}{:else if a.connection.ephemeral}<T
+          k="network:NetAdapter.connection.ephemeral"
+          params={{ name: a.connection.name }}
+        />{:else}{a.connection.name}{/if}</Note
+    >
   </div>
   <p id={`net-status${s}`} class="net-status">
     {v.text}{#each v.details ?? [] as d, k (k)}<br /><span class="net-detail">{d}</span
@@ -119,7 +123,7 @@
       <select id={`net-exit${s}`} value={v.exitNodes.find((e) => e.use)?.id ?? ''} onchange={chooseExit}>
         <option value="">{t('network:NetAdapter.exitNode.none')}</option>
         {#each v.exitNodes as e (e.id)}
-          <option value={e.id}>{e.online ? e.name : t('network:NetAdapter.exitNode.offline', { name: e.name })}</option>
+          <option value={e.id}>{exitLabel(e)}</option>
         {/each}
       </select>
     </Field>

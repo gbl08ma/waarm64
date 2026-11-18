@@ -4,6 +4,7 @@
   overlays; one that has it already, has as many disks as a machine can, or runs in another tab says so instead.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import { Actions, type Act } from './actions.svelte.ts';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
@@ -11,7 +12,7 @@
   import Modal from './ui/Modal.svelte';
   import type { Dialog } from './ui/dialog.ts';
   import Note from './ui/Note.svelte';
-  import { t } from '../i18n.ts';
+  import { msg, t } from '../i18n.ts';
   import type { Store } from './store.ts';
   import { MAX_DISKS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { attach } from './machines.ts';
@@ -62,7 +63,7 @@
 <Modal
   id="attach-disk"
   bind:this={dialog}
-  title={t('disks:AttachDisk.title', { disk: disk.name })}
+  title={msg('disks:AttachDisk.title', { disk: disk.name })}
   onclose={close}
   data-disk={disk.id}
 >
@@ -82,6 +83,6 @@
       </Card>
     {/each}
   </CardList>
-  {#if runner.error}<Note tone="error" class="error" role="alert">{runner.error.text}</Note>{/if}
+  {#if runner.error}<Note tone="error" class="error" role="alert"><ErrorText error={runner.error} /></Note>{/if}
   {#snippet buttons()}<Button onclick={() => dialog.close()}>{t('disks:AttachDisk.cancel')}</Button>{/snippet}
 </Modal>

@@ -8,11 +8,14 @@
 -->
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
+  import T from '../T.svelte';
+  import type { Msg } from '../../i18n.ts';
 
   type Props = {
     /** The dialog's id; its title's is `<id>-title`. */
     id: string;
-    title: string;
+    /** Its title: words, or a message (drawn with its names' and elements' markers: T.svelte). */
+    title: string | Msg;
     /** The dialog closed (Esc, a button, `close()`). */
     onclose?: () => void;
     /** Makes the body a form (Enter submits). */
@@ -43,7 +46,9 @@
 </script>
 
 {#snippet inner()}
-  <h2 id={`${id}-title`}>{title}</h2>
+  <h2 id={`${id}-title`}>
+    {#if typeof title === 'string'}{title}{:else}<T m={title} />{/if}
+  </h2>
   {@render children()}
   <div class="buttons">
     {#if back}<div class="back">{@render back()}</div>{/if}

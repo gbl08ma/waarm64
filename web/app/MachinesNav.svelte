@@ -11,7 +11,7 @@
   import type { Actions } from './actions.svelte.ts';
   import { createMachine } from './machines.ts';
   import { importDefinition, parseDefinition } from './definitions.ts';
-  import { t, type Msg } from '../i18n.ts';
+  import { msg, t, type Msg } from '../i18n.ts';
   import type { MachineRecord } from './shape.ts';
   import type { Store } from './store.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
@@ -81,7 +81,7 @@
       const r = await importDefinition(store, parseDefinition(await f.text()));
       machinesNav.choose(r.machine.id);
       if (r.toPick.length)
-        actions.fail(t('machines:MachinesNav.imported.toPick', { name: r.machine.name, files: r.toPick }));
+        actions.fail(msg('machines:MachinesNav.imported.toPick', { name: r.machine.name, files: r.toPick }));
     });
   }
 </script>

@@ -1,7 +1,7 @@
 // Shared folders (docs/shares.md; web/app/page.ts's `folder*`): attaching, detaching and the list's order are saved
 // at once, running or not; the page's machine takes them while it runs (web/app/folders-live.ts). A directory dropped
 // on the page is a folder of this browser's, offered to the running machine.
-import { msg, MsgError, t } from '../../i18n.ts';
+import { msg, MsgError, t, type Msg } from '../../i18n.ts';
 import { ask } from '../ask.svelte.ts';
 import { createFolder, type NewFolder } from '../folders.ts';
 import type { PageFolders } from '../folders-live.ts';
@@ -47,9 +47,11 @@ export class FolderActions {
   /** Asks the user, then takes a folder another machine has. */
   async #useHere(id: string) {
     const v = this.#folders.views().find((x) => x.id === id);
-    const question = t('folders:folder-actions.inUse.confirm', {
-      name: v?.name ?? msg('folders:folder-actions.inUse.folder'),
-      holder: v?.holder ?? msg('folders:folder-actions.inUse.otherTab'),
+    /** A name, marked, or `or`'s words where it isn't known. */
+    const named = (name: string | undefined, or: Msg) => (name ? msg('folders:folder-actions.named', { name }) : or);
+    const question = msg('folders:folder-actions.inUse.confirm', {
+      name: named(v?.name, msg('folders:folder-actions.inUse.folder')),
+      who: named(v?.holder, msg('folders:folder-actions.inUse.otherTab')),
     });
     if (
       !(await ask.confirm(question, {
@@ -60,7 +62,7 @@ export class FolderActions {
       return;
     if (!(await this.#folders.useHere(id)))
       throw new MsgError('folders:folder-actions.kept', {
-        holder: v?.holder ?? msg('folders:folder-actions.kept.thatMachine'),
+        who: named(v?.holder, msg('folders:folder-actions.kept.thatMachine')),
       });
   }
 
@@ -70,7 +72,7 @@ export class FolderActions {
     const here = !machinesNav.open && folders.running ? this.#m.stored?.record : undefined;
     if (
       here &&
-      !(await ask.confirm(t('folders:folder-actions.drop.confirm', { folder: handle.name, machine: here.name }), {
+      !(await ask.confirm(msg('folders:folder-actions.drop.confirm', { folder: handle.name, machine: here.name }), {
         title: t('folders:folder-actions.drop.title'),
         ok: t('folders:folder-actions.drop.ok'),
       }))

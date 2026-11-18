@@ -28,7 +28,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), its first step: the kind of a connection that is kept nowhere (gone when its tab closes). {{kind}} is the kind's words (e.g. “a tailnet (controlplane.tailscale.com)”)."
   },
   "NetPickStep.kind.held": {
-    "message": "{{kind}}; in use by {{holder}}",
+    "message": "{{kind}}; in use by <name>{{holder}}</name>",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), its first step: the line under a connection that a machine running in another tab has now. {{kind}} is the kind's words; {{holder}} is that machine's name."
   },
   "NetPickStep.kind.heldElsewhere": {
@@ -36,7 +36,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), its first step: the line under a connection that a machine in another tab has now, when that tab didn't say which machine. {{kind}} is the kind's words."
   },
   "NetPickStep.choose": {
-    "message": "Choose a connection, or New connection….",
+    "message": "Choose a connection, or <ui>New connection…</ui>.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), its first step: the error under the list when the user goes on without choosing a connection. “New connection…” is the first choice's name."
   },
   "NetTailcatStep.chooseTailcat": {
@@ -52,7 +52,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the tailnet step: the error when the server that serves the page lacks the tailnet client's module (a developer's setup). The commands stay as they are."
   },
   "NetWizard.title.edit": {
-    "message": "Edit {{name}}",
+    "message": "Edit <name>{{name}}</name>",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections): its title while it edits an existing connection. {{name}} is the connection's name."
   },
   "NetWizard.title.pick": {
@@ -288,7 +288,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the first choice of “Key” (the default): a key of the connection's own."
   },
   "NetRoomStep.room.key.of": {
-    "message": "The same key as {{name}}",
+    "message": "The same key as <name>{{name}}</name>",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: a choice of “Key”: share another room connection's key. {{name}} is that connection's name."
   },
   "NetRoomStep.room.key.note": {
@@ -304,7 +304,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the room step (Create a room or Join a room), Advanced, with “A key to paste” chosen: the label of the (hidden, password-like) field the key is pasted into."
   },
   "NetRoomStep.room.key.paste.note": {
-    "message": "A key copied from a room connection (Advanced, while editing it), from this computer or another. The connection's name and address in the room come from its key, so the same key gives the same ones; a key copied with domains after it brings those domains too. Don't connect with one key in two places at once.",
+    "message": "A key copied from a room connection (<ui>Advanced</ui>, while editing it), from this computer or another. The connection's name and address in the room come from its key, so the same key gives the same ones; a key copied with domains after it brings those domains too. Don't connect with one key in two places at once.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under “The connection's key” while “A key to paste” is chosen, in place of network.NetRoomStep.room.key.note."
   },
   "NetRoomStep.room.key.bad": {
@@ -316,7 +316,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), while it edits a room connection, Advanced: the label of the field (hidden by default, with Show and Copy icons in it) holding the connection's key."
   },
   "NetRoomStep.room.exportKey.note": {
-    "message": "Whoever has this key can take this connection's name and address in a room, and its registered domains, which follow the key after a dot: keep it secret. To use it in another connection, perhaps on another computer, choose “A key to paste” when creating or joining a room, and don't connect both at once.",
+    "message": "Whoever has this key can take this connection's name and address in a room, and its registered domains, which follow the key after a dot: keep it secret. To use it in another connection, perhaps on another computer, choose <ui>A key to paste</ui> when creating or joining a room, and don't connect both at once.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), while it edits a room connection, Advanced: the text under the connection's key. “A key to paste” is network.NetRoomStep.room.key.paste."
   },
   "NetRoomStep.room.exportKey.none": {
@@ -420,8 +420,8 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the tailcat step: the checkbox that gives the machine a tailcat address other computers reach it by."
   },
   "NetTailcatStep.tailcat.serve.note": {
-    "message": "The connection gets a tailcat address of its own, shown in the Network menu once connected. On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the tailcat step: the text under “Let tailcat clients in to this machine”. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
+    "message": "The connection gets a tailcat address of its own, shown in the <ui-network>Network</ui-network> menu once connected. On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the tailcat step: the text under “Let tailcat clients in to this machine”. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code. The <ui-network> marker shows the Network icon before the words."
   },
   "NetTailcatStep.advanced": {
     "message": "Advanced",
@@ -516,7 +516,7 @@
     "note": "As NetAdapter.adapter.primary, when only IPv6's default route goes through this adapter: IPv4's goes through another, whose connection doesn't reach the internet over IPv6 while this one's does. {{adapter}} is its number."
   },
   "NetAdapter.connection.ephemeral": {
-    "message": "{{name}} (ephemeral)",
+    "message": "<name>{{name}}</name> (ephemeral)",
     "note": "The toolbar's Network menu: the line that names an adapter's connection, when that connection is ephemeral (kept nowhere, gone when the tab closes). {{name}} is the connection's name."
   },
   "NetAdapter.noConnection": {
@@ -536,7 +536,7 @@
     "note": "The toolbar's Network menu: the first choice of “Internet through”: no exit node, the internet directly."
   },
   "NetAdapter.exitNode.offline": {
-    "message": "{{name}} (offline)",
+    "message": "<name>{{name}}</name> (offline)",
     "note": "The toolbar's Network menu: a choice of “Internet through” for an exit node that is offline. {{name}} is the peer's name."
   },
   "NetAdapter.routes.more": {
@@ -620,8 +620,8 @@
     "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the label of the field (with a Copy icon in it) with the tailnet's control server's URL (Tailscale's, or another such as Headscale)."
   },
   "NetDetails.tailnet.note": {
-    "message": "The tailnet's admin console lists this machine under its hostname. Log out, in the Network menu, removes it from the tailnet and forgets its keys in this browser.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the text under its settings. “Log out” is network.NetAdapter.logout."
+    "message": "The tailnet's admin console lists this machine under its hostname. <ui>Log out</ui>, in the <ui-network>Network</ui-network> menu, removes it from the tailnet and forgets its keys in this browser.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the text under its settings. “Log out” is network.NetAdapter.logout. The <ui-network> marker shows the Network icon before the words."
   },
   "NetDetails.served.note": {
     "message": "On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on. Keep the address to yourself, as it lets anyone in.",
@@ -644,7 +644,7 @@
     "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: its first text. <a>…</a> links to the helper's source and releases; its install lines (network.NetLocalInstall.install) follow."
   },
   "NetDetails.local.link": {
-    "message": "If the helper prints a different link, use Edit connection… to paste it.",
+    "message": "If the helper prints a different link, use <ui>Edit connection…</ui> to paste it.",
     "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: the text under its install lines. “Edit connection…” is network.NetDetails.edit, the dialog's button."
   },
   "NetDetails.room.note": {
@@ -692,11 +692,11 @@
     "note": "The default name of a new connection through the local helper (waarm64-net), as the Network wizard, the Network menu and the Home page's Connections show it. It is stored with the connection, which the user can rename."
   },
   "net-claims.keyInUse": {
-    "message": "Its key is in use by the connection {{other}} on another adapter: a key runs in one room connection at a time.",
+    "message": "Its key is in use by the connection <name>{{other}}</name> on another adapter: a key runs in one room connection at a time.",
     "note": "Why a room connection didn't connect (after net-live.notConnected): it uses the same node key as another room connection (the Advanced setting that takes another connection's key), which another adapter of this machine is running. {{other}}: that connection's name."
   },
   "net-claims.keyHeld": {
-    "message": "Its key is in use by a room connection of {{holder}}: a key runs in one room connection at a time.",
+    "message": "Its key is in use by a room connection of <name>{{holder}}</name>: a key runs in one room connection at a time.",
     "note": "Why a room connection didn't connect (after net-live.notConnected): another tab's machine runs a room connection with the same node key. {{holder}}: that machine's name."
   },
   "net-claims.keyHeldElsewhere": {
@@ -704,11 +704,11 @@
     "note": "As net-claims.keyHeld, when the other tab didn't say its machine's name."
   },
   "net-claims.held": {
-    "message": "{{name}} is in use by {{holder}}.",
+    "message": "<name>{{name}}</name> is in use by <name>{{holder}}</name>.",
     "note": "An error, or the note under an adapter in the Network menu, when a connection the user attaches or connects is had by a machine running in another tab; the page may go on to ask whether to take it. {{name}} is the connection's name; {{holder}} the other machine's."
   },
   "net-claims.heldElsewhere": {
-    "message": "{{name}} is in use by a machine in another tab.",
+    "message": "<name>{{name}}</name> is in use by a machine in another tab.",
     "note": "As net-claims.held, when the other tab didn't say which machine has the connection. {{name}} is the connection's name."
   },
   "net-live.gone": {
@@ -720,19 +720,19 @@
     "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): a connection is connected while the machine isn't running."
   },
   "net-live.notConnected": {
-    "message": "Couldn't connect {{name}}",
+    "message": "Couldn't connect <name>{{name}}</name>",
     "note": "Error headline (Network menu, Network wizard, the Home page's Network tab) when a connection couldn't be connected on an adapter; why is the line under it (network:net-live.off, network:net-live.onOtherAdapter, network:net-live.loggingOut, network:network.notStarted, or the client's error). {{name}} is the connection's name."
   },
   "net-live.loggingOut": {
-    "message": "{{name}} is being logged out.",
+    "message": "<name>{{name}}</name> is being logged out.",
     "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): the user connects a tailnet connection whose node is being logged out. {{name}} is the connection's name."
   },
   "net-live.onOtherAdapter": {
-    "message": "{{name}} is already on adapter {{adapter}}. A connection can be on only one adapter at a time.",
+    "message": "<name>{{name}}</name> is already on adapter {{adapter}}. A connection can be on only one adapter at a time.",
     "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): the user connects a connection that another adapter of the same machine runs. {{name}} is the connection's name; {{adapter}} the other adapter's number (1, 2, …)."
   },
   "net-nodes.notLoggedOut": {
-    "message": "Couldn't log {{name}} out",
+    "message": "Couldn't log <name>{{name}}</name> out",
     "note": "Error headline (Home page's Connections, Network menu) when logging a kept tailnet node out failed because its control server didn't answer; network:net-nodes.notLoggedOut.cause is the line under it. {{name}} is the connection's name."
   },
   "net-nodes.notLoggedOut.cause": {
@@ -740,7 +740,7 @@
     "note": "Error details, under network:net-nodes.notLoggedOut: the control server didn't answer, so the node is still on the tailnet. {{host}} is the control server's host name."
   },
   "net-live.taken": {
-    "message": "{{name}} was taken by another machine.",
+    "message": "<name>{{name}}</name> was taken by another machine.",
     "note": "A note in the toolbar's Network menu (under the adapter) and the Home page's Network tab, when a machine in another tab took the adapter's connection (it disconnected here). {{name}} is the connection's name."
   },
   "net-live.takenUnnamed": {
@@ -844,11 +844,11 @@
     "note": "In the Network menu's status line for an adapter (also the Home page's Network tab and the status bar's network item): a tailcat connection connects to its relay."
   },
   "network-view.connected.as.address": {
-    "message": "Connected as {{name}} ({{address}})",
+    "message": "Connected as <name>{{name}}</name> ({{address}})",
     "note": "The start of the status line of a connected tailnet (network.connectedPeers' {{connected}}). {{name}} is the node's name on the tailnet; {{address}} the guest's IPv4 address."
   },
   "network-view.connected.as": {
-    "message": "Connected as {{name}}",
+    "message": "Connected as <name>{{name}}</name>",
     "note": "The start of the status line of a connected tailnet (network.connectedPeers' {{connected}}), when the guest's address isn't known. {{name}} is the node's name."
   },
   "network-view.connected.address": {
@@ -860,19 +860,19 @@
     "note": "The start of the status line of a connected tailnet (network.connectedPeers' {{connected}}), when neither the node's name nor its address is known."
   },
   "network-view.connectedPeers.via_one": {
-    "message": "{{connected}}, {{count}} peer, internet through {{via}}",
+    "message": "{{connected}}, {{count}} peer, internet through <name>{{via}}</name>",
     "note": "In the Network menu's status line for an adapter (also the Home page's Network tab and the status bar's network item): a connected tailnet with an exit node in use. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
   },
   "network-view.connectedPeers.via_other": {
-    "message": "{{connected}}, {{count}} peers, internet through {{via}}",
+    "message": "{{connected}}, {{count}} peers, internet through <name>{{via}}</name>",
     "note": "In the Network menu's status line for an adapter (also the Home page's Network tab and the status bar's network item): a connected tailnet with an exit node in use. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
   },
   "network-view.connectedPeers.viaOffline_one": {
-    "message": "{{connected}}, {{count}} peer, exit node {{via}} offline",
+    "message": "{{connected}}, {{count}} peer, exit node <name>{{via}}</name> offline",
     "note": "In the Network menu's status line for an adapter (also the Home page's Network tab and the status bar's network item): a connected tailnet whose chosen exit node the tailnet reports offline, so the internet traffic is likely dropped. Says “exit node”, not “internet through”: the user chose one, and if the report is wrong it doesn't mislead. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
   },
   "network-view.connectedPeers.viaOffline_other": {
-    "message": "{{connected}}, {{count}} peers, exit node {{via}} offline",
+    "message": "{{connected}}, {{count}} peers, exit node <name>{{via}}</name> offline",
     "note": "In the Network menu's status line for an adapter (also the Home page's Network tab and the status bar's network item): a connected tailnet whose chosen exit node the tailnet reports offline, so the internet traffic is likely dropped. Says “exit node”, not “internet through”: the user chose one, and if the report is wrong it doesn't mislead. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
   },
   "network-view.connectedPeers_one": {
@@ -1052,12 +1052,12 @@
     "note": "The cause under “Couldn't use that exit node” (Network menu): the chosen peer isn't an exit node (any more). {{id}} is the peer's stable ID. A detail line."
   },
   "network-actions.ephemeral": {
-    "message": "{{name}} is ephemeral and belongs to this tab, so a machine running in another tab can't use it.",
+    "message": "<name>{{name}}</name> is ephemeral and belongs to this tab, so a machine running in another tab can't use it.",
     "note": "Error when an ephemeral connection (kept in this tab's memory only) is attached to a machine that runs in another tab (the Network wizard, the Home page's Network tab); {{name}} is the connection's name."
   },
   "network-actions.held.useHere": {
     "message": "{{held}} Use it here instead? That machine will disconnect from it.",
-    "note": "Text of the question asked when a connection attached or connected here is in use by another tab's machine; {{held}} says who has it."
+    "note": "Text of the question asked when a connection attached or connected here is in use by another tab's machine; {{held}} says who has it. {{held}} is a message (net-claims.held and the like), which marks the names in it itself."
   },
   "network-actions.held.title": {
     "message": "The connection is in use",
@@ -1069,7 +1069,7 @@
   },
   "network-actions.held.logOut": {
     "message": "{{held}} Log it out anyway? That machine will disconnect from it.",
-    "note": "Text of the question asked by a connection's Log out (the Home page's Connections) while another tab's machine uses it; {{held}} says who has it."
+    "note": "Text of the question asked by a connection's Log out (the Home page's Connections) while another tab's machine uses it; {{held}} says who has it. {{held}} is a message (net-claims.held and the like), which marks the names in it itself."
   },
   "network-actions.logOut": {
     "message": "Log out",
@@ -1092,35 +1092,35 @@
     "note": "What deleting a room connection does (when no other connection shares its key), in the question asked by its Delete."
   },
   "network-actions.delete.confirm": {
-    "message": "Delete the connection {{name}}?",
+    "message": "Delete the connection <name>{{name}}</name>?",
     "note": "Text of the question asked by a connection's Delete (the Home page's Connections) when no machine has it and deleting it does nothing more; {{name}} is its name."
   },
   "network-actions.delete.confirm.on": {
-    "message": "Delete the connection {{name}}? It will be detached from {{machines}}.",
+    "message": "Delete the connection <name>{{name}}</name>? It will be detached from <name>{{machines}}</name>.",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs."
   },
   "network-actions.delete.confirm.what": {
-    "message": "Delete the connection {{name}}? {{what}}",
+    "message": "Delete the connection <name>{{name}}</name>? {{what}}",
     "note": "Text of the question asked by a connection's Delete when no machine has it; {{name}} is its name, {{what}} what deleting it does."
   },
   "network-actions.delete.confirm.on.what": {
-    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. {{what}}",
+    "message": "Delete the connection <name>{{name}}</name>? It will be detached from <name>{{machines}}</name>. {{what}}",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs, {{what}} what deleting it does."
   },
   "network-actions.delete.names_one": {
-    "message": "Delete the connection {{name}}? It holds the domain {{names}} in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, domains included, and paste it as a room connection's key.",
+    "message": "Delete the connection <name>{{name}}</name>? It holds the domain <name>{{names}}</name> in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, domains included, and paste it as a room connection's key.",
     "note": "Text of the question asked by a room connection's Delete when it holds a registered name (docs/plans/room-names.md); its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the name it holds."
   },
   "network-actions.delete.names_other": {
-    "message": "Delete the connection {{name}}? It holds the domains {{names}} in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, domains included, and paste it as a room connection's key.",
+    "message": "Delete the connection <name>{{name}}</name>? It holds the domains <name>{{names}}</name> in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, domains included, and paste it as a room connection's key.",
     "note": "Text of the question asked by a room connection's Delete when it holds several registered names; its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the names it holds, {{count}} how many."
   },
   "network-actions.delete.names.on_one": {
-    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. It holds the domain {{names}} in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, domains included, and paste it as a room connection's key.",
+    "message": "Delete the connection <name>{{name}}</name>? It will be detached from <name>{{machines}}</name>. It holds the domain <name>{{names}}</name> in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, domains included, and paste it as a room connection's key.",
     "note": "Text of the question asked by a room connection's Delete when it holds a registered name and machines have it attached; its field below holds the connection's export to copy. {{name}} is the connection's name, {{machines}} the machines', {{names}} the name it holds."
   },
   "network-actions.delete.names.on_other": {
-    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. It holds the domains {{names}} in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, domains included, and paste it as a room connection's key.",
+    "message": "Delete the connection <name>{{name}}</name>? It will be detached from <name>{{machines}}</name>. It holds the domains <name>{{names}}</name> in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, domains included, and paste it as a room connection's key.",
     "note": "Text of the question asked by a room connection's Delete when it holds several registered names and machines have it attached; its field below holds the connection's export to copy. {{name}} is the connection's name, {{machines}} the machines', {{names}} the names, {{count}} how many."
   },
   "network-actions.delete.title": {
@@ -1132,11 +1132,11 @@
     "note": "The confirm button (drawn as a warning) of the question asked by a connection's Delete."
   },
   "network-actions.stranded": {
-    "message": "{{name}} is deleted, but its control server didn't answer. Its node stays on the tailnet until it expires or an admin removes it.",
+    "message": "<name>{{name}}</name> is deleted, but its control server didn't answer. Its node stays on the tailnet until it expires or an admin removes it.",
     "note": "Error shown after a tailnet connection was deleted and its control server couldn't be told; {{name}} is the connection's name."
   },
   "network-actions.newAddress.confirm": {
-    "message": "Forget {{name}}'s tailcat address? Whoever has it won't be able to come in any more, and the machine will get a new one when it next lets clients in.",
+    "message": "Forget <name>{{name}}</name>'s tailcat address? Whoever has it won't be able to come in any more, and the machine will get a new one when it next lets clients in.",
     "note": "Text of the question asked by a tailcat connection's New address; {{name}} is the connection's name."
   },
   "network-actions.newAddress.ok": {
@@ -1144,7 +1144,7 @@
     "note": "The confirm button (drawn as a warning) of the question asked by a tailcat connection's New address."
   },
   "network-actions.newName.confirm": {
-    "message": "Give {{name}} a new name in its room? Members who have the machine's current name won't be able to reach it any more.",
+    "message": "Give <name>{{name}}</name> a new name in its room? Members who have the machine's current name won't be able to reach it any more.",
     "note": "Text of the question asked by a room connection's New name (the Network wizard's edit, Advanced); {{name}} is the connection's name."
   },
   "network-actions.newName.ok": {
@@ -1164,8 +1164,8 @@
     "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the label of the field the name is typed in. As typed, the line under it says only what this page can tell (not a valid name, this connection's already); the room is asked when Register is pressed."
   },
   "NameDialog.full": {
-    "message": "Guests in this room will reach it as {{full}}, and usually as {{name}} alone.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field once a name is typed. {{full}} is the whole domain (`<name>.<tag>.p2p.internal`, the room's domain), {{name}} the part typed (the guest's search domain lets it be used alone; not every guest's)."
+    "message": "Guests in this room will reach it as <name>{{full}}</name>, and usually as <name>{{name}}</name> alone.",
+    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field once a name is typed. {{full}} is the whole domain (`<name>.<tag>.p2p.internal`, the room's domain), {{name}} the part typed (the guest's search domain lets it be used alone; not every guest's). Both are domains someone typed, marked as names."
   },
   "NameDialog.suffix": {
     "message": "A domain in this room ends in .{{domain}}, which guests can usually leave out.",
@@ -1200,15 +1200,15 @@
     "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when it breaks the rules of names (docs/plans/room-names.md \"Names\")."
   },
   "names-view.check.yours": {
-    "message": "This connection already holds {{name}}.",
+    "message": "This connection already holds <name>{{name}}</name>.",
     "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when this connection registered it already; {{name}} is the name typed."
   },
   "names-view.check.taken": {
-    "message": "{{name}} is taken, until about {{when, date}} unless its owner renews it.",
+    "message": "<name>{{name}}</name> is taken, until about {{when, date}} unless its owner renews it.",
     "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and another owner holds it: the dialog stays open and Register is disabled until the name changes. {{name}} is the name typed, {{when}} when it lapses if not renewed."
   },
   "names-view.check.unknown": {
-    "message": "Nobody in the room can say whether {{name}} is free right now: no member serving the room's domains answered. Press Register again to register it all the same.",
+    "message": "Nobody in the room can say whether <name>{{name}}</name> is free right now: no member serving the room's domains answered. Press <ui>Register</ui> again to register it all the same.",
     "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and no server of the room's names answered: the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed."
   },
   "names-view.preparing": {
@@ -1253,7 +1253,7 @@
   },
   "names-view.line.serving_other": {
     "message": "This web app serves the room's domains for this connection: it keeps the records of {{count}} domains, and synced with {{servers}} other servers lately.",
-    "note": "A room adapter's details: the registry's line on a machine that holds a name. {{count}} is the names it holds, {{servers}} the servers it synced with lately."
+    "note": "A room adapter's details: the registry's line on a machine that holds a name. {{count}} is how many names it holds, {{servers}} the servers it synced with lately."
   },
   "names-view.line.member_one": {
     "message": "Domains: 1 resolved; {{servers}} servers held.",
@@ -1264,11 +1264,11 @@
     "note": "A room adapter's details: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
   },
   "names-view.machine.new": {
-    "message": "{{name}} (being registered)",
+    "message": "<name>{{name}}</name> (being registered)",
     "note": "The Home page, a machine's Network tab, an adapter's line of names (machines:AdapterCard.adapter.names): a name whose claim isn't public yet. {{name}} is the name."
   },
   "names-view.machine.until": {
-    "message": "{{name}} (until about {{when, date}})",
+    "message": "<name>{{name}}</name> (until about {{when, date}})",
     "note": "The Home page, a machine's Network tab, an adapter's line of names (machines:AdapterCard.adapter.names): a name with the date it stops resolving unless this web app renews it. {{name}} is the name, {{when}} that date."
   },
   "NameEntry.label": {
@@ -1280,7 +1280,7 @@
     "note": "A room adapter's details, a registered name's points: the accessible name of the field holding the member's name in the room (or its key) the name or its label points at."
   },
   "NameEntry.note": {
-    "message": "Each points at a member's name in the room, this connection's or another's: paste one to point there. A subdomain adds a domain under {{name}}.",
+    "message": "Each points at a member's name in the room, this connection's or another's: paste one to point there. A subdomain adds a domain under <name>{{name}}</name>.",
     "note": "A room adapter's details, under a registered name's points; {{name}} is the name."
   },
   "NameEntry.addLabel": {
@@ -1304,7 +1304,7 @@
     "note": "A room adapter's details, a registered name: the button that releases it (after asking), and the confirm button of that question (drawn as a warning)."
   },
   "NameEntry.release.confirm": {
-    "message": "Let {{name}} go? It will stop working for the room's members, and anyone can register it once the release is public.",
+    "message": "Let <name>{{name}}</name> go? It will stop working for the room's members, and anyone can register it once the release is public.",
     "note": "The question asked by a registered name's Let it go; {{name}} is the name."
   },
   "NameEntry.badLabel": {
@@ -1320,15 +1320,15 @@
     "note": "Error in the message bar if a name is registered on a connection whose key goes with the page (the dialog says so first: NameDialog.ephemeral)."
   },
   "names.registerFailed": {
-    "message": "{{name}} couldn't be registered",
+    "message": "<name>{{name}}</name> couldn't be registered",
     "note": "Error headline in the message bar when registering a name failed (its cause under it); {{name}} is the name."
   },
   "names.lastWeek_one": {
-    "message": "The domain {{names}} is kept only until about {{when, date}}. Leave this web app open for a few hours, or reopen it before then, to keep it.",
+    "message": "The domain <name>{{names}}</name> is kept only until about {{when, date}}. Leave this web app open for a few hours, or reopen it before then, to keep it.",
     "note": "Notice in the message bar at load when a registered name is in its last week (it will stop resolving unless renewed and its renewal made public). {{names}} is the name, {{when}} when it stops."
   },
   "names.lastWeek_other": {
-    "message": "The domains {{names}} are kept only until about {{when, date}}. Leave this web app open for a few hours, or reopen it before then, to keep them.",
+    "message": "The domains <name>{{names}}</name> are kept only until about {{when, date}}. Leave this web app open for a few hours, or reopen it before then, to keep them.",
     "note": "Notice in the message bar at load when registered names are in their last week. {{names}} are the names, {{count}} how many, {{when}} when the first stops."
   }
 }

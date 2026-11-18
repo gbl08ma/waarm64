@@ -2,14 +2,13 @@
 // when it runs, by their identities (the device worker opens them: web/usb-device.ts). A device is one machine's at a
 // time (its Web Lock, web/app/usb-live.ts); Snapshot and Suspend empty the ports first. The built-in keyboard is
 // plugged in while the guest has no driver on its virtio keyboard; a device plugged in is attached or offered.
-import { msg, MsgError, t, type Said } from '../../i18n.ts';
+import { msg, MsgError, t, text, type Said } from '../../i18n.ts';
 import type { UsbIdentity, UsbVirtual } from '../../usb-device.ts';
 import { ask } from '../ask.svelte.ts';
 import { listPads } from '../gamepads.ts';
 import { KEYBOARD_CONNECTOR, type UsbEntry } from '../shape.ts';
 import { findDevices, isGranted, UsbError, UsbHeldError, UsbPorts, type Api } from '../usb-live.ts';
 import { deviceName, identityKey, identityOf as usbIdentity, usbLock } from '../usb-ports.ts';
-import { errorLines } from '../usb-problems.ts';
 import type { Messages } from '../run/messages.ts';
 import { usbDetails } from '../run/messages.ts';
 import type { PageMachine } from '../run/page-machine.svelte.ts';
@@ -26,9 +25,9 @@ export type Unplugged = { connector: number; device: UsbIdentity | UsbVirtual; e
 /** An attach's error for the message bar (`again`: an attach after a snapshot): a `UsbError` with problems names the device itself. */
 export const attachFailed = (name: string, err: unknown, again = false): Said =>
   err instanceof UsbError && err.words.length
-    ? errorLines(err)
+    ? { headline: text(err.msg), details: err.words.map((w) => w.text), from: [err.msg] }
     : usbDetails(
-        again ? t('usb:usb-attach.attachFailed.again', { name }) : t('usb:usb-attach.attachFailed', { name }),
+        again ? msg('usb:usb-attach.attachFailed.again', { name }) : msg('usb:usb-attach.attachFailed', { name }),
         err,
       );
 
@@ -69,12 +68,12 @@ export class UsbRun {
         this.lastGone = gone;
         usb.offer({
           id: `gone-${connector}`,
-          text: t('usb:usb-attach.offer.gone', { name: was.name, connector: connector + 1 }),
+          text: msg('usb:usb-attach.offer.gone', { name: was.name, connector: connector + 1 }),
           label: t('usb:usb-attach.offer.pick'),
           run: () => this.replug(api, gone),
         });
       } else if (error) {
-        this.#messages.notify(usbDetails(t('usb:usb-attach.detached', { name: was.name }), error), 'error');
+        this.#messages.notify(usbDetails(msg('usb:usb-attach.detached', { name: was.name }), error), 'error');
       }
     };
     return p;
@@ -98,8 +97,8 @@ export class UsbRun {
         return false;
       }
       const question = who
-        ? t('usb:usb-attach.held.confirm', { name, who })
-        : t('usb:usb-attach.held.confirm.unknown', { name });
+        ? msg('usb:usb-attach.held.confirm', { name, who })
+        : msg('usb:usb-attach.held.confirm.unknown', { name });
       return ask.confirm(question, { title: t('usb:usb-attach.held.title'), ok: t('usb:usb-attach.held.ok') });
     };
     await takeHeld(attach, UsbHeldError, confirm, async () => {
@@ -140,7 +139,9 @@ export class UsbRun {
       else if (!keys.live && !c)
         await p
           .attach(KEYBOARD_CONNECTOR, KEYBOARD)
-          .catch((err: unknown) => this.#messages.notify(usbDetails(t('usb:usb-attach.keyboardFailed'), err), 'error'));
+          .catch((err: unknown) =>
+            this.#messages.notify(usbDetails(msg('usb:usb-attach.keyboardFailed'), err), 'error'),
+          );
     });
     return this.#keyboardSync;
   }
@@ -156,7 +157,7 @@ export class UsbRun {
         if (!isGranted(identityKey(e)))
           usb.offer({
             id: `allow-${e.id}`,
-            text: t('usb:usb-attach.offer.ungranted', { name: deviceName(e) }),
+            text: msg('usb:usb-attach.offer.ungranted', { name: deviceName(e) }),
             label: t('usb:usb-attach.offer.allow'),
             run: () => allow(e),
           });
@@ -164,7 +165,7 @@ export class UsbRun {
       }
       if (!e.atStart) continue;
       await this.attach(e, { quiet: true }).catch((err: unknown) =>
-        this.#messages.notify(usbDetails(t('usb:usb-attach.attachFailed', { name: deviceName(e) }), err), 'error'),
+        this.#messages.notify(usbDetails(msg('usb:usb-attach.attachFailed', { name: deviceName(e) }), err), 'error'),
       );
     }
     this.#view.refresh();
@@ -183,11 +184,13 @@ export class UsbRun {
     const names = on.map((c) => c.name);
     const count = names.length;
     const list =
-      count === 1 ? names[0] : t('usb:usb-attach.empty.list', { first: names.slice(0, -1), last: names.at(-1) });
+      count === 1
+        ? msg('usb:usb-attach.empty.one', { name: names[0] })
+        : msg('usb:usb-attach.empty.list', { first: names.slice(0, -1), last: names.at(-1) });
     const question =
       what === 'suspend'
-        ? t('usb:usb-attach.empty.suspend', { count, list })
-        : t('usb:usb-attach.empty.snapshot', { count, list });
+        ? msg('usb:usb-attach.empty.suspend', { count, list })
+        : msg('usb:usb-attach.empty.snapshot', { count, list });
     if (!(await ask.confirm(question, { title: t('usb:usb-attach.empty.title'), ok: t('usb:usb-attach.empty.ok') })))
       return undefined;
     return p.detachAll();

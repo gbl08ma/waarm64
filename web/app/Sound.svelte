@@ -9,6 +9,7 @@
   import Check from './ui/Check.svelte';
   import Field from './ui/Field.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
   import { sound } from './areas/sound.svelte.ts';
@@ -77,7 +78,7 @@
   >
   <Note id="sound-hint">{t('sound:Sound.hint')}</Note>
   <Note id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>
-    {micState === 'denied' ? t('sound:Sound.mic.denied') : t('sound:Sound.mic.asking')}
+    {#if micState === 'denied'}<T k="sound:Sound.mic.denied" />{:else}{t('sound:Sound.mic.asking')}{/if}
   </Note>
 </Menu>
 

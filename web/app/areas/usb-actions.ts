@@ -1,7 +1,7 @@
 // What the USB menu and the Home page's USB tab ask (docs/usb.md "The page"; web/app/page.ts's `usb*`): devices
 // added from the browser's chooser, attached, detached, edited and forgotten, grants given, the menu's offers taken,
 // the game pads and Gadget Zero; and the host's devices and pads as they come and go.
-import { describe, MsgError, t } from '../../i18n.ts';
+import { describe, msg, MsgError, t } from '../../i18n.ts';
 import { listPads } from '../gamepads.ts';
 import { KEYBOARD_CONNECTOR, type MachineRecord, type UsbEntry } from '../shape.ts';
 import {
@@ -138,7 +138,7 @@ export class UsbActions {
       const label = t('usb:usb-actions.offer.attach');
       return usb.offer({
         id,
-        text: t('usb:usb-actions.offer.plugged', { name }),
+        text: msg('usb:usb-actions.offer.plugged', { name }),
         label,
         run: () => this.#run.attach(e),
       });
@@ -149,7 +149,7 @@ export class UsbActions {
       usb.takeOffer(`gone-${back.connector}`);
       return usb.offer({
         id,
-        text: t('usb:usb-actions.offer.back', { name, was: back.name, connector: back.connector + 1 }),
+        text: msg('usb:usb-actions.offer.back', { name, was: back.name, connector: back.connector + 1 }),
         label: t('usb:usb-actions.offer.there'),
         run: () => this.rememberAndAttach(api, device, { connector: back.connector, atStart: back.atStart }),
       });
@@ -157,7 +157,7 @@ export class UsbActions {
     const label = t('usb:usb-actions.offer.remember');
     usb.offer({
       id,
-      text: t('usb:usb-actions.offer.plugged', { name }),
+      text: msg('usb:usb-actions.offer.plugged', { name }),
       label,
       run: () => this.rememberAndAttach(api, device),
     });

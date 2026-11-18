@@ -39,6 +39,20 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 5. **Reaching for a new step is a design smell.** A screen that seems to need a smaller font, a tighter gap or a
    one-off size is usually too dense: split it (more panes, tabs or wizard steps, a details disclosure) before adding
    a token. Consistency and usability come before fitting everything on one screen.
+6. **Names and the page's elements in words.** A name someone gave (a machine's, a disk's, an overlay's, a shared
+   folder's, a snapshot's, a connection's, a file's, a USB device's) is drawn in running text as a soft pill: its own
+   color a step brighter (`--name-fg`), on a faint tint of the text's color (`--name-bg`), radius `--radius-sm`, 3 px
+   of padding, at the weight around it (`--name-weight`). The words of the page's own elements named in a sentence (a
+   button, a menu's item, a tab, a pane: `Open disk…`, `Edit connection…`) are framed faintly, like a small button
+   (`--ui-ref-border`), with the element's icon before them where it has one (the Network tab, the toolbar's Network
+   menu, Home). Both are T.svelte's (the catalog's `<name>`, `<ui>`, `<ui-…>` markers: [i18n.md](i18n.md) "Markers"),
+   with tokens made of `currentColor`, so they take a bar's tone (the message bar) as they take a title's weight. Chosen
+   over three others in screenshots of the Resize, Overlays, Delete and message bar screens
+   (`node tools/screens.ts --css <file>`): a brighter semibold name vanished in titles, already semibold ("Resize
+   Changes" read as before); a pale blue one read as a link; a warm one as a warning's tone; a stronger pill (13 %
+   tint, its own weight) read as a tag and dimmed names in titles. Quotes ("Export “Changes”") and monospace (a jump in
+   texture, for code) are kept for what they mean. Where only text fits (a tooltip, an `aria-label`, the tab's title),
+   the name or the words stand alone, as the page's text reads them (`t()`).
 
 ## 2. Components: small, reused, owning their own styles
 

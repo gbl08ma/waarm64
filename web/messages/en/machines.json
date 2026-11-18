@@ -280,7 +280,7 @@
     "note": "Home page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the same devices, in another order."
   },
   "shape-diff.identity.file": {
-    "message": "the file {{name}}",
+    "message": "the file <name>{{name}}</name>",
     "note": "Which disk an attachment was, in shape-diff.disk.other: a file on your computer. {{name}}: its file name."
   },
   "shape-diff.identity.stored": {
@@ -368,19 +368,19 @@
     "note": "Error details: the cause under the headline machines:machines.swapMin, on the line under it in the same place; what happened, and what the user can do if anything. {{kib}}: as that entry's note says."
   },
   "storage-report.storage.stored": {
-    "message": "Stored disk {{name}}",
+    "message": "Stored disk <name>{{name}}</name>",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Home page, at the bottom), before its size (StorageDetails.item). {{name}}: a disk stored in the browser."
   },
   "storage-report.storage.overlayOfNone": {
-    "message": "Overlay {{overlay}} of a deleted disk",
+    "message": "Overlay <name>{{overlay}}</name> of a deleted disk",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Home page, at the bottom), before its size (StorageDetails.item). An overlay whose disk the browser no longer has; {{overlay}}: the overlay's name."
   },
   "storage-report.storage.overlay": {
-    "message": "Overlay {{overlay}} of {{disk}}",
+    "message": "Overlay <name>{{overlay}}</name> of <name>{{disk}}</name>",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Home page, at the bottom), before its size (StorageDetails.item). {{disk}}: the disk's name; {{overlay}}: the name of one of its overlays (the changes a machine wrote)."
   },
   "storage-report.storage.machine": {
-    "message": "{{name}}'s firmware settings, snapshots, and suspended state",
+    "message": "<name>{{name}}</name>'s firmware settings, snapshots, and suspended state",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Home page, at the bottom), before its size (StorageDetails.item). {{name}}: a machine, whose firmware variables, snapshots and suspended copy these are."
   },
   "storage-report.storage.remote": {
@@ -400,7 +400,7 @@
     "note": "Error in the Home page's message bar when Export the definition finds one of the machine's disks missing from the browser: the headline; its details are the line under it (machines:definitions.diskMissing.cause). {{name}}: the machine."
   },
   "definitions.diskMissing.cause": {
-    "message": "{{name}} has a disk that isn't in this browser.",
+    "message": "<name>{{name}}</name> has a disk that isn't in this browser.",
     "note": "Error details: the cause under the headline machines:definitions.diskMissing, on the line under it in the same place; what happened, and what the user can do if anything. {{name}}: as that entry's note says."
   },
   "definitions.notJson": {
@@ -440,7 +440,7 @@
     "note": "Error in the message bar when the user deletes a disk some machines still have (the Home page's Disks pane): the headline; its details are the line under it (machines:store.diskAttached.cause). {{machines}}: their names, comma-separated."
   },
   "store.diskAttached.cause": {
-    "message": "It's attached to {{machines}}. Detach it first.",
+    "message": "It's attached to <name>{{machines}}</name>. Detach it first.",
     "note": "Error details: the cause under the headline machines:store.diskAttached, on the line under it in the same place; what happened, and what the user can do if anything. {{machines}}: as that entry's note says."
   },
   "resize.failed": {
@@ -464,11 +464,11 @@
     "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. {{size}}: the size asked for; {{now}}: the size now (both as KiB, MiB or GiB)."
   },
   "resize.running_one": {
-    "message": "{{machines}} uses it and is running. Power it off first.",
+    "message": "<name>{{machines}}</name> uses it and is running. Power it off first.",
     "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. {{machines}}: the running machine's name; {{count}}: 1."
   },
   "resize.running_other": {
-    "message": "{{machines}} use it and are running. Power them off first.",
+    "message": "<name>{{machines}}</name> use it and are running. Power them off first.",
     "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. {{machines}}: the running machines' names, comma-separated; {{count}}: how many."
   },
   "resize.inUse": {
@@ -536,8 +536,8 @@
     "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Home page, Disks tab), and in the error when the URL is added anyway. Here: the request for a chunked image's first piece failed. {{needs}}: urlcheck.corsHint."
   },
   "urlcheck.slow": {
-    "message": "The guest reads the disk over the network as it needs it. What it reads is cached in this browser, so later boots read that part from here. A chunked image whose manifest lists a boot's reads (tools/disk-trace.ts) boots the first time about as fast as a file. To keep the whole disk, download the image and add it with Add a disk… › A file, copied into this browser.",
-    "note": "Note beside a URL disk (Home page, Disks tab) and after a URL checks out in Add a disk: how a disk over the network is read. The tool's path stays as it is."
+    "message": "The guest reads the disk over the network as it needs it. What it reads is cached in this browser, so later boots read that part from here. A chunked image whose manifest lists a boot's reads (tools/disk-trace.ts) boots the first time about as fast as a file. To keep the whole disk, download the image and add it with <ui>Add a disk… › A file, copied into this browser</ui>.",
+    "note": "Note beside a URL disk (Home page, Disks tab) and after a URL checks out in Add a disk: how a disk over the network is read. The tool's path stays as it is. The <ui> marker frames the Add a disk menu path as the page's element."
   },
   "MachinesPage.state.running": {
     "message": "running",
@@ -556,7 +556,7 @@
     "note": "Home page: message bar text (also an error headline) when an edit that needs a machine off finds it running in another tab."
   },
   "MachinesPage.powerOff.confirm": {
-    "message": "Forcibly power off {{name}} to make this change? Unsaved work in the guest will be lost.",
+    "message": "Forcibly power off <name>{{name}}</name> to make this change? Unsaved work in the guest will be lost.",
     "note": "Home page: confirmation dialog's text before an edit that needs the machine on this page off (e.g. on the Disks tab). {{name}}: the machine."
   },
   "MachinesPage.powerOff.ok": {
@@ -576,8 +576,8 @@
     "note": "Home page: the button that saves a machine's settings (Settings, Network, USB and Shared folders tabs), and the confirm button of machine-edit.orphans.confirm's dialog."
   },
   "KeyboardField.keyboard.matched": {
-    "message": "This browser's keyboard looks like {{layout}}. Save to use it.",
-    "note": "Home page, Settings tab: note under the Keyboard layout after Match this browser found the layout. {{layout}}: the layout's name (a keyboard message)."
+    "message": "This browser's keyboard looks like {{layout}}. <ui>Save</ui> to use it.",
+    "note": "Home page, Settings tab: note under the Keyboard layout after Match this browser found the layout. {{layout}}: the layout's name (a keyboard message). <ui>Save</ui> is the tab's Save button."
   },
   "KeyboardField.keyboard.unknown": {
     "message": "This browser didn't report a layout from the list. Only Chromium-based browsers report one. Choose your layout from the list.",
@@ -592,11 +592,11 @@
     "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Import a definition…."
   },
   "MachinesNav.imported.toPick": {
-    "message": "{{name}} was created. You will be asked to select its disk files when it first starts: {{files}}.",
+    "message": "<name>{{name}}</name> was created. You will be asked to select its disk files when it first starts: <name>{{files}}</name>.",
     "note": "Home page: message bar text after Import a definition… made a machine with disks that are files on the user's computer. {{name}}: the new machine; {{files}}: the files' names, comma-separated."
   },
   "MachinePane.delete.confirm": {
-    "message": "Delete {{name}}? This will delete its snapshots, its firmware settings, and its suspended state, if any. Its disks and their overlays will remain stored in this browser.",
+    "message": "Delete <name>{{name}}</name>? This will delete its snapshots, its firmware settings, and its suspended state, if any. Its disks and their overlays will remain stored in this browser.",
     "note": "Home page: confirmation dialog's text after a machine's Delete button. {{name}}: the machine."
   },
   "MachinePane.delete.ok": {
@@ -648,7 +648,7 @@
     "note": "Home page, Connections: who has the connection now, in each connection's line. Here: no one."
   },
   "ConnectionsPane.logout.confirm": {
-    "message": "Log out of {{name}}? This will remove its node from the tailnet and delete its keys from this browser. Connecting again will log in as a new node.",
+    "message": "Log out of <name>{{name}}</name>? This will remove its node from the tailnet and delete its keys from this browser. Connecting again will log in as a new node.",
     "note": "Home page, Connections: confirmation dialog's text after a connection's Log out button. {{name}}: the connection."
   },
   "ConnectionsPane.logout.ok": {
@@ -736,8 +736,8 @@
     "note": "Home page, Settings tab: tooltip of Run the guest agent."
   },
   "DeviceSwitches.agent.on": {
-    "message": "The guest agent sets the guest's clock after a snapshot is restored, after a pause, and after your computer wakes from sleep (Preferences can turn that off). It can also share the clipboard. The guest must be running systemd version 256 or above. Nothing is written to the guest's disk. Changes apply from the next boot.",
-    "note": "Home page, Settings tab: the note under Run the guest agent while it is ticked. Preferences: the Preferences pane's switch for setting the guest's clock."
+    "message": "The guest agent sets the guest's clock after a snapshot is restored, after a pause, and after your computer wakes from sleep (<ui-adjustments-horizontal>Preferences</ui-adjustments-horizontal> can turn that off). It can also share the clipboard. The guest must be running systemd version 256 or above. Nothing is written to the guest's disk. Changes apply from the next boot.",
+    "note": "Home page, Settings tab: the note under Run the guest agent while it is ticked. Preferences: the Preferences pane's switch for setting the guest's clock. The <ui-adjustments-horizontal> marker shows the Preferences pane's icon before the word."
   },
   "DeviceSwitches.agent.off": {
     "message": "Without the guest agent, the guest's clock falls behind after a snapshot is restored until something in the guest sets it, and the clipboard isn't shared. Changes apply from the next boot.",
@@ -988,12 +988,12 @@
     "note": "Home page, Preferences: the label of a box. Disk caches: the copies of files the guest's kernel keeps in its memory."
   },
   "PreferencesPane.dropCaches.note": {
-    "message": "Right before a snapshot or Suspend, the guest agent has the guest's kernel drop the copies of files it keeps in memory, so the snapshot leaves that memory out and takes less space. The guest reads those files from its disk again afterwards, so it may be slower for a while. Only machines that run the guest agent (their Settings tab) drop their caches.",
-    "note": "Home page, Preferences: the note under Drop the guest's disk caches before a snapshot. The guest agent: the small program the emulator starts in the guest, the Settings tab's Run the guest agent."
+    "message": "Right before a snapshot or <ui-zzz>Suspend</ui-zzz>, the guest agent has the guest's kernel drop the copies of files it keeps in memory, so the snapshot leaves that memory out and takes less space. The guest reads those files from its disk again afterwards, so it may be slower for a while. Only machines that run the guest agent (their <ui-settings>Settings</ui-settings> tab) drop their caches.",
+    "note": "Home page, Preferences: the note under Drop the guest's disk caches before a snapshot. The guest agent: the small program the emulator starts in the guest, the Settings tab's Run the guest agent. The markers show the toolbar's Suspend button and a machine's Settings tab, each with its icon."
   },
   "PreferencesPane.clockSync.note": {
-    "message": "The guest agent sets the guest's clock to your computer's when a snapshot is restored, after the pause of a snapshot or Suspend, and when your computer wakes from sleep. Only machines that run the guest agent (their Settings tab) can have their clock set. When this is off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.",
-    "note": "Home page, Preferences: the note under Set the guest's clock after a restore. The guest agent: the small program the emulator starts in the guest, the Settings tab's Run the guest agent."
+    "message": "The guest agent sets the guest's clock to your computer's when a snapshot is restored, after the pause of a snapshot or <ui-zzz>Suspend</ui-zzz>, and when your computer wakes from sleep. Only machines that run the guest agent (their <ui-settings>Settings</ui-settings> tab) can have their clock set. When this is off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.",
+    "note": "Home page, Preferences: the note under Set the guest's clock after a restore. The guest agent: the small program the emulator starts in the guest, the Settings tab's Run the guest agent. The markers show the toolbar's Suspend button and a machine's Settings tab, each with its icon."
   },
   "PreferencesPane.clockSync": {
     "message": "Set the guest's clock after a restore",
@@ -1012,8 +1012,8 @@
     "note": "Home page, Preferences: the heading over the status bar's editor."
   },
   "PreferencesPane.statusFullscreen.note": {
-    "message": "When this is on, full screen shows the status bar under the machine, and its Keyboard element shows whether the browser's shortcuts reach the machine. When it's off, full screen shows the machine alone, edge to edge.",
-    "note": "Home page, Preferences: the note under Show the status bar in full screen."
+    "message": "When this is on, full screen shows the status bar under the machine, and its <ui>Keyboard</ui> element shows whether the browser's shortcuts reach the machine. When it's off, full screen shows the machine alone, edge to edge.",
+    "note": "Home page, Preferences: the note under Show the status bar in full screen. <ui>Keyboard</ui> is the status bar's Keyboard element."
   },
   "PreferencesPane.statusFullscreen": {
     "message": "Show the status bar in full screen",
@@ -1064,7 +1064,7 @@
     "note": "Home page, Connections: the line under a connection's name. {{kind}}: what it is (a connection-kind.* message); {{state}}: who has it now; {{used}}: which machines it is attached to."
   },
   "ConnectionsPane.connection.usedBy": {
-    "message": "attached to {{machines}}",
+    "message": "attached to <name>{{machines}}</name>",
     "note": "Home page, Connections: the end of a connection's line. {{machines}}: the machines whose adapters have it, comma-separated."
   },
   "ConnectionsPane.connection.usedByNone": {
@@ -1100,12 +1100,12 @@
     "note": "Home page, Connections: button on each connection that deletes it."
   },
   "ConnectionsPane.connections.none": {
-    "message": "No connections yet. Create one here, or from a machine's adapter, on its Network tab or in the toolbar's Network menu.",
-    "note": "Home page, Connections pane: in place of the list when the browser keeps no connection."
+    "message": "No connections yet. Create one here, or from a machine's adapter, on its <ui-network>Network</ui-network> tab or in the toolbar's <ui-network>Network</ui-network> menu.",
+    "note": "Home page, Connections pane: in place of the list when the browser keeps no connection. The <ui-network> markers show the Network icon before the words."
   },
   "PagePane.transient.meta": {
-    "message": "Opened from the address and not stored. Set its size in the toolbar's Machine menu.",
-    "note": "Home page: the line beside the title of the page's own machine (opened from the address, not kept)."
+    "message": "Opened from the address and not stored. Set its size in the toolbar's <ui-cpu>Machine</ui-cpu> menu.",
+    "note": "Home page: the line beside the title of the page's own machine (opened from the address, not kept). The <ui-cpu> marker shows the Machine menu's CPU icon before the word."
   },
   "PagePane.tab.disks": {
     "message": "Disks",
@@ -1132,8 +1132,8 @@
     "note": "Export wizard opened from the page's own machine (Home page): the small note under the formats. <code>…</code> wraps a guest command, shown as code (it stays as it is)."
   },
   "PagePane.importChanges.title": {
-    "message": "Import a changes file made from this disk with Export › Changes only (qcow2). Its changes replace the ones kept in this browser.",
-    "note": "Home page, the page's own machine, Disks tab: tooltip of Import changes…."
+    "message": "Import a changes file made from this disk with <ui>Export… › Changes only</ui> (qcow2). Its changes replace the ones kept in this browser.",
+    "note": "Home page, the page's own machine, Disks tab: tooltip of Import changes…. The <ui> marker quotes the Export wizard's path."
   },
   "PagePane.importChanges": {
     "message": "Import changes…",
@@ -1328,16 +1328,16 @@
     "note": "Home page, Settings tab: button beside the Keyboard layout menu that picks the layout the browser reports."
   },
   "KeyboardField.keyboard.followNote.now": {
-    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to the layout this browser reports, now {{layout}}, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with Don't set it.",
-    "note": "Home page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports a layout. {{layout}}: that layout's name. Don't set it quotes the menu's first option."
+    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to the layout this browser reports, now {{layout}}, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with <ui>Don't set it (the guest's own)</ui>.",
+    "note": "Home page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports a layout. {{layout}}: that layout's name. The <ui> marker quotes the menu's first option."
   },
   "KeyboardField.keyboard.followNote": {
-    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to the layout this browser reports, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with Don't set it.",
-    "note": "Home page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports no layout now. Don't set it quotes the menu's first option."
+    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to the layout this browser reports, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with <ui>Don't set it (the guest's own)</ui>.",
+    "note": "Home page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports no layout now. The <ui> marker quotes the menu's first option."
   },
   "KeyboardField.keyboard.setNote": {
-    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to this layout, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Choosing Don't set it later leaves the last layout in place.",
-    "note": "Home page, Settings tab: note under the Keyboard layout menu when a layout is chosen. Don't set it quotes the menu's first option."
+    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to this layout, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Choosing <ui>Don't set it (the guest's own)</ui> later leaves the last layout in place.",
+    "note": "Home page, Settings tab: note under the Keyboard layout menu when a layout is chosen. The <ui> marker quotes the menu's first option."
   },
   "SettingsTab.shape.note": {
     "message": "Changing the vCPUs, RAM, display, Vulkan, network adapters, USB controller, mouse, touchscreen, clock device, or shared folders changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them. The JIT cache doesn't affect snapshots.",
@@ -1352,7 +1352,7 @@
     "note": "Home page, Network tab: the line under an adapter's name. {{mac}}: its MAC address."
   },
   "AdapterCard.adapter.connection": {
-    "message": "{{name}}: {{kind}}",
+    "message": "<name>{{name}}</name>: {{kind}}",
     "note": "Home page, Network tab: the adapter's connection, under its name. {{name}}: the connection's name; {{kind}}: what it is (a connection-kind.* message). The connection's state and AdapterCard.adapter.primary may follow, after a \" · \"."
   },
   "AdapterCard.adapter.noConnection": {
@@ -1372,8 +1372,8 @@
     "note": "As AdapterCard.adapter.primary, when only IPv6's default route goes through this adapter (IPv4's goes through another, whose connection doesn't reach the internet over IPv6)."
   },
   "AdapterCard.adapter.atStart.title": {
-    "message": "Connect the adapter when the machine starts. Disconnect turns this off.",
-    "note": "Home page, Network tab: tooltip of Connect at start."
+    "message": "Connect the adapter when the machine starts. <ui>Disconnect</ui> turns this off.",
+    "note": "Home page, Network tab: tooltip of Connect at start. <ui>Disconnect</ui> is the adapter's Disconnect button."
   },
   "AdapterCard.adapter.atStart": {
     "message": "Connect at start",
@@ -1568,7 +1568,7 @@
     "note": "Home page, Preferences: the note under Vulkan shader cache size."
   },
   "MachinesPage.powerOff.confirm.soft": {
-    "message": "Shut {{name}} down to make this change? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
+    "message": "Shut <name>{{name}}</name> down to make this change? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
     "note": "Text of the question asked before an edit on the Home page that needs the machine off, when its guest's agent (the page's program in the guest) can shut it down cleanly. {{name}} is the machine's name."
   },
   "MachinesPage.powerOff.ok.soft": {
@@ -1629,14 +1629,14 @@
   },
   "StorageDetails.item": {
     "message": "{{what}}: {{size, bytes}}",
-    "note": "Home page: Storage in this browser (StorageDetails.title). An item of What uses the space (StorageDetails.items). {{what}}: what (a machines.storage.* message); {{size}}: its bytes."
+    "note": "Home page: Storage in this browser (StorageDetails.title). An item of What uses the space (StorageDetails.items). {{what}}: what (a storage-report.storage.* message, which marks the names in it); {{size}}: its bytes."
   },
   "AdapterCard.adapter.names_one": {
     "message": "Domain in the room: {{names}}",
-    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds a registered name: its line of names. {{names}} is the name with its date (network:names-view.machine.until)."
+    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds a registered name: its line of names. {{names}}: a list of one message (network:names-view.machine.*), the domain with its date, which marks the domain itself (so {{names}} isn't wrapped)."
   },
   "AdapterCard.adapter.names_other": {
     "message": "Domains in the room: {{names}}",
-    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds registered names: its line of names. {{names}} are the names, each with its date (network:names-view.machine.until), {{count}} how many."
+    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds registered names: its line of names. {{names}}: a list of messages (network:names-view.machine.*), each domain with its date, which mark the domains themselves (so {{names}} isn't wrapped), {{count}} how many."
   }
 }

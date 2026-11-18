@@ -13,12 +13,13 @@
   import CardList from './ui/CardList.svelte';
   import Icon from './ui/Icon.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, SnapshotRecord } from './store.ts';
   import type { MachineRecord, Shape } from './shape.ts';
   import { shapeDiff } from './shape-diff.ts';
   import { snapshotPath } from './store.ts';
-  import { t, text } from '../i18n.ts';
+  import { msg, t, text } from '../i18n.ts';
   import { importSnapshot, unrestorable } from './snapshots.ts';
   import { machineLike } from './machine-like.ts';
   import { opfsDir } from '../overlay.ts';
@@ -89,7 +90,7 @@
   async function rename(s: SnapshotRecord) {
     const name = (
       await ask.prompt(t('snapshots:Snapshots.rename.prompt'), s.name, {
-        title: t('snapshots:Snapshots.rename.title', { name: s.name }),
+        title: msg('snapshots:Snapshots.rename.title', { name: s.name }),
         ok: t('snapshots:Snapshots.rename.ok'),
       })
     )?.trim();
@@ -98,7 +99,7 @@
   }
   async function remove(s: SnapshotRecord) {
     if (
-      await ask.confirm(t('snapshots:Snapshots.delete.confirm', { name: s.name, size: s.bytes }), {
+      await ask.confirm(msg('snapshots:Snapshots.delete.confirm', { name: s.name, size: s.bytes }), {
         ok: t('snapshots:Snapshots.delete.ok'),
         danger: true,
       })
@@ -153,7 +154,7 @@
 
 <div class="snapshots">
   {#if machine}
-    {#if !kept.length}<Note>{t('snapshots:Snapshots.none')}</Note>{:else}
+    {#if !kept.length}<Note><T k="snapshots:Snapshots.none" /></Note>{:else}
       <CardList>
         {#each kept as s (s.id)}
           <Card data-snapshot={s.id} class={orphaned(s) ? 'orphaned' : undefined}>

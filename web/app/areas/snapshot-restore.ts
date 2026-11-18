@@ -34,20 +34,21 @@ function restoreQuestion(name: string, header: SnapshotHeader, plan: Plan, runni
   const taken = !Number.isNaN(when.getTime());
   const asked = running
     ? taken
-      ? t('snapshots:snapshot-restore.restore.confirm.takenRunning', { name, when })
-      : t('snapshots:snapshot-restore.restore.confirm.running', { name })
+      ? msg('snapshots:snapshot-restore.restore.confirm.takenRunning', { name, when })
+      : msg('snapshots:snapshot-restore.restore.confirm.running', { name })
     : taken
-      ? t('snapshots:snapshot-restore.restore.confirm.taken', { name, when })
-      : t('snapshots:snapshot-restore.restore.confirm', { name });
-  return [
+      ? msg('snapshots:snapshot-restore.restore.confirm.taken', { name, when })
+      : msg('snapshots:snapshot-restore.restore.confirm', { name });
+  const lines = [
     asked,
-    ...(plan.kept.length ? [t('snapshots:snapshot-restore.restore.kept', { disks: plan.kept })] : []),
+    ...(plan.kept.length ? [msg('snapshots:snapshot-restore.restore.kept', { disks: plan.kept })] : []),
     ...plan.forks.map((f) =>
       f.reused
-        ? t('snapshots:snapshot-restore.restore.fork.reused', { disk: f.disk })
-        : t('snapshots:snapshot-restore.restore.fork.new', { disk: f.disk }),
+        ? msg('snapshots:snapshot-restore.restore.fork.reused', { disk: f.disk })
+        : msg('snapshots:snapshot-restore.restore.fork.new', { disk: f.disk }),
     ),
-  ].join('\n');
+  ];
+  return msg('snapshots:snapshot-restore.restore.question', { lines });
 }
 
 /** Whether the disks the restore forks replace their overlays (the user says no to keeping them). */
@@ -55,11 +56,11 @@ async function replaceForks(plan: Plan) {
   const replaceable = plan.forks.flatMap((f) => (!f.reused && f.replaceable ? [f.replaceable] : []));
   const count = replaceable.length;
   const list = replaceable.map((r) =>
-    t('snapshots:snapshot-restore.restore.keep.item', { name: r.name, size: r.bytes }),
+    msg('snapshots:snapshot-restore.restore.keep.item', { name: r.name, size: r.bytes }),
   );
   return (
     count > 0 &&
-    !(await ask.confirm(t('snapshots:snapshot-restore.restore.keep', { count, list }), {
+    !(await ask.confirm(msg('snapshots:snapshot-restore.restore.keep', { count, list }), {
       title: t('snapshots:snapshot-restore.restore.keep.title'),
       ok: t('snapshots:snapshot-restore.restore.keep.ok'),
       cancel: t('snapshots:snapshot-restore.restore.replace', { count }),
@@ -114,7 +115,7 @@ export class SnapshotRestore {
     if (!now) return undefined;
     const other = await this.#otherShape(s, header, name);
     if (other) {
-      void ask.alert(t(other.key, other.params), { title: t('snapshots:snapshot-restore.restore.cant') });
+      void ask.alert(other, { title: t('snapshots:snapshot-restore.restore.cant') });
       return undefined;
     }
     try {
@@ -202,7 +203,7 @@ export class SnapshotRestore {
     const m = this.#c.machine;
     if (header.machine !== m.name) {
       const other = { other: label, otherId: String(header.machine), machine: m.spec.title, id: m.name };
-      void ask.alert(t('snapshots:snapshot-restore.load.otherMachine', { name: file.name, ...other }));
+      void ask.alert(msg('snapshots:snapshot-restore.load.otherMachine', { name: file.name, ...other }));
       return false;
     }
     const taken = typeof header.disk === 'string' ? header.disk : null;
@@ -211,8 +212,8 @@ export class SnapshotRestore {
     const words = { name: file.name, taken: this.#disk(taken), open: this.#disk(open) };
     void ask.alert(
       taken
-        ? t('snapshots:snapshot-restore.load.otherDisk', words)
-        : t('snapshots:snapshot-restore.load.otherDisk.reload', words),
+        ? msg('snapshots:snapshot-restore.load.otherDisk', words)
+        : msg('snapshots:snapshot-restore.load.otherDisk.reload', words),
     );
     return false;
   }
@@ -231,7 +232,7 @@ export class SnapshotRestore {
       header = await readHeader(file);
     } catch (e) {
       if (!(e instanceof SnapshotError)) throw e;
-      return void ask.alert(t('snapshots:snapshot-restore.notSnapshot', { name: file.name, why: msgOf(e) }), {
+      return void ask.alert(msg('snapshots:snapshot-restore.notSnapshot', { name: file.name, why: msgOf(e) }), {
         title: t('snapshots:snapshot-restore.notSnapshot.title'),
       });
     }
@@ -251,7 +252,7 @@ export class SnapshotRestore {
       : msg('snapshots:snapshot-restore.load.written', { disk });
     const holds = holdsWords(file, header, label);
     if (
-      !(await ask.confirm(t('snapshots:snapshot-restore.load.confirm', { name: file.name, holds, replaces, lost }), {
+      !(await ask.confirm(msg('snapshots:snapshot-restore.load.confirm', { name: file.name, holds, replaces, lost }), {
         title: t('snapshots:snapshot-restore.load.title'),
         ok: t('snapshots:snapshot-restore.load.ok'),
         danger: true,

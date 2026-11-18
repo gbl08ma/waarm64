@@ -3,9 +3,10 @@
 // server, the browser's records seeded through the page's own modules (a machine with disks, an overlay, snapshots, an
 // adapter on a connection, a USB device, a folder), then the toolbar and each of its menus, the message bar, the
 // Home page's panes and a machine's tabs (also 720 px wide), and every dialog and wizard step, one PNG per state.
-//   node tools/screens.ts [--label before] [--only <substring>]
+//   node tools/screens.ts [--label before] [--only <substring>[,<substring>…]] [--css <file>]
 // writes bench/results/local/screens/<label>/<state>.png (label `now` by default) and lists the states it couldn't
-// reach (they need a guest or hardware) in `missed.txt` there.
+// reach (they need a guest or hardware) in `missed.txt` there. `--css` adds a stylesheet to every page (a look to try:
+// tokens to compare in two sets).
 //   node tools/screens.ts --compare before [--label now]
 // compares two sets taken before: each state's changed pixels and where (states only one set has are listed too).
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,7 +15,7 @@ import { chromium, type Page } from 'playwright-core';
 import { ROOT, startServer } from './serve.ts';
 
 const { values: args } = parseArgs({
-  options: { label: { type: 'string', default: 'now' }, only: { type: 'string' }, compare: { type: 'string' } },
+  options: { label: { type: 'string', default: 'now' }, only: { type: 'string' }, compare: { type: 'string' }, css: { type: 'string' } },
 });
 const SCREENS = `${ROOT}bench/results/local/screens`;
 const DIR = `${SCREENS}/${args.label}`;
@@ -72,7 +73,7 @@ const taken: string[] = [];
 
 /** Runs `f` for state `name` (skipped unless it matches `--only`); a failure is listed as missed, and the run goes on. */
 async function state(name: string, f: () => Promise<void>) {
-  if (args.only && !name.includes(args.only)) return;
+  if (args.only && !args.only.split(',').some((o) => name.includes(o))) return;
   try {
     await f();
   } catch (e) {
@@ -97,6 +98,7 @@ async function open(viewport = WIDE, hash = '') {
   page.on('pageerror', (e) => missed.push(`(page error) ${String(e).split('\n')[0]}`));
   await page.goto(`${base}/web/app/${hash}`);
   await page.locator('#machines-open').waitFor();
+  if (args.css) await page.addStyleTag({ path: args.css });
   return page;
 }
 
@@ -138,7 +140,7 @@ async function seed(page: Page): Promise<Seed> {
     await createDisk(store, { kind: 'blank', size: 16 << 20, name: 'Spare' }); // in no machine: Attach to a machine…
     for (const d of [url, blank, ram]) await attach(store, m, d);
     const overlay = { id: 'a00000000001', name: 'Before the upgrade', disk: blank.id, identity: blank.identity, generation: 0, bytes: 0, created: now, modified: now };
-    const scratch = { ...overlay, id: 'a00000000002', name: 'Scratch' };
+    const scratch = { ...overlay, id: 'a00000000002', name: 'Changes' };
     for (const o of [overlay, scratch]) await store.put('overlays', o);
     m.attachments[1].overlay = overlay.id;
     m.adapters[0] = { ...m.adapters[0], mac: '52:54:00:12:34:56', connection: tailnet.id };
@@ -147,7 +149,7 @@ async function seed(page: Page): Promise<Seed> {
     await store.put('machines', m);
     const bare = await createMachine(store, { name: 'Bare', network: false, usb: false });
     // Two kept snapshots: one of the machine as it is, one orphaned (made when it had another size).
-    const { shape, hash } = await actions.shapeNow(m, new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d])));
+    const { shape, hash } = await actions.shapeNow(m, new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d])), await store.all('overlays'));
     const pins: unknown[] = [];
     await store.put('snapshots', { id: newId(), machine: m.id, name: 'Logged in', created: now - 3600_000, bytes: 412 << 20, shape, shapeHash: hash, pins });
     await store.put('snapshots', { id: newId(), machine: m.id, name: 'Old size', created: now - 86400_000, bytes: 380 << 20, shape: { ...shape, ramMiB: 1024 }, shapeHash: 'orphaned', pins });
@@ -196,9 +198,25 @@ let seeded: Seed;
       const { t } = await import('/web/i18n.ts' as string);
       messageBar.text = t('machine:power-actions.cantOpen');
       messageBar.details = ['NotFoundError: A requested file or directory could not be found.']; // i18n-ignore: a browser's error, as shown
+      messageBar.from = [undefined, 'raw'];
       messageBar.kind = 'error';
     });
     await shot(page, 'message-error');
+    await page.click('#message-close');
+  });
+  await state('message-error-named', async () => {
+    // An error whose headline names a machine and whose cause is a message, then a browser's own words.
+    await page.evaluate(async () => {
+      const { messageBar } = await import('/web/app/areas/message-bar.svelte.ts' as string);
+      const { t, msg } = await import('/web/i18n.ts' as string);
+      const head = msg('machine:worker-errors.diskInUse', { machine: 'Workbench' });
+      const cause = msg('folders:folders-page.inUseElsewhere', { name: 'Shared' });
+      messageBar.text = t(head.key, head.params);
+      messageBar.details = [t(cause.key, cause.params), 'NotFoundError: A requested file or directory could not be found.']; // i18n-ignore: a browser's error, as shown
+      messageBar.from = [head, cause, 'raw'];
+      messageBar.kind = 'error';
+    });
+    await shot(page, 'message-error-named');
     await page.click('#message-close');
   });
   await state('message-info', async () => {
@@ -207,6 +225,7 @@ let seeded: Seed;
       const { t } = await import('/web/i18n.ts' as string);
       messageBar.text = t('machine:trim-actions.full', { before: 3 << 30, after: 1 << 30 });
       messageBar.details = [];
+      messageBar.from = [];
       messageBar.kind = 'info';
       messageBar.countdown = { ms: 15_000, id: 1, end: () => {} };
     });
@@ -338,6 +357,26 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
       await page.locator('#ask[open]').waitFor();
       await shot(page, 'ask-prompt');
       await page.click('#ask [data-answer=cancel]');
+    });
+    await state('ask-delete-overlay', async () => {
+      await page.locator('#overlays [data-action=delete-overlay]').last().click();
+      await page.locator('#ask[open]').waitFor();
+      await shot(page, 'ask-delete-overlay');
+      await page.click('#ask [data-answer=cancel]');
+    });
+    await state('dialog-resize-overlay', async () => {
+      // The second overlay is called Changes: its name in the dialog's title.
+      await page.locator('#overlays [data-action=resize-overlay]').last().click();
+      await page.locator('#resize-disk[open]').waitFor();
+      await shot(page, 'dialog-resize-overlay');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !document.querySelector('#resize-disk[open]'), undefined, { timeout: 5000 });
+    });
+    await state('dialog-export-overlay', async () => {
+      await page.locator('#overlays [data-action=export]').last().click();
+      await settle(page);
+      await shot(page, 'dialog-export-overlay');
+      await page.click('#overlays [data-action=export-back]');
     });
     await escape(page);
   });

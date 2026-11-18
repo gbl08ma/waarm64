@@ -7,7 +7,8 @@
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
   import VisualizeLine from './VisualizeLine.svelte';
-  import { t } from '../i18n.ts';
+  import T from './T.svelte';
+  import { msg } from '../i18n.ts';
   import { bytesText } from './bytes.ts';
   import { diskKind } from './disk-kind.ts';
   import type { OverlayRecord } from './store.ts';
@@ -20,19 +21,16 @@
   const bytes = $derived(overlays.reduce((n, o) => n + o.bytes, 0));
   /** Its line: its kind and size, its overlays (a ramdisk has none), the machines that have it. */
   const line = $derived.by(() => {
-    const parts = [
+    const meta =
       disk.kind === 'stored' && disk.bytes !== undefined
-        ? t('disks:DiskInfo.meta.held', { kind: kind.text, held: bytesText(disk.bytes), size: bytesText(disk.size) })
-        : t('disks:DiskInfo.meta', { kind: kind.text, size: bytesText(disk.size) }),
-    ];
-    if (disk.kind !== 'ramdisk')
-      parts.push(
-        bytes
-          ? t('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) })
-          : t('disks:DiskInfo.overlays', { count: overlays.length }),
-      );
-    parts.push(users.length ? t('disks:DiskInfo.on', { machines: users }) : t('disks:DiskInfo.onNone'));
-    return parts.join(' · ');
+        ? msg('disks:DiskInfo.meta.held', { kind: kind.text, held: bytesText(disk.bytes), size: bytesText(disk.size) })
+        : msg('disks:DiskInfo.meta', { kind: kind.text, size: bytesText(disk.size) });
+    const on = users.length ? msg('disks:DiskInfo.on', { machines: users }) : msg('disks:DiskInfo.onNone');
+    if (disk.kind === 'ramdisk') return msg('disks:DiskInfo.line.ramdisk', { meta, on });
+    const held = bytes
+      ? msg('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) })
+      : msg('disks:DiskInfo.overlays', { count: overlays.length });
+    return msg('disks:DiskInfo.line', { meta, overlays: held, on });
   });
 </script>
 
@@ -41,7 +39,7 @@
   <div class="what">
     <strong>{disk.name}</strong>
     <span class="meta"
-      >{#if onvisualize}<VisualizeLine {line} {onvisualize} />{:else}{line}{/if}</span
+      >{#if onvisualize}<VisualizeLine {line} {onvisualize} />{:else}<T m={line} />{/if}</span
     >
   </div>
 </div>

@@ -2,7 +2,7 @@
 // again where the browser has it (a file's or a URL's identity: its overlays come back with it).
 import { ask } from './ask.svelte.ts';
 import { estimateStored, importStored } from './disks.ts';
-import { MsgError, t } from '../i18n.ts';
+import { msg, MsgError, t, type Msg } from '../i18n.ts';
 import { bytesText, createDisk, knownDisk, type NewDisk } from './machines.ts';
 import { askPersist } from './storage-report.ts';
 import { causes } from '../msg.ts';
@@ -27,14 +27,14 @@ const virtualSize = (head: Uint8Array | undefined, bytes: number) =>
 
 /**
  * The disk `d` describes for `machine`: undefined if the user declined (a copy into the browser asks first). `onCheck`
- * gets a URL's check (the step shows it); `onProgress` a copy's progress, in words.
+ * gets a URL's check (the step shows it); `onProgress` a copy's progress, in words (undefined once it's done).
  */
 export async function makeDisk(
   store: Store,
   machine: MachineRecord,
   d: Details,
   onCheck: (c: UrlCheck) => void,
-  onProgress: (words: string) => void,
+  onProgress: (words: Msg | undefined) => void,
 ): Promise<DiskRecord | undefined> {
   // A file or URL the browser knows is the same disk again, with its overlays (its handle renewed, if picked with one).
   const reuse = async (n: NewDisk) => {
@@ -76,11 +76,11 @@ export async function makeDisk(
 }
 
 /** A file copied into the browser: asked first (its size, the room left), the storage made persistent. */
-async function storeCopy(store: Store, file: File, onProgress: (words: string) => void) {
+async function storeCopy(store: Store, file: File, onProgress: (words: Msg | undefined) => void) {
   const est = await estimateStored(file);
   const free = await navigator.storage.estimate();
   const sure = await ask.confirm(
-    t('disks:add-disk.store.confirm', {
+    msg('disks:add-disk.store.confirm', {
       name: file.name,
       size: bytesText(est.estimate),
       free: bytesText((free.quota ?? 0) - (free.usage ?? 0)),
@@ -90,8 +90,8 @@ async function storeCopy(store: Store, file: File, onProgress: (words: string) =
   if (!sure) return undefined;
   await askPersist();
   const d = await importStored(store, file, (f) => {
-    onProgress(t('disks:add-disk.storing', { name: file.name, percent: Math.floor(100 * f) }));
+    onProgress(msg('disks:add-disk.storing', { name: file.name, percent: Math.floor(100 * f) }));
   });
-  onProgress('');
+  onProgress(undefined);
   return d;
 }
