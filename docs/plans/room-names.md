@@ -703,7 +703,9 @@ copies by nonce **and round** (the three rounds share a nonce).
     as any change), and remembered for a day, an anchor in it offered meanwhile refused at its check, and one checked
     before the refusal in a job still being verified dropped when the job is kept (review 3, finding 6). One explorer's
     word is enough: one denies and the other confirms, checked; one denies and the other can't be reached, asked again
-    after 5 minutes, doubling to 6 hours. **Until a block is checked its anchors count** on their header's work, as a
+    after 5 minutes, doubling to 6 hours (the tries kept through the check and a transport's restart: review 3,
+    finding 7, every retry had waited 5 minutes; 16 asks a block in 12 hours with both explorers down, was 290).
+    **Until a block is checked its anchors count** on their header's work, as a
     member's do, so names work with the explorers down. The pace: one check every 3 s at most (`Params::check_every_ms`),
     the newest arrival first, so a new server's first sync (hundreds or thousands of blocks) takes a while and a new
     arrival is checked within seconds; N6 measures what the explorers tolerate. Checks run from the module's ticks:

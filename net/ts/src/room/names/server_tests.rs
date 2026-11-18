@@ -2678,6 +2678,41 @@ fn a_block_both_explorers_deny_is_refused_with_its_anchors() {
     compiled_only(&bus);
 }
 
+/// Review 3's finding 7: a block neither explorer can be asked about is asked again after 5 minutes, doubling to 6
+/// hours. The retry read its tries from the state being checked, so every retry waited 5 minutes: 144 checks a block
+/// in 12 hours for good, at every server.
+#[test]
+fn a_block_no_explorer_answers_for_is_asked_again_ever_less_often() {
+    let (b, mut bus, forged, hash) = forged_room(74, Params::TEST);
+    bus.advance(Duration::from_secs(60));
+    bus.svc.as_mut().unwrap().explorers_down = [true, true];
+    assert_eq!(bus.put(1, 0, forged.clone()), Msg::Taken);
+    let mut shown = hash;
+    shown.reverse();
+    let shown: String = shown.iter().map(|b| format!("{b:02x}")).collect();
+    let asked = |bus: &Bus| {
+        (bus.fetched.iter())
+            .filter(|(i, u)| *i == 0 && u.contains(&shown))
+            .count()
+    };
+    bus.advance(Duration::from_secs(12 * 3600));
+    let n = asked(&bus);
+    eprintln!("a block no explorer answers for, 12 hours: {n} asks at one server");
+    // 5, 10, 20, 40, 80, 160, 320 minutes: 8 checks of two explorers in 12 hours (and the first's).
+    assert!((2..=2 * 10).contains(&n), "{n} asks");
+    // Its transport closing and opening again every 2 hours: the doubling kept.
+    for _ in 0..6 {
+        bus.s[0].stop();
+        let (k, now) = (bus.keys[0], bus.now);
+        bus.s[0].start(k, now);
+        bus.advance(Duration::from_secs(2 * 3600));
+    }
+    let restarts = asked(&bus) - n;
+    eprintln!("then six restarts 2 hours apart: {restarts} asks");
+    assert!(restarts <= 2 * 8, "{restarts} asks");
+    let _ = b;
+}
+
 #[test]
 fn a_block_one_explorer_denies_counts_until_the_other_answers_and_is_kept_when_it_confirms() {
     let (b, mut bus, _, _) = forged_room(73, Params::TEST);

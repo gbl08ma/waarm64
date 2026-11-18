@@ -56,7 +56,10 @@ enum State {
         next: u64,
         tries: u32,
     },
-    Checking,
+    /// Asked, `tries` times before without an answer (review 3, finding 7: kept here, so the wait doubles).
+    Checking {
+        tries: u32,
+    },
     Checked,
     Refused,
 }
@@ -176,8 +179,8 @@ impl Outside {
         self.fetches.clear();
         self.next_check = None;
         for b in self.blocks.values_mut() {
-            if b.state == State::Checking {
-                b.state = State::Unchecked { next: 0, tries: 0 };
+            if let State::Checking { tries } = b.state {
+                b.state = State::Unchecked { next: 0, tries };
             }
         }
         for f in self.finishing.values_mut() {
@@ -342,7 +345,12 @@ impl Server {
         {
             self.out.next_check =
                 Some(now + Duration::from_millis(self.params.check_every_ms as u64));
-            self.out.blocks.get_mut(&hash).unwrap().state = State::Checking;
+            let b = self.out.blocks.get_mut(&hash).unwrap();
+            let tries = match b.state {
+                State::Unchecked { tries, .. } => tries,
+                _ => 0,
+            };
+            b.state = State::Checking { tries };
             self.check_at(hash, 0, 0, 0, now);
         }
         // Renewals: one decision a slot each.
@@ -402,7 +410,7 @@ impl Server {
                 let Some(b) = self.out.blocks.get(&hash) else {
                     return;
                 };
-                if b.state != State::Checking {
+                if !matches!(b.state, State::Checking { .. }) {
                     return;
                 }
                 let ours = b.header.map(|h| hex(&h.0));
@@ -421,7 +429,7 @@ impl Server {
                 // One that couldn't be reached: asked again later.
                 let b = self.out.blocks.get_mut(&hash).unwrap();
                 let tries = match b.state {
-                    State::Unchecked { tries, .. } => tries,
+                    State::Checking { tries } => tries,
                     _ => 0,
                 };
                 let wait = (CHECK_AGAIN << tries.min(10)).min(CHECK_AGAIN_MAX);
@@ -515,12 +523,12 @@ impl Server {
                 self.log(format!("a renewal finished: {}", hex(&eid[..4])));
                 // The explorer gave the header for that height, and it is the anchor's: the block is checked too.
                 let b = self.out.blocks.entry(header.hash()).or_insert(Block {
-                    state: State::Checking,
+                    state: State::Checking { tries: 0 },
                     at: unix,
                     header: Some(header),
                 });
                 if b.state != State::Refused {
-                    b.state = State::Checking;
+                    b.state = State::Checking { tries: 0 };
                     self.block_verdict(header.hash(), State::Checked, unix);
                 }
                 // Checked and kept as anything put is: stored, and told to the servers it syncs with.
