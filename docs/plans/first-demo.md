@@ -42,8 +42,9 @@ equivalent) works with nothing configured.** At least one demo in the store must
 **Reopened (the user, 2026-11-18).** plans/networking.md §1 ("No v86 compatibility") and plans/networking-local.md
 §1 ("Not WebSocket relays or Wisp") no longer rule out a hosted way out. The user's caveat: if we run our own
 server anyway, Wisp has no claim on us. Our own protocol, or **the local helper deployed on a server with a
-destination allowlist**, may be simpler. The other rule stands: no open proxy, so whatever we host is restricted to a
-list of destinations.
+destination allowlist**, may be simpler. The other rule stands with one exception: nothing unrestricted. Full speed goes
+only to a list of destinations, and everything else, if the owner turns it on, goes through a heavily throttled
+**slow lane** (§3.2, the user, 2026-11-18), as JSLinux's VPN does.
 
 ### 3.1 The two shapes
 
@@ -142,7 +143,38 @@ What it has that the local helper hasn't:
   needed: Alpine's repositories have been HTTPS by default for years, and apk checks every package's signature
   either way. Later demos add their own rules with their own notes, each the owner's call: PyPI and
   `files.pythonhosted.org` for `pip`, Debian's `deb.debian.org`, Arch's mirror, and so on.
-- **Logs:** counts per destination and budget refusals, no addresses kept past the budget's day.
+- **The slow lane** (the user, 2026-11-18): a setting, **off by default**, that lets a guest reach destinations off
+  the list over a heavily throttled connection, as JSLinux's VPN does (40 kB/s and 2 connections per IP there). With it
+  on:
+  - **The resolver answers every name,** not only listed ones, still dropping answers in private, loopback and
+    link-local ranges. A connection is sorted by its first bytes: a listed SNI or Host goes at full speed, and
+    anything else goes to the slow lane (an unlisted name, a literal address, ECH's public name, a protocol that
+    isn't TLS or HTTP).
+  - **Throttled per source IP across all its connections** (a token bucket, both directions together), with a few
+    connections at once and a byte budget a day. A **total rate for the whole lane** bounds what it can cost the
+    server and its uplink however many visitors there are. When it's spent, each visitor's share shrinks; nothing
+    queues without bound.
+  - **Ports stay listed,** even in the slow lane: 80 and 443 by default, never 25 or the other mail ports. No UDP but
+    the helper's own DNS, so QUIC falls back to TCP.
+  - **What it can't stop:** at any rate, the lane lets a stranger's traffic leave from the server's address (slow
+    scanning, a login form tried, a request to a site that bans the address). That's why it's off by default, why
+    its rate is low, and why the owner turns it on knowingly. Abuse reports name the server's IP, so the logs keep
+    what answering one needs: per connection, a hash of the source IP, the destination name and port, the time
+    and the bytes, for a few days only (the owner's setting), never contents.
+  - The guest's motd says which hosts are fast and that the rest is slow.
+
+  ```toml
+  [slow_lane]
+  enabled = false
+  rate = "40kB/s"                # per source IP, all its connections, both directions
+  connections = 2                # at once, per source IP
+  bytes_per_day = "50MB"         # per source IP
+  total_rate = "2MB/s"           # the whole lane, every visitor together
+  ports = [80, 443]
+  log_days = 3                   # per-connection records for abuse reports (hashed IP, name, port, bytes)
+  ```
+- **Logs:** counts per destination and budget refusals. No addresses are kept past the budget's day, except the slow
+  lane's hashed records above.
 - **Cost:** bandwidth. A demo visitor's `apk add python3` is about 20 MB. One small VPS with a few TB a month covers a
   launch.
 
@@ -326,7 +358,7 @@ vmdisks.tny.im (§4 "Hosting").
 
 ## 7. Open questions
 
-- Does the hosted helper keep an allowlist for good, or open up for kept machines? No, by default: an open proxy is
-  what was ruled out.
+- The slow lane's numbers (rate, connections, total) for the first deployment: measured with the Alpine and desktop
+  demos (what a page load or `git clone` feels like at 40 kB/s), then the owner's call.
 - Should the demo network also be offered to the user's own machines by default (a new machine's first adapter), or
   only to demos?

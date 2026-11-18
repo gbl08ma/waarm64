@@ -55,7 +55,8 @@ user makes it public).
   API (Isolated Web Apps only, not a user path yet), not a helper assembled from QEMU and websockify or websocat
   (no good Windows story).
   *Reopened 2026-11-18 (the user):* for the first demo, this helper deployed on a server with a destination
-  allowlist, or a Wisp-style stream proxy, is on the table ([first-demo.md](first-demo.md) §3). Still no open proxy.
+  allowlist, or a Wisp-style stream proxy, is on the table ([first-demo.md](first-demo.md) §3). Full speed only to the list; the rest only through a
+  throttled slow lane, off by default.
 
 ## 2. The helper
 

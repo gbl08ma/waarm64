@@ -23,8 +23,8 @@ test adapter, or anything on the page behind a `MessagePort`).
   `apt install` fails inside the VM; the relay and Wisp adapters need someone to run a server.
   `v86Bus` in `web/net.ts` goes away (N1), and the adapter API is ours to shape: frames on a
   `MessagePort`, one `ArrayBuffer` per message, as today.
-  *Reopened 2026-11-18 (the user):* a hosted way out for the first demo, with a destination allowlist and never an
-  open proxy: a hosted local helper or a stream proxy such as Wisp ([first-demo.md](first-demo.md) §3). v86
+  *Reopened 2026-11-18 (the user):* a hosted way out for the first demo, with a destination allowlist, and everything else
+  only through a heavily throttled slow lane the owner turns on: a hosted local helper or a stream proxy such as Wisp ([first-demo.md](first-demo.md) §3). v86
   compatibility itself stays dropped.
 - **The first real backend is Tailscale**, built on the upstream Go client (BSD-3), not a fork and
   not our own implementation (§4). **Go is an accepted build dependency.**
