@@ -10,7 +10,10 @@
 //! what they lack and settle hold the same: a run that one holds cut short (a last anchor
 //! missing, so it looked dead) is only ever worse than the whole run the other sends.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use blake2::{Blake2s256, Digest};
 use sha2::Sha256;
@@ -409,8 +412,8 @@ impl Registry {
         self.items.range(lo..=hi).map(|(id, _)| *id).collect()
     }
 
-    /// The bound: past `max_names` or `max_bytes`, the names nobody asked for longest go first,
-    /// never one in `own`. The ids dropped.
+    /// The bound: past `max_names` or `max_bytes`, the names whose owning chain is youngest go
+    /// first, of one age those nobody asked for longest, never one in `own`. The ids dropped.
     pub fn bound(
         &mut self,
         max_names: usize,
@@ -420,15 +423,20 @@ impl Registry {
         if self.items.len() <= max_names && self.bytes <= max_bytes {
             return Vec::new();
         }
-        let mut order: Vec<(u64, [u8; 32])> = self
+        // The youngest owning chain first (none: first of all), then the longest unasked: asks are anyone's, a
+        // chain's age is bought only with time (NAMES loop 6a).
+        let mut order: Vec<(Reverse<u32>, u64, [u8; 32])> = self
             .items
             .iter()
             .filter(|(id, _)| !own.contains(*id))
-            .map(|(id, h)| (h.asked, *id))
+            .map(|(id, h)| {
+                let age = h.owner.as_ref().map_or(u32::MAX, |c| c.seniority);
+                (Reverse(age), h.asked, *id)
+            })
             .collect();
         order.sort();
         let mut dropped = Vec::new();
-        for (_, id) in order {
+        for (_, _, id) in order {
             if self.items.len() <= max_names && self.bytes <= max_bytes {
                 break;
             }

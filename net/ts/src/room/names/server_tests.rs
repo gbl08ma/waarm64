@@ -917,6 +917,68 @@ fn the_bound_drops_the_longest_unasked_never_its_own() {
     assert!(s.reg.len() <= 3 && s.reg.bytes <= 3 * 2600);
 }
 
+/// Junk registered in bulk (young chains), arriving after the room's names and asked for lately by its registrant,
+/// is what the bound drops: the youngest chains first, asks only between chains of one age (NAMES loop 6a: with the
+/// longest unasked first, a bulk registration's arrival alone dropped the room's names that nobody had asked for
+/// since they came).
+#[test]
+fn the_bound_drops_young_chains_before_old_ones_however_asked() {
+    let mut b = Bitcoin::new(ROOM, 12);
+    let mut s = Server::new(
+        ROOM,
+        Config {
+            max_names: 6,
+            ..cfg(vec![])
+        },
+        T,
+    );
+    // The room's names: claimed weeks ago, last asked for a day ago.
+    let mut honest = Vec::new();
+    for k in 0..4u8 {
+        let (_, it) = b.title(
+            k + 2,
+            &format!("honest{k}"),
+            t(20) + k as u32 * HOUR,
+            &[t(4)],
+            [k; 32],
+        );
+        honest.push(it.id);
+        assert!(s.load(&record(&it, T - DAY as u64), T));
+    }
+    // Junk claimed in the last hour: two asked for lately by its registrant, two arriving now.
+    let mut junk = Vec::new();
+    for k in 0..2u8 {
+        let (_, it) = b.title(
+            50,
+            &format!("junk{k}"),
+            T as u32 - HOUR + k as u32 * 60,
+            &[],
+            [k; 32],
+        );
+        junk.push(it.id);
+        s.load(&record(&it, T), T);
+    }
+    let mut bus = Bus::new(vec![s, Server::new(ROOM, cfg(vec![]), T)]);
+    for k in 2..4u8 {
+        let (_, it) = b.title(
+            50,
+            &format!("junk{k}"),
+            T as u32 - HOUR + k as u32 * 60,
+            &[],
+            [k; 32],
+        );
+        junk.push(it.id);
+        bus.put(1, 0, it);
+    }
+    let held: Vec<[u8; 32]> = bus.s[0].reg.items.keys().copied().collect();
+    assert_eq!(held.len(), 6);
+    for h in &honest {
+        assert!(held.contains(h), "a room's name dropped for junk");
+    }
+    // Among the junk, one age: the latest claims go first.
+    assert!(held.contains(&junk[0]) && held.contains(&junk[1]));
+}
+
 /// Servers that sync: everything each holds reaches the others; a server that leaves names out
 /// (it never keeps them) takes nothing from the others and the newcomer gets them elsewhere.
 #[test]
