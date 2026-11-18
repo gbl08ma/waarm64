@@ -15,6 +15,8 @@ import { asTemplate } from '../web/snapshot-file.ts';
 import { words } from './words.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { pageFixture } from './debian-fixture.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 
@@ -83,56 +85,63 @@ async function restore(file: string, query: string) {
   return { context, page };
 }
 
-test("a template's restore has the agent renew the guest's identity; the same snapshot unflagged keeps it", { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
+test("a template's restore has the agent renew the guest's identity; the same snapshot unflagged keeps it", { skip, timeout: 20 * 60_000 }, async () => {
   const query = `ncpus=2&view=both&agent=1&${unattendedQuery()}`;
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
-  await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
-  await running(page);
-  await shows(page, /login: /);
-  await onSerial(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
-  await agentUp(page);
-  const keygen = (await run(page, 'command -v ssh-keygen || echo none')) !== 'none';
-  const before = await identity(page);
-  console.log(`# the template's identity: ${JSON.stringify(before)}; ssh-keygen ${keygen ? 'there' : 'not there'}`);
-  assert.match(before.id, /^[0-9a-f]{32}$/);
-  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.locator('#save-snapshot').click()]);
-  const plain = join(dir, 'debian.waarm64snap');
-  await download.saveAs(plain);
-  await context.close();
-  const template = join(dir, 'template.waarm64snap');
-  await writeFile(template, (await asTemplate(await openAsBlob(plain))).stream());
+  // The template's guest from a booted-Debian fixture (tests/debian-fixture.ts): no boot is tested here.
+  const fixture = await pageFixture(browser, base, `${PAGE_QUERY}${query}`);
+  await withDebianLock(async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
+    await answerAsks(page);
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    if (fixture) await loadSnapshotFile(page, fixture);
+    await running(page);
+    await shows(page, /login: /);
+    await onSerial(page, 'root\n');
+    await shows(page, /root@\S+:~# /);
+    // A restored guest's clock stood still since the save.
+    if (fixture) await run(page, `date -u -s @${(Date.now() / 1000).toFixed(3)} > /dev/null`);
+    await agentUp(page);
+    const keygen = (await run(page, 'command -v ssh-keygen || echo none')) !== 'none';
+    const before = await identity(page);
+    console.log(`# the template's identity: ${JSON.stringify(before)}; ssh-keygen ${keygen ? 'there' : 'not there'}`);
+    assert.match(before.id, /^[0-9a-f]{32}$/);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.locator('#save-snapshot').click()]);
+    const plain = join(dir, 'debian.waarm64snap');
+    await download.saveAs(plain);
+    await context.close();
+    const template = join(dir, 'template.waarm64snap');
+    await writeFile(template, (await asTemplate(await openAsBlob(plain))).stream());
 
-  // Unflagged: the restore is the saved machine, its identity and all.
-  const a = await restore(plain, query);
-  assert.deepEqual(await identity(a.page), before, 'a snapshot of ours keeps its identity');
-  assert.equal(await a.page.evaluate(() => (window as unknown as { __agent: Agent }).__agent.renewed), undefined, 'no RENEW');
-  await a.context.close();
+    // Unflagged: the restore is the saved machine, its identity and all.
+    const a = await restore(plain, query);
+    assert.deepEqual(await identity(a.page), before, 'a snapshot of ours keeps its identity');
+    assert.equal(await a.page.evaluate(() => (window as unknown as { __agent: Agent }).__agent.renewed), undefined, 'no RENEW');
+    await a.context.close();
 
-  // A template: the agent renews what there is.
-  const b = await restore(template, query);
-  const renewed = await b.page.waitForFunction(() => (window as unknown as { __agent: Agent }).__agent.renewed, null, { timeout: 120_000, polling: 250 }).then((h) => h.jsonValue() as Promise<{ done: number; failed: number }>);
-  const want = RENEWED.ENTROPY | RENEWED.MACHINE_ID | (before.seed ? RENEWED.SEED : 0) | (keygen && before.keys ? RENEWED.SSH : 0);
-  assert.deepEqual(renewed, { done: want, failed: 0 }, `RENEWED; the agent says: ${await run(b.page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep renew | tail -4')}`);
-  const after = await identity(b.page);
-  console.log(`# the copy's identity: ${JSON.stringify(after)}`);
-  assert.match(after.id, /^[0-9a-f]{12}4[0-9a-f]{19}$/, 'a new version 4 machine id');
-  assert.notEqual(after.id, before.id);
-  if (before.seed) assert.notEqual(after.seed, before.seed, 'a new random seed');
-  if (keygen && before.keys) {
-    assert.notEqual(after.keys, before.keys, 'new SSH host keys');
-    assert.equal(after.keys.split(' ').length, before.keys.split(' ').length, 'as many as before');
-    assert.equal(await run(b.page, 'ls /etc/ssh | grep -c "\\.new" || true'), '0', 'none left half made');
-  }
-  // The agent renews the leases through networkd (docs/devices.md "The network after a restore"): its networkctl over
-  // D-Bus from inside the unit's sandbox. The page asks once its connections are up; this machine's card has none, so
-  // the test asks itself.
-  const leased = await b.page.evaluate(() => (window as unknown as { __agent: { lease(ms: number): Promise<number | undefined> } }).__agent.lease(60_000));
-  assert.equal(leased, LEASED.RENEWED, `LEASED; the agent says: ${await run(b.page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep lease | tail -3')}`);
-  // Nothing in the guest minded.
-  assert.equal(await run(b.page, 'systemctl --failed --no-legend | wc -l'), '0');
-  await b.context.close();
-}));
+    // A template: the agent renews what there is.
+    const b = await restore(template, query);
+    const renewed = await b.page.waitForFunction(() => (window as unknown as { __agent: Agent }).__agent.renewed, null, { timeout: 120_000, polling: 250 }).then((h) => h.jsonValue() as Promise<{ done: number; failed: number }>);
+    const want = RENEWED.ENTROPY | RENEWED.MACHINE_ID | (before.seed ? RENEWED.SEED : 0) | (keygen && before.keys ? RENEWED.SSH : 0);
+    assert.deepEqual(renewed, { done: want, failed: 0 }, `RENEWED; the agent says: ${await run(b.page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep renew | tail -4')}`);
+    const after = await identity(b.page);
+    console.log(`# the copy's identity: ${JSON.stringify(after)}`);
+    assert.match(after.id, /^[0-9a-f]{12}4[0-9a-f]{19}$/, 'a new version 4 machine id');
+    assert.notEqual(after.id, before.id);
+    if (before.seed) assert.notEqual(after.seed, before.seed, 'a new random seed');
+    if (keygen && before.keys) {
+      assert.notEqual(after.keys, before.keys, 'new SSH host keys');
+      assert.equal(after.keys.split(' ').length, before.keys.split(' ').length, 'as many as before');
+      assert.equal(await run(b.page, 'ls /etc/ssh | grep -c "\\.new" || true'), '0', 'none left half made');
+    }
+    // The agent renews the leases through networkd (docs/devices.md "The network after a restore"): its networkctl over
+    // D-Bus from inside the unit's sandbox. The page asks once its connections are up; this machine's card has none, so
+    // the test asks itself.
+    const leased = await b.page.evaluate(() => (window as unknown as { __agent: { lease(ms: number): Promise<number | undefined> } }).__agent.lease(60_000));
+    assert.equal(leased, LEASED.RENEWED, `LEASED; the agent says: ${await run(b.page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep lease | tail -3')}`);
+    // Nothing in the guest minded.
+    assert.equal(await run(b.page, 'systemctl --failed --no-legend | wc -l'), '0');
+    await b.context.close();
+  });
+});

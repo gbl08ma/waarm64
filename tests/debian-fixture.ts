@@ -132,8 +132,11 @@ export async function debianFixture(browser: Browser, base: string, name: keyof 
   return `/target/ci/${path.slice(DIR.length + 1)}`;
 }
 
-/** What makes the page's own machine, besides `fixtureKey`'s sources: the worker's devices and its start. */
-const PAGE_SOURCES = ['web/app/worker-devices.ts', 'web/app/worker-start.ts', 'web/app/worker-header.ts', 'web/app/machine.ts'];
+/**
+ * What makes the page's own machine, besides `fixtureKey`'s sources: the worker's devices and its start, and the guest
+ * agent the page serves (a restored guest runs the one its boot got: a fixture of an older agent would test that one).
+ */
+const PAGE_SOURCES = ['web/app/worker-devices.ts', 'web/app/worker-start.ts', 'web/app/worker-header.ts', 'web/app/machine.ts', 'target/images/agent/waarm64-agent.gz'];
 
 /**
  * The page's own transient machine of `query` (web/app/?<query>, the tests' `PAGE_QUERY` and `unattendedQuery()`
@@ -143,7 +146,7 @@ const PAGE_SOURCES = ['web/app/worker-devices.ts', 'web/app/worker-start.ts', 'w
  */
 export async function pageFixture(browser: Browser, base: string, query: string): Promise<string> {
   if (process.env.WAARM64_DEBIAN_FIXTURES === '0') return '';
-  const key = sha(JSON.stringify([fixtureKey({}), query, PAGE_SOURCES.map((f) => sha(readFileSync(join(ROOT, f))))])).slice(0, 16);
+  const key = sha(JSON.stringify([fixtureKey({}), query, PAGE_SOURCES.map((f) => (existsSync(join(ROOT, f)) ? sha(readFileSync(join(ROOT, f))) : ''))])).slice(0, 16);
   return fixture(`page-${sha(query).slice(0, 8)}`, key, async (to) => {
     const ctx = await browser.newContext({ acceptDownloads: true });
     try {
