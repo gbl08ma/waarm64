@@ -46,19 +46,19 @@ list of destinations.
 
 ### 3.1 The two shapes
 
-| | **A. A hosted helper** (frames) | **B. A stream proxy** (Wisp or our own, e.g. on a Worker) |
+| | **A. A hosted helper** (frames) | **B. A stream proxy** (Wisp or our own) |
 |---|---|---|
 | What crosses the WebSocket | the guest's Ethernet frames, as with the local helper today | TCP (and maybe UDP) streams opened by name |
 | Who runs TCP/IP | the server (gvisor-tap-vsock's netstack, in waarm64-net) | **the page**: a new TCP/IP endpoint at the gateway (smoltcp, or a port of unkernel's ~530-line `net.ts`) |
 | New page code | almost none: a `local` connection whose URL is `wss://` on a host of ours instead of loopback (no Local Network Access prompt) | the stack, DNS with fake addresses, the stream client, a new connection kind |
 | What the guest gets | everything the local helper gives: TCP, UDP (DNS, NTP, QUIC), ICMP, IPv6 where the server has it, a 1500 MTU | TCP only (UDP only with Wisp v2's extension where the server allows it), IPv4, DNS answered with fake addresses |
 | The allowlist | at the server's dial (below, §3.2): addresses from its own DNS, checked again against the TLS SNI or HTTP Host | by name in each CONNECT: trivial |
-| Hosting | a server we run (any small VPS, or the host behind static.gbl08ma.com), behind TLS | a Cloudflare Worker (or Durable Object), or the same server |
+| Hosting | a server we run (any small VPS, or the host behind static.gbl08ma.com), behind TLS | the same server |
 | Interop | ours only | Wisp framing lets users point it at any Wisp server for unrestricted access |
 
-**Recommended: A.** It reuses what exists, gives the guest a real network (UDP and IPv6 too), and needs neither a
-TCP stack in the page nor smoltcp as a dependency. What it costs is a server to run, and the allowlist's work in the
-helper. B stays possible later as a "bring your own Wisp server" connection, for users who want their own unrestricted
+**Chosen: A, on the user's server (the user, 2026-11-18).** It reuses what exists, gives the guest a real network
+(UDP and IPv6 too), and needs neither a TCP stack in the page nor smoltcp as a dependency. What it costs is a server
+to run, and the allowlist's work in the helper. B stays possible later as a "bring your own Wisp server" connection, for users who want their own unrestricted
 way out without installing the local helper.
 
 ### 3.2 A: the helper on a server
@@ -127,33 +127,21 @@ What it has that the local helper hasn't:
 - **Cost:** bandwidth. A demo visitor's `apk add python3` is about 20 MB. One small VPS with a few TB a month covers a
   launch.
 
-### 3.3 B on Cloudflare's free tier, for the record
+### 3.3 Cloudflare Workers: not taken
 
-The user asked whether a Wisp proxy (or our own) fits the Workers free tier. From Cloudflare's docs (2026-11-18):
-- **A plain Worker:** 100,000 requests a day, but **10 ms of CPU per request** on the free plan. Cloudflare's post on
-  WebSockets in Workers ([2021, updated 2022](https://blog.cloudflare.com/introducing-websockets-in-workers/#pricing-considerations))
-  says a WebSocket "incur[s] a request charge when the connection is first established", then the Worker's duration
-  while it's active, and "there is no per-message fee". So **a whole connection is one request**: the 100,000 a day
-  is no constraint. By the same reading, though, the 10 ms of CPU is the whole connection's, since there's no
-  per-message reset outside Durable Objects. A proxy copies every message in JS, so 10 ms runs out after a few MB at
-  best, mid-download. (The post predates today's Standard pricing; the docs don't contradict this reading, but a
-  `wrangler tail` test would settle it.) On the paid plan a request gets up to 5 minutes of CPU, billed per ms, which
-  is plenty. **On the free plan, a plain Worker doesn't fit a proxy.**
-- **A Durable Object** (on the free plan since the SQLite backend): each incoming WebSocket message resets the CPU
-  budget to 30 s, and incoming messages bill at 20:1 (outgoing ones are free, so downloads cost no requests). But an
-  open TCP socket keeps the object awake, and the free plan's **13,000 GB-s a day at 128 MB is ~29 object-hours a day**.
-  That's one object serving everyone around the clock (one location, one thread), or ~29 visitor-hours of
-  per-visitor objects. A launch day could pass that. On the $5 paid plan it doesn't matter.
-- **What blocks it regardless of the plan:** `connect()` **refuses Cloudflare's own address ranges**, so any
-  destination behind Cloudflare is unreachable (npm's registry among them). The docs also say "to connect to port 80
-  or 443 to make HTTP requests, use `fetch`". Whether raw TCP to 443 with the guest's own TLS works isn't stated
-  (`wisp-server-workers` existing suggests it does: *to test*). No UDP at all.
-- **And the terms:** proxying arbitrary visitors' traffic through an account is the kind of use that gets an account
-  looked at. With an allowlist it's narrower, but it should be read against Cloudflare's current terms before relying
-  on it.
-
-So B on a free Worker might work for a demo's `apk add`, with unknowns and a hard hole (Cloudflare-hosted
-destinations). A on a small server has no unknowns, only work.
+Dropped for now (the user, 2026-11-18). What was found, so it isn't looked up again:
+- **On the free plan,** a WebSocket is one request for its whole life, with no per-message fee
+  ([Cloudflare, 2021/2022](https://blog.cloudflare.com/introducing-websockets-in-workers/#pricing-considerations)).
+  But a plain Worker gets 10 ms of CPU per request, and nothing says that resets per message, so it likely covers
+  the whole connection. A proxy wakes JS for every chunk, so how far 10 ms goes is unmeasured. One WebSocket per TCP
+  connection would give each connection its own 10 ms.
+- **Splitting a connection into many short requests doesn't work:** a `connect()` socket can't outlive the request
+  that opened it, and only a Durable Object can hold one between requests. A Durable Object resets its CPU on each
+  message, but it stays awake while a socket is open, and the free plan's 13,000 GB-s a day is ~29 object-hours.
+  HTTP/2 doesn't change any of this.
+- **A browser can't stream full duplex over `fetch`:** Chromium's streaming uploads are half duplex.
+- **What blocks it on any plan:** `connect()` refuses Cloudflare's own address ranges, so Cloudflare-hosted
+  destinations (npm's registry among them) are unreachable, and there's no UDP.
 
 ### 3.4 If B is built: what the others do, and the DNS
 
@@ -170,8 +158,7 @@ destinations). A on a small server has no unknowns, only work.
 - **DNS: unkernel's trick, taken.** Wisp has no DNS of its own, and its CONNECT takes a *hostname*. So the gateway
   answers the guest's A queries with fake addresses from a reserved range (unkernel uses 198.18.0.0/15; our echo
   backend already leases from 198.18.0.x, so pick a range that doesn't collide). A TCP connect to one of those
-  addresses becomes a Wisp CONNECT to the name, and the server resolves it. That also fits a Worker (`connect()`
-  takes a hostname) and an allowlist by name. Literal addresses pass through when the server allows them. Other
+  addresses becomes a Wisp CONNECT to the name, and the server resolves it. That also fits an allowlist by name. Literal addresses pass through when the server allows them. Other
   record types (AAAA, TXT, MX) get an empty answer, or DoH if something needs them. `net/ts`'s `dns.rs` already
   parses and builds messages.
 
@@ -284,9 +271,9 @@ published next to its disk and snapshot:
 
 **Settled (the user, 2026-11-18):** the no-Wisp decision reopened; a demo makes a stored machine, with `fromDemo`
 and versions by id; the public helper is a fork of its own, hosted on the user's server, configured from a file.
-**Needs the user's OK:** A or B (§3.1, A recommended); the fork's repository (§3.2); TOML and its library; the
-allowlist's contents; smoltcp as a
-dependency, only if B is built; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image and
+Also settled: A, the hosted helper, on the user's server; no Cloudflare Workers for now.
+**Needs the user's OK:** the fork's repository (§3.2); TOML and its library; the
+allowlist's contents; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image and
 its hosting on vmdisks.tny.im; any deploy.
 
 ## 7. Open questions
@@ -295,5 +282,3 @@ its hosting on vmdisks.tny.im; any deploy.
   what was ruled out.
 - Should the demo network also be offered to the user's own machines by default (a new machine's first adapter), or
   only to demos?
-- B's unknowns, if it's ever wanted: a test confirming that a plain Worker's 10 ms covers a WebSocket's whole life,
-  and whether `connect()` to 443 passes the guest's own TLS (§3.3).
