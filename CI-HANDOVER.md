@@ -28,14 +28,18 @@ decisions in §11).
   ci.sh **737 s** (peak 8.0 GiB under its 11G), the JS tests (594 s) and the native group now end together. vmstat
   (`bench/results/local/ci/tsan-par-vmstat.log`): the cores are saturated from the JS tests' start to ~10 min, and ~70%
   idle in the 144 s before them (the serial steps: clippy, rust test, agent, testfloat, wasm build).
+- **ci.sh's early steps at once** (`scripts/ci-group.sh`, shared with the lane): the quick checks and clippy (17 s),
+  then the Rust tests, the agent, TestFloat and the builds (37 s); the JS tests start at 55 s (144 before). ci.sh
+  **635 s** (peak 7.9 GiB); the JS step (581 s) is the whole tail, the cores saturated through it
+  (`bench/results/local/ci/early-par-vmstat.log`), the native group done by ~500 s.
 - **Not run yet:** the topic scripts since they gained the lock line (each `ci_lock exclusive` after `step()`), and the
   lock with two sessions' real runs at once (it was checked with small scripts only).
 
 ## Next, in order
 
-1. **The cheap speedups:** the steps before ci.sh's JS tests beside each other (144 s at ~70% idle: rust test 29,
-   agent 19, testfloat 41, wasm build; or skipped by `ci.sh --affected` when no Rust input changed); the fast lane
-   re-measured with nextest; ci-net.sh at 2 Debian slots. Past those, ci.sh is CPU-bound: less work, not more overlap.
+1. **The cheap speedups left:** the fast lane re-measured with nextest (and its first run since the shared group
+   helper); ci-net.sh at 2 Debian slots. ci.sh is now CPU-bound in its JS step: only less work shortens it (the
+   measurement window's per-file CPU and memory say where it goes).
 2. **The measurement window** (§9, ~2.5 h, the machine idle): each file's peak memory and time alone, the fast lane's
    concurrency, the Debian slots.
 3. **The booted-Debian snapshot fixture** for the Debian tests that don't test booting.

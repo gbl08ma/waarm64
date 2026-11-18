@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Before a push (T2, docs/testing.md "Tiers"; ~15.5 min on 2026-11-18); works the same locally. CHROMIUM overrides the browser binary.
+# Before a push (T2, docs/testing.md "Tiers"; ~10.5 min on 2026-11-18: the quick checks at once, then the crates and
+# builds at once, then the JS tests beside the native ones); works the same locally. CHROMIUM overrides the browser binary.
 # docs/testing.md says which runner covers what. Distro boots: alpine, alpine-user and
 # alpine-uefi run when their images are current; WAARM64_DISTROS (a comma list) overrides which
 # ones. The Debian page boots are scripts/ci-debian.sh's, graphics' scripts/ci-graphics.sh's, the network
@@ -13,29 +14,32 @@ cargo nextest --version > /dev/null 2>&1 || { echo 'cargo-nextest is missing: ca
 source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 step rust fmt;    cargo fmt --all --check
-# The checks that take seconds first (~35 s): a type error or a lint once surfaced only after the Rust tests' ~170 s.
 step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
 step lint deps;   [ tools/lint/node_modules/.package-lock.json -nt tools/lint/package-lock.json ] || npm ci --prefix tools/lint --no-fund --no-audit
-step typecheck;   npx tsc --noEmit
-step svelte-check; npm run -s svelte-check
-step lint;        npm run -s lint
-step i18n;        node --disable-warning=ExperimentalWarning tools/i18n-check.ts
-step third-party; node --disable-warning=ExperimentalWarning tools/third-party.ts
-step harness imports; node --disable-warning=ExperimentalWarning tools/harness-imports.ts
-step areas;       node --disable-warning=ExperimentalWarning tools/ci-select.ts --check
-step rust clippy; cargo clippy --all-targets -q -- -D warnings
-# cargo-nextest: every test binary's tests at once (.config/nextest.toml; ~25 s, `cargo test`'s 123 s); doctests apart.
-step rust test;   cargo nextest run --cargo-quiet; cargo test -q --doc
-# Clipboard sharing's guest agent (agent/: its own crate and toolchain), then its build (Podman; the host's cargo without it).
-# (Two commands, not `(…) && build`: under set -e a failure left of && doesn't stop the script, so the tests' failures went unseen.)
-step agent;       (cd agent && cargo fmt --check && cargo clippy --all-targets -q -- -D warnings && cargo test -q)
-images/build.sh agent
-step testfloat;   scripts/testfloat.sh
-step wasm build;  scripts/build-wasm.sh -q
-step tailnet client; net/ts/build.sh
-# The tests' module too (tests/names-*.test.ts run it when it exists): a stale one tested the page's names agent against
-# an older module and failed for no fault of the change (QA, 2026-11-18).
-net/ts/build.sh --test-params
+source scripts/ci-group.sh
+node=(node --disable-warning=ExperimentalWarning)
+# The checks that take seconds first, at once (~15 s; ~45 s one after another): a type error or a lint once surfaced
+# only after the Rust tests' ~170 s.
+step 'static checks'
+group "typecheck::npx tsc --noEmit" \
+  "svelte-check::npm run -s svelte-check" \
+  "lint::npm run -s lint" \
+  "i18n::${node[*]} tools/i18n-check.ts" \
+  "third-party::${node[*]} tools/third-party.ts" \
+  "harness-imports::${node[*]} tools/harness-imports.ts" \
+  "areas::${node[*]} tools/ci-select.ts --check" \
+  "clippy::cargo clippy --all-targets -q -- -D warnings"
+# Then the crates' tests and the builds the JS tests need, at once (the machine was ~70% idle running them one after
+# another, 2026-11-18). cargo-nextest: every test binary's tests at once (.config/nextest.toml); doctests apart.
+# Clipboard sharing's guest agent (agent/: its own crate and toolchain), then its build (Podman; the host's cargo
+# without it). TestFloat: waarm64_core::fp against Berkeley TestFloat's vectors. The tailnet client's test module too
+# (tests/names-*.test.ts run it when it exists): a stale one tested the page's names agent against an older module and
+# failed for no fault of the change (QA, 2026-11-18).
+step 'crates and builds'
+group "rust-test::cargo nextest run --cargo-quiet && cargo test -q --doc" \
+  "agent::(cd agent && cargo fmt --check && cargo clippy --all-targets -q -- -D warnings && cargo test -q) && images/build.sh agent" \
+  "testfloat::scripts/testfloat.sh" \
+  "builds::scripts/build-wasm.sh -q && net/ts/build.sh && net/ts/build.sh --test-params"
 current() { images/build.sh --check "$1" > /dev/null; }
 export WAARM64_DISTROS=${WAARM64_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current alpine-uefi && echo ,alpine-uefi)}
 export WAARM64_LONG_TESTS=${WAARM64_LONG_TESTS-1}
@@ -66,8 +70,7 @@ native() {
 }
 # The native guest-image tests (~130 s) run beside the JS tests, which spend much of their time
 # waiting on realtime guests and the Debian lock; their output follows the JS tests'.
-native_log=$(mktemp)
-trap 'rm -f "$native_log"' EXIT
+native_log=$ci_group_logs/native.log
 native > "$native_log" 2>&1 &
 native_pid=$!
 # npm test's files, with each file's wall time written to target/ci/timings.json (tools/test-timings.ts: tests/areas.ts's

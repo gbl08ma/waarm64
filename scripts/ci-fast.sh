@@ -40,25 +40,9 @@ fi
 # The Rust tests run under cargo-nextest (.config/nextest.toml).
 cargo nextest --version > /dev/null 2>&1 || { echo 'cargo-nextest is missing: cargo +stable install --locked cargo-nextest@0.9.152 (docs/devenv.md)' >&2; exit 1; }
 has() { local x; for x in "${CARGO[@]:-}"; do [ "$x" = "$1" ] && return 0; done; return 1; }
-logs=$(mktemp -d)
-trap 'rm -rf "$logs"' EXIT
-# Runs "name::command" jobs at once, then prints each one's output in order; fails when any did.
-group() {
-  local -a names=() pids=() starts=()
-  local job name rc=0 i
-  for job in "$@"; do
-    name=${job%%::*}
-    names+=("$name"); starts+=("$SECONDS")
-    (eval "${job#*::}") > "$logs/$name.log" 2>&1 &
-    pids+=($!)
-  done
-  for i in "${!pids[@]}"; do
-    if wait "${pids[$i]}"; then printf '== %s: ok\n' "${names[$i]}"
-    else rc=1; printf '== %s: FAILED\n' "${names[$i]}"; fi
-    sed 's/^/   /' "$logs/${names[$i]}.log" | grep -v '^   $' | tail -n 40 || true
-  done
-  return $rc
-}
+source scripts/ci-group.sh
+CI_GROUP_TAIL=40
+logs=$ci_group_logs
 
 step rust fmt; cargo fmt --all --check
 step npm deps; [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit

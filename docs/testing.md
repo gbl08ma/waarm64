@@ -8,7 +8,7 @@ comments) needs none (`tools/i18n-check.ts` when it changes a `(ui:` quote; the 
 | Tier | When | What | Time (dev VM, 2026-11-18) |
 |---|---|---|---|
 | **T1, the fast lane**: `scripts/ci-fast.sh` | after every change | the static checks; the changed areas' crates; the smoke set, the areas' heavy files, reduced | ~2–3 min: 111 s for a network change (net/ts's crate beside 129 files), 161 s for a JIT one (the core's crate, 143 s, the tail; 133 files); peaks 4.2 and 3.3 GiB |
-| **T2, before a push**: `scripts/ci.sh` + the areas' topic scripts | before a push or a merge; a piece of work is done when it passed | everything but the Debian boots and the topic scripts' layers; the scripts the change table names | ci.sh ~15.5 min (937 s), plus the topic scripts |
+| **T2, before a push**: `scripts/ci.sh` + the areas' topic scripts | before a push or a merge; a piece of work is done when it passed | everything but the Debian boots and the topic scripts' layers; the scripts the change table names | ci.sh ~10.5 min (635 s: the JS tests 581 s of it, CPU-bound), plus the topic scripts |
 | **T3, the full set** | a track's end | every script, the track-end column below | ~85 min, ~160 with dEQP's `--full` |
 
 **The fast lane** (`scripts/ci-fast.sh`, the areas map `tests/areas.ts`, the selection `tools/ci-select.ts`). For
@@ -90,7 +90,7 @@ and the scripts in the push column; at a track's end, the track-end column too (
 
 Layered, cheapest first:
 
-- **`scripts/ci.sh`** (~15.5 min: T2) before a push: every layer but the
+- **`scripts/ci.sh`** (~10.5 min: T2) before a push: every layer but the
   Debian boots and the JIT's JIT-stress and JIT-check variants (`ci-jit.sh`, below). It includes the heaviest
   multi-vCPU runs (`WAARM64_LONG_TESTS=1`: the parallel litmus and atomics stress under the JIT at `-r 50`, Node's
   Alpine on 4 parallel vCPUs; a plain `npm test` leaves them out or runs `-r 10`), and the graphics and network tests
