@@ -43,8 +43,21 @@ export function addressOf(prefix: Uint8Array, pub: Uint8Array, whole = false): s
   return whole ? expanded(a) : compressed(a);
 }
 
-/** A member's name: its public key in base32, then the room's domain (`<tag>.p2p.internal`). */
-export const nameOf = (prefix: Uint8Array, pub: Uint8Array) => `${base32(pub)}.${base32(prefix.subarray(1))}.p2p.internal`;
+/**
+ * The label a room's ID is under `p2p.internal` beside its tag (room.rs `room_label`): the ID in lower case when it is a
+ * DNS label, unless it is 8 characters of base32's (shaped like a tag) or a private room's (a hyphen and 26 of them last).
+ */
+export function roomLabel(id: string): string | undefined {
+  const l = id.replace(/[A-Z]/g, (c) => c.toLowerCase());
+  const label = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(l) && l.slice(2, 4) !== '--';
+  return label && !/^[a-z2-7]{8}$/.test(l) && !/-[a-z2-7]{26}$/.test(l) ? l : undefined;
+}
+
+/** The room's domain the page shows (room.rs `Room::domain`): `<room name>.p2p.internal` when it has a label, else `<tag>.p2p.internal`. */
+export const roomDomain = (id: string) => `${roomLabel(id) ?? base32(roomPrefix(id).subarray(1))}.p2p.internal`;
+
+/** A member's name in room `id`: its public key in base32, then the room's domain. */
+export const nameOf = (id: string, pub: Uint8Array) => `${base32(pub)}.${roomDomain(id)}`;
 
 /** A new key pair: the private key (what the wizard takes, 64 hex digits) and the public key, raw. */
 export function keyPair(): { key: string; pub: Buffer } {

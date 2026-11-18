@@ -32,7 +32,7 @@ export type NetMap = {
   serving?: string;
   /** tailcat: the machine's node key (`nodekey:…`), the same at each connect for a kept connection, so a server can `--allow` it. */
   tailcatKey?: string;
-  /** A room: the member's name to give out (`<key>.<tag>.p2p.internal`), the room's link, and its switches;
+  /** A room: the member's name to give out (`<key>.<room name>.p2p.internal`, or `<key>.<tag>.p2p.internal`: net/ts room.rs `Room::domain`), the room's link, and its switches;
    * `directBlocked`: this browser makes no direct paths (web/room.ts `RoomEvent`), so every member goes through the relay;
    * `directFailed`: how many members reached through the relay have a failed attempt behind them (gathering worked here:
    * something between the two is in the way); `peersBlocked`: how many said their browser makes none. */

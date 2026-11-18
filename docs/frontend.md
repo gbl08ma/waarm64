@@ -1997,7 +1997,8 @@ and the guest's default way out (below).
   id's first byte, one byte a press, never the id, through a checker made for that press (a publisher, closed with its
   answer), each with when its owner's hold ends. Free, the name is registered and the dialog closes; taken, the dialog
   stays open and says until about a date; nobody in the room can say, the dialog says so and Register pressed again
-  with the same name registers it; under the field, the whole domain (`<name>.<tag>.p2p.internal`, or the room's suffix
+  with the same name registers it; under the field, the whole domain (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` in a room whose
+  ID isn't a label of its own, docs/networking/rooms.md "The room's name as a domain"; or the room's suffix
   while nothing is typed); the two notices, always shown, no boxes ([Members of this room who know the domain can
   reach this connection's address and see when it's online. While this connection is connected, this web app helps
   other members look domains up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to
@@ -2020,10 +2021,11 @@ and the guest's default way out (below).
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `waarm64-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
   then [Connected to the room](ui:network:network-view.room) with [1 active connection (1 direct)](ui:network:network-view.room.connectionsDirect_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count; and how many of them its packets reach over WebRTC rather than the relay, `path` `direct`; with none, [0 active connections](ui:network:network-view.room.connections_other)). When members go through the relay where a direct path was wanted (this browser or theirs makes none, or attempts failed: docs/networking/rooms.md "Why the menu says nothing is direct"), a small warning follows the count ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)) and opens the adapter's details, which say why and what may fix it; a relay-only connection has none. The
-  menu then shows the machine's name in the room (`<key>.<tag>.p2p.internal`) to copy, the room's link to copy and, under
+  menu then shows the machine's name in the room (`<key>.<room name>.p2p.internal` when the room's ID is a DNS label
+  that doesn't look derived, else `<key>.<tag>.p2p.internal`; both resolve) to copy, the room's link to copy and, under
   them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).
   The guest's lease: its room address as a /128 (DHCPv6, the router advertisement), IPv4 `192.0.0.2` with no IPv4
-  routes, the room's resolver (`<prefix>::53`) and `<tag>.p2p.internal` as its domain, so `ping <name>` works through
+  routes, the room's resolver (`<prefix>::53`) and its domains (the room name's, then `<tag>.p2p.internal`), so `ping <name>` works through
   systemd-resolved. A room never reaches the internet, so beside another adapter it is never the default way out and
   offers its /48 as a route: beside the local helper, say, the guest's defaults and other names stay the helper's
   while the room's members are reached by name on the second card (`tests/net-local.test.ts`).

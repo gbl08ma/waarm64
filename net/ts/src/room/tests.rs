@@ -767,6 +767,167 @@ fn a_rooms_derivations() {
     assert_eq!(unbase32("m1"), None);
 }
 
+/// Configs for nodes `seeds` in the room whose ID is `id`.
+fn configs_in(id: &str, seeds: &[u8]) -> Vec<Config> {
+    let mut cs = configs(seeds);
+    for c in &mut cs {
+        c.link.id = id.into();
+    }
+    cs
+}
+
+#[test]
+fn a_room_whose_id_is_a_dns_label_gets_a_domain_by_its_name_unless_it_looks_derived() {
+    // Lower-cased; the tag's domain too, the name's first.
+    let r = Room::derive("Gabriel-LAN");
+    assert_eq!(r.label.as_deref(), Some("gabriel-lan"));
+    assert_eq!(r.domain(), "gabriel-lan.p2p.internal");
+    assert_eq!(
+        r.domains(),
+        [
+            "gabriel-lan.p2p.internal".to_string(),
+            format!("{}.p2p.internal", r.tag)
+        ]
+    );
+    assert_eq!(
+        r.name(&public(1)),
+        format!("{}.gabriel-lan.p2p.internal", base32(&public(1)))
+    );
+    assert_ne!(
+        r.prefix,
+        Room::derive("gabriel-lan").prefix,
+        "still two rooms"
+    );
+    let long = "a".repeat(63);
+    for ok in [
+        "global",
+        "a",
+        "7",
+        "lan-2",
+        "abcdefg1",  // 8 characters, but a 1 is in no tag
+        "abcdefg",   // 7
+        "abcdefghi", // 9
+        &long,
+    ] {
+        assert_eq!(
+            Room::derive(ok).label.as_deref(),
+            Some(&ok.to_lowercase()[..]),
+            "{ok}"
+        );
+    }
+    let tag_shaped = Room::derive("test room").tag;
+    let private = format!("lan-{}", base32(&[7; 16]));
+    let too_long = "a".repeat(64);
+    for no in [
+        // Not a label: the tag's domain alone.
+        "test room",
+        "café",
+        "a.b",
+        "a_b",
+        "-lan",
+        "lan-",
+        "xn--caf-dma",
+        "ab--cd",
+        "",
+        &too_long,
+        // Shaped like a tag (another room's, or any 8 characters of base32's): it'd read as that room's domain.
+        &tag_shaped,
+        &tag_shaped.to_uppercase(),
+        "abcdefgh",
+        "22222222",
+        // A private room's ID (a name, a hyphen and 128 random bits in base32): not to be given out in names.
+        &private,
+        &private.to_uppercase(),
+    ] {
+        let r = Room::derive(no);
+        assert_eq!(r.label, None, "{no}");
+        assert_eq!(r.domain(), format!("{}.p2p.internal", r.tag), "{no}");
+        assert_eq!(r.domains(), [r.domain()], "{no}");
+    }
+}
+
+#[test]
+fn a_key_name_resolves_under_the_rooms_name_and_its_tag() {
+    let mut n = Net::new(configs_in("Gabriel-LAN", &[1, 2]));
+    let tag = n.nodes[0].c.room.tag.clone();
+    let key = base32(&public(2));
+    let self_event = n.nodes[1]
+        .events
+        .iter()
+        .find(|e| e["type"] == "self")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        self_event["name"],
+        format!("{key}.gabriel-lan.p2p.internal"),
+        "the page shows the room name's"
+    );
+    assert_eq!(self_event["tag"], tag.as_str());
+    for name in [
+        format!("{key}.gabriel-lan.p2p.internal"),
+        format!("{key}.Gabriel-LAN.p2p.internal").to_uppercase(),
+        format!("{key}.{tag}.p2p.internal"),
+    ] {
+        assert_eq!(
+            n.resolve(0, &name, dns::AAAA),
+            (dns::NOERROR, vec![n.addr(1)]),
+            "{name}"
+        );
+    }
+    for bad in [
+        "gabriel-lan.p2p.internal".to_string(),
+        format!("{key}.gabriel-lan2.p2p.internal"),
+        format!("{key}gabriel-lan.p2p.internal"),
+    ] {
+        assert_eq!(n.resolve(0, &bad, dns::AAAA).0, dns::NXDOMAIN, "{bad}");
+    }
+    let lease = n.nodes[0]
+        .events
+        .iter()
+        .find(|e| e["type"] == "lease")
+        .unwrap()["lease"]
+        .clone();
+    assert_eq!(
+        lease["domains"],
+        json!(["gabriel-lan.p2p.internal", format!("{tag}.p2p.internal")]),
+        "both, the room name's first"
+    );
+    n.reach(0, 1, b"by the room's name");
+    assert_eq!(n.got(1), [b"by the room's name".to_vec()]);
+}
+
+#[test]
+fn a_room_named_like_a_tag_answers_under_its_own_tag_alone() {
+    // A room whose ID is another room's tag: `<key>.<that tag>.p2p.internal` stays that room's.
+    let other = Room::derive("test room").tag;
+    let mut n = Net::new(configs_in(&other, &[1, 2]));
+    let tag = n.nodes[0].c.room.tag.clone();
+    assert_ne!(tag, other);
+    let key = base32(&public(2));
+    assert_eq!(
+        n.resolve(0, &format!("{key}.{other}.p2p.internal"), dns::AAAA)
+            .0,
+        dns::NXDOMAIN
+    );
+    assert_eq!(
+        n.resolve(0, &format!("{key}.{tag}.p2p.internal"), dns::AAAA),
+        (dns::NOERROR, vec![n.addr(1)])
+    );
+    let lease = n.nodes[0]
+        .events
+        .iter()
+        .find(|e| e["type"] == "lease")
+        .unwrap()["lease"]
+        .clone();
+    assert_eq!(lease["domains"], json!([format!("{tag}.p2p.internal")]));
+    let self_event = n.nodes[1]
+        .events
+        .iter()
+        .find(|e| e["type"] == "self")
+        .unwrap();
+    assert_eq!(self_event["name"], format!("{key}.{tag}.p2p.internal"));
+}
+
 #[test]
 fn a_lookup_finds_a_peer_and_its_packets_then_take_their_channel() {
     let mut n = Net::new(configs(&[1, 2]));

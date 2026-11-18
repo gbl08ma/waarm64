@@ -191,7 +191,7 @@ export function machineNames(views: TitleView[]): Msg[] {
 
 const B32 = 'abcdefghijklmnopqrstuvwxyz234567';
 
-/** A member's name in the room (`<key>.<tag>.p2p.internal`, or its first label) or a node key (64 hex digits) as a node
+/** A member's name in the room (`<key>.<room name or tag>.p2p.internal`, or its first label) or a node key (64 hex digits) as a node
  * key, lower case; undefined if it is neither. */
 export function parseTarget(s: string): string | undefined {
   const t = s.trim().toLowerCase();
@@ -213,7 +213,7 @@ export function parseTarget(s: string): string | undefined {
   return base32(key) === label ? Array.from(key, (b) => b.toString(16).padStart(2, '0')).join('') : undefined;
 }
 
-/** Node key `key` as a member's name in the room whose domain is `domain` (`<tag>.p2p.internal`). */
+/** Node key `key` as a member's name in the room whose domain is `domain` (`<room name>.p2p.internal` or `<tag>.p2p.internal`). */
 export function targetName(key: string, domain: string): string {
   const b = Uint8Array.from({ length: 32 }, (_, i) => parseInt(key.slice(2 * i, 2 * i + 2), 16));
   return `${base32(b)}.${domain}`;

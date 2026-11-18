@@ -122,7 +122,7 @@ export type TsFailure = { code?: string; detail?: string };
 export type TsEvent =
   | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
   | { type: 'lease'; lease: Lease }
-  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.internal`), the link and the
+  /** This node; a room's member also has the room's tag, its own name (`<key>.<room name or tag>.p2p.internal`), the link and the
    * parameters its names are checked with (`production`; `test` only in the page tests' module, ts-test.wasm). */
   | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string; params?: 'production' | 'test' }
   | { type: 'serving'; addr: string }
