@@ -147,8 +147,12 @@ test('a kept snapshot of a disk written in place that moved on shows as orphaned
   await modal(page).locator('.pick', { hasText: 'In place' }).click();
   await modal(page).locator('[data-tab=snapshots]').click();
   const card = modal(page).locator('[data-snapshot=eeeeeeeeeee2]');
-  await card.locator('.orphan').waitFor();
-  assert.equal(await card.locator('.orphan').textContent(), t('snapshots:Snapshots.orphaned', { why: t('snapshots:snapshots.unrestorable.inPlace', { disk: 'data.raw' }) }));
+  // Its shape (none the page reads) orphans it at once, with that reason; the disk's reason replaces it once the tab has
+  // read the disks' generations from their files (watchGenerations), which under load comes later.
+  const orphaned = t('snapshots:Snapshots.orphaned', { why: t('snapshots:snapshots.unrestorable.inPlace', { disk: 'data.raw' }) });
+  await card.locator('.orphan', { hasText: orphaned }).waitFor({ timeout: 10_000 })
+    .catch(async (e) => { throw new Error(`${e}; it says: ${await card.locator('.orphan').textContent()}`); });
+  assert.equal(await card.locator('.orphan').textContent(), orphaned);
   assert.equal(await card.locator('[data-action=restore]').count(), 0, 'nothing restores it');
   assert.equal(await card.getByRole('button', { name: t('snapshots:Snapshots.like') }).count(), 0, 'a machine like it would have the same disk');
   await shot(page, 'unrestorable-snapshot');

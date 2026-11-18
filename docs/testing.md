@@ -117,8 +117,10 @@ Layered, cheapest first:
   time (`WAARM64_DEBIAN_SLOTS=3`), ~3.5 min.
   Split from `ci-debian.sh` on 2026-10-17: together they took 455 s on two slots (790 s of slot time, the machines
   tests ~415 of it), 361 s on three.
-- **`scripts/ci-net.sh`** (~4 min) runs the network tests on Debian (`net-guest`, `page-network`,
-  `net-tailnet` (with two adapters: the tailnet beside tailcat), `net-tailcat`, `net-local`) and the local helper's own Go tests.
+- **`scripts/ci-net.sh`** (~9 min) runs the network tests on Debian (`net-guest`, `page-network`,
+  `net-tailnet` (with two adapters: the tailnet beside tailcat), `net-tailcat`, `net-local`, `page-room`) and the local helper's own Go tests,
+  two Debian boots at a time (`WAARM64_DEBIAN_SLOTS=2`: 551 s, peak 7.1 GiB, against 795 s and 4.1 GiB on one, 2026-11-18),
+  then the tailnet client without a guest, one test at a time.
 - **`scripts/ci-audio.sh`** (~1 min) runs the realtime sound tests on the page (`audio-browser`: the snd guest's
   tone heard, the microphone, snapshots while it plays). They time the sound against the clock, so they run alone:
   beside `npm test`'s other files a starved guest failed their timing now and then (backlog).

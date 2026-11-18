@@ -35,28 +35,31 @@ decisions in §11).
 - **The fast lane with nextest**, the JIT case (`--files core/src/jit/emit/simd.rs`): 161 → **146 s** (peak 3.3 GiB),
   the core's tests 19 s (143 before); the tail is the JS files (128 s at 4 at a time). One run at
   `WAARM64_FAST_JOBS=6`: 123 s, peak 4.3 GiB (the lane's budget is 4.5): for the measurement window to settle.
-- **Not run yet:** the topic scripts since they gained the lock line (each `ci_lock exclusive` after `step()`), and the
-  lock with two sessions' real runs at once (it was checked with small scripts only).
+- **The measurement window** (2026-11-18, the machine idle, under the CI lock exclusive; rows and logs in
+  `bench/results/local/ci/window-*`, runner `window-files.sh`/`file-peak.sh` there):
+  - **Each JS file in its own scope, 4 at a time**, ci.sh's env (Alpine, the long runs): all 196 passed, **492 s wall**,
+    against ci.sh's JS step at node's default 7 at a time (581 s). The files' times sum to 1961 s, 3631 s in ci.sh: at 7
+    the files (each its own Chromium and workers) slow each other ~1.85×. (ci.sh's native group runs beside its JS
+    step, nothing did here.) Peaks (`memory.peak`, mostly anon; `file_max` counts only the page cache a scope read
+    first): 120 files < 256 MiB, 35 at 0.5–1 GiB, 12 at 1–2 GiB, one over 2 (virgl-browser, 2.7 GiB); the longest at 4
+    browser 169 s, venus-driver 141, wgsl 126, jit-diff-1..4 111–125 (one row each in `window-files.jsonl`).
+    The fast lane stays at 4: 6 was 23 s faster but peaked at 4.3 of its 4.5 GiB.
+  - **ci-net.sh**: 2 Debian slots 551 s (peak 7.1 GiB), the default 795 s (4.1 GiB): ci-net now takes 2 (passed).
+  - **The wasm core after a one-line `core/src/jit/` edit: 9 s** (release, LTO), not the ~2 min guessed.
+- **A flake fixed** (seen in the fast lane): page-unrestorable's in-place case read the card's first reason (its
+  shape's) before the tab had read the disks' generations; it waits for its reason now (a planted 2 s delay in
+  `watchGenerations` failed the old test, not the new).
+- The commit with ci-net's 2 slots and the flake's fix passed the fast lane (115 s) and ci.sh (712 s, peak 8.4 GiB;
+  its JS step 620 s against 581 in the 635 s run: one run each, so no trend yet).
+- **Not run yet:** the topic scripts other than ci-net since they gained the lock line, and the lock with two sessions'
+  real runs at once (checked with small scripts only).
 
 ## Next, in order
 
-1. **The cheap speedup left:** ci-net.sh at 2 Debian slots, once the window's ci-net runs say it holds. ci.sh is now
-   CPU-bound in its JS step: only less work shortens it (the window's per-file numbers say where it goes).
-2. **The measurement window, shortened** (the user, 2026-11-18: ~45 min instead of §9's ~2.5 h; the machine idle, no
-   other session's CI, run as one exclusive holder of the CI lock):
-   - **Each JS file in its own scope, 4 at a time** (~15–20 min): `systemd-run --user --scope -p MemoryMax=… --` per
-     file, 4 files at once (the fast lane's concurrency), reading each scope's `memory.peak` at its end and its wall
-     (`bench/results/local/ci/peak.sh <cmd>` does both inside a scope; git-ignored, this VM only). The peaks are
-     each file's own (a scope per file); the times are under load, the fast lane's conditions, not alone (accepted).
-     `memory.peak` counts page cache too (TSan's 4.8 GiB at once was partly the images'): also record `memory.stat`'s
-     `anon` at the end (not a peak, a hint), or note which files read big images. Output: one JSON row per file in `bench/results/local/ci/`.
-     It decides the fast lane's concurrency (4 vs 6: 146 vs 123 s, peaks 3.3 vs 4.3 GiB, one run each) and the
-     Actions shards.
-   - **ci-net.sh** at `WAARM64_DEBIAN_SLOTS=2 WAARM64_DEBIAN_TIMES=1` and once at the default (~25 min): the slots.
-   - **The wasm core's incremental build** after a one-line `core/src/jit/` edit (~2 min; the native rebuild is ~3 s).
-   - Dropped from §9 as already measured today: ci.sh twice (847, 737, 635 s runs), the smoke set at 4 (the fast
-     lane's runs), the native rebuild. Not needed now: a cold worktree's first build, Chromium's start-up (take them
-     when a design depends on them).
+1. **ci.sh's JS step at `--test-concurrency=4`** (or 5): the window ran the files at 4 in 492 s against the step's
+   581 s at 7, so fewer at once may be faster in ci.sh too, the native group beside it (~500 s) included. One ci.sh run
+   each at 4 and the default, alternated; and its peak (7.9 GiB now) should drop.
+2. **The Actions shards** (plan §6, plan-only while the repo is private): from `window-files.jsonl`'s times and peaks.
 3. **The booted-Debian snapshot fixture** for the Debian tests that don't test booting.
 4. **Guests:** which Debian tests need only a Linux guest (purpose-built Buildroot guests, cached by config hash); a
    Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility runs without
