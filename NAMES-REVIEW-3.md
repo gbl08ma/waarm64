@@ -201,3 +201,22 @@ room, this is the load the spec meant the doubling to prevent.
 - **The refused-block check at load** (`take_trusted`, and `load_block` in either record order).
 - **Reply budgets** (2 a second, 16 a minute a tag, once a nonce), the per-key call-back limit, the accept window's
   eviction, and members never fetching outside the room.
+
+## Status (fix loop, 2026-11-18, branch `names-fix-3`)
+
+All seven fixed, each from a test that failed first on the code reviewed; each fix's bug planted back and caught.
+
+| # | Commit | Test (failed first) | What changed | Planted, caught |
+|---|---|---|---|---|
+| 1 | 468e9ee1 | `member_tests::a_back_order_doesnt_replace_a_kept_name_whose_claim_wasnt_seen` (the review's: impostor 10 days back, owner renewed 4 days back; `Node([0x66; 32])`, no history), `tests::a_member_keeps_what_it_verified` grown | `Kept.whole` (`Chain::claimed`): until a run from the kept chain's claim is seen, another key's run never replaces it on seniority alone, so the refresh contests it and asks `history`; the member's record version 3 carries it | `offer` on seniority alone (2 tests); `whole` not stored |
+| 2 | ad61e399 | `member_tests::forged_too_big_replies_dont_stall_a_first_lookup` (the review's 40 forged `TooBig`, `since` 0: `Wait` after 4 s, 8 fetches), `a_contest_crowded_by_forged_repliers_ends_in_time_and_never_for_another_owner` | "too big" carries the last entry (wire, pre-release) and is checked; a key whose zone came with an item needs no fetch; a contest decides by `CONTEST_FOR` (10 s) at the latest and only when every key shown is settled (else no answer, never another owner's); 32 repliers a key, the earliest `since` | no deadline (27 s); `settled` ignored (the impostor taken); a "too big" counted as zoned |
+| 3 | a2e315c9 | `member_tests::two_contests_at_once_each_get_their_own_run` (the review's two names on one honest server, fakes on one or two servers; 8 runs a kind, as the share draw is random) | each fetched item to the contest of its own id; a server holding nothing answers an empty item of the id; a session let go only once no contest waits on it; a fetch's timeout ends that contest's wait alone | routing to the first contest waiting; `Forget` unconditional |
+| 4 | 0c9ff66e | `server_tests::a_peers_get_answers_keep_only_what_was_asked_in_a_bounded_queue` (32 `get`s answered with 40 other names each: 328 jobs; 320 names haved and answered with no tick between) | a `get` remembers what it asked, its answer keeps matching items (two at most); 256 items and 4 MiB of a peer's waiting to be verified (4,096 and 32 MiB in all); past them its `have`s ask nothing and its run's `get`s wait, resumed at a tick | prefix filter off; the peer's room unbounded |
+| 5 | ecd34a8d | `names-agent.test.ts` "one server's better chain doesn't make a title lost when another took it, nor a chain on a block no explorer knows" | a `taken`/own chain/branch in the same pass wins over `lost`; `lost` only once an explorer serves the better chain's first block (`judge` returns its hash and header): both denying is refused, neither reachable is judged again next pass, renewing meanwhile | the taken-wins check off; the block always "known" |
+| 6 | dffa574d | `server_tests::an_anchor_in_a_block_refused_while_its_job_was_checked_isnt_kept` (a 12-entry put, its claim's block refused after the first slice: the anchor kept) | `keep` drops the anchor of any checked entry whose block is refused | the code reviewed (the test's first run) |
+| 7 | c987a221 | `server_tests::a_block_no_explorer_answers_for_is_asked_again_ever_less_often` (both explorers down 12 h: 290 asks at one server) | `State::Checking { tries }`: the retry doubles (16 asks in 12 h); `stop` keeps the tries | the retry's tries read as 0. `stop`'s reset isn't caught: the bus answers fetches at once, so no check is in flight at a stop (one line, by inspection) |
+
+Left open, in NAMES-HANDOVER.md "Open questions": a contest crowded by forged copies from made-up servers now ends in
+10 s with no answer (finding 2: a denial of a contested name's first lookups, which needs a registration on the name);
+forged copies and nones still narrow the next first lookup's spread (its rounds widen to everyone); a refresh that
+can't get the kept owner's run from its drawn servers keeps what is kept rather than ask the room (finding 1).
