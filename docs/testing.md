@@ -17,8 +17,8 @@ the changes (the commits since the merge base with the upstream, the index, the 
 - `cargo fmt`, then at once: `tsc`, `svelte-check`, the page's linters, the i18n checks, `tools/third-party.ts`, the
   harness pages' imports, the areas map's check, and the wasm core's and net/ts's builds (content-stamped: 0 s when
   current);
-- then, beside each other: the areas' crates (clippy and `cargo test` of `waarm64-core` or `waarm64_ts`, TestFloat for
-  floating point, the agent's), and the JS tests, 4 files at a time (`WAARM64_FAST_JOBS`): **the smoke set** (every
+- then, beside each other: the areas' crates (clippy and `cargo nextest run` of `waarm64-core` or `waarm64_ts`, TestFloat
+  for floating point, the agent's), and the JS tests, 4 files at a time (`WAARM64_FAST_JOBS`): **the smoke set** (every
   test file neither heavy nor topic-only: those under `HEAVY_SECONDS`, 20 s of wall in `ci.sh`, ~125 files and all
   run on every change), **the heavy files of the areas the change touches**, the changed test files and the files
   importing a changed test helper. Reduced: no `WAARM64_DISTROS` (no Alpine), no `WAARM64_LONG_TESTS`,

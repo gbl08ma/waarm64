@@ -53,6 +53,8 @@ PATH=$NODE_DIR/bin:$PATH
 [ tools/lint/node_modules/.package-lock.json -nt tools/lint/package-lock.json ] || npm ci --prefix tools/lint --no-fund --no-audit >/dev/null
 # Pre-fetch the pinned nightly and its std sources (the first cargo call would otherwise do it).
 rustc --version >/dev/null
+# cargo-nextest, which scripts/ci.sh and scripts/ci-fast.sh run the Rust tests with (docs/devenv.md): built with stable.
+cargo nextest --version >/dev/null 2>&1 || { rustup toolchain install stable --profile minimal >/dev/null && cargo +stable install --locked -q cargo-nextest@0.9.152; }
 # Clipboard sharing's guest agent: without Podman, images/build.sh agent builds it with the host's cargo (rustup installs
 # agent/rust-toolchain.toml's stable with its aarch64-unknown-linux-musl target; rust-lld links it), marked HOST-BUILD
 # (docs/cloud.md). Not fatal: the tests that need it skip.

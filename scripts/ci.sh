@@ -8,6 +8,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+# The Rust tests run under cargo-nextest (.config/nextest.toml).
+cargo nextest --version > /dev/null 2>&1 || { echo 'cargo-nextest is missing: cargo +stable install --locked cargo-nextest@0.9.152 (docs/devenv.md)' >&2; exit 1; }
 source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 step rust fmt;    cargo fmt --all --check
@@ -22,7 +24,8 @@ step third-party; node --disable-warning=ExperimentalWarning tools/third-party.t
 step harness imports; node --disable-warning=ExperimentalWarning tools/harness-imports.ts
 step areas;       node --disable-warning=ExperimentalWarning tools/ci-select.ts --check
 step rust clippy; cargo clippy --all-targets -q -- -D warnings
-step rust test;   cargo test -q
+# cargo-nextest: every test binary's tests at once (.config/nextest.toml; ~25 s, `cargo test`'s 123 s); doctests apart.
+step rust test;   cargo nextest run --cargo-quiet; cargo test -q --doc
 # Clipboard sharing's guest agent (agent/: its own crate and toolchain), then its build (Podman; the host's cargo without it).
 # (Two commands, not `(…) && build`: under set -e a failure left of && doesn't stop the script, so the tests' failures went unseen.)
 step agent;       (cd agent && cargo fmt --check && cargo clippy --all-targets -q -- -D warnings && cargo test -q)

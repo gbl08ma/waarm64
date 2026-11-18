@@ -192,7 +192,7 @@ export const AREAS: Record<string, Area> = {
   'build-rust': {
     // The Rust dependencies, toolchain and build configuration: every crate and every heavy file; scripts/ci.sh is the
     // tier (a toolchain bump: the benchmarks too, CLAUDE.md).
-    src: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'scripts/build-wasm.sh'],
+    src: ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', '.config/nextest.toml', 'scripts/build-wasm.sh'],
     cargo: ['core', 'ts', 'agent'],
     all: true,
   },

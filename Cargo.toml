@@ -24,3 +24,11 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
+
+# The test builds of our crates optimized a little (debug assertions and overflow checks stay on): the Rust tests took
+# 64 s under cargo-nextest unoptimized, 26 s so (the baremetal and block-interpreter tests run guest code; net/ts's
+# names tests are k256's inlined field arithmetic, compiled in waarm64_ts), and a rebuild after an edit stays ~3 s.
+[profile.test.package.waarm64-core]
+opt-level = 1
+[profile.test.package.waarm64_ts]
+opt-level = 2

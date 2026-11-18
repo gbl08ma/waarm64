@@ -19,14 +19,19 @@ decisions in §11).
   crate beside 129 files, peak 4.2 GiB), 161 s for a JIT one (`--files core/src/jit/emit/simd.rs`: 133 files, peak
   3.3 GiB). Its tail on a core change is the core crate's cargo tests run one binary after another (143 s: lib 44,
   baremetal 66, corpus 21), so cargo-nextest is the biggest win for the lane. Run it under `MemoryMax=6G`.
+- **cargo-nextest** (0.9.152, `.config/nextest.toml`: the longest tests first) in ci.sh and the lane, with the test
+  builds of `waarm64-core` at opt-level 1 and `waarm64_ts` at 2 (Cargo.toml): the workspace's Rust tests 123 s → 26 s
+  (nextest alone 64 s; peak < 300 MiB; a rebuild after an edit ~3 s). Passed ci.sh: 847 s, its rust test step 26 s
+  (134 before), the JS tests from 175 s to 736 s. **The tail is now the native group beside them**, ends at ~847 s:
+  TSan 361 s of it (272 → 633 s). The tests' CPU sum is 160 s on 8 cores: splitting them further gains little.
 - **Not run yet:** the topic scripts since they gained the lock line (each `ci_lock exclusive` after `step()`), and the
   lock with two sessions' real runs at once (it was checked with small scripts only).
 
 ## Next, in order
 
-1. **The cheap speedups:** cargo-nextest (the Rust test binaries at once: the fast lane's tail and ~80 s of ci.sh);
-   the Rust steps before ci.sh's JS tests (~230 s serial: beside them, or skipped by `ci.sh --affected` when no Rust
-   input changed); ci-net.sh at 2 Debian slots; TSan's parts at once (the native group's tail).
+1. **The cheap speedups:** TSan's parts at once (now ci.sh's tail: 361 s); the fast lane re-measured with nextest;
+   the steps before ci.sh's JS tests (~130 s now: agent 18, testfloat 41, wasm and tailnet builds 45; beside them, or
+   skipped by `ci.sh --affected` when no Rust input changed); ci-net.sh at 2 Debian slots.
 2. **The measurement window** (§9, ~2.5 h, the machine idle): each file's peak memory and time alone, the fast lane's
    concurrency, the Debian slots.
 3. **The booted-Debian snapshot fixture** for the Debian tests that don't test booting.

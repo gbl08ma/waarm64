@@ -22,6 +22,7 @@ with a per-environment egress policy (Network access in the environment's settin
 | `/usr/bin/chromium` (153) | none; Playwright's Chromium is in `/opt/pw-browsers` (`chromium-*/chrome-linux64/chrome`, 153.0.8010.12 on 2026-10-26; it was `chrome-linux/` at 141) | `CHROMIUM` points at it (the tests and `bench/run.ts` already honor it) |
 | `dtc` from zypper (1.7.2) | apt has 1.7.0, which prints strings as `"a\0b"` instead of `"a", "b"`, failing `dtb_round_trips_through_dtc` | the script builds dtc v1.7.2 into `/opt/dtc` |
 | qemu-user, qemu-img, fonts | absent | apt (`qemu-user`, `qemu-utils`, `fonts-dejavu-core`) |
+| cargo-nextest (`~/.cargo/bin`, the CI scripts' Rust tests) | absent | the script builds it with stable (`cargo install --locked cargo-nextest@0.9.152`, ~1–2 min, once) |
 | `systemd-run --user --scope -p MemoryMax=10G` around heavy runs | "Failed to connect to bus" | run without it, under `timeout`; the container has 15 GiB and nothing else on it, but a leaking test can still take the session down |
 | testfloat's tarballs from github.com | the redirect to `codeload.github.com` is refused (403) | `scripts/testfloat.sh` falls back to `git fetch` of the pinned commit |
 | Guest images in rootless Podman (`images/build.sh`) | not practical: most images are built in arm64 containers that run natively on the arm64 VM, here they'd run under qemu-user for hours (`buildroot` and `ltp` would build natively: their container is multi-arch), and nested Podman is untested | not attempted; see below |

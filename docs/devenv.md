@@ -56,6 +56,9 @@ From zypper (add what's missing with `sudo zypper in`, and note it here):
   it current with `sudo zypper in chromium`; Google builds no Chrome for Testing for Linux arm64), clang/lld/llvm, qemu (user, system, tools), podman (rootless), dtc,
   capstone, tcpdump (checking packets on the wire), qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dosfstools, dejavu-fonts (headless Chromium draws no
   page text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
+- **cargo-nextest** 0.9.152 (`cargo +stable install --locked cargo-nextest@0.9.152`, in `~/.cargo/bin`): `scripts/ci.sh`
+  and `scripts/ci-fast.sh` run the Rust tests with it (`.config/nextest.toml`: every binary's tests at once, the
+  longest first; docs/testing.md "Tiers"). Plain `cargo test` runs the same tests, one binary after another.
 - Graphics: qemu-hw-display-virtio-gpu (QEMU's virtio-gpu device is a separate package) and edid-decode (the graphics
   oracle); for the virgl oracle virglrenderer-test-server (`virgl_test_server`, vtest), Mesa-demo (`eglinfo`,
   `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); glmark2, xvfb-run

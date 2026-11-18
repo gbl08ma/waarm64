@@ -1,0 +1,15 @@
+# cargo-nextest (scripts/ci.sh, scripts/ci-fast.sh; docs/testing.md "Tiers"): the tests of every test binary at once,
+# each in its own process.
+[store]
+dir = "target/nextest"
+
+[profile.default]
+status-level = "fail"
+final-status-level = "slow"
+slow-timeout = { period = "60s" }
+failure-output = "final"
+
+# The longest tests start first, so the run takes about as long as the longest one.
+[[profile.default.overrides]]
+filter = 'test(/^baremetal/) | test(blocks_run_as_the_interpreter_runs_them) | test(golden_corpus) | (package(waarm64_ts) & test(/server_tests::(visits_14_days|calendar_asks)/))'
+priority = 100

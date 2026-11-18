@@ -37,6 +37,8 @@ if ((DOCS_ONLY)); then
   exit 0
 fi
 
+# The Rust tests run under cargo-nextest (.config/nextest.toml).
+cargo nextest --version > /dev/null 2>&1 || { echo 'cargo-nextest is missing: cargo +stable install --locked cargo-nextest@0.9.152 (docs/devenv.md)' >&2; exit 1; }
 has() { local x; for x in "${CARGO[@]:-}"; do [ "$x" = "$1" ] && return 0; done; return 1; }
 logs=$(mktemp -d)
 trap 'rm -rf "$logs"' EXIT
@@ -78,7 +80,7 @@ rust() {
   has ts && pkgs+=(-p waarm64_ts)
   if ((${#pkgs[@]})); then
     echo "clippy ${pkgs[*]}"; cargo clippy -q --all-targets "${pkgs[@]}" -- -D warnings
-    echo "cargo test ${pkgs[*]}"; cargo test -q "${pkgs[@]}"
+    echo "cargo nextest run ${pkgs[*]}"; cargo nextest run --cargo-quiet "${pkgs[@]}"
   fi
   if has testfloat; then scripts/testfloat.sh; fi
   if has agent; then (cd agent && cargo fmt --check && cargo clippy --all-targets -q -- -D warnings && cargo test -q); fi
