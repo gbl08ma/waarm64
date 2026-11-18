@@ -49,7 +49,7 @@ store works the same way.
 2. **The way out is a hosted helper:** Ethernet frames over a WebSocket to a server-side netstack, as with the local
    helper. No TCP stack in the page, no smoltcp, no Wisp for now (it stays a possible "bring your own server"
    connection later). **No Cloudflare Workers** for it.
-3. **The hosted helper is a fork of waarm64-net in a new repository** (`waarm64-demonet`, the user creates it): Go,
+3. **The hosted helper is a fork of waarm64-net in a new repository** (`github.com/gbl08ma/waarm64-demonet`, created empty by the user on 2026-11-18): Go,
    released and deployed on its own, its own README, THIRD_PARTY and tests. waarm64-net stays the small local helper.
    This repo's tests pin a commit of the fork, as they pin the local helper's.
 4. **It runs on the user's server,** configured from **one TOML file** (BurntSushi/toml) the user edits, reloaded on
@@ -84,7 +84,14 @@ One slice, one commit and a short report per loop (CLAUDE.md "How a track runs")
 0. **Measure the gap** (no code): unkernel's, v86's and our current page in headless Chromium (time to prompt, bytes
    on the wire, `apk add python3`, peak memory), into a `bench/demo/REPORT.md` with its JSON, and the numbers into
    comparison.md §3 where the rows allow.
-1. **The fork** (in `waarm64-demonet`, once the user has made it): waarm64-net's code taken over, `--public`'s
+1. **The fork.** `github.com/gbl08ma/waarm64-demonet` exists and is **empty** (the user, 2026-11-18). The loop
+   sets it up in the dev VM: clone waarm64-net's history into `../waarm64-demonet`, beside `../waarm64-net`
+   (`git clone ../waarm64-net ../waarm64-demonet`, then point `origin` at the new repository and push `main`), so
+   the fork keeps waarm64-net's history and authorship. Then rename the module and binary, write its own README,
+   THIRD_PARTY.md and CLAUDE.md (what it is, that it is public-facing, its rules), and add
+   `tests/waarm64-demonet.ts` here, pinning its commit as `tests/waarm64-net.ts` pins the helper's, with a
+   `WAARM64_DEMONET_SRC=../waarm64-demonet` override (docs/devenv.md gets the checkout's line). From there:
+   waarm64-net's code taken over, `--public`'s
    behavior as the only behavior: TLS behind a reverse proxy, the origin, no token, a network per WebSocket (no guest
    sees another), per-IP budgets, the TOML file with reload and `--check`.
 2. **The allowlist** at the resolver, the dial and the first bytes, tested against fake upstreams: a listed name, an
