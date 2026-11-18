@@ -417,3 +417,85 @@ Also: the fork's dependencies (BurntSushi/toml, golang.org/x/net/proxy, wireguar
   demos (what a page load or `git clone` feels like at 40 kB/s), then the owner's call.
 - Should the demo network also be offered to the user's own machines by default (a new machine's first adapter), or
   only to demos?
+
+## 8. The plan's review (2026-11-18)
+
+A fresh agent reviewed the kickoff and this plan against the docs and the code (statically). What it found, checked
+against the code, and what changes. **K** marks a change to DEMO-KICKOFF.md, which waits for the user's OK.
+Everything else is this plan's.
+
+1. **A template's restore forks, and its pins are by URL path.** `web/app/snapshots.ts` `stepOf` keeps a disk only
+   when the overlay *and* its generation match the pin. A visitor's fresh overlay is a new one, so every first restore
+   forks. That works, since a fork is what a restore onto another overlay is, but "nothing forks" in §4 is wrong. The
+   template's overlay blocks (what the boot wrote) travel in the snapshot file, so they count toward the 30 MB.
+   `shape.ts` `DiskIdentity` for a URL is `{path, bytes, etag}`: a template made against `local::` or another host is
+   orphaned on vm.tny.im. **K:** a loop item (in the spike, below): a chunked image's identity by its content `id`
+   (machines.md §10 already asks for it), and the template's pins mapped onto the new machine's overlays by slot,
+   tested by a restore in a fresh profile.
+2. **The guest agent doesn't run on Alpine.** It is delivered as a systemd unit through SMBIOS credentials
+   (`web/app/guest-agent.ts`), and the lease renewal after a restore knows systemd-networkd and NetworkManager only
+   (devices.md "The network after a restore"). The demo relies on it for the clock: a template's clock is old by
+   months, so `apk`'s TLS fails on certificate dates. And a stored machine can't boot a kernel directly
+   (decisions.md "Booting users' images": UEFI). **K:** loop 6 boots Alpine through UEFI (the `alpine-uefi` path), and
+   adds an OpenRC service for the agent (from fw_cfg, or baked into the image) and udhcpc in `agent/src/lease.rs`,
+   each with the user's OK (they touch the agent), with a test of a template restored with an old clock.
+3. **A page update can orphan every published demo.** `SNAPSHOT_VERSION`, the default CPU features, the device list
+   or the display are in a snapshot's format or shape (machines.md §5.1). **K:** the publish tool checks each
+   snapshot's core version and shape hash against the build being deployed, and deploying vm.tny.im re-makes and
+   re-publishes the demos when they differ. `ci-machines.sh` makes a template from a local build and restores it. The
+   card falls back to a cold boot (and says so) when the snapshot can't be restored.
+4. **The demo network breaks adapters.md's rules and doesn't fit `local`.** "There is no default connection" (rule 2)
+   and "one running machine holds a connection at a time" (rule 4, a Web Lock): one built-in connection means one demo
+   per browser. `web/local-net.ts` is loopback-only (`parseLocalURL`, `loopbackRefused`, the words about "your
+   computer") and speaks only `waarm64-net.v1`, with no text messages. **K:** a connection kind of its own, `demo`,
+   that every machine can attach at once (one socket each; no lock), as a rule change to adapters.md and
+   decisions.md's Network row, with the user's OK, and its own words in the catalog. §3.1's "almost none" for the
+   page is wrong: it's the kind, the client's control channel and its words.
+5. **The disk cache expires, and pieces aren't shared.** A URL disk's blocks live in one Storage Bucket, not
+   persisted, deleted a week after last use, 2 GiB (`web/diskcache.ts`). So a demo machine depends on vmdisks.tny.im
+   for good, and the desktop alone nearly fills the bucket. `tools/chunk-image.ts` writes `pieces/` per image, and
+   `_headers` and `deploy.sh` count per image, so a new version in a new directory shares nothing. §4's claims are
+   wrong on both. **K:** a shared `pieces/` directory for the site, and the publish tool counting distinct files; a
+   retention rule for a retired version's pieces (the user's: how long); a "this demo's files are gone" state when a
+   manifest 404s, instead of guest I/O errors; and either a persisted store for demo disks or "Keep this disk in the
+   browser" (a stored disk, machines.md §4.4).
+6. **Hosting the fork and reviewing it before it's public are missing.** The draft's "Hosting it" loop didn't make it
+   into the kickoff, and local-helper.md cuts a release only after an out-of-context review. **K:** a hosting loop
+   (Caddy, the service, the TOML file's place, log retention, monitoring, releases), and a review of the fork before
+   its first deploy. Measure a network per WebSocket's cost, so 4009 has a number. Check early that wireguard-go's
+   netstack and gvisor-tap-vsock's pinned gVisor agree on one version.
+7. **Holes in the allowlist.** Domain fronting: an SNI on the list with another Host inside TLS reaches Fastly's other
+   sites, so the SNI check is a filter, not a wall. Measure whether Fastly refuses the mismatch, and dial the SNI's
+   name with the server's resolver rather than the guest's address. Literal addresses in the slow lane must still be
+   refused at the dial in every lane: private, loopback, link-local (the cloud metadata address), IPv4-mapped and
+   NAT64 forms, and the server's own addresses. The text disagrees on ports (443; `[443, 80]`; "53 … 123"), on NTP
+   (gvisor-tap-vsock serves none), and on what a bare `name` matches. Fix: 443 only; no NTP; a bare name matches
+   itself only, `*.` its subdomains, pinned by tests. The resolver answers HTTPS/SVCB queries empty.
+8. **Abuse, privacy and other people's stores.** `Origin` isn't authentication, so with the slow lane on the helper
+   is a throttled open proxy to anyone. Per-IP budgets hit CGNAT and campus networks (4008), IPv6 must be grouped by
+   /64, and the source IP comes only from the trusted proxy's header. An unkeyed hash of an IPv4 address reverses by
+   brute force: use a keyed hash with a rotating key. Logging addresses needs a privacy notice on vm.tny.im, and the
+   interstitial says the demo's traffic goes through the owner's server. **K**, with the user's OK: the notice and the
+   interstitial's line. Another store's definitions are untrusted: they import with clipboard sharing and shared
+   folders off, can't attach the demo network, their text is plain text, and no thumbnail is fetched before the
+   visitor accepts the warning.
+9. **The desktop demo has no network by default.** With one rule and the slow lane off, its Firefox reaches nothing.
+   Say so on its card, or list the rules it needs (each the user's).
+10. **§4's sketch isn't the real format.** `web/app/definitions.ts` has `type: 'waarm64-machine'`, `machine: {…}`,
+    attachments with `identity` and `serial`. `parse` refuses any other `version`. The store's file is told apart by
+    `type`, not `format`. Version 2 needs a reader of both, old pages refuse it, and serials must survive the import
+    (they're in the shape).
+11. **Failure paths and budgets not covered:** the helper unreachable or closing mid-run; vmdisks.tny.im down; the
+    snapshot's download cut off or the storage full during it; another machine running in the tab. The interstitial
+    checks the browser before any download (Chromium, SharedArrayBuffer, OPFS, WebGL2 or WebGPU for 3D, memory,
+    mobile). The 30 MB includes the page's own code (~10 MiB of `dist` without its source maps) and the 5 s the JIT's
+    cold start after a resume. Cards are keyboard-reachable with alt text, and their words from `store.json` are data
+    (docs/i18n.md). The helper's per-WebSocket network must ACK a renewal from a MAC it never leased to (a resume, a
+    renewal, a reconnect).
+12. **Loop order.** The riskiest unknowns (1–3, the 5 s) come after four loops on the server. **K:** a spike right
+    after loop 0: an Alpine template restored in a fresh profile, offline, timed. Then the store and the image, with
+    the fork beside them. The slow lane and the egress per lane (off by default, not needed by the goal) move after
+    the store ships. The kickoff's "Needs the user's OK" gains: the first visit opening the store, the agent and
+    lease changes for OpenRC, adapters.md's and decisions.md's changes, the privacy notice, the retention rule, and
+    the fallback if Alpine misses the budget (Buildroot can't run `apk`). The fork's repository is private, so cloud
+    sessions skip its tests and say so.
