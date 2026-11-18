@@ -1649,13 +1649,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - Done (R3a): **the owner's own last entry shown with an old zone or none** (or an entry a renewal behind) no longer
       silences the dissent: `shown` is 8 bytes of a hash of the owner key, the last entry and the zone, so a holder of
       anything newer replies (room-names-r3.md "As built"; the ask stays 164 bytes).
-    - **The owner's last entry before its release, shown by a sample that is all an attacker's** (R3a found it): holders
-      of the release hold no owner, so they don't dissent, and a reply carries only a live entry, so the member keeps
-      the released owner until its refresh 5 minutes on (whose `get` sends the release). With a next owner, its holder
-      dissents, but the contest's fetched runs carry no release, so the released run wins, for those 5 minutes too
-      (confirmed on the bus, not committed as a test). Closing it: a server holding a release replies to a `dissent`
-      with the release and the entry it follows, a `fetch` sends a tombstone run with the history, and the member's
-      check takes a release (ending that key's chain). A change to the reply's item and the member's checks.
+    - Done (the final review's finding 5): **the owner's last entry before its release, replayed**: a server holding a
+      release replies it (the release and the entries before it that fit) to shares and every dissent, and a member
+      takes no key whose last entry such a release ends. Not done: a contest's `fetch` still sends only the owning
+      chain's run (the release comes by the share and dissent replies, which every holder sends).
     - **`REPLY_MAX` (4 KiB) is the user's starting value**: whether the six default relays forward an ephemeral event of
       that size, and how fast they rate-limit a server's replies, is a dev VM session's to measure (N0c/N6: about a
       hundred events, no public service touched in the cloud). Under a relay's limit, items come by `fetch` (a session).
@@ -1853,6 +1850,32 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       browser holding the export) learns the release only as a "better" answer with no owner (`judge` says `none` and
       takes nothing in): that page shows the name active until its own chain lapses, and keeps renewing on an ended
       branch (its renewals count for nothing). Taking the release into the title on `none` would end it there too.
+  - The final review's fixes (NAMES-REVIEW-FINAL.md on `review/names-final`; findings 1, 2, 3, 5, 6 and 7 in the
+    Rust lane), what they leave:
+    - **Reply budgets keyed on an unproven key** (finding 2, mitigated only): `REPLIES_PER_TAG` and `ANSWERS_PER_KEY`
+      are counted by the asker's names key, which anyone reads in an ask or question and can name in its own. A member
+      now sees replies under its tag to nonces it never sent and decides no first lookup while they come
+      (`STRAYS_MAX`, 8 a minute): no answer instead of an impostor's or a forged NXDOMAIN, but no answer all the same,
+      for 16 events a minute (and forged strays, made up from nothing, do the same for 8). Questions aren't covered:
+      4 forged questions a minute naming a key cost it "who serves?" at every server (a member's refreshes, puts, the
+      dialog's check, its contests' fetches; a new server its sync partners, so it counts itself alone and serves
+      unsynced until the next round). The fix is a proof of the key before a server spends on it: the asker opening
+      the session (a round trip before the call back, which the question can't carry), or budgets per (key, nonce)
+      under a global cap, which lets a forger aim the whole per-second budget at one victim (2 replies and 4 call
+      backs a second a server, against 16 and 4 a minute now). A protocol change, the user's call.
+    - **`ids` lists the registry** (finding 7, mitigated only): answered twice a session and four times a minute a
+      server, so listing every id takes ~64 minutes of one server, ~3 of twenty, a question a session. Closing it
+      needs answers a dictionary can't be hashed against. Ids cut short don't do it: at 3 bytes (with the first byte
+      asked) a million-word dictionary against 20,000 ids gets ~1,200 false matches beside the real ones, and at 2 the
+      dialog would say taken for a free name ~30% of the time. A private membership check (the server answering only
+      whether the asker's id is held, blinded, as an OPRF does) is a protocol and a dependency; the user's call.
+    - **A re-signed entry still costs its signature's check** (finding 1): the proof of work's verdict is remembered by
+      the fields it covers, so a copy signed again costs a BIP-340 check (0.15 ms), as any junk entry does, and a
+      member charges it a whole entry's units. Covering the signature by the work (sign, then mine over the signed
+      bytes) would make copies cost a mining each: a format change, not needed while the junk floor is the same.
+    - **An imported title's secret is trusted** (finding 6): a title is refused unless its entries and zone are its
+      key's, but an export crafted by its sender with a secret the sender knows passes: the importer's node then
+      serves and claims a name the sender can sign for too. What an export is (a secret handed over) can't tell.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

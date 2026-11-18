@@ -124,6 +124,23 @@ From the final review's fix loop, the agent and page findings (2026-11-18, branc
 - **"Taken" from one liar** (finding 8, mitigated): the check weighs each server's `ids` apart, and a disagreement says
   so with a second press that registers. A liar that answers alone, or two liars drawn, still make it taken; proving
   it takes a `get` naming the id before the claim, which N5b's one-byte decision rules out (backlog).
+From the final review's Rust lane (2026-11-18, branch `names-final-a`; findings 1, 2, 3, 5, 6, 7), for the user:
+- **Reply and answer budgets keyed on an unproven key** (finding 2): mitigated only. A member that sees replies under
+  its tag to nonces it never sent (8 a minute) decides no first lookup: no answer, never an impostor's or a forged
+  NXDOMAIN. Left open: it is still denied answers for 16 events a minute (8 forged strays do the same), and the same
+  spending on "who serves?" (4 questions a minute naming a key) costs a member's refreshes, puts, the dialog's check
+  and contest fetches, and a new server its sync partners (it counts itself alone). The full fix needs a proof of the
+  asker's key before a server spends on it (the asker opening the session, a round trip the question can't carry),
+  or per-(key, nonce) budgets under a global cap (which raises what a forger can aim at one victim to the per-second
+  budgets): a protocol change. docs/backlog.md "The final review's fixes".
+- **`ids` lists the registry** (finding 7): mitigated only, twice a session and four times a minute a server (every
+  id in ~64 minutes of one server, ~3 of twenty). Closing it needs a check a dictionary can't be hashed against
+  (ids cut short trade false "taken" for leaks; a blinded membership check is a protocol and a dependency).
+- Fixed within the format: finding 1 (proof of work's verdict remembered by the fields it covers; re-signed copies
+  cost a signature's check, the junk floor; covering the signature by the work would be a format change, not needed),
+  finding 3 (dedup by nonce and key), finding 5 (holders of a release reply it; the reply item may now be a release
+  run), finding 6 (titles refused whole unless their key's, before they count as the node's own; an export crafted
+  with a secret its sender knows still passes: what an export is).
 
 From N6b (2026-11-18):
 - **The long run's relay traffic is past "a few hundred requests a service"**: a room's own cadence (a server alone
@@ -177,8 +194,6 @@ Things for the user's attention when the track ends, all in docs/backlog.md:
   for a loop.
 - **Anchors link names stamped together** (N0b): stamps made within seconds share most of their calendar path, so a
   server can tell which ids were stamped in one visit; it waits with spreading an owner's renewals.
-- **A released name shown by liars** (R3a): liars showing the owner's last entry from before a release keep a member
-  on the released owner until its 5-minute refresh; closing it changes the reply format.
 - **A claim never goes stale** (R1): if all three calendars lose a claim's commitment, the agent asks for its proof
   hourly for good.
 - **Raising the compiled floor** in a later release must stay under every block back to the oldest live anchor (R1).

@@ -1491,6 +1491,117 @@ fn junk_replies_take_no_place() {
     assert_eq!(bus.m.kept[&alpha.id].zone, alpha.zone, "the owner's zone");
 }
 
+/// The final review's finding 2: a server's replies under one reply tag are budgeted (16 a minute), and the tag is the
+/// asker's names key, which any member reads in the ask and can name in asks of its own. Spending that budget at every
+/// honest server just after a member's first round left only an impostor to reply, and its younger chain, one key
+/// shown, was taken. The member sees the budget spent (replies under its tag to nonces it never sent) and decides
+/// nothing while it is: no answer (the resolver's SERVFAIL), never the impostor's; the attack over, the owner.
+#[test]
+fn replies_spent_under_a_members_tag_dont_hand_its_lookup_to_an_impostor() {
+    let mut b = Bitcoin::new(ROOM, 58);
+    let bank = title(&mut b, 1, "bank", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let fake = title(&mut b, 66, "bank", 2, &[], [0x66; 32], [0x66; 32]);
+    let mut servers: Vec<Server> = (1..=5).map(|k| serving(&mut b, k, &[&bank])).collect();
+    servers.push(serving(&mut b, 6, &[&fake]));
+    let mut bus = Bus::new(servers, member());
+    // The forger knows the member's names key (from an ask of its own: here, any earlier lookup) and spends its reply
+    // tag's budget at every honest server, 16 asks naming it at 2 a second (each server's reply rate).
+    let forge = |bus: &mut Bus| {
+        for k in 0..16u32 {
+            let unix = bus.unix();
+            for j in 0..5 {
+                let mut nonce = [0xf0; 16];
+                nonce[..4].copy_from_slice(&k.to_le_bytes());
+                let ask = NameAsk {
+                    key: bus.mkey,
+                    region: 0,
+                    time: unix,
+                    nonce,
+                    id: bank.id,
+                    mode: AskMode::Share,
+                    spread: 0,
+                    shown: [0; 8],
+                };
+                let (now, via) = (bus.now, [0xf0; 16]);
+                bus.s[j].input(
+                    Input::Ask {
+                        ask,
+                        region: Some(0),
+                        via,
+                    },
+                    now,
+                    unix,
+                );
+            }
+            bus.advance(Duration::from_millis(500));
+        }
+    };
+    let lookup = |bus: &mut Bus| {
+        let start = bus.now;
+        let mut a = Answer::Wait;
+        let mut first = true;
+        while a == Answer::Wait && bus.now - start < Duration::from_secs(4) {
+            let (now, unix) = (bus.now, bus.unix());
+            a = bus.m.query("bank", now, unix, first);
+            first = false;
+            bus.advance(Duration::from_millis(10));
+        }
+        a
+    };
+    forge(&mut bus);
+    let a = lookup(&mut bus);
+    assert_ne!(a, Answer::Node([0x66; 32]), "never the impostor's");
+    assert_eq!(a, Answer::Wait, "no answer while the budget is spent");
+    assert!(!bus.m.kept.contains_key(&bank.id));
+    // A minute on, nobody forging: the owner, its run older than the impostor's.
+    bus.advance(Duration::from_secs(61));
+    assert_eq!(lookup(&mut bus), Answer::Node([0xa1; 32]));
+}
+
+/// The final review's finding 5: a name let go, and its owner's last entry before the release (public, alive by its
+/// own time) replayed to first lookups by made-up servers. Holders of the release held no owner, so they replied
+/// none and kept quiet at the dissent, and a reply couldn't carry a release: one key shown, and the member took the
+/// released owner (NXDOMAIN expected); once someone registered the name, the replayed run, older, left a contest
+/// unsettled (its repliers never answer a fetch) and the next owner unresolved. Holders of a release now reply it.
+#[test]
+fn a_released_name_isnt_revived_by_replaying_its_last_entry() {
+    use super::wire::{ReplyItem, WireEntry};
+    let mut b = Bitcoin::new(ROOM, 56);
+    let key = b.key(1, "shop");
+    let claim = b.at(Kind::Claim, &key, "shop", [0; 32], t(30));
+    let renew = b.at(Kind::Renew, &key, "shop", claim.id(), t(10));
+    let release = b.at(Kind::Release, &key, "shop", renew.id(), t(1));
+    let zone = Zone::seal(&b.names, &key, "shop", 1, &[(None, [0xa1; 32])], false).unwrap();
+    let gone = b.item("shop", &[claim, renew.clone(), release], None);
+    let replayed = |n: u8| Reply {
+        nonce: [0; 16],
+        server: [0xe0 + n; 32],
+        region: 0,
+        since: t(30),
+        item: ReplyItem::Item(Box::new(Item {
+            id: gone.id,
+            entries: vec![WireEntry::of(&renew)],
+            zone: Some(zone.clone()),
+        })),
+    };
+    let servers = |b: &mut Bitcoin, items: &[&Item]| -> Vec<Server> {
+        (1..=3).map(|k| serving(b, k, items)).collect()
+    };
+    let mut bus = Bus::new(servers(&mut b, &[&gone]), member());
+    bus.junk = (0..4).map(replayed).collect();
+    assert_eq!(bus.resolve("shop").0, Answer::Nx, "let go: nobody's");
+    assert!(!bus.m.kept.contains_key(&gone.id));
+    // Registered again since: the next owner, whatever the replay shows.
+    let next = title(&mut b, 9, "shop", 0, &[], [0x99; 32], [0x99; 32]);
+    let mut bus = Bus::new(servers(&mut b, &[&gone, &next]), member());
+    bus.junk = (0..4).map(replayed).collect();
+    assert_eq!(
+        bus.resolve("shop").0,
+        Answer::Node([0x99; 32]),
+        "the next owner"
+    );
+}
+
 /// Review 3's finding 2: "too big" replies, forged by anyone who knows the room's ID (no registration), each from a
 /// made-up server claiming `since` 0, forced a contest that fetched every one of them (5 s each, 8 at once). A "too
 /// big" now carries the last entry: forged with a broken one it is refused; with the owner's own, copied, it shows the

@@ -2135,6 +2135,83 @@ fn valid_entries_put_again_are_checked_once() {
     assert_eq!(checked, vec![40, 40, 40], "checked whole once each");
 }
 
+/// The final review's finding 1: an entry's id takes its signature in and its proof of work doesn't, so the owner of
+/// one mined entry signs it again as often as it likes (BIP-340's aux randomness) and gets valid entries, each with an
+/// id of its own. A put of 1,024 such copies cost a server 1,024 Argon2ids (and pushed 1,024 ids through what it
+/// remembers as verified); 64 of them held the put queue for minutes of a core.
+#[test]
+fn an_entry_signed_again_costs_no_more_work() {
+    let mut b = Bitcoin::new(ROOM, 52);
+    let k = b.key(1, "copies");
+    let one = b.at(Kind::Claim, &k, "copies", [0; 32], t(10));
+    let copies = |b: &Bitcoin, n: usize| {
+        let mut it = b.item("copies", &[], None);
+        it.entries = (0..n)
+            .map(|_| {
+                let mut w = WireEntry::of(&one);
+                w.entry.sign(&k, &b.names);
+                w.anchor = None;
+                w
+            })
+            .collect();
+        it
+    };
+    let it = copies(&b, 1024);
+    let distinct: std::collections::BTreeSet<[u8; 32]> =
+        it.entries.iter().map(|w| w.entry.id()).collect();
+    assert_eq!(distinct.len(), 1024, "an id each");
+    let mut s = Server::new(ROOM, cfg(vec![]), T);
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    while s.poll().is_some() {}
+    let drain = |s: &mut Server| {
+        let mut ticks = 0;
+        while s.busy() {
+            s.tick(now, T);
+            ticks += 1;
+            assert!(ticks < 100_000);
+        }
+        ticks
+    };
+    for d in datagrams(1, &Msg::Put(it).encode(0)) {
+        s.input(
+            Input::Datagram {
+                from: [0x44; 32],
+                data: d,
+            },
+            now,
+            T,
+        );
+    }
+    let ticks = drain(&mut s);
+    assert_eq!(
+        s.stats.checked, 1,
+        "one check for 1,024 signings of one entry"
+    );
+    assert_eq!(s.stats.work, 1, "one Argon2id");
+    assert!(ticks <= 4, "{ticks} turns");
+    // The put queue full of them (16 peers, 4 puts each, each of fresh signings): drained in a few turns a put, each
+    // put's first signing a signature's check, and no proof of work again.
+    for p in 0..16u8 {
+        for q in 0..4u32 {
+            for d in datagrams(q + 1, &Msg::Put(copies(&b, 256)).encode(0)) {
+                s.input(
+                    Input::Datagram {
+                        from: [0x50 + p; 32],
+                        data: d,
+                    },
+                    now,
+                    T,
+                );
+            }
+        }
+    }
+    let ticks = drain(&mut s);
+    eprintln!("64 puts of 256 signings each: {ticks} turns");
+    assert!(ticks <= 64, "{ticks} turns");
+    assert_eq!((s.stats.checked, s.stats.work), (1 + 64, 1));
+}
+
 /// A peer forgotten on our side only (its session ended here, not there) and met again: our new transfers aren't ones
 /// it remembers as done and drops (found while fixing review 2's finding 5: a member asking the same server again).
 #[test]
@@ -2307,6 +2384,58 @@ fn ids_answers_round_cover_ends_to_a_week() {
     for (u, e) in untils.iter().zip(&ends) {
         assert!(*u % WEEK == 0 && *u >= *e && *u < *e + WEEK, "{u} for {e}");
     }
+}
+
+/// The final review's finding 7: `ids` was answered to anyone, as often as asked, so 256 gets from one session (made by
+/// one "who serves?" under a fresh key) listed every id held with its cover end, to hash a dictionary against offline.
+/// A session is answered twice at most (the dialog's checker asks once, a press), and a server answers four a minute
+/// from everyone; past them an empty `items`, so the checker hears at once that this server can't say.
+#[test]
+fn ids_are_answered_twice_a_session_and_four_times_a_minute() {
+    let mut b = Bitcoin::new(ROOM, 54);
+    let mut s = Server::new(ROOM, cfg(vec![]), T);
+    for k in 0..64u8 {
+        let (_, item) = b.title(k + 1, &format!("name{k}"), t(20), &[t(5)], [9; 32]);
+        assert!(s.load(&record(&item, T), T));
+    }
+    let mut now = Instant::now();
+    s.start([0x10; 32], now);
+    while s.poll().is_some() {}
+    let get = |first: u8| Msg::Get {
+        mode: GetMode::Ids,
+        id: vec![first],
+        zone: (0, [0; 4]),
+        held: Vec::new(),
+    };
+    let answered = |got: Vec<Msg>| match got.into_iter().next() {
+        Some(Msg::Ids(_)) => true,
+        Some(Msg::Items(v)) if v.is_empty() => false,
+        other => panic!("{other:?}"),
+    };
+    let mut n = 0;
+    for first in 0..=255u8 {
+        n += answered(exchange(
+            &mut s,
+            [0x30; 32],
+            first as u32 + 1,
+            &get(first),
+            now,
+            T,
+        )) as usize;
+        now += Duration::from_millis(500);
+    }
+    assert_eq!(n, 2, "one session's");
+    now += Duration::from_secs(61);
+    let mut n = 0;
+    for k in 0..16u8 {
+        n += answered(exchange(&mut s, [0x40 + k; 32], 1, &get(k), now, T)) as usize;
+    }
+    assert_eq!(n, 4, "a minute's, from sessions of their own");
+    now += Duration::from_secs(61);
+    assert!(
+        answered(exchange(&mut s, [0x60; 32], 1, &get(0), now, T)),
+        "a minute on"
+    );
 }
 
 /// Review 2's finding 14: a sync partner that answers each request just before it times out, with sixteenths that
@@ -2501,6 +2630,98 @@ fn titles_are_verified_before_the_registry_holds_them() {
         s.tick(now, T);
     }
     assert!(s.reg.get(&own.id).is_some_and(|h| h.owner.is_some()));
+}
+
+/// The final review's finding 6: a title was taken as this node's own (its id in `own`, its zone answering the
+/// resolver while the registry doesn't resolve the name) before it was checked, and kept when the check refused it; a
+/// title with no entries passed, and its zone was never checked. An export can be crafted (review 2), so a title that
+/// doesn't hold is refused whole: its entries and its zone the title key's, for its name, each holding.
+#[test]
+fn a_title_that_doesnt_hold_isnt_taken_as_this_nodes_own() {
+    let mut b = Bitcoin::new(ROOM, 55);
+    let attacker = [0x66; 32];
+    let other = b.key(9, "elsewhere");
+    let unix = T;
+    // A zone only, signed by another key, pointing "bank" at the attacker's node.
+    let (key1, _) = b.title(1, "bank", t(20), &[t(5)], [1; 32]);
+    let zone_only = Item {
+        id: b.names.name_id("bank"),
+        entries: Vec::new(),
+        zone: Some(Zone::seal(&b.names, &other, "bank", 1, &[(None, attacker)], false).unwrap()),
+    };
+    // An entry whose signature doesn't hold, with the title's own zone.
+    let (key2, mut broken) = b.title(2, "shop", t(20), &[t(5)], attacker);
+    broken.entries[1].entry.sig[5] ^= 1;
+    // Entries of the title's name, but another key's (the title key isn't the owner).
+    let (_, mut theirs) = b.title(3, "mail", t(20), &[t(5)], attacker);
+    theirs.zone = None;
+    let key3 = b.key(4, "mail").to_bytes().into();
+    // No entries, the title key's own zone.
+    let blog = b.key(7, "blog");
+    let zone_of_its_own = Item {
+        id: b.names.name_id("blog"),
+        entries: Vec::new(),
+        zone: Some(Zone::seal(&b.names, &blog, "blog", 1, &[(None, attacker)], false).unwrap()),
+    };
+    // The title's entries and another key's zone.
+    let (key4, mut zoned) = b.title(5, "news", t(20), &[t(5)], [5; 32]);
+    zoned.zone = Some(Zone::seal(&b.names, &other, "news", 9, &[(None, attacker)], false).unwrap());
+    let titles = vec![
+        Title {
+            key: key1,
+            item: zone_only,
+        },
+        Title {
+            key: key2,
+            item: broken,
+        },
+        Title {
+            key: blog.to_bytes().into(),
+            item: zone_of_its_own,
+        },
+        Title {
+            key: key3,
+            item: theirs,
+        },
+        Title {
+            key: key4,
+            item: zoned.clone(),
+        },
+    ];
+    let s = Server::new(ROOM, cfg(titles), unix);
+    for name in ["bank", "shop", "mail", "news", "blog"] {
+        assert_eq!(s.resolve(name, name, unix), Answer::Wait, "{name}");
+        assert_eq!(
+            s.resolve(&format!("www.{name}"), name, unix),
+            Answer::Wait,
+            "{name}"
+        );
+    }
+    for name in ["bank", "shop", "mail", "news", "blog"] {
+        assert!(
+            s.reg.get(&b.names.name_id(name)).is_none(),
+            "{name}: nothing held"
+        );
+    }
+    // An honest title is taken: resolved from the registry, and its own name not public yet from its zone.
+    let (key, own) = b.title(6, "mine", t(20), &[t(5)], [6; 32]);
+    let k = b.key(6, "pending");
+    let claim = b.entry(Kind::Claim, &k, "pending", [0; 32]);
+    let z = Zone::seal(&b.names, &k, "pending", 1, &[(None, [7; 32])], false).unwrap();
+    let pending = b.item("pending", &[claim], Some(z));
+    let s = Server::new(
+        ROOM,
+        cfg(vec![
+            Title { key, item: own },
+            Title {
+                key: k.to_bytes().into(),
+                item: pending,
+            },
+        ]),
+        unix,
+    );
+    assert_eq!(s.resolve("mine", "mine", unix), Answer::Node([6; 32]));
+    assert_eq!(s.resolve("pending", "pending", unix), Answer::Node([7; 32]));
 }
 
 // ---- Outside the room (outside.rs): renewals finished at a calendar, blocks checked at an explorer ----
@@ -3394,6 +3615,134 @@ fn a_server_replies_to_asks_by_their_mode() {
     };
     assert_eq!(items[0].entries, alpha.entries, "the whole run");
     assert_eq!(s.stats.fetched, 1);
+}
+
+/// The final review's finding 5: a server holding a release (a tombstone) replies it, with what leads to it as far as
+/// a reply carries: in place of none to a `share`, beside the owner's reply when the name has a next owner, and to a
+/// `dissent` whatever it showed (the released chain's last entry, replayed, is alive by its own time).
+#[test]
+fn a_server_holding_a_release_replies_it() {
+    use super::wire::{AskMode, Reply, ReplyItem};
+    let mut b = Bitcoin::new(ROOM, 57);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let k = b.key(2, "shop");
+    let claim = b.at(Kind::Claim, &k, "shop", [0; 32], t(30));
+    let renew = b.at(Kind::Renew, &k, "shop", claim.id(), t(10));
+    let release = b.at(Kind::Release, &k, "shop", renew.id(), t(1));
+    let gone = b.item("shop", &[claim, renew.clone(), release.clone()], None);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    assert!(s.load(&record(&gone, T), T));
+    let mut now = Instant::now();
+    s.start([7; 32], now);
+    while s.poll().is_some() {}
+    s.synced = true;
+    let replies = |s: &mut Server, a: super::wire::NameAsk, now: Instant| -> Vec<Reply> {
+        s.input(
+            Input::Ask {
+                ask: a,
+                region: Some(0),
+                via: [0; 16],
+            },
+            now,
+            T,
+        );
+        let mut v = Vec::new();
+        while let Some(c) = s.poll() {
+            if let Cmd::Reply { data, .. } = c {
+                v.push(Reply::decode(&data).unwrap());
+            }
+        }
+        v
+    };
+    let ids = |r: &Reply| match &r.item {
+        ReplyItem::Item(it) => it.entries.iter().map(|w| w.entry.id()).collect::<Vec<_>>(),
+        other => panic!("{other:?}"),
+    };
+    let r = replies(
+        &mut s,
+        an_ask(1, 1, gone.id, AskMode::Share, 0, [0; 8]),
+        now,
+    );
+    assert_eq!(r.len(), 1, "the release in place of none");
+    assert_eq!(
+        ids(&r[0]),
+        [release.id(), renew.id(), gone.entries[0].entry.id()]
+    );
+    // What fits: none when not even the release does.
+    s.reply_max = 1;
+    now += Duration::from_secs(1);
+    let r = replies(
+        &mut s,
+        an_ask(1, 2, gone.id, AskMode::Share, 0, [0; 8]),
+        now,
+    );
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].item, ReplyItem::None, "nothing fits");
+    s.reply_max = super::wire::REPLY_MAX;
+    // A dissent naming the replayed last entry: the release.
+    now += Duration::from_secs(1);
+    let shown = super::wire::shown(&renew.entry.owner, &renew.id(), None);
+    let r = replies(
+        &mut s,
+        an_ask(2, 3, gone.id, AskMode::Dissent, 6, shown),
+        now,
+    );
+    assert_eq!(r.len(), 1);
+    assert_eq!(ids(&r[0])[0], release.id());
+    // Registered again since: the next owner's reply, and the release in one of its own.
+    let (_, next) = b.title(3, "shop", t(0), &[], [3; 32]);
+    assert!(s.load(&record(&next, T), T));
+    now += Duration::from_secs(1);
+    let r = replies(
+        &mut s,
+        an_ask(3, 4, gone.id, AskMode::Share, 0, [0; 8]),
+        now,
+    );
+    assert_eq!(r.len(), 2, "{r:?}");
+    assert_eq!(ids(&r[0]), [next.entries[0].entry.id()]);
+    assert_eq!(ids(&r[1])[0], release.id());
+    // Once a nonce and key, both.
+    assert!(
+        replies(
+            &mut s,
+            an_ask(3, 4, gone.id, AskMode::Share, 0, [0; 8]),
+            now
+        )
+        .is_empty()
+    );
+}
+
+/// The final review's finding 3: a first lookup's rounds share their nonce, and a server replied to a nonce once,
+/// whoever asked. Anyone who read the first round could send its nonce under another key first (spread 0), and the
+/// asker's later rounds and dissent went unreplied. Once a nonce and asker key: a copy through another relay is the
+/// same key's, and is still replied to once.
+#[test]
+fn a_nonce_copied_under_another_key_doesnt_silence_the_asker() {
+    use super::wire::AskMode;
+    let mut b = Bitcoin::new(ROOM, 53);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let (_, alpha) = b.title(2, "alpha", t(30), &[t(15), t(2)], [0xa1; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    assert!(s.load(&record(&alpha, T), T));
+    let now = Instant::now();
+    s.start([7; 32], now);
+    while s.poll().is_some() {}
+    s.synced = true;
+    let honest = an_ask(1, 1, alpha.id, AskMode::Share, 0, [0; 8]);
+    let forged = super::wire::NameAsk {
+        key: [0x66; 32],
+        ..honest
+    };
+    assert!(
+        ask_one(&mut s, forged, now, T).0.is_some(),
+        "the forger's own reply"
+    );
+    let r = ask_one(&mut s, honest, now, T).0;
+    assert!(r.is_some(), "the asker still gets its reply");
+    assert!(
+        ask_one(&mut s, honest, now, T).0.is_none(),
+        "once a nonce and key (a round again, a copy through another relay)"
+    );
 }
 
 /// Reply budgets: 2 a second a server, 16 a minute under one reply tag, apart from "who serves?"'s answers. A flood of
