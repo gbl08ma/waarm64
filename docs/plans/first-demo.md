@@ -20,7 +20,7 @@ equivalent) works with nothing configured.** At least one demo in the store must
 
 ## 2. What the visitor sees (target)
 
-1. `vm.tny.im` (or `vm.tny.im/#demo/<id>`) opens on the **demo store**. Per the decision of 2026-10-23
+1. `vm.tny.im/demos` (or a demo's own link, §4 "Links") opens the **demo store**, a full-screen page like Home. Per the decision of 2026-10-23
    (backlog.md), the page first says what the project is, that it needs a capable computer, and how many MB the
    download is. Nothing is fetched before the click.
 2. One click on **Alpine (terminal)** downloads a small snapshot (budget: ≤ 30 MB on the wire) and the first pieces of
@@ -202,7 +202,7 @@ published next to its disk and snapshot:
   "format": "waarm64-machine", "version": N,
   "name": "Alpine (terminal)",
   "demo": {
-    "id": "alpine-term",                    // #demo/alpine-term
+    "id": "alpine-term",                    // vm.tny.im/demos?id=alpine-term
     "summary": "...", "thumbnail": "thumb.webp",
     "download": 24000000,                   // what the card shows, checked at publish time
     "view": "serial",                       // or "screen": the view it opens on
@@ -218,12 +218,24 @@ published next to its disk and snapshot:
   is a KB or two, so dozens of demos still make a small file. Its relative URLs (disks, snapshot, thumbnail) resolve
   against the store's URL, so a demo's files sit beside it. A standalone definition file is the same object on its
   own. Anyone can host either kind.
-- **Links:** `#demo=<url>` (the URL percent-encoded) takes either kind of file. The file's `format` says which:
-  `waarm64-store` or `waarm64-machine`. A store link can name one of its demos: `#demo=<url>&id=<id>` opens that
-  demo's interstitial. Without an `id` it shows that store's cards. `#demo/<id>` is short for our own store's
-  `<id>`. A demo's `id` is unique within its store (the publish step checks), and a link to an `id` the store no
-  longer has opens the store's cards and says so. Anything not from our store gets a warning that it isn't ours
-  before anything is fetched past the JSON.
+- **The store is a page of its own** (the user, 2026-11-18): full screen, taking the machine's place as Home does
+  (frontend.md "The Home page"), with **Back** to where the visitor came from. It's reached three ways: its own
+  address; **Demos**, a new item in Home's sidebar between Preferences and About, which opens the store page rather
+  than a pane inside Home; and the deployed page's first visit, when the visitor has no machines yet.
+- **Addresses.** The page's assets are relative (`base: './'`, so a static copy works from any directory: frontend.md
+  "A static copy"), and the page routes by hash (`#home`). So the store has both forms:
+  - **`#demos`** works on every copy with no server setup, and a reload keeps it, as `#home` does.
+  - **`vm.tny.im/demos`**, the address to share, is the same page served at a one-segment path. A one-segment path
+    keeps `./assets/…` resolving to `/assets/…`. The deployed Worker serves `index.html` there: an entry for `/demos`
+    in the static copy (a second `index.html`, or `not_found_handling: "single-page-application"`, which answers only
+    navigations), checked on `npm start`'s server too. A static copy without it still has `#demos`.
+  - **Parameters go in the query, never the path,** so links stay one segment deep: `/demos?id=<id>` (`#demos?id=<id>`)
+    opens our store's demo `<id>` at its interstitial. `/demos?store=<url>` shows another store's cards, and `&id=<id>`
+    opens one of its demos. `?store=` also takes a single definition's URL: the file's `format`, `waarm64-store` or
+    `waarm64-machine`, says which. URLs are percent-encoded.
+  - A demo's `id` is unique within its store (the publish step checks). A link to an `id` the store no longer has opens
+    the store's cards and says so. Anything not from our store gets a warning that it isn't ours before anything is
+    fetched past the JSON.
 - **The snapshot** is fetched whole, chunked like a disk image, and becomes the new machine's first kept snapshot
   (below). It must be a **template** (`tools/snapshot-template.ts`: the guest agent
   renews entropy, the machine id and the SSH keys at the restore), and it pins its disk by the chunked image's `id`,
@@ -290,7 +302,7 @@ published next to its disk and snapshot:
    prompt), its words in the catalog, and `scripts/ci-net.sh` against a public-mode helper on loopback.
 4. **The demo guest.** `images/build.sh alpine-demo`, its template snapshot, chunked and traced from the resume,
    with numbers.
-5. **The store and the definition's `demo` fields.** The interstitial, the cards, `#demo/<id>`, a machine made from
+5. **The store and the definition's `demo` fields.** The store's page (`#demos`, `/demos`, Home's Demos item), the interstitial, the cards, `?id=` and `?store=`, a machine made from
    the definition with `fromDemo`, the first start's restore, "started before" and versions by id.
    `scripts/ci-machines.sh` and `ci-debian.sh`.
 6. **The desktop demo as a snapshot**, and the 3D one.
