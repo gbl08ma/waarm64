@@ -100,7 +100,13 @@ published next to its disk and snapshot:
   every card (name, summary, thumbnail, download size, what it needs: 3D, Vulkan, RAM) renders at once. A definition
   is a KB or two, so dozens of demos still make a small file. Its relative URLs (disks, snapshot, thumbnail) resolve
   against the store's URL, so a demo's files sit beside it. A standalone definition file is the same object on its
-  own: anyone can host one, and `#demo=<url>` opens it from elsewhere (with a warning when it isn't ours).
+  own. Anyone can host either kind.
+- **Links:** `#demo=<url>` (the URL percent-encoded) takes either kind of file. The file's `format` says which:
+  `waarm64-store` or `waarm64-machine`. A store link can name one of its demos: `#demo=<url>&id=<id>` opens that
+  demo's interstitial. Without an `id` it shows that store's cards. `#demo/<id>` is short for our own store's
+  `<id>`. A demo's `id` is unique within its store (the publish step checks), and a link to an `id` the store no
+  longer has opens the store's cards and says so. Anything not from our store gets a warning that it isn't ours
+  before anything is fetched past the JSON.
 - **The snapshot** is fetched whole, chunked like a disk image, into the same expiring Storage Bucket as the disk's
   blocks (backlog.md "A public demo…"). It must be a **template** (`tools/snapshot-template.ts`: the guest agent
   renews entropy, the machine id and the SSH keys at the restore), and it pins its disk by the chunked image's `id`,
