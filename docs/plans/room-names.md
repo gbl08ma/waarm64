@@ -470,8 +470,12 @@ copies by nonce **and round** (the three rounds share a nonce).
        is listed by its `since` (of one owner key, the 32 with the earliest `since` are kept); the member
        sends **`fetch`** (`shown` the first 8 bytes of one replier's names key) to the earliest, 8 at a time, a replier
        whose key already has a run checked as old as it claims skipped, and lets in handshakes from those names keys
-       only. The server named calls back and sends the owning chain's whole run (`items`, as `history`), checked as
-       a `history` is, a slice a turn. It stops once nothing is in flight and the best run checked (by "Who owns a
+       only. The server named calls back and sends the owning chain's whole run (`items`, as `history`; an item of
+       the id with no entries when it holds nothing), checked as a `history` is, a slice a turn. Each item goes to
+       the contest of its own id waiting on that server, and the session is let go once no contest waits on it: a
+       server fetched for two names at once answers each in a transfer of its own (review 3, finding 3: the first
+       contest waiting took both, dropped the other's run and closed the session, so an impostor won the other
+       name; `two_contests_at_once_each_get_their_own_run`). It stops once nothing is in flight and the best run checked (by "Who owns a
        name" over every run that held) is older than every `since` left, or **10 s after it started**
        (`CONTEST_FOR`); the owner is that best, only if every key shown is settled: its run checked, or each of its
        repliers claiming a run younger than the best. A liar about `since` costs a fetch and loses

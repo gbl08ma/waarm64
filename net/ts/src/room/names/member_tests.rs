@@ -1611,6 +1611,55 @@ fn a_contest_crowded_by_forged_repliers_ends_in_time_and_never_for_another_owner
     }
 }
 
+/// Review 3's finding 3: two contests at once that fetch from one server (it replied for both names) each get their
+/// own run. A fetched run went to the first contest waiting on its server, whichever name it was for: the honest run
+/// was dropped there, the session forgotten, and the other name's run lost with it, so an impostor won or nobody did.
+/// (Which servers a round reaches is drawn, so each kind runs several times; most run both contests.)
+#[test]
+fn two_contests_at_once_each_get_their_own_run() {
+    let mut b = Bitcoin::new(ROOM, 51);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let beta = title(&mut b, 2, "beta", 20, &[4], [0xb1; 32], [0xb2; 32]);
+    let fa = title(&mut b, 66, "alpha", 10, &[], [0x66; 32], [0x66; 32]);
+    let fb = title(&mut b, 67, "beta", 10, &[], [0x67; 32], [0x67; 32]);
+    for one_fake_server in [false, true] {
+        let mut both = 0;
+        for run in 0..8 {
+            let mut servers = vec![serving(&mut b, 1, &[&alpha, &beta])];
+            if one_fake_server {
+                servers.push(serving(&mut b, 2, &[&fa, &fb]));
+            } else {
+                servers.push(serving(&mut b, 2, &[&fa]));
+                servers.push(serving(&mut b, 3, &[&fb]));
+            }
+            let mut bus = Bus::new(servers, member());
+            let (now, unix) = (bus.now, bus.unix());
+            bus.m.query("alpha", now, unix, true);
+            bus.m.query("beta", now, unix, true);
+            bus.advance(Duration::from_secs(15));
+            let k = (one_fake_server, run);
+            // Decided by those lookups (a query now would start a lookup of its own).
+            for it in [&alpha, &beta] {
+                let kept = bus
+                    .m
+                    .kept
+                    .get(&it.id)
+                    .map(|n| n.zone.as_ref().unwrap().owner);
+                assert_eq!(
+                    kept,
+                    Some(it.zone.as_ref().unwrap().owner),
+                    "{k:?}: the owner kept"
+                );
+            }
+            both += (bus.m.stats.contests == 2) as usize;
+        }
+        assert!(
+            both >= 4,
+            "one fake server {one_fake_server}: {both} of 8 ran both contests"
+        );
+    }
+}
+
 /// R3a: liars that are the whole of a first lookup's sample reply with the owner's own records, all public and valid,
 /// but not the newest: its last entry with an old zone, with none, or a renewal behind (in its grace, so it doesn't
 /// resolve). The dissent names what was shown, the entry and the zone with the key, so the one honest holder of the

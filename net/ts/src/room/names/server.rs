@@ -1311,7 +1311,13 @@ impl Server {
                 } else {
                     self.cmds.push_back(Cmd::CallBack { key: a.key, region });
                 }
-                let m = Msg::Items(item.into_iter().collect());
+                // Nothing held: an item of the id with no entries, so the asker knows which of its fetches this answers.
+                let item = item.unwrap_or(Item {
+                    id: a.id,
+                    entries: Vec::new(),
+                    zone: None,
+                });
+                let m = Msg::Items(vec![item]);
                 self.xf.send(a.key, &m.encode(0), now);
                 self.flush();
             }

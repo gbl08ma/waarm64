@@ -1894,7 +1894,7 @@ impl Member {
                     .map(|(k, _)| *k)
                     .collect();
                 for k in late {
-                    self.fetch_gone(&k, now, unix);
+                    self.fetch_late(id, k, now, unix);
                 }
                 continue;
             }
@@ -1932,12 +1932,8 @@ impl Member {
             if let Some(d) = f.dissent {
                 self.ask_nonces.remove(&d);
             }
-            for k in f
-                .contest
-                .iter()
-                .flat_map(|c| c.flying.keys().chain(&c.fetched))
-            {
-                self.cmds.push_back(Cmd::Forget(*k));
+            for k in (f.contest.iter()).flat_map(|c| c.flying.keys().chain(&c.fetched)) {
+                self.forget_fetched(*k);
             }
         }
     }
@@ -2060,8 +2056,9 @@ impl Member {
         let c = f.contest.take().unwrap();
         f.decided.get_or_insert(now);
         for k in c.fetched.iter().chain(c.flying.keys()) {
-            self.cmds.push_back(Cmd::Forget(*k));
+            self.forget_fetched(*k);
         }
+        let f = &self.firsts[&id];
         let Some(owner) = best else {
             self.log("a contest without a run that held: asked again at the next query".into());
             return self.end_first(id);
@@ -2093,36 +2090,55 @@ impl Member {
         self.take(id, owner, last, zones, unix);
     }
 
-    /// A fetched run came (a `fetch`'s answer: `Items` on a session the server opened).
+    /// A fetched run came (a `fetch`'s answer: `Items` on a session the server opened). Each item goes to the contest
+    /// of its own id that waits on this server (review 3, finding 3: a server fetched by two contests answers each in
+    /// a transfer of its own, so the first contest waiting mustn't take the other's run); the session is let go once
+    /// no contest waits on it.
     fn on_fetched(&mut self, from: [u8; 32], items: Vec<Item>, now: Instant, unix: u64) {
-        let Some((&id, f)) = (self.firsts.iter_mut()).find(|(_, f)| {
-            f.contest
-                .as_ref()
-                .is_some_and(|c| c.flying.contains_key(&from))
-        }) else {
-            return self.cmds.push_back(Cmd::Forget(from));
-        };
-        let c = f.contest.as_mut().unwrap();
-        c.flying.remove(&from);
-        c.fetched.insert(from);
-        if let Some(it) = items
-            .into_iter()
-            .find(|i| i.id == id && !i.entries.is_empty())
-        {
-            let mut seen = BTreeSet::new();
-            let entries = (it.entries.into_iter())
-                .filter(|w| seen.insert(w.entry.id()))
-                .collect();
-            c.runs.push_back(Check {
-                server: from,
-                entries,
-                zone: it.zone,
-                name: Name::new(id),
-                last: None,
-            });
+        let mut any = false;
+        for it in items {
+            let Some(c) = (self.firsts.get_mut(&it.id))
+                .and_then(|f| f.contest.as_mut())
+                .filter(|c| c.flying.contains_key(&from))
+            else {
+                continue;
+            };
+            any = true;
+            c.flying.remove(&from);
+            c.fetched.insert(from);
+            if !it.entries.is_empty() {
+                let mut seen = BTreeSet::new();
+                let entries = (it.entries.into_iter())
+                    .filter(|w| seen.insert(w.entry.id()))
+                    .collect();
+                c.runs.push_back(Check {
+                    server: from,
+                    entries,
+                    zone: it.zone,
+                    name: Name::new(it.id),
+                    last: None,
+                });
+            }
         }
-        self.cmds.push_back(Cmd::Forget(from));
+        if !any && self.fetch_waited(&from) {
+            return; // nothing for a contest waiting on it: what it waits for comes in a transfer of its own
+        }
+        self.forget_fetched(from);
         self.check_replies(now, unix);
+    }
+
+    /// Whether a contest still waits on a fetch from `k`.
+    fn fetch_waited(&self, k: &[u8; 32]) -> bool {
+        (self.firsts.values())
+            .filter_map(|f| f.contest.as_ref())
+            .any(|c| c.flying.contains_key(k))
+    }
+
+    /// A fetched server's session let go, unless a contest still waits on it or it is a server held.
+    fn forget_fetched(&mut self, k: [u8; 32]) {
+        if !self.fetch_waited(&k) && !self.servers.contains(&k) {
+            self.cmds.push_back(Cmd::Forget(k));
+        }
     }
 
     /// A fetched run checked: its chain (ending at its last entry, covering now) joins the contest.
@@ -2149,15 +2165,28 @@ impl Member {
         }
     }
 
-    /// A fetch's server went (its session, or its wait ran out): the contest goes on without it.
+    /// A fetch's server went (its session): every contest waiting on it goes on without it.
     fn fetch_gone(&mut self, k: &[u8; 32], now: Instant, unix: u64) {
-        let id = (self.firsts.iter_mut()).find_map(|(id, f)| {
-            let c = f.contest.as_mut()?;
-            c.flying.remove(k)?;
-            c.fetched.insert(*k);
-            Some(*id)
-        });
-        if let Some(id) = id {
+        let ids: Vec<[u8; 32]> = (self.firsts.iter_mut())
+            .filter_map(|(id, f)| {
+                let c = f.contest.as_mut()?;
+                c.flying.remove(k)?;
+                c.fetched.insert(*k);
+                Some(*id)
+            })
+            .collect();
+        for id in ids {
+            self.contest_step(id, now, unix);
+        }
+    }
+
+    /// One contest's wait for a fetch from `k` ran out: it goes on without it (another contest's wait is its own).
+    fn fetch_late(&mut self, id: [u8; 32], k: [u8; 32], now: Instant, unix: u64) {
+        if let Some(c) = self.firsts.get_mut(&id).and_then(|f| f.contest.as_mut())
+            && c.flying.remove(&k).is_some()
+        {
+            c.fetched.insert(k);
+            self.forget_fetched(k);
             self.contest_step(id, now, unix);
         }
     }
