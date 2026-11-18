@@ -5,6 +5,7 @@
   command to copy). Logic is web/app/folders-live.ts's, through `page`.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import Menu from './ui/Menu.svelte';
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
@@ -20,6 +21,7 @@
   let { folders }: { folders: PageFolders } = $props();
 
   let open = $state(false);
+  let menu = $state<{ focusButton: () => void }>();
   const views = $derived(folders.views());
   const waiting = $derived(views.some((v) => v.problem));
   $effect(() =>
@@ -51,6 +53,7 @@
 {#snippet path()}<code>{shares.path}/&lt;name&gt;</code>{/snippet}
 
 <Menu
+  bind:this={menu}
   id="folders"
   icon="folder"
   title={t('folders:FoldersMenu.title')}
@@ -83,11 +86,14 @@
       <li><Note>{t('folders:FoldersMenu.none')}</Note></li>
     {/each}
   </ul>
-  <Note tone="error" id="folders-error" hidden={!runner.error}>{runner.error?.text}</Note>
+  <Note tone="error" id="folders-error" hidden={!runner.error}
+    >{#if runner.error}<ErrorText error={runner.error} />{/if}</Note
+  >
   <div class="buttons">
     <Button
       id="folder-attach"
       onclick={() => {
+        menu?.focusButton();
         open = false;
         shares.openWizard({
           machine: current.id,
@@ -106,6 +112,7 @@
     id="folders-mount-open"
     title={t('folders:FoldersMenu.mount.title')}
     onclick={() => {
+      menu?.focusButton();
       open = false;
       shares.openMount();
     }}

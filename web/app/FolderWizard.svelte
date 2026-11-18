@@ -5,6 +5,7 @@
   Without a `machine` it only makes a folder (Shared folders, on the Home page). web/app/areas/folder-actions.ts attaches.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import Button from './ui/Button.svelte';
   import Choice from './ui/Choice.svelte';
   import Field from './ui/Field.svelte';
@@ -160,7 +161,9 @@
       <Check id="folder-opfs-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check>
     </section>
   {/if}
-  <Note tone="error" size="md" id="folder-error" class="error" hidden={!runner.error}>{runner.error?.text}</Note>
+  <Note tone="error" size="md" id="folder-error" class="error" hidden={!runner.error}
+    >{#if runner.error}<ErrorText error={runner.error} />{/if}</Note
+  >
   {#snippet back()}
     <Button
       type="button"

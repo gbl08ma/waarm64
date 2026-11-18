@@ -771,6 +771,10 @@
     "message": "Close",
     "note": "Home page: accessible name (aria-label) of the × button that dismisses the message bar."
   },
+  "MachinesPage.heading": {
+    "message": "Home",
+    "note": "Home page: its heading, for a screen reader only (the toolbar's Home button opens the page); also the name of its left column (a navigation landmark: the machines, the commands that make one, the browser's Disks, Shared folders, Connections, Preferences and About)."
+  },
   "MachinesNav.heading": {
     "message": "Machines",
     "note": "Home page: the heading over the list of machines kept in this browser, at the top of the page's left column."

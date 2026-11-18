@@ -307,6 +307,10 @@
     "message": "This needs about {{need}} GiB of memory, and your computer reports {{has}} GiB. If memory runs out, the browser will close the tab without warning.",
     "note": "Paragraph after the question asked before a restart with another size (the toolbar's Machine menu, a stored machine's Save) when your computer may not have the memory: {{need}} is what the machine needs, {{has}} what your computer reports (GiB)."
   },
+  "memory-signal.memoryWarning.after": {
+    "message": "{{question}}\n\n{{warning}}",
+    "note": "A question asked before a restart with another size ({{question}}: the toolbar's Machine menu's, a stored machine's Save), with the paragraph that warns your computer may not have the memory ({{warning}}) after it, a blank line between them."
+  },
   "memory-signal.memoryWarning.max": {
     "message": "This needs about {{need}} GiB of memory, and your computer reports {{has}} GiB. Browsers report at most 8 GiB, so it may have more. If memory runs out, the browser will close the tab without warning.",
     "note": "Paragraph after the question asked before a restart with another size when your computer may not have the memory and reports 8 GiB, the most browsers report: {{need}} is what the machine needs, {{has}} what your computer reports (GiB)."

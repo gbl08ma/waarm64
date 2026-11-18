@@ -1,6 +1,6 @@
 // The machine's power state and the message bar as the run writes them (docs/frontend.md "The page's code"): the
 // state and its words, the message and what can be done about it, the notices that clear themselves.
-import { describe, msg, said, t, text, type Described, type Msg, type Said } from '../../i18n.ts';
+import { msg, said, t, text, type Described, type Msg, type Said } from '../../i18n.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { messageBar, type Action, type MessageKind } from '../areas/message-bar.svelte.ts';
 import { isStopped, power, type PageState } from '../areas/power.svelte.ts';
@@ -25,11 +25,7 @@ export const NOTICE_MS = 15_000;
 /** A job's phase (words already rendered, or a message) and how far it is, for the state's words. */
 export const progressText = (phase: string | Msg, f: number) =>
   msg('machine:messages.progress', { phase, percent: Math.floor(100 * f) });
-/** An error's words with a line said after its headline (what the page did about it), its causes under them. */
-export function withNote(e: unknown, note: string): Described {
-  const d = describe(e);
-  return { headline: `${d.headline}\n${note}`, details: d.details, from: [undefined, ...(d.from ?? []).slice(1)] };
-}
+export { withNote } from '../../i18n.ts';
 /** Words a USB device's error adds under a headline (web/app/usb-problems.ts `errorLines`: its own, then its problems'). */
 export const usbDetails = (headline: Msg, err: unknown): Described => ({
   headline: text(headline),

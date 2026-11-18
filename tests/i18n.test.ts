@@ -2,7 +2,7 @@
 // catalog's checks (tools/i18n-check.ts) on small sources.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { describe, errorText, marked, parts, plain, said, t, text } from '../web/i18n.ts';
+import { describe, errorText, marked, parts, plain, said, t, text, withNote } from '../web/i18n.ts';
 import { devText, fromWire, msg, msgOf, MsgError, toWire } from '../web/msg.ts';
 import { checkDoc, checkSources, checkTests, loneLine, referenceProblems, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
 import { words } from './words.ts';
@@ -42,6 +42,11 @@ test('references: names and the page\'s elements, drawn by T, dropped from words
   assert.match(referenceProblems('Start <name>the {{machine}}</name>', 'Its title.', icons).join(), /holds one parameter/);
   assert.match(referenceProblems('On its <ui-wifi>Network</ui-wifi> tab', 'A note.', icons).join(), /no icon wifi/);
   assert.deepEqual(referenceProblems('On its <ui-network>Network</ui-network> tab', 'A note.', icons), []);
+  // A marker is closed, by its own closer, and holds no other ('<port>' as text reads as one).
+  assert.match(referenceProblems('Looks like ws://127.0.0.1:<port>/<token>.', 'An error.', icons).join(), /<port> isn't closed/);
+  assert.match(referenceProblems('A <code>b</ui> c', 'A note.', icons).join(), /<\/ui> closes no marker|<code> isn't closed/);
+  assert.match(referenceProblems('A <code>b <ui>c</ui></code>', 'A note.', icons).join(), /inside <code>/);
+  assert.deepEqual(referenceProblems('A <code>b</code> and <ui>c</ui>', 'A note.', icons), []);
   // A message with references drawn as text in the markup, or as a dialog's title from t().
   const found = checkSources({ x: { 'Thing.title': { message: 'Resize <name>{{name}}</name>', note: 'A dialog title: {{name}} is the disk\'s name.' } } }, [{
     path: 'web/app/Thing.svelte',
@@ -69,6 +74,25 @@ test('errors: a headline and its causes as details, across postMessage', () => {
   assert.deepEqual(said('words'), { headline: 'words', details: [] });
   assert.deepEqual(said(msg('common:ask.ok')), { headline: 'OK', details: [], from: [msg('common:ask.ok')] });
   assert.equal(devText(msg('a:b.c', { n: 2, m: msg('a:b.d') })), 'a:b.c {n=2, m=(a:b.d)}');
+});
+
+test("errors: rendered words are the page's, an exception's own words a developer's (drawn as code)", () => {
+  // A string is words already rendered (a caller's t(…)): not code, as said() takes it.
+  assert.deepEqual(describe(t('common:ask.ok')), { headline: 'OK', details: [], from: [undefined] });
+  assert.deepEqual(describe(new Error('ENOENT')).from, ['raw']);
+  const e = new MsgError('common:ask.cancel', undefined, { cause: 'the page said so' });
+  assert.deepEqual(describe(e).from, [msg('common:ask.cancel'), undefined]);
+});
+
+test("errors: a note after the headline keeps the headline's message (its markers)", () => {
+  const e = new MsgError('disks:ResizeDisk.title', { name: 'Changes' }, { cause: new Error('busy') });
+  assert.deepEqual(withNote(e, 'note'), {
+    headline: 'Resize Changes',
+    details: ['note', 'busy'],
+    from: [msg('disks:ResizeDisk.title', { name: 'Changes' }), undefined, 'raw'],
+  });
+  // A raw headline stays raw.
+  assert.deepEqual(withNote(new Error('boom'), 'note').from, ['raw', undefined]);
 });
 
 test('the catalog: every entry has its words and a note', () => {

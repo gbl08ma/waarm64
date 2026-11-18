@@ -207,6 +207,15 @@ export function referenceProblems(message: string, note: string, icons?: Readonl
     if (tag === 'name' && !/^\{\{\s*\w+\s*\}\}$/.test(inner)) out.push(`<name>${inner}</name>: a <name> holds one parameter, the name, and nothing else`);
     if (tag.startsWith('ui-') && icons && !icons.has(tag.slice(3))) out.push(`<${tag}>: no icon ${tag.slice(3)} in web/app/icons.ts`);
   }
+  // Markers are pairs, one at a time (web/i18n.ts `parts`): a `<word>` left open swallows the words after it.
+  let open: string | undefined;
+  for (const m of message.matchAll(/<(\/?)([a-z][a-z0-9-]*)>/g)) {
+    const [, close, tag] = m;
+    if (close && tag !== open) out.push(`</${tag}> closes no marker${open ? ` (<${open}> is open)` : ''}`);
+    else if (!close && open) out.push(`<${tag}> inside <${open}>: markers don't nest`);
+    else open = close ? undefined : tag;
+  }
+  if (open) out.push(`<${open}> isn't closed: a marker wraps words (<${open}>…</${open}>); text that only looks like one (ws://host:<port>) needs other words (PORT)`);
   // Every parameter inside a marker (a name in <code> is marked too).
   for (const m of message.matchAll(/<([a-z][a-z0-9-]*)>([^<]*)<\/\1>/g)) for (const v of m[2].matchAll(/\{\{\s*(\w+)/g)) marked.add(v[1]);
   const names = new Set([...varsOf(message)].filter((v) => NAME_PARAMS.has(v)));

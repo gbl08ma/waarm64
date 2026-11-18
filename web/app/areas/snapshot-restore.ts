@@ -1,6 +1,6 @@
 // A snapshot back (docs/frontend.md "Snapshots", docs/machines.md §5.2): a kept one restored onto the stored machine,
 // or a file loaded (a stored machine's restore, or a transient machine replaced by the one the file holds).
-import { errorText, msg, MsgError, t, text } from '../../i18n.ts';
+import { describe, msg, MsgError, t, text } from '../../i18n.ts';
 import { msgOf } from '../../msg.ts';
 import { opfsDir, overlayBytes } from '../../overlay.ts';
 import { readHeader, SnapshotError, type SnapshotHeader } from '../../snapshot-file.ts';
@@ -129,10 +129,10 @@ export class SnapshotRestore {
       );
       if (!plan.refused) return plan;
       void ask.alert(
-        errorText(new MsgError('snapshots:snapshot-restore.restore.refused', { name }, { cause: plan.refused })),
+        describe(new MsgError('snapshots:snapshot-restore.restore.refused', { name }, { cause: plan.refused })),
       );
     } catch (e) {
-      void ask.alert(errorText(new MsgError('snapshots:snapshot-restore.restore.failed', { name }, { cause: e })));
+      void ask.alert(describe(new MsgError('snapshots:snapshot-restore.restore.failed', { name }, { cause: e })));
     }
     return undefined;
   }

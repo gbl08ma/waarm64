@@ -10,6 +10,7 @@
   page (web/app/areas/network-actions.ts) attaches and connects.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import Button from './ui/Button.svelte';
   import Check from './ui/Check.svelte';
   import Modal from './ui/Modal.svelte';
@@ -195,7 +196,9 @@
       {/snippet}
     </Check>
   {/if}
-  <Note tone="error" size="md" id="net-error" class="error" hidden={!runner.error}>{runner.error?.text}</Note>
+  <Note tone="error" size="md" id="net-error" class="error" hidden={!runner.error}
+    >{#if runner.error}<ErrorText error={runner.error} />{/if}</Note
+  >
   {#snippet back()}
     <Button type="button" id="net-back" hidden={noBack} onclick={goBack}>{t('network:NetWizard.back')}</Button>
   {/snippet}

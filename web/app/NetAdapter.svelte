@@ -9,6 +9,7 @@
   web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import Check from './ui/Check.svelte';
   import Button from './ui/Button.svelte';
   import Field from './ui/Field.svelte';
@@ -101,7 +102,8 @@
     >
   </div>
   <p id={`net-status${s}`} class="net-status">
-    {v.text}{#each v.details ?? [] as d, k (k)}<br /><span class="net-detail">{d}</span
+    {#if v.line}<T m={v.line} />{:else}{v.text}{/if}{#each v.details ?? [] as d, k (k)}<br /><span class="net-detail"
+        >{d}</span
       >{#if k === 0 && roomWarned(v.room)}<span class="net-warn"
           ><Button
             variant="inline"
@@ -188,7 +190,9 @@
     </div>
   {/if}
   <NetNames {a} {onname} />
-  <Note tone="error" id={`net-menu-error${s}`} hidden={!runner.error}>{runner.error?.text}</Note>
+  <Note tone="error" id={`net-menu-error${s}`} hidden={!runner.error}
+    >{#if runner.error}<ErrorText error={runner.error} />{/if}</Note
+  >
   <div id={`net-actions${s}`} class="net-actions">
     {#if a.connection && !a.active && a.on}
       <Button id={`net-connect-now${s}`} onclick={() => act(() => page.netConnect(i))}>

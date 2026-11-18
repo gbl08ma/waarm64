@@ -112,7 +112,7 @@
   async function offFirst(m: MachineRecord) {
     if (!running.has(m.id)) return true;
     if (m.id !== current.id) {
-      runner.fail(t('machines:MachinesPage.otherTab'));
+      runner.fail(msg('machines:MachinesPage.otherTab'));
       return false;
     }
     // The guest asked to shut down first where its agent can (the page's powerOff: web/app/run/clean-stop.ts).
@@ -131,6 +131,9 @@
 </script>
 
 <div class="machines" data-busy={runner.busy} out:leaveInPlace={!!messageBar.text || !!runner.error}>
+  <!-- The page's heading, for a screen reader (its top bar says it with the toolbar's Home): its list and panes are
+       under it, and its left column, the way to them, is named after it. -->
+  <h2 id="home-heading" class="sr">{t('machines:MachinesPage.heading')}</h2>
   <div class="bar">
     <Button
       variant="tool"

@@ -1,6 +1,7 @@
 <!-- The page's questions (web/app/ask.svelte.ts): one modal dialog, the first queued question in it. -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import ErrorText from './ErrorText.svelte';
   import T from './T.svelte';
   import { answer, asking } from './ask.svelte.ts';
 
@@ -43,7 +44,9 @@
         {#if typeof q.title === 'string'}{q.title}{:else}<T m={q.title} />{/if}
       </h2>
       <p class="ask-text">
-        {#if typeof q.text === 'string'}{q.text}{:else}<T m={q.text} />{/if}
+        {#if typeof q.text === 'string'}{q.text}{:else if 'headline' in q.text}<ErrorText
+            error={{ text: q.text.headline, said: q.text }}
+          />{:else}<T m={q.text} />{/if}
       </p>
       {#if q.kind === 'prompt'}<input bind:this={input} bind:value={text} spellcheck="false" autocomplete="off" />{/if}
       <div class="buttons">

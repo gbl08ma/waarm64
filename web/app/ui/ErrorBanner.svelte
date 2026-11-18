@@ -2,7 +2,8 @@
   A bar that says something went wrong (`tone` `error`), needs a look (`warn`) or was done (`info`): the message bar, the
   Home page's error. Across the page, or `floating` over what's under it (a card the size of its words, which the
   caller places). With a `countdown` (an `info` notice's), a ring around its close button runs down its time, paused
-  while the pointer is on the bar, then calls its `end`. Its words (`children`) take the room, centered on its buttons
+  while the pointer is on the bar, then calls its `end`; a bar that takes the notice from another (the move to or from
+  the Home page) goes on from where the other's ring got to. Its words (`children`) take the room, centered on its buttons
   while they're a line or two and from the top when taller; its buttons (`actions`) and its close button (with
   `ondismiss`, named `dismissLabel`) stay at the top, one height. `bodyId`, `actionsId` and `dismissId` name its parts (the tests' handles); `class` and other
   attributes (`id`, `role`, `hidden`, `data-*`) go on the bar. Two bars with the same `crossfade` key, one leaving
@@ -10,6 +11,36 @@
   that comes or goes on its own (no counterpart, or no key) slides down from above the page and back up if `floating`,
   or unfolds and folds in its column (a fade with `prefers-reduced-motion`), 250 ms either way.
 -->
+<script module lang="ts">
+  import type { Attachment } from 'svelte/attachments';
+
+  /**
+   * The ring counting each notice's time (by `Countdown.id`), shared by the bars: a bar that takes the message from
+   * another (the move to or from the Home page) goes on from the time the other's ring has counted, and only the ring
+   * counting ends it. One that goes leaves its time for the next.
+   */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not state: nothing draws it
+  const rings = new Map<number, { circle?: Element; time: () => number }>();
+
+  /** The ring `circle` counts notice `id`'s time, from where the one before it got to. */
+  const counting =
+    (id: number): Attachment<SVGCircleElement> =>
+    (circle) => {
+      for (const k of rings.keys()) if (k !== id) rings.delete(k);
+      const run = circle.getAnimations()[0] as Animation | undefined;
+      const from = rings.get(id)?.time() ?? 0;
+      if (run && from) run.currentTime = from;
+      const me = { circle, time: () => Number(run?.currentTime ?? from) };
+      rings.set(id, me);
+      return () => {
+        const t = me.time();
+        if (rings.get(id) === me) rings.set(id, { time: () => t });
+      };
+    };
+  /** Whether `circle` is the ring counting notice `id`'s time. */
+  const counts = (id: number, circle: EventTarget | null) => rings.get(id)?.circle === circle;
+</script>
+
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Button from './Button.svelte';
@@ -69,7 +100,9 @@
             viewBox="0 0 28 28"
             aria-hidden="true"
             style={ringStyle}
-            onanimationend={countdown.end}><circle cx="14" cy="14" r="12.5" pathLength="100" /></svg
+            onanimationend={(e) => {
+              if (counts(countdown.id, e.target)) countdown.end();
+            }}><circle cx="14" cy="14" r="12.5" pathLength="100" {@attach counting(countdown.id)} /></svg
           >{/key}{/if}
       <Button
         variant="plain"

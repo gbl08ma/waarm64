@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { t } from '../web/i18n.ts';
 
 let browser: Browser;
 let base: string;
@@ -82,5 +83,77 @@ test("the primitives: a form's buttons are one height (ui/Button.svelte), and th
   assert.equal(got.control, '28px', 'tokens.css is loaded');
   assert.ok(got.heights.length >= 2, `buttons: ${got.heights.length}`);
   assert.deepEqual([...new Set(got.heights)], [28], `heights: ${got.heights.join(', ')}`);
+  await page.close();
+});
+
+test("the Home page's outline: its heading, then the machines' list and each pane under it; the nav named for the page", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await page.locator('.machines nav').waitFor();
+  const r = await page.evaluate(() => {
+    const nav = document.querySelector('.machines nav')!;
+    const by = nav.getAttribute('aria-labelledby');
+    return {
+      nav: nav.getAttribute('aria-label') ?? (by ? document.getElementById(by)?.textContent?.trim() : undefined),
+      headings: [...document.querySelectorAll('.machines :is(h1, h2, h3, h4)')].map((h) => `${h.tagName}:${h.textContent?.trim()}`),
+    };
+  });
+  assert.equal(r.nav, t('machines:MachinesPage.heading'));
+  assert.deepEqual(r.headings.slice(0, 2), [`H2:${t('machines:MachinesPage.heading')}`, `H3:${t('machines:MachinesNav.heading')}`]);
+  assert.ok(r.headings.slice(2).every((h) => h.startsWith('H3:')), JSON.stringify(r.headings));
+  await page.close();
+});
+
+/** A page with the first message (open a disk image) landed, its slide down done. */
+async function withMessage(o: { reducedMotion?: 'reduce' } = {}) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, ...o });
+  await page.goto(`${base}/web/app/`);
+  await page.locator('#message:not([hidden]) #message-actions button').waitFor();
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  return page;
+}
+/** Clicks `sel`, then waits a frame: the bars' 250 ms move under way. */
+const clickNow = (sel: string) => `document.querySelector(${JSON.stringify(sel)}).click(); await new Promise((r) => requestAnimationFrame(() => r()));`;
+const settled = 'await new Promise((r) => setTimeout(r, 400));';
+
+test('the message moving to the Home page: one #message-text, the new one, during the move', async () => {
+  const page = await withMessage();
+  const r = await page.evaluate(`(async () => { ${clickNow('#machines-open')} return [...document.querySelectorAll('[id=message-text], [id=message-details]')].map((e) => e.closest('.machines') ? 'home' : 'floating'); })()`);
+  assert.deepEqual(r, ['home']);
+  await page.close();
+});
+
+test('the message moving to the Home page with prefers-reduced-motion: a fade, nothing moves', async () => {
+  const page = await withMessage({ reducedMotion: 'reduce' });
+  const moves = await page.evaluate(`(async () => { ${clickNow('#machines-open')} return [...document.querySelectorAll('.banner')].flatMap((b) => b.getAnimations().flatMap((a) => a.effect.getKeyframes())).filter((k) => k.transform && k.transform !== 'none').length; })()`);
+  assert.equal(moves, 0);
+  await page.close();
+});
+
+test('the Home page closed and opened again within the move: in the flow, not left fixed where it was', async () => {
+  const page = await withMessage();
+  await page.click('#machines-open');
+  await page.locator('.machines [data-action=back]').waitFor();
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  const r = await page.evaluate(`(async () => { ${clickNow('.machines [data-action=back]')} ${clickNow('#machines-open')} ${settled} return [...document.querySelectorAll('.machines')].map((e) => e.style.position + '|' + getComputedStyle(e).position); })()`);
+  assert.deepEqual(r, ['|static']);
+  await page.close();
+});
+
+test("a notice's countdown goes on where it was when the bar moves to the Home page", async () => {
+  const page = await withMessage();
+  const r = await page.evaluate(async () => {
+    const { Messages } = await import('/web/app/run/messages.ts' as string);
+    new Messages({ spec: {} }, () => undefined).notify('notice-1');
+    const ring = () => [...document.querySelectorAll('.ring circle')].map((c) => Number(c.getAnimations()[0]?.currentTime ?? -1));
+    await new Promise((res) => setTimeout(res, 1500));
+    const before = ring();
+    (document.getElementById('machines-open') as HTMLElement).click();
+    await new Promise((res) => setTimeout(res, 400));
+    return { before, after: ring() };
+  });
+  assert.equal(r.after.length, 1, JSON.stringify(r));
+  assert.ok(r.before[0] >= 1400 && r.after[0] >= 1800, JSON.stringify(r));
   await page.close();
 });

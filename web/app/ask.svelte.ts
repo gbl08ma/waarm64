@@ -1,15 +1,18 @@
 // The page's questions and notices (docs/frontend.md "Dialogs"): in-page dialogs instead of the browser's confirm, alert
 // and prompt, shown one at a time by Ask.svelte (`<dialog id="ask">`). Each resolves when answered; Esc is Cancel.
-// The words are the caller's: rendered (`t(…)`, web/i18n.ts), or a message (`msg(…)`), drawn with its names' and the
-// page's elements' markers (T.svelte); the defaults are the catalog's.
-import { t, type Msg } from '../i18n.ts';
+// The words are the caller's: rendered (`t(…)`, web/i18n.ts), a message (`msg(…)`), drawn with its names' and the
+// page's elements' markers (T.svelte), or an error's (`describe(e)`: its headline and causes, drawn as ErrorText draws
+// them); the defaults are the catalog's.
+import { t, type Described, type Msg } from '../i18n.ts';
 
-/** A question's words: rendered, or a message. */
-export type Words = string | Msg;
+/** A title's words: rendered, or a message. */
+export type Title = string | Msg;
+/** A question's words: rendered, a message, or an error's (web/i18n.ts `describe`). */
+export type Words = Title | Described;
 
 export type Question = {
   kind: 'confirm' | 'alert' | 'prompt' | 'wait';
-  title: Words;
+  title: Title;
   text: Words;
   ok: string;
   cancel: string;
@@ -19,7 +22,7 @@ export type Question = {
   value: string;
   resolve(answer: boolean | string | undefined): void;
 };
-type Options = { title?: Words; ok?: string; cancel?: string; danger?: boolean };
+type Options = { title?: Title; ok?: string; cancel?: string; danger?: boolean };
 
 export const asking = $state({ current: undefined as Question | undefined, serial: 0 });
 const queue: Question[] = [];

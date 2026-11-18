@@ -2,7 +2,7 @@
 // edit, whether it changed, and its Save (docs/machines.md §7). The page reads the records and hands this machine's
 // over (`follow`); the draft follows the record unless the user is editing it.
 import { ask } from './ask.svelte.ts';
-import { said, t, MsgError, type Msg } from '../i18n.ts';
+import { t, MsgError, type Msg } from '../i18n.ts';
 import type { Actions } from './actions.svelte.ts';
 import { updateMachine } from './machines.ts';
 import { adaptersOf, type MachineRecord } from './shape.ts';
@@ -125,7 +125,7 @@ export class MachineEdit {
     if (!m.sharesPath) delete m.sharesPath;
     const pathError = m.sharesPath ? sharesPathError(m.sharesPath) : undefined;
     if (pathError) {
-      this.#actions.fail(said(pathError).headline);
+      this.#actions.fail(pathError);
       return;
     }
     await this.#actions.run(t('machines:machine-edit.saving'), async () => {

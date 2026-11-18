@@ -110,13 +110,16 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   const panel = await a.locator('#folders').evaluate((m) => { const p = m.querySelector('summary')!.nextElementSibling as HTMLElement; return { scroll: p.scrollWidth, client: p.clientWidth }; });
   assert.ok(panel.scroll <= panel.client, `the menu's panel holds its words: ${JSON.stringify(panel)}`);
   assert.equal(await a.locator('#folders').textContent().then((s) => s?.includes('mount -t')), false, 'no command in the menu');
-  await a.click('#folders-mount-open');
+  // From the keyboard: closed, the dialog gives the focus back to the Folders button (the menu's closed with Details… in it).
+  await a.focus('#folders-mount-open');
+  await a.keyboard.press('Enter');
   await a.waitForFunction(() => (document.getElementById('folders-mount') as HTMLDialogElement).open, null, { timeout: 5_000 });
   assert.equal(await a.locator('#folders-mount-command').inputValue(), SHARES_BY_HAND);
   assert.match(await a.locator('#folders-mount-auto').textContent() ?? '', words('folders:FoldersMount.auto', { path: '/mnt/shared' }));
   assert.equal(await a.locator('#folders-mount').evaluate((d) => d.scrollWidth <= d.clientWidth), true, 'the dialog holds the command');
-  await a.click('#folders-mount-close');
+  await a.keyboard.press('Escape');
   await a.waitForFunction(() => !(document.getElementById('folders-mount') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  assert.equal(await a.evaluate(() => document.activeElement?.matches('#folders > summary') ?? false), true, `focus on ${await a.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))}`);
   await menu(a);
 
   // A second tab's machine: Alpha writes it, so it waits, naming Alpha, and takes it after asking.

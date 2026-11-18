@@ -413,23 +413,27 @@ shows the message instead, so there is never both a floating banner and the page
 floats again when the Home page closes. Between the two places it moves (a 250 ms crossfade,
 `web/app/ui/crossfade.ts`: `ErrorBanner`'s `crossfade` key, kept as `data-crossfade` because a transition's parameter
 from a prop is a derived Svelte won't compute once its component is going); the closing Home page, kept in the DOM
-for that time, leaves the flow (fixed where it was) and fades, so the machine's page isn't pushed aside beside it.
+for that time, leaves the flow (fixed where it was) and fades, so the machine's page isn't pushed aside beside it
+(opened again within that time, Svelte reverses the outro and the page takes its own style back).
 Where it comes or goes rather than moving (that crossfade's `fallback`, also 250 ms), the floating bar slides down from
 above the page, passing over the toolbar, and goes back up the same way: it reads as a message from waarm64, not from
 the guest whose screen it covers. The Home page's banner (its own errors too) unfolds and folds in the page's column
-(Svelte's `slide`); with `prefers-reduced-motion`, both fade. The floating bar is mounted only while there is a
+(Svelte's `slide`); with `prefers-reduced-motion`, everything fades, the move between the two places too. The floating bar is mounted only while there is a
 message (`MessageBar.svelte`; `#message`, the wrapper that holds it, stays, with the `data-kind`, `data-snapshot` and
-`data-load` tools read), and a leaving bar keeps the last message's words: tests read the words with
+`data-load` tools read), and a leaving bar keeps the last message's words but gives up its ids (`data-left-id`
+holds them), so `#message-text` is always the bar that shows the message now: tests read the words with
 `getElementById('message-text')` rather than wait for an element that may not come, and a test that measures the bar
 waits for its animations to finish. Its words (`MessageWords.svelte`, in both places) are in the page's font: a
 headline that isn't a sentence (an error's) is bold, the details under it a line each, a message's names and the
 page's elements drawn as everywhere (i18n.md "Markers"); only a line that is a developer's text, an exception's own
-words from the browser or the core (`describe`'s `from`, `'raw'`), is code. Its
+words from the browser or the core (`describe`'s `from`, `'raw'`), is code (a string is words already rendered, never
+code: pass a `Msg` where they have markers). A note the page adds to an error (`withNote`) is a line under its headline. Its
 words take the room its actions leave, which sit at the bar's far end. It has a close button, beside its words (which wrap with its actions)
 at the top right. A notice that leaves the machine as it was (`notify`) is `info` when something was
 done (a snapshot kept or saved; a suspended machine resumed; a disk saved, from this machine or another; changes
 loaded into a machine that's off; a disk grown; the guest asleep): green, it closes itself after 15 s, which a ring around the close button runs down (paused
-while the pointer is on the bar, and in a hidden tab, CSS animations being). A notice that's a warning or an error (a
+while the pointer is on the bar, and in a hidden tab, CSS animations being; the bar that takes the notice to or from
+the Home page goes on from where the other's ring got to, and only the ring counting ends it). A notice that's a warning or an error (a
 save that failed, the guest that refused a soft power-off) stays until it's closed. A problem that keeps the machine
 from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it gives way to it
 again, with its actions, when it closes.
@@ -445,7 +449,9 @@ edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab
 `PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
 called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav`, `openMachines`, `#machines-open`, kept
 theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
-address opens it, so a reload keeps it, and the older `#machines` still does): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. The left
+address opens it, so a reload keeps it, and the older `#machines` still does): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. Its heading,
+**[Home](ui:machines:MachinesPage.heading)**, is for a screen reader alone (an `h2`, the toolbar's `h1` above it): it
+names the left column (a `nav`), and the list's heading and each pane's title (`h3`) are under it. The left
 column's **[Machines](ui:machines:MachinesNav.heading)** heads the list of machines, each said running (its Web Lock
 is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off (while there are none, a line
 says so in its place, with no rule under it); then the commands that make one (new, **from a disk image…** (what Open

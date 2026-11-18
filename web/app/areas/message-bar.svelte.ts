@@ -7,7 +7,7 @@ export type MessageKind = 'error' | 'warn' | 'info';
 export type Action = { label: string; run: (button: HTMLButtonElement) => void };
 /**
  * A notice's time on screen: `ms`, counted by the bar's ring around its close button (paused while the pointer is on
- * the bar or the tab is hidden), then `end`. `id` tells one notice's from the next's (the ring starts over).
+ * the bar or the tab is hidden), then `end`. `id` tells one notice's from the next's (the ring starts over; a bar that takes a notice from another goes on from its time: ui/ErrorBanner.svelte).
  */
 export type Countdown = { ms: number; id: number; end: () => void };
 
