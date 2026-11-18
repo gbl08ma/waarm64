@@ -140,13 +140,14 @@ const PAGE_SOURCES = ['web/app/worker-devices.ts', 'web/app/worker-start.ts', 'w
 
 /**
  * The page's own transient machine of `query` (web/app/?<query>, the tests' `PAGE_QUERY` and `unattendedQuery()`
- * in it) at its serial login prompt, saved with the page's Snapshot: its local path, for Load snapshot
+ * in it, or a `disk=` of its own) at its serial login prompt, saved with the page's Snapshot: its local path, for Load snapshot
  * (bench/snapshot-start.ts `loadSnapshotFile`), or '' with WAARM64_DEBIAN_FIXTURES=0. A page loads it only into a
  * machine of the same query (the machine's name, its disk and its devices: web/app/worker-header.ts).
  */
 export async function pageFixture(browser: Browser, base: string, query: string): Promise<string> {
   if (process.env.WAARM64_DEBIAN_FIXTURES === '0') return '';
-  const key = sha(JSON.stringify([fixtureKey({}), query, PAGE_SOURCES.map((f) => (existsSync(join(ROOT, f)) ? sha(readFileSync(join(ROOT, f))) : ''))])).slice(0, 16);
+  const disk = new URLSearchParams(query).get('disk') ?? undefined; // the query's disk (a `?disk=` URL machine), else the tests' Debian
+  const key = sha(JSON.stringify([fixtureKey({ disk }), query, PAGE_SOURCES.map((f) => (existsSync(join(ROOT, f)) ? sha(readFileSync(join(ROOT, f))) : ''))])).slice(0, 16);
   return fixture(`page-${sha(query).slice(0, 8)}`, key, async (to) => {
     const ctx = await browser.newContext({ acceptDownloads: true });
     try {

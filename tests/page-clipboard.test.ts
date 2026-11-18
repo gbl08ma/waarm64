@@ -28,6 +28,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { pageFixture } from './debian-fixture.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { desktopNow, desktops, recordDesktop } from './page-desktop.ts';
@@ -220,262 +222,270 @@ async function swayUp(page: Page, after = 0) {
   }
 }
 
-test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-paste, long texts, echoes, the pause, sway again; idle costs', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
-  const context = await browser.newContext();
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&clipboard=1&disk=/${IMAGE}&${credentialsQuery()}`);
-  await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
-  assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
-  await shows(page, /login: /); // `running` may come from the agent's HELLO, before the getty's prompt
-  await onSerial(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
-  const h = await hello(page);
-  assert.ok(h.caps & 2, `the agent shares text (caps ${h.caps})`);
-  // In the serial shell itself (a command's $(…) would define it in a subshell).
-  await onSerial(page, `${W}\n`);
-  await recordDesktop(page);
-  const up = await swayUp(page);
-  t.diagnostic(`sway and the agent's child in session ${up.session}: ${up.journal}`);
-  // The session sway runs in is a tty's (logged in by getty), active on seat0: the agent found it all the same.
-  const props = await run(page, `loginctl show-session ${up.session} -p Type -p Seat -p Active -p Name`);
-  for (const p of ['Type=tty', 'Seat=seat0', 'Active=yes', 'Name=user']) assert.ok(props.split(' ').includes(p), `session ${up.session}: ${props}`);
-  await countWrites(page);
+test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-paste, long texts, echoes, the pause, sway again; idle costs', { skip, timeout: 15 * 60_000 }, async (t) => {
+  const query = `${PAGE_QUERY}ncpus=2&view=both&clipboard=1&disk=/${IMAGE}&${credentialsQuery()}`;
+  // From a booted-Debian fixture of the sway image (tests/debian-fixture.ts): no boot is tested here.
+  const fixture = await pageFixture(browser, base, query);
+  await withDebianLock(async () => {
+    const context = await browser.newContext();
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await answerAsks(page);
+    await page.goto(`${base}/web/app/?${query}`);
+    if (fixture) await loadSnapshotFile(page, fixture);
+    await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
+    assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
+    await shows(page, /login: /); // `running` may come from the agent's HELLO, before the getty's prompt
+    await onSerial(page, 'root\n');
+    await shows(page, /root@\S+:~# /);
+    // A restored guest's clock stood still since the save.
+    if (fixture) await run(page, `date -u -s @${(Date.now() / 1000).toFixed(3)} > /dev/null`);
+    const h = await hello(page);
+    assert.ok(h.caps & 2, `the agent shares text (caps ${h.caps})`);
+    // In the serial shell itself (a command's $(…) would define it in a subshell).
+    await onSerial(page, `${W}\n`);
+    await recordDesktop(page);
+    const up = await swayUp(page);
+    t.diagnostic(`sway and the agent's child in session ${up.session}: ${up.journal}`);
+    // The session sway runs in is a tty's (logged in by getty), active on seat0: the agent found it all the same.
+    const props = await run(page, `loginctl show-session ${up.session} -p Type -p Seat -p Active -p Name`);
+    for (const p of ['Type=tty', 'Seat=seat0', 'Active=yes', 'Name=user']) assert.ok(props.split(' ').includes(p), `session ${up.session}: ${props}`);
+    await countWrites(page);
 
-  // The screen's size: each size the page asks the guest for goes to the agent too, and sway's output follows.
-  assert.ok(h.caps & CAP_DISPLAY, `the agent follows the screen's size (caps ${h.caps})`);
-  await recordSizes(page);
-  for (const [w, hh] of [[1200, 1000], [1600, 900]]) {
-    await page.setViewportSize({ width: w, height: hh });
-    const size = await page.waitForFunction(() => (window as unknown as { __sizes: Size[] }).__sizes.at(-1), null, { timeout: 10_000, polling: 100 }).then((x) => x.jsonValue() as Promise<Size>);
-    await outputIs(page, size, `the window at ${w}x${hh}`);
-    await page.evaluate(() => { (window as unknown as { __sizes: Size[] }).__sizes = []; });
-  }
-  const last = (await outputSize(page)).size!;
+    // The screen's size: each size the page asks the guest for goes to the agent too, and sway's output follows.
+    assert.ok(h.caps & CAP_DISPLAY, `the agent follows the screen's size (caps ${h.caps})`);
+    await recordSizes(page);
+    for (const [w, hh] of [[1200, 1000], [1600, 900]]) {
+      await page.setViewportSize({ width: w, height: hh });
+      const size = await page.waitForFunction(() => (window as unknown as { __sizes: Size[] }).__sizes.at(-1), null, { timeout: 10_000, polling: 100 }).then((x) => x.jsonValue() as Promise<Size>);
+      await outputIs(page, size, `the window at ${w}x${hh}`);
+      await page.evaluate(() => { (window as unknown as { __sizes: Size[] }).__sizes = []; });
+    }
+    const last = (await outputSize(page)).size!;
 
-  // The keyboard layout (KEYMAP): one the session hasn't (a restore onto another setting, the setting saved while it
-  // runs) reaches sway through its IPC. sway compiles the keymap at each command: `neo` is a variant of German's and
-  // `intl` of US's, neither of the other's, so what it takes says the layout (a failed command changes nothing).
-  const takes = (c: string) =>
-    run(page, `runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 swaymsg -s "$(ls /run/user/1000/sway-ipc.*.sock | head -1)" 'input type:keyboard xkb_variant ${c}' >/dev/null 2>&1 && echo yes || echo no`);
-  const keymap = (l: { layout: string; variant?: string; vc: string }) =>
-    page.evaluate((l) => (window as unknown as { __agent: { keymap(l: unknown): boolean } }).__agent.keymap(l), l);
-  for (const [l, yes, no] of [[{ layout: 'de', variant: 'neo', vc: 'de-latin1' }, 'neo', 'intl'], [{ layout: 'us', vc: 'us' }, 'intl', 'neo']] as const) {
-    assert.equal(await keymap(l), true, 'the agent takes KEYMAP');
-    for (let i = 0; (await takes(yes)) !== 'yes'; i++) {
-      if (i > 20) assert.fail(`sway's layout isn't ${l.layout}; the agent says: ${await journal(page)}`);
+    // The keyboard layout (KEYMAP): one the session hasn't (a restore onto another setting, the setting saved while it
+    // runs) reaches sway through its IPC. sway compiles the keymap at each command: `neo` is a variant of German's and
+    // `intl` of US's, neither of the other's, so what it takes says the layout (a failed command changes nothing).
+    const takes = (c: string) =>
+      run(page, `runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 swaymsg -s "$(ls /run/user/1000/sway-ipc.*.sock | head -1)" 'input type:keyboard xkb_variant ${c}' >/dev/null 2>&1 && echo yes || echo no`);
+    const keymap = (l: { layout: string; variant?: string; vc: string }) =>
+      page.evaluate((l) => (window as unknown as { __agent: { keymap(l: unknown): boolean } }).__agent.keymap(l), l);
+    for (const [l, yes, no] of [[{ layout: 'de', variant: 'neo', vc: 'de-latin1' }, 'neo', 'intl'], [{ layout: 'us', vc: 'us' }, 'intl', 'neo']] as const) {
+      assert.equal(await keymap(l), true, 'the agent takes KEYMAP');
+      for (let i = 0; (await takes(yes)) !== 'yes'; i++) {
+        if (i > 20) assert.fail(`sway's layout isn't ${l.layout}; the agent says: ${await journal(page)}`);
+        await page.waitForTimeout(500);
+      }
+      assert.equal(await takes(no), 'no', `${l.layout} has no ${no}`);
+    }
+
+    // Guest to host: short text inline, then 200 KiB requested in DATA frames.
+    await run(page, 'wlc wl-copy "$(printf "from the guest \\342\\230\\203")" >/dev/null 2>&1; echo copied');
+    await hostHas(page, 'from the guest ☃', 'wl-copy');
+    await run(page, 'seq 1 36000 >/tmp/long; stat -c %s /tmp/long; wlc wl-copy </tmp/long >/dev/null 2>&1');
+    const long = Array.from({ length: 36000 }, (_, i) => `${i + 1}\n`).join('');
+    await hostHas(page, long, 'wl-copy of 200 KiB');
+    assert.equal(await writes(page), 2);
+
+    // Host to guest: the paste chord, short (inline), again (from the agent's cache), and long (streamed: past the 4 KiB
+    // inline, the 64 KiB cache and the 4 frames a request grants before a MORE).
+    const short = 'from the host ✓ — π\n';
+    await pasteChord(page, short);
+    await guestHasText(page, short, 'the paste chord');
+    assert.equal(await guestHas(page), sha(short), 'pasted again: the same');
+    const big = Array.from({ length: 12000 }, (_, i) => `line ${i} of the host's text, ünïcödé\n`).join('');
+    assert.ok(Buffer.byteLength(big) > 4 * 65536);
+    await pasteChord(page, big);
+    await guestHasText(page, big, 'the paste chord with 400 KiB');
+    assert.equal(await guestHas(page), sha(big), 'pasted again: the same');
+    // The guest copies the host's text back (a program that takes a paste and copies it): not offered to the host.
+    await pasteChord(page, short);
+    await guestHasText(page, short, 'the paste chord, short again');
+    await run(page, 'wlc wl-paste -n >/tmp/back && wlc wl-copy </tmp/back >/dev/null 2>&1; echo copied back');
+    await page.waitForTimeout(3000);
+    assert.equal(await writes(page), 2, "the host's own text isn't offered back");
+    // The same text pasted again when the guest has it: no offer, the key goes at once.
+    const t0 = Date.now();
+    await pasteChord(page, short);
+    t.diagnostic(`the paste chord with what the guest has: ${Date.now() - t0} ms`);
+
+    // Sync (way 1): the read permission is granted, so a copy on the host reaches the guest's clipboard with no paste:
+    // Chromium fires clipboardchange and the page reads on it. A focus with nothing new offers nothing.
+    assert.equal(await page.evaluate(() => document.getElementById('clipboard-menu')?.dataset.permission), 'granted');
+    const offers = () => page.evaluate(() => (window as unknown as { __offers?: number }).__offers ?? 0);
+    await page.evaluate(() => {
+      const w = window as unknown as { __offers: number; __agent: { send(type: number, p?: Uint8Array): boolean } };
+      w.__offers = 0;
+      const send = w.__agent.send.bind(w.__agent);
+      w.__agent.send = (type, p) => { if (type === 2) w.__offers++; return send(type, p); };
+    });
+    await page.evaluate((s) => navigator.clipboard.writeText(s), 'synced from the host');
+    await guestHasText(page, 'synced from the host', 'sync with the read permission');
+    assert.equal(await offers(), 1);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForTimeout(1000);
+    assert.equal(await offers(), 1, 'a focus with the same clipboard: no offer');
+    assert.equal(await writes(page), 2, "the host's text isn't written back");
+
+    // PAUSE from the toolbar's switch: the host's text leaves the guest's clipboard; nothing either way until RESUME.
+    await pasteChord(page, 'before the pause');
+    await guestHasText(page, 'before the pause', 'the paste chord before the pause');
+    await share(page, false);
+    for (let i = 0; ; i++) {
+      const s = await run(page, 'wlc wl-paste -n >/dev/null 2>&1 && echo has || echo empty');
+      if (s === 'empty') break;
+      if (i > 20) assert.fail("the guest's clipboard kept the host's text after PAUSE");
       await page.waitForTimeout(500);
     }
-    assert.equal(await takes(no), 'no', `${l.layout} has no ${no}`);
-  }
+    await pasteChord(page, 'during the pause');
+    await page.waitForTimeout(2000);
+    assert.equal(await run(page, 'wlc wl-paste -n >/dev/null 2>&1 && echo has || echo empty'), 'empty', 'paused: the paste chord offers nothing');
+    await run(page, 'wlc wl-copy guest-during-pause >/dev/null 2>&1; echo copied');
+    await page.waitForTimeout(3000);
+    assert.equal(await hostText(page), 'during the pause', "paused: the guest's copy doesn't reach the host");
+    await share(page, true);
+    await run(page, 'wlc wl-copy guest-after-resume >/dev/null 2>&1; echo copied');
+    await hostHas(page, 'guest-after-resume', 'wl-copy after RESUME');
+    await pasteChord(page, 'host after resume');
+    await guestHasText(page, 'host after resume', 'the paste chord after RESUME');
 
-  // Guest to host: short text inline, then 200 KiB requested in DATA frames.
-  await run(page, 'wlc wl-copy "$(printf "from the guest \\342\\230\\203")" >/dev/null 2>&1; echo copied');
-  await hostHas(page, 'from the guest ☃', 'wl-copy');
-  await run(page, 'seq 1 36000 >/tmp/long; stat -c %s /tmp/long; wlc wl-copy </tmp/long >/dev/null 2>&1');
-  const long = Array.from({ length: 36000 }, (_, i) => `${i + 1}\n`).join('');
-  await hostHas(page, long, 'wl-copy of 200 KiB');
-  assert.equal(await writes(page), 2);
-
-  // Host to guest: the paste chord, short (inline), again (from the agent's cache), and long (streamed: past the 4 KiB
-  // inline, the 64 KiB cache and the 4 frames a request grants before a MORE).
-  const short = 'from the host ✓ — π\n';
-  await pasteChord(page, short);
-  await guestHasText(page, short, 'the paste chord');
-  assert.equal(await guestHas(page), sha(short), 'pasted again: the same');
-  const big = Array.from({ length: 12000 }, (_, i) => `line ${i} of the host's text, ünïcödé\n`).join('');
-  assert.ok(Buffer.byteLength(big) > 4 * 65536);
-  await pasteChord(page, big);
-  await guestHasText(page, big, 'the paste chord with 400 KiB');
-  assert.equal(await guestHas(page), sha(big), 'pasted again: the same');
-  // The guest copies the host's text back (a program that takes a paste and copies it): not offered to the host.
-  await pasteChord(page, short);
-  await guestHasText(page, short, 'the paste chord, short again');
-  await run(page, 'wlc wl-paste -n >/tmp/back && wlc wl-copy </tmp/back >/dev/null 2>&1; echo copied back');
-  await page.waitForTimeout(3000);
-  assert.equal(await writes(page), 2, "the host's own text isn't offered back");
-  // The same text pasted again when the guest has it: no offer, the key goes at once.
-  const t0 = Date.now();
-  await pasteChord(page, short);
-  t.diagnostic(`the paste chord with what the guest has: ${Date.now() - t0} ms`);
-
-  // Sync (way 1): the read permission is granted, so a copy on the host reaches the guest's clipboard with no paste:
-  // Chromium fires clipboardchange and the page reads on it. A focus with nothing new offers nothing.
-  assert.equal(await page.evaluate(() => document.getElementById('clipboard-menu')?.dataset.permission), 'granted');
-  const offers = () => page.evaluate(() => (window as unknown as { __offers?: number }).__offers ?? 0);
-  await page.evaluate(() => {
-    const w = window as unknown as { __offers: number; __agent: { send(type: number, p?: Uint8Array): boolean } };
-    w.__offers = 0;
-    const send = w.__agent.send.bind(w.__agent);
-    w.__agent.send = (type, p) => { if (type === 2) w.__offers++; return send(type, p); };
-  });
-  await page.evaluate((s) => navigator.clipboard.writeText(s), 'synced from the host');
-  await guestHasText(page, 'synced from the host', 'sync with the read permission');
-  assert.equal(await offers(), 1);
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.waitForTimeout(1000);
-  assert.equal(await offers(), 1, 'a focus with the same clipboard: no offer');
-  assert.equal(await writes(page), 2, "the host's text isn't written back");
-
-  // PAUSE from the toolbar's switch: the host's text leaves the guest's clipboard; nothing either way until RESUME.
-  await pasteChord(page, 'before the pause');
-  await guestHasText(page, 'before the pause', 'the paste chord before the pause');
-  await share(page, false);
-  for (let i = 0; ; i++) {
-    const s = await run(page, 'wlc wl-paste -n >/dev/null 2>&1 && echo has || echo empty');
-    if (s === 'empty') break;
-    if (i > 20) assert.fail("the guest's clipboard kept the host's text after PAUSE");
-    await page.waitForTimeout(500);
-  }
-  await pasteChord(page, 'during the pause');
-  await page.waitForTimeout(2000);
-  assert.equal(await run(page, 'wlc wl-paste -n >/dev/null 2>&1 && echo has || echo empty'), 'empty', 'paused: the paste chord offers nothing');
-  await run(page, 'wlc wl-copy guest-during-pause >/dev/null 2>&1; echo copied');
-  await page.waitForTimeout(3000);
-  assert.equal(await hostText(page), 'during the pause', "paused: the guest's copy doesn't reach the host");
-  await share(page, true);
-  await run(page, 'wlc wl-copy guest-after-resume >/dev/null 2>&1; echo copied');
-  await hostHas(page, 'guest-after-resume', 'wl-copy after RESUME');
-  await pasteChord(page, 'host after resume');
-  await guestHasText(page, 'host after resume', 'the paste chord after RESUME');
-
-  // Images (plan §4.4). Guest to host: a screenshot (grim) copied as PNG reaches the host's clipboard with the same
-  // pixels (against grim's PPM of the same screen); the page reads it back once, so the browser's re-encoding isn't
-  // offered back to the guest.
-  await page.evaluate(() => {
-    const w = window as unknown as { __images: number; __clipboard: { onImage?: () => void } };
-    w.__images = 0;
-    w.__clipboard.onImage = () => { w.__images++; };
-  });
-  const images = () => page.evaluate(() => (window as unknown as { __images: number }).__images);
-  const offersBefore = await offers();
-  await run(page, 'wlc grim /tmp/s.png && wlc grim -t ppm /tmp/s.ppm && wlc wl-copy --type image/png </tmp/s.png >/dev/null 2>&1; echo copied');
-  // sway's screen is the page's size now (the agent's DISPLAY, above).
-  const [sw, sh] = last.split('x').map(Number);
-  const ppm = await run(page, `head -n 3 /tmp/s.ppm | tr "\\n" " "; tail -c ${sw * sh * 3} /tmp/s.ppm | sha256sum | cut -c1-64`);
-  const shot = await hostImage(page, (x) => x.width === sw, 'the screenshot');
-  assert.equal(ppm, `P6 ${sw} ${sh} 255 ${shot.rgb}`, "the screenshot's pixels on the host (grim's PPM)");
-  assert.equal(await images(), 1);
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.waitForTimeout(2000);
-  assert.equal(await offers(), offersBefore, "the guest's screenshot, re-encoded by the browser, offered back");
-  // A JPEG alone (made on the host, typed in as base64): the page converts it, the host gets a PNG of its pixels.
-  const jpeg = await page.evaluate(async () => {
-    const c = new OffscreenCanvas(64, 32);
-    const g = c.getContext('2d')!;
-    g.fillStyle = '#f00';
-    g.fillRect(0, 0, 32, 32);
-    g.fillStyle = '#00f';
-    g.fillRect(32, 0, 32, 32);
-    const b = new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg', quality: 0.9 })).arrayBuffer());
-    return btoa(String.fromCharCode(...b));
-  });
-  assert.ok(jpeg.length < 3000, `a JPEG of ${jpeg.length} base64 characters`);
-  await run(page, `echo ${jpeg} | base64 -d >/tmp/p.jpg && wlc wl-copy --type image/jpeg </tmp/p.jpg >/dev/null 2>&1; echo copied`);
-  const converted = await hostImage(page, (x) => x.width === 64, 'the JPEG as PNG');
-  assert.deepEqual(converted.types, ['image/png']);
-  const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 12);
-  assert.ok(near(converted.left, [255, 0, 0]) && near(converted.right, [0, 0, 255]), `the JPEG's pixels: ${converted.left} ${converted.right}`);
-  assert.equal(await images(), 2);
-
-  // Host to guest: Copy the screen (the toolbar's menu) puts the page's display on the host's clipboard as PNG; the
-  // sync offers it, and wl-paste gets the bytes the browser gives.
-  await page.click('#clipboard-menu > summary');
-  await page.click('#clipboard-screen');
-  const screen = await hostImage(page, (x) => x.width !== 64, 'the screen copied');
-  t.diagnostic(`Copy the screen: ${screen.width}×${screen.height}, ${screen.size} bytes`);
-  await guestHasImage(page, screen.sha, 'the screen in the guest');
-  // A big picture (noise, 1024×512: past the 4 frames a request grants and the cap's checks), streamed; timed.
-  await page.evaluate(async () => {
-    const c = new OffscreenCanvas(1024, 512);
-    const g = c.getContext('2d')!;
-    const img = g.createImageData(1024, 512);
-    let x = 0x2545f491;
-    for (let k = 0; k < img.data.length; k++) {
-      x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
-      img.data[k] = k % 4 === 3 ? 255 : x & 0xff;
-    }
-    g.putImageData(img, 0, 0);
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': c.convertToBlob({ type: 'image/png' }) })]);
-  });
-  const t1 = Date.now();
-  const noise = await hostImage(page, (x) => x.width === 1024, 'the noise on the host');
-  await guestHasImage(page, noise.sha, 'the noise in the guest');
-  t.diagnostic(`a ${noise.size}-byte PNG to the guest's wl-paste: ${Date.now() - t1} ms`);
-  // The guest copies it back (wl-copy of the file): written whole, the same pixels.
-  await run(page, 'wlc wl-paste -n -t image/png >/tmp/big.png && wlc wl-copy --type image/png </tmp/big.png >/dev/null 2>&1; echo copied');
-  for (let i = 0; (await images()) < 3; i++) {
-    if (i > 120) assert.fail(`the guest's big PNG never written: ${await journal(page)}`);
-    await page.waitForTimeout(250);
-  }
-  assert.equal((await hostImage(page, (x) => x.width === 1024, 'the noise back')).rgb, noise.rgb);
-
-  // The cap, against the offer's size before any bytes cross (a page's offer past 64 MiB): the agent refuses it
-  // (ACK TOO_LARGE) and requests nothing; the guest's clipboard keeps what it had.
-  const before = await run(page, 'wlc wl-paste -l | tr "\\n" " "');
-  const refused = await page.evaluate(async () => {
-    const { encodeOffer, FRAME } = await import('/web/agent-frame.ts' as string) as typeof import('../web/agent-frame.ts');
-    const w = window as unknown as { __frames: number[]; __agent: { send(type: number, p?: Uint8Array): boolean; onFrame?: (f: { type: number; payload: Uint8Array }) => void } };
-    const requests = w.__frames.filter((k) => k === FRAME.REQUEST).length;
-    const ack = new Promise<number[]>((resolve) => {
-      const on = w.__agent.onFrame;
-      w.__agent.onFrame = (f) => {
-        on?.(f);
-        if (f.type === FRAME.ACK && new DataView(f.payload.buffer, f.payload.byteOffset).getUint32(0, true) === 0x7fff0001) resolve([...f.payload]);
-      };
-      setTimeout(() => resolve([]), 10_000);
+    // Images (plan §4.4). Guest to host: a screenshot (grim) copied as PNG reaches the host's clipboard with the same
+    // pixels (against grim's PPM of the same screen); the page reads it back once, so the browser's re-encoding isn't
+    // offered back to the guest.
+    await page.evaluate(() => {
+      const w = window as unknown as { __images: number; __clipboard: { onImage?: () => void } };
+      w.__images = 0;
+      w.__clipboard.onImage = () => { w.__images++; };
     });
-    w.__agent.send(FRAME.OFFER, encodeOffer({ serial: 0x7fff0001, types: [{ type: 'image/png', size: (64 << 20) + 1 }] }));
-    const a = await ack;
-    await new Promise((r) => setTimeout(r, 1000));
-    return { ack: a, requests: w.__frames.filter((k) => k === FRAME.REQUEST).length - requests };
-  });
-  assert.deepEqual(refused, { ack: [1, 0, 0xff, 0x7f, 3], requests: 0 }, 'ACK TOO_LARGE, no REQUEST');
-  assert.equal(await run(page, 'wlc wl-paste -l | tr "\\n" " "'), before, "the guest's clipboard after the refused offer");
+    const images = () => page.evaluate(() => (window as unknown as { __images: number }).__images);
+    const offersBefore = await offers();
+    await run(page, 'wlc grim /tmp/s.png && wlc grim -t ppm /tmp/s.ppm && wlc wl-copy --type image/png </tmp/s.png >/dev/null 2>&1; echo copied');
+    // sway's screen is the page's size now (the agent's DISPLAY, above).
+    const [sw, sh] = last.split('x').map(Number);
+    const ppm = await run(page, `head -n 3 /tmp/s.ppm | tr "\\n" " "; tail -c ${sw * sh * 3} /tmp/s.ppm | sha256sum | cut -c1-64`);
+    const shot = await hostImage(page, (x) => x.width === sw, 'the screenshot');
+    assert.equal(ppm, `P6 ${sw} ${sh} 255 ${shot.rgb}`, "the screenshot's pixels on the host (grim's PPM)");
+    assert.equal(await images(), 1);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForTimeout(2000);
+    assert.equal(await offers(), offersBefore, "the guest's screenshot, re-encoded by the browser, offered back");
+    // A JPEG alone (made on the host, typed in as base64): the page converts it, the host gets a PNG of its pixels.
+    const jpeg = await page.evaluate(async () => {
+      const c = new OffscreenCanvas(64, 32);
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#f00';
+      g.fillRect(0, 0, 32, 32);
+      g.fillStyle = '#00f';
+      g.fillRect(32, 0, 32, 32);
+      const b = new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg', quality: 0.9 })).arrayBuffer());
+      return btoa(String.fromCharCode(...b));
+    });
+    assert.ok(jpeg.length < 3000, `a JPEG of ${jpeg.length} base64 characters`);
+    await run(page, `echo ${jpeg} | base64 -d >/tmp/p.jpg && wlc wl-copy --type image/jpeg </tmp/p.jpg >/dev/null 2>&1; echo copied`);
+    const converted = await hostImage(page, (x) => x.width === 64, 'the JPEG as PNG');
+    assert.deepEqual(converted.types, ['image/png']);
+    const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 12);
+    assert.ok(near(converted.left, [255, 0, 0]) && near(converted.right, [0, 0, 255]), `the JPEG's pixels: ${converted.left} ${converted.right}`);
+    assert.equal(await images(), 2);
 
-  // Idle while sway runs (plan §3.3): the agent and its session child take no CPU time and no wakeups.
-  const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
-  const child = await run(page, `ps -o pid= --ppid ${pid} | tr -d " "`);
-  assert.match(child, /^\d+$/, `one session child: ${child}`);
-  assert.equal(await run(page, `stat -c %U /proc/${child}`), 'user', "the child runs as the session's user");
-  const cost = async () => {
-    const [p, c] = [await run(page, `cat /proc/${pid}/stat /proc/${pid}/status`), await run(page, `cat /proc/${child}/stat /proc/${child}/status`)];
-    const parse = (s: string) => {
-      const stat = s.split(/\s+/);
-      return { ticks: Number(stat[13]) + Number(stat[14]), switches: Number(/voluntary_ctxt_switches:\s*(\d+)/.exec(s)![1]), rss: Number(/VmRSS:\s*(\d+)/.exec(s)![1]) };
+    // Host to guest: Copy the screen (the toolbar's menu) puts the page's display on the host's clipboard as PNG; the
+    // sync offers it, and wl-paste gets the bytes the browser gives.
+    await page.click('#clipboard-menu > summary');
+    await page.click('#clipboard-screen');
+    const screen = await hostImage(page, (x) => x.width !== 64, 'the screen copied');
+    t.diagnostic(`Copy the screen: ${screen.width}×${screen.height}, ${screen.size} bytes`);
+    await guestHasImage(page, screen.sha, 'the screen in the guest');
+    // A big picture (noise, 1024×512: past the 4 frames a request grants and the cap's checks), streamed; timed.
+    await page.evaluate(async () => {
+      const c = new OffscreenCanvas(1024, 512);
+      const g = c.getContext('2d')!;
+      const img = g.createImageData(1024, 512);
+      let x = 0x2545f491;
+      for (let k = 0; k < img.data.length; k++) {
+        x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+        img.data[k] = k % 4 === 3 ? 255 : x & 0xff;
+      }
+      g.putImageData(img, 0, 0);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': c.convertToBlob({ type: 'image/png' }) })]);
+    });
+    const t1 = Date.now();
+    const noise = await hostImage(page, (x) => x.width === 1024, 'the noise on the host');
+    await guestHasImage(page, noise.sha, 'the noise in the guest');
+    t.diagnostic(`a ${noise.size}-byte PNG to the guest's wl-paste: ${Date.now() - t1} ms`);
+    // The guest copies it back (wl-copy of the file): written whole, the same pixels.
+    await run(page, 'wlc wl-paste -n -t image/png >/tmp/big.png && wlc wl-copy --type image/png </tmp/big.png >/dev/null 2>&1; echo copied');
+    for (let i = 0; (await images()) < 3; i++) {
+      if (i > 120) assert.fail(`the guest's big PNG never written: ${await journal(page)}`);
+      await page.waitForTimeout(250);
+    }
+    assert.equal((await hostImage(page, (x) => x.width === 1024, 'the noise back')).rgb, noise.rgb);
+
+    // The cap, against the offer's size before any bytes cross (a page's offer past 64 MiB): the agent refuses it
+    // (ACK TOO_LARGE) and requests nothing; the guest's clipboard keeps what it had.
+    const before = await run(page, 'wlc wl-paste -l | tr "\\n" " "');
+    const refused = await page.evaluate(async () => {
+      const { encodeOffer, FRAME } = await import('/web/agent-frame.ts' as string) as typeof import('../web/agent-frame.ts');
+      const w = window as unknown as { __frames: number[]; __agent: { send(type: number, p?: Uint8Array): boolean; onFrame?: (f: { type: number; payload: Uint8Array }) => void } };
+      const requests = w.__frames.filter((k) => k === FRAME.REQUEST).length;
+      const ack = new Promise<number[]>((resolve) => {
+        const on = w.__agent.onFrame;
+        w.__agent.onFrame = (f) => {
+          on?.(f);
+          if (f.type === FRAME.ACK && new DataView(f.payload.buffer, f.payload.byteOffset).getUint32(0, true) === 0x7fff0001) resolve([...f.payload]);
+        };
+        setTimeout(() => resolve([]), 10_000);
+      });
+      w.__agent.send(FRAME.OFFER, encodeOffer({ serial: 0x7fff0001, types: [{ type: 'image/png', size: (64 << 20) + 1 }] }));
+      const a = await ack;
+      await new Promise((r) => setTimeout(r, 1000));
+      return { ack: a, requests: w.__frames.filter((k) => k === FRAME.REQUEST).length - requests };
+    });
+    assert.deepEqual(refused, { ack: [1, 0, 0xff, 0x7f, 3], requests: 0 }, 'ACK TOO_LARGE, no REQUEST');
+    assert.equal(await run(page, 'wlc wl-paste -l | tr "\\n" " "'), before, "the guest's clipboard after the refused offer");
+
+    // Idle while sway runs (plan §3.3): the agent and its session child take no CPU time and no wakeups.
+    const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
+    const child = await run(page, `ps -o pid= --ppid ${pid} | tr -d " "`);
+    assert.match(child, /^\d+$/, `one session child: ${child}`);
+    assert.equal(await run(page, `stat -c %U /proc/${child}`), 'user', "the child runs as the session's user");
+    const cost = async () => {
+      const [p, c] = [await run(page, `cat /proc/${pid}/stat /proc/${pid}/status`), await run(page, `cat /proc/${child}/stat /proc/${child}/status`)];
+      const parse = (s: string) => {
+        const stat = s.split(/\s+/);
+        return { ticks: Number(stat[13]) + Number(stat[14]), switches: Number(/voluntary_ctxt_switches:\s*(\d+)/.exec(s)![1]), rss: Number(/VmRSS:\s*(\d+)/.exec(s)![1]) };
+      };
+      return { agent: parse(p), child: parse(c) };
     };
-    return { agent: parse(p), child: parse(c) };
-  };
-  const a = await cost();
-  await page.waitForTimeout(IDLE_S * 1000);
-  const b = await cost();
-  for (const k of ['agent', 'child'] as const) {
-    t.diagnostic(`${k} idle over ${IDLE_S} s with sway: ${b[k].ticks - a[k].ticks} ticks, ${b[k].switches - a[k].switches} voluntary switches; VmRSS ${b[k].rss} KiB`);
-    assert.equal(b[k].ticks, a[k].ticks, `${k}: no CPU time while idle`);
-    assert.equal(b[k].switches, a[k].switches, `${k}: no wakeups while idle`);
-    assert.ok(b[k].rss <= 1024, `${k}: VmRSS ${b[k].rss} KiB`);
-  }
+    const a = await cost();
+    await page.waitForTimeout(IDLE_S * 1000);
+    const b = await cost();
+    for (const k of ['agent', 'child'] as const) {
+      t.diagnostic(`${k} idle over ${IDLE_S} s with sway: ${b[k].ticks - a[k].ticks} ticks, ${b[k].switches - a[k].switches} voluntary switches; VmRSS ${b[k].rss} KiB`);
+      assert.equal(b[k].ticks, a[k].ticks, `${k}: no CPU time while idle`);
+      assert.equal(b[k].switches, a[k].switches, `${k}: no wakeups while idle`);
+      assert.ok(b[k].rss <= 1024, `${k}: VmRSS ${b[k].rss} KiB`);
+    }
 
-  // sway ends (and with it the session: `exec sway`); getty logs the user in again and sway starts in a new session.
-  // The host's text the guest held goes with it; the agent says SESSION, and the page, which forgot what the guest
-  // had, syncs it to the new session.
-  await pasteChord(page, 'host before sway again');
-  await guestHasText(page, 'host before sway again', 'the paste chord before sway again');
-  await run(page, 'pkill -x sway; echo stopped');
-  const again = await swayUp(page, up.session);
-  assert.deepEqual((await desktops(page)).slice(-3), ['wayland', 'none', 'wayland'], "the page's desktop: down with sway, up with the new one");
-  t.diagnostic(`sway again, session ${again.session}; its runs: ${await run(page, 'grep "^== sway" /tmp/sway.log')}`);
-  await outputIs(page, last, "the new sway at the page's size (its config says 800x600)");
-  await guestHasText(page, 'host before sway again', "the host's text in the new session (SESSION)");
-  await run(page, 'wlc wl-copy guest-after-sway-again >/dev/null 2>&1; echo copied');
-  await hostHas(page, 'guest-after-sway-again', 'wl-copy with sway again');
-  await pasteChord(page, 'host with sway again');
-  await guestHasText(page, 'host with sway again', 'the paste chord with sway again');
-  assert.equal(await run(page, `ps -o pid= --ppid ${pid} | wc -l`), '1', 'one session child');
+    // sway ends (and with it the session: `exec sway`); getty logs the user in again and sway starts in a new session.
+    // The host's text the guest held goes with it; the agent says SESSION, and the page, which forgot what the guest
+    // had, syncs it to the new session.
+    await pasteChord(page, 'host before sway again');
+    await guestHasText(page, 'host before sway again', 'the paste chord before sway again');
+    await run(page, 'pkill -x sway; echo stopped');
+    const again = await swayUp(page, up.session);
+    assert.deepEqual((await desktops(page)).slice(-3), ['wayland', 'none', 'wayland'], "the page's desktop: down with sway, up with the new one");
+    t.diagnostic(`sway again, session ${again.session}; its runs: ${await run(page, 'grep "^== sway" /tmp/sway.log')}`);
+    await outputIs(page, last, "the new sway at the page's size (its config says 800x600)");
+    await guestHasText(page, 'host before sway again', "the host's text in the new session (SESSION)");
+    await run(page, 'wlc wl-copy guest-after-sway-again >/dev/null 2>&1; echo copied');
+    await hostHas(page, 'guest-after-sway-again', 'wl-copy with sway again');
+    await pasteChord(page, 'host with sway again');
+    await guestHasText(page, 'host with sway again', 'the paste chord with sway again');
+    assert.equal(await run(page, `ps -o pid= --ppid ${pid} | wc -l`), '1', 'one session child');
 
-  assert.deepEqual(errors, []);
-  await context.close();
-}));
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+});

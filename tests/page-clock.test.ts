@@ -15,6 +15,8 @@ import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { pageFixture } from './debian-fixture.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 
@@ -81,71 +83,76 @@ async function setBack(page: Page) {
 const agentUp = (page: Page) =>
   page.waitForFunction(() => !!(window as unknown as { __agent?: { agent?: unknown } }).__agent?.agent, null, { timeout: 120_000, polling: 200 });
 
-test('the guest agent sets the clock after a snapshot, a resume and a load; a guest asleep by itself wakes on a key', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
+test('the guest agent sets the clock after a snapshot, a resume and a load; a guest asleep by itself wakes on a key', { skip, timeout: 25 * 60_000 }, async () => {
   // With the USB controller: Linux's xHCI suspend and resume (CSS, its registers written again, CRS) go through the
   // guest's own sleep; a controller that started its event ring over left the guest stuck in an interrupt storm (docs/usb.md).
   const query = `ncpus=2&view=both&usb=1&clocksync=1&agent=1&${unattendedQuery()}`;
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
-  await running(page);
-  await shows(page, /login: /);
-  await onSerial(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
-  await agentUp(page);
-  await near(page, 'booted');
-  // The clock device (virtio-rtc, a transient machine's by default) is there; Debian 13's 6.12 has no driver for it.
-  await onSerial(page, 'clear; grep -l 0x0011 /sys/bus/virtio/devices/*/device | wc -l; echo li""sted\n');
-  await shows(page, /^\s*1\s*listed/);
+  // From a booted-Debian fixture (tests/debian-fixture.ts): the agent sets the clock after its load as after the test's.
+  const fixture = await pageFixture(browser, base, `${PAGE_QUERY}${query}`);
+  await withDebianLock(async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await answerAsks(page);
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    if (fixture) await loadSnapshotFile(page, fixture);
+    await running(page);
+    await shows(page, /login: /);
+    await onSerial(page, 'root\n');
+    await shows(page, /root@\S+:~# /);
+    await agentUp(page);
+    await near(page, 'booted');
+    // The clock device (virtio-rtc, a transient machine's by default) is there; Debian 13's 6.12 has no driver for it.
+    await onSerial(page, 'clear; grep -l 0x0011 /sys/bus/virtio/devices/*/device | wc -l; echo li""sted\n');
+    await shows(page, /^\s*1\s*listed/);
 
-  // Save snapshot: after its pause, the agent sets the clock.
-  await setBack(page);
-  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.locator('#save-snapshot').click()]);
-  const file = join(dir, 'debian.waarm64snap');
-  await download.saveAs(file);
-  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
-  await near(page, 'after its snapshot');
-  await onSerial(page, 'clear; journalctl -b -u waarm64-agent -o cat | grep -c "clock set"; echo co""unted\n');
-  await shows(page, /^\s*[1-9]\d*\s*counted/); // the agent's log says so (`clear` took the command line)
+    // Save snapshot: after its pause, the agent sets the clock.
+    await setBack(page);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.locator('#save-snapshot').click()]);
+    const file = join(dir, 'debian.waarm64snap');
+    await download.saveAs(file);
+    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
+    await near(page, 'after its snapshot');
+    await onSerial(page, 'clear; journalctl -b -u waarm64-agent -o cat | grep -c "clock set"; echo co""unted\n');
+    await shows(page, /^\s*[1-9]\d*\s*counted/); // the agent's log says so (`clear` took the command line)
 
-  // A guest that suspends itself sleeps until a key (its clock runs on meanwhile: the counter doesn't stop).
-  await onSerial(page, 'systemctl suspend\n');
-  await page.waitForFunction((said) => (document.getElementById('message-text')?.textContent ?? '') === said, t('machine:worker-messages.asleep'), { timeout: 60_000 });
-  await page.waitForTimeout(5000);
-  await onSerial(page, '\n');
-  await awake(page);
-  await onSerial(page, 'clear; echo aw""ake-$((6*7))\n');
-  await shows(page, /awake-42/);
-  await near(page, 'woken by a key');
+    // A guest that suspends itself sleeps until a key (its clock runs on meanwhile: the counter doesn't stop).
+    await onSerial(page, 'systemctl suspend\n');
+    await page.waitForFunction((said) => (document.getElementById('message-text')?.textContent ?? '') === said, t('machine:worker-messages.asleep'), { timeout: 60_000 });
+    await page.waitForTimeout(5000);
+    await onSerial(page, '\n');
+    await awake(page);
+    await onSerial(page, 'clear; echo aw""ake-$((6*7))\n');
+    await shows(page, /awake-42/);
+    await near(page, 'woken by a key');
 
-  // Suspend: resumed a while later, the agent connects again and sets the clock.
-  await page.locator('#suspend').click();
-  await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 });
-  await page.waitForTimeout(20_000);
-  await page.reload();
-  await running(page, 180_000);
-  assert.match(await message(page), words('machine:worker.resumed', {}, { start: true }));
-  await agentUp(page);
-  await near(page, 'resumed 20 s after its suspend');
-  assert.deepEqual(errors, []);
-  await context.close();
+    // Suspend: resumed a while later, the agent connects again and sets the clock.
+    await page.locator('#suspend').click();
+    await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 });
+    await page.waitForTimeout(20_000);
+    await page.reload();
+    await running(page, 180_000);
+    assert.match(await message(page), words('machine:worker.resumed', {}, { start: true }));
+    await agentUp(page);
+    await near(page, 'resumed 20 s after its suspend');
+    assert.deepEqual(errors, []);
+    await context.close();
 
-  // The snapshot, minutes later, in a fresh profile.
-  const fresh = await browser.newContext();
-  const p2 = await fresh.newPage();
-  await answerAsks(p2);
-  await p2.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
-  await p2.setInputFiles('#load-snapshot-input', file);
-  await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000 });
-  await running(p2, 180_000);
-  await agentUp(p2);
-  await near(p2, 'its snapshot loaded minutes later');
-  // Nothing in the guest minded: no failed unit, no RCU stall, no watchdog.
-  await onSerial(p2, 'clear; systemctl --failed --no-legend | wc -l; dmesg | grep -ciE "rcu.*stall|soft lockup|watchdog"; echo che""cked\n');
-  await shows(p2, /^\s*0\s*0\s*checked/);
-  await fresh.close();
-}));
+    // The snapshot, minutes later, in a fresh profile.
+    const fresh = await browser.newContext();
+    const p2 = await fresh.newPage();
+    await answerAsks(p2);
+    await p2.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    await p2.setInputFiles('#load-snapshot-input', file);
+    await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000 });
+    await running(p2, 180_000);
+    await agentUp(p2);
+    await near(p2, 'its snapshot loaded minutes later');
+    // Nothing in the guest minded: no failed unit, no RCU stall, no watchdog.
+    await onSerial(p2, 'clear; systemctl --failed --no-legend | wc -l; dmesg | grep -ciE "rcu.*stall|soft lockup|watchdog"; echo che""cked\n');
+    await shows(p2, /^\s*0\s*0\s*checked/);
+    await fresh.close();
+  });
+});

@@ -21,6 +21,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { pageFixture } from './debian-fixture.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { desktopNow, desktops, recordDesktop } from './page-desktop.ts';
@@ -148,166 +150,174 @@ async function share(page: Page, on: boolean) {
   await page.waitForFunction((w) => document.getElementById('clipboard-menu')?.dataset.state === w, on ? 'sharing' : 'paused', { timeout: 10_000, polling: 100 });
 }
 
-test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML, the pause, X again; idle costs', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
-  const context = await browser.newContext();
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&clipboard=1&disk=/${IMAGE}&${credentialsQuery()}`);
-  await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
-  assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
-  await shows(page, /login: /); // `running` may come from the agent's HELLO, before the getty's prompt
-  await onSerial(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
-  const h = await hello(page);
-  assert.ok(h.caps & 2, `the agent shares text (caps ${h.caps})`);
-  await onSerial(page, `${X}\n`);
-  await recordDesktop(page);
-  // The user's next login is an X session: sway ends (and its session), getty logs the user in again.
-  await run(page, 'touch /tmp/x11; for i in $(seq 60); do pgrep -x sway >/dev/null && break; sleep 1; done; pkill -x sway; echo switched');
-  const up = await xUp(page);
-  t.diagnostic(`X in session ${up.session}: ${up.journal}`);
-  const props = await run(page, `loginctl show-session ${up.session} -p Type -p Seat -p Active -p Display`);
-  t.diagnostic(`session ${up.session}: ${props}; the unit: ${await run(page, 'systemd-analyze security waarm64-agent --no-pager 2>/dev/null | tail -1')}`);
-  assert.ok(props.split(' ').includes('Type=tty') && props.split(' ').includes('Active=yes'), props);
-  await page.evaluate(() => {
-    const w = window as unknown as { __clipboard: Share; __writes: number; __images: number };
-    w.__writes = w.__images = 0;
-    w.__clipboard.onWritten = () => { w.__writes++; };
-    w.__clipboard.onImage = () => { w.__images++; };
-  });
-  const counts = () => page.evaluate(() => { const w = window as unknown as { __writes: number; __images: number }; return { writes: w.__writes, images: w.__images }; });
-
-  // Guest to host: short text inline; 2.7 MB, which xclip sends by INCR.
-  await run(page, 'printf "from X11 \\342\\230\\203" >/tmp/s; xc xclip -i -selection clipboard </tmp/s >/dev/null 2>&1; echo copied');
-  await hostHas(page, 'from X11 ☃', 'xclip -i');
-  await run(page, 'seq 1 400000 >/tmp/huge; stat -c %s /tmp/huge; xc xclip -i -selection clipboard </tmp/huge >/dev/null 2>&1');
-  const huge = Array.from({ length: 400000 }, (_, i) => `${i + 1}\n`).join('');
-  assert.ok(huge.length > 2 << 20);
-  const t0 = Date.now();
-  await hostHas(page, huge, 'xclip -i of 2.7 MB (INCR)', 120_000);
-  t.diagnostic(`2.7 MB from xclip (INCR) to the host: ${Date.now() - t0} ms`);
-
-  // Host to guest: the paste chord, short (inline) and 400 KB (past the agent's threshold: to xclip by INCR).
-  const short = 'from the host ✓ — π\n';
-  await pasteChord(page, short);
-  await guestHasHash(page, sha(short), 'the paste chord');
-  assert.equal(await guestHas(page, 'STRING'), sha(short), 'as STRING too');
-  const big = Array.from({ length: 12000 }, (_, i) => `line ${i} of the host's text, ünïcödé\n`).join('');
-  assert.ok(Buffer.byteLength(big) > 256 << 10);
-  await pasteChord(page, big);
-  await guestHasHash(page, sha(big), 'the paste chord with 400 KB (INCR)');
-  // The guest copies the host's text back: not offered to the host.
-  const before = (await counts()).writes;
-  await pasteChord(page, short);
-  await guestHasHash(page, sha(short), 'the paste chord, short again');
-  await run(page, 'xc xclip -o -selection clipboard >/tmp/back && xc xclip -i -selection clipboard </tmp/back >/dev/null 2>&1; echo copied back');
-  await page.waitForTimeout(3000);
-  assert.equal((await counts()).writes, before, "the host's own text isn't offered back");
-
-  // Images. Guest to host: a PNG (made here, typed in as base64) copied with xclip: the host's PNG has its pixels.
-  const png = await page.evaluate(async () => {
-    const c = new OffscreenCanvas(64, 32);
-    const g = c.getContext('2d')!;
-    g.fillStyle = '#f00';
-    g.fillRect(0, 0, 32, 32);
-    g.fillStyle = '#00f';
-    g.fillRect(32, 0, 32, 32);
-    const b = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
-    return btoa(String.fromCharCode(...b));
-  });
-  assert.ok(png.length < 3000, `a PNG of ${png.length} base64 characters`);
-  await run(page, `echo ${png} | base64 -d >/tmp/p.png && xc xclip -i -selection clipboard -t image/png </tmp/p.png >/dev/null 2>&1; echo copied`);
-  const got = await hostImage(page, (x) => x.width === 64, "xclip's PNG");
-  const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
-  assert.ok(near(got.left, [255, 0, 0]) && near(got.right, [0, 0, 255]), `its pixels: ${got.left} ${got.right}`);
-  // Host to guest: 1.5 MB of noise (1024×512), synced (the read permission), to xclip by INCR byte for byte.
-  await page.evaluate(async () => {
-    const c = new OffscreenCanvas(1024, 512);
-    const g = c.getContext('2d')!;
-    const img = g.createImageData(1024, 512);
-    let x = 0x2545f491;
-    for (let k = 0; k < img.data.length; k++) {
-      x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
-      img.data[k] = k % 4 === 3 ? 255 : x & 0xff;
-    }
-    g.putImageData(img, 0, 0);
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': c.convertToBlob({ type: 'image/png' }) })]);
-  });
-  const noise = await hostImage(page, (x) => x.width === 1024, 'the noise on the host');
-  const t1 = Date.now();
-  await guestHasHash(page, noise.sha, 'the noise in the guest', 'image/png');
-  t.diagnostic(`a ${noise.size}-byte PNG to xclip (INCR): ${Date.now() - t1} ms`);
-
-  // HTML. Guest to host: xclip's text/html (alone) on the host's clipboard.
-  await run(page, `printf '<b>bold</b> from X11' | xc xclip -i -selection clipboard -t text/html >/dev/null 2>&1; echo copied`);
-  for (let i = 0; ; i++) {
-    const html = await page.evaluate(async () => {
-      const item = (await navigator.clipboard.read()).find((x) => x.types.includes('text/html'));
-      return item ? (await item.getType('text/html')).text() : '';
+test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML, the pause, X again; idle costs', { skip, timeout: 15 * 60_000 }, async (t) => {
+  const query = `${PAGE_QUERY}ncpus=2&view=both&clipboard=1&disk=/${IMAGE}&${credentialsQuery()}`;
+  // From a booted-Debian fixture of the sway image (tests/debian-fixture.ts): no boot is tested here.
+  const fixture = await pageFixture(browser, base, query);
+  await withDebianLock(async () => {
+    const context = await browser.newContext();
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await answerAsks(page);
+    await page.goto(`${base}/web/app/?${query}`);
+    if (fixture) await loadSnapshotFile(page, fixture);
+    await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
+    assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
+    await shows(page, /login: /); // `running` may come from the agent's HELLO, before the getty's prompt
+    await onSerial(page, 'root\n');
+    await shows(page, /root@\S+:~# /);
+    // A restored guest's clock stood still since the save.
+    if (fixture) await run(page, `date -u -s @${(Date.now() / 1000).toFixed(3)} > /dev/null`);
+    const h = await hello(page);
+    assert.ok(h.caps & 2, `the agent shares text (caps ${h.caps})`);
+    await onSerial(page, `${X}\n`);
+    await recordDesktop(page);
+    // The user's next login is an X session: sway ends (and its session), getty logs the user in again.
+    await run(page, 'touch /tmp/x11; for i in $(seq 60); do pgrep -x sway >/dev/null && break; sleep 1; done; pkill -x sway; echo switched');
+    const up = await xUp(page);
+    t.diagnostic(`X in session ${up.session}: ${up.journal}`);
+    const props = await run(page, `loginctl show-session ${up.session} -p Type -p Seat -p Active -p Display`);
+    t.diagnostic(`session ${up.session}: ${props}; the unit: ${await run(page, 'systemd-analyze security waarm64-agent --no-pager 2>/dev/null | tail -1')}`);
+    assert.ok(props.split(' ').includes('Type=tty') && props.split(' ').includes('Active=yes'), props);
+    await page.evaluate(() => {
+      const w = window as unknown as { __clipboard: Share; __writes: number; __images: number };
+      w.__writes = w.__images = 0;
+      w.__clipboard.onWritten = () => { w.__writes++; };
+      w.__clipboard.onImage = () => { w.__images++; };
     });
-    if (/<b>bold<\/b> from X11/.test(html)) break;
-    if (i > 80) assert.fail(`xclip's HTML on the host: ${JSON.stringify(html)}; the agent says: ${await journal(page)}`);
-    await page.waitForTimeout(250);
-  }
-  // Host to guest: text and HTML in one item, synced: each by its type.
-  await page.evaluate(() => navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob(['rich text'], { type: 'text/plain' }), 'text/html': new Blob(['<i>rich</i> text'], { type: 'text/html' }) })]));
-  await guestHasHash(page, sha('rich text'), "the host's text beside its HTML");
-  const targets = await run(page, 'xc xclip -o -selection clipboard -t TARGETS');
-  assert.ok(targets.split(' ').includes('text/html') && targets.split(' ').includes('UTF8_STRING'), targets);
-  const html = await run(page, 'xc xclip -o -selection clipboard -t text/html');
-  assert.match(html, /\[i\]rich\[\/i\] text/, "the host's HTML (Chromium's, sanitised)");
+    const counts = () => page.evaluate(() => { const w = window as unknown as { __writes: number; __images: number }; return { writes: w.__writes, images: w.__images }; });
 
-  // PAUSE: the host's text leaves the guest's clipboard; RESUME: sharing again.
-  await pasteChord(page, 'before the pause');
-  await guestHasHash(page, sha('before the pause'), 'the paste chord before the pause');
-  await share(page, false);
-  for (let i = 0; ; i++) {
-    if (await run(page, 'xc xclip -o -selection clipboard >/dev/null 2>&1 && echo has || echo empty') === 'empty') break;
-    if (i > 20) assert.fail("the guest's clipboard kept the host's text after PAUSE");
-    await page.waitForTimeout(500);
-  }
-  await run(page, 'echo guest-during-pause | xc xclip -i -selection clipboard >/dev/null 2>&1; echo copied');
-  await page.waitForTimeout(3000);
-  assert.equal(await hostText(page), 'before the pause', "paused: the guest's copy doesn't reach the host");
-  await share(page, true);
-  await run(page, 'printf guest-after-resume | xc xclip -i -selection clipboard >/dev/null 2>&1; echo copied');
-  await hostHas(page, 'guest-after-resume', 'xclip after RESUME');
+    // Guest to host: short text inline; 2.7 MB, which xclip sends by INCR.
+    await run(page, 'printf "from X11 \\342\\230\\203" >/tmp/s; xc xclip -i -selection clipboard </tmp/s >/dev/null 2>&1; echo copied');
+    await hostHas(page, 'from X11 ☃', 'xclip -i');
+    await run(page, 'seq 1 400000 >/tmp/huge; stat -c %s /tmp/huge; xc xclip -i -selection clipboard </tmp/huge >/dev/null 2>&1');
+    const huge = Array.from({ length: 400000 }, (_, i) => `${i + 1}\n`).join('');
+    assert.ok(huge.length > 2 << 20);
+    const t0 = Date.now();
+    await hostHas(page, huge, 'xclip -i of 2.7 MB (INCR)', 120_000);
+    t.diagnostic(`2.7 MB from xclip (INCR) to the host: ${Date.now() - t0} ms`);
 
-  // Idle while X runs (plan §3.3): the agent and its session child take no CPU time and no wakeups.
-  const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
-  const child = await run(page, `ps -o pid= --ppid ${pid} | tr -d " "`);
-  assert.match(child, /^\d+$/, `one session child: ${child}`);
-  const cost = async () => {
-    const [p, c] = [await run(page, `cat /proc/${pid}/stat /proc/${pid}/status`), await run(page, `cat /proc/${child}/stat /proc/${child}/status`)];
-    const parse = (s: string) => {
-      const stat = s.split(/\s+/);
-      return { ticks: Number(stat[13]) + Number(stat[14]), switches: Number(/voluntary_ctxt_switches:\s*(\d+)/.exec(s)![1]), rss: Number(/VmRSS:\s*(\d+)/.exec(s)![1]) };
+    // Host to guest: the paste chord, short (inline) and 400 KB (past the agent's threshold: to xclip by INCR).
+    const short = 'from the host ✓ — π\n';
+    await pasteChord(page, short);
+    await guestHasHash(page, sha(short), 'the paste chord');
+    assert.equal(await guestHas(page, 'STRING'), sha(short), 'as STRING too');
+    const big = Array.from({ length: 12000 }, (_, i) => `line ${i} of the host's text, ünïcödé\n`).join('');
+    assert.ok(Buffer.byteLength(big) > 256 << 10);
+    await pasteChord(page, big);
+    await guestHasHash(page, sha(big), 'the paste chord with 400 KB (INCR)');
+    // The guest copies the host's text back: not offered to the host.
+    const before = (await counts()).writes;
+    await pasteChord(page, short);
+    await guestHasHash(page, sha(short), 'the paste chord, short again');
+    await run(page, 'xc xclip -o -selection clipboard >/tmp/back && xc xclip -i -selection clipboard </tmp/back >/dev/null 2>&1; echo copied back');
+    await page.waitForTimeout(3000);
+    assert.equal((await counts()).writes, before, "the host's own text isn't offered back");
+
+    // Images. Guest to host: a PNG (made here, typed in as base64) copied with xclip: the host's PNG has its pixels.
+    const png = await page.evaluate(async () => {
+      const c = new OffscreenCanvas(64, 32);
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#f00';
+      g.fillRect(0, 0, 32, 32);
+      g.fillStyle = '#00f';
+      g.fillRect(32, 0, 32, 32);
+      const b = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
+      return btoa(String.fromCharCode(...b));
+    });
+    assert.ok(png.length < 3000, `a PNG of ${png.length} base64 characters`);
+    await run(page, `echo ${png} | base64 -d >/tmp/p.png && xc xclip -i -selection clipboard -t image/png </tmp/p.png >/dev/null 2>&1; echo copied`);
+    const got = await hostImage(page, (x) => x.width === 64, "xclip's PNG");
+    const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+    assert.ok(near(got.left, [255, 0, 0]) && near(got.right, [0, 0, 255]), `its pixels: ${got.left} ${got.right}`);
+    // Host to guest: 1.5 MB of noise (1024×512), synced (the read permission), to xclip by INCR byte for byte.
+    await page.evaluate(async () => {
+      const c = new OffscreenCanvas(1024, 512);
+      const g = c.getContext('2d')!;
+      const img = g.createImageData(1024, 512);
+      let x = 0x2545f491;
+      for (let k = 0; k < img.data.length; k++) {
+        x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+        img.data[k] = k % 4 === 3 ? 255 : x & 0xff;
+      }
+      g.putImageData(img, 0, 0);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': c.convertToBlob({ type: 'image/png' }) })]);
+    });
+    const noise = await hostImage(page, (x) => x.width === 1024, 'the noise on the host');
+    const t1 = Date.now();
+    await guestHasHash(page, noise.sha, 'the noise in the guest', 'image/png');
+    t.diagnostic(`a ${noise.size}-byte PNG to xclip (INCR): ${Date.now() - t1} ms`);
+
+    // HTML. Guest to host: xclip's text/html (alone) on the host's clipboard.
+    await run(page, `printf '<b>bold</b> from X11' | xc xclip -i -selection clipboard -t text/html >/dev/null 2>&1; echo copied`);
+    for (let i = 0; ; i++) {
+      const html = await page.evaluate(async () => {
+        const item = (await navigator.clipboard.read()).find((x) => x.types.includes('text/html'));
+        return item ? (await item.getType('text/html')).text() : '';
+      });
+      if (/<b>bold<\/b> from X11/.test(html)) break;
+      if (i > 80) assert.fail(`xclip's HTML on the host: ${JSON.stringify(html)}; the agent says: ${await journal(page)}`);
+      await page.waitForTimeout(250);
+    }
+    // Host to guest: text and HTML in one item, synced: each by its type.
+    await page.evaluate(() => navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob(['rich text'], { type: 'text/plain' }), 'text/html': new Blob(['<i>rich</i> text'], { type: 'text/html' }) })]));
+    await guestHasHash(page, sha('rich text'), "the host's text beside its HTML");
+    const targets = await run(page, 'xc xclip -o -selection clipboard -t TARGETS');
+    assert.ok(targets.split(' ').includes('text/html') && targets.split(' ').includes('UTF8_STRING'), targets);
+    const html = await run(page, 'xc xclip -o -selection clipboard -t text/html');
+    assert.match(html, /\[i\]rich\[\/i\] text/, "the host's HTML (Chromium's, sanitised)");
+
+    // PAUSE: the host's text leaves the guest's clipboard; RESUME: sharing again.
+    await pasteChord(page, 'before the pause');
+    await guestHasHash(page, sha('before the pause'), 'the paste chord before the pause');
+    await share(page, false);
+    for (let i = 0; ; i++) {
+      if (await run(page, 'xc xclip -o -selection clipboard >/dev/null 2>&1 && echo has || echo empty') === 'empty') break;
+      if (i > 20) assert.fail("the guest's clipboard kept the host's text after PAUSE");
+      await page.waitForTimeout(500);
+    }
+    await run(page, 'echo guest-during-pause | xc xclip -i -selection clipboard >/dev/null 2>&1; echo copied');
+    await page.waitForTimeout(3000);
+    assert.equal(await hostText(page), 'before the pause', "paused: the guest's copy doesn't reach the host");
+    await share(page, true);
+    await run(page, 'printf guest-after-resume | xc xclip -i -selection clipboard >/dev/null 2>&1; echo copied');
+    await hostHas(page, 'guest-after-resume', 'xclip after RESUME');
+
+    // Idle while X runs (plan §3.3): the agent and its session child take no CPU time and no wakeups.
+    const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
+    const child = await run(page, `ps -o pid= --ppid ${pid} | tr -d " "`);
+    assert.match(child, /^\d+$/, `one session child: ${child}`);
+    const cost = async () => {
+      const [p, c] = [await run(page, `cat /proc/${pid}/stat /proc/${pid}/status`), await run(page, `cat /proc/${child}/stat /proc/${child}/status`)];
+      const parse = (s: string) => {
+        const stat = s.split(/\s+/);
+        return { ticks: Number(stat[13]) + Number(stat[14]), switches: Number(/voluntary_ctxt_switches:\s*(\d+)/.exec(s)![1]), rss: Number(/VmRSS:\s*(\d+)/.exec(s)![1]) };
+      };
+      return { agent: parse(p), child: parse(c) };
     };
-    return { agent: parse(p), child: parse(c) };
-  };
-  const a = await cost();
-  await page.waitForTimeout(IDLE_S * 1000);
-  const b = await cost();
-  for (const k of ['agent', 'child'] as const) {
-    t.diagnostic(`${k} idle over ${IDLE_S} s with X: ${b[k].ticks - a[k].ticks} ticks, ${b[k].switches - a[k].switches} voluntary switches; VmRSS ${b[k].rss} KiB`);
-    assert.equal(b[k].ticks, a[k].ticks, `${k}: no CPU time while idle`);
-    assert.equal(b[k].switches, a[k].switches, `${k}: no wakeups while idle`);
-    assert.ok(b[k].rss <= 1024, `${k}: VmRSS ${b[k].rss} KiB`);
-  }
+    const a = await cost();
+    await page.waitForTimeout(IDLE_S * 1000);
+    const b = await cost();
+    for (const k of ['agent', 'child'] as const) {
+      t.diagnostic(`${k} idle over ${IDLE_S} s with X: ${b[k].ticks - a[k].ticks} ticks, ${b[k].switches - a[k].switches} voluntary switches; VmRSS ${b[k].rss} KiB`);
+      assert.equal(b[k].ticks, a[k].ticks, `${k}: no CPU time while idle`);
+      assert.equal(b[k].switches, a[k].switches, `${k}: no wakeups while idle`);
+      assert.ok(b[k].rss <= 1024, `${k}: VmRSS ${b[k].rss} KiB`);
+    }
 
-  // The X server ends (and its session); getty logs the user in again, X comes back, and so does sharing.
-  await run(page, 'pkill -x Xvfb; echo stopped');
-  const again = await xUp(page, up.session);
-  assert.deepEqual((await desktops(page)).slice(-3), ['x11', 'none', 'x11'], "the page's desktop: down with X, up with it again");
-  t.diagnostic(`X again, session ${again.session}`);
-  await run(page, 'printf guest-after-x-again | xc xclip -i -selection clipboard >/dev/null 2>&1; echo copied');
-  await hostHas(page, 'guest-after-x-again', 'xclip with X again');
-  await pasteChord(page, 'host with X again');
-  await guestHasHash(page, sha('host with X again'), 'the paste chord with X again');
+    // The X server ends (and its session); getty logs the user in again, X comes back, and so does sharing.
+    await run(page, 'pkill -x Xvfb; echo stopped');
+    const again = await xUp(page, up.session);
+    assert.deepEqual((await desktops(page)).slice(-3), ['x11', 'none', 'x11'], "the page's desktop: down with X, up with it again");
+    t.diagnostic(`X again, session ${again.session}`);
+    await run(page, 'printf guest-after-x-again | xc xclip -i -selection clipboard >/dev/null 2>&1; echo copied');
+    await hostHas(page, 'guest-after-x-again', 'xclip with X again');
+    await pasteChord(page, 'host with X again');
+    await guestHasHash(page, sha('host with X again'), 'the paste chord with X again');
 
-  assert.deepEqual(errors, []);
-  await context.close();
-}));
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+});
