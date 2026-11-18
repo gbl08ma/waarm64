@@ -247,7 +247,8 @@ test('a machine edited on the Home page while it is off on this page starts as i
   // It starts with the disk added since it was opened (the firmware loads and boots; a stale record would wait again).
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
   // The floating bar's words (the Home page, closing, may still be fading out with its own banner).
-  assert.doesNotMatch(await page.locator('#message #message-text').textContent() ?? '', words('disks:power-actions.noDisks'));
+  // (A floating bar leaving keeps its words for its 250 ms: the words gone, not at once.)
+  await page.waitForFunction((src) => !new RegExp(src).test(document.querySelector('#message #message-text')?.textContent ?? ''), words('disks:power-actions.noDisks').source, { timeout: 5_000 });
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -557,7 +558,8 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
   // No message: no floating bar over the Home page (its messages show in the page's own banner), and no banner.
   await page.locator('#message').waitFor({ state: 'detached', timeout: 5_000 });
-  assert.equal(await page.locator('.machines .banner').count(), 0, 'no gap over the Home page');
+  // (A banner that was there folds away in 250 ms.)
+  await page.locator('.machines .banner').waitFor({ state: 'detached', timeout: 5_000 }); // no gap over the Home page
   await m.locator('[data-tab=settings]').click();
   await m.locator('[data-action=ram-open]').click();
   await page.locator('#ram-window').waitFor({ timeout: 10_000 });

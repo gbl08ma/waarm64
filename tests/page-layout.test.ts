@@ -56,6 +56,8 @@ test('the message: one line of text centered on its buttons', async () => {
   const page = await browser.newPage({ viewport: { width: 2560, height: 600 } });
   await page.goto(`${base}/web/app/`);
   await page.locator('#message:not([hidden]) #message-actions button').waitFor();
+  // Where it lands: its slide down from above the page (ui/crossfade.ts) done.
+  await page.locator('#message .banner').evaluate((e) => Promise.all(e.getAnimations().map((a) => a.finished)));
   const mid = (sel: string) => page.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; });
   const [text, button, close] = [await mid('#message-body'), await mid('#message-actions button'), await mid('#message-close')];
   const height = await page.locator('#message-text').evaluate((e) => e.getBoundingClientRect().height);

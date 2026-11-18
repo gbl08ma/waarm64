@@ -129,7 +129,7 @@
   }
 </script>
 
-<div class="machines" data-busy={runner.busy} out:leaveInPlace={!!messageBar.text}>
+<div class="machines" data-busy={runner.busy} out:leaveInPlace={!!messageBar.text || !!runner.error}>
   <div class="bar">
     <Button
       variant="tool"

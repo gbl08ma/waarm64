@@ -413,7 +413,15 @@ shows the message instead, so there is never both a floating banner and the page
 floats again when the Home page closes. Between the two places it moves (a 250 ms crossfade,
 `web/app/ui/crossfade.ts`: `ErrorBanner`'s `crossfade` key, kept as `data-crossfade` because a transition's parameter
 from a prop is a derived Svelte won't compute once its component is going); the closing Home page, kept in the DOM
-for that time, leaves the flow (fixed where it was) and fades, so the machine's page isn't pushed aside beside it. Its
+for that time, leaves the flow (fixed where it was) and fades, so the machine's page isn't pushed aside beside it.
+Where it comes or goes rather than moving (that crossfade's `fallback`, also 250 ms), the floating bar slides down from
+above the page, passing over the toolbar, and goes back up the same way: it reads as a message from waarm64, not from
+the guest whose screen it covers. The Home page's banner (its own errors too) unfolds and folds in the page's column
+(Svelte's `slide`); with `prefers-reduced-motion`, both fade. The floating bar is mounted only while there is a
+message (`MessageBar.svelte`; `#message`, the wrapper that holds it, stays, with the `data-kind`, `data-snapshot` and
+`data-load` tools read), and a leaving bar keeps the last message's words: tests read the words with
+`getElementById('message-text')` rather than wait for an element that may not come, and a test that measures the bar
+waits for its animations to finish. Its
 words take the room its actions leave, which sit at the bar's far end. It has a close button, beside its words (which wrap with its actions)
 at the top right. A notice that leaves the machine as it was (`notify`) is `info` when something was
 done (a snapshot kept or saved; a suspended machine resumed; a disk saved, from this machine or another; changes

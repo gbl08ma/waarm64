@@ -111,7 +111,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
     const kept = words('snapshots:snapshot-actions.kept', {}, { start: true }).source;
     const failed = words('snapshots:worker-snapshot.notSaved', {}, { start: true }).source;
     await page.waitForFunction(([a, b]) => [a, b].some((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? '')), [kept, failed], { timeout: 300_000 });
-    assert.match(await page.locator('#message-text').textContent() ?? '', new RegExp(kept), await said(page));
+    assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '', new RegExp(kept), await said(page));
     const after = await storage(page);
     console.log(`# after the snapshot: the cache holds ${mib(after.cache)} MiB; the origin ${mib(after.usage)} MiB`);
 
@@ -132,7 +132,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'suspended', await said(page));
     await page.goto(url);
     await stateIs(page, 'running');
-    assert.match(await page.locator('#message-text').textContent() ?? '', words('machine:worker.resumed'));
+    assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '', words('machine:worker.resumed'));
     assert.equal(await ok(page, 'cat /root/f'), 'kept-state');
     assert.deepEqual(errors, []);
   } finally {

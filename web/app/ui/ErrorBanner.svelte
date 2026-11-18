@@ -6,7 +6,9 @@
   while they're a line or two and from the top when taller; its buttons (`actions`) and its close button (with
   `ondismiss`, named `dismissLabel`) stay at the top, one height. `bodyId`, `actionsId` and `dismissId` name its parts (the tests' handles); `class` and other
   attributes (`id`, `role`, `hidden`, `data-*`) go on the bar. Two bars with the same `crossfade` key, one leaving
-  as the other comes, move into each other (crossfade.ts): the message bar between floating and the Home page.
+  as the other comes, move into each other (crossfade.ts): the message bar between floating and the Home page. One
+  that comes or goes on its own (no counterpart, or no key) slides down from above the page and back up if `floating`,
+  or unfolds and folds in its column (a fade with `prefers-reduced-motion`), 250 ms either way.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';

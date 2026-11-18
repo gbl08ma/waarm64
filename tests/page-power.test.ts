@@ -105,7 +105,7 @@ test("Debian's OS in the status bar, its clean restart and power-off from the to
     const w = window as unknown as { __firstLink?: unknown; __agent?: unknown };
     return w.__agent !== w.__firstLink;
   }, null, { timeout: 180_000, polling: 250 })
-    .catch(async (e) => { throw new Error(`${e}; the state is ${await state(page)}; the message bar: ${await page.textContent('#message-text').catch(() => '')}; asked: ${JSON.stringify(asked)}; the terminal shows: ${(await terminal(page)).slice(-1500)}`); });
+    .catch(async (e) => { throw new Error(`${e}; the state is ${await state(page)}; the message bar: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '').catch(() => '')}; asked: ${JSON.stringify(asked)}; the terminal shows: ${(await terminal(page)).slice(-1500)}`); });
   t0.diagnostic(`the guest's restart reached its reset in ${((performance.now() - t1) / 1000).toFixed(1)} s`);
   assert.equal(await page.locator('#soft-power').count(), 0, 'the sign gone with the run');
   await login(page);

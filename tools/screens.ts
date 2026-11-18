@@ -187,7 +187,7 @@ let seeded: Seed;
   const page = await open();
   await state('toolbar', async () => { await shot(page, 'toolbar'); });
   await state('message-warn', async () => {
-    await page.locator('#message').waitFor();
+    await page.locator('#message .banner').waitFor();
     await shot(page, 'message-warn');
   });
   await state('message-error', async () => {
