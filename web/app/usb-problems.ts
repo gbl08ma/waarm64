@@ -1,7 +1,7 @@
 // The page's words for what a USB device's worker reports (`UsbProblem`, docs/usb.md "What the browser allows"): each
 // problem in plain words with the host OS's remedy, and an attach's error with its problems. DOM-free: Node's tests
 // use it. The entries and their matching are web/app/usb-ports.ts.
-import { describe, errorText, msg, t, type Msg } from '../i18n.ts';
+import { describe, errorText, msg, t, text, type Described, type Msg } from '../i18n.ts';
 import type { UsbProblem } from '../usb-device.ts';
 import { hex4 } from './usb-ports.ts';
 
@@ -52,21 +52,21 @@ const HID_USAGES: Record<string, string> = {
  * What WebUSB keeps from pages, with where to go instead by class (docs/usb.md "What WebUSB can't attach, and where it
  * goes instead"): a message per route.
  */
-function protectedInterface(iface: number, c: number): string {
+function protectedInterface(iface: number, c: number): Msg {
   const p = { interface: iface, class: className(c) };
   switch (c) {
     case 0x03:
-      return t('usb:usb-problems.protectedInterface.hid', p);
+      return msg('usb:usb-problems.protectedInterface.hid', p);
     case 0x08:
-      return t('usb:usb-problems.protectedInterface.disk', p);
+      return msg('usb:usb-problems.protectedInterface.disk', p);
     case 0x01:
     case 0x0e:
     case 0x10:
-      return t('usb:usb-problems.protectedInterface.sound', p);
+      return msg('usb:usb-problems.protectedInterface.sound', p);
     case 0xe0:
-      return t('usb:usb-problems.protectedInterface.bluetooth', p);
+      return msg('usb:usb-problems.protectedInterface.bluetooth', p);
     default:
-      return t('usb:usb-problems.protectedInterface', p);
+      return msg('usb:usb-problems.protectedInterface', p);
   }
 }
 
@@ -79,10 +79,16 @@ const udevRule = (d: ProblemDevice) =>
 /** A step of a remedy: what to do, then a command or a line to copy (`code`), or a page to open (`link`). */
 export type FixStep = { text: string; code?: string; link?: string };
 /**
- * A problem in words: `text` first, short and plain; `fix`, the host OS's remedy, which the page shows folded (a
- * title, numbered steps, a note: UsbProblems.svelte); `said`, the browser's own message, folded with it.
+ * A problem in words: `text` first, short and plain (`msg`: the message it is, where it names the page's elements, for
+ * UsbProblems.svelte to draw with its markers); `fix`, the host OS's remedy, which the page shows folded (a title,
+ * numbered steps, a note: UsbProblems.svelte); `said`, the browser's own message, folded with it.
  */
-export type ProblemWords = { text: string; fix?: { title: string; steps: FixStep[]; note?: FixStep }; said?: string };
+export type ProblemWords = {
+  text: string;
+  msg?: Msg;
+  fix?: { title: string; steps: FixStep[]; note?: FixStep };
+  said?: string;
+};
 
 /** The words as plain text: `text` alone, or (`all`) everything in them. */
 export function wordsText(w: ProblemWords, all = false): string {
@@ -117,8 +123,10 @@ type ProblemDevice = { api: 'usb' | 'hid'; vendorId: number; productId: number }
  */
 export function problemText(p: UsbProblem, d: ProblemDevice, os: HostOs = hostOs()): ProblemWords {
   switch (p.kind) {
-    case 'protected-interface':
-      return { text: protectedInterface(p.interface, p.class) };
+    case 'protected-interface': {
+      const m = protectedInterface(p.interface, p.class);
+      return { text: text(m), msg: m };
+    }
     case 'claim-failed':
       return claimFailed(p.interface, p.message, os);
     case 'protected-collection':
@@ -223,10 +231,14 @@ function openFailed(said: string, d: ProblemDevice, os: HostOs): ProblemWords {
  * An error as the page shows it: its words (a headline and its causes, a line each), or, for an attach's that has the
  * problems' words (a `UsbError`), its headline and those.
  */
-export type ErrorView = { text: string; words?: ProblemWords[] };
+export type ErrorView = { text: string; words?: ProblemWords[]; said?: Described };
 export function errorView(e: unknown): ErrorView {
   const words = (e as { words?: ProblemWords[] } | undefined)?.words;
-  return words?.length ? { text: describe(e).headline, words } : { text: errorText(e) };
+  const said = describe(e);
+  // `said`: what each line is (a message drawn with its names and the page's elements, a developer's text as code: ErrorText.svelte).
+  return words?.length
+    ? { text: said.headline, words, said: { headline: said.headline, details: [], from: said.from?.slice(0, 1) } }
+    : { text: errorText(e), said };
 }
 
 /** An error's view as plain text, a line each: its text, then each problem's (for the message bar). */

@@ -39,8 +39,12 @@
         answer(true, text);
       }}
     >
-      <h2 id="ask-title">{#if typeof q.title === 'string'}{q.title}{:else}<T m={q.title} />{/if}</h2>
-      <p class="ask-text">{#if typeof q.text === 'string'}{q.text}{:else}<T m={q.text} />{/if}</p>
+      <h2 id="ask-title">
+        {#if typeof q.title === 'string'}{q.title}{:else}<T m={q.title} />{/if}
+      </h2>
+      <p class="ask-text">
+        {#if typeof q.text === 'string'}{q.text}{:else}<T m={q.text} />{/if}
+      </p>
       {#if q.kind === 'prompt'}<input bind:this={input} bind:value={text} spellcheck="false" autocomplete="off" />{/if}
       <div class="buttons">
         {#if q.kind !== 'alert' && q.kind !== 'wait'}<Button

@@ -46,7 +46,9 @@
 </script>
 
 {#snippet inner()}
-  <h2 id={`${id}-title`}>{#if typeof title === 'string'}{title}{:else}<T m={title} />{/if}</h2>
+  <h2 id={`${id}-title`}>
+    {#if typeof title === 'string'}{title}{:else}<T m={title} />{/if}
+  </h2>
   {@render children()}
   <div class="buttons">
     {#if back}<div class="back">{@render back()}</div>{/if}

@@ -11,26 +11,30 @@
   import type { Msg } from '../i18n.ts';
 
   const from = $derived(messageBar.from);
+  /** A line break between lines (the parent keeps it: `pre-line`, `pre-wrap`). */
+  const NL = '\n';
   /** The headline's first line and the rest (after its line break, if any). */
   const head = $derived.by(() => {
     const at = messageBar.text.indexOf('\n');
-    return at < 0 ? { first: messageBar.text, rest: '' } : { first: messageBar.text.slice(0, at), rest: messageBar.text.slice(at) };
+    return at < 0
+      ? { first: messageBar.text, rest: '' }
+      : { first: messageBar.text.slice(0, at), rest: messageBar.text.slice(at) };
   });
   const bold = $derived(!/[.?!:]\s*$/.test(head.first));
 </script>
 
 {#snippet line(words: string, f: Msg | 'raw' | undefined)}{#if f && f !== 'raw'}<T m={f} />{:else}{words}{/if}{/snippet}
 
-<p id="message-text" class={{ raw: from[0] === 'raw' }}
-  >{#if head.rest && from[0] === undefined}<span class={{ bold }}>{head.first}</span>{head.rest}{:else}<span
+<p id="message-text" class={{ raw: from[0] === 'raw' }}>
+  {#if head.rest && from[0] === undefined}<span class={{ bold }}>{head.first}</span>{head.rest}{:else}<span
       class={{ bold }}>{@render line(messageBar.text, from[0])}</span
-    >{/if}</p
->
-{#if messageBar.details.length}<p id="message-details"
-  >{#each messageBar.details as d, i (i)}{#if i}{'\n'}{/if}<span class={{ raw: from[i + 1] === 'raw' }}
-      >{@render line(d, from[i + 1])}</span
-    >{/each}</p
->{/if}
+    >{/if}
+</p>
+{#if messageBar.details.length}<p id="message-details">
+    {#each messageBar.details as d, i (i)}{#if i}{NL}{/if}<span class={{ raw: from[i + 1] === 'raw' }}
+        >{@render line(d, from[i + 1])}</span
+      >{/each}
+  </p>{/if}
 
 <style>
   p {

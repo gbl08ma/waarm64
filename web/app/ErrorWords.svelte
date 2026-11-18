@@ -4,6 +4,7 @@
   `Note` (a paragraph); where no problems can come, a `<Note tone="error">` of `error.text` says the same.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import type { ErrorView } from './usb-problems.ts';
 
@@ -11,7 +12,7 @@
   let { error }: Props = $props();
 </script>
 
-<div class="words">{error.text}</div>
+<div class="words"><ErrorText {error} /></div>
 {#if error.words}<UsbProblems words={error.words} />{/if}
 
 <style>

@@ -24,7 +24,8 @@
   } = $props();
   const pieces = $derived(m ? marked(m.key, m.params) : marked(k ?? '', params));
   /** The icon of a `<ui-…>` marker, if it names one. */
-  const iconOf = (tag: string) => (tag.startsWith('ui-') && tag.slice(3) in ICONS ? (tag.slice(3) as IconName) : undefined);
+  const iconOf = (tag: string) =>
+    tag.startsWith('ui-') && tag.slice(3) in ICONS ? (tag.slice(3) as IconName) : undefined;
 </script>
 
 {#each pieces as p, i (i)}{#if p.tag && typeof markers[p.tag] === 'function'}{@render (
@@ -50,7 +51,7 @@
   .ui {
     color: var(--ui-ref-fg);
     background: var(--ui-ref-bg);
-    box-shadow: inset 0 0 0 1px var(--ui-ref-border);
+    border: 1px solid var(--ui-ref-border);
     border-radius: var(--radius-sm);
     padding: 0 var(--space-2);
     box-decoration-break: clone;
