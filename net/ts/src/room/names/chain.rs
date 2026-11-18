@@ -203,11 +203,49 @@ impl Name {
         link(p, c, params).then_some(p)
     }
 
-    /// Every chain held: each unbroken run to a leaf (an entry no valid step follows).
+    /// The entries a release ends: every other entry of the owner's that follows an entry an anchored release validly
+    /// follows, and everything of the owner's after those. **A release beats any sibling branch at its parent**, whatever
+    /// the times (the final review's finding 4: a renewal the servers held and finished after Let it go was pressed,
+    /// made on the same entry as the release, outlived it by a term). Only the owner key signs a release, so only it
+    /// can end its branches. Releases themselves are never ended (two releases at one entry both stand).
+    fn released_past(&self, params: &Params) -> BTreeSet<[u8; 32]> {
+        let mut ended: BTreeSet<[u8; 32]> = BTreeSet::new();
+        let let_go: BTreeSet<[u8; 32]> = (self.entries.values())
+            .filter(|r| r.entry.kind == Kind::Release)
+            .filter_map(|r| self.parent(r, params))
+            .map(Stamped::id)
+            .collect();
+        if let_go.is_empty() {
+            return ended;
+        }
+        let owners = |e: &Stamped| {
+            (self.entries.get(&e.entry.prev)).is_some_and(|p| p.entry.owner == e.entry.owner)
+        };
+        // The release's siblings, then everything after them (a release on an ended branch too).
+        let mut from: BTreeSet<[u8; 32]> = (self.entries.values())
+            .filter(|e| {
+                e.entry.kind != Kind::Release && let_go.contains(&e.entry.prev) && owners(e)
+            })
+            .map(Stamped::id)
+            .collect();
+        while !from.is_empty() {
+            ended.extend(from.iter().copied());
+            from = (self.entries.values())
+                .filter(|e| from.contains(&e.entry.prev) && !ended.contains(&e.id()) && owners(e))
+                .map(Stamped::id)
+                .collect();
+        }
+        ended
+    }
+
+    /// Every chain held: each unbroken run to a leaf (an entry no valid step follows). An entry a release ended
+    /// ([`Name::released_past`]) is on none.
     pub fn chains(&self, params: &Params) -> Vec<Chain> {
+        let ended = self.released_past(params);
         let mut inner = BTreeSet::new();
         for c in self.entries.values() {
             if c.time().is_some()
+                && !ended.contains(&c.id())
                 && let Some(p) = self.parent(c, params)
             {
                 inner.insert(p.id());
@@ -215,7 +253,7 @@ impl Name {
         }
         let mut out = Vec::new();
         for leaf in self.entries.values() {
-            if leaf.time().is_none() || inner.contains(&leaf.id()) {
+            if leaf.time().is_none() || inner.contains(&leaf.id()) || ended.contains(&leaf.id()) {
                 continue;
             }
             let mut run = vec![leaf];

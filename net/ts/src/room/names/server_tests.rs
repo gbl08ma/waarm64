@@ -3627,3 +3627,82 @@ fn forged_asks_in_a_room_of_hundreds() {
         assert!(replies <= 300 * 2 * 10 + 300);
     }
 }
+
+/// Let it go while a renewal the servers hold waits for its anchor (the final review's finding 4): the release is made
+/// on the renewal's parent (the owning chain's last, as web/names.ts makes it), both are finished by the servers, and
+/// the release wins whichever is anchored first. Before, the renewal's branch outlived the release by a term.
+#[test]
+fn a_release_beats_a_renewal_waiting_at_its_parent() {
+    for renewal_first in [false, true] {
+        let params = Params::TEST_PACED;
+        let mut b = Bitcoin::new(ROOM, 72);
+        let mut svc = Services::new(72);
+        let node = [0x42; 32];
+        let own = [
+            Owner::claimed(&mut b, &mut svc, 1, "alpha", t(20), [1; 32]),
+            Owner::claimed(&mut b, &mut svc, 2, "bravo", t(20), [2; 32]),
+        ];
+        let mut o = Owner::claimed(&mut b, &mut svc, 3, "letgo", t(20), node);
+        let servers: Vec<Server> = own
+            .iter()
+            .map(|w| {
+                let title = Title {
+                    key: w.key.to_bytes().into(),
+                    item: b.item(&w.name, &w.entries, Some(w.zone.clone())),
+                };
+                Server::new(ROOM, cfg_with(params.clone(), vec![title]), T)
+            })
+            .collect();
+        let mut bus = Bus::new(servers);
+        bus.svc = Some(svc);
+        bus.advance(Duration::from_secs(60));
+        let unix = bus.unix();
+        // A visit renews (the claim is 20 days old): the renewal stamped and put, its pending anchor with it.
+        let item = o.visit(&mut b, bus.svc.as_mut().unwrap(), unix);
+        assert_eq!(item.entries.len(), 2);
+        assert_eq!(bus.put(1, 0, item), Msg::Taken);
+        let mine = |bus: &mut Bus| {
+            bus.advance(Duration::from_secs(2 * 3600));
+            let unix = bus.unix() as u32;
+            bus.svc.as_mut().unwrap().mine(1, unix);
+            bus.advance(Duration::from_secs(3600));
+            let unix = bus.unix() as u32;
+            bus.svc.as_mut().unwrap().mine(6, unix);
+            bus.advance(Duration::from_secs(3 * 3600));
+        };
+        let id = b.names.name_id("letgo");
+        if renewal_first {
+            mine(&mut bus);
+            let held = bus.s[0].reg.get(&id).unwrap();
+            assert_eq!(
+                held.owner.as_ref().unwrap().ids.len(),
+                2,
+                "the servers finished the renewal"
+            );
+        }
+        // Let it go: the waiting renewal dropped from the title, a release on the claim stamped and put.
+        let claim = o.entries[0].id();
+        o.entries.truncate(1);
+        o.entries
+            .push(b.entry(Kind::Release, &o.key, "letgo", claim));
+        o.stamp(&b, bus.svc.as_mut().unwrap(), 1);
+        let item = b.item("letgo", &o.entries, Some(o.zone.clone()));
+        bus.put(1, 0, item);
+        mine(&mut bus);
+        let unix = bus.unix();
+        let r = o.entries[1].id();
+        for (i, s) in bus.s.iter().enumerate() {
+            assert_eq!(
+                s.resolve("letgo", "letgo", unix),
+                Answer::Nx,
+                "server {i}, renewal first {renewal_first}: the name let go"
+            );
+            let held = s.reg.get(&id).unwrap();
+            assert!(held.owner.is_none(), "server {i}: nobody owns it");
+            assert!(
+                held.name.get(&r).is_some_and(|e| e.time().is_some()),
+                "server {i}, renewal first {renewal_first}: the release finished and kept"
+            );
+        }
+    }
+}

@@ -588,6 +588,63 @@ fn forks_and_releases() {
     assert!(n.get(&bc.id()).is_some(), "B's chain is alive");
 }
 
+/// A release beats every sibling branch at its parent (the final review's finding 4): a renewal made on the same entry,
+/// anchored earlier or later, and what follows it, are on no chain; another key's chain is untouched.
+#[test]
+fn a_release_ends_the_branches_beside_it() {
+    let mut w = World::new(16);
+    let a = w.key(1, "test123");
+    let b = w.key(2, "test123");
+    let p = w.params.clone();
+    let claim = w.at(Kind::Claim, &a, "test123", [0; 32], T0);
+    let r1 = w.at(Kind::Renew, &a, "test123", claim.id(), T0 + 15 * DAY);
+    // A renewal finished by the servers, then one after it, and the release made on r1 beside the first.
+    let c = w.at(Kind::Renew, &a, "test123", r1.id(), T0 + 30 * DAY);
+    let d = w.at(Kind::Renew, &a, "test123", c.id(), T0 + 45 * DAY);
+    let rel = w.at(
+        Kind::Release,
+        &a,
+        "test123",
+        r1.id(),
+        T0 + 30 * DAY + 2 * HOUR,
+    );
+    let now = T0 as u64 + 46 * DAY as u64;
+    let before = w.name("test123", &[&claim, &r1, &c, &d]);
+    assert_eq!(before.owner(&p, now).unwrap().last(), d.id());
+    for set in [vec![&claim, &r1, &c, &rel], vec![&claim, &r1, &rel, &c, &d]] {
+        let n = w.name("test123", &set);
+        let now = T0 as u64 + 31 * DAY as u64;
+        assert_eq!(n.owner(&p, now), None, "let go: nobody owns it");
+        let cs = n.chains(&p);
+        assert_eq!(cs.len(), 1, "only the released chain");
+        assert!(cs[0].released && cs[0].last() == rel.id());
+        let mut n2 = n.clone();
+        n2.prune(&p, now);
+        assert!(n2.get(&c.id()).is_none(), "the ended branch is dropped");
+        assert!(n2.get(&rel.id()).is_some(), "the tombstone stays");
+    }
+    // A release earlier than the renewal beside it wins too.
+    let early = w.at(Kind::Release, &a, "test123", r1.id(), T0 + 20 * DAY);
+    let n = w.name("test123", &[&claim, &r1, &c, &early]);
+    assert_eq!(n.owner(&p, T0 as u64 + 31 * DAY as u64), None);
+    // Two releases at one entry both stand; another key's run naming the entry is no branch of the title.
+    let rel2 = w.at(
+        Kind::Release,
+        &a,
+        "test123",
+        r1.id(),
+        T0 + 30 * DAY + 3 * HOUR,
+    );
+    let other = w.at(Kind::Renew, &b, "test123", r1.id(), T0 + 30 * DAY);
+    let n = w.name("test123", &[&claim, &r1, &rel, &rel2, &other]);
+    let cs = n.chains(&p);
+    assert_eq!(cs.iter().filter(|c| c.released).count(), 2);
+    assert!(
+        cs.iter().any(|c| c.ids == vec![other.id()]),
+        "a run of its own"
+    );
+}
+
 #[test]
 fn pruning_changes_no_answer() {
     let mut w = World::new(12);

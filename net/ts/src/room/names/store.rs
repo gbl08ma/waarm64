@@ -109,18 +109,21 @@ impl Held {
             keep.extend(o.ids.iter().copied());
             next = next.min(o.cover_end);
             // Renewals on its last entry waiting for their anchors: they can link until its cover ends, so as long as
-            // it owns the name (chain.rs `Name::stale`).
+            // it owns the name (chain.rs `Name::stale`). And releases waiting on any entry of the run, first: once
+            // anchored, a release ends every branch after the entry it follows (chain.rs `Name::released_past`), so a
+            // release made beside a renewal the servers finished first still wins (the final review's finding 4).
             let mut pending: Vec<&Stamped> = self
                 .name
                 .entries()
                 .filter(|e| {
                     e.time().is_none()
                         && e.entry.kind != Kind::Claim
-                        && e.entry.prev == o.last()
                         && e.entry.owner == o.owner
+                        && (e.entry.prev == o.last()
+                            || e.entry.kind == Kind::Release && o.ids.contains(&e.entry.prev))
                 })
                 .collect();
-            pending.sort_by_key(|e| e.id());
+            pending.sort_by_key(|e| (e.entry.kind != Kind::Release, e.id()));
             for e in pending.into_iter().take(MAX_PENDING) {
                 keep.insert(e.id());
             }

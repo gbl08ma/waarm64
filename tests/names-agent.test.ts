@@ -462,6 +462,40 @@ test('Let it go while a renewal waits for its anchor: the renewal goes, and a re
   assert.ok(r2 && t.stamps[r2.id]?.length, `made again: ${log.join('\n')}`);
 });
 
+test('Let it go wins over a renewal the room finished: one browser renews, the other lets go, both anchored (the final review, finding 4)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const a = await testAgent({ publish: fakePublish(), log });
+  const ca = conn('conn-letgo-a');
+  // Claimed 20 days ago: the pass that collects the claim renews it, and the renewal is put with its pending anchor
+  // (the servers hold it, and finish it themselves).
+  await aged(cal, a.agent, ca, 'letgo3', nowS() - 20 * DAY);
+  const renewal = (await statusOf(a.backend, (await a.store.titles(ca.identityKey))[0])).entries.find((e) => e.kind === 'renew' && e.time === null);
+  assert.ok(renewal, log.join('\n'));
+  // The same title in another browser (or the servers' copy), with that renewal waiting.
+  const bundle = await exportNames(a.store, ca.identityKey);
+  const b = await testAgent({ publish: fakePublish(), log });
+  const cb = conn('conn-letgo-b');
+  await importNames(b.store, cb.identityKey, bundle!);
+  // Let go here before the renewal's anchor came: a release on the renewal's parent.
+  await a.agent.release(ca, 'letgo3');
+  // Both anchored; the other copy collects the renewal (as the servers would).
+  cal.mine(7);
+  await b.agent.pass(cb.identityKey);
+  const [tb] = await b.store.titles(cb.identityKey);
+  assert.ok((await statusOf(b.backend, tb)).entries.some((e) => e.id === renewal.id && e.time !== null), log.join('\n'));
+  // The page that let go is shown the renewed chain by the room: not taken back into the title.
+  const shown = await testAgent({ store: a.store, publish: fakePublish(() => [{ id: '', server: 's1', result: 'better', item: tb.item }]), log });
+  await shown.agent.pass(ca.identityKey);
+  const [ta] = await a.store.titles(ca.identityKey);
+  const st = await statusOf(a.backend, ta);
+  assert.ok(st.best?.released, `the release anchored: ${log.join('\n')}`);
+  assert.equal(st.owner, null, 'nobody owns it: the release beats the renewal beside it');
+  assert.equal((await shown.agent.titles(ca.identityKey))[0].state, 'released');
+  // What any server holding both computes: nobody owns the name.
+  const j = await a.backend.op<{ verdict: string }>('judge', { room: roomOf(LINK), item: tb.item, other: ta.item, now: nowS() });
+  assert.equal(j.verdict, 'none', 'the renewed copy shown the release: nobody owns it');
+});
+
 test('an export pasted into a connection that has an owners\' secret already: its titles keep their own (review 2, finding 11)', { skip, timeout: 60_000 }, async () => {
   const log: string[] = [];
   // Browser B's connection holds a name of its own, so it has a secret.

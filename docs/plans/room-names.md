@@ -222,7 +222,12 @@ wall clock (rooms already need it right to within most of an hour).
   **covers** from its first entry's time less `drift` (a block's time may run that far ahead of a node's clock, so a
   chain anchored in such a block is alive as soon as it can be checked, not dropped until the clock catches up) to its
   last entry's `t + TERM + GRACE`. A `release` (anchored like any entry)
-  ends the cover at its own time.
+  ends the cover at its own time, and **beats every sibling branch at the entry it follows**: the owner's other
+  entries after that entry, and everything of the owner's after them, are on no chain (`Name::released_past`), whatever
+  their times. Without it, a renewal the servers held and finished themselves (pending when Let it go was pressed, or
+  made in another browser holding the title) and the release made beside it shared their first entry, the renewal's
+  cover ended later, and the name stayed for a term (the final review's finding 4). Only the owner key signs a
+  release, so only it can end its branches; two releases at one entry both stand.
 - **A chain's seniority** is the time of the first entry of the unbroken run a node holds of it: the claim's, when it
   holds the whole chain.
 - **The owner now** is, of the chains that cover now, the one with the earliest seniority. Equal: the lower SHA-256 of
@@ -593,8 +598,10 @@ copies by nonce **and round** (the three rounds share a nonce).
 
 - **Hold**, per name, what a rule of the entries held and the time says (`Held::settle`), the same on every server:
   the owning chain ("Who owns a name", from every entry the server was given, so the order they came in can't matter)
-  with its whole run; the unanchored renewals that continue its last entry (two at most, the lowest ids: a title
-  forked between two browsers makes two), each until it is anchored or could no longer be; released chains still kept
+  with its whole run; the unanchored renewals that continue its last entry and the unanchored releases on any entry
+  of its run (two at most, releases first, then the lowest ids: a title forked between two browsers makes two), each
+  until it is anchored or could no longer be, so servers finish a release made beside a renewal they finished first
+  (the final review's finding 4); released chains still kept
   as tombstones that, without their release, would beat the owner (two at most); the newest zone, if the owner key
   signed it. Everything else is dropped, so a worse chain offered is refused. Each entry keeps one anchor (the
   earliest) and its item carries the headers its entries need, once each. **Why one chain and not every chain
@@ -867,7 +874,9 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   its chain at every hour of 60 days, at both servers. Let it go drops the one made ahead.
   **[Let it go](ui:network:NameEntry.release)** drops the title's renewals that wait for their anchors (one collected later would be a branch whose
   cover outlasts the release's, so the name would stay: review 2's finding 6) and makes the release on the owning
-  chain's last entry; a release no calendar stamped, or one that never came, is made again at the next pass.
+  chain's last entry; a release no calendar stamped, or one that never came, is made again at the next pass. A renewal
+  the servers already hold (put with its pending anchor, and finished by them) is ended by the release once both are
+  anchored ("Who owns a name"), as is one another browser holding the title made.
 - **Publishing** is a `put` through a **publisher**: a room client that is a names client alone (room.rs
   `Config::publish`: a fresh key, relay only, nothing let in but its question's answers, no guest, no node), which asks
   "who serves?", keeps two servers as a member does, and puts the title's item (every entry it holds, the zone) to each,
