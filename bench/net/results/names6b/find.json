@@ -1,0 +1,174 @@
+{
+ "date": "2026-11-18T08:09:34.429Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "derp": "303",
+ "find": [
+  {
+   "round": 0,
+   "runningMs": [
+    1526,
+    1560
+   ],
+   "bothNamesMs": [
+    8668,
+    8823
+   ],
+   "logs": {
+    "A0": [
+     [
+      1657,
+      "names: a names client, nodekey:a79aec70fb2401d318b9cf46fca21fee442c13ca9b2e0f834134c94c383b4475"
+     ],
+     [
+      4388,
+      "names: nobody answered, but someone asked meanwhile; asking again in 2465 ms"
+     ]
+    ],
+    "B0": [
+     [
+      1687,
+      "names: a names client, nodekey:001c5414c55a0087c3b01011d88e27ac8a075a4fb62815252fafc39d426f2d72"
+     ],
+     [
+      5445,
+      "names: nobody serves the registry; asking again in 33 s"
+     ]
+    ]
+   }
+  },
+  {
+   "round": 1,
+   "runningMs": [
+    875,
+    886
+   ],
+   "bothNamesMs": [
+    8217,
+    8099
+   ],
+   "logs": {
+    "A1": [
+     [
+      1031,
+      "names: a names client, nodekey:ee7944ad09b6db9c7b90471b5c3bdf5b574cf3b91bdfd33db24b725d5f4f5600"
+     ],
+     [
+      3739,
+      "names: nobody answered, but someone asked meanwhile; asking again in 2765 ms"
+     ]
+    ],
+    "B1": [
+     [
+      1045,
+      "names: a names client, nodekey:7bb10c56d308dad14ec772af2ea80b0a16e646dfd103c328d6bf3710ed85b522"
+     ],
+     [
+      3753,
+      "names: nobody answered, but someone asked meanwhile; asking again in 2644 ms"
+     ]
+    ]
+   }
+  },
+  {
+   "round": 2,
+   "runningMs": [
+    1376,
+    938
+   ],
+   "bothNamesMs": [
+    8158,
+    8004
+   ],
+   "logs": {
+    "A2": [
+     [
+      1541,
+      "names: a names client, nodekey:08e298bb0c0b2952ea629f34941e2759949b89b32289ffa2b1d29760f9b8501c"
+     ],
+     [
+      4276,
+      "names: nobody answered, but someone asked meanwhile; asking again in 1851 ms"
+     ]
+    ],
+    "B2": [
+     [
+      1094,
+      "names: a names client, nodekey:f56cf44f6cb9befdb47c342b587c5b930352eacac9b7a1c880fd8b64dcb11e26"
+     ],
+     [
+      3831,
+      "names: nobody answered, but someone asked meanwhile; asking again in 2372 ms"
+     ]
+    ]
+   }
+  },
+  {
+   "round": 3,
+   "runningMs": [
+    1375,
+    885
+   ],
+   "bothNamesMs": [
+    7463,
+    7310
+   ],
+   "logs": {
+    "A3": [
+     [
+      1531,
+      "names: a names client, nodekey:b2b8845d3187aea3a38b9111f7f3fdbec163654ce33e76d174ee334d78fc966f"
+     ],
+     [
+      4242,
+      "names: nobody answered, but someone asked meanwhile; asking again in 2635 ms"
+     ]
+    ],
+    "B3": [
+     [
+      1036,
+      "names: a names client, nodekey:a91d57c00bd09cd4735b01fc19e570250c8fe4484683b8d7aa8ee5685af5e028"
+     ],
+     [
+      3772,
+      "names: nobody answered, but someone asked meanwhile; asking again in 1871 ms"
+     ]
+    ]
+   }
+  },
+  {
+   "round": 4,
+   "runningMs": [
+    883,
+    1426
+   ],
+   "bothNamesMs": [
+    7861,
+    8014
+   ],
+   "logs": {
+    "A4": [
+     [
+      1032,
+      "names: a names client, nodekey:df99c97db614bdc40e051f1479b8e91d204caecc9c872929f1e7b6f746f2ee13"
+     ],
+     [
+      3759,
+      "names: nobody answered, but someone asked meanwhile; asking again in 2337 ms"
+     ]
+    ],
+    "B4": [
+     [
+      1610,
+      "names: a names client, nodekey:84e3f4299b701317a626a46f55efa21e6c2ab76a3a51b96ccef65933eb803920"
+     ],
+     [
+      4325,
+      "names: nobody answered, but someone asked meanwhile; asking again in 2887 ms"
+     ]
+    ]
+   }
+  }
+ ]
+}

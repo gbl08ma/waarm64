@@ -1,0 +1,658 @@
+{
+ "date": "2026-11-18T08:08:59.840Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "rttMs": 95,
+ "bufferBytes": 65536,
+ "runs": [
+  {
+   "round": 0,
+   "window": 8,
+   "flows": 1,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1680,
+   "allMs": 56145,
+   "syncMs": 54465,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.7,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     436,
+     "names: a names client, nodekey:d0b482de6e93f7b65c70081de32c1de3c6a700a24cd60390199807f8579cbe03"
+    ],
+    [
+     56144,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 16,
+   "flows": 1,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1708,
+   "allMs": 41342,
+   "syncMs": 39634,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.97,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     464,
+     "names: a names client, nodekey:cd0560fd6a149ce1af3e454d724d4ff89e6d1aef4ba7600022f9f561f1109039"
+    ],
+    [
+     41342,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 32,
+   "flows": 1,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1779,
+   "allMs": 40747,
+   "syncMs": 38968,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.98,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     481,
+     "names: a names client, nodekey:bf540af411891d4e6128706961f8cf33da36bfc9388ad07090a9d0dc287bc766"
+    ],
+    [
+     40747,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 8,
+   "flows": 2,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1728,
+   "allMs": 56221,
+   "syncMs": 54493,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.7,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     469,
+     "names: a names client, nodekey:b830d353e2d5364de772c4c28f182d8a55477cfee53fcb21fd27db093d1ab73c"
+    ],
+    [
+     56221,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 16,
+   "flows": 2,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1498,
+   "allMs": 40616,
+   "syncMs": 39118,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.98,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     436,
+     "names: a names client, nodekey:69af39e012df528bf55d54e6739456b12eb89b7ad4cae6383b51e5fc9ef94f50"
+    ],
+    [
+     40616,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 32,
+   "flows": 2,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1710,
+   "allMs": 40503,
+   "syncMs": 38793,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.99,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     461,
+     "names: a names client, nodekey:76dcc71bd8c676756ff798f798fd0755a0945d26f156e2e27dcf66a33e85a90d"
+    ],
+    [
+     40503,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 8,
+   "flows": 1,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1596,
+   "allMs": 57188,
+   "syncMs": 55592,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.69,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     425,
+     "names: a names client, nodekey:4c876ef20104295e405544f39591294c38a2d0a239a9f2dbc9e2fce54266b64a"
+    ],
+    [
+     57187,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 16,
+   "flows": 1,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1743,
+   "allMs": 41536,
+   "syncMs": 39793,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.96,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     465,
+     "names: a names client, nodekey:d3f3736ed69bf80627f224f7aa2d08b7e04ba0eccca3fc3003009b3d5203e178"
+    ],
+    [
+     41536,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 32,
+   "flows": 1,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1723,
+   "allMs": 41287,
+   "syncMs": 39564,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.97,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     465,
+     "names: a names client, nodekey:ef58ec4e5352bb508986394f0d80d24eaf43a633418c9e74fb9f468911d9b440"
+    ],
+    [
+     41287,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 8,
+   "flows": 2,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1700,
+   "allMs": 57173,
+   "syncMs": 55473,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.69,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     466,
+     "names: a names client, nodekey:c6771b50deba8f372cc9c0be5a1a3d701334a9396d36f8b77ac3c6741808bf54"
+    ],
+    [
+     57173,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 16,
+   "flows": 2,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1677,
+   "allMs": 41984,
+   "syncMs": 40307,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.95,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     467,
+     "names: a names client, nodekey:d640c722030ae14a7ffeb4f1e3799642fb6b332a2c23ab592f7a132432fa503e"
+    ],
+    [
+     41983,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 0,
+   "window": 32,
+   "flows": 2,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1717,
+   "allMs": 42181,
+   "syncMs": 40464,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.95,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     460,
+     "names: a names client, nodekey:79e3cde3ae28e5d611a3df5695dee759ad5cab636ba42473668dab0a0e52100c"
+    ],
+    [
+     42181,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 32,
+   "flows": 1,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1629,
+   "allMs": 40600,
+   "syncMs": 38971,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.98,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     457,
+     "names: a names client, nodekey:38d478ddfdd5c765c7eb09ebcdeb88cd9f79299f823764374f00fb8ae874232a"
+    ],
+    [
+     40600,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 16,
+   "flows": 1,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1725,
+   "allMs": 41265,
+   "syncMs": 39540,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.97,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     457,
+     "names: a names client, nodekey:51c9fa5692ee427359beb74c2dafb930e206ee12f6912119448027d6f7cc136f"
+    ],
+    [
+     41264,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 8,
+   "flows": 1,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1709,
+   "allMs": 56591,
+   "syncMs": 54882,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.7,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     458,
+     "names: a names client, nodekey:f9ca1d60fc1088869498d16f1efc29a5b12dea71ec4cbb754b6a2852ba79f624"
+    ],
+    [
+     56590,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 32,
+   "flows": 2,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1683,
+   "allMs": 41472,
+   "syncMs": 39789,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.96,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     452,
+     "names: a names client, nodekey:d8e7f6b0dc6ea28f28f61ba369a644ad0cab1dd91b4ad860510e41caa9fede23"
+    ],
+    [
+     41472,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 16,
+   "flows": 2,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1682,
+   "allMs": 41133,
+   "syncMs": 39451,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.97,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     461,
+     "names: a names client, nodekey:7d44c500d6aceb20672326c832ecf5eac2254d26de28dd1ea0da9a14fff8944c"
+    ],
+    [
+     41133,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 8,
+   "flows": 2,
+   "mbps": 0,
+   "names": 1295,
+   "firstNameMs": 1713,
+   "allMs": 56461,
+   "syncMs": 54748,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.7,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     445,
+     "names: a names client, nodekey:7b7b3a198a13e18e3903c2ee67832091c37ee7b0f846d15d24f545d08381d321"
+    ],
+    [
+     56461,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 32,
+   "flows": 1,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1702,
+   "allMs": 42180,
+   "syncMs": 40478,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.95,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     454,
+     "names: a names client, nodekey:f7a44deaa8a10a63f38a8feeb27beed66863be4323ab1ae30c5f95f17d81a77d"
+    ],
+    [
+     42180,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 16,
+   "flows": 1,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1633,
+   "allMs": 41796,
+   "syncMs": 40163,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.95,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     450,
+     "names: a names client, nodekey:782ee39950c0fb2325a0c81de524817c4157a000d62952a0953119a52e74d512"
+    ],
+    [
+     41795,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 8,
+   "flows": 1,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1750,
+   "allMs": 57665,
+   "syncMs": 55915,
+   "namesAtEnd": 1297,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.69,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     481,
+     "names: a names client, nodekey:f81ba34a90453716c35653ea723f9ef72d74ad148a702ce4bc48aa0ade2f2014"
+    ],
+    [
+     57665,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 32,
+   "flows": 2,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1593,
+   "allMs": 42257,
+   "syncMs": 40664,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.8,
+   "mbitsDuringSync": 0.94,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     473,
+     "names: a names client, nodekey:aed25e556cc98fc6ff90a16fc89904426c64b5596429748d52a73c88ac80152c"
+    ],
+    [
+     42257,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 16,
+   "flows": 2,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1594,
+   "allMs": 41733,
+   "syncMs": 40139,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.96,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     470,
+     "names: a names client, nodekey:527632aab9c7476a3dd1afdfa456d177bfb12dc68e44b6f3546a14aba0d68e34"
+    ],
+    [
+     41733,
+     "names: synced: answering questions"
+    ]
+   ]
+  },
+  {
+   "round": 1,
+   "window": 8,
+   "flows": 2,
+   "mbps": 10,
+   "names": 1295,
+   "firstNameMs": 1588,
+   "allMs": 57351,
+   "syncMs": 55763,
+   "namesAtEnd": 1298,
+   "derpInMB": 4.79,
+   "mbitsDuringSync": 0.69,
+   "derpDropped": 0,
+   "queueHead": 0,
+   "queueTail": 0,
+   "derpSent": 0,
+   "logs": [
+    [
+     464,
+     "names: a names client, nodekey:1a583a7caa995648f1b85660a20886825ca3afbdb8a8b2474b157ff6cf6a3354"
+    ],
+    [
+     57351,
+     "names: synced: answering questions"
+    ]
+   ]
+  }
+ ]
+}

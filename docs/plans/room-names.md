@@ -346,8 +346,10 @@ reach it) and closes after 10 minutes without one (a minute's wait after it fail
 the next query then starts it again). Registry messages are UDP between two
 names clients' room addresses, port 2 both ends (`NAMES_PORT`), binary, 1,200 bytes a datagram at most (`wire.rs`):
 a message goes in numbered parts (kind, transfer, part, parts: 9 bytes, then up to 1,191 of the message), each
-acknowledged, resent after 0.5, 1 and 2 s and given up 2 s after that (the transfer fails), at most 8 of a peer's
-unacknowledged at once (a derper queues 32 packets a client and drops the oldest: bench/net/REPORT.md); a message is
+acknowledged, resent after 0.5, 1 and 2 s and given up 2 s after that (the transfer fails), at most 16 of a peer's
+unacknowledged at once (a derper queues 32 packets a client and drops the oldest, so two partners syncing into one
+server fill it and no more; 8 until NAMES loop 6b, bench/net/REPORT.md: 32 a peer had the rig's derper drop 16 to 117
+parts); a message is
 1 MiB at most, and a peer may have 16 incomplete, 2 MiB, held at once (every new part counts; an incomplete transfer
 is dropped 10 s after its last new part); at most 8 MiB is queued to a peer unacknowledged, past which a send fails
 (a peer that asks much and acknowledges nothing can't make us hold all we would answer). A message is a type, the
@@ -418,7 +420,20 @@ copies by nonce **and round** (the three rounds share a nonce).
   member one question (three events) every 10 minutes at most, and only while its guest asks for such names. Names
   the member already holds answer throughout: they don't need a server. A server nobody answered is alone: it counts
   as synced (there is nothing to sync with) and asks again after the same wait (5 minutes at most), with a fifth of it
-  at random on top, so servers that started together don't ask together again.
+  at random on top, so servers that started together don't ask together again. **But a server that refused a question
+  meanwhile for not being synced yet asks again within 1.5 to 3 s** (`ASK_SOON` and as much at random), not counting
+  it as a nobody: two servers that start within a second or two each ask while the other's own question is open, and
+  each refuses the other (N0c: both then waited 30 s); the next question, a server's that serves by then, finds the
+  other. Measured: on the bus, both hold both names 1.5 to 6.5 s after the later start at any gap from 0 to 3 s
+  (`servers_that_start_together_find_each_other_within_seconds`); on the six default relays and tailcat's region
+  303, 7.3 to 8.8 s from the start in five rounds of two servers started at once (bench/net/REPORT.md "NAMES loop
+  6b"; N0c: 34 s, once ~350 s).
+- **A server asks once its names client's home region is up** (its DERP connection; as a member's names client is
+  ready only then): the answers' call backs come through it. It asked as soon as its names client was made (NAMES
+  loop 6b found it): on a public region, which takes a second or more to connect (TLS and the DERP handshake over a
+  ~95 ms round trip), the call backs found no connection (a derper drops them as an unknown destination), and the
+  server took nobody answering for 30 s (`a_servers_first_question_waits_for_its_names_clients_home_region`; through
+  the rig's derper behind a 95 ms shaper, a new server's first name 30.8 s after its start before, 1.6 s after).
 - Questions have a rate of their own (1 a second), not the guest's lookups'. **A question's key proves nothing** (it
   is the asker's names client's, which can't sign, and no secret of the room tells one key's owner from another
   member), so questions naming a victim's node key would have every server call it back, spending its incoming trials,
@@ -593,12 +608,16 @@ copies by nonce **and round** (the three rounds share a nonce).
   rule's answer is the same), but servers have it only once its owner's agent puts it again, at its next renewal (two
   weeks at most) or when the agent sees the name free (N4).
 - **Sync with each other** (`Run`): a sync round asks "who serves?" afresh and syncs with the two servers it keeps,
-  at the start and every 5 minutes with 30 s of jitter either way. A range of name ids (those that start with a
+  at the start and every 5 minutes with 30 s of jitter either way; **a round whose sync brought names is followed by
+  the next 30 to 40 s on** (`QUICK_ROUND`, 8 in a row at most), so servers that start together converge in a few of
+  those (NAMES loop 6b: twenty servers through the fake DERP and relay in 40 s, was 340; N6a's rig had held 3,100 to
+  3,700 of 5,000 names a minute in, then nothing for 5 minutes). A range of name ids (those that start with a
   number of nibbles: `wire::Range`) is summarized as a fingerprint, 8 bytes, the XOR of 8 bytes of `BLAKE2s(id,
   version)` over its names, and their count; a name's version is 8 bytes of SHA-256 over its kept entries' ids and
   their anchors' digests and its zone's hash. The asker sends `sync` with its summary of everything; the other
   answers `same`, the 16 sub-ranges' summaries, or, where its range holds 64 names or fewer, a listing (8 bytes of id
-  and the version, each); the asker descends into the sub-ranges that differ (4 requests in flight), and for each
+  and the version, each); the asker descends into the sub-ranges that differ (8 requests in flight: a first sync's rate is these over the
+  round trip, 4 until NAMES loop 6b), and for each
   listed name it lacks or holds otherwise sends `get` (`all`: the id or its 8 bytes, the zone it holds as `seq` and 4
   bytes of hash, and every entry it holds as 8 bytes of id and 4 of its anchor's digest; the answer, `items`, carries
   the entries it lacks or whose anchor differs, and the zone if it differs), and at the end tells the other in `have`
@@ -611,7 +630,11 @@ copies by nonce **and round** (the three rounds share a nonce).
   most 8,192 `sync`s (20,000 names each differing take ~4,400) and as many `get`s as the bound holds names, the
   listed ones from a work list 4 at a time, and lasts 4 minutes at most (`RUN_MAX`, under a round's 5; review 2: a
   partner answering each request just before its 15 s could stretch a run to hours while the new server answered
-  nobody): a run that ends by its time ends the round as any other does, and the next round goes on from what came. A peer's `sync`s may make the server fingerprint 16 times its registry a
+  nobody): a run that ends by its time ends the round as any other does (the server counts as synced once what came
+  is verified), and **the next round starts at once** and goes on from what came (its `get`s say what is held, so
+  only what's missing crosses); a run ended by a breach of its bounds waits for the round's 5 minutes. N0c's 50 MB
+  first sync waited ~100 s for the next round (`a_slow_partner_doesnt_keep_a_server_unsynced`: next round at the
+  cut, was 63 s after it; `a_run_ended_by_a_breach_waits_for_the_next_round`). A peer's `sync`s may make the server fingerprint 16 times its registry a
   sync round; a `have` names 32 ids at most, and what `have`s make it ask a peer waits 64 at once. A `get`'s answer
   is taken only for the name asked (its id, or an 8-byte prefix's two at most), and what a peer's answers bring waits to
   be verified 256 items and 4 MiB at most (4,096 and 32 MiB from everyone): past it its `have`s ask nothing and its
@@ -619,8 +642,8 @@ copies by nonce **and round** (the three rounds share a nonce).
   summarize it, so time has done the same to both. A changed name (a `put`, a sync) is told in `have` to the servers
   of this round and those that synced with this one in the last 10 minutes, but the one it came from. A server
   answers "who serves?" only once its first sync round is over and what it brought is verified (not what was `put`
-  meanwhile: below), or nobody answered it. Measured through the fake DERP and relay (room/tests/names.rs): two servers converge in 40 s from their start
-  (the first question finds nobody, both then serve, the next finds the other); twenty servers holding 40 names in 6
+  meanwhile: below), or nobody answered it. Measured through the fake DERP and relay (room/tests/names.rs): two servers converge within 10 s of their start
+  (was 40 s: the first question found nobody, both then served, the next 30 s on found the other; "Finding a server"); twenty servers holding 40 names in 6
   minutes (8,900 DERP packets in all, a 51 KB registry each); after a reset, three owners' names are back everywhere
   in 40 s. (The tests' entries carry one 4-operation pretend anchor each, so bytes are small against real anchors'.)
 - **`get`** has three more modes, a member's: `owner` (the owning chain's last entry and the zone, those the member
@@ -741,19 +764,25 @@ the six after it). So **1.17 to 1.52 KB an entry (1.45 typical)**, and with two 
 about 0.4 KB for its zone plus **2.3 to 3.0 KB a month it has been held** (2.9 typical; the estimate was 1.1 to 3.0,
 whose low end assumed anchors shared).
 
-| Names, held six months on average | A server keeps | A new server's first sync through public DERP (N0c: ~0.8 Mbit/s, the 8-part window over a 95 ms RTT) |
+| Names, held six months on average | A server keeps | A new server's first sync through public DERP (N6b: ~1.7 Mbit/s, 8 `get`s and 16 parts in flight over a 95 ms RTT; N0c's 0.8 with 4 and 8) |
 |---|---|---|
-| 1,000 | 14 to 19 MB (~4x that in the module's memory) | 2.5 to 3.5 minutes |
-| 5,000 | 72 to 93 MB | 12 to 16 minutes of transfer, in runs of 4 minutes a round (5): ~16 to 21 |
+| 1,000 | 14 to 19 MB (~2.7x that in the module's memory; ~4x before N6b) | 1.2 to 1.7 minutes |
+| 5,000 | 72 to 93 MB | 6 to 8 minutes of transfer, in runs of 4 minutes, the next at once |
 | 20,000 | 290 to 370 MB | too much for a tab |
 
 N0c measured it (bench/net/REPORT.md "NAMES loop 0c"): 5 MB of items synced in 61 s and 20 MB in 228 s between two
 servers through tailcat's Frankfurt region and the six default relays, a guest's ping on the node's own DERP
 connection beside it unmoved (95 ms median before, during and after); 50 MB went past a run's 4 minutes and on in the
-next round (docs/backlog.md). N6a measured a room of 20 servers holding 5,000 names (15.5 MB of items, each name
+next round (docs/backlog.md). With 8 `get`s and 16 parts in flight (NAMES loop 6b) 20 MB took 114 s through the same
+region, the ping beside it unmoved (90 ms). N6a measured a room of 20 servers holding 5,000 names (15.5 MB of items, each name
 two entries with 30-level anchors) on the tests' relay and derper (bench/net/REPORT.md "NAMES loop 6a"): 54 to 61 MB
 of linear memory a server (3.5 to 3.9x its items), 0.3 cores for all 20 while they synced from a cold start, under 0.1
-idle and 0.2 to 0.3 while members looked names up; 1,000 members beside them 1.4 MB each.
+idle and 0.2 to 0.3 while members looked names up; 1,000 members beside them 1.4 MB each. **Where a server's memory
+goes** (N6b, `net/ts/examples/names-memory.rs`, a counting allocator over the same 5,000 names): the store's records
+were 55.3 of the 61.7 MB of heap (3.99x the items), because a name's entries sat in a `BTreeMap` whose node holds 11
+entries of 416 bytes whatever it holds; they are a sorted `Vec` of their number now (chain.rs `Entries`), 41.1 MB
+(2.66x), a first sync's peak 48.3 MB (was 68.7; a tab keeps its peak: linear memory doesn't shrink). Most of what's
+left is each anchor decoded (62 operations, ~3.4 KB an entry with it against ~1.2 KB encoded): docs/backlog.md.
 
 Anchors a calendar put in one transaction share their path's tail, and those in one block their header, but an item
 is one name's and carries neither across names. A store that kept a registry's anchors by calendar transaction

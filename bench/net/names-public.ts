@@ -15,9 +15,11 @@
 //     A's guest once a second beside it (the RTTs before, during and after).
 //   - `client`: what a second room client (the names client) costs a node: memory, connections, idle CPU over `--idle`
 //     seconds, a server (one title: its names client up) against a member that never asks a name.
+//   - `find`: two servers started at once in a fresh room, `--rounds` times: until each holds the other's name, with
+//     their names clients' lines (N6b).
 //   - `lookup`: a member's cold first lookup of a name two servers hold (R3's `ask`/`reply` through the relays), then the
 //     same name again (kept) and a second name (a room asked before: the names client up), `--rounds` fresh members.
-// Usage: node bench/net/names-public.ts <relays|explorers|transfer|client|lookup> [--out results/x.json] [...]
+// Usage: node bench/net/names-public.ts <relays|explorers|transfer|client|lookup|find> [--out results/x.json] [...]
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -353,7 +355,7 @@ if (what === 'node') {
       send({ t: 'error', error: String((e as Error).stack ?? e) });
     }
   });
-} else if (['transfer', 'client', 'lookup'].includes(what)) {
+} else if (['transfer', 'client', 'lookup', 'find'].includes(what)) {
   const { fork } = await import('node:child_process');
   const LOCAL = `${ROOT}bench/results/local/names0c`;
   execFileSync('mkdir', ['-p', LOCAL]);
@@ -491,6 +493,28 @@ if (what === 'node') {
       const memberNames = await window(m);
       results.client = { idleS: Number(o.idle), server, member, memberAsk: ans, memberWithNamesClient: memberNames, serverKey: ss.key };
       console.log(JSON.stringify(results.client, null, 1));
+    } else if (what === 'find') {
+      // N6b: two servers started at once (each a title of its own) in a fresh room, `--rounds` times: how long until each
+      // holds the other's name, with both names clients' lines kept (N0c saw 30 s, once ~350 s).
+      const rounds: unknown[] = [];
+      for (let k = 0; k < Number(o.rounds); k++) {
+        const r = `names6b-find-${randomBytes(12).toString('hex')}`;
+        const l = `waarm64-room:${encodeURIComponent(r)}?derp=${encodeURIComponent(o.derp!)}`;
+        const [ta, tb] = [titles(r, ['finda']), titles(r, ['findb'])];
+        const a = spawnNode(`A${k}`);
+        const b = spawnNode(`B${k}`);
+        const t0 = Date.now();
+        const [sa, sb] = await Promise.all([up(a, { cmd: 'start', link: l, titles: ta }), up(b, { cmd: 'start', link: l, titles: tb })]);
+        const both = await Promise.all([a, b].map((n) => n.next('names', 400_000, (m) => m.names >= 2).then((m) => m.at - t0, () => null)));
+        const logs = Object.fromEntries([a, b].map((n) => [n.name, n.msgs.filter((m): m is Extract<FromNode, { t: 'log' }> => m.t === 'log' && !/Nostr:/.test(m.msg)).map((m) => [m.at - t0, m.msg]).slice(0, 30)]));
+        const x = { round: k, runningMs: [sa.runningMs, sb.runningMs], bothNamesMs: both, logs };
+        console.log(JSON.stringify({ ...x, logs: undefined }));
+        rounds.push(x);
+        a.kill();
+        b.kill();
+        await sleep(3000);
+      }
+      results.find = rounds;
     } else if (what === 'lookup') {
       // Two servers holding the names (B syncs A's), then fresh members asking.
       const a = spawnNode('A');

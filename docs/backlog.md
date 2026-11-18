@@ -1730,32 +1730,41 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - The 20-server and 60-day tests (server_tests.rs) take ~1.5 minutes of `cargo test` each, even with the curve,
       Argon2 and the hashes optimized in test builds (the root Cargo.toml's `profile.dev.package`).
   - On the public relays and DERP (N0c, bench/net/REPORT.md "NAMES loop 0c"):
-    - **A first sync is the window over the RTT**: 8 parts of 1,191 bytes in flight, so ~0.8 Mbit/s (~100 KB/s of
-      items) at a 95 ms RTT, whatever the relay; 20 MB took 3.8 minutes, 5,000 names (72 to 93 MB) would take 12 to
-      16. A guest's ping on the node's own DERP connection beside it moved by under 2 ms. A wider window (16 or 32,
-      against a derper's 32-packet queue a client, shared by every peer the server syncs with) would cut it; not
-      tried: it wants a test of two or three syncs at once into one server through a real derper.
-    - **A first sync past one run's 4 minutes** (`RUN_MAX`: ~24 MB at that rate, about 1,300 to 1,700 names held six
-      months) is cut, the server says it's synced and answers questions with what it has, and the next round's run
-      (~100 s later, at the round's 5 minutes) goes on: 50 MB was 5,922 of 16,176 names at the cut, 9,434 at 450 s.
-      By design (review 2: a slow partner mustn't keep a new server silent), but the gap is a quarter of the time; a
-      next round at once after a run cut by its time (not by a breach) would close it.
-    - **A server's memory is ~4x its registry's bytes** in the module (20 MB synced: 82 MB of linear memory; 50 MB
-      of titles: 328 MB, 600 MB RSS): at 5,000 names held six months (72 to 93 MB) ~300 to 370 MB in a tab. Where
-      it goes (items kept decoded beside their bytes, the store's records, transfer buffers) isn't measured. N6a: 5,000
-      names (15.5 MB of items) in 54 to 61 MB of linear memory a server (3.5 to 3.9x), ~140 MB RSS a server in Node;
-      7,500 names (the bound) 78 MB.
-    - **A room's servers that all start at once converge in rounds** (N6a: 20 servers of 250 names each, the tests'
-      relay and derper): each held ~3,100 to 3,700 of the 5,000 a minute after the start, then nothing more until the
-      next round ~5 minutes on (4,800 to 5,000 by 6.5 minutes), not all within 8 minutes. A name a server learns is
-      told in `have` only to the servers of its rounds of the last 10 minutes, so the rest wait for a round.
-    - **Two servers that start within a second don't find each other for 30 s**: each one's first question comes
-      while the other's own is open and it isn't synced yet (the answer rule's "not synced yet", by the logs' times),
-      and both back off 30 s. Once
-      in three runs the next three questions (at ~30, ~90 and ~210 s) went unanswered too, and the sync started at
-      ~350 s; the logs then didn't keep the names lines, so why is unknown. N6a's 20 servers started within 10 s on the
-      tests' relay and derper: each asked once, heard nobody and served 1 s after its start, and they found each other
-      within the minute (their asks again 30 s on); the public relays' case (N0c) is for N6b's run with the names lines kept.
+    - Done (N6b): **a first sync was what's in flight over the RTT**: not the 8-part window alone but a run's 4 `get`s
+      (one name each, ~3 KB, three parts) under it. Through the rig's derper behind a 95 ms shaper
+      (`bench/net/names-window.ts`): 4 gets and 8 parts 0.72 Mbit/s; a window of 16 or 32 alone 0.97; 8 gets and 16
+      parts 1.44, no drop at the derper with one partner or two, unshaped or at 4 Mbit/s; 16 and 32 2.9, but the
+      derper's 32-packet queue dropped 25 to 33 parts with one partner and 16 to 117 with two. Now 8 and 16 (two partners' 16
+      are the queue); tailcat's 303 moved 20 MB in 114 s (N0c: 228), a guest's ping beside it unmoved. **Left**: two
+      partners at once into a new server are rarer than thought (a server's question stops at the first round with an
+      answer and keeps what answered, often one), so a first sync is mostly one partner's rate; and a wider pipe
+      wants either more gets in flight with acknowledgements paced by the derper's queue, or `get`s naming several
+      ids (fewer round trips): neither tried. 5,000 names held six months (72 to 93 MB) now take 6 to 8 minutes.
+    - Done (N6b): **a first sync past one run's 4 minutes** goes on in a round that starts at once after a run cut by
+      its time (a breach still waits for the round's 5 minutes); N0c's 50 MB had waited ~100 s.
+    - **A server's memory, measured** (N6b, `net/ts/examples/names-memory.rs`, a counting allocator; 5,000 names held as
+      N0c's and N6a's, 15.5 MB of items): the items decoded alone are 36.3 MB (2.35x: an anchor's 62 operations are a
+      `Vec<Op>` of 32 bytes each and 31 allocations of their own, ~3.4 KB an entry with its anchor against ~1.2 KB
+      encoded); a server held 61.7 MB (3.99x), of which the store's records 55.3 and the rest (the registry's map,
+      blocks to check) 6.4; a server syncing them all peaked at 68.7. **Cut** (N6b): a name's entries in a sorted `Vec`
+      of their number instead of a `BTreeMap`, whose node held 11 entries of 416 bytes whatever it held: 41.1 MB
+      (2.66x), its sync's peak 48.3. What's left is the anchors' decoded form: keeping each anchor encoded (decoded
+      only when checked) would save ~2 KB an entry, ~20 MB more at 5,000 names (to ~1.4x); `Anchor` is public and
+      used by the verifier, the agent and the tests, so it is a change of its own, not done. A tab's linear memory is
+      its heap's high-water mark (dlmalloc never gives it back), so the sync's peak is what a tab keeps.
+    - Done (N6b): **a room's servers that all start at once converge in rounds**: a round whose sync brought names is
+      followed by the next 30 to 40 s on (8 in a row at most), so twenty servers through the fake DERP and relay
+      converge in 40 s (was 340 s). Not rerun on N6a's rig (20 servers of 250 names): the bus and the fake net say
+      it, the rig would give the minutes.
+    - Done (N6b): **two servers that start within a second found each other only 30 s on**, for two reasons. (1) Each
+      one's first question came while the other's was open and unsynced, and each refused the other: a server that
+      refused a question for that now asks again within 1.5 to 3 s. (2) A server's first question went out before its
+      names client's DERP connection was up, so on a public region (a second or more to connect) the answers' call
+      backs found nobody there (a derper drops them as an unknown destination): it now asks once that region is up,
+      as a member does. On the six default relays and tailcat's 303, two servers started at once now hold each other's
+      name 7.3 to 8.8 s from the start, five rounds of five (N0c: 34 s, once ~350 s). Why N0c's ~350 s run had three
+      more questions go unanswered is still unknown (its logs had no names lines); it wasn't seen in these five, nor
+      in the long run's proof.
   - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
     - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
       (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.
