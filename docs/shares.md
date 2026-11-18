@@ -163,7 +163,10 @@ after the request it names**. What changes while the machine runs comes over the
   user's computer, numbered steps, Read-only then the picker, that end at **[Pick the folder…](ui:folders:FolderWizard.choose)**, and a note on the folders Chromium refuses). **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of
   machines is the browser's (§2.2, §2.3), with rename, Read-only, Delete (naming the machines that lose it).
 - **The toolbar:** a **Folders** menu while the page's machine has `shares`: each attached folder with its state,
-  **Allow access…**, Detach, [Attach a folder…](ui:folders:FoldersMenu.attach) (the wizard), and where the guest finds them (`<mount point>/<name>`).
+  **Allow access…**, Detach, [Attach a folder…](ui:folders:FoldersMenu.attach) (the wizard), and where the guest finds them (`<mount point>/<name>`),
+  with [Details…](ui:folders:FoldersMenu.mount): a dialog (`FoldersMount.svelte`) that says how the guest mounts them and
+  gives the command to mount them by hand (§5) in a field with Copy. The command isn't in the menu: a menu's words
+  can't be selected, and a long command made its narrow panel scroll sideways.
 - **A drop on the page's screen** of a directory offers to attach it to the running machine (and keep it as a folder).
 - The transient machine (`?machine=`, `?disk=`) has no folders: it isn't stored, and tests make their own.
 
@@ -185,7 +188,7 @@ after the request it names**. What changes while the machine runs comes over the
   files hides them, which the field's note says. The units are read at boot, so a new mount point applies at the next
   start.
 - Guests without systemd 256 see the device and mount it by hand: `mount -t 9p -o trans=virtio,version=9p2000.L,cache=none waarm64 /mnt`.
-  The Folders menu says so.
+  The Folders menu's Details… says so, with the command to copy (`SHARES_BY_HAND`, web/app/shares-mount.ts).
 
 ## 6. Snapshots
 

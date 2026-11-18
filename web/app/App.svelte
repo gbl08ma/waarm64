@@ -9,6 +9,7 @@
   import BootCard from './BootCard.svelte';
   import FilePickers from './FilePickers.svelte';
   import FolderWizard from './FolderWizard.svelte';
+  import FoldersMount from './FoldersMount.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import MessageBar from './MessageBar.svelte';
   import NetWizard from './NetWizard.svelte';
@@ -133,6 +134,7 @@
 <NetDetails {net} />
 <NameDialog {net} />
 <FolderWizard {folders} />
+<FoldersMount />
 <Ask />
 <FilePickers />
 

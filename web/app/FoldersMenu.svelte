@@ -1,7 +1,8 @@
 <!--
   The toolbar's Folders menu (docs/shares.md §4): the page's machine's attached folders with their state, Allow access…,
-  Use it here, Detach, Attach a folder… (the Folder wizard), and where the guest finds them. Logic is
-  web/app/folders-live.ts's, through `page`.
+  Use it here, Detach, Attach a folder… (the Folder wizard), and where the guest finds them, with Details…: how the
+  guest mounts them and the command to mount them by hand (FoldersMount.svelte, a dialog: the menu is no place for a
+  command to copy). Logic is web/app/folders-live.ts's, through `page`.
 -->
 <script lang="ts">
   import Menu from './ui/Menu.svelte';
@@ -12,7 +13,6 @@
   import { Actions } from './actions.svelte.ts';
   import { t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
-  import { SHARES_BY_HAND } from './shares-mount.ts';
   import { shares } from './areas/shares.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
@@ -47,9 +47,8 @@
   }
 </script>
 
-<!-- The markers' words stand for what the page puts there (the path and the command): the snippets show those. -->
+<!-- The marker's words stand for what the page puts there (the path): the snippet shows it. -->
 {#snippet path()}<code>{shares.path}/&lt;name&gt;</code>{/snippet}
-{#snippet command()}<code>{SHARES_BY_HAND}</code>{/snippet}
 
 <Menu
   id="folders"
@@ -98,11 +97,21 @@
     >
   </div>
   <Note id="folders-where">
-    {#if shares.path}<T k="folders:FoldersMenu.where" params={{ path: shares.path }} {path} {command} />{:else}<T
-        k="folders:FoldersMenu.where.byHand"
-        {command}
-      />{/if}
+    {#if shares.path}<T k="folders:FoldersMenu.where" params={{ path: shares.path }} {path} />{:else}{t(
+        'folders:FoldersMenu.where.byHand',
+      )}{/if}
   </Note>
+  <Button
+    variant="link"
+    id="folders-mount-open"
+    title={t('folders:FoldersMenu.mount.title')}
+    onclick={() => {
+      open = false;
+      shares.openMount();
+    }}
+  >
+    {t('folders:FoldersMenu.mount')}
+  </Button>
 </Menu>
 
 <style>
@@ -113,7 +122,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    min-width: 300px;
   }
   .folder-list li {
     display: flex;
@@ -124,7 +132,7 @@
     color: var(--text-dim);
     font-size: var(--text-sm);
   }
-  /* The mount command is long: it breaks where it must, in the panel. */
+  /* A long mount point breaks where it must, in the panel. */
   code {
     overflow-wrap: anywhere;
   }

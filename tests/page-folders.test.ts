@@ -18,6 +18,7 @@ import { answerAsks } from './page-ask.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
+import { SHARES_BY_HAND } from '../web/app/shares-mount.ts';
 
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -102,6 +103,21 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await started(a);
   await menu(a);
   assert.ok((await itemState(a, data) ?? '').includes(`Data ${t('folders:FoldersMenu.state.readWrite')}`));
+  // The menu says where the guest finds them, in its width; the command to mount them by hand is in Details…, to copy.
+  assert.match(await a.locator('#folders-where').textContent() ?? '', words('folders:FoldersMenu.where'));
+  const sideways = await a.locator('#folders').evaluate((m) => [...m.querySelectorAll('*')].filter((e) => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX !== 'visible').map((e) => `${e.tagName}.${e.className} ${e.scrollWidth}/${e.clientWidth}`));
+  assert.deepEqual(sideways, [], 'nothing in the menu scrolls sideways');
+  const panel = await a.locator('#folders').evaluate((m) => { const p = m.querySelector('summary')!.nextElementSibling as HTMLElement; return { scroll: p.scrollWidth, client: p.clientWidth }; });
+  assert.ok(panel.scroll <= panel.client, `the menu's panel holds its words: ${JSON.stringify(panel)}`);
+  assert.equal(await a.locator('#folders').textContent().then((s) => s?.includes('mount -t')), false, 'no command in the menu');
+  await a.click('#folders-mount-open');
+  await a.waitForFunction(() => (document.getElementById('folders-mount') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  assert.equal(await a.locator('#folders-mount-command').inputValue(), SHARES_BY_HAND);
+  assert.match(await a.locator('#folders-mount-auto').textContent() ?? '', words('folders:FoldersMount.auto', { path: '/mnt/shared' }));
+  assert.equal(await a.locator('#folders-mount').evaluate((d) => d.scrollWidth <= d.clientWidth), true, 'the dialog holds the command');
+  await a.click('#folders-mount-close');
+  await a.waitForFunction(() => !(document.getElementById('folders-mount') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  await menu(a);
 
   // A second tab's machine: Alpha writes it, so it waits, naming Alpha, and takes it after asking.
   const b = await context.newPage();
