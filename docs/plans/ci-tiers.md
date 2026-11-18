@@ -417,6 +417,9 @@ page tests. Everything stays advisory until it has a month of green.
 
 ## 9. Measurements needed (a window with the machine idle)
 
+**Shortened (2026-11-18):** CI-HANDOVER.md's "Next" item 2 replaces this list: the files 4 at a time, each in its
+own scope (~45 min in all).
+
 In order of what they unblock:
 1. **Per-file memory peaks and wall times of `npm test`:** every file alone under `systemd-run … MemoryMax=…`,
    reading the scope's `memory.peak`, at concurrency 1. ~60 min (3,440 s of test time plus start-ups). This

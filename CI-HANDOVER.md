@@ -40,10 +40,23 @@ decisions in §11).
 
 ## Next, in order
 
-1. **The cheap speedup left:** ci-net.sh at 2 Debian slots. ci.sh is now CPU-bound in its JS step: only less work shortens it (the
-   measurement window's per-file CPU and memory say where it goes).
-2. **The measurement window** (§9, ~2.5 h, the machine idle): each file's peak memory and time alone, the fast lane's
-   concurrency (4 vs 6: 146 vs 123 s in one run each), the Debian slots.
+1. **The cheap speedup left:** ci-net.sh at 2 Debian slots, once the window's ci-net runs say it holds. ci.sh is now
+   CPU-bound in its JS step: only less work shortens it (the window's per-file numbers say where it goes).
+2. **The measurement window, shortened** (the user, 2026-11-18: ~45 min instead of §9's ~2.5 h; the machine idle, no
+   other session's CI, run as one exclusive holder of the CI lock):
+   - **Each JS file in its own scope, 4 at a time** (~15–20 min): `systemd-run --user --scope -p MemoryMax=… --` per
+     file, 4 files at once (the fast lane's concurrency), reading each scope's `memory.peak` at its end and its wall
+     (`bench/results/local/ci/peak.sh <cmd>` does both inside a scope; git-ignored, this VM only). The peaks are
+     each file's own (a scope per file); the times are under load, the fast lane's conditions, not alone (accepted).
+     `memory.peak` counts page cache too (TSan's 4.8 GiB at once was partly the images'): also record `memory.stat`'s
+     `anon` at the end (not a peak, a hint), or note which files read big images. Output: one JSON row per file in `bench/results/local/ci/`.
+     It decides the fast lane's concurrency (4 vs 6: 146 vs 123 s, peaks 3.3 vs 4.3 GiB, one run each) and the
+     Actions shards.
+   - **ci-net.sh** at `WAARM64_DEBIAN_SLOTS=2 WAARM64_DEBIAN_TIMES=1` and once at the default (~25 min): the slots.
+   - **The wasm core's incremental build** after a one-line `core/src/jit/` edit (~2 min; the native rebuild is ~3 s).
+   - Dropped from §9 as already measured today: ci.sh twice (847, 737, 635 s runs), the smoke set at 4 (the fast
+     lane's runs), the native rebuild. Not needed now: a cold worktree's first build, Chromium's start-up (take them
+     when a design depends on them).
 3. **The booted-Debian snapshot fixture** for the Debian tests that don't test booting.
 4. **Guests:** which Debian tests need only a Linux guest (purpose-built Buildroot guests, cached by config hash); a
    Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility runs without
