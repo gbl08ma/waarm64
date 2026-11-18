@@ -222,3 +222,23 @@ test('a merge is refused when it is no longer the one confirmed: the overlay wri
   assert.ok(await store.get('overlays', w.ob.id));
   assert.equal(await mergeIntoDisk(store, changes, (await mergeEffect(store, changes))!), 1, 'asked again, it is done');
 });
+
+test("a blank disk's grow by a merge is refused while a machine runs over another overlay of the disk (its guest would see the disk change size under it)", async () => {
+  const w = await world();
+  const { store } = w;
+  await resize(store, { machine: w.A.id, attachment: w.A.attachments[0].id }, 16 * MiB, { grow: true });
+  const changes = (await store.get('machines', w.A.id))!.attachments[0].overlay!;
+  const effect = (await mergeEffect(store, changes))!;
+  assert.equal(effect.how, 'grow');
+  // B runs over its overlay: its lock is held.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let granted!: () => void;
+  const got = new Promise<void>((r) => (granted = r));
+  void navigator.locks.request(`waarm64-overlay:${overlayDir(w.ob.id)}`, () => (granted(), held));
+  await got;
+  await assert.rejects(mergeIntoDisk(store, changes, effect), (e: unknown) => msgOf(e)?.key === 'disks:merge.overlayNamedRunning' && msgOf(e)?.params?.name === w.ob.name);
+  release();
+  assert.equal((await store.get('disks', w.blank.id))!.size, 8 * MiB, 'not grown');
+  assert.ok(await store.get('overlays', changes), 'nothing was done');
+});

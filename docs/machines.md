@@ -304,7 +304,8 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   `meta` under the merge's lock) grows the blank disk to the overlay's size and is deleted; the disk stays blank, its
   identity keeps the size it was made with (as a stored disk's does), so its other overlays still fit it and stay, and
   a machine that had it chosen gets an empty one at the new size at its next start (its guest sees the same disk: its
-  snapshots stay). An overlay **written to** makes the blank disk a stored disk of its blocks at the overlay's size
+  snapshots stay); refused while a machine runs over any overlay of the disk (those without a size of their own see
+  the new size), as a resize is. An overlay **written to** makes the blank disk a stored disk of its blocks at the overlay's size
   (`convertBlank`: the stored disk's merge job into a block store that starts empty, then the record says `stored`
   with a stored disk's identity and the overlay's grow mark); its other overlays are deleted, as above, and the machines
   that attach it see another disk (their snapshots orphan by the shape); then the overlay's record goes and the

@@ -141,12 +141,14 @@ async function convertBlank(store: Store, o: OverlayRecord, d: DiskRecord) {
 
 /**
  * Blank disk `d` grown by merging overlay `o`, never written to: the disk takes the overlay's size (its identity keeps
- * the size it was made with, so its other overlays still fit it), and `o` is deleted, unchosen. Nothing is copied: both
+ * the size it was made with, so its other overlays still fit it), and `o` is deleted, unchosen. Refused while a machine
+ * has any overlay of the disk open. Nothing is copied: both
  * read as zeros. A machine that had `o` chosen gets an empty overlay at the disk's new size at its next start: what its
  * guest sees stays.
  */
 async function growBlank(store: Store, o: OverlayRecord, d: DiskRecord) {
-  await noneInUse(d, [o]);
+  // Every overlay of the disk: the others without a size of their own see the disk's new size (as a resize refuses).
+  await noneInUse(d, await store.overlaysOf(d.id));
   const size = Math.max(d.size, o.size ?? 0);
   if (size > d.size) await store.put('disks', { ...d, size });
   await deleteOverlay(store, o.id);
