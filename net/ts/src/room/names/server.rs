@@ -688,9 +688,39 @@ pub struct Stats {
     pub work: u64,
 }
 
+/// Nonces and draws. In the tests, a stream seeded from the test's name (its thread's): a test draws the same bytes
+/// whatever runs beside it, so a failure reproduces alone (before, a test met a rare draw under one run in a few
+/// dozen and passed when run again).
+#[cfg(not(test))]
 pub(super) fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     let _ = getrandom::fill(&mut b);
+    b
+}
+
+#[cfg(test)]
+pub(super) fn random<const N: usize>() -> [u8; N] {
+    use std::cell::Cell;
+    thread_local! {
+        static STATE: Cell<u64> = Cell::new({
+            // FNV-1a of the thread's name (libtest names a test's thread after the test).
+            let name = std::thread::current().name().unwrap_or("").to_owned();
+            name.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3)) | 1
+        });
+    }
+    let mut b = [0u8; N];
+    STATE.with(|s| {
+        for chunk in b.chunks_mut(8) {
+            // splitmix64
+            let x = s.get().wrapping_add(0x9e37_79b9_7f4a_7c15);
+            s.set(x);
+            let mut z = x;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            z ^= z >> 31;
+            chunk.copy_from_slice(&z.to_le_bytes()[..chunk.len()]);
+        }
+    });
     b
 }
 

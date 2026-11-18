@@ -2113,6 +2113,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   QEMU's hvf debug model lacks and leave those checks out of the `-DHVF` build (not ours to change: the hardware's own
   debug registers aren't what runs there). (`mmio` and `watch`, which also failed there, were fixed in PERF loop 34: the
   `-DHVF` build leaves out what QEMU can't emulate under hvf, and `oracle.sh` skips `// window` tests.)
+- [B] **net/ts's other draws are unseeded in its tests** (CI loop 1, 2026-11-18): the room names' `random()`
+  (`room/names/server.rs`) draws from a stream seeded by the test's name under `cfg(test)`, which ended three names
+  tests' flakes (2 of 12 runs of the lib failed four at a time; 28 of 28 passed after). The crate's other
+  `getrandom::fill` calls (room.rs's keys and nonces, `zone.rs`'s slots, `agent.rs`, the DERP and tailnet nonces) still
+  draw from the OS in tests; seed them the same way if a test that reaches them turns flaky.
 - [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
   end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
   passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.
