@@ -19,6 +19,9 @@ images/build.sh agent
 step testfloat;   scripts/testfloat.sh
 step wasm build;  scripts/build-wasm.sh -q
 step tailnet client; net/ts/build.sh
+# The tests' module too (tests/names-*.test.ts run it when it exists): a stale one tested the page's names agent against
+# an older module and failed for no fault of the change (QA, 2026-11-18).
+net/ts/build.sh --test-params
 step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
 step lint deps;   [ tools/lint/node_modules/.package-lock.json -nt tools/lint/package-lock.json ] || npm ci --prefix tools/lint --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
