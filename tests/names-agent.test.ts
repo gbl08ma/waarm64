@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { CALENDARS, EXPLORERS, exportNames, importNames, inLastWeek, LAST_WEEK_S, memoryNamesStore, NamesAgent, roomOf, serviceFetch, SERVICES, type TitleView } from '../web/names.ts';
-import { localBackend, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
+import { localBackend, mergeIds, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
+import type { NamesIds } from '../web/ts-client.ts';
 import { aged, DAY, fakePublish, nowS, point, routeServices, statusOf, TEST_WASM, testAgent, testModule, type Asked } from './net/names-agent.ts';
 import { startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 
@@ -614,7 +615,7 @@ test('production talks to the compiled calendars and explorers only: no link, ti
 test('the dialog\'s check: as typed, the rules and this connection\'s own, asking no server; at Register, one first byte, never the id', { skip, timeout: 60_000 }, async () => {
   const { agent, backend } = await testAgent();
   const firsts: number[] = [];
-  let answer: () => Promise<IdsAnswer> = () => Promise.resolve({ result: 'nobody', ids: [] });
+  let answer: () => Promise<IdsAnswer> = () => Promise.resolve({ result: 'nobody', lists: [] });
   // The servers' answers as the test says; what the agent asked recorded.
   (backend as { ids: NamesBackend['ids'] }).ids = (_link, first) => { firsts.push(first); return answer(); };
   for (const bad of ['', 'Wpad', 'wpad', 'com', 'ab', 'xn--abc', '-ab', 'x'.repeat(33), 'has.dot']) {
@@ -632,14 +633,14 @@ test('the dialog\'s check: as typed, the rules and this connection\'s own, askin
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'unknown' }, 'nobody serves: nobody can say');
   assert.deepEqual(firsts, [first], 'one byte, the id\'s first');
   const other = `${id.slice(0, 2)}${'0'.repeat(62)}`;
-  answer = () => Promise.resolve({ result: 'ids', ids: [[other, nowS() + DAY]] });
+  answer = () => Promise.resolve({ result: 'ids', lists: [[[other, nowS() + DAY]]] });
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'free' }, 'another name under its byte');
   const until = nowS() + 20 * DAY;
-  answer = () => Promise.resolve({ result: 'ids', ids: [[other, 0], [id, until]] });
+  answer = () => Promise.resolve({ result: 'ids', lists: [[[other, 0], [id, until]]] });
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'taken', until });
-  answer = () => Promise.resolve({ result: 'ids', ids: [[id, 0]] });
+  answer = () => Promise.resolve({ result: 'ids', lists: [[[id, 0]]] });
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'free' }, 'held, but nobody owns it now');
-  answer = () => Promise.resolve({ result: 'failed', ids: [] });
+  answer = () => Promise.resolve({ result: 'failed', lists: [] });
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'unknown' }, 'no server answered');
   assert.deepEqual(firsts, [first, first, first, first, first], 'one byte a check');
   // This connection's own already.
@@ -651,6 +652,32 @@ test('the dialog\'s check: as typed, the rules and this connection\'s own, askin
   assert.deepEqual(await agent.held('conn-a'), ['mybox'], 'what deleting the connection would lose');
   await agent.forget('conn-a');
   assert.deepEqual(await agent.titles('conn-a'), []);
+});
+
+test('the dialog\'s check: one server listing the name, another not, can\'t make it taken (the final review, finding 8)', { skip, timeout: 60_000 }, async () => {
+  const { agent, backend } = await testAgent();
+  const { id } = await backend.op<{ id: string }>('key', { room: roomOf(LINK), secret: '11'.repeat(32), name: 'common' });
+  const first = parseInt(id.slice(0, 2), 16);
+  const server = (s: string, ids: [string, number][]): NamesIds => ({ type: 'names-ids', first, server: s, result: 'ids', ids });
+  let answers: NamesIds[] = [];
+  (backend as { ids: NamesBackend['ids'] }).ids = () => Promise.resolve(mergeIds(answers));
+  const far = nowS() + 30 * DAY;
+  const soon = nowS() + 5 * DAY;
+  // A liar drawn as one of the two lists the name (it has the room key, so any guessable name's id) far ahead; the
+  // other holds nothing under the byte.
+  answers = [server('liar', [[id, far]]), server('honest', [])];
+  const said = await agent.check(conn('conn-liar-8'), 'common');
+  assert.notEqual(said.state, 'taken', 'one server alone can\'t make it taken');
+  assert.deepEqual(said, { state: 'disputed', until: far }, 'the servers disagree: said so, and a second press registers');
+  // Both list it: taken, until the earlier of the two (a liar's far date doesn't stretch the honest one's).
+  answers = [server('liar', [[id, far]]), server('honest', [[id, soon]])];
+  assert.deepEqual(await agent.check(conn('conn-liar-8'), 'common'), { state: 'taken', until: soon });
+  // One server answered: as before, its word.
+  answers = [server('one', [[id, soon]])];
+  assert.deepEqual(await agent.check(conn('conn-liar-8'), 'common'), { state: 'taken', until: soon });
+  // Neither lists it as held now: free.
+  answers = [server('a', [[id, 0]]), server('b', [])];
+  assert.deepEqual(await agent.check(conn('conn-liar-8'), 'common'), { state: 'free' });
 });
 
 test('on load the page says which names are in their last week: still resolving or in their grace, kept less than a week', () => {

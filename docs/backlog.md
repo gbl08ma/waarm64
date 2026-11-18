@@ -1843,6 +1843,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A member's answer goes only into a lookup asking that server in the same mode (finding 9): a defence beside the
       fix (no lookup being checked is asked again), with no test of its own, since the fix leaves nothing for it to
       catch.
+  - The final review's fixes (findings 4, 8, 9, 10), what they leave:
+    - The dialog's "taken" (finding 8) weighs each server's `ids` list apart: taken only when every server that
+      answered lists the name, a disagreement said as such with a second press that registers. Still taken on a lie:
+      one liar alone answering in time (the other silent past 3 s), or both drawn servers liars. A `get` of the one
+      id, checked as a member checks a reply, would prove "taken" but names the id to the server before the claim
+      (review 2's finding 1, which the user's N5b decision answered with one byte a press): the user's call.
+    - A release beats every sibling branch at its parent (finding 4), but a copy of the title that renewed (another
+      browser holding the export) learns the release only as a "better" answer with no owner (`judge` says `none` and
+      takes nothing in): that page shows the name active until its own chain lapses, and keeps renewing on an ended
+      branch (its renewals count for nothing). Taking the release into the title on `none` would end it there too.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

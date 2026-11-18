@@ -83,12 +83,15 @@ export function checkWords(name: string, c: CheckShown): Msg | undefined {
       });
     case 'unknown':
       return msg('network:names-view.check.unknown', { name });
+    case 'disputed':
+      return msg('network:names-view.check.disputed', { name, when: date(c.until) });
   }
 }
 
-/** Register is offered for a valid name not asked about yet, and for one nobody in the room can say about (pressed
- * again, it registers). */
-export const canRegister = (c: CheckShown) => c.state === 'valid' || c.state === 'free' || c.state === 'unknown';
+/** Register is offered for a valid name not asked about yet, and for one nobody in the room can say about or whose
+ * servers disagree about (pressed again, it registers). */
+export const canRegister = (c: CheckShown) =>
+  c.state === 'valid' || c.state === 'free' || c.state === 'unknown' || c.state === 'disputed';
 
 /** What the dialog asks of the names (web/app/areas/names.svelte.ts `pageNames`; the tests' fakes). */
 export type NameAsk = {
@@ -103,9 +106,10 @@ export type NameAsk = {
 /**
  * The dialog's check (room-names.md "What the user sees"; the user's decision, 2026-11-17): **as typed, only what this
  * page can say** (not a valid name, this connection's own); **the room's servers are asked when Register is pressed**,
- * one first byte a press. Free: registered. Taken: the dialog stays open and says until about when. Nobody can say: it
- * says so, and Register pressed again for the same name registers it (first come still holds; nothing added to the
- * path where the name is free, the kickoff's decision 6).
+ * one first byte a press. Free: registered. Taken: the dialog stays open and says until about when. Nobody can say, or
+ * the servers disagree (one lists it, another doesn't: an answer is a bare claim, so one liar can't make it taken, the
+ * final review's finding 8): it says so, and Register pressed again for the same name registers it (first come still
+ * holds; nothing added to the path where the name is free, the kickoff's decision 6).
  */
 export class NameForm {
   shown: CheckShown = { state: 'empty' };
@@ -135,7 +139,7 @@ export class NameForm {
     const name = this.#name;
     const s = this.shown.state;
     if (!name || s === 'checking' || s === 'invalid' || s === 'yours' || s === 'taken') return false;
-    if (s === 'unknown') {
+    if (s === 'unknown' || s === 'disputed') {
       this.#ask.register(name);
       return true;
     }

@@ -20,10 +20,11 @@ export class NamesError extends Error {
 /** A server's answer to a put, without the event's type. */
 export type PutAnswer = Omit<NamesPut, 'type'>;
 
-/** The dialog's check (docs/plans/room-names.md "A member resolving a name"), one a press of Register: the ids the
- * room's servers hold under one first byte, each with until when its owner holds it (Unix seconds, 0: nobody now);
- * `nobody` when nobody serves the room's names, `failed` when no server answered. */
-export type IdsAnswer = { result: 'ids' | 'nobody' | 'failed'; ids: [string, number][] };
+/** The dialog's check (docs/plans/room-names.md "A member resolving a name"), one a press of Register: each answering
+ * server's ids under one first byte, each with until when its owner holds it (Unix seconds, 0: nobody now), one list a
+ * server, never merged (an answer is a bare claim: one lying server mustn't make a name taken, the final review's
+ * finding 8); `nobody` when nobody serves the room's names, `failed` when no server answered. */
+export type IdsAnswer = { result: 'ids' | 'nobody' | 'failed'; lists: [string, number][][] };
 
 /** What the agent asks of the module, wherever it runs. */
 export type NamesBackend = {
@@ -99,6 +100,12 @@ export function publishWith(m: TsModule, link: string, items: { id: string; item
   });
 }
 
+/** The servers' answers to one check: each `ids` answer's list, kept apart (the agent's `check` weighs them). */
+export function mergeIds(answers: NamesIds[]): IdsAnswer {
+  const said = answers.filter((a) => a.result === 'ids');
+  return { result: said.length ? 'ids' : answers.some((a) => a.result === 'nobody') ? 'nobody' : 'failed', lists: said.map((a) => a.ids ?? []) };
+}
+
 /** A check's longest wait (finding servers, then their answers). */
 const CHECK_MS = 20_000;
 
@@ -106,7 +113,7 @@ const CHECK_MS = 20_000;
  * The dialog's check in the room with link `link` (module `m`): every id under `first`, through a checker made for this
  * one check and closed with its answer (a publisher: a names client alone, a key made new, no machine), so no server
  * can link one press of Register to another. Resolves once two servers answered, or one and SECOND_ANSWER_MS more, or
- * nobody serves, or at CHECK_MS: with the ids of every server that answered (the latest until of each).
+ * nobody serves, or at CHECK_MS: with the ids of every server that answered, a list each (`mergeIds`).
  */
 export function idsWith(m: TsModule, link: string, first: number, o: { derpMapURL?: string; log?: (s: string) => void } = {}): Promise<IdsAnswer> {
   const answers: NamesIds[] = [];
@@ -121,10 +128,7 @@ export function idsWith(m: TsModule, link: string, first: number, o: { derpMapUR
       clearTimeout(second);
       client?.close();
       client = undefined;
-      const said = answers.filter((a) => a.result === 'ids');
-      const until = new Map<string, number>();
-      for (const a of said) for (const [id, u] of a.ids ?? []) until.set(id, Math.max(until.get(id) ?? 0, u));
-      resolve({ result: said.length ? 'ids' : answers.some((a) => a.result === 'nobody') ? 'nobody' : 'failed', ids: [...until] });
+      resolve(mergeIds(answers));
     };
     const timer = setTimeout(done, CHECK_MS);
     try {

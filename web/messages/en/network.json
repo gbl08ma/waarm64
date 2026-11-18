@@ -1195,6 +1195,10 @@
     "message": "Checking…",
     "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name after Register is pressed, while the room is asked whether the name is free."
   },
+  "names-view.check.disputed": {
+    "message": "The room's servers disagree about <name>{{name}}</name>: one says it is taken, until about {{when, date}}, and another doesn't. Press <ui>Register</ui> again to register it all the same.",
+    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and of the servers asked, some list the name as held and some don't (one may be lying): the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed, {{when}} the latest date a server gave."
+  },
   "names-view.check.invalid": {
     "message": "Not a domain that can be registered. It takes 1 to 32 lower-case letters, digits and hyphens, not starting or ending with a hyphen; some, such as every two-letter one, are reserved.",
     "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when it breaks the rules of names (docs/plans/room-names.md \"Names\")."

@@ -965,8 +965,17 @@ room adapter, **[Register a domain…](ui:network:NetNames.name)** opens one dia
    a server's `ids` answer carries each id's cover end, when the owning chain's hold ends, 0 when nobody owns it now,
    so "taken until" needs no `get` naming the id). Then:
    - **free**: the name is registered and the dialog closes, with no step added (the kickoff's decision 6);
-   - **taken**: the dialog stays open and says until about when (*mybox is taken, until about <date> unless its owner
-     renews it.*); Register is offered again once the name changes;
+   - **taken** (every server that answered lists it as held): the dialog stays open and says until about when, the
+     earliest date one gave (*mybox is taken, until about <date> unless its owner renews it.*); Register is offered
+     again once the name changes;
+   - **the servers disagree** (one lists it as held, another doesn't): an `ids` answer is a bare claim, and a liar
+     drawn as one of the two (it has the room key, so it can list any guessable name's id far ahead) would otherwise
+     make common names taken while it's drawn (the final review's finding 8). The dialog says so
+     ([The room's servers disagree about mybox: one says it is taken, until about <date>, and another doesn't. Press
+     Register again to register it all the same.](ui:network:names-view.check.disputed)), and a second press
+     registers it, as for nobody can say. An honest server that lacks the name (not synced yet) gives this too; the
+     claim then loses to the older chain and the title says lost. With one answer only, its word stands. What's left:
+     a liar alone answering, or both drawn servers liars, still say taken (docs/backlog.md);
    - **nobody can say** (no server answered): the dialog stays open and says so (*Nobody in the room can say whether
      mybox is free right now: no machine that serves the room's names answered. Press Register again to register it
      all the same.*), and Register pressed again with the same name registers it. First come still holds, and the

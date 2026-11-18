@@ -25,10 +25,10 @@ test('a title\'s state in words: each state its own, the reserved one\'s hours r
 
 test('the dialog\'s check: what it says under the field, and Register offered for a valid name not asked about yet or one nobody can say about', () => {
   assert.equal(checkWords('', { state: 'empty' }), undefined);
-  const shown = { checking: false, invalid: false, yours: false, valid: true, free: true, unknown: true, taken: false, empty: false };
-  const said = { checking: true, invalid: true, yours: true, valid: false, free: false, unknown: true, taken: true, empty: false };
+  const shown = { checking: false, invalid: false, yours: false, valid: true, free: true, unknown: true, disputed: true, taken: false, empty: false };
+  const said = { checking: true, invalid: true, yours: true, valid: false, free: false, unknown: true, disputed: true, taken: true, empty: false };
   for (const [state, offered] of Object.entries(shown)) {
-    const c = state === 'taken' ? { state, until: 1 } as const : { state } as { state: Exclude<keyof typeof shown, 'taken'> };
+    const c = state === 'taken' || state === 'disputed' ? { state, until: 1 } as const : { state } as { state: Exclude<keyof typeof shown, 'taken' | 'disputed'> };
     assert.equal(canRegister(c), offered, state);
     assert.equal(!!checkWords('mybox', c), said[state as keyof typeof said], state);
   }
@@ -103,6 +103,20 @@ test('the dialog: nobody can say, it says so, and Register pressed again registe
   assert.deepEqual(other.asked.registered, []);
 });
 
+test('the dialog: the servers disagree, it says so, and Register pressed again registers that name (the final review, finding 8)', async () => {
+  const until = 1_800_000_000;
+  const { f, asked } = form(() => Promise.resolve({ state: 'disputed', until }));
+  f.typed('common');
+  await settle();
+  assert.equal(await f.press(), false, 'the first press: the disagreement said');
+  assert.deepEqual(f.shown, { state: 'disputed', until });
+  assert.equal(text(checkWords('common', f.shown)!), t('network:names-view.check.disputed', { name: 'common', when: new Date(until * 1000) }));
+  assert.ok(canRegister(f.shown), 'Register still offered');
+  assert.equal(await f.press(), true, 'pressed again: registered, the servers not asked again');
+  assert.deepEqual(asked.servers, ['common']);
+  assert.deepEqual(asked.registered, ['common']);
+});
+
 test('the dialog: an answer to a name typed over, or a dialog closed, is dropped', async () => {
   let answer: (c: NameCheck) => void = () => {};
   const { f, asked } = form(() => new Promise((r) => (answer = r)));
@@ -158,6 +172,8 @@ test('wording: the dialog\'s check', () => {
   assert.match(t('network:names-view.check.taken', { name: 'mybox', when: new Date(NOW) }), /^mybox is taken, until about .+ unless its owner renews it\.$/);
   assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /^Nobody in the room can say whether mybox is free/);
   assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /Press Register again to register it all the same\.$/, 'nobody can say: the way on');
+  assert.match(t('network:names-view.check.disputed', { name: 'mybox', when: new Date(NOW) }), /^The room's servers disagree about mybox: one says it is taken, until about .+, and another doesn't\./);
+  assert.match(t('network:names-view.check.disputed', { name: 'mybox', when: new Date(NOW) }), /Press Register again to register it all the same\.$/, 'the servers disagree: the way on');
   assert.match(t('network:names-view.check.invalid'), /^Not a domain that can be registered\./);
 });
 

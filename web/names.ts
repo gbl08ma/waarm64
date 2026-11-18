@@ -98,7 +98,7 @@ export type TitleRecord = {
 
 /** The dialog's check of a name: as typed, by this page alone (`NamesAgent.checkHere`: `invalid`, `yours`, or `valid`,
  * the servers not asked); at Register, with the room's servers too (`NamesAgent.check`): `until` in Unix seconds. */
-export type NameCheck = { state: 'invalid' | 'yours' | 'valid' | 'free' | 'unknown' } | { state: 'taken'; until: number };
+export type NameCheck = { state: 'invalid' | 'yours' | 'valid' | 'free' | 'unknown' } | { state: 'taken' | 'disputed'; until: number };
 
 /** What a title is now, for the page (N5's dialog and the adapter's states). */
 export type TitleState = 'preparing' | 'reserved' | 'active' | 'grace' | 'lapsed' | 'released' | 'lost';
@@ -460,8 +460,15 @@ export class NamesAgent {
     const id = here.id;
     const a = await this.b.ids(c.link, parseInt(id.slice(0, 2), 16));
     if (a.result !== 'ids') return { state: 'unknown' };
-    const until = a.ids.find(([i]) => i === id)?.[1] ?? 0;
-    return until > nowS() ? { state: 'taken', until } : { state: 'free' };
+    // Each server's word apart: an `ids` answer is a bare claim, so one server listing the name and another not is a
+    // disagreement (a second press registers), never `taken` (the final review, finding 8: one lying server of the two
+    // drawn could make any guessable name taken); taken when all say so, until the earliest date one gives.
+    const now = nowS();
+    const untils = a.lists.map((l) => l.find(([i]) => i === id)?.[1] ?? 0);
+    const held = untils.filter((u) => u > now);
+    if (!held.length) return { state: 'free' };
+    if (held.length === untils.length) return { state: 'taken', until: Math.min(...held) };
+    return { state: 'disputed', until: Math.max(...held) };
   }
 
   /** The names connection `identityKey` holds now (not let go, lost or lapsed), by name: what deleting it would lose. */
