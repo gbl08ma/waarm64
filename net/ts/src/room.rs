@@ -25,9 +25,22 @@
 //! - **Incoming connections** (on by default): a member we don't know may call us. Off, only the
 //!   guest's own flows get their replies, and lookups for it go unanswered unless it has a flow
 //!   with the dialer.
+//! - **Names** ([`names`], docs/plans/room-names.md "The registry"): a node that holds titles is a
+//!   server. Its registry traffic goes through a **names client**: a second `Client` in the same
+//!   worker, under a key made new each session, relay only, with no guest, its own DERP and Nostr
+//!   connections ([`NAMES_CONN`] up), subscribed to the room's names tag, letting in handshakes only
+//!   while its own question is open, and carrying registry datagrams on [`names::wire::NAMES_PORT`]
+//!   ([`NamesHost`]). The node's own key carries none of it. Any other node is a member: its guest's
+//!   query for a name that isn't a key starts a names client of its own, which asks servers for that
+//!   name ([`names::member`], [`MemberHost`]) and closes after [`names::member::IDLE`] without one.
+//! - **The resolver** answers a registered name (`<name>.<tag>.p2p.internal`, or a label under it) after
+//!   the key names: from what the member keeps (TTL 60), its own pending name with its own address, or
+//!   once the names client hears; SERVFAIL after [`DNS_WAIT`]; NXDOMAIN at once for a reserved or
+//!   ill-formed name, a name both servers lack, and while nobody serves.
 
 pub mod link;
 pub mod lookup;
+pub mod names;
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -44,7 +57,15 @@ use ts_packet::PacketMut;
 use ts_tunnel::{Endpoint, PeerConfig, PeerId};
 
 pub use self::link::{Link, Region};
-use self::lookup::Lookup;
+use self::{
+    lookup::Lookup,
+    names::{
+        Params,
+        member::{self, Answer, Member},
+        server::{Cmd, Input, Server},
+        wire::{ASK_SIZE, NAMES_PORT, NameAsk, QUESTION_SIZE, Question, REPLY_SEALED_MAX, Reply},
+    },
+};
 use crate::{
     client::{Action, GUEST4, pad, queue_frames, unpad},
     derp, dns, ip, nostr, tailcat,
@@ -99,6 +120,11 @@ const LOOKUP_QUEUE: usize = 16;
 /// a dialer sends each lookup up to three times.
 const LOOKUP_EVENTS_PER_SECOND: usize = 128;
 const OPENED_FOR: Duration = Duration::from_secs(10);
+/// A server's reply to an ask goes through the relay that brought the ask and the one whose copy came next; with no
+/// copy this long after the reply, through another relay (room-names-r3.md: replies through two relays).
+const REPLY_SECOND_WAIT: Duration = Duration::from_secs(1);
+/// An ask's copies are remembered this long.
+const ASK_COPIES_FOR: Duration = Duration::from_secs(5);
 const MAX_OPENED: usize = 8192;
 /// A target drops lookups this much older (or newer) than its clock: the tags' window, as a
 /// dialer's clock may be off by most of an hour (rooms.md "Finding a peer"); a copy within it is dropped by its
@@ -175,6 +201,18 @@ const STABLE: Duration = Duration::from_secs(10);
 const FLOW_IDLE: Duration = Duration::from_secs(300);
 const MAX_FLOWS: usize = 4096;
 const MAX_KNOWN: usize = 4096;
+/// A names client's WebSocket connections are numbered from here, so the worker's one set of
+/// connection numbers routes to the node or to its names client.
+pub const NAMES_CONN: u32 = 0x4000_0000;
+/// A names client that failed is made again after this long.
+const NAMES_RETRY: Duration = Duration::from_secs(60);
+/// A query for a name the member doesn't know waits this long for its names client (finding servers takes 1 to 3 s on
+/// public relays, room-names.md "The resolver"), then gets SERVFAIL (a guest's resolver asks again).
+pub const DNS_WAIT: Duration = Duration::from_secs(4);
+/// Queries waiting at once; past it, SERVFAIL at once.
+const MAX_DNS_WAITING: usize = 64;
+/// A registered name's answer's TTL: a zone change or a lost name shows within a minute of the member's knowing.
+const NAME_TTL: u32 = 60;
 /// tailcat's ULA /48, which no room's may be (the guest may be on tailcat beside it).
 const TAILCAT_PREFIX: [u8; 6] = [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0];
 
@@ -209,7 +247,7 @@ pub(crate) fn mac16(key: &[u8; 32], parts: &[&[u8]]) -> [u8; 16] {
     h.finalize()[..16].try_into().unwrap()
 }
 
-fn hash(label: &str, id: &str) -> [u8; 32] {
+pub(crate) fn hash(label: &str, id: &str) -> [u8; 32] {
     let mut h = Blake2s256::new();
     h.update(label.as_bytes());
     h.update([0]);
@@ -347,6 +385,74 @@ pub struct Config {
     pub incoming: bool,
     /// The wall clock (Unix seconds) at the `now` [`Client::new`] gets; None: the system's.
     pub unix_time: Option<u64>,
+    /// The node's titles: it serves the registry through a names client.
+    pub names: Option<names::server::Config>,
+    /// The clock's and proof of work's parameters a member checks names with (the module's: [`Params::BUILT`]).
+    pub params: Params,
+    /// A publisher (room-names.md "The names agent"): not a node but a names client alone, under this fresh key, relay
+    /// only, no guest, that finds servers and puts the items the page gives it ([`Client::names_put`]). The page's
+    /// names agent publishes titles through one with no machine running.
+    pub publish: bool,
+}
+
+/// A node's registry: the server's logic and the names client that carries it (made once the
+/// node runs, and again after [`NAMES_RETRY`] if it fails).
+pub struct NamesHost {
+    pub server: Server,
+    pub transport: Option<Box<Client>>,
+    retry_at: Option<Instant>,
+}
+
+/// A member's side of the registry (any node without titles): what it keeps and asks, and its names client, made at
+/// the guest's query for a name that isn't a key and closed after [`member::IDLE`] without one.
+pub struct MemberHost {
+    pub member: Member,
+    pub transport: Option<Box<Client>>,
+    /// The guest's last query for a name that isn't a key.
+    last_query: Option<Instant>,
+    retry_at: Option<Instant>,
+}
+
+/// An ask a server's names client opened ([`Client::ask_copies`]).
+struct AskCopy {
+    at: Instant,
+    first: usize,
+    second: Option<usize>,
+    /// The reply, once made, until it went through a second relay.
+    reply: Option<String>,
+}
+
+/// A query to the room's resolver waiting for the names client.
+struct DnsWait {
+    m: Vec<u8>,
+    sport: u16,
+    /// The name asked, relative to the room's domain.
+    rel: String,
+    until: Instant,
+}
+
+/// The registry's side a names client carries: a server's or a member's.
+trait Side {
+    fn input(&mut self, i: Input, now: Instant, unix: u64);
+    fn poll(&mut self) -> Option<Cmd>;
+}
+
+impl Side for Server {
+    fn input(&mut self, i: Input, now: Instant, unix: u64) {
+        Server::input(self, i, now, unix)
+    }
+    fn poll(&mut self) -> Option<Cmd> {
+        Server::poll(self)
+    }
+}
+
+impl Side for Member {
+    fn input(&mut self, i: Input, now: Instant, unix: u64) {
+        Member::input(self, i, now, unix)
+    }
+    fn poll(&mut self) -> Option<Cmd> {
+        Member::poll(self)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -618,6 +724,28 @@ pub struct Client {
     published: VecDeque<Instant>,
     /// The DERP map is awaited.
     map_pending: bool,
+    /// A names client (the transport of [`NamesHost`]), not a node: no guest, no signalling,
+    /// relay only; questions and registry datagrams go to `names_events`.
+    names_mode: bool,
+    names_subscribed: bool,
+    /// A member's names client: subscribed to its reply tag (room-names-r3.md).
+    names_replies: bool,
+    /// Asks opened lately (by the event's mark): the relay that brought each first, the one whose copy came next, and
+    /// the reply waiting for that copy.
+    ask_copies: BTreeMap<[u8; 16], AskCopy>,
+    /// Handshakes from unknown keys are let in until then, this many at most (our question's
+    /// answers), and how many came.
+    names_window: names::server::AcceptWindow,
+    pub names_events: VecDeque<Input>,
+    /// A node's registry, when it holds titles.
+    pub names: Option<Box<NamesHost>>,
+    /// A member's side, when it holds none.
+    pub member: Option<Box<MemberHost>>,
+    /// A publisher's side ([`Config::publish`]): this client is its own names client.
+    pub publisher: Option<Box<Member>>,
+    /// The names line last told the page (`names` event): serving, names resolved or held, servers held.
+    names_told: Option<(bool, usize, usize)>,
+    dns_waiting: Vec<DnsWait>,
     flows: BTreeMap<Flow, Instant>,
     next_conn: u32,
     state: State,
@@ -639,7 +767,93 @@ fn b64() -> base64::engine::GeneralPurpose {
 }
 
 impl Client {
-    pub fn new(cfg: Config, now: Instant) -> Result<Self, String> {
+    pub fn new(mut cfg: Config, now: Instant) -> Result<Self, String> {
+        if cfg.publish {
+            // A names client alone: a key of its own, relay only, nothing let in but its question's answers.
+            cfg.key = None;
+            cfg.relay_only = true;
+            cfg.incoming = false;
+            cfg.names = None;
+            cfg.known.clear();
+        }
+        let mut c = Client::build(cfg, now)?;
+        if c.cfg.publish {
+            c.names = None;
+            c.names_mode = true;
+            c.publisher = Some(Box::new(Member::new(&c.cfg.link.id, c.cfg.params.clone())));
+        } else if c.names.is_none() {
+            c.member = Some(Box::new(MemberHost {
+                member: Member::new(&c.cfg.link.id, c.cfg.params.clone()),
+                transport: None,
+                last_query: None,
+                retry_at: None,
+            }));
+        }
+        c.event(json!({
+            "type": "self", "key": format!("nodekey:{}", hex(&c.public)), "address6": c.addr,
+            "tag": c.room.tag, "name": c.room.name(&c.public), "link": c.cfg.link.encode(),
+            "params": c.cfg.params.label(),
+        }));
+        for i in 0..c.nostr.len() {
+            c.nostr_connect(i, now);
+        }
+        // The map first, when the home region is the map's or is to be chosen among regions some
+        // of which are the map's; a configured home of the link's own connects at once.
+        let wait_for_map = c.cfg.link.needs_map()
+            && (c.configured().is_none() || matches!(c.cfg.link.derp[c.home], Region::Map(_)));
+        if c.cfg.link.needs_map() {
+            c.map_pending = true;
+            c.actions.push_back(Action::Fetch {
+                id: 1,
+                url: c.cfg.derp_map_url.clone(),
+            });
+        }
+        if wait_for_map {
+            c.state = State::FetchingMap;
+            c.state_event();
+        } else if c.relays.iter().all(|g| g.nodes.is_empty()) {
+            c.fail("no-browser-relay", "");
+        } else {
+            c.state_event();
+            c.start_home(now);
+        }
+        Ok(c)
+    }
+
+    /// A names client for this node: its own key, relay only, no guest, the node's regions as
+    /// the map gave them and its home region; its connections numbered from [`NAMES_CONN`].
+    fn names_client(&self, now: Instant) -> Result<Client, String> {
+        let cfg = Config {
+            link: self.cfg.link.clone(),
+            key: None,
+            home: Some(self.home),
+            derp_map_url: String::new(),
+            known: Vec::new(),
+            relay_only: true,
+            incoming: false,
+            unix_time: self.cfg.unix_time.map(|_| self.unix(now)),
+            names: None,
+            params: self.cfg.params.clone(),
+            publish: false,
+        };
+        let mut c = Client::build(cfg, now)?;
+        c.names_mode = true;
+        c.next_conn = NAMES_CONN;
+        for (g, h) in c.relays.iter_mut().zip(&self.relays) {
+            g.nodes = h.nodes.clone();
+            g.map_id = h.map_id;
+            g.home_ok = h.home_ok;
+        }
+        for i in 0..c.nostr.len() {
+            c.nostr_connect(i, now);
+        }
+        c.home = self.home;
+        c.connect_home(now);
+        Ok(c)
+    }
+
+    /// The client's state, nothing started.
+    fn build(mut cfg: Config, now: Instant) -> Result<Self, String> {
         let room = Room::derive(&cfg.link.id);
         let private = match cfg.key {
             Some(k) => k,
@@ -677,7 +891,14 @@ impl Client {
             .filter(|k| **k != public)
             .map(|k| (room.addr(k), *k))
             .collect();
-        let mut c = Client {
+        let names = cfg.names.take().map(|n| {
+            Box::new(NamesHost {
+                server: Server::new(&cfg.link.id, n, unix0),
+                transport: None,
+                retry_at: None,
+            })
+        });
+        let c = Client {
             addr: room.addr(&public),
             resolver: room.resolver(),
             home: cfg.home.filter(|h| *h < cfg.link.derp.len()).unwrap_or(0),
@@ -714,39 +935,23 @@ impl Client {
             blocked: false,
             published: VecDeque::new(),
             map_pending: false,
+            names_mode: false,
+            names_subscribed: false,
+            names_replies: false,
+            ask_copies: BTreeMap::new(),
+            names_window: Default::default(),
+            names_events: VecDeque::new(),
+            names,
+            member: None,
+            publisher: None,
+            names_told: None,
+            dns_waiting: Vec::new(),
             flows: BTreeMap::new(),
             next_conn: 1,
             state: State::Connecting,
             actions: VecDeque::new(),
             cfg,
         };
-        c.event(json!({
-            "type": "self", "key": format!("nodekey:{}", hex(&public)), "address6": c.addr,
-            "tag": c.room.tag, "name": c.room.name(&public), "link": c.cfg.link.encode(),
-        }));
-        for i in 0..c.nostr.len() {
-            c.nostr_connect(i, now);
-        }
-        // The map first, when the home region is the map's or is to be chosen among regions some
-        // of which are the map's; a configured home of the link's own connects at once.
-        let wait_for_map = c.cfg.link.needs_map()
-            && (c.configured().is_none() || matches!(c.cfg.link.derp[c.home], Region::Map(_)));
-        if c.cfg.link.needs_map() {
-            c.map_pending = true;
-            c.actions.push_back(Action::Fetch {
-                id: 1,
-                url: c.cfg.derp_map_url.clone(),
-            });
-        }
-        if wait_for_map {
-            c.state = State::FetchingMap;
-            c.state_event();
-        } else if c.relays.iter().all(|g| g.nodes.is_empty()) {
-            c.fail("no-browser-relay", "");
-        } else {
-            c.state_event();
-            c.start_home(now);
-        }
         Ok(c)
     }
 
@@ -1099,8 +1304,19 @@ impl Client {
     // ---- WebSockets ----
 
     pub fn ws_closed(&mut self, conn: u32, now: Instant) {
+        self.ws_closed_in(conn, now);
+        self.pump_publisher(now);
+    }
+
+    fn ws_closed_in(&mut self, conn: u32, now: Instant) {
         if self.state == State::Failed {
             return;
+        }
+        if conn >= NAMES_CONN && !self.names_mode {
+            if let Some(t) = self.names_transport() {
+                t.ws_closed(conn, now);
+            }
+            return self.pump_names(now);
         }
         if let Some(k) = self.probes.iter().position(|(c, _)| *c == conn) {
             let (_, r) = self.probes.remove(k);
@@ -1144,8 +1360,19 @@ impl Client {
     }
 
     pub fn ws_message(&mut self, conn: u32, data: &[u8], now: Instant) {
+        self.ws_message_in(conn, data, now);
+        self.pump_publisher(now);
+    }
+
+    fn ws_message_in(&mut self, conn: u32, data: &[u8], now: Instant) {
         if self.state == State::Failed {
             return;
+        }
+        if conn >= NAMES_CONN && !self.names_mode {
+            if let Some(t) = self.names_transport() {
+                t.ws_message(conn, data, now);
+            }
+            return self.pump_names(now);
         }
         if let Some(&(_, r)) = self.probes.iter().find(|(c, _)| *c == conn) {
             // A DERP server's key answers; anything else isn't a derper: that probe is done.
@@ -1214,6 +1441,7 @@ impl Client {
                 self.flush_relays();
                 if r == self.home {
                     self.set_running();
+                    self.start_names(now);
                 }
             }
             derp::Event::Recv { src, packet } => self.on_relay_packet(r, src, packet, now),
@@ -1241,9 +1469,28 @@ impl Client {
 
     // ---- Nostr ----
 
-    fn tags(&self) -> [String; 3] {
+    /// The tags we subscribe to: our address's of the previous, current and next hour (a names
+    /// client: the room's names tag's).
+    fn tags(&self) -> Vec<String> {
         let h = self.hour;
-        [h.saturating_sub(1), h, h + 1].map(|h| self.room.tag_for(&self.addr, h))
+        let hours = [h.saturating_sub(1), h, h + 1];
+        if !self.names_mode {
+            return hours.map(|h| self.room.tag_for(&self.addr, h)).to_vec();
+        }
+        let mut t = Vec::new();
+        if self.names_subscribed {
+            t.extend(hours.map(|h| self.room.names_tag(h)));
+        }
+        if self.names_replies {
+            t.extend(self.reply_tags());
+        }
+        t
+    }
+
+    /// A member's names client's reply tags: the previous, current and next hour's.
+    fn reply_tags(&self) -> [String; 3] {
+        let h = self.hour;
+        [h.saturating_sub(1), h, h + 1].map(|h| self.room.reply_tag(&self.public, h))
     }
 
     fn nostr_send(&mut self, i: usize, text: String) {
@@ -1260,6 +1507,16 @@ impl Client {
     /// The hour's tags are taken here, so a turned hour waits for a renewal.
     fn nostr_subscribe(&mut self, i: usize, now: Instant) {
         self.hour = self.unix(now) / 3600;
+        if self.names_mode && !self.names_subscribed && !self.names_replies {
+            // An asker only publishes: nothing comes to it through a relay.
+            if let Some(old) = self.nostr[i].sub.take() {
+                self.nostr_send(i, nostr::unsubscribe(&old));
+            }
+            let n = &mut self.nostr[i];
+            n.check_at = None;
+            n.answer_by = None;
+            return;
+        }
         let sub = format!("waarm64-{}", self.hour);
         if let Some(old) = self.nostr[i].sub.take()
             && old != sub
@@ -1333,8 +1590,13 @@ impl Client {
 
     /// An event under tag `x` through Nostr relay `i`: a lookup for us, if it opens, is called back.
     fn on_lookup(&mut self, i: usize, x: &str, content: &str, now: Instant) {
-        if self.state != State::Running || !self.tags().iter().any(|t| t == x) {
+        // A names client hears its relays before its home region is up (a member's first lookup doesn't wait for it).
+        let up = self.state == State::Running || self.names_mode && self.state != State::Failed;
+        if !up || !self.tags().iter().any(|t| t == x) {
             return;
+        }
+        if self.names_mode {
+            return self.on_names_event(i, x, content, now);
         }
         // Only a member's lookup goes further: an outsider's junk under our tag (anyone who saw a
         // lookup to us can publish under the tag) costs a BLAKE2s and takes no budget.
@@ -1342,30 +1604,9 @@ impl Client {
         if !lookup::authentic(&self.room, x, &b) {
             return;
         }
-        // A copy of an event opened already (through another relay): dropped before the budget.
-        let mut h = Blake2s256::new();
-        h.update(x.as_bytes());
-        h.update([0]);
-        h.update(content.as_bytes());
-        let seen: [u8; 16] = h.finalize()[..16].try_into().unwrap();
-        while let Some(&(old, t)) = self.opened_order.front()
-            && (now.saturating_duration_since(t) >= OPENED_FOR
-                || self.opened_order.len() >= MAX_OPENED)
-        {
-            self.opened_order.pop_front();
-            self.opened.remove(&old);
-        }
-        if self.opened.contains(&seen) {
+        if !self.admit(i, x, content, now) {
             return;
         }
-        if self.lookups_in.len() < self.nostr.len() {
-            self.lookups_in.resize_with(self.nostr.len(), VecDeque::new);
-        }
-        if !Self::take(&mut self.lookups_in[i], LOOKUP_EVENTS_PER_SECOND, now) {
-            return;
-        }
-        self.opened.insert(seen);
-        self.opened_order.push_back((seen, now));
         let Some(l) = Lookup::open(&self.room, &self.private, &self.public, x, &b) else {
             return;
         };
@@ -1426,6 +1667,151 @@ impl Client {
             return;
         }
         self.call_back(l.key, region, now);
+    }
+
+    /// An event under a names client's tags: a question or an ask under the names tag (a server's), a reply under its
+    /// reply tag (a member's).
+    fn on_names_event(&mut self, i: usize, x: &str, content: &str, now: Instant) {
+        if self.names_replies && self.reply_tags().iter().any(|t| t == x) {
+            return self.on_reply(i, x, content, now);
+        }
+        if !self.names_subscribed {
+            return;
+        }
+        // A copy of an ask we opened, through another relay: the relay a reply goes through too.
+        let seen = event_mark(x, content);
+        if let Some(c) = self.ask_copies.get_mut(&seen) {
+            if c.first != i && c.second.is_none() {
+                c.second = Some(i);
+                if let Some(text) = c.reply.take() {
+                    self.nostr_send(i, text);
+                }
+            }
+            return;
+        }
+        if content.len() == ASK_SIZE.div_ceil(3) * 4 {
+            return self.on_ask(i, x, content, seen, now);
+        }
+        if self.state == State::Running {
+            self.on_question(i, x, content, now);
+        }
+    }
+
+    /// An ask under the names tag (a server's names client): checked as a question is (the MAC first, copies and the
+    /// relay's budget, the time, not our own key) and handed to the registry, with the region it names if the link
+    /// has it (a `fetch`'s call back).
+    fn on_ask(&mut self, i: usize, x: &str, content: &str, seen: [u8; 16], now: Instant) {
+        let Ok(b) = b64().decode(content) else { return };
+        if !lookup::authentic_len(&self.room, x, &b, ASK_SIZE) || !self.admit(i, x, content, now) {
+            return;
+        }
+        let Some(ask) =
+            lookup::open_bare(&self.room, x, &b, ASK_SIZE).and_then(|p| NameAsk::from_plain(&p))
+        else {
+            return;
+        };
+        let unix = self.unix(now);
+        if ask.key == self.public || unix.abs_diff(ask.time) > LOOKUP_MAX_AGE {
+            return;
+        }
+        let region = self.local_region(ask.region);
+        self.ask_copies.insert(
+            seen,
+            AskCopy {
+                at: now,
+                first: i,
+                second: None,
+                reply: None,
+            },
+        );
+        self.names_events.push_back(Input::Ask {
+            ask,
+            region,
+            via: seen,
+        });
+    }
+
+    /// A reply under our reply tag (a member's names client): the MAC, copies and the relay's budget, then opened.
+    fn on_reply(&mut self, i: usize, x: &str, content: &str, now: Instant) {
+        if content.len() > REPLY_SEALED_MAX.div_ceil(3) * 4 {
+            return; // past what a server sends: dropped unread
+        }
+        let Ok(b) = b64().decode(content) else { return };
+        if b.len() < 64 || !lookup::authentic_len(&self.room, x, &b, b.len()) {
+            return;
+        }
+        if !self.admit(i, x, content, now) {
+            return;
+        }
+        let Some(r) = lookup::open_bare_var(&self.room, x, &b, REPLY_SEALED_MAX)
+            .and_then(|p| Reply::decode(&p).ok())
+        else {
+            return;
+        };
+        self.names_events.push_back(Input::Reply(r));
+    }
+
+    /// A question under the names tag through Nostr relay `i` (a names client subscribed to it,
+    /// a server's): checked as a lookup is (the MAC first, copies and the relay's budget, the
+    /// time, a fresh nonce, a region of the link's, not our own) and handed to the registry.
+    fn on_question(&mut self, i: usize, x: &str, content: &str, now: Instant) {
+        let Ok(b) = b64().decode(content) else { return };
+        if !lookup::authentic_len(&self.room, x, &b, QUESTION_SIZE) {
+            return;
+        }
+        if !self.admit(i, x, content, now) {
+            return;
+        }
+        let Some(q) = lookup::open_bare(&self.room, x, &b, QUESTION_SIZE)
+            .and_then(|p| Question::from_plain(&p))
+        else {
+            return;
+        };
+        let unix = self.unix(now);
+        let region = self.local_region(q.region);
+        // A question's rounds share its nonce: each round is remembered apart.
+        let seen = mac16(&[q.spread; 32], &[&q.nonce]);
+        if q.key == self.public
+            || unix.abs_diff(q.time) > LOOKUP_MAX_AGE
+            || self.nonces.contains(&seen)
+        {
+            return;
+        }
+        let Some(region) = region else { return };
+        if self.nonce_order.len() >= MAX_NONCES
+            && let Some((old, _)) = self.nonce_order.pop_front()
+        {
+            self.nonces.remove(&old);
+        }
+        self.nonces.insert(seen);
+        self.nonce_order.push_back((seen, now));
+        self.names_events.push_back(Input::Question { q, region });
+    }
+
+    /// Whether an event (its tag and content) through Nostr relay `i` is opened: not a copy of
+    /// one opened lately (through another relay), and within that relay's budget.
+    fn admit(&mut self, i: usize, x: &str, content: &str, now: Instant) -> bool {
+        // A copy of an event opened already (through another relay): dropped before the budget.
+        let seen = event_mark(x, content);
+        while let Some(&(old, t)) = self.opened_order.front()
+            && (now.saturating_duration_since(t) >= OPENED_FOR
+                || self.opened_order.len() >= MAX_OPENED)
+        {
+            self.opened_order.pop_front();
+            self.opened.remove(&old);
+        }
+        if self.opened.contains(&seen) {
+            return false;
+        }
+        if self.lookups_in.len() < self.nostr.len() {
+            self.lookups_in.resize_with(self.nostr.len(), VecDeque::new);
+        }
+        if !Self::take(&mut self.lookups_in[i], LOOKUP_EVENTS_PER_SECOND, now) {
+            return false;
+        }
+        self.opened.insert(seen);
+        self.opened_order.push_back((seen, now));
+        true
     }
 
     /// Answers a lookup from `key`: our handshake through the dialer's home region `r`, or, past
@@ -1555,6 +1941,9 @@ impl Client {
         self.wg.remove_peer(id);
         if let Some(p) = self.peers.remove(&id) {
             self.by_addr.remove(&p.addr);
+            if self.names_mode {
+                self.names_events.push_back(Input::Gone(p.key));
+            }
         }
     }
 
@@ -1609,7 +1998,9 @@ impl Client {
                 // A member we don't know calls: the one a lookup of ours waits on, or (incoming
                 // on, or a flow of the guest's with it) one that opens a connection, on trial.
                 let addr = self.room.addr(&src);
-                let expected = self.pending.contains_key(&addr);
+                // A names client lets in only the servers answering its own question.
+                let names = self.names_mode && self.names_window.room(&src, now);
+                let expected = self.pending.contains_key(&addr) || names;
                 if !expected && !(self.cfg.incoming || self.has_flow(&addr, now)) {
                     return;
                 }
@@ -1625,6 +2016,12 @@ impl Client {
                 if self.peers.contains_key(&id) {
                     if !expected {
                         self.trials_in.push_back(now);
+                    }
+                    if names
+                        && let Some(k) = self.names_window.admit(src, now)
+                        && let Some(old) = self.wg.peer_id(NodePublicKey::from_bytes(k))
+                    {
+                        self.forget(old);
                     }
                     self.drain_pending(id, now);
                 }
@@ -1710,8 +2107,8 @@ impl Client {
         let Some(p) = self.peers.get_mut(&id) else {
             return;
         };
-        if p.hello_sent {
-            return;
+        if p.hello_sent || self.names_mode {
+            return; // a names client has no signalling: registry datagrams carry its traffic
         }
         p.hello_sent = true;
         self.signal(
@@ -1769,6 +2166,19 @@ impl Client {
             return;
         }
         let Some(info) = ip::parse(p) else { return };
+        if self.names_mode {
+            // Registry datagrams, and nothing else: a names client has no guest.
+            if info.proto == ip::UDP
+                && (info.sport, info.dport) == (NAMES_PORT, NAMES_PORT)
+                && let Some(body) = ip::udp_payload(p, &info)
+            {
+                let (key, data) = (peer.key, body.to_vec());
+                self.touch(from, now);
+                self.names_events
+                    .push_back(Input::Datagram { from: key, data });
+            }
+            return;
+        }
         if info.proto == ip::UDP && (info.sport == SIGNAL_PORT || info.dport == SIGNAL_PORT) {
             if (info.sport, info.dport) == (SIGNAL_PORT, SIGNAL_PORT)
                 && let Some(body) = ip::udp_payload(p, &info)
@@ -2329,36 +2739,113 @@ impl Client {
         self.actions.push_back(Action::ToGuest(m));
     }
 
-    /// The guest's DNS query `p` to the room's resolver: a name is a key, its address computed.
-    fn resolve(&mut self, p: &[u8], info: &ip::Info) {
+    /// The guest's DNS query `p` to the room's resolver: a name that is a key, its address computed; a registered name
+    /// (room-names.md "The resolver"), from what this node holds or once its names client hears.
+    fn resolve(&mut self, p: &[u8], info: &ip::Info, now: Instant) {
         let Some(m) = ip::udp_payload(p, info) else {
             return;
         };
         let Some(q) = dns::parse(m) else { return };
-        let key = q
+        let rel = q
             .name
             .strip_suffix(&self.room.domain())
             .and_then(|s| s.strip_suffix('.'))
+            .map(str::to_string);
+        let key = rel
+            .as_deref()
             .filter(|k| k.len() == 52)
             .and_then(unbase32)
             .and_then(|k| <[u8; 32]>::try_from(k).ok());
-        let (rcode, addrs) = match key {
-            Some(k) => {
+        let m = m.to_vec();
+        match (key, rel) {
+            (Some(k), _) => self.dns_answer(&m, info.sport, Answer::Node(k), 3600),
+            (None, Some(rel)) => {
+                let a = self.resolve_name(&rel, now, true);
+                self.log(format!("resolver: {rel} (type {}): {a:?}", q.qtype));
+                if a != Answer::Wait {
+                    self.dns_answer(&m, info.sport, a, NAME_TTL);
+                } else if self.dns_waiting.len() >= MAX_DNS_WAITING {
+                    self.dns_answer(&m, info.sport, Answer::Wait, 0);
+                } else {
+                    self.dns_waiting.push(DnsWait {
+                        m,
+                        sport: info.sport,
+                        rel,
+                        until: now + DNS_WAIT,
+                    });
+                }
+            }
+            (None, None) => self.dns_answer(&m, info.sport, Answer::Nx, 0),
+        }
+    }
+
+    /// What a registered name `rel` (relative to the room's domain) answers now. `start`: the guest just asked (the
+    /// member may look it up); else a waiting query is looked at again.
+    fn resolve_name(&mut self, rel: &str, now: Instant, start: bool) -> Answer {
+        let unix = self.unix(now);
+        let Some((_, name)) = names::id::split(rel) else {
+            return Answer::Nx; // reserved, or not a name
+        };
+        if let Some(h) = self.names.as_ref() {
+            return h.server.resolve(rel, name, unix);
+        }
+        let Some(h) = self.member.as_mut() else {
+            return Answer::Nx;
+        };
+        if start {
+            h.last_query = Some(now);
+        }
+        let a = h.member.query(rel, now, unix, start);
+        if start {
+            self.start_member(now);
+        }
+        a
+    }
+
+    /// The answer to the guest's query `m` from port `sport`: `Wait` as SERVFAIL.
+    fn dns_answer(&mut self, m: &[u8], sport: u16, a: Answer, ttl: u32) {
+        let Some(q) = dns::parse(m) else { return };
+        let (rcode, addrs) = match a {
+            Answer::Node(k) => {
                 let a = self.room.addr(&k);
                 if k != self.public {
                     self.learn(a, k);
                 }
                 (dns::NOERROR, vec![IpAddr::V6(a.into())])
             }
-            None => (dns::NXDOMAIN, Vec::new()),
+            Answer::Own => (dns::NOERROR, vec![IpAddr::V6(self.addr.into())]),
+            Answer::Nx => (dns::NXDOMAIN, Vec::new()),
+            Answer::Wait => (dns::SERVFAIL, Vec::new()),
         };
-        let answer = dns::fit(&dns::answer(m, &q, rcode, &addrs, 3600), q.udp_size);
+        let answer = dns::fit(&dns::answer(m, &q, rcode, &addrs, ttl), q.udp_size);
         let r = ip::udp(
             (IpAddr::V6(self.resolver.into()), 53),
-            (IpAddr::V6(self.addr.into()), info.sport),
+            (IpAddr::V6(self.addr.into()), sport),
             &answer,
         );
         self.actions.push_back(Action::ToGuest(r));
+    }
+
+    /// The queries that wait, looked at again: answered, or SERVFAIL once their wait is over.
+    fn answer_waiting(&mut self, now: Instant) {
+        if self.dns_waiting.is_empty() {
+            return;
+        }
+        for w in std::mem::take(&mut self.dns_waiting) {
+            let a = self.resolve_name(&w.rel, now, false);
+            if a == Answer::Wait && now < w.until {
+                self.dns_waiting.push(w);
+                continue;
+            }
+            if a == Answer::Wait {
+                self.log(format!(
+                    "resolver: {}: no answer in {} s",
+                    w.rel,
+                    DNS_WAIT.as_secs()
+                ));
+            }
+            self.dns_answer(&w.m, w.sport, a, NAME_TTL);
+        }
     }
 
     /// An IP packet from the guest.
@@ -2378,7 +2865,7 @@ impl Client {
         let dst: [u8; 16] = p[24..40].try_into().unwrap();
         if dst == self.resolver {
             if info.proto == ip::UDP && info.dport == 53 {
-                self.resolve(p, &info);
+                self.resolve(p, &info, now);
             }
             return;
         }
@@ -2427,6 +2914,17 @@ impl Client {
     }
 
     pub fn tick(&mut self, now: Instant) {
+        self.tick_in(now);
+        let unix = self.unix(now);
+        if let Some(p) = self.publisher.as_mut()
+            && p.deadline().is_some_and(|d| d <= now)
+        {
+            p.tick(now, unix);
+        }
+        self.pump_publisher(now);
+    }
+
+    fn tick_in(&mut self, now: Instant) {
         #[cfg(test)]
         self.check_rtcs();
         if self.state == State::Failed {
@@ -2585,6 +3083,10 @@ impl Client {
             }
         }
         self.flush_relays();
+        if self.names_mode {
+            self.ask_copies_tick(now);
+        }
+        self.names_tick(now);
     }
 
     pub fn deadline(&self) -> Option<Instant> {
@@ -2623,10 +3125,44 @@ impl Client {
         let calls = (!self.calls_waiting.is_empty())
             .then(|| self.trials_out.front().map(|t| *t + Duration::from_secs(1)))
             .flatten();
+        let names = self.names.as_ref().and_then(|h| {
+            [
+                h.transport.as_ref().and_then(|t| t.deadline()),
+                h.server.deadline().filter(|_| h.transport.is_some()),
+                h.retry_at,
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+        });
+        let member = self.member.as_ref().and_then(|h| {
+            let t = h.transport.as_ref()?;
+            [
+                t.deadline(),
+                h.member.deadline(),
+                h.last_query.map(|q| q + member::IDLE),
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+        });
+        let waiting = self.dns_waiting.iter().map(|w| w.until).min();
+        let copies = (self.ask_copies.values())
+            .map(|c| match c.reply {
+                Some(_) => c.at + REPLY_SECOND_WAIT,
+                None => c.at + ASK_COPIES_FOR,
+            })
+            .min();
+        let publisher = self.publisher.as_ref().and_then(|p| p.deadline());
         [
+            publisher,
             self.wg.next_event().map(|r| r.start()),
             calls,
             self.probe_until,
+            names,
+            member,
+            waiting,
+            copies,
         ]
         .into_iter()
         .chain(peers)
@@ -2645,7 +3181,591 @@ impl Client {
         self.actions.pop_front()
     }
 
+    // ---- Names (names/server.rs carries the registry; this, its transport) ----
+
+    /// A stored record of the registry, streamed in at the start (before the first tick): a server's (a name it
+    /// holds) or a member's (a name it resolved). False for one this node doesn't take (the page deletes it).
+    pub fn names_load(&mut self, record: &[u8]) -> bool {
+        let unix = self.unix(self.t0);
+        if let Some(h) = self.names.as_mut() {
+            return h.server.load(record, unix);
+        }
+        self.member
+            .as_mut()
+            .is_some_and(|h| h.member.load(record, unix))
+    }
+
+    /// The page's answer to a server's fetch ([`Action::NamesFetch`] `id`): the HTTP status (0: it failed) and the
+    /// body. Ignored by anything but a server.
+    pub fn names_fetched(&mut self, id: u32, status: u16, body: &[u8], now: Instant) {
+        let unix = self.unix(now);
+        if let Some(h) = self.names.as_mut() {
+            let body = body.to_vec();
+            h.server
+                .input(Input::Fetched { id, status, body }, now, unix);
+            self.pump_names(now);
+        }
+    }
+
+    /// A publisher's item to put ([`Config::publish`]): to the two servers it finds, each answer a `names-put` event.
+    /// False when it isn't a publisher, the item isn't one, or too many wait.
+    pub fn names_put(&mut self, item: &[u8], now: Instant) -> bool {
+        let Ok(item) = names::wire::Item::decode(item) else {
+            return false;
+        };
+        let Some(p) = self.publisher.as_mut() else {
+            return false;
+        };
+        let ok = p.put(item, now);
+        self.pump_publisher(now);
+        ok
+    }
+
+    /// A publisher's check for the dialog: every id under `first` (a name id's first byte) the servers it finds hold,
+    /// each answer a `names-ids` event (the name id itself never leaves the page). False when it isn't a publisher.
+    pub fn names_ids(&mut self, first: u8, now: Instant) -> bool {
+        let Some(p) = self.publisher.as_mut() else {
+            return false;
+        };
+        p.ids(first, now);
+        self.pump_publisher(now);
+        true
+    }
+
+    /// The node's titles as they change (the page's names agent): a server's are replaced; a member with titles now
+    /// becomes a server (its member side and names client go), its names client made at once if the node runs.
+    pub fn set_titles(&mut self, titles: Vec<names::server::Title>, now: Instant) {
+        if self.names_mode || self.publisher.is_some() {
+            return;
+        }
+        let unix = self.unix(now);
+        if let Some(h) = self.names.as_mut() {
+            h.server.set_titles(titles, unix);
+            return self.pump_names(now);
+        }
+        if titles.is_empty() {
+            return;
+        }
+        if let Some(mut m) = self.member.take() {
+            m.member.stop();
+            if let Some(mut t) = m.transport.take() {
+                t.close();
+                while let Some(a) = t.poll() {
+                    if !matches!(a, Action::Event(_)) {
+                        self.actions.push_back(a);
+                    }
+                }
+            }
+        }
+        self.names = Some(Box::new(NamesHost {
+            server: Server::new(
+                &self.cfg.link.id,
+                names::server::Config {
+                    params: self.cfg.params.clone(),
+                    titles,
+                    max_names: names::server::MAX_NAMES,
+                    max_bytes: names::server::MAX_BYTES,
+                },
+                unix,
+            ),
+            transport: None,
+            retry_at: None,
+        }));
+        self.log("names: titles given: this node serves the room's names".into());
+        self.start_names(now);
+    }
+
+    /// A publisher's side and its transport (this client) talk; its answers go out as `names-put` events.
+    fn pump_publisher(&mut self, now: Instant) {
+        let Some(mut p) = self.publisher.take() else {
+            return;
+        };
+        let unix = self.unix(now);
+        if self.state == State::Running && !p.running() {
+            p.start(self.public, now);
+            p.ready(now);
+        }
+        if self.state == State::Failed && p.running() {
+            p.stop();
+        }
+        loop {
+            let mut moved = false;
+            while let Some(i) = self.names_events.pop_front() {
+                p.input(i, now, unix);
+                moved = true;
+            }
+            while let Some(c) = p.poll() {
+                moved = true;
+                match c {
+                    Cmd::Log(s) => self.log(format!("names: {s}")),
+                    Cmd::Store { .. } => {}
+                    c => self.names_cmd(c, now),
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        while let Some(d) = p.put_done.pop_front() {
+            let (result, item) = match d.result {
+                member::PutResult::Taken => ("taken", None),
+                member::PutResult::Better(it) => ("better", Some(hex(&it.encode()))),
+                member::PutResult::Failed => ("failed", None),
+                member::PutResult::Nobody => ("nobody", None),
+            };
+            self.event(json!({
+                "type": "names-put", "id": hex(&d.id), "server": d.server.map(|k| hex(&k)),
+                "result": result, "item": item,
+            }));
+        }
+        while let Some(d) = p.ids_done.pop_front() {
+            let (result, ids) = match d.result {
+                member::IdsResult::Ids(v) => (
+                    "ids",
+                    Some(
+                        v.iter()
+                            .map(|(i, u)| json!([hex(i), u]))
+                            .collect::<Vec<_>>(),
+                    ),
+                ),
+                member::IdsResult::Failed => ("failed", None),
+                member::IdsResult::Nobody => ("nobody", None),
+            };
+            self.event(json!({
+                "type": "names-ids", "first": d.first, "server": d.server.map(|k| hex(&k)),
+                "result": result, "ids": ids,
+            }));
+        }
+        self.publisher = Some(p);
+    }
+
+    /// The names client that carries this node's registry side, if it runs.
+    fn names_transport(&mut self) -> Option<&mut Client> {
+        let s = self.names.as_mut().and_then(|h| h.transport.as_deref_mut());
+        match s {
+            Some(t) => Some(t),
+            None => self
+                .member
+                .as_mut()
+                .and_then(|h| h.transport.as_deref_mut()),
+        }
+    }
+
+    /// The node runs: a node with titles makes its names client.
+    fn start_names(&mut self, now: Instant) {
+        if self.names_mode
+            || self.state != State::Running
+            || self.names.as_ref().is_none_or(|h| h.transport.is_some())
+        {
+            return;
+        }
+        match self.names_client(now) {
+            Ok(t) => {
+                let key = t.public;
+                let h = self.names.as_mut().unwrap();
+                h.retry_at = None;
+                h.transport = Some(Box::new(t));
+                h.server.start(key, now);
+                self.log(format!("names: a names client, nodekey:{}", hex(&key)));
+            }
+            Err(e) => {
+                self.names.as_mut().unwrap().retry_at = Some(now + NAMES_RETRY);
+                self.log(format!("names: no names client: {e}"));
+            }
+        }
+        self.pump_names(now);
+    }
+
+    /// A member that needs its names client (a lookup waits) makes it; the member starts once it runs.
+    fn start_member(&mut self, now: Instant) {
+        let running = self.state == State::Running;
+        let Some(h) = self.member.as_ref() else {
+            return;
+        };
+        if self.names_mode
+            || !running
+            || h.transport.is_some()
+            || h.retry_at.is_some_and(|t| t > now)
+            || !h.member.busy()
+        {
+            return;
+        }
+        match self.names_client(now) {
+            Ok(t) => {
+                let key = t.public;
+                let h = self.member.as_mut().unwrap();
+                h.retry_at = None;
+                h.transport = Some(Box::new(t));
+                self.log(format!(
+                    "names: a member's names client, nodekey:{}",
+                    hex(&key)
+                ));
+            }
+            Err(e) => {
+                self.member.as_mut().unwrap().retry_at = Some(now + NAMES_RETRY);
+                self.log(format!("names: no names client: {e}"));
+            }
+        }
+        self.pump_names(now);
+    }
+
+    fn names_tick(&mut self, now: Instant) {
+        let unix = self.unix(now);
+        if let Some(h) = self.names.as_mut() {
+            if h.transport.is_none() {
+                if h.retry_at.is_some_and(|t| t <= now) {
+                    h.retry_at = None;
+                    self.start_names(now);
+                }
+            } else {
+                if let Some(t) = h.transport.as_mut()
+                    && t.deadline().is_some_and(|d| d <= now)
+                {
+                    t.tick(now);
+                }
+                if h.server.deadline().is_some_and(|d| d <= now) {
+                    h.server.tick(now, unix);
+                }
+            }
+        }
+        let mut idle = false;
+        if let Some(h) = self.member.as_mut()
+            && let Some(t) = h.transport.as_mut()
+        {
+            if t.deadline().is_some_and(|d| d <= now) {
+                t.tick(now);
+            }
+            if h.member.deadline().is_some_and(|d| d <= now) {
+                h.member.tick(now, unix);
+            }
+            idle = h.last_query.is_none_or(|q| now >= q + member::IDLE) && !h.member.busy();
+        }
+        if idle {
+            let h = self.member.as_mut().unwrap();
+            let mut t = h.transport.take().unwrap();
+            h.member.stop();
+            t.close();
+            while let Some(a) = t.poll() {
+                if !matches!(a, Action::Event(_)) {
+                    self.actions.push_back(a);
+                }
+            }
+            self.log(format!(
+                "names: the member's names client closes, no name asked for {} s",
+                member::IDLE.as_secs()
+            ));
+        }
+        self.pump_names(now);
+    }
+
+    /// Carries what the names clients and the registry's sides say to each other, and the names clients' actions
+    /// out; then the queries that wait are looked at again.
+    fn pump_names(&mut self, now: Instant) {
+        if let Some(mut h) = self.names.take() {
+            if self.pump_side(&mut h.transport, &mut h.server, now) {
+                h.transport = None;
+                h.server.stop();
+                h.retry_at = Some(now + NAMES_RETRY);
+                self.log(format!(
+                    "names: the names client failed; again in {} s",
+                    NAMES_RETRY.as_secs()
+                ));
+            }
+            self.names = Some(h);
+        }
+        if let Some(mut h) = self.member.take() {
+            // The member starts with its names client (its relays: a first lookup asks the room at once), and is ready
+            // once its home region is up (servers' call backs reach it: "who serves?", `fetch`).
+            if let Some(t) = h.transport.as_ref() {
+                if !h.member.running() && t.state != State::Failed {
+                    let key = t.public;
+                    h.member.start(key, now);
+                }
+                if t.state == State::Running && !h.member.is_ready() {
+                    h.member.ready(now);
+                }
+            }
+            if self.pump_side(&mut h.transport, &mut h.member, now) {
+                h.transport = None;
+                h.member.stop();
+                h.retry_at = Some(now + NAMES_RETRY);
+                self.log(format!(
+                    "names: the member's names client failed; again at a query in {} s",
+                    NAMES_RETRY.as_secs()
+                ));
+            }
+            self.member = Some(h);
+        }
+        self.tell_names();
+        self.answer_waiting(now);
+    }
+
+    /// The adapter's details' names line, when it changed: a server's names held and the servers it synced with
+    /// lately, or a member's names resolved (kept) and servers held now.
+    fn tell_names(&mut self) {
+        let now = match (self.names.as_ref(), self.member.as_ref()) {
+            (Some(h), _) => (true, h.server.reg.len(), h.server.partners()),
+            (None, Some(h)) => (false, h.member.kept.len(), h.member.servers().len()),
+            (None, None) => return,
+        };
+        if self.names_told != Some(now) {
+            self.names_told = Some(now);
+            self.event(json!({
+                "type": "names", "serving": now.0, "names": now.1, "servers": now.2,
+            }));
+        }
+    }
+
+    /// One side's commands to its names client and its events back, until neither moves; the names client's actions
+    /// out (its WebSockets; of its events, only its log, marked). True when the names client failed.
+    fn pump_side(
+        &mut self,
+        transport: &mut Option<Box<Client>>,
+        side: &mut dyn Side,
+        now: Instant,
+    ) -> bool {
+        let unix = self.unix(now);
+        loop {
+            let mut moved = false;
+            if let Some(t) = transport.as_mut() {
+                while let Some(i) = t.names_events.pop_front() {
+                    side.input(i, now, unix);
+                    moved = true;
+                }
+            }
+            while let Some(c) = side.poll() {
+                moved = true;
+                match c {
+                    Cmd::Store { id, record } => {
+                        self.actions.push_back(Action::NamesStore { id, record })
+                    }
+                    // Only a server's side asks (outside.rs); the page fetches.
+                    Cmd::Fetch { id, url } => {
+                        self.actions.push_back(Action::NamesFetch { id, url })
+                    }
+                    Cmd::Log(s) => self.log(format!("names: {s}")),
+                    c => {
+                        if let Some(t) = transport.as_mut() {
+                            t.names_cmd(c, now);
+                        }
+                    }
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        let mut failed = false;
+        if let Some(t) = transport.as_mut() {
+            while let Some(a) = t.poll() {
+                match a {
+                    Action::Event(e) => {
+                        let v: serde_json::Value = serde_json::from_str(&e).unwrap_or_default();
+                        if v["type"] == "log" {
+                            self.log(format!("names client: {}", v["msg"].as_str().unwrap_or("")));
+                        }
+                        failed |= v["type"] == "state" && v["state"] == "Failed";
+                    }
+                    a => self.actions.push_back(a),
+                }
+            }
+        }
+        failed
+    }
+
+    /// What the registry asks of its names client.
+    fn names_cmd(&mut self, c: Cmd, now: Instant) {
+        match c {
+            Cmd::Publish { nonce, spread } => self.publish_question(nonce, spread, now),
+            Cmd::Accept { until, max } => self.names_window.open(until, max),
+            Cmd::Served(k, r) => self.names_window.served(&k, r),
+            Cmd::CallBack { key, region } => {
+                // A peer we have (a server of ours asking again) is answered on its session.
+                if !self.peers.values().any(|p| p.key == key) {
+                    self.call_back(key, region, now);
+                }
+            }
+            Cmd::Send { to, data } => self.names_send(to, &data, now),
+            Cmd::Forget(k) => {
+                if let Some(id) = self.wg.peer_id(NodePublicKey::from_bytes(k)) {
+                    self.forget(id);
+                }
+            }
+            Cmd::Subscribe(on) => {
+                self.names_subscribed = on;
+                self.resubscribe(now);
+            }
+            Cmd::Replies(on) => {
+                self.names_replies = on;
+                self.resubscribe(now);
+            }
+            Cmd::Ask {
+                nonce,
+                id,
+                mode,
+                spread,
+                shown,
+            } => self.publish_ask(nonce, id, mode, spread, shown, now),
+            Cmd::Reply { to, via, data } => self.publish_reply(to, via, data, now),
+            Cmd::AcceptFrom { keys, until } => self.names_window.open_for(keys, until),
+            // A publisher's and a member's sides ask nothing outside the room.
+            Cmd::Store { .. } | Cmd::Log(_) | Cmd::Fetch { .. } => {}
+        }
+    }
+
+    fn resubscribe(&mut self, now: Instant) {
+        for i in 0..self.nostr.len() {
+            if self.nostr[i].conn.is_some() {
+                self.nostr_subscribe(i, now);
+            }
+        }
+    }
+
+    /// An ask (a member's first lookup) under the names tag of the hour, on every relay of the link.
+    fn publish_ask(
+        &mut self,
+        nonce: [u8; 16],
+        id: [u8; 32],
+        mode: names::wire::AskMode,
+        spread: u8,
+        shown: [u8; 8],
+        now: Instant,
+    ) {
+        let unix = self.unix(now);
+        let a = NameAsk {
+            key: self.public,
+            region: self.wire_region(self.home),
+            time: unix,
+            nonce,
+            id,
+            mode,
+            spread,
+            shown,
+        };
+        let tag = self.room.names_tag(unix / 3600);
+        let content = b64().encode(lookup::seal_bare(&self.room, &tag, &a.plain()));
+        let text = nostr::publish(&self.author.event(KIND, &tag, &content, unix));
+        for i in 0..self.nostr.len() {
+            self.nostr_send(i, text.clone());
+        }
+    }
+
+    /// A reply (a server's) under names key `to`'s reply tag of the hour: through the relay that brought the ask
+    /// (`via`) and the one whose copy came next, or another after [`REPLY_SECOND_WAIT`].
+    fn publish_reply(&mut self, to: [u8; 32], via: [u8; 16], mut data: Vec<u8>, now: Instant) {
+        // Our home region, which the registry's side doesn't know.
+        let region = self.wire_region(self.home).to_be_bytes();
+        if let Some(r) = data.get_mut(48..50) {
+            r.copy_from_slice(&region);
+        }
+        let unix = self.unix(now);
+        let tag = self.room.reply_tag(&to, unix / 3600);
+        let content = b64().encode(lookup::seal_bare(&self.room, &tag, &data));
+        let text = nostr::publish(&self.author.event(KIND, &tag, &content, unix));
+        let (first, second) = match self.ask_copies.get_mut(&via) {
+            Some(c) => {
+                if c.second.is_none() {
+                    c.reply = Some(text.clone());
+                }
+                (Some(c.first), c.second)
+            }
+            None => (None, None),
+        };
+        let mut sent = 0;
+        for i in [first, second].into_iter().flatten() {
+            self.nostr_send(i, text.clone());
+            sent += 1;
+        }
+        if first.is_none() {
+            let up: Vec<usize> = (0..self.nostr.len())
+                .filter(|i| self.nostr[*i].conn.is_some())
+                .collect();
+            for i in up {
+                if sent == 2 {
+                    break;
+                }
+                self.nostr_send(i, text.clone());
+                sent += 1;
+            }
+        }
+    }
+
+    /// Replies whose ask's copy didn't come go through another relay; old asks are forgotten.
+    fn ask_copies_tick(&mut self, now: Instant) {
+        let due: Vec<([u8; 16], usize, String)> = (self.ask_copies.iter_mut())
+            .filter(|(_, c)| now >= c.at + REPLY_SECOND_WAIT && c.reply.is_some())
+            .map(|(k, c)| (*k, c.first, c.reply.take().unwrap()))
+            .collect();
+        for (_, first, text) in due {
+            if let Some(i) =
+                (0..self.nostr.len()).find(|i| *i != first && self.nostr[*i].conn.is_some())
+            {
+                self.nostr_send(i, text);
+            }
+        }
+        self.ask_copies
+            .retain(|_, c| now.saturating_duration_since(c.at) < ASK_COPIES_FOR);
+    }
+
+    /// "Who serves the registry?" under the names tag of the hour, on every relay of the link.
+    fn publish_question(&mut self, nonce: [u8; 16], spread: u8, now: Instant) {
+        let unix = self.unix(now);
+        let q = Question {
+            key: self.public,
+            region: self.wire_region(self.home),
+            time: unix,
+            nonce,
+            spread,
+        };
+        let tag = self.room.names_tag(unix / 3600);
+        let content = b64().encode(lookup::seal_bare(&self.room, &tag, &q.plain()));
+        let text = nostr::publish(&self.author.event(KIND, &tag, &content, unix));
+        for i in 0..self.nostr.len() {
+            self.nostr_send(i, text.clone());
+        }
+    }
+
+    /// A registry datagram to the peer with key `to` (a names client's), on [`NAMES_PORT`].
+    fn names_send(&mut self, to: [u8; 32], data: &[u8], now: Instant) {
+        let Some(id) = self.wg.peer_id(NodePublicKey::from_bytes(to)) else {
+            return;
+        };
+        let Some(p) = self.peers.get_mut(&id) else {
+            return;
+        };
+        p.waiting.get_or_insert(now);
+        let (me, them) = (
+            IpAddr::V6(Ipv6Addr::from(self.addr)),
+            IpAddr::V6(Ipv6Addr::from(p.addr)),
+        );
+        let mut pkt = ip::udp((me, NAMES_PORT), (them, NAMES_PORT), data);
+        pad(&mut pkt);
+        self.touch(id, now);
+        let r = self.wg.send(now, [(id, vec![PacketMut::from(pkt)])]);
+        self.send_to_peers(r.to_peers, now);
+    }
+
     pub fn close(&mut self) {
+        let mut transports = Vec::new();
+        if let Some(h) = self.names.as_mut() {
+            h.retry_at = None;
+            transports.extend(h.transport.take());
+            h.server.stop();
+        }
+        if let Some(h) = self.member.as_mut() {
+            h.retry_at = None;
+            transports.extend(h.transport.take());
+            h.member.stop();
+        }
+        for mut t in transports {
+            t.close();
+            while let Some(a) = t.poll() {
+                if !matches!(a, Action::Event(_)) {
+                    self.actions.push_back(a);
+                }
+            }
+        }
+        self.dns_waiting.clear();
         self.end_probes();
         let ids: Vec<PeerId> = self.peers.keys().copied().collect();
         for id in ids {
@@ -2667,6 +3787,15 @@ impl Client {
         self.pending.clear();
         self.state = State::Failed;
     }
+}
+
+/// An event's mark: a hash of its tag and content, the same through every relay.
+fn event_mark(x: &str, content: &str) -> [u8; 16] {
+    let mut h = Blake2s256::new();
+    h.update(x.as_bytes());
+    h.update([0]);
+    h.update(content.as_bytes());
+    h.finalize()[..16].try_into().unwrap()
 }
 
 #[cfg(test)]

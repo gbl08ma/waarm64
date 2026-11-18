@@ -3,7 +3,8 @@
 // what to do: false clicks Cancel, a string types it into a prompt and clicks OK, anything else clicks OK.
 import type { Page } from 'playwright-core';
 
-export type Question = { kind: 'confirm' | 'alert' | 'prompt' | 'wait'; text: string };
+/** A question as it opened: a prompt's `value` is its field's first text (one to copy, or to change). */
+export type Question = { kind: 'confirm' | 'alert' | 'prompt' | 'wait'; text: string; value?: string };
 let names = 0;
 
 /** Answers every question the page asks from now on (call it before `goto`; it also takes over a page already loaded). */
@@ -15,7 +16,7 @@ export async function answerAsks(page: Page, answer: (q: Question) => boolean | 
       const d = document.getElementById('ask') as HTMLDialogElement | null;
       if (!d?.open || d.dataset.answered === d.dataset.serial) return;
       d.dataset.answered = d.dataset.serial;
-      const q = { kind: d.dataset.kind, text: d.querySelector('.ask-text')?.textContent ?? '' };
+      const q = { kind: d.dataset.kind, text: d.querySelector('.ask-text')?.textContent ?? '', value: d.querySelector('input')?.value };
       void (window as unknown as Record<string, (q: unknown) => Promise<boolean | string>>)[fn](q).then((a) => {
         const input = d.querySelector('input');
         if (input && typeof a === 'string') {

@@ -1591,6 +1591,179 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md)): `isPrivateRoom` labels any ID ending in a hyphen
   and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
   a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.
+- **Room names' loose ends** (NAMES track, [plans/room-names.md](plans/room-names.md); the records and rules in
+  `net/ts/src/room/names/`):
+  - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not the
+    ~1,400 newer generic ones (`app`, `dev`, …): words people want as names, which a guest asks under the room's
+    domain only after the name itself failed. Compile them if a guest turns out to ask them unprompted.
+  - Done (N4c, N4d): a zone's `seq` is `n << 32 | branch`, each copy of a title a branch of its own, 32 random bits
+    drawn at registration and by every copy taken in from an export, so one export pasted twice gives two branches.
+    Titles kept with N4c's one-byte branch (and their items' 4-byte zones) are refused now: rooms are pre-release.
+  - Servers keep one chain a name, the owner's (N2, room-names.md "Servers"), so a back-order (a younger chain alive
+    beside the owner) isn't carried: when the holder lapses it owns the name by the rule, but servers have it only
+    once its owner's agent puts it again. Done (N4c): the agent puts each public title once a visit and an hour, not
+    only at its changes, so a back-order or a reset room has it within the hour of a page being open.
+  - A server's sync partners last one round (a new question every 5 minutes; idle sessions go after 3 minutes), where
+    the spec's members hold theirs across questions. Holding servers' partners would save a question a round.
+  - A zone a server got through sync waits out the 10-minute limit like one put to it, so servers can differ on a
+    zone for up to 10 minutes (sync then asks for it every round).
+  - Headers are kept once an item, not once a registry: entries a calendar anchored in one block repeat its header
+    across names (80 bytes each, ~5.5% of an entry's 1.45 KB: N0b). Anchors through one calendar transaction likewise
+    repeat their common path (a second one made apart adds 304 to 713 bytes of its own, of ~1,185): a store of anchors
+    by transaction would save ~30% at 1,000 names, ~40% at 5,000 (room-names.md "Size, and where it stops"). N6's
+    sizes say whether it matters.
+  - **The agent collects a claim's anchor later than the dialog says** (N0b): it asks 5 minutes after stamping, then
+    5 minutes doubling to an hour (`RETRY_MS`, `PASS_MS`: at 5, 10, 20, 40, 80, 140, 200 minutes), so a proof the
+    calendars serve at 81 to 140 minutes (the first of the three's p90 is 1.7 to 2.3 hours) is collected at 140, past
+    `PUBLIC_IN_MS`'s 2 hours, and the page shows "public once this web app has been open a while" while open: 76 of
+    N0b's 80 stamps would have. Asks spaced around the expected proof (a first at an hour, then every 10 to 15 minutes
+    to 3 hours, then the doubling) make "about 2 hours" true for ~90%.
+  - Names a server dropped by its bound keep their ranges' fingerprints differing from other servers', so each sync
+    round descends to them and lists them again (a request or two a range). N6 measures the bound's churn.
+  - An asker checks each `serve` whole (an Argon2id, ~0.5 ms in wasm) as it comes; at most 32 a question.
+  - The module grew 92 KB Brotli (592 to 684, `net/ts/build.sh`, 2026-11-16) once the names code was linked (N1's
+    records and rules were dead code until N2 used them). Not looked into: what dominates (Argon2, the anchor
+    verifier, monomorphized collections), and whether it's worth trimming.
+  - Done (N4c): titles as they change go to a running room (`ts_room_names_titles`, the room worker listening on the
+    agent's BroadcastChannel `waarm64-names`). Tested natively (room/tests/names.rs) and through the config in Node;
+    the BroadcastChannel path in a page isn't (N5's page test can: register while the room runs).
+  - The `names` store in `waarm64-room` is kept by room and connection (review 1): deleting a connection leaves its
+    records (a member's few KB, a server's registry) for good. A sweep at Delete of the connection's key in each room
+    it named would clean them.
+  - A member that holds a better chain than a server showed it (it kept the owner's after a reset) doesn't `put` it:
+    it keeps only the chain's last entry, not the run a server needs to take it. The owner's agent puts it back at its
+    next visit, or within the hour while its page is open (N4c).
+  - A member's resolver logs every query for a name that isn't a key to the worker's console, names in words
+    included (the page tests read it to see what a guest asks on its own). Quieter (a count, or only in a debug
+    mode) once N6 has its numbers.
+  - A member's refresh that two servers left unanswered is tried once more and then given up (what is kept answers
+    meanwhile); a server that never answers a `get` but always answers "who serves?" is found again at each new
+    question. N6 sees whether that matters at scale.
+  - **A first lookup's loose ends** (R3, plans/room-names-r3.md "As built"):
+    - Done (R3a): **the owner's own last entry shown with an old zone or none** (or an entry a renewal behind) no longer
+      silences the dissent: `shown` is 8 bytes of a hash of the owner key, the last entry and the zone, so a holder of
+      anything newer replies (room-names-r3.md "As built"; the ask stays 164 bytes).
+    - **The owner's last entry before its release, shown by a sample that is all an attacker's** (R3a found it): holders
+      of the release hold no owner, so they don't dissent, and a reply carries only a live entry, so the member keeps
+      the released owner until its refresh 5 minutes on (whose `get` sends the release). With a next owner, its holder
+      dissents, but the contest's fetched runs carry no release, so the released run wins, for those 5 minutes too
+      (confirmed on the bus, not committed as a test). Closing it: a server holding a release replies to a `dissent`
+      with the release and the entry it follows, a `fetch` sends a tombstone run with the history, and the member's
+      check takes a release (ending that key's chain). A change to the reply's item and the member's checks.
+    - **`REPLY_MAX` (4 KiB) is the user's starting value**: whether the six default relays forward an ephemeral event of
+      that size, and how fast they rate-limit a server's replies, is a dev VM session's to measure (N0c/N6: about a
+      hundred events, no public service touched in the cloud). Under a relay's limit, items come by `fetch` (a session).
+    - **Forged asks in a room of hundreds of servers**: each holder replies once to a made-up `dissent` (up to 4.1 KB
+      through two relays), bounded only by 2 a second a server and 16 a minute a tag: megabytes a second onto public
+      relays. The design's remedy (servers answering on one relay, thinning replies by the room's size) isn't built:
+      N6 measures it.
+    - **Reply budgets spent by one guest**: in a room of a few servers, a guest asking many names at once meets the
+      servers' 2 replies a second; the rounds repeat "everyone" and silence soon after a reply is SERVFAIL rather than
+      "nobody serves", so the guest's resolver retries. Not measured with real guests.
+    - **A name in its grace resolved first while its renewal is pending** is kept and NXDOMAIN for 5 minutes, as any
+      kept name in its grace (room-names.md "A member resolving a name"); a first lookup now comes sooner than the
+      servers finish a renewal, which the rig's test had to wait out. A shorter freshness for a kept name in its grace
+      would end it.
+    - The first lookup's time on public relays (~1 s in a room asked before, ~2 s the first time: *estimates*) is
+      N0c's item 6.
+  - **A forged header at the floor** (R1: an anchor is its proof and its block's one header, against one floor at 1/16
+    of block 976,177's difficulty): one header mined in private, timed weeks back, anchors claims on any number of
+    names in every room. Servers asking an explorer about each block (R2, built) refuse it at a server; a member, which
+    asks no explorer, still takes it from any server that shows it (since R3 a first lookup's reply or a contest's
+    run: its older run wins the contest; docs/plans/room-names-redesign.md).
+    N4b's run of seven headers and the floor's schedule are gone, and with them the schedule's upkeep.
+  - The floor is one constant. Raising it at a release must stay under every block since the oldest anchor still
+    alive (a term and a grace, 37 days), or entries alive then are refused; no release step does it yet, and nothing
+    has to while difficulty doesn't fall sixteen-fold.
+  - A claim never goes stale (R1: an anchor at any time makes it a claim then), so the agent asks for a claim's proof
+    hourly for as long as its calendars never finish it (all three lost the commitment), and never makes it again. A
+    limit (made again after, say, a day with every calendar answering pending) would end that.
+  - What servers ask outside the room (R2, room-names.md "Servers", "Outside the room"):
+    - A server's count of the room's servers, which sets its chance of asking a calendar, comes from its own questions'
+      answers (times the round's share, at most 64). Junk registrations that answer questions raise it, so honest
+      servers ask a renewal's calendar less often (at worst 1/64 a slot each) and a renewal is finished later; the
+      owner's own visit still collects it. A room of many young or junk servers isn't measured: N6.
+    - The pace of block checks (one every 3 s a server, the newest first) and the asks' rates are the design's, not
+      measured against the public explorers and calendars: N6 measures what they tolerate from a page, and what a
+      server's first sync of thousands of blocks costs in time.
+    - A block is checked by its hash, so an explorer's 404 for an unknown block must carry its CORS header for a page
+      to see it as a denial: without it a forged block is never refused (it stays counted on its header's work, as
+      before R2), never a real one wrongly. Whether blockstream.info's and mempool.space's 404s do is unchecked (N6).
+    - A server finishes the one pending anchor it keeps an entry (the lower of two): if that calendar never finishes
+      (it lost the commitment), the servers ask it, ever more rarely, until the renewal goes stale; the owner's agent,
+      at its visit, tries all three of its calendars.
+    - The renewal made ahead is made after a pass's publish while the page stays open (proof of work: half a minute on
+      average); a page closed sooner leaves it to the next visit, which makes it then if a renewal is due (the slow
+      path, as before R2). The visit after a registration makes the first one.
+    - The 20-server and 60-day tests (server_tests.rs) take ~1.5 minutes of `cargo test` each, even with the curve,
+      Argon2 and the hashes optimized in test builds (the root Cargo.toml's `profile.dev.package`).
+  - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
+    - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
+      (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.
+    - A server none of whose names is alive can't prove one, so the servers it asks refuse its `sync`s: it keeps what
+      it holds and syncs nothing until its agent renews (it answers no question either).
+    - One registration still buys a server's work: its `sync`s may make another fingerprint 16 times its registry a
+      round, its `have`s 64 `get`s at once; any session `put`s 4 at a time (a junk one costs one check, an Argon2id).
+      N6 measures what that costs a server at 5,000 names.
+    - A peer's proof is checked once a session (an Argon2id), a refused one not again; a new session is a new key and
+      a new DERP connection.
+    - A send past the 8 MiB queued to a peer fails quietly when it is an answer (the asker's request times out).
+    - Done (N4c): the agent signs every pending anchor (`ts_names_pending`), and the rig test sees servers hold it.
+  - The names agent's loose ends (N4c, room-names.md "The names agent"):
+    - Done (R2): servers finish pending renewals at the calendar and an explorer, and the agent makes the next renewal
+      ahead of the visit that stamps it, so one short visit every 2 weeks keeps a name (room-names.md "Servers",
+      "Outside the room", and "The names agent").
+    - Done (N5): deleting a room connection that holds names says so in its question, with the export to copy, and
+      forgets them (room-names.md "What the user sees").
+    - Done (N5): an ephemeral connection with a key of its own can't hold a name; the dialog says so.
+    - Done (N5): the wizard's key field is the export with names, and a pasted one brings them.
+    - The page's loose ends (N5):
+      - New name on a room connection that holds names keeps its titles (under the same entry) pointing at the old
+        key: the details' [Point all at this machine](ui:network:NameEntry.pointHere) fixes it by hand. New name could
+        offer it, or repoint them itself.
+      - Name this machine… is shown only while the room is connected (the node key comes with the connection's start).
+        A stored connection's key is in `waarm64-room` before that; reading it there would offer the dialog offline.
+      - The dialog's check opens a checker (a publisher: a new key, "who serves?") for each press of Register (N5b), so
+        Register waits for servers to be found (a few seconds) before a free name registers. A running room's own
+        names client could ask sooner, but it would link one press to the next and to the node's own lookups.
+      - "Taken until" is a server's word, unchecked: a lying server can make a free name look taken (Register is then
+        disabled). Two servers are asked and the latest date wins; a check that showed both answers apart could say so.
+      - The details' points take a member's name or key pasted; nothing lists the room's members to choose from.
+      - The last week's notice is a message bar notice that clears itself; a name past its term in grace says so in the
+        menu only.
+    - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
+      entries a month, 1.17 to 1.52 KB each with their anchors and headers (R1; measured by N0b), and is put whole. Pruning dead branches and
+      stale entries from the item (they never count again) would keep puts small.
+    - The publisher waits up to 45 s for its answers and is made again at each publish: a page with many titles in one
+      room puts them one publisher each. One publisher a pass a room would ask "who serves?" once.
+    - The proof of work's time in Chromium (production, cloud x86_64, five entries): 3, 17, 51, 62 and 64 s (a draw, as
+      room-names.md says); the dev VM re-times it with N0's numbers.
+  - Review 2's fixes (N5a; the review was NAMES-REVIEW-2.md, in git history before its deletion), what they leave:
+    - Done (R2): finding 3 (servers finish renewals, option A).
+      Spreading one owner's renewals over visits (finding 13) waits on the same decision: it moves when renewals happen.
+      N0b measured what spreading must cover: stamps made within the same second are near-siblings in a calendar's tree
+      (under ~450 bytes of path apart, where stamps 10 s or more apart differ by 290 to 700), so a server sees which ids
+      were stamped together without guessing them; 1 to 10 s apart they partly do (291 to 641).
+    - Answers rank by their chain's age (finding 2), so a Sybil needs registrations held as long as the honest
+      servers', renewed all along: three months buys the top tier, and from there it is a lottery again. In a room
+      younger than that servers rank by age among themselves, and rounds sample young ones rarely, so more questions
+      reach the last round (everyone answers, within each server's 4 a second). A `serve` carries up to 8 entries
+      (~16 KB with anchors and headers) where it carried one: N6 measures a cold lookup with it.
+    - A server remembers 16,384 entries it verified (finding 7); an attacker with more valid entries than that (a dead
+      registry's, collected over time) can still make it check them whole. Checking an item's anchors before its
+      entries' proof of work (a dead chain fails on the cheap part) or a budget of whole checks a second for puts would
+      close it; neither is built.
+    - A question's key proves nothing (finding 12): a server answers questions naming one key 4 times a minute, so a
+      victim's node gets 4 call backs and `serve`s a minute from each server (1.3 trials a second with 20, of its 16). A
+      proof needs a round trip the asker starts, which "who serves?" can't carry.
+    - Listing the registry's ids costs nothing (finding 13; the spec's table says so now). The dialog's check asks one
+      first byte a press of Register (finding 1, as the user decided in N5b; N5a's every-id form is gone): a server
+      that hashes a dictionary can tell a guessable name from the byte, and nothing more.
+    - A sync run lasts 4 minutes at most (finding 14): a new server answers questions after its first run even when
+      that run's partner held it up, with what it got so far; the next rounds fill in the rest.
+    - A member's answer goes only into a lookup asking that server in the same mode (finding 9): a defence beside the
+      fix (no lookup being checked is asked again), with no test of its own, since the fix leaves nothing for it to
+      catch.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

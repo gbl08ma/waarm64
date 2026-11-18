@@ -145,6 +145,8 @@ const messages = new Messages(machine, () => {
   // The guest's cursor (an image, or hidden by a graphical session) goes with the machine: the host's pointer is back over its screen.
   if (screen.cursor) screen.setCursor(undefined);
 });
+// The names agent at every load (titles kept: collect, renew, publish), and the notice of names in their last week.
+void import('./areas/names.svelte.ts').then((n) => n.startPageNames((m) => messages.notify(m)));
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
 const growActions = new GrowActions(messages, store, () => machine.stored?.record.id);
 const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown(power, status), growActions);

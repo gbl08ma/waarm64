@@ -284,11 +284,11 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced, with “A key to paste” chosen: the label of the (hidden, password-like) field the key is pasted into."
   },
   "NetRoomStep.room.key.paste.note": {
-    "message": "A key copied from a room connection (Advanced, while editing it), from this computer or another. The connection's name and address in the room come from its key, so the same key gives the same ones. Don't connect with one key in two places at once.",
+    "message": "A key copied from a room connection (Advanced, while editing it), from this computer or another. The connection's name and address in the room come from its key, so the same key gives the same ones; a key copied with names after it brings those names too. Don't connect with one key in two places at once.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under “The connection's key” while “A key to paste” is chosen, in place of network.NetRoomStep.room.key.note."
   },
   "NetRoomStep.room.key.bad": {
-    "message": "That isn't a key. A key is 64 hexadecimal digits (0–9 and a–f).",
+    "message": "That isn't a key. A key is 64 hexadecimal digits (0–9 and a–f), with a connection's names after a dot when it was copied with them.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the error when Create or Join is clicked with “A key to paste” chosen and what's pasted isn't a key."
   },
   "NetRoomStep.room.exportKey": {
@@ -296,7 +296,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the label of the field (hidden by default, with Show and Copy icons in it) holding the connection's key."
   },
   "NetRoomStep.room.exportKey.note": {
-    "message": "Whoever has this key can take this connection's name and address in a room: keep it secret. To use it in another connection, perhaps on another computer, choose “A key to paste” when creating or joining a room, and don't connect both at once.",
+    "message": "Whoever has this key can take this connection's name and address in a room, and its registered names, which follow the key after a dot: keep it secret. To use it in another connection, perhaps on another computer, choose “A key to paste” when creating or joining a room, and don't connect both at once.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the text under the connection's key. “A key to paste” is network.NetRoomStep.room.key.paste."
   },
   "NetRoomStep.room.exportKey.none": {
@@ -1087,6 +1087,22 @@
     "message": "Delete the connection {{name}}? It will be detached from {{machines}}. {{what}}",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs, {{what}} what deleting it does."
   },
+  "network-actions.delete.names_one": {
+    "message": "Delete the connection {{name}}? It holds the name {{names}} in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds a registered name (docs/plans/room-names.md); its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the name it holds."
+  },
+  "network-actions.delete.names_other": {
+    "message": "Delete the connection {{name}}? It holds the names {{names}} in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds several registered names; its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the names it holds, {{count}} how many."
+  },
+  "network-actions.delete.names.on_one": {
+    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. It holds the name {{names}} in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds a registered name and machines have it attached; its field below holds the connection's export to copy. {{name}} is the connection's name, {{machines}} the machines', {{names}} the name it holds."
+  },
+  "network-actions.delete.names.on_other": {
+    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. It holds the names {{names}} in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds several registered names and machines have it attached; its field below holds the connection's export to copy. {{name}} is the connection's name, {{machines}} the machines', {{names}} the names, {{count}} how many."
+  },
   "network-actions.delete.title": {
     "message": "Delete the connection",
     "note": "Title of the question asked by a connection's Delete."
@@ -1114,5 +1130,177 @@
   "network-actions.newName.ok": {
     "message": "New name",
     "note": "The confirm button (drawn as a warning) of the question asked by a room connection's New name."
+  },
+  "NetNames.name": {
+    "message": "Name this machine…",
+    "note": "The toolbar's Network menu, a room adapter's section, once its connection is connected: the button that opens a dialog to register a name for this machine in the room (docs/plans/room-names.md), which members then reach it by."
+  },
+  "NameDialog.title": {
+    "message": "Name this machine",
+    "note": "Title of Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu)."
+  },
+  "NameDialog.name": {
+    "message": "Name",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the label of the field the name is typed in. As typed, the line under it says only what this page can tell (not a valid name, this connection's already); the room is asked when Register is pressed."
+  },
+  "NameDialog.notice.find": {
+    "message": "Members of this room who know the name can find this machine and see when it's online, and your machine helps other members look names up.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the first of its two notices, always shown, with no box to tick: what registering a name reveals, and that the machine then serves the room's names."
+  },
+  "NameDialog.notice.visit": {
+    "message": "Open this web app at least every 2 weeks to keep the name.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the second of its two notices, always shown, with no box to tick: this web app renews the name only while it is open (the kickoff's decision 13: every 2 weeks)."
+  },
+  "NameDialog.register": {
+    "message": "Register",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the main button. It first asks the room whether the name is free: free, it registers the name and closes the dialog (the adapter's section then shows the name with its state: Preparing, Reserved, Active); taken, the dialog stays open and says until when; when nobody in the room can say, the dialog says so and pressing it again registers the name."
+  },
+  "NameDialog.cancel": {
+    "message": "Cancel",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the button that closes it without registering."
+  },
+  "NameDialog.ephemeral": {
+    "message": "This connection can't hold a name: its key lasts only until this page closes, and a name lasts for weeks. To name this machine, give it a connection kept in this browser.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu), for a connection that isn't kept (an ephemeral one with a key of its own): shown in place of the field and the notices, with no Register button. A name registered on it would point at a key gone with the page, and its renewals would go on with nothing to reach."
+  },
+  "names-view.check.checking": {
+    "message": "Checking…",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name after Register is pressed, while the room is asked whether the name is free."
+  },
+  "names-view.check.invalid": {
+    "message": "Not a name that can be registered. A name is 1 to 32 lower-case letters, digits and hyphens, not starting or ending with a hyphen; some names, such as every two-letter one, are reserved.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when it breaks the rules of names (docs/plans/room-names.md \"Names\")."
+  },
+  "names-view.check.yours": {
+    "message": "This connection already holds {{name}}.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when this connection registered it already; {{name}} is the name typed."
+  },
+  "names-view.check.taken": {
+    "message": "{{name}} is taken, until about {{when, date}} unless its owner renews it.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and another owner holds it: the dialog stays open and Register is disabled until the name changes. {{name}} is the name typed, {{when}} when it lapses if not renewed."
+  },
+  "names-view.check.unknown": {
+    "message": "Nobody in the room can say whether {{name}} is free right now: no machine that serves the room's names answered. Press Register again to register it all the same.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and no server of the room's names answered: the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed."
+  },
+  "names-view.preparing": {
+    "message": "Preparing",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim is made (a proof of work, a minute or so)."
+  },
+  "names-view.reserved_one": {
+    "message": "Reserved, public in about 1 hour; it already works on this machine.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."
+  },
+  "names-view.reservedLate": {
+    "message": "Reserved, public once this web app has been open a while; it already works on this machine.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when its claim's timestamp is later than the usual couple of hours (this web app collects it only while open)."
+  },
+  "names-view.reserved_other": {
+    "message": "Reserved, public in about {{count}} hours; it already works on this machine.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."
+  },
+  "names-view.active": {
+    "message": "Active, kept until about {{when, date}} unless you visit",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state once members reach it. {{when}} is when it stops resolving if this web app isn't opened again (each visit past half of its term renews it)."
+  },
+  "names-view.grace": {
+    "message": "Not renewed in time: members don't reach it until it's renewed. It lapses about {{when, date}}.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state after its term, in the week of grace in which only its owner can renew it. {{when}} is when it lapses for good."
+  },
+  "names-view.lapsed": {
+    "message": "Lapsed: anyone can register it now.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state after its grace ran out unrenewed."
+  },
+  "names-view.released": {
+    "message": "Let go",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state after Let it go."
+  },
+  "names-view.lost": {
+    "message": "Lost: another owner's claim holds it.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when a server showed another owner's chain that owns the name now (docs/plans/room-names.md \"Who owns a name\": an older claim, or a younger one once this name had lapsed); this web app no longer renews it."
+  },
+  "names-view.line.serving_one": {
+    "message": "This machine serves the room's names: it holds 1, and synced with {{servers}} other servers lately.",
+    "note": "A room adapter's details (Details… in the toolbar's Network menu): the registry's line on a machine that holds a name. {{count}} is the names it holds, {{servers}} the servers it synced with lately."
+  },
+  "names-view.line.serving_other": {
+    "message": "This machine serves the room's names: it holds {{count}}, and synced with {{servers}} other servers lately.",
+    "note": "A room adapter's details: the registry's line on a machine that holds a name. {{count}} is the names it holds, {{servers}} the servers it synced with lately."
+  },
+  "names-view.line.member_one": {
+    "message": "Names: 1 resolved; {{servers}} servers held.",
+    "note": "A room adapter's details: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
+  },
+  "names-view.line.member_other": {
+    "message": "Names: {{count}} resolved; {{servers}} servers held.",
+    "note": "A room adapter's details: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
+  },
+  "names-view.machine.new": {
+    "message": "{{name}} (being registered)",
+    "note": "The Machines page, a machine's Network tab, an adapter's line of names (machines:AdapterCard.adapter.names): a name whose claim isn't public yet. {{name}} is the name."
+  },
+  "names-view.machine.until": {
+    "message": "{{name}} (until about {{when, date}})",
+    "note": "The Machines page, a machine's Network tab, an adapter's line of names (machines:AdapterCard.adapter.names): a name with the date it stops resolving unless this web app renews it. {{name}} is the name, {{when}} that date."
+  },
+  "NameEntry.label": {
+    "message": "Label",
+    "note": "A room adapter's details, a registered name's points: the accessible name of the field holding a label under the name (`git` in git.<name>)."
+  },
+  "NameEntry.target": {
+    "message": "Points at",
+    "note": "A room adapter's details, a registered name's points: the accessible name of the field holding the member's name in the room (or its key) the name or its label points at."
+  },
+  "NameEntry.note": {
+    "message": "Each points at a member's name in the room, this machine's or another's: paste one to point there. A label adds a name under {{name}}.",
+    "note": "A room adapter's details, under a registered name's points; {{name}} is the name."
+  },
+  "NameEntry.addLabel": {
+    "message": "Add a label",
+    "note": "A room adapter's details, a registered name: adds a row for a label under the name, pointing at this machine."
+  },
+  "NameEntry.removeLabel": {
+    "message": "Remove this label",
+    "note": "A room adapter's details, a registered name: the tooltip and accessible name of the icon that removes a label's row (Save keeps it)."
+  },
+  "NameEntry.pointHere": {
+    "message": "Point all at this machine",
+    "note": "A room adapter's details, a registered name: sets every row's target to this machine's name in the room (Save keeps it)."
+  },
+  "NameEntry.save": {
+    "message": "Save",
+    "note": "A room adapter's details, a registered name: saves where it and its labels point (a new zone, published to the room)."
+  },
+  "NameEntry.release": {
+    "message": "Let it go",
+    "note": "A room adapter's details, a registered name: the button that releases it (after asking), and the confirm button of that question (drawn as a warning)."
+  },
+  "NameEntry.release.confirm": {
+    "message": "Let {{name}} go? Members won't reach this machine by it any more, and anyone can register it once the release is public.",
+    "note": "The question asked by a registered name's Let it go; {{name}} is the name."
+  },
+  "NameEntry.badLabel": {
+    "message": "“{{label}}” isn't a label: use letters, digits and inner hyphens, 63 at most.",
+    "note": "Error shown in a room adapter's details when Save finds a label that isn't a DNS label; {{label}} is what was typed."
+  },
+  "NameEntry.badTarget": {
+    "message": "“{{target}}” isn't a member's name in the room or a key.",
+    "note": "Error shown in a room adapter's details when Save finds a target that isn't a member's name (<key>.<tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
+  },
+  "names.ephemeral": {
+    "message": "A connection that isn't kept in this browser can't hold a name",
+    "note": "Error in the message bar if a name is registered on a connection whose key goes with the page (the dialog says so first: NameDialog.ephemeral)."
+  },
+  "names.registerFailed": {
+    "message": "{{name}} couldn't be registered",
+    "note": "Error headline in the message bar when registering a name failed (its cause under it); {{name}} is the name."
+  },
+  "names.lastWeek_one": {
+    "message": "The name {{names}} is kept only until about {{when, date}}. Leave this web app open for a few hours, or open it again before then, to keep it.",
+    "note": "Notice in the message bar at load when a registered name is in its last week (it will stop resolving unless renewed and its renewal made public). {{names}} is the name, {{when}} when it stops."
+  },
+  "names.lastWeek_other": {
+    "message": "The names {{names}} are kept only until about {{when, date}}. Leave this web app open for a few hours, or open it again before then, to keep them.",
+    "note": "Notice in the message bar at load when registered names are in their last week. {{names}} are the names, {{count}} how many, {{when}} when the first stops."
   }
 }

@@ -108,6 +108,7 @@ if (COPY_EDITING) {
 i18n.services.formatter?.add('bytes', (v: unknown) => bytesText(Number(v)));
 i18n.services.formatter?.add('lines', (v: unknown) => (Array.isArray(v) ? v.join('\n') : String(v)));
 i18n.services.formatter?.add('time', (v: unknown) => (v instanceof Date ? v.toLocaleTimeString() : String(v)));
+i18n.services.formatter?.add('date', (v: unknown) => (v instanceof Date ? v.toLocaleDateString() : String(v)));
 
 /** A list's words: its items rendered and, where the message doesn't format it, joined with commas. */
 class Items extends Array<string> {

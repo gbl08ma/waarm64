@@ -1917,6 +1917,40 @@ and the guest's default way out (below).
   the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
   computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/networking/tailnet.md
   "Rooms").
+  **Names** (docs/plans/room-names.md "The names agent"): web/names.ts is the names agent (titles and the owners'
+  secret in `waarm64-room`'s `owner` and `titles`; collecting, renewing and publishing, started at every load when a
+  title is kept, hourly while open, with no machine running), web/names-worker.ts its worker (the module's `ts_names_*`
+  operations and the publishers), web/names-ops.ts what both run; a running room's worker gives the module the
+  connection's titles; a room connection's export carries its names (web/app/room-export.ts). On the page
+  (web/app/areas/names.svelte.ts, the titles read into `$state` at load, at each change the agent announces and every
+  minute; web/app/names-view.ts their words): a connected room adapter's section of the menu lists its connection's
+  names with their states (`NetNames.svelte`: [Preparing](ui:network:names-view.preparing), Reserved, public in about N
+  hours, Active, kept until about a date, in its grace, [Lapsed: anyone can register it now.](ui:network:names-view.lapsed),
+  [Let go](ui:network:names-view.released), lost) and [Name this machine…](ui:network:NetNames.name), which opens one
+  dialog (`NameDialog.svelte`, its logic `NameForm` in names-view.ts): the name's field, checked as typed by the page
+  alone, asking no server (the agent's `checkHere`: not a valid name, this connection's own); **the room's servers are
+  asked when Register is pressed** (the user's decision, 2026-11-17; the agent's `check`): every id under the name's
+  id's first byte, one byte a press, never the id, through a checker made for that press (a publisher, closed with its
+  answer), each with when its owner's hold ends. Free, the name is registered and the dialog closes; taken, the dialog
+  stays open and says until about a date; nobody in the room can say, the dialog says so and Register pressed again
+  with the same name registers it; the two notices, always shown, no boxes
+  ([Members of this room who know the name can find this machine and see when it's online, and your machine helps other
+  members look names up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to keep the
+  name.](ui:network:NameDialog.notice.visit)); no key shown or asked for; once [Register](ui:network:NameDialog.register)
+  has registered it, the name shows Preparing until its claim is made. A connection whose key is ephemeral (its own, in the
+  page's memory) can't hold a name: the dialog says so in place of the field and has no Register (the name would point
+  at a key gone with the page while its title, in IndexedDB, went on being renewed). The adapter's details add the
+  registry's line (a server's names held and the servers it synced with, or a member's names resolved and servers held:
+  the module's `names` event) and, per name (`NameEntry.svelte`), where it and each label under it point (a member's
+  name in the room, or a key, pasted), [Add a label](ui:network:NameEntry.addLabel),
+  [Point all at this machine](ui:network:NameEntry.pointHere), Save (a new zone) and
+  [Let it go](ui:network:NameEntry.release) (after asking). A stored machine's Network tab lists each room adapter's
+  names with the date each stops resolving unless renewed. At every load the agent starts when titles are kept and,
+  after its first pass, the message bar names those in their last week (web/names.ts `inLastWeek`). The wizard's
+  [The connection's key](ui:network:NetRoomStep.room.exportKey) is the connection's export (its key, then its names
+  after a dot), and a pasted one brings its names with it (web/room.ts `parseRoomExport`). Deleting a room connection
+  that holds names (its key no other connection's) asks in a question of its own that says it holds them, with the
+  export in its field to copy; deleting it forgets its owners' secret and titles.
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `waarm64-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
@@ -1966,7 +2000,9 @@ and the guest's default way out (below).
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest), tests/page-room.test.ts (two Debian guests in one Chromium, two profiles: one creates a private room in the wizard on the tests' Nostr relay and the rig's derper, the other joins by its link, and they ping each other by name; the wizard's refusals), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest), tests/page-room.test.ts (two Debian guests in one Chromium, two profiles: one creates a private room in the wizard on the tests' Nostr relay and the rig's derper, the other joins by its link, and they ping each other by name; the wizard's refusals; then Name this machine… on one, its check, Register, the
+name reached from the other with nothing done there, a label in the details, the last week's notice, the export in
+the wizard and in Delete's question), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
   control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 

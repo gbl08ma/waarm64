@@ -32,6 +32,12 @@ struct Node {
     events: Vec<Value>,
     derp_packets: usize,
     rtc_packets: usize,
+    /// The registry's records the node stored (room/names), by name id.
+    stored: BTreeMap<[u8; 32], Vec<u8>>,
+    /// WebRTC connections it asked for.
+    rtc_opens: usize,
+    /// The URLs it asked the page to fetch (a room's server's: room/names/outside.rs).
+    fetches: Vec<String>,
 }
 
 /// One end of a fake WebRTC connection.
@@ -83,6 +89,8 @@ struct Net {
     subs: Vec<Sub>,
     /// Every event published, in order.
     published: Vec<Value>,
+    /// Every event a node published, and the relay it went to.
+    published_on: Vec<(String, Value)>,
     now: Instant,
     faults: Faults,
     relayed: usize,
@@ -90,6 +98,8 @@ struct Net {
     held: Vec<(usize, u32, Vec<u8>)>,
     /// The (node, URL) pairs a DERP connection was opened for.
     opened: std::collections::BTreeSet<(usize, String)>,
+    /// Packets relayed, by (source key, destination key).
+    by_keys: BTreeMap<([u8; 32], [u8; 32]), usize>,
 }
 
 fn key(seed: u8) -> [u8; 32] {
@@ -124,6 +134,9 @@ fn config(seed: u8) -> Config {
         relay_only: false,
         incoming: true,
         unix_time: Some(T0),
+        names: None,
+        params: Params::TEST,
+        publish: false,
     }
 }
 
@@ -139,6 +152,9 @@ fn node(c: Client) -> Node {
         events: Vec::new(),
         derp_packets: 0,
         rtc_packets: 0,
+        stored: BTreeMap::new(),
+        fetches: Vec::new(),
+        rtc_opens: 0,
     }
 }
 
@@ -163,11 +179,13 @@ impl Net {
             ends: BTreeMap::new(),
             subs: Vec::new(),
             published: Vec::new(),
+            published_on: Vec::new(),
             now,
             faults,
             relayed: 0,
             held: Vec::new(),
             opened: Default::default(),
+            by_keys: BTreeMap::new(),
         };
         n.run();
         n
@@ -242,6 +260,7 @@ impl Net {
                 .retain(|s| !(s.node == i && s.conn == conn && s.id == m[1])),
             "EVENT" => {
                 let e = m[1].clone();
+                self.published_on.push((url.clone(), e.clone()));
                 let ok = json!(["OK", e["id"], true, ""]).to_string();
                 let now = self.now;
                 self.nodes[i].c.ws_message(conn, ok.as_bytes(), now);
@@ -342,7 +361,13 @@ impl Net {
                 for r in replies {
                     self.nodes[i].c.ws_message(conn, &r, now);
                 }
-                let src = self.nodes[i].c.public;
+                // The key that connection's client said it is (the node's, or its names client's).
+                let src = match self.nodes[i].conns.get(&conn) {
+                    Some(Conn::Derp { server, .. }) => {
+                        server.client.unwrap_or(self.nodes[i].c.public)
+                    }
+                    _ => self.nodes[i].c.public,
+                };
                 for (dst, p) in sent {
                     self.relayed += 1;
                     if self.faults.drop_next_from == Some(i) {
@@ -358,24 +383,21 @@ impl Net {
                     {
                         continue;
                     }
-                    // The node of that key, on this region.
+                    // The client of that key, on this region.
                     let Some((j, c)) = self.nodes.iter().enumerate().find_map(|(j, n)| {
-                        (n.c.public == dst)
-                            .then(|| {
-                                n.conns.iter().find_map(|(c, x)| match x {
-                                    Conn::Derp { url: u, server }
-                                        if *u == url && server.client.is_some() =>
-                                    {
-                                        Some((j, *c))
-                                    }
-                                    _ => None,
-                                })
-                            })
-                            .flatten()
+                        n.conns.iter().find_map(|(c, x)| match x {
+                            Conn::Derp { url: u, server }
+                                if *u == url && server.client == Some(dst) =>
+                            {
+                                Some((j, *c))
+                            }
+                            _ => None,
+                        })
                     }) else {
                         continue;
                     };
                     self.nodes[i].derp_packets += 1;
+                    *self.by_keys.entry((src, dst)).or_default() += 1;
                     let Some(Conn::Derp { server, .. }) = self.nodes[j].conns.get(&c) else {
                         unreachable!()
                     };
@@ -389,7 +411,22 @@ impl Net {
             }
             Action::ToGuest(p) => self.nodes[i].guest.push(p),
             Action::Event(e) => self.nodes[i].events.push(serde_json::from_str(&e).unwrap()),
+            // Nothing answers a server's fetches here (room/tests/names.rs counts them): no answer, as a page with
+            // the services down would say.
+            Action::NamesFetch { id, url } => {
+                self.nodes[i].fetches.push(url);
+                self.nodes[i].c.names_fetched(id, 0, &[], now);
+            }
+            Action::NamesStore { id, record } => match record {
+                Some(r) => {
+                    self.nodes[i].stored.insert(id, r);
+                }
+                None => {
+                    self.nodes[i].stored.remove(&id);
+                }
+            },
             Action::RtcOpen { rtc, offer } => {
+                self.nodes[i].rtc_opens += 1;
                 self.ends.insert((i, rtc), End::default());
                 if offer && !self.faults.block_rtc {
                     self.signal(i, rtc, json!({ "type": "offer", "pc": [i, rtc] }));
@@ -2424,3 +2461,5 @@ fn closing_while_probing_leaves_nothing_open_or_scheduled() {
     n.release(); // late answers: nothing opens
     assert_eq!(n.regions(0), Vec::<String>::new());
 }
+
+mod names;

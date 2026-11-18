@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // The names agent in the page (web/names.ts; tests/names-browser.test.ts): its worker (web/names-worker.ts) on the
+  // module the test routes in ts.wasm's place, its titles in IndexedDB `waarm64-room`, one Web Lock a title, the
+  // compiled calendars and explorers (routed by the test to the pretend ones), a connection's export and import.
+  import { exportNames, idbNamesStore, importNames, NamesAgent, workerBackend } from '../../web/names.ts';
+  const params = new URLSearchParams(location.search);
+  const conn = { identityKey: params.get('conn') ?? 'conn', link: params.get('link') ?? 'waarm64-room:x' };
+  const agent = new NamesAgent({ store: idbNamesStore(), backend: workerBackend(), retryMs: 0 });
+  const log = [];
+  window.harness = {
+    async register(name) {
+      const t0 = performance.now();
+      const v = await agent.register(conn, name, [{ label: null, key: 'ab'.repeat(32) }]);
+      return { view: v, ms: performance.now() - t0 };
+    },
+    async pass() { await agent.pass(conn.identityKey); },
+    titles: () => agent.titles(conn.identityKey),
+    stored: () => idbNamesStore().titles(conn.identityKey),
+    secret: () => idbNamesStore().secret(conn.identityKey),
+    exportNames: () => exportNames(idbNamesStore(), conn.identityKey),
+    importNames: (b) => importNames(idbNamesStore(), conn.identityKey, b),
+    persisted: () => navigator.storage.persisted(),
+  };
+</script>

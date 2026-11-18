@@ -37,6 +37,58 @@ pub fn authentic(room: &Room, tag: &str, b: &[u8]) -> bool {
     b.len() == SIZE && b[SIZE - 16..] == mac(room, tag, &b[..SIZE - 16])
 }
 
+/// Whether `b`, of `len` bytes (a lookup's or a names question's), is a member's under `tag`.
+pub fn authentic_len(room: &Room, tag: &str, b: &[u8], len: usize) -> bool {
+    b.len() == len && b[len - 16..] == mac(room, tag, &b[..len - 16])
+}
+
+/// `plain` sealed as a lookup to a bare address is, with the room's lookup key (any member reads
+/// it): 32 random bytes (the first 12 the AEAD's nonce), the ciphertext, the room's MAC. The names
+/// question ("who serves the registry?", names/wire.rs) is sealed so.
+pub fn seal_bare(room: &Room, tag: &str, plain: &[u8]) -> Vec<u8> {
+    let mut rnd = [0u8; 32];
+    getrandom::fill(&mut rnd).expect("randomness");
+    let ct = ChaCha20Poly1305::new(&room.lookup.into())
+        .encrypt(
+            Nonce::from_slice(&rnd[..12]),
+            Payload {
+                msg: plain,
+                aad: tag.as_bytes(),
+            },
+        )
+        .unwrap();
+    let mut b = [&rnd[..], &ct].concat();
+    let m = mac(room, tag, &b);
+    b.extend_from_slice(&m);
+    b
+}
+
+/// [`seal_bare`] opened: its plaintext, if `b` is `len` bytes, its MAC holds and it opens.
+pub fn open_bare(room: &Room, tag: &str, b: &[u8], len: usize) -> Option<Vec<u8>> {
+    if !authentic_len(room, tag, b, len) {
+        return None;
+    }
+    let (head, ct) = b[..len - 16].split_at(32);
+    ChaCha20Poly1305::new(&room.lookup.into())
+        .decrypt(
+            Nonce::from_slice(&head[..12]),
+            Payload {
+                msg: ct,
+                aad: tag.as_bytes(),
+            },
+        )
+        .ok()
+}
+
+/// [`seal_bare`] of a plaintext of any length up to `max` sealed bytes (a names reply's): its plaintext, if its MAC holds
+/// and it opens.
+pub fn open_bare_var(room: &Room, tag: &str, b: &[u8], max: usize) -> Option<Vec<u8>> {
+    if b.len() < 32 + 16 + 16 || b.len() > max {
+        return None;
+    }
+    open_bare(room, tag, b, b.len())
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lookup {
     pub key: [u8; 32],
@@ -48,6 +100,33 @@ pub struct Lookup {
 
 impl Room {
     /// A node's tag for `hour` (Unix hours): what its subscription filters on.
+    /// The room's names tag for `hour`: what servers' names clients subscribe to and askers
+    /// publish "who serves the registry?" under (room-names.md "Finding a server").
+    pub fn names_tag(&self, hour: u64) -> String {
+        let mut h = Blake2s256::new();
+        h.update(self.salt);
+        h.update(b"names");
+        h.update(hour.to_be_bytes());
+        h.finalize()[..16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// A member's names client's reply tag for `hour`: what it subscribes to, and servers publish their replies to its
+    /// asks under (room-names-r3.md).
+    pub fn reply_tag(&self, key: &[u8; 32], hour: u64) -> String {
+        let mut h = Blake2s256::new();
+        h.update(self.salt);
+        h.update(b"names-reply");
+        h.update(key);
+        h.update(hour.to_be_bytes());
+        h.finalize()[..16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
     pub fn tag_for(&self, addr: &[u8; 16], hour: u64) -> String {
         let mut h = Blake2s256::new();
         h.update(self.salt);

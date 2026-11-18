@@ -1646,5 +1646,13 @@
   "StorageDetails.item": {
     "message": "{{what}}: {{size, bytes}}",
     "note": "Machines page: Storage in this browser (StorageDetails.title). An item of What uses the space (StorageDetails.items). {{what}}: what (a machines.storage.* message); {{size}}: its bytes."
+  },
+  "AdapterCard.adapter.names_one": {
+    "message": "Name in the room: {{names}}",
+    "note": "The Machines page, a machine's Network tab, an adapter whose room connection holds a registered name: its line of names. {{names}} is the name with its date (network:names-view.machine.until)."
+  },
+  "AdapterCard.adapter.names_other": {
+    "message": "Names in the room: {{names}}",
+    "note": "The Machines page, a machine's Network tab, an adapter whose room connection holds registered names: its line of names. {{names}} are the names, each with its date (network:names-view.machine.until), {{count}} how many."
   }
 }

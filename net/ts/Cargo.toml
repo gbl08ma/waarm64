@@ -9,6 +9,12 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# The tests' pretend Bitcoin (room/names: easy headers, cheap proof of work) compiled in as the parameters the module runs
+# on, for the page tests' build (`net/ts/build.sh --test-params`: target/net/ts-test.wasm) and the title tool
+# (examples/names-title.rs). Never the shipped module's: without it, the module has no other parameters than production's.
+test-params = []
+
 [dependencies]
 # tailscale-rs's sans-I/O protocol crates (BSD-3-Clause): WireGuard, keys, packets.
 ts_tunnel = "0.6.1"
@@ -41,6 +47,8 @@ ts_disco_protocol = "0.6.1"
 # Rooms (docs/networking/rooms.md): BIP-340 signatures on secp256k1 for Nostr events, and their SHA-256 ids.
 k256 = { version = "0.13", default-features = false, features = ["schnorr", "alloc"] }
 sha2 = { version = "0.10", default-features = false }
+# Room names (docs/plans/room-names.md "Records"): an entry's proof of work, Argon2id (OK'd 2026-11-15 for N0's pick).
+argon2 = { version = "0.5", default-features = false }
 
 # The room key miner (examples/room-key-mine.rs, docs/networking/rooms.md): native only, never in the wasm module.
 [dev-dependencies]
@@ -50,3 +58,8 @@ regex = "1"
 [[example]]
 name = "room-key-mine"
 test = true
+
+# Titles for the page tests (tests/page-room.test.ts), on the tests' pretend Bitcoin, until the names agent makes them.
+[[example]]
+name = "names-title"
+required-features = ["test-params"]

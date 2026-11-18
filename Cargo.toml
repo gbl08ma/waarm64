@@ -11,3 +11,16 @@ panic = "abort"
 debug = "line-tables-only"
 codegen-units = 1
 lto = true
+
+# The room names' tests (net/ts) check signatures, proof of work and hashes by the thousand over simulated weeks:
+# unoptimized, BIP-340's curve and Argon2 take ~10 ms a check and those tests minutes. Optimized in test builds too.
+[profile.dev.package.k256]
+opt-level = 3
+[profile.dev.package.elliptic-curve]
+opt-level = 3
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3

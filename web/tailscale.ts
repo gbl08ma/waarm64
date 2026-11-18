@@ -36,7 +36,14 @@ export type NetMap = {
    * `directBlocked`: this browser makes no direct paths (web/room.ts `RoomEvent`), so every member goes through the relay;
    * `directFailed`: how many members reached through the relay have a failed attempt behind them (gathering worked here:
    * something between the two is in the way); `peersBlocked`: how many said their browser makes none. */
-  room?: { name: string; link: string; incoming: boolean; relayOnly: boolean; directBlocked?: boolean; directFailed?: number; peersBlocked?: number };
+  room?: {
+    name: string; link: string; incoming: boolean; relayOnly: boolean; directBlocked?: boolean; directFailed?: number; peersBlocked?: number;
+    /** The node key (64 hex digits): where a name registered on this machine points. */
+    key?: string;
+    /** The registry's line (room-names.md "What the user sees"): a server's names held and servers synced with
+     * (`serving`), or a member's names resolved and servers held. */
+    names?: { serving: boolean; names: number; servers: number };
+  };
 };
 
 export type TailscaleConfig = {

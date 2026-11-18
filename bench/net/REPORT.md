@@ -537,3 +537,306 @@ at 32 packets of 1,232 bytes in flight.
   answer a probe (docs/networking/rooms.md "DERP"). Two members on such a link from this machine: 99 ms RTT (Frankfurt), up in
   1.2 s.
 
+
+## NAMES loop 0, cloud part (N0a, 2026-11-16)
+
+The NAMES track's measurements (docs/plans/room-names.md "Measure first", items 1 to 4; items 5 and 6 and a GPU of our
+own are the dev VM's). **A cloud session** (x86_64 Firecracker, 4 vCPUs, Intel Xeon @ 2.30 GHz, shared; Node
+26.13.1, Playwright's Chromium 153.0.8010.12 headless, the pinned nightly): **its times are cloud figures, provisional
+until a dev VM run**; they are good for ratios and for choices a 20% error can't move. JSON under
+`results/names0/`: `stamps.json` (the batch), `history.json` (time to anchor), `pow-verify.json` (proof of work and
+verification), `requests.json` (what was asked of each public service).
+
+### A batch of real stamps (for N0b)
+
+`bench/net/ots-stamps.ts stamp` POSTed random 32-byte digests (not names) to `alice`, `bob` (opentimestamps.org) and
+`finney` (eternitywall.com), with a generic User-Agent: **80 digests, 2026-11-16 19:11 to 21:04 UTC**, every one at all three (240
+receipts, none refused). Made together: seven bursts of 8 POSTed at once (19:11:11 and 19:11:32, then 19:33, 19:55,
+20:17, 20:39, 21:01), which a calendar aggregates into one tree; apart: 23 single digests every 5 minutes between
+them, and one test digest (19:11:01), so the batch spans one or two transactions at `finney` and several at `alice` and
+`bob`, where stamps share the tail from the calendar's tip. Every receipt is in `stamps.json` with its
+commitment (the message the calendar timestamps) and the time it was made; a receipt came in a median of 1.1 s at alice, 2.3 s at bob, 1.4 s at finney (3.0 s at worst).
+**Collecting** (N0b, any session, from the committed files alone): `NODE_USE_ENV_PROXY=1 node bench/net/ots-stamps.ts
+collect` (once a run per unfinished receipt; reruns ask only for what is still pending), then `node
+bench/net/ots-stamps.ts sizes` for the anchors' sizes, raw and with what proofs in one block share (the calendar's
+tail; the header once). The proofs and their headers (from both explorers, which must agree, and checked against the
+proofs' Merkle roots) go to `results/names0/proofs.json`; one of them, with its header, is N1's vector. **Collect from 2026-11-18 on** (finney's slowest is about a day); the calendars keep proofs for years.
+
+**A first look** (21:04, the 17 digests made before 19:12): all finished at alice (block 976,177, 19:25 UTC) and at bob
+(976,178, 19:38), pending at finney. Each was in its calendar's first transaction mined after the stamp (the status
+pages show no alice or bob transaction in the blocks between): the **next** reading of the model below, 14 and 27
+minutes to the block. Their anchors were 1,068 to 1,208 bytes whole (digest to Merkle root), as the stamp of
+2026-11-15 had it.
+
+### Time to anchor (`bench/net/ots-history.ts`)
+
+**The calendars' addresses.** Each calendar's status page names a donation address and lists its latest transactions
+(alice: `bc1qep2un4…`, bob `bc1q83zmv…`, finney `bc1q9gmuj…`). Those transactions (one input, the change back and an
+`OP_RETURN` with the Merkle tip) showed that **a calendar pays from a new change address every time, and from several
+coins in turn**: each transaction spends the change of an earlier one on the same coin (alice's every other
+transaction, bob's about one in five). So no address lists a calendar's history, and **a year can't be read within a
+few hundred requests**: it is one request a transaction (alice alone ~16,000 a year). What was read instead:
+
+- **The complete record of the last days**, from the status pages (every transaction with its confirmations, so its
+  height): alice 143 transactions over 457 blocks (2026-11-13 to 16), bob 105 over 462, finney 103 over 4,052 (from
+  2026-10-19). Fee rates 0.12 to 3.4 sat/vB.
+- **A year's samples**: windows of consecutive transactions **on one coin** (so an upper bound on the calendar's
+  waits, its other coins' transactions falling between), walked forward through the explorers' `outspends` from the
+  transactions that spent gifts to the donation address (the address's history lists them, at whatever dates people
+  gave): alice 9 windows of 24 (dates from 2025-12-10 to 2026-11-16), bob 7 of 18, finney 4 of up to 8 (it spent
+  gifts on few dates).
+- **A year of block times and fees**: mempool.space's fee-rate series (an average every 48 blocks), which also gives a
+  height's time. No day of the year had blocks whose 10th-percentile fee rate passed 5 sat/vB (2026-02-05), so no
+  long stall the samples could have missed was likely.
+
+The model: a stamp at a uniform time goes into the calendar's first transaction mined after it (**next**; the
+calendar replaces its unconfirmed transaction with one carrying the newer tip), or, slowly, the one after (**second**);
+the proof is served once that block is 6 deep (five more blocks, drawn as exponential intervals at the time's mean).
+The first proofs of the batch fit **next**; N0b checks it over all of them. Hours, stamp to proof:
+
+| | median | p90 | p99 | worst |
+|---|---|---|---|---|
+| alice, last 3 days (complete) | 1.04 | 1.82 | 2.75 | 4.1 |
+| bob, last 3 days | 1.11 | 2.10 | 3.58 | 4.7 |
+| finney, last 4 weeks | 4.24 | 7.52 | 9.71 | 12.2 |
+| **the first of the three**, last 3 days | **0.86** | **1.52** | **2.39** | **3.1** |
+| alice, year samples (one coin), next / second | 1.26 / 1.94 | 2.30 / 3.41 | 3.59 / 5.55 | 6.2 / 7.2 |
+| bob, year samples | 2.48 / 5.83 | 6.32 / 11.9 | 10.8 / 17.8 | 14.0 / 21.8 |
+| finney, year samples | 4.87 / 13.5 | 9.07 / 19.5 | 12.5 / 24.1 | 14.2 / 26.4 |
+| the first of the three, year samples (taken as independent) | 1.11 / 1.87 | 1.93 / 3.21 | 2.90 / 5.11 | 4.8 / 7.0 |
+
+Gaps between transactions on one coin, year samples: alice median 3 blocks (worst 13), bob 9 (49), finney 49 (74);
+in the complete record: alice 3 (8), bob 4 (11), finney 40 (65). It agrees with the one stamp of 2026-11-15
+(anchored at alice and bob between 1.3 and 2.8 hours).
+
+**`REF_WINDOW`** bounds the time from `ref`'s block (6 deep when the entry is made: ~1.0 hour old, p99 2.3) to the
+anchor's block. With all three calendars up it is a few hours (the first of the three: p99 ~3, worst ~5). The slowest
+case is finney alone (alice and bob are one operator): 27 hours at worst through the year's samples under the
+"second" reading (~16 under "next", which the first proofs fit), plus up to 2 hours that a block's time may run
+ahead. **Set to 48 hours** (provisional until N0b
+checks the model): that with half again to spare for days the samples missed; two days ahead is no difference against
+a 30-day term. The dialog's **"about 2 hours"** stands (90% of stamps within 1.5 to 1.9 hours at the first calendar).
+
+### Proof of work and verification (a scratch crate, native and wasm)
+
+A scratch crate under `bench/results/local/` (outside the workspace, not committed): `blake2` 0.10.6, `sha2` 0.10.9,
+`k256` 0.13.4 as net/ts's Cargo.lock has them, and `argon2` 0.5.3 (only there); built as net/ts/build.sh builds
+(`wasm32-wasip1`, release with LTO, one codegen unit, opt-level 3, `panic = "abort"`), timed natively and in
+Chromium's wasm (and Node's, which agreed within ~10%). µs per operation, median of 7:
+
+| | native | Chromium wasm | tries a minute in a tab | 60,000 entries checked in wasm |
+|---|---|---|---|---|
+| BLAKE2s, a 143-byte entry (3 compressions) | 0.32 | 0.35 | 1.7·10⁸ (2²⁷·⁴; 2²⁸·⁹ with the first two blocks precomputed) | 0.02 s |
+| Argon2id 8 KiB, t = 1 | 12.4 | 19.1 | 3.1·10⁶ | 1.1 s |
+| Argon2id 64 KiB, t = 1 | 29.0 | 46.1 | 1.3·10⁶ | 2.8 s |
+| Argon2id 64 KiB, t = 3 | 67.9 | 105 | 5.7·10⁵ | 6.3 s |
+| Argon2id 256 KiB, t = 1 | 84.1 | 159 | 3.8·10⁵ | 9.6 s |
+| **Argon2id 1 MiB, t = 1** | **309** | **488** | **1.2·10⁵ (2¹⁶·⁹)** | **29 s** |
+| Argon2id 4 MiB, t = 1 | 1,339 | 2,050 | 2.9·10⁴ | 123 s |
+| Argon2id 16 MiB, t = 1 | 6,270 | 8,800 | 6.8·10³ | 528 s |
+
+**A GPU's side: published figures and estimates, not measured.** hashcat's RTX 5090 benchmark (Chick3nman's gist,
+hashcat v6.2.6-851, `-O`) gives BLAKE2s-256 (mode 31000) **33.6 GH/s** (one compression: an attacker precomputes an
+entry's first two blocks, as a tab could), against a tab's ~8.6 M/s: a lead of **~3,900x**. No published Argon2
+figure at these sizes was found (hashcat's mode 34000 benchmarks run large parameters; a vendor's 8x RTX 5090 rig at
+490 H/s doesn't say its parameters), so for Argon2id it is an *estimate* from the card's memory bandwidth (1.79 TB/s;
+~3 KiB of traffic per 1 KiB block a pass): **~570,000/s at 1 MiB, ~280x a tab**, and the same ratio at 4 MiB. That is
+an upper bound on the card: the same gist's scrypt (N = 16,384, 16 MiB) runs at 7,760 H/s, ~7x under the same
+bound. At 64 to 256 KiB an instance fits in the card's on-chip memory and the bound is compute (BLAKE2b at 17.3 GH/s
+on the card, ~2 BLAKE2b compressions per Argon2 block), a lead in the thousands, like BLAKE2s.
+
+| A million names, two entries each a term, at a minute of a tab per entry | GPU time a term (RTX 5090) | a server checking 60,000 entries |
+|---|---|---|
+| BLAKE2s, 29 bits | ~9 hours | 0.02 s |
+| Argon2id 1 MiB, 16 bits | **≥ ~64 hours** (*estimate*; scrypt's ratio suggests ~5x more) | ~29 s |
+| Argon2id 4 MiB, 14 bits | ≥ ~64 hours | ~2 minutes |
+
+**Chosen: Argon2id, 1 MiB, t = 1, p = 1, `POW_BITS` 16** (provisional: the dev VM re-times the tab; the bits move by
+one if its tab is twice as fast). The knee: past 1 MiB the card is bandwidth-bound and the ratio stops improving while
+the check grows; under it the card's chips hold an instance. Neither function makes a dictionary expensive (tens of
+GPU-hours, a few hundred euros at rental rates at most), which is what the spec claims of it (a price every term), not
+more. **The draw** (hashcash): at 2,050 tries a second in Chromium a mean of 32 s; half within 22 s, 90% within 74 s,
+99% within 2.5 minutes.
+
+**Verification in Chromium's wasm** (Node's agreed within ~3%): BIP-340 (`k256` `verify_raw`) **151 µs**; an anchor's
+operations (46 SHA-256s over ~1.2 KB: a calendar tree of 20 levels, the transaction, a block's path of 12, double
+SHA-256) **15.2 µs** (a SHA-256 of 64 bytes 0.36 µs; natively 0.10, SHA extensions); an 80-byte header's double
+SHA-256 and target **0.53 µs**. A whole entry with Argon2id: **~0.66 ms**, so a 4 ms slice of a module's turn checks
+~6 entries, a 1,000-name registry's 10,000 entries ~6.6 s and a 5,000-name one's 60,000 ~40 s of one core; a member's
+lookup (the last entry only) under a millisecond.
+
+### Requests to public services
+
+All with a generic User-Agent, nothing about the user or the project; counts in `results/names0/requests.json`.
+
+| Service | Requests | What |
+|---|---|---|
+| alice.btc.calendar.opentimestamps.org | 100 | 80 stamps, 17 proofs, 3 status pages |
+| bob.btc.calendar.opentimestamps.org | 100 | the same |
+| finney.calendar.eternitywall.com | 99 | 80 stamps, 17 proofs, 2 status pages |
+| blockstream.info | 210 | transactions, outspends, address histories, block hashes and headers |
+| mempool.space | 208 | the same, and the fee-rate series |
+
+N0b's collection adds ~70 GETs at each calendar and a few at each explorer (a block hash from both, a header from one,
+per block).
+
+### Reproduce
+```sh
+export NODE_USE_ENV_PROXY=1                            # a session behind a proxy (docs/cloud.md)
+node bench/net/ots-stamps.ts stamp --minutes 115 --burst-every 22    # the batch (~2 hours; ~80 POSTs a calendar)
+node bench/net/ots-stamps.ts collect                   # N0b: hours later, until nothing is pending; then `sizes`
+node bench/net/ots-history.ts fetch                    # the pages, the fee series, ~400 requests over both explorers; cached under bench/results/local/names0/
+node bench/net/ots-history.ts model                    # -> results/names0/history.json
+```
+The proof-of-work crate isn't committed (it names `argon2`, which enters the project only in the loop that builds the
+function): its kernels are the table's rows over a 143-byte entry with the nonce last, timed in a loop natively and
+from JavaScript around the wasm (`performance.now`), the wasm instantiated with stub WASI imports.
+
+## NAMES loop 0b (cloud), 2026-11-17
+
+N0a's batch collected, and what it says now that R1 has removed `ref` and `REF_WINDOW` (an anchor is its
+OpenTimestamps proof and its block's one 80-byte header). A cloud session (as N0a's); nothing here is a time
+measured on the host. JSON under `results/names0/`: `proofs.json` (every proof and its block's header, both
+explorers agreeing on the hash, checked against the Merkle roots), `anchors.json` (sizes, times, the calendars'
+transactions, the blocks' times, each stamp's row), `history-lead.json` (N0a's model again with the correction
+below), `requests.json`.
+
+### Collected
+
+`NODE_USE_ENV_PROXY=1 node bench/net/ots-stamps.ts collect` once, 2026-11-17 14:45 UTC (17.7 hours after the last
+stamp): **all 240 receipts finished, none pending**. They are in eight calendar transactions over six blocks:
+
+| Calendar | Block (time, UTC 2026-11-16) | Anchors | Stamp groups in it |
+|---|---|---|---|
+| alice | 976,177 (19:25:21) | 19 | test, burst-pre, burst0, two singles |
+| bob | 976,178 (19:38:05) | 20 | the same and a third single |
+| alice | 976,183 (20:47:59) | 39 | bursts 1 to 3, 15 singles |
+| alice | 976,185 (21:03:49) | 12 | burst 4, 4 singles |
+| bob | 976,185 | 50 | bursts 1 to 4, 18 singles |
+| alice | 976,187 (21:25:57) | 10 | burst 5, 2 singles |
+| bob | 976,193 (22:33:07) | 10 | burst 5, 2 singles |
+| finney | 976,193 | 80 | all of them: one transaction for the whole batch |
+
+Then `node bench/net/ots-stamps.ts anchors` (new) set each proof against its calendar's status page of the moment
+(every transaction of the last days with its confirmations, so its height; each proof's transaction, found as the
+double SHA-256 over the first message longer than 64 bytes, is on it at the proof's height) and the blocks' times
+(blockstream.info's block lists, checked against the six headers' own times).
+
+### Anchor sizes
+
+An anchor as the module encodes it (anchor.rs `Anchor::encode`: the operations from the 32-byte entry id to the Merkle
+root, then the attestation and the height, 13 bytes):
+
+| | min | median | p90 | max | mean |
+|---|---|---|---|---|---|
+| all 240 | **905** | **1,185** | 1,245 | **1,256** | 1,169 |
+| alice | 905 | 1,151 | 1,221 | 1,256 | 1,144 |
+| bob | 1,045 | 1,150 | 1,221 | 1,256 | 1,156 |
+| finney | 1,105 | 1,210 | 1,245 | 1,245 | 1,207 |
+
+The spec's estimate of "300 to 1,250" assumed sharing; the raw range is narrow and close to its top: about 20
+levels of the calendar's tree (35 bytes each), the transaction (~235 bytes), a block's path of ~12 levels.
+
+**Shared, if anchors through one calendar transaction were stored as one tree** (each operation once for all the
+anchors whose paths run through it; nothing built does this): 234 to 325 bytes an anchor over the batch's eight
+transactions (raw 1,054 to 1,218), because 10 to 80 of them share each transaction. What decides it is what a second
+anchor in the same transaction adds of its own: **made apart (another moment), 304 to 713 bytes, median 619**; made in
+the same second (one burst), 58 to 444, median 128. By the time apart, at alice: under a second 45 to 291 (median
+115), 10 to 60 s 291 to 606 (396), 1 to 10 minutes 361 to 641 (501), over 10 minutes 396 to 676 (606); bob and
+finney alike. **Headers**: one 80-byte header a block, six for the 240 anchors.
+
+### Time to anchor, against the real stamps
+
+**The 6-deep wait holds.** Both status pages read (N0a's at height 976,175, this loop's at 976,285) count as
+"Transactions waiting for confirmation" exactly the calendar's mined transactions with fewer than 6 confirmations
+(alice 2 and 4 then, 3 now; bob 2 then, 2 now) and not the one with 6: a proof is served from the sixth confirmation,
+the anchor's block and five more. N0a's first look fits: alice's 976,177 and bob's 976,178 were 6 deep at 20:35 and
+20:48, and both were served at 21:04. Block to sixth confirmation in the batch: alice 1.05 to 1.17 hours, bob 1.08 to
+1.56, finney 1.56 (blocks were slow that evening: 976,177 to 976,183 took 83 minutes).
+
+**Next or later transaction.** finney: all 80 in its next transaction (its first after the batch, 3.4 hours after
+the first stamp). alice: 60 of 80 in the next; bob 61 of 80. **Every one of the 39 that missed was made 1.4 to 9.1
+minutes before the block that mined the transaction it missed**; every stamp made 9.8 minutes or more before such a
+block made it, and one made 6.4 minutes before (alice, 976,177). So neither of N0a's readings: the transaction a block
+mines carries the calendar's tip of some minutes before it, and a stamp in those minutes waits for the calendar's
+transaction after. None waited two.
+
+**N0a's model with that correction** (`ots-history.ts model --lead 600`: a stamp misses a calendar transaction mined
+less than 10 minutes after it), hours from stamp to proof:
+
+| | median | p90 | p99 | worst |
+|---|---|---|---|---|
+| alice, last 3 days (complete) | 1.19 (N0a 1.04) | 2.00 (1.82) | 2.91 (2.75) | 3.9 (4.1) |
+| bob, last 3 days | 1.28 (1.11) | 2.23 (2.10) | 3.77 (3.58) | 4.8 (4.7) |
+| finney, last 4 weeks | 4.39 (4.24) | 7.69 (7.52) | 9.84 (9.71) | 12.9 (12.2) |
+| **the first of the three**, last 3 days | **1.03** (0.86) | **1.69** (1.52) | **2.53** (2.39) | **3.2** (3.1) |
+| the first of the three, year samples | 1.28 (1.11) | 2.10 (1.93) | 3.08 (2.90) | 5.3 (4.8) |
+| finney, year samples | 5.03 (4.87) | 9.21 (9.07) | 12.65 (12.49) | 15.0 (14.2) |
+
+**The batch itself** (stamp to the sixth confirmation of its block; one evening, four transactions at alice, so one
+draw rather than a distribution):
+
+| | min | median | p90 | max |
+|---|---|---|---|---|
+| alice | 1.24 | 1.48 | 2.31 | 2.47 |
+| bob | 1.24 | 1.85 | 3.08 | 3.13 |
+| finney | 3.04 | 4.18 | 4.92 | 4.93 |
+| **the first of the three** (alice for 78, bob for 2) | **1.24** | **1.48** | **2.31** | **2.39** |
+
+Inside the model's spread (the first of the three's p90 1.7 to 2.1 hours, its p99 2.5 to 3.1); higher in the median
+for the slow blocks and alice's six-block gap at 976,177 to 976,183.
+
+**What it bears on now that `REF_WINDOW` is gone.**
+- *The dialog's "public in about 2 hours"* (`PUBLIC_IN_MS`): the proof itself is there in about 1 to 1.5 hours,
+  90% within 1.7 to 2.3. But the agent, page open, asks 5 minutes after stamping and then waits 5 minutes doubling to
+  an hour (`RETRY_MS`, `PASS_MS`): it asks at 5, 10, 20, 40, 80, 140, 200 minutes. A proof that comes at 81 to 140
+  minutes is collected at 140 (2.33 hours), past the two hours the dialog counts down, and the line turns to "public
+  once this web app has been open a while" with the page open. In the batch that was **76 of 80** (collected at 1.33
+  hours for 4, 2.33 for 75, 3.33 for 1); by the corrected model fewer than half (the first of the three's median,
+  1.03 hours, is inside 80 minutes; its p90, 1.69, isn't). docs/backlog.md has it: asks spaced around the expected proof (a
+  first at an hour, then every 10 to 15 minutes to 3 hours) would make "about 2 hours" true.
+- *Servers finishing renewals* (R2: from 30 minutes after a server first holds the renewal, then a 15-minute slot):
+  the earliest proof in the batch came 1.24 hours after its stamp and the 6-deep rule held, so the first 3 to 4 slots
+  ask in vain (404s, a few a renewal a room) and the room has the anchor within a slot or two of its sixth
+  confirmation. The pending anchor servers finish is the lowest, alice's when alice stamped (`Calendar`'s order), which
+  was the first of the three for 78 of the 80.
+- *The pending anchor's staleness and renewals made ahead*: a renewal is stamped 15 to 29 days after the entry before
+  it and can link until 37 days after it; the slowest anchor anywhere here (finney alone, a year's samples, missing a
+  transaction) is about a day. Nothing in either rule depends on these hours.
+
+### Sizes for the spec
+
+A name's item (wire.rs, version 4) carries per entry 175 bytes, the anchor with its 2-byte length, a 2-byte header
+index and a 2-byte pending length, and its block's header once an item: a name's entries are two weeks apart, so in
+practice one header each. **1,166 to 1,517 bytes an entry, median 1,446**; two a month **2.3 to 3.0 KB a name a month
+(2.9 typical)**, where the spec said 1.1 to 3.0 from the estimated 300-byte low end. Six months held and its zone
+(~0.4 KB): 14 to 19 KB a name, so 14 to 19 MB at 1,000 names, 72 to 93 MB at 5,000, 290 to 370 MB at 20,000; the
+spec's "where it stops" holds (the table there is replaced). Storing a registry's anchors by calendar transaction (not
+built) would save in proportion to the entries a transaction carries: about 2 entries a name a month, so a room of
+N names stamps N/360 entries an hour and alice's transaction (every ~1.2 hours) carries ~N/300: at 1,000 names ~3
+(an anchor ~790 bytes on average, an entry ~1.0 KB, about 30% less), at 5,000 ~17 (~650, an entry ~0.84 KB, about
+40% less), headers shared across names included. A constant factor: it doesn't move where a registry stops.
+
+**Stamps made in the same second are near-siblings in the calendar's tree** (under ~450 bytes apart, where stamps 10
+seconds or more apart differ by 290 to 700), so a server that holds two names' anchors can tell whether they were
+stamped within the same second or so: a finer grouping than "one block" (room-names.md "What a server still
+learns"). The agent stamps a visit's due renewals one title after another, seconds apart (the 1 to 10 s pairs here
+were 291 to 641); docs/backlog.md's "spreading one owner's renewals" covers both.
+
+### Requests to public services
+
+| Service | collect | anchors | N0b | N0a and N0b |
+|---|---|---|---|---|
+| alice.btc.calendar.opentimestamps.org | 63 proofs | 1 status page | 64 | 164 |
+| bob.btc.calendar.opentimestamps.org | 63 | 1 | 64 | 164 |
+| finney.calendar.eternitywall.com | 80 | 1 | 81 | 180 |
+| blockstream.info | 8 (4 block hashes, 4 headers) | 7 block lists | 15 | 225 |
+| mempool.space | 4 block hashes | | 4 | 212 |
+
+### Reproduce
+```sh
+export NODE_USE_ENV_PROXY=1                            # a session behind a proxy (docs/cloud.md)
+node bench/net/ots-stamps.ts collect                   # nothing left to ask: every receipt is finished
+node bench/net/ots-stamps.ts anchors                   # -> results/names0/anchors.json (pages and block lists cached under bench/results/local/names0b/)
+node bench/net/ots-history.ts model --lead 600 --out bench/net/results/names0/history-lead.json   # needs N0a's cache
+```

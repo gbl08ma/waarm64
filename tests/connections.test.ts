@@ -16,19 +16,23 @@ import { Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { profilesOf } from '../web/tailscale-state.ts';
 import { t } from '../web/i18n.ts';
+import { exportNames, importNames, memoryNamesStore, parseRoomExport, type TitleRecord } from '../web/names.ts';
 
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {
   const forgot: string[] = [];
+  /** The names kept under a key, forgotten with it (web/names.ts's stores: `heldNames`, `forgetNames`). */
+  const namesForgot: string[] = [];
   /** `waarm64-room`'s entries: what a room connection's first start keeps, and pasted keys. */
   const rooms = new Map<string, { key: string }>();
   return {
-    forgot, rooms,
+    forgot, rooms, namesForgot,
     state: {
       forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); },
       forgetRoom: async (k: string) => { forgot.push(`room:${k}`); rooms.delete(k); },
       readRoom: async (k: string) => rooms.get(k), keepRoom: async (k: string, i: { key: string }) => { rooms.set(k, i); },
       roomIdentity: async (k: string) => { if (!rooms.has(k)) rooms.set(k, newRoomIdentity()); return rooms.get(k)!; },
+      forgetNames: async (k: string) => { namesForgot.push(k); },
     },
   };
 };
@@ -78,7 +82,7 @@ test('connections: stored and ephemeral, their names and state keys, deleted wit
 
 test('rooms: named by the room, a key of their own or another connection\'s, forgotten when no other connection shares it', async () => {
   const s = store();
-  const { forgot, state } = fakeState();
+  const { forgot, namesForgot, state } = fakeState();
   const conns = new Connections(s, state);
   const link = 'waarm64-room:gabriel-lan';
   const pub = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
@@ -106,6 +110,8 @@ test('rooms: named by the room, a key of their own or another connection\'s, for
   await conns.delete(priv.id);
   await conns.delete(eph.id);
   assert.deepEqual(forgot, [`room:${pub.id}`, `room:${priv.id}`], 'a key of its own is forgotten; an ephemeral one\'s own is in memory');
+  // The names kept under a key go with it, at the same time (the delete said so first: web/app/areas/network-actions.ts).
+  assert.deepEqual(namesForgot, [pub.id, priv.id, eph.id], 'names: with the last one that uses their key');
 });
 
 test("rooms: another tab's ephemeral connection on a stored one's key keeps it through Delete and New name", async () => {
@@ -192,6 +198,46 @@ test("rooms: a stored connection made with an ephemeral one's key keeps it in wa
     assert.notEqual(await used(renamed), key, 'New name: a new key');
     assert.equal(await used((await conns.get(eph.id))!), key, 'the ephemeral one keeps its own');
   }
+});
+
+test('rooms: a connection\'s export carries its names (the owners\' secret and titles), which the connection made from it in another browser holds', async () => {
+  // Two browsers: each its connections, its waarm64-room (keys, and the names agent's stores).
+  const browser = () => {
+    const { state, rooms } = fakeState();
+    const names = memoryNamesStore();
+    return { rooms, names, conns: new Connections(store(), { ...state, exportNames: (k) => exportNames(names, k), keepNames: (k, b) => importNames(names, k, b) }) };
+  };
+  const a = browser();
+  const link = 'waarm64-room:lobby';
+  const c = await a.conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  assert.equal(await a.conns.exportKey(c), '', 'no key before its first start');
+  const key = (await a.rooms.get(c.id)) ?? { key: '7'.repeat(64) };
+  a.rooms.set(c.id, key);
+  assert.equal(await a.conns.exportKey(c), key.key, 'no names: the key alone');
+  // A title registered (the agent's record, as web/names.ts keeps it).
+  await a.names.addSecret(c.room!.identityKey, '5'.repeat(64));
+  const title: TitleRecord = {
+    identityKey: c.room!.identityKey, room: 'lobby', link, name: 'test123', item: '02aa', stamps: {}, collect: {},
+    points: [{ label: null, key: 'ab'.repeat(32) }], zone: { n: 3, branch: 9 }, made: 1,
+  };
+  await a.names.put(title);
+  const exported = await a.conns.exportKey(c);
+  const parsed = parseRoomExport(exported);
+  assert.equal(parsed?.key, key.key);
+  assert.ok(parsed?.names);
+  // Pasted in another browser: the key, the owners' secret and the title are the new connection's.
+  const b = browser();
+  const d = await b.conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: parsed.key, names: parsed.names } });
+  assert.deepEqual(b.rooms.get(d.id), key);
+  assert.equal(Object.hasOwn(d.room!, 'names'), false, 'not in the record');
+  assert.equal(await b.names.secret(d.room!.identityKey), '5'.repeat(64));
+  const [got] = await b.names.titles(d.room!.identityKey);
+  assert.equal(got.item, title.item);
+  assert.equal(got.name, 'test123');
+  assert.notEqual(got.zone.branch, 9, 'a branch of its own');
+  assert.equal((await a.names.titles())[0].zone.branch, 9, 'the exported one keeps its own');
+  assert.equal(parseRoomExport('zz'), undefined);
+  assert.deepEqual(parseRoomExport(` ${'AB'.repeat(32)} `), { key: 'ab'.repeat(32) });
 });
 
 test('pasted room keys: 64 hex digits, spaces around them ignored, lower case', () => {

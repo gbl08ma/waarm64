@@ -5,7 +5,7 @@
   connection…). What they're for and how to use them is in its details (Details…: NetDetails.svelte), so the menu stays
   short: a room whose members go through the relay where a direct path was wanted has a small warning after its count
   of connections, which opens the details, where the reason is. Adapter 1's elements keep the ids they always had;
-  adapter n's end in `-<n-1>`. `heading`: the machine has more than one adapter. `onwizard`: Change connection… (or Set up…), `ondetails`: Details…; both close the menu. Logic is
+  adapter n's end in `-<n-1>`. `heading`: the machine has more than one adapter. `onwizard`: Change connection… (or Set up…), `ondetails`: Details…, `onname`: a room's Name this machine… (NetNames.svelte, with its names' states); each closes the menu. Logic is
   web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
@@ -15,6 +15,7 @@
   import Note from './ui/Note.svelte';
   import StatusDot from './ui/StatusDot.svelte';
   import ValueField from './ui/ValueField.svelte';
+  import NetNames from './NetNames.svelte';
   import { Actions } from './actions.svelte.ts';
   import { t } from '../i18n.ts';
   import { MsgError } from '../msg.ts';
@@ -23,8 +24,8 @@
   import type { AdapterView } from './network-view.ts';
   import { page } from './page.ts';
 
-  type Props = { a: AdapterView; heading: boolean; onwizard: () => void; ondetails: () => void };
-  let { a, heading, onwizard, ondetails }: Props = $props();
+  type Props = { a: AdapterView; heading: boolean; onwizard: () => void; ondetails: () => void; onname: () => void };
+  let { a, heading, onwizard, ondetails, onname }: Props = $props();
   const v = $derived(a.view);
   const i = $derived(a.index);
   const s = $derived(i ? `-${i}` : '');
@@ -182,6 +183,7 @@
       />
     </div>
   {/if}
+  <NetNames {a} {onname} />
   <Note tone="error" id={`net-menu-error${s}`} hidden={!runner.error}>{runner.error?.text}</Note>
   <div id={`net-actions${s}`} class="net-actions">
     {#if a.connection && !a.active && a.on}

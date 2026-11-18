@@ -1,0 +1,275 @@
+{
+ "date": "2026-11-16",
+ "host": "cloud session: x86_64 Firecracker, 4 vCPUs, Intel Xeon @ 2.30GHz (shared; times provisional until a dev VM run)",
+ "rustc": "1.100.0-nightly (6eeff9a52 2026-09-23), the pinned nightly",
+ "build": "scratch crate outside the workspace: blake2 0.10.6, sha2 0.10.9, k256 0.13.4 (schnorr), argon2 0.5.3; release, lto, codegen-units 1, panic abort, opt-level 3; wasm32-wasip1 as net/ts/build.sh",
+ "node": "v26.13.1",
+ "chromium": "153.0.8010.12",
+ "units": "microseconds per operation, median of 7 repetitions (min, max beside)",
+ "kernels": {
+  "blake2s": "one BLAKE2s-256 of a 143-byte entry (3 compressions), the hashcash try",
+  "argon2id_mM_tT": "one Argon2id evaluation, M KiB, T passes, 1 lane, 32-byte output",
+  "sha256_64": "one SHA-256 of 64 bytes",
+  "anchor_ops": "an anchor's operations: 46 SHA-256s, ~1.2 KB (calendar tree 20 levels, the transaction, the block's Merkle path 12 levels, double SHA-256)",
+  "header_check": "an 80-byte header's double SHA-256 and the target its bits encode",
+  "bip340_verify": "one BIP-340 verification, k256 verify_raw over a 32-byte hash"
+ },
+ "native": [
+  {
+   "kernel": "blake2s",
+   "usPerOp": 0.3206,
+   "min": 0.3106,
+   "max": 0.3482,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m8_t1",
+   "usPerOp": 12.4149,
+   "min": 12.2737,
+   "max": 15.276,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m64_t1",
+   "usPerOp": 29.0041,
+   "min": 28.425,
+   "max": 33.4389,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m256_t1",
+   "usPerOp": 84.1414,
+   "min": 83.5791,
+   "max": 90.0377,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m1024_t1",
+   "usPerOp": 308.7824,
+   "min": 305.7188,
+   "max": 368.1849,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m4096_t1",
+   "usPerOp": 1339.2205,
+   "min": 1315.233,
+   "max": 2358.3145,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m16384_t1",
+   "usPerOp": 6269.553,
+   "min": 6048.3455,
+   "max": 10560.588,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m64_t3",
+   "usPerOp": 67.8809,
+   "min": 67.1179,
+   "max": 86.4346,
+   "reps": 7
+  },
+  {
+   "kernel": "sha256_64",
+   "usPerOp": 0.1007,
+   "min": 0.1001,
+   "max": 0.1057,
+   "reps": 7
+  },
+  {
+   "kernel": "anchor_ops",
+   "usPerOp": 3.8715,
+   "min": 3.8441,
+   "max": 4.0942,
+   "reps": 7
+  },
+  {
+   "kernel": "header_check",
+   "usPerOp": 0.1408,
+   "min": 0.1401,
+   "max": 0.152,
+   "reps": 7
+  },
+  {
+   "kernel": "bip340_verify",
+   "usPerOp": 57.0727,
+   "min": 56.6635,
+   "max": 57.9946,
+   "reps": 7
+  }
+ ],
+ "nodeWasm": [
+  {
+   "kernel": "blake2s",
+   "usPerOp": 0.3362,
+   "min": 0.3333,
+   "max": 0.4864,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m8_t1",
+   "usPerOp": 15.9064,
+   "min": 15.7993,
+   "max": 29.5049,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m64_t1",
+   "usPerOp": 41.7871,
+   "min": 41.5057,
+   "max": 43.4497,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m256_t1",
+   "usPerOp": 137.0507,
+   "min": 132.1,
+   "max": 201.614,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m1024_t1",
+   "usPerOp": 499.2584,
+   "min": 497.6731,
+   "max": 728.6099,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m4096_t1",
+   "usPerOp": 2236.592,
+   "min": 2185.5745,
+   "max": 3658.969,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m16384_t1",
+   "usPerOp": 10047.446,
+   "min": 9938.314,
+   "max": 15005.1655,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m64_t3",
+   "usPerOp": 158.3555,
+   "min": 106.1641,
+   "max": 171.0616,
+   "reps": 7
+  },
+  {
+   "kernel": "sha256_64",
+   "usPerOp": 0.3602,
+   "min": 0.3569,
+   "max": 0.654,
+   "reps": 7
+  },
+  {
+   "kernel": "anchor_ops",
+   "usPerOp": 15.2244,
+   "min": 15.1692,
+   "max": 18.8097,
+   "reps": 7
+  },
+  {
+   "kernel": "header_check",
+   "usPerOp": 0.5362,
+   "min": 0.5295,
+   "max": 0.8296,
+   "reps": 7
+  },
+  {
+   "kernel": "bip340_verify",
+   "usPerOp": 155.5412,
+   "min": 152.1038,
+   "max": 178.6517,
+   "reps": 7
+  }
+ ],
+ "chromiumWasm": [
+  {
+   "kernel": "blake2s",
+   "usPerOp": 0.3471,
+   "min": 0.3388,
+   "max": 0.361,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m8_t1",
+   "usPerOp": 19.1406,
+   "min": 16.4062,
+   "max": 31.25,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m64_t1",
+   "usPerOp": 46.0938,
+   "min": 43.75,
+   "max": 50,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m256_t1",
+   "usPerOp": 159.375,
+   "min": 137.5,
+   "max": 178.125,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m1024_t1",
+   "usPerOp": 487.5,
+   "min": 487.5,
+   "max": 675,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m4096_t1",
+   "usPerOp": 2050,
+   "min": 2000,
+   "max": 3500,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m16384_t1",
+   "usPerOp": 8800,
+   "min": 8650,
+   "max": 13500,
+   "reps": 7
+  },
+  {
+   "kernel": "argon2id_m64_t3",
+   "usPerOp": 105.4688,
+   "min": 104.6875,
+   "max": 106.25,
+   "reps": 7
+  },
+  {
+   "kernel": "sha256_64",
+   "usPerOp": 0.362,
+   "min": 0.361,
+   "max": 0.435,
+   "reps": 7
+  },
+  {
+   "kernel": "anchor_ops",
+   "usPerOp": 15.2,
+   "min": 15.1,
+   "max": 19.9,
+   "reps": 7
+  },
+  {
+   "kernel": "header_check",
+   "usPerOp": 0.53,
+   "min": 0.518,
+   "max": 0.59,
+   "reps": 7
+  },
+  {
+   "kernel": "bip340_verify",
+   "usPerOp": 150.7,
+   "min": 149.6,
+   "max": 155.4,
+   "reps": 7
+  }
+ ]
+}

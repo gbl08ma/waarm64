@@ -58,7 +58,18 @@ export type NetworkView = {
    * `blocked`, this browser makes none; `peersBlocked`, how many members' browsers make none; `failed`, how many
    * members' attempts failed though this browser gathers. Relay only, by choice, has none of these.
    */
-  room?: { name: string; link: string; incoming: boolean; blocked?: boolean; peersBlocked?: number; failed?: number };
+  room?: {
+    name: string;
+    link: string;
+    incoming: boolean;
+    blocked?: boolean;
+    peersBlocked?: number;
+    failed?: number;
+    /** The node key (64 hex digits): where Name this machine… points the name. */
+    key?: string;
+    /** The registry's line for the details: a server's names held, or a member's resolved, and servers. */
+    names?: { serving: boolean; names: number; servers: number };
+  };
 };
 
 /** Whether a room's members go through the relay for a reason worth a warning (`NetworkView.room`). */
@@ -154,6 +165,8 @@ function roomView(c: ClientReport): NetworkView {
         name: r.name,
         link: r.link,
         incoming: r.incoming,
+        ...(r.key ? { key: r.key } : {}),
+        ...(r.names ? { names: r.names } : {}),
         // Why members aren't reached directly (web/room.ts): the menu shows a warning, the details say why and what to do.
         ...(r.relayOnly
           ? {}

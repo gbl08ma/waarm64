@@ -33,6 +33,7 @@ export type ToRoom =
   | { type: 'attach'; ip: MessagePort }
   | { type: 'primary'; primary: boolean; rank?: number; primary6?: boolean }
   | { type: 'detach' }
+  | { type: 'close' }
   | { type: 'rtc-channel'; rtc: number; channel: RTCDataChannel }
   | { type: 'rtc-signal'; rtc: number; json: string }
   | { type: 'rtc-closed'; rtc: number }
@@ -45,6 +46,7 @@ export type FromRoom =
   | { type: 'rtc-signal'; rtc: number; json: string }
   | { type: 'rtc-close'; rtc: number }
   | { type: 'detached'; ip?: MessagePort }
+  | { type: 'closed' }
   | { type: 'error'; error: WireError };
 
 export type RoomPeer = { key: string; address6: number[]; path: 'direct' | 'relay' };
@@ -210,6 +212,10 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
     worker.onerror = (e) => reject(new Error(e.message));
     worker.onmessage = (e: MessageEvent<FromRoom>) => {
       const m = e.data;
+      if (closed) {
+        if (m.type === 'closed') worker.terminate();
+        return;
+      }
       switch (m.type) {
         case 'loaded': timings.loadMs = m.ms; break;
         case 'rtc-open': void open(m.rtc, m.offer); break;
@@ -263,7 +269,9 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
       netInfo?.removeEventListener('change', reprobe);
       for (const { pc } of conns.values()) pc.close();
       conns.clear();
-      worker.terminate();
+      // The worker closes its client and writes what waits for the names store first (NAMES_WRITE_MS's batch).
+      post({ type: 'close' });
+      setTimeout(() => worker.terminate(), CLOSE_WAIT_MS);
     },
   };
 }
@@ -271,19 +279,28 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
 /** A room connection's node key (64 hex digits), kept in this origin's IndexedDB `waarm64-room` (docs/networking/adapters.md §2.1). */
 export type RoomIdentity = { key: string };
 const IDB = 'waarm64-room';
+/** Version 2 added `names` (the room's registry records); 3, `owner` and `titles` (the names agent's, web/names.ts). */
+const IDB_VERSION = 3;
 
-function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+/** `waarm64-room`, opened at its version (web/names.ts keeps its stores here too). */
+export function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open(IDB, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('identity');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
+    const open = indexedDB.open(IDB, IDB_VERSION);
+    open.onupgradeneeded = () => {
       const db = open.result;
-      const r = f(db.transaction('identity', mode).objectStore('identity'));
-      r.onsuccess = () => { db.close(); resolve(r.result); };
-      r.onerror = (e) => { e.preventDefault(); db.close(); reject(r.error); }; // handled here (`add`'s refusal)
+      for (const s of ['identity', 'names', 'owner', 'titles']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
     };
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => resolve(open.result);
   });
+}
+
+function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>, store = 'identity'): Promise<T> {
+  return openIdb().then((db) => new Promise((resolve, reject) => {
+    const r = f(db.transaction(store, mode).objectStore(store));
+    r.onsuccess = () => { db.close(); resolve(r.result); };
+    r.onerror = (e) => { e.preventDefault(); db.close(); reject(r.error); }; // handled here (`add`'s refusal)
+  }));
 }
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -314,15 +331,99 @@ export function parseRoomKey(s: string): string | undefined {
   return /^[0-9a-f]{64}$/.test(k) ? k : undefined;
 }
 
+/** A room connection's key as it is exported: the node key (64 hex digits), and its names after a dot when it has some
+ * (web/names.ts `exportNames`). */
+export const roomExport = (key: string, names?: string) => (names ? `${key}.${names}` : key);
+
+/** An export pasted (`roomExport`'s): the key, lower case, and the names; undefined if it isn't one. */
+export function parseRoomExport(s: string): { key: string; names?: string } | undefined {
+  const m = /^([0-9a-fA-F]{64})(?:\.([A-Za-z0-9_-]+))?$/.exec(s.trim());
+  return m ? { key: m[1].toLowerCase(), ...(m[2] ? { names: m[2] } : {}) } : undefined;
+}
+
 /** Whether there's an identity kept under `key`. */
 export const hasRoomIdentity = (key: string) => idb<number>('readonly', (s) => s.count(key)).then((n) => n > 0, () => false);
 
 /** Forgets the identity under `key`: the next start makes a new key, so a new address and name in every room that used it. */
 export const forgetRoomIdentity = (key: string) => idb('readwrite', (s) => s.delete(key)).then(() => {});
 
+/**
+ * A room's registry records (docs/plans/room-names.md "Servers" "Persist", "A member resolving a name"), in `waarm64-room`'s
+ * `names` store: what a server holds of each name, or what a member keeps of each name it resolved, one record a name id,
+ * keyed by the room and the connection (a hash of the room's ID and the `identityKey`: `roomNamesKey`) and the id in hex. The module emits them (action 11) and takes them
+ * back at the start (`TsClient.namesLoad`), so a member answers names it knew before it asks anyone. Only a stored
+ * connection's (one with an `identityKey`): an ephemeral one keeps nothing.
+ */
+export type RoomNamesStore = {
+  /** This room's records. */
+  load(): Promise<{ id: string; record: Uint8Array }[]>;
+  /** Keeps a record (null: deletes it); written in batches, the last of an id's winning. */
+  write(id: Uint8Array | string, record: Uint8Array | null): void;
+  /** Writes what's waiting now. */
+  flush(): Promise<void>;
+};
+
+/**
+ * The key a room connection's records are kept under: 16 bytes of SHA-256 over the room's ID and the connection's
+ * `identityKey`, in hex (the ID itself is a private room's secret; two stored connections in one room, a server and a
+ * member, keep theirs apart).
+ */
+export async function roomNamesKey(id: string, identityKey: string): Promise<string> {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`waarm64 room names\n${id}\n${identityKey}`));
+  return hex(new Uint8Array(h).subarray(0, 16));
+}
+
+/** How long writes wait to go in one transaction (a server's sync changes many names at once). */
+export const NAMES_WRITE_MS = 1000;
+/** How long a closed room's worker may take to write what waits before it is terminated. */
+const CLOSE_WAIT_MS = 3000;
+
+/** The records of the stored connection `identityKey` in the room with ID `id`. */
+export async function roomNamesStore(id: string, identityKey: string): Promise<RoomNamesStore> {
+  const room = await roomNamesKey(id, identityKey);
+  const waiting = new Map<string, Uint8Array | null>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let last: Promise<void> = Promise.resolve();
+  const flush = (): Promise<void> => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (!waiting.size) return last;
+    const batch = [...waiting];
+    waiting.clear();
+    last = last.then(() => openIdb()).then((db) => new Promise<void>((resolve) => {
+      const tx = db.transaction('names', 'readwrite');
+      const s = tx.objectStore('names');
+      for (const [k, record] of batch) {
+        if (record) s.put({ id: k, record }, [room, k]);
+        else s.delete([room, k]);
+      }
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = tx.onabort = () => { console.log('room: names not kept:', tx.error); db.close(); resolve(); };
+    }), (err) => console.log('room: names not kept:', err));
+    return last;
+  };
+  return {
+    load: () => idb<{ id: string; record: Uint8Array }[]>('readonly', (s) => s.getAll(IDBKeyRange.bound([room], [room, []])), 'names'),
+    write(k, record) {
+      waiting.set(typeof k === 'string' ? k : hex(k), record);
+      timer ??= setTimeout(() => void flush(), NAMES_WRITE_MS);
+    },
+    flush,
+  };
+}
+
 // A room's link, as net/ts/src/room/link.rs reads it: `waarm64-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part
 // percent-encoded. The page builds it (Create a room) and checks one pasted (Join a room); the module reads it again.
 export const ROOM_SCHEME = 'waarm64-room:';
+
+/** A room's ID from its link (`waarm64-room:<id>?…`, or a bare ID), as link.rs reads it. */
+export function roomOf(link: string): string {
+  const s = link.trim();
+  if (!s.startsWith('waarm64-room:')) return s;
+  const rest = s.slice('waarm64-room:'.length);
+  const q = rest.indexOf('?');
+  return decodeURIComponent(q < 0 ? rest : rest.slice(0, q));
+}
 /** What link.rs allows: an ID of at most 256 bytes, at most 8 relays and 8 regions. */
 export const ROOM_MAX_ID = 256;
 export const ROOM_MAX_RELAYS = 8;
@@ -464,7 +565,8 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
   let state = '';
   let netmap: NetMap | undefined;
   let lease: Lease | null = null;
-  let me: { name?: string; link?: string; address6: number[] } | undefined;
+  let me: { key?: string; name?: string; link?: string; address6: number[] } | undefined;
+  let names: { serving: boolean; names: number; servers: number } | undefined;
   let directBlocked = false;
   const peers = new Map<string, { name: string; address6: number[] }>();
   /** The peers whose packets take a direct path (a `path` event may come before the peer's `peer`). */
@@ -483,6 +585,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       room: {
         name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly, directBlocked,
         directFailed: relayedFor('failed'), peersBlocked: relayedFor('blocked'),
+        ...(me.key ? { key: me.key.replace(/^nodekey:/, '') } : {}), ...(names ? { names } : {}),
       },
     };
   };
@@ -519,6 +622,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
         direct.delete(ev.key);
         why.delete(ev.key);
       } else if (ev.type === 'direct') directBlocked = ev.blocked;
+      else if (ev.type === 'names') names = { serving: ev.serving, names: ev.names, servers: ev.servers };
       else return;
       changed();
     },

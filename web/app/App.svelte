@@ -13,6 +13,7 @@
   import MessageBar from './MessageBar.svelte';
   import NetWizard from './NetWizard.svelte';
   import NetDetails from './NetDetails.svelte';
+  import NameDialog from './NameDialog.svelte';
   import Osk from './Osk.svelte';
   import RamWindow from './RamWindow.svelte';
   import StatusBar from './StatusBar.svelte';
@@ -130,6 +131,7 @@
 <StatusBar {net} />
 <NetWizard {net} />
 <NetDetails {net} />
+<NameDialog {net} />
 <FolderWizard {folders} />
 <Ask />
 <FilePickers />

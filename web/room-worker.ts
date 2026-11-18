@@ -6,7 +6,9 @@ import { toWire } from './msg.ts';
 import { batchSender, packetsOf } from './net.ts';
 import { failureOf, TsClient, TsModule, type RoomConfig } from './ts-client.ts';
 import { ranked, routedLease, type Lease, type Prefix } from './gateway.ts';
-import { roomIdentity, type FromRoom, type ToRoom } from './room.ts';
+import { parseRoomLink, roomIdentity, roomNamesStore, type FromRoom, type RoomNamesStore, type ToRoom } from './room.ts';
+import { idbNamesStore, NAMES_CHANNEL, roomTitles, serviceFetch } from './names.ts';
+import { namesOp } from './names-ops.ts';
 
 const post = (m: FromRoom) => self.postMessage(m);
 
@@ -17,6 +19,10 @@ let primary = true;
 let primary6 = true;
 let rank = 0;
 let client: TsClient | undefined;
+/** A stored connection's registry records (web/room.ts `roomNamesStore`); an ephemeral one keeps none. */
+let names: RoomNamesStore | undefined;
+/** The names agent's word that a connection's titles changed (web/names.ts): the running room's are given again. */
+let titlesChannel: BroadcastChannel | undefined;
 /** On another adapter, the room offers its /48 only (docs/networking/adapters.md §4). */
 const offered = () => ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }, primary6), rank);
 
@@ -44,16 +50,32 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     case 'rtc-signal': return client?.rtcSignal(m.rtc, m.json);
     case 'rtc-closed': return client?.rtcClosed(m.rtc);
     case 'rtc-blocked': return client?.rtcBlocked(m.blocked);
-    case 'detach':
+    case 'detach': {
+      titlesChannel?.close();
       lease = null;
       ip?.postMessage({ type: 'lease', lease: null });
       if (ip) ip.onmessage = null;
       client?.close();
       client = undefined;
-      self.postMessage({ type: 'detached', ip } satisfies FromRoom, ip ? [ip] : []);
+      // What waits for the names store is written before the page goes on (it may close the worker next).
+      const store = names;
+      names = undefined;
+      const port = ip;
       ip = undefined;
       send = undefined;
+      await store?.flush();
+      self.postMessage({ type: 'detached', ip: port } satisfies FromRoom, port ? [port] : []);
       return;
+    }
+    case 'close': {
+      titlesChannel?.close();
+      client?.close();
+      client = undefined;
+      const store = names;
+      names = undefined;
+      await store?.flush();
+      return post({ type: 'closed' });
+    }
     case 'start':
       break;
   }
@@ -65,9 +87,27 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     if (!ip) return; // detached meanwhile
     // The kept identity (docs/networking/adapters.md §2.1): the same address and name each time it joins.
     const id = m.identity ?? (m.identityKey !== undefined ? await roomIdentity(m.identityKey) : undefined);
-    const config = id ? { ...m.config, key: id.key } : m.config;
+    // The room's registry records, streamed in before the first tick (docs/networking/tailnet.md "The module").
+    const parsed = parseRoomLink(m.config.room.link);
+    // The connection's titles (the names agent's, web/names.ts): with them the node serves the room's names.
+    const ids = m.identityKey;
+    const titlesOf = async () => ids !== undefined && 'room' in parsed
+      ? roomTitles(idbNamesStore(), (op, input) => namesOp(mod, op, input), ids, parsed.room.id).catch(() => [])
+      : [];
+    const titles = await titlesOf();
+    const withKey = id ? { ...m.config, key: id.key } : m.config;
+    const config = titles.length ? { ...withKey, room: { ...withKey.room, names: { ...withKey.room.names, titles } } } : withKey;
+    const store = m.identityKey !== undefined && 'room' in parsed ? await roomNamesStore(parsed.room.id, m.identityKey).catch(() => undefined) : undefined;
+    const records = (await store?.load().catch(() => undefined)) ?? [];
     if (!ip) return; // detached meanwhile
+    names = store;
     client = new TsClient(mod, config, {
+      namesStore: (k, record) => names?.write(k, record),
+      // A server's asks outside the room: the compiled calendars and explorers only (web/names.ts `serviceFetch`).
+      namesFetch: (fid, url) => {
+        const asker = client; // an answer that comes after a restart isn't the new client's
+        void serviceFetch(url).then((r) => { if (asker && client === asker) asker.namesFetched(fid, r.status, r.body); });
+      },
       packet: (p) => send?.(p),
       rtc: {
         open: (rtc, offer) => post({ type: 'rtc-open', rtc, offer }),
@@ -84,6 +124,18 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
         post({ type: 'event', event: ev });
       },
     });
+    // Before the first tick (the timer the constructor set fires later): one the module doesn't take is deleted.
+    for (const r of records) if (!client.namesLoad(r.record)) names?.write(r.id, null);
+    if (ids !== undefined) {
+      try {
+        titlesChannel = new BroadcastChannel(NAMES_CHANNEL);
+        titlesChannel.onmessage = async (e: MessageEvent<{ identityKey: string }>) => {
+          if (e.data.identityKey !== ids || !client) return;
+          const now = await titlesOf();
+          client?.namesTitles(now);
+        };
+      } catch { /* no channel: the titles at the start */ }
+    }
   } catch (err) {
     post({ type: 'error', error: toWire(err) });
   }

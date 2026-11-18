@@ -32,7 +32,18 @@ type Exports = {
   ts_rtc_message(h: number, rtc: number, ptr: number, len: number): void;
   ts_rtc_closed(h: number, rtc: number): void;
   ts_rtc_blocked(h: number, blocked: number): void;
+  ts_room_names_load(h: number, ptr: number, len: number): number;
+  ts_room_names_put(h: number, ptr: number, len: number): number;
+  ts_room_names_ids(h: number, first: number): number;
+  ts_room_names_titles(h: number, ptr: number, len: number): number;
+  ts_room_names_fetched(h: number, id: number, status: number, ptr: number, len: number): void;
+} & {
+  /** The names agent's operations (net/ts/src/room/names/agent.rs): JSON in, the length of JSON out (minus: why not). */
+  [K in `ts_names_${NamesOp}`]: (ptr: number, len: number) => number;
 };
+
+/** The names agent's operations (web/names-ops.ts calls them). */
+export type NamesOp = 'key' | 'make' | 'mine' | 'sign' | 'add' | 'pending' | 'commitment' | 'finish' | 'anchor' | 'zone' | 'status' | 'judge' | 'drop';
 
 /** A room's member (net/ts/src/room.rs, docs/networking/rooms.md). */
 /** The most messages a WebSocket holds before it opens (a room's lookups while a Nostr relay connects, say). */
@@ -52,11 +63,32 @@ export type RoomConfig = {
     incoming?: boolean;
     /** The wall clock at the start, Unix seconds (default: the system's): a benchmark's shifted clock. */
     unixTime?: number;
+    /** The node's titles (docs/plans/room-names.md "The registry"): each a name's owner key and its item (hex,
+     * net/ts/src/room/names/wire.rs). With them the node serves the room's names; without, it is a member that asks. */
+    names?: { titles: NamesTitle[]; maxNames?: number; maxBytes?: number };
+    /** A publisher (docs/plans/room-names.md "The names agent"): no node, no guest, a names client alone under a fresh
+     * key that puts what `namesPut` gives it to the room's servers, each answer a `names-put` event. */
+    publish?: boolean;
   };
   derpMapURL?: string;
   /** The node's private key, 64 hex digits. */
   key?: string;
 };
+
+/** A title as the module takes it: the name's owner key (its secret, 64 hex digits) and its item (hex). */
+export type NamesTitle = { key: string; item: string };
+
+/** What a server said to an item a publisher put: `taken`, `better` (with the server's item, hex), `failed` (no answer), or
+ * `nobody` (nobody serves the room's names; no server). */
+export type NamesPut = { type: 'names-put'; id: string; server: string | null; result: 'taken' | 'better' | 'failed' | 'nobody'; item: string | null };
+
+/** A server's answer to a publisher's check for the dialog (`namesIds`): the ids it holds under the first byte asked, each
+ * with until when its owner holds it (Unix seconds, 0: nobody now); `failed` (no answer) or `nobody` (no server). */
+export type NamesIds = { type: 'names-ids'; first: number; server: string | null; result: 'ids' | 'failed' | 'nobody'; ids: [string, number][] | null };
+
+/** A room node's names line, when it changes: a server's names held and the servers it synced with lately (`serving`),
+ * or a member's names resolved and servers held now. */
+export type NamesLine = { type: 'names'; serving: boolean; names: number; servers: number };
 
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
 export type TailcatConfig = {
@@ -90,8 +122,9 @@ export type TsFailure = { code?: string; detail?: string };
 export type TsEvent =
   | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
   | { type: 'lease'; lease: Lease }
-  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.internal`) and the link. */
-  | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string }
+  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.internal`), the link and the
+   * parameters its names are checked with (`production`; `test` only in the page tests' module, ts-test.wasm). */
+  | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string; params?: 'production' | 'test' }
   | { type: 'serving'; addr: string }
   | { type: 'client' | 'client-gone'; key: string; address6: number[] }
   /** A room: a peer whose data decrypted, and the path a peer's packets take. */
@@ -112,7 +145,11 @@ export type TsEvent =
   | { type: 'login'; url: string }
   | { type: 'loggedout' }
   /** The answer to `setExitNode`: no `code` when it took, else why not (`no-exit-node`: no peer `id` offers to be one). */
-  | ({ type: 'exitnode'; id?: string } & TsFailure);
+  | ({ type: 'exitnode'; id?: string } & TsFailure)
+  /** A room's publisher: a server's answer to an item put (`TsClient.namesPut`). */
+  | NamesPut
+  | NamesIds
+  | NamesLine;
 
 export type TsHandlers = {
   /** An IP packet for the guest (the array is the client's: keep it). */
@@ -121,6 +158,14 @@ export type TsHandlers = {
   /** A room's WebRTC connections, which the page holds (web/room.ts): it hands each one's data channel back with
    * `rtcChannel` and its descriptions and candidates with `rtcSignal`. */
   rtc?: RtcHandlers;
+  /** A room's registry record to keep (`record`) or delete (null), by its name id (32 bytes): action 11, streamed back with
+   * `namesLoad` at the next start (docs/networking/tailnet.md "The module"). */
+  namesStore?(id: Uint8Array, record: Uint8Array | null): void;
+  /** A room's server asks outside the room (net/ts/src/room/names/outside.rs): GET `url`, a compiled calendar's or
+   * explorer's (action 12); the answer goes back with `namesFetched(id, …)`. The room's worker does it through
+   * web/names.ts `serviceFetch`, which fetches nothing else. Without this handler nothing is fetched (a member's node
+   * never asks: only a server's). */
+  namesFetch?(id: number, url: string): void;
 };
 
 export type RtcHandlers = {
@@ -306,6 +351,47 @@ export class TsClient {
     this.pump();
   }
 
+  /** A room: one stored registry record, before the first tick (right after the client is made): whether it was taken
+   * (one it doesn't take, another role's or a lapsed name's, is for the page to delete). */
+  namesLoad(record: Uint8Array): boolean {
+    if (this.closed) return false;
+    return this.m.x.ts_room_names_load(this.h, ...this.m.put(record)) === 1;
+  }
+
+  /** A room: the answer to a server's fetch `id` (`namesFetch`): the HTTP status (0: the fetch failed or was refused)
+   * and the body. */
+  namesFetched(id: number, status: number, body: Uint8Array) {
+    if (this.closed) return;
+    this.m.x.ts_room_names_fetched(this.h, id, status, ...this.m.put(body));
+    this.pump();
+  }
+
+  /** A room's publisher: puts `item` (hex) to the room's servers; each answer is a `names-put` event. Whether it was taken
+   * to be put. */
+  namesPut(item: Uint8Array): boolean {
+    if (this.closed) return false;
+    const ok = this.m.x.ts_room_names_put(this.h, ...this.m.put(item)) === 1;
+    this.pump();
+    return ok;
+  }
+
+  /** A room's publisher: asks the room's servers for every id under `first` (a name id's first byte; the dialog's check,
+   * which never names the id); each answer is a `names-ids` event. Whether it was taken to be asked. */
+  namesIds(first: number): boolean {
+    if (this.closed) return false;
+    const ok = this.m.x.ts_room_names_ids(this.h, first) === 1;
+    this.pump();
+    return ok;
+  }
+
+  /** A room: the node's titles as they change (the page's names agent): a member given titles becomes a server. */
+  namesTitles(titles: NamesTitle[]): boolean {
+    if (this.closed) return false;
+    const ok = this.m.x.ts_room_names_titles(this.h, ...this.m.put(encoder.encode(JSON.stringify(titles)))) === 1;
+    this.pump();
+    return ok;
+  }
+
   /** A room: whether this browser makes no direct paths now (web/room.ts), or does again. */
   rtcBlocked(blocked: boolean) {
     if (this.closed) return;
@@ -377,6 +463,12 @@ export class TsClient {
           this.on.rtc?.close(id);
           break;
         }
+        case 11:
+          this.on.namesStore?.(rest.slice(0, 32), rest.length > 32 ? rest.slice(32) : null);
+          break;
+        case 12:
+          this.on.namesFetch?.(id, decoder.decode(rest));
+          break;
       }
     }
     clearTimeout(this.timer);

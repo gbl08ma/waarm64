@@ -41,6 +41,36 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   event (`state`, `lease`, `self`, `serving`, `client`, `netmap`, `login`, `store`, `exitnode`,
   `loggedout`, `log`); a `Failed` state and a refused `exitnode` say why as a stable `code` the page words
   (`web/ts-client.ts` `failureOf`, docs/i18n.md), with any technical `detail` beside it. Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
+- **A room's registry** (docs/plans/room-names.md "The registry"): a room's config with `names` (`titles`: each a
+  name's owner key, 64 hex digits, and its item, hex: `room/names/wire.rs`; `maxNames`, `maxBytes`) makes the node a
+  server of the room's names; without it the node is a member, which asks the room for the names its guest wants
+  (`room/names/member.rs`: a first lookup is an ask under the room's names tag, answered by servers' replies under the
+  member's names client's own reply tag, both through the Nostr relays; a refresh of a name it keeps goes to servers
+  found by "who serves?"). Either's names client is a second room client inside the same handle (a member's only
+  from its guest's first query for a name that isn't a key until 10 minutes after the last; it asks through its relays
+  before its home region is up): its WebSocket
+  connections are numbered from `0x40000000` (`room::NAMES_CONN`), so the worker opens, feeds and closes them as any
+  other, and of its events only its log comes out (marked `names client:`). Action 11 stores a name's record (the
+  name id, 32 bytes, then the record; the id alone: delete it), a server's (version 1) or a member's (version 2);
+  `ts_room_names_load(h, ptr, len)` takes one back (1 when taken; a record of the other role's, or one whose
+  chain lapsed, isn't), and the worker streams them all in before the first `ts_tick`: web/room-worker.ts keeps them
+  in IndexedDB `waarm64-room`, store `names`, under the room and the connection and the id (web/room.ts
+  `roomNamesStore`; a stored connection's only, written before the worker is closed), and deletes what the module didn't take. The room's `self` event says which parameters names
+  are checked with (`params`: `production`; `test` only in the page tests' build, `net/ts/build.sh --test-params` →
+  `target/net/ts-test.wasm`, never shipped: room-names.md "Tests' parameters"). The room's resolver answers registered
+  names (room-names.md "The resolver") and logs each query for one (`resolver: …`). A server asks outside the room
+  (room-names.md "Servers", `room/names/outside.rs`): action 12 is a GET (the id, then the URL, always a compiled
+  calendar's or explorer's), whose answer goes back with `ts_room_names_fetched(h, id, status, ptr, len)` (the HTTP
+  status, 0 when the fetch failed, and the body); web/room-worker.ts makes it through web/names.ts `serviceFetch`, which
+  fetches nothing but the compiled services. A server stores each block's check as a record too (version 3, under the
+  block's hash). A member's node never emits action 12.
+  With `room.publish` the client is a **publisher** (the page's names agent, web/names.ts): a names client alone, no
+  node and no guest, under a fresh key; `ts_room_names_put(h, item)` puts an item to the servers it finds, each answer a
+  `names-put` event (`taken`, `better` with the server's item, `failed`, `nobody`). `ts_room_names_titles(h, json)` gives
+  a running room node its titles as they change (a member given some becomes a server). The agent's operations are
+  pure exports, `ts_names_<op>(ptr, len)` (JSON in, the length of JSON out in `ts_buf()`, minus that of why not;
+  room/names/agent.rs): `key`, `make`, `mine`, `sign`, `add`, `pending`, `commitment`, `finish`, `anchor`, `zone`,
+  `status`, `judge`, `drop`.
   Bytes cross through the module's memory (`ts_alloc`), one copy each way. One thread, no shared
   memory, no atomics: one worker per client.
 - **`wasm32-wasip1`, not the core's target.** On `wasm32-unknown-unknown` std's `Instant::now()` and

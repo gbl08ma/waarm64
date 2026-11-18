@@ -19,15 +19,7 @@
   import { ROOM_STEPS, type Flow, type Step as StepName } from './net-wizard.ts';
   import type { PageNetwork } from './net-live.ts';
   import { tailcatBuilt } from './network.ts';
-  import {
-    GLOBAL_ROOM,
-    parseRoomKey,
-    parseRoomLink,
-    privateRoomId,
-    readRoomIdentity,
-    roomLink,
-    type RoomLink,
-  } from '../room.ts';
+  import { GLOBAL_ROOM, parseRoomExport, parseRoomLink, privateRoomId, roomLink, type RoomLink } from '../room.ts';
   import { page } from './page.ts';
 
   type Props = { flow: Flow; net: PageNetwork; step: StepName };
@@ -82,11 +74,11 @@
     relayOnly = r?.relayOnly ?? false;
   }
   export function enter() {
-    const r = flow.editing?.room;
-    if (step === 'roomEdit' && r?.identity) [kept, exported] = [true, r.identity.key];
-    else if (step === 'roomEdit' && r)
-      void readRoomIdentity(r.identityKey).then(
-        (k) => ([kept, exported] = [!!k, k?.key ?? '']),
+    const c = flow.editing;
+    // The connection's export: its key, and its names after a dot (the names agent's owners' secret and titles).
+    if (step === 'roomEdit' && c?.room)
+      void net.conns.exportKey(c).then(
+        (k) => ([kept, exported] = [!!k, k]),
         () => ([kept, exported] = [false, '']),
       );
     queueMicrotask(() => firstControl()?.focus());
@@ -111,19 +103,34 @@
       link = roomLink({ id: isPrivate ? privateRoomId(n) : n, nostr: lines(nostr), derp: lines(derp) });
     } else link = parseRoomLink(joinLink);
     if ('error' in link) return flow.fail(link.error);
-    const key = keyOf === PASTE ? parseRoomKey(pastedKey) : undefined;
-    if (keyOf === PASTE && !key) return flow.fail(msg('network:NetRoomStep.room.key.bad'));
+    const pasted = keyOf === PASTE ? parseRoomExport(pastedKey) : undefined;
+    if (keyOf === PASTE && !pasted) return flow.fail(msg('network:NetRoomStep.room.key.bad'));
     if (!(await tailcatBuilt())) return flow.fail(msg('network:NetTailcatStep.tailcatNotBuilt'));
     const c = await page.netCreate({
       kind: 'room',
       ephemeral: !flow.keep,
-      room: { link: link.link, incoming, relayOnly, ...(key ? { key } : keyOf ? { keyOf } : {}) },
+      room: {
+        link: link.link,
+        incoming,
+        relayOnly,
+        ...keyChoice(pasted),
+      },
     });
     await flow.made(c);
   }
+  /** The key's choice: a pasted key, or a connection's whole export (the key and the names it carries); another
+   * connection's key; or a new one. */
+  function keyChoice(pasted: { key: string; names?: string } | undefined) {
+    if (pasted) return pasted.names ? { key: pasted.key, names: pasted.names } : { key: pasted.key };
+    return keyOf ? { keyOf } : {};
+  }
   async function forget() {
     // A stored connection's next start makes its new key; an ephemeral one has it now (`forget` replaced `editing`).
-    if (await flow.forget()) [kept, exported] = [false, flow.editing?.room?.identity?.key ?? ''];
+    if (await flow.forget()) {
+      const c = flow.editing;
+      kept = false;
+      exported = c?.room?.identity ? await net.conns.exportKey(c) : '';
+    }
   }
 </script>
 
