@@ -114,7 +114,7 @@ attacker nothing here: there is no place to win.
   questions are now) and one to eight replies of 1.3 to 4.1 KB through two relays, to one subscriber. A member sends
   4 asks a second at most.
 - **Servers**: a look in their store an ask; a reply only in their share or when they differ.
-- **Not known**: whether every default relay forwards an ephemeral event of 4 KB, and at what rate it limits a
+- **Still to measure**: whether every default relay forwards an ephemeral event of 4 KB, and at what rate it limits a
   server's replies. Two of 25 relays rate-limited a burst of 16 small events in R4. If a relay's limit is under the
   item's size, `REPLY_MAX` goes under it and items come by `fetch`: the design holds, a first lookup costs a session.
 

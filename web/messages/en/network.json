@@ -1160,7 +1160,7 @@
     "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the button that closes it without registering."
   },
   "NameDialog.ephemeral": {
-    "message": "This connection can't hold a name: its key lasts only until this page closes, and a name lasts for weeks. To name this machine, give it a connection kept in this browser.",
+    "message": "This connection can't hold a name: its key lasts only until this tab closes or reloads, and a name lasts for weeks. To name this machine, give it a connection kept in this browser.",
     "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu), for a connection that isn't kept (an ephemeral one with a key of its own): shown in place of the field and the notices, with no Register button. A name registered on it would point at a key gone with the page, and its renewals would go on with nothing to reach."
   },
   "names-view.check.checking": {
@@ -1296,11 +1296,11 @@
     "note": "Error headline in the message bar when registering a name failed (its cause under it); {{name}} is the name."
   },
   "names.lastWeek_one": {
-    "message": "The name {{names}} is kept only until about {{when, date}}. Leave this web app open for a few hours, or open it again before then, to keep it.",
+    "message": "The name {{names}} is kept only until about {{when, date}}. Leave this web app open for a few hours, or reopen it before then, to keep it.",
     "note": "Notice in the message bar at load when a registered name is in its last week (it will stop resolving unless renewed and its renewal made public). {{names}} is the name, {{when}} when it stops."
   },
   "names.lastWeek_other": {
-    "message": "The names {{names}} are kept only until about {{when, date}}. Leave this web app open for a few hours, or open it again before then, to keep them.",
+    "message": "The names {{names}} are kept only until about {{when, date}}. Leave this web app open for a few hours, or reopen it before then, to keep them.",
     "note": "Notice in the message bar at load when registered names are in their last week. {{names}} are the names, {{count}} how many, {{when}} when the first stops."
   }
 }
