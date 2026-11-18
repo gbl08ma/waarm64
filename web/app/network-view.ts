@@ -32,6 +32,8 @@ export type NetworkView = {
   phase: Phase;
   /** One line for the menu. */
   text: string;
+  /** That line as a message, where it names something (a tailnet's node, its exit node): drawn with T. */
+  line?: Msg;
   /** Lines under `text`, one each: an error's (`phase` `error`) what it said; a room's its active connections. */
   details?: string[];
   /** Where to log in (only http(s) URLs). */
@@ -265,11 +267,11 @@ function tailnetView(netmap: NetMap | undefined): NetworkView {
   const subnets = routes.length ? { subnets: { routes, on: netmap?.acceptRoutes !== false } } : {};
   const connected = connectedAs(netmap?.name ? netmap.name.replace(/\.$/, '') : '', address);
   // An exit node reported offline is named as such: its traffic is dropped (the client fails closed, as Go's does).
-  const text = via
+  const line = via
     ? via.online
-      ? t('network:network-view.connectedPeers.via', { connected, count: peers.length, via: via.name })
-      : t('network:network-view.connectedPeers.viaOffline', { connected, count: peers.length, via: via.name })
-    : t('network:network-view.connectedPeers', { connected, count: peers.length });
+      ? msg('network:network-view.connectedPeers.via', { connected, count: peers.length, via: via.name })
+      : msg('network:network-view.connectedPeers.viaOffline', { connected, count: peers.length, via: via.name })
+    : msg('network:network-view.connectedPeers', { connected, count: peers.length });
   return {
     phase: 'connected',
     address,
@@ -277,7 +279,8 @@ function tailnetView(netmap: NetMap | undefined): NetworkView {
     internet: !!via,
     internet6: !!via && !!netmap?.reached6,
     ...subnets,
-    text,
+    text: text(line),
+    line,
   };
 }
 

@@ -71,8 +71,8 @@ export class SizeActions {
         ? msg('machine:size-actions.size.3d', { count: n, ram: r })
         : msg('machine:size-actions.size.2d', { count: n, ram: r });
     const question = running
-      ? t('machine:size-actions.size.confirm.running', { size })
-      : t('machine:size-actions.size.confirm', { size });
+      ? msg('machine:size-actions.size.confirm.running', { size })
+      : msg('machine:size-actions.size.confirm', { size });
     if (
       !(await ask.confirm(memoryWarning(question, r, n, m.jitBudget()), {
         title: t('machine:size-actions.size.title'),
@@ -100,7 +100,7 @@ export class SizeActions {
       running &&
       !(await ask.confirm(
         memoryWarning(
-          t(power.canSoft ? 'machine:size-actions.settings.confirm.soft' : 'machine:size-actions.settings.confirm', {
+          msg(power.canSoft ? 'machine:size-actions.settings.confirm.soft' : 'machine:size-actions.settings.confirm', {
             name: next.name,
           }),
           next.ramMiB,

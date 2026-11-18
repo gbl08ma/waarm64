@@ -2,7 +2,7 @@
 // what it costs, renewed every 10 s and cleared at a clean stop; a mark left over means its tab went away with it
 // running (most likely killed for memory), and the next start offers a smaller JIT cache or less RAM first. And the
 // warnings for a size this device may not have the memory for.
-import { msg, t } from '../../i18n.ts';
+import { msg, t, type Msg } from '../../i18n.ts';
 import { ask } from '../ask.svelte.ts';
 import type { Action } from '../areas/message-bar.svelte.ts';
 import { hostMemoryGiB, RAM_CHOICES } from '../machine.ts';
@@ -17,15 +17,15 @@ import type { PageMachine } from './page-machine.svelte.ts';
 type Crash = NonNullable<ReturnType<typeof lastCrash>>;
 
 /** A question's words with the warning for a size this device may not have the memory for, a paragraph after them. */
-export function memoryWarning(question: string, r: number, n: number, j: number) {
+export function memoryWarning(question: Msg, r: number, n: number, j: number): Msg {
   const need = hostMemoryGiB(r, n, j);
   const has = navigator.deviceMemory;
   if (has === undefined || has >= need) return question;
   const warning =
     has >= 8
-      ? t('machine:memory-signal.memoryWarning.max', { need: need.toFixed(1), has })
-      : t('machine:memory-signal.memoryWarning', { need: need.toFixed(1), has });
-  return `${question}\n\n${warning}`;
+      ? msg('machine:memory-signal.memoryWarning.max', { need: need.toFixed(1), has })
+      : msg('machine:memory-signal.memoryWarning', { need: need.toFixed(1), has });
+  return msg('machine:memory-signal.memoryWarning.after', { question, warning });
 }
 
 export class MemorySignal {

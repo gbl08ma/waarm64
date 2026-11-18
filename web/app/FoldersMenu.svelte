@@ -5,6 +5,7 @@
   command to copy). Logic is web/app/folders-live.ts's, through `page`.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import Menu from './ui/Menu.svelte';
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
@@ -83,7 +84,9 @@
       <li><Note>{t('folders:FoldersMenu.none')}</Note></li>
     {/each}
   </ul>
-  <Note tone="error" id="folders-error" hidden={!runner.error}>{runner.error?.text}</Note>
+  <Note tone="error" id="folders-error" hidden={!runner.error}
+    >{#if runner.error}<ErrorText error={runner.error} />{/if}</Note
+  >
   <div class="buttons">
     <Button
       id="folder-attach"
