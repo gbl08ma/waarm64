@@ -375,8 +375,9 @@ pub enum ReplyItem {
     None,
     /// The owning chain's last entry with its anchor and header, and the zone.
     Item(Box<Item>),
-    /// It holds an owner, but its item is past [`REPLY_MAX`]: the asker fetches it.
-    TooBig,
+    /// It holds an owner, but its item is past [`REPLY_MAX`]: the owning chain's last entry alone (no zone), checked as
+    /// an item is, and the asker fetches the rest. Something checkable, so a forged one weighs nothing (review 3).
+    TooBig(Box<Item>),
 }
 
 /// A server's answer to an ask (room-names-r3.md), published under the asker's reply tag
@@ -408,7 +409,10 @@ impl Reply {
                 o.push(1);
                 o.extend(it.encode());
             }
-            ReplyItem::TooBig => o.push(2),
+            ReplyItem::TooBig(it) => {
+                o.push(2);
+                o.extend(it.encode());
+            }
         }
         o
     }
@@ -419,16 +423,23 @@ impl Reply {
         let server = r.a()?;
         let region = u16::from_be_bytes(r.a()?);
         let since = r.u32()?;
-        let item = match r.u8()? {
+        let kind = r.u8()?;
+        let item = match kind {
             0 => ReplyItem::None,
-            1 => {
+            1 | 2 => {
                 let it = r.rest();
                 if it.len() > REPLY_MAX {
                     return Err(Invalid::Encoding);
                 }
-                ReplyItem::Item(Box::new(Item::decode(it)?))
+                let it = Box::new(Item::decode(it)?);
+                if kind == 1 {
+                    ReplyItem::Item(it)
+                } else if it.zone.is_none() {
+                    ReplyItem::TooBig(it)
+                } else {
+                    return Err(Invalid::Encoding);
+                }
             }
-            2 => ReplyItem::TooBig,
             _ => return Err(Invalid::Encoding),
         };
         r.end()?;

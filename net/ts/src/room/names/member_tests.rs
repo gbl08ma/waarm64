@@ -371,7 +371,7 @@ fn a_member_resolves_a_name_keeps_it_and_asks_again_after_five_minutes() {
     assert_eq!(bus.asks.len(), asks, "nothing asked");
     // Stored: a member made from the record answers at once, with no names client.
     let rec = bus.stored[&alpha.id].clone().unwrap();
-    assert_eq!(rec[0], 2, "a member's record");
+    assert_eq!(rec[0], 3, "a member's record");
     let mut m = member();
     assert!(m.load(&rec, bus.unix()));
     assert!(!m.load(&record(&alpha, T), bus.unix()), "not a server's");
@@ -475,6 +475,58 @@ fn a_kept_name_isnt_replaced_by_a_younger_chain() {
     // does not give").
     let mut fresh = Bus::new(vec![serving(&mut b, 5, &[&fake])], member());
     assert_eq!(fresh.resolve("alpha").0, Answer::Node([0x66; 32]));
+}
+
+/// Review 3's finding 1: a first lookup that saw one owner key kept only its last entry (a renewal 4 days back), so
+/// an impostor's back-order claimed 10 days ago, after the owner's claim but before that renewal, looked older. Shown
+/// alone by both servers of a refresh (junk registrations drawn, or a reset), it replaced the owner. What is kept now
+/// knows its earliest time wasn't verified from a claim: another key never replaces it on seniority alone.
+#[test]
+fn a_back_order_doesnt_replace_a_kept_name_whose_claim_wasnt_seen() {
+    let mut b = Bitcoin::new(ROOM, 47);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let fake = title(&mut b, 66, "alpha", 10, &[], [0x66; 32], [0x66; 32]);
+    let (s0, s1) = (serving(&mut b, 1, &[&alpha]), serving(&mut b, 2, &[&alpha]));
+    let mut bus = Bus::new(vec![s0, s1], member());
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    let kept = bus.m.kept[&alpha.id].clone();
+    assert_eq!(
+        kept.kept.earliest,
+        t(4),
+        "a first lookup sees the last entry"
+    );
+    assert!(!kept.kept.whole, "not from a claim");
+    // Stored and loaded back: still not from a claim.
+    let rec = bus.stored[&alpha.id].clone().unwrap();
+    let mut m = member();
+    assert!(m.load(&rec, bus.unix()));
+    assert!(!m.kept[&alpha.id].kept.whole);
+    // Both servers of the refresh hold only the impostor's chain.
+    let (s2, s3) = (serving(&mut b, 3, &[&fake]), serving(&mut b, 4, &[&fake]));
+    let mut m = std::mem::replace(&mut bus.m, member());
+    m.stop();
+    let mut bus = Bus::new(vec![s2, s3], m);
+    bus.advance(Duration::from_secs(KEPT_REFRESH + 1));
+    bus.resolve("alpha");
+    bus.advance(Duration::from_secs(2));
+    assert!(bus.m.stats.histories >= 2, "contested: history asked");
+    assert_eq!(
+        bus.resolve("alpha").0,
+        Answer::Node([0xa1; 32]),
+        "the owner stands"
+    );
+    assert_eq!(bus.m.kept[&alpha.id].kept, kept.kept, "what is kept stands");
+    // A refresh whose servers show the owner's run too: its claim is seen, and the earliest time is the claim's.
+    let (s4, s5) = (serving(&mut b, 5, &[&alpha]), serving(&mut b, 6, &[&fake]));
+    let mut m = std::mem::replace(&mut bus.m, member());
+    m.stop();
+    let mut bus = Bus::new(vec![s4, s5], m);
+    bus.advance(Duration::from_secs(2 * KEPT_REFRESH + 30)); // a new bus's clock starts again at T
+    bus.resolve("alpha");
+    bus.advance(Duration::from_secs(2));
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    let k = &bus.m.kept[&alpha.id].kept;
+    assert_eq!((k.earliest, k.whole), (t(20), true), "the owner's run seen");
 }
 
 /// One server lost the name, the other shows a younger chain against what the member keeps: the one answer isn't
@@ -1111,8 +1163,9 @@ fn a_history_is_checked_once_an_entry_in_slices() {
     // What the member keeps: alpha's owner.
     let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
     let last = alpha.entries.last().unwrap().clone();
-    let mut rec = vec![2u8];
+    let mut rec = vec![3u8];
     rec.extend_from_slice(&t(20).to_le_bytes());
+    rec.push(1); // the claim's time
     rec.extend_from_slice(&(T - KEPT_REFRESH - 10).to_le_bytes()); // checked a while ago: asked again
     rec.extend(
         Item {
@@ -1256,8 +1309,9 @@ fn a_lookup_being_checked_isnt_asked_again() {
 /// A member's record of `it`'s last entry and zone, confirmed at `checked`.
 fn kept_record(it: &Item, checked: u64) -> Vec<u8> {
     let last = it.entries.last().unwrap().clone();
-    let mut rec = vec![2u8];
+    let mut rec = vec![3u8];
     rec.extend_from_slice(&last.anchor.as_ref().unwrap().1.time().to_le_bytes());
+    rec.push(0); // its earliest time not a claim's
     rec.extend_from_slice(&checked.to_le_bytes());
     rec.extend(
         Item {
@@ -1435,6 +1489,175 @@ fn junk_replies_take_no_place() {
     assert!(bus.m.stats.refused >= 300, "{}", bus.m.stats.refused);
     assert_eq!(bus.m.stats.fetches, 0, "no contest: junk shows no owner");
     assert_eq!(bus.m.kept[&alpha.id].zone, alpha.zone, "the owner's zone");
+}
+
+/// Review 3's finding 2: "too big" replies, forged by anyone who knows the room's ID (no registration), each from a
+/// made-up server claiming `since` 0, forced a contest that fetched every one of them (5 s each, 8 at once). A "too
+/// big" now carries the last entry: forged with a broken one it is refused; with the owner's own, copied, it shows the
+/// owner's key, whose zone an item already brought, so nothing is fetched.
+#[test]
+fn forged_too_big_replies_dont_stall_a_first_lookup() {
+    let mut b = Bitcoin::new(ROOM, 49);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let real = alpha.entries.last().unwrap().clone();
+    for copied in [false, true] {
+        let mut junk = Vec::new();
+        for k in 0..40u32 {
+            let mut server = [0x55; 32];
+            server[..4].copy_from_slice(&k.to_le_bytes());
+            let mut w = real.clone();
+            if !copied {
+                w.entry.sig[(k % 64) as usize] ^= 1;
+            }
+            junk.push(Reply {
+                nonce: [0; 16],
+                server,
+                region: 0,
+                since: 0,
+                item: super::wire::ReplyItem::TooBig(Box::new(Item {
+                    id: alpha.id,
+                    entries: vec![w],
+                    zone: None,
+                })),
+            });
+        }
+        let s0 = serving(&mut b, 1, &[&alpha]);
+        let mut bus = Bus::new(vec![s0], member());
+        bus.junk = junk;
+        let (a, took) = bus.resolve("alpha");
+        eprintln!(
+            "40 forged too-big replies a round (copied {copied}): {a:?} in {took:?}, {} fetches",
+            bus.m.stats.fetches
+        );
+        assert_eq!(a, Answer::Node([0xa1; 32]), "copied {copied}");
+        assert_eq!(bus.m.stats.fetches, 0, "copied {copied}: nothing fetched");
+        assert_eq!(bus.m.kept[&alpha.id].zone, alpha.zone);
+    }
+}
+
+/// Review 3's finding 2, in a contest (impostors' real back-orders, each on a server of its own): forged replies
+/// copying a key's entry from made-up servers, each claiming `since` 0, crowd out its real holder, and every fetch of
+/// them waits its 5 s. With one impostor whose run is checked, the owner's run unchecked gives no answer, never the
+/// impostor's; with four, every key crowded (fetching them all would take 25 s), the contest ends within its time.
+#[test]
+fn a_contest_crowded_by_forged_repliers_ends_in_time_and_never_for_another_owner() {
+    let mut b = Bitcoin::new(ROOM, 50);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    for impostors in [1u8, 4] {
+        let mut shown = vec![alpha.clone()];
+        for k in 0..impostors {
+            shown.push(title(
+                &mut b,
+                66 + k,
+                "alpha",
+                10,
+                &[],
+                [0x66; 32],
+                [0x66; 32],
+            ));
+        }
+        let mut junk = Vec::new();
+        // The owner's key crowded (40 copies, past what a contest fetches in its time; `since` 1, after the impostor's
+        // lie); with four impostors, every key (8 copies each).
+        let crowded = if impostors == 1 { 1 } else { shown.len() };
+        for (k, it) in shown.iter().take(crowded).enumerate() {
+            for j in 0..if impostors == 1 { 40 } else { 8u32 } {
+                let mut server = [0x55; 32];
+                server[..4].copy_from_slice(&(k as u32 * 64 + j).to_le_bytes());
+                junk.push(Reply {
+                    nonce: [0; 16],
+                    server,
+                    region: 0,
+                    since: (impostors == 1) as u32,
+                    item: super::wire::ReplyItem::Item(Box::new(Item {
+                        id: alpha.id,
+                        entries: vec![it.entries.last().unwrap().clone()],
+                        zone: it.zone.clone(),
+                    })),
+                });
+            }
+        }
+        let mut servers: Vec<Server> = (shown.iter().enumerate())
+            .map(|(k, it)| serving(&mut b, 1 + k as u8, &[it]))
+            .collect();
+        if impostors == 1 {
+            // The impostor's own server claims the earliest run of all, so its run is checked first.
+            servers[1].lie_since = Some(0);
+        }
+        let mut bus = Bus::new(servers, member());
+        bus.junk = junk;
+        let start = bus.now;
+        let (a, _) = bus.resolve("alpha");
+        assert_ne!(a, Answer::Node([0x66; 32]), "{impostors} impostors");
+        while bus.m.firsts() > 0 && bus.now - start < Duration::from_secs(60) {
+            bus.advance(Duration::from_millis(100));
+            let (now, unix) = (bus.now, bus.unix());
+            assert_ne!(
+                bus.m.query("alpha", now, unix, false),
+                Answer::Node([0x66; 32]),
+                "{impostors} impostors: never an impostor"
+            );
+        }
+        let took = bus.now - start;
+        eprintln!(
+            "a contest of {impostors} impostors crowded by forged repliers: over in {took:?}, {} fetches",
+            bus.m.stats.fetches
+        );
+        assert!(
+            took <= Duration::from_secs(14), // CONTEST_FOR (10 s), the first round and the wait for the decision
+            "{impostors} impostors: {took:?}"
+        );
+        assert!(!bus.m.kept.contains_key(&alpha.id), "nothing taken");
+    }
+}
+
+/// Review 3's finding 3: two contests at once that fetch from one server (it replied for both names) each get their
+/// own run. A fetched run went to the first contest waiting on its server, whichever name it was for: the honest run
+/// was dropped there, the session forgotten, and the other name's run lost with it, so an impostor won or nobody did.
+/// (Which servers a round reaches is drawn, so each kind runs several times; most run both contests.)
+#[test]
+fn two_contests_at_once_each_get_their_own_run() {
+    let mut b = Bitcoin::new(ROOM, 51);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let beta = title(&mut b, 2, "beta", 20, &[4], [0xb1; 32], [0xb2; 32]);
+    let fa = title(&mut b, 66, "alpha", 10, &[], [0x66; 32], [0x66; 32]);
+    let fb = title(&mut b, 67, "beta", 10, &[], [0x67; 32], [0x67; 32]);
+    for one_fake_server in [false, true] {
+        let mut both = 0;
+        for run in 0..8 {
+            let mut servers = vec![serving(&mut b, 1, &[&alpha, &beta])];
+            if one_fake_server {
+                servers.push(serving(&mut b, 2, &[&fa, &fb]));
+            } else {
+                servers.push(serving(&mut b, 2, &[&fa]));
+                servers.push(serving(&mut b, 3, &[&fb]));
+            }
+            let mut bus = Bus::new(servers, member());
+            let (now, unix) = (bus.now, bus.unix());
+            bus.m.query("alpha", now, unix, true);
+            bus.m.query("beta", now, unix, true);
+            bus.advance(Duration::from_secs(15));
+            let k = (one_fake_server, run);
+            // Decided by those lookups (a query now would start a lookup of its own).
+            for it in [&alpha, &beta] {
+                let kept = bus
+                    .m
+                    .kept
+                    .get(&it.id)
+                    .map(|n| n.zone.as_ref().unwrap().owner);
+                assert_eq!(
+                    kept,
+                    Some(it.zone.as_ref().unwrap().owner),
+                    "{k:?}: the owner kept"
+                );
+            }
+            both += (bus.m.stats.contests == 2) as usize;
+        }
+        assert!(
+            both >= 4,
+            "one fake server {one_fake_server}: {both} of 8 ran both contests"
+        );
+    }
 }
 
 /// R3a: liars that are the whole of a first lookup's sample reply with the owner's own records, all public and valid,

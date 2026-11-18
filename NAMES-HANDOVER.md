@@ -23,26 +23,24 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   quote of the page (`machines:About.unknown`); reworded. **The check that would have caught it** (the user,
   2026-11-18: noted here, the kickoff unchanged): loops run `tools/i18n-check.ts` when a doc changed too, not only
   when the page did (it reads the docs' quotes of the page). At the end also `scripts/ci-debian.sh`,
-  `scripts/ci-machines.sh`. **The redesign's code (R1–R3a) has had no out-of-context review.**
+  `scripts/ci-machines.sh`. **Review 3** (the redesign's code, R1–R3a) is done and its seven findings fixed
+  (`NAMES-REVIEW-3.md` "Status"); its fix loop ran targeted tests only (`cargo test -p waarm64_ts`, the Node names
+  tests): the loop's full scripts are `scripts/ci.sh` and `scripts/ci-net.sh` (names-room's rig, page-room).
 - **Session kind:** the dev VM from 2026-11-18 (cloud before: docs/cloud.md). The user (2026-11-17): **N6 doesn't
   run in a cloud session**.
 
 ## Next, in order (a dev VM session)
 
-1. **Review 3**: an out-of-context review of the redesign's code and what it touches (`net/ts/src/room/names/`,
-   especially `outside.rs`, `member.rs`, `server.rs`, `wire.rs`; the names code in `room.rs`, `wasm.rs`;
-   `web/names*.ts`, `web/room-worker.ts`), findings in `NAMES-REVIEW-3.md`, then a fix loop, each fix from a failing
-   test.
-2. **N0c**: N0's items 5 and 6 on the public relays and DERP (5, 20, 50 MB between two names clients; what a second
+1. **N0c**: N0's items 5 and 6 on the public relays and DERP (5, 20, 50 MB between two names clients; what a second
    room client costs; a cold first lookup, now R3's `ask`/`reply`), the GPU figure for Argon2id, and what R2 and R3
    left to measure on public services: whether the six default relays forward a 4 KiB ephemeral event (`REPLY_MAX`),
    whether the explorers' 404s carry CORS headers (R2's block refusal relies on seeing them), and the explorers'
    tolerance of a first sync's block checks. All within "a few hundred small requests" a service.
-3. **N6**: scale and abuse as the kickoff says, plus R2's and R3's items in docs/backlog.md ("What servers ask
+2. **N6**: scale and abuse as the kickoff says, plus R2's and R3's items in docs/backlog.md ("What servers ask
    outside the room", R3's loose ends: forged-reply floods with hundreds of servers, reply budgets in small rooms).
-4. **The end**, as the kickoff says: final review, the full scripts (also `ci-debian.sh`, `ci-machines.sh`),
+3. **The end**, as the kickoff says: final review, the full scripts (also `ci-debian.sh`, `ci-machines.sh`),
    `docs/networking/names.md` from the spec, rooms.md's decisions, the deletions (this file, the kickoff,
-   `docs/plans/room-names*.md`, `room-names-research/`), PLAN.md's row.
+   `docs/plans/room-names*.md`, `room-names-research/`, `NAMES-REVIEW-3.md`), PLAN.md's row.
 
 ## The queue
 
@@ -69,10 +67,10 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 | R3 | As redesigned in [docs/plans/room-names-r3.md](docs/plans/room-names-r3.md) (the user's idea, 2026-11-17): a first lookup asks the room through the relays (`ask`/`reply`, sampled, with dissent folded in); "who serves?" back to the plain draw for what mustn't announce an id; N5a's tiers out. The user's answers to its four questions (2026-11-17): records may pass through relays as replies; a name that doesn't exist is announced again when its negative answer expires; build with `REPLY_MAX` 4 KiB and leave measuring the relays to a dev VM session (N0c/N6); no publisher's `ask` for its own name. **Built (2026-11-17, cloud; 60821f8, 383583b, and the commits after)**: the tiers out (`rank` is the hash's top 64 bits, a `serve` one entry); `ask` (share, dissent, fetch) and `reply` (wire.rs `NameAsk`, `Reply`, `Room::reply_tag`); servers reply 2 a second, 16 a minute a tag, once a nonce, item ≤ `REPLY_MAX` 4 KiB else "too big", a `fetch` a call back and the whole run; a member's first lookup at the room's last spread (6 first; three rounds, "everyone" repeated), each reply checked for its content, dissent at the first, decided 0.7 s on (0.3 s when everyone was asked): one key its latest entry, none NXDOMAIN 60 s doubling to 10 min, more keys or too big a contest by `fetch` (earliest `since` first, 8 at once), late replies 3 s; refreshes, the dialog's check and puts keep "who serves?" (servers redrawn every 15 min) and never ask; the names client asks before its home region is up; replies through the ask's relay and its copy's. Choices the design left open: room-names-r3.md "As built". Tests: Rust (member_tests +12, server_tests +4, room/tests/names +1 and the first lookup's no-DERP assertion), names-room's grace step waits for the servers first. 128/1,280 junk registrations against one holder: the owner every time (≤2.4 s with a contest, ~1.1 s without; 6 to 26 replies a lookup); first lookup on the fake relay 1.3 s (room of two), then 0.3 s; 2,000 forged asks → 20 replies. 16 planted bugs, all caught. **Found, for the user**: the owner's own last entry shown without its zone silences the dissent (NXDOMAIN or an old zone until the 5-minute refresh; never another owner): closing it changes the ask (backlog) | done (2026-11-17) |
 | R3a | Dissent covers the zone (2026-11-17, cloud): a `dissent`'s `shown` is now 8 bytes of a tagged SHA-256 over the owner key, the owning chain's last entry's id and the zone (`wire::shown`), where it was 8 bytes of the owner key; a server replies when what it holds hashes otherwise, so the honest holder of a newer zone or a renewal answers liars who show the owner's own records stale (its last entry with an old zone or none, or an entry a renewal behind in its grace). The ask stays 164 bytes; what an observer learns is which version of public records the asker was shown (room-names.md "What a relay sees"). Not covered on purpose: the anchor and header (another calendar's anchor moves the entry's time by hours), `since`, the replier's key. **Found, not closed (backlog)**: the owner's last entry before its release, shown by a sample of liars: holders of the release don't dissent and a reply can't carry a release, so the member keeps the released owner (even over a next owner, whose contest the old run wins) until its 5-minute refresh. Test failing first: `the_owners_own_records_shown_stale_dont_silence_the_dissent` (128 liars, one honest holder, six first lookups a kind; NXDOMAIN or the old zone on R3's code), and the server's mode test grown. 4 planted bugs, all caught: the zone out of the hash, the entry out of it, a server hashing without its zone, a member hashing without the zone (every holder dissenting). room-names-r3.md "As built", room-names.md, backlog | done (2026-11-17) |
 | Domains | The page's words (2026-11-18, dev VM; the user's call): a name is a **domain**, a label a **subdomain** (a term people can look up, held by the connection's key, not a machine); Register a domain… and its dialog (the whole domain `<name>.<tag>.p2p.internal` under the field, the room's suffix while empty), Point all at this connection, the serving notice says this web app serves while the connection is connected (a machine running or not). Keys and components unchanged; copy.md's words table has the row; the spec keeps "name" and says so | done |
-| Review 3 | Out-of-context review of the redesign (R1–R3a) and a fix loop | *dev VM* (the user, 2026-11-17): "Next" 1 |
-| N0c | N0's items 5 and 6 (public DERP transfer, cold lookup) and the GPU figure, plus R2's and R3's public-service checks | *dev VM*: "Next" 2 |
-| N6 | Scale and abuse; days on the public services | *dev VM*: "Next" 3 (not in a cloud session: the user) |
-| End | Final review, full scripts, docs, deletions | *dev VM*: "Next" 4 |
+| Review 3 | Out-of-context review of the redesign (R1–R3a) → `NAMES-REVIEW-3.md` (7 findings), and its fix loop (2026-11-18, dev VM; 468e9ee1 to c987a221, one commit a finding, each from a failing test, 15 planted bugs caught, one by inspection): a kept name whose claim wasn't seen isn't replaced by another key's back-order (`Kept.whole`, member record version 3); "too big" replies carry the last entry, a contest decides within 10 s (`CONTEST_FOR`) and only when every key shown is settled, never for another owner, 32 repliers a key; a fetched run goes to its own name's contest; a `get`'s answer keeps only the name asked, a peer's share of the verify queue bounded (256 items, 4 MiB); a title is lost only when no server of the pass took it and an explorer knows the better chain's block; an anchor in a block refused mid-job isn't kept; block retries double. Wire changed (Reply's too big, a fetch's empty item), pre-release | done |
+| N0c | N0's items 5 and 6 (public DERP transfer, cold lookup) and the GPU figure, plus R2's and R3's public-service checks | *dev VM*: "Next" 1 |
+| N6 | Scale and abuse; days on the public services | *dev VM*: "Next" 2 (not in a cloud session: the user) |
+| End | Final review, full scripts, docs, deletions | *dev VM*: "Next" 3 |
 
 ## Notes for whoever runs loops here
 
@@ -101,7 +99,21 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 
 ## Open questions
 
-None waiting for the user. Things for the user's attention when the track ends, all in docs/backlog.md:
+From review 3's fix loop (2026-11-18), each fixed as conservatively as the decisions allow; the user's call:
+- **A contest crowded by forged repliers** (finding 2): copies of a key's real entry from made-up servers, claiming
+  `since` 0, crowd out its real holder; the contest now ends within 10 s with no answer, never another owner's. So
+  anyone who knows the room's ID can keep a *contested* name (one with a second live chain: a registration) from
+  resolving on first lookups. Closing it needs a reply to prove its server (a serve-style proof over the nonce): a
+  protocol change, and the replier's identity in every reply.
+- **The spread under forged replies** (finding 2): forged nones and copies of real entries still count toward the
+  next first lookup's spread (narrower by 3 bits, to 15 at most); its rounds widen to everyone, so a lookup is slower
+  by about a second, not wrong.
+- **A refresh that can't see the kept owner's claim** (finding 1): while a member never saw the kept chain's claim, a
+  refresh whose two drawn servers show only another key's run keeps what is kept (refused). A first lookup's `ask`
+  would find the owner's holders but announces the name id from a member that keeps it (decision 12 as widened covers
+  only names not kept); not done.
+
+Things for the user's attention when the track ends, all in docs/backlog.md:
 - **The visit notice and collecting a claim** (N0b): the page's backoff collects most claims at 140 minutes, past
   the dialog's "about 2 hours"; the fix (first ask at an hour, then every 10 to 15 minutes to 3 hours) is product code
   for a loop.

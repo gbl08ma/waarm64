@@ -11,11 +11,13 @@
 //!   naming what was shown, the owner key, its last entry and the zone hashed (`wire::shown`; zeros for none): every
 //!   server holding anything else (another owner, a renewal, another zone) replies. 0.7 s after it (0.3 s
 //!   after the first reply when everyone was asked): one owner key, that owner (its latest last entry); only none,
-//!   NXDOMAIN for 60 s doubling to 10 minutes while the name stays unknown; two or more keys, or an item too big for an
-//!   event, a contest: `fetch` from one replier at a time per key (8 at once, the earliest `since` first), each
-//!   calling back and sending the owning chain's run, checked as `history` is, until the best run checked is older
-//!   than every `since` left; the owner by "Who owns a name". Silence through the last round: nobody serves (30 s
-//!   doubling to 10 minutes). A reply within 3 s after the decision is still checked: another owner starts a contest.
+//!   NXDOMAIN for 60 s doubling to 10 minutes while the name stays unknown; two or more keys, or one shown only by
+//!   items too big for an event (a "too big" carries the last entry, checked), a contest: `fetch` from one replier at a
+//!   time per key (8 at once, the earliest `since` first), each calling back and sending the owning chain's run,
+//!   checked as `history` is, until the best run checked is older than every `since` left, or [`CONTEST_FOR`] ran
+//!   out; the owner by "Who owns a name" if every key shown is settled, else no answer. Silence through the last
+//!   round: nobody serves (30 s doubling to 10 minutes). A reply within 3 s after the decision is still checked:
+//!   another owner starts a contest.
 //! - **Finding servers** for what must not name an id (the refresh of kept names, the dialog's check, a publisher's
 //!   puts): "who serves the registry?" as a server asks it (server.rs), the plain draw: shares of 1/64, 1/8, everyone;
 //!   the two answers with the lowest `BLAKE2s(nonce, owner key)` 0.3 s after the first. Held while asked and for
@@ -28,7 +30,7 @@
 //!   `history` from each, and the owner by "Who owns a name" over everything shown, which `Kept::offer` then takes or
 //!   refuses. **A refresh never sends an `ask`**: that would tell the room how long a name stays in use.
 //! - **What is kept**: each name resolved, its chain's last entry, the earliest time verified for that chain, the
-//!   zone and when servers last confirmed it, persisted (a record a name, version 2). It answers at once while its
+//!   zone and when servers last confirmed it, persisted (a record a name, version 3). It answers at once while its
 //!   chain is alive.
 //! - **The dialog's check**: `ids`, every id under one first byte ([`Member::ids`]), never an `ask`.
 
@@ -86,6 +88,11 @@ pub const ASKS_PER_SECOND: usize = 4;
 /// A contest's fetches at once, and how long one waits for its run.
 pub const FETCHES_AT_ONCE: usize = 8;
 pub const FETCH_WAIT: Duration = Duration::from_secs(5);
+/// A contest decides this long after it started at the latest, on the runs checked by then (review 3, finding 2:
+/// repliers claiming `since` 0 mustn't hold it open).
+pub const CONTEST_FOR: Duration = Duration::from_secs(10);
+/// The repliers a first lookup keeps of one owner key: those with the earliest `since` (the first of equals).
+pub const REPLIERS_A_KEY: usize = 32;
 /// A first lookup's first spread in a room it never asked.
 pub const FIRST_SPREAD: u8 = 6;
 /// A round that brings more replies than this starts the next lookup 3 bits narrower (up to [`MAX_SPREAD`]).
@@ -104,7 +111,7 @@ const MAX_NEGATIVE: usize = 1024;
 /// The most entries a server's answer may show to lead from a kept last entry to its release.
 const RELEASE_RUN: usize = 8;
 /// A member's record's version byte (a server's is 1: store.rs).
-const RECORD_VERSION: u8 = 2;
+const RECORD_VERSION: u8 = 3;
 
 /// What a member keeps of a name it resolved.
 #[derive(Debug, Clone)]
@@ -121,11 +128,12 @@ pub struct KeptName {
 }
 
 impl KeptName {
-    /// The stored record: its version byte, the earliest time, when it was checked, an item of the last entry and the
-    /// zone.
+    /// The stored record: its version byte, the earliest time, whether that is a claim's, when it was checked, an item
+    /// of the last entry and the zone.
     pub fn record(&self) -> Vec<u8> {
         let mut r = vec![RECORD_VERSION];
         r.extend_from_slice(&self.kept.earliest.to_le_bytes());
+        r.push(self.kept.whole as u8);
         r.extend_from_slice(&self.checked.to_le_bytes());
         r.extend(
             Item {
@@ -256,13 +264,12 @@ struct AskOut {
     shown: [u8; 8],
 }
 
-/// A server that replied to a first lookup: its names key, its `since`, the owner key its item showed (None: too big
-/// for an event, fetched to be known).
+/// A server that replied to a first lookup: its names key, its `since`, the owner key its item showed (checked).
 #[derive(Debug, Clone, Copy)]
 struct Replier {
     server: [u8; 32],
     since: u32,
-    key: Option<[u8; 32]>,
+    key: [u8; 32],
 }
 
 /// A first lookup (room-names-r3.md "A first lookup").
@@ -286,6 +293,8 @@ struct First {
     queue: VecDeque<Reply>,
     /// What the replies that held showed, by owner key: the latest last entry and the zones.
     keys: BTreeMap<[u8; 32], (Stamped, Vec<Zone>)>,
+    /// The keys shown by an item with its zone (not only "too big": its zone is fetched to be known).
+    zoned: BTreeSet<[u8; 32]>,
     nones: usize,
     repliers: Vec<Replier>,
     contest: Option<Contest>,
@@ -294,10 +303,10 @@ struct First {
     entries: BTreeMap<[u8; 32], Option<Stamped>>,
 }
 
-/// A contest (two owner keys shown, or an item too big for an event): runs fetched from repliers, the earliest
-/// `since` first, until the best run checked is older than every `since` left.
+/// A contest (two owner keys shown, or a key shown only by items too big for an event): runs fetched from repliers,
+/// the earliest `since` first, until the best run checked is older than every `since` left, or [`CONTEST_FOR`] ran out.
 struct Contest {
-    left: Vec<Replier>,
+    until: Instant,
     /// Fetches out: the server and until when its run is waited for (None: the ask waits for the rate).
     flying: BTreeMap<[u8; 32], Option<Instant>>,
     fetched: BTreeSet<[u8; 32]>,
@@ -464,10 +473,10 @@ impl Member {
             || self.reqs.values().any(|(r, _)| matches!(r, Req::Put(_)))
     }
 
-    /// A stored record (a member's, version 2), streamed in at the start: verified when it was taken, so trusted. False
+    /// A stored record (a member's, version 3), streamed in at the start: verified when it was taken, so trusted. False
     /// for a record that isn't a member's or whose chain no longer covers `unix` (the page deletes it).
     pub fn load(&mut self, record: &[u8], unix: u64) -> bool {
-        let Some((earliest, checked, item)) = read_record(record) else {
+        let Some((earliest, whole, checked, item)) = read_record(record) else {
             return false;
         };
         let [w]: [WireEntry; 1] = match item.entries.try_into() {
@@ -491,6 +500,7 @@ impl Member {
             KeptName {
                 kept: Kept {
                     earliest: earliest.min(chain.seniority),
+                    whole: whole || chain.claimed,
                     chain,
                 },
                 last,
@@ -1455,6 +1465,7 @@ impl Member {
                 decided: None,
                 queue: VecDeque::new(),
                 keys: BTreeMap::new(),
+                zoned: BTreeSet::new(),
                 nones: 0,
                 repliers: Vec::new(),
                 contest: None,
@@ -1561,8 +1572,8 @@ impl Member {
                     Some(d) if f.round < f.spreads.len() => f.started + *d,
                     _ => f.started + GIVE_UP,
                 });
-                let fetch =
-                    (f.contest.as_ref()).and_then(|c| c.flying.values().flatten().min().copied());
+                let fetch = (f.contest.as_ref())
+                    .and_then(|c| c.flying.values().flatten().chain([&c.until]).min().copied());
                 let decide = f.decide_at.filter(|_| f.decided.is_none());
                 let late = (f.decided)
                     .filter(|_| f.contest.is_none())
@@ -1635,10 +1646,15 @@ impl Member {
             while units < UNITS_PER_TURN {
                 let f = self.firsts.get_mut(&id).unwrap();
                 let Some(r) = f.queue.pop_front() else { break };
-                let checked = match r.item {
-                    ReplyItem::None => Ok(None),
-                    ReplyItem::TooBig => Ok(Some(None)),
-                    ReplyItem::Item(it) => {
+                let it = match r.item {
+                    ReplyItem::None => None,
+                    ReplyItem::Item(it) => Some((it, false)),
+                    // "Too big" carries the last entry alone, checked as an item's (a forged one weighs nothing).
+                    ReplyItem::TooBig(it) => Some((it, true)),
+                };
+                let checked = match it {
+                    None => Ok(None),
+                    Some((it, big)) => {
                         let (names, params) = (&self.names, &self.params);
                         Self::check_item(
                             names,
@@ -1651,7 +1667,7 @@ impl Member {
                             unix,
                             &mut units,
                         )
-                        .map(|x| Some(Some(x)))
+                        .map(|(s, z)| Some((s, z, big)))
                     }
                 };
                 match checked {
@@ -1752,8 +1768,9 @@ impl Member {
         Ok((s, zone))
     }
 
-    /// A reply that held (`item`: None, said none; Some(None), too big; Some(Some), an item checked) counts: the first
-    /// asks for dissent or sets the decision; after the decision, another owner starts a contest.
+    /// A reply that held (`item`: None, said none; else the last entry checked, the zone, and whether the item was too
+    /// big for an event) counts: the first asks for dissent or sets the decision; after the decision, another owner
+    /// starts a contest.
     #[allow(clippy::too_many_arguments)]
     fn counted(
         &mut self,
@@ -1761,7 +1778,7 @@ impl Member {
         nonce: [u8; 16],
         server: [u8; 32],
         since: u32,
-        item: Option<Option<(Stamped, Option<Zone>)>>,
+        item: Option<(Stamped, Option<Zone>, bool)>,
         now: Instant,
         unix: u64,
     ) {
@@ -1774,15 +1791,7 @@ impl Member {
         let mut new_key = false;
         match item {
             None => f.nones += 1,
-            Some(None) => {
-                new_key = true;
-                f.repliers.push(Replier {
-                    server,
-                    since,
-                    key: None,
-                });
-            }
-            Some(Some((s, zone))) => {
+            Some((s, zone, big)) => {
                 let k = s.entry.owner;
                 new_key = !f.keys.contains_key(&k);
                 let e = f.keys.entry(k).or_insert_with(|| (s.clone(), Vec::new()));
@@ -1791,11 +1800,17 @@ impl Member {
                     e.0 = s;
                 }
                 e.1.extend(zone);
-                f.repliers.push(Replier {
-                    server,
-                    since,
-                    key: Some(k),
-                });
+                if !big {
+                    f.zoned.insert(k);
+                }
+                add_replier(
+                    &mut f.repliers,
+                    Replier {
+                        server,
+                        since,
+                        key: k,
+                    },
+                );
             }
         }
         if f.first.is_none() {
@@ -1832,19 +1847,19 @@ impl Member {
             return;
         }
         let f = self.firsts.get_mut(&id).unwrap();
+        // In a contest, a replier that came is among those its next step may fetch.
         if f.decided.is_some() && f.contest.is_none() {
-            if new_key && f.keys.len() + f.repliers.iter().filter(|r| r.key.is_none()).count() > 1 {
+            if new_key && f.keys.len() > 1 {
                 self.log("a late reply shows another owner: a contest".into());
                 self.start_contest(id, now, unix);
             } else if f.keys.len() == 1 && !self.kept.contains_key(&id) {
-                // Decided none; an owner came late.
-                self.decide_one(id, unix);
+                // Decided none; an owner came late (its zone fetched when only "too big" showed it).
+                if f.zoned.is_empty() {
+                    self.start_contest(id, now, unix);
+                } else {
+                    self.decide_one(id, unix);
+                }
             }
-        } else if let Some(c) = f.contest.as_mut()
-            && let Some(r) = f.repliers.last().copied()
-            && r.server == server
-        {
-            c.left.push(r);
         }
     }
 
@@ -1870,12 +1885,16 @@ impl Member {
                 continue;
             }
             if let Some(c) = &f.contest {
+                if now >= c.until {
+                    self.contest_step(id, now, unix); // out of time: decided on the runs checked
+                    continue;
+                }
                 let late: Vec<[u8; 32]> = (c.flying.iter())
                     .filter(|(_, t)| t.is_some_and(|t| now >= t))
                     .map(|(k, _)| *k)
                     .collect();
                 for k in late {
-                    self.fetch_gone(&k, now, unix);
+                    self.fetch_late(id, k, now, unix);
                 }
                 continue;
             }
@@ -1913,17 +1932,14 @@ impl Member {
             if let Some(d) = f.dissent {
                 self.ask_nonces.remove(&d);
             }
-            for k in f
-                .contest
-                .iter()
-                .flat_map(|c| c.flying.keys().chain(&c.fetched))
-            {
-                self.cmds.push_back(Cmd::Forget(*k));
+            for k in (f.contest.iter()).flat_map(|c| c.flying.keys().chain(&c.fetched)) {
+                self.forget_fetched(*k);
             }
         }
     }
 
-    /// The decision: one owner key, that owner; only none, NXDOMAIN; more keys or an item too big, a contest.
+    /// The decision: one owner key, that owner; only none, NXDOMAIN; more keys, or one shown only by items too big, a
+    /// contest.
     fn decide_first(&mut self, id: [u8; 32], now: Instant, unix: u64) {
         let f = self.firsts.get_mut(&id).unwrap();
         f.decided = Some(now);
@@ -1935,10 +1951,10 @@ impl Member {
         } else {
             self.spread
         };
-        let too_big = f.repliers.iter().any(|r| r.key.is_none());
-        match (f.keys.len(), too_big) {
-            (0, false) => self.none_known(id, now),
-            (1, false) => self.decide_one(id, unix),
+        // One key, and its zone came with an item: that owner. A key shown only "too big" has its zone fetched.
+        match f.keys.len() {
+            0 => self.none_known(id, now),
+            1 if !f.zoned.is_empty() => self.decide_one(id, unix),
             _ => self.start_contest(id, now, unix),
         }
     }
@@ -1972,7 +1988,7 @@ impl Member {
         self.stats.contests += 1;
         let f = self.firsts.get_mut(&id).unwrap();
         f.contest = Some(Contest {
-            left: f.repliers.clone(),
+            until: now + CONTEST_FOR,
             flying: BTreeMap::new(),
             fetched: BTreeSet::new(),
             runs: VecDeque::new(),
@@ -1984,35 +2000,41 @@ impl Member {
     }
 
     /// The next fetches, or the contest's end: the best run checked older than every `since` left (a replier whose
-    /// key already has a run as old as it claims can show nothing better, and is skipped).
+    /// key already has a run as old as it claims can show nothing better, and is skipped), or [`CONTEST_FOR`] past.
     fn contest_step(&mut self, id: [u8; 32], now: Instant, unix: u64) {
         let Some(f) = self.firsts.get_mut(&id) else {
             return;
         };
         let Some(c) = f.contest.as_mut() else { return };
         let best = c.name.owner(&self.params, unix);
-        c.left.retain(|r| {
-            !c.fetched.contains(&r.server)
-                && !c.flying.contains_key(&r.server)
-                && r.key
-                    .is_none_or(|k| c.best.get(&k).is_none_or(|b| *b > r.since))
-        });
-        c.left.sort_by_key(|r| (r.since, r.server));
+        let mut left: Vec<Replier> = (f.repliers.iter())
+            .filter(|r| {
+                !c.fetched.contains(&r.server)
+                    && !c.flying.contains_key(&r.server)
+                    && c.best.get(&r.key).is_none_or(|b| *b > r.since)
+            })
+            .copied()
+            .collect();
+        left.sort_by_key(|r| (r.since, r.server));
         let older = |b: &Option<Chain>, since: u32| b.as_ref().is_some_and(|b| b.seniority < since);
         let mut fetch = Vec::new();
+        let mut rest = left.iter().peekable();
         while c.flying.len() + fetch.len() < FETCHES_AT_ONCE
-            && let Some(r) = c.left.first().copied()
-            && !older(&best, r.since)
+            && let Some(r) = rest.next_if(|r| !older(&best, r.since))
         {
-            c.left.remove(0);
             if !fetch.contains(&r.server) {
                 fetch.push(r.server); // a server that replied twice (a share and a dissent) is fetched once
             }
         }
-        let done = fetch.is_empty()
-            && c.flying.is_empty()
-            && c.runs.is_empty()
-            && c.left.first().is_none_or(|r| older(&best, r.since));
+        let timed_out = now >= c.until;
+        let done = timed_out
+            || fetch.is_empty()
+                && c.flying.is_empty()
+                && c.runs.is_empty()
+                && rest.peek().is_none_or(|r| older(&best, r.since));
+        if timed_out {
+            fetch.clear();
+        }
         for k in &fetch {
             c.flying.insert(*k, None);
         }
@@ -2033,13 +2055,30 @@ impl Member {
         let f = self.firsts.get_mut(&id).unwrap();
         let c = f.contest.take().unwrap();
         f.decided.get_or_insert(now);
-        for k in &c.fetched {
-            self.cmds.push_back(Cmd::Forget(*k));
+        for k in c.fetched.iter().chain(c.flying.keys()) {
+            self.forget_fetched(*k);
         }
+        let f = &self.firsts[&id];
         let Some(owner) = best else {
             self.log("a contest without a run that held: asked again at the next query".into());
             return self.end_first(id);
         };
+        // Every key shown is settled: its run checked, or each of its repliers claims a run younger than the best
+        // (one that can't win unless it lied, to its own loss). A key whose repliers were never fetched (they didn't
+        // answer, or the time ran out) decides nothing: no answer, rather than another owner's.
+        let settled = f.keys.keys().all(|k| {
+            c.best.contains_key(k)
+                || (f.repliers.iter())
+                    .filter(|r| r.key == *k)
+                    .all(|r| owner.seniority < r.since)
+        });
+        if !settled {
+            self.log(format!(
+                "a contest {}: a key shown without its run checked; asked again at the next query",
+                if timed_out { "out of time" } else { "over" }
+            ));
+            return self.end_first(id);
+        }
         let last = c.name.get(&owner.last()).unwrap().clone();
         let mut zones = c.zones;
         zones.extend(
@@ -2051,36 +2090,55 @@ impl Member {
         self.take(id, owner, last, zones, unix);
     }
 
-    /// A fetched run came (a `fetch`'s answer: `Items` on a session the server opened).
+    /// A fetched run came (a `fetch`'s answer: `Items` on a session the server opened). Each item goes to the contest
+    /// of its own id that waits on this server (review 3, finding 3: a server fetched by two contests answers each in
+    /// a transfer of its own, so the first contest waiting mustn't take the other's run); the session is let go once
+    /// no contest waits on it.
     fn on_fetched(&mut self, from: [u8; 32], items: Vec<Item>, now: Instant, unix: u64) {
-        let Some((&id, f)) = (self.firsts.iter_mut()).find(|(_, f)| {
-            f.contest
-                .as_ref()
-                .is_some_and(|c| c.flying.contains_key(&from))
-        }) else {
-            return self.cmds.push_back(Cmd::Forget(from));
-        };
-        let c = f.contest.as_mut().unwrap();
-        c.flying.remove(&from);
-        c.fetched.insert(from);
-        if let Some(it) = items
-            .into_iter()
-            .find(|i| i.id == id && !i.entries.is_empty())
-        {
-            let mut seen = BTreeSet::new();
-            let entries = (it.entries.into_iter())
-                .filter(|w| seen.insert(w.entry.id()))
-                .collect();
-            c.runs.push_back(Check {
-                server: from,
-                entries,
-                zone: it.zone,
-                name: Name::new(id),
-                last: None,
-            });
+        let mut any = false;
+        for it in items {
+            let Some(c) = (self.firsts.get_mut(&it.id))
+                .and_then(|f| f.contest.as_mut())
+                .filter(|c| c.flying.contains_key(&from))
+            else {
+                continue;
+            };
+            any = true;
+            c.flying.remove(&from);
+            c.fetched.insert(from);
+            if !it.entries.is_empty() {
+                let mut seen = BTreeSet::new();
+                let entries = (it.entries.into_iter())
+                    .filter(|w| seen.insert(w.entry.id()))
+                    .collect();
+                c.runs.push_back(Check {
+                    server: from,
+                    entries,
+                    zone: it.zone,
+                    name: Name::new(it.id),
+                    last: None,
+                });
+            }
         }
-        self.cmds.push_back(Cmd::Forget(from));
+        if !any && self.fetch_waited(&from) {
+            return; // nothing for a contest waiting on it: what it waits for comes in a transfer of its own
+        }
+        self.forget_fetched(from);
         self.check_replies(now, unix);
+    }
+
+    /// Whether a contest still waits on a fetch from `k`.
+    fn fetch_waited(&self, k: &[u8; 32]) -> bool {
+        (self.firsts.values())
+            .filter_map(|f| f.contest.as_ref())
+            .any(|c| c.flying.contains_key(k))
+    }
+
+    /// A fetched server's session let go, unless a contest still waits on it or it is a server held.
+    fn forget_fetched(&mut self, k: [u8; 32]) {
+        if !self.fetch_waited(&k) && !self.servers.contains(&k) {
+            self.cmds.push_back(Cmd::Forget(k));
+        }
     }
 
     /// A fetched run checked: its chain (ending at its last entry, covering now) joins the contest.
@@ -2107,27 +2165,68 @@ impl Member {
         }
     }
 
-    /// A fetch's server went (its session, or its wait ran out): the contest goes on without it.
+    /// A fetch's server went (its session): every contest waiting on it goes on without it.
     fn fetch_gone(&mut self, k: &[u8; 32], now: Instant, unix: u64) {
-        let id = (self.firsts.iter_mut()).find_map(|(id, f)| {
-            let c = f.contest.as_mut()?;
-            c.flying.remove(k)?;
-            c.fetched.insert(*k);
-            Some(*id)
-        });
-        if let Some(id) = id {
+        let ids: Vec<[u8; 32]> = (self.firsts.iter_mut())
+            .filter_map(|(id, f)| {
+                let c = f.contest.as_mut()?;
+                c.flying.remove(k)?;
+                c.fetched.insert(*k);
+                Some(*id)
+            })
+            .collect();
+        for id in ids {
+            self.contest_step(id, now, unix);
+        }
+    }
+
+    /// One contest's wait for a fetch from `k` ran out: it goes on without it (another contest's wait is its own).
+    fn fetch_late(&mut self, id: [u8; 32], k: [u8; 32], now: Instant, unix: u64) {
+        if let Some(c) = self.firsts.get_mut(&id).and_then(|f| f.contest.as_mut())
+            && c.flying.remove(&k).is_some()
+        {
+            c.fetched.insert(k);
+            self.forget_fetched(k);
             self.contest_step(id, now, unix);
         }
     }
 }
 
-/// A member's stored record read back: the earliest time, when it was checked, the item.
-fn read_record(b: &[u8]) -> Option<(u32, u64, Item)> {
+/// A replier added to a first lookup's: once a server and key (the lower `since`), and [`REPLIERS_A_KEY`] of a key at
+/// most, those with the earliest `since` (a replier past them, claiming a later run, could show nothing better).
+fn add_replier(rs: &mut Vec<Replier>, r: Replier) {
+    if let Some(x) = rs
+        .iter_mut()
+        .find(|x| x.server == r.server && x.key == r.key)
+    {
+        x.since = x.since.min(r.since);
+        return;
+    }
+    let of_key = || rs.iter().enumerate().filter(|(_, x)| x.key == r.key);
+    if of_key().count() >= REPLIERS_A_KEY {
+        let Some((worst, w)) = of_key().max_by_key(|(i, x)| (x.since, *i)) else {
+            return;
+        };
+        if w.since <= r.since {
+            return;
+        }
+        rs.remove(worst);
+    }
+    rs.push(r);
+}
+
+/// A member's stored record read back: the earliest time, whether it is a claim's, when it was checked, the item.
+fn read_record(b: &[u8]) -> Option<(u32, bool, u64, Item)> {
     let mut r = Rd::new(b);
     if r.u8().ok()? != RECORD_VERSION {
         return None;
     }
     let earliest = r.u32().ok()?;
+    let whole = match r.u8().ok()? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let checked = r.u64().ok()?;
-    Some((earliest, checked, Item::decode(r.rest()).ok()?))
+    Some((earliest, whole, checked, Item::decode(r.rest()).ok()?))
 }

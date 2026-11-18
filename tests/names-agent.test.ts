@@ -183,6 +183,42 @@ test('a better chain of another key\'s makes a title lost, and a lost title isn\
   assert.notEqual((await liar.agent.titles(l.identityKey))[0].state, 'lost');
 });
 
+test('one server\'s better chain doesn\'t make a title lost when another took it, nor a chain on a block no explorer knows (review 3, finding 5)', { skip, timeout: 90_000 }, async () => {
+  const other = await testAgent({ publish: fakePublish() });
+  const theirs = conn('conn-other-5');
+  await aged(cal, other.agent, theirs, 'disputed', nowS() - 25 * DAY);
+  const [better] = await other.store.titles(theirs.identityKey);
+  // Of the two servers put to, one says `better` (a liar's chain), the other took the title.
+  let answers: () => { id: string; server: string; result: 'better' | 'taken'; item: string | null }[] = () => [
+    { id: '', server: 's1', result: 'better', item: better.item },
+    { id: '', server: 's2', result: 'taken', item: null },
+  ];
+  const pub = fakePublish(() => answers());
+  const log: string[] = [];
+  const mine = await testAgent({ publish: pub, log });
+  const c = conn('conn-mine-5');
+  await aged(cal, mine.agent, c, 'disputed', nowS() - 20 * DAY);
+  assert.notEqual((await mine.agent.titles(c.identityKey))[0].state, 'lost', `another server took it: ${log.join('\n')}`);
+  // Both say `better`, but no explorer knows the better chain's first block (its header forged, as servers would
+  // refuse it): not lost.
+  answers = () => [{ id: '', server: 's1', result: 'better', item: better.item }, { id: '', server: 's3', result: 'better', item: better.item }];
+  // (Each a new visit, another tab on the same store, so the title is put again.)
+  const visit = async () => (await testAgent({ store: mine.store, publish: pub, log })).agent;
+  const restoreFetch = breakFetch((url) => url.includes('/block/') && url.endsWith('/header') ? new Response('Block not found', { status: 404 }) : undefined);
+  const second = await visit();
+  try {
+    await second.pass(c.identityKey);
+  } finally {
+    restoreFetch();
+  }
+  assert.notEqual((await second.titles(c.identityKey))[0].state, 'lost', `a block no explorer knows: ${log.join('\n')}`);
+  assert.ok(log.some((l) => l.includes('no explorer knows')), log.join('\n'));
+  // The block known: lost.
+  const third = await visit();
+  await third.pass(c.identityKey);
+  assert.equal((await third.titles(c.identityKey))[0].state, 'lost', log.join('\n'));
+});
+
 test('a title exported to another browser: the two copies never share a zone\'s seq', { skip, timeout: 60_000 }, async () => {
   const a = await testAgent({ publish: fakePublish() });
   const ca = conn('conn-fork-a');

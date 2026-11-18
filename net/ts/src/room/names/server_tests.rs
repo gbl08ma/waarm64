@@ -1532,6 +1532,150 @@ fn only_a_server_that_proved_a_live_name_is_answered_sync_have_and_get_all() {
     assert!(answered > 100);
 }
 
+/// A message in, with no tick (nothing verified meanwhile): the messages the server sends back, with their transfer ids.
+fn feed(
+    s: &mut Server,
+    from: [u8; 32],
+    xid: u32,
+    reply: u32,
+    m: &Msg,
+    now: Instant,
+) -> Vec<(u32, Msg)> {
+    let mut x = Transfers::default();
+    for d in datagrams(xid, &m.encode(reply)) {
+        s.input(Input::Datagram { from, data: d }, now, T);
+    }
+    let mut got = Vec::new();
+    loop {
+        while let Some(c) = s.poll() {
+            if let Cmd::Send { to, data } = c
+                && to == from
+                && let Some((id, p)) = x.input([0; 32], &data, now)
+            {
+                got.push((id, Msg::decode(&p).unwrap().0));
+            }
+        }
+        // Our acknowledgements back, so the rest comes.
+        let acks = std::mem::take(&mut x.out);
+        if acks.is_empty() {
+            return got;
+        }
+        for (_, d) in acks {
+            s.input(Input::Datagram { from, data: d }, now, T);
+        }
+    }
+}
+
+/// Review 3's finding 4: a peer that proved one live name answers the `get`s its `have`s make the server send. Items
+/// for names it didn't ask about were all taken to be verified, and nothing bounded the queue: a peer could grow it
+/// faster than 24 units a turn verify it, holding memory and the CPU, and a new server's first sync never ended. Now
+/// an answer keeps only the name asked for, and a peer's share of the queue is bounded.
+#[test]
+fn a_peers_get_answers_keep_only_what_was_asked_in_a_bounded_queue() {
+    use super::server::JOBS_PER_PEER;
+    let mut b = Bitcoin::new(ROOM, 53);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    s.synced = true;
+    while s.poll().is_some() {}
+    let peer = [0x44; 32];
+    let (pkey, pitem) = b.title(2, "theirs", t(20), &[t(5)], [8; 32]);
+    let sk = k256::schnorr::SigningKey::from_bytes(&pkey).unwrap();
+    let proof = super::wire::Proof {
+        entry: pitem.entries.last().unwrap().clone(),
+        sig: super::entry::sign(&sk, &super::server::peer_hash(&b.names, &[0x10; 32], &peer)),
+    };
+    let sync = Msg::Sync {
+        range: Range::ALL,
+        fp: Default::default(),
+        proof: Some(Box::new(proof)),
+    };
+    assert!(matches!(
+        &exchange(&mut s, peer, 1, &sync, now, T)[..],
+        [Msg::SyncAnswer(_)]
+    ));
+    let n = JOBS_PER_PEER + 64;
+    let junk: Vec<Item> = (0..n)
+        .map(|k| {
+            b.title(3 + (k % 200) as u8, &format!("junk{k}"), t(3), &[], [7; 32])
+                .1
+        })
+        .collect();
+    let mut xid = 10;
+    // 32 names asked for, each answered with 40 items of other names besides its own.
+    let haves: Vec<[u8; 32]> = junk[..32].iter().map(|i| i.id).collect();
+    for (rid, m) in feed(&mut s, peer, xid, 0, &Msg::Have(haves), now) {
+        let Msg::Get { id, .. } = m else { panic!() };
+        let mut items: Vec<Item> = junk[32..72].to_vec();
+        items.extend(junk.iter().find(|i| i.id[..] == id[..]).cloned());
+        xid += 1;
+        feed(&mut s, peer, xid, rid, &Msg::Items(items), now);
+    }
+    assert_eq!(s.jobs_len(), 32, "only the names asked for");
+    // Asked and answered, again and again, faster than anything is verified: its share of the queue is bounded.
+    for c in junk[32..].chunks(32) {
+        xid += 1;
+        let haves = c.iter().map(|i| i.id).collect();
+        for (rid, m) in feed(&mut s, peer, xid, 0, &Msg::Have(haves), now) {
+            let Msg::Get { id, .. } = m else { panic!() };
+            let items = junk
+                .iter()
+                .filter(|i| i.id[..] == id[..])
+                .cloned()
+                .collect();
+            xid += 1;
+            feed(&mut s, peer, xid, rid, &Msg::Items(items), now);
+        }
+    }
+    eprintln!("{n} names haved and answered: {} jobs", s.jobs_len());
+    assert!(s.jobs_len() <= JOBS_PER_PEER, "{} jobs", s.jobs_len());
+}
+
+/// Review 3's finding 6: a job longer than a turn's units has its first entries checked (their anchors offered while
+/// their block wasn't refused), then their block is refused (its anchors dropped from what is held), then the job is
+/// kept: its anchors in the refused block were kept with it, for a day. Now `keep` drops them.
+#[test]
+fn an_anchor_in_a_block_refused_while_its_job_was_checked_isnt_kept() {
+    let mut b = Bitcoin::new(ROOM, 54);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    s.synced = true;
+    while s.poll().is_some() {}
+    let renewals: Vec<u32> = (1..12).map(|k| t(40 - 3 * k)).collect();
+    let (_, long) = b.title(9, "longname", t(40), &renewals, [9; 32]);
+    assert!(long.entries.len() * 4 > super::server::UNITS_PER_TURN as usize);
+    let block = long.entries[0].anchor.as_ref().unwrap().1.hash();
+    assert_eq!(
+        long.entries
+            .iter()
+            .filter(|w| w.anchor.as_ref().unwrap().1.hash() == block)
+            .count(),
+        1,
+        "the claim's block is its own"
+    );
+    feed(&mut s, [0x44; 32], 1, 0, &Msg::Put(long.clone()), now);
+    s.tick(now, T); // the job's first slice: the claim checked, its anchor offered
+    let mut refusal = vec![super::server::BLOCK_RECORD, 2];
+    refusal.extend_from_slice(&T.to_le_bytes());
+    refusal.extend_from_slice(&block);
+    assert!(s.load(&refusal, T), "the block refused mid-job");
+    for _ in 0..100 {
+        s.tick(now, T);
+        while s.poll().is_some() {}
+    }
+    let held = s.reg.get(&long.id);
+    let kept = held.map_or(0, |h| {
+        (h.name.entries())
+            .filter(|e| e.anchor().is_some_and(|a| a.header.hash() == block))
+            .count()
+    });
+    assert_eq!(kept, 0, "no anchor in the refused block kept");
+}
+
 #[test]
 fn a_put_of_one_junk_entry_many_times_costs_one_check() {
     let mut b = Bitcoin::new(ROOM, 45);
@@ -2534,6 +2678,41 @@ fn a_block_both_explorers_deny_is_refused_with_its_anchors() {
     compiled_only(&bus);
 }
 
+/// Review 3's finding 7: a block neither explorer can be asked about is asked again after 5 minutes, doubling to 6
+/// hours. The retry read its tries from the state being checked, so every retry waited 5 minutes: 144 checks a block
+/// in 12 hours for good, at every server.
+#[test]
+fn a_block_no_explorer_answers_for_is_asked_again_ever_less_often() {
+    let (b, mut bus, forged, hash) = forged_room(74, Params::TEST);
+    bus.advance(Duration::from_secs(60));
+    bus.svc.as_mut().unwrap().explorers_down = [true, true];
+    assert_eq!(bus.put(1, 0, forged.clone()), Msg::Taken);
+    let mut shown = hash;
+    shown.reverse();
+    let shown: String = shown.iter().map(|b| format!("{b:02x}")).collect();
+    let asked = |bus: &Bus| {
+        (bus.fetched.iter())
+            .filter(|(i, u)| *i == 0 && u.contains(&shown))
+            .count()
+    };
+    bus.advance(Duration::from_secs(12 * 3600));
+    let n = asked(&bus);
+    eprintln!("a block no explorer answers for, 12 hours: {n} asks at one server");
+    // 5, 10, 20, 40, 80, 160, 320 minutes: 8 checks of two explorers in 12 hours (and the first's).
+    assert!((2..=2 * 10).contains(&n), "{n} asks");
+    // Its transport closing and opening again every 2 hours: the doubling kept.
+    for _ in 0..6 {
+        bus.s[0].stop();
+        let (k, now) = (bus.keys[0], bus.now);
+        bus.s[0].start(k, now);
+        bus.advance(Duration::from_secs(2 * 3600));
+    }
+    let restarts = asked(&bus) - n;
+    eprintln!("then six restarts 2 hours apart: {restarts} asks");
+    assert!(restarts <= 2 * 8, "{restarts} asks");
+    let _ = b;
+}
+
 #[test]
 fn a_block_one_explorer_denies_counts_until_the_other_answers_and_is_kept_when_it_confirms() {
     let (b, mut bus, _, _) = forged_room(73, Params::TEST);
@@ -3041,7 +3220,17 @@ fn an_item_past_the_reply_bound_is_left_out() {
     )
     .0
     .unwrap();
-    assert_eq!(r.item, ReplyItem::TooBig, "{size} bytes past {}", size - 1);
+    // The last entry alone, without the zone: something a member can check.
+    assert_eq!(
+        r.item,
+        ReplyItem::TooBig(Box::new(Item {
+            zone: None,
+            ..*it.clone()
+        })),
+        "{size} bytes past {}",
+        size - 1
+    );
+    assert_eq!(super::wire::Reply::decode(&r.encode()).unwrap(), r);
     // And a member refuses a reply whose item is past REPLY_MAX at the wire.
     let big = super::wire::Reply {
         item: ReplyItem::Item(Box::new(Item {
