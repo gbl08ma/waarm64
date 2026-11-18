@@ -28,9 +28,11 @@ equivalent) works with nothing configured.** At least one demo in the store must
    on a good connection with a cold cache. Nothing boots: it's a resume.
 3. The machine has a network adapter on the **demo network** (a hosted helper with an allowlist, §3). `apk add python3` works,
    `pip install` works, `curl https://…` works.
-4. The visitor can **keep** the machine (it becomes an ordinary stored machine on the Home page, with its overlay and a
-   snapshot), or close the tab and lose nothing they cared about. Until they keep it, the demo machine is the tab's
-   and is ephemeral.
+4. **The demo is an ordinary stored machine from the click on** (the user, 2026-11-18): choosing a demo makes a
+   machine from its definition, which is listed on the Home page with every setting where it always is. Its remote
+   disk's overlay lives in this browser (OPFS), so **changes survive a reload by default**. The visitor deletes the
+   machine like any other. Not the page's transient machine: its settings aren't all shown the same way, which would
+   make the emulator look more limited than it is.
 5. Every other demo in the store works the same way, with its own size shown on its card: the desktop (Arch, sway,
    Firefox), a 3D one (glmark2/vkcube/a game on virgl or Venus), Debian, and later others.
 
@@ -61,7 +63,14 @@ way out without installing the local helper.
 
 ### 3.2 A: the helper on a server
 
-The helper is waarm64-net (its own repository). A `--public` mode differs from the local one in these ways:
+**A fork, not a mode** (the user, 2026-11-18). waarm64-net stays the small local helper that a user can read and
+trust on their own computer. The public helper is a **fork in a project of its own**, which takes the parts it shares
+(the WebSocket framing and protocol, the gvisor-tap-vsock glue) and adds what only a server needs. Where it lives: a
+new repository (`waarm64-demonet`, say) is **recommended** over a directory in this one. It's Go, released and
+deployed on its own schedule to a server, with its own README, THIRD_PARTY and tests, like waarm64-net. This repo's
+tests pin a commit of it the way they pin the local helper's. The user's call.
+
+What it has that the local helper hasn't:
 - **TLS and the origin:** behind a reverse proxy (Caddy) on `wss://`. Origin `https://vm.tny.im` only. No pairing
   token: the demo's link is public, so the token proves nothing. Instead each source IP gets a budget (connections,
   bytes a day, concurrent guests).
@@ -81,9 +90,39 @@ The helper is waarm64-net (its own repository). A `--public` mode differs from t
   
   This is the "challenge" the user expected. It's about two hundred lines of Go around the library's forwarders, with
   tests against a fake upstream.
-- **What the list holds:** the demos' package hosts (Alpine's CDN, PyPI and files.pythonhosted.org, Debian's, Arch's
-  mirror, GitHub's release and raw hosts, crates.io's, npm's registry), a time host, and a few test sites (so `curl`
-  has something to show). It's a file the server reloads. Editing it is the user's call each time.
+- **The configuration is one file the owner edits** (the user, 2026-11-18: "easy to configure by me"), reloaded on
+  change or `SIGHUP`, and checked at load (a bad file keeps the old one and says why). **TOML recommended** over JSON
+  because it allows comments, which a list like this needs ("why is this host here"), with one small Go library
+  (BurntSushi/toml, MIT). A sketch:
+
+  ```toml
+  [server]
+  origins = ["https://vm.tny.im"]
+
+  [budget]                       # per source IP
+  guests = 2                     # at once
+  bytes_per_day = "500MB"
+  connections_per_minute = 120
+
+  [[allow]]                      # a name and everything under it
+  name = "dl-cdn.alpinelinux.org"
+  ports = [443, 80]
+  note = "Alpine packages (the Alpine demo)"
+
+  [[allow]]
+  name = "*.pythonhosted.org"    # a wildcard matches one or more labels, never the bare suffix
+  ports = [443]
+  note = "pip downloads"
+  ```
+
+  **Strict by construction:** nothing is allowed unless a rule names it. A rule is a hostname or a `*.` suffix (no
+  regex) with explicit ports. No rule takes an address or a CIDR, so a guest can't reach a literal IP, a private
+  range or the server's own services. Answers that resolve to private, loopback or link-local addresses are dropped
+  whatever the name. UDP goes only to the helper's own DNS and NTP. `helper --check config.toml` prints what each
+  rule allows, and resolves each name once, so the owner sees what a change opens before it's live.
+- **What the first list holds:** the demos' package hosts (Alpine's CDN, PyPI and files.pythonhosted.org, Debian's,
+  Arch's mirror, GitHub's release hosts, crates.io's), a time host, and one or two test sites so `curl` has something
+  to show. The owner edits it.
 - **Logs:** counts per destination and budget refusals, no addresses kept past the budget's day.
 - **Cost:** bandwidth. A demo visitor's `apk add python3` is about 20 MB. One small VPS with a few TB a month covers a
   launch.
@@ -91,9 +130,15 @@ The helper is waarm64-net (its own repository). A `--public` mode differs from t
 ### 3.3 B on Cloudflare's free tier, for the record
 
 The user asked whether a Wisp proxy (or our own) fits the Workers free tier. From Cloudflare's docs (2026-11-18):
-- **A plain Worker:** 100,000 requests a day, but **10 ms of CPU per request** on the free plan. The docs don't say
-  how a long-lived WebSocket is metered (one request for its whole life, or per message). If it's per connection,
-  10 ms is a few MB of copying at best. *Unverified: it needs a test with `wrangler tail`.*
+- **A plain Worker:** 100,000 requests a day, but **10 ms of CPU per request** on the free plan. Cloudflare's post on
+  WebSockets in Workers ([2021, updated 2022](https://blog.cloudflare.com/introducing-websockets-in-workers/#pricing-considerations))
+  says a WebSocket "incur[s] a request charge when the connection is first established", then the Worker's duration
+  while it's active, and "there is no per-message fee". So **a whole connection is one request**: the 100,000 a day
+  is no constraint. By the same reading, though, the 10 ms of CPU is the whole connection's, since there's no
+  per-message reset outside Durable Objects. A proxy copies every message in JS, so 10 ms runs out after a few MB at
+  best, mid-download. (The post predates today's Standard pricing; the docs don't contradict this reading, but a
+  `wrangler tail` test would settle it.) On the paid plan a request gets up to 5 minutes of CPU, billed per ms, which
+  is plenty. **On the free plan, a plain Worker doesn't fit a proxy.**
 - **A Durable Object** (on the free plan since the SQLite backend): each incoming WebSocket message resets the CPU
   budget to 30 s, and incoming messages bill at 20:1 (outgoing ones are free, so downloads cost no requests). But an
   open TCP socket keeps the object awake, and the free plan's **13,000 GB-s a day at 128 MB is ~29 object-hours a day**.
@@ -173,12 +218,27 @@ published next to its disk and snapshot:
   `<id>`. A demo's `id` is unique within its store (the publish step checks), and a link to an `id` the store no
   longer has opens the store's cards and says so. Anything not from our store gets a warning that it isn't ours
   before anything is fetched past the JSON.
-- **The snapshot** is fetched whole, chunked like a disk image, into the same expiring Storage Bucket as the disk's
-  blocks (backlog.md "A public demo…"). It must be a **template** (`tools/snapshot-template.ts`: the guest agent
+- **The snapshot** is fetched whole, chunked like a disk image, and becomes the new machine's first kept snapshot
+  (below). It must be a **template** (`tools/snapshot-template.ts`: the guest agent
   renews entropy, the machine id and the SSH keys at the restore), and it pins its disk by the chunked image's `id`,
   never by its URL.
-- **Ephemeral until kept:** the demo runs as the page's transient machine (no record), with an overlay in memory or in
-  the expiring bucket. **Keep this machine** writes a record, moves the overlay into OPFS and keeps a snapshot.
+- **A demo makes a machine** (the user, 2026-11-18): choosing one writes a machine record from its definition, as
+  Import a definition does (machines.md §6), with an overlay for the remote disk in OPFS, and **the demo's `id` stored
+  on the record** (`fromDemo: {store, id}`). Its first start restores the demo's snapshot onto that fresh overlay
+  (generation 0, so the pins match and nothing forks), and the snapshot is kept on the machine as its first snapshot.
+  "Back to the demo's start" is then an ordinary Restore. Later starts are the machine's own: its overlay, its
+  Suspend, its snapshots.
+- **Started before:** the store looks for machines whose `fromDemo` matches the card. If one exists, the click asks:
+  **Open my machine** (the default) or **Start a fresh copy** (another machine, named with a suffix), and says when the
+  existing one was last used and that it has changes. The card also marks demos the visitor already has.
+- **Versions are ids:** a demo that changes (a new image, a new snapshot) is published under a new `id`, and the old
+  one leaves the store, or stays marked as old. A machine made from an old demo keeps working, because its disk's
+  pieces and its snapshot are addressed by content. Nobody is held on an old version by the "started before" check,
+  because the new id doesn't match. The store can name an id's successor (`replaces: "<old id>"`), so the card says
+  "you have an older version of this demo".
+- **Storage:** a demo machine's disk blocks go to the OPFS store of a URL disk, as any machine's do, not the
+  expiring bucket. The bucket is right for a one-off visit, but a demo is now a machine the visitor keeps until they
+  delete it.
 - **Templates for new machines** (the user's own backlog item): the same definitions, minus `demo.snapshot`, offered
   under **New machine** as starting points ("Alpine", "Debian", "Arch desktop"), so a new machine needs no disk image
   of the user's own.
@@ -194,8 +254,7 @@ published next to its disk and snapshot:
   Measure: the snapshot's size on the wire, click to prompt, `apk add python3` time.
   What unkernel's demo does that this one should match: a shell's command-not-found hook that installs the package
   for a missing command and runs it (BusyBox ash has no hook, so use a small wrapper; only `main` enabled at first and
-  `community` on demand, which unkernel says makes `apk` ~4× faster), and changes that survive a reload. For us
-  that's "Keep this machine", or keeping a demo's overlay until the visitor resets it: a choice for the kickoff.
+  `community` on demand, which unkernel says makes `apk` ~4× faster), and changes that survive a reload, which a stored machine gives us for free (§4).
 - **Buildroot**, as a fallback if Alpine's snapshot can't meet the budget: tiny, but no package manager. That makes it
   a worse match for "install as you type". Kept as a "boots in under a second" demo, not as the networked one.
 - **The desktop (Arch, sway, Firefox), resumed at the desktop.** The existing Desktop Demo, as a snapshot rather than a
@@ -208,22 +267,25 @@ published next to its disk and snapshot:
 0. **Measure the gap.** unkernel's and v86's demos against ours, by hand and in headless Chromium: time to prompt,
    bytes on the wire, `apk add python3` time, peak memory. These numbers feed [../comparison.md](../comparison.md) §3.
    No code.
-1. **The public helper** (waarm64-net, its own repository): `--public` with a network per WebSocket, the budgets,
-   and the allowlist at the resolver, the dial and the first bytes, tested against fake upstreams (an allowed name,
+1. **The public helper**, a fork of waarm64-net in a project of its own (§3.2): a network per WebSocket, the
+   budgets, the TOML configuration with `--check`, and the allowlist at the resolver, the dial and the first bytes, tested against fake upstreams (an allowed name,
    a name off the list, an allowed CDN address reached with another SNI or Host, ECH, UDP 443, a literal address).
-2. **Hosting it:** a server behind TLS (which host is the user's call), the list as a reloaded file, logs without
-   addresses. Deploy only on the user's word.
+2. **Hosting it:** on the user's server, behind TLS, with the list the user approves; logs without addresses. Deploy only on the user's word.
 3. **The page:** a built-in "Demo network" (a `local` connection with that URL, no pairing, no Local Network Access
    prompt), its words in the catalog, and `scripts/ci-net.sh` against a public-mode helper on loopback.
 4. **The demo guest.** `images/build.sh alpine-demo`, its template snapshot, chunked and traced from the resume,
    with numbers.
-5. **The store and the definition's `demo` fields.** The interstitial, the cards, `#demo/<id>`, ephemeral until kept,
-   Keep this machine. `scripts/ci-machines.sh` and `ci-debian.sh`.
+5. **The store and the definition's `demo` fields.** The interstitial, the cards, `#demo/<id>`, a machine made from
+   the definition with `fromDemo`, the first start's restore, "started before" and versions by id.
+   `scripts/ci-machines.sh` and `ci-debian.sh`.
 6. **The desktop demo as a snapshot**, and the 3D one.
 7. **Templates under New machine.**
 8. **Review, numbers, the comparison's numbers filled in, the docs.**
 
-**Needs the user's OK:** A or B (§3.1); which server hosts the helper and the allowlist's contents; smoltcp as a
+**Settled (the user, 2026-11-18):** the no-Wisp decision reopened; a demo makes a stored machine, with `fromDemo`
+and versions by id; the public helper is a fork of its own, hosted on the user's server, configured from a file.
+**Needs the user's OK:** A or B (§3.1, A recommended); the fork's repository (§3.2); TOML and its library; the
+allowlist's contents; smoltcp as a
 dependency, only if B is built; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image and
 its hosting on vmdisks.tny.im; any deploy.
 
@@ -233,5 +295,5 @@ its hosting on vmdisks.tny.im; any deploy.
   what was ruled out.
 - Should the demo network also be offered to the user's own machines by default (a new machine's first adapter), or
   only to demos?
-- B's unknowns, if it's ever wanted: how a plain Worker meters a long WebSocket's CPU, and whether `connect()` to 443
-  passes the guest's own TLS (§3.3).
+- B's unknowns, if it's ever wanted: a test confirming that a plain Worker's 10 ms covers a WebSocket's whole life,
+  and whether `connect()` to 443 passes the guest's own TLS (§3.3).
