@@ -763,10 +763,6 @@
     "message": "Back to the machine",
     "note": "Machines page: the button (and its tooltip) at the left of the top bar that closes the page and shows the machine again."
   },
-  "MachinesPage.heading": {
-    "message": "Machines",
-    "note": "Machines page: the page's title, in its top bar."
-  },
   "MachinesPage.busy": {
     "message": "{{what}}…",
     "note": "Machines page: top bar, while an action runs. {{what}}: what it is doing (a `.busy.*` message of the pane or tab that runs it)."
@@ -774,6 +770,14 @@
   "MachinesPage.dismiss": {
     "message": "Close",
     "note": "Machines page: accessible name (aria-label) of the × button that dismisses the message bar."
+  },
+  "MachinesNav.heading": {
+    "message": "Machines",
+    "note": "Home page: the heading over the list of machines kept in this browser, at the top of the page's left column."
+  },
+  "MachinesNav.list.empty": {
+    "message": "No machines yet. The machines you create, or open from a disk image, are kept here, in this browser.",
+    "note": "Home page: in place of the list of machines (under its Machines heading) while this browser keeps none; the buttons that make one (New machine, From a disk image…, Import a definition…) follow it."
   },
   "MachinesNav.list.transient": {
     "message": "opened from the address, not stored",

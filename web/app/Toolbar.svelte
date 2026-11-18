@@ -1,6 +1,6 @@
 <!--
-  The toolbar (docs/frontend.md "The toolbar"): the running machine's quick actions. The Machines page holds the rest
-  (settings, disks, overlays, snapshots). Icons with tooltips; the main gates (Machines, Start) also have their names.
+  The toolbar (docs/frontend.md "The toolbar"): the running machine's quick actions. The Home page holds the rest
+  (settings, disks, overlays, snapshots). Icons with tooltips; the main gates (Home, Start) also have their names.
   Each network adapter has its own button where the toolbar keeps to one row with them; where they'd take it onto
   another, one button has them all (Network.svelte `split`).
 -->
@@ -139,7 +139,7 @@
   <Button
     variant="tool"
     labelled
-    icon="server-2"
+    icon="home"
     id="machines-open"
     aria-pressed={machinesNav.open}
     title={t('toolbar:Toolbar.machines.title')}

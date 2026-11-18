@@ -1,5 +1,5 @@
 <!--
-  The Machines page (docs/machines.md §7): it takes the machine's place on the page (which runs on behind it). It
+  The Home page (docs/machines.md §7; the toolbar's Home): it takes the machine's place on the page (which runs on behind it). It
   composes: the list (MachinesNav.svelte: the machines kept in this browser, the commands that make one, the browser's
   panes) and the chosen pane, a machine's (MachinePane.svelte and its tabs), the page's own transient machine's
   (PagePane.svelte), the browser's Disks (DisksPane.svelte), Shared folders (FoldersPane.svelte) and Connections
@@ -141,7 +141,6 @@
     >
       {t('machines:MachinesPage.back')}
     </Button>
-    <h2>{t('machines:MachinesPage.heading')}</h2>
     {#if runner.busy}<span class="busy">{t('machines:MachinesPage.busy', { what: runner.busy })}</span>{/if}
   </div>
   {#if messageBar.text || runner.error}
@@ -231,11 +230,6 @@
     padding: var(--space-2) var(--space-4);
     border-bottom: 1px solid var(--border);
     background: var(--surface-raised);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: var(--weight-bold);
   }
   .busy {
     color: var(--status-busy);

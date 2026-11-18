@@ -361,7 +361,7 @@ test("the Machines page's agent and clipboard switches: the agent on by default,
   page.on('pageerror', (e) => errors.push(String(e)));
   const asked: Question[] = [];
   await answerAsks(page, (q) => { asked.push(q); });
-  await page.goto(`${base}/web/app/#machines`);
+  await page.goto(`${base}/web/app/#home`);
   await page.locator('.machines').waitFor();
   await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);

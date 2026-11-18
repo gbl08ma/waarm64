@@ -214,7 +214,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-attachment]').nth(2).getByRole('button', { name: t('disks:Disks.detach.button') }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 2);
 
-  // Kept across a reload (the Machines page stays open: `#machines`), and opened on the page: the toolbar names it.
+  // Kept across a reload (the Home page stays open: `#home`), and opened on the page: the toolbar names it.
   await page.reload();
   await modal(page).waitFor();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).click();

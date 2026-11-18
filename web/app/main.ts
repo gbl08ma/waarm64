@@ -319,7 +319,7 @@ installBenchHooks(machine, terminal, replies, audio);
 addEventListener('unhandledrejection', (e) => messages.notify(describe(e.reason), 'error'));
 
 pageWindow.firstView();
-if (location.hash === '#machines') pageWindow.openMachines();
+if (location.hash === '#home' || location.hash === '#machines') pageWindow.openMachines();
 messages.note = standingNote(await hasOpfs());
 await disks.fromAddress();
 powerActions.boot();

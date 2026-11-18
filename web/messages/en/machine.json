@@ -220,8 +220,8 @@
     "note": "Error headline in the message bar (under the toolbar) when the machine kept in this browser that the page opens is gone, or one of its disks is; why is the detail under it."
   },
   "power-actions.machines": {
-    "message": "Machines…",
-    "note": "Button in the message bar (under the toolbar) after “Couldn't open the machine”: it opens the Machines page."
+    "message": "Go to Home",
+    "note": "Button in the message bar (under the toolbar) after “Couldn't open the machine”: it opens the Home page."
   },
   "power-actions.restart.confirm": {
     "message": "Restart the machine? This will power it off immediately, like pulling the plug, and unsaved work in the guest will be lost.",

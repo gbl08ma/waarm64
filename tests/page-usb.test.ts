@@ -74,7 +74,7 @@ async function open(c: BrowserContext, asked: Question[] = []) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, (q) => { asked.push(q); });
-  await page.goto(`${base}/web/app/#machines`);
+  await page.goto(`${base}/web/app/#home`);
   await page.locator('.machines').waitFor();
   return { page, errors };
 }

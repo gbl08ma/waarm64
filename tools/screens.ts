@@ -234,7 +234,7 @@ let seeded: Seed;
 
 // The Machines page: its panes, a machine's tabs, its dialogs and the wizards, wide; the panes and tabs narrow too.
 for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
-  const page = await open(viewport, '#machines');
+  const page = await open(viewport, '#home');
   await machinesPage(page).waitFor();
   const { machine } = seeded;
   for (const pane of ['preferences', 'about', 'disks', 'folders', 'connections']) {
@@ -460,7 +460,7 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
 
 // The page's own (transient) machine on the Machines page: `?machine=` with a disk, its Disks and Snapshots tabs.
 await state('machines-transient', async () => {
-  const page = await open(WIDE, '#machines');
+  const page = await open(WIDE, '#home');
   await setUi(page, `a.current.transient = { label: 'This page’s machine', disk: 'disk.qcow2' }; a.current.hasOverlay = true; a.machinesNav.choose('page');`); // i18n-ignore: a test's label
   await page.locator('section.machine[data-selected="page"]').waitFor();
   await shot(page, 'machines-transient-disks');

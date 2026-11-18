@@ -147,14 +147,13 @@ export class PageWindow {
     e.returnValue = '';
   }
 
-  // The Machines page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind
-  // it. `#machines` in the address opens it (a reload keeps it open).
+  // The Home page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind
+  // it. `#home` in the address opens it (a reload keeps it open; main.ts takes the older `#machines` too).
   openMachines(tab?: MachinesTab, id?: string) {
     if (tab) machinesNav.tab = tab;
     if (id) machinesNav.choose(id);
     machinesNav.open = true;
-    if (location.hash !== '#machines')
-      history.replaceState(null, '', `${location.pathname}${location.search}#machines`);
+    if (location.hash !== '#home') history.replaceState(null, '', `${location.pathname}${location.search}#home`);
   }
   closeMachines() {
     machinesNav.open = false;

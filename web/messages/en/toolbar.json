@@ -44,12 +44,12 @@
     "note": "The product's name, at the toolbar's left end (the page's heading)."
   },
   "Toolbar.machines.title": {
-    "message": "Show the machines stored in this browser, with their settings, disks, overlays, and snapshots.",
-    "note": "Tooltip of the toolbar's Machines button, which opens the Machines page."
+    "message": "Show the machines stored in this browser, with their settings, disks, overlays, and snapshots, and this browser's disks, shared folders, connections, and preferences.",
+    "note": "Tooltip of the toolbar's Home button, which opens the Home page."
   },
   "Toolbar.machines": {
-    "message": "Machines",
-    "note": "Label of the toolbar's first button: it opens the Machines page (the machines kept in this browser)."
+    "message": "Home",
+    "note": "Label of the toolbar's first button (a house icon): it opens the Home page (the machines kept in this browser, the browser's disks, shared folders and connections, the preferences, About)."
   },
   "Toolbar.powerOff": {
     "message": "Power off",

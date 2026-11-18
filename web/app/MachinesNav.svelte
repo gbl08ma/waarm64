@@ -1,7 +1,8 @@
 <!--
-  The Machines page's list (MachinesPage.svelte): the page's own machine (a transient one), the machines kept in this
-  browser (each with its disks and its state), the commands that make one (new, from a disk image, import a
-  definition: docs/machines.md §6), then the browser's panes (Disks, Shared folders, Connections, Preferences, About).
+  The Home page's left column (MachinesPage.svelte): under its Machines heading, the page's own machine (a transient
+  one) and the machines kept in this browser (each with its disks and its state), or a line saying there are none yet;
+  the commands that make one (new, from a disk image, import a definition: docs/machines.md §6), then the browser's
+  panes (Disks, Shared folders, Connections, Preferences, About).
 -->
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
@@ -62,6 +63,9 @@
     },
   ]);
 
+  /** Anything in the list of machines (none: a line says so, and no rule parts it from the commands under it). */
+  const listed = $derived(!!current.transient || machines.length > 0);
+
   const newMachine = () =>
     actions.run(t('machines:MachinesNav.busy.making'), async () => {
       onchoose((await createMachine(store)).id);
@@ -82,28 +86,33 @@
   }
 </script>
 
-<nav>
-  <ul>
-    {#if current.transient}
-      <li class:chosen={machinesNav.selected === PAGE}>
-        <button class="pick" onclick={() => onchoose(PAGE)} data-machine={PAGE}>
-          <span class="name">{current.transient.label}</span>
-          <span class="meta">{t('machines:MachinesNav.list.transient')}</span>
-        </button>
-      </li>
-    {/if}
-    {#each machines as m (m.id)}
-      <li class:chosen={m.id === machinesNav.selected}>
-        <button class="pick" onclick={() => onchoose(m.id)} data-machine={m.id}>
-          <span class="name">{m.name}</span>
-          <span class="meta">
-            {t('machines:MachinesNav.list.meta', { count: m.attachments.length, state: stateOf(m.id) })}
-          </span>
-        </button>
-      </li>
-    {/each}
-  </ul>
-  <div class="new">
+<nav aria-labelledby="machines-heading">
+  <h2 id="machines-heading">{t('machines:MachinesNav.heading')}</h2>
+  {#if listed}
+    <ul>
+      {#if current.transient}
+        <li class:chosen={machinesNav.selected === PAGE}>
+          <button class="pick" onclick={() => onchoose(PAGE)} data-machine={PAGE}>
+            <span class="name">{current.transient.label}</span>
+            <span class="meta">{t('machines:MachinesNav.list.transient')}</span>
+          </button>
+        </li>
+      {/if}
+      {#each machines as m (m.id)}
+        <li class:chosen={m.id === machinesNav.selected}>
+          <button class="pick" onclick={() => onchoose(m.id)} data-machine={m.id}>
+            <span class="name">{m.name}</span>
+            <span class="meta">
+              {t('machines:MachinesNav.list.meta', { count: m.attachments.length, state: stateOf(m.id) })}
+            </span>
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    <p class="none" data-empty="machines">{t('machines:MachinesNav.list.empty')}</p>
+  {/if}
+  <div class="new" class:ruled={listed}>
     <button onclick={newMachine} data-action="new-machine">
       <Icon name="plus" size={16} />{t('machines:MachinesNav.newMachine')}
     </button>
@@ -124,7 +133,7 @@
       data-field="import-definition"
     />
   </div>
-  <div class="new">
+  <div class="new ruled">
     {#each panes as p (p.id)}
       <button
         class:chosen={machinesNav.selected === p.id}
@@ -148,6 +157,21 @@
     padding: var(--space-3);
     border-right: 1px solid var(--border);
     background: var(--surface-raised);
+  }
+  /* The list's heading, a label over it, in line with its machines' names. */
+  h2 {
+    margin: 0 0 calc(-1 * var(--space-2));
+    padding: 0 var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-bold);
+    color: var(--text-dim);
+    letter-spacing: 0.02em;
+  }
+  .none {
+    margin: 0;
+    padding: 0 var(--space-4);
+    color: var(--text-dim);
+    font-size: var(--text-md);
   }
   ul {
     list-style: none;
@@ -185,6 +209,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  .ruled {
     padding-top: var(--space-3);
     border-top: 1px solid var(--border);
   }
