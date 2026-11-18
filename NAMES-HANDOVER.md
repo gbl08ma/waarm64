@@ -114,6 +114,17 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 
 ## Open questions
 
+From the final review's fix loop, the agent and page findings (2026-11-18, branch `names-final-b`):
+- **A release now beats every sibling branch at its parent** (finding 4): the owner's other entries after the entry a
+  release follows, and all after them, are on no chain, whatever their times (chain.rs `Name::released_past`), and
+  servers keep a pending release on any entry of the owning run so they finish it. It refines "who owns a name"
+  (decision 1) for the owner's own branches only; another key's chain is untouched. A copy of the title that renewed
+  (another browser) still shows the name active and keeps renewing on the ended branch: `judge` takes nothing in on
+  `none` (backlog).
+- **"Taken" from one liar** (finding 8, mitigated): the check weighs each server's `ids` apart, and a disagreement says
+  so with a second press that registers. A liar that answers alone, or two liars drawn, still make it taken; proving
+  it takes a `get` naming the id before the claim, which N5b's one-byte decision rules out (backlog).
+
 From N6b (2026-11-18):
 - **The long run's relay traffic is past "a few hundred requests a service"**: a room's own cadence (a server alone
   asks "who serves?" about every 5 minutes, three events each; the agent's publisher connects hourly; a member's names
