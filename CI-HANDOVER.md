@@ -90,7 +90,7 @@ decisions in §11).
   for net-guest 2–4, net-local, net-tailnet, net-tailcat. ci-net **373 s** (551 before; 545 slot-seconds against ~950;
   logs `bench/results/local/ci/fixture/`), a run that makes them ~400 s. Fixtures 155–166 MiB, ~28 s each to make. A
   maker's disk without an overlay was read-only: the restore was refused as another machine (`vm.otherHardware`).
-  net-guest alone 91 s from ~184 s of holds. Passed ci-net twice and the fast lane.
+  net-guest alone 91 s from ~184 s of holds. Passed ci-net twice, the fast lane (108 s) and ci.sh (641 s).
 
 ## Next, in order
 
