@@ -6,7 +6,8 @@
 //! - **Asking** "who serves the registry?": shares of 1/64, then 1/8 after 0.4 s, then everyone
 //!   after 1 s, stopping at the first round that brings an answer; 0.3 s after the first answer,
 //!   the two servers with the lowest `BLAKE2s(nonce, server's key)`. Nobody within 2.5 s: remembered
-//!   for 30 s, doubling to 10 minutes, reset by an answer. At most one question a second.
+//!   for 30 s, doubling to 10 minutes, reset by an answer; but a server that refused a question meanwhile for not
+//!   being synced yet (another that started with it) asks again within 1.5 to 3 s. At most one question a second.
 //! - **Answering**: when the server's hash falls in the share, it has synced, it holds fewer than
 //!   [`MAX_ASKERS`] askers and its own budget ([`ANSWERS_PER_SECOND`], apart from the node's call
 //!   backs and trials) allows: a call back, then `serve`, signed by a live name's owner key over
@@ -14,7 +15,8 @@
 //! - **Sync**: with the two servers a question found, at the start and every 5 minutes with
 //!   jitter: range fingerprints by id, 16 sub-ranges where they differ, a listing where a range is
 //!   small; `get` with what is held, so only what's missing crosses; `have` for what the other
-//!   lacks. A server answers questions only once its first sync is done (or nobody answered it).
+//!   lacks. A server answers questions only once its first sync is done (or nobody answered it). A run
+//!   cut by [`RUN_MAX`] ends its round, and the next starts at once.
 //! - **Verification** of everything taken, in slices of [`UNITS_PER_TURN`] a turn; what is stored
 //!   was verified and is trusted at load.
 //! - **The bound**: [`Config::max_names`] and bytes; past either, the names nobody asked for
@@ -66,6 +68,9 @@ pub(super) const CHOOSE_AFTER: Duration = Duration::from_millis(300);
 pub(super) const GIVE_UP: Duration = Duration::from_millis(2500);
 pub(super) const NOBODY_FIRST: Duration = Duration::from_secs(30);
 pub(super) const NOBODY_MAX: Duration = Duration::from_secs(600);
+/// A server whose question found nobody, but which refused a question meanwhile for not being synced yet, asks again
+/// after this and as much again at random (two servers that started together: N0c's 30 s).
+pub(super) const ASK_SOON: Duration = Duration::from_millis(1500);
 /// Incoming handshakes a question lets in (servers answering it), at most at once.
 pub const ACCEPT_MAX: usize = 32;
 /// A key let in that hasn't served this long after its handshake makes room for a newcomer (a server's `serve` comes
@@ -443,6 +448,8 @@ pub(super) struct Ask {
     /// Servers whose `serve` held, by their names client's key: the answer's [`rank`] key, the owner key it served
     /// with and the name id.
     pub answers: BTreeMap<[u8; 32], Answered>,
+    /// A server's: it refused a question meanwhile for not being synced yet (another new server's, perhaps).
+    pub heard_unsynced: bool,
 }
 
 impl Ask {
@@ -453,6 +460,7 @@ impl Ask {
             round: 1,
             first: None,
             answers: BTreeMap::new(),
+            heard_unsynced: false,
         }
     }
 
@@ -948,8 +956,15 @@ impl Server {
             .filter(|(_, r)| r.started.is_some_and(|t| now >= t + RUN_MAX))
             .map(|(k, _)| *k)
             .collect();
+        let cut = !long.is_empty();
         for k in long {
             self.end_run(k, "a run past its time");
+        }
+        // A run cut by its time (not by a breach) goes on in a round that starts at once: what's held counts as synced
+        // (review 2: a slow partner mustn't keep a new server silent), and the round's `get`s ask only what's missing
+        // (N0c: 50 MB waited ~100 s for the next round at the round's 5 minutes).
+        if cut && self.runs.is_empty() && self.ask.is_none() {
+            self.next_round = Some(now);
         }
         // Runs whose `get`s waited for room in the queue.
         let waiting: Vec<[u8; 32]> = (self.runs.iter())
@@ -1053,8 +1068,23 @@ impl Server {
     }
 
     fn nobody_answered(&mut self, now: Instant) {
-        self.ask = None;
+        let heard = self.ask.take().is_some_and(|a| a.heard_unsynced);
         self.out.heard(0, 0);
+        if heard {
+            // Someone asked while we weren't synced, and we refused it as it may have refused us: two servers that
+            // started together. Both serve now; the next question, within seconds, finds the other (N0c: 30 s).
+            let soon = ASK_SOON
+                + Duration::from_millis(
+                    u64::from_le_bytes(random()) % (ASK_SOON.as_millis() as u64 + 1),
+                );
+            self.log(format!(
+                "nobody answered, but someone asked meanwhile; asking again in {} ms",
+                soon.as_millis()
+            ));
+            self.synced = true;
+            self.next_round = Some(now + soon);
+            return;
+        }
         let wait = self
             .nobody
             .map_or(NOBODY_FIRST, |(_, w)| (w * 2).min(NOBODY_MAX));
@@ -1197,6 +1227,13 @@ impl Server {
         if let Err(why) = self.answers_rule(&q, r, now) {
             if why != "outside the share" {
                 self.stats.refused += 1;
+            }
+            // Another server (or a member) asking while our own first question is open: if ours finds nobody, it may
+            // be that one, refused here as we were there; ask again soon, not after `NOBODY_FIRST`.
+            if why == "not synced yet"
+                && let Some(a) = &mut self.ask
+            {
+                a.heard_unsynced = true;
             }
             return;
         }

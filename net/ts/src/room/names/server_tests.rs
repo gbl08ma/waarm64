@@ -80,6 +80,35 @@ impl Bus {
         b
     }
 
+    /// Servers started one after another, `starts[i]` after the bus's start (the first at once).
+    fn staggered(servers: Vec<Server>, starts: &[Duration]) -> Bus {
+        let n = servers.len();
+        let mut b = Bus::new(Vec::new());
+        b.keys = (0..n)
+            .map(|i| {
+                let mut k = [0x5a; 32];
+                k[..8].copy_from_slice(&(i as u64 + 1).to_le_bytes());
+                k
+            })
+            .collect();
+        b.s = servers;
+        b.sub = vec![false; n];
+        b.calls = vec![Vec::new(); n];
+        b.stored = vec![BTreeMap::new(); n];
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|i| starts[*i]);
+        for i in order {
+            let at = b.t0 + starts[i];
+            if at > b.now {
+                b.advance(at - b.now);
+            }
+            let (k, now) = (b.keys[i], b.now);
+            b.s[i].start(k, now);
+            b.run();
+        }
+        b
+    }
+
     fn unix(&self) -> u64 {
         T + self.now.duration_since(self.t0).as_secs()
     }
@@ -1060,6 +1089,48 @@ fn servers_sync_and_a_server_that_leaves_names_out() {
             panic!("an answer")
         };
         assert_eq!(items.len(), expect, "server {j}");
+    }
+}
+
+/// N0c found two servers that start within a second each waiting 30 s for the other: each one's question came while
+/// the other's own was open and it wasn't synced yet, so both found nobody. A server that refused a question for that
+/// asks again within seconds (room-names.md "Finding a server", "Nobody answered").
+#[test]
+fn servers_that_start_together_find_each_other_within_seconds() {
+    let mut b = Bitcoin::new(ROOM, 52);
+    let titles: Vec<([u8; 32], Item)> = ["alpha", "bravo"]
+        .iter()
+        .enumerate()
+        .map(|(k, n)| b.title(k as u8 + 1, n, t(20), &[t(4)], [k as u8; 32]))
+        .collect();
+    for ms in [0u64, 100, 300, 700, 1000, 1400, 1900, 2400, 3000] {
+        let mk = |k: usize| {
+            let (key, item) = &titles[k];
+            Server::new(
+                ROOM,
+                cfg(vec![Title {
+                    key: *key,
+                    item: item.clone(),
+                }]),
+                T,
+            )
+        };
+        let skew = Duration::from_millis(ms);
+        let mut bus = Bus::staggered(vec![mk(0), mk(1)], &[Duration::ZERO, skew]);
+        let mut took = None;
+        for step in 1..=60 {
+            bus.advance(Duration::from_millis(500));
+            if bus.reg(0).len() == 2 && bus.reg(1).len() == 2 {
+                took = Some(Duration::from_millis(500 * step));
+                break;
+            }
+        }
+        let took = took.unwrap_or_else(|| panic!("started {ms} ms apart: not synced within 30 s"));
+        eprintln!("started {ms} ms apart: both hold both names {took:?} after the second start");
+        assert!(
+            took <= Duration::from_secs(10),
+            "started {ms} ms apart: each held the other's name {took:?} after the second start"
+        );
     }
 }
 
@@ -2166,10 +2237,19 @@ fn a_slow_partner_doesnt_keep_a_server_unsynced() {
     // Answers the partner holds back: (when, transfer, answer).
     let mut later: Vec<(Instant, u32, Msg)> = Vec::new();
     let mut syncs = 0;
-    while now < t0 + Duration::from_secs(3 * 3600) && !v.synced {
+    // When it counted as synced, and its first question after that (the next round).
+    let mut synced_at = None;
+    let mut next_question = None;
+    while now < t0 + Duration::from_secs(3 * 3600) && next_question.is_none() {
+        if v.synced && synced_at.is_none() {
+            synced_at = Some(now);
+        }
         let unix = T + now.duration_since(t0).as_secs();
         while let Some(c) = v.poll() {
             match c {
+                Cmd::Publish { spread: 6, .. } if synced_at.is_some() => {
+                    next_question = Some(now);
+                }
                 Cmd::Publish { nonce, spread: 0 } => {
                     let h =
                         super::entry::tagged("waarm64/names/serve", &[&b.names.value, &nonce, &pk]);
@@ -2226,13 +2306,56 @@ fn a_slow_partner_doesnt_keep_a_server_unsynced() {
             v.tick(now, T + now.duration_since(t0).as_secs());
         }
     }
-    let took = now - t0;
+    let took = synced_at.map_or(now - t0, |t| t - t0);
     eprintln!(
-        "a slow partner: synced after {took:?}, {syncs} syncs, {} runs",
-        v.stats.syncs
+        "a slow partner: synced after {took:?}, {syncs} syncs, {} runs; the next question {:?} after the start",
+        v.stats.syncs,
+        next_question.map(|t| t - t0)
     );
-    assert!(v.synced, "still unsynced after {took:?}");
+    assert!(synced_at.is_some(), "still unsynced after {took:?}");
     assert!(took <= Duration::from_secs(270), "{took:?}");
+    // A run cut by its time goes on in a round that starts at once (N0c: 50 MB waited ~100 s for the next round), not
+    // at the round's 5 minutes.
+    let next = next_question.expect("a next question") - t0;
+    assert!(
+        next <= took + Duration::from_secs(10),
+        "the next round {next:?} after the start, synced at {took:?}"
+    );
+}
+
+/// A run ended by a breach of its bounds (not by its time) waits for the round's 5 minutes, as before.
+#[test]
+fn a_run_ended_by_a_breach_waits_for_the_next_round() {
+    let mut differ = [super::wire::Fp::default(); 16];
+    for (k, f) in differ.iter_mut().enumerate() {
+        *f = super::wire::Fp {
+            hash: [k as u8 + 1; 8],
+            count: 1,
+        };
+    }
+    let (mut v, _, _) = partner_answers(|_| SyncAnswer::Children(differ), 20_000);
+    assert!(v.synced, "the round with it ended");
+    // The harness's clock where it stopped: the server's first deadline after it.
+    let t0 = v.deadline().expect("a deadline");
+    let mut now = t0;
+    let mut next = None;
+    while now < t0 + Duration::from_secs(600) && next.is_none() {
+        v.tick(now, T + 600 + now.duration_since(t0).as_secs());
+        now = v.deadline().map_or(now + Duration::from_secs(1), |d| {
+            d.max(now + Duration::from_millis(1))
+        });
+        while let Some(c) = v.poll() {
+            if matches!(c, Cmd::Publish { spread: 6, .. }) && next.is_none() {
+                next = Some(now - t0);
+            }
+        }
+    }
+    let next = next.expect("a next round");
+    // The run took a while of the round's 5 minutes; what is left of them, not a round at once.
+    assert!(
+        next >= Duration::from_secs(60),
+        "the next round after {next:?}"
+    );
 }
 
 /// Review 2's finding 15: titles taken in from a pasted export reach the node's server through `set_titles`, and a
