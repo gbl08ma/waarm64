@@ -2232,12 +2232,20 @@
                   "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/MIT"
                 },
                 {
+                  "name": "src/util/softfloat.c (BSD-3-Clause)",
+                  "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/src/util/softfloat.c"
+                },
+                {
                   "name": "licenses/BSL-1.0",
                   "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/BSL-1.0"
                 },
                 {
                   "name": "licenses/Apache-2.0",
                   "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/Apache-2.0"
+                },
+                {
+                  "name": "BLAKE3 1.8.2: LICENSE_CC0",
+                  "url": "https://github.com/BLAKE3-team/BLAKE3/blob/1.8.2/LICENSE_CC0"
                 }
               ]
             },
