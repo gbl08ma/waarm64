@@ -10,9 +10,11 @@ with their OK on 2026-11-19 for the red lines and loop 11), this file, and the f
 docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
 deploy** vm.tny.im or vmdisks.tny.im (decision 11) without the user asking. Every loop is done, and so are four out-of-context reviews and their fixes (review 4: f6252749). **The demos are
 deployed** (4e81858b) and **the user validated them by hand** (2026-11-19: all three on their desktop's Nvidia GPU).
-**Next: the user's items** ("What's left" 2), then the whole CI set, the deployed numbers and the track's end (a
-CI set at f6252749 ran meanwhile: its results below). Review 4's fixes are page-side only (no agent or template rebuild); they reach vm.tny.im only with a
-redeploy of the page (ask the user).
+**Done since: the user's items** ("What's left" 2: the divider in Both, the terminal's own view without a frame,
+colors on the serial console, the countdown's notes and Ctrl+C, fresh image bases), the three templates rebuilt on
+them and checked (page-demos-guest, all three, with its new TERM and Ctrl+C cases: 28cc70ba). **Next: the whole CI
+set at 28cc70ba** (started 2026-11-19 ~21:50), then a redeploy (ask the user: decision 11), the deployed numbers and
+the track's end.
 
 ### Where things stand
 
@@ -109,8 +111,7 @@ doesn't save the virgl caps, #7 docs; #3 not a defect (the fit's 2 px come out o
 check added, green before the change), #4 the re-login checks (Alpine, and now Debian) pass with the agent's tty hold
 planted out (docs say so; the hold kept), #5 filed (backlog "A desktop demo's machine can wait for good").
 
-**2. The user's items before the track closes** (2026-11-19, after review 4; each its own loop, then one template
-rebuild and one whole CI set for all of them):
+**2. Done: the user's items before the track closes** (2026-11-19, after review 4; templates rebuilt once, 28cc70ba):
 - **The divider in Both**: backlog "A divider to drag between the screen and the terminal in Both" (its whole design is
   there); the item leaves the backlog when done.
 - **No padding around the serial terminal in its own view** (Terminal), as the screen has none in its own.
