@@ -87,9 +87,11 @@
   >
     {t('machines:DeviceSwitches.clipboard')}
   </Check>
-  <Button type="button" variant="link" id="agent-openrc-open" onclick={() => (openrc = true)}>
-    {t('machines:DeviceSwitches.openrc.link')}
-  </Button>
+  <div class="openrc-link">
+    <Button type="button" variant="link" id="agent-openrc-open" onclick={() => (openrc = true)}>
+      {t('machines:DeviceSwitches.openrc.link')}
+    </Button>
+  </div>
 </div>
 {#if openrc}
   <Modal
@@ -116,7 +118,6 @@
         {code}
       />
     </Note>
-    <Note size="md">{t('machines:DeviceSwitches.openrc.demo')}</Note>
     {#snippet buttons()}
       <Button type="button" variant="primary" id="agent-openrc-close" onclick={() => dialog?.close()}>
         {t('machines:DeviceSwitches.openrc.close')}
@@ -128,11 +129,11 @@
 <style>
   /* A switch that works through the one above it. */
   .under {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-3);
     padding-inline-start: var(--space-5);
+  }
+  /* The OpenRC dialog's link, under the clipboard's switch and its note. */
+  .openrc-link {
+    margin-block-start: var(--space-2);
   }
   /* A toolbar button's icon named in a sentence (the clipboard note): on the text's line, the words' color. */
   .inline-icon {

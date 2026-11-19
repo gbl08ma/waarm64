@@ -497,7 +497,7 @@ Duplicate, Export the definition, Delete; then tabs:
   **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **[Save and restart](ui:machines:SaveRow.saveRestart)**
   (asked first), the USB controller, the **[Mouse (the mouse lock's Raw mode)](ui:machines:DeviceSwitches.mouse)** and the **[Touchscreen](ui:machines:DeviceSwitches.touch)**, and
   **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default, its note under it; ticking it asks for the browser's read permission), and
-  under it the link [Using Alpine or another system without systemd?](ui:machines:DeviceSwitches.openrc.link), a dialog
+  under it the link [Using a guest without systemd?](ui:machines:DeviceSwitches.openrc.link), a dialog
   with the OpenRC installer's command to copy (docs/devices.md "On OpenRC"). A change of shape
   asks first when it orphans snapshots; a box whose change does (Vulkan, the USB controller, the mouse, touchscreen and
   clock device, clipboard sharing, shared folders) warns under it only when the machine has snapshots, while the note under Save always says it. The three are peripherals the guest sees: absent on machines made before
@@ -1693,7 +1693,7 @@ credentials, clipboard sharing's agent) are one pure function of its start messa
   is [The emulator's guest agent](ui:guest:guest-words.agent). The settings are the Settings tab's
   **[Run the guest agent](ui:machines:DeviceSwitches.agent)** (on by default) and, under it,
   **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default); neither changes the
-  shape. Under them, [Using Alpine or another system without systemd?](ui:machines:DeviceSwitches.openrc.link) opens a
+  shape. Under them, [Using a guest without systemd?](ui:machines:DeviceSwitches.openrc.link) opens a
   dialog with the OpenRC installer's command (`AGENT_OPENRC_INSTALL`) and a Copy button. Ticking the latter is the click that asks for the browser's read permission ("The toolbar", Clipboard).
 - **The keyboard layout** writes to the guest's disk instead (`/etc/default/keyboard`, localed's files,
   `/etc/environment`): Xorg's `xorg.conf.d`, localed, console-setup and pam_env read `/etc` only, so nothing in `/run`

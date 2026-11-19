@@ -820,32 +820,28 @@
     "note": "Home page, Settings tab: the note under Share the clipboard with the guest (docs/plans/clipboard.md §5, docs/clipboard.md for the details it leaves out). Kept short on purpose: what it does, what the guest needs, where it's controlled. data-control is the Wayland protocol (ext or wlr) the emulator's agent needs; an X11 session: Xorg, or Xwayland under a desktop without data-control, through the CLIPBOARD selection; typing is the toolbar menu's Type the clipboard item. The <icon> marker's words are followed by the toolbar's clipboard icon."
   },
   "DeviceSwitches.openrc.link": {
-    "message": "Using Alpine or another system without systemd?",
-    "note": "Home page, Settings tab: a link under Share the clipboard with the guest that opens a dialog with the command that installs the guest agent's service in a guest without systemd (Alpine Linux, whose init is OpenRC)."
+    "message": "Using a guest without systemd?",
+    "note": "Home page, Settings tab: a link under Share the clipboard with the guest that opens a dialog with the command that installs the guest agent's service in a guest without systemd (one whose init is OpenRC)."
   },
   "DeviceSwitches.openrc.title": {
     "message": "The guest agent without systemd",
-    "note": "The dialog opened by the link under Share the clipboard with the guest (Home page, Settings tab), on how to run the guest agent in a guest without systemd (Alpine Linux's OpenRC): its title."
+    "note": "The dialog opened by the link under Share the clipboard with the guest (Home page, Settings tab), on how to run the guest agent in a guest whose init is OpenRC rather than systemd: its title."
   },
   "DeviceSwitches.openrc.systemd": {
-    "message": "Clipboard sharing, and setting the guest's clock after a restore, go through the guest agent. In a guest with systemd version 256 or above, it starts by itself at every boot.",
-    "note": "The dialog opened by the link under Share the clipboard with the guest (Home page, Settings tab), on how to run the guest agent in a guest without systemd (Alpine Linux's OpenRC): its first paragraph, what needs the agent and where it needs nothing."
+    "message": "Clipboard sharing and setting the guest's clock after a restore both work through the guest agent. In a guest running systemd version 256 or above, the agent starts automatically at every boot.",
+    "note": "The same dialog: its first paragraph, what needs the agent and when it needs nothing from the user."
   },
   "DeviceSwitches.openrc.run": {
-    "message": "In Alpine Linux, or another guest that uses OpenRC, run this command once, as root:",
-    "note": "The dialog opened by the link under Share the clipboard with the guest (Home page, Settings tab), on how to run the guest agent in a guest without systemd (Alpine Linux's OpenRC): the line over the command (a field with a Copy button)."
+    "message": "In a guest that uses OpenRC instead, run this command once as root:",
+    "note": "The same dialog: the line over the command (a field with a Copy button). OpenRC is an init system, named because it's what the user may need to look up."
   },
   "DeviceSwitches.openrc.what": {
-    "message": "It installs only the agent's service, <code>{{service}}</code>, and starts it at every boot. The agent itself stays out of the guest's disk: the service reads it from the machine at each start. To remove the service: <code>{{remove}}</code>",
-    "note": "The dialog opened by the link under Share the clipboard with the guest (Home page, Settings tab), on how to run the guest agent in a guest without systemd (Alpine Linux's OpenRC): under the command, what it installs. <code> is shown as code; {{service}} is the service's file, {{remove}} the command that removes it."
-  },
-  "DeviceSwitches.openrc.demo": {
-    "message": "The Alpine demo has the service already.",
-    "note": "The dialog opened by the link under Share the clipboard with the guest (Home page, Settings tab), on how to run the guest agent in a guest without systemd (Alpine Linux's OpenRC): its last line; the Alpine demo is the page's own Alpine Linux machine, offered among the demos."
+    "message": "This installs only the agent's service, <code>{{service}}</code>, which starts the agent at every boot. The agent itself isn't copied to the guest's disk; the service reads it from the machine at each start. To remove the service, run <code>{{remove}}</code>.",
+    "note": "The same dialog: under the command, what it installs and how to undo it. <code> is shown as code; {{service}} is the service's file, {{remove}} the command that removes it."
   },
   "DeviceSwitches.openrc.close": {
     "message": "Close",
-    "note": "The dialog opened by the link under Share the clipboard with the guest (Home page, Settings tab), on how to run the guest agent in a guest without systemd (Alpine Linux's OpenRC): the button that closes it."
+    "note": "The same dialog: the button that closes it."
   },
   "SaveRow.saveRestart": {
     "message": "Save and restart",
