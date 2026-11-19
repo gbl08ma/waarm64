@@ -91,6 +91,11 @@ machine**, so visitors' demo machines can reach one another. Not started. What i
   `udhcpc6`. Arch's network manager probably takes DHCPv6 on any card already: check, else its image changes too (a new
   hand-made image: new ids for arch-desktop and arch-3d). Only the primary (the demo network, eth0) offers default
   routes, so the room adds its /48 and nothing else.
+- **Images CI and others already use stay as they are** (the user, 2026-11-19): `alpine-uefi` is ci.sh's and
+  ci-net.sh's, and `alpine-demo` is cut from it, so the change goes in `images/alpine-demo/`'s own files only (its
+  hash moves in SHA256SUMS; its tests: alpine-demo-hook, page-alpine-agent in ci-net, ci-machines' build). The
+  desktop's `target/arch/desktop.qcow2` is the deployed Desktop Demo's and bench/gpu's guest: never edited; an Arch
+  that needs a change is a new image under a new name.
 - **Every template made again** (a second card is another shape: the shape hash moves), by tools/build-demos.ts.
 - **Costs and words:** the room client (`ts.wasm`, 3.8 MB) after the prompt, not before it (click → command stays);
   the visitor's browser then talks to six public Nostr relays and Tailscale's DERP servers: the interstitial says so
