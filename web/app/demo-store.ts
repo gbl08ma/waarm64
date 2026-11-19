@@ -143,7 +143,15 @@ export async function demoMachines(
   store: Store,
   d: StoreDemo,
 ): Promise<{ mine: MachineRecord[]; older: MachineRecord[] }> {
-  const all = (await store.all('machines')).sort((a, b) => b.modified - a.modified);
+  return machinesOf(await store.all('machines'), d);
+}
+
+/** `demoMachines` over machines `list` (the records as the page has them). */
+export function machinesOf(
+  list: readonly MachineRecord[],
+  d: StoreDemo,
+): { mine: MachineRecord[]; older: MachineRecord[] } {
+  const all = [...list].sort((a, b) => b.modified - a.modified);
   const id = d.def.demo.id;
   const replaced = new Set(d.def.demo.replaces ?? []);
   return {

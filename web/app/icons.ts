@@ -70,6 +70,7 @@ import IconZzz from '@tabler/icons-svelte-runes/icons/zzz';
 import IconAppWindow from '@tabler/icons-svelte-runes/icons/app-window';
 import IconAlertTriangle from '@tabler/icons-svelte-runes/icons/alert-triangle';
 import IconHome from '@tabler/icons-svelte-runes/icons/home';
+import IconApps from '@tabler/icons-svelte-runes/icons/apps';
 
 export const ICONS = {
   'arrow-down': IconArrowDown,
@@ -142,5 +143,6 @@ export const ICONS = {
   'app-window': IconAppWindow,
   'alert-triangle': IconAlertTriangle,
   home: IconHome,
+  apps: IconApps,
 };
 export type IconName = keyof typeof ICONS;

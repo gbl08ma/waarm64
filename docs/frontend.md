@@ -719,6 +719,66 @@ license texts at that version, and under a table the license file served beside 
 ([third-party.md](third-party.md)). A link to another site opens in a new tab with `rel="external nofollow noopener
 noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 
+## The demo store
+
+The demo store's page (`DemosPage.svelte`; DEMO-KICKOFF.md decisions 11–16; the data: [machines.md](machines.md)
+§6.2) takes the machine's place as Home does (`body[data-page=demos]`; the machine runs on behind it), with
+**[Back](ui:machines:DemosPage.back)** to where the visitor came from (Home, when opened from there; else the machine).
+It's reached three ways: **[Demos](ui:machines:MachinesNav.demos)** in Home's left column (between Preferences and
+About: it opens the page, not a pane); its address; and a **first visit**, a load with no machines kept and nothing
+asked (no query, no fragment: `demos-route.ts` `firstVisit`), which opens it. Not under automation (the tests open the
+page bare in fresh profiles) unless `?firstvisit=1`.
+
+- **Its address** (`web/app/demos-route.ts`, parsed once; `areas/demos.svelte.ts` holds what shows): `/demos` (the
+  copy's `demos.html`, below, "A static copy"; `/demos.html` too) or `#demos` on any copy. Parameters go in the query,
+  never the path, percent-encoded: `?id=<id>` opens our store's demo at its interstitial, `?store=<url>` another store's
+  cards (or a single definition's demo: the store of one), `&id=` one of its demos; in the fragment's form after
+  `#demos?` (it wins over the query). The page's own knobs never take `id` or `store`, so the rest of the query is the
+  page's (`pageQuery`: a load with only those still opens the last machine). While the page shows, the address follows
+  the demo chosen (on `/demos` its query, else `#demos?id=…`), so a reload keeps it; closed, the address is the page's
+  own (`/demos` → `./`, the store's parameters dropped). A `hashchange` to `#demos` opens it. The store's URL is ours,
+  `https://vmdisks.tny.im/store.json` (`OUR_STORE`), unless `?store=` names another (not http(s): ours).
+- **The cards** (`DemoCard.svelte`): a button each (Tab and Enter reach and open it), its thumbnail (`crossorigin`:
+  vmdisks.tny.im sends CORS, the page is cross-origin isolated; its alt text the demo's name), name, summary and
+  download size, and a mark when the visitor has a machine from it ([You have this demo](ui:machines:DemoCard.mine)) or
+  from a version it replaces ([You have an older version of this demo](ui:machines:DemoCard.older); `demo-store.ts` `machinesOf`). The store's words
+  (names, summaries, its `name`) are data, drawn as plain text, never as catalog keys. A store's demos this page can't
+  read are counted over the cards; an `?id=` the store doesn't have opens the cards and says so.
+- **Another store** (`?store=` not ours): its JSON is fetched, then a warning ([These demos aren't waarm64's](ui:machines:DemosPage.notOurs.title), its host,
+  the name it gives itself) before anything past it (no thumbnail, no snapshot) until **[Show their demos](ui:machines:DemosPage.notOurs.show)**;
+  or [Show waarm64's demos](ui:machines:DemosPage.notOurs.ours). Its definitions are otherwise as trusted as an imported one (decision 15).
+- **The interstitial** (`DemoStart.svelte`), before any download: what the project is and needs, the demo's card, its
+  download and that its disk stays on its server, and **[What it needs](ui:machines:DemoStart.needs)**: the browser checked (`demo-check.ts`,
+  `DemoChecks.svelte`): a stop (no Start) for no cross-origin isolation or SharedArrayBuffer, no OPFS, no WebGL2 for a 3D
+  machine (`display: "3d"`), no WebGPU adapter for Vulkan, or storage with less room than the download and its first
+  writes (`room`: ×1.25, at least +64 MiB); a warning for another browser than Chromium, a phone or tablet, or less
+  memory than the machine's RAM plus 1.5 GiB (`navigator.deviceMemory`, which Chromium caps at 8). No privacy notice
+  (decision 8).
+- **Start** ([Start the demo](ui:machines:DemoStart.start)): the switch asked first when another machine runs on the
+  page (`disk-actions.ts` `askSwitch`, the Open the machine question), then `machineFromDemo` (the snapshot downloaded
+  with a progress bar, the machine made: machines.md §6.2), then `page.openDemo`: the page closes, the view is the
+  demo's (`serial` → the terminal, `screen` → the screen; remembered as a chosen view is), and `switchMachine` opens it,
+  whose first start restores the template (`restoreFirst`). A reload is the machine's (`?m=`), not the store's.
+- **Started before** (a machine whose `fromDemo` is the card's): the interstitial says so, with its name and when it was
+  last used (when its disks' overlays were last written, `demo-open.ts` `lastUsed`, else its record's change), with
+  **[Open my machine](ui:machines:DemoStart.openMine)** (the default: it has the focus) and **[Start a fresh copy](ui:machines:DemoStart.fresh)** (another
+  machine; `importDefinition` names it with a suffix, `Alpine (2)`); a note when that machine runs in another tab.
+  Open my machine checks its chunked disks' manifests first (`checkDisks`).
+- **Failures**, each in the catalog's words, under the interstitial (or, for the store's own file, with
+  **[Try again](ui:machines:DemosPage.retry)**): the store or a demo's server unreachable (`demo-store.unreachable`), a
+  status, the demo's files gone (a manifest's 404: `template.gone`), the snapshot republished meanwhile
+  (`template.otherSnapshot`), the download cut off partway (`template.cutOff`, nothing kept), the storage full when the
+  snapshot is kept (`template.full`, its cause the storage's numbers; the machine made for it is deleted again), and
+  another machine running in the tab (the switch's question; a note says so beforehand). None leaves a machine.
+
+Tests: `tests/demos-route.test.ts` (the address, the first visit, the checks; Node), `tests/demo-store.test.ts` (the
+cut-off download), `tests/page-demos.test.ts` (Chromium, a stand-in worker and the stores answered by the test: the
+first visit, a card by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
+started before, a fresh copy, `?id=`, an unknown id, Home's Demos and Back, `?store=`'s warning and what it fetches,
+the server down, the files gone, the download cut off), `tests/page-demos-guest.test.ts` (scripts/ci-machines.sh: a
+demo's template from the demos' build in `target/demos`, `WAARM64_DEMO_SITE`, from the card to a `#` prompt, a file
+kept across a reload; skipped without it).
+
 ## The worker protocol
 
 The seed of phase D's embedding API; not frozen. One machine per worker: a restart stops the
@@ -2212,7 +2272,8 @@ Node never goes through it: tools, tests and `bench/` run `.ts` directly, as bef
 - **The dev server** (`tools/serve.ts` `startServer`, the repository as its root) serves the whole repository from
   source: TypeScript and Svelte compiled per request, so the test pages under `tests/browser/`, `bench/*/index.html`
   and modules a test imports in a page (`import('/web/app/store.ts')`) work as they are. `/` redirects to the page at
-  `/web/app/` (with the query). `target/` is served by sirv ahead of Vite (range requests and HEAD for the disks and
+  `/web/app/` (with the query), and `/demos` to `/web/app/demos`, which is the page again (the store's page: above,
+  "The demo store"). `target/` is served by sirv ahead of Vite (range requests and HEAD for the disks and
   firmware; Vite would take an extensionless file, a kernel's `Image`, for a module); a HEAD there is answered from
   the file's `stat` (`headOnly`): sirv's reads the whole file, ~1.9 s for a 2.2 GB disk image, twice a start
   (bench/boot/REPORT.md "SNAPZ loop 7"). No dependency pre-bundling (the
@@ -2317,6 +2378,9 @@ stops if a binary is missing, Vulkan's renderer among them), then builds the pag
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the
   page is.
+- `demos.html`, the built `index.html` as it is (vite.config.ts `demosPage`), the demo store's page at `/demos` (above,
+  "The demo store"): Cloudflare's `auto-trailing-slash` and Vite's preview server serve it there, one segment deep, so
+  its `./assets/…` are the page's (not `demos/index.html`, served at `/demos/`, where they would be `/demos/assets/`).
 - From `web/app/public/`, copied as they are: `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and
   `.htaccess` (Apache) with the two headers (and, for Apache, the agent's `.gz` as `application/gzip` with no
   `Content-Encoding`, which would have the browser decode it; Vite's servers likewise: vite.config.ts `plainGzip`;

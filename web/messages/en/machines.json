@@ -1714,5 +1714,225 @@
   "connection-kind.demo": {
     "message": "the demo network",
     "note": "Home page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: the project's public demo network."
+  },
+  "MachinesNav.demos": {
+    "message": "Demos",
+    "note": "Home page: button under the list of machines, between Preferences and About, that opens the demo store's page (machines ready to use, downloaded on a click) in Home's place."
+  },
+  "MachinesNav.demos.title": {
+    "message": "Machines ready to use, set up and started in a click.",
+    "note": "Home page: tooltip of the Demos button under the list of machines (between Preferences and About), which opens the demo store's page."
+  },
+  "DemosPage.back": {
+    "message": "Back",
+    "note": "Demo store's page: the button (and its tooltip) at the left of its top bar that closes the page, back to where the visitor came from (Home, or the machine)."
+  },
+  "DemosPage.heading": {
+    "message": "Demos",
+    "note": "Demo store's page: its heading, over the demos' cards (or a demo's details)."
+  },
+  "DemosPage.intro": {
+    "message": "Machines ready to use: choose one, and it starts in this tab where it was left, already set up, with nothing to install. What you change in it is kept in this browser, and the machine stays on the Home page.",
+    "note": "Demo store's page: the paragraph under its heading, over the demos' cards: what a demo is."
+  },
+  "DemosPage.loading": {
+    "message": "Loading the demos…",
+    "note": "Demo store's page: said while the store's list of demos downloads (a small file)."
+  },
+  "DemosPage.retry": {
+    "message": "Try again",
+    "note": "Demo store's page: button under the error when the store's list of demos couldn't be loaded (the server down, the connection lost): loads it again."
+  },
+  "DemosPage.unknown": {
+    "message": "This store has no demo {{id}}: it may have been replaced by a newer one. Its demos are below.",
+    "note": "Demo store's page: warning over the cards when the link named a demo (?id=) the store doesn't have. {{id}}: the id in the link (short, lowercase)."
+  },
+  "DemosPage.skipped_one": {
+    "message": "{{count}} demo in this store needs a newer version of this web app, or is damaged, and is left out.",
+    "note": "Demo store's page: a small line over the cards when the store lists demos this page can't read (a later version of the format, a damaged entry). {{count}}: how many."
+  },
+  "DemosPage.skipped_other": {
+    "message": "{{count}} demos in this store need a newer version of this web app, or are damaged, and are left out.",
+    "note": "Demo store's page: a small line over the cards when the store lists demos this page can't read (a later version of the format, a damaged entry). {{count}}: how many."
+  },
+  "DemosPage.empty": {
+    "message": "This store has no demos.",
+    "note": "Demo store's page: said in the cards' place when the store lists none."
+  },
+  "DemosPage.notOurs.title": {
+    "message": "These demos aren't $t(common:product.name)'s",
+    "note": "Demo store's page: the heading of the warning shown when a link opens another store than the project's (?store=), before any of its demos is shown or downloaded."
+  },
+  "DemosPage.notOurs": {
+    "message": "This link opens demos published at {{host}}, not by the $t(common:product.name) project. A demo is a whole machine, set up by whoever published it: open its demos only if you trust them.",
+    "note": "Demo store's page: the warning's text when a link opens another store than the project's (?store=), before anything of it past its list is downloaded. {{host}}: the other store's server (its host name)."
+  },
+  "DemosPage.notOurs.name": {
+    "message": "It calls itself <name>{{name}}</name>.",
+    "note": "Demo store's page: a line of the warning about another store than the project's, when the store gives itself a name. {{name}}: that name, the store's own words."
+  },
+  "DemosPage.notOurs.show": {
+    "message": "Show their demos",
+    "note": "Demo store's page: the button of the warning about another store (?store=) that accepts it and shows that store's demos."
+  },
+  "DemosPage.notOurs.ours": {
+    "message": "Show $t(common:product.name)'s demos",
+    "note": "Demo store's page: the button of the warning about another store (?store=) that shows the project's own demos instead."
+  },
+  "DemosPage.from": {
+    "message": "These demos are from {{host}}.",
+    "note": "Demo store's page: a small line over the cards of another store than the project's, once the visitor accepted its warning. {{host}}: its server's host name."
+  },
+  "DemoCard.thumbnail.alt": {
+    "message": "A screenshot of <name>{{name}}</name>",
+    "note": "Demo store's page: the alt text of a demo's picture, on its card and in its details. {{name}}: the demo's name (the store's words)."
+  },
+  "DemoCard.download": {
+    "message": "{{size, bytes}} to download",
+    "note": "Demo store's page: a line on a demo's card: what choosing it downloads. {{size}}: the bytes."
+  },
+  "DemoCard.mine": {
+    "message": "You have this demo",
+    "note": "Demo store's page: a mark on a demo's card when this browser has a machine made from it."
+  },
+  "DemoCard.older": {
+    "message": "You have an older version of this demo",
+    "note": "Demo store's page: a mark on a demo's card when this browser has a machine made from an older version it replaces."
+  },
+  "DemoStart.back": {
+    "message": "All demos",
+    "note": "Demo store's page, a demo's details: the link-like button at the top that goes back to every demo's card."
+  },
+  "DemoStart.about": {
+    "message": "$t(common:product.name) runs a whole arm64 computer in this browser tab, with nothing to install. The demo downloads the machine as it was left running, and it carries on from there. It needs a recent computer, and works best in Chrome or Edge.",
+    "note": "Demo store's page, a demo's details: what the project is and what it needs, before anything is downloaded."
+  },
+  "DemoStart.download": {
+    "message": "Starting it downloads about {{size, bytes}}. The machine's disk stays on its server and is read as the machine uses it, so the machine needs that server to run; what you change is kept in this browser.",
+    "note": "Demo store's page, a demo's details: what starting it downloads, and where its files are. {{size}}: the bytes."
+  },
+  "DemoStart.needs": {
+    "message": "What it needs",
+    "note": "Demo store's page, a demo's details: the heading over what the demo needs of the browser, each checked (machines:DemoChecks.*)."
+  },
+  "DemoStart.checking": {
+    "message": "Checking this browser…",
+    "note": "Demo store's page, a demo's details: said in the checks' place while the browser is asked what it has (a moment)."
+  },
+  "DemoStart.start": {
+    "message": "Start the demo",
+    "note": "Demo store's page, a demo's details: the main button: downloads the demo, makes its machine in this browser and starts it. Off when a check failed."
+  },
+  "DemoStart.openMine": {
+    "message": "Open my machine",
+    "note": "Demo store's page, a demo's details: the main button (the default) when this browser has a machine made from the demo: opens that machine, as it was left."
+  },
+  "DemoStart.fresh": {
+    "message": "Start a fresh copy",
+    "note": "Demo store's page, a demo's details: the second button when this browser has a machine made from the demo: downloads it again into another machine, named with a number after it; the visitor's own stays as it is."
+  },
+  "DemoStart.mine": {
+    "message": "You started this demo before: <name>{{machine}}</name>, last used {{when}}. Open it as you left it, or start a fresh copy beside it.",
+    "note": "Demo store's page, a demo's details: said over the buttons when this browser has a machine made from the demo. {{machine}}: its name; {{when}}: when it last ran (its disk last written), a date and time."
+  },
+  "DemoStart.mine.undated": {
+    "message": "You started this demo before: <name>{{machine}}</name>. Open it as you left it, or start a fresh copy beside it.",
+    "note": "Demo store's page, a demo's details: said over the buttons when this browser has a machine made from the demo, before its last use is known. {{machine}}: its name."
+  },
+  "DemoStart.elsewhere": {
+    "message": "<name>{{machine}}</name> is running in another tab.",
+    "note": "Demo store's page, a demo's details: a warning when the visitor's machine from the demo runs in another tab of this browser (it must be stopped there to open here). {{machine}}: its name."
+  },
+  "DemoStart.older": {
+    "message": "You have <name>{{machine}}</name> from an older version of this demo. This version starts as a new machine; that one stays as it is.",
+    "note": "Demo store's page, a demo's details: said when this browser has a machine made from a version this demo replaces. {{machine}}: its name."
+  },
+  "DemoStart.runningHere": {
+    "message": "<name>{{machine}}</name> is running in this tab: opening the demo powers it off (you will be asked first).",
+    "note": "Demo store's page, a demo's details: a warning when another machine runs on this page. {{machine}}: its name."
+  },
+  "DemoStart.busy.download": {
+    "message": "Downloading the demo…",
+    "note": "Demo store's page, a demo's details: said while Start the demo (or Start a fresh copy) downloads it and makes its machine."
+  },
+  "DemoStart.busy.opening": {
+    "message": "Opening the machine…",
+    "note": "Demo store's page, a demo's details: said while Open my machine checks the machine's files are still on their server and opens it."
+  },
+  "DemoStart.progress": {
+    "message": "{{done, bytes}} of {{total, bytes}}",
+    "note": "Demo store's page, a demo's details: the download's progress, under its bar. {{done}}: the bytes downloaded; {{total}}: all of them."
+  },
+  "DemoChecks.browser.ok": {
+    "message": "A Chromium browser (Chrome, Edge…), the browser $t(common:product.name) is made for.",
+    "note": "Demo store's page, a demo's details, under What it needs: the browser is Chromium's (met)."
+  },
+  "DemoChecks.browser.warn": {
+    "message": "$t(common:product.name) is made for Chromium's browsers (Chrome, Edge…). In this one the demo may not work, or only in part.",
+    "note": "Demo store's page, a demo's details, under What it needs: another browser than Chromium's (a warning: the demo may still run)."
+  },
+  "DemoChecks.isolation.ok": {
+    "message": "Shared memory for the machine (the page is cross-origin isolated).",
+    "note": "Demo store's page, a demo's details, under What it needs: SharedArrayBuffer is there (met)."
+  },
+  "DemoChecks.isolation.fail": {
+    "message": "The browser gives this page no shared memory, which the machine needs: its server doesn't send the cross-origin isolation headers.",
+    "note": "Demo store's page, a demo's details, under What it needs: no SharedArrayBuffer (the demo can't start)."
+  },
+  "DemoChecks.opfs.ok": {
+    "message": "Storage for the machine's disk in this browser.",
+    "note": "Demo store's page, a demo's details, under What it needs: the origin private file system is there (met)."
+  },
+  "DemoChecks.opfs.fail": {
+    "message": "The browser gives this page no storage for the machine's disk (a private window refuses it). Open the page in a normal window.",
+    "note": "Demo store's page, a demo's details, under What it needs: no origin private file system (the demo can't start)."
+  },
+  "DemoChecks.webgl2.ok": {
+    "message": "WebGL2, for the demo's 3D graphics.",
+    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with 3D; WebGL2 is there (met)."
+  },
+  "DemoChecks.webgl2.fail": {
+    "message": "No WebGL2, which the demo's 3D graphics need. Check that hardware acceleration is on in the browser's settings.",
+    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with 3D; no WebGL2 (the demo can't start)."
+  },
+  "DemoChecks.webgpu.ok": {
+    "message": "WebGPU, for the demo's Vulkan graphics.",
+    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with Vulkan; WebGPU is there (met)."
+  },
+  "DemoChecks.webgpu.fail": {
+    "message": "No WebGPU, which the demo's Vulkan graphics need.",
+    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with Vulkan; no WebGPU adapter (the demo can't start)."
+  },
+  "DemoChecks.memory.ok": {
+    "message": "Memory: this computer has at least {{have}} GiB, and the demo wants {{need}} GiB.",
+    "note": "Demo store's page, a demo's details, under What it needs: the device's memory as the browser says it (met). {{have}}: GiB the browser reports (it says at most 8); {{need}}: GiB the demo's machine wants with the page's own."
+  },
+  "DemoChecks.memory.warn": {
+    "message": "This computer says it has {{have}} GiB of memory, and the demo wants {{need}} GiB: it may run slowly, or the browser may stop it.",
+    "note": "Demo store's page, a demo's details, under What it needs: less memory than the demo wants (a warning: it may still run). {{have}}: GiB the browser reports; {{need}}: GiB the demo's machine wants with the page's own."
+  },
+  "DemoChecks.storage.ok": {
+    "message": "Room in this browser's storage: {{free, bytes}} free, and the demo needs {{need, bytes}}.",
+    "note": "Demo store's page, a demo's details, under What it needs: the browser's storage has room for the download and the machine's first changes (met). {{free}}, {{need}}: bytes."
+  },
+  "DemoChecks.storage.fail": {
+    "message": "This browser's storage has {{free, bytes}} free, and the demo needs {{need, bytes}}. Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes it.",
+    "note": "Demo store's page, a demo's details, under What it needs: no room for the download (the demo can't start). {{free}}, {{need}}: bytes. The <ui-home> marker shows the Home button's icon before its words."
+  },
+  "DemoChecks.mobile.warn": {
+    "message": "This looks like a phone or a tablet: the demo needs a computer's memory and speed, and may not run.",
+    "note": "Demo store's page, a demo's details, under What it needs: a mobile device (a warning: it may still run)."
+  },
+  "template.cutOff": {
+    "message": "The demo's download was cut off",
+    "note": "Error headline on the demo store's page when a demo's snapshot stopped downloading partway (the connection lost, a piece refused by the server). Its details are the line under it (machines:template.cutOff.cause)."
+  },
+  "template.cutOff.cause": {
+    "message": "The connection to {{host}} was lost before the whole download arrived. Nothing was kept: try again.",
+    "note": "Error details, the cause under the headline machines:template.cutOff, on the line under it in the same place. {{host}}: the server's host name."
+  },
+  "template.full": {
+    "message": "There's no room for the demo in this browser",
+    "note": "Error headline on the demo store's page when the browser's storage refused the demo's snapshot (full). Its details are the line under it (disks:overlay.storageFull or disks:overlay.storageFull.numbers)."
   }
 }

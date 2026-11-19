@@ -48,6 +48,7 @@ export const TOPIC = [
   // scripts/ci-machines.sh
   'tests/page-machines.test.ts', 'tests/page-stored.test.ts', 'tests/page-snapshots.test.ts', 'tests/page-quota.test.ts',
   'tests/page-incognito.test.ts', 'tests/page-usb-guest.test.ts', 'tests/page-surface-debian.test.ts',
+  'tests/page-demos-guest.test.ts',
   // scripts/ci-graphics.sh
   'tests/page-venus.test.ts',
   // scripts/ci-net.sh
@@ -117,7 +118,7 @@ export const AREAS: Record<string, Area> = {
   machines: {
     // Stored machines, the store, the Machines and Home pages.
     heavy: ['tests/storage-full.test.ts'],
-    src: ['web/app/store*.ts', 'web/app/machine*.ts', 'web/app/machines*.ts', 'web/app/Machine*.svelte', 'web/app/MachinesPage.svelte', 'web/app/storage-report.ts', 'web/app/Storage*.svelte', 'web/app/locks.ts', 'web/app/areas/machines-nav.svelte.ts', 'web/app/areas/records.svelte.ts', 'web/app/definitions.ts', 'web/app/template.ts', 'web/app/demo-store.ts', 'tools/demo-site.ts', 'tools/publish-demos.ts', 'tests/demo-store.test.ts', 'tests/demo-site.test.ts', 'tests/template.test.ts'],
+    src: ['web/app/store*.ts', 'web/app/machine*.ts', 'web/app/machines*.ts', 'web/app/Machine*.svelte', 'web/app/MachinesPage.svelte', 'web/app/storage-report.ts', 'web/app/Storage*.svelte', 'web/app/locks.ts', 'web/app/areas/machines-nav.svelte.ts', 'web/app/areas/records.svelte.ts', 'web/app/definitions.ts', 'web/app/template.ts', 'web/app/demo-store.ts', 'web/app/demo-check.ts', 'web/app/demo-open.ts', 'web/app/demos-route.ts', 'web/app/Demo*.svelte', 'web/app/areas/demos.svelte.ts', 'tests/demos-route.test.ts', 'tests/demo-fixture.ts', 'tests/page-demos*.test.ts', 'tools/demo-site.ts', 'tools/publish-demos.ts', 'tests/demo-store.test.ts', 'tests/demo-site.test.ts', 'tests/template.test.ts'],
     push: ['ci-machines.sh'],
   },
   // ---- graphics

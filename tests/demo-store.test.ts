@@ -184,3 +184,13 @@ test('a machine from a version a demo replaces is found as older', async () => {
   const other = parseStore(text, 'https://elsewhere.example/store.json');
   assert.equal((await demoMachines(store, findDemo(other, 'alpine-term')!)).mine.length, 0, "another store's demo of the same id isn't it");
 });
+
+test("a snapshot's download cut off partway is said as such, and makes no machine", async () => {
+  const def = await demoDef();
+  const manifest = { format: 'waarm64-chunked-1', size: 2 * MiB, piece: 2 * MiB, pieces: '../pieces/{hash}.bin', hashes: ['ef'.repeat(32)], id: SNAP };
+  serve({ [STORE_URL]: JSON.stringify({ type: STORE_TYPE, version: 1, demos: [def] }), 'https://disks.example/alpine-term/snapshot.json': JSON.stringify(manifest) }, [`https://disks.example/pieces/${'ef'.repeat(32)}.bin`]);
+  const s = await fetchStore(STORE_URL);
+  const store = fresh();
+  await assert.rejects(machineFromDemo(store, findDemo(s, 'alpine-term')!), (e) => msgOf(e)?.key === 'machines:template.cutOff' && msgOf((e as Error).cause)?.params?.host === 'disks.example');
+  assert.equal((await store.all('machines')).length, 0, 'no machine');
+});

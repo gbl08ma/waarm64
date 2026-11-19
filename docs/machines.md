@@ -599,7 +599,9 @@ id}`** (the store's URL as fetched, absolute), and its first adapter attached to
 (`attachDemoNetwork`, web/app/net-demo.ts). `demoMachines` finds this browser's machines from a card (`mine`: "started
 before", the most recently changed first) and from the versions it replaces (`older`). `fromDemo` isn't in the shape or
 a definition; a copy keeps it (it's still that demo's machine) and drops `restoreFirst` (the template is a snapshot of
-the original, not of the copy). Tests: tests/demo-store.test.ts (Node), tests/page-template-first.test.ts (a store's
+the original, not of the copy). A download cut off partway is `machines:template.cutOff`; the storage full when the
+snapshot is kept, `machines:template.full` (the machine just made is deleted again). The store's page, which makes
+these machines: [frontend.md](frontend.md) "The demo store". Tests: tests/demo-store.test.ts (Node), tests/page-template-first.test.ts (a store's
 demo made and restored at its first start in Chromium).
 
 ## 7. The page

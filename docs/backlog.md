@@ -1267,6 +1267,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **The demo store's loose ends** (DEMO loop 6, frontend.md "The demo store"): a demo machine started from Home (not
+  the store) whose disk's files are gone fails as a start does, not with "this demo's files are gone" (only the store's
+  Open my machine checks the manifests first); the store's URL is set only by `?store=` (no Preferences field); a 3D or
+  Vulkan demo's card doesn't fall back to a cold boot when its snapshot can't be restored (plans/first-demo.md §8
+  finding 3); "started before" doesn't say whether the machine has changes.
 - **What the i18n checks can't see** (tools/i18n-check.ts, [i18n.md](i18n.md) "Checks"; 2026-11-02, when the
   headline-and-line errors were split and the AST rules added). Each needs data flow across functions or modules, which
   the checker doesn't have (it reads one file's syntax, no types):

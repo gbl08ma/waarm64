@@ -4,7 +4,7 @@
 // serves the whole repository from source, so the test pages under tests/browser/ and bench/ load web/'s modules as they are.
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
-import { stat } from 'node:fs/promises';
+import { copyFile, stat } from 'node:fs/promises';
 import { extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sirv from 'sirv';
@@ -119,9 +119,30 @@ const rootPage = (): Plugin => ({
     server.middlewares.use('/target', sirv(`${ROOT}target`, { dev: true, dotfiles: false, setHeaders: (res) => { for (const [k, v] of Object.entries(headers())) res.setHeader(k, v as string); } }));
     server.middlewares.use((req, res, next) => {
       const url = new URL(req.url ?? '/', 'http://x');
+      // The demo store's page (`/demos`, as the copy's demos.html is served): the page at web/app/demos, one segment
+      // under the page's directory as /demos is under the copy's, so its relative URLs resolve alike.
+      if (url.pathname === '/demos' || url.pathname === '/demos.html')
+        return void res.writeHead(302, { Location: `/web/app/demos${url.search}` }).end();
+      if (url.pathname === '/web/app/demos' || url.pathname === '/web/app/demos.html') {
+        req.url = `/web/app/index.html${url.search}`;
+        return next();
+      }
       if (url.pathname !== '/') return next();
       res.writeHead(302, { Location: `/web/app/${url.search}` }).end();
     });
+  },
+});
+
+/**
+ * The demo store's page in the copy: `demos.html`, the built `index.html` as it is, beside it (docs/frontend.md "A
+ * static copy"). A host serves it at `/demos` (Cloudflare's `auto-trailing-slash`, Vite's preview server), one segment
+ * deep, so its `./assets/…` are the page's; the page tells the store's page by its path (web/app/demos-route.ts).
+ */
+const demosPage = (): Plugin => ({
+  name: 'waarm64-demos-page',
+  apply: 'build',
+  writeBundle: async (o) => {
+    if (o.dir) await copyFile(join(o.dir, 'index.html'), join(o.dir, 'demos.html'));
   },
 });
 
@@ -137,7 +158,7 @@ export default defineConfig(({ command, mode }) => ({
   appType: 'mpa',
   // Copied as they are into the static copy: the hosts' headers files and web/app/'s old address's redirect.
   publicDir: command === 'build' ? `${ROOT}web/app/public` : false,
-  plugins: [plainGzip(), svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), rootPage(), nodeModules()],
+  plugins: [plainGzip(), svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), rootPage(), demosPage(), nodeModules()],
   resolve: mode === 'test' ? { conditions: ['module', 'browser', 'production'] } : {},
   worker: { format: 'es', plugins: () => [nodeModules()], rollupOptions: { output: { assetFileNames } } },
   // No pre-bundling: the few packages the page uses are ES modules, and every test process runs its own dev server (a

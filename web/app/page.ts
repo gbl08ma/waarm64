@@ -12,6 +12,7 @@ import type { LockMode } from '../input.ts';
 import type { Mods } from './osk.ts';
 import type { View } from './areas/screen.svelte.ts';
 import { Actions } from './actions.svelte.ts';
+import type { DemosRoute } from './demos-route.ts';
 
 /** What the components ask of the page. */
 export type Page = {
@@ -68,6 +69,14 @@ export type Page = {
   screenSize(): void;
   openMachines(tab?: MachinesTab, id?: string): void;
   closeMachines(): void;
+  /** The demo store's page (web/app/DemosPage.svelte): opened (on the store shown last), Back, a demo chosen in it. */
+  openDemos(route?: DemosRoute): void;
+  closeDemos(): void;
+  chooseDemo(id?: string): void;
+  /** Whether opening machine `id` (undefined: one not made yet) may stop the one running here: asks if it must. */
+  askSwitch(id?: string): Promise<boolean>;
+  /** Opens a demo's machine `id` (the store's page closes) in the demo's view; the switch was asked (`askSwitch`). */
+  openDemo(id: string, view: 'serial' | 'screen'): Promise<void>;
   /** Closes the message bar. */
   dismiss(): void;
   /**

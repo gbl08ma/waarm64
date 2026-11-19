@@ -64,6 +64,19 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   (bench/results/local/demo/site/alpine-spike): its shape hash matches what the tool computes, and a dry run plus
   `--apply` on a hard-linked copy of target/disks keeps the desktop's files (1009 files).
 
+- **Loop 6, the store's page, done** (2026-11-19, committed unpushed; docs/frontend.md "The demo store"): `/demos`
+  (`demos.html` beside `index.html` in the copy; the dev server redirects `/demos` to `/web/app/demos`) and `#demos`,
+  `?id=`, `?store=` (`web/app/demos-route.ts`); `DemosPage.svelte` in the machine's place with Back, Home's **Demos**
+  between Preferences and About, the first visit (no machines, a bare address) opening it; cards (`DemoCard.svelte`),
+  the interstitial with the browser's checks (`DemoStart.svelte`, `DemoChecks.svelte`, `demo-check.ts`), Start →
+  `machineFromDemo` → `page.openDemo` (the demo's view, `switchMachine` asked once up front), started before (Open my
+  machine, the default, its disks' manifests checked; Start a fresh copy), and the failures (`template.cutOff`,
+  `template.full` new; the machine deleted when its snapshot can't be kept). Tests: tests/demos-route.test.ts (Node),
+  tests/page-demos.test.ts (Chromium, stand-in worker), tests/page-demos-guest.test.ts (ci-machines.sh; **needs loop
+  5's `target/demos/alpine-term/`**, `WAARM64_DEMO_SITE`/`WAARM64_DEMO_NAME` override, skipped without it).
+  **For loop 5:** the guest test is its ci-machines check once the build writes `target/demos`; it wraps the site's
+  `definition.json` into a store itself (the `demo` taken from it if it has one, its network dropped: offline).
+
 ## Next: loop 5, the automated demo build
 
 - One command that makes each demo's build into **`target/demos/<id>/`**, which is where `deploy/disks/demos.json`
@@ -103,6 +116,16 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
 None.
 
 ## Awaiting the user's review
+
+- **Loop 6's engineering calls:** the first visit opens the store only on a bare address with no machines, and never
+  under automation unless `?firstvisit=1` (the tests open the page bare in fresh profiles; `leavewarning`'s precedent).
+  The interstitial and "started before" are one panel (a card → its details: checks, then Open my machine / Start a
+  fresh copy, or Start). Stops: no isolation, no OPFS, no WebGL2 (3D), no WebGPU (Vulkan), storage below the download
+  ×1.25 (+64 MiB at least); warnings: not Chromium, mobile, `deviceMemory` below RAM + 1.5 GiB. "Last used" is the
+  last write to the machine's overlays (no new record field). Another store: its JSON is fetched, then the warning
+  (with its host and its own name), nothing more until accepted. The store's URL is configurable by `?store=` only.
+  The message bar is hidden on the store's page, as on Home (whose banner shows it; the store's page shows its own
+  errors). A new icon (`apps`, Tabler) for Demos.
 
 - **Loop 4's engineering calls:** version 2 is version 1 plus `demo`, so there's no migration; exports write 2. No
   `needs` field: 3D, Vulkan and RAM come from the machine's own fields, so they can't disagree. `replaces` is a list,

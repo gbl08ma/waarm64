@@ -340,7 +340,7 @@ published next to its disk and snapshot:
   "Back to the demo's start" is then an ordinary Restore. Later starts are the machine's own: its overlay, its
   Suspend, its snapshots.
 - **Started before:** the store looks for machines whose `fromDemo` matches the card. If one exists, the click asks:
-  **Open my machine** (the default) or **Start a fresh copy** (another machine, named with a suffix), and says when the
+  [Open my machine](ui:machines:DemoStart.openMine) (the default) or [Start a fresh copy](ui:machines:DemoStart.fresh) (another machine, named with a suffix), and says when the
   existing one was last used and that it has changes. The card also marks demos the visitor already has.
 - **Versions are ids:** a demo that changes (a new image, a new snapshot) is published under a new `id`, and the old
   one leaves the store, or stays marked as old. A machine made from an old demo keeps working, because its disk's

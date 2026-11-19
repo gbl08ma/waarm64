@@ -136,28 +136,32 @@ export class DiskActions {
   }
 
   /**
-   * Opens stored machine `id` on this page: the one running stops (after asking), and it starts. From a transient
+   * Whether opening machine `id` (undefined: one not made yet, a demo's) may stop the one running on this page: true
+   * when none runs, or it is that one, or the user says so.
+   */
+  async askSwitch(id?: string) {
+    if (!isLive(power.state) || (id !== undefined && this.#d.machine.stored?.record.id === id)) return true;
+    return ask.confirm(
+      t(power.canSoft ? 'machine:disk-actions.switch.confirm.soft' : 'machine:disk-actions.switch.confirm'),
+      {
+        title: t('machine:disk-actions.switch.title'),
+        ok: t('machine:disk-actions.switch.ok'),
+        danger: true,
+      },
+    );
+  }
+
+  /**
+   * Opens stored machine `id` on this page: the one running stops (after asking, unless `asked`), and it starts. From a transient
    * machine's page (a test's `?machine=`) the page is reloaded as the machine's.
    */
-  async switchMachine(id: string) {
+  async switchMachine(id: string, asked = false) {
     const { machine: m, runner, power: pw } = this.#d;
     if (m.name !== 'uefi' || params.has('machine')) {
       location.search = `?m=${id}`;
       return;
     }
-    if (
-      isLive(power.state) &&
-      m.stored?.record.id !== id &&
-      !(await ask.confirm(
-        t(power.canSoft ? 'machine:disk-actions.switch.confirm.soft' : 'machine:disk-actions.switch.confirm'),
-        {
-          title: t('machine:disk-actions.switch.title'),
-          ok: t('machine:disk-actions.switch.ok'),
-          danger: true,
-        },
-      ))
-    )
-      return;
+    if (!asked && !(await this.askSwitch(id))) return;
     await pw.exclusively(async () => {
       if (!(await pw.stopCleanly())) return; // kept running: this machine stays
       runner.d.net.machineOff();

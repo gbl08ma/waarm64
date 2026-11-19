@@ -1,0 +1,15 @@
+// The demo store's page (docs/frontend.md "The demo store"; web/app/DemosPage.svelte): whether it shows (in the
+// machine's place, as Home does), the store and demo the address asks for (web/app/demos-route.ts), and where its Back
+// returns. web/app/areas/page-window.ts opens and closes it (`page.openDemos`).
+import { OUR_STORE } from '../demo-store.ts';
+import type { DemosRoute } from '../demos-route.ts';
+
+class Demos {
+  /** The store's page shows instead of the machine (and of Home). */
+  open = $state(false);
+  /** The store shown, and the demo chosen in it (its interstitial). */
+  route = $state<DemosRoute>({ store: OUR_STORE, ours: true });
+  /** Where Back returns: Home, when it was opened from there; else the machine. */
+  from = $state<'home' | 'machine'>('machine');
+}
+export const demos = new Demos();

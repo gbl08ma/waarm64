@@ -10,6 +10,9 @@ import { params } from '../run/knobs.ts';
 import type { PageMachine } from '../run/page-machine.svelte.ts';
 import type { MachinesTab } from './machines-nav.svelte.ts';
 import { machinesNav } from './machines-nav.svelte.ts';
+import { demos } from './demos.svelte.ts';
+import { demosAddress, demosRoute, firstVisit, leftDemos, type DemosRoute } from '../demos-route.ts';
+import type { Page } from '../page.ts';
 import { keys } from './keys.svelte.ts';
 import { network } from './network.ts';
 import { isStopped, power } from './power.svelte.ts';
@@ -69,7 +72,11 @@ export class PageWindow {
         focus: () => this.focusChanged(),
         focusLater: () => queueMicrotask(() => this.focusChanged()),
         beforeUnload: (e) => this.beforeUnload(e),
-        hashChange: () => this.takePairing(),
+        hashChange: () => {
+          this.takePairing();
+          const r = demosRoute(location);
+          if (r) this.openDemos(r);
+        },
         dragOver: (e) => this.dragOver(e),
         drop: (e) => this.drop(e),
         fullscreenChanged: () => this.fullscreenChanged(),
@@ -87,6 +94,7 @@ export class PageWindow {
     if (save) remember({ view: v });
     screen.view = v;
     if (machinesNav.open) this.closeMachines();
+    if (demos.open) this.closeDemos(false);
     flushSync(); // the body's data-view (App.svelte) shows the view now: it is measured and focused below
     this.#d.screen.fit();
     const term = this.#d.terminal.term;
@@ -150,6 +158,10 @@ export class PageWindow {
   // The Home page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind
   // it. `#home` in the address opens it (a reload keeps it open; main.ts takes the older `#machines` too).
   openMachines(tab?: MachinesTab, id?: string) {
+    if (demos.open) {
+      demos.open = false;
+      history.replaceState(null, '', leftDemos(location));
+    }
     if (tab) machinesNav.tab = tab;
     if (id) machinesNav.choose(id);
     machinesNav.open = true;
@@ -161,6 +173,59 @@ export class PageWindow {
     // guest (off, crashed, suspended), the run is still `machine.run` until the next stop: the state says.
     if (isStopped(power.state) && !power.busy) void this.#d.reloadStored();
     if (location.hash) history.replaceState(null, '', `${location.pathname}${location.search}`);
+    queueMicrotask(() => {
+      this.#d.screen.fit();
+      this.#input().focus();
+    });
+  }
+
+  // The demo store's page (docs/frontend.md "The demo store"; web/app/DemosPage.svelte): in the machine's place, and
+  // Home's, which it closes (its Back returns there). Its address (`/demos`, `#demos`, with `?id=`, `?store=`) keeps it
+  // open across a reload; closed, the address is the page's own again.
+  openDemos(route: DemosRoute = demos.route) {
+    if (!demos.open) demos.from = machinesNav.open ? 'home' : 'machine';
+    if (machinesNav.open) machinesNav.open = false;
+    demos.route = route;
+    demos.open = true;
+    history.replaceState(null, '', demosAddress(location, route));
+  }
+  /**
+   * What the address opens at the page's load: the store's page (`/demos`, `#demos`), Home (`#home`, the older
+   * `#machines`), or, on a first visit (no machines: `machines`), the store.
+   */
+  openFromAddress(machines: number) {
+    const r = demosRoute(location);
+    if (r) this.openDemos(r);
+    else if (location.hash === '#home' || location.hash === '#machines') this.openMachines();
+    else if (firstVisit(location, machines, navigator.webdriver)) this.openDemos();
+  }
+  /** The store's page's part of `page`: `switchTo` opens a stored machine (asked first by `askSwitch`). */
+  demoActions(d: {
+    switchTo: (id: string) => Promise<void>;
+    askSwitch: (id?: string) => Promise<boolean>;
+  }): Pick<Page, 'openDemos' | 'closeDemos' | 'chooseDemo' | 'askSwitch' | 'openDemo'> {
+    return {
+      openDemos: (route) => this.openDemos(route),
+      closeDemos: () => this.closeDemos(),
+      chooseDemo: (id) => this.chooseDemo(id),
+      askSwitch: d.askSwitch,
+      openDemo: (id, view) => {
+        this.closeDemos(false);
+        this.setView(view === 'serial' ? 'terminal' : 'screen');
+        return d.switchTo(id);
+      },
+    };
+  }
+  /** The demo `id` chosen in the store shown (undefined: its cards), in the address too. */
+  chooseDemo(id?: string) {
+    const { id: _, ...rest } = demos.route;
+    this.openDemos(id ? { ...rest, id } : rest);
+  }
+  /** Back (`back`: to Home, when it came from there; else to the machine), or a demo's machine opened (not `back`). */
+  closeDemos(back = true) {
+    demos.open = false;
+    history.replaceState(null, '', leftDemos(location));
+    if (back && demos.from === 'home') return this.openMachines();
     queueMicrotask(() => {
       this.#d.screen.fit();
       this.#input().focus();

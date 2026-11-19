@@ -2,7 +2,8 @@
   The Home page's left column (MachinesPage.svelte): under its Machines heading, the page's own machine (a transient
   one) and the machines kept in this browser (each with its disks and its state), or a line saying there are none yet;
   the commands that make one (new, from a disk image, import a definition: docs/machines.md §6), then the browser's
-  panes (Disks, Shared folders, Connections, Preferences, About).
+  panes (Disks, Shared folders, Connections, Preferences, About) with Demos before About, which opens the demo store's
+  page (DemosPage.svelte) in Home's place.
 -->
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
@@ -30,7 +31,8 @@
   };
   let { store, machines, counts, stateOf, actions, onchoose }: Props = $props();
 
-  const panes = $derived<{ id: string; icon: IconName; label: string; title: string }[]>([
+  /** The browser's panes, and Demos, which opens the demo store's page instead of a pane (`open`). */
+  const panes = $derived<{ id: string; icon: IconName; label: string; title: string; open?: () => void }[]>([
     {
       id: DISKS,
       icon: 'database',
@@ -54,6 +56,13 @@
       icon: 'adjustments-horizontal',
       label: t('machines:MachinesNav.preferences'),
       title: t('machines:MachinesNav.preferences.title'),
+    },
+    {
+      id: 'demos',
+      icon: 'apps',
+      label: t('machines:MachinesNav.demos'),
+      title: t('machines:MachinesNav.demos.title'),
+      open: () => page.openDemos(),
     },
     {
       id: ABOUT,
@@ -137,7 +146,7 @@
     {#each panes as p (p.id)}
       <button
         class:chosen={machinesNav.selected === p.id}
-        onclick={() => onchoose(p.id)}
+        onclick={() => (p.open ? p.open() : onchoose(p.id))}
         data-machine={p.id}
         title={p.title}
       >

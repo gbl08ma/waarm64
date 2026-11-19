@@ -59,6 +59,7 @@ import { SizeActions, sizeOf } from './run/size-actions.ts';
 import { remember } from './settings.ts';
 import { Store } from './store.ts';
 import { describe, text } from '../i18n.ts';
+import { pageQuery } from './demos-route.ts';
 
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
 const build = document.querySelector('meta[name="waarm64-build"]')?.getAttribute('content');
@@ -67,7 +68,7 @@ if (build) console.info(`waarm64: built from ${build}`);
 // A machine kept in this browser (docs/machines.md), by id: `?m=<id>`, else the one last opened on a page without a
 // query. Without one the machine is transient, made from the query (the tests' `?machine=`).
 const store = await Store.open();
-const chosenId = params.get('m') ?? (location.search ? undefined : lastMachine());
+const chosenId = params.get('m') ?? (pageQuery(location.search) ? undefined : lastMachine());
 let storedError: unknown;
 const stored = chosenId
   ? await loadStored(store, chosenId).catch((e: unknown) => {
@@ -265,6 +266,10 @@ const page: Page = {
     pageWindow.closeMachines();
     return disks.switchMachine(id);
   },
+  ...pageWindow.demoActions({
+    switchTo: (id) => disks.switchMachine(id, true),
+    askSwitch: (id) => disks.askSwitch(id),
+  }),
   powerOff: () => powerActions.powerOff({ cleanly: true }),
   powerOffAsked: () => powerActions.powerOffAsked(),
   saveDisk: (mode, compress, target) => diskExport.save(mode, compress, target),
@@ -313,7 +318,7 @@ installBenchHooks(machine, terminal, replies, audio, (id) => page.openMachine(id
 addEventListener('unhandledrejection', (e) => messages.notify(describe(e.reason), 'error'));
 
 pageWindow.firstView();
-if (location.hash === '#home' || location.hash === '#machines') pageWindow.openMachines();
+pageWindow.openFromAddress((await store.all('machines')).length);
 messages.note = standingNote(await hasOpfs());
 await disks.fromAddress();
 powerActions.boot();

@@ -7,7 +7,7 @@
 // definition names), its first adapter on the demo network when it asks (`network: "demo"`), and the record marked
 // with the demo it came from (`fromDemo`). DOM-free but for `fetch`.
 import { fetchChunked } from '../chunked.ts';
-import { MsgError } from '../msg.ts';
+import { msgOf, MsgError } from '../msg.ts';
 import { importDefinition, parseDefinition, resolveUrls, type Definition } from './definitions.ts';
 import { fetchText, type DemoRef, type StoreDemo } from './demo-store.ts';
 import { attachDemoNetwork } from './net-demo.ts';
@@ -37,14 +37,29 @@ export async function machineFromTemplate(
   o: { fromDemo?: DemoRef } = {},
 ): Promise<{ machine: MachineRecord; snapshot: SnapshotRecord }> {
   const { machine } = await importDefinition(store, def);
-  const kept = await importSnapshot(store, machine.id, snapshot);
+  let kept: SnapshotRecord;
+  try {
+    kept = await importSnapshot(store, machine.id, snapshot);
+  } catch (e) {
+    // No machine without its template (the storage full, most often): the record goes, its disks stay (another
+    // machine may have them).
+    await store.deleteMachine(machine.id).catch(() => undefined); // tidying up: the failure thrown is the one to report
+    throw full(e) ?? e;
+  }
   const m = { ...machine, restoreFirst: kept.id, ...(o.fromDemo ? { fromDemo: o.fromDemo } : {}) };
   await store.put('machines', m);
   return { machine: m, snapshot: kept };
 }
 
+/** A snapshot's import refused for want of room, said as a demo's (its cause, the storage's numbers), else undefined. */
+function full(e: unknown) {
+  const cause = e instanceof Error ? e.cause : undefined;
+  if (!msgOf(cause)?.key.startsWith('disks:overlay.storageFull')) return undefined;
+  return new MsgError('machines:template.full', undefined, { cause });
+}
+
 /** The words for a demo whose files the server no longer has (a manifest's 404: decision 12). */
-const gone = (url: string) => () =>
+export const gone = (url: string) => () =>
   new MsgError('machines:template.gone', undefined, { cause: new MsgError('machines:template.gone.cause', { url }) });
 
 /**
@@ -58,13 +73,22 @@ async function fetchSnapshot(url: string, id?: string, progress?: (done: number,
     throw new MsgError('machines:template.otherSnapshot', undefined, {
       cause: new MsgError('machines:template.otherSnapshot.cause'),
     });
-  return fetchChunked(url, { progress });
+  try {
+    return await fetchChunked(url, { progress });
+  } catch (e) {
+    // A piece refused or the connection lost partway: nothing is kept, and trying again starts over.
+    if (e instanceof MsgError) throw e;
+    throw new MsgError('machines:template.cutOff', undefined, {
+      cause: new MsgError('machines:template.cutOff.cause', { host: new URL(url).host }, { cause: e }),
+    });
+  }
 }
 
 /**
  * Makes store demo `d`'s machine in this browser: its definition imported, marked `fromDemo`, its template snapshot
  * (if it has one) fetched first, so a failed download leaves no machine, and kept to restore at its first start; its
- * first adapter on the demo network if it asks. Returns the record as stored.
+ * first adapter on the demo network if it asks. Named as the definition says, with a suffix past the visitor's own
+ * machines' names (importDefinition's: a fresh copy is `Alpine (2)`). Returns the record as stored.
  */
 export async function machineFromDemo(
   store: Store,
