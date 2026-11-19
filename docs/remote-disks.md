@@ -163,6 +163,21 @@ the publish above (a dry run; `--apply` writes `target/disks/`). Per demo, into 
    kept (the agent drops the guest's caches), flagged as a template and deflated (by the same core), chunked;
    `definition.json` (the page's export); `thumb.webp` (the console's top at the prompt, 480×300, Chromium's WebP).
 
+**A desktop** (`arch-desktop`, `arch-3d`: DEMO loop 12): its recipe's `image` is a qcow2 in the checkout made by hand
+(`target/arch/desktop.qcow2`, images/arch/desktop.sh: Arch's packages of the day, so never the same twice), taken as
+it is and never rebuilt (a new one is a new demo id), and its `session` (`user`, `apps`: `{run, window}`, `settle`,
+`screen`, `cmdline`: tools/demo-site.ts `Session`) makes the template a desktop's: root logged in on the serial console
+(`root`/`root`, staying logged in there, as Alpine's); `cmdline`'s kernel parameters added to systemd-boot's entry on the
+ESP and the guest booted again once (the change is in the template's overlay, the image untouched); the user logged in
+on the screen (tty1) once logind has the session and its `XDG_RUNTIME_DIR` (typed sooner, sway found none), sway (`WLR_RENDERER=gles2`
+on a 3D machine), each app run through `swaymsg exec` until its window is in sway's tree, `settle` s, the caches
+dropped and memory compacted (`--compact`), the thumbnail the screen's (the page's layers over it, such as its
+[Click to type](ui:common:App.screen.hint) hint, hidden), the snapshot with sway's 3D state (the page's
+question past 64 MiB answered yes). The screen is fixed at `screen` (sway keeps the size it started with; the page
+letterboxes it). Its card's `view` is `screen`. ~3 min a desktop (the boot ~70 s, the session ~40 s, the snapshot of ~1 GiB
+of RAM and its deflate). The image is the deployed Desktop Demo's (`desktop/`, its content id the same); the demos' copy
+of its pieces is in the shared `pieces/` (944 files more until `desktop/` is published again from there: backlog).
+
 **What's reproducible:** the shape hash. The recipe fixes everything it covers (the MAC, the disk's serial, CPUs, RAM,
 display, the devices) and the image is bit for bit, so its content id is too: a rebuild from the same checkout gives the
 same hash (tests/build-demos.test.ts), and the publish's checks pass. **What isn't:** the snapshot's bytes (the guest's
@@ -175,7 +190,9 @@ built from (its `SNAPSHOT_VERSION` and shape code are the ones the publish check
 `npm run dist`, then `node tools/build-demos.ts --core target/dist --apply`, then deploy both (the page, and
 `deploy/disks/deploy.sh` for vmdisks.tny.im). ~30 s per template, plus the image when rebuilt. `scripts/ci-machines.sh`
 runs it for `alpine-term` into `target/ci-demos/` (`--out`, `--no-images`, the publish's plan only) and restores what it
-made through the store's page (tests/page-demos-guest.test.ts). Tests: tests/build-demos.test.ts (the recipe, the
+made through the store's page (tests/page-demos-guest.test.ts); `scripts/ci-graphics.sh` restores `arch-desktop` from
+`target/demos/` (not made by CI: skipped when it isn't there or another core made it) and checks its screen shows the
+desktop (bench/demo/screen-like.ts: like the thumbnail). Tests: tests/build-demos.test.ts (the recipe, the
 shape's stability, `--out`, the core's lookup).
 
 ## Where our images are

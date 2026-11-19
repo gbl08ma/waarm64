@@ -21,7 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { applyPlan, describe, planSite, readSource, siteCount, type Recipe, type Source, type SourceDemo } from './demo-site.ts';
+import { applyPlan, describe, planSite, readSource, siteCount, type Recipe, type Session, type Source, type SourceDemo } from './demo-site.ts';
 import { DEFINITION_TYPE, DEFINITION_VERSION } from '../web/app/definitions.ts';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
@@ -44,12 +44,31 @@ export function recipeDefinition(r: Recipe) {
 export function checkRecipe(r: unknown, at: string): Recipe {
   const x = r as Recipe;
   if (typeof x !== 'object' || x === null || Array.isArray(x)) throw new Error(`${at}: recipe is { image, machine, serial }`);
-  const extra = Object.keys(x).filter((k) => !['image', 'machine', 'serial'].includes(k));
+  const extra = Object.keys(x).filter((k) => !['image', 'machine', 'serial', 'session'].includes(k));
   if (extra.length) throw new Error(`${at}: recipe: unknown fields ${extra.join(', ')}`);
-  if (typeof x.image !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(x.image)) throw new Error(`${at}: recipe.image is an images/build.sh name`);
+  if (typeof x.image !== 'string' || !(/^[a-z0-9][a-z0-9-]*$/.test(x.image) || imagePath(x.image)))
+    throw new Error(`${at}: recipe.image is an images/build.sh name or a .qcow2 under target/`);
   if (typeof x.machine !== 'object' || x.machine === null) throw new Error(`${at}: recipe.machine is a definition's machine`);
   if (typeof x.serial !== 'string' || !x.serial) throw new Error(`${at}: recipe.serial is the disk's serial (fixed: it's in the shape)`);
+  if (x.session !== undefined) checkSession(x.session, `${at}: recipe.session`);
   return x;
+}
+
+/** A recipe's image given as a file (`target/….qcow2`, made by hand: images/arch/desktop.sh's), or undefined for a name. */
+export const imagePath = (image: string) => (/^target\/[\w./-]+\.qcow2$/.test(image) && !image.includes('..') ? image : undefined);
+
+/** Checks a desktop's session (bench/demo/make-template.ts `--session`). */
+function checkSession(s: Session, at: string) {
+  const plain = (v: unknown) => typeof v === 'string' && /^[\w ./:=,+-]+$/.test(v); // typed into a shell's double quotes
+  if (typeof s !== 'object' || s === null || Array.isArray(s)) throw new Error(`${at} is { user, apps, settle?, screen?, cmdline? }`);
+  const extra = Object.keys(s).filter((k) => !['user', 'apps', 'settle', 'screen', 'cmdline'].includes(k));
+  if (extra.length) throw new Error(`${at}: unknown fields ${extra.join(', ')}`);
+  if (typeof s.user !== 'string' || !/^[a-z_][a-z0-9_-]*$/.test(s.user)) throw new Error(`${at}.user is a login name`);
+  if (!Array.isArray(s.apps) || s.apps.some((x) => !plain(x?.run) || !plain(x?.window) || Object.keys(x).length !== 2))
+    throw new Error(`${at}.apps is a list of { run, window } (no quotes or $ in them)`);
+  if (s.settle !== undefined && !(Number.isInteger(s.settle) && s.settle >= 0 && s.settle <= 120)) throw new Error(`${at}.settle is 0 to 120 s`);
+  if (s.screen !== undefined && !/^\d{3,4}x\d{3,4}$/.test(s.screen)) throw new Error(`${at}.screen is <w>x<h>`);
+  if (s.cmdline !== undefined && !(typeof s.cmdline === 'string' && /^[\w.=,-]+( [\w.=,-]+)*$/.test(s.cmdline))) throw new Error(`${at}.cmdline is kernel parameters (no quotes, / or $)`);
 }
 
 /** The core's wasm in `given` (a file, or a copy of the page's directory), and the commit a copy was built from. */
@@ -134,16 +153,23 @@ async function main() {
     const r = checkRecipe(d.recipe, `${sourceFile}: ${id}`);
     const dir = resolve(ROOT, d.build);
     const tImage = Date.now();
-    try {
-      execFileSync(join(ROOT, 'images/build.sh'), ['--check', r.image], { stdio: 'pipe' });
-    } catch (e) {
-      const why = String((e as { stdout?: Buffer }).stdout ?? '').trim();
-      if (a['no-images']) throw new Error(`${id}: ${why} (and --no-images)`);
-      log(`${id}: ${why}`);
-      execFileSync(join(ROOT, 'images/build.sh'), [r.image], { stdio: 'inherit' });
-      log(`${id}: the image built in ${((Date.now() - tImage) / 1000).toFixed(0)} s`);
+    const file = imagePath(r.image);
+    // An image made by hand (the Arch desktop's, images/arch/desktop.sh: Arch's packages of the day, so never the same
+    // twice) is taken as it is: a new one is a new demo id (decision 13), never rebuilt here.
+    if (file) {
+      if (!existsSync(join(ROOT, file))) throw new Error(`${id}: no ${file} (made by hand: docs/images.md; a new one is a new demo id)`);
+    } else {
+      try {
+        execFileSync(join(ROOT, 'images/build.sh'), ['--check', r.image], { stdio: 'pipe' });
+      } catch (e) {
+        const why = String((e as { stdout?: Buffer }).stdout ?? '').trim();
+        if (a['no-images']) throw new Error(`${id}: ${why} (and --no-images)`);
+        log(`${id}: ${why}`);
+        execFileSync(join(ROOT, 'images/build.sh'), [r.image], { stdio: 'inherit' });
+        log(`${id}: the image built in ${((Date.now() - tImage) / 1000).toFixed(0)} s`);
+      }
     }
-    const image = join(ROOT, 'target/images', r.image, `${r.image}.qcow2`);
+    const image = file ? join(ROOT, file) : join(ROOT, 'target/images', r.image, `${r.image}.qcow2`);
     if (!existsSync(image)) throw new Error(`${id}: no ${image} after images/build.sh ${r.image}`);
     // The definition beside the build while it's made (removed after: definition.json is what the page exported).
     mkdirSync(dirname(dir), { recursive: true });
@@ -153,8 +179,10 @@ async function main() {
     try {
       execFileSync(
         'node',
-        [join(ROOT, 'bench/demo/make-template.ts'), '--site', dirname(dir), '--name', basename(dir), '--image', image, '--definition', defFile, '--core', core.wasm, '--thumbnail'],
-        { stdio: 'inherit', timeout: 540_000 },
+        [join(ROOT, 'bench/demo/make-template.ts'), '--site', dirname(dir), '--name', basename(dir), '--image', image, '--definition', defFile, '--core', core.wasm, '--thumbnail',
+          ...(r.session ? ['--session', JSON.stringify(r.session), '--compact', '--label', d.name ?? id] : [])],
+        // A desktop: its boot, the session and a snapshot of ~1 GiB of RAM.
+        { stdio: 'inherit', timeout: r.session ? 900_000 : 540_000 },
       );
     } finally {
       rmSync(defFile, { force: true });
