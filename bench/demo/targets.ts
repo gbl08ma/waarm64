@@ -5,6 +5,7 @@ import { linkSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'n
 import type { Server } from 'node:http';
 import type { Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
+import { untilLike } from './screen-like.ts';
 import { brotliBytes, brotliRatio, bytesByKind, count, linkFromEnv, siteServer, throttle, type Served as Log } from './site.ts';
 
 /** A target's local server: its base URL, how to stop it, and what it sent (where it counts). */
@@ -203,7 +204,6 @@ const alpine: Target = {
 };
 
 const SITE = new URL('../results/local/demo/site/', import.meta.url).pathname;
-const SPIKE = process.env.DEMO_TEMPLATE ?? 'alpine-demo';
 
 /**
  * DEMO loop 1's spike: the spike's Alpine template (bench/demo/make-template.ts) restored in a fresh profile with no
@@ -212,10 +212,10 @@ const SPIKE = process.env.DEMO_TEMPLATE ?? 'alpine-demo';
  * The click is the page's hook for a demo's card (web/app/template.ts: the definition imported, the snapshot fetched
  * and kept, the machine opened, its first start the restore).
  */
-const template: Target = {
-  name: 'waarm64-template',
+const templateTarget = (name: string, SPIKE: string, view: 'terminal' | 'screen'): Target => ({
+  name,
   system: 'waarm64',
-  what: `${process.env.DEMO_LINK ? `through one link of ${process.env.DEMO_LINK} (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): ` : ''}the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and a demo's template (\`DEMO_TEMPLATE\`, default alpine-demo: bench/demo/make-template.ts from images/build.sh alpine-demo; alpine-spike, loop 1's: bench/demo/spike-image.sh) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to the root shell`,
+  what: `${process.env.DEMO_LINK ? `through one link of ${process.env.DEMO_LINK} (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): ` : ''}the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and a demo's template (${SPIKE}${view === 'screen' ? ', a desktop: tools/build-demos.ts --out bench/results/local/demo/site' : ': bench/demo/make-template.ts'}; \`DEMO_TEMPLATE\` another) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to ${view === 'screen' ? 'its desktop on the screen' : 'the root shell'}`,
   offline: true,
   serve: async () => {
     if (!existsSync(`${DIST}index.html`)) throw new Error('build the page first: npm run dist -- --out bench/results/local/demo/dist');
@@ -256,16 +256,35 @@ const template: Target = {
   click: async (page, base) => {
     const site = base.split('#')[1];
     await page.evaluate(([d, s]) => window.__waarm64FromTemplate!(d, s), [`${site}/${SPIKE}/definition.json`, 'snapshot.json']);
-    // The terminal's view, as the demo's card will open it (its `view`, the store's loop).
-    await page.locator('[data-view-button="terminal"]').click();
+    // The view the demo's card opens (its `view`); a desktop's with the terminal beside it, where the command is typed.
+    await page.locator(`[data-view-button="${view === 'screen' ? 'both' : 'terminal'}"]`).click();
   },
-  promptIs: 'the restored machine running (the root shell, logged in, is where the snapshot was taken)',
-  echo: ECHO,
-  // A program the boot didn't run (apk and its libraries, ~5 MB: read from the disk unless the snapshot has them cached).
-  again: 'apk --version >/dev/null && echo ok-$((6*8))',
-  apk: APK,
-  timeoutMs: 120_000,
-};
+  ...(view === 'screen'
+    ? {
+        // The desktop visible: the screen like the template's thumbnail (bench/demo/screen-like.ts), the machine running.
+        prompt: async (page: Page, ms: number) => {
+          await ours.prompt(page, ms);
+          await untilLike(page, readFileSync(`${SITE}${SPIKE}/thumb.webp`), ms);
+        },
+        promptIs: "the restored machine running and its screen like the template's thumbnail (bench/demo/screen-like.ts: the desktop shown); the command on the serial console, root logged in there",
+        echo: ECHO,
+        // A program the snapshot didn't run (its pages read from the disk).
+        again: 'pacman --version >/dev/null && echo ok-$((6*8))',
+        timeoutMs: 300_000,
+      }
+    : {
+        promptIs: 'the restored machine running (the root shell, logged in, is where the snapshot was taken)',
+        echo: ECHO,
+        // A program the boot didn't run (apk and its libraries, ~5 MB: read from the disk unless the snapshot has them cached).
+        again: 'apk --version >/dev/null && echo ok-$((6*8))',
+        apk: APK,
+        timeoutMs: 120_000,
+      }),
+});
+const template = templateTarget('waarm64-template', process.env.DEMO_TEMPLATE ?? 'alpine-demo', 'terminal');
+/** DEMO loop 12: the Arch desktop and its 3D variant, resumed at the desktop (tools/build-demos.ts's builds, put in the site by `--out`). */
+const desktopTemplate = templateTarget('waarm64-desktop-template', process.env.DEMO_TEMPLATE ?? 'arch-desktop', 'screen');
+const glTemplate = templateTarget('waarm64-3d-template', process.env.DEMO_TEMPLATE ?? 'arch-3d', 'screen');
 
 /** The browser alone: an empty page, for the memory every target's numbers include. */
 const blank: Target = {
@@ -280,4 +299,4 @@ const blank: Target = {
   timeoutMs: 10_000,
 };
 
-export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, template, blank].map((t) => [t.name, t]));
+export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, template, desktopTemplate, glTemplate, blank].map((t) => [t.name, t]));

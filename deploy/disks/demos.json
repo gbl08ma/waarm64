@@ -27,6 +27,88 @@
     "network": "demo",
     "template": true
    }
+  },
+  {
+   "build": "target/demos/arch-desktop",
+   "name": "Arch Linux (desktop)",
+   "thumbnail": "target/demos/arch-desktop/thumb.webp",
+   "recipe": {
+    "image": "target/arch/desktop.qcow2",
+    "machine": {
+     "name": "Arch desktop",
+     "ncpus": 4,
+     "ramMiB": 2048,
+     "keyboard": "browser",
+     "display": "3d",
+     "network": true,
+     "macs": ["52:54:00:44:29:a1"],
+     "mouse": true,
+     "touch": true,
+     "clock": true
+    },
+    "serial": "c30a659ecdf9",
+    "session": {
+     "user": "arch",
+     "screen": "1280x800",
+     "apps": [
+      {
+       "run": "firefox",
+       "window": "firefox"
+      },
+      {
+       "run": "foot",
+       "window": "foot"
+      }
+     ],
+     "settle": 20,
+     "cmdline": "init_on_free=1"
+    }
+   },
+   "demo": {
+    "id": "arch-desktop",
+    "summary": "Arch Linux's sway desktop with Firefox and a terminal, resumed where it was saved. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now: Firefox can't open websites, and pacman can't reach Arch's mirror.",
+    "view": "screen",
+    "network": "demo"
+   }
+  },
+  {
+   "build": "target/demos/arch-3d",
+   "name": "Arch Linux (3D)",
+   "thumbnail": "target/demos/arch-3d/thumb.webp",
+   "recipe": {
+    "image": "target/arch/desktop.qcow2",
+    "machine": {
+     "name": "Arch 3D",
+     "ncpus": 4,
+     "ramMiB": 2048,
+     "keyboard": "browser",
+     "display": "3d",
+     "network": true,
+     "macs": ["52:54:00:b2:db:99"],
+     "mouse": true,
+     "touch": true,
+     "clock": true
+    },
+    "serial": "e13da3b66b20",
+    "session": {
+     "user": "arch",
+     "screen": "1280x800",
+     "apps": [
+      {
+       "run": "gtk4-demo --run=shadertoy",
+       "window": "org.gtk.Demo4"
+      }
+     ],
+     "settle": 20,
+     "cmdline": "init_on_free=1"
+    }
+   },
+   "demo": {
+    "id": "arch-3d",
+    "summary": "OpenGL running on Arch Linux's sway desktop: the guest's Mesa draws through virgl onto your browser's WebGL2. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now.",
+    "view": "screen",
+    "network": "demo"
+   }
   }
  ]
 }

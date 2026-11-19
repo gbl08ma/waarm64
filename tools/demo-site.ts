@@ -61,7 +61,17 @@ const THUMBS = ['.webp', '.png', '.jpg', '.avif'];
  * `target/images/<image>/<image>.qcow2`), and the machine that boots it as a definition's `machine` with its disk's
  * serial, fixed here so every rebuild has the same shape hash (its MAC, CPUs, RAM, display, devices).
  */
-export type Recipe = { image: string; machine: Record<string, unknown>; serial: string };
+/**
+ * A desktop resumed on the screen (bench/demo/make-template.ts `--session`): `user` logged in on the screen, sway, each
+ * of `apps` run through it until its `window` (an app_id or X11 class) is up, `settle` s more; `screen` the page's
+ * fixed screen size (e.g. `1280x800`).
+ */
+export type Session = { user: string; apps: { run: string; window: string }[]; settle?: number; screen?: string; cmdline?: string };
+/**
+ * How tools/build-demos.ts makes a demo: its image (an images/build.sh name, or a qcow2's path in the checkout, made by
+ * hand and never rebuilt), the definition's machine, the disk's serial and, for a desktop, its session.
+ */
+export type Recipe = { image: string; machine: Record<string, unknown>; serial: string; session?: Session };
 export type SourceDemo = { build: string; name?: string; thumbnail?: string; recipe?: Recipe; demo: Omit<Demo, 'snapshot' | 'thumbnail' | 'download'> & { download?: number } };
 export type Source = { type: typeof SOURCE_TYPE; name?: string; demos: SourceDemo[] };
 export type Ledger = { version: 1; demos: Record<string, { published: string; updated: string; retired?: string; image: string; snapshot?: string }> };
