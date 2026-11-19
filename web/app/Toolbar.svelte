@@ -30,9 +30,9 @@
   import type { View } from './areas/screen.svelte.ts';
   import { t } from '../i18n.ts';
 
-  // The wordmark: the name's two halves told apart by weight (wa: WebAssembly, dim and lighter; arm64).
-  const name = t('toolbar:Toolbar.name');
-  const WORDMARK = [name.slice(0, 2), name.slice(2)];
+  // The wordmark: the name's two halves told apart by weight (wa: WebAssembly, dim and lighter; arm64). A drawing of
+  // the name, not words from the catalog (which names the heading: the copy editor's marks can't be cut in two).
+  const WORDMARK = ['wa', 'arm64']; // i18n-ignore
 
   let { audio, net, folders }: { audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
@@ -151,7 +151,7 @@
 </script>
 
 <header class="toolbar" bind:this={bar}>
-  <h1><span>{WORDMARK[0]}</span>{WORDMARK[1]}</h1>
+  <h1 aria-label={t('toolbar:Toolbar.name')}><span>{WORDMARK[0]}</span>{WORDMARK[1]}</h1>
   <Button
     variant="tool"
     labelled
