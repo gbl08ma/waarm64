@@ -517,7 +517,9 @@ at 0x40a0_0000; with no host the guest moves on after 10 ms of the counter). The
 runs on the oracles and the deterministic runners too); `tests/spin.test.ts` runs it in parallel under the JIT, and
 JIT-stress and JIT-check (`scripts/ci-jit.sh`), each with the default chunk and with 2^30-step chunks (`vm_set_chunk`), where only a
 setter ends a chunk early: the medians over the 32 shape runs (12 shapes at 3 ELs and MMU settings, the aliases MMU-on only) must be under 1 ms (the worst under 50 ms; typical: a few
-to ~100 µs), the timer's under the JIT with the default chunk, the pauses' median under 5 ms (typical ~0.1 ms).
+to ~100 µs), the timer's under the JIT with the default chunk, the pauses' median under 5 ms (typical ~0.1 ms). A run
+that misses a bound runs once more: a loaded host (`scripts/ci.sh`'s files side by side) once put every shape's round
+trip near 2 ms, while a missing poll misses in every run.
 The copies' blocks and f1's run 16 times a lap, so CPU 0 waits 200 and 400 laps (compiled by then; the loop calling
 f1 may stay interpreted, which also stops at the lap's end), and CPU 1 records where it took each ping (ELR): with a
 poll only at the lap's check (a forward by-VA link or a host call's return that didn't poll), all 8 land there; the

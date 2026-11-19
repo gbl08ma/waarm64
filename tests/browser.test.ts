@@ -562,7 +562,11 @@ const settled = (page: Page, ms = 30_000, from?: string) =>
     .then(() => page.evaluate(() => ({ state: document.body.dataset.state, text: (document.getElementById('message-text')?.textContent ?? ''), details: (document.getElementById('message-details')?.textContent ?? ''), actions: [...document.querySelectorAll('#message-actions button')].map((b) => b.textContent) })));
 
 // The page's messages (M8 loop 4): what stops a machine from starting says what to do.
-test("the page says what's wrong: no cross-origin isolation, a missing script, core or image (then Retry), too little memory", { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+// A stall in it (once in ci.sh, 2026-11-18: 600 s at idle CPU, not reproduced in 20 runs under load) fails in 3 minutes,
+// its notes saying the last step reached.
+test("the page says what's wrong: no cross-origin isolation, a missing script, core or image (then Retry), too little memory", { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh', timeout: 180_000 }, async (tc) => {
+  const step = (what: string) => tc.diagnostic(`${new Date().toISOString()} ${what}`);
+  step('no cross-origin isolation');
   const ctx = await browser.newContext();
   const open = async (route?: (page: Page) => Promise<unknown>) => {
     const page = await ctx.newPage();
@@ -582,6 +586,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   assert.equal(await page.locator('#restart').isHidden(), true);
   await page.close();
   // xterm.js not installed: the module graph fails to load.
+  step('a missing script');
   page = await open((p) => p.route('**/xterm.mjs', (r) => r.fulfill({ status: 404 })));
   await page.waitForFunction(() => document.getElementById('state')?.dataset.state === 'failed', null, { timeout: 10_000, polling: 50 });
   assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '', /scripts didn't load[^]*npm start/);
@@ -591,6 +596,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
     ['**/waarm64_core.wasm', words('machine:worker-fetch.noCore', {}, { start: true }), words('machine:worker-fetch.noCore.cause', { path: 'target/wasm32-unknown-unknown/release/waarm64_core.wasm', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
     ['**/buildroot/rootfs.ext4', words('machine:worker-fetch.noImage', { machine: t('machines:machine.buildroot') }, { start: true }), words('machine:worker-fetch.noImage.cause', { path: 'target/images/buildroot/rootfs.ext4', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
   ] as const) {
+    step(`a 404 for ${pattern}`);
     page = await open((p) => p.route(pattern, (r) => r.fulfill({ status: 404 })));
     r = await settled(page);
     assert.equal(r.state, 'failed', r.text!);
@@ -598,11 +604,14 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
     assert.match(r.details!, why);
     assert.deepEqual(r.actions, [t('machine:problems.retry')]);
     await page.unroute(pattern);
+    step('the retry');
     await page.locator('#message-actions button').click();
     assert.equal((await settled(page, 30_000, 'failed')).state, 'running');
+    step('close');
     await page.close();
   }
   // A device that reports 1 GB: the page asks before starting a machine that needs more.
+  step('too little memory');
   page = await open((p) => p.addInitScript(() => Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 1 })));
   r = await settled(page);
   assert.equal(r.state, 'idle');
@@ -618,6 +627,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   assert.ok(m.gib > 1 && m.gib < 3, `the estimate ${m.gib} GiB`);
   await page.close();
   // A machine whose tab went away while it ran (a mark no tab renews): the page says so and offers less first.
+  step('a crashed mark');
   page = await open((p) => p.addInitScript(() => localStorage.setItem('waarm64.alive.transient-buildroot', JSON.stringify({ name: 'Buildroot', ramMiB: 1024, ncpus: 1, jitMiB: 320, gib: 2.9, peakGiB: 3.1, t: Date.now() - 600_000 }))));
   r = await settled(page);
   assert.equal(r.state, 'idle');
@@ -629,6 +639,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}'); delete s.jitMiB; localStorage.setItem('waarm64.settings', JSON.stringify(s)); });
   await page.close();
   // A saved disk written over another image: the way out is a reset.
+  step('a disk written over another image');
   const prep = await ctx.newPage();
   await prep.goto(`${base}/tests/browser/core.html`); // any page of the origin
   await prep.evaluate(async () => {
@@ -646,6 +657,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   await answerAsks(page);
   await page.locator('#message-actions button').click();
   assert.equal((await settled(page, 30_000, 'failed')).state, 'running');
+  step('close');
   await page.close();
   await ctx.close();
 });

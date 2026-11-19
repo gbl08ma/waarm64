@@ -86,12 +86,14 @@ EOF
 		"$BIN/tailcat" --verbose serve --key="$DIR/run/server.json" exit-node > "$DIR/run/serve.log" 2>&1 9>&- &
 	echo $! > "$DIR/run/serve.pid"
 	i=0
-	until grep -q 'Server listening' "$DIR/run/serve.log"; do
+	# The listening line is written in parts (its address after the words): read it once a line follows it.
+	until sed -n '/Server listening/{n;p;}' "$DIR/run/serve.log" | grep -q .; do
 		i=$((i + 1))
 		[ $i -lt 60 ] || { echo "tailcat didn't start:" >&2; tail -20 "$DIR/run/serve.log" >&2; exit 1; }
 		sleep 0.5
 	done
 	grep -o 'tc[A-Za-z0-9_-]\{40,\}' "$DIR/run/serve.log" | tail -1 > "$DIR/addr"
+	[ -s "$DIR/addr" ] || { echo "tailcat printed no address:" >&2; tail -20 "$DIR/run/serve.log" >&2; exit 1; }
 	# The server answers meows only once its own relay connection is up.
 	until grep -q 'derp-1 connected' "$DIR/run/serve.log"; do
 		i=$((i + 1))

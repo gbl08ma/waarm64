@@ -73,24 +73,36 @@ function bounded(what: string, xs: number[], all: string) {
   assert.ok(median(xs) <= MEDIAN_US && Math.max(...xs) <= WORST_US, `${what}: median ${median(xs)} µs, worst ${Math.max(...xs)} µs (bounds ${MEDIAN_US}, ${WORST_US})\n${all}`);
 }
 
+/** The bounds on one run's numbers. */
+function check({ lines, pauses }: { lines: Line[]; pauses: number[] }, jit: 1 | 2 | 3 | 4, long: boolean) {
+  const all = lines.map((l) => `${l.env} ${l.form}: rtt ${l.rtt} tlbi ${l.tlbi} timer ${l.timer} inside ${l.inside}`).join('\n') + `\npauses (ms): ${pauses.map((p) => p.toFixed(2)).join(' ')}`;
+  if (process.env.WAARM64_SPIN_PRINT) console.log(all);
+  bounded('IPI round trip', lines.map((l) => l.rtt), all);
+  bounded('TLBI IS + DSB', lines.map((l) => l.tlbi), all);
+  // Where the pings were taken in the aliases and the nested calls: at polls along the way, not only at their laps'
+  // checks (a forward by-VA link, a callee's return, a region's edge to a lower PA in the next VA page, that didn't
+  // poll).
+  for (const l of lines.filter((l) => l.form === 'alias' || l.form === 'calls' || l.form === 'xpage')) assert.ok(l.inside >= ROUNDS / 2, `${l.env} ${l.form}: ${l.inside} of ${ROUNDS} pings taken inside the shape\n${all}`);
+  // The timer has no setter: its bound is the chunk's steps (with long chunks, spin.c's ping after 50 ms), whose
+  // time JIT-check's checker (a hash at every transfer) stretches to milliseconds.
+  if (!long && jit === 1) bounded("the spinner's own timer, late", lines.map((l) => l.timer), all);
+  assert.ok(median(pauses) <= PAUSE_MS, `pause: median ${median(pauses).toFixed(2)} ms (bound ${PAUSE_MS})\n${all}`);
+}
+
 // The block interpreter alone (`VmConfig.jit` 4: the dispatcher never compiles) in scripts/ci-jit.sh too: interpreted
 // code reads no stop word, so the dispatcher interprets at most a default chunk's steps between its looks at it.
 for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2], ['JIT-check', 3], ['the block interpreter', 4]] as const) {
   for (const long of [false, true]) {
-    test(`spin: a looping vCPU takes its IRQs, answers TLBI IS and pauses (${mode}${long ? ', 2^30-step chunks' : ''})`, { skip: jit !== 1 && jitVariantSkip }, async () => {
-      const { lines, pauses } = await run(jit, long);
-      const all = lines.map((l) => `${l.env} ${l.form}: rtt ${l.rtt} tlbi ${l.tlbi} timer ${l.timer} inside ${l.inside}`).join('\n') + `\npauses (ms): ${pauses.map((p) => p.toFixed(2)).join(' ')}`;
-      if (process.env.WAARM64_SPIN_PRINT) console.log(all);
-      bounded('IPI round trip', lines.map((l) => l.rtt), all);
-      bounded('TLBI IS + DSB', lines.map((l) => l.tlbi), all);
-      // Where the pings were taken in the aliases and the nested calls: at polls along the way, not only at their laps'
-      // checks (a forward by-VA link, a callee's return, a region's edge to a lower PA in the next VA page, that didn't
-      // poll).
-      for (const l of lines.filter((l) => l.form === 'alias' || l.form === 'calls' || l.form === 'xpage')) assert.ok(l.inside >= ROUNDS / 2, `${l.env} ${l.form}: ${l.inside} of ${ROUNDS} pings taken inside the shape\n${all}`);
-      // The timer has no setter: its bound is the chunk's steps (with long chunks, spin.c's ping after 50 ms), whose
-      // time JIT-check's checker (a hash at every transfer) stretches to milliseconds.
-      if (!long && jit === 1) bounded("the spinner's own timer, late", lines.map((l) => l.timer), all);
-      assert.ok(median(pauses) <= PAUSE_MS, `pause: median ${median(pauses).toFixed(2)} ms (bound ${PAUSE_MS})\n${all}`);
+    test(`spin: a looping vCPU takes its IRQs, answers TLBI IS and pauses (${mode}${long ? ', 2^30-step chunks' : ''})`, { skip: jit !== 1 && jitVariantSkip }, async (t) => {
+      // Once more when it misses a bound: a loaded host (scripts/ci.sh's files side by side) once put the IPI round trips'
+      // median at 2 ms, every shape alike; a missing poll misses them in every run.
+      try {
+        check(await run(jit, long), jit, long);
+      } catch (e) {
+        if (!(e instanceof assert.AssertionError)) throw e;
+        t.diagnostic(`missed a bound, run again: ${e.message.split('\n')[0]}`);
+        check(await run(jit, long), jit, long);
+      }
     });
   }
 }

@@ -2124,6 +2124,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   tests' flakes (2 of 12 runs of the lib failed four at a time; 28 of 28 passed after). The crate's other
   `getrandom::fill` calls (room.rs's keys and nonces, `zone.rs`'s slots, `agent.rs`, the DERP and tailnet nonces) still
   draw from the OS in tests; seed them the same way if a test that reaches them turns flaky.
+- [B] **`tests/browser.test.ts` "the page says what's wrong…" stalled once** (2026-11-18, `scripts/ci.sh`): 600 s at
+  idle CPU, no step named; 24 runs alone and 20 with every CPU busy passed in 8-18 s. A page-side hang would fail its
+  30 s waits, so a Playwright call with no timeout (an `evaluate`, `close`, `newPage`) didn't return. It now notes each
+  section (`t.diagnostic`) and fails at 3 min: the next stall names its step.
+- [B] **The tailcat upload in `tests/net-tailcat.test.ts` came back empty once** (2026-11-19, `scripts/ci-net.sh`): the
+  guest sent the 2 MB (372 packets, 0.8 s) but curl printed nothing, so the console's next line (the end marker's echo)
+  was read as its answer; the download just before passed, and the next run passed. Print curl's exit code and
+  `%{http_code}` with its answer if it recurs.
 - [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
   end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
   passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.
