@@ -45,6 +45,26 @@ export function isFileUrl(v: unknown) {
 export const isDemoId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(v);
 const isHash = (v: unknown) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 
+/**
+ * A disk's identity (shape.ts `DiskIdentity`) as its kind `kind` has it: a URL's by content (a chunked image's id) or
+ * by path, a file's by name and date, a stored, blank or ramdisk disk's by an id (hashed in the shape, never a record's).
+ */
+function validIdentity(v: unknown, kind: unknown) {
+  if (!isRecord(v) || v.kind !== kind || !isInt(v.bytes, 0, Number.MAX_SAFE_INTEGER)) return false;
+  switch (kind) {
+    case 'url':
+      return v.chunked !== undefined
+        ? isHash(v.chunked)
+        : isText(v.path, 2048) &&
+            optional(v.etag, (e) => isText(e, 1024)) &&
+            optional(v.lastModified, (e) => isText(e, 1024));
+    case 'file':
+      return isText(v.name, 1024) && typeof v.modified === 'number';
+    default:
+      return isText(v.id, 64, 1);
+  }
+}
+
 /** A split of the RAM over memory 0 and the spill memories that adds up to it and can be laid out. */
 const validSplit = (m: Raw) =>
   optional(
@@ -91,7 +111,7 @@ const DISK_CHECKS: Checks = {
   kind: (x) => DISK_KINDS.includes(x.kind),
   size: (x) => Number.isSafeInteger(x.size) && (x.size as number) > 0,
   name: (x) => typeof x.name === 'string',
-  identity: (x) => isRecord(x.identity) && !!x.identity.kind,
+  identity: (x) => validIdentity(x.identity, x.kind),
   url: (x) => (x.kind === 'url' ? isFileUrl(x.url) : optional(x.url, (v) => typeof v === 'string')),
   serial: (x) => typeof x.serial === 'string' && /^[0-9a-f]{12}$/.test(x.serial),
   inPlace: (x) => optional(x.inPlace, isBool),

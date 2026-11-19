@@ -12,9 +12,12 @@
 //!   DEMO-KICKOFF.md), found among the processes (`/proc/<pid>/cmdline`):
 //!   - **udhcpc** (busybox's) for the card (its `-i`, else `eth0`, its default): SIGUSR1, busybox's "renew": a request
 //!     for its lease to the server it had, a NAK (or no answer, after three) and it asks afresh.
-//!   - **dhcpcd** running (any process of that name: one for every card, or the card's own): `dhcpcd -n <link>`, its
-//!     rebind (the configuration read again and the lease asked for as at a reboot, an INIT-REBOOT's request, else a
-//!     discover): unlike `-N` (renew) it also leaves an IPv4LL fallback, a template's made with no network.
+//!   - **dhcpcd** where it manages the card (`dhcpcd_manages`: a dhcpcd of the card's own, `dhcpcd <link>`, its title
+//!     naming it; or the manager, `[manager]`/`[master]`, for every card its configuration doesn't leave out by
+//!     `denyinterfaces`/`allowinterfaces`): `dhcpcd -n <link>`, its rebind (the configuration read again and the lease
+//!     asked for as at a reboot, an INIT-REBOOT's request, else a discover): unlike `-N` (renew) it also leaves an
+//!     IPv4LL fallback, a template's made with no network. Never for a card no dhcpcd runs for (`-n` would start one
+//!     there: a statically configured card would get a lease and a route its user didn't ask for).
 //!
 //! The links are the network cards (`/sys/class/net/<name>` with a `device`: not `lo`, bridges, tunnels). The tool
 //! runs (and the signal is sent) in a forked child whose end the root process's loop hears on its pidfd; LEASED
@@ -43,6 +46,8 @@ pub struct Paths {
     pub nm: String,
     pub nmcli: Vec<String>,
     pub dhcpcd: Vec<String>,
+    /// dhcpcd's configuration (its `denyinterfaces`, `allowinterfaces`).
+    pub dhcpcd_conf: String,
     pub net: String,
     /// Where the processes are (udhcpc's and dhcpcd's are found there).
     pub proc: String,
@@ -61,6 +66,7 @@ impl Default for Paths {
             nm: "/run/NetworkManager".into(),
             nmcli: bins("nmcli"),
             dhcpcd: bins("dhcpcd"),
+            dhcpcd_conf: "/etc/dhcpcd.conf".into(),
             net: "/sys/class/net".into(),
             proc: "/proc".into(),
         }
@@ -252,14 +258,23 @@ pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Step>> {
                 .collect(),
         );
     }
-    // The clients without a manager, card by card: the card's udhcpc, else dhcpcd's rebind where dhcpcd runs (by its
-    // name: dhcpcd rewrites its argv, "dhcpcd: [master] [ip4] [ip6]").
+    // The clients without a manager, card by card: the card's udhcpc, else dhcpcd's rebind where dhcpcd manages the
+    // card (found by its name: dhcpcd rewrites its argv, "dhcpcd: [manager] [ip4] [ip6]", "dhcpcd: eth0 [ip4]").
     let procs = processes(&p.proc);
-    let dhcpcd = procs
+    let titles: Vec<String> = procs
         .iter()
-        .any(|(_, comm, _)| comm == "dhcpcd")
-        .then(|| found(&p.dhcpcd))
-        .flatten();
+        .filter(|(_, comm, _)| comm == "dhcpcd")
+        .filter_map(|(pid, _, _)| {
+            // Its whole title (argv_of keeps a program's name alone: a title's `10.0.2.15/24` isn't a path).
+            let raw = crate::rt::read_file(format!("{}/{}/cmdline", p.proc, pid.as_raw_nonzero()))
+                .ok()?;
+            Some(String::from_utf8_lossy(&raw).replace('\0', " "))
+        })
+        .collect();
+    let dhcpcd = (!titles.is_empty()).then(|| found(&p.dhcpcd)).flatten();
+    let conf = dhcpcd
+        .and_then(|_| crate::rt::read_text(&p.dhcpcd_conf).ok())
+        .unwrap_or_default();
     let mut steps = Vec::new();
     for card in &cards {
         let udhcpc: Vec<Step> = procs
@@ -269,11 +284,78 @@ pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Step>> {
             .collect();
         if !udhcpc.is_empty() {
             steps.extend(udhcpc);
-        } else if let Some(tool) = dhcpcd {
+        } else if let Some(tool) = dhcpcd
+            && dhcpcd_manages(&titles, &conf, card)
+        {
             steps.push(Step::Run(vec![tool.clone(), "-n".into(), card.clone()]));
         }
     }
     (!steps.is_empty()).then_some(steps)
+}
+
+/// Whether a running dhcpcd manages `card`: one whose title (`titles`: the dhcpcd processes' argv, joined) names it (a
+/// dhcpcd for that card alone, `dhcpcd: eth0 [ip4] [ip6]`, or a privilege-separated helper of the manager's for it), or
+/// the manager (`[manager]`, `[master]` before dhcpcd 10) where its configuration `conf` doesn't leave the card out.
+pub fn dhcpcd_manages(titles: &[String], conf: &str, card: &str) -> bool {
+    let words = |t: &str| {
+        t.split_whitespace()
+            .map(|w| w.trim_end_matches(':'))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    if titles
+        .iter()
+        .any(|t| words(t).split(' ').skip(1).any(|w| w == card))
+    {
+        return true;
+    }
+    if !titles
+        .iter()
+        .any(|t| t.contains("[manager]") || t.contains("[master]"))
+    {
+        return false;
+    }
+    let mut allow: Option<bool> = None;
+    for line in conf.lines() {
+        let line = line.split('#').next().unwrap_or("");
+        let mut w = line.split_whitespace();
+        let (Some(key), rest) = (w.next(), w) else {
+            continue;
+        };
+        let pats: Vec<&str> = rest
+            .flat_map(|x| x.split(','))
+            .filter(|x| !x.is_empty())
+            .collect();
+        match key {
+            "denyinterfaces" if pats.iter().any(|p| glob(p, card)) => return false,
+            "allowinterfaces" => *allow.get_or_insert(false) |= pats.iter().any(|p| glob(p, card)),
+            _ => {}
+        }
+    }
+    allow.unwrap_or(true)
+}
+
+/// `name` matches shell pattern `pat` (`*`, `?`; what dhcpcd's interface lists take, through fnmatch).
+fn glob(pat: &str, name: &str) -> bool {
+    let (p, n) = (pat.as_bytes(), name.as_bytes());
+    let (mut i, mut j, mut star, mut back) = (0, 0, None, 0);
+    while j < n.len() {
+        if i < p.len() && (p[i] == b'?' || p[i] == n[j]) {
+            i += 1;
+            j += 1;
+        } else if i < p.len() && p[i] == b'*' {
+            star = Some(i);
+            back = j;
+            i += 1;
+        } else if let Some(s) = star {
+            i = s + 1;
+            back += 1;
+            j = back;
+        } else {
+            return false;
+        }
+    }
+    p[i..].iter().all(|&c| c == b'*')
 }
 
 unsafe extern "C" {
@@ -423,6 +505,55 @@ mod tests {
         );
         assert_eq!(i(&["-b", "--", "-i", "eth7"]), "eth0");
         assert_eq!(i(&[]), "eth0", "busybox's default");
+    }
+
+    /// REVIEW.md (review/demo-page) #6: `dhcpcd -n` only where a dhcpcd manages the card.
+    #[test]
+    fn dhcpcd_manages_only_its_cards() {
+        let t = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // A dhcpcd per card (ifupdown's `dhcpcd eth0`): that card, not another one (a static eth1).
+        let own = t(&["dhcpcd: eth0 [ip4] [ip6]"]);
+        assert!(dhcpcd_manages(&own, "", "eth0"));
+        assert!(
+            !dhcpcd_manages(&own, "", "eth1"),
+            "a card no dhcpcd runs for"
+        );
+        assert!(!dhcpcd_manages(&t(&["dhcpcd: eth10 [ip4]"]), "", "eth1"));
+        // Not rewritten: its argv.
+        assert!(dhcpcd_manages(&t(&["dhcpcd -b eth0"]), "", "eth0"));
+        // The manager: every card, but those its configuration leaves out.
+        for m in [
+            "dhcpcd: [manager] [ip4] [ip6]",
+            "dhcpcd: [master] [ip4] [ip6]",
+        ] {
+            let m = t(&[m]);
+            assert!(dhcpcd_manages(&m, "", "eth1"));
+            assert!(!dhcpcd_manages(&m, "denyinterfaces eth1 wlan*\n", "eth1"));
+            assert!(!dhcpcd_manages(
+                &m,
+                "# x\ndenyinterfaces wlan0,eth*\n",
+                "eth1"
+            ));
+            assert!(dhcpcd_manages(&m, "#denyinterfaces eth1\n", "eth1"));
+            assert!(dhcpcd_manages(&m, "allowinterfaces eth0 eth1\n", "eth1"));
+            assert!(!dhcpcd_manages(&m, "allowinterfaces eth0\n", "eth1"));
+            assert!(dhcpcd_manages(&m, "allowinterfaces en?0 e*\n", "eth1"));
+        }
+        // A manager's helpers name the card they serve; nothing else does.
+        assert!(dhcpcd_manages(
+            &t(&[
+                "dhcpcd: [privileged proxy]",
+                "dhcpcd: [BPF ARP] eth1 10.0.2.15"
+            ]),
+            "",
+            "eth1"
+        ));
+        assert!(!dhcpcd_manages(
+            &t(&["dhcpcd: [privileged proxy]"]),
+            "",
+            "eth1"
+        ));
+        assert!(!dhcpcd_manages(&[], "", "eth0"));
     }
 
     /// A helper whose pidfd can't be had (descriptors run out): killed and reaped at once, not waited for (review L5).

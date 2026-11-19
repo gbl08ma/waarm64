@@ -202,26 +202,44 @@ export function resolveUrls<D extends Definition>(def: D, base: string): D {
 }
 
 /**
- * The disk a definition's disk `x` comes back as: the one this browser has by identity (`same`), a URL, blank or
- * ramdisk disk as it was, or a file to pick (`pick`; a stored disk becomes one: its bytes aren't in this browser).
+ * The disk a definition's disk `x` comes back as: the one this browser has by identity (`same`; a URL disk's at the
+ * same URL), a URL, blank or ramdisk disk as it was, or a file to pick (`pick`; a stored disk becomes one: its bytes
+ * aren't in this browser).
  */
 function diskFor(
   x: DefinitionDisk,
   have: DiskRecord[],
   now: number,
 ): { d: DiskRecord; same?: boolean; pick?: boolean } {
-  const same = have.find((d) => canonical(d.identity) === canonical(x.identity));
+  // A URL disk is the same disk only at the same URL: a chunked image is its content wherever it's hosted (its
+  // identity, which the shape hashes, matches on any host), but the record says where it's read from, and that stays
+  // the definition's. Another store's definition naming an image's id doesn't decide where ours reads it (the bytes
+  // are checked against the id either way: web/chunked.ts), nor does a mirror that later goes away.
+  const same = have.find(
+    (d) => canonical(d.identity) === canonical(x.identity) && (x.kind !== 'url' || sameUrl(d.url, x.url)),
+  );
   if (same) return { d: same, same: true };
   const base = { name: x.name, size: x.size, created: now };
   if (x.kind === 'url') return { d: { id: newId(), kind: 'url', url: x.url, identity: x.identity, ...base } };
-  // Under the identity's id, so the shape is the definition's.
+  // A record of its own, whatever id the identity names (that id is the definition's, hashed in the shape as part of
+  // the identity, never a record's to take: it could be one this browser has).
   if (x.kind === 'blank' || x.kind === 'ramdisk')
-    return {
-      d: { id: x.identity.kind === x.kind ? x.identity.id : newId(), kind: x.kind, identity: x.identity, ...base },
-    };
+    return { d: { id: newId(), kind: x.kind, identity: x.identity, ...base } };
   const identity: DiskIdentity =
     x.kind === 'file' ? x.identity : { kind: 'file', name: x.name, bytes: x.identity.bytes || x.size, modified: 0 };
   return { d: { id: newId(), kind: 'file', identity, ...setOf({ sha256: x.sha256 }), ...base }, pick: true };
+}
+
+/** Whether two URLs (a record's, a definition's: absolute, or the page's) name the same file. */
+function sameUrl(a: string | undefined, b: string | undefined) {
+  if (a === undefined || b === undefined) return false;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
+  const at = globalThis.location?.href;
+  try {
+    return new URL(a, at).href === new URL(b, at).href;
+  } catch {
+    return false;
+  }
 }
 
 /** The attachment of disk `d` from the definition's `x` (its serial, unless another attachment has it already). */
@@ -263,28 +281,47 @@ function machineFrom(def: Definition, name: string, attachments: Attachment[], n
 /**
  * Makes a machine from definition `def` in this browser; returns it, and the names of the disks to pick at its first
  * start (files, and stored disks this browser doesn't have, which come back as files: their bytes aren't in it).
+ * `finish`: what the record needs before it's stored (a template's snapshot kept under its id, its marks), given the
+ * record; the machine is stored once, as it returns it. When it throws (or a disk can't be made) nothing is left: the
+ * disks and overlays this import made go, and the machine's files (`finish`'s: a kept snapshot) with them.
  */
 export async function importDefinition(
   store: Store,
   def: Definition,
+  finish?: (m: MachineRecord) => Promise<MachineRecord>,
 ): Promise<{ machine: MachineRecord; toPick: string[] }> {
   const have = await store.all('disks');
   const now = Date.now();
   const attachments: Attachment[] = [];
   const toPick: string[] = [];
-  for (const x of def.disks) {
-    const { d, same, pick } = diskFor(x, have, now);
-    if (pick) toPick.push(x.name);
-    if (!same) {
-      await store.put('disks', d);
-      have.push(d);
+  const made: string[] = [];
+  let machine: MachineRecord | undefined;
+  try {
+    for (const x of def.disks) {
+      const { d, same, pick } = diskFor(x, have, now);
+      if (pick) toPick.push(x.name);
+      if (!same) {
+        await store.put('disks', d);
+        have.push(d);
+        made.push(d.id);
+      }
+      attachments.push(await withGrownOverlay(store, d, attachmentOf(x, d, attachments), x.overlaySize));
     }
-    attachments.push(await withGrownOverlay(store, d, attachmentOf(x, d, attachments), x.overlaySize));
+    const names = (await store.all('machines')).map((m) => m.name);
+    machine = machineFrom(def, uniqueName(def.machine.name, names), attachments, now);
+    if (finish) machine = await finish(machine);
+    await store.put('machines', machine);
+    return { machine, toPick };
+  } catch (e) {
+    // Tidying up: the failure thrown is the one to report. The machine's files (and a snapshot's record) first, then the
+    // grown overlays it made on disks it found, then the disks it made (their overlays with them).
+    const tidy = (f: Promise<unknown>) => f.catch(() => undefined);
+    if (machine) await tidy(store.deleteMachine(machine.id));
+    for (const { overlay, disk } of attachments)
+      if (overlay && !made.includes(disk)) await tidy(store.deleteOverlay(overlay));
+    for (const id of made) await tidy(store.deleteDisk(id));
+    throw e;
   }
-  const names = (await store.all('machines')).map((m) => m.name);
-  const machine = machineFrom(def, uniqueName(def.machine.name, names), attachments, now);
-  await store.put('machines', machine);
-  return { machine, toPick };
 }
 
 /**

@@ -181,3 +181,27 @@ test("a snapshot made again under its id (a new core): the old snapshot's pieces
   applyPlan(p, s);
   for (const h of JSON.parse(readFileSync(join(s, 'alpine/manifest.json'), 'utf8')).hashes as string[]) assert.ok(existsSync(join(s, 'pieces', `${h}.bin`)));
 });
+
+// REVIEW.md (review/demo-page) #5: a piece that fails its check leaves the site as it was, and the next publish works.
+test('--apply: a corrupt piece fails the publish before the store, the manifests or the ledger change; the next one goes through', async () => {
+  const s = site('atomic');
+  const a = await build('atom1');
+  applyPlan(await plan(source([demo('alpine', a)]), s), s);
+  const before = new Map(['store.json', '.publish.json', 'alpine/manifest.json'].map((f) => [f, readFileSync(join(s, f), 'utf8')]));
+  const b = await build('atom2', { fill: 7 });
+  const p = await plan(source([demo('alpine', a), demo('other', b)]), s);
+  const piece = [...p.files.entries()].find(([, e]) => 'hash' in e && e.hash && 'from' in e && e.from.includes('pieces'))!;
+  const from = (piece[1] as { from: string }).from;
+  const good = readFileSync(from);
+  writeFileSync(from, Buffer.concat([good.subarray(0, 10), Buffer.from('x'), good.subarray(11)]));
+  try {
+    assert.throws(() => applyPlan(p, s), /isn't the piece/);
+  } finally {
+    writeFileSync(from, good);
+  }
+  for (const [f, text] of before) assert.equal(readFileSync(join(s, f), 'utf8'), text, `${f} changed by a failed publish`);
+  assert.equal(existsSync(join(s, 'other')), false, "the new demo's files went in before its pieces");
+  assert.ok(!readdirSync(s, { recursive: true }).some((f) => String(f).endsWith('.publishing')), 'staged files left');
+  applyPlan(await plan(source([demo('alpine', a), demo('other', b)]), s), s);
+  assert.equal(parseStore(readFileSync(join(s, 'store.json'), 'utf8'), 'https://x.example/store.json').demos.length, 2);
+});

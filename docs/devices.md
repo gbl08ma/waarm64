@@ -388,8 +388,10 @@ cards (`/sys/class/net/<name>` with a `device`, its `address` one of LEASE's; ea
 `RestrictAddressFamilies` refuses: seen on Debian 13), or NetworkManager (`/run/NetworkManager`) through `nmcli
 device connect <name>`; else, card by card, the DHCP clients that run without a manager (Alpine's, from ifupdown),
 found among the processes: the card's **udhcpc** (busybox's; its `-i`, else `eth0`) gets SIGUSR1, busybox's renew (a
-request to the server it had; a NAK, or three unanswered, and it asks afresh), else where **dhcpcd** runs (by its
-name: it rewrites its argv) `dhcpcd -n <name>`, its rebind (an INIT-REBOOT request, else a discover; unlike `-N` it
+request to the server it had; a NAK, or three unanswered, and it asks afresh), else where **dhcpcd** manages the card
+(`dhcpcd_manages`, found by its name: it rewrites its argv; a dhcpcd whose title names the card, `dhcpcd: eth0 [ip4]`,
+or the manager, `[manager]`/`[master]`, for a card `/etc/dhcpcd.conf`'s `denyinterfaces`/`allowinterfaces` don't
+leave out; never a card no dhcpcd runs for, where `-n` would start one) `dhcpcd -n <name>`, its rebind (an INIT-REBOOT request, else a discover; unlike `-N` it
 also leaves the IPv4LL fallback a template made offline holds). All in a forked child polled by its pidfd; LEASED says
 what came of it. A renewal keeps an address
 that is still right (open connections live on), and the gateway's NAK of one it doesn't hold has the client ask afresh.
@@ -917,12 +919,15 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
 - **A chunked image** (`web/chunked.ts`, made by `tools/chunk-image.ts`; [remote-disks.md](remote-disks.md)): a disk URL
   ending in `.json` is a manifest (`waarm64-chunked-1`: the file's size, the piece size, each piece's SHA-256, an
   `id` hashed from them, and a `name` the page shows: `--name`, or the image's file name) of the image file cut into equal pieces, named by their SHA-256 at the manifest's `pieces` URL (relative to it: `pieces/` beside it, or a site's shared `../pieces/`). It reads as one
-  file under the block cache: a piece by range, or whole where the host answers a range with the whole file (as
-  a Cloudflare Worker's static assets and Pages do: the images' host, vmdisks.tny.im), and then `Source.span` has the cache take the whole piece. `bootVm` sizes it from the
-  manifest and its first piece; the URL check (`web/app/urlcheck.ts`) gives the manifest's `id` as the disk's identity
-  (`chunked`, docs/machines.md §3.1), so a machine's disk follows the content wherever it's hosted. A disk's reads
-  aren't checked against the hashes yet (reads are synchronous; `crypto.subtle` isn't); a file fetched whole
-  (`fetchChunked`: a template snapshot) is, piece by piece.
+  file under the block cache: each piece fetched whole (any static host, ranges or not) and `Source.span` has the cache
+  take the whole piece. `bootVm` sizes it from the manifest and its first piece; the URL check (`web/app/urlcheck.ts`)
+  gives the manifest's `id` as the disk's identity (`chunked`, docs/machines.md §3.1). **Nothing is taken on the host's
+  word:** `checkManifest` refuses a manifest whose hashes aren't 64 hex digits (they go into URLs) or whose `id` isn't
+  their hash (`contentId`: SHA-256 of the hashes joined by newlines, what the tool writes); a disk opens only if the
+  manifest's `id` is the one its record was made with (`chunked` on the disk's source; else `disks:chunked.otherImage`);
+  and every piece is checked against its hash before a byte of it is used (a bad one reads as a failed read):
+  `crypto.subtle` on the async reads, `web/sha256.ts` (~100 MiB/s, ~20 ms a 2 MiB piece) on the synchronous ones. A
+  file fetched whole (`fetchChunked`: a template snapshot) is checked the same way.
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
   unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate, inflated by the core's
   miniz_oxide (`web/deflate.ts`: `inflate_raw` on a codec-only core instance of the thread's own, synchronous; the

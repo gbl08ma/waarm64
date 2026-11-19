@@ -33,7 +33,7 @@ export const venusOn = (m: StartMessage) => m.config.vulkan && !!m.ports.rendere
 type Source = StartDisk['source'];
 /** Where a disk's bytes come from, as its device takes it. */
 function sourceOf(s: Source) {
-  if ('url' in s) return { url: new URL(s.url, self.location.href).href };
+  if ('url' in s) return { url: new URL(s.url, self.location.href).href, ...(s.chunked ? { chunked: s.chunked } : {}) };
   if ('file' in s) return { file: s.file };
   if ('blank' in s) return { source: 'zero' as const, size: s.blank };
   if ('stored' in s) return { stored: s.stored, size: s.size };

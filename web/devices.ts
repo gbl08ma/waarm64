@@ -69,7 +69,7 @@ export type DeviceSpec =
   | { type: 'balloon' }
   | VsockSpec;
 
-export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; diskSize?: number; ramInit?: [number, Uint8Array][]; swap?: string };
+export type BlkSpec = { type: 'blk'; url?: string; chunked?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; diskSize?: number; ramInit?: [number, Uint8Array][]; swap?: string };
 
 /**
  * What the page says when a disk's write found the browser's storage full (docs/machines.md "Storage"), with the storage's
@@ -790,10 +790,11 @@ export function httpSource(url: string): Source & { validator?: string } {
 /**
  * A disk on a web server, as the device worker reads it: a chunked image (by its manifest) or a file, through the block
  * cache, over the blocks kept in OPFS where the image has an identity that changes with it (a chunked image's id, a
- * server's validator) and this browser has room (web/diskcache.ts).
+ * server's validator) and this browser has room (web/diskcache.ts). `chunked`: a chunked image's content id, which its
+ * manifest must name.
  */
-async function remoteSource(url: string, keep: boolean, realtime: boolean) {
-  const src = isManifestUrl(url) ? chunkedSource(url) : httpSource(url);
+async function remoteSource(url: string, keep: boolean, realtime: boolean, chunked?: string) {
+  const src = isManifestUrl(url) ? chunkedSource(url, undefined, chunked) : httpSource(url);
   const identity = 'manifest' in src ? `chunked:${src.manifest.id}` : src.validator ? JSON.stringify({ url, size: src.size, validator: src.validator }) : undefined;
   const store = identity && keep ? await openBlockStore(await cacheKey(identity), src.size, BLOCK_CACHE.block).catch(() => undefined) : undefined;
   const cached = cachedSource(src, BLOCK_CACHE, store);
@@ -1378,7 +1379,7 @@ export class Devices {
       if (d.file) return blobSource(d.file);
       if (!d.url) throw new Error('a disk with no image (url, file or source)');
       if (d.url.startsWith('file:')) return fileSource(d.url);
-      return remoteSource(d.url, d.keep ?? true, !init.deterministic);
+      return remoteSource(d.url, d.keep ?? true, !init.deterministic, d.chunked);
     }));
     // At most once a minute for all disks: while it's full, overwrites of blocks an overlay holds still land (they
     // don't grow its file), and each disk tells again after one.

@@ -125,3 +125,50 @@ test("a machine's first restore onto a fresh overlay (never written) fills that 
   const after = (await b.get('machines', m.id))!;
   assert.ok(![written.id, empty.id].includes(after.attachments[0].overlay!), 'a new fork');
 });
+
+// REVIEW.md (review/demo-page) R1: a definition naming an image's content id from another URL (another store's demo,
+// an imported file) doesn't decide where a later definition's disk is read from: a URL disk is the same disk only at
+// the same URL (its identity, the shape's, still matches on any host).
+test("a definition's URL disk is reused only at its own URL: another store's record of the same image isn't ours", async () => {
+  const a = fresh();
+  const m = await templateMachine(a);
+  const at = async (url: string) => {
+    const def = await exportDefinition(a, m.id);
+    def.disks[0].url = url;
+    return def;
+  };
+  const store = fresh();
+  const evil = await importDefinition(store, await at('https://evil.example/fake/manifest.json'));
+  const ours = await importDefinition(store, await at('https://vmdisks.tny.im/alpine-term/manifest.json'));
+  const disk = await store.get('disks', ours.machine.attachments[0].disk);
+  assert.equal(disk?.url, 'https://vmdisks.tny.im/alpine-term/manifest.json', "the project's demo reads another store's URL");
+  assert.notEqual(ours.machine.attachments[0].disk, evil.machine.attachments[0].disk);
+  assert.equal(await shape(store, ours.machine), await shape(a, m), "the template's shape all the same");
+  const again = await importDefinition(store, await at('https://vmdisks.tny.im/alpine-term/manifest.json'));
+  assert.equal(again.machine.attachments[0].disk, ours.machine.attachments[0].disk, 'the same URL: the same disk');
+});
+
+// R2: a blank or ramdisk disk's identity id is the definition's, hashed in the shape; never a record's id to take.
+test("a definition's blank disk whose identity names an existing record's id doesn't overwrite that record", async () => {
+  const a = fresh();
+  const base = await exportDefinition(a, (await templateMachine(a)).id);
+  const blank = (bytes: number, id = 'aaaaaaaaaaaa') => ({
+    ...base,
+    disks: [...base.disks, { kind: 'blank' as const, name: 'scratch', size: bytes, identity: { kind: 'blank' as const, id, bytes }, readOnly: false, serial: '0123456789ab' }],
+  });
+  const store = fresh();
+  const first = await importDefinition(store, blank(MiB));
+  const second = await importDefinition(store, blank(2 * MiB));
+  const disk = await store.get('disks', first.machine.attachments[1].disk);
+  assert.equal(disk?.size, MiB, "machine A's blank disk was overwritten by B's import");
+  assert.notEqual(second.machine.attachments[1].disk, first.machine.attachments[1].disk);
+  // An identity naming one of the user's own disks' ids: that disk stays as it was.
+  const mine = (await store.all('disks')).find((d) => d.kind === 'url')!;
+  await importDefinition(store, blank(MiB, mine.id));
+  assert.equal((await store.get('disks', mine.id))?.kind, 'url', "the user's disk record was replaced");
+  // Identities checked by kind: a blank disk's identity of another kind, or without an id, is refused.
+  const bad = (identity: unknown) => JSON.stringify({ ...base, disks: [{ ...blank(MiB).disks[1], identity }] });
+  assert.throws(() => parseDefinition(bad({ kind: 'url', chunked: ID, bytes: MiB })), /damaged/);
+  assert.throws(() => parseDefinition(bad({ kind: 'blank', bytes: MiB })), /damaged/);
+  assert.throws(() => parseDefinition(JSON.stringify({ ...base, disks: [{ ...base.disks[0], identity: { kind: 'url', chunked: '../x', bytes: 1 } }] })), /damaged/);
+});

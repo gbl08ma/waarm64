@@ -106,6 +106,9 @@ export async function duplicateMachine(store: Store, id: string) {
     network: undefined,
     ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}),
     restoreFirst: undefined, // the template kept is the machine's own snapshot, which a copy hasn't
+    // Not the demo's own: its card's "started before" would open a copy that starts cold, off the demo network (copies drop
+    // connections). A copy is the user's machine, made from theirs.
+    fromDemo: undefined,
     created: now,
     modified: now,
   };

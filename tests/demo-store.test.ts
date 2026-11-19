@@ -13,7 +13,10 @@ import { attach, createDisk, createMachine } from '../web/app/machines.ts';
 import { Connections } from '../web/app/connections.ts';
 import { Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
+import { contentId, CHUNKED_FORMAT } from '../web/chunked.ts';
+import { duplicateMachine } from '../web/app/machines.ts';
 import { msgOf } from '../web/msg.ts';
+import { createHash } from 'node:crypto';
 
 const MiB = 2 ** 20;
 const ID = 'ab'.repeat(32);
@@ -186,11 +189,95 @@ test('a machine from a version a demo replaces is found as older', async () => {
 });
 
 test("a snapshot's download cut off partway is said as such, and makes no machine", async () => {
-  const def = await demoDef();
-  const manifest = { format: 'waarm64-chunked-1', size: 2 * MiB, piece: 2 * MiB, pieces: '../pieces/{hash}.bin', hashes: ['ef'.repeat(32)], id: SNAP };
+  const hashes = ['ef'.repeat(32)];
+  const def = await demoDef({ snapshot: { manifest: 'alpine-term/snapshot.json', id: contentId(hashes) } });
+  const manifest = { format: 'waarm64-chunked-1', size: 2 * MiB, piece: 2 * MiB, pieces: '../pieces/{hash}.bin', hashes, id: contentId(hashes) };
   serve({ [STORE_URL]: JSON.stringify({ type: STORE_TYPE, version: 1, demos: [def] }), 'https://disks.example/alpine-term/snapshot.json': JSON.stringify(manifest) }, [`https://disks.example/pieces/${'ef'.repeat(32)}.bin`]);
   const s = await fetchStore(STORE_URL);
   const store = fresh();
   await assert.rejects(machineFromDemo(store, findDemo(s, 'alpine-term')!), (e) => msgOf(e)?.key === 'machines:template.cutOff' && msgOf((e as Error).cause)?.params?.host === 'disks.example');
   assert.equal((await store.all('machines')).length, 0, 'no machine');
+});
+
+// REVIEW.md (review/demo-page) R3, R4, #9. A chunked file of `bytes` served under `dir`: its manifest (its real id unless
+// `id`) and its one piece.
+const sha = (b: Uint8Array | string) => createHash('sha256').update(b).digest('hex');
+function chunked(dir: string, bytes: Uint8Array, id?: string) {
+  const h = sha(bytes);
+  const manifest = { format: CHUNKED_FORMAT, size: bytes.length, piece: MiB, pieces: '{hash}.bin', hashes: [h], id: id ?? sha(h) };
+  return { manifest, files: { [`${dir}/${h}.bin`]: bytes } as Record<string, Uint8Array> };
+}
+/** `fetch` answering from `files` (a function: a new answer each time), counting each URL's requests in `asked`. */
+function serveBytes(files: Record<string, string | Uint8Array | (() => string)>) {
+  const asked = new Map<string, number>();
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input instanceof Request ? input.url : input);
+    asked.set(url, (asked.get(url) ?? 0) + 1);
+    const f = files[url];
+    if (f === undefined) return new Response('no', { status: 404 });
+    return new Response(typeof f === 'function' ? f() : (f as BodyInit));
+  }) as typeof fetch;
+  return asked;
+}
+const D = 'https://disks.example/alpine-term';
+/** A store of one demo whose snapshot is the content id `id`, without the demo network unless `network`. */
+async function storeWith(id: string, network = false) {
+  const { network: _, ...demo } = (await demoDef({ snapshot: { manifest: 'alpine-term/snapshot.json', id } })).demo!;
+  return parseStore(JSON.stringify({ type: STORE_TYPE, version: 1, demos: [{ ...(await demoDef()), demo: network ? { ...demo, network: 'demo' } : demo }] }), STORE_URL);
+}
+
+test("R3a: a template snapshot's manifest whose id isn't its content's is refused", async () => {
+  const good = chunked(D, new Uint8Array(4096).fill(1));
+  const other = chunked(D, new Uint8Array(4096).fill(2));
+  serveBytes({ [`${D}/snapshot.json`]: JSON.stringify({ ...other.manifest, id: good.manifest.id }), ...other.files });
+  await assert.rejects(machineFromDemo(fresh(), findDemo(await storeWith(good.manifest.id), 'alpine-term')!), (e) => msgOf(e)?.key === 'machines:template.otherSnapshot', 'a forged id is taken');
+  // A hash that isn't hex isn't spliced into a piece's URL.
+  const odd = { ...good.manifest, hashes: ['../../x'], id: sha('../../x') };
+  serveBytes({ [`${D}/snapshot.json`]: JSON.stringify(odd) });
+  await assert.rejects(machineFromDemo(fresh(), findDemo(await storeWith(odd.id), 'alpine-term')!), (e) => msgOf(e)?.key === 'disks:chunked.malformed');
+});
+
+test("R3b: the snapshot's manifest is fetched once, and its pieces are the checked manifest's", async () => {
+  const good = chunked(D, new Uint8Array(4096).fill(1));
+  const other = chunked(D, new Uint8Array(4096).fill(2));
+  let n = 0;
+  const asked = serveBytes({ [`${D}/snapshot.json`]: () => JSON.stringify(n++ === 0 ? good.manifest : other.manifest), ...good.files, ...other.files });
+  // The bytes aren't a snapshot (the import refuses them): what matters is which were fetched.
+  await assert.rejects(machineFromDemo(fresh(), findDemo(await storeWith(good.manifest.id), 'alpine-term')!));
+  assert.equal(asked.get(`${D}/snapshot.json`), 1, 'the manifest fetched twice');
+  assert.equal(asked.get(Object.keys(other.files)[0]), undefined, "another manifest's piece was fetched");
+});
+
+test('R4: a template snapshot that fails to import, or a demo network that fails to attach, leaves nothing; trying again makes one machine', async () => {
+  const snap = chunked(D, new Uint8Array(4096).fill(3)); // its id is its content's: the download is fine, the import isn't
+  serveBytes({ [`${D}/snapshot.json`]: JSON.stringify(snap.manifest), ...snap.files });
+  const store = fresh();
+  for (let i = 0; i < 2; i++) await assert.rejects(machineFromDemo(store, findDemo(await storeWith(snap.manifest.id), 'alpine-term')!));
+  assert.equal((await store.all('machines')).length, 0, 'a machine was left behind');
+  assert.equal((await store.all('disks')).length, 0, 'a disk was left behind');
+  assert.equal((await store.all('snapshots')).length, 0);
+  // The demo network's connection can't be made (the storage refuses it): no machine either.
+  const { snapshot: _, ...noSnap } = (await demoDef()).demo!;
+  const s = parseStore(JSON.stringify({ type: STORE_TYPE, version: 1, demos: [{ ...(await demoDef()), demo: noSnap }] }), STORE_URL);
+  const put = store.put.bind(store);
+  store.put = (async (kind: string, r: unknown) => {
+    if (kind === 'connections') throw new Error('refused');
+    return put(kind as never, r as never);
+  }) as typeof store.put;
+  await assert.rejects(machineFromDemo(store, findDemo(s, 'alpine-term')!), /refused/);
+  assert.equal((await store.all('machines')).length, 0, 'a machine without its demo network was left behind');
+  store.put = put;
+  const { machine } = await machineFromDemo(store, findDemo(s, 'alpine-term')!);
+  assert.deepEqual([(await store.all('machines')).length, (await store.all('disks')).length], [1, 1]);
+  assert.ok(machine.adapters?.[0].connection && machine.fromDemo, 'stored with its marks');
+});
+
+test("#9: a copy of a demo's machine isn't the demo's: its card doesn't find it as started before", async () => {
+  const { snapshot: _, ...noSnap } = (await demoDef()).demo!;
+  const s = parseStore(JSON.stringify({ type: STORE_TYPE, version: 1, demos: [{ ...(await demoDef()), demo: noSnap }] }), STORE_URL);
+  const store = fresh();
+  const { machine } = await machineFromDemo(store, findDemo(s, 'alpine-term')!);
+  const copy = await duplicateMachine(store, machine.id);
+  assert.equal(copy.fromDemo, undefined);
+  assert.deepEqual((await demoMachines(store, findDemo(s, 'alpine-term')!)).mine.map((m) => m.id), [machine.id]);
 });

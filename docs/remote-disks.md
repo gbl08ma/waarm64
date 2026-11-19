@@ -27,6 +27,9 @@ The chunked format costs nothing against ranges where the host has them, and 2 M
 where it hasn't. From the hosts below (the Desktop Demo, 2026-10-23): 66.5 s from `static.gbl08ma.com`; from
 `vmdisks.tny.im` 78.1 s on the very first fetch of each piece (Cloudflare's edge filling from its storage), then
 62.9 s.
+Since DEMO's review fixes (2026-11-19) the page fetches a chunked image's pieces whole on every host, to check each
+against its hash before it's used (web/chunked.ts): the no-ranges path above, which booted as fast; not re-measured
+on a host with ranges.
 
 Findings worth not re-measuring:
 - **Compression gains nothing on a qcow2 that is already compressed:** the desktop boot's 543 MB compress to 98.9%
@@ -134,7 +137,10 @@ the snapshot is made again under an id, decision 13); the site past its budget.
 **Retention:** a demo left out of the source is retired: out of `store.json`, its directory and pieces kept, so
 machines made from it keep working. Only when the site would pass its budget (15,000 files by default, never past
 deploy.sh's 20,000) do retired demos go, the oldest retired first, until it fits; the plan names each (`DROPPED …`)
-before `--apply` removes it. Pieces no manifest on the site names go. The ledger, `.publish.json` (each id's first
+before `--apply` removes it. Pieces no manifest on the site names go. `--apply` leaves the site as it was when it fails
+partway: the new pieces go in first (each hashed), then every other file is written beside its place
+(`<path>.publishing`) and renamed over it once all are written (the demos' files, then `store.json`, then the
+ledger), and only then are files removed; a `.publishing` file a crash left goes at the next publish. The ledger, `.publish.json` (each id's first
 publish, last change, retirement, image and snapshot ids), sits in the site and isn't deployed (`.assetsignore`;
 deploy.sh doesn't count it). Tests: tests/demo-site.test.ts.
 

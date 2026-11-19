@@ -213,6 +213,7 @@ impl Harness {
             nm: s("NetworkManager"),
             nmcli: vec![s("nmcli")],
             dhcpcd: vec![s("dhcpcd")],
+            dhcpcd_conf: s("dhcpcd.conf"),
             net: s("net"),
             proc: s("proc"),
         };
@@ -1044,6 +1045,26 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
         Some(&[status::RENEWED][..])
     );
     assert_eq!(calls(), "-n enp0s1\n-n eth1\n");
+    // Where the configuration leaves a card out (a static one), not that card (review #6): `-n` would start a dhcpcd.
+    std::fs::write(r("dhcpcd.conf"), "denyinterfaces eth1\n").unwrap();
+    std::fs::remove_file(r("calls")).unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    assert_eq!(calls(), "-n enp0s1\n", "the card dhcpcd leaves alone");
+    std::fs::remove_file(r("dhcpcd.conf")).unwrap();
+    // A dhcpcd for one card alone (ifupdown's `dhcpcd enp0s1`): that card; none runs for eth1: nothing there.
+    process(400, "dhcpcd", &["dhcpcd: enp0s1 [ip4] [ip6]"]);
+    std::fs::remove_file(r("calls")).unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    assert_eq!(calls(), "-n enp0s1\n", "eth1 has no dhcpcd");
+    process(400, "dhcpcd", &["dhcpcd: [master] [ip4] [ip6]"]);
     // udhcpc for a card (ifupdown's arguments): SIGUSR1, busybox's renew, to that process; dhcpcd's rebind for the other.
     // The process is a real one (a shell that says what it got) behind a fake /proc entry.
     let got = r("usr1");

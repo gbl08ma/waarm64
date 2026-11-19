@@ -17,7 +17,8 @@ import { makeTemplate, standIn, type Start } from './demo-fixture.ts';
 
 const OURS = 'https://vmdisks.tny.im';
 const OTHER = 'https://other.example';
-const SNAP = 'cd'.repeat(32);
+/** The snapshot's content id: its one piece's hash's (web/chunked.ts `contentId`). */
+let SNAP = '';
 /** A 1×1 PNG, the cards' thumbnail. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const CORS = { 'Access-Control-Allow-Origin': '*' };
@@ -36,6 +37,7 @@ before(async () => {
   const made = await makeTemplate(browser, base);
   snapshot = new Uint8Array(made.snapshot);
   piece = createHash('sha256').update(snapshot).digest('hex');
+  SNAP = createHash('sha256').update(piece).digest('hex');
   const demo = { id: 'alpine-term', summary: 'A terminal.', thumbnail: 'alpine/thumb.png', download: snapshot.length, view: 'serial', snapshot: { manifest: 'alpine/snapshot.json', id: SNAP } };
   def = { ...made.def, version: 2, disks: made.def.disks.map((x) => ({ ...x, url: 'alpine/manifest.json' })), demo };
 });

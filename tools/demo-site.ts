@@ -27,7 +27,7 @@
 // made from it keep working). Only when the site would pass its budget do retired demos go, the oldest retired first,
 // until it fits; the plan says which, and nothing is written without `apply`. Pieces no manifest on the site names go.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, linkSync, mkdirSync, openAsBlob, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, linkSync, mkdirSync, openAsBlob, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { checkManifest, CHUNKED_FORMAT, type Manifest } from '../web/chunked.ts';
 import { checkDefinition, DEFINITION_TYPE, DEFINITION_VERSION, importDefinition, isDemoId, type Definition, type Demo } from '../web/app/definitions.ts';
@@ -45,6 +45,8 @@ export const HARD_LIMIT = 20_000;
 const MAX_FILE = 25 * 2 ** 20;
 export const LEDGER = '.publish.json';
 const IGNORE = '.assetsignore';
+/** The suffix of a file `applyPlan` writes beside its place before renaming it over it (one left by a crash goes at the next publish). */
+const STAGED = '.publishing';
 /** Files deploy.sh adds or the host doesn't serve: not the site's own. */
 const NOT_SITE = new Set([LEDGER, IGNORE]);
 
@@ -324,7 +326,7 @@ export async function planSite(source: Source, o: { root: string; site: string; 
     const files = new Map<string, Entry>();
     for (const p of existing) {
       const top = p.split('/')[0];
-      if (top === 'pieces' || NOT_SITE.has(p) || p === 'store.json' || managed.has(top)) continue;
+      if (top === 'pieces' || NOT_SITE.has(p) || p === 'store.json' || managed.has(top) || p.endsWith(STAGED)) continue;
       files.set(p, { keep: true }); // another image's (the desktop's), _headers
     }
     for (const p of existing) if (keepRetired.has(p.split('/')[0])) files.set(p, { keep: true });
@@ -372,31 +374,57 @@ export function describe(plan: Plan): string[] {
   return lines;
 }
 
-/** Writes `plan` into `site`: new pieces (hard links where it can, each checked against its hash), the demos' files, the store, the ledger; then removes what it drops. */
+/**
+ * Writes `plan` into `site` so that a failure partway leaves the site as it was (but for new pieces nothing names yet,
+ * which the next publish removes): first the new pieces (hard links where it can, each checked against its hash), then
+ * every other file written beside its place (`<path>.publishing`) and, once all are written, renamed over it: the demos'
+ * files, then the store, then the ledger (so it never names a state the site isn't in). Then removes what it drops.
+ */
 export function applyPlan(plan: Plan, site: string): void {
   site = resolve(site);
-  for (const [p, e] of plan.files) {
-    if ('keep' in e) continue;
-    const to = join(site, p);
-    mkdirSync(dirname(to), { recursive: true });
-    if ('text' in e) {
-      writeFileSync(to, e.text);
-      continue;
-    }
-    if (e.hash && createHash('sha256').update(readFileSync(e.from)).digest('hex') !== e.hash) fail(`${e.from} isn't the piece ${e.hash}`);
+  const place = (to: string, e: { from: string }) => {
     rmSync(to, { force: true });
     try {
       linkSync(e.from, to);
     } catch {
       copyFileSync(e.from, to);
     }
+  };
+  // The pieces: content-addressed, so a new one can't stand for an old one; each checked before it goes in.
+  for (const [p, e] of plan.files) {
+    if ('keep' in e || 'text' in e || !e.hash) continue;
+    if (createHash('sha256').update(readFileSync(e.from)).digest('hex') !== e.hash) fail(`${e.from} isn't the piece ${e.hash}`);
+    const to = join(site, p);
+    if (existsSync(to)) continue;
+    mkdirSync(dirname(to), { recursive: true });
+    place(`${to}${STAGED}`, e);
+    renameSync(`${to}${STAGED}`, to);
   }
+  // The rest staged, the store after the demos' files, the ledger last.
+  const staged: string[] = [];
+  const order = [...plan.files.entries()].filter(([, e]) => !('keep' in e) && !('hash' in e && e.hash));
+  order.sort(([a], [b]) => Number(a === 'store.json') - Number(b === 'store.json'));
+  try {
+    for (const [p, e] of order) {
+      const to = join(site, p);
+      mkdirSync(dirname(to), { recursive: true });
+      if ('text' in e) writeFileSync(`${to}${STAGED}`, e.text);
+      else if ('from' in e) place(`${to}${STAGED}`, e);
+      staged.push(to);
+    }
+    writeFileSync(join(site, `${LEDGER}${STAGED}`), `${JSON.stringify(plan.ledger, null, 1)}\n`);
+    staged.push(join(site, LEDGER));
+  } catch (e) {
+    for (const to of staged) rmSync(`${to}${STAGED}`, { force: true });
+    rmSync(join(site, `${LEDGER}${STAGED}`), { force: true });
+    throw e;
+  }
+  for (const to of staged) renameSync(`${to}${STAGED}`, to);
+  writeFileSync(join(site, IGNORE), `${LEDGER}\n`);
   for (const p of plan.removed) rmSync(join(site, p), { force: true });
   // Directories left empty by what went.
   for (const p of new Set(plan.removed.map((r) => dirname(join(site, r)))))
     if (p !== site && existsSync(p) && readdirSync(p).length === 0) rmSync(p, { recursive: true });
-  writeFileSync(join(site, LEDGER), `${JSON.stringify(plan.ledger, null, 1)}\n`);
-  writeFileSync(join(site, IGNORE), `${LEDGER}\n`);
 }
 
 /** The site's files as deploy.sh counts them (its own files left out). */

@@ -1,16 +1,16 @@
 // A machine from a template (docs/machines.md "A machine from a template"; the demos' first start, DEMO-KICKOFF.md
-// decision 11): a machine definition imported as a new stored machine (its disks by identity: a chunked image's by its
-// content, wherever it's hosted), its template snapshot kept as the machine's first snapshot, and the record marked to
+// decision 11): a machine definition imported as a new stored machine (its disks by identity, a URL disk's at the same
+// URL: web/app/definitions.ts), its template snapshot kept as the machine's first snapshot, and the record marked to
 // restore it at its first start (`restoreFirst`), with no question: a fork onto the machine's fresh overlays, which is
 // what a restore onto other overlays is (web/app/snapshots.ts `planRestore`). A demo's (`machineFromDemo`, a store's
 // demo: web/app/demo-store.ts) is that from its definition's `demo`: its snapshot (checked against the content id the
 // definition names), its first adapter on the demo network when it asks (`network: "demo"`), and the record marked
 // with the demo it came from (`fromDemo`). DOM-free but for `fetch`.
-import { fetchChunked } from '../chunked.ts';
+import { checkManifest, contentId, fetchChunked, type Manifest } from '../chunked.ts';
 import { msgOf, MsgError } from '../msg.ts';
 import { importDefinition, parseDefinition, resolveUrls, type Definition } from './definitions.ts';
 import { fetchText, type DemoRef, type StoreDemo } from './demo-store.ts';
-import { attachDemoNetwork } from './net-demo.ts';
+import { withDemoNetwork } from './net-demo.ts';
 import type { MachineRecord } from './shape.ts';
 import { importSnapshot } from './snapshots.ts';
 import type { SnapshotRecord, Store } from './store.ts';
@@ -28,27 +28,33 @@ export async function fetchDefinition(url: string): Promise<Definition> {
 
 /**
  * Makes machine `def` in this browser with `snapshot` (a snapshot file of a machine of the same shape: a template) as
- * its first kept snapshot, restored at its first start (`fromDemo`: the demo it is, on the record). Returns both records.
+ * its first kept snapshot, restored at its first start (`fromDemo`: the demo it is, on the record; `network`: its first
+ * adapter on the demo network). The snapshot is kept before the machine's record is stored, and the record is stored
+ * once with its marks: a failure (the storage full, most often) leaves no machine, and none of the disks or overlays
+ * the import made. Returns both records.
  */
 export async function machineFromTemplate(
   store: Store,
   def: Definition,
   snapshot: File,
-  o: { fromDemo?: DemoRef } = {},
+  o: { fromDemo?: DemoRef; network?: boolean } = {},
 ): Promise<{ machine: MachineRecord; snapshot: SnapshotRecord }> {
-  const { machine } = await importDefinition(store, def);
-  let kept: SnapshotRecord;
-  try {
-    kept = await importSnapshot(store, machine.id, snapshot);
-  } catch (e) {
-    // No machine without its template (the storage full, most often): the record goes, its disks stay (another
-    // machine may have them).
-    await store.deleteMachine(machine.id).catch(() => undefined); // tidying up: the failure thrown is the one to report
-    throw full(e) ?? e;
-  }
-  const m = { ...machine, restoreFirst: kept.id, ...(o.fromDemo ? { fromDemo: o.fromDemo } : {}) };
-  await store.put('machines', m);
-  return { machine: m, snapshot: kept };
+  let kept!: SnapshotRecord;
+  const { machine } = await importDefinition(store, def, async (m) => {
+    try {
+      kept = await importSnapshot(store, m.id, snapshot);
+    } catch (e) {
+      throw full(e) ?? e;
+    }
+    return marked({ ...m, restoreFirst: kept.id }, store, o);
+  });
+  return { machine, snapshot: kept };
+}
+
+/** Record `m` with a demo's marks: `fromDemo`, and its first adapter on the demo network (`network`). */
+async function marked(m: MachineRecord, store: Store, o: { fromDemo?: DemoRef; network?: boolean }) {
+  const withDemo = o.fromDemo ? { ...m, fromDemo: o.fromDemo } : m;
+  return o.network ? withDemoNetwork(store, withDemo) : withDemo;
 }
 
 /** A snapshot's import refused for want of room, said as a demo's (its cause, the storage's numbers), else undefined. */
@@ -67,14 +73,16 @@ export const gone = (url: string) => () =>
  * files are gone; another file under the URL (a site republished meanwhile) is refused.
  */
 async function fetchSnapshot(url: string, id?: string, progress?: (done: number, total: number) => void) {
-  // The manifest first, for its 404 in words (fetchChunked fetches it again: a small file, from the cache).
-  const manifest = JSON.parse(await fetchText(url, { demo: true, gone: gone(url) })) as { id?: unknown };
-  if (id !== undefined && manifest.id !== id)
+  // The manifest once (its 404 in words), checked, and its pieces by it: each against its hash (fetchChunked).
+  const raw = JSON.parse(await fetchText(url, { demo: true, gone: gone(url) })) as Partial<Manifest>;
+  // The id the definition names must be the manifest's and its content's: the hashes' (the pieces are checked by them).
+  if (id !== undefined && (raw.id !== id || !Array.isArray(raw.hashes) || contentId(raw.hashes) !== id))
     throw new MsgError('machines:template.otherSnapshot', undefined, {
       cause: new MsgError('machines:template.otherSnapshot.cause'),
     });
+  const manifest = checkManifest(raw);
   try {
-    return await fetchChunked(url, { progress });
+    return await fetchChunked(url, { progress, manifest });
   } catch (e) {
     // A piece refused or the connection lost partway: nothing is kept, and trying again starts over.
     if (e instanceof MsgError) throw e;
@@ -86,8 +94,8 @@ async function fetchSnapshot(url: string, id?: string, progress?: (done: number,
 
 /**
  * Makes store demo `d`'s machine in this browser: its definition imported, marked `fromDemo`, its template snapshot
- * (if it has one) fetched first, so a failed download leaves no machine, and kept to restore at its first start; its
- * first adapter on the demo network if it asks. Named as the definition says, with a suffix past the visitor's own
+ * (if it has one) fetched first and kept to restore at its first start; its first adapter on the demo network if it
+ * asks. The record is stored once, with all of that: a failure anywhere leaves no machine (so trying again makes one). Named as the definition says, with a suffix past the visitor's own
  * machines' names (importDefinition's: a fresh copy is `Alpine (2)`). Returns the record as stored.
  */
 export async function machineFromDemo(
@@ -98,18 +106,13 @@ export async function machineFromDemo(
   const { def } = d;
   const fromDemo = { store: d.store, id: def.demo.id };
   const snap = def.demo.snapshot;
-  let made: { machine: MachineRecord; snapshot?: SnapshotRecord };
+  const o = { fromDemo, network: def.demo.network === 'demo' };
   if (snap) {
     const { blob } = await fetchSnapshot(snap.manifest, snap.id, progress);
-    made = await machineFromTemplate(store, def, new File([blob], `${def.machine.name}.waarm64snap`), { fromDemo });
-  } else {
-    const { machine } = await importDefinition(store, def);
-    const m = { ...machine, fromDemo };
-    await store.put('machines', m);
-    made = { machine: m };
+    return machineFromTemplate(store, def, new File([blob], `${def.machine.name}.waarm64snap`), o);
   }
-  if (def.demo.network === 'demo') await attachDemoNetwork(store, made.machine.id);
-  return { ...made, machine: (await store.get('machines', made.machine.id)) ?? made.machine };
+  const { machine } = await importDefinition(store, def, (m) => marked(m, store, o));
+  return { machine };
 }
 
 /**

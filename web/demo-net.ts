@@ -34,6 +34,11 @@ export const DEMO_JITTER_MS = 30_000;
 /** Backing off while the server is unreachable or dropped the socket: from `BACKOFF_MS`, doubling, to `BACKOFF_MAX_MS`. */
 export const BACKOFF_MS = 1000;
 export const BACKOFF_MAX_MS = 120_000;
+/**
+ * How long a socket lives past its `hello` before its loss starts the backoff over and counts as a new outage: a server
+ * or a proxy that drops each socket right after the handshake would otherwise be tried every second, "lost" said each time.
+ */
+export const HEALTHY_MS = 30_000;
 /** The least wait after a refusal for being too many (4008 without a time, 4009): trying sooner only adds to it. */
 export const CROWDED_MS = 30_000;
 
@@ -213,8 +218,12 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
   let opened = false;
   let hello = false;
   let closing: Record<string, unknown> | undefined;
-  /** The backoff's step (0 after a `hello`). */
+  /** The backoff's step (0 again after a socket that lived `HEALTHY_MS` past its `hello`). */
   let attempt = 0;
+  /** When this socket's `hello` came. */
+  let helloAt = 0;
+  /** A lost socket said ("lost"), and no socket has been healthy since: the same outage, not said again. */
+  let outage = false;
   let timer: unknown;
   let asker: unknown;
   let asked = -1;
@@ -277,6 +286,7 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
     if (stopped) return;
     setPhase('connecting');
     [opened, hello, closing] = [false, false, undefined];
+    change();
     let s: SocketLike;
     try {
       s = env.socket(url, DEMO_SUBPROTOCOL);
@@ -333,7 +343,7 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
     switch (m.type) {
       case 'hello': {
         hello = true;
-        attempt = 0;
+        helloAt = env.now();
         setPhase('connected');
         status.lane = m.lane === 'none' ? 'none' : 'fast';
         const [gateway, st] = [str(m.gateway), str(m.status)];
@@ -423,6 +433,7 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
     if (stopped) return;
     const was = hello;
     if (was) status.again = true;
+    if (was && env.now() - helloAt >= HEALTHY_MS) [attempt, outage] = [0, false];
     const final = error ?? demoCloseError(code, reason);
     if (final) return end(final);
     // The closing message before the close says the same as the code, with its numbers.
@@ -452,9 +463,9 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
         return wait('session', until(c?.reconnect_after));
     }
     if (!opened) return wait('unreachable', backoff());
-    if (was) {
+    if (was && !outage) {
       notice({ kind: 'lost' });
-      attempt = 0;
+      outage = true;
     }
     wait('lost', backoff());
   }

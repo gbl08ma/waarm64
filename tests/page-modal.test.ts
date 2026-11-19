@@ -2,6 +2,7 @@
 // Chromium, without a guest: a machine made, set and given disks from several sources through the modal's controls,
 // kept across a reload, opened on the page; a URL refused with the reason when its server lacks CORS or ranges.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -11,7 +12,7 @@ import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 import { MAX_RESIZE } from '../web/app/resize.ts';
 
-const DEMO = { format: 'waarm64-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: 'demo' };
+const DEMO = { format: 'waarm64-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: createHash('sha256').update('0'.repeat(64)).digest('hex') };
 let browser: Browser;
 let base: string;
 let close: () => void;
@@ -57,7 +58,7 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
     return { ok: r.ok, problems: r.problems.map((p: { key: string }) => p.key), bytes: r.bytes, etag: r.etag, ...(r.chunked ? { chunked: r.chunked } : {}), ...(r.name ? { name: r.name } : {}) };
   }, url);
   // A chunked image's manifest: its id the identity (wherever it's hosted), its name the disk's.
-  assert.deepEqual(await check(`${otherBase}/c/demo.json`), { ok: true, problems: [], bytes: 4096, etag: undefined, chunked: 'demo', name: 'Desktop Demo' });
+  assert.deepEqual(await check(`${otherBase}/c/demo.json`), { ok: true, problems: [], bytes: 4096, etag: undefined, chunked: DEMO.id, name: 'Desktop Demo' });
   // The dev server's files (sirv): a weak ETag of the size and modification time.
   const raw = await check(`${base}/tests/qcow2/data.raw`);
   assert.deepEqual({ ...raw, etag: undefined }, { ok: true, problems: [], bytes: 196608, etag: undefined });

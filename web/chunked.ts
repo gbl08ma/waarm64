@@ -1,11 +1,14 @@
 // A chunked image (docs/devices.md "A chunked image", docs/remote-disks.md): the image file cut into equal pieces at byte offsets, each a file
 // named by its SHA-256, listed by a manifest (tools/chunk-image.ts makes them). Read as one file (a `Source`), so
-// qcow2, the block cache and the overlay above it are unchanged. A piece is read by range where the host answers
-// ranges, and whole where it answers a range with the whole file (a Cloudflare Worker's static assets, as Pages did): the host is tried once, and then
-// `span` tells a cache above to take the whole piece. The manifest's `id` (a hash of the pieces' hashes) is the image's identity: it
-// changes with the content, whatever the URL.
+// qcow2, the block cache and the overlay above it are unchanged. A piece is fetched whole (any static host serves it,
+// ranges or not) and `span` tells a cache above to keep the whole piece. The manifest's `id` (a hash of the pieces'
+// hashes) is the image's identity: it changes with the content, whatever the URL. Nothing is taken on the host's word:
+// a manifest's id must be its hashes' (`checkManifest`) and the one the disk was added as (`chunkedSource`'s
+// `chunked`), and each piece is checked against its hash before a byte of it is used, so what a disk reads is its id's
+// content whoever serves it.
 import type { Source } from './devices.ts';
 import { MsgError } from './msg.ts';
+import { sha256Hex } from './sha256.ts';
 
 export const CHUNKED_FORMAT = 'waarm64-chunked-1';
 
@@ -36,11 +39,19 @@ export type Manifest = {
 /** Whether a disk's URL names a chunked image's manifest (by its path's `.json`). */
 export const isManifestUrl = (url: string) => /\.json$/i.test(new URL(url, 'http://x').pathname);
 
-/** Checks a parsed manifest; throws saying what's wrong. */
+const isHash = (h: unknown) => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h);
+
+/** The content id of a chunked file whose pieces have `hashes`: what its manifest's `id` must be (tools/chunk-image.ts). */
+export const contentId = (hashes: string[]) => sha256Hex(hashes.join('\n'));
+
+/**
+ * Checks a parsed manifest: its fields, its hashes hex (they go into the pieces' URLs), its id its hashes'; throws
+ * saying what's wrong.
+ */
 export function checkManifest(m: unknown): Manifest {
   const x = m as Manifest;
   if (!x || x.format !== CHUNKED_FORMAT) throw new MsgError('disks:chunked.notManifest', { format: String(x?.format) });
-  if (!(x.size > 0) || !(x.piece >= 1 << 20) || x.piece % (1 << 20) || !Array.isArray(x.hashes) || x.hashes.length !== Math.ceil(x.size / x.piece) || typeof x.pieces !== 'string')
+  if (!(x.size > 0) || !(x.piece >= 1 << 20) || x.piece % (1 << 20) || !Array.isArray(x.hashes) || x.hashes.length !== Math.ceil(x.size / x.piece) || typeof x.pieces !== 'string' || !x.hashes.every(isHash) || !isHash(x.id) || contentId(x.hashes) !== x.id)
     throw new MsgError('disks:chunked.malformed');
   return x;
 }
@@ -59,48 +70,52 @@ export const xhrGet: SyncGet = (url, range) => {
   return { status: x.status, body: b ? new Uint8Array(b) : undefined };
 };
 
-/** A chunked image over HTTP, by its manifest's URL (`get`: synchronous XHRs by default, so workers only). */
-export function chunkedSource(url: string, get: SyncGet = xhrGet): Source & { manifest: Manifest; ranges: () => boolean | undefined } {
+/** The SHA-256 of `b` in hex, without blocking (the platform's). */
+async function sha256(b: Uint8Array) {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', b as Uint8Array<ArrayBuffer>));
+  return [...d].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A chunked image over HTTP, by its manifest's URL (`get`: synchronous XHRs by default, so workers only); `chunked`:
+ * the content id the disk was added as, which the manifest must name (else it throws: another image under the URL).
+ * Pieces are fetched whole and checked against their hashes (a range of one couldn't be), the last one kept for the
+ * reads of it that follow; `span` tells a cache above to keep whole pieces. A piece that isn't its hash's reads as a
+ * failed read.
+ */
+export function chunkedSource(url: string, get: SyncGet = xhrGet, chunked?: string): Source & { manifest: Manifest } {
   const mx = get(url);
   if (mx.status !== 200 || !mx.body) throw new Error(`${url}: ${mx.status}`);
   const m = checkManifest(JSON.parse(new TextDecoder().decode(mx.body)));
+  if (chunked !== undefined && m.id !== chunked) throw new MsgError('disks:chunked.otherImage');
   const pieceUrl = (i: number) => new URL(m.pieces.replace('{hash}', m.hashes[i]), url).href;
   const pieceLen = (i: number) => Math.min(m.piece, m.size - i * m.piece);
-  /** Whether the host answers ranges: unknown until the first piece read. */
-  let ranges: boolean | undefined;
-  /** The last whole piece (a host without ranges), for the reads of it that follow (a read over several pieces). */
-  let whole: [number, Uint8Array] | undefined;
+  /** The last piece read (checked), for the reads of it that follow (a read over several pieces, a cache's blocks). */
+  let last: [number, Uint8Array] | undefined;
+  /** Piece `i` as fetched, if it's the piece its hash names. */
+  const checked = (i: number, b: Uint8Array) => {
+    if (b.byteLength !== pieceLen(i)) return undefined;
+    last = [i, b];
+    return b;
+  };
   /** `len` bytes at `off` inside piece `i`. */
   const readPiece = (i: number, off: number, len: number): Uint8Array | undefined => {
-    if (whole?.[0] === i) return whole[1].subarray(off, off + len);
-    const all = off === 0 && len === pieceLen(i);
-    const x = get(pieceUrl(i), ranges === false || all ? undefined : `bytes=${off}-${off + len - 1}`);
-    const b = x.body;
-    if (!b) return undefined;
-    if (x.status === 206 && b.byteLength === len) {
-      ranges = true;
-      return b;
+    if (last?.[0] !== i) {
+      const x = get(pieceUrl(i));
+      if (x.status !== 200 || !x.body || x.body.byteLength !== pieceLen(i) || sha256Hex(x.body) !== m.hashes[i]) return undefined;
+      checked(i, x.body);
     }
-    if (x.status === 200 && b.byteLength === pieceLen(i)) {
-      if (!all) ranges = false; // asked for a range, got the piece
-      if (!all) whole = [i, b];
-      return b.subarray(off, off + len);
-    }
-    return undefined;
+    return last![1].subarray(off, off + len);
   };
-  /** `readPiece` without blocking (`fetch`). */
+  /** `readPiece` without blocking (`fetch`; the platform's digest). */
   const readPieceAsync = async (i: number, off: number, len: number): Promise<Uint8Array | undefined> => {
-    if (whole?.[0] === i) return whole[1].subarray(off, off + len);
-    const all = off === 0 && len === pieceLen(i);
+    if (last?.[0] === i) return last[1].subarray(off, off + len);
     try {
-      const r = await fetch(pieceUrl(i), ranges === false || all ? {} : { headers: { Range: `bytes=${off}-${off + len - 1}` } });
-      if (r.status !== 206 && r.status !== 200) return void r.body?.cancel();
+      const r = await fetch(pieceUrl(i));
+      if (r.status !== 200) return void r.body?.cancel();
       const b = new Uint8Array(await r.arrayBuffer());
-      if (r.status === 206 && b.length === len) return (ranges = true, b);
-      if (r.status === 200 && b.length === pieceLen(i)) {
-        if (!all) [ranges, whole] = [false, [i, b]];
-        return b.subarray(off, off + len);
-      }
+      if (b.length !== pieceLen(i) || (await sha256(b)) !== m.hashes[i]) return undefined;
+      return checked(i, b)?.subarray(off, off + len);
     } catch {} // the network
     return undefined;
   };
@@ -124,9 +139,8 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet): Source & { ma
       for (const b of got) (out.set(b!, at), at += b!.length);
       return out;
     },
-    ranges: () => ranges,
-    // Without ranges a read fetches its pieces whole: a cache above takes them all.
-    span: (off, len) => (ranges === false ? [Math.floor(off / m.piece) * m.piece, Math.min(m.size, Math.ceil((off + len) / m.piece) * m.piece)] : [off, off + len]),
+    // A read fetches its pieces whole: a cache above takes them all.
+    span: (off, len) => [Math.floor(off / m.piece) * m.piece, Math.min(m.size, Math.ceil((off + len) / m.piece) * m.piece)],
     read(off, len) {
       if (off < 0 || len < 0 || off + len > m.size) return undefined;
       const out = new Uint8Array(len);
@@ -158,23 +172,18 @@ export async function chunkedHead(url: string, n = 32): Promise<{ manifest: Mani
   return { manifest, head: new Uint8Array(await p.arrayBuffer()).slice(0, n) };
 }
 
-/** The SHA-256 of `b` in hex. */
-async function sha256(b: Uint8Array) {
-  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', b as Uint8Array<ArrayBuffer>));
-  return [...d].map((x) => x.toString(16).padStart(2, '0')).join('');
-}
-
 /**
  * A chunked file fetched whole (a template snapshot: docs/machines.md "A machine from a template"): its pieces, `at
  * once` at a time, each checked against its hash (they are content-addressed: a piece that doesn't match is a broken
- * copy), joined into one Blob in order. `progress` is told the bytes so far. Throws on a piece that is missing or wrong.
+ * copy), joined into one Blob in order. `progress` is told the bytes so far; `manifest`: its manifest already fetched
+ * (and checked again here), not fetched twice. Throws on a piece that is missing or wrong.
  */
 export async function fetchChunked(
   url: string,
-  o: { atOnce?: number; progress?: (done: number, total: number) => void } = {},
+  o: { atOnce?: number; progress?: (done: number, total: number) => void; manifest?: Manifest } = {},
 ): Promise<{ manifest: Manifest; blob: Blob }> {
   const abs = new URL(url, globalThis.location?.href).href;
-  const m = await fetchManifest(abs);
+  const m = o.manifest ? checkManifest(o.manifest) : await fetchManifest(abs);
   const parts: Uint8Array[] = new Array<Uint8Array>(m.hashes.length);
   let next = 0;
   let done = 0;

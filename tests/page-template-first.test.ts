@@ -39,7 +39,7 @@ test("a machine from a template, made in a fresh profile, restores the template 
     if (path.endsWith('/definition.json')) return r.fulfill({ json: { ...made.def, disks: made.def.disks.map((x: object) => ({ ...x, url: 'manifest.json' })) } });
     const piece = new Uint8Array(made.snapshot);
     if (path.endsWith('/snapshot.json'))
-      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: 'x' } });
+      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
     return r.fulfill({ body: Buffer.from(piece) });
   });
   await page.goto(`${base}/web/app/?hooks`);
@@ -77,7 +77,7 @@ test("a machine from a store's demo: the definition inline, its URLs relative to
   await standIn(page);
   const piece = new Uint8Array(made.snapshot);
   const PIECE = createHash('sha256').update(piece).digest('hex');
-  const SNAP = 'cd'.repeat(32);
+  const SNAP = createHash('sha256').update(PIECE).digest('hex'); // its content id (web/chunked.ts `contentId`)
   const demo = { id: 'alpine-term', summary: 'A terminal.', download: piece.length, view: 'serial', snapshot: { manifest: 'alpine/snapshot.json', id: SNAP } };
   const def = { ...made.def, version: 2, disks: made.def.disks.map((x) => ({ ...x, url: 'alpine/manifest.json' })), demo };
   await page.route('**/site/**', (r) => {

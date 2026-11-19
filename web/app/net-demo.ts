@@ -6,6 +6,7 @@
 import { DEMO_URL } from '../demo-net.ts';
 import { Connections, type Connection } from './connections.ts';
 import { setAdapterConnection } from './machines.ts';
+import { adaptersOf, type MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
 
 /**
@@ -15,6 +16,22 @@ import type { Store } from './store.ts';
 export async function demoConnection(conns: Connections, url = DEMO_URL): Promise<Connection> {
   const have = (await conns.list()).find((c) => c.kind === 'demo' && !c.ephemeral && c.demo?.url === url);
   return have ?? conns.create({ kind: 'demo', demo: { url } });
+}
+
+/**
+ * Machine record `m` (not stored yet: a demo's, web/app/template.ts) with its adapter `adapter` (default: its first) on
+ * the demo connection (`url`: its server, by default the project's), which is made if this browser has none.
+ */
+export async function withDemoNetwork(
+  store: Store,
+  m: MachineRecord,
+  adapter = 0,
+  url = DEMO_URL,
+): Promise<MachineRecord> {
+  const adapters = adaptersOf(m).map((a) => ({ ...a }));
+  if (!adapters[adapter]) throw new Error(`${m.name} has no adapter ${adapter + 1}`);
+  adapters[adapter].connection = (await demoConnection(new Connections(store), url)).id;
+  return { ...m, network: undefined, adapters };
 }
 
 /**

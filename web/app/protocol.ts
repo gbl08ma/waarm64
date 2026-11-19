@@ -244,7 +244,7 @@ export type ToWorker =
  * web/changes.ts `baseHash`). A stored disk written in place is a blank source with the store as its overlay.
  */
 export type DiskSource =
-  | { url: string }
+  | { url: string; chunked?: string }
   | { file: File }
   | { blank: number }
   | { ramdisk: number; swap?: string }

@@ -7,7 +7,7 @@
 // the page's words for all of it (web/app/demo-view.ts, from the catalog).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DEMO_SUBPROTOCOL, DEMO_URL, demoNetmap, parseDemoURL, startDemoNet, type DemoEnv, type DemoNotice, type FramePort, type SocketLike } from '../web/demo-net.ts';
+import { DEMO_SUBPROTOCOL, DEMO_URL, demoNetmap, HEALTHY_MS, parseDemoURL, startDemoNet, type DemoEnv, type DemoNotice, type FramePort, type SocketLike } from '../web/demo-net.ts';
 import { frameMessage, framesOf } from '../web/local-net.ts';
 import { demoNotice } from '../web/app/demo-view.ts';
 import { viewOf } from '../web/app/network-view.ts';
@@ -205,7 +205,7 @@ test('4011, 4013, 4008 with reconnect_after: after it and a random delay of up t
   }
 });
 
-test('4008 guests and site, 4009 full: at least 30 s; unreachable: backing off from 1 s, doubling, to 2 min; reset by a hello', () => {
+test('4008 guests and site, 4009 full: at least 30 s; unreachable: backing off from 1 s, doubling, to 2 min; reset by a socket healthy a while', () => {
   for (const [code, reason, why] of [[4008, 'guests', 'guests'], [4008, 'site', 'site'], [4009, 'full', 'full']] as const) {
     const h = harness(() => 0);
     h.last().accept();
@@ -227,13 +227,42 @@ test('4008 guests and site, 4009 full: at least 30 s; unreachable: backing off f
   assert.equal(h.notices.length, 0, 'never connected: nothing lost');
   h.last().accept();
   h.last().hello();
+  h.advance(HEALTHY_MS);
   h.last().end(1006);
   assert.deepEqual(h.notices, [{ kind: 'lost' }], 'a connected socket dropped: said once');
   assert.equal(h.net.status().wait?.why, 'lost');
-  assert.equal(h.nextAt() - h.now(), 1000, 'the backoff starts over');
+  assert.equal(h.nextAt() - h.now(), 1000, 'the backoff starts over: the socket was healthy a while');
   const r = harness(() => 0);
   r.last().end(1006);
   assert.equal(r.nextAt() - T0, 500, 'the delay\'s second half is random');
+});
+
+// REVIEW.md (review/demo-page) #7.
+test('a server that drops each socket right after its hello: the backoff grows, "lost" said once per outage, the status follows each try', () => {
+  const h = harness(() => 1);
+  const delays: number[] = [];
+  for (let k = 0; k < 9; k++) {
+    h.last().accept();
+    h.last().hello();
+    h.advance(100);
+    const t = h.now();
+    h.last().end(1006);
+    const at = h.net.status().wait!.at; // not nextAt: the budget's asker runs beside it
+    delays.push(at - t);
+    const before = h.changes();
+    h.advance(at - t);
+    assert.equal(h.net.status().phase, 'connecting', 'the status says it tries again');
+    assert.ok(h.changes() > before, 'told when it tries again');
+  }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 32000, 64000, 120000, 120000]);
+  assert.deepEqual(h.notices, [{ kind: 'lost' }], 'one outage: one "lost"');
+  // Healthy again for a while, then lost: a new outage, said again, and the backoff from the start.
+  h.last().accept();
+  h.last().hello();
+  h.advance(HEALTHY_MS);
+  h.last().end(1006);
+  assert.deepEqual(h.notices, [{ kind: 'lost' }, { kind: 'lost' }]);
+  assert.equal(h.net.status().wait!.at - h.now(), 1000);
 });
 
 test('4010: the budget spent, said, waited out until it resets', () => {

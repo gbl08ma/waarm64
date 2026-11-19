@@ -56,8 +56,8 @@ local helper's `framedClient`). Like the helper's client it moves the card's fra
 | 4011 `maintenance`, 4013 `session`, 4008 `connections` | tries again at `reconnect_after` plus a random delay of up to 30 s (`DEMO_JITTER_MS`) |
 | 4008 `guests`, `site`; 4009 `full` | backs off, at least 30 s (`CROWDED_MS`) |
 | 4010 `bytes` | waits until `resets` (the next UTC midnight) plus the random delay |
-| never opened (1006) | backs off: 1 s, doubling, to 2 min, the second half of each delay random; a `hello` resets it |
-| opened, closed without `closing` | the same backoff from its start; said once in the message bar if it had connected |
+| never opened (1006) | backs off: 1 s, doubling, to 2 min, the second half of each delay random; a socket that lived `HEALTHY_MS` (30 s) past its `hello` resets it |
+| opened, closed without `closing` | the same backoff (from its start only after a socket healthy that long: a server that drops each socket right after `hello` is backed off); said in the message bar once per outage (a lost socket again before one was healthy isn't said again) |
 | 4001, 4003, 1002, 1009, a malformed message | closed for good: the menu's [Couldn't connect](ui:network:network-view.couldntConnect) with the reason, and its Retry |
 
 ## On the page

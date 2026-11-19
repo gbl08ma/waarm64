@@ -160,11 +160,17 @@ Since decided (the user, 2026-10-17):
 
 Cheap, and recorded at attach: a file's name, size and modification time; a chunked image's manifest `id` and size
 (`{kind: 'url', chunked, bytes}`: its content, not its URL, so the same image hosted anywhere is the same disk, and a
-template's pins and a definition's disk match wherever it's served from); another URL's path and size, plus its `ETag` or
+template's pins and a definition's disk match wherever it's served from; the bytes are checked against it as they're
+read: devices.md "A chunked image"); another URL's path and size, plus its `ETag` or
 `Last-Modified` where the server sends one; a stored disk's id; a blank disk's id and size. A chunked image's disk
 added before content ids keeps the identity it was made with (its path, the manifest's `id` as its `etag`): nothing
 migrates it, and adding the same URL again finds it (`knownDisk` tries both forms). A file or URL added again, opened or dropped is
 the disk the browser already has with that identity (`machines.ts` `knownDisk`), so its overlays come back with it.
+A definition's URL disk (an import, a store's demo) is that disk only at the same URL: the record says where it's
+read from, so another store's definition naming an image's id can't decide where ours reads it (nor a mirror that
+later goes away); a new record has the same identity, so the shape still matches. A definition's blank or ramdisk
+disk always gets a record of its own (its identity's `id` is hashed in the shape, never taken as a record id), and
+identities are checked by kind (`definition-check.ts`).
 The SHA-256 (`hashSource`, web/changes.ts, ~640 MiB/s in Chromium) is computed only where one is needed: a re-picked
 file whose cheap identity differs (§6) and a changes file's base. Two different files with the same name, size and
 date are the same disk to the page.
@@ -592,15 +598,18 @@ damaged, not a demo, an id seen before in the store) is left out and listed in `
 with a newer demo still shows the others; the store itself unreadable (unreachable, a status, not JSON, not a store,
 another version) is a `MsgError` (`machines:demo-store.*`). `OUR_STORE` is `https://vmdisks.tny.im/store.json`.
 
-**A demo's machine** (`machineFromDemo`, web/app/template.ts): its snapshot fetched first (a 404 is
-`machines:template.gone`, "this demo's files are gone"; a manifest whose content id isn't the card's is refused: the site
-was republished meanwhile), so a failed download leaves no machine; then §6.1's machine, marked **`fromDemo: {store,
-id}`** (the store's URL as fetched, absolute), and its first adapter attached to the demo network when the card asks
-(`attachDemoNetwork`, web/app/net-demo.ts). `demoMachines` finds this browser's machines from a card (`mine`: "started
+**A demo's machine** (`machineFromDemo`, web/app/template.ts): its snapshot fetched first, its manifest once (a 404 is
+`machines:template.gone`, "this demo's files are gone"; a manifest whose `id`, or its hashes' content id, isn't the
+card's is refused: the site was republished meanwhile) and its pieces by that manifest; then §6.1's machine, marked
+**`fromDemo: {store, id}`** (the store's URL as fetched, absolute), and its first adapter on the demo network when the
+card asks (`withDemoNetwork`, web/app/net-demo.ts). The snapshot is kept under the machine's id before its record is
+stored, and the record is stored once with all its marks (`importDefinition`'s `finish`): any failure (the download,
+the storage full, the demo connection) leaves no machine and none of the disks or overlays the import made, so trying
+again makes one machine. `demoMachines` finds this browser's machines from a card (`mine`: "started
 before", the most recently changed first) and from the versions it replaces (`older`). `fromDemo` isn't in the shape or
-a definition; a copy keeps it (it's still that demo's machine) and drops `restoreFirst` (the template is a snapshot of
-the original, not of the copy). A download cut off partway is `machines:template.cutOff`; the storage full when the
-snapshot is kept, `machines:template.full` (the machine just made is deleted again). The store's page, which makes
+a definition; a copy drops it (the card would open a copy that starts cold, off the demo network: a copy is the user's
+own machine) and `restoreFirst` (the template is a snapshot of the original, not of the copy). A download cut off
+partway is `machines:template.cutOff`; the storage full when the snapshot is kept, `machines:template.full`. The store's page, which makes
 these machines: [frontend.md](frontend.md) "The demo store". Tests: tests/demo-store.test.ts (Node), tests/page-template-first.test.ts (a store's
 demo made and restored at its first start in Chromium).
 

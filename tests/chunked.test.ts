@@ -11,7 +11,9 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { cachedSource } from '../web/blockcache.ts';
-import { chunkedSource, type Manifest, type SyncGet } from '../web/chunked.ts';
+import { checkManifest, chunkedSource, contentId, type Manifest, type SyncGet } from '../web/chunked.ts';
+import { sha256Hex } from '../web/sha256.ts';
+import { createHash } from 'node:crypto';
 import { msgOf } from '../web/msg.ts';
 import { STEPS } from './steps.ts';
 
@@ -85,7 +87,7 @@ for (const ranges of [true, false]) {
     }
     same(src.read(0, image.length), 0, image.length, 'the whole file');
     assert.equal(src.read(image.length - 10, 20), undefined);
-    assert.equal(src.ranges(), ranges);
+    assert.ok(h.gets.every((g) => !g.range), 'pieces are fetched whole (a range of one couldn\'t be checked)');
   });
 }
 
@@ -100,7 +102,7 @@ test('without ranges, the block cache above takes whole pieces: each fetched onc
     same(c.read(off, len), off, len, 'cached, no ranges');
   }
   const pieces = h.gets.filter((g) => g.path.endsWith('.bin'));
-  assert.ok(pieces.length <= 6, `${pieces.length} piece fetches`); // five pieces, and the first read's, before the host was known
+  assert.equal(pieces.length, 5, `${pieces.length} piece fetches`); // five pieces, each once
 });
 
 test('the block cache over a chunked image', () => {
@@ -131,10 +133,57 @@ test('a malformed manifest or a missing piece is refused', () => {
   writeFileSync(join(tmp, 'out/other.json'), JSON.stringify({ format: 'something' }));
   assert.throws(() => chunkedSource('http://h/other.json', h.get), (e) => msgOf(e)?.key === 'disks:chunked.notManifest');
   const m = JSON.parse(readFileSync(join(tmp, 'out/manifest.json'), 'utf8')) as Manifest;
-  writeFileSync(join(tmp, 'out/gone.json'), JSON.stringify({ ...m, hashes: m.hashes.map((x, i) => (i === 2 ? '0'.repeat(64) : x)) }));
+  const hashes = m.hashes.map((x, i) => (i === 2 ? '0'.repeat(64) : x));
+  writeFileSync(join(tmp, 'out/gone.json'), JSON.stringify({ ...m, hashes, id: contentId(hashes) }));
   const src = chunkedSource('http://h/gone.json', h.get);
   assert.equal(src.read(2 * MiB + 10, 100), undefined);
   same(src.read(10, 100), 10, 100, 'a piece that is there');
+});
+
+// REVIEW.md (review/demo-page) R1: nothing a disk reads is taken on the host's word.
+test('a manifest whose id is not its hashes\', or whose hashes are not hex, is refused; one of another id than the disk was added as too', () => {
+  const m = JSON.parse(readFileSync(join(tmp, 'out/manifest.json'), 'utf8')) as Manifest;
+  assert.equal(contentId(m.hashes), m.id, "the tool's id is the hashes'");
+  const refused = (x: unknown) => assert.throws(() => checkManifest(x), (e) => msgOf(e)?.key === 'disks:chunked.malformed', JSON.stringify(x).slice(0, 80));
+  refused({ ...m, id: 'ab'.repeat(32) });
+  refused({ ...m, hashes: m.hashes.map((x, i) => (i === 0 ? '../../etc' : x)), id: contentId(m.hashes.map((x, i) => (i === 0 ? '../../etc' : x))) });
+  refused({ ...m, hashes: m.hashes.map((x) => x.toUpperCase()), id: contentId(m.hashes.map((x) => x.toUpperCase())) });
+  const h = host(join(tmp, 'out'), true);
+  assert.throws(() => chunkedSource('http://h/manifest.json', h.get, 'cd'.repeat(32)), (e) => msgOf(e)?.key === 'disks:chunked.otherImage');
+  assert.equal(chunkedSource('http://h/manifest.json', h.get, m.id).size, image.length);
+});
+
+test("a piece whose bytes aren't its hash's reads as a failed read, synchronously or not", async () => {
+  const dir = join(tmp, 'planted');
+  cut(join(tmp, 'disk.img'), dir);
+  const m = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as Manifest;
+  const file = join(dir, 'pieces', `${m.hashes[2]}.bin`);
+  const bytes = readFileSync(file);
+  bytes[7] ^= 1;
+  writeFileSync(file, bytes);
+  const src = chunkedSource('http://h/manifest.json', host(dir, true).get);
+  assert.equal(src.read(2 * MiB + 10, 100), undefined, 'a planted piece was read');
+  same(src.read(10, 100), 10, 100, 'a piece that is its hash\'s');
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (u: string | URL | Request) => {
+    const r = host(dir, false).get(String(u));
+    return new Response(r.body ? (r.body as BodyInit) : null, { status: r.status });
+  }) as typeof fetch;
+  try {
+    assert.equal(await src.readAsync!(2 * MiB + 10, 100), undefined, 'a planted piece was read (async)');
+    const ok = await src.readAsync!(3 * MiB, 100);
+    same(ok, 3 * MiB, 100, 'async, a piece that is its hash\'s');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('web/sha256.ts is SHA-256', () => {
+  for (const n of [0, 1, 55, 56, 63, 64, 65, 119, 120, 128, 1000, 100_003]) {
+    const b = new Uint8Array(n).map((_, i) => (i * 31 + 7) & 255);
+    assert.equal(sha256Hex(b), createHash('sha256').update(b).digest('hex'), `${n} bytes`);
+  }
+  assert.equal(sha256Hex('a\nb'), createHash('sha256').update('a\nb').digest('hex'));
 });
 
 // Chromium: a deterministic boot with its root on the chunked Buildroot rootfs, and the URL check of a manifest.

@@ -9,7 +9,7 @@ import type { DiskSource } from './protocol.ts';
 export async function openSource(s: DiskSource): Promise<Source & { close?(): void }> {
   if ('url' in s)
     return isManifestUrl(s.url)
-      ? chunkedSource(new URL(s.url, self.location.href).href)
+      ? chunkedSource(new URL(s.url, self.location.href).href, undefined, s.chunked)
       : httpSource(new URL(s.url, self.location.href).href);
   if ('file' in s) return blobSource(s.file);
   if ('blank' in s) return zeroSource(s.blank);

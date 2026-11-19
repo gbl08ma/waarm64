@@ -314,8 +314,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     disk) would let whoever hosts an image make one.
   - **Plain image URLs have no prefetch:** only a chunked image's manifest carries the list; a sidecar
     (`<image>.prefetch.json`) would give a whole-file host the same 96 → 65 s.
-  - **Pieces aren't checked against their SHA-256:** the synchronous reads can't use `crypto.subtle`; the realtime
-    path (`readAsync`) could check whole-piece fetches (a host without ranges) and the prefetch's, not ranges.
+  - **Whole pieces on a host with ranges, unmeasured:** pieces are now always fetched whole to be checked against
+    their hashes (DEMO review fixes, 2026-11-19); R2 measured whole 2 MiB pieces as fast as ranges only on the
+    no-ranges path. An A/B of the Desktop Demo's boot from `static.gbl08ma.com` (ranges) would confirm it, and the
+    synchronous path's JS SHA-256 (~20 ms a piece, deterministic mode and an image's opening) could move to the core.
   - **The paced prefetch's 1.5 s** (R6): R5's, which fetched the whole trace at once, did its fetching during the boot
     menu's idle seconds; the paced one fetches beside the guest. Running eagerly (R5's way) once the guest is past its
     boot menu (its place in the list past the loader's blocks, or a mark in the manifest) would win it back without

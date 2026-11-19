@@ -591,6 +591,10 @@
     "message": "The chunked image's manifest is malformed.",
     "note": "Error when a chunked image's manifest is missing fields or they don't agree: in Add a disk › From a URL's check, or as a detail when the disks can't be opened."
   },
+  "chunked.otherImage": {
+    "message": "The server now has another image under this disk's URL: its content isn't the one the disk was added as.",
+    "note": "Error detail when a machine's disks can't be opened because a chunked image's manifest names another content id than the one the disk record was made with (the image was replaced on the server, or another site serves something else under the URL)."
+  },
   "overlay.storageFull": {
     "message": "This browser's storage is full. Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes this browser's storage.",
     "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused, and the browser doesn't say how much it holds. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). The <ui-home> marker shows the Home button's icon before its words."

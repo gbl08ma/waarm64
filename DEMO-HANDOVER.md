@@ -77,6 +77,18 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   **For loop 5:** the guest test is its ci-machines check once the build writes `target/demos`; it wraps the site's
   `definition.json` into a store itself (the `demo` taken from it if it has one, its network dropped: offline).
 
+- **Review fixes (review/demo-page, 2026-11-19, committed unpushed):** R1 a chunked image's bytes checked against its
+  content id (manifest id = its hashes', = the disk record's; each piece hashed before use, so pieces are always fetched
+  whole; `web/sha256.ts` for the synchronous reads) and a definition's URL disk reused only at the same URL; R2 a
+  definition's blank/ramdisk disk always a new record, identities checked by kind; R3 the template snapshot's manifest
+  fetched once and its id checked against its hashes, hashes hex; R4 `importDefinition(store, def, finish)`: the
+  snapshot kept and the demo network set before the record is stored once (any failure leaves nothing); #5
+  `applyPlan` pieces first, the rest staged and renamed, store then ledger last; #6 LEASE's `dhcpcd -n` only for cards
+  dhcpcd manages (`dhcpcd_manages`: its title names the card, or the manager and `/etc/dhcpcd.conf` doesn't deny it);
+  #7 the demo client's backoff resets only after a socket lived 30 s past `hello` (`HEALTHY_MS`), "lost" once per
+  outage, `open()` reports; #9 a copy drops `fromDemo`. `knownDisk` (a URL the user adds) still finds a record of the
+  same image from another host: user-initiated and now content-checked, so kept (loop 1's call).
+
 ## Next: loop 5, the automated demo build
 
 - One command that makes each demo's build into **`target/demos/<id>/`**, which is where `deploy/disks/demos.json`
@@ -117,6 +129,9 @@ None.
 
 ## Awaiting the user's review
 
+- **Review #8 left as is (the user's decision):** a store's definition can turn on clipboard sharing (and shares);
+  other stores' definitions get no extra restrictions.
+
 - **Loop 6's engineering calls:** the first visit opens the store only on a bare address with no machines, and never
   under automation unless `?firstvisit=1` (the tests open the page bare in fresh profiles; `leavewarning`'s precedent).
   The interstitial and "started before" are one panel (a card → its details: checks, then Open my machine / Start a
@@ -131,8 +146,7 @@ None.
   `needs` field: 3D, Vulkan and RAM come from the machine's own fields, so they can't disagree. `replaces` is a list,
   so v3 can name v1 and v2 both. The page ignores fields it doesn't know, while the publish tool refuses them. A
   store's unreadable demo is skipped and said, not fatal. `fromDemo.store` is the store's absolute URL (another host's
-  store with the same id is another demo). A copy keeps `fromDemo` and drops `restoreFirst` (that mark used to be copied:
-  a small bug). Publishing is a dry run unless `--apply`. Retired demos keep their files until the 15,000-file budget,
+  store with the same id is another demo). A copy drops `fromDemo` (review #9: its card would open a copy that starts cold) and `restoreFirst`. Publishing is a dry run unless `--apply`. Retired demos keep their files until the 15,000-file budget,
   then the oldest retired go first. The ledger lives in the site, excluded by `.assetsignore`.
 
 - **Loop 10:** the default server URL is a placeholder, **`wss://demonet.tny.im/` (web/demo-net.ts `DEMO_URL`): the
