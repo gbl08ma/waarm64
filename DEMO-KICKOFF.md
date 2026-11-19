@@ -203,14 +203,21 @@ the fork (loops 7–10) are independent; the fork's loops can run beside them.
 
 ## Needs the user's OK during the track
 
+**The red lines** (the user, 2026-11-19: not expected to be crossed during the track; stop and ask):
 - Each allowlist rule past `dl-cdn.alpinelinux.org`, and the slow lane's first numbers (rate, connections, total)
   before it's turned on.
-- The definition format's new version (a format others may hold) and the machine record's `fromDemo` field.
-- The `alpine-demo` image's contents, and each demo added to the store.
-- The agent on Alpine and udhcpc in its lease renewal (guest-visible for Alpine users), beyond decision 14's
-  direction.
-- A change to the snapshot's disk side, if decision 18's measurement asks for one.
 - Every deploy: the fork on the user's server, vmdisks.tny.im, vm.tny.im.
+- A new dependency beyond those decision 7 and decision 4 name.
+
+**Engineering calls, made in the loops and listed in the handover** (the user, 2026-11-19):
+- The definition format's new version and the machine record's `fromDemo` field: designed as a senior engineer
+  would. No real users yet, so if a migration path from the old version would cost too much, skip it and say so at
+  the top of the handover (the user exports their machines before loading that build).
+- The `alpine-demo` image: **barebones, like unkernel's** (Alpine's base minimum, `apk`, the command-not-found
+  wrapper, the agent, networking, the motd; no python, lua or nano preinstalled: they install on demand). Each demo
+  added to the store is listed in the handover.
+- The agent on Alpine and udhcpc in its lease renewal, as decision 14 directs.
+- A change to the snapshot's disk side, if decision 18's measurement asks for one: make it.
 - Any guest-visible change to an existing machine (none planned: demos are new machines).
 
 ## Validation
