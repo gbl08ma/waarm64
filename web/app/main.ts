@@ -192,7 +192,7 @@ const runner = new Runner({
     storageFull: () => void trimActions.full(),
     restored: (template) => {
       if (template) agentActions.renew();
-      void leaseActions.restored();
+      void leaseActions.restored().then((r) => (document.body.dataset.lease = r)); // the tests' waits: nothing shown
     },
   },
   alive: { mark: (st) => signal.mark(st), clear: () => signal.clear() },

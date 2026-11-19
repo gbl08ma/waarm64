@@ -4,7 +4,8 @@
 //! poweroff` does: `org.freedesktop.login1.Manager.PowerOffWithFlags` (or `RebootWithFlags`) with
 //! `SD_LOGIND_ROOT_CHECK_INHIBITORS`, so that a block inhibitor refuses it even to root and a delay inhibitor
 //! holds it for its time (logind's `InhibitDelayMaxSec`). Without logind or busctl, `shutdown now` (`shutdown -r now`)
-//! where it is. logind checks the caller's CAP_SYS_BOOT (the unit's bounding set keeps it for that). The tool runs in a
+//! where it is, else `poweroff` (`reboot`): busybox's, which have its init run the shutdown's actions (Alpine's OpenRC
+//! has no `shutdown`). logind checks the caller's CAP_SYS_BOOT (the unit's bounding set keeps it for that). The tool runs in a
 //! forked child (src/lease.rs `spawn`) whose end the root process's loop hears; POWERED answers (`status`). A request
 //! taken may stop the agent before POWERED leaves: the page takes the connection's end as the guest's shutdown under
 //! way.
@@ -32,6 +33,8 @@ pub struct Paths {
     pub logind: String,
     pub busctl: Vec<String>,
     pub shutdown: Vec<String>,
+    pub poweroff: Vec<String>,
+    pub reboot: Vec<String>,
 }
 
 impl Default for Paths {
@@ -40,6 +43,8 @@ impl Default for Paths {
             logind: "/run/systemd/seats".into(),
             busctl: crate::keymap::places("busctl"),
             shutdown: crate::keymap::places("shutdown"),
+            poweroff: crate::keymap::places("poweroff"),
+            reboot: crate::keymap::places("reboot"),
         }
     }
 }
@@ -69,12 +74,14 @@ pub fn command(p: &Paths, reboot: bool) -> Option<Vec<String>> {
             .to_vec(),
         );
     }
-    let shutdown = crate::keymap::found(&p.shutdown)?;
-    Some(if reboot {
-        vec![shutdown, "-r".into(), "now".into()]
-    } else {
-        vec![shutdown, "now".into()]
-    })
+    if let Some(shutdown) = crate::keymap::found(&p.shutdown) {
+        return Some(if reboot {
+            vec![shutdown, "-r".into(), "now".into()]
+        } else {
+            vec![shutdown, "now".into()]
+        });
+    }
+    crate::keymap::found(if reboot { &p.reboot } else { &p.poweroff }).map(|t| vec![t])
 }
 
 #[cfg(test)]
@@ -91,12 +98,20 @@ mod tests {
             logind: s("seats"),
             busctl: vec![s("busctl")],
             shutdown: vec![s("no-shutdown"), s("shutdown")],
+            poweroff: vec![s("poweroff")],
+            reboot: vec![s("reboot")],
         };
         let tool = |n: &str| {
             std::fs::write(dir.join(n), "#!/bin/sh\n").unwrap();
             rustix::fs::chmod(s(n).as_str(), rustix::fs::Mode::from_raw_mode(0o755)).unwrap();
         };
         assert_eq!(command(&p, false), None, "no tool");
+        // busybox's (Alpine: no shutdown).
+        tool("poweroff");
+        assert_eq!(command(&p, false), Some(vec![s("poweroff")]));
+        assert_eq!(command(&p, true), None, "no reboot");
+        tool("reboot");
+        assert_eq!(command(&p, true), Some(vec![s("reboot")]));
         tool("shutdown");
         assert_eq!(command(&p, false), Some(vec![s("shutdown"), "now".into()]));
         assert_eq!(

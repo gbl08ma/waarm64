@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { firmwareFiles } from '../web/app/firmware-files.ts';
-import { agentCredentials, agentFiles } from '../web/app/guest-agent.ts';
+import { AGENT_OPENRC_FILE, agentCredentials, agentFiles, agentInstaller } from '../web/app/guest-agent.ts';
 import { netCredentials } from '../web/app/guest-net.ts';
 import { swapCredentials } from '../web/app/guest-swap.ts';
 import { OEM_STRINGS_FILE, oemStrings } from '../web/app/guest-unit.ts';
@@ -38,7 +38,9 @@ function before(c: Case) {
     { name: 'systemd.unit-dropin.sshd-vsock.socket~waarm64-no-issue', data: '[Socket]\nExecStartPost=\nExecStopPre=\n' },
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
-  return machine.firmware ? [...credentialFiles(credentials), ...oem, ...(agentBytes ? agentFiles(agentBytes) : [])] : undefined;
+  // Since: the agent's OpenRC installer beside its binary (DEMO loop 2: a guest without systemd, docs/devices.md).
+  const agent = agentBytes ? [{ name: AGENT_OPENRC_FILE, data: agentInstaller() }, ...agentFiles(agentBytes)] : [];
+  return machine.firmware ? [...credentialFiles(credentials), ...oem, ...agent] : undefined;
 }
 
 const disks = (c: Case): StartDisk[] => [

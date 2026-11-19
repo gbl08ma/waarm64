@@ -8,9 +8,17 @@
 //!   keeps the address where the gateway's lease is the same (open connections live on), and the gateway's NAK of an
 //!   address it doesn't hold sends the client to ask afresh at once.
 //! - **NetworkManager** (running: `/run/NetworkManager`; `nmcli`): `nmcli device connect <link>` for each.
+//! - Else, card by card, the DHCP clients that run without a manager (Alpine's, through ifupdown: decision 14 of
+//!   DEMO-KICKOFF.md), found among the processes (`/proc/<pid>/cmdline`):
+//!   - **udhcpc** (busybox's) for the card (its `-i`, else `eth0`, its default): SIGUSR1, busybox's "renew": a request
+//!     for its lease to the server it had, a NAK (or no answer, after three) and it asks afresh.
+//!   - **dhcpcd** running (any process of that name: one for every card, or the card's own): `dhcpcd -n <link>`, its
+//!     rebind (the configuration read again and the lease asked for as at a reboot, an INIT-REBOOT's request, else a
+//!     discover): unlike `-N` (renew) it also leaves an IPv4LL fallback, a template's made with no network.
 //!
 //! The links are the network cards (`/sys/class/net/<name>` with a `device`: not `lo`, bridges, tunnels). The tool
-//! runs in a forked child whose end the root process's loop hears on its pidfd; LEASED answers (`status`).
+//! runs (and the signal is sent) in a forked child whose end the root process's loop hears on its pidfd; LEASED
+//! answers (`status`).
 
 use crate::prelude::*;
 use rustix::fd::OwnedFd;
@@ -34,7 +42,10 @@ pub struct Paths {
     pub busctl: Vec<String>,
     pub nm: String,
     pub nmcli: Vec<String>,
+    pub dhcpcd: Vec<String>,
     pub net: String,
+    /// Where the processes are (udhcpc's and dhcpcd's are found there).
+    pub proc: String,
 }
 
 impl Default for Paths {
@@ -49,7 +60,9 @@ impl Default for Paths {
             busctl: bins("busctl"),
             nm: "/run/NetworkManager".into(),
             nmcli: bins("nmcli"),
+            dhcpcd: bins("dhcpcd"),
             net: "/sys/class/net".into(),
+            proc: "/proc".into(),
         }
     }
 }
@@ -105,8 +118,94 @@ fn found(list: &[String]) -> Option<&String> {
         .find(|p| rustix::fs::access(p.as_str(), rustix::fs::Access::EXEC_OK).is_ok())
 }
 
-/// The commands that renew the cards' leases with the network manager that runs here; None if none the agent knows.
-pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Vec<String>>> {
+/// One thing the child does: a program run (its argv, the first its path), or a signal sent.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Step {
+    Run(Vec<String>),
+    Signal(Pid, Signal),
+}
+
+/// A process's argv (`/proc/<pid>/cmdline`: NUL-separated), its program's name first (the path's last part); a
+/// busybox applet run as `busybox <applet>` is named by its applet.
+fn argv_of(proc: &str, pid: &str) -> Option<Vec<String>> {
+    let raw = crate::rt::read_file(format!("{proc}/{pid}/cmdline")).ok()?;
+    let mut args: Vec<String> = raw
+        .split(|&b| b == 0)
+        .map(|a| String::from_utf8_lossy(a).into_owned())
+        .collect();
+    if raw.last() == Some(&0) {
+        args.pop();
+    }
+    let name = |a: &str| a.rsplit('/').next().unwrap_or("").to_owned();
+    let first = name(args.first()?);
+    if first == "busybox" && args.len() > 1 {
+        args.remove(0);
+    }
+    args[0] = name(&args[0]);
+    Some(args)
+}
+
+/// The processes: each one's pid, its name (`comm`: the program's, which a rewritten argv keeps) and argv (`argv_of`).
+fn processes(proc: &str) -> Vec<(Pid, String, Vec<String>)> {
+    let Ok(pids) = crate::rt::dir_names(proc) else {
+        return Vec::new();
+    };
+    pids.iter()
+        .filter(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit()))
+        .filter_map(|p| {
+            let comm = crate::rt::read_text(format!("{proc}/{p}/comm")).unwrap_or_default();
+            Some((
+                Pid::from_raw(p.parse().ok()?)?,
+                comm.trim_end().to_owned(),
+                argv_of(proc, p)?,
+            ))
+        })
+        .collect()
+}
+
+/// The options of busybox's udhcpc that take a value (its getopt string), the interface's (`i`) among them.
+const UDHCPC_VALUED: &[u8] = b"VHhFipsrTtAOxB";
+
+/// The interface a udhcpc's arguments (past its name) give it: `-i <if>`, `-i<if>` (also at a cluster's end, `-bRi
+/// <if>`), `--interface <if>`, `--interface=<if>`; else busybox's default, `eth0`.
+pub fn udhcpc_interface(args: &[String]) -> String {
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--" {
+            break;
+        }
+        if let Some(long) = a.strip_prefix("--") {
+            match long.split_once('=') {
+                Some(("interface", v)) => return v.to_owned(),
+                None if long == "interface" => return it.next().cloned().unwrap_or_default(),
+                _ => {}
+            }
+            continue;
+        }
+        let Some(cluster) = a.strip_prefix('-') else {
+            continue;
+        };
+        for (k, c) in cluster.bytes().enumerate() {
+            if !UDHCPC_VALUED.contains(&c) {
+                continue;
+            }
+            let rest = &cluster[k + 1..];
+            let value = if rest.is_empty() {
+                it.next().cloned().unwrap_or_default()
+            } else {
+                rest.to_owned()
+            };
+            if c == b'i' {
+                return value;
+            }
+            break;
+        }
+    }
+    "eth0".into()
+}
+
+/// What renews the cards' leases with the network manager that runs here; None if none the agent knows.
+pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Step>> {
     let cards = cards(&p.net, macs);
     if cards.is_empty() {
         return None;
@@ -124,18 +223,20 @@ pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Vec<String>>> {
                     let idx = crate::rt::read_text(format!("{}/{n}/ifindex", p.net)).ok()?;
                     let idx = idx.trim();
                     (!idx.is_empty() && idx.bytes().all(|b| b.is_ascii_digit())).then(|| {
-                        [
-                            tool.as_str(),
-                            "call",
-                            "org.freedesktop.network1",
-                            "/org/freedesktop/network1",
-                            "org.freedesktop.network1.Manager",
-                            "RenewLink",
-                            "i",
-                            idx,
-                        ]
-                        .map(String::from)
-                        .to_vec()
+                        Step::Run(
+                            [
+                                tool.as_str(),
+                                "call",
+                                "org.freedesktop.network1",
+                                "/org/freedesktop/network1",
+                                "org.freedesktop.network1.Manager",
+                                "RenewLink",
+                                "i",
+                                idx,
+                            ]
+                            .map(String::from)
+                            .to_vec(),
+                        )
                     })
                 })
                 .collect(),
@@ -147,11 +248,32 @@ pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Vec<String>>> {
         return Some(
             cards
                 .into_iter()
-                .map(|c| vec![tool.clone(), "device".into(), "connect".into(), c])
+                .map(|c| Step::Run(vec![tool.clone(), "device".into(), "connect".into(), c]))
                 .collect(),
         );
     }
-    None
+    // The clients without a manager, card by card: the card's udhcpc, else dhcpcd's rebind where dhcpcd runs (by its
+    // name: dhcpcd rewrites its argv, "dhcpcd: [master] [ip4] [ip6]").
+    let procs = processes(&p.proc);
+    let dhcpcd = procs
+        .iter()
+        .any(|(_, comm, _)| comm == "dhcpcd")
+        .then(|| found(&p.dhcpcd))
+        .flatten();
+    let mut steps = Vec::new();
+    for card in &cards {
+        let udhcpc: Vec<Step> = procs
+            .iter()
+            .filter(|(_, _, a)| a[0] == "udhcpc" && udhcpc_interface(&a[1..]) == *card)
+            .map(|(pid, _, _)| Step::Signal(*pid, Signal::USR1))
+            .collect();
+        if !udhcpc.is_empty() {
+            steps.extend(udhcpc);
+        } else if let Some(tool) = dhcpcd {
+            steps.push(Step::Run(vec![tool.clone(), "-n".into(), card.clone()]));
+        }
+    }
+    (!steps.is_empty()).then_some(steps)
 }
 
 unsafe extern "C" {
@@ -168,10 +290,28 @@ fn cstr(s: &str) -> Vec<u8> {
 
 /// Runs `cmds` one after the other in a forked child (each in a child of its own), which exits with 0 if all did.
 pub fn spawn(cmds: &[Vec<String>]) -> Result<Job, Errno> {
+    spawn_steps(
+        &cmds
+            .iter()
+            .map(|c| Step::Run(c.clone()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Takes `steps` one after the other in a forked child (each program in a child of its own), which exits with 0 if all
+/// did (a signal: if it was sent).
+pub fn spawn_steps(steps: &[Step]) -> Result<Job, Errno> {
     // Everything the child needs, made before the fork.
-    let argvs: Vec<Vec<Vec<u8>>> = cmds
+    enum Ready {
+        Run(Vec<Vec<u8>>),
+        Signal(Pid, Signal),
+    }
+    let ready: Vec<Ready> = steps
         .iter()
-        .map(|c| c.iter().map(|a| cstr(a)).collect())
+        .map(|s| match s {
+            Step::Run(c) => Ready::Run(c.iter().map(|a| cstr(a)).collect()),
+            Step::Signal(p, sig) => Ready::Signal(*p, *sig),
+        })
         .collect();
     // SAFETY: the agent is one thread, so the child has the whole process's state in order; it never returns to the
     // parent's frames (it exits).
@@ -183,7 +323,14 @@ pub fn spawn(cmds: &[Vec<String>]) -> Result<Job, Errno> {
         let _ = rustix::process::set_parent_process_death_signal(Some(Signal::KILL));
         crate::rt::close_inherited();
         // Each of them, whatever became of the ones before (a card the manager doesn't renew fails alone).
-        let ok = argvs.iter().filter(|a| !run(a)).count() == 0;
+        let ok = ready
+            .iter()
+            .filter(|r| match r {
+                Ready::Run(a) => !run(a),
+                Ready::Signal(p, sig) => rustix::process::kill_process(*p, *sig).is_err(),
+            })
+            .count()
+            == 0;
         crate::rt::exit(if ok { 0 } else { 1 });
     }
     let pid = Pid::from_raw(pid).ok_or(Errno::INVAL)?;
@@ -251,6 +398,32 @@ pub fn done(j: Job) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_udhcpcs_interface_in_its_arguments() {
+        let i = |a: &[&str]| udhcpc_interface(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        // ifupdown-ng's and busybox ifupdown's.
+        assert_eq!(
+            i(&["-b", "-R", "-p", "/var/run/udhcpc.eth1.pid", "-i", "eth1"]),
+            "eth1"
+        );
+        assert_eq!(i(&["-i", "eth2", "-x", "hostname:a"]), "eth2");
+        assert_eq!(i(&["-ieth3"]), "eth3");
+        assert_eq!(i(&["-bRi", "eth4"]), "eth4");
+        assert_eq!(i(&["--interface=eth5"]), "eth5");
+        assert_eq!(i(&["--interface", "eth6"]), "eth6");
+        // A value with an `i` in it isn't the option (`-p/run/...pid`'s), nor is an argument past `--`.
+        assert_eq!(
+            i(&[
+                "-p/var/run/udhcpc.pid",
+                "-s",
+                "/usr/share/udhcpc/default.script"
+            ]),
+            "eth0"
+        );
+        assert_eq!(i(&["-b", "--", "-i", "eth7"]), "eth0");
+        assert_eq!(i(&[]), "eth0", "busybox's default");
+    }
 
     /// A helper whose pidfd can't be had (descriptors run out): killed and reaped at once, not waited for (review L5).
     #[test]

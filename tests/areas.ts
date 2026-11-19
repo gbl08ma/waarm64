@@ -53,7 +53,7 @@ export const TOPIC = [
   // scripts/ci-net.sh
   'tests/net-guest.test.ts', 'tests/page-network.test.ts', 'tests/net-tailnet.test.ts', 'tests/tailcat-browser.test.ts',
   'tests/room-browser.test.ts', 'tests/page-room.test.ts', 'tests/net-tailcat.test.ts', 'tests/net-local.test.ts',
-  'tests/ts-tailnet.test.ts', 'tests/tailscale-browser.test.ts', 'tests/ts-tailcat.test.ts',
+  'tests/ts-tailnet.test.ts', 'tests/tailscale-browser.test.ts', 'tests/ts-tailcat.test.ts', 'tests/page-alpine-agent.test.ts',
   // scripts/ci-audio.sh, ci-fp.sh, ci-usb.sh, ci-deqp.sh, ci-deqp-vk.sh
   'tests/audio-browser.test.ts', 'tests/fptest.test.ts', 'tests/usb-e2e-webusb.test.ts', 'tests/usb-e2e-hid.test.ts',
   'tests/usb-guest.test.ts', 'tests/page-deqp-vk.test.ts',
@@ -165,7 +165,7 @@ export const AREAS: Record<string, Area> = {
     src: ['agent/**', 'web/agent-frame.ts', 'web/app/agent-link.ts', 'web/app/guest-*.ts', 'web/app/clipboard*.ts', 'web/app/Clipboard*.svelte', 'web/app/areas/agent-*.ts', 'web/app/areas/clipboard*.ts', 'web/app/areas/power.svelte.ts', 'images/debian-sway/**', 'tests/debian-unattended.ts'],
     heavy: ['tests/page-clipboard-ui.test.ts'],
     cargo: ['agent'],
-    push: ['ci-debian.sh'],
+    push: ['ci-debian.sh', 'ci-net.sh'], // ci-net.sh: the agent on Alpine (tests/page-alpine-agent.test.ts)
     end: ['ci-debian.sh --platform'],
   },
   folders: {

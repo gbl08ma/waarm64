@@ -1517,8 +1517,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **virtio-rtc's cross-timestamps** (READ_CROSS with the ARM virtual counter: the reading and CNTVCT at one instant,
     which the device worker would need the core's clock for) and **alarms** (an RTC alarm that wakes a suspended
     guest: `rtcwake`).
-  - **Guests without the agent** (no firmware: the direct-boot machines; no systemd 256: Alpine with OpenRC; the agent
-    turned off) lag as before. A link flap for timesyncd (a virtio-net `VIRTIO_NET_F_STATUS` down and up on restore:
+  - **Guests without the agent** (no firmware: the direct-boot machines; an OpenRC guest whose user hasn't installed
+    its service, devices.md "On OpenRC"; the agent turned off) lag as before. A link flap for timesyncd (a virtio-net `VIRTIO_NET_F_STATUS` down and up on restore:
     Debian's networkd and timesyncd re-sync at once on it; networked guests only) or the agent from a tools disk
     (plans/agent.md) would cover them.
   - **A step, not a slew:** the agent sets CLOCK_REALTIME at once (past 50 ms off). A guest with chrony or timesyncd
@@ -2062,7 +2062,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   before vcsu's first read comes back through its font's glyphs (a character the font lacks as ■): the agent could read
   each console's vcsu once at its start (the kernel keeps the characters from then on), not measured.
 - **The clean power-off, the rest of it** (devices.md "Power off and restart from the guest"): `shutdown now`, the
-  path for a guest without logind or busctl, isn't run on a guest (Debian has both; tested with a fake tool); the
+  path for a guest without logind or busctl, isn't run on a guest (Debian has both; tested with a fake tool; busybox's
+  `poweroff` after it runs on Alpine, tests/page-alpine-agent.test.ts); the
   Home page's clean stops (clean-stop.ts) run on Debian only through tests that cut them short (`answerAsks`
   clicks Power off now); their wait dialog queues behind a question already open (an alert fired just before), so
   Power off now shows only once that one is answered (review/betteragent-loop13, low). No Debian test lets the

@@ -212,7 +212,9 @@ impl Harness {
             busctl: vec![s("busctl")],
             nm: s("NetworkManager"),
             nmcli: vec![s("nmcli")],
+            dhcpcd: vec![s("dhcpcd")],
             net: s("net"),
+            proc: s("proc"),
         };
         let trim_table = s("mountinfo");
         let grow = crate::grow::Paths {
@@ -235,6 +237,8 @@ impl Harness {
             logind: s("logind"),
             busctl: vec![s("busctl")],
             shutdown: vec![s("shutdown")],
+            poweroff: vec![s("poweroff")],
+            reboot: vec![s("reboot")],
         };
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
@@ -1011,6 +1015,98 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
         h.page.next(frame::LEASED, 5000).as_deref(),
         Some(&[status::NO_CLIENT][..])
     );
+    std::fs::remove_dir(r("NetworkManager")).unwrap();
+
+    // Alpine's clients, without a manager (decision 14): found among the processes. A process in the fake /proc: its
+    // name and argv.
+    let process = |pid: u32, comm: &str, argv: &[&str]| {
+        std::fs::create_dir_all(r(&format!("proc/{pid}"))).unwrap();
+        std::fs::write(r(&format!("proc/{pid}/comm")), format!("{comm}\n")).unwrap();
+        let mut cmdline = argv.join("\0");
+        cmdline.push('\0');
+        std::fs::write(r(&format!("proc/{pid}/cmdline")), cmdline).unwrap();
+    };
+    // dhcpcd running (its argv rewritten, as dhcpcd does: found by its name) and its tool there: a rebind of each card.
+    std::fs::create_dir(r("proc")).unwrap();
+    process(1, "init", &["/sbin/init"]);
+    process(400, "dhcpcd", &["dhcpcd: [master] [ip4] [ip6]"]);
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::NO_CLIENT][..]),
+        "dhcpcd without its tool"
+    );
+    tool("dhcpcd", 0);
+    std::fs::remove_file(r("calls")).unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    assert_eq!(calls(), "-n enp0s1\n-n eth1\n");
+    // udhcpc for a card (ifupdown's arguments): SIGUSR1, busybox's renew, to that process; dhcpcd's rebind for the other.
+    // The process is a real one (a shell that says what it got) behind a fake /proc entry.
+    let got = r("usr1");
+    let mut child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "trap 'echo usr1 > {}; exit 0' USR1; while :; do sleep 0.05; done",
+            got.display()
+        ))
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200)); // its trap set
+    process(
+        child.id(),
+        "udhcpc",
+        &[
+            "/sbin/udhcpc",
+            "-b",
+            "-R",
+            "-p",
+            "/var/run/udhcpc.enp0s1.pid",
+            "-i",
+            "enp0s1",
+            "-x",
+            "hostname:alpine",
+        ],
+    );
+    std::fs::remove_file(r("calls")).unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    assert!(child.wait().unwrap().success(), "udhcpc got SIGUSR1");
+    assert_eq!(std::fs::read_to_string(&got).unwrap(), "usr1\n");
+    assert_eq!(calls(), "-n eth1\n", "dhcpcd for the card without a udhcpc");
+    std::fs::remove_dir_all(r(&format!("proc/{}", child.id()))).unwrap();
+    // udhcpc alone, for a card of the page's: its signal, nothing run; for a card the page didn't connect: none.
+    std::fs::remove_dir_all(r("proc/400")).unwrap();
+    std::fs::remove_file(r("calls")).unwrap();
+    let mut child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("trap 'exit 0' USR1; while :; do sleep 0.05; done")
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    process(child.id(), "busybox", &["busybox", "udhcpc", "-bRienp0s1"]);
+    h.page.send(frame::LEASE, &[1, 0x52, 0x54, 0, 0, 0, 1]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::NO_CLIENT][..]),
+        "eth1 has no client"
+    );
+    h.page.send(frame::LEASE, &[1, 0x52, 0x54, 0, 0, 0, 0]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    assert!(
+        child.wait().unwrap().success(),
+        "busybox's udhcpc got SIGUSR1"
+    );
+    assert_eq!(calls(), "", "nothing run");
 }
 
 /// The tests' foreground console: text, 2 rows of 4 columns.

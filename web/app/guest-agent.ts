@@ -2,7 +2,10 @@
 // a `firmware` machine with the agent on the binary (agent/, `images/build.sh agent`) as fw_cfg files
 // `opt/waarm64/agent.000`, `.001`, …, and a unit (web/app/guest-unit.ts: SMBIOS credentials, systemd 256+) that copies it into /run and
 // runs it as root; the agent connects to the page over the machine's vsock (web/vsock-device.ts `AGENT_PORT`). Nothing
-// is installed: a boot without the agent has no unit and no binary, and /run is gone at the next boot.
+// is installed: a boot without the agent has no unit and no binary, and /run is gone at the next boot. A guest with
+// OpenRC (Alpine) has no such path: nothing in it reads fw_cfg, SMBIOS or credentials at boot, so its service
+// (`agentOpenrc`) is in the image (ours: images/, docs/images.md) or installed once by the user from fw_cfg
+// (`AGENT_OPENRC_FILE`, `agentInstaller`), and reads the binary from fw_cfg at each start as the unit does.
 
 import { guestUnit } from './guest-unit.ts';
 import type { Credential } from './machine.ts';
@@ -150,3 +153,96 @@ export const agentCredentials = (description: string): Credential[] =>
     wantedBy: 'multi-user.target',
     service: AGENT_SERVICE,
   });
+
+/**
+ * The OpenRC installer's fw_cfg file, given beside the binary: a POSIX sh script that installs the agent's service on a
+ * guest with OpenRC (Alpine) once, run as root (`agentInstaller`).
+ */
+export const AGENT_OPENRC_FILE = 'opt/waarm64/openrc';
+
+/** The service's name on OpenRC (`/etc/init.d/<name>`). */
+export const AGENT_OPENRC_NAME = 'waarm64-agent';
+
+/**
+ * The agent's OpenRC service (`/etc/init.d/waarm64-agent`): what the systemd unit does (`agentScript`,
+ * `AGENT_SERVICE`) as far as OpenRC has it. At each start the binary out of fw_cfg (`qemu_fw_cfg` loaded first: Alpine's
+ * linux-virt has it as a module) into a tmpfs of its own at /run/waarm64 (mounted `exec`, gone when it stops), then run
+ * under supervise-daemon: respawned 5 s after a crash, at most 5 times in 10 minutes (the unit's start limit), low
+ * priority (nice 10) and first to go when the guest runs out (`oom_score_adj` 500), its memory capped at 32 MiB where
+ * OpenRC has cgroups v2 (`rc_cgroup_settings`; a cap for a bug, not a budget). Not sandboxed: OpenRC has no namespaces
+ * of its own, and the agent is root as under systemd. Without the machine's binary (the agent off, another
+ * hypervisor) it says so and runs nothing, so the service may stay in an image that boots elsewhere. Its messages go to
+ * /var/log/waarm64-agent.log (the journal's, on systemd).
+ */
+export function agentOpenrc(): string {
+  return `#!/sbin/openrc-run
+# From waarm64: the machine's guest agent (docs/devices.md, "The guest's agent"), at every boot while the machine gives
+# it. The machine gives the agent's binary as fw_cfg files, its gzip in pieces of a page; it runs from /run/waarm64, a
+# tmpfs of the service's own, gone when it stops. A machine without it (the agent off, another hypervisor): nothing runs.
+description="waarm64's guest agent: the clock, the clipboard and the screen's size shared with the page"
+supervisor=supervise-daemon
+command=/run/waarm64/start
+respawn_delay=5
+respawn_max=5
+respawn_period=600
+error_log=/var/log/waarm64-agent.log
+rc_cgroup_settings="memory.max 33554432"
+fw=/sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}
+
+depend() {
+	need localmount
+	after modules hwdrivers
+}
+
+start() {
+	modprobe -q qemu_fw_cfg 2>/dev/null
+	modprobe -q vmw_vsock_virtio_transport 2>/dev/null
+	if [ ! -r "$fw.000/raw" ]; then
+		einfo "The machine gives no agent: not started"
+		return 0
+	fi
+	mkdir -p /run/waarm64
+	mountpoint -q /run/waarm64 || mount -t tmpfs -o mode=0700,size=16m,nosuid,nodev waarm64 /run/waarm64 || return 1
+	if ! cat "$fw".[0-9][0-9][0-9]/raw | gzip -dc > /run/waarm64/agent; then
+		eerror "Can't read the agent from the machine"
+		umount /run/waarm64
+		return 1
+	fi
+	printf '#!/bin/sh\\necho 500 > /proc/self/oom_score_adj\\nexec nice -n 10 /run/waarm64/agent\\n' > /run/waarm64/start
+	chmod 0500 /run/waarm64/agent /run/waarm64/start
+	default_start
+}
+
+stop() {
+	mountpoint -q /run/waarm64 || return 0
+	default_stop
+	umount /run/waarm64
+}
+`;
+}
+
+/**
+ * The installer the machine gives as `AGENT_OPENRC_FILE` (docs/devices.md "The guest's agent", "On OpenRC"): run once
+ * as root on the guest,
+ * `modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/openrc/raw`, it writes the service
+ * (`agentOpenrc`), adds it to the default runlevel and starts it (again: an update). What it writes is the service
+ * alone: the binary comes from the machine at each start.
+ */
+export function agentInstaller(): string {
+  return `# From waarm64: installs the guest agent's OpenRC service (docs/devices.md, "The guest's agent"). Run it once, as root:
+#   modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/${AGENT_OPENRC_FILE}/raw
+# It writes /etc/init.d/${AGENT_OPENRC_NAME}, adds it to the default runlevel and starts it. The agent itself isn't
+# installed: the service reads it from the machine at each start (a machine without it: nothing runs). To remove it:
+#   rc-update del ${AGENT_OPENRC_NAME}; rm /etc/init.d/${AGENT_OPENRC_NAME}
+set -e
+if [ "$(id -u)" != 0 ]; then echo "waarm64: run it as root" >&2; exit 1; fi
+if ! command -v openrc-run > /dev/null; then echo "waarm64: no OpenRC here (a guest with systemd gets the agent without this)" >&2; exit 1; fi
+cat > /etc/init.d/${AGENT_OPENRC_NAME}.new << 'WAARM64_EOF'
+${agentOpenrc()}WAARM64_EOF
+chmod 0755 /etc/init.d/${AGENT_OPENRC_NAME}.new
+mv /etc/init.d/${AGENT_OPENRC_NAME}.new /etc/init.d/${AGENT_OPENRC_NAME}
+rc-update add ${AGENT_OPENRC_NAME} default
+rc-service ${AGENT_OPENRC_NAME} restart
+echo "waarm64: the agent's service is installed and started"
+`;
+}

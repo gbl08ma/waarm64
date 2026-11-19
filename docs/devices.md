@@ -139,7 +139,7 @@ COPY's stale screen); a connection's end and the run's (the link's `close`) sett
 take down what the page shows the agent can do (the storage bar's trim, Power off's clean shutdown).
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 203,552 bytes, its gzip 120,101, 2026-11-15).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 207,848 bytes, its gzip 122,647, 2026-11-19).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: the build's gzip (an ELF file a server decoded is gzipped), or
 nothing) and hands it to the guest as the fw_cfg files **`opt/waarm64/agent.000`**, `.001`, … (its gzip in pieces of
 4 KiB: `agentFiles`), with a unit as SMBIOS credentials
@@ -161,6 +161,29 @@ sets), …) with the capabilities it needs: `CAP_SYS_TIME` for the clock, `CAP_S
 `CAP_SYS_TTY_CONFIG` for the consoles' keymap (KEYMAP's `loadkeys`: KDSKBENT), `CAP_SYS_BOOT` for POWER's request
 (logind grants a power-off to a caller that has it; else polkit decides, and a guest may have none), `CAP_SYS_RESOURCE`
 for GROW's ext4 resize ("A disk grown" below); no DAC override.
+
+**On OpenRC** (Alpine: DEMO-KICKOFF.md decision 14, for every Alpine user). Nothing in a stock Alpine reads what the
+machine gives at boot: OpenRC has no credentials or generators, nothing reads fw_cfg or SMBIOS, the kernel's command
+line comes from the image's own loader (UEFI), and tiny-cloud (the cloud images') reads a NoCloud seed at the first
+boot only (and the demo's image has none). So the service is on the guest's disk: **in our images** (`images/`, the
+`alpine-demo` image: docs/images.md), and **for an image of the user's, installed once** from what the machine gives
+beside the binary, the fw_cfg file **`opt/waarm64/openrc`** (`AGENT_OPENRC_FILE`, `agentInstaller`), run as root:
+`modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/openrc/raw`. It writes
+`/etc/init.d/waarm64-agent` (`agentOpenrc`), adds it to the default runlevel and (re)starts it; removing it is
+`rc-update del waarm64-agent; rm /etc/init.d/waarm64-agent`. What is installed is the service alone: at each start it
+loads `qemu_fw_cfg` (a module in Alpine's linux-virt) and the vsock transport, copies the pieces into a tmpfs of its
+own at `/run/waarm64` (mode 0700, `exec`, unmounted at its stop) and runs the agent under supervise-daemon through a
+two-line wrapper (`oom_score_adj` 500, `nice -n 10`): respawned 5 s after a crash, at most 5 times in 10 minutes, its
+memory capped at 32 MiB where OpenRC has cgroups v2 (`rc_cgroup_settings`), its messages in
+`/var/log/waarm64-agent.log`. A machine without the binary (the agent off, another hypervisor): it says so and runs
+nothing, so an image keeps the service wherever it boots. Not sandboxed: OpenRC has none; the agent is root as under
+systemd. The agent's HELLO marks the machine up (`readiness`): a guest whose root is logged in on the console shows no
+login prompt, and OpenRC sends no READY=1. What needs logind stays off there (the session children follow logind's
+seats); POWER takes busybox's `poweroff` or `reboot` (Alpine has no `shutdown`). Tested on the page
+(`tests/page-alpine-agent.test.ts`, ci-net.sh, ~2 min): Alpine's cloud image unmodified, the installer run, the
+machine `running` only at the agent's HELLO (`?ready=guest`), then a template with a clock months old restored in a
+fresh profile: the clock set, the lease renewed through dhcpcd and then udhcpc, `apk` over TLS (a CA of the test's)
+through the local helper, a power-off.
 
 **Its connection** (`agent/src/vsock.rs`: `struct sockaddr_vm` of its own, which rustix lacks): a stream to the host's
 CID 2 on `AGENT_PORT` (8574), blocking. When it ends (the page's reset, a restore's transport reset, the page gone) the
@@ -363,13 +386,20 @@ the guest's network manager through its own tool, where both are there: systemd-
 `/run/systemd/netif/links`) through `busctl call org.freedesktop.network1 … RenewLink i <ifindex>` for each of those
 cards (`/sys/class/net/<name>` with a `device`, its `address` one of LEASE's; each tried, past one that fails), what `networkctl renew` calls (networkctl resolves a link over netlink, even an index, which the unit's
 `RestrictAddressFamilies` refuses: seen on Debian 13), or NetworkManager (`/run/NetworkManager`) through `nmcli
-device connect <name>`, in a forked child polled by its pidfd; LEASED says what came of it. A renewal keeps an address
+device connect <name>`; else, card by card, the DHCP clients that run without a manager (Alpine's, from ifupdown),
+found among the processes: the card's **udhcpc** (busybox's; its `-i`, else `eth0`) gets SIGUSR1, busybox's renew (a
+request to the server it had; a NAK, or three unanswered, and it asks afresh), else where **dhcpcd** runs (by its
+name: it rewrites its argv) `dhcpcd -n <name>`, its rebind (an INIT-REBOOT request, else a discover; unlike `-N` it
+also leaves the IPv4LL fallback a template made offline holds). All in a forked child polled by its pidfd; LEASED says
+what came of it. A renewal keeps an address
 that is still right (open connections live on), and the gateway's NAK of one it doesn't hold has the client ask afresh.
 Where the agent can't (none within 20 s, no `CAP.LEASE`, LEASED not 0, no answer in 60 s), each connected card's link
 flaps instead: the run's link port to its device (`Run.netLinks`, `{type: 'flap'}`) → `FLAP_MS`, 7 s down (net
 below). networkd's DHCP DUID stays the one its start read (a template's old machine id). Tests: the root loop (fake
 busctl, nmcli), the link, `LeaseActions` with fakes, `NetSettled` (tests/net-live.test.ts), the flap on asking
-(tests/net-path.test.ts), and on Debian (`tests/page-template.test.ts`) the agent's renewal through busctl.
+(tests/net-path.test.ts), on Debian (`tests/page-template.test.ts`) the agent's renewal through busctl, and on Alpine
+(`tests/page-alpine-agent.test.ts`, ci-net.sh) through dhcpcd and udhcpc after a template's restore. The page says what
+became of a restore's leases as `body[data-lease]` (`agent`, `flap`, `none`, `gone`: the tests' waits).
 
 **The desktop's state** (DESKTOP; the user's decision, 2026-11-13: for the tests only): the session child says when a
 graphical session is up for seat0's active user: Wayland's once its connection to a compositor has the globals (the
@@ -592,7 +622,7 @@ agent says `CAP.POWER`, ask the guest to power off or reboot itself (POWER: 0 of
 and ask nothing first. The root asks systemd-logind (running: `/run/systemd/seats`) through `busctl`, as `systemctl
 poweroff` does: `org.freedesktop.login1.Manager.PowerOffWithFlags` (`RebootWithFlags`) with flags 1
 (`SD_LOGIND_ROOT_CHECK_INHIBITORS`), so a block inhibitor refuses it even to root and a delay inhibitor holds it for
-its time; without logind or busctl, `shutdown now` (`shutdown -r now`) where the guest has it. Not the `reboot(2)` system call
+its time; without logind or busctl, `shutdown now` (`shutdown -r now`) where the guest has it, else busybox's `poweroff` (`reboot`: Alpine, "On OpenRC" above). Not the `reboot(2)` system call
 (which `CAP_SYS_BOOT` allows too): it skips the clean shutdown (no programs stopped, no filesystems unmounted), and
 on the systemd 256+ guests the agent runs on, `shutdown` reaches systemd without logind anyway (the user's decision,
 2026-11-14). The tool runs in a forked

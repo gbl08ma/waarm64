@@ -18,7 +18,7 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
 - **The fork, loop 7 done** (waarm64-demonet `6de5a2b`, pushed): a network per WebSocket, per-IP budgets, the TOML
   file with reload and `--check`, close codes 4001/4003/4008–4010; fails closed until loop 8 (running beside).
 - **Loop 0** (pushed): `bench/demo/` and the gap, [bench/demo/REPORT.md](bench/demo/REPORT.md) "DEMO loop 0".
-- **Loop 1, the spike, done** (2026-11-19, committed unpushed): an Alpine template restored in a fresh profile,
+- **Loop 1, the spike, done** (2026-11-19, pushed f29b3dd5): an Alpine template restored in a fresh profile,
   offline, through a modelled 100 Mbit/s / 20 ms link: **click → a command answered in ~3.4 s, ~32 MB on the wire**
   (page 2.5 MiB brotli'd, snapshot 24.0 MiB, disk 4.0 MiB), with the image booted with `init_on_free=1` and the
   guest's caches dropped before the snapshot (REPORT.md "DEMO loop 1"). Code: a chunked image's identity is its
@@ -26,22 +26,31 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   `restoreFirst` on the record, machines.md §6.1), a machine's first restore fills its fresh overlays, one shared
   `pieces/` (`tools/chunk-image.ts --pieces`, `_headers`). The harness: target `waarm64-template` (`DEMO_LINK`,
   `DEMO_TEMPLATE`), `bench/demo/make-template.ts`, `spike-image.sh`, `site.ts`, `snapinfo.ts`, `ramcodec.ts`.
+- **Loop 2, the agent on Alpine, done** (2026-11-19, committed unpushed): an OpenRC service for the agent
+  (`web/app/guest-agent.ts` `agentOpenrc`), reaching a user's own Alpine through a one-command installer the machine
+  gives over fw_cfg (`opt/waarm64/openrc`: `modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/openrc/raw`),
+  since nothing stock on Alpine reads fw_cfg/SMBIOS/credentials at boot (devices.md "On OpenRC"); LEASE renews udhcpc
+  (SIGUSR1) and dhcpcd (`dhcpcd -n`) found among the processes (`agent/src/lease.rs`); POWER falls back to busybox's
+  `poweroff`/`reboot`; `body[data-lease]` says what a restore's lease renewal did. The clock and "ready" needed no new
+  code: the agent's HELLO sets the clock and marks the machine up. Test: `tests/page-alpine-agent.test.ts` (ci-net.sh,
+  ~2 min).
 
-## Next: loop 2, the guest agent on Alpine
+## Next: loop 3, the alpine-demo image
 
-Decision 14: an OpenRC service for the agent (from fw_cfg or the image), udhcpc (and dhcpcd: the cloud image runs
-dhcpcd, not udhcpc) in `agent/src/lease.rs`, the clock set at a restore; tested with a template restored with an old
-clock (`apk` over TLS works after it). What loop 1 leaves for it and later loops:
-- The spike's template has no agent: the restored guest's clock is the template's (the page's `clocksync` needs the
-  agent), and its lease is whatever dhcpcd got at the template's boot (IPv4LL with no connection).
-- **For loop 3's image (measured, do these):** `init_on_free=1` on the kernel's command line (free memory is zero in
-  the snapshot: −7.7 MB of LZ4), Limine's `timeout: 0` (the spike image's boot is 23 s to the prompt, 10 s less), no
-  tiny-cloud, sshd, chronyd. **For loop 5's builder:** drop the guest's caches before the template's snapshot (−7 MB;
-  costs one more 2 MiB piece by the first command). `bench/demo/make-template.ts` is the builder's seed.
+`images/build.sh alpine-demo` (decision 14, the user's barebones list). What loops 1–2 leave for it:
+- **The agent's service baked in:** `/etc/init.d/waarm64-agent` with `agentOpenrc()`'s text (web/app/guest-agent.ts; e.g.
+  `node -e` importing it, or a small tool, on the host before Podman) and its symlink in `/etc/runlevels/default/`. It
+  runs nothing where the machine gives no agent. **udhcpc** as the client (no dhcpcd package: ifupdown-ng then runs
+  udhcpc), which LEASE renews by SIGUSR1 (seen working in the test: busybox 1.37 logs "sending renew to server").
+- **Measured in loop 1, do these:** `init_on_free=1` on the kernel's command line (−7.7 MB of LZ4), Limine's
+  `timeout: 0` (−10 s of boot), no tiny-cloud, sshd, chronyd. **For loop 5's builder:** drop the guest's caches
+  before the template's snapshot (−7 MB). `bench/demo/make-template.ts` is the builder's seed; with the agent in the
+  image the template's boot reaches `running` (no more `booting` with root logged in), and a restore sets the clock.
+- `tests/page-alpine-agent.test.ts` is the seed for loop 5's ci-machines test (it makes a template on the page and
+  restores it in a fresh profile through `machineFromTemplate`; its card on the local helper).
 - **The next biggest cut (not built, a format change):** the template's RAM frames packed with deflate (the
   browser's `DecompressionStream('deflate-raw')`, no dependency; the core inflates already) instead of LZ4: the
-  snapshot's RAM 25.0 → 16.0 MB, the whole download ~32 → ~23 MB. A new frame codec the reader takes beside LZ4
-  (republished templates only); loop 3 or 5 should build it (REPORT.md "What would close the gap").
+  snapshot's RAM 25.0 → 16.0 MB, the whole download ~32 → ~23 MB (REPORT.md "What would close the gap"); loop 3 or 5.
 - The store's click (loop 6) calls `machineFromUrls` (web/app/template.ts) as the `?hooks` hook does; the definition
   format's `demo.snapshot` (loop 4) replaces the hook's second argument. The site's layout is decision 17's: the
   publish tool (loop 4) writes it with `chunk-image.ts --pieces`.
@@ -58,3 +67,10 @@ None.
   A machine record may carry `restoreFirst` (a kept snapshot its first start restores without asking). A machine's
   first restore writes into its never-written overlays rather than forking beside them (only then: a restore the
   user asks for leaves their overlays alone).
+- **Loop 2's engineering calls:** the agent reaches a stock Alpine by a one-command install (the fw_cfg file
+  `opt/waarm64/openrc`, given beside the binary on every machine with the agent: ~3 KB more fw_cfg, a guest-visible
+  change) rather than zero-touch, which no stock Alpine mechanism allows (tiny-cloud's NoCloud seed runs at a first
+  boot only, cloud images only); our images bake the service. Not sandboxed on OpenRC (no namespaces there); capped by
+  OpenRC's cgroups v2 where it has them. dhcpcd is renewed with `-n` (rebind), not `-N`, so a template's IPv4LL
+  fallback is left too. The page shows nothing new to a user: the install command is in docs/devices.md only (whether
+  the page should say it, e.g. in Settings beside "Run the guest agent", is the user's call).

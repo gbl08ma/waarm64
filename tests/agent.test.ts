@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
@@ -26,7 +26,7 @@ import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../w
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
 import { contentHash, HTML, IMAGE_CAP, imageHash, isPasteChord, onMac, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard-host.ts';
 import { REQUEST_WAIT } from '../web/app/clipboard-transfer.ts';
-import { AGENT_FILE, AGENT_PIECE, agentBinary, agentCredentials, agentFiles, agentScript } from '../web/app/guest-agent.ts';
+import { AGENT_FILE, AGENT_OPENRC_NAME, AGENT_PIECE, agentBinary, agentCredentials, agentFiles, agentInstaller, agentOpenrc, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
 import { words } from './words.ts';
@@ -304,6 +304,79 @@ test("the guest agent's script: the binary out of fw_cfg (its pieces in order), 
     assert.equal(readFileSync(at('run/waarm64/agent'), 'utf8'), program, 'gunzipped');
     assert.equal(execFileSync('stat', ['-c', '%a', at('run/waarm64/agent')]).toString().trim(), '500');
     assert.doesNotMatch(agentScript(), /udevadm/, 'no device to wait for: the agent connects by itself');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the agent on OpenRC: the installer writes the service, adds it to the default runlevel and starts it; the service reads the binary from fw_cfg into its tmpfs and starts it under supervise-daemon, or nothing without the files", { skip: !hasDash && 'no dash' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'waarm64-openrc-'));
+  try {
+    const at = (p: string) => join(root, p);
+    const moved = (sh: string) => sh.replace(/(?<=[ =>])\/(sys|run|etc|var|proc)\//g, `${root}/$1/`);
+    mkdirSync(at('bin'));
+    mkdirSync(at('etc/init.d'), { recursive: true });
+    // The guest's tools as stand-ins that say how they were called.
+    const tool = (name: string, body = '') => {
+      writeFileSync(at(`bin/${name}`), `#!/bin/sh\necho "${name} $*" >> ${at('calls')}\n${body}\n`);
+      chmodSync(at(`bin/${name}`), 0o755);
+    };
+    tool('id', 'echo 0');
+    tool('openrc-run');
+    tool('rc-update');
+    tool('rc-service');
+    const env = { PATH: `${at('bin')}:/usr/bin:/bin` };
+    const calls = () => (existsSync(at('calls')) ? readFileSync(at('calls'), 'utf8') : '');
+    writeFileSync(at('install.sh'), moved(agentInstaller()));
+    assert.match(execFileSync('dash', [at('install.sh')], { env }).toString(), /installed and started/);
+    const service = at(`etc/init.d/${AGENT_OPENRC_NAME}`);
+    assert.equal(readFileSync(service, 'utf8'), moved(agentOpenrc()), 'the service as it is');
+    assert.equal(execFileSync('stat', ['-c', '%a', service]).toString().trim(), '755');
+    assert.equal(calls(), `id -u\nrc-update add ${AGENT_OPENRC_NAME} default\nrc-service ${AGENT_OPENRC_NAME} restart\n`);
+    assert.match(agentOpenrc(), /^#!\/sbin\/openrc-run\n/);
+    assert.match(agentOpenrc(), /^supervisor=supervise-daemon$/m);
+    assert.match(agentOpenrc(), /^respawn_delay=5\nrespawn_max=5\nrespawn_period=600$/m, "the unit's start limit");
+    // Not root, or no OpenRC: refused, nothing written.
+    rmSync(at('calls'));
+    tool('id', 'echo 1000');
+    assert.throws(() => execFileSync('dash', [at('install.sh')], { env, stdio: 'pipe' }), /run it as root/);
+    tool('id', 'echo 0');
+    rmSync(at('bin/openrc-run'));
+    assert.throws(() => execFileSync('dash', [at('install.sh')], { env, stdio: 'pipe' }), /no OpenRC here/);
+    assert.equal(calls(), 'id -u\nid -u\n');
+
+    // The service's start and stop, with openrc-run's functions as stand-ins (default_start: supervise-daemon's start of
+    // `command`, run here in its place).
+    rmSync(at('calls'));
+    for (const t of ['modprobe', 'mount', 'umount']) tool(t);
+    tool('mountpoint', `[ -e ${at('mounted')} ]`);
+    tool('nice', 'shift 2; exec "$@"');
+    mkdirSync(at('proc/self'), { recursive: true });
+    const openrc = (fn: string) => execFileSync('dash', ['-c', `einfo() { echo "einfo $*"; }; eerror() { echo "eerror $*"; }
+default_start() { echo "default_start $supervisor $command"; touch ${at('mounted')}; "$command"; }
+default_stop() { echo default_stop; }
+. ${service}; ${fn}`], { env, stdio: 'pipe' }).toString();
+    // No fw_cfg files: said, nothing mounted or started.
+    assert.equal(openrc('start'), 'einfo The machine gives no agent: not started\n');
+    assert.equal(calls(), 'modprobe -q qemu_fw_cfg\nmodprobe -q vmw_vsock_virtio_transport\n');
+    assert.equal(openrc('stop'), '', 'nothing to stop');
+    // The files: the binary gunzipped into the tmpfs, executable for root only, started through the wrapper (its
+    // oom_score_adj, nice 10).
+    rmSync(at('calls'));
+    const program = `#!/bin/sh\necho "agent ran"\n# ${randomBytes(3 * AGENT_PIECE).toString('base64')}\n`;
+    for (const f of agentFiles(gzipSync(program))) {
+      const dir = at(`sys/firmware/qemu_fw_cfg/by_name/${f.name}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'raw'), f.data);
+    }
+    assert.equal(openrc('start'), `default_start supervise-daemon ${at('run/waarm64/start')}\nagent ran\n`);
+    assert.equal(readFileSync(at('run/waarm64/agent'), 'utf8'), program, 'gunzipped');
+    assert.equal(execFileSync('stat', ['-c', '%a', at('run/waarm64/agent')]).toString().trim(), '500');
+    assert.equal(readFileSync(at('proc/self/oom_score_adj'), 'utf8'), '500\n');
+    assert.equal(calls(), `modprobe -q qemu_fw_cfg\nmodprobe -q vmw_vsock_virtio_transport\nmountpoint -q ${at('run/waarm64')}\nmount -t tmpfs -o mode=0700,size=16m,nosuid,nodev waarm64 ${at('run/waarm64')}\nnice -n 10 ${at('run/waarm64/agent')}\n`);
+    rmSync(at('calls'));
+    assert.equal(openrc('stop'), 'default_stop\n');
+    assert.equal(calls(), `mountpoint -q ${at('run/waarm64')}\numount ${at('run/waarm64')}\n`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -884,12 +884,12 @@ impl Session<'_> {
                 match lease::commands(&self.agent.lease, &macs) {
                     None => {
                         log(
-                            "lease: no network manager the agent knows (networkd, NetworkManager) with its tool",
+                            "lease: no network manager the agent knows (networkd, NetworkManager, udhcpc, dhcpcd) with its tool",
                             None,
                         );
                         self.agent.leased = Some(lease::status::NO_CLIENT);
                     }
-                    Some(cmds) => match lease::spawn(&cmds) {
+                    Some(steps) => match lease::spawn_steps(&steps) {
                         Ok(j) => self.agent.leasing = Some(j),
                         Err(e) => {
                             log("lease: fork", Some(e));
