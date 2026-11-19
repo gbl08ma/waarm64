@@ -72,15 +72,15 @@ Access-Control-Allow-Origin *; Access-Control-Expose-Headers "Content-Range, Con
 and a `handle` of `OPTIONS` there answering 204 with `Allow-Methods: GET, HEAD`, `Allow-Headers: Range`, `Max-Age:
 86400`. A Worker's static assets: `deploy/disks/_headers`.
 
-An image's identity (what its overlays and kept blocks belong to) is a chunked image's `id` (a hash of its pieces'
-hashes: it changes with the content, whatever the URL), or for a whole file its URL, size and the server's `ETag` or
-`Last-Modified`. Replacing a whole file under the same URL leaves the machines that had it with overlays that no
+An image's identity (what its overlays, kept blocks and snapshots' pins belong to) is a chunked image's `id` (a hash
+of its pieces' hashes: it changes with the content, whatever the URL or host: docs/machines.md §3.1), or for a whole
+file its URL's path, size and the server's `ETag` or `Last-Modified`. Replacing a whole file under the same URL leaves the machines that had it with overlays that no
 longer match (refused at open).
 
 ## Publishing an image
 
 ```sh
-node tools/chunk-image.ts <image> target/images/remote/<name> 2 --name "<what the page calls it>"  # manifest.json, pieces/
+node tools/chunk-image.ts <image> target/images/remote/<name> 2 --name "<what the page calls it>"  # manifest.json, pieces/ (or --pieces <site>/pieces)
 node bench/remote-disk/boot.ts <label> local::<name>/manifest.json      # a boot from it, its reads traced
 D=target/images/remote/<name>; node tools/disk-trace.ts bench/results/local/remote-disk/<label>.json $D/manifest.json $D/prefetch.json
 cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh   # vmdisks.tny.im (below)
@@ -101,6 +101,18 @@ cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh
   MB/s); the trace is the guest's, so a local run's is a remote one's. Not part of the `id`: `manifest.json` and
   `prefetch.json` are the same image, with and without it.
 - Publish the pieces before the manifests, so a manifest never names a piece that isn't there yet.
+- **One `pieces/` for the site** (the demos' layout, DEMO-KICKOFF.md decision 17): `--pieces <site>/pieces` writes the
+  pieces there and the manifest names them relative to itself (`../pieces/{hash}.bin`), so every image, template
+  snapshot and version shares one directory, and a new version costs only the pieces it changed. `<out>` ending in
+  `.json` is the manifest file itself, so a template's snapshot sits beside its image:
+  `<site>/<demo>/manifest.json` (the image), `snapshot.json` (the template snapshot, chunked the same way and fetched
+  whole: docs/machines.md §6.1), `definition.json` (its disk's `url` relative to it). `_headers` makes `/pieces/*`
+  immutable; the desktop's older `<name>/pieces/` stays until it's published again. The site's file budget counts
+  distinct pieces (deploy.sh counts the files), and a deploy still replaces the whole site: what the publish tool does
+  about both is the demos' publish loop's.
+- **A template snapshot on the wire** (bench/demo/REPORT.md "DEMO loop 1"): Alpine's at a prompt is 24–40 MB of
+  LZ4 frames, nearly all RAM; the overlay blocks a boot wrote are ~8–29 KB of it. Pieces are served as they are
+  (`.bin`, not compressed by the host), though a host's brotli would take a quarter off an LZ4 file's pieces.
 
 ## Where our images are
 

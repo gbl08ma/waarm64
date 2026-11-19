@@ -173,9 +173,9 @@ test('the URL check takes a chunked image\'s manifest, with its id as the identi
   const r = await page.evaluate(async (url) => {
     const { checkUrl } = await import('/web/app/urlcheck.ts' as string);
     const c = await checkUrl(url);
-    return { ok: c.ok, problems: c.problems, bytes: c.bytes, etag: c.etag, head: c.head?.length };
+    return { ok: c.ok, problems: c.problems, bytes: c.bytes, chunked: c.chunked, etag: c.etag, head: c.head?.length };
   }, `${base}/target/images/chunked-buildroot/manifest.json`);
   const m = JSON.parse(readFileSync(join(CHUNKED, 'manifest.json'), 'utf8')) as Manifest;
-  assert.deepEqual(r, { ok: true, problems: [], bytes: m.size, etag: m.id, head: 512 });
+  assert.deepEqual(r, { ok: true, problems: [], bytes: m.size, chunked: m.id, etag: undefined, head: 512 });
   await page.close();
 });

@@ -1,6 +1,6 @@
 // The benchmarks' and tests' calls on `window` (web/app/hooks.ts; `?displaystats`, `?snd=`, `?iostats`): the guest
 // PC sampler, the vCPU timeline, the core's heap, the serial log, the GPU worker's stall and Venus's skips, the 3D
-// screen's read-back, the disks' timers.
+// screen's read-back, the disks' timers, a machine from a template (bench/demo).
 import type { PageAudio } from '../../audio.ts';
 import type { ToGpuWorker } from '../../gpu-worker.ts';
 import type { SerialTerminal } from '../areas/serial-terminal.ts';
@@ -9,12 +9,14 @@ import type { FromWorker, ToWorker } from '../protocol.ts';
 import { benchHooks, params } from './knobs.ts';
 import type { PageMachine } from './page-machine.svelte.ts';
 import type { Replies } from './replies.ts';
+import { machineFromUrls } from '../template.ts';
 
 export function installBenchHooks(
   m: PageMachine,
   terminal: SerialTerminal,
   replies: { grabs: Replies<Grab>; worker: Replies<FromWorker> },
   audio: PageAudio,
+  openMachine: (id: string) => Promise<void>,
 ) {
   if (params.has('snd')) window.__audio = audio; // tests and measurements (?snd=stats)
   if (params.has('iostats'))
@@ -45,6 +47,12 @@ export function installBenchHooks(
     else void ask((id) => ({ type: 'timeline', on, id })).then((a) => a && (window.__timeline = a.timeline));
   };
   window.__serialLog = () => terminal.log;
+  // A demo's click before the store's page has one (bench/demo/targets.ts): a machine from a template, opened.
+  window.__waarm64FromTemplate = async (definition, snapshot) => {
+    const { machine: made } = await machineFromUrls(m.store, definition, snapshot);
+    await openMachine(made.id);
+    return made.id;
+  };
   window.__waarm64Heap = () => void ask((id) => ({ type: 'heap', id })).then((a) => a && (window.__heap = a.heap));
   window.__waarm64StallGpu = (ms) => gpu({ type: 'stall', ms });
   window.__waarm64VkSkip = (paths) => gpu({ type: 'vkskip', skip: paths });

@@ -121,6 +121,7 @@ const COMPARERS: Comparer[] = [cpus, ram, display, vulkan, cpu, adapters, usb, d
 export function describeIdentity(d: DiskIdentity): string | Msg {
   switch (d.kind) {
     case 'url':
+      if ('chunked' in d) return msg('machines:shape-diff.identity.chunked', { id: d.chunked.slice(0, 12) });
       // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a path ending in '/' names no file
       return d.path.split('/').pop() || d.path;
     case 'file':

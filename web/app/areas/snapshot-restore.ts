@@ -88,6 +88,7 @@ export class SnapshotRestore {
   readonly #c: Core;
   constructor(c: Core) {
     this.#c = c;
+    c.power.restoreFirst = (id) => this.first(id); // a machine from a template's first start
   }
 
   /** What a snapshot's disk is called, for messages. */
@@ -110,8 +111,11 @@ export class SnapshotRestore {
     return msg('snapshots:snapshot-restore.restore.otherShape', { name, machine: s.record.name, why });
   }
 
-  /** The restore's plan for the stored machine, or none (said why: another shape, or it can't be planned). */
-  async #plan(s: Stored, header: SnapshotHeader, key: string, name: string) {
+  /**
+   * The restore's plan for the stored machine, or none (said why: another shape, or it can't be planned); `fresh`: its
+   * first restore (`first`), whose never-written overlays take the forks' blocks.
+   */
+  async #plan(s: Stored, header: SnapshotHeader, key: string, name: string, fresh = false) {
     const now = await this.#c.machine.about();
     if (!now) return undefined;
     const other = await this.#otherShape(s, header, name);
@@ -137,6 +141,7 @@ export class SnapshotRestore {
           coreVersion: header.coreVersion,
         },
         now.shape,
+        { fresh },
       );
       if (!plan.refused) return plan;
       this.#c.messages.notify(
@@ -210,6 +215,43 @@ export class SnapshotRestore {
     const file = await (await opfsFile(snapshotPath(rec.machine, id))).getFile();
     const header = await readHeader(file);
     await this.#restore(new File([file], `${rec.name}.waarm64snap`), header, id, rec.name);
+  }
+
+  /**
+   * A stored machine's first start that restores kept snapshot `id` (its record's `restoreFirst`: a machine from a
+   * template, web/app/template.ts) with no question: the fresh overlays take its blocks (a fork), and the mark is
+   * cleared before the start. Called from a start (within its `exclusively`, where there is one). One that can't be
+   * restored (another shape, refused: said) boots the machine instead.
+   */
+  async first(id: string) {
+    const { machine: m, runner, terminal } = this.#c;
+    const s = m.stored;
+    const rec = await m.store.get('snapshots', id);
+    const clear = async () => {
+      const r = s && (await m.store.get('machines', s.record.id));
+      if (r?.restoreFirst) await m.store.put('machines', { ...r, restoreFirst: undefined });
+      return this.#c.power.reloadStored();
+    };
+    if (!s || rec?.machine !== s.record.id) {
+      if (await clear()) runner.start();
+      return;
+    }
+    const file = new File([await (await opfsFile(snapshotPath(rec.machine, id))).getFile()], `${rec.name}.waarm64snap`);
+    const header = await readHeader(file);
+    const plan = await this.#plan(s, header, id, rec.name, true);
+    let disks: DiskPlan[] | undefined;
+    try {
+      disks = plan && (await plan.commit(false));
+    } catch (e) {
+      this.#c.messages.notify(
+        new MsgError('snapshots:snapshot-restore.restore.failed', { name: rec.name }, { cause: e }),
+        'error',
+      );
+    }
+    if (!(await clear())) return;
+    terminal.term.reset();
+    if (disks) runner.start(file, true, disks);
+    else runner.start();
   }
 
   /** Whether a transient machine can load `header`'s snapshot: its machine, and its disk by name (said if not). */

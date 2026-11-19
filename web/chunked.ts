@@ -143,7 +143,6 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet): Source & { ma
   };
 }
 
-/** A chunked image's manifest and the image file's first `n` bytes (its first piece's: by range, or whole), with `fetch`. */
 /** Fetches and checks a chunked image's manifest; throws saying what's wrong. */
 export async function fetchManifest(url: string): Promise<Manifest> {
   const r = await fetch(url);
@@ -151,9 +150,47 @@ export async function fetchManifest(url: string): Promise<Manifest> {
   return checkManifest(await r.json());
 }
 
+/** A chunked image's manifest and the image file's first `n` bytes (its first piece's: by range, or whole), with `fetch`. */
 export async function chunkedHead(url: string, n = 32): Promise<{ manifest: Manifest; head: Uint8Array }> {
   const manifest = await fetchManifest(url);
   const p = await fetch(new URL(manifest.pieces.replace('{hash}', manifest.hashes[0]), new URL(url, globalThis.location?.href)), { headers: { Range: `bytes=0-${n - 1}` } });
   if (p.status !== 206 && p.status !== 200) throw new Error(`${url}: its first piece: ${p.status}`);
   return { manifest, head: new Uint8Array(await p.arrayBuffer()).slice(0, n) };
+}
+
+/** The SHA-256 of `b` in hex. */
+async function sha256(b: Uint8Array) {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', b as Uint8Array<ArrayBuffer>));
+  return [...d].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * A chunked file fetched whole (a template snapshot: docs/machines.md "A machine from a template"): its pieces, `at
+ * once` at a time, each checked against its hash (they are content-addressed: a piece that doesn't match is a broken
+ * copy), joined into one Blob in order. `progress` is told the bytes so far. Throws on a piece that is missing or wrong.
+ */
+export async function fetchChunked(
+  url: string,
+  o: { atOnce?: number; progress?: (done: number, total: number) => void } = {},
+): Promise<{ manifest: Manifest; blob: Blob }> {
+  const abs = new URL(url, globalThis.location?.href).href;
+  const m = await fetchManifest(abs);
+  const parts: Uint8Array[] = new Array<Uint8Array>(m.hashes.length);
+  let next = 0;
+  let done = 0;
+  const one = async () => {
+    while (next < m.hashes.length) {
+      const i = next++;
+      const r = await fetch(new URL(m.pieces.replace('{hash}', m.hashes[i]), abs));
+      if (!r.ok) throw new Error(`${url}: piece ${i}: ${r.status}`);
+      const b = new Uint8Array(await r.arrayBuffer());
+      if (b.length !== Math.min(m.piece, m.size - i * m.piece) || (await sha256(b)) !== m.hashes[i])
+        throw new Error(`${url}: piece ${i} isn't the one the manifest names`);
+      parts[i] = b;
+      done += b.length;
+      o.progress?.(done, m.size);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(o.atOnce ?? 6, m.hashes.length) }, one));
+  return { manifest: m, blob: new Blob(parts as BlobPart[]) };
 }

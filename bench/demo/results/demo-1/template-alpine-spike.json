@@ -1,0 +1,49 @@
+{
+ "made": "2026-11-19T02:41:52.491Z",
+ "image": "target/images/remote/alpine-spike.qcow2",
+ "ram": 512,
+ "cpus": 2,
+ "drop": false,
+ "settle": 5,
+ "snapshot": {
+  "bytes": 39878208,
+  "header": 5490,
+  "tags": {
+   "CORE": {
+    "frames": 2,
+    "raw": 1187881,
+    "stored": 135429
+   },
+   "DEVS": {
+    "frames": 1,
+    "raw": 1174,
+    "stored": 746
+   },
+   "RAM ": {
+    "frames": 110,
+    "raw": 91807168,
+    "stored": 39728980
+   },
+   "DISK": {
+    "frames": 4,
+    "raw": 53248,
+    "stored": 7531
+   },
+   "END ": {
+    "frames": 1,
+    "raw": 0,
+    "stored": 32
+   }
+  },
+  "pins": [
+   {
+    "slot": 7,
+    "blocks": 13,
+    "overlay": "overlays/bf87e43fc1d5",
+    "generation": 1
+   }
+  ],
+  "template": true
+ },
+ "siteBytesBoot": 57917824
+}

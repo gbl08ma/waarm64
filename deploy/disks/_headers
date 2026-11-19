@@ -1,8 +1,12 @@
 # Copied into target/disks/ by deploy.sh. CORS for any page (the page is cross-origin isolated: a response without
-# CORS doesn't reach it); pieces are named by their hash, so they never change; manifests do.
+# CORS doesn't reach it); pieces are named by their hash, so they never change; manifests do. `/pieces/` is the site's
+# one directory of pieces, shared by every image, snapshot and version (docs/remote-disks.md "Publishing an image");
+# `/:image/pieces/` the older layout, a directory per image (the desktop's, until it's published again).
 /*
   Access-Control-Allow-Origin: *
   Access-Control-Expose-Headers: Content-Length, ETag
+/pieces/*
+  Cache-Control: public, max-age=31536000, immutable
 /:image/pieces/*
   Cache-Control: public, max-age=31536000, immutable
 /*.json

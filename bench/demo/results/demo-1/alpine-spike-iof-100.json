@@ -1,0 +1,379 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "waarm64-template",
+ "system": "waarm64",
+ "what": "through one link of 100/20 (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and the spike's Alpine template (bench/demo/make-template.ts: Alpine 3.24.2's UEFI cloud image with root logged in on the serial console, bench/demo/spike-image.sh) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to the root shell",
+ "promptIs": "the restored machine running (the root shell, logged in, is where the snapshot was taken)",
+ "url": "<local>/?hooks",
+ "date": "2026-11-19T03:02:07.803Z",
+ "commit": "3c60c7e9559b",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "ready": 381,
+    "click": 381,
+    "made": 3447,
+    "prompt": 4555,
+    "command": 4825,
+    "again": 6008
+   },
+   "bytes": {
+    "total": 48827424,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10354338,
+     "localhost": 38473086
+    },
+    "prompt": 44630593,
+    "command": 44630593,
+    "kinds": {
+     "prompt": {
+      "page": 10343976,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10343976,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 2097152
+     },
+     "total": {
+      "page": 10345109,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 6291456
+     }
+    },
+    "pageBrotli": {
+     "prompt": 2603002,
+     "total": 2604094
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1385,
+     "pssMiB": 793,
+     "processes": 11,
+     "rendererPssMiB": 390
+    },
+    "prompt": {
+     "rssMiB": 1352,
+     "pssMiB": 760,
+     "processes": 11,
+     "rendererPssMiB": 357
+    },
+    "uasmMiB": 7740
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "ready": 337,
+    "click": 337,
+    "made": 3277,
+    "prompt": 4180,
+    "command": 4410,
+    "again": 5510
+   },
+   "bytes": {
+    "total": 48827424,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10354338,
+     "localhost": 38473086
+    },
+    "prompt": 44618915,
+    "command": 44630593,
+    "kinds": {
+     "prompt": {
+      "page": 10333184,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10343976,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 2097152
+     },
+     "total": {
+      "page": 10345109,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 6291456
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1390,
+     "pssMiB": 798,
+     "processes": 11,
+     "rendererPssMiB": 395
+    },
+    "prompt": {
+     "rssMiB": 1331,
+     "pssMiB": 739,
+     "processes": 11,
+     "rendererPssMiB": 338
+    },
+    "uasmMiB": 7741
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "ready": 319,
+    "click": 319,
+    "made": 3240,
+    "prompt": 4145,
+    "command": 4373,
+    "again": 5459
+   },
+   "bytes": {
+    "total": 48827424,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10354338,
+     "localhost": 38473086
+    },
+    "prompt": 44630466,
+    "command": 44630593,
+    "kinds": {
+     "prompt": {
+      "page": 10343976,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10343976,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 2097152
+     },
+     "total": {
+      "page": 10345109,
+      "meta": 4600,
+      "snapshot": 32170125,
+      "disk": 6291456
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1407,
+     "pssMiB": 814,
+     "processes": 11,
+     "rendererPssMiB": 411
+    },
+    "prompt": {
+     "rssMiB": 1336,
+     "pssMiB": 743,
+     "processes": 11,
+     "rendererPssMiB": 340
+    },
+    "uasmMiB": 7741
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "ready_ms": {
+   "median": 337,
+   "iqr": 31,
+   "n": 3,
+   "samples": [
+    381,
+    337,
+    319
+   ]
+  },
+  "click_made_ms": {
+   "median": 2940,
+   "iqr": 72.5,
+   "n": 3,
+   "samples": [
+    3066,
+    2940,
+    2921
+   ]
+  },
+  "click_prompt_ms": {
+   "median": 3843,
+   "iqr": 174,
+   "n": 3,
+   "samples": [
+    4174,
+    3843,
+    3826
+   ]
+  },
+  "click_command_ms": {
+   "median": 4073,
+   "iqr": 195,
+   "n": 3,
+   "samples": [
+    4444,
+    4073,
+    4054
+   ]
+  },
+  "again_ms": {
+   "median": 1100,
+   "iqr": 48.5,
+   "n": 3,
+   "samples": [
+    1183,
+    1100,
+    1086
+   ]
+  },
+  "prompt_ms": {
+   "median": 4180,
+   "iqr": 205,
+   "n": 3,
+   "samples": [
+    4555,
+    4180,
+    4145
+   ]
+  },
+  "command_ms": {
+   "median": 4410,
+   "iqr": 226,
+   "n": 3,
+   "samples": [
+    4825,
+    4410,
+    4373
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 42.56292915344238,
+   "iqr": 0.005568504333496094,
+   "n": 3,
+   "samples": [
+    42.563050270080566,
+    42.551913261413574,
+    42.56292915344238
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 42.563050270080566,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    42.563050270080566,
+    42.563050270080566,
+    42.563050270080566
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 46.565460205078125,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    46.565460205078125,
+    46.565460205078125,
+    46.565460205078125
+   ]
+  },
+  "sent_page_command_MiB": {
+   "median": 9.864784240722656,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    9.864784240722656,
+    9.864784240722656,
+    9.864784240722656
+   ]
+  },
+  "sent_meta_command_MiB": {
+   "median": 0.00438690185546875,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    0.00438690185546875,
+    0.00438690185546875,
+    0.00438690185546875
+   ]
+  },
+  "sent_snapshot_command_MiB": {
+   "median": 30.679821968078613,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    30.679821968078613,
+    30.679821968078613,
+    30.679821968078613
+   ]
+  },
+  "sent_disk_command_MiB": {
+   "median": 2,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    2,
+    2,
+    2
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 743,
+   "iqr": 10.5,
+   "n": 3,
+   "samples": [
+    760,
+    739,
+    743
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 798,
+   "iqr": 10.5,
+   "n": 3,
+   "samples": [
+    793,
+    798,
+    814
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1390,
+   "iqr": 11,
+   "n": 3,
+   "samples": [
+    1385,
+    1390,
+    1407
+   ]
+  },
+  "uasm_MiB": {
+   "median": 7741,
+   "iqr": 0.5,
+   "n": 3,
+   "samples": [
+    7740,
+    7741,
+    7741
+   ]
+  }
+ }
+}

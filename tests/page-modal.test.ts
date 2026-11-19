@@ -54,10 +54,10 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
   const check = (url: string) => page.evaluate(async (url) => {
     const { checkUrl } = await import('/web/app/urlcheck.ts' as string);
     const r = await checkUrl(url);
-    return { ok: r.ok, problems: r.problems.map((p: { key: string }) => p.key), bytes: r.bytes, etag: r.etag, ...(r.name ? { name: r.name } : {}) };
+    return { ok: r.ok, problems: r.problems.map((p: { key: string }) => p.key), bytes: r.bytes, etag: r.etag, ...(r.chunked ? { chunked: r.chunked } : {}), ...(r.name ? { name: r.name } : {}) };
   }, url);
-  // A chunked image's manifest: its id the identity, its name the disk's.
-  assert.deepEqual(await check(`${otherBase}/c/demo.json`), { ok: true, problems: [], bytes: 4096, etag: 'demo', name: 'Desktop Demo' });
+  // A chunked image's manifest: its id the identity (wherever it's hosted), its name the disk's.
+  assert.deepEqual(await check(`${otherBase}/c/demo.json`), { ok: true, problems: [], bytes: 4096, etag: undefined, chunked: 'demo', name: 'Desktop Demo' });
   // The dev server's files (sirv): a weak ETag of the size and modification time.
   const raw = await check(`${base}/tests/qcow2/data.raw`);
   assert.deepEqual({ ...raw, etag: undefined }, { ok: true, problems: [], bytes: 196608, etag: undefined });

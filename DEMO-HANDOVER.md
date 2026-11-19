@@ -15,33 +15,36 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
 
 ## Current state
 
-- **The fork, loop 7 done** (waarm64-demonet `6de5a2b`, pushed): renamed, its own docs, a network per WebSocket,
-  per-IP budgets, the TOML file with reload and `--check`, close codes 4001/4003/4008–4010; fails closed (no
-  forwarding) until loop 8. An idle network costs ~210 KiB RSS and 14 goroutines. wireguard-go and
-  gvisor-tap-vsock agree on one gVisor. Loop 8 (the allowlist and egress) is running.
+- **The fork, loop 7 done** (waarm64-demonet `6de5a2b`, pushed): a network per WebSocket, per-IP budgets, the TOML
+  file with reload and `--check`, close codes 4001/4003/4008–4010; fails closed until loop 8 (running beside).
+- **Loop 0** (pushed): `bench/demo/` and the gap, [bench/demo/REPORT.md](bench/demo/REPORT.md) "DEMO loop 0".
+- **Loop 1, the spike, done** (2026-11-19, committed unpushed): an Alpine template restored in a fresh profile,
+  offline, through a modelled 100 Mbit/s / 20 ms link: **click → a command answered in ~3.4 s, ~32 MB on the wire**
+  (page 2.5 MiB brotli'd, snapshot 24.0 MiB, disk 4.0 MiB), with the image booted with `init_on_free=1` and the
+  guest's caches dropped before the snapshot (REPORT.md "DEMO loop 1"). Code: a chunked image's identity is its
+  content (`{kind:'url', chunked, bytes}`, machines.md §3.1), a machine from a template (`web/app/template.ts`,
+  `restoreFirst` on the record, machines.md §6.1), a machine's first restore fills its fresh overlays, one shared
+  `pieces/` (`tools/chunk-image.ts --pieces`, `_headers`). The harness: target `waarm64-template` (`DEMO_LINK`,
+  `DEMO_TEMPLATE`), `bench/demo/make-template.ts`, `spike-image.sh`, `site.ts`, `snapinfo.ts`, `ramcodec.ts`.
 
-- **Loop 0 (measure the gap) is done** (2026-11-19, ci-fast.sh, pushed): `bench/demo/` (`run.ts`, `targets.ts`, `netlog.ts`,
-  `procmem.ts`), numbers in [bench/demo/REPORT.md](bench/demo/REPORT.md) "DEMO loop 0" with `results/demo-0/*.json`,
-  and in docs/comparison.md §3. Headline: unkernel answers a command 1.3 s after its link with 6.7 MiB and installs
-  python3 in 7.7 s; our Desktop Demo 31.7 s and 420 MiB, no network; Alpine's cloud image on our page 48 s to a
-  login prompt (33 s of it OpenRC/tiny-cloud after the kernel, waiting on DHCP with no adapter connection).
-- The harness's targets: `unkernel`, `v86-buildroot`, `v86-arch`, `waarm64-desktop` (deployed vm.tny.im),
-  `waarm64-alpine` (an `npm run dist -- --out bench/results/local/demo/dist` build served locally with
-  `target/images/alpine-uefi/alpine.qcow2`), `blank`. A target is a URL, a console to read and type on, a prompt test,
-  an optional login, `echo` and `apk` commands, and console `phases`. Results share one schema (`summary`: medians
-  and IQRs of prompt/command/apk ms, bytes by mark, PSS/RSS).
+## Next: loop 2, the guest agent on Alpine
 
-## Next: loop 1, the spike
-
-Add a target for the Alpine template restored from a snapshot (local hosting under the final path layout, fresh
-profile, offline): a `serve` that hosts the build plus the template, a `prompt` on `running`, `echo` after the
-restore (it's a logged-in shell). Notes for it:
-- The local preview server sends the page uncompressed (78.7 MiB to the cloud image's prompt with the page's 46 MiB
-  of files); for a deployment-like byte count, count the disk's and snapshot's bytes apart from the page's or serve
-  compressed. The deployed page's own bytes are 6.1 MiB (vm.tny.im in the Desktop Demo runs).
-- The Desktop Demo had 414 MiB of its disk fetched by the login prompt (remote-disk R6 measured ~100 MiB by
-  systemd's start): the paced prefetch runs well ahead by then. Worth keeping in mind for the demo disks' bytes.
-- `measureUserAgentSpecificMemory` reports ~24 GiB for our page (the shared memories' reservations): use PSS.
+Decision 14: an OpenRC service for the agent (from fw_cfg or the image), udhcpc (and dhcpcd: the cloud image runs
+dhcpcd, not udhcpc) in `agent/src/lease.rs`, the clock set at a restore; tested with a template restored with an old
+clock (`apk` over TLS works after it). What loop 1 leaves for it and later loops:
+- The spike's template has no agent: the restored guest's clock is the template's (the page's `clocksync` needs the
+  agent), and its lease is whatever dhcpcd got at the template's boot (IPv4LL with no connection).
+- **For loop 3's image (measured, do these):** `init_on_free=1` on the kernel's command line (free memory is zero in
+  the snapshot: −7.7 MB of LZ4), Limine's `timeout: 0` (the spike image's boot is 23 s to the prompt, 10 s less), no
+  tiny-cloud, sshd, chronyd. **For loop 5's builder:** drop the guest's caches before the template's snapshot (−7 MB;
+  costs one more 2 MiB piece by the first command). `bench/demo/make-template.ts` is the builder's seed.
+- **The next biggest cut (not built, a format change):** the template's RAM frames packed with deflate (the
+  browser's `DecompressionStream('deflate-raw')`, no dependency; the core inflates already) instead of LZ4: the
+  snapshot's RAM 25.0 → 16.0 MB, the whole download ~32 → ~23 MB. A new frame codec the reader takes beside LZ4
+  (republished templates only); loop 3 or 5 should build it (REPORT.md "What would close the gap").
+- The store's click (loop 6) calls `machineFromUrls` (web/app/template.ts) as the `?hooks` hook does; the definition
+  format's `demo.snapshot` (loop 4) replaces the hook's second argument. The site's layout is decision 17's: the
+  publish tool (loop 4) writes it with `chunk-image.ts --pieces`.
 
 ## Open questions
 
@@ -49,4 +52,9 @@ None.
 
 ## Awaiting the user's review
 
-None yet.
+- **Loop 1's engineering calls:** a chunked image's disk identity is now `{kind: 'url', chunked: <manifest id>, bytes}`
+  (no path), for disks added from now on; disks added before keep their old identity (path + `etag`), so their
+  overlays and snapshots stay valid, and adding the same URL again finds them: no migration, nothing to export first.
+  A machine record may carry `restoreFirst` (a kept snapshot its first start restores without asking). A machine's
+  first restore writes into its never-written overlays rather than forking beside them (only then: a restore the
+  user asks for leaves their overlays alone).

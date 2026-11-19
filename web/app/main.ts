@@ -314,7 +314,7 @@ for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () =>
 clipboardActions.listen();
 usbActions.listen();
 usbView.refresh();
-installBenchHooks(machine, terminal, replies, audio);
+installBenchHooks(machine, terminal, replies, audio, (id) => page.openMachine(id));
 // What still escapes (a promise dropped outside an action) is shown as the page shows errors.
 addEventListener('unhandledrejection', (e) => messages.notify(describe(e.reason), 'error'));
 

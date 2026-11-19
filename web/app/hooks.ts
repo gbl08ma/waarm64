@@ -1,5 +1,5 @@
 // The page's hooks for tests, benchmarks and tools (docs/testing.md): what they read and call on `window`,
-// typed in one place (docs/frontend-code.md §5.4). Most are set only with `?displaystats` or `?snd=` (`benchHooks`).
+// typed in one place (docs/frontend-code.md §5.4). Most are set only with `?displaystats`, `?snd=` or `?hooks` (`benchHooks`).
 import type { PageAudio } from '../audio.ts';
 import type { Grown } from '../agent-frame.ts';
 import type { AgentLink } from './agent-link.ts';
@@ -35,6 +35,12 @@ declare global {
     __waarm64Grab?: () => Promise<Grab>;
     /** `?iostats`: the disks' timers and base-read traces (web/iostats.ts). */
     __ioStats?: () => Promise<unknown>;
+    /**
+     * A machine from a template (web/app/template.ts `machineFromUrls`: a definition's URL, its snapshot's chunked
+     * manifest), opened on the page, whose first start restores the snapshot; its id (bench/demo/targets.ts, until the
+     * demo store's page clicks it).
+     */
+    __waarm64FromTemplate?: (definition: string, snapshot: string) => Promise<string>;
     /** `?avprobe`: when the screen's centre turned bright (ms on this page's clock; bench/audio/avsync.ts). */
     __flashes?: number[];
     /** `?displaystats`: the display's and the GPU worker's reports, and the device's events and presents in them. */

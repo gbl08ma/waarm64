@@ -30,9 +30,9 @@ export const simpleDisplay = params.get('display') === 'simple';
 
 /**
  * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts; web/app/hooks.ts): `?snd=` (sound measurements) wants
- * the serial log and status too.
+ * the serial log and status too; `?hooks` the hooks alone (bench/demo: a machine from a template).
  */
-export const benchHooks = params.has('displaystats') || params.has('snd');
+export const benchHooks = params.has('displaystats') || params.has('snd') || params.has('hooks');
 
 /**
  * 3D's knobs (docs/frontend.md "A 3D machine"): `?gpu=2d` (or `virgl-null`, G2's null renderer) off, `?gpu=virgl` on,

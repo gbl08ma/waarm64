@@ -158,9 +158,12 @@ Since decided (the user, 2026-10-17):
 
 ### 3.1 A base's identity
 
-Cheap, and recorded at attach: a file's name, size and modification time; a URL's path and size, plus its `ETag` or
-`Last-Modified` where the server sends one (a chunked image's manifest `id` stands in as its `etag`, so the identity
-follows the content); a stored disk's id; a blank disk's id and size. A file or URL added again, opened or dropped is
+Cheap, and recorded at attach: a file's name, size and modification time; a chunked image's manifest `id` and size
+(`{kind: 'url', chunked, bytes}`: its content, not its URL, so the same image hosted anywhere is the same disk, and a
+template's pins and a definition's disk match wherever it's served from); another URL's path and size, plus its `ETag` or
+`Last-Modified` where the server sends one; a stored disk's id; a blank disk's id and size. A chunked image's disk
+added before content ids keeps the identity it was made with (its path, the manifest's `id` as its `etag`): nothing
+migrates it, and adding the same URL again finds it (`knownDisk` tries both forms). A file or URL added again, opened or dropped is
 the disk the browser already has with that identity (`machines.ts` `knownDisk`), so its overlays come back with it.
 The SHA-256 (`hashSource`, web/changes.ts, ~640 MiB/s in Chromium) is computed only where one is needed: a re-picked
 file whose cheap identity differs (§6) and a changes file's base. Two different files with the same name, size and
@@ -499,6 +502,11 @@ The file's format, what the core saves and the page's toolbar and header fields:
   has stopped (`commit`): a disk the guest wrote to in between forks then (the replace answer holds only for the
   disks the confirmation named). The worker refuses a **keep** whose overlay isn't at the generation the plan names
   ([A disk this snapshot was to keep as it is was written to after the restore was planned, so the snapshot no longer fits it. Nothing was changed. Restore the snapshot again.](ui:snapshots:snapshot.keptMoved)), so the snapshot's RAM never lands on a disk that moved on.
+- **A fork into a fresh overlay:** on a machine's first restore (a template's, §6.1), where the attached overlay
+  never took a write (its files' generation 0, at the snapshot's size: the overlays the page made for the machine),
+  the fork's blocks go into it (named after the snapshot, marked as its fork) instead of a new overlay beside it, and
+  nothing is asked: it holds nothing to lose (`pristine`, `planRestore`'s `fresh`; tests/template.test.ts). A restore
+  the user asks for leaves an overlay they made as it is.
 - **Repeated restores don't pile up forks:** a restore that would fork attaches an earlier fork of the same snapshot
   whose generation hasn't moved since (still 1), at the snapshot's size, instead (**reuse**).
 - **On the records as they are:** the page reads the machine's records again before it plans a restore of a machine
@@ -546,6 +554,20 @@ copy stale.
   when it has one; otherwise the user is asked, and taking it anyway makes it another disk's identity (its overlays
   won't apply).
 
+### 6.1 A machine from a template
+
+`web/app/template.ts` (the demos' first start: DEMO-KICKOFF.md decision 11; the store's page, which clicks it, is a
+later loop of the track): a definition imported as above (`fetchDefinition`: its disks' relative URLs resolved against
+the definition's own URL, so a site moves whole), the template snapshot (a chunked file: `fetchChunked`, each piece
+checked against its hash) kept as the new machine's first snapshot, and the record marked `restoreFirst: <its id>`.
+The machine's first start (`PowerActions.startOpened`, or Start after a page that didn't start it) restores that
+snapshot instead of booting, with no question (`SnapshotRestore.first`): the shape is the definition's (its disks'
+identities and serials), so it matches; the pins, by slot, fork onto the machine's fresh overlays (none yet: new
+ones; a fresh one: that one, §5.2). The mark is cleared before the start; a snapshot that can't be restored (another
+shape: said) boots the machine instead. Afterwards it's an ordinary machine: its overlay, Suspend, and the template
+kept as a snapshot to go back to. The page's hook `window.__waarm64FromTemplate(definition, snapshot)` (`?hooks`) is
+bench/demo's click; tests/template.test.ts the identity and the plan in Node.
+
 ## 7. The page
 
 The Home page (`MachinesPage.svelte` and its panes and tabs, `#home` in the address), its tabs, wizards and storage footer:
@@ -562,7 +584,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
   hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
   (the shape now, the restore's plan, `unrestorable`), `web/app/snapshot-lost.ts` (which snapshots can never be restored: `lost`, the disks' generations, `basesOf`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
-  (a switch to an overlay of another size asked), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
+  (a switch to an overlay of another size asked), `web/app/definitions.ts`, `web/app/template.ts` (a machine from a template, §6.1), `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Home page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
 - A disk's map (frontend.md "A disk's surface"): `web/surface.ts` (the counts), `web/app/surface-job.ts` and
@@ -595,9 +617,8 @@ reading a file handle back from IndexedDB off the record: backlog).
 
 ## 10. Ahead
 
-- **The preloaded image** (PLAN.md, proposed) would be a built-in machine: a URL disk and a snapshot fetched with
-  the page, restored with pins that match a fresh overlay (generation 0), so nothing forks. It needs a content
-  identity for the image (a chunked image's manifest `id`: a URL's path can't tell a new image from the old one).
+- **The preloaded image** (PLAN.md, proposed) and **the demos** (DEMO track) are machines from a template (§6.1): a
+  chunked image known by its content and a template snapshot restored onto fresh overlays.
 - **A catalog** of hosted images would be a list of such machine definitions.
 - **The embedding API**'s VM configuration would start from the machine definition and its shape.
 - **Exporting a whole machine** (a bundle: the definition, its overlays as changes files, its kept snapshots and,

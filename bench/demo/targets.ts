@@ -1,10 +1,19 @@
 // The systems bench/demo/run.ts times (bench/demo/REPORT.md): each one's page, how its console is read and typed on,
 // what counts as its prompt, and the commands it can run. A target is what a visitor opens, as shipped: the others'
 // demos on their own servers, ours deployed or as `npm run dist` builds it.
-import { linkSync, existsSync, unlinkSync } from 'node:fs';
+import { linkSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
+import { brotliBytes, brotliRatio, bytesByKind, count, linkFromEnv, siteServer, throttle, type Served as Log } from './site.ts';
+
+/** A target's local server: its base URL, how to stop it, and what it sent (where it counts). */
+export type Served = {
+  base: string;
+  close: () => Promise<void>;
+  kinds?: (until?: number) => Record<string, number>;
+  pageBrotli?: (until?: number) => number;
+};
 
 export type Target = {
   /** The name on the command line and in the JSON. */
@@ -12,8 +21,18 @@ export type Target = {
   /** The system, and what a run of this target is (for the report). */
   system: string;
   what: string;
-  /** A local server the page is served from (our own builds): its base URL, and how to stop it. */
-  serve?: () => Promise<{ base: string; close: () => Promise<void> }>;
+  /**
+   * A local server the page is served from (our own builds): its base URL, and how to stop it; where it counts what it
+   * sends, the bytes by kind up to a moment (`kinds`), and the page's as a host that compresses would send them
+   * (`pageBrotli`).
+   */
+  serve?: () => Promise<Served>;
+  /** Run without a network past this computer (the host resolver answers nothing else). */
+  offline?: boolean;
+  /** Resolves when the page is loaded and waiting for the visitor (the moment before `click`). */
+  ready?: (page: Page, ms: number) => Promise<void>;
+  /** The visitor's click that starts the demo (after `ready`): resolves when the page has what it needs to start it. */
+  click?: (page: Page, base: string) => Promise<void>;
   url: (base: string) => string;
   /** The console's text as it is now (its rows, newline-separated where the console allows). */
   text: (page: Page) => Promise<string>;
@@ -29,6 +48,8 @@ export type Target = {
   login?: (page: Page) => Promise<void>;
   /** A command whose output (`ok-42`) shows it ran: the prompt was usable. Absent: the target can't run one. */
   echo?: string;
+  /** A second command after `echo`, answered `ok-48`. */
+  again?: string;
   /** Type `echo` again after this many ms without its answer (a console that drops keys until it's ready). */
   retryMs?: number;
   /** The package install, if the guest can: its command, ending in a marker `apk-<status>-42`. */
@@ -181,6 +202,71 @@ const alpine: Target = {
   timeoutMs: 300_000,
 };
 
+const SITE = new URL('../results/local/demo/site/', import.meta.url).pathname;
+const SPIKE = process.env.DEMO_TEMPLATE ?? 'alpine-spike';
+
+/**
+ * DEMO loop 1's spike: the spike's Alpine template (bench/demo/make-template.ts) restored in a fresh profile with no
+ * network past this computer: the page as `npm run dist` builds it on 127.0.0.1, the template's site (its image's and
+ * snapshot's pieces, the definition) on localhost as vmdisks.tny.im would serve it, both counting what they send.
+ * The click is the page's hook for a demo's card (web/app/template.ts: the definition imported, the snapshot fetched
+ * and kept, the machine opened, its first start the restore).
+ */
+const template: Target = {
+  name: 'waarm64-template',
+  system: 'waarm64',
+  what: `${process.env.DEMO_LINK ? `through one link of ${process.env.DEMO_LINK} (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): ` : ''}the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and the spike's Alpine template (bench/demo/make-template.ts: Alpine 3.24.2's UEFI cloud image with root logged in on the serial console, bench/demo/spike-image.sh) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to the root shell`,
+  offline: true,
+  serve: async () => {
+    if (!existsSync(`${DIST}index.html`)) throw new Error('build the page first: npm run dist -- --out bench/results/local/demo/dist');
+    if (!existsSync(`${SITE}${SPIKE}/snapshot.json`)) throw new Error('make the template first: node bench/demo/make-template.ts');
+    const log: Log[] = [];
+    const hashes = (f: string) => new Set<string>((JSON.parse(readFileSync(`${SITE}${SPIKE}/${f}`, 'utf8')) as { hashes: string[] }).hashes);
+    const [snap, disk] = [hashes('snapshot.json'), hashes('manifest.json')];
+    const kindOf = (path: string) => {
+      const h = /^\/pieces\/([0-9a-f]{64})\.bin$/.exec(path)?.[1];
+      if (!h) return 'meta'; // the definition and the manifests
+      return snap.has(h) ? 'snapshot' : disk.has(h) ? 'disk' : 'other';
+    };
+    const site = await siteServer(SITE, log, kindOf);
+    const server: Server = await startServer(0, '127.0.0.1', DIST);
+    count(server, log, () => 'page');
+    let [pagePort, sitePort] = [(server.address() as { port: number }).port, Number(new URL(site.base).port)];
+    // `DEMO_LINK=<Mbit/s>/<RTT ms>`: both behind one throttled link, the page's files at their compressed size.
+    const link = linkFromEnv();
+    const proxies = link ? [await throttle(pagePort, link, (p) => brotliRatio(DIST, p)), await throttle(sitePort, link)] : [];
+    if (link) [pagePort, sitePort] = proxies.map((p) => p.port);
+    return {
+      base: `http://127.0.0.1:${pagePort}#http://localhost:${sitePort}`,
+      close: async () => {
+        // `DEMO_SERVED=<file>`: every response (when it ended, its path, kind and bytes), for a run's timeline.
+        if (process.env.DEMO_SERVED) writeFileSync(process.env.DEMO_SERVED, `${JSON.stringify(log)}\n`);
+        for (const p of proxies) await p.close();
+        await new Promise((r) => server.close(r));
+        await site.close();
+      },
+      kinds: (until) => bytesByKind(log, until),
+      pageBrotli: (until) => brotliBytes(log, DIST, until),
+    };
+  },
+  url: (base) => `${base.split('#')[0]}/?hooks`,
+  ...ours,
+  phases: undefined,
+  ready: (page, ms) => page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: ms, polling: 50 }).then(() => undefined),
+  click: async (page, base) => {
+    const site = base.split('#')[1];
+    await page.evaluate(([d, s]) => window.__waarm64FromTemplate!(d, s), [`${site}/${SPIKE}/definition.json`, 'snapshot.json']);
+    // The terminal's view, as the demo's card will open it (its `view`, the store's loop).
+    await page.locator('[data-view-button="terminal"]').click();
+  },
+  promptIs: 'the restored machine running (the root shell, logged in, is where the snapshot was taken)',
+  echo: ECHO,
+  // A program the boot didn't run (apk and its libraries, ~5 MB: read from the disk unless the snapshot has them cached).
+  again: 'apk --version >/dev/null && echo ok-$((6*8))',
+  apk: APK,
+  timeoutMs: 120_000,
+};
+
 /** The browser alone: an empty page, for the memory every target's numbers include. */
 const blank: Target = {
   name: 'blank',
@@ -194,4 +280,4 @@ const blank: Target = {
   timeoutMs: 10_000,
 };
 
-export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, blank].map((t) => [t.name, t]));
+export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, template, blank].map((t) => [t.name, t]));

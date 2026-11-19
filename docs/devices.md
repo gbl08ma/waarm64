@@ -886,12 +886,13 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   boot: 109 → 63 s, no requests (bench/remote-disk/REPORT.md "R3").
 - **A chunked image** (`web/chunked.ts`, made by `tools/chunk-image.ts`; [remote-disks.md](remote-disks.md)): a disk URL
   ending in `.json` is a manifest (`waarm64-chunked-1`: the file's size, the piece size, each piece's SHA-256, an
-  `id` hashed from them, and a `name` the page shows: `--name`, or the image's file name) of the image file cut into equal pieces, `pieces/<sha256>.bin` beside it. It reads as one
+  `id` hashed from them, and a `name` the page shows: `--name`, or the image's file name) of the image file cut into equal pieces, named by their SHA-256 at the manifest's `pieces` URL (relative to it: `pieces/` beside it, or a site's shared `../pieces/`). It reads as one
   file under the block cache: a piece by range, or whole where the host answers a range with the whole file (as
   a Cloudflare Worker's static assets and Pages do: the images' host, vmdisks.tny.im), and then `Source.span` has the cache take the whole piece. `bootVm` sizes it from the
-  manifest and its first piece; the URL check (`web/app/urlcheck.ts`) gives the manifest's `id` as the disk's `etag`,
-  so a machine's disk identity follows the content. Not checked against the hashes yet (reads are synchronous;
-  `crypto.subtle` isn't).
+  manifest and its first piece; the URL check (`web/app/urlcheck.ts`) gives the manifest's `id` as the disk's identity
+  (`chunked`, docs/machines.md §3.1), so a machine's disk follows the content wherever it's hosted. A disk's reads
+  aren't checked against the hashes yet (reads are synchronous; `crypto.subtle` isn't); a file fetched whole
+  (`fetchChunked`: a template snapshot) is, piece by piece.
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
   unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate, inflated by the core's
   miniz_oxide (`web/deflate.ts`: `inflate_raw` on a codec-only core instance of the thread's own, synchronous; the

@@ -1,0 +1,89 @@
+{
+ "note": "bench/demo/ramcodec.ts: each frame unpacked and packed alone with each codec (bytes); pieces: the LZ4 file cut into 2 MiB pieces, each packed alone (a host compressing what it serves)",
+ "nodrop": {
+  "frames": {
+   "CORE": {
+    "raw": 1187881,
+    "lz4": 135365,
+    "zstd-3": 127749,
+    "zstd-19": 127048,
+    "brotli-5": 126894,
+    "brotli-9": 126864
+   },
+   "DEVS": {
+    "raw": 1174,
+    "lz4": 714,
+    "zstd-3": 516,
+    "zstd-19": 512,
+    "brotli-5": 469,
+    "brotli-9": 468
+   },
+   "RAM ": {
+    "raw": 91807168,
+    "lz4": 39725460,
+    "zstd-3": 28095561,
+    "zstd-19": 24258823,
+    "brotli-5": 25522251,
+    "brotli-9": 25270206
+   },
+   "DISK": {
+    "raw": 53248,
+    "lz4": 7403,
+    "zstd-3": 5189,
+    "zstd-19": 4708,
+    "brotli-5": 4593,
+    "brotli-9": 4600
+   }
+  },
+  "pieces": {
+   "bytes": 39878208,
+   "zstd-3": 30347777,
+   "brotli-5": 29447289
+  }
+ },
+ "iofdrop": {
+  "frames": {
+   "CORE": {
+    "raw": 1187881,
+    "lz4": 135293,
+    "deflate-9": 128575,
+    "zstd-3": 127724,
+    "zstd-19": 127013,
+    "brotli-5": 126867,
+    "brotli-9": 126846
+   },
+   "DEVS": {
+    "raw": 4509,
+    "lz4": 2449,
+    "deflate-9": 1503,
+    "zstd-3": 1556,
+    "zstd-19": 1367,
+    "brotli-5": 1454,
+    "brotli-9": 1453
+   },
+   "RAM ": {
+    "raw": 64789792,
+    "lz4": 24993078,
+    "deflate-9": 15990605,
+    "zstd-3": 16093278,
+    "zstd-19": 13567267,
+    "brotli-5": 14416850,
+    "brotli-9": 14252222
+   },
+   "DISK": {
+    "raw": 159744,
+    "lz4": 28250,
+    "deflate-9": 19874,
+    "zstd-3": 19939,
+    "zstd-19": 18461,
+    "brotli-5": 17967,
+    "brotli-9": 18153
+   }
+  },
+  "pieces": {
+   "bytes": 25168563,
+   "zstd-3": 17732615,
+   "brotli-5": 17094723
+  }
+ }
+}

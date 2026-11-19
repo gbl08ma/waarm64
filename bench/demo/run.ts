@@ -20,7 +20,7 @@ import { chromiumEnv } from '../../tools/nosme.ts';
 import { summarize } from '../stats.ts';
 import { bytesBy, readNetLog } from './netlog.ts';
 import { browserPid, memSampler, type Mem } from './procmem.ts';
-import { TARGETS, type Target } from './targets.ts';
+import { TARGETS, type Served, type Target } from './targets.ts';
 
 const { values: args, positionals } = parseArgs({
   allowPositionals: true,
@@ -39,18 +39,31 @@ const git = (cmd: string) => execSync(`git ${cmd}`, { encoding: 'utf8' }).trim()
 
 export type Run = {
   run: number;
-  /** ms from the navigation's start. `apkMs` is the install's own duration. */
-  marks: { prompt?: number; command?: number; apkMs?: number };
+  /**
+   * ms from the navigation's start: the page `ready` for the visitor, the `click` (made: the click's work done), the
+   * prompt, the command's answer, the second command's (`again`). `apkMs` is the install's own duration.
+   */
+  marks: { ready?: number; click?: number; made?: number; prompt?: number; command?: number; again?: number; apkMs?: number };
   /** ms from the navigation's start to each of the target's `phases` first showing on its console. */
   phases?: Record<string, number>;
   apkOk?: boolean;
   /** Bytes received: the page's hosts (`page`) and Chromium's own (`background`), by each mark and in all; by host in all. */
-  bytes: { prompt?: number; command?: number; total: number; background: number; byHost: Record<string, number> };
+  bytes: {
+    prompt?: number;
+    command?: number;
+    total: number;
+    background: number;
+    byHost: Record<string, number>;
+    /** What a counting server sent (the target's `serve`), by kind, by each mark and in all; the page brotli'd. */
+    kinds?: { prompt?: Record<string, number>; command?: Record<string, number>; total: Record<string, number> };
+    pageBrotli?: { prompt?: number; total: number };
+  };
   mem: { prompt?: Mem; peak: Mem; uasmMiB?: number };
   error?: string;
 };
 
-async function once(t: Target, n: number, base: string): Promise<Run> {
+async function once(t: Target, n: number, server: Served | undefined): Promise<Run> {
+  const base = server?.base ?? '';
   const profile = `${WORK}profile-${t.name}-${n}`;
   const netlog = `${WORK}netlog-${t.name}-${n}.json`;
   rmSync(profile, { recursive: true, force: true });
@@ -60,7 +73,12 @@ async function once(t: Target, n: number, base: string): Promise<Run> {
     viewport: { width: 1400, height: 1000 },
     env: chromiumEnv(),
     // ForceEagerMeasureMemory: measureUserAgentSpecificMemory answers at once rather than at the next GC.
-    args: [`--log-net-log=${netlog}`, '--enable-blink-features=ForceEagerMeasureMemory'],
+    args: [
+      `--log-net-log=${netlog}`,
+      '--enable-blink-features=ForceEagerMeasureMemory',
+      // Offline: no name resolves but this computer's (Chromium's own traffic included).
+      ...(t.offline ? ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1'] : []),
+    ],
   });
   const pid = browserPid(profile);
   if (!pid) throw new Error('the browser process was not found');
@@ -69,6 +87,7 @@ async function once(t: Target, n: number, base: string): Promise<Run> {
   version ||= ctx.browser()?.version() ?? '';
   page.on('pageerror', (e) => log('[page error]', e.message.slice(0, 200)));
   const wall: { prompt?: number; command?: number } = {};
+  const log0 = server?.kinds?.() ?? {};
   const r: Run = { run: n, marks: {}, bytes: { total: 0, background: 0, byHost: {} }, mem: { peak: mem.now() } };
   const t0 = Date.now();
   const since = () => Date.now() - t0;
@@ -79,6 +98,16 @@ async function once(t: Target, n: number, base: string): Promise<Run> {
   }, 250);
   try {
     await page.goto(t.url(base), { timeout: 60_000 });
+    if (t.ready) {
+      await t.ready(page, 60_000);
+      r.marks.ready = since();
+    }
+    if (t.click) {
+      r.marks.click = since();
+      await t.click(page, base);
+      r.marks.made = since();
+      log(`run ${n}: click ${r.marks.click} ms, made ${r.marks.made} ms`);
+    }
     await t.prompt(page, t.timeoutMs);
     r.marks.prompt = since();
     wall.prompt = Date.now();
@@ -100,6 +129,13 @@ async function once(t: Target, n: number, base: string): Promise<Run> {
       r.marks.command = since();
       wall.command = Date.now();
       log(`run ${n}: command`, r.marks.command, 'ms');
+      if (t.again) {
+        await t.type(page, `${t.again}\n`);
+        for (const end = Date.now() + 60_000; !/ok-48/.test(await t.text(page)); await page.waitForTimeout(20))
+          if (Date.now() > end) throw new Error('the second command was not answered');
+        r.marks.again = since();
+        log(`run ${n}: again`, r.marks.again - r.marks.command, 'ms after the first');
+      }
     }
     r.mem.uasmMiB = await Promise.race([
       page.evaluate(async () => {
@@ -139,6 +175,17 @@ async function once(t: Target, n: number, base: string): Promise<Run> {
   r.bytes = { total: all.page, background: all.background, byHost: all.byHost };
   if (wall.prompt) r.bytes.prompt = bytesBy(hosts, wall.prompt).page;
   if (wall.command) r.bytes.command = bytesBy(hosts, wall.command).page;
+  if (server?.kinds) {
+    // What this run's servers sent: the counts since the run began (a server lives across the runs).
+    const less = (now: Record<string, number>) => Object.fromEntries(Object.entries(now).map(([k, v]) => [k, v - (log0[k] ?? 0)]));
+    r.bytes.kinds = {
+      prompt: wall.prompt ? less(server.kinds(wall.prompt)) : undefined,
+      command: wall.command ? less(server.kinds(wall.command)) : undefined,
+      total: less(server.kinds()),
+    };
+  }
+  // The page's files sent compressed: each distinct file once per run (a fresh profile), so only the first run's count.
+  if (server?.pageBrotli && n === 1) r.bytes.pageBrotli = { prompt: wall.prompt ? server.pageBrotli(wall.prompt) : undefined, total: server.pageBrotli() };
   log(`run ${n}: bytes`, JSON.stringify(r.bytes), 'mem', JSON.stringify(r.mem));
   if (!args.keep) {
     rmSync(profile, { recursive: true, force: true });
@@ -150,7 +197,7 @@ async function once(t: Target, n: number, base: string): Promise<Run> {
 const server = await target.serve?.();
 const runs: Run[] = [];
 try {
-  for (let n = 1; n <= Number(args.runs); n++) runs.push(await once(target, n, server?.base ?? ''));
+  for (let n = 1; n <= Number(args.runs); n++) runs.push(await once(target, n, server));
 } finally {
   await server?.close();
 }
@@ -163,12 +210,20 @@ const metric = (f: (r: Run) => number | undefined) => {
 const MiB = 2 ** 20;
 const summary = Object.fromEntries(
   Object.entries({
+    ready_ms: metric((r) => r.marks.ready),
+    click_made_ms: metric((r) => r.marks.made !== undefined && r.marks.click !== undefined ? r.marks.made - r.marks.click : undefined),
+    click_prompt_ms: metric((r) => r.marks.prompt !== undefined && r.marks.click !== undefined ? r.marks.prompt - r.marks.click : undefined),
+    click_command_ms: metric((r) => r.marks.command !== undefined && r.marks.click !== undefined ? r.marks.command - r.marks.click : undefined),
+    again_ms: metric((r) => r.marks.again !== undefined && r.marks.command !== undefined ? r.marks.again - r.marks.command : undefined),
     prompt_ms: metric((r) => r.marks.prompt),
     command_ms: metric((r) => r.marks.command),
     apk_ms: metric((r) => r.marks.apkMs),
     bytes_prompt_MiB: metric((r) => r.bytes.prompt && r.bytes.prompt / MiB),
     bytes_command_MiB: metric((r) => r.bytes.command && r.bytes.command / MiB),
     bytes_total_MiB: metric((r) => r.bytes.total / MiB),
+    ...Object.fromEntries(
+      [...new Set(ok.flatMap((r) => Object.keys(r.bytes.kinds?.command ?? {})))].map((k) => [`sent_${k}_command_MiB`, metric((r) => (r.bytes.kinds?.command?.[k] ?? 0) / MiB)]),
+    ),
     pss_prompt_MiB: metric((r) => r.mem.prompt?.pssMiB),
     pss_peak_MiB: metric((r) => r.mem.peak.pssMiB),
     rss_peak_MiB: metric((r) => r.mem.peak.rssMiB),

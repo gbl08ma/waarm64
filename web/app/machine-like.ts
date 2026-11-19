@@ -19,16 +19,19 @@ function diskLike(sd: Shape['disks'][number], urls: Record<number, string> | und
       throw new MsgError('snapshots:machine-like.storedDiskGone', undefined, {
         cause: new MsgError('snapshots:machine-like.storedDiskGone.cause'),
       });
-    case 'url':
+    case 'url': {
+      // A chunked image's identity has no path: its URL is the snapshot's (a template's: where it was made).
+      const url = urls?.[sd.slot] ?? ('path' in i ? i.path : '');
       return {
         id: newId(),
         kind: 'url',
         // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a path ending in '/' names no file
-        name: i.path.split('/').pop() || t('snapshots:machine-like.urlDisk'),
-        url: urls?.[sd.slot] ?? i.path,
+        name: new URL(url, 'http://x').pathname.split('/').pop() || t('snapshots:machine-like.urlDisk'),
+        url,
         identity: i,
         ...base,
       };
+    }
     case 'file':
       return { id: newId(), kind: 'file', name: i.name, identity: i, ...base };
     default:

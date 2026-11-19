@@ -13,6 +13,8 @@ export type UrlCheck = {
   problems: Msg[];
   /** The file's size (from `Content-Range` or `Content-Length`), when known. */
   bytes?: number;
+  /** A chunked image's manifest `id`: the disk's identity (§3.1), whatever its URL. */
+  chunked?: string;
   /** The server's validators, for the disk's identity (§3.1). */
   etag?: string;
   lastModified?: string;
@@ -100,8 +102,8 @@ async function checkSuffix(u: URL, problems: Msg[]): Promise<void> {
 
 /**
  * A chunked image (web/chunked.ts): its manifest, and its first piece's first bytes (by range, or the whole piece
- * where the host has no ranges, which a chunked image allows). The manifest's id stands as the disk's `etag`, so the
- * disk's identity follows the content (docs/machines.md §3.1).
+ * where the host has no ranges, which a chunked image allows). The manifest's id is the disk's identity (`chunked`), so
+ * it follows the content, wherever the image is hosted (docs/machines.md §3.1).
  */
 async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
   const fail = (why: Msg) => (out.problems.push(why), out);
@@ -131,7 +133,7 @@ async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
   } catch {
     return fail(msg('machines:urlcheck.noPiece', { needs: CORS_HINT }));
   }
-  Object.assign(out, { bytes: m.size, etag: m.id, name: m.name, ok: out.problems.length === 0 });
+  Object.assign(out, { bytes: m.size, chunked: m.id, name: m.name, ok: out.problems.length === 0 });
   return out;
 }
 

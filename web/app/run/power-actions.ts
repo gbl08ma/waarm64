@@ -28,6 +28,11 @@ export type PowerDeps = {
 export class PowerActions {
   readonly #d: PowerDeps;
   readonly #soft: SoftPower;
+  /**
+   * The first start of a machine from a template: its kept snapshot `id` restored instead of a boot (set by
+   * web/app/areas/snapshot-restore.ts, `first`, which is made after this).
+   */
+  restoreFirst: (id: string) => Promise<void> = () => Promise.reject(new Error('no restore yet'));
   constructor(d: PowerDeps) {
     this.#d = d;
     this.#soft = new SoftPower(d.agent, power, d.messages);
@@ -84,6 +89,9 @@ export class PowerActions {
       await runner.stop();
       if (!(await this.reloadStored())) return;
       if (needsDisk(this.#d.machine)) return this.waitForDisk();
+      // A machine from a template not started yet (its first start offered, not taken): its snapshot, not a boot.
+      const first = this.#d.machine.stored?.record.restoreFirst;
+      if (first) return this.restoreFirst(first);
       terminal.term.reset();
       runner.start(undefined, resume);
     });
@@ -216,6 +224,8 @@ export class PowerActions {
     const { machine: m, runner, signal } = this.#d;
     if (needsDisk(m)) return this.waitForDisk();
     if (signal.crashedBefore() || !signal.fits()) return;
+    const first = m.stored?.record.restoreFirst;
+    if (first) return void this.restoreFirst(first);
     runner.start();
   }
 

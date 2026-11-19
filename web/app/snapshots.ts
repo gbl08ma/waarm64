@@ -25,7 +25,7 @@ import {
   type MachineRecord,
   type Shape,
 } from './shape.ts';
-import { overlayDir, type SnapshotRecord, type Store } from './store.ts';
+import { overlayDir, type OverlayRecord, type SnapshotRecord, type Store } from './store.ts';
 import { msg, MsgError, type Msg } from '../i18n.ts';
 import { basesIn, dependsOn, diskGenerations, inPlaceDisk, lost, RECORDED_FROM, type Lost } from './snapshot-lost.ts';
 
@@ -101,6 +101,8 @@ type Restoring = {
   snap: Snap;
   run: RunShape;
   bySlot: ReturnType<typeof slots>;
+  /** A machine's first restore (a template's, `restoreFirst`): an attached overlay never written takes a fork's blocks. */
+  fresh?: boolean;
 };
 /** The generations `lost` judged by (`diskGenerations`), for the steps of the disks written in place. */
 type Generations = ReadonlyMap<string, number>;
@@ -120,6 +122,12 @@ type Step = {
   generation?: number;
   reuse?: string;
   replaceable?: { overlay: string; name: string; bytes: number };
+  /**
+   * A fork's overlay where the attached one never took a write (its generation 0, at the snapshot's size) on a
+   * machine's first restore (a template's: `fresh`, the overlays the page made for it): it takes the blocks, as a new
+   * fork would, and nothing is left behind or asked (it holds nothing to lose). An overlay the user made stays theirs.
+   */
+  into?: string;
 };
 
 /**
@@ -178,9 +186,19 @@ async function forkStep(
 ): Promise<Step> {
   const reuse = await earlierFork(r.store, step.disk, r.snap.key, step.size);
   const current = attached ? await r.store.get('overlays', attached) : undefined;
+  if (!reuse && r.fresh && current && (await pristine(current, step)))
+    return { ...step, action: 'fork', into: current.id };
   const replaceable = current ? { overlay: current.id, name: current.name, bytes: current.bytes } : undefined;
   const action = reuse ? 'reuse' : 'fork';
   return { ...step, action, reuse: reuse?.id, generation: reuse?.generation, replaceable };
+}
+
+/**
+ * Whether overlay `o` never took a write (its files' generation 0: the device bumps it before an opening's first
+ * change, §3.3) and the guest sees it at the size the snapshot had: a fork into it loses nothing.
+ */
+async function pristine(o: OverlayRecord, step: Pick<Step, 'disk' | 'size'>) {
+  return Math.max(step.disk.size, o.size ?? 0) === step.size && (await overlayMeta(overlayDir(o.id))).generation === 0;
 }
 
 /** What each pinned disk's overlay calls for as the overlays are on disk now, or why the restore is refused (`lost`). */
@@ -213,6 +231,12 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
   if (replace && s.action === 'fork' && a.overlay) return write(a.overlay);
   // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
   const fork = { snapshot: r.snap.key, generation: 1 };
+  const into = s.into === a.overlay && s.into ? await r.store.get('overlays', s.into) : undefined;
+  if (into) {
+    // The attached overlay never written: it is the fork (named after the snapshot, reused as one).
+    await r.store.put('overlays', { ...into, name: r.snap.name, fork, modified: Date.now() });
+    return write(into.id);
+  }
   const o = await createOverlay(r.store, s.disk, r.snap.name, fork, s.size, await forkMark(r.store, s.pinned, s.size));
   a.overlay = o.id;
   a.inPlace = undefined;
@@ -278,8 +302,9 @@ export async function planRestore(
   disks: Map<string, DiskRecord>,
   snap: Snap,
   run: RunShape = { display: m.display },
+  o: { fresh?: boolean } = {},
 ): Promise<RestorePlan> {
-  const r: Restoring = { store, m, disks, snap, run, bySlot: runSlots(m, run) };
+  const r: Restoring = { store, m, disks, snap, run, bySlot: runSlots(m, run), fresh: o.fresh };
   const planned = await survey(r);
   const forks = planned.steps.filter((s) => s.action !== 'keep');
   /** The attachments the user was asked to replace rather than fork (a fresh fork with an overlay attached). */

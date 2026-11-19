@@ -212,13 +212,25 @@ export async function updateMachine(store: Store, m: MachineRecord) {
 
 /** What a new disk is: its kind and what the kind needs (a URL checked, a file's handle, a size). */
 export type NewDisk =
-  | { kind: 'url'; url: string; name?: string; size: number; bytes: number; etag?: string; lastModified?: string }
+  | {
+      kind: 'url';
+      url: string;
+      name?: string;
+      size: number;
+      bytes: number;
+      /** A chunked image's manifest `id`: the disk's identity (its URL left out of it). */
+      chunked?: string;
+      etag?: string;
+      lastModified?: string;
+    }
   | { kind: 'file'; file: File; handle?: FileSystemFileHandle; size: number }
   | { kind: 'blank' | 'ramdisk'; size: number; name?: string };
 
 /** A file's or URL's identity (machines.md §3.1): what makes it the same disk when it's added again. */
 function identityFor(d: NewDisk & { kind: 'url' | 'file' }): DiskIdentity {
   if (d.kind === 'file') return { kind: 'file', name: d.file.name, bytes: d.file.size, modified: d.file.lastModified };
+  // A chunked image is its content, wherever it's hosted (a template's pins match on any host: docs/machines.md §3.1).
+  if (d.chunked) return { kind: 'url', chunked: d.chunked, bytes: d.bytes };
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
   const u = new URL(d.url, globalThis.location?.href);
   return {
@@ -237,7 +249,16 @@ function identityFor(d: NewDisk & { kind: 'url' | 'file' }): DiskIdentity {
 export async function knownDisk(store: Store, d: NewDisk): Promise<DiskRecord | undefined> {
   if (d.kind !== 'url' && d.kind !== 'file') return undefined;
   const want = canonical(identityFor(d));
-  return (await store.all('disks')).find((x) => x.kind === d.kind && canonical(x.identity) === want);
+  // A chunked image's disk added before content ids: its identity the URL's, with the manifest's id as its `etag`.
+  const before =
+    d.kind === 'url' && d.chunked
+      ? canonical(identityFor({ ...d, chunked: undefined, etag: d.chunked, lastModified: undefined }))
+      : undefined;
+  const all = await store.all('disks');
+  return (
+    all.find((x) => x.kind === d.kind && canonical(x.identity) === want) ??
+    all.find((x) => x.kind === d.kind && canonical(x.identity) === before)
+  );
 }
 
 /** A disk record for `d` (a stored disk is made by `importStored` instead: its bytes first). */

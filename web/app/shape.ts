@@ -19,12 +19,15 @@ export type DiskKind = 'url' | 'file' | 'stored' | 'blank' | 'ramdisk';
 
 /**
  * A base disk's cheap identity (machines.md §3.1): what decides whether an overlay belongs to it and
- * a snapshot was made over it. A URL's path (not its host: the same image moved keeps its changes)
- * and size, with the server's validator where it sent one; a file's name, size and modification
+ * a snapshot was made over it. A chunked image's manifest `id` (`chunked`: a hash of its pieces' hashes, so the same
+ * content wherever it is hosted, and a new one for new content) and size; another URL's path (not its host: the same
+ * image moved keeps its changes) and size, with the server's validator where it sent one (a chunked image's disk
+ * added before content ids had this form, its `etag` the manifest's id); a file's name, size and modification
  * time; the id of a disk that exists only in this browser (stored, blank) and its size; a ramdisk's
  * id and size (it starts empty: there's nothing else to tell).
  */
 export type DiskIdentity =
+  | { kind: 'url'; chunked: string; bytes: number }
   | { kind: 'url'; path: string; bytes: number; etag?: string; lastModified?: string }
   | { kind: 'file'; name: string; bytes: number; modified: number }
   | { kind: 'stored' | 'blank' | 'ramdisk'; id: string; bytes: number };
@@ -169,6 +172,12 @@ export type MachineRecord = {
   sharesPath?: string;
   /** The folders attached, in the root's order (changed while the machine runs: not in the shape). Absent: none. */
   folders?: FolderAttachment[];
+  /**
+   * A kept snapshot of this machine its first start restores instead of booting (a template's: web/app/template.ts,
+   * docs/machines.md "A machine from a template"), with no question asked: its pins fork onto the machine's fresh
+   * overlays. Cleared by that restore. Not in the shape.
+   */
+  restoreFirst?: string;
   /** In slot order (the guest's vda, vdb…). */
   attachments: Attachment[];
   created: number;

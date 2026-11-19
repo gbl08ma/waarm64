@@ -56,6 +56,7 @@ export async function makeDisk(
         name: c.name,
         size: virtualSize(c.head, bytes),
         bytes,
+        chunked: c.chunked,
         etag: c.etag,
         lastModified: c.lastModified,
       });
