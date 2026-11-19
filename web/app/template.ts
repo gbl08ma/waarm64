@@ -44,26 +44,37 @@ export async function machineFromTemplate(
   o: DemoMarks = {},
 ): Promise<{ machine: MachineRecord; snapshot: SnapshotRecord }> {
   let kept!: SnapshotRecord;
-  const { machine } = await importDefinition(store, def, async (m) => {
-    try {
-      kept = await importSnapshot(store, m.id, snapshot);
-    } catch (e) {
-      throw full(e) ?? e;
-    }
-    return marked({ ...m, restoreFirst: kept.id }, store, o);
-  });
+  const { machine } = await importDefinition(
+    store,
+    def,
+    async (m) => {
+      try {
+        kept = await importSnapshot(store, m.id, snapshot);
+      } catch (e) {
+        throw full(e) ?? e;
+      }
+      return marked({ ...m, restoreFirst: kept.id }, store, o);
+    },
+    roomLast(store, o),
+  );
   return { machine, snapshot: kept };
 }
 
 /** A demo's marks on its machine: `fromDemo`; its first adapter on the demo network (`network`); its second on a room of its own (`room`). */
 type DemoMarks = { fromDemo?: DemoRef; network?: boolean; room?: boolean };
 
-/** Record `m` with a demo's marks (`DemoMarks`). */
+/** Record `m` with a demo's marks (`DemoMarks`) but its room (`roomLast`). */
 async function marked(m: MachineRecord, store: Store, o: DemoMarks) {
   const withDemo = o.fromDemo ? { ...m, fromDemo: o.fromDemo } : m;
-  const onNet = o.network ? await withDemoNetwork(store, withDemo) : withDemo;
-  return o.room ? withDemoRoom(store, onNet) : onNet;
+  return o.network ? withDemoNetwork(store, withDemo) : withDemo;
 }
+
+/**
+ * A demo's room (`o.room`), made as importDefinition's `last`: its connection just before the machine's record, so a
+ * failure before (the storage full) or a tab closed meanwhile makes none, and importDefinition removes it on a failure
+ * after.
+ */
+const roomLast = (store: Store, o: DemoMarks) => (o.room ? (m: MachineRecord) => withDemoRoom(store, m) : undefined);
 
 /** A snapshot's import refused for want of room, said as a demo's (its cause, the storage's numbers), else undefined. */
 function full(e: unknown) {
@@ -163,7 +174,7 @@ export async function machineFromDemo(
     signal?.throwIfAborted(); // nothing made yet: the page that asked is gone
     return machineFromTemplate(store, def, new File([blob], `${def.machine.name}.waarm64snap`), o);
   }
-  const { machine } = await importDefinition(store, def, (m) => marked(m, store, o));
+  const { machine } = await importDefinition(store, def, (m) => marked(m, store, o), roomLast(store, o));
   return { machine };
 }
 

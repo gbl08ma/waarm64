@@ -342,6 +342,16 @@ test("a demo's machine starts each run paused: PAUSE at the agent's opening, no 
   assert.deepEqual((await guestReads(page, 5)).map((f) => f.type), [FRAME.RESUME]);
   b = await waitButton(page, (x) => x.state === 'sharing' && x.permission === 'denied', 'after the click');
   assert.equal(await reads(), 1, "the switch's click read once, to ask");
+  // A pause the visitor makes later in the run is theirs: the plain paused words, not the demo's start.
+  await menu(page, true);
+  await page.uncheck('#clipboard-on');
+  assert.deepEqual((await guestReads(page, 5)).map((f) => f.type), [FRAME.PAUSE]);
+  b = await waitButton(page, (x) => x.state === 'paused', 'paused by the visitor');
+  assert.equal(b.title, t('clipboard:ClipboardMenu.title.paused'), "the visitor's pause");
+  assert.equal(await page.locator('#clipboard-paused-demo').count(), 0, "no demo's note");
+  await page.check('#clipboard-on');
+  assert.deepEqual((await guestReads(page, 5)).map((f) => f.type), [FRAME.RESUME]);
+  await waitButton(page, (x) => x.state === 'sharing', 'resumed again');
   // Allowed: the host's copy reaches the guest.
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
   await waitButton(page, (x) => x.permission === 'granted', 'after the grant');

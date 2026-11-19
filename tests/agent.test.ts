@@ -378,6 +378,12 @@ default_stop() { echo default_stop; }
     rmSync(at('calls'));
     assert.equal(openrc('stop'), 'default_stop\n');
     assert.equal(calls(), `mountpoint -q ${at('run/waarm64')}\numount ${at('run/waarm64')}\n`);
+    // The tmpfs still busy (the forwarder, a child of the agent's binary, ending a moment after it): unmounted lazily,
+    // and the stop still succeeds (a restart starts it again, on a fresh tmpfs).
+    rmSync(at('calls'));
+    tool('umount', '[ "$1" = -l ]');
+    assert.equal(openrc('stop'), 'default_stop\n');
+    assert.equal(calls(), `mountpoint -q ${at('run/waarm64')}\numount ${at('run/waarm64')}\numount -l ${at('run/waarm64')}\n`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

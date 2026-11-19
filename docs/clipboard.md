@@ -61,7 +61,8 @@ RESUME, TIME) is in devices.md "The guest's agent".
   Chromium asks nothing before the user wants sharing: the switch off, PAUSE at the agent's connection, no focus,
   HELLO or paste-chord read, and Allow… hidden. One click on the switch turns it on: it reads on that click while the
   permission is `prompt` (Chromium asks then; any machine's switch does), and a grant syncs. The next run starts
-  paused again (the choice isn't remembered); a copy of the machine has no `fromDemo` and shares from the start.
+  paused again (the choice isn't remembered); a pause the user makes later in the run is an ordinary one (the plain
+  paused words, Allow… shown); a copy of the machine has no `fromDemo` and shares from the start.
 
 ## The host's ways
 

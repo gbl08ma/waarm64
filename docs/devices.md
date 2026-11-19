@@ -425,7 +425,9 @@ one that nothing in the guest manages, for a guest whose network is configured c
 configures only what `/etc/network/interfaces` lists (`eth0`), so a second adapter the page connected (a demo's room:
 [networking/rooms.md](networking/rooms.md) "A demo's room") would stay down. A card is the agent's only when the guest
 has no systemd (`/run/systemd/system`: there networkd, NetworkManager or the user owns the cards, and the unit is
-sandboxed), neither networkd nor NetworkManager runs, the card is down (IFF_UP clear in its sysfs `flags`), no ifupdown
+sandboxed), neither networkd nor NetworkManager runs, the card is down (IFF_UP clear in its sysfs `flags`; or up but marked as
+one the agent brought up before, `/run/waarm64-cards/<card>`, so a card whose udhcpc6 didn't start or died is brought
+up again at the next CARDS), no ifupdown
 file names it (`/etc/network/interfaces`, `/etc/network/interfaces.d/*`: any word of a line that isn't a comment) and no
 DHCP client runs for it (a udhcpc or udhcpc6 of its own, a dhcpcd that manages it). Then, in a forked child as LEASE's
 tools run: `accept_ra_rt_info_max_plen` 128 on the card (the kernel's default, 0, ignores the Route Information
@@ -448,15 +450,22 @@ a running udhcpc6), it forks a DNS forwarder, a process of its own that runs whe
 listening on `127.0.53.53:53` (UDP and TCP; out of the way of a resolver the user runs on 127.0.0.1). While a card's
 lease has given resolvers, the forwarder keeps `/etc/resolv.conf` naming it alone: each time udhcpc rewrites the file,
 its servers and search domains become the upstreams (kept in the file's comments, `# upstream nameserver …`, so a
-forwarder started again finds them) and the file is written again, the cards' domains first in its `search` (so a
-member's first label alone resolves). A name under a card's domains goes to that card's resolvers, anything else to the
-upstreams, all at once, the first answer that isn't SERVFAIL or REFUSED relayed (as musl would); TCP queries (musl's
-after a truncated answer) get a child each. When the cards' resolvers go (a lease lost) and when the agent ends (the
-pipe from the root closes: a stop, a crash), the file is written back with the upstreams alone. Only where the agent
+forwarder started again finds them) and the file is written again, the cards' domains in its `search` after the
+upstream's (so a member's first label alone resolves; after, because musl stops at the first search domain whose query
+fails, and a room that doesn't answer, its adapter disconnected, would fail every dotless name). A name under a card's
+domains goes to that card's resolvers, anything else to the upstreams, all at once, the first answer that isn't
+SERVFAIL or REFUSED relayed (as musl would); a datagram shorter than a header is dropped. TCP queries (musl's after a
+truncated answer) get a child each, 8 at once at most (past them a connection is closed), each ending with the
+forwarder and within 15 s. When the cards' resolvers go (a lease lost) and when the agent ends (the pipe from the root
+closes: a stop, a crash), the file is written back with the upstreams alone. The root watches the forwarder (its
+pidfd): if it dies (the OOM killer: it shares the agent's cgroup and `oom_score_adj`), the root writes the file back
+itself and starts it again, unless it died within 10 s of its start (then the next CARDS does). The OpenRC service's
+stop unmounts the agent's tmpfs lazily if the forwarder, a fork of the agent's binary, still has it busy. Only where the agent
 brought a card up, so only on guests configured card by card (udhcpc's: Alpine); systemd-resolved does it per link on
 the others. Tests: the file taken and given back, routing, and the forwarder end to end on loopback with two servers
-(agent/src/resolve.rs), and on the page `tests/page-demo-room.test.ts` (a member pinged by its name and its first label,
-a name off the room through the demo network).
+and a 1-byte query, the TCP children's bound, a forwarder killed (agent/src/resolve.rs), and on the page
+`tests/page-demo-room.test.ts` (a member pinged by its name and its first label, a name off the room through the demo
+network; again after the forwarder is killed and after `rc-service waarm64-agent restart` with a TCP query held).
 
 **The desktop's state** (DESKTOP; the user's decision, 2026-11-13: for the tests only): the session child says when a
 graphical session is up for seat0's active user: Wayland's once its connection to a compositor has the globals (the

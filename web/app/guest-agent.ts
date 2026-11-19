@@ -226,7 +226,8 @@ start() {
 stop() {
 	mountpoint -q /run/waarm64 || return 0
 	default_stop
-	umount /run/waarm64
+	# Lazily if still busy: the agent's forwarder, a fork of its binary, ends a moment after the agent.
+	umount /run/waarm64 2>/dev/null || umount -l /run/waarm64
 }
 `;
 }

@@ -7,8 +7,8 @@
 // there before the first start. After the restore the agent brings up `eth1`, which nothing in Alpine manages (CARDS,
 // docs/devices.md "A card nothing else manages"): udhcpc6 takes the room's address, the router advertisement's Route
 // Information option the room's /48, and the default routes stay `eth0`'s; then each pings the other's room address,
-// and A pings B by its name in the room through the agent's DNS forwarder (docs/devices.md "Names through the agent").
-// The template: `WAARM64_DEMO_SITE` (default target/demos) `/alpine-term`, built by tools/build-demos.ts from
+// and A pings B by its name in the room through the agent's DNS forwarder (docs/devices.md "Names through the agent"),
+// also after the forwarder is killed and after the agent's service restarts. The template: `WAARM64_DEMO_SITE` (default target/demos) `/alpine-term`, built by tools/build-demos.ts from
 // deploy/disks/demos.json (two adapters); skipped when it isn't this core's or has one adapter. ~20 s. Opt-in with the
 // network tests (scripts/ci-net.sh): WAARM64_NET_TESTS=1, WAARM64_TAILCAT=1 (Go for derper).
 import assert from 'node:assert/strict';
@@ -216,5 +216,27 @@ test("a demo's room: two visitors' Alpine demo machines, each its own key; the a
   }
   const cdn = await run(a, 'nslookup dl-cdn.alpinelinux.org 2>&1 | tail -4');
   assert.match(cdn, /Address:?\s+[0-9a-f.:]+/, `a name off the room, upstream: ${cdn}`);
+  // The forwarder (a child of the agent's root, the agent's binary too) killed, as the OOM killer would: the agent gives
+  // resolv.conf back and starts it again; B's name resolves through the new one.
+  const forwarder = `for p in $(pidof agent); do pp=$(cut -d' ' -f4 /proc/$p/stat); case " $(pidof agent) " in *" $pp "*) echo $p;; esac; done`;
+  const byName = async (what: string) => {
+    const out = await run(a, `ping -c 1 -W 5 ${nameB} 2>&1 | head -1`, 60_000);
+    assert.match(out, new RegExp(`\\(${addrB}\\)`), `${what}: ${out}`);
+  };
+  const first = await run(a, forwarder);
+  assert.match(first, /^\d+$/, `one forwarder: ${first}`);
+  await run(a, `kill -9 ${first}; sleep 3`);
+  const second = await run(a, forwarder);
+  assert.match(second, /^\d+$/, `a forwarder again: ${second}`);
+  assert.notEqual(second, first, 'started again');
+  assert.equal(await run(a, "grep '^nameserver' /etc/resolv.conf"), 'nameserver 127.0.53.53');
+  await byName('after the forwarder was killed');
+  // The service restarted while a TCP query holds a child of the forwarder: the stop succeeds (the tmpfs unmounted
+  // lazily if still busy), the agent comes back, and with the page's CARDS its forwarder.
+  const restart = await run(a, "(printf '\\000\\034'; sleep 20) 2>/dev/null | nc 127.0.53.53 53 > /dev/null 2>&1 & sleep 1; rc-service waarm64-agent restart > /tmp/rc.out 2>&1; echo rc=$?; tail -n 3 /tmp/rc.out", 90_000);
+  assert.match(restart, /^rc=0/, `the restart: ${restart}`);
+  const back = await run(a, `for i in $(seq 40); do f=$(${forwarder}); [ -n "$f" ] && break; sleep 1; done; echo $f`, 90_000);
+  assert.match(back, /^\d+$/, `the forwarder after the restart: ${back}`);
+  await byName('after the restart');
   assert.deepEqual(errors, []);
 });

@@ -221,6 +221,24 @@ test("a demo's room (`demo.room`): its second adapter on a room connection of it
   assert.ok((await new Connections(store).list()).some((c) => c.id === roomOf(b)?.id), 'attached elsewhere since: the user\'s now');
 });
 
+test("a demo's import that fails leaves no room connection behind (nor one per retry)", async () => {
+  const d = await demoDef({ room: 'global' });
+  const { snapshot: _, ...noSnap } = d.demo!;
+  const def = { ...d, machine: { ...d.machine, macs: ['52:54:00:12:34:56', '52:54:00:12:34:57'] }, demo: noSnap };
+  serve({ [STORE_URL]: JSON.stringify({ type: STORE_TYPE, version: 1, demos: [def] }) });
+  const s = await fetchStore(STORE_URL);
+  const store = fresh();
+  const put = store.put.bind(store);
+  store.put = (async (kind, value) => {
+    if (kind === 'machines') throw new Error('the storage full');
+    return put(kind, value);
+  }) as typeof store.put;
+  for (let i = 0; i < 2; i++) await assert.rejects(machineFromDemo(store, findDemo(s, 'alpine-term')!), /the storage full/);
+  assert.equal((await store.all('machines')).length, 0, 'no machine');
+  const rooms = (await new Connections(store).list()).filter((c) => c.kind === 'room');
+  assert.equal(rooms.length, 0, `no room connection left: ${rooms.map((c) => c.name).join(', ')}`);
+});
+
 test("templates (New machine's): only the demos marked so; a template's machine is the definition's, cold, the user's own", async () => {
   const text = JSON.stringify({ type: STORE_TYPE, version: 1, demos: [await demoDef({ template: true }), await demoDef({ id: 'only-demo' }), await demoDef({ id: 'not', template: false })] });
   const s = parseStore(text, STORE_URL);

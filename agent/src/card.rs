@@ -9,7 +9,8 @@
 //! - the guest has no systemd (`/run/systemd/system`): on systemd the network manager (networkd, NetworkManager) or
 //!   the user owns every card, and the agent's unit is sandboxed besides;
 //! - neither networkd nor NetworkManager runs (`lease::Paths`' `networkd`, `nm`);
-//! - the card is down (IFF_UP clear in `/sys/class/net/<card>/flags`): anything that configured it brought it up;
+//! - the card is down (IFF_UP clear in `/sys/class/net/<card>/flags`): anything that configured it brought it up; or
+//!   it is up but the agent brought it up before (its mark, `Paths::marks`), and the next rule finds its client gone;
 //! - no ifupdown file names it (`/etc/network/interfaces` and the files of `/etc/network/interfaces.d`: any word of a
 //!   line that isn't a comment, `auto eth1`, `iface eth1 inet6 …`, `allow-hotplug eth1`);
 //! - no DHCP client runs for it (a udhcpc or udhcpc6 of the card's, a dhcpcd that manages it: src/lease.rs).
@@ -71,6 +72,9 @@ pub struct Paths {
     pub busybox: Vec<String>,
     /// Where `SCRIPT` is written (outside the agent's own tmpfs, which goes when it stops: udhcpc6 stays).
     pub script: String,
+    /// A file per card the agent brought up (`mark`), outside its tmpfs too: such a card, up with no client, is the
+    /// agent's to bring up again.
+    pub marks: String,
 }
 
 impl Default for Paths {
@@ -89,6 +93,7 @@ impl Default for Paths {
             udhcpc6: bins("udhcpc6"),
             busybox: bins("busybox"),
             script: "/run/waarm64-udhcpc6.script".into(),
+            marks: "/run/waarm64-cards".into(),
         }
     }
 }
@@ -141,7 +146,7 @@ pub fn unmanaged(lp: &LeasePaths, p: &Paths, macs: &[[u8; 6]]) -> Vec<String> {
     let conf = crate::rt::read_text(&lp.dhcpcd_conf).unwrap_or_default();
     crate::lease::cards(&lp.net, macs)
         .into_iter()
-        .filter(|c| !up(&lp.net, c))
+        .filter(|c| !up(&lp.net, c) || exists(&format!("{}/{c}", p.marks)))
         .filter(|c| !named(&ifupdown, c))
         .filter(|c| !procs.iter().any(|(_, _, a)| udhcpc_of(a, c)))
         .filter(|c| !dhcpcd_manages(&titles, &conf, c))
@@ -191,6 +196,23 @@ pub fn steps(p: &Paths, cards: &[String]) -> Option<Vec<Step>> {
         out.push(Step::Run(run));
     }
     Some(out)
+}
+
+/// Marks `cards` as the agent's (a file each in `p.marks`), before it brings them up.
+pub fn mark(p: &Paths, cards: &[String]) -> Result<(), rustix::io::Errno> {
+    use rustix::fs::{Mode, OFlags};
+    match rustix::fs::mkdir(p.marks.as_str(), Mode::from_raw_mode(0o755)) {
+        Ok(()) | Err(rustix::io::Errno::EXIST) => {}
+        Err(e) => return Err(e),
+    }
+    for c in cards {
+        rustix::fs::open(
+            format!("{}/{c}", p.marks).as_str(),
+            OFlags::WRONLY | OFlags::CREATE | OFlags::CLOEXEC,
+            Mode::from_raw_mode(0o644),
+        )?;
+    }
+    Ok(())
 }
 
 /// Writes `SCRIPT` at `p.script` (0755, replaced whole).
@@ -268,6 +290,7 @@ mod tests {
                 udhcpc6: vec![self.s("bin/udhcpc6")],
                 busybox: vec![self.s("bin/busybox")],
                 script: self.s("udhcpc6.script"),
+                marks: self.s("marks"),
             };
             (lp, p)
         }
@@ -368,6 +391,30 @@ mod tests {
             let (lp, p) = g.paths();
             assert!(unmanaged(&lp, &p, &[ETH1]).is_empty(), "{f}");
         }
+    }
+
+    /// A card the agent brought up before (its mark) that is up with no client (udhcpc6 didn't start, or died) is
+    /// the agent's again; one up by anything else (no mark) stays left alone.
+    #[test]
+    fn a_card_the_agent_brought_up_whose_client_is_gone_is_tried_again() {
+        let g = alpine("again");
+        let (lp, p) = g.paths();
+        assert_eq!(unmanaged(&lp, &p, &[ETH1]), ["eth1"]);
+        mark(&p, &["eth1".into()]).unwrap();
+        g.card("eth1", "52:54:00:ab:cd:ef", "0x1003");
+        assert_eq!(
+            unmanaged(&lp, &p, &[ETH1]),
+            ["eth1"],
+            "up, the agent's, no udhcpc6"
+        );
+        g.process(900, "udhcpc6", &["/sbin/udhcpc6", "-i", "eth1", "-b"]);
+        assert!(unmanaged(&lp, &p, &[ETH1]).is_empty(), "its udhcpc6 runs");
+        let g = alpine("again-named");
+        let (lp, p) = g.paths();
+        mark(&p, &["eth1".into()]).unwrap();
+        g.card("eth1", "52:54:00:ab:cd:ef", "0x1003");
+        fs::write(g.dir.join("etc/interfaces.d/eth1"), "auto eth1\n").unwrap();
+        assert!(unmanaged(&lp, &p, &[ETH1]).is_empty(), "ifupdown's since");
     }
 
     #[test]

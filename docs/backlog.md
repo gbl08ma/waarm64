@@ -1255,6 +1255,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **The store's sweep never runs** (review demo-page-3, 2026-11-19): `Store.sweep` (web/app/store.ts) removes the
+  bytes no record owns, and machines.md §2 says it runs at start, but nothing on the page calls it, so what a crash or a
+  closed tab leaves (an import's kept snapshot, a disk's files) stays in OPFS. Before wiring it in: a template's import
+  (web/app/definitions.ts `importDefinition`) keeps its snapshot before the machine's record and then writes the disks,
+  overlays and the room's connection, outside the write lock (`importSnapshot` holds it only around its own copy), so
+  another tab's sweep in that window would delete the snapshot the record then names (`restoreFirst`). Wrapping the
+  whole import in `writing` isn't the fix as is: a shared lock asked again inside it waits behind an exclusive sweep
+  queued meanwhile (Web Locks queue in order), a deadlock; the import's own nested `writing` calls would need to go.
+  A room connection left by a tab closed mid-import (`forMachine` naming no machine) would be the sweep's too.
 - **The demo store's loose ends** (DEMO loop 6, frontend.md "The demo store"): a demo machine started from Home (not
   the store) whose disk's files are gone fails as a start does, not with "this demo's files are gone" (only the store's
   Open my machine checks the manifests first); the store's URL is set only by `?store=` (no Preferences field); a 3D or

@@ -84,8 +84,9 @@ Since decided (the user, 2026-10-17):
 
 - **IndexedDB for records, OPFS for bytes** (`web/app/store.ts`, IndexedDB `waarm64`, ids of 12 hex digits). A record
   is written after its bytes and deleted before them, so a crash leaves unreferenced files, never a record without
-  its files. `Store.sweep` removes, at start, id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
-  `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock).
+  its files. `Store.sweep` removes id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
+  `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock); the page doesn't call
+  it yet (backlog.md "The store's sweep never runs").
 - **Without OPFS** (Firefox's private windows, where `getDirectory` throws a SecurityError; Node): `hasOpfs`
   (`web/overlay.ts`, one probe per context) sends the store to memory (records and files, for the page's life) and the
   overlays, variable stores and suspended copies to the memory of the context that opens them (the machine's worker,

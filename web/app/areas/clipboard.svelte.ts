@@ -15,7 +15,10 @@ class Clipboard {
    * write, Copy the console's text no text (`console`) or a console that shows graphics (`graphics`).
    */
   failed = $state<'send' | 'type' | 'screen' | 'console' | 'graphics'>();
-  /** The run began paused: a machine made from a demo, whose every run does (web/app/demo-store.ts `startsPaused`). */
+  /**
+   * The run began paused and is still in that pause: a machine made from a demo, whose every run does
+   * (web/app/demo-store.ts `startsPaused`); cleared once sharing resumes (a later pause is the user's own).
+   */
   startedPaused = $state(false);
   readonly #changes = new Changes();
 
@@ -26,7 +29,10 @@ class Clipboard {
     this.startedPaused = paused;
     if (!share) return;
     share.setPermission(this.permission);
-    share.onChange = () => this.#changes.notify();
+    share.onChange = () => {
+      if (share.state !== 'paused') this.startedPaused = false;
+      this.#changes.notify();
+    };
   }
   /** The page's machine has the setting: its button shows while it runs. */
   get on() {

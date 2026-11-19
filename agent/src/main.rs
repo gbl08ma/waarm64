@@ -571,6 +571,9 @@ impl Agent {
             log("cards: udhcpc6's script", Some(e));
             return;
         }
+        if let Err(e) = card::mark(&self.card, &cards) {
+            log("cards: their marks", Some(e));
+        }
         log(&format!("cards: bringing up {}", cards.join(" ")), None);
         match lease::spawn_steps(&steps) {
             Ok(j) => self.carding = Some(j),
@@ -664,6 +667,7 @@ struct Session<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tag {
     Port,
+    Resolver,
     Ino,
     Mounts,
     Child,
@@ -714,6 +718,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(j) = &s.agent.carding {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
             tags.push(Tag::Card);
+        }
+        if let Some(fd) = s.agent.resolver.as_ref().and_then(|r| r.pidfd.as_ref()) {
+            fds.push(PollFd::new(fd, PollFlags::IN));
+            tags.push(Tag::Resolver);
         }
         if let Some(j) = &s.agent.trimming {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
@@ -795,6 +803,15 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                     }
                     if let Some(macs) = s.agent.cards_next.take() {
                         s.agent.cards(&macs);
+                    }
+                }
+                Tag::Resolver => {
+                    // The forwarder ended (the OOM killer, an abort): the file back, and the forwarder again.
+                    if let Some(r) = s.agent.resolver.take() {
+                        log("resolve: the forwarder ended", None);
+                        if resolve::ended(r, &s.agent.resolve, resolve::now()) {
+                            s.agent.ensure_resolver(false);
+                        }
                     }
                 }
                 Tag::Trim => {

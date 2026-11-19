@@ -35,6 +35,8 @@ const UPSTREAM_SEARCH: &str = "# upstream search ";
 const QUERY_MS: u64 = 5_000;
 /// Queries in flight at most (more are dropped: the client asks again).
 const MAX_PENDING: usize = 64;
+/// TCP connections answered at once at most (a child each; past them a connection is closed).
+const MAX_TCP: usize = 8;
 
 #[derive(Clone)]
 pub struct Paths {
@@ -118,7 +120,7 @@ pub fn parse_resolv(text: &str) -> Resolv {
     r
 }
 
-/// The forwarder's `resolv.conf`: the marker, the upstreams kept, the rooms' domains then the upstreams', the
+/// The forwarder's `resolv.conf`: the marker, the upstreams kept, the upstream's domains then the rooms', the
 /// forwarder alone as the server, the other lines.
 pub fn ours(up: &Resolv, rooms: &[Room], listen: IpAddr) -> String {
     let mut out = format!("{MARKER}\n");
@@ -129,10 +131,12 @@ pub fn ours(up: &Resolv, rooms: &[Room], listen: IpAddr) -> String {
         out.push_str(&format!("{UPSTREAM_SEARCH}{}\n", up.search.join(" ")));
     }
     let mut search: Vec<String> = Vec::new();
-    for d in rooms
+    // The upstream's domains first: musl stops at the first search domain whose query fails (a SERVFAIL, a timeout),
+    // so a room that doesn't answer (its adapter disconnected) would otherwise fail every dotless name.
+    for d in up
+        .search
         .iter()
-        .flat_map(|r| r.domains.iter())
-        .chain(up.search.iter())
+        .chain(rooms.iter().flat_map(|r| r.domains.iter()))
     {
         if !search.contains(d) {
             search.push(d.clone());
@@ -474,7 +478,7 @@ pub fn serve(p: Paths, parent: OwnedFd) -> i32 {
             };
             let answer = buf[..n].to_vec();
             let q = &mut pending[i];
-            if answer.len() < 12 || answer[..2] != q.query[..2] {
+            if answer.len() < 12 || answer.get(..2) != q.query.get(..2) {
                 continue;
             }
             if matches!(rcode(&answer), 2 | 5) {
@@ -504,6 +508,9 @@ pub fn serve(p: Paths, parent: OwnedFd) -> i32 {
             while let Ok((n, _, Some(from))) =
                 rustix::net::recvfrom(&udp, &mut buf[..], RecvFlags::DONTWAIT)
             {
+                if n < 12 {
+                    continue; // not a query: no header to answer by
+                }
                 let q = buf[..n].to_vec();
                 let Ok(client) = SocketAddr::try_from(from) else {
                     continue;
@@ -531,9 +538,19 @@ pub fn serve(p: Paths, parent: OwnedFd) -> i32 {
                 });
             }
         }
-        // Queries over TCP: a child each.
+        tcp_children.retain(|p| {
+            !matches!(
+                rustix::process::waitpid(Some(*p), WaitOptions::NOHANG),
+                Ok(Some(_))
+            )
+        });
+        // Queries over TCP: a child each, `MAX_TCP` at most (past them a connection is closed: musl falls back).
         if ready[3] {
             while let Ok(conn) = rustix::net::accept_with(&tcp, SocketFlags::CLOEXEC) {
+                if tcp_children.len() >= MAX_TCP {
+                    drop(conn);
+                    continue;
+                }
                 if let Some(pid) = tcp_child(
                     &f,
                     conn,
@@ -548,28 +565,32 @@ pub fn serve(p: Paths, parent: OwnedFd) -> i32 {
                 }
             }
         }
-        tcp_children.retain(|p| {
-            !matches!(
-                rustix::process::waitpid(Some(*p), WaitOptions::NOHANG),
-                Ok(Some(_))
-            )
-        });
     }
 }
 
 unsafe extern "C" {
     /// The C library's (musl's), as in src/lease.rs.
     fn fork() -> i32;
+    /// The C library's: SIGALRM (whose default ends the process) in `secs` seconds.
+    fn alarm(secs: u32) -> u32;
 }
 
+/// A TCP child's whole life at most (each read and write is bounded by `QUERY_MS` besides): a client that trickles
+/// its bytes doesn't hold one longer.
+const TCP_CHILD_S: u32 = 3 * (QUERY_MS / 1000) as u32;
+
 /// A TCP query on `conn`, answered by a child: read whole (its length first), asked of the first of its servers that
-/// takes a connection, the answer written back. Every step bounded by the socket's 5 s timeouts.
+/// takes a connection, the answer written back. Every step bounded by the socket's 5 s timeouts, the whole by
+/// `TCP_CHILD_S`; it ends with the forwarder.
 fn tcp_child(f: &Forwarder, conn: OwnedFd, close: &[i32]) -> Option<Pid> {
     // SAFETY: the forwarder is one thread; the child exits without returning.
     let pid = unsafe { fork() };
     if pid != 0 {
         return Pid::from_raw(pid);
     }
+    let _ = rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::KILL));
+    // SAFETY: a plain syscall wrapper; SIGALRM's default action ends the child.
+    unsafe { alarm(TCP_CHILD_S) };
     for &fd in close {
         // SAFETY: the parent's descriptors, which the child never uses.
         unsafe { drop(<OwnedFd as rustix::fd::FromRawFd>::from_raw_fd(fd)) };
@@ -643,12 +664,19 @@ fn write_all(fd: impl AsFd, mut b: &[u8]) -> bool {
     true
 }
 
-/// The forwarder, running (the root's: its process and the pipe whose closing ends it).
+/// The forwarder, running (the root's: its process, its pidfd, when it started, and the pipe whose closing ends it).
 pub struct Running {
     pub pid: Pid,
+    /// Readable once it ended (the root's poll hears it: `ended`); none if the kernel gave none (descriptors ran out).
+    pub pidfd: Option<OwnedFd>,
+    started: u64,
     /// Held, never written: its closing (the root's end, a crash too) ends the forwarder.
     _pipe: OwnedFd,
 }
+
+/// A forwarder that ended sooner than this after its start isn't started again at once (one that can't run: the next
+/// CARDS tries again).
+const YOUNG_MS: u64 = 10_000;
 
 /// Forks the forwarder (`serve`); the root keeps the pipe's write end, and the child exits when it closes.
 pub fn spawn(p: &Paths) -> Result<Running, Errno> {
@@ -664,10 +692,43 @@ pub fn spawn(p: &Paths) -> Result<Running, Errno> {
         crate::rt::exit(serve(p.clone(), read));
     }
     drop(read);
+    let pid = Pid::from_raw(pid).ok_or(Errno::INVAL)?;
     Ok(Running {
-        pid: Pid::from_raw(pid).ok_or(Errno::INVAL)?,
+        pid,
+        pidfd: rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()).ok(),
+        started: now_ms(),
         _pipe: write,
     })
+}
+
+/// The file written back with the upstreams its comments keep, if it's a forwarder's (the root's, for one that died:
+/// it could not).
+pub fn give_back(p: &Paths) {
+    let text = crate::rt::read_text(&p.resolv).unwrap_or_default();
+    if text.lines().next() == Some(MARKER) {
+        let up = Resolv {
+            ours: false,
+            ..parse_resolv(&text)
+        };
+        match write_file(&p.resolv, &plain(&up)) {
+            Ok(()) => crate::log("resolve: resolv.conf given back", None),
+            Err(e) => crate::log("resolve: resolv.conf", Some(e)),
+        }
+    }
+}
+
+/// Forwarder `r` ended (its pidfd readable) at `now`, or is ended: reaped, and the file given back, so names resolve
+/// through the upstreams meanwhile. Whether to start it again: not when it died young (`YOUNG_MS`).
+pub fn ended(r: Running, p: &Paths, now: u64) -> bool {
+    let _ = rustix::process::kill_process(r.pid, rustix::process::Signal::KILL);
+    let _ = rustix::process::waitpid(Some(r.pid), WaitOptions::empty());
+    give_back(p);
+    now >= r.started + YOUNG_MS
+}
+
+/// Now, in the monotonic clock's milliseconds (`ended`'s `now`).
+pub fn now() -> u64 {
+    now_ms()
 }
 
 /// Whether the forwarder still runs (reaped if it ended).
@@ -699,11 +760,14 @@ mod tests {
         assert_eq!(up.servers.len(), 2);
         assert_eq!(up.search, ["lan"]);
         assert_eq!(up.rest, ["options ndots:1"]);
+        // The rooms' domains after the upstream's: musl stops at the first search domain that fails (SERVFAIL, a
+        // timeout), so a room that doesn't answer (its adapter disconnected) mustn't come before the names the
+        // upstream's domains find.
         let mine = ours(&up, &[room()], IpAddr::V4(LISTEN));
         assert_eq!(
             mine,
             format!(
-                "{MARKER}\n# upstream nameserver 192.168.127.1\n# upstream nameserver 192.168.127.2\n# upstream search lan\nsearch global.p2p.internal lan\nnameserver 127.0.53.53\noptions ndots:1\n"
+                "{MARKER}\n# upstream nameserver 192.168.127.1\n# upstream nameserver 192.168.127.2\n# upstream search lan\nsearch lan global.p2p.internal\nnameserver 127.0.53.53\noptions ndots:1\n"
             )
         );
         // Read back (a forwarder started again): its upstreams from the comments, not the forwarder.
@@ -770,59 +834,118 @@ mod tests {
         assert_eq!((f[0], f[1], f[2] & 0x80, rcode(&f)), (0x12, 0x34, 0x80, 2));
     }
 
-    /// The forwarder end to end on loopback: a room's server and an upstream (tests' own, on 127.0.0.x ports),
-    /// resolv.conf taken, a query to each routed there and answered, the file given back when the pipe closes.
+    /// A forwarder of the tests' on loopback: a room's server and an upstream (on 127.0.0.x ports, `base` apart from
+    /// another test's), a resolv.conf naming the upstream and a room's file; returned once it holds the file.
+    struct Harness {
+        dir: std::path::PathBuf,
+        roomsrv: std::net::UdpSocket,
+        upsrv: std::net::UdpSocket,
+        listen: SocketAddr,
+        write: Option<OwnedFd>,
+        t: Option<std::thread::JoinHandle<i32>>,
+    }
+
+    impl Harness {
+        fn start(name: &str, listen_ip: &str) -> Harness {
+            use std::net::UdpSocket;
+            let dir = std::env::temp_dir().join(format!("waarm64-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join("rooms")).unwrap();
+            let roomsrv = UdpSocket::bind("127.0.0.2:0").unwrap();
+            let port = roomsrv.local_addr().unwrap().port();
+            let upsrv = UdpSocket::bind(format!("127.0.0.3:{port}")).unwrap();
+            std::fs::write(dir.join("resolv.conf"), "nameserver 127.0.0.3\n").unwrap();
+            std::fs::write(
+                dir.join("rooms/eth1"),
+                "dns 127.0.0.2\nsearch global.p2p.internal\n",
+            )
+            .unwrap();
+            let listen: SocketAddr = format!("{listen_ip}:{}", port + 1).parse().unwrap();
+            let p = Paths {
+                resolv: dir.join("resolv.conf").to_str().unwrap().into(),
+                etc: dir.to_str().unwrap().into(),
+                rooms: dir.join("rooms").to_str().unwrap().into(),
+                listen,
+                port,
+            };
+            let (read, write) = rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).unwrap();
+            let t = std::thread::Builder::new()
+                .name(name.into())
+                .spawn(move || serve(p, read))
+                .unwrap();
+            let h = Harness {
+                dir,
+                roomsrv,
+                upsrv,
+                listen,
+                write: Some(write),
+                t: Some(t),
+            };
+            assert!(h.until(|f| f.starts_with(MARKER)), "the file taken");
+            h
+        }
+
+        fn resolv(&self) -> String {
+            std::fs::read_to_string(self.dir.join("resolv.conf")).unwrap()
+        }
+
+        /// Whether the file came to be as `ok` wants within 2 s.
+        fn until(&self, ok: impl Fn(&str) -> bool) -> bool {
+            for _ in 0..100 {
+                if ok(&self.resolv()) {
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            false
+        }
+
+        fn running(&self) -> bool {
+            !self.t.as_ref().unwrap().is_finished()
+        }
+
+        /// The root's pipe closed: the forwarder's exit status.
+        fn end(&mut self) -> i32 {
+            drop(self.write.take());
+            self.t.take().unwrap().join().unwrap()
+        }
+    }
+
+    impl Drop for Harness {
+        fn drop(&mut self) {
+            drop(self.write.take());
+            if let Some(t) = self.t.take() {
+                let _ = t.join();
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// A query for `name` (AAAA, id 0xabcd).
+    fn query(name: &[u8]) -> Vec<u8> {
+        let mut q = vec![0xab, 0xcd, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];
+        for l in name.split(|&b| b == b'.') {
+            q.push(l.len() as u8);
+            q.extend_from_slice(l);
+        }
+        q.extend_from_slice(&[0, 0, 28, 0, 1]);
+        q
+    }
+
+    /// The forwarder end to end on loopback: resolv.conf taken, a query to each server routed there and answered,
+    /// the file given back when the room's lease goes and when the pipe closes.
     #[test]
     fn forwards_and_gives_back() {
         use std::net::UdpSocket;
-        let dir = std::env::temp_dir().join(format!("waarm64-resolve-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("rooms")).unwrap();
-        let roomsrv = UdpSocket::bind("127.0.0.2:0").unwrap();
-        let port = roomsrv.local_addr().unwrap().port();
-        let upsrv = UdpSocket::bind(format!("127.0.0.3:{port}")).unwrap();
-        std::fs::write(dir.join("resolv.conf"), "nameserver 127.0.0.3\n").unwrap();
-        std::fs::write(
-            dir.join("rooms/eth1"),
-            "dns 127.0.0.2\nsearch global.p2p.internal\n",
-        )
-        .unwrap();
-        let listen: SocketAddr = format!("127.0.53.54:{}", port + 1).parse().unwrap();
-        let p = Paths {
-            resolv: dir.join("resolv.conf").to_str().unwrap().into(),
-            etc: dir.to_str().unwrap().into(),
-            rooms: dir.join("rooms").to_str().unwrap().into(),
-            listen,
-            port,
-        };
-        let (read, write) = rustix::pipe::pipe_with(rustix::pipe::PipeFlags::CLOEXEC).unwrap();
-        let t = std::thread::spawn(move || serve(p, read));
-        for _ in 0..100 {
-            if std::fs::read_to_string(dir.join("resolv.conf"))
-                .unwrap()
-                .starts_with(MARKER)
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(
-            std::fs::read_to_string(dir.join("resolv.conf"))
-                .unwrap()
-                .contains("nameserver 127.0.53.54")
-        );
+        let mut h = Harness::start("resolve", "127.0.53.54");
+        let (listen, roomsrv, upsrv, dir) = (h.listen, &h.roomsrv, &h.upsrv, h.dir.clone());
+        assert!(h.resolv().contains("nameserver 127.0.53.54"));
         let client = UdpSocket::bind("127.0.0.1:0").unwrap();
         client
             .set_read_timeout(Some(std::time::Duration::from_secs(5)))
             .unwrap();
         let ask = |name: &[u8], srv: &UdpSocket| {
-            let mut q = vec![0xab, 0xcd, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];
-            for l in name.split(|&b| b == b'.') {
-                q.push(l.len() as u8);
-                q.extend_from_slice(l);
-            }
-            q.extend_from_slice(&[0, 0, 28, 0, 1]);
-            client.send_to(&q, listen).unwrap();
+            client.send_to(&query(name), listen).unwrap();
             let mut b = [0u8; 512];
             let (n, from) = srv.recv_from(&mut b).unwrap();
             let mut a = b[..n].to_vec();
@@ -831,49 +954,168 @@ mod tests {
             let (n, _) = client.recv_from(&mut b).unwrap();
             b[..n].to_vec()
         };
-        let a = ask(b"abc.global.p2p.internal", &roomsrv);
+        let a = ask(b"abc.global.p2p.internal", roomsrv);
         assert_eq!(
             (a[0], a[1], a[2] & 0x80),
             (0xab, 0xcd, 0x80),
             "the room's answer relayed"
         );
-        let a = ask(b"dl-cdn.alpinelinux.org", &upsrv);
+        let a = ask(b"dl-cdn.alpinelinux.org", upsrv);
         assert_eq!((a[0], a[1]), (0xab, 0xcd), "the upstream's");
         // The room's lease lost: the file given back; then the agent ends.
         std::fs::remove_file(dir.join("rooms/eth1")).unwrap();
-        for _ in 0..100 {
-            if !std::fs::read_to_string(dir.join("resolv.conf"))
-                .unwrap()
-                .starts_with(MARKER)
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert_eq!(
-            std::fs::read_to_string(dir.join("resolv.conf")).unwrap(),
-            "nameserver 127.0.0.3\n"
+        assert!(
+            h.until(|f| f == "nameserver 127.0.0.3\n"),
+            "given back: {}",
+            h.resolv()
         );
         std::fs::write(
             dir.join("rooms/eth1"),
             "dns 127.0.0.2\nsearch global.p2p.internal\n",
         )
         .unwrap();
-        for _ in 0..100 {
-            if std::fs::read_to_string(dir.join("resolv.conf"))
-                .unwrap()
-                .starts_with(MARKER)
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        drop(write);
-        assert_eq!(t.join().unwrap(), 0);
+        assert!(h.until(|f| f.starts_with(MARKER)), "taken again");
+        assert_eq!(h.end(), 0);
         assert_eq!(
             std::fs::read_to_string(dir.join("resolv.conf")).unwrap(),
             "nameserver 127.0.0.3\n",
             "given back when the agent ends"
+        );
+    }
+
+    /// A datagram shorter than a DNS header isn't forwarded (an upstream that answers anything would have the
+    /// forwarder compare the answer's ID with a query that has none).
+    #[test]
+    fn a_runt_query_is_dropped() {
+        let h = Harness::start("resolve-runt", "127.0.53.55");
+        let up = h.upsrv.try_clone().unwrap();
+        up.set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
+        // An upstream that answers anything with a header (twice: the runt, if it came, then the real query).
+        let echo = std::thread::spawn(move || {
+            let mut b = [0u8; 512];
+            let mut heard = Vec::new();
+            for _ in 0..2 {
+                let Ok((n, from)) = up.recv_from(&mut b) else {
+                    break;
+                };
+                heard.push(n);
+                let mut a = if n >= 12 {
+                    b[..n].to_vec()
+                } else {
+                    vec![0u8; 12]
+                };
+                a[2] |= 0x80;
+                up.send_to(&a, from).unwrap();
+            }
+            heard
+        });
+        let client = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        client
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        client.send_to(&[0x12], h.listen).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(h.running(), "the forwarder still runs after a 1-byte query");
+        let q = query(b"dl-cdn.alpinelinux.org");
+        client.send_to(&q, h.listen).unwrap();
+        let mut b = [0u8; 512];
+        let (n, _) = client.recv_from(&mut b).expect("a real query answered");
+        assert_eq!((n, b[0], b[1]), (q.len(), 0xab, 0xcd));
+        assert_eq!(
+            echo.join().unwrap(),
+            [q.len()],
+            "the runt never went upstream"
+        );
+    }
+
+    /// The children of this process's thread named `name` (a forwarder's: its TCP children are forked by the thread
+    /// it runs on).
+    fn children(name: &str) -> usize {
+        std::fs::read_dir("/proc/self/task")
+            .unwrap()
+            .filter_map(|t| {
+                let t = t.ok()?.path();
+                (std::fs::read_to_string(t.join("comm")).ok()?.trim() == name)
+                    .then(|| std::fs::read_to_string(t.join("children")).ok())?
+            })
+            .map(|c| c.split_whitespace().count())
+            .sum()
+    }
+
+    /// Connections over TCP are answered by MAX_TCP children at most: past them, a connection is closed at once (a
+    /// local user can't fork the agent's cgroup out of memory).
+    #[test]
+    fn tcp_children_are_bounded() {
+        let h = Harness::start("resolve-tcp", "127.0.53.56");
+        let conns: Vec<std::net::TcpStream> = (0..MAX_TCP * 3)
+            .map(|_| std::net::TcpStream::connect(h.listen).unwrap())
+            .collect();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let n = children("resolve-tcp");
+        assert!(n <= MAX_TCP, "{n} children for {} connections", conns.len());
+        assert!(n > 0, "the first ones answered by a child");
+        assert!(h.running());
+    }
+
+    /// A forwarder that dies (the OOM killer, an abort) leaves the file naming an address nobody listens on: the root
+    /// hears it end (its pidfd) and gives the file back with the upstreams its comments keep, and says whether to start
+    /// it again (not when it died young: a forwarder that can't run).
+    #[test]
+    fn a_forwarder_that_dies_gives_the_file_back() {
+        let dir = std::env::temp_dir().join(format!("waarm64-resolve-dies-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("rooms")).unwrap();
+        std::fs::write(
+            dir.join("resolv.conf"),
+            "search lan\nnameserver 127.0.0.3\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("rooms/eth1"),
+            "dns 127.0.0.2\nsearch global.p2p.internal\n",
+        )
+        .unwrap();
+        let p = Paths {
+            resolv: dir.join("resolv.conf").to_str().unwrap().into(),
+            etc: dir.to_str().unwrap().into(),
+            rooms: dir.join("rooms").to_str().unwrap().into(),
+            listen: "127.0.53.57:5353".parse().unwrap(),
+            port: 5353,
+        };
+        let read = || std::fs::read_to_string(dir.join("resolv.conf")).unwrap();
+        let r = spawn(&p).unwrap();
+        for _ in 0..100 {
+            if read().starts_with(MARKER) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(read().starts_with(MARKER), "taken: {}", read());
+        rustix::process::kill_process(r.pid, rustix::process::Signal::KILL).unwrap();
+        let pidfd = r.pidfd.as_ref().expect("a pidfd to hear its end on");
+        let mut fds = [PollFd::new(pidfd, PollFlags::IN)];
+        let t = rustix::time::Timespec {
+            tv_sec: 5,
+            tv_nsec: 0,
+        };
+        assert_eq!(poll(&mut fds, Some(&t)).unwrap(), 1, "its end heard");
+        assert_eq!(
+            read().lines().next(),
+            Some(MARKER),
+            "still the dead forwarder's"
+        );
+        let again = ended(r, &p, now_ms());
+        assert_eq!(
+            read(),
+            "search lan\nnameserver 127.0.0.3\n",
+            "given back by the root"
+        );
+        assert!(!again, "died young: not started again at once");
+        let r = spawn(&p).unwrap();
+        assert!(
+            ended(r, &p, now_ms() + 60_000),
+            "after a while: started again"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

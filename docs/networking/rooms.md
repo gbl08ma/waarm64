@@ -268,7 +268,8 @@ A demo whose definition asks for it (`demo.room: "global"`, web/app/definitions.
 global public room on its machine's second adapter, so visitors' demo machines can reach one another
 (decisions.md "Network"; adapters.md §1 rule 2's second exception):
 - **A connection per machine** (web/app/net-demo.ts `withDemoRoom`): a stored room connection on `waarm64-room:global`,
-  named as the machine, `forMachine` its id, made with the machine (web/app/template.ts `machineFromDemo`) and deleted
+  named as the machine, `forMachine` its id, made with the machine (web/app/template.ts `machineFromDemo`), the last
+  record before the machine's own (an import that fails removes it: web/app/definitions.ts `importDefinition`) and deleted
   with it (`deleteOwnConnections`, from the machine's Delete; one another machine was attached to since stays, the
   user's now). Its node key is made in the visitor's browser at the machine's first start, as any stored room
   connection's, so each machine has an address of its own (rule 4 forbids sharing one anyway) and none is in the

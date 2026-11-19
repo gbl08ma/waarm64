@@ -296,13 +296,16 @@ function machineFrom(def: Definition, name: string, attachments: Attachment[], n
  * record; the machine is stored once, as it returns it (its attachments are this import's). `finish` runs before any
  * record is written (its files are the machine's: without its record, the store's sweep takes them), and the disks,
  * overlays and machine are written after it, at once: a tab closed during a template's long import leaves no disk record
- * behind. When it throws (or a disk can't be made) nothing is left: the disks and overlays this import made go, and the
- * machine's files (`finish`'s: a kept snapshot) with them.
+ * behind. `last`: records the machine needs made just before its own (a demo's room connection, `forMachine` its id),
+ * given the record with its attachments. When anything throws (or a disk can't be made) nothing is left: the disks and
+ * overlays this import made go, the machine's files (`finish`'s: a kept snapshot) with them, and the connections made
+ * for it.
  */
 export async function importDefinition(
   store: Store,
   def: Definition,
   finish?: (m: MachineRecord) => Promise<MachineRecord>,
+  last?: (m: MachineRecord) => Promise<MachineRecord>,
 ): Promise<{ machine: MachineRecord; toPick: string[] }> {
   const have = await store.all('disks');
   const now = Date.now();
@@ -342,6 +345,7 @@ export async function importDefinition(
       attachments.push(await withGrownOverlay(store, d, a, x.overlaySize));
     }
     machine = { ...machine, attachments };
+    if (last) machine = await last(machine);
     await store.put('machines', machine);
     return { machine, toPick };
   } catch (e) {
@@ -349,6 +353,9 @@ export async function importDefinition(
     // grown overlays it made on disks it found, then the disks it made (their overlays with them).
     const tidy = (f: Promise<unknown>) => f.catch(() => undefined);
     await tidy(store.deleteMachine(machine.id));
+    // The connections made for it (`last`'s: a demo's room).
+    for (const c of await store.all('connections'))
+      if (c.forMachine === machine.id) await tidy(store.forget('connections', c.id));
     for (const { overlay, disk } of attachments)
       if (overlay && !made.includes(disk)) await tidy(store.deleteOverlay(overlay));
     for (const id of made) await tidy(store.deleteDisk(id));

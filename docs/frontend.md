@@ -303,7 +303,8 @@ opening of the agent's port, so an agent restored paused is resumed). A machine 
 `fromDemo`: web/app/demo-store.ts `startsPaused`) starts every run paused, the switch off and PAUSE said at the port's
 first opening, so the page makes no read and nothing makes Chromium ask until the user turns it on; the pause isn't
 remembered (each run starts so), and a copy of the machine drops `fromDemo` and shares from the start. Its tooltip and
-a note in the menu say "[Clipboard sharing is off. Tick Share the clipboard to share it with the guest both ways; your browser may ask you first. A machine made from a demo starts with it off each time.](ui:clipboard:ClipboardMenu.title.pausedDemo)", and Allow… is hidden meanwhile: the
+a note in the menu say "[Clipboard sharing is off. Tick Share the clipboard to share it with the guest both ways; your browser may ask you first. A machine made from a demo starts with it off each time.](ui:clipboard:ClipboardMenu.title.pausedDemo)", and Allow… is hidden meanwhile (until
+sharing first resumes: a later pause in the run is the user's, with the plain words): the
 switch is the one click, since turning it on while the permission is `prompt` reads on the click (any machine's), as
 the setting's tick does, and a grant then syncs; **[Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send)** and
 **[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click (Send reads `read()`, for an image too); the menu stays open while one runs and closes when it succeeds (for Type, at the agent's TYPED DONE), a failure keeping it open with its note; after Type, the menu says what went
