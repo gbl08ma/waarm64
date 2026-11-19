@@ -130,6 +130,12 @@ const unknownFields = (o: Record<string, unknown>, known: string[]) => Object.ke
 const urlPath = (p: string) => p.split(sep).join('/');
 
 /** Reads and checks the source file strictly: an unknown field, a bad id or one seen twice refuses it. */
+/** A build's directory as a source names it: `target/<dir>/<name>`, each part a plain name (no `.` or `..`). */
+export function isBuildPath(p: string): boolean {
+  const parts = p.split('/');
+  return parts.length === 3 && parts[0] === 'target' && parts.every((x) => /^[A-Za-z0-9._-]+$/.test(x) && x !== '.' && x !== '..');
+}
+
 export function readSource(file: string): Source {
   const x = readJson(file);
   if (!isRecord(x) || x.type !== SOURCE_TYPE) return fail(`${file}: not a ${SOURCE_TYPE} file`);
@@ -137,6 +143,7 @@ export function readSource(file: string): Source {
   if (extra.length) fail(`${file}: unknown fields ${extra.join(', ')}`);
   if (!Array.isArray(x.demos)) return fail(`${file}: no demos`);
   const seen = new Set<string>();
+  const builds = new Set<string>();
   for (const [i, d] of (x.demos as unknown[]).entries()) {
     const at = `${file}: demos[${i}]`;
     if (!isRecord(d) || typeof d.build !== 'string' || !isRecord(d.demo)) return fail(`${at}: a demo is { build, demo, name?, thumbnail? }`);
@@ -145,6 +152,11 @@ export function readSource(file: string): Source {
     if (!isDemoId(d.demo.id) || d.demo.id === 'pieces') fail(`${at}: demo.id must be lowercase letters, digits and dashes (not "pieces")`);
     if (seen.has(d.demo.id as string)) fail(`${at}: the id ${String(d.demo.id)} is taken by another demo`);
     seen.add(d.demo.id as string);
+    // tools/build-demos.ts and make-template.ts empty a build's directory before making it: only a directory of its own
+    // under target/ (`target/<dir>/<name>`, a plain relative path) is one they may remove.
+    if (!isBuildPath(d.build)) fail(`${at}: build must be target/<dir>/<name> (letters, digits, dots, dashes and underscores; not ${JSON.stringify(d.build)})`);
+    if (builds.has(d.build)) fail(`${at}: the build ${d.build} is another demo's`);
+    builds.add(d.build);
   }
   return x as Source;
 }

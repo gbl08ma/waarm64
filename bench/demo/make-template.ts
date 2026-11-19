@@ -63,6 +63,8 @@ const ROOT = new URL('../../', import.meta.url).pathname;
  * Size menu's: sway keeps the size it started with). Root is logged in on the serial console first (`root`/`root`) to
  * drive it, and stays logged in there (the demo's serial console, as the Alpine demo's).
  */
+// The site's `<name>/` and `.work/<name>/` are removed first: a name is one plain path part.
+if (!/^[A-Za-z0-9._-]+$/.test(a.name!) || a.name === '.' || a.name === '..') throw new Error(`--name must be one plain name (not ${JSON.stringify(a.name)})`);
 const session = a.session ? (JSON.parse(a.session) as Session) : undefined;
 const site = resolve(ROOT, a.site!);
 const dir = join(site, a.name!);
@@ -166,7 +168,9 @@ async function desktop(page: Page, s: Session, id: string) {
   // The kernel's command line the session wants (e.g. init_on_free=1: what the kernel frees is zero, out of the
   // snapshot): added to systemd-boot's entry on the ESP and booted again once (the change is in the template's overlay).
   if (s.cmdline && !(await run(page, 'cat /proc/cmdline')).split(/\s+/).includes(s.cmdline.split(' ')[0])) {
-    const entry = (await run(page, 'bootctl status 2>/dev/null | sed -n "s/^ *source: //p" | head -n 1')).trim() || '/boot/loader/entries/arch.conf';
+    const entry = (await run(page, 'bootctl status 2>/dev/null | sed -n "s/^ *source: //p" | head -n 1 | cut -d " " -f 1')).trim() || '/boot/loader/entries/arch.conf';
+    // bootctl says `source: /boot//loader/entries/arch.conf (on the EFI System Partition)`: the path is its first word.
+    if (!/^\/[\w./-]+\.conf$/.test(entry)) throw new Error(`the loader entry: ${entry}`);
     await run(page, `sed -i "s/^options .*/& ${s.cmdline}/" ${entry} && sync && grep -c "${s.cmdline}" ${entry}`);
     await type(page, 'clear; reboot\n');
     await page.waitForTimeout(15_000);

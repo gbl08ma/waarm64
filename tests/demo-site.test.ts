@@ -113,7 +113,7 @@ test("a site: the store with each demo's definition inline, its files under its 
   assert.deepEqual([again.added, again.removed], [[], []], 'published again: nothing changes');
 });
 
-test('refused: another core format, another shape, not a template, a download off the files, a typo, an id twice', async () => {
+test('refused: another core format, another shape, not a template, a download off the files, a typo, an id twice, a build outside target/', async () => {
   const s = site('refused');
   await refused(plan(source([demo('x', await build('format', { snap: { coreVersion: SNAPSHOT_VERSION + 1 } }))]), s), /core's format/);
   await refused(plan(source([demo('x', await build('shape', { ramMiB: 512 }))]), s), /shape hash/);
@@ -125,10 +125,18 @@ test('refused: another core format, another shape, not a template, a download of
   const file = join(tmp, 'typo.json');
   writeFileSync(file, JSON.stringify(source([{ ...demo('x', ok), demo: { ...demo('x', ok).demo, veiw: 'serial' } as never }])));
   assert.throws(() => readSource(file), /unknown fields demo\.veiw/);
-  writeFileSync(file, JSON.stringify(source([demo('x', ok), demo('x', ok)])));
+  writeFileSync(file, JSON.stringify(source([demo('x', 'target/demos/x'), demo('x', 'target/demos/y')])));
   assert.throws(() => readSource(file), /taken/);
   writeFileSync(file, JSON.stringify(source([demo('x', ok, { snapshot: {} })])));
   assert.throws(() => readSource(file), /the tool's/);
+  for (const bad of ['/tmp/x', 'target', 'target/demos', 'target/demos/../x', 'target/../demos/x', 'target/demos/x/y', 'bench/demos/x']) {
+    writeFileSync(file, JSON.stringify(source([{ ...demo('x', ok), build: bad }])));
+    assert.throws(() => readSource(file), /build must be target/, bad);
+  }
+  writeFileSync(file, JSON.stringify(source([{ ...demo('x', ok), build: 'target/demos/x' }, { ...demo('y', ok), build: 'target/demos/x' }])));
+  assert.throws(() => readSource(file), /another demo's/);
+  writeFileSync(file, JSON.stringify(source([{ ...demo('x', ok), build: 'target/demos/x' }])));
+  assert.equal(readSource(file).demos.length, 1);
   await refused(plan(source([demo('x', ok, { view: 'tty' })]), s), /demo\.view/);
   await refused(plan(source([demo('x', ok, { template: 'yes' })]), s), /demo\.template/);
 });
