@@ -2,8 +2,9 @@
 # command that isn't installed is looked up in Alpine's packages, `main` first and then `community` (enabled in
 # /etc/apk/repositories the first time a command needs it: an index four times main's), and when a package provides
 # it, that package is installed and the command run. BusyBox ash calls the hook with the command's name alone, so the
-# line typed at the prompt is run again from the shell's history; anywhere else (a script, a pipeline's subshell) the
-# hook installs the package and says to run the command again.
+# line typed at the prompt is run again from the shell's history, when it is that command alone with its arguments
+# (plain words); anywhere else (a line with more after the command, a script, a pipeline's subshell) the hook installs
+# the package and says to run the command again.
 # No pipelines in the hook: in BusyBox 1.37's ash, one run from the hook never ends (its last command waits on a pipe
 # the shell keeps open), so the line is run again by a child shell (cd and variables there don't stay).
 
@@ -47,7 +48,15 @@ command_not_found_handle() {
 	line=${line#"${line%%[![:space:]]*}"}
 	line=${line#*[0-9] }
 	line=${line#"${line%%[![:space:]]*}"}
-	if [ "$self" = "$$" ] && [ "${line%%[[:space:]]*}" = "$name" ]; then
+	# Run again only when the line is the command alone, with its arguments: the prompt's shell goes on with the rest of
+	# the line once the hook returns (`cmd; x`, `cmd && x`, `cmd >f; x`), so a child running the whole line would run
+	# that rest twice. Anything past plain words (`;`, `&`, `|`, a redirection, `$`, a backquote, parentheses, a
+	# newline: even quoted, where they'd be harmless) leaves it to the visitor.
+	case ${line#"$name"} in
+	*[\;\&\|\<\>\$\`\(\)]* | *'
+'*) line= ;;
+	esac
+	if [ "$self" = "$$" ] && [ -n "$line" ] && [ "${line%%[[:space:]]*}" = "$name" ]; then
 		/bin/sh -c "$line"
 		return
 	fi
