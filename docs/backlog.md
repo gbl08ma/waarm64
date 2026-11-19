@@ -1608,12 +1608,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md)): `isPrivateRoom` labels any ID ending in a hyphen
   and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
   a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.
-- **A demo's room's loose ends** ([networking/rooms.md](networking/rooms.md) "A demo's room"; DEMO loop 15):
-  - [A] **The guest doesn't show its own name** in the room: the visitor finds it in the Network menu's adapter details.
-    A login line or motd line from the agent (it knows the address from udhcpc6's script, not the name: the page would
-    send it) would make it easier to give out.
-  - [B] A room connection made for a demo machine whose import then failed (the record's write, after the snapshot was
-    kept) stays in the Connections list unattached; nothing sweeps such connections yet.
 - **Room names' loose ends** (NAMES track, [networking/names.md](networking/names.md); the records and rules in
   `net/ts/src/room/names/`):
   - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not the
