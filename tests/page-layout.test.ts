@@ -27,7 +27,8 @@ test("the Home page's panes: the title and the body at one place, with buttons i
   await page.click('#machines-open');
   await page.click('[data-action=new-machine]');
   await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
-  const ids = await page.$$eval('nav [data-machine]', (bs) => bs.map((b) => (b as HTMLElement).dataset.machine!));
+  // Every pane (Demos isn't one: it opens the demo store's page in Home's place, tests/page-demos.test.ts).
+  const ids = (await page.$$eval('nav [data-machine]', (bs) => bs.map((b) => (b as HTMLElement).dataset.machine!))).filter((id) => id !== 'demos');
   const at: Record<string, { title: number; titleX: number; head: number; body: number; tabs: boolean; buttons: number }> = {};
   for (const id of ids) {
     await page.click(`nav [data-machine="${id}"]`);

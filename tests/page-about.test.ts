@@ -27,9 +27,9 @@ test('About: the build, waarm64\'s license, the third-party projects and their l
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  // After Preferences, the last of the buttons under the list.
+  // The last of the buttons under the list, after Preferences and Demos (which opens the demo store's page).
   const buttons = await page.$$eval('nav .new:last-of-type button', (bs) => bs.map((b) => (b as HTMLElement).dataset.machine));
-  assert.deepEqual(buttons.slice(-2), ['preferences', 'about']);
+  assert.deepEqual(buttons.slice(-3), ['preferences', 'demos', 'about']);
   await page.click('[data-machine=about]');
   const pane = page.locator('section[data-selected=about]');
   assert.equal(await pane.locator('h3').textContent(), t('machines:MachinesPage.about'));
