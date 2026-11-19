@@ -120,6 +120,8 @@ for (const NAME of NAMES) {
     }
     await run(page, 'echo demo-$((6*7)) > /root/demo-file; cat /root/demo-file; sync', /demo-42/, 120_000);
     console.log(`# click to a command answered: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    // The serial console's login was told the page's terminal (colors: web/app/firmware-files.ts SERIAL_TERM, alpine-demo's inittab).
+    await run(page, 'clear; echo term-$TERM-end', /term-xterm-256color-end/, 30_000);
     if (screen) {
       // The session's countdown (tools/demo-site.ts `Countdown`) resumed: its app's window comes in sway's tree.
       const c = (JSON.parse(readFileSync(join(SITE, NAME, 'template.json'), 'utf8')) as { session: Session }).session.countdown;
@@ -151,6 +153,42 @@ for (const NAME of NAMES) {
     await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 180_000, polling: 200 });
     assert.equal(await page.evaluate(() => document.body.dataset.page), 'machine', 'the machine, not the store');
     await run(page, 'cat /root/demo-file', /demo-42/, 180_000);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+
+  test(`${NAME}: Ctrl+C at a desktop's countdown stops it and leaves its terminal open with a shell`, { skip, timeout: 8 * 60_000 }, async (t) => {
+    const why = await unfit(NAME);
+    if (why) return void t.skip(why);
+    const c = isDesktop(NAME) ? (JSON.parse(readFileSync(join(SITE, NAME, 'template.json'), 'utf8')) as { session: Session }).session.countdown : undefined;
+    if (!c) return void t.skip('no countdown');
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    const url = `${site.base}/store.json`;
+    await ctx.route(url, (r) => r.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: store(NAME) }));
+    await page.goto(`${base}/demos?store=${encodeURIComponent(url)}`);
+    await page.locator('[data-action="accept-store"]').click({ timeout: 30_000 });
+    await page.locator('.cards [data-demo]').first().click();
+    await page.locator('[data-action="start-demo"]:not([disabled])').click({ timeout: 30_000 });
+    await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 120_000, polling: 100 });
+    await page.locator('[data-view-button="both"]').click();
+    // The countdown's script itself running in the terminal (sway started, foot open, the count going): its own command
+    // line, not the swaymsg or bash -c that name it.
+    const script = `'^/bin/sh /home/[^ ]*/${c.script}$'`;
+    await run(page, `clear; for i in $(seq 180); do pgrep -f ${script} >/dev/null && break; sleep 1; done; echo count-$i-on`, /count-\d+-on/, 240_000);
+    await page.waitForTimeout(1500); // foot's window drawn and focused
+    if (process.env.WAARM64_DEMO_SHOT) await page.locator('#screen').screenshot({ path: join(process.env.WAARM64_DEMO_SHOT, `${NAME}-countdown.png`) });
+    // Ctrl+C on the screen, where foot has the focus.
+    await page.locator('#screen').click();
+    await page.keyboard.press('Control+c');
+    // Past the count's end: no app's window in sway's tree, the script gone, foot still there with a bash under it.
+    await page.waitForTimeout((c.seconds + 10) * 1000);
+    await run(page, `clear; echo st-$(pgrep -f ${script} >/dev/null && echo counting || echo stopped)-$(pgrep -x foot >/dev/null && echo foot || echo nofoot)-$(pgrep -P "$(pgrep -x foot | head -n1)" -x bash >/dev/null && echo shell || echo noshell)-$(su arch -c "SWAYSOCK=$(ls /run/user/$(id -u arch)/sway-ipc.*.sock) swaymsg -t get_tree" | grep -q -E '"(app_id|class)": "${c.window}"' && echo app || echo noapp)-end`, /st-\w+-\w+-\w+-\w+-end/, 60_000);
+    const got = /st-(\w+)-(\w+)-(\w+)-(\w+)-end/.exec(await terminal(page))!.slice(1).join(' ');
+    if (process.env.WAARM64_DEMO_SHOT) await page.locator('#screen').screenshot({ path: join(process.env.WAARM64_DEMO_SHOT, `${NAME}-ctrlc.png`) });
+    assert.equal(got, 'stopped foot shell noapp', `after Ctrl+C: ${got}`);
     assert.deepEqual(errors, []);
     await ctx.close();
   });
