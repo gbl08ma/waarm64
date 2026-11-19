@@ -4,7 +4,7 @@
 // web/app/net-live.ts; DOM-free.
 import { MsgError } from '../i18n.ts';
 import { connectionLock, type Connection, type RoomConnection } from './connections.ts';
-import { heldLocks, Locks } from './locks.ts';
+import { Locks } from './locks.ts';
 import type { Store } from './store.ts';
 
 /** A connection another machine has (in another tab): `holder` is its name, when that tab answered. */
@@ -139,11 +139,7 @@ export class NetClaims {
 
   /** The ids of `connections` another tab's machine holds now. */
   async heldElsewhere(connections: Connection[]): Promise<Set<string>> {
-    const held = await heldLocks();
-    return new Set(
-      connections
-        .filter((c) => held.has(connectionLock(c.id)) && !this.locks.mine(connectionLock(c.id)))
-        .map((c) => c.id),
-    );
+    const held = await this.locks.heldElsewhere();
+    return new Set(connections.filter((c) => held.has(connectionLock(c.id))).map((c) => c.id));
   }
 }

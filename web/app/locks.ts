@@ -6,7 +6,12 @@
 import type { Note, Store } from './store.ts';
 
 export class Locks {
-  private held = new Map<string, () => void>();
+  /** The locks this page holds: what lets each go, and the request's promise (settled once the browser released it). */
+  private held = new Map<string, { release: () => void; done: Promise<unknown> }>();
+  /** The locks let go here that the browser may still report held (Web Locks release asynchronously). */
+  private releasing = new Map<string, Promise<unknown>>();
+  /** How many locks were let go here: `heldElsewhere` reads again if one was during its query. */
+  private drops = 0;
   private store: Store;
   private topic: string;
   private me: () => string;
@@ -39,22 +44,45 @@ export class Locks {
     const kept = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let done!: Promise<unknown>;
     const got = await new Promise<boolean>((resolve) => {
-      void navigator.locks.request(lock, { ifAvailable: true, mode: o.shared ? 'shared' : 'exclusive' }, (l) => {
+      done = navigator.locks.request(lock, { ifAvailable: true, mode: o.shared ? 'shared' : 'exclusive' }, (l) => {
         resolve(!!l);
         return l ? kept : undefined;
       });
     });
-    if (got) this.held.set(lock, release);
+    if (got) this.held.set(lock, { release, done });
     return got;
   }
 
   drop(lock: string) {
-    this.held.get(lock)?.();
+    const h = this.held.get(lock);
+    if (!h) return;
     this.held.delete(lock);
+    this.drops++;
+    h.release();
+    const settled = h.done.catch(() => undefined);
+    this.releasing.set(lock, settled);
+    void settled.then(() => {
+      if (this.releasing.get(lock) === settled) this.releasing.delete(lock);
+    });
   }
   dropAll() {
     for (const l of [...this.held.keys()]) this.drop(l);
+  }
+
+  /**
+   * The locks another tab holds now: those held anywhere, less this page's, once this page's let-go locks are released
+   * (until then the browser still reports them, and a machine that just stopped would look like another tab's).
+   */
+  async heldElsewhere(): Promise<Set<string>> {
+    for (let tries = 0; ; tries++) {
+      await Promise.all(this.releasing.values());
+      const drops = this.drops;
+      const all = await heldLocks();
+      if (drops === this.drops || tries >= 3)
+        return new Set([...all].filter((l) => !this.held.has(l) && !this.releasing.has(l)));
+    }
   }
 
   /** The name of the machine that holds `lock` in another tab (undefined if none answers in time). */

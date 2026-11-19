@@ -233,6 +233,15 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.waitForFunction(() => document.getElementById('state')?.dataset.state === 'off', null, { timeout: 30_000 });
   await pageA.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
   assert.deepEqual(await locksBecome([]), [], 'its lock is let go');
+  // Connections says no one has it (not another tab: the lock let go here is still held a moment after).
+  await pageA.click('#machines-open');
+  await pageA.click('[data-machine="connections"]');
+  const meta = pageA.locator(`li[data-connection="${t.id}"] .meta`);
+  await meta.waitFor({ timeout: 10_000 });
+  await pageA.waitForTimeout(500);
+  const state = await meta.textContent() ?? '';
+  assert.ok(state.includes(tWords('machines:ConnectionsPane.connection.unused')), `not in use: ${state}`);
+  await pageA.click('.machines [data-action=back]');
   assert.equal((await records(pageA, 'connections'))[0].connectAtStart, true, "it isn't a Disconnect");
   await menu(pageA);
   assert.equal(await pageA.locator('#net-connect-now').isVisible(), false);

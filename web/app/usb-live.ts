@@ -9,7 +9,7 @@ import type { PadState } from '../usb-gamepad.ts';
 import type { UsbFromWorker, UsbIdentity, UsbProblem, UsbSpeed, UsbToWorker, UsbVirtual } from '../usb-device.ts';
 import { fromWire, MsgError, type Params } from '../msg.ts';
 import { USB_CONNECTORS, type UsbEntry } from './shape.ts';
-import { heldLocks, Locks } from './locks.ts';
+import { Locks } from './locks.ts';
 import type { Store } from './store.ts';
 import { deviceName, identityAt, identityKey, matchDevices, usbLock, type SeenDevice } from './usb-ports.ts';
 import { problemText, type ProblemWords } from './usb-problems.ts';
@@ -106,12 +106,12 @@ export async function findDevices(entries: UsbEntry[]): Promise<Map<string, Host
 /** Each entry's state; `attached`: the entries this page's machine has on a port now (its ids). */
 export async function entryStates(entries: UsbEntry[], attached: Set<string>, locks: UsbLocks): Promise<EntryView[]> {
   const found = await findDevices(entries);
-  const held = await heldLocks();
+  const held = await locks.heldElsewhere();
   return Promise.all(
     entries.map(async (entry): Promise<EntryView> => {
       if (attached.has(entry.id)) return { entry, state: 'attached' };
       const lock = usbLock(entry);
-      if (held.has(lock) && !locks.mine(lock)) return { entry, state: 'held', holder: await locks.holder(lock) };
+      if (held.has(lock)) return { entry, state: 'held', holder: await locks.holder(lock) };
       if (found.has(entry.id)) return { entry, state: 'plugged' };
       return { entry, state: isGranted(identityKey(entry)) ? 'unplugged' : 'ungranted' };
     }),

@@ -17,7 +17,7 @@ import {
   setAttachmentReadOnly,
   type Folder,
 } from './folders.ts';
-import { heldLocks, Locks } from './locks.ts';
+import { Locks } from './locks.ts';
 import type { FolderAttachment, MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
 import { errorText } from '../i18n.ts';
@@ -110,10 +110,8 @@ export class PageFolders {
 
   private async read() {
     this.#folders = (await this.store.all('folders')).sort((a, b) => a.created - b.created);
-    const held = await heldLocks();
-    this.#held = new Set(
-      this.#folders.filter((f) => held.has(folderLock(f.id)) && !this.locks.mine(folderLock(f.id))).map((f) => f.id),
-    );
+    const held = await this.locks.heldElsewhere();
+    this.#held = new Set(this.#folders.filter((f) => held.has(folderLock(f.id))).map((f) => f.id));
   }
 
   /**

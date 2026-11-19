@@ -362,7 +362,7 @@ published next to its disk and snapshot:
   change. A deploy replaces the whole site, so `target/disks/` must hold every demo that stays, and a demo's id
   leaves the store before its pieces leave the site.
 - **Templates for new machines** (the user's own backlog item): the same definitions, minus `demo.snapshot`, offered
-  under **New machine** as starting points ("Alpine", "Debian", "Arch desktop"), so a new machine needs no disk image
+  under [New machine](ui:machines:MachinesNav.newMachine) as starting points ("Alpine", "Debian", "Arch desktop"), so a new machine needs no disk image
   of the user's own.
 
 ## 5. The guests

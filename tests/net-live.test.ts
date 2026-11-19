@@ -213,6 +213,27 @@ test('a machine powered off lets its connections go, and connects them at its ne
   p.close();
 });
 
+test("a machine powered off: its connections aren't shown as another tab's while their locks are let go", async () => {
+  const p = pageOn('nl-off-held', 'M');
+  const c = await tailnet(p.net);
+  p.net.ports('m', adapters(c));
+  await p.net.autoconnect();
+  assert.ok(!p.net.held.has(c.id), 'held here, not elsewhere');
+  // Every refresh the stop starts, read as it lands: none may say another tab has it.
+  const seen: boolean[] = [];
+  p.hooks.change = () => seen.push(p.net.held.has(c.id));
+  p.net.machineOff();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(!p.net.locks.mine(connectionLock(c.id)), 'its lock is let go');
+  assert.ok(!seen.includes(true), `shown as another tab's: ${seen}`);
+  assert.ok(!p.net.held.has(c.id));
+  // A lock let go here is never another tab's, even read at once.
+  await p.net.locks.take('nl-off-held-x');
+  p.net.locks.drop('nl-off-held-x');
+  assert.ok(!(await p.net.locks.heldElsewhere()).has('nl-off-held-x'));
+  p.close();
+});
+
 test("a machine powered off keeps an ephemeral tailnet's client: its node would be lost, a login with it", async () => {
   const p = pageOn('nl-off-eph', 'M');
   const c = await tailnet(p.net, { ephemeral: true });
