@@ -12,7 +12,7 @@
 // orphaning snapshots, saved into the record. A machine made from a demo (`fromDemo`): each run starts paused, with no
 // clipboard read, and one click on the switch shares.
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
@@ -280,7 +280,7 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await context.close();
 });
 
-const uefiSkip = !existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES)) && 'SKIPPED: run images/build.sh edk2';
+const uefiSkip = skip || (!existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES)) && 'SKIPPED: run images/build.sh edk2');
 test("a demo's machine starts each run paused: PAUSE at the agent's opening, no clipboard read (the permission stays prompt) at HELLO or focus, Allow hidden; one click on the switch shares (RESUME, its click asks); a machine not from a demo shares from the start", { skip: uefiSkip, timeout: 120_000 }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -299,18 +299,24 @@ test("a demo's machine starts each run paused: PAUSE at the agent's opening, no 
   const reads = () => page.evaluate(() => (window as unknown as { __reads: number }).__reads);
   await page.goto(`${base}/web/app/#home`);
   await page.locator('.machines').waitFor();
-  const demo = { id: 'dddddddddd01', name: 'From a demo', ncpus: 1, ramMiB: 512, display: '2d', network: false, attachments: [], clipboard: true, fromDemo: { store: `${base}/store.json`, id: 'alpine-term' }, created: 0, modified: 0 };
+  // A disk the firmware won't boot (Buildroot's root file system): the page starts no machine without one.
+  const path = '/target/images/buildroot/rootfs.ext4';
+  const bytes = statSync(new URL('buildroot/rootfs.ext4', IMAGES)).size;
+  const disk = { id: 'dddddddddd0d', kind: 'url', name: 'rootfs.ext4', size: bytes, url: path, identity: { kind: 'url', path, bytes }, created: 0 };
+  const demo = { id: 'dddddddddd01', name: 'From a demo', ncpus: 1, ramMiB: 512, display: '2d', network: false, attachments: [{ id: 'dddddddddda1', disk: disk.id, readOnly: true }], clipboard: true, fromDemo: { store: `${base}/store.json`, id: 'alpine-term' }, created: 0, modified: 0 };
   const plainOne = { ...demo, id: 'dddddddddd02', name: 'Not from a demo', fromDemo: undefined };
   await page.evaluate(async (ms) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
-    for (const m of ms) await store.put('machines', m);
+    await store.put('disks', ms.disk);
+    for (const m of ms.machines) await store.put('machines', m);
     store.close();
-  }, [demo, plainOne]);
-  /** The machine `id` started (the firmware, no disk: only the agent's end, the test's, matters), its agent's end the test's. */
+  }, { disk, machines: [demo, plainOne] });
+  /** The machine `id` started (the firmware, finding nothing to boot: only the agent's end, the test's, matters). */
   const start = async (id: string) => {
     await page.goto(`${base}/web/app/?${PAGE_QUERY}view=both&agentstub&m=${id}`);
-    await page.waitForFunction(() => !!(window as unknown as { __agentStub?: MessagePort }).__agentStub, null, { timeout: 30_000, polling: 100 });
+    await page.waitForFunction(() => !!(window as unknown as { __agentStub?: MessagePort }).__agentStub, null, { timeout: 30_000, polling: 100 })
+      .catch(async (e) => assert.fail(`${e}; the page: ${await page.evaluate(() => JSON.stringify({ url: location.href, state: document.body.dataset.state, message: document.getElementById('message-text')?.textContent, ask: document.querySelector('dialog[open]')?.textContent?.slice(0, 300) }))}`));
     await stub(page);
   };
   const helloSize = encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: pageCaps(true) })).length;
