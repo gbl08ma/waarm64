@@ -104,8 +104,8 @@
      "settle": 20,
      "countdown": {
       "script": "open-shader-demo.sh",
-      "run": "gtk4-demo --run=shadertoy",
-      "window": "org.gtk.Demo4",
+      "run": "env GDK_DISABLE=offload gtk4-demo --run=shadertoy",
+      "window": "gtk4-demo",
       "name": "The shader demo",
       "seconds": 10
      }

@@ -119,8 +119,17 @@ for (const NAME of NAMES) {
         const sock = `SWAYSOCK=$(ls /run/user/$(id -u arch)/sway-ipc.*.sock)`;
         // Up to 120 s after the restore: the count, then the app's start under emulation (Firefox's ~30 s).
         await run(page, `clear; for i in $(seq 120); do su arch -c "${sock} swaymsg -t get_tree" | grep -q -E '"(app_id|class)": "${c.window}"' && break; sleep 1; done; [ "$i" -lt 120 ] && echo WIN""DOW-UP || echo WIN""DOW-NONE`, /WINDOW-(UP|NONE)/, 180_000);
-        assert.match(await terminal(page), /WINDOW-UP/, `${c.name}'s window (${c.window}) never came after the countdown`);
+        if (!/WINDOW-UP/.test(await terminal(page))) {
+          // What the guest says of it: sway's log (the app's stderr, sway started it), the app_ids sway has, its processes.
+          await run(page, `clear; tail -n 25 /tmp/sway.log; su arch -c "${sock} swaymsg -t get_tree" | grep -o -E '"(app_id|class)": "[^"]*"'; ps -eo args | grep -v -E '^\\[|ps -eo' | tail -n 6; echo DI""AG-END`, /DIAG-END/, 60_000);
+          assert.fail(`${c.name}'s window (${c.window}) never came after the countdown; the guest: ${(await terminal(page)).slice(-2500)}`);
+        }
         console.log(`# click to ${c.name}'s window (the countdown resumed): ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+        // `WAARM64_DEMO_SHOT=<dir>`: the screen 10 s after the window came, to see what the app drew (a person's check).
+        if (process.env.WAARM64_DEMO_SHOT) {
+          await page.waitForTimeout(10_000);
+          await page.locator('#screen').screenshot({ path: join(process.env.WAARM64_DEMO_SHOT, `${NAME}-app.png`) });
+        }
       }
       assert.deepEqual(errors, []);
       return void (await ctx.close());
