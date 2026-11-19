@@ -68,8 +68,8 @@ comparison (the same source compiled for each guest), and the table must say tha
 
 | Workload | waarm64 | unkernel | v86 | WebVM | JSLinux |
 |---|---|---|---|---|---|
-| Click to a shell prompt (cold cache): a typed command answered | 31.7 s (the Desktop Demo's first boot, logged in; login prompt 27.8 s) | 1.3 s | 1.8 s (Arch, a saved state); 3.9 s (Buildroot, a boot) | TBD | TBD |
-| Bytes downloaded to the prompt | 420 MiB (6.1 the page, 414 the disk) | 6.7 MiB | 15.3 MiB (Arch); 5.5 MiB (Buildroot) | TBD | TBD |
+| Click to a shell prompt (cold cache): a typed command answered | 31.7 s (the Desktop Demo's first boot, logged in; login prompt 27.8 s); 2.9–3.0 s (the Alpine demo, a resume: a local build at a modelled 100 Mbit/s and 20 ms, not deployed yet) | 1.3 s | 1.8 s (Arch, a saved state); 3.9 s (Buildroot, a boot) | TBD | TBD |
+| Bytes downloaded to the prompt | 420 MiB (6.1 the page, 414 the disk); 24.7 MB (the Alpine demo: the page, a 15.7 MB template, the disk's first reads) | 6.7 MiB | 15.3 MiB (Arch); 5.5 MiB (Buildroot) | TBD | TBD |
 | CoreMark, 1 core * | TBD | TBD | TBD | TBD | TBD |
 | CoreMark, all cores * | TBD | TBD (`?smp`) | — | TBD | — |
 | `xz -9` / `gzip` of a fixed file * | TBD | TBD | TBD | TBD | TBD |
@@ -80,7 +80,9 @@ comparison (the same source compiled for each guest), and the table must say tha
 
 The measured rows (the prompt, the bytes, `apk`, the memory): [bench/demo/REPORT.md](../bench/demo/REPORT.md) "DEMO loop 0" (2026-11-19, the dev VM, Chromium
 155 headless, a fresh profile per run, medians of 3; `node bench/demo/run.ts`). They are the demos as shipped: ours
-is the deployed Desktop Demo (Arch with sway, a first boot from a remote disk), since the page has no Alpine demo yet.
+is the deployed Desktop Demo (Arch with sway, a first boot from a remote disk). The Alpine demo's numbers are
+"DEMO loop 3" (a local build served offline through a modelled link; the deployed page's numbers come after its
+deploy, and the link model is not the peers' real network, so the row is not like for like yet).
 
 Our own numbers for context (Chromium 153, M4, [benchmarking.md](benchmarking.md) "Current numbers"): CoreMark 10,080
 it/s in user mode (QEMU TCG natively: 12,500); 5,175 integer MIPS; Alpine boot to power-off 9.9 s; Buildroot 0.8 s;

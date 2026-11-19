@@ -11,6 +11,32 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
 - **Loop 3 (snapshot codec 3):** nothing to export first. Kept snapshots stay LZ4 and load as before; only templates made
   with `--deflate` are the new container version 3, which a page from before loop 3 refuses as newer.
 
+## Where things stand (the coordinator, 2026-11-19 morning)
+
+**Done and pushed** (each with its CI tier; waarm64 at `46901e44`, waarm64-demonet at `f8a6354`):
+- Page: loops 0, 1, 2, 3, 4, 5, 6, 10, 10b (the slow lane's words, the held flap), 13; two out-of-context reviews of
+  the page's demo code (`review/demo-page`, `review/demo-page-2`) and their fixes. Every commit passed ci.sh plus its
+  topic scripts (ci-machines, ci-net, ci-debian as the area asked) in the CI worktree `../waarm64-ci`; failures seen
+  under load (tailnet leases, page-open, page-ram) were rerun alone and passed, and the harness bug behind the tailnet
+  ones was fixed (tests/serial-console.ts `run`).
+- Fork: loops 7, 8, 9, 11 (its review: 10 findings fixed), 14 (the slow lane, off by default) and the slow lane's own
+  review (8 findings fixed); `go test -race ./...` clean on a quiet machine (241 s).
+- **The Alpine demo meets the goal's numbers locally:** click → command answered 2.9–3.0 s, 24.7 MB on the wire at a
+  modelled 100 Mbit/s / 20 ms (bench/demo/REPORT.md "DEMO loop 3"). Not yet on the deployed page (no deploy).
+
+**Blocked, for you:**
+- **Loop 12 (the desktop and 3D demos) is stopped, uncommitted in the working tree:** auto mode refused its build
+  command (`systemd-run … node tools/build-demos.ts --only arch-desktop --no-images --no-publish`, the same kind that
+  ran three times before) with no reason given; the coordinator didn't work around it. Its state, its files and the
+  remaining steps: `bench/results/local/demo/LOOP12-STATE.md` (git-ignored). Untested so far: the sway
+  XDG_RUNTIME_DIR fix, the 3D demo's app, the screen-likeness threshold. Also its: review demo-page-2 #12 (below, Next).
+- **The disk filled overnight** (100 %): freed 18 GB (the gdb debug guest, cargo's target/debug caches). ~19.5 GB of
+  Podman images (old `webpc-*` tags among them) and a few old qcow2s are listed in the coordinator's memory to ask about.
+
+**Left of the kickoff:** loop 12 (above); loop 15's last part (the comparison's numbers, the docs' final pass); the
+deploys (yours: vm.tny.im, vmdisks.tny.im, the fork on your server, "Before a deploy" below) and the check by hand on
+the deployed page; at the end, the whole CI set (ci-graphics, ci-jit, ci-deqp…) and the track's close.
+
 ## How the track runs (the user, 2026-11-19)
 
 - The kickoff's "Needs the user's OK" is red lines (deploys, allowlist rules past `dl-cdn.alpinelinux.org`, new
@@ -19,8 +45,8 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   user's follow-up, not loop 11's.
 - CI is the coordinator's: loop agents run targeted, capped tests and commit unpushed; the coordinator runs the CI
   scripts one at a time and pushes.
-- Two lanes: the page (loops 0–6, this checkout) and the fork (loops 7–9, `../waarm64-demonet`, its own
-  `HANDOVER.md`). Loop 7's waarm64 side (`tests/waarm64-demonet.ts`, devenv.md) moved to loop 10.
+- Two lanes: the page (this checkout) and the fork (`../waarm64-demonet`, its own `HANDOVER.md`: its state, open
+  calls for the owner, what the page must add).
 
 ## Current state
 
