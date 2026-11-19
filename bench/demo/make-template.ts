@@ -4,17 +4,25 @@
 // fresh profile until the guest agent says it's up (the machine `running`) and root's prompt is on the serial console,
 // the console cleared to the motd, a snapshot kept there (the page has the agent drop the guest's caches first), flagged
 // as a template with its frames deflated (tools/snapshot-template.ts `--deflate`) and chunked beside the image with
-// the machine's definition (its disk's URL relative to it):
-//   <site>/pieces/<sha256>.bin, <site>/<name>/manifest.json, definition.json, snapshot.json, template.json (what it holds)
+// the machine's definition (its disk's URL relative to it), and a thumbnail of the console (`--thumbnail`):
+//   <site>/pieces/<sha256>.bin, <site>/<name>/manifest.json, definition.json, snapshot.json, template.json (what it
+//   holds), thumb.webp
 //   node bench/demo/make-template.ts [--image target/images/alpine-demo/alpine-demo.qcow2] [--name alpine-demo]
-//     [--site bench/results/local/demo/site] [--ram 512] [--cpus 2] [--ready agent|prompt] [--lz4] [--drop] [--compact] [--settle 5]
+//     [--site bench/results/local/demo/site] [--ram 512] [--cpus 2] [--definition <file>] [--core <wasm>] [--thumbnail]
+//     [--ready agent|prompt] [--lz4] [--drop] [--compact] [--settle 5]
+// tools/build-demos.ts (the demos' build: docs/remote-disks.md "Building the demos") runs it per demo with
+// `--definition`: the machine made by importing that definition (its MAC, the disk's serial, its CPUs and RAM: what the
+// shape hash covers, so a rebuild gives the same hash), its one URL disk's `url`, `name`, `identity` and `size` filled in here
+// from the chunked image; without it, a machine made as the page's New machine makes one (`--ram`, `--cpus`; a random
+// MAC and serial). `--core`: the page runs that core build (a wasm file, e.g. a copy's `assets/waarm64_core-*.wasm`)
+// instead of the checkout's target/, and the frames are deflated by it.
 // `--ready prompt`: an image without the agent (the spike's: bench/demo/spike-image.sh), whose prompt is the sign; `--lz4`:
 // the frames as the page wrote them (LZ4). `--drop` drops the guest's page cache by the shell before the snapshot (`echo 3 >
 // /proc/sys/vm/drop_caches`: what the agent does), `--compact` that and compacts its memory (`echo 1 >
 // /proc/sys/vm/compact_memory`: free memory in whole blocks the guest reports); `--settle` waits that many seconds at the
 // prompt first (free page reporting hands the freed memory back: SNAPZ leaves it out). Bounded: run it under `timeout 600`.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from 'playwright-core';
@@ -35,12 +43,17 @@ const { values: a } = parseArgs({
     settle: { type: 'string', default: '5' },
     ready: { type: 'string', default: 'agent' },
     lz4: { type: 'boolean', default: false },
+    definition: { type: 'string' },
+    core: { type: 'string' },
+    thumbnail: { type: 'boolean', default: false },
   },
 });
 const ROOT = new URL('../../', import.meta.url).pathname;
 const site = resolve(ROOT, a.site!);
 const dir = join(site, a.name!);
-const work = join(ROOT, 'bench/results/local/demo/template-work');
+// The profile and the snapshot's files while it's made (removed after): beside the site, one per name.
+const work = join(site, '.work', a.name!);
+const core = a.core ? resolve(a.core) : undefined;
 const log = (...x: unknown[]) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...x);
 const chunk = (file: string, out: string, label: string) =>
   log(execFileSync('node', [join(ROOT, 'tools/chunk-image.ts'), file, out, '2', '--name', label, '--pieces', join(site, 'pieces')], { encoding: 'utf8' }).trim());
@@ -49,11 +62,35 @@ rmSync(dir, { recursive: true, force: true });
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
 if (a.ready !== 'agent' && a.ready !== 'prompt') throw new Error('--ready is agent or prompt');
-chunk(resolve(ROOT, a.image!), dir, `Alpine (${a.name})`);
+const imageFile = resolve(ROOT, a.image!);
+chunk(imageFile, dir, `Alpine (${a.name})`);
+
+/** A qcow2's virtual size (big-endian at byte 24), or a raw image's bytes. */
+function virtualSize(file: string): number {
+  const b = Buffer.alloc(32);
+  const fd = openSync(file, 'r');
+  try {
+    readSync(fd, b, 0, 32, 0);
+  } finally {
+    closeSync(fd);
+  }
+  return b.readUInt32BE(0) === 0x514649fb ? Number(b.readBigUInt64BE(24)) : statSync(file).size;
+}
+
+/** `--definition`'s file with its one URL disk made the chunked image at `url`. */
+function definitionFor(url: string) {
+  const def = JSON.parse(readFileSync(resolve(a.definition!), 'utf8')) as { disks: Record<string, unknown>[] };
+  const urls = def.disks.filter((d) => d.kind === 'url');
+  if (urls.length !== 1) throw new Error(`${a.definition}: a demo's definition has one URL disk (its image)`);
+  const m = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as { id: string; size: number; name?: string };
+  Object.assign(urls[0], { url, name: m.name ?? urls[0].name, size: virtualSize(imageFile), identity: { kind: 'url', chunked: m.id, bytes: m.size } });
+  return def;
+}
 
 const served: Served[] = [];
 const disks = await siteServer(site, served, () => 'site');
 const page0 = await startServer();
+let coreServed = 0;
 const base = `http://127.0.0.1:${(page0.address() as { port: number }).port}`;
 const ctx = await chromium.launchPersistentContext(join(work, 'profile'), {
   executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
@@ -62,6 +99,12 @@ const ctx = await chromium.launchPersistentContext(join(work, 'profile'), {
   acceptDownloads: true,
   downloadsPath: work,
 });
+// The given core build in place of the checkout's (the page, its workers and the deflate step all fetch this one URL).
+if (core)
+  await ctx.route('**/target/wasm32-unknown-unknown/release/waarm64_core.wasm', (r) => {
+    coreServed++;
+    return r.fulfill({ path: core, contentType: 'application/wasm' });
+  });
 const text = (page: Page) => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
 const until = async (page: Page, re: RegExp, ms: number) => {
   const end = Date.now() + ms;
@@ -82,7 +125,14 @@ try {
   });
   await page.goto(`${base}/web/app/?clocksync=0`);
   const url = `${disks.base}/${a.name}/manifest.json`;
-  const id = await page.evaluate(
+  const id = a.definition
+    ? await page.evaluate(async (def) => {
+        const { Store } = await import('/web/app/store.ts' as string);
+        const { checkDefinition, importDefinition } = await import('/web/app/definitions.ts' as string);
+        const { machine } = await importDefinition(await Store.open(), checkDefinition(def));
+        return machine.id as string;
+      }, definitionFor(url))
+    : await page.evaluate(
     async ([url, ram, cpus]) => {
       const { Store } = await import('/web/app/store.ts' as string);
       const { createMachine, createDisk, attach } = await import('/web/app/machines.ts' as string);
@@ -123,6 +173,20 @@ try {
   await type(page, `${prep.filter(Boolean).join('; ')}\n`);
   await page.waitForTimeout(Number(a.settle) * 1000);
   await until(page, /~#\s*$/, 10_000);
+  if (a.thumbnail) {
+    // The console as the card shows it: its top, 16:10, as WebP (Chromium's canvas encodes it).
+    const png = (await page.locator('.xterm').screenshot()).toString('base64');
+    const webp = await page.evaluate(async (png) => {
+      const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+      const w = Math.min(img.width, Math.round((img.height * 16) / 10));
+      const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 300 });
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, (w * 10) / 16, 0, 0, 480, 300);
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', 0.85));
+      if (blob?.type !== 'image/webp') throw new Error('this Chromium encodes no WebP');
+      return [...new Uint8Array(await blob.arrayBuffer())];
+    }, png);
+    writeFileSync(join(dir, 'thumb.webp'), Uint8Array.from(webp));
+  }
   // The toolbar's Snapshot keeps it in the machine (a stored machine's), then the kept file is downloaded.
   await page.locator('#save-snapshot').click();
   const kept = (id: string) =>
@@ -156,9 +220,10 @@ try {
   for (const d of def.disks) if (d.url) d.url = 'manifest.json';
   writeFileSync(join(dir, 'definition.json'), `${JSON.stringify(def, null, 1)}\n`);
   const template = join(work, 'template.waarm64snap');
-  execFileSync('node', [join(ROOT, 'tools/snapshot-template.ts'), plain, template, ...(a.lz4 ? [] : ['--deflate'])], { stdio: 'inherit' });
+  execFileSync('node', [join(ROOT, 'tools/snapshot-template.ts'), plain, template, ...(a.lz4 ? [] : ['--deflate']), ...(core ? ['--core', core] : [])], { stdio: 'inherit' });
+  if (core && !coreServed) throw new Error(`the page never fetched the core, so --core ${core} wasn't the one it ran`);
   chunk(template, join(dir, 'snapshot.json'), `Alpine (${a.name}), its template`);
-  const info = { made: new Date().toISOString(), image: a.image, ram: Number(a.ram), cpus: Number(a.cpus), ready: a.ready, deflate: !a.lz4, drop: a.drop, compact: a.compact, settle: Number(a.settle), snapshot: snapInfo(template), lz4: snapInfo(plain), siteBytesBoot: served.reduce((n, s) => n + s.bytes, 0) };
+  const info = { made: new Date().toISOString(), image: a.image, core: core ?? 'the checkout\'s', definition: a.definition, ram: def.machine.ramMiB, cpus: def.machine.ncpus, ready: a.ready, deflate: !a.lz4, drop: a.drop, compact: a.compact, settle: Number(a.settle), snapshot: snapInfo(template), lz4: snapInfo(plain), siteBytesBoot: served.reduce((n, s) => n + s.bytes, 0) };
   writeFileSync(join(dir, 'template.json'), `${JSON.stringify(info, null, 1)}\n`);
   log('template', JSON.stringify(info));
 } finally {
@@ -166,3 +231,7 @@ try {
   await new Promise((r) => page0.close(r));
   await disks.close();
 }
+rmSync(work, { recursive: true, force: true });
+try {
+  rmdirSync(join(site, '.work')); // when no other name's is there
+} catch {}

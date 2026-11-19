@@ -2,8 +2,9 @@
 // tools/publish-demos.ts writes into target/disks/ for vmdisks.tny.im, planned before anything is written.
 //
 // The input is a source file (deploy/disks/demos.json): per demo, its card (`demo`: id, summary, view, network,
-// replaces, download, template: whether New machine offers it as a template too), a name, a thumbnail and its build: a directory as bench/demo/make-template.ts (loop 5's builder)
-// writes it, `manifest.json` (the image, chunked), `snapshot.json` (the template snapshot, chunked) and
+// replaces, download, template: whether New machine offers it as a template too), a name, a thumbnail, its recipe (how
+// tools/build-demos.ts makes it: `Recipe`; not checked here) and its build: a directory as bench/demo/make-template.ts
+// (which tools/build-demos.ts runs) writes it, `manifest.json` (the image, chunked), `snapshot.json` (the template snapshot, chunked) and
 // `definition.json` (the machine that made the template, its disk's `url` relative to it), their pieces where their
 // manifests say. The site it makes:
 //   store.json                      the store (web/app/demo-store.ts): every live demo's definition inline, URLs relative to it
@@ -16,7 +17,7 @@
 // definition is a version-2 definition with its one URL disk the build's image (its identity the manifest's content);
 // the snapshot a template whose core format is this checkout's (`SNAPSHOT_VERSION`: the page `npm run dist` builds
 // from it) and whose shape hash is the one this checkout gives the definition's machine (so a page update that changes
-// the shape, the CPU features or the format refuses until the template is made again: loop 5's automated build); the
+// the shape, the CPU features or the format refuses until the template is made again: tools/build-demos.ts); the
 // pieces there, their sizes and, for those new to the site, their hashes; the card's `download` between what a visit
 // fetches (the snapshot, the thumbnail and the image's pieces its boot trace names) and that plus the whole image (left
 // out, it's that floor); an id's image never changes (a new image is a new id: decision 13; only the snapshot is made
@@ -52,10 +53,16 @@ const NOT_SITE = new Set([LEDGER, IGNORE]);
 
 /** The card's fields the source gives (the snapshot's and the thumbnail's are the tool's). */
 const CARD_FIELDS = ['id', 'summary', 'download', 'view', 'network', 'replaces', 'template'];
-const ENTRY_FIELDS = ['build', 'name', 'thumbnail', 'demo'];
+const ENTRY_FIELDS = ['build', 'name', 'thumbnail', 'demo', 'recipe'];
 const THUMBS = ['.webp', '.png', '.jpg', '.avif'];
 
-export type SourceDemo = { build: string; name?: string; thumbnail?: string; demo: Omit<Demo, 'snapshot' | 'thumbnail' | 'download'> & { download?: number } };
+/**
+ * How tools/build-demos.ts makes a demo's build (left out: a build made by hand): the image (`images/build.sh <image>`,
+ * `target/images/<image>/<image>.qcow2`), and the machine that boots it as a definition's `machine` with its disk's
+ * serial, fixed here so every rebuild has the same shape hash (its MAC, CPUs, RAM, display, devices).
+ */
+export type Recipe = { image: string; machine: Record<string, unknown>; serial: string };
+export type SourceDemo = { build: string; name?: string; thumbnail?: string; recipe?: Recipe; demo: Omit<Demo, 'snapshot' | 'thumbnail' | 'download'> & { download?: number } };
 export type Source = { type: typeof SOURCE_TYPE; name?: string; demos: SourceDemo[] };
 export type Ledger = { version: 1; demos: Record<string, { published: string; updated: string; retired?: string; image: string; snapshot?: string }> };
 
@@ -189,7 +196,7 @@ export async function buildDemo(d: SourceDemo, root: string): Promise<Built> {
     const h = await snapshotHeader(snapshot, snapFile);
     if (h.template !== true) fail(`${at}: the snapshot isn't a template (tools/snapshot-template.ts makes one)`);
     if (h.coreVersion !== SNAPSHOT_VERSION)
-      fail(`${at}: the snapshot is the core's format ${h.coreVersion}, and this build's is ${SNAPSHOT_VERSION}: make the template again (loop 5's build)`);
+      fail(`${at}: the snapshot is the core's format ${h.coreVersion}, and this build's is ${SNAPSHOT_VERSION}: make the template again (tools/build-demos.ts)`);
     const want = await shapeHashOf(made);
     if (h.shapeHash !== want)
       fail(`${at}: the snapshot's shape hash ${String(h.shapeHash).slice(0, 16)}… isn't the one this build gives its machine (${want.slice(0, 16)}…): make the template again`);

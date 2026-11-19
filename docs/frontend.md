@@ -782,8 +782,8 @@ cut-off download), `tests/page-demos.test.ts` (Chromium, a stand-in worker and t
 first visit, a card by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
 started before, a fresh copy, `?id=`, an unknown id, Home's Demos and Back, `?store=`'s warning and what it fetches,
 the server down, the files gone, the download cut off), `tests/page-demos-guest.test.ts` (scripts/ci-machines.sh: a
-demo's template from the demos' build in `target/demos`, `WAARM64_DEMO_SITE`, from the card to a `#` prompt, a file
-kept across a reload; skipped without it).
+demo's template made from the build under test by `tools/build-demos.ts` into `target/ci-demos` (`WAARM64_DEMO_SITE`;
+default `target/demos`), from the card to a `#` prompt, a file kept across a reload; skipped without it).
 
 ## The worker protocol
 

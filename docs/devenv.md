@@ -151,6 +151,7 @@ scripts/testfloat.sh           # FP core vs TestFloat 3e (in ci.sh)
 tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
 npm start                      # what a user runs: checks, npm ci, wasm core, the tailnet client, the UEFI firmware (images/build.sh edk2, Podman), the page's build, then serves it; the page waits for the user's disk (frontend.md)
 npm run dist                   # the page built (Vite) as static files for any web server -> target/dist/ (no guest images; frontend.md "A static copy")
+node tools/build-demos.ts [--core target/dist] [--apply]   # the demos' templates made again from a core build into target/demos/<id>/, then published to target/disks/ (a dry run without --apply; remote-disks.md "Building the demos")
 npm run serve                  # Vite's dev server with COOP/COEP and hot reloading on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
 node tools/screens.ts --label <name>   # screenshots of every page state without a guest (toolbar menus, Home page wide and 720 px, dialogs, wizard steps) -> bench/results/local/screens/<name>/; --compare <other> --label <name>: what differs (frontend.md "Screenshots")
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)

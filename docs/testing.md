@@ -118,7 +118,11 @@ Layered, cheapest first:
   merge, grown with the agent growing its root at the in-place boot, in place), `page-snapshots` (kept snapshots, forks, the ramdisk, Suspend on pins, orphaned ones), `page-quota` and `page-incognito` (the storage full: docs/machines.md "Storage"), `page-surface-debian` (a disk's map live, opened as the boot starts: the qcow2 counted per table as the boot reads them, its kept blocks ticked, the overlay's cores, a guest write flashing and counted, the files after the power-off), three at a
   time (`WAARM64_DEBIAN_SLOTS=3`), ~3.5 min (206 and 206 s, ~575 slot-seconds, 2026-11-18: 309 s and 844 before the
   stored fixtures below, 269 s with them before the slots' order, 224 and 218 s before page-machines' fixture). The
-  slots are full from the start to ~+175 s: their order has little left to give, only fewer slot-seconds do.
+  slots are full from the start to ~+175 s: their order has little left to give, only fewer slot-seconds do. Before the Debian
+  tests, the Alpine demo's template is made from the build under test (`tools/build-demos.ts --only alpine-term --out
+  target/ci-demos --no-images`, ~31 s: the image as built, `images/build.sh --check alpine-demo` required; its
+  publish's checks planned, a dry run), which `page-demos-guest` restores through the store's page (~21 s, beside the
+  Debian slots): ~4 min in all.
   **The slots' order:** a free slot goes to the waiter with the longest `chain` first, then the earliest
   (`withDebianLock(f, { chain })`, a queue file per waiter beside the slots). `chain` is a hint by hand: the
   slot-seconds the test's file still has from that test on (its tests run one after another), set on the long ones

@@ -3,8 +3,9 @@
 // `<site>/pieces/`: bench/demo/make-template.ts, the demos' build), served by a local stand-in for vmdisks.tny.im
 // (bench/demo/site.ts, another origin), listed by a store the test makes. In a fresh profile, the store's card →
 // Start → a `#` prompt that answers a command (the template restored, nothing booted); a file written there survives a
-// reload, the machine booting again from its overlay. The site: `WAARM64_DEMO_SITE` (default target/demos) and
-// `WAARM64_DEMO_NAME` (default alpine-term); skipped without it. ~2 min. scripts/ci-machines.sh.
+// reload, the machine booting again from its overlay. The site: `WAARM64_DEMO_SITE` (default target/demos;
+// scripts/ci-machines.sh makes it from the build under test with tools/build-demos.ts into target/ci-demos) and
+// `WAARM64_DEMO_NAME` (default alpine-term); skipped without it. ~2 min.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -109,31 +109,50 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   `newEmptyMachine` (answers our store empty: no request leaves the machine). Tests: tests/demo-store.test.ts,
   demo-site.test.ts (Node); tests/page-demos.test.ts's New machine case (Chromium).
 
-## Next: loop 5, the automated demo build
+- **Loop 5, the automated demo build, done** (2026-11-19, committed unpushed; remote-disks.md "Building the demos"):
+  `node tools/build-demos.ts [--core <wasm | target/dist>] [--apply]` remakes every demo with a `recipe` in
+  deploy/disks/demos.json (the image name, the machine with a fixed MAC, the disk's serial) under its id into
+  `target/demos/<id>/` (the image rebuilt if stale; make-template.ts with `--definition`, `--core` routed into the page,
+  `--thumbnail`: thumb.webp), prunes the build's unnamed pieces, and plans the publish (dry run; `--apply` writes
+  target/disks). ~32 s for alpine-term; the shape hash the same across builds (aa731d0b…, checked on two builds; the
+  snapshot ids differ: RAM isn't reproducible). `target/demos/alpine-term` is built (from d686e684's core).
+  scripts/ci-machines.sh builds it into target/ci-demos and runs tests/page-demos-guest.test.ts on it (passed: 21 s).
 
-- One command that makes each demo's build into **`target/demos/<id>/`**, which is where `deploy/disks/demos.json`
-  points (`bench/demo/make-template.ts --site target/demos --name alpine-term` writes that layout: `manifest.json`,
-  `snapshot.json`, `definition.json`, pieces in `target/demos/pieces/`), then runs `tools/publish-demos.ts`. The tool
-  refuses a template whose core format or shape hash differs from the checkout's: that's the cue to rebuild. An id's
-  image must not change (a new image is a new id with `replaces`).
-- `bench/demo/make-template.ts` defaults to the alpine-demo image and the name `alpine-demo`: loop 5 passes `--site
-  target/demos --name alpine-term`. It boots with `?ready=guest` (the agent's HELLO, ~20 s), clears the console to the
-  motd, and deflates the snapshot (`--lz4` to skip; ~5 s for 64 MB). The template must be made from the same image the
-  site publishes (an id's image never changes), and remade when the core's format or shape changes.
+## Before a deploy of vm.tny.im (the user)
+
+The demos' templates must be made by the core that's deployed (the publish refuses another core format or shape hash):
+
+1. `npm run dist` (the page into `target/dist/`, from the checkout you deploy);
+2. `node tools/build-demos.ts --core target/dist` (each demo with a recipe made again under its id into
+   `target/demos/<id>/`, the image rebuilt first if stale; a dry run of the publish: read the plan), then the same with
+   `--apply` (writes `target/disks/`: store.json, `<id>/`, the shared `pieces/`). Or `node tools/publish-demos.ts
+   --apply` alone once the builds are there;
+3. deploy both: the page (`npm run dist`'s copy, docs/devenv.md "Deploying") and vmdisks.tny.im
+   (`deploy/disks/deploy.sh`).
+
+~30 s per template (plus ~40 s when `alpine-demo`'s image is rebuilt). When the image itself changed (its content id),
+the publish refuses: that's a new demo id with `replaces` (decision 13).
+
+## Next
+
+- Loop 5 is done (below). The remaining page loops: 12 (the desktop demo; give it a `recipe` in demos.json if it can
+  be built the same way, or a hand-made build without one), 14, 15.
 - **A restore's link flap vs LEASE** (backlog.md "The Alpine demo's loose ends"): the address comes ~10 s after the
   restore, not at once; the first `apk` typed sooner fails. The page's fix is in lease-actions/devices.ts.
-- make-template.ts still writes a version-1-looking export (it calls `exportDefinition`, now version 2) with no `demo`:
-  the card comes from demos.json, so nothing more is needed. The card's `download` can be left out (the tool writes the
-  floor: snapshot + thumbnail + the image's prefetched pieces); a boot trace in the image's manifest makes that floor
-  include the disk's reads.
-- `scripts/ci-machines.sh` test: make a template from the local build, publish it into a temporary site, and restore
-  it through `fetchStore` + `machineFromDemo` (tests/page-template-first.test.ts's second case is the stand-in version).
 
 ## Open questions
 
 None.
 
 ## Awaiting the user's review
+
+- **Loop 5's engineering calls:** the demo's machine is fixed in `deploy/disks/demos.json` (`recipe`: the image's name,
+  the definition's `machine` with its MAC, and the disk's serial; the MAC and serial are loop 3's template's), so a
+  rebuild's shape hash is the same; the publish tool takes `recipe` as a known field and leaves it to the build. The
+  template is made by the checkout's page (the dev server) around the given core, not by the copy's bundle (the copy's
+  `assets/waarm64_core-*.wasm` is routed in; its stamp is printed beside the checkout's commit): make a copy's demos
+  from the checkout it was built from. The thumbnail is generated: the console's top at the prompt, 480×300 WebP.
+  The image is rebuilt when `images/build.sh --check` calls it stale (Podman), unless `--no-images`.
 
 - **The alpine-demo image's contents** (loop 3; the user's barebones brief): Alpine 3.24.2 from alpine-uefi's pinned
   cloud image, cut to alpine-base, e2fsprogs, linux-virt and Limine (45 packages; removed: tiny-cloud, chrony, dhcpcd,

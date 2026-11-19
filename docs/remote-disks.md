@@ -121,7 +121,7 @@ cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh
 
 `node tools/publish-demos.ts [deploy/disks/demos.json] [--site target/disks] [--budget 15000] [--apply]`
 (`tools/demo-site.ts` is the plan): from the source file (per demo its card, `template: true` where New machine offers
-it as a template too (docs/machines.md §6.3; a boolean, checked), name, thumbnail and its build, a
+it as a template too (docs/machines.md §6.3; a boolean, checked), name, thumbnail, its `recipe` (below) and its build, a
 directory as `bench/demo/make-template.ts` writes it: `manifest.json`, `snapshot.json`, `definition.json`), it lays out
 `store.json` (every live demo's definition inline, URLs relative to it: docs/machines.md §6.2), `<id>/manifest.json`,
 `snapshot.json`, `definition.json` (the same definition alone) and `thumb.<ext>`, all pieces in the one `pieces/`;
@@ -130,7 +130,7 @@ It refuses the whole publish on: a source field it doesn't know, an id twice or 
 a build whose definition's URL disk isn't its image (by content id), or that has file or stored disks; a snapshot that
 isn't a template, or whose core format (`SNAPSHOT_VERSION`) or shape hash (computed by this checkout for the
 definition's machine: CPU features, devices, disks) isn't this build's, so a page update that would orphan a demo
-refuses until loop 5's build makes its template again; a missing or wrong-sized piece (new pieces are hashed as they're
+refuses until `tools/build-demos.ts` makes its template again; a missing or wrong-sized piece (new pieces are hashed as they're
 copied); a card's `download` outside [the snapshot + the thumbnail + the pieces the image's boot trace names, that +
 the whole image] (left out, it's that floor); an id whose image changed (a new image is a new id with `replaces`; only
 the snapshot is made again under an id, decision 13); the site past its budget.
@@ -144,6 +144,39 @@ partway: the new pieces go in first (each hashed), then every other file is writ
 ledger), and only then are files removed; a `.publishing` file a crash left goes at the next publish. The ledger, `.publish.json` (each id's first
 publish, last change, retirement, image and snapshot ids), sits in the site and isn't deployed (`.assetsignore`;
 deploy.sh doesn't count it). Tests: tests/demo-site.test.ts.
+
+### Building the demos
+
+`node tools/build-demos.ts [deploy/disks/demos.json] [--only <id>,…] [--core <wasm | target/dist>] [--out <dir>]
+[--no-images] [--no-publish] [--site target/disks] [--apply]` makes every demo that has a `recipe` again from a core
+build, under its existing id (DEMO-KICKOFF.md decision 13: when only the emulator changed, the id stays), then plans
+the publish above (a dry run; `--apply` writes `target/disks/`). Per demo, into its `build` (`target/demos/<id>/`):
+
+1. its image: `images/build.sh <recipe.image>` when `--check` calls it missing or stale (Podman, ~40 s for
+   `alpine-demo`); `--no-images` refuses instead;
+2. its template, by `bench/demo/make-template.ts` under the checkout's dev server with the given core (`--core`: a
+   wasm, or a copy of the page whose `assets/waarm64_core-*.wasm` it takes, its stamp said beside this checkout's
+   commit; default the checkout's `target/wasm32-unknown-unknown/release/waarm64_core.wasm`): the image chunked into
+   the shared `pieces/`, the machine imported from the recipe's definition (the recipe's `machine`, a definition's,
+   and the disk's `serial`; its `url`, `name`, `identity` and `size` filled from the chunked image), booted with
+   `?ready=guest&dropcaches=1` until the agent says hello and root's prompt shows, the console cleared to the motd,
+   kept (the agent drops the guest's caches), flagged as a template and deflated (by the same core), chunked;
+   `definition.json` (the page's export); `thumb.webp` (the console's top at the prompt, 480×300, Chromium's WebP).
+
+**What's reproducible:** the shape hash. The recipe fixes everything it covers (the MAC, the disk's serial, CPUs, RAM,
+display, the devices) and the image is bit for bit, so its content id is too: a rebuild from the same checkout gives the
+same hash (tests/build-demos.test.ts), and the publish's checks pass. **What isn't:** the snapshot's bytes (the guest's
+RAM: timers, entropy, what the boot's timing left), so each build is a new snapshot id with new snapshot pieces (~16 MB;
+the previous ones leave the site at the publish that replaces them: machines made from them have their copy). A new
+image (another content id) is refused by the publish: that's a new id with `replaces`.
+
+The template is made by the checkout's page around the given core, so a copy's demos are made from the checkout it was
+built from (its `SNAPSHOT_VERSION` and shape code are the ones the publish checks). Before a deploy of vm.tny.im:
+`npm run dist`, then `node tools/build-demos.ts --core target/dist --apply`, then deploy both (the page, and
+`deploy/disks/deploy.sh` for vmdisks.tny.im). ~30 s per template, plus the image when rebuilt. `scripts/ci-machines.sh`
+runs it for `alpine-term` into `target/ci-demos/` (`--out`, `--no-images`, the publish's plan only) and restores what it
+made through the store's page (tests/page-demos-guest.test.ts). Tests: tests/build-demos.test.ts (the recipe, the
+shape's stability, `--out`, the core's lookup).
 
 ## Where our images are
 
