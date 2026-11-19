@@ -86,16 +86,20 @@ machine**, so visitors' demo machines can reach one another. Not started. What i
   restore the page connects it and the guest asks for its address then (the room's gateway gives a /128 by DHCPv6 and
   the RA: tailnet.md). The restore's hold (devices.md "The network after a restore") and the agent's LEASE must cover
   the second card and DHCPv6.
-- **The guests:** Alpine's busybox `udhcpc` is IPv4 only: `alpine-demo` needs `iface eth1 inet6 dhcp` (`udhcpc6`),
-  so its image's content id changes: a **new demo id** with `replaces: ["alpine-term"]`; `agent/src/lease.rs` learns
-  `udhcpc6`. Arch's network manager probably takes DHCPv6 on any card already: check, else its image changes too (a new
-  hand-made image: new ids for arch-desktop and arch-3d). Only the primary (the demo network, eth0) offers default
-  routes, so the room adds its /48 and nothing else.
+- **The guests, without changing their images** (checked with the user, 2026-11-19): Arch's systemd-networkd already
+  takes any `eth*`/`en*` card with `DHCP=yes`, v4 and v6 (images/arch/build.sh), so its second card configures
+  itself. Alpine's ifupdown-ng configures only what `/etc/network/interfaces` lists (`lo`, `eth0`), so `eth1` stays
+  down, and the room's address is a /128 by DHCPv6 (no SLAAC). Rather than an image change (a new content id, so new
+  demo ids), **the agent does it**: its binary comes from fw_cfg at each start (web/app/guest-agent.ts), so it ships
+  with the page; told a card is connected, it brings up a card nothing else manages (no ifupdown stanza, no
+  dhcpcd/networkd/NetworkManager on it) and runs busybox's `udhcpc6` there, and its LEASE after a restore renews
+  `udhcpc6` as it does `udhcpc` (`agent/src/lease.rs`). Only the primary (the demo network, eth0) offers default
+  routes, so the room adds its /48 and nothing else. With no image changed, the demos keep their ids (no `replaces`):
+  only their snapshots are made again.
 - **Images CI and others already use stay as they are** (the user, 2026-11-19): `alpine-uefi` is ci.sh's and
-  ci-net.sh's, and `alpine-demo` is cut from it, so the change goes in `images/alpine-demo/`'s own files only (its
-  hash moves in SHA256SUMS; its tests: alpine-demo-hook, page-alpine-agent in ci-net, ci-machines' build). The
-  desktop's `target/arch/desktop.qcow2` is the deployed Desktop Demo's and bench/gpu's guest: never edited; an Arch
-  that needs a change is a new image under a new name.
+  ci-net.sh's (`alpine-demo` is cut from it), and `target/arch/desktop.qcow2` is the deployed Desktop Demo's and
+  bench/gpu's guest: never edited. If an image must change after all, `alpine-demo`'s own files only (its hash moves
+  in SHA256SUMS, a new demo id), and an Arch change is a new image under a new name.
 - **Every template made again** (a second card is another shape: the shape hash moves), by tools/build-demos.ts.
 - **Costs and words:** the room client (`ts.wasm`, 3.8 MB) after the prompt, not before it (click → command stays);
   the visitor's browser then talks to six public Nostr relays and Tailscale's DERP servers: the interstitial says so
