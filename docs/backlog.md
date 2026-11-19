@@ -1255,18 +1255,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
-- **A divider to drag between the screen and the terminal in Both** (the user's idea, 2026-11-19): today a fitted
-  terminal (an agent that sets the guest's size: devices.md "The serial console's size") keeps its 80 columns beside
-  the screen and fits only its rows (stacked, 80×25: web/app/areas/serial-terminal.ts `#refit`), so the screen's room
-  doesn't move when an agent says HELLO; only the Terminal view fits both ways. A split pane
-  with a handle in the middle would let the user give either more: the terminal refits as it moves (its size told once
-  it settles, as now), the screen's room measured again (the display's size follows it on a machine with the agent).
-  Remembered per browser as the view is (`waarm64.settings`); keyboard-movable (a separator role, arrows); the stacked
-  layout's handle horizontal. Only the user moves it: its place is set before the machine starts (the default, today's
-  layout, or the remembered one), an agent's HELLO never moves it (the terminal refits inside its share), and a drag is
-  a resize as the window's is (the display follows). A layout that moved by itself at the HELLO changed the screen's
-  room after the boot and failed `tests/page-debian.test.ts`'s "the preferred mode at the boot is the screen box"
-  (2026-11-19): that test guards it.
 - **A desktop demo's machine can wait for good on "Starting the desktop..."** (review demo-page-4 #5, 2026-11-19):
   the template's `start-desktop.sh` (bench/demo/make-template.ts `startOnResume`) goes on only when the machine's id
   changes, which the agent's RENEW does, and RENEW is owed per link (web/app/main.ts `restored(template)` →

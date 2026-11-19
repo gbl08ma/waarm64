@@ -11,6 +11,7 @@
   import FolderWizard from './FolderWizard.svelte';
   import FoldersMount from './FoldersMount.svelte';
   import DemosPage from './DemosPage.svelte';
+  import ViewDivider from './ViewDivider.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import MessageBar from './MessageBar.svelte';
   import NetWizard from './NetWizard.svelte';
@@ -92,7 +93,13 @@
 />
 <Toolbar {audio} {net} {folders} />
 {#if !machinesNav.open && !demos.open}<MessageBar />{/if}
-<main bind:this={main}>
+<main
+  bind:this={main}
+  data-split-across={screen.split.across === undefined ? undefined : ''}
+  data-split-stacked={screen.split.stacked === undefined ? undefined : ''}
+  style:--split-across={screen.split.across}
+  style:--split-stacked={screen.split.stacked}
+>
   <div id="screen-view" bind:this={box}>
     <div id="screen-frame">
       {#key screen.generation}
@@ -116,6 +123,7 @@
       <BootCard />
     </div>
   </div>
+  {#if screen.view === 'both'}<ViewDivider {main} />{/if}
   <div id="terminal-view"><div id="terminal" bind:this={terminal}></div></div>
   {#if keys.osk}<Osk
       send={(code: string, down: boolean, mods: Mods, repeat?: boolean) => page.oskKey(code, down, mods, repeat)}
@@ -251,6 +259,14 @@
   :global(body[data-view='screen']) #screen {
     box-shadow: none;
   }
+  /* Both: the divider (ViewDivider.svelte) takes the gap; once moved, the terminal's share is where it put it. */
+  :global(body[data-view='both']) main {
+    gap: 0;
+  }
+  :global(body[data-view='both']) main[data-split-across] #terminal-view {
+    flex: 0 0 calc((100% - var(--space-4)) * var(--split-across));
+    min-width: 0;
+  }
   /* The terminal alone, as the screen alone: no frame around it (the page's padding, its border and its own). */
   :global(body[data-view='terminal']) main {
     padding: 0;
@@ -271,6 +287,13 @@
   @media (max-width: 1100px) {
     :global(body[data-view='both']) main {
       flex-direction: column;
+    }
+    :global(body[data-view='both']) main[data-split-across] #terminal-view {
+      flex: 0 1 auto;
+    }
+    :global(body[data-view='both']) main[data-split-stacked] #terminal-view {
+      flex: 0 0 calc((100% - var(--space-4)) * var(--split-stacked));
+      min-height: 0;
     }
   }
 </style>

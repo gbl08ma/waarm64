@@ -1,7 +1,7 @@
 // Settings remembered per browser (the view, the sound's volume, a transient
 // machine's size and the connection its network adapter has, the mouse lock, the Preferences: the status bar's elements and Vulkan's shader store's budget among them). Storage can be off or throw: then nothing is remembered.
 import type { NetworkSettings } from './network.ts';
-import type { View } from './areas/screen.svelte.ts';
+import type { Split, View } from './areas/screen.svelte.ts';
 import type { LockMode } from '../input.ts';
 import type { Item } from './statusbar.ts';
 import type { ModifierMode } from './osk.ts';
@@ -15,6 +15,8 @@ export type Settings = {
   ncpus?: number;
   ramMiB?: number;
   view?: View;
+  /** Both's divider, where the user last put it (web/app/areas/screen.svelte.ts `Split`). */
+  split?: Split;
   net?: NetworkSettings;
   transientNet?: string;
   screen?: string;

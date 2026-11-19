@@ -16,7 +16,7 @@ import type { Page } from '../page.ts';
 import { keys } from './keys.svelte.ts';
 import { network } from './network.ts';
 import { isStopped, power } from './power.svelte.ts';
-import { screen, type View } from './screen.svelte.ts';
+import { screen, splitShare, type View } from './screen.svelte.ts';
 import type { ScreenElements, ScreenView } from './screen-view.ts';
 import type { SerialTerminal } from './serial-terminal.ts';
 import { status } from './status.svelte.ts';
@@ -138,6 +138,8 @@ export class PageWindow {
     const asked = params.get('view');
     const demo = tabView();
     const kept = settings().view;
+    const split = settings().split;
+    screen.split = { across: splitShare(split?.across), stacked: splitShare(split?.stacked) };
     this.setView(isView(asked) ? asked : isView(demo) ? demo : isView(kept) ? kept : 'screen', false);
   }
   /** The serial log shown: the terminal's view, or both. */

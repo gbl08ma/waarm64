@@ -154,3 +154,49 @@ test("the serial terminal: 80×25 without an agent that sets the guest's size; w
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test("Both's divider: the terminal keeps 80 columns beside the screen until the user drags it; then it fits its share (told to the guest), the keys move it, a double click restores the default, and it's remembered", { skip, timeout: 120_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+  const page = await ctx.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&agentstub`);
+  await page.waitForFunction(() => document.body.dataset.state === 'running' && /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
+  await stub(page);
+  await openPort(page);
+  await hello(page, CAP.TIME | CAP.CONSOLE);
+  await until(() => consoles(page), (c) => c.length > 0, 'CONSOLE at the HELLO');
+  const cols = async () => Number((await shown(page)).size?.split('x')[0]);
+  assert.equal(await cols(), 80, 'the default layout: 80 columns beside the screen');
+  const screenW = () => page.evaluate(() => document.getElementById('screen-view')!.getBoundingClientRect().width);
+  const before = await screenW();
+  // Dragged 300 px toward the screen: the terminal fits its new share, wider, and says it.
+  const d = (await page.locator('#view-divider').boundingBox())!;
+  await page.mouse.move(d.x + d.width / 2, d.y + d.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(d.x + d.width / 2 - 150, d.y + d.height / 2, { steps: 5 });
+  await page.mouse.move(d.x + d.width / 2 - 300, d.y + d.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const wide = await until(cols, (c) => c > 100, 'the terminal wider after the drag');
+  await until(() => consoles(page), (c) => c.at(-1)![0] === wide, 'the new size said');
+  assert.ok((await screenW()) < before - 250, "the screen's room smaller by the drag");
+  const saved = () => page.evaluate(() => (JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}') as { split?: { across?: number } }).split?.across);
+  assert.ok((await saved()) !== undefined, 'the share remembered');
+  // The arrow keys: right gives the screen more.
+  await page.locator('#view-divider').focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+  await until(cols, (c) => c < wide, 'narrower after ArrowRight');
+  // An agent's new connection doesn't move it: the same share, the same size.
+  const kept = await cols();
+  await openPort(page, false);
+  await openPort(page);
+  await hello(page, CAP.TIME | CAP.CONSOLE);
+  await page.waitForTimeout(800);
+  assert.equal(await cols(), kept, 'the HELLO leaves the share as it is');
+  // A double click: the default layout again.
+  await page.locator('#view-divider').dblclick();
+  await until(cols, (c) => c === 80, '80 columns again after the double click');
+  assert.equal(await saved(), undefined, 'the default remembered');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

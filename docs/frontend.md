@@ -1761,7 +1761,15 @@ xterm.js and its stylesheet are imported as the package (`areas/serial-terminal.
 ## Views, settings and the disk
 
 Screen (the default, decision 2; edge to edge between the toolbar and the status bar, no padding,
-black around the canvas), Serial terminal, or Both (side by side; stacked below 1100 px).
+black around the canvas), Serial terminal (edge to edge too, no frame), or Both (side by side; stacked below 1100 px).
+In Both a **divider** (web/app/ViewDivider.svelte, a focusable separator) sits between them: dragged, or moved with the
+arrow keys (2 % a press), it sets the terminal's share of the room (15 % to 85 %, `screen.split`, side by side and
+stacked each their own), and the terminal then fits its share both ways (an agent's CONSOLE tells the guest), the
+screen's box measured again (the display follows, as at a window's resize). Until it's moved the layout is the default
+one (the terminal's own width: 80 columns beside the screen, 80×25 under it); a double click goes back to it. Only the
+user moves it: an agent's HELLO refits the terminal inside its share, so the screen's room at the boot is the one
+`tests/page-debian.test.ts`'s "the preferred mode at the boot is the screen box" checks. Remembered per browser
+(`split`).
 The view chosen last is remembered per browser (`localStorage` `waarm64.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
 it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs; its **[JIT cache](ui:machines:SettingsTab.jit)**, beside the RAM, is

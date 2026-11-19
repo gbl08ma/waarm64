@@ -15,6 +15,14 @@
     "message": "Click to type and capture the mouse, Esc to release it",
     "note": "Hint shown over the machine's screen while typing doesn't go to the machine and the toolbar's mouse lock is on: a click also hands the machine the mouse."
   },
+  "ViewDivider.label": {
+    "message": "Divider between the screen and the serial terminal",
+    "note": "Screen-reader name of the divider between the machine's screen and its serial terminal in the Both view: dragging it (or the arrow keys) gives either more room."
+  },
+  "ViewDivider.title": {
+    "message": "Drag to give the screen or the serial terminal more room. Double-click to restore the default layout.",
+    "note": "Tooltip of the divider between the machine's screen and its serial terminal in the Both view."
+  },
   "BootCard.serial": {
     "message": "No video output. The guest may be sending boot menus and setup instructions to the serial console.",
     "note": "Line on the boot card (over the screen while a machine starts) when the guest's boot menus or first-boot questions go to the serial console instead of the screen; a Show serial console button follows."

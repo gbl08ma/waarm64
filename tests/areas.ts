@@ -123,7 +123,7 @@ export const AREAS: Record<string, Area> = {
   },
   // ---- graphics
   display: {
-    src: ['web/gpu.ts', 'web/gpu-present.ts', 'web/display.ts', 'web/edid.ts', 'web/surface.ts', 'web/input.ts', 'web/app/Screen*.svelte', 'web/app/areas/screen*.ts', 'web/app/areas/mouse.svelte.ts', 'web/app/areas/cursor-fit.ts', 'web/app/Mouse*.svelte', 'web/app/Size*.svelte', 'web/app/areas/page-window.ts', 'tests/gpu/**'],
+    src: ['web/gpu.ts', 'web/gpu-present.ts', 'web/display.ts', 'web/edid.ts', 'web/surface.ts', 'web/input.ts', 'web/app/Screen*.svelte', 'web/app/areas/screen*.ts', 'web/app/areas/mouse.svelte.ts', 'web/app/areas/cursor-fit.ts', 'web/app/Mouse*.svelte', 'web/app/Size*.svelte', 'web/app/areas/page-window.ts', 'web/app/ViewDivider.svelte', 'tests/gpu/**'],
     heavy: ['tests/page-pointers.test.ts', 'tests/page-surface.test.ts', 'tests/page-layout.test.ts'],
     push: ['ci-debian.sh', 'ci-graphics.sh'],
   },
