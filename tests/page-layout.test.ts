@@ -212,6 +212,9 @@ test("a notice's countdown goes on where it was when the bar moves to the Home p
     const before = ring();
     (document.getElementById('machines-open') as HTMLElement).click();
     await new Promise((res) => setTimeout(res, 400));
+    // The move ended (under load it outlasts the 400 ms, the outgoing bar's ring still there): every animation but the rings'.
+    const moving = document.getAnimations().filter((a) => !((a.effect as KeyframeEffect | null)?.target instanceof SVGCircleElement));
+    await Promise.all(moving.map((a) => a.finished.catch(() => undefined)));
     return { before, after: ring() };
   });
   assert.equal(r.after.length, 1, JSON.stringify(r));

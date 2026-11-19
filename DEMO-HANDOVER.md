@@ -2,23 +2,27 @@
 
 The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-demo.md](docs/plans/first-demo.md).
 
-## Start here (for a new session; 2026-11-19 ~14:40)
+## Start here (for a new session; 2026-11-19 ~17:30)
 
 You're picking up the DEMO track (the first demo: a store of demo machines resumed from template snapshots, and a
 hosted demo network). Read, in order: CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited
 with their OK on 2026-11-19 for the red lines and loop 11), this file, and the fork's `../waarm64-demonet/HANDOVER.md`.
 docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
-deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. Every loop is done; **the next piece of work is the
-out-of-context review** ("What's left" 1), then its fixes, then the first deploy (the user's plan, 2026-11-19).
+deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. Every loop is done, and so are the third
+out-of-context review and its fixes (cbe02be1); **the next piece of work is the first deploy, asked of the user first**
+("What's left" 3).
 
 ### Where things stand
 
 - **waarm64 `main`** (origin): pushed through this file's commit. Loops 0–6, 10, 10b, 12, 13, 15 and 15b are done;
-  two out-of-context reviews of the page's demo code (branches `review/demo-page`, `review/demo-page-2`, kept on
-  origin), every finding fixed or left by the user's decision ("Awaiting the user's review"). Three demos in
+  three out-of-context reviews of the page's demo code (branches `review/demo-page`, `review/demo-page-2`,
+  `review/demo-page-3`, kept on origin), every finding fixed or left by the user's decision ("Awaiting the user's
+  review"). **Review 3** (9 findings) fixed in cbe02be1 but #7, filed (docs/backlog.md "The store's sweep never runs":
+  the page never calls `Store.sweep`, which machines.md said it did; a template import's window before the record).
+  The agent and alpine-demo images and the three templates were rebuilt after it. Three demos in
   deploy/disks/demos.json, each with the global room on its second adapter (`room: "global"`): `alpine-term` (Alpine
   at a root prompt; also New machine's template), `arch-desktop` and `arch-3d` (the Arch desktop, resumed with foot
-  counting 10 s down to Firefox or the shader demo). Built locally, all three with 15b's agent (1e5e7931):
+  counting 10 s down to Firefox or the shader demo). Built locally, all three with review 3's agent (cbe02be1):
   `target/demos/{alpine-term,arch-desktop,arch-3d,pieces}`, made by tools/build-demos.ts from the checkout's core.
   **Nothing of the track is deployed.**
 - **Loop 15 (a demo's room) and 15b (its names on Alpine):** docs rooms.md "A demo's room", devices.md "A card nothing
@@ -32,10 +36,12 @@ out-of-context review** ("What's left" 1), then its fixes, then the first deploy
   2.9–3.0 s, 24.7 MB ("DEMO loop 3"); arch-desktop click → desktop 12.7 s, 140 MiB, arch-3d 13.2 s, 145 MiB
   ("DEMO loop 12"). comparison.md §3 has Alpine's, marked local. CI's own runs after loop 15 (local, no link model):
   Alpine click → command 3.1 s; the desktop shown 2.5 s, Firefox's window 30.0 s.
-- **CI at `1e5e7931`** (15b; 52afe6fa is 15): ci.sh green but browser.test.ts's "the page says what's wrong" (timed
-  out at 180 s under ci.sh's load; passed alone in 9.9 s: a timing flake, not 15's), ci-net.sh OK (411 s, the room
-  test 27 s), ci-machines.sh OK (354 s), ci-graphics.sh OK (195 s, the desktop step ran). This file's commit after it
-  is docs only.
+- **CI at `cbe02be1`** (review 3's fixes), the whole set: ci.sh green but page-layout's "a notice's countdown goes
+  on…" (two rings 400 ms after the move under load; passed alone; the test now waits for the move: next commit,
+  ci-fast OK), ci-net OK (435 s; the room test now also kills the forwarder and restarts the service), ci-debian
+  `--platform` OK (467 s), ci-graphics OK (198 s, the desktop step ran: click → desktop 2.5 s), ci-machines OK (342 s),
+  ci-audio, ci-jit, ci-fp, ci-deqp OK, ci-deqp-vk OK (1079 s; the CI worktree needed `target/vkframes` linked in),
+  ci-usb OK.
 - **The track's docs are in docs/ already** (this session moved them; an Explore agent checked the kickoff, the plan
   and this file against docs/): decisions.md "Network" and "Demos" (the kickoff's decisions, which docs and code now
   cite instead of the kickoff), remote-disks.md "Publishing", "Building" and **"Deploying the demos"** (the runbook),
@@ -86,19 +92,7 @@ out-of-context review** ("What's left" 1), then its fixes, then the first deploy
 
 ### What's left, in order
 
-**1. The out-of-context review** (CLAUDE.md "Out-of-context reviews"; docs/testing.md): a fresh agent with only the
-repo and a neutral brief (the area, "find real defects"; never this file's theories), reviewing statically the page's
-demo code since `review/demo-page-2`: the clipboard pause (web/app/demo-store.ts `startsPaused`, the toolbar), loop
-12's build and countdown (tools/build-demos.ts, tools/demo-site.ts, bench/demo/make-template.ts, the session's
-countdown), loop 13's templates (web/app/template.ts, NewMachine), loop 15's room (web/app/net-demo.ts,
-template.ts, definition-check.ts, connections.ts `forMachine`, MachinePane's delete, agent-link/agent-actions CARDS,
-net-settled.ts) and the agent's card.rs and resolve.rs. Findings ranked on a `review/demo-page-3` branch. Then each
-one fixed (its confirming test first, failing) or filed in docs/backlog.md; a fix to the agent or a template's guest
-means the agent image and the three templates rebuilt again (tools/build-demos.ts), once, after the last such fix.
-
-**2. The whole CI set** on the head after the fixes: ci.sh, ci-net, ci-debian `--platform`, ci-graphics,
-ci-machines, ci-audio, ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb (one at a time in ../waarm64-ci; link the rebuilt
-images and target/demos in first).
+**1–2. Done:** review 3 and its fixes, and the whole CI set at cbe02be1 (above).
 
 **3. The first deploy** (ask the user first, decision 11): the runbook, remote-disks.md "Deploying the demos"
 (vmdisks.tny.im's demos site from tools/build-demos.ts → tools/publish-demos.ts `--apply`, then vm.tny.im's page
@@ -157,6 +151,14 @@ facts).
 
 ## Awaiting the user's review
 
+- **Review 3's fixes, the engineering calls** (cbe02be1): a forwarder that dies is given back by the root and started
+  again at once unless it lived under 10 s (then at the next CARDS); 8 TCP children at most, each killed with the
+  forwarder and after 15 s; the rooms' search domains now **after** the upstream's (musl stops at the first failing
+  search domain; on the demo network there is no upstream domain, so nothing changes there); the agent marks the cards
+  it brought up in `/run/waarm64-cards` and brings a marked one up again when its udhcpc6 is gone; the OpenRC stop falls
+  back to `umount -l` (a guest-visible change to the service, in alpine-demo and the installer); a demo's room is made
+  last and removed when the import fails. Not done: wrapping the import in the write lock (#7: a nested shared lock
+  would deadlock behind a queued sweep), filed with the sweep the page never calls.
 - **Loop 15's engineering calls:** the room's connection is the machine's (`forMachine`), deleted with it unless
   another machine was attached to it since; a fresh copy of a demo gets its own. CARDS is a new frame (not LEASE at
   every connection, which would have nmcli reconnect cards a user disconnected). The agent's card: only down cards,
