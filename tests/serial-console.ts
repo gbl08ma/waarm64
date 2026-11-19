@@ -22,14 +22,34 @@ export async function shows(page: Page, re: RegExp, ms: number, from = 0, contex
 /**
  * Runs a shell command on the serial console; resolves with its output. The markers are built by
  * the shell (`$((40+2))`), so the echoed command line never matches them, only what ran (bash
- * echoes the second line after the first has run, so the output can't be cut by the echo).
+ * echoes the second line after the first has run, so the output can't be cut by the echo). That
+ * echo, the prompt and `echo __END$((40+2))__` after the output, isn't the output: it's cut off, so a
+ * command that prints nothing gives '' (it used to give the prompt's line, which a wait for a
+ * non-empty answer took for one: tests/net-tailcat.test.ts's lease under load).
  */
 export async function run(page: Page, cmd: string, ms = 60_000, context?: () => Promise<string>) {
   const from = (await output(page)).length;
-  await page.evaluate((c) => (window as never as { harness: { send(s: string): void } }).harness.send(c), `echo __BEGIN$((40+2))__; ${cmd}\necho __END$((40+2))__\n`);
+  // `stty -echo` first: the end line typed ahead arrives while the command runs, when the terminal (not readline) would
+  // echo what comes in, so a slow guest put part of it among the output ("D$((40+2))__", seen under ci-net.sh's load);
+  // readline still echoes each line it reads.
+  await page.evaluate((c) => (window as never as { harness: { send(s: string): void } }).harness.send(c), `stty -echo 2>/dev/null; echo __BEGIN$((40+2))__; ${cmd}\necho __END$((40+2))__\n`);
   await shows(page, /__END42__\r?\n/, ms, from, context);
   const out = (await output(page)).slice(from).replace(/\r/g, '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
-  return out.slice(out.lastIndexOf('__BEGIN42__\n') + 12, out.lastIndexOf('__END42__'));
+  return commandOutput(out.slice(out.lastIndexOf('__BEGIN42__\n') + 12, out.lastIndexOf('__END42__')));
+}
+
+const END_ECHO = 'echo __END$((40+2))__';
+/**
+ * What `run`'s command printed, from what the console showed between its markers: without the shell's echo of the end
+ * line that follows it (the prompt, then `echo __END$((40+2))__`), on a line of its own or after output that didn't end
+ * its line.
+ */
+export function commandOutput(between: string): string {
+  const at = between.lastIndexOf(END_ECHO);
+  if (at < 0) return between;
+  const line = between.lastIndexOf('\n', at) + 1;
+  const prompt = /root@[^\s:]+:\S*# $/.exec(between.slice(line, at)); // loginRoot's shell
+  return between.slice(0, prompt ? line + prompt.index : line);
 }
 
 /**

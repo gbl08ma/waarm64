@@ -194,7 +194,12 @@ const refusalOf = (v: unknown): DemoRefusal => {
  */
 export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = {}, env: DemoEnv = browserEnv()): DemoNet {
   const change = () => hooks.change?.();
-  const notice = (n: DemoNotice) => hooks.notice?.(n);
+  /** The last notice given: a lost socket's "trying again" is followed by the spent budget's, if that's what it meets. */
+  let said: DemoNotice['kind'] | undefined;
+  const notice = (n: DemoNotice) => {
+    said = n.kind;
+    hooks.notice?.(n);
+  };
   const stats = { rxFrames: 0, txFrames: 0, rxBytes: 0, txBytes: 0, sockets: 0 };
   const status: DemoStatus = { phase: 'connecting', again: false };
   let port = frames;
@@ -434,7 +439,9 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
         return wait('full', backoff(CROWDED_MS));
       case 4010: {
         const resets = str(c?.resets);
-        if (status.lane !== 'none') notice({ kind: 'spent', ...(resets ? { resets } : {}) });
+        // Said unless the lane's message said it, and nothing said otherwise since (a socket lost past the grace, whose
+        // reconnect meets this: the message bar's "trying again" would stay until the reset).
+        if (status.lane !== 'none' || said === 'lost') notice({ kind: 'spent', ...(resets ? { resets } : {}) });
         status.lane = 'none';
         if (resets) status.laneResets = resets;
         return wait('bytes', until(resets, CROWDED_MS), resets);

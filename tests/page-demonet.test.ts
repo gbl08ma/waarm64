@@ -208,7 +208,11 @@ test('the demo network on the page: the lease and /status, a refusal counted, a 
   await statusLike(page, [words('network:demo-view.wait.bytes', {})], 60_000);
   const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
   assert.ok(seen.some((s) => words('network:demo-view.notice.budget.resets', { percent: 80 }).test(s)), `80 % said: ${JSON.stringify(seen)}`);
-  assert.match(await bar(page), words('network:demo-view.notice.spent', {}), 'then used up, said until closed');
+  // Used up, and said until closed whichever way the socket ended: past the grace the server's 4010, or (under load,
+  // its close not through in time) a lost socket whose reconnect meets 4010, said again.
+  const spent = words('network:demo-view.notice.spent', {});
+  assert.ok(seen.some((s) => spent.test(s)), `used up said: ${JSON.stringify(seen)}`);
+  assert.match(await bar(page), spent, `still said at the end: ${JSON.stringify(seen)}`);
   assert.deepEqual(errors, []);
   await context.close();
 });

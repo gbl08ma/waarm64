@@ -115,15 +115,17 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
       await run("mkdir -p /run/systemd/network && printf '[Match]\\nName=e*\\n[Network]\\nDHCP=yes\\n' > /run/systemd/network/20-eth.network");
       await run('ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf; systemctl start systemd-resolved systemd-networkd', 120_000);
       let a4 = '';
-      for (let k = 0; k < 40 && !a4; k++) {
+      const isV4 = /^\d+\.\d+\.\d+\.\d+\/\d+$/m; // an address only: nothing else the console shows
+      for (let k = 0; k < 40 && !isV4.test(a4); k++) {
         a4 = (await run("ip -4 -o addr show scope global | awk '{print $4}'")).trim();
-        if (!a4) await page.waitForTimeout(1000);
+        if (!isV4.test(a4)) await page.waitForTimeout(1000);
       }
       assert.equal(a4.split('/')[0], '192.0.0.2', `the IPv4 lease is the translator's address: ${await run('ip -br addr; networkctl list 2>&1 | head')}`);
       let a6 = '';
-      for (let k = 0; k < 40 && !a6; k++) {
+      const isV6 = /^[0-9a-f:]+\/\d+$/;
+      for (let k = 0; k < 40 && !isV6.test(a6); k++) {
         a6 = (await run("ip -6 -o addr show scope global | awk '{print $4}'")).trim().split('\n')[0];
-        if (!a6) await page.waitForTimeout(1000);
+        if (!isV6.test(a6)) await page.waitForTimeout(1000);
       }
       assert.equal(a6.split('/')[0], self6, `the IPv6 lease is the tunnel's address (${a6})`);
       const until = async (what: string, cmd: string, ok: (s: string) => boolean, ms: number) => {

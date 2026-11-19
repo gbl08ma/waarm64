@@ -96,11 +96,12 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       await run("mkdir -p /run/systemd/network && printf '[Match]\\nName=e*\\n[Network]\\nDHCP=yes\\n' > /run/systemd/network/20-eth.network");
       await run('ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf; systemctl start systemd-resolved systemd-networkd', 120_000);
       let addr = '';
-      for (let k = 0; k < 40 && !addr; k++) {
+      const isV4 = /^\d+\.\d+\.\d+\.\d+\/\d+$/m; // an address only: nothing else the console shows
+      for (let k = 0; k < 40 && !isV4.test(addr); k++) {
         addr = (await run("ip -4 -o addr show scope global | awk '{print $4}'")).trim();
-        if (!addr) await page.waitForTimeout(1000);
+        if (!isV4.test(addr)) await page.waitForTimeout(1000);
       }
-      assert.ok(addr, `no DHCP lease after 40 s:\n${await run('ip -br link; ip -br addr; systemctl is-active systemd-networkd systemd-resolved; networkctl list 2>&1 | head; journalctl -u systemd-networkd --no-pager 2>&1 | tail -15; lsmod | grep -i virtio')}`);
+      assert.match(addr, isV4, `no DHCP lease after 40 s:\n${await run('ip -br link; ip -br addr; systemctl is-active systemd-networkd systemd-resolved; networkctl list 2>&1 | head; journalctl -u systemd-networkd --no-pager 2>&1 | tail -15; lsmod | grep -i virtio')}`);
       assert.equal(addr.split('/')[0], self, 'the lease is the address the client reports');
       const routes = await run('ip -4 route');
       console.log(`# guest: ${addr}; routes: ${routes.trim().replace(/\n/g, ' | ')}`);

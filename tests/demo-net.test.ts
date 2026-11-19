@@ -254,6 +254,18 @@ test('4010: the budget spent, said, waited out until it resets', () => {
   m.last().text({ type: 'closing', code: 4010, reason: 'bytes', resets: iso(resets) });
   m.last().end(4010, 'bytes');
   assert.deepEqual(m.notices.map((n) => n.kind), ['lane']);
+  // The socket lost past the grace (the server's close never reached the page): its reconnect meets 4010, said again.
+  const l = harness(() => 0);
+  l.last().accept();
+  l.last().hello();
+  l.last().text({ type: 'lane', lane: 'none', reason: 'bytes', resets: iso(resets) });
+  l.last().end(1006);
+  l.advance(l.nextAt() - l.now());
+  l.last().accept();
+  l.last().text({ type: 'closing', code: 4010, reason: 'bytes', resets: iso(resets) });
+  l.last().end(4010, 'bytes');
+  assert.deepEqual(l.notices.map((n) => n.kind), ['lane', 'lost', 'spent'], 'not "trying again" until the reset');
+  assert.equal(l.net.status().wait?.why, 'bytes');
 });
 
 test('closed for good: another version, another origin, a protocol error, a malformed message; and close()', () => {
