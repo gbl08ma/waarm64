@@ -26,8 +26,10 @@ says so again** (they allowed it, then withdrew it: "changed my mind, don't depl
 - **The Alpine demo meets the goal's numbers locally:** click → command answered 2.9–3.0 s, 24.7 MB on the wire, at a
   modelled 100 Mbit/s / 20 ms (bench/demo/REPORT.md "DEMO loop 3"; comparison.md §3 has them, marked local). Not
   deployed, so the kickoff's "on the deployed page" isn't met yet.
-- **Loop 12 (the desktop and 3D demos) is unfinished**, on branch **`wip/demo-loop12`** (origin; one WIP commit over
-  `f18c51a0`, untested parts marked below). Not on main.
+- **Loop 12 (the desktop and 3D demos): built, measured, docs moved; CI on `c2bacdcf` running** (branch
+  `wip/demo-loop12`, rebased on main). Both demos resume with foot counting down to their app; click → desktop 12.7 s
+  (arch-desktop) and 13.2 s (arch-3d) at 100/20, 140 and 145 MiB (bench/demo/REPORT.md "DEMO loop 12"). Merges to
+  main once ci.sh, ci-machines.sh and ci-graphics.sh pass.
 
 ### The user's decisions since the kickoff (2026-11-19), all binding
 
@@ -61,51 +63,11 @@ says so again** (they allowed it, then withdrew it: "changed my mind, don't depl
 
 ### What's left, in order
 
-**1. Loop 12: the desktop and 3D demos** (branch `wip/demo-loop12`; `git switch wip/demo-loop12`, then rebase onto
-main). What the WIP holds:
-- `bench/demo/make-template.ts`: `--session <json>` (root on serial, the user logged in on tty1, `WLR_RENDERER=gles2`
-  sway, each app via `swaymsg exec` and waited for by app_id/class, settle), `--label`, `--compact` (drops caches and
-  compacts before the snapshot; the recorded `drop` flag now says so), a fixed screen size, the page's questions
-  answered, the thumbnail from `#screen` with the page's own layers hidden (the "Click to type" hint was in the first
-  one), diagnostics on failure (a screenshot, the message bar, a 420 s limit), and a `cmdline` session field: it adds
-  kernel parameters to the Arch loader entry (`/boot/loader/entries/arch.conf` on the ESP) from the serial console and
-  reboots once, checking `/proc/cmdline`. **Fixed and tested:** the wait for logind's session and `XDG_RUNTIME_DIR`
-  before typing `sway` (the first builds failed with "XDG_RUNTIME_DIR is not set").
-- `tools/build-demos.ts` (a recipe's `image` may be a hand-made `target/….qcow2`, never rebuilt; the session checked:
-  no quotes or `$`; `cmdline` only kernel-parameter characters; desktops get a 900 s timeout), `tools/demo-site.ts`
-  (`Session`, `Recipe.session`), `deploy/disks/demos.json` (two new demos, neither a template: **`arch-desktop`** —
-  4 vCPUs, 2 GiB, 3D, sway with Firefox and foot at 1280×800, view `screen`, network `demo`, its card saying the
-  network reaches only dl-cdn.alpinelinux.org, so no websites and no pacman; **`arch-3d`** — the same image with
-  `gtk4-demo --run=shadertoy` on virgl/WebGL2, chosen over Venus because a snapshot is refused while a Venus context
-  exists; **untested**), `bench/demo/screen-like.ts` (a screen against its thumbnail, mean gray difference at 32×20;
-  threshold 12 **uncalibrated**), `bench/demo/targets.ts` (`waarm64-desktop-template`, `waarm64-3d-template`),
-  `tests/build-demos.test.ts` (passes), `tests/page-demos-guest.test.ts` (desktops: the screen shown plus a serial
-  command; **not run**), `scripts/ci-graphics.sh` (a step restoring `arch-desktop` from `target/demos`, skipped without
-  a build), `tests/areas.ts`, docs/remote-disks.md ("A desktop"), docs/images.md.
-- **Built once** (the user approved that exact command): `target/demos/arch-desktop` in the main checkout, a template of
-  287.8 MB deflated (RAM 273 MB stored of 993 MB; LZ4 would be 409 MB), boot to agent 26 s, sway +15 s, Firefox +53 s,
-  foot +70 s, 196 s in all. Its thumbnail still has the "Click to type" hint (fixed since, not rebuilt).
-- **Blocked:** auto mode refused every later build command, "Destructive or Unwanted Actions", even into a separate
-  `--out` directory:
-  `systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 -- timeout 1000 node tools/build-demos.ts --only arch-desktop --no-images --no-publish --out bench/results/local/demo/site > bench/results/local/demo/build-arch-desktop-2.log 2>&1`.
-  The likely trigger is the new `cmdline: init_on_free=1` step (the guest edits its own boot entry and reboots; only on
-  its overlay). Ask the user to approve it, or drop `cmdline` from both Arch recipes (then it's the build the user
-  already approved). **Never work around a refusal.**
-- `init_on_free=1` on Arch: it turns the balloon's free page reporting off (web/balloon.ts: Linux does without
-  PAGE_POISON); loop 12 judged that costs nothing in the browser (a wasm memory can't shrink, so reporting only zeroes
-  blocks) and keeps it only if the template shrinks noticeably from 287.8 MB.
-- Then: build `arch-3d` and check the shadertoy renders and its window name matches; calibrate `screen-like.ts` (a
-  resumed screen against its thumbnail and against a different screen); `npm run dist` into
-  `bench/results/local/demo/dist` and build both demos from it (`--core bench/results/local/demo/dist --out
-  bench/results/local/demo/site`); measure ≥3 runs per target in a quiet window at `DEMO_LINK=100/20` (snapshot on the
-  wire, click → desktop visible, PSS), JSON in `bench/demo/results/demo-12/`, numbers in bench/demo/REPORT.md; run
-  `tests/page-demos-guest.test.ts` on arch-desktop; also **review demo-page-2 #12**: `tools/demo-site.ts` `readSource`
-  must require `build` to resolve under `target/` (or `--out`) in a directory of its own, and make-template.ts refuse a
-  `--name` with `/` or `..`, before its `rmSync(recursive)`; and docs/images.md's sentence on the command-not-found hook
-  must say it re-runs the line "when it is the command alone" (the hook changed in 78bedcc7). CI: ci.sh,
-  ci-machines.sh, ci-graphics.sh (the CI worktree needs `target/demos/arch-desktop` and `target/demos/pieces` linked
-  in, `cp -al`, or that step skips). Note under "Awaiting the user's review": each new demo, and that the desktop
-  image's 944 pieces are duplicated in the shared `pieces/` until `desktop/` is published from there.
+**1. Loop 12's end:** CI in `../waarm64-ci` at the branch head (its `target/demos/{arch-desktop,arch-3d,pieces}`
+linked from main's, which hold the builds from bench/results/local/demo/site): ci.sh, then ci-machines.sh, then
+ci-graphics.sh; on green, fast-forward main and push. The builds' commands (the user approved the first; the others
+ran): `node tools/build-demos.ts --only arch-desktop,arch-3d --core bench/results/local/demo/dist --no-images
+--no-publish --out bench/results/local/demo/site`.
 
 **2. (closed: decision 9, kept as is.)**
 
@@ -337,6 +299,18 @@ the publish refuses: that's a new demo id with `replaces` (decision 13).
 See "Start here" › "What's left, in order" above.
 
 ## Awaiting the user's review
+
+- **Loop 12's engineering calls:** two new demos, neither a template for New machine: **`arch-desktop`** (4 vCPUs,
+  2 GiB, 3D, sway at 1280×800, Firefox) and **`arch-3d`** (the same image, the shader demo on virgl; virgl, not Venus,
+  since a snapshot is refused while a Venus context exists), both on the demo network (their cards say it reaches
+  only dl-cdn.alpinelinux.org: no websites, no pacman). They resume with foot open and a 10 s countdown to the app
+  (`~/open-firefox.sh`, `~/open-shader-demo.sh`, Ctrl+C stops it), the user's idea; the card's thumbnail is taken after
+  the build's own countdown, with the app open, and the screen at the snapshot is kept as `resume.webp` for the
+  checks. The shader demo runs with `GDK_DISABLE=offload`. `init_on_free=1` dropped (the session's `cmdline` field
+  stays, unused). screen-like.ts's threshold 12 kept (measured). The desktop image's 944 pieces are in the site twice
+  until `desktop/` is published from the shared `pieces/` (backlog). Builds go only under `target/<dir>/<name>`
+  (review demo-page-2 #12). Measured cost: the app's files (~125 MiB) come from the disk after the desktop shows, and a
+  command typed meanwhile waits behind them (backlog: a trace of the app's start).
 
 - **Loop 5's engineering calls:** the demo's machine is fixed in `deploy/disks/demos.json` (`recipe`: the image's name,
   the definition's `machine` with its MAC, and the disk's serial; the MAC and serial are loop 3's template's), so a
