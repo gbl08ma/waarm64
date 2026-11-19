@@ -194,6 +194,9 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   console.log(`# apk with the template's old clock: ${before}`);
   assert.equal(asked.length, 0, `no request with the old clock: ${before}`);
   assert.match(before, /TLS: server certificate not trusted/, before);
+  // The link's carrier changes so far: the restore's renewal must not flap it (web/devices.ts `restored`: the card's
+  // switch onto the helper's frames holds its flap while the agent's LEASE runs, which a link down would lose).
+  const carrier = await run(a, 'cat /sys/class/net/eth0/carrier_changes');
   // The snapshot, kept in the machine and downloaded, flagged as a template; the machine's definition.
   await a.locator('#save-snapshot').click();
   const kept = () => a.evaluate(async (id) => {
@@ -248,6 +251,7 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   await b.waitForFunction(() => document.body.dataset.lease !== undefined, null, { timeout: 150_000, polling: 250 });
   const log = () => run(b, 'grep -E "lease|renew" /var/log/waarm64-agent.log | tail -4');
   assert.equal(await b.evaluate(() => document.body.dataset.lease), 'agent', `the lease renewed by the agent; it says: ${await log()}`);
+  assert.equal(await run(b, 'cat /sys/class/net/eth0/carrier_changes'), carrier, 'the link stayed up through the restore and its renewal');
   // dhcpcd's rebind takes the address down while it asks (an INIT-REBOOT): back within seconds.
   let addr2 = '';
   for (let k = 0; k < 30 && !/^192\.168\.127\./.test(addr2); k++) {
@@ -255,6 +259,7 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
     addr2 = await run(b, "ip -4 -o addr show dev eth0 scope global | awk '{print $4}'");
   }
   assert.match(addr2, /^192\.168\.127\.\d+\/\d+$/, `the lease after the rebind: ${addr2}; ${await run(b, 'grep dhcpcd /var/log/messages | tail -6')}`);
+  console.log(`# the restored guest's address ${((Date.now() - t0) / 1000).toFixed(1)} s after the page's load`);
   const after = await apk(b);
   assert.ok(asked.some((p) => p.endsWith('/APKINDEX.tar.gz')), `apk reached the repository over TLS: ${after}; asked ${JSON.stringify(asked)}`);
 

@@ -6,7 +6,9 @@
 // after the first): the guest agent renews them through the guest's network manager (LEASE, web/app/agent-link.ts
 // `lease`), at once and keeping an address that is still right; where it can't (no agent within `AGENT_WAIT_MS`, an
 // agent without `CAP.LEASE`, LEASED not RENEWED), each connected card's link flaps instead (web/devices.ts `flap`:
-// 7 s down, past what networkd waits out). The user's choice, 2026-11-13.
+// 7 s down, past what networkd waits out). The user's choice, 2026-11-13. Until it's done, a card's own flaps (its switch
+// onto the local helper's or the demo network's frames) are held (web/devices.ts `restored`), so the link doesn't go down
+// under the agent's renewal; then the page says which cards it renewed (`settled`), and the others flap if they owed one.
 import { LEASED } from '../../agent-frame.ts';
 import type { AgentLink } from '../agent-link.ts';
 
@@ -27,6 +29,8 @@ export type LeaseDeps = {
   link(): AgentLink | undefined;
   /** Flaps card `i`'s link. */
   flap(i: number): void;
+  /** Done with the restore's leases: `renewed` the cards the agent renewed (each card's held flap is dropped or done). */
+  settled(renewed: number[]): void;
   /** Ms to wait (the tests' are shorter). */
   waits?: { grace: number; agent: number; leased: number };
 };
@@ -48,7 +52,10 @@ export class LeaseActions {
     const connected = await this.#d.whenConnected(w.grace, gone);
     if (gone()) return 'gone';
     // The grace ended with none connected (the one that was went back to connecting): nothing to renew yet.
-    if (!connected.length) return 'none';
+    if (!connected.length) {
+      this.#d.settled([]);
+      return 'none';
+    }
     const link = this.#d.link();
     const hello = link && (await link.hello(w.agent));
     if (gone()) return 'gone';
@@ -60,8 +67,12 @@ export class LeaseActions {
         )
       : undefined;
     if (gone()) return 'gone';
-    if (status === LEASED.RENEWED) return 'agent';
+    if (status === LEASED.RENEWED) {
+      this.#d.settled(connected.map((c) => c.index));
+      return 'agent';
+    }
     for (const c of connected) this.#d.flap(c.index);
+    this.#d.settled([]);
     return 'flap';
   }
 

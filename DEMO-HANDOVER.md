@@ -118,6 +118,16 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   snapshot ids differ: RAM isn't reproducible). `target/demos/alpine-term` is built (from d686e684's core).
   scripts/ci-machines.sh builds it into target/ci-demos and runs tests/page-demos-guest.test.ts on it (passed: 21 s).
 
+- **Loop 10b, the page's slow lane and the late address, done** (2026-11-19, committed unpushed): the demo client and
+  its words take the fork's slow lane (off on the server by default: forward-compatible; demo-network.md): the lane
+  `slow`, the slow budget and `slow-threshold`, `hello.limits.slow` in the status's details, every refusal's reason in
+  words (`slow-connections`, `slow-spent` among them; an unknown one: the name alone), 4010's `closing.lane`. **The
+  late address after a restore** (devices.md "The network after a restore"): a restored card holds the flap its switch
+  onto the helper's or the demo network's frames owes until `LeaseActions` settles (`{type: 'settled', renewed}`;
+  `HOLD_MS` 120 s at most), so the agent's LEASE no longer runs under a link that's down. page-alpine-agent (passed
+  under load ~13) asserts `carrier_changes` unchanged across the restore; there the address came 5.6 s after the page's
+  load (agent 1.4 s; dhcpcd). Not measured on alpine-demo's udhcpc template yet (loop 5's build, ci-machines).
+
 ## Before a deploy of vm.tny.im (the user)
 
 The demos' templates must be made by the core that's deployed (the publish refuses another core format or shape hash):
@@ -137,8 +147,6 @@ the publish refuses: that's a new demo id with `replaces` (decision 13).
 
 - Loop 5 is done (below). The remaining page loops: 12 (the desktop demo; give it a `recipe` in demos.json if it can
   be built the same way, or a hand-made build without one), 14, 15.
-- **A restore's link flap vs LEASE** (backlog.md "The Alpine demo's loose ends"): the address comes ~10 s after the
-  restore, not at once; the first `apk` typed sooner fails. The page's fix is in lease-actions/devices.ts.
 
 ## Open questions
 

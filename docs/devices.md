@@ -397,10 +397,18 @@ what came of it. A renewal keeps an address
 that is still right (open connections live on), and the gateway's NAK of one it doesn't hold has the client ask afresh.
 Where the agent can't (none within 20 s, no `CAP.LEASE`, LEASED not 0, no answer in 60 s), each connected card's link
 flaps instead: the run's link port to its device (`Run.netLinks`, `{type: 'flap'}`) → `FLAP_MS`, 7 s down (net
-below). networkd's DHCP DUID stays the one its start read (a template's old machine id). Tests: the root loop (fake
-busctl, nmcli), the link, `LeaseActions` with fakes, `NetSettled` (tests/net-live.test.ts), the flap on asking
-(tests/net-path.test.ts), on Debian (`tests/page-template.test.ts`) the agent's renewal through busctl, and on Alpine
-(`tests/page-alpine-agent.test.ts`, ci-net.sh) through dhcpcd and udhcpc after a template's restore. The page says what
+below). **Meanwhile a card's own flaps are held** (web/devices.ts `Backend.restored`, `HOLD_MS` 120 s at most): a
+template made offline (or on the page's gateway) restored onto the local helper or the demo network switches its card
+onto their frames as they connect, which flaps it, and a flap then would take the link down under the agent's LEASE: the
+renewal it starts goes out on a dead link (udhcpc, which doesn't watch the carrier, then waits for its next try: the
+address came ~10 s late). Once done, the page says on each card's link which it renewed (`{type: 'settled', renewed}`):
+a renewed card drops the flap it owed, another flaps then (a flap asked for settles too). So a guest without an agent
+gets its flap when `LeaseActions` gives up on one (at once without one, else after `AGENT_WAIT_MS`). networkd's DHCP
+DUID stays the one its start read (a template's old machine id). Tests: the root loop (fake
+busctl, nmcli), the link, `LeaseActions` with fakes, `NetSettled` (tests/net-live.test.ts), the flap on asking and the
+held flaps (tests/net-path.test.ts), on Debian (`tests/page-template.test.ts`) the agent's renewal through busctl, and on Alpine
+(`tests/page-alpine-agent.test.ts`, ci-net.sh) through dhcpcd and udhcpc after a template's restore (its link's
+`carrier_changes` the same as at the save: no flap). The page says what
 became of a restore's leases as `body[data-lease]` (`agent`, `flap`, `none`, `gone`: the tests' waits).
 
 **The desktop's state** (DESKTOP; the user's decision, 2026-11-13: for the tests only): the session child says when a
@@ -1102,7 +1110,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   to another address than the one it last acknowledged (`stale`: another connection on the adapter; the same
   address again, a reconnect, doesn't), so the guest asks for a lease at once: networkd drops the link's addresses on
   a carrier loss and asks on its return, which cuts its open connections, hence only when its address is stale
-  anyway. A reset puts the link up. Frames for the guest wait for receive buffers (the oldest dropped past
+  anyway. A restored machine's card holds those flaps until the page settled its leases ("The network after a
+  restore"). A reset puts the link up. Frames for the guest wait for receive buffers (the oldest dropped past
   256) and fill as many as they need (`MRG_RXBUF`: the header's `num_buffers`; without it, one larger
   than the next buffer is dropped). Frames from a port (a page adapter or a port backend) are delivered
   in batches: those one task brought, at its end (a microtask, so no timer); the test adapters' at once,

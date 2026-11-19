@@ -117,6 +117,12 @@ export const SEVERAL_ADAPTERS = { leaseSeconds: 120, renewSeconds: 10 };
  */
 export const FLAP_MS = 7000;
 /**
+ * How long a restored machine's card holds the flaps its switches owe (`Backend.restored`) when the page never says it
+ * settled its leases: past what web/app/areas/lease-actions.ts waits at most once a card is connected (its grace, the
+ * agent's HELLO and LEASED: 110 s).
+ */
+export const HOLD_MS = 120_000;
+/**
  * virtio-9p (web/9p.ts), mounted by the guest by `tag`: an in-memory tree starting with `files` (path → contents), or with
  * `folders` the page's shared folders (web/9p-folders.ts), `port` carrying what changes while the machine runs.
  */
@@ -317,6 +323,8 @@ export type Backend = {
    * backends again, so one that only holds buffers has neither.
    */
   save?(): unknown | Promise<unknown>; restore?(state: unknown): void;
+  /** The VM was restored from a snapshot (or a suspended copy): called on every backend, after `restore`. */
+  restored?(): void;
   /** Why `save` would refuse now (`unsaveable` in its state), or undefined: asked before a snapshot touches the machine. */
   refusal?(): Promise<WireError | undefined>;
   /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
@@ -509,7 +517,23 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
   // The link flap (docs/devices.md "net"): the link goes down and, `FLAP_MS` later, up, so the guest's DHCP client asks
   // again at once (networkd does on a carrier). Only under a driver, and only when what the guest holds is stale.
   let flapping: ReturnType<typeof setTimeout> | undefined;
+  // A restored machine's card holds the flaps its own switches owe (`restored`) until the page settled the restore's
+  // leases (web/app/areas/lease-actions.ts: `{type: 'settled', renewed}` on the link): a flap then would take the link
+  // down under the agent's LEASE, and the renewal it starts would go out on a dead link (udhcpc then waits for its next
+  // try). Renewed, what was owed is dropped; not, it flaps then. `HOLD_MS` at most.
+  let hold: ReturnType<typeof setTimeout> | undefined;
+  let owed = false;
+  const settled = (renewed: boolean) => {
+    clearTimeout(hold);
+    hold = undefined;
+    if (owed && !renewed) flap();
+    owed = false;
+  };
   const flap = () => {
+    if (hold) {
+      owed = true;
+      return;
+    }
     if (!ctx.features() || flapping) return;
     ctx.changeConfig((c) => { c[6] = 0; });
     flapping = setTimeout(() => {
@@ -544,7 +568,13 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
   if (a instanceof MessagePort) framesTo = adapter; // a frame port from the start: its own, the card's frames go to it
   // The page's: a flap asked for (a restored guest whose agent couldn't renew its lease: web/app/areas/lease-actions.ts).
   const link = typeof a === 'object' && !(a instanceof MessagePort) ? a.link : undefined;
-  if (link) link.onmessage = (e: MessageEvent<{ type?: string } | undefined>) => { if (e.data?.type === 'flap') flap(); };
+  if (link)
+    link.onmessage = (e: MessageEvent<{ type?: string; renewed?: boolean } | undefined>) => {
+      if (e.data?.type === 'flap') {
+        settled(true); // asked for: the page's renewal, past anything held
+        flap();
+      } else if (e.data?.type === 'settled') settled(e.data.renewed === true);
+    };
   const out = (f: Uint8Array) => (framesMode ? framesTo?.send(f) : adapter.send(f));
   return {
     request(r) {
@@ -570,8 +600,13 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
         ctx.config()[6] = 1;
       }
     },
+    // Only a card the page settles (its link): the gateway's, whose switches to the local helper's frames flap.
+    restored() {
+      if (link && !hold) hold = setTimeout(() => settled(false), HOLD_MS);
+    },
     close: () => {
       clearTimeout(flapping);
+      clearTimeout(hold);
       link?.close();
       if (framesTo !== adapter) framesTo?.close?.();
       adapter.close?.();
@@ -1298,6 +1333,7 @@ export class Devices {
       const u32 = new Uint32Array(memory.buffer);
       this.epochs = shared.map((at) => Atomics.load(u32, (at + EPOCH) / 4) & 0xff);
       this.backends.forEach((b, i) => { if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]); });
+      for (const b of this.backends) b.restored?.();
     }
   }
 

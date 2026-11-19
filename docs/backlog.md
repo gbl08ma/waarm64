@@ -1275,11 +1275,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Vulkan demo's card doesn't fall back to a cold boot when its snapshot can't be restored (plans/first-demo.md §8
   finding 3); "started before" doesn't say whether the machine has changes.
 - **The Alpine demo's loose ends** (DEMO loop 3, bench/demo/REPORT.md "DEMO loop 3"), ranked:
-  - **A restore's LEASE can land inside its link flap:** a template made offline restored onto a connection flaps its
-    card's link (the frames handed over: web/devices.ts `toFrames`) for `FLAP_MS` while the agent's LEASE runs, so
-    udhcpc's renew goes out on a link that's down and the address comes at its next retry (25–30 s with busybox's
-    default pause; the image now retries every ~3 s: ~10 s). The page could send LEASE once a flap it started ends, or
-    not flap a card the agent will renew; seen with the local helper, so likely the demo network too.
   - **The resume's disk reads, prefetched with the snapshot:** 2–3 dependent 2 MiB misses before the first command (a
     trace from the resume, as loop 1 ranked it: ~0.3 s each at 100/20).
   - **The command-not-found hook has no automated test** (checked by hand against dl-cdn: the REPORT): a page test

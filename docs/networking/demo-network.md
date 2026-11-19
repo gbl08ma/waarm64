@@ -37,10 +37,16 @@ local helper's `framedClient`). Like the helper's client it moves the card's fra
 (a batch per timer turn, under `DEMO_MAX_MESSAGE`, 1 MiB) with no gateway in the page (`FramePath`). Besides:
 
 - **Control messages** (text, JSON, codes and numbers only) kept as the adapter's status (`DemoStatus`, in the network
-  map's `demo`): `hello` (the lane, the gateway, its `/status` URL), `budget` (the day's bytes, `used`/`limit`/`resets`),
-  `lane` (`none` when the budget is spent, `fast` when it's back), `refused` (the total and the last four), `notice`
-  (`restart-at`, `none`). `closing` is read with the close that follows. Unknown types, fields and notices are ignored
-  (v1's rule). Some are also **notices** for the message bar (`DemoNotice`, posted as `{type: 'notice'}`).
+  map's `demo`): `hello` (the lane, the gateway, its `/status` URL; with `slow_lane` on, `limits.slow`), `budget` (the
+  day's bytes, `used`/`limit`/`resets`; `slow` the slow lane's, null while it's off), `lane` (`slow` when the budget is
+  spent and the server's slow lane is on, `none` when nothing is left, `fast` when it's back), `refused` (the total and
+  the last four, each with its reason), `notice` (`restart-at`, `none`). `closing` is read with the close that follows
+  (4010's `lane: slow`: its numbers are the slow lane's). Unknown types, fields, notices and refusal reasons are ignored
+  or shown generic (v1's rule). Some are also **notices** for the message bar (`DemoNotice`, posted as
+  `{type: 'notice'}`).
+- **The slow lane** (the fork's README "The slow lane"; off on the server by default, so this is forward-compatible): the
+  page shows the lane `slow` as its own, the slow budget and the lane's terms (rate, connections at once, ports), its
+  thresholds (`budget.reason` `slow-threshold`), its refusals (`slow-connections`, `slow-spent`) and 4010's `lane`.
 - **Frames wait for `hello`:** those the guest sends while a socket opens are held (at most `DEMO_HOLD`, 256 KiB) and go
   out after it, in order; while the client waits to try again they're dropped, as a link drops them.
 - **`budget?`** every minute while the guest's traffic moves the budget (`BUDGET_ASK_MS`), so the status's numbers
@@ -65,12 +71,16 @@ local helper's `framedClient`). Like the helper's client it moves the card's fra
 The words are the catalog's (web/app/demo-view.ts; codes to keys, a note each):
 - **The Network menu's status** (and the Network tab's, the status bar's item): connecting, connected with the guest's
   address, idle, connected but the day's allowance used up (until when), or waiting with why and when it tries again
-  (unreachable, lost, too many from this address or its site, too often, full, the allowance spent, maintenance, the
-  session's end). Under it: the day's budget used of its limit and when it resets; the destinations refused, as a count
-  with the last few names, newest first; a restart announced.
+  (unreachable, lost, too many from this address or its site, too often, full, the allowance spent (the slow lane's
+  too), maintenance, the session's end); with the slow lane on, connected slowly (the lane `slow`, until when). Under
+  it: the day's budget used of its limit and when it resets; the slow lane's budget and its terms, while it's on; the
+  destinations refused, as a count with the last few names, newest first, each with its reason in a few words (one
+  this page doesn't know: the name alone); a restart announced.
 - **The message bar** (`PageNetworkOptions.notify`, `Messages.notify`): 80 % of the day's budget crossed (a notice that
-  closes itself), the budget spent (100 %, the lane `none`, or a new socket's 4010: a warning that stays), the
-  allowance back, a restart announced (when, and when it's back), a connected socket lost.
+  closes itself), the budget spent (100 %, the lane `none`, or a new socket's 4010: a warning that stays), with the slow
+  lane on: the traffic slowed (the fast budget's 100 %, the lane `slow`), the slow budget's 80 % and its 100 % while
+  the fast lane goes on (in the lane `slow` the lane `none` says it); the allowance back, a restart announced (when, and
+  when it's back), a connected socket lost.
 - **The adapter's details**: what the connection is, the server's URL, and `curl http://<gateway>/status`, the same
   numbers inside the guest (the fork's `/status`; the alpine-demo image's motd says so).
 
@@ -80,8 +90,9 @@ The words are the catalog's (web/app/demo-view.ts; codes to keys, a note each):
   frames held until `hello` (and the hold's bound), every control message kept and the notices it gives, 4012's
   reconnect at the guest's next frame, `reconnect_after` and its random delay for 4011/4013/4008, the 30 s floor of
   4008/4009, the backoff's steps and cap, a lost socket said once, 4010 until `resets`, the closes for good, `close()`
-  leaving no timer, `budget?` only while traffic moves, a restart's new port on the same socket; and the words of the
-  status, its details and the notices.
+  leaving no timer, `budget?` only while traffic moves, a restart's new port on the same socket; the slow lane's
+  messages (`limits.slow`, the lane `slow`, the slow budget and its thresholds, 4010's `lane`, its refusals); and the
+  words of the status, its details and the notices.
 - `tests/net-live.test.ts`: two tabs and two adapters of one machine on one demo connection at once, no lock taken; the
   demo adapter the primary; its notices reaching `notify`.
 - `tests/page-demonet.test.ts` (`scripts/ci-net.sh`, ~2 min): Alpine's cloud image on the page against the real server

@@ -363,10 +363,10 @@ test("the page's words: the status line, its details and the message bar's notic
   assert.equal(spent.text, t('network:demo-view.spent', { when: new Date(resets) }));
   assert.deepEqual(spent.details, [
     t('network:demo-view.budget.resets', { used: 600, limit: 500, when: new Date(resets) }),
-    t('network:demo-view.refused', { count: 3, names: ['1.1.1.1:443', 'pypi.org'] }),
+    t('network:demo-view.refused', { count: 3, names: [t('network:demo-view.refusal', { what: '1.1.1.1:443', why: t('network:demo-view.reason.address') }), t('network:demo-view.refusal', { what: 'pypi.org', why: t('network:demo-view.reason.notListed') })] }),
     t('network:demo-view.restart', { at: new Date(resets) }),
   ]);
-  assert.match(spent.details![1], /^3 destinations refused .*1\.1\.1\.1:443, pypi\.org$/, 'newest first');
+  assert.match(spent.details![1], /^3 destinations refused.*1\.1\.1\.1:443 \(.*\), pypi\.org \(.*\)$/, 'newest first');
   assert.equal(demoNotice({ kind: 'budget', threshold: 80, used: 4, limit: 5, resets }).kind, 'info');
   assert.deepEqual(demoNotice({ kind: 'budget', threshold: 100, used: 5, limit: 5, resets }), { message: { key: 'network:demo-view.notice.spent', params: { when: new Date(resets) } }, kind: 'warn' });
   assert.equal(demoNotice({ kind: 'lane', lane: 'fast' }).message.key, 'network:demo-view.notice.back');
@@ -376,4 +376,90 @@ test("the page's words: the status line, its details and the message bar's notic
   // An error closes it: "Couldn't connect", with the cause.
   const e = viewOf({ state: 'Connecting', error: new Error('x'), demo: true }); // i18n-ignore
   assert.equal(e.phase, 'error');
+});
+
+// The slow lane (PROTOCOL.md: off on the server by default; additive within v1): the lane `slow`, the slow lane's
+// budget and its thresholds, `hello.limits.slow`, its refusals, and 4010's `lane: slow`.
+test('the slow lane: hello.limits.slow kept, the lane `slow`, the slow budget and its thresholds, closing 4010 lane slow', () => {
+  const h = harness(() => 0);
+  const s = h.last();
+  s.accept();
+  const resets = '2026-11-20T00:00:00Z';
+  s.hello({ slow_lane: true, limits: { guests: 2, slow: { rate: 40_000, connections: 2, bytes_per_day: 50_000_000, total_rate: 2_000_000, ports: [80, 443] } } });
+  assert.deepEqual(h.net.status().slow, { rate: 40_000, connections: 2, bytesPerDay: 50_000_000, totalRate: 2_000_000, ports: [80, 443] });
+  s.text({ type: 'budget', reason: 'start', fast: { used: 1, limit: 500, resets }, slow: { used: 2, limit: 50, resets } });
+  assert.deepEqual([h.net.status().budget, h.net.status().slowBudget], [{ used: 1, limit: 500, resets }, { used: 2, limit: 50, resets }]);
+  // The slow lane's 80 %: said as its own; its 100 % while the fast lane goes on: said (only hosts off the list are lost).
+  s.text({ type: 'budget', reason: 'slow-threshold', threshold: 80, fast: { used: 1, limit: 500, resets }, slow: { used: 41, limit: 50, resets } });
+  assert.deepEqual(h.notices.at(-1), { kind: 'budget', threshold: 80, used: 41, limit: 50, resets, lane: 'slow' });
+  s.text({ type: 'budget', reason: 'slow-threshold', threshold: 100, fast: { used: 1, limit: 500, resets }, slow: { used: 50, limit: 50, resets } });
+  assert.deepEqual(h.notices.at(-1), { kind: 'budget', threshold: 100, used: 50, limit: 50, resets, lane: 'slow' });
+  // The fast budget spent with the slow lane on: the lane `slow`, slowed rather than stopped.
+  s.text({ type: 'budget', reason: 'threshold', threshold: 100, fast: { used: 500, limit: 500, resets }, slow: { used: 10, limit: 50, resets } });
+  assert.deepEqual(h.notices.at(-1), { kind: 'budget', threshold: 100, used: 500, limit: 500, resets, slowLane: true });
+  s.text({ type: 'lane', lane: 'slow', reason: 'bytes', resets });
+  assert.deepEqual([h.net.status().lane, h.net.status().laneResets], ['slow', resets]);
+  assert.deepEqual(h.notices.at(-1), { kind: 'lane', lane: 'slow', resets });
+  // In the lane `slow`, the slow budget's 100 % isn't said: the lane `none` that follows says it.
+  const n = h.notices.length;
+  s.text({ type: 'budget', reason: 'slow-threshold', threshold: 100, fast: { used: 500, limit: 500, resets }, slow: { used: 50, limit: 50, resets } });
+  assert.equal(h.notices.length, n);
+  s.text({ type: 'lane', lane: 'none', reason: 'bytes', resets });
+  assert.deepEqual(h.notices.at(-1), { kind: 'lane', lane: 'none', resets });
+  // Past the grace: 4010 with the slow lane's numbers.
+  s.text({ type: 'closing', code: 4010, reason: 'bytes', lane: 'slow', used: 51, limit: 50, resets });
+  s.end(4010, 'bytes');
+  assert.deepEqual(h.net.status().slowBudget, { used: 51, limit: 50, resets });
+  assert.deepEqual(h.net.status().wait, { why: 'bytes', at: Date.parse(resets), resets, lane: 'slow' });
+  assert.equal(h.notices.at(-1)?.kind, 'lane', 'the lane `none` said it already');
+  // A new socket refused at once for both budgets: said, with the lane.
+  const r = harness(() => 0);
+  r.last().accept();
+  r.last().text({ type: 'closing', code: 4010, reason: 'bytes', lane: 'slow', used: 51, limit: 50, resets });
+  r.last().end(4010, 'bytes');
+  assert.deepEqual(r.notices, [{ kind: 'spent', resets, lane: 'slow' }]);
+  // The slow lane off again (the owner's reload): its numbers go with the next hello and budget.
+  const o = harness();
+  o.last().accept();
+  o.last().hello({ slow_lane: true, limits: { slow: { rate: 1, connections: 1, bytes_per_day: 1, ports: [443] } } });
+  o.last().text({ type: 'budget', reason: 'start', fast: { used: 1, limit: 5 }, slow: { used: 0, limit: 1 } });
+  o.last().text({ type: 'budget', reason: 'request', fast: { used: 1, limit: 5 }, slow: null });
+  assert.equal(o.net.status().slowBudget, undefined);
+  o.last().text({ type: 'closing', code: 4013, reason: 'session' });
+  o.last().end(4013, 'session');
+  o.advance(o.nextAt() - o.now());
+  o.last().accept();
+  o.last().hello();
+  assert.deepEqual([o.net.status().slow, o.net.status().lane], [undefined, 'fast']);
+});
+
+test("the slow lane's words: the status line, the slow budget and the lane's terms, the refusals' reasons, the notices", () => {
+  const view = (demo: Parameters<typeof demoNetmap>[1], state = 'Running') => viewOf({ state, netmap: demoNetmap({ address: '192.168.127.2' }, demo), demo: true }); // i18n-ignore
+  const resets = '2026-11-20T00:00:00Z';
+  const when = new Date(resets);
+  const v = view({ phase: 'connected', again: false, lane: 'slow', laneResets: resets, budget: { used: 600, limit: 500, resets }, slowBudget: { used: 10, limit: 50, resets }, slow: { rate: 40_000, connections: 2, bytesPerDay: 50, ports: [80, 443] }, refused: { total: 3, last: [{ reason: 'slow-connections', name: 'github.com', port: 443 }, { reason: 'slow-spent', name: 'pypi.org' }, { reason: 'from-a-later-v1', address: '1.1.1.1', port: 53 }] } });
+  assert.deepEqual([v.text, v.phase, v.internet, v.demo?.lane], [t('network:demo-view.slow', { when }), 'connected', true, 'slow']);
+  assert.deepEqual(v.details, [
+    t('network:demo-view.budget.resets', { used: 600, limit: 500, when }),
+    t('network:demo-view.budget.slow', { used: 10, limit: 50 }),
+    t('network:demo-view.slowLane', { rate: 40_000, count: 2, ports: ['80', '443'] }),
+    t('network:demo-view.refused', { count: 3, names: ['1.1.1.1:53', t('network:demo-view.refusal', { what: 'pypi.org', why: t('network:demo-view.reason.slowSpent') }), t('network:demo-view.refusal', { what: 'github.com:443', why: t('network:demo-view.reason.slowConnections') })] }),
+  ]);
+  assert.match(v.details![2], /80, 443/);
+  assert.match(v.details![3], /^3 destinations refused: 1\.1\.1\.1:53, pypi\.org \(.+\), github\.com:443 \(.+\)$/, 'an unknown reason: the destination alone');
+  assert.equal(view({ phase: 'connected', again: false, slow: { rate: 1, connections: 1, bytesPerDay: 1, ports: [] } }).details?.[0], t('network:demo-view.slowLane.anyPort', { rate: 1, count: 1 }));
+  assert.equal(view({ phase: 'waiting', again: false, wait: { why: 'bytes', at: 0, resets, lane: 'slow' } }, 'Connecting').text, t('network:demo-view.wait.bytes.slow', { when })); // i18n-ignore
+  assert.equal(view({ phase: 'connected', again: false, lane: 'slow' }).text, t('network:demo-view.slow.noTime'));
+  const key = (n: DemoNotice) => [demoNotice(n).message.key, demoNotice(n).kind];
+  assert.deepEqual(key({ kind: 'lane', lane: 'slow', resets }), ['network:demo-view.notice.slowed', 'warn']);
+  assert.deepEqual(key({ kind: 'budget', threshold: 100, used: 5, limit: 5, resets, slowLane: true }), ['network:demo-view.notice.slowed', 'warn']);
+  assert.deepEqual(key({ kind: 'budget', threshold: 100, used: 5, limit: 5, resets }), ['network:demo-view.notice.spent', 'warn']);
+  assert.deepEqual(key({ kind: 'budget', threshold: 80, used: 4, limit: 5, resets, lane: 'slow' }), ['network:demo-view.notice.slowBudget.resets', 'info']);
+  assert.deepEqual(key({ kind: 'budget', threshold: 80, used: 4, limit: 5, lane: 'slow' }), ['network:demo-view.notice.slowBudget', 'info']);
+  assert.deepEqual(key({ kind: 'budget', threshold: 100, used: 5, limit: 5, resets, lane: 'slow' }), ['network:demo-view.notice.slowSpent', 'warn']);
+  assert.deepEqual(key({ kind: 'spent', resets, lane: 'slow' }), ['network:demo-view.notice.spent', 'warn']);
+  for (const n of [{ kind: 'lane', lane: 'slow' }, { kind: 'budget', threshold: 100, used: 1, limit: 1, lane: 'slow' }, { kind: 'budget', threshold: 80, used: 1, limit: 2, lane: 'slow', resets }] as DemoNotice[]) {
+    const m = demoNotice(n).message;
+    assert.doesNotMatch(t(m.key, m.params), /\{\{/);
+  }
 });

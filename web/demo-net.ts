@@ -70,6 +70,19 @@ export type DemoRefusal = { reason: string; name?: string; address?: string; por
 export type DemoBudget = { used: number; limit: number; resets?: string };
 
 /**
+ * The server's slow lane, while its owner turned it on (PROTOCOL.md "hello", `limits.slow`): hosts off the allowlist
+ * reached slowly, at `rate` bytes a second for this visitor (`totalRate` the whole lane's), `connections` at once,
+ * on `ports`, with a day's budget of its own.
+ */
+export type DemoSlowLimits = { rate: number; connections: number; bytesPerDay: number; totalRate?: number; ports: number[] };
+
+/**
+ * The lane the visitor's traffic is in (PROTOCOL.md "lane"): `fast`, the allowlist at full speed (and the slow lane beside
+ * it when it's on); `slow`, the day's budget spent with the slow lane on: everything goes slowly; `none`, nothing leaves.
+ */
+export type DemoLane = 'fast' | 'slow' | 'none';
+
+/**
  * Why the client waits before it tries again: `unreachable`, the socket never opened; `lost`, it closed without the
  * server saying why; else the server's close reason (`guests`, `site`, `connections`: 4008; `full`: 4009; `bytes`:
  * 4010; `maintenance`: 4011; `session`: 4013).
@@ -82,13 +95,20 @@ export type DemoStatus = {
   phase: 'connecting' | 'connected' | 'idle' | 'waiting';
   /** It was connected before (a reconnect, not the first connect). */
   again: boolean;
-  /** Waiting: why, and when it tries again (ms since the epoch, `Date.now()`'s); `resets`, the budget's (4010). */
-  wait?: { why: DemoWhy; at: number; resets?: string };
-  /** The lane: `fast` (the allowlist at full speed), `none` (the day's budget spent: nothing leaves). */
-  lane?: 'fast' | 'none';
-  /** The lane `none`'s end, when the budget resets. */
+  /**
+   * Waiting: why, and when it tries again (ms since the epoch, `Date.now()`'s); `resets`, the budget's (4010), `lane`
+   * `slow` when the slow lane's budget is spent too.
+   */
+  wait?: { why: DemoWhy; at: number; resets?: string; lane?: 'slow' };
+  /** The lane (`DemoLane`). */
+  lane?: DemoLane;
+  /** The lane `slow`'s or `none`'s end, when the budget resets. */
   laneResets?: string;
   budget?: DemoBudget;
+  /** The slow lane's budget (`budget.slow`), while the server's slow lane is on. */
+  slowBudget?: DemoBudget;
+  /** The server's slow lane, while it's on (`hello.limits.slow`). */
+  slow?: DemoSlowLimits;
   /** The destinations refused on this network: how many in all, and the last few (oldest first). */
   refused?: { total: number; last: DemoRefusal[] };
   /** A restart announced by the server's owner: when it goes down, and when it's expected back. */
@@ -100,14 +120,17 @@ export type DemoStatus = {
 
 /** What the message bar says of the demo network (web/app/demo-view.ts words it). */
 export type DemoNotice =
-  /** The day's budget passed 80 % or 100 %. */
-  | { kind: 'budget'; threshold: number; used: number; limit: number; resets?: string }
-  /** The lane changed: `none` when the budget is spent, `fast` when it's back. */
-  | { kind: 'lane'; lane: 'fast' | 'none'; resets?: string }
+  /**
+   * The day's budget passed 80 % or 100 %: the fast one's, or with `lane: 'slow'` the slow lane's; `slowLane`, the
+   * server's slow lane is on (the fast budget spent moves the traffic there rather than stopping it).
+   */
+  | { kind: 'budget'; threshold: number; used: number; limit: number; resets?: string; lane?: 'slow'; slowLane?: true }
+  /** The lane changed: `slow` or `none` when a budget is spent, `fast` when it's back. */
+  | { kind: 'lane'; lane: DemoLane; resets?: string }
   /** The server's owner announced a restart. */
   | { kind: 'restart'; at: string; backAt?: string }
-  /** The server refused a new socket: today's budget is spent (4010, no lane message before it). */
-  | { kind: 'spent'; resets?: string }
+  /** The server refused a new socket: today's budget is spent (4010, no lane message before it); `slow`, the slow lane's too. */
+  | { kind: 'spent'; resets?: string; lane?: 'slow' }
   /** A connected socket closed without the server saying why (the server or the way to it went down). */
   | { kind: 'lost' };
 
@@ -184,6 +207,14 @@ const budgetOf = (v: unknown): DemoBudget | undefined => {
   const used = num(b?.used);
   const limit = num(b?.limit);
   return used === undefined || limit === undefined ? undefined : { used, limit, ...(str(b?.resets) ? { resets: str(b?.resets) } : {}) };
+};
+const laneOf = (v: unknown): DemoLane => (v === 'none' || v === 'slow' ? v : 'fast');
+const slowOf = (v: unknown): DemoSlowLimits | undefined => {
+  const l = v as Record<string, unknown> | null;
+  const [rate, connections, bytesPerDay, totalRate] = [num(l?.rate), num(l?.connections), num(l?.bytes_per_day), num(l?.total_rate)];
+  if (rate === undefined || connections === undefined || bytesPerDay === undefined) return undefined;
+  const ports = Array.isArray(l?.ports) ? l.ports.filter((p): p is number => num(p) !== undefined) : [];
+  return { rate, connections, bytesPerDay, ...(totalRate !== undefined ? { totalRate } : {}), ports };
 };
 const refusalOf = (v: unknown): DemoRefusal => {
   const r = v as Record<string, unknown> | null;
@@ -345,7 +376,12 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
         hello = true;
         helloAt = env.now();
         setPhase('connected');
-        status.lane = m.lane === 'none' ? 'none' : 'fast';
+        status.lane = laneOf(m.lane);
+        if (status.lane === 'fast') delete status.laneResets;
+        const slow = m.slow_lane === true ? slowOf((m.limits as Record<string, unknown> | null)?.slow) : undefined;
+        if (slow) status.slow = slow;
+        else delete status.slow;
+        if (m.slow_lane !== true) delete status.slowBudget;
         const [gateway, st] = [str(m.gateway), str(m.status)];
         if (gateway) status.gateway = gateway;
         if (st) status.status = st;
@@ -359,16 +395,24 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
         const fast = budgetOf(m.fast);
         if (!fast) return;
         status.budget = fast;
+        const slow = budgetOf(m.slow); // null: the slow lane is off
+        if (slow) status.slowBudget = slow;
+        else delete status.slowBudget;
         const threshold = num(m.threshold);
-        if (m.reason === 'threshold' && threshold !== undefined) notice({ kind: 'budget', threshold, ...fast });
+        if (threshold === undefined) break;
+        if (m.reason === 'threshold') notice({ kind: 'budget', threshold, ...fast, ...(slow ? { slowLane: true as const } : {}) });
+        // The slow lane's spent: said while the fast lane goes on (only the hosts off the allowlist are lost); in the
+        // lane `slow` the lane's own message says it (`none`: nothing leaves).
+        else if (m.reason === 'slow-threshold' && slow && (threshold < 100 || status.lane === 'fast'))
+          notice({ kind: 'budget', threshold, ...slow, lane: 'slow' });
         break;
       }
       case 'lane': {
-        const lane = m.lane === 'none' ? 'none' : 'fast';
+        const lane = laneOf(m.lane);
         const resets = str(m.resets);
         if (lane === status.lane) return;
         status.lane = lane;
-        if (resets && lane === 'none') status.laneResets = resets;
+        if (resets && lane !== 'fast') status.laneResets = resets;
         else delete status.laneResets;
         notice({ kind: 'lane', lane, ...(resets ? { resets } : {}) });
         break;
@@ -399,10 +443,10 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
     change();
   }
 
-  /** Waits `ms`, then tries again, saying why (`resets`: the budget's, for 4010). */
-  function wait(why: DemoWhy, ms: number, resets?: string) {
+  /** Waits `ms`, then tries again, saying why (`resets`: the budget's, for 4010; `lane`, the slow lane's budget too). */
+  function wait(why: DemoWhy, ms: number, resets?: string, lane?: 'slow') {
     setPhase('waiting');
-    status.wait = { why, at: env.now() + ms, ...(resets ? { resets } : {}) };
+    status.wait = { why, at: env.now() + ms, ...(resets ? { resets } : {}), ...(lane ? { lane } : {}) };
     timer = env.setTimeout(open, ms);
     change();
   }
@@ -450,12 +494,19 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
         return wait('full', backoff(CROWDED_MS));
       case 4010: {
         const resets = str(c?.resets);
+        // `lane: slow`: its numbers are the slow lane's budget (the fast one is spent too).
+        const slow = c?.lane === 'slow' ? ({ lane: 'slow' } as const) : {};
+        const spent = budgetOf(c);
+        if (spent) {
+          if (slow.lane) status.slowBudget = spent;
+          else status.budget = spent;
+        }
         // Said unless the lane's message said it, and nothing said otherwise since (a socket lost past the grace, whose
         // reconnect meets this: the message bar's "trying again" would stay until the reset).
-        if (status.lane !== 'none' || said === 'lost') notice({ kind: 'spent', ...(resets ? { resets } : {}) });
+        if (status.lane !== 'none' || said === 'lost') notice({ kind: 'spent', ...(resets ? { resets } : {}), ...slow });
         status.lane = 'none';
         if (resets) status.laneResets = resets;
-        return wait('bytes', until(resets, CROWDED_MS), resets);
+        return wait('bytes', until(resets, CROWDED_MS), resets, slow.lane);
       }
       case 4011:
         return wait('maintenance', until(c?.reconnect_after, CROWDED_MS));

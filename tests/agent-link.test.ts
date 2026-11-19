@@ -139,13 +139,15 @@ test('LEASE names the connected cards by their MACs; none connected after the gr
   const a = agent(CAP.TIME | CAP.LEASE, (type) => (type === FRAME.LEASE ? { type: FRAME.LEASED, payload: new Uint8Array([LEASED.RENEWED]) } : undefined));
   await a.connect();
   const flaps: number[] = [];
-  const deps = (connected: { index: number; mac: string }[]) => ({ whenConnected: () => Promise.resolve(connected), link: () => a.link, flap: (i: number) => flaps.push(i), waits: { grace: 50, agent: 500, leased: 500 } });
+  const settles: number[][] = [];
+  const deps = (connected: { index: number; mac: string }[]) => ({ whenConnected: () => Promise.resolve(connected), link: () => a.link, flap: (i: number) => flaps.push(i), settled: (k: number[]) => settles.push(k), waits: { grace: 50, agent: 500, leased: 500 } });
   assert.equal(await new LeaseActions(deps([{ index: 1, mac: '52:54:00:12:34:57' }])).restored(), 'agent');
   const lease = a.got.filter((f) => f.type === FRAME.LEASE);
   assert.deepEqual(lease.at(-1)?.payload, [1, 0x52, 0x54, 0, 0x12, 0x34, 0x57]);
   assert.equal(await new LeaseActions(deps([])).restored(), 'none');
   assert.equal(a.got.filter((f) => f.type === FRAME.LEASE).length, 1, 'no LEASE');
   assert.deepEqual(flaps, []);
+  assert.deepEqual(settles, [[1], []], 'settled: the renewed card, then none');
   a.link.close();
 });
 

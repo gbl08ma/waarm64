@@ -4,6 +4,7 @@
 import { describe, errorText, msg, t, text, type Msg } from '../i18n.ts';
 import { isMsg } from '../msg.ts';
 import type { NetMap } from '../tailscale.ts';
+import type { DemoLane } from '../demo-net.ts';
 import type { Connection } from './connections.ts';
 import { demoView } from './demo-view.ts';
 import type { Network } from './network.ts';
@@ -59,7 +60,7 @@ export type NetworkView = {
    * The demo network's (web/app/demo-view.ts): its lease routes everything through it too, so it is a primary as the
    * local helper's is; the URL the guest can fetch its numbers from (`http://<gateway>/status`), and the lane.
    */
-  demo?: { status?: string; lane: 'fast' | 'none' };
+  demo?: { status?: string; lane: DemoLane };
   /**
    * A room's, when connected: the machine's name in it (to give out), the room's link, and whether members may connect;
    * and why members go through the relay where a direct path was wanted (the menu's warning, the details' words):

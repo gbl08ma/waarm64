@@ -149,6 +149,8 @@ const leaseActions = new LeaseActions({
   whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
   link: () => agentActions.link,
   flap: (i) => machine.run?.netLinks[i]?.postMessage({ type: 'flap' }),
+  settled: (renewed) =>
+    machine.run?.netLinks.forEach((l, i) => l.postMessage({ type: 'settled', renewed: renewed.includes(i) })),
 });
 const trimActions = new TrimActions(agentActions, messages, compactor(machine, replies.worker), current);
 screen.onSent = (size) => agentActions.display(size);

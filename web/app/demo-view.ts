@@ -3,7 +3,7 @@
 // refused, a restart announced), and the message bar's words for its notices. The server sends codes and numbers
 // only; the words are these. DOM-free, for tests/demo-net.test.ts.
 import { msg, t, text, type Msg } from '../i18n.ts';
-import type { DemoNotice, DemoRefusal, DemoStatus, DemoWhy } from '../demo-net.ts';
+import type { DemoNotice, DemoRefusal, DemoSlowLimits, DemoStatus, DemoWhy } from '../demo-net.ts';
 import type { ClientReport, NetworkView } from './network-view.ts';
 
 /** An RFC 3339 time as a `Date` for the words (`{{when}}`), or undefined. */
@@ -25,11 +25,40 @@ const WAITING: Record<DemoWhy, (when: Date) => Msg> = {
   session: (when) => msg('network:demo-view.wait.session', { when }),
 };
 
-/** A refused destination as the status names it: the name or the address, and the port when it has one. */
+/** Why the server refused a destination (PROTOCOL.md "refused", its `reason`), in a few words; another: none. */
+const REASONS: Record<string, () => Msg> = {
+  'not-listed': () => msg('network:demo-view.reason.notListed'),
+  port: () => msg('network:demo-view.reason.port'),
+  private: () => msg('network:demo-view.reason.private'),
+  address: () => msg('network:demo-view.reason.address'),
+  'no-name': () => msg('network:demo-view.reason.noName'),
+  name: () => msg('network:demo-view.reason.name'),
+  egress: () => msg('network:demo-view.reason.egress'),
+  busy: () => msg('network:demo-view.reason.busy'),
+  udp: () => msg('network:demo-view.reason.udp'),
+  quic: () => msg('network:demo-view.reason.quic'),
+  spent: () => msg('network:demo-view.reason.spent'),
+  'slow-connections': () => msg('network:demo-view.reason.slowConnections'),
+  'slow-spent': () => msg('network:demo-view.reason.slowSpent'),
+  unresolved: () => msg('network:demo-view.reason.unresolved'),
+};
+
+/**
+ * A refused destination as the status names it: the name or the address, the port when it has one, and why in a few
+ * words (a reason of a later v1 this page doesn't know: none).
+ */
 export function refusalText(r: DemoRefusal): string {
-  const what = r.name ?? r.address ?? '?';
-  return r.port === undefined ? what : `${what}:${r.port}`;
+  const name = r.name ?? r.address ?? '?';
+  const what = r.port === undefined ? name : `${name}:${r.port}`;
+  const why = Object.hasOwn(REASONS, r.reason) ? REASONS[r.reason]() : undefined;
+  return why ? t('network:demo-view.refusal', { what, why: text(why) }) : what;
 }
+
+/** The slow lane's terms, as the status's line says them. */
+const slowText = (s: DemoSlowLimits) =>
+  s.ports.length
+    ? t('network:demo-view.slowLane', { rate: s.rate, count: s.connections, ports: s.ports.map(String) })
+    : t('network:demo-view.slowLane.anyPort', { rate: s.rate, count: s.connections });
 
 /** The status's lines under the headline: the day's budget, the refusals (a count and the last few), a restart. */
 function demoDetails(d: DemoStatus): string[] {
@@ -43,6 +72,9 @@ function demoDetails(d: DemoStatus): string[] {
         : t('network:demo-view.budget', { used: b.used, limit: b.limit }),
     );
   }
+  const sb = d.slowBudget;
+  if (sb) out.push(t('network:demo-view.budget.slow', { used: sb.used, limit: sb.limit }));
+  if (d.slow) out.push(slowText(d.slow));
   if (d.refused?.total)
     out.push(
       t('network:demo-view.refused', {
@@ -60,6 +92,7 @@ function demoDetails(d: DemoStatus): string[] {
 function demoLine(d: DemoStatus, address: string | undefined): Msg {
   if (d.phase === 'waiting' && d.wait) {
     const when = d.wait.why === 'bytes' ? (dateOf(d.wait.resets) ?? new Date(d.wait.at)) : new Date(d.wait.at);
+    if (d.wait.why === 'bytes' && d.wait.lane === 'slow') return msg('network:demo-view.wait.bytes.slow', { when });
     return WAITING[d.wait.why](when);
   }
   if (d.phase === 'idle') return msg('network:demo-view.idle');
@@ -68,6 +101,10 @@ function demoLine(d: DemoStatus, address: string | undefined): Msg {
   if (d.lane === 'none') {
     const when = dateOf(d.laneResets);
     return when ? msg('network:demo-view.spent', { when }) : msg('network:demo-view.spent.noTime');
+  }
+  if (d.lane === 'slow') {
+    const when = dateOf(d.laneResets);
+    return when ? msg('network:demo-view.slow', { when }) : msg('network:demo-view.slow.noTime');
   }
   return address ? msg('network:demo-view.connected.address', { address }) : msg('network:demo-view.connected');
 }
@@ -96,31 +133,65 @@ export function demoView(c: ClientReport): NetworkView {
   };
 }
 
-/** A notice's words and the message bar's tone: what's said and goes (`info`), or what stays until closed (`warn`). */
-export function demoNotice(n: DemoNotice): { message: Msg; kind: 'info' | 'warn' } {
-  const spent = (resets: string | undefined) => {
-    const when = dateOf(resets);
-    return {
-      message: when ? msg('network:demo-view.notice.spent', { when }) : msg('network:demo-view.notice.spent.noTime'),
-      kind: 'warn' as const,
-    };
+type Said = { message: Msg; kind: 'info' | 'warn' };
+
+/** A budget spent: nothing leaves until it resets. */
+const spentNotice = (resets: string | undefined): Said => {
+  const when = dateOf(resets);
+  return {
+    message: when ? msg('network:demo-view.notice.spent', { when }) : msg('network:demo-view.notice.spent.noTime'),
+    kind: 'warn',
   };
-  switch (n.kind) {
-    case 'budget': {
-      if (n.threshold >= 100) return spent(n.resets);
-      const when = dateOf(n.resets);
-      const p = { percent: n.threshold, used: n.used, limit: n.limit };
+};
+
+/** The fast budget spent with the server's slow lane on: everything goes on, slowly. */
+const slowedNotice = (resets: string | undefined): Said => {
+  const when = dateOf(resets);
+  return {
+    message: when ? msg('network:demo-view.notice.slowed', { when }) : msg('network:demo-view.notice.slowed.noTime'),
+    kind: 'warn',
+  };
+};
+
+/** A budget's threshold crossed: the fast one's, or the slow lane's (`lane: 'slow'`). */
+function budgetNotice(n: Extract<DemoNotice, { kind: 'budget' }>): Said {
+  const when = dateOf(n.resets);
+  const p = { percent: n.threshold, used: n.used, limit: n.limit };
+  if (n.lane === 'slow') {
+    if (n.threshold >= 100)
       return {
         message: when
-          ? msg('network:demo-view.notice.budget.resets', { ...p, when })
-          : msg('network:demo-view.notice.budget', p),
-        kind: 'info',
+          ? msg('network:demo-view.notice.slowSpent', { when })
+          : msg('network:demo-view.notice.slowSpent.noTime'),
+        kind: 'warn',
       };
-    }
+    return {
+      message: when
+        ? msg('network:demo-view.notice.slowBudget.resets', { ...p, when })
+        : msg('network:demo-view.notice.slowBudget', p),
+      kind: 'info',
+    };
+  }
+  if (n.threshold >= 100) return n.slowLane ? slowedNotice(n.resets) : spentNotice(n.resets);
+  return {
+    message: when
+      ? msg('network:demo-view.notice.budget.resets', { ...p, when })
+      : msg('network:demo-view.notice.budget', p),
+    kind: 'info',
+  };
+}
+
+/** A notice's words and the message bar's tone: what's said and goes (`info`), or what stays until closed (`warn`). */
+export function demoNotice(n: DemoNotice): Said {
+  switch (n.kind) {
+    case 'budget':
+      return budgetNotice(n);
     case 'lane':
-      return n.lane === 'none' ? spent(n.resets) : { message: msg('network:demo-view.notice.back'), kind: 'info' };
+      if (n.lane === 'none') return spentNotice(n.resets);
+      if (n.lane === 'slow') return slowedNotice(n.resets);
+      return { message: msg('network:demo-view.notice.back'), kind: 'info' };
     case 'spent':
-      return spent(n.resets);
+      return spentNotice(n.resets);
     case 'restart': {
       const at = dateOf(n.at) ?? new Date();
       const back = dateOf(n.backAt);

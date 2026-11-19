@@ -139,3 +139,48 @@ test("net: the page's link flaps the card on asking (a restored guest whose agen
     link.port1.close();
   }
 });
+
+test("net: a restored card holds its switch's flap until the page settled the leases: dropped when renewed, done when not", { timeout: 2 * FLAP_MS + 10_000 }, async () => {
+  const make = () => {
+    const config = new Uint8Array(8);
+    config[6] = 1;
+    const links: number[] = [];
+    const ctx = {
+      ram: () => [new Uint8Array(4096)], complete: () => {}, features: () => 1n, config: () => config, io: new Float64Array(2),
+      changeConfig: (w: (c: Uint8Array) => void) => { w(config); links.push(config[6]); },
+    } as unknown as Ctx;
+    const ip = new MessageChannel();
+    const link = new MessageChannel();
+    const n = net(ctx, { type: 'net', adapter: { ip: ip.port2, link: link.port2 } });
+    n.restored?.();
+    /** The client takes the card onto its frames (a template made offline, restored onto the local helper or the demo network). */
+    const toFrames = () => {
+      const f = new MessageChannel();
+      f.port1.close();
+      ip.port1.postMessage({ type: 'frames', port: f.port2 }, [f.port2]);
+    };
+    return { n, links, link: link.port1, toFrames, toGateway: () => ip.port1.postMessage({ type: 'gateway' }), close: () => { n.close?.(); ip.port1.close(); link.port1.close(); } };
+  };
+  const renewed = make();
+  const flapped = make();
+  const asked = make();
+  try {
+    for (const x of [renewed, flapped, asked]) x.toFrames();
+    await tick(100);
+    for (const x of [renewed, flapped, asked]) assert.deepEqual(x.links, [], 'held: the link stays up under the agent\'s LEASE');
+    renewed.link.postMessage({ type: 'settled', renewed: true });
+    flapped.link.postMessage({ type: 'settled', renewed: false });
+    asked.link.postMessage({ type: 'flap' });
+    await tick(100);
+    assert.deepEqual(renewed.links, [], 'renewed by the agent: what was held dropped');
+    assert.deepEqual(flapped.links, [0], 'not renewed: the held flap now');
+    assert.deepEqual(asked.links, [0], 'a flap asked for: one');
+    await tick(FLAP_MS + 100);
+    assert.deepEqual([flapped.links, asked.links], [[0, 1], [0, 1]]);
+    renewed.toGateway(); // settled: a later switch flaps as ever
+    await tick(100);
+    assert.deepEqual(renewed.links, [0]);
+  } finally {
+    for (const x of [renewed, flapped, asked]) x.close();
+  }
+});

@@ -1316,7 +1316,7 @@ test("the link: the guest's desktop as the agent says it (DESKTOP), none again w
   port2.close();
 });
 
-test("a restore's leases (web/app/areas/lease-actions.ts): once the network settled, the agent renews them; without it, or when it can't, the connected cards flap; a run that ends first does neither", async () => {
+test("a restore's leases (web/app/areas/lease-actions.ts): once the network settled, the agent renews them; without it, or when it can't, the connected cards flap; the held flaps settled after; a run that ends first does neither", async () => {
   const settle = () => new Promise((r) => setTimeout(r, 30));
   /** A link whose agent answers LEASE with `status` (none: never says HELLO). */
   const agentWith = (caps: number | undefined, status?: number) => {
@@ -1341,8 +1341,9 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
   };
   const run = async (link: AgentLink | undefined, connected: Promise<number[]>) => {
     const flaps: number[] = [];
-    const a = new LeaseActions({ whenConnected: () => connected.then((k) => k.map((index) => ({ index, mac: `52:54:00:00:00:0${index}` }))), link: () => link, flap: (i) => flaps.push(i), waits: { grace: 50, agent: 100, leased: 200 } });
-    return { a, flaps, done: a.restored() };
+    const settles: number[][] = [];
+    const a = new LeaseActions({ whenConnected: () => connected.then((k) => k.map((index) => ({ index, mac: `52:54:00:00:00:0${index}` }))), link: () => link, flap: (i) => flaps.push(i), settled: (k) => settles.push(k), waits: { grace: 50, agent: 100, leased: 200 } });
+    return { a, flaps, settles, done: a.restored() };
   };
   // The agent renews: no flap.
   const ok = agentWith(CAP.TIME | CAP.LEASE, LEASED.RENEWED);
@@ -1350,6 +1351,7 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
   let r = await run(ok.link, Promise.resolve([0, 2]));
   assert.equal(await r.done, 'agent');
   assert.deepEqual(r.flaps, []);
+  assert.deepEqual(r.settles, [[0, 2]], 'settled once LEASED came: the renewed cards drop what they held');
   assert.equal(ok.leases.length, 1);
   ok.close();
   // An agent with no network manager it knows, one without CAP.LEASE, one that never connects, none: the cards flap.
@@ -1358,6 +1360,7 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
     r = await run(x.link, Promise.resolve([1]));
     assert.equal(await r.done, 'flap', what);
     assert.deepEqual(r.flaps, [1], what);
+    assert.deepEqual(r.settles, [[]], what);
     x.close();
   }
   r = await run(undefined, Promise.resolve([0]));
@@ -1368,7 +1371,7 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
   r.a.end();
   settled([0]);
   assert.equal(await r.done, 'gone');
-  assert.deepEqual(r.flaps, []);
+  assert.deepEqual([r.flaps, r.settles], [[], []]);
 });
 
 test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, the overlays compacted after it, what it did said; nothing without an agent that trims", async () => {

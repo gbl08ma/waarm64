@@ -1463,6 +1463,14 @@
     "message": "Connected, but today's allowance is used up: nothing leaves the guest until it resets.",
     "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the address's daily traffic allowance is spent (the server didn't say when it resets)."
   },
+  "demo-view.slow": {
+    "message": "Connected, slowly: today's allowance is used up, so everything goes through the slow lane until {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the address's daily traffic allowance is spent, and the server's slow lane is on: the guest still reaches hosts, but slowly (the allowed hosts too). {{when}} is when the allowance resets (the next UTC midnight)."
+  },
+  "demo-view.slow.noTime": {
+    "message": "Connected, slowly: today's allowance is used up, so everything goes through the slow lane until it resets.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the address's daily traffic allowance is spent, and the server's slow lane is on: the guest still reaches hosts, but slowly (the server didn't say when it resets)."
+  },
   "demo-view.wait.unreachable": {
     "message": "Couldn't reach the demo network's server. Trying again at {{when}}.",
     "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the connection never opened (the server is down, or no internet here). {{when}} is the date and time it tries again (sooner at first, then less often)."
@@ -1491,6 +1499,10 @@
     "message": "Today's allowance on the demo network is used up. It resets at {{when}}.",
     "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server refused the connection because this address's daily traffic allowance is spent (close code 4010). {{when}} is when it resets (the page connects again then)."
   },
+  "demo-view.wait.bytes.slow": {
+    "message": "Today's allowances on the demo network, the slow lane's too, are used up. They reset at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server refused the connection because this address's daily traffic allowance and its slow lane's allowance are both spent (close code 4010). {{when}} is when they reset (the page connects again then)."
+  },
   "demo-view.wait.maintenance": {
     "message": "The demo network's server is restarting for maintenance. Trying again at {{when}}.",
     "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server stopped for a restart (close code 4011). {{when}} is the date and time it tries again (when the server said it would be back)."
@@ -1507,13 +1519,93 @@
     "message": "{{used, bytes}} of today's {{limit, bytes}} used (resets at {{when}})",
     "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the traffic this address used today, of its daily allowance. {{when}} is when the count starts again (the next UTC midnight)."
   },
+  "demo-view.budget.slow": {
+    "message": "{{used, bytes}} of today's {{limit, bytes}} used on the slow lane",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the traffic this address used today on the server's slow lane (the hosts off the allowed list, reached slowly), of the slow lane's own daily allowance. Shown only while the server's slow lane is on."
+  },
+  "demo-view.slowLane_one": {
+    "message": "Hosts off the allowed list are reached slowly: {{rate, bytes}}/s, {{count}} connection at a time, on ports {{ports}}",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the server's slow lane is on: hosts not on the allowed list can still be reached, slowly. {{rate}} is this address's speed there (bytes a second), {{count}} how many such connections it may have open at once, {{ports}} the TCP ports the slow lane reaches (numbers, a list)."
+  },
+  "demo-view.slowLane_other": {
+    "message": "Hosts off the allowed list are reached slowly: {{rate, bytes}}/s, {{count}} connections at a time, on ports {{ports}}",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the server's slow lane is on: hosts not on the allowed list can still be reached, slowly. {{rate}} is this address's speed there (bytes a second), {{count}} how many such connections it may have open at once, {{ports}} the TCP ports the slow lane reaches (numbers, a list)."
+  },
+  "demo-view.slowLane.anyPort_one": {
+    "message": "Hosts off the allowed list are reached slowly: {{rate, bytes}}/s, {{count}} connection at a time",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the server's slow lane is on: hosts not on the allowed list can still be reached, slowly. {{rate}} is this address's speed there (bytes a second), {{count}} how many such connections it may have open at once."
+  },
+  "demo-view.slowLane.anyPort_other": {
+    "message": "Hosts off the allowed list are reached slowly: {{rate, bytes}}/s, {{count}} connections at a time",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the server's slow lane is on: hosts not on the allowed list can still be reached, slowly. {{rate}} is this address's speed there (bytes a second), {{count}} how many such connections it may have open at once."
+  },
   "demo-view.refused_one": {
-    "message": "{{count}} destination refused (not allowed): {{names}}",
-    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): how many connections or lookups the server refused because their destination isn't on its allowlist. {{names}} is the last few refused, newest first (host names, or addresses, with a port where there is one)."
+    "message": "{{count}} destination refused: {{names}}",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): how many connections or lookups the server refused (most because their destination isn't on its allowed list). {{names}} is the last few refused, newest first: host names or addresses, with a port where there is one, each with why in parentheses (the demo-view.reason messages)."
   },
   "demo-view.refused_other": {
-    "message": "{{count}} destinations refused (not allowed): {{names}}",
-    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): how many connections or lookups the server refused because their destination isn't on its allowlist. {{names}} is the last few refused, newest first (host names, or addresses, with a port where there is one)."
+    "message": "{{count}} destinations refused: {{names}}",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): how many connections or lookups the server refused (most because their destination isn't on its allowed list). {{names}} is the last few refused, newest first: host names or addresses, with a port where there is one, each with why in parentheses (the demo-view.reason messages)."
+  },
+  "demo-view.refusal": {
+    "message": "{{what}} ({{why}})",
+    "note": "One destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): {{what}} is the host name or address, with a port where there is one; {{why}} is the reason, a few words (the demo-view.reason messages)."
+  },
+  "demo-view.reason.notListed": {
+    "message": "not allowed",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): a name or address not on the server's allowed list."
+  },
+  "demo-view.reason.port": {
+    "message": "port not allowed",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): an allowed host, but on a port the server doesn't allow for it (or that no lane reaches)."
+  },
+  "demo-view.reason.private": {
+    "message": "private address",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): an address in a private or local range, which the server never reaches."
+  },
+  "demo-view.reason.address": {
+    "message": "address without a lookup",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): a connection to an IP address typed directly rather than looked up by name through the server."
+  },
+  "demo-view.reason.noName": {
+    "message": "no host name",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): a connection whose first bytes don't say which host it's for (no TLS server name, no HTTP Host)."
+  },
+  "demo-view.reason.name": {
+    "message": "host not allowed",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): a connection to an allowed address whose first bytes name another host (another site on the same CDN)."
+  },
+  "demo-view.reason.egress": {
+    "message": "the server's way out is down",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): the server couldn't reach the internet for it; not the guest's doing."
+  },
+  "demo-view.reason.busy": {
+    "message": "too many at once",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): the guest had too many connections or lookups going at once."
+  },
+  "demo-view.reason.udp": {
+    "message": "UDP",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): UDP traffic past the server's DNS, which it doesn't carry."
+  },
+  "demo-view.reason.quic": {
+    "message": "QUIC",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): HTTP/3 (QUIC, over UDP), which the server doesn't carry; programs fall back to TCP."
+  },
+  "demo-view.reason.spent": {
+    "message": "allowance used up",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): today's traffic allowance is spent."
+  },
+  "demo-view.reason.slowConnections": {
+    "message": "too many slow connections",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): the server's slow lane would take it, but this address already has as many slow-lane connections open as it allows."
+  },
+  "demo-view.reason.slowSpent": {
+    "message": "slow-lane allowance used up",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): the server's slow lane would take it, but the slow lane's daily allowance is spent."
+  },
+  "demo-view.reason.unresolved": {
+    "message": "name not found",
+    "note": "A refusal's reason, in parentheses after the destination in the line under the demo network's status that lists the last destinations the server refused (the toolbar's Network menu, the Home page's Network tab): an allowed name that has no address (it doesn't exist, or has no IPv4 address)."
   },
   "demo-view.restart": {
     "message": "The server restarts for maintenance at {{at}}.",
@@ -1538,6 +1630,30 @@
   "demo-view.notice.spent.noTime": {
     "message": "Today's allowance on the demo network is used up: the guest reaches nothing through it until it resets.",
     "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily traffic allowance is spent (the server didn't say when it resets)."
+  },
+  "demo-view.notice.slowed": {
+    "message": "Today's allowance on the demo network is used up: the guest's traffic goes on through the slow lane, slowly, until {{when}}.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily traffic allowance is spent and the server's slow lane is on, so everything still works, slowly. {{when}} is when it resets (the next UTC midnight)."
+  },
+  "demo-view.notice.slowed.noTime": {
+    "message": "Today's allowance on the demo network is used up: the guest's traffic goes on through the slow lane, slowly, until it resets.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily traffic allowance is spent and the server's slow lane is on, so everything still works, slowly (the server didn't say when it resets)."
+  },
+  "demo-view.notice.slowBudget": {
+    "message": "The demo network: this address has used {{percent}}% of today's slow-lane allowance ({{used, bytes}} of {{limit, bytes}}).",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's traffic on the server's slow lane (hosts off the allowed list, reached slowly) passed a threshold of its own daily allowance. {{percent}} is the threshold (80)."
+  },
+  "demo-view.notice.slowBudget.resets": {
+    "message": "The demo network: this address has used {{percent}}% of today's slow-lane allowance ({{used, bytes}} of {{limit, bytes}}). It resets at {{when}}.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's traffic on the server's slow lane (hosts off the allowed list, reached slowly) passed a threshold of its own daily allowance. {{percent}} is the threshold (80); {{when}} is when the count starts again (the next UTC midnight)."
+  },
+  "demo-view.notice.slowSpent": {
+    "message": "Today's slow-lane allowance on the demo network is used up: until {{when}} the guest reaches only the allowed hosts.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily allowance on the server's slow lane is spent; the allowed hosts still work at full speed. {{when}} is when it resets (the next UTC midnight)."
+  },
+  "demo-view.notice.slowSpent.noTime": {
+    "message": "Today's slow-lane allowance on the demo network is used up: until it resets the guest reaches only the allowed hosts.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily allowance on the server's slow lane is spent; the allowed hosts still work at full speed (the server didn't say when it resets)."
   },
   "demo-view.notice.back": {
     "message": "The demo network's allowance has reset: the guest reaches the allowed hosts again.",
