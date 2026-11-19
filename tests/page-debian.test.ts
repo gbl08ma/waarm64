@@ -137,8 +137,16 @@ async function onSerial(page: Page, text: string) {
   await page.keyboard.type(text, { delay: 10 });
 }
 
-/** Logs in as root on the serial terminal, once its `login: ` prompt is up (`running` may come from systemd's READY=1 first). */
+/**
+ * Waits for the boot's end on the serial console: systemd's last status line there. Until it, systemd's status lines
+ * and a login's shell share the console (the shell redraws its line at the agent's CONSOLE), and a command's echo can
+ * be written over, its regex then missing it (seen under ci-debian.sh's load, 2026-11-19).
+ */
+const booted = (page: Page) => shows(page, /Reached target graphical\.target/, 120_000);
+
+/** Logs in as root on the serial terminal, once the boot's status is done and its `login: ` prompt is up (`running` may come from systemd's READY=1 first). */
 async function serialLogin(page: Page) {
+  await booted(page);
   await shows(page, /login: /);
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /); // not typed ahead: a key typed while login hands the tty over was lost (the first of the next line)
@@ -546,6 +554,7 @@ for (let run = 1; run <= RUNS; run++) {
     await p2.reload();
     await running(p2);
     assert.doesNotMatch((await message(p2)) ?? '', words('machine:worker.resumed'));
+    await booted(p2);
     await shows(p2, /login: /);
     await onSerial(p2, 'root\n');
     await shows(p2, /root@\S+:~# /);
