@@ -1612,10 +1612,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - [A] **The guest doesn't show its own name** in the room: the visitor finds it in the Network menu's adapter details.
     A login line or motd line from the agent (it knows the address from udhcpc6's script, not the name: the page would
     send it) would make it easier to give out.
-  - [B] **Names on Alpine:** the room's resolver isn't in `/etc/resolv.conf` (musl asks every server at once and takes
-    the first answer, so the demo network's NXDOMAIN would race the room's), so an Alpine demo reaches a peer by its
-    address only. A local forwarder by suffix (`p2p.internal` to the room's resolver) in the agent or the image would
-    fix it.
   - [B] A room connection made for a demo machine whose import then failed (the record's write, after the snapshot was
     kept) stays in the Connections list unattached; nothing sweeps such connections yet.
 - **Room names' loose ends** (NAMES track, [networking/names.md](networking/names.md); the records and rules in

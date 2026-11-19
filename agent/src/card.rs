@@ -19,9 +19,9 @@
 //! /128s), the link up (`ip link set <card> up`), and `udhcpc6 -i <card> -b` with the agent's script
 //! (`SCRIPT`, written to `script` first: busybox's default script on Alpine is IPv4's only), which adds the leased
 //! address as a /128. IPv6 only: a gateway that isn't the primary gives no IPv4 route (adapters.md §4), and only the
-//! primary gives default routes, so the card adds its network's routes and nothing else. The card's resolvers are left
-//! alone (musl asks every server in `/etc/resolv.conf` at once and takes the first answer, so another network's
-//! NXDOMAIN would race the room's). The agent never takes a card down: one the page disconnected keeps its client,
+//! primary gives default routes, so the card adds its network's routes and nothing else. The card's resolvers and
+//! domains go to the agent's DNS forwarder (src/resolve.rs), not to `/etc/resolv.conf` (musl asks every server there
+//! at once and takes the first answer, so another network's NXDOMAIN would race the room's). The agent never takes a card down: one the page disconnected keeps its client,
 //! which asks until its network comes back. After a restore, LEASE renews its udhcpc6 as it does udhcpc.
 
 use crate::lease::{Paths as LeasePaths, Step, dhcpcd_manages, found, processes, udhcpc_of};
@@ -30,16 +30,27 @@ use crate::prelude::*;
 /// IFF_UP in a link's `flags`.
 const IFF_UP: u32 = 0x1;
 
-/// udhcpc6's script (busybox sh): the leased address as a /128 at `bound` and `renew`, the card's global addresses
-/// flushed at `deconfig` (udhcpc6's start, a lease lost). busybox's `ip` has `replace`.
+/// udhcpc6's script (busybox sh): the leased address as a /128 at `bound` and `renew`, and the lease's resolvers and
+/// domains in `/run/waarm64-dns/<card>` (resolve::ROOM_DIR) for the agent's forwarder; the card's global addresses
+/// flushed and its file removed at `deconfig` (udhcpc6's start, a lease lost). busybox's `ip` has `replace`.
 pub const SCRIPT: &str = "#!/bin/sh
 # From waarm64's guest agent (docs/devices.md, \"A card nothing else manages\"): udhcpc6's script for a card the agent
 # brought up, which nothing else in the guest manages. The leased address, as a /128; routes come from the router's
-# advertisements, resolvers are left alone.
+# advertisements; the resolvers and domains go to /run/waarm64-dns/<card> for the agent's forwarder (src/resolve.rs).
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
+d=/run/waarm64-dns
 case \"$1\" in
-deconfig) ip -6 addr flush dev \"$interface\" scope global ;;
-bound|renew) [ -n \"$ipv6\" ] && ip -6 addr replace \"$ipv6/128\" dev \"$interface\" ;;
+deconfig)
+	ip -6 addr flush dev \"$interface\" scope global
+	rm -f \"$d/$interface\" ;;
+bound|renew)
+	[ -n \"$ipv6\" ] && ip -6 addr replace \"$ipv6/128\" dev \"$interface\"
+	mkdir -p \"$d\"
+	if [ -n \"$dns\" ]; then
+		printf 'dns %s\\nsearch %s\\n' \"$dns\" \"$search\" > \"$d/$interface.new\" && mv \"$d/$interface.new\" \"$d/$interface\"
+	else
+		rm -f \"$d/$interface\"
+	fi ;;
 esac
 exit 0
 ";

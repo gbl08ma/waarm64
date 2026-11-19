@@ -40,6 +40,7 @@ mod os;
 mod outputs;
 mod power;
 mod renew;
+mod resolve;
 mod rt;
 mod screen;
 #[cfg(test)]
@@ -192,6 +193,9 @@ struct Agent {
     card: card::Paths,
     carding: Option<lease::Job>,
     cards_next: Option<Vec<[u8; 6]>>,
+    /// The DNS forwarder for the cards the agent brought up (src/resolve.rs), running; its paths.
+    resolver: Option<resolve::Running>,
+    resolve: resolve::Paths,
     /// TRIM's mount table, how a filesystem is trimmed (the tests' records it), its child, and TRIMMED's status once done.
     trim: trim::Paths,
     fitrim: trim::Fitrim,
@@ -271,6 +275,8 @@ impl Agent {
             card: card::Paths::default(),
             carding: None,
             cards_next: None,
+            resolver: None,
+            resolve: resolve::Paths::default(),
             leasing: None,
             leased: None,
             trim: trim::Paths::default(),
@@ -538,8 +544,25 @@ impl Agent {
         self.load_vc(k.vc.clone());
     }
 
+    /// The DNS forwarder running (src/resolve.rs) if a card the agent brought up is there: `brought` one just was, or
+    /// udhcpc6's script has written a card's resolvers (an agent started again beside a running udhcpc6). Started
+    /// again if it ended.
+    fn ensure_resolver(&mut self, brought: bool) {
+        if self.resolver.as_ref().is_some_and(resolve::alive) {
+            return;
+        }
+        if !brought && rustix::fs::stat(self.resolve.rooms.as_str()).is_err() {
+            return;
+        }
+        match resolve::spawn(&self.resolve) {
+            Ok(r) => self.resolver = Some(r),
+            Err(e) => log("resolve: fork", Some(e)),
+        }
+    }
+
     /// CARDS' cards (`macs`): those nothing else manages brought up in a child (src/card.rs).
     fn cards(&mut self, macs: &[[u8; 6]]) {
+        self.ensure_resolver(false);
         let cards = card::unmanaged(&self.lease, &self.card, macs);
         let Some(steps) = card::steps(&self.card, &cards) else {
             return;
@@ -768,6 +791,7 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                             },
                             None,
                         );
+                        s.agent.ensure_resolver(true);
                     }
                     if let Some(macs) = s.agent.cards_next.take() {
                         s.agent.cards(&macs);

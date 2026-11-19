@@ -284,9 +284,8 @@ global public room on its machine's second adapter, so visitors' demo machines c
   nothing else.
 - **What it costs:** the room client (`ts.wasm`) loads with the second adapter's connection, after the restore, so
   click to prompt is unchanged.
-- **Names on Alpine:** the room's resolver isn't in Alpine's `/etc/resolv.conf` (musl asks every server at once and
-  takes the first answer, so the demo network's NXDOMAIN would race it), so a demo on Alpine reaches a peer by its
-  room address, not its name (docs/backlog.md).
+- **Names on Alpine:** the agent's DNS forwarder answers the room's names there ([devices.md](../devices.md) "Names
+  through the agent"): musl has no resolver by domain, and udhcpc rewrites `/etc/resolv.conf` at each lease.
 
 ## The direct path
 

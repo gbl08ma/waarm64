@@ -6,7 +6,8 @@
 // rig's derper, tests/net/tailcat.sh) instead of the global room's public ones: the test points the two connections
 // there before the first start. After the restore the agent brings up `eth1`, which nothing in Alpine manages (CARDS,
 // docs/devices.md "A card nothing else manages"): udhcpc6 takes the room's address, the router advertisement's Route
-// Information option the room's /48, and the default routes stay `eth0`'s; then each pings the other's room address.
+// Information option the room's /48, and the default routes stay `eth0`'s; then each pings the other's room address,
+// and A pings B by its name in the room through the agent's DNS forwarder (docs/devices.md "Names through the agent").
 // The template: `WAARM64_DEMO_SITE` (default target/demos) `/alpine-term`, built by tools/build-demos.ts from
 // deploy/disks/demos.json (two adapters); skipped when it isn't this core's or has one adapter. ~20 s. Opt-in with the
 // network tests (scripts/ci-net.sh): WAARM64_NET_TESTS=1, WAARM64_TAILCAT=1 (Go for derper).
@@ -175,7 +176,7 @@ async function roomAddress(page: Page): Promise<string> {
   return m[1];
 }
 
-test("a demo's room: two visitors' Alpine demo machines, each its own key; the agent brings eth1 up (udhcpc6, the room's /48), eth0 keeps the defaults; each pings the other's room address", { skip, timeout: 12 * 60_000 }, async (t) => {
+test("a demo's room: two visitors' Alpine demo machines, each its own key; the agent brings eth1 up (udhcpc6, the room's /48), eth0 keeps the defaults; each pings the other's room address, and A pings B by name (the agent's forwarder)", { skip, timeout: 12 * 60_000 }, async (t) => {
   const why = await unfit();
   if (why) return void t.skip(why);
   const errors: string[] = [];
@@ -199,5 +200,21 @@ test("a demo's room: two visitors' Alpine demo machines, each its own key; the a
     const out = await run(from, `for i in 1 2 3 4 5 6; do ping -c 2 -W 5 ${to} > /tmp/ping.out 2>&1 && break; sleep 2; done; tail -n 3 /tmp/ping.out`, 180_000);
     assert.match(out, /[12] packets received/, `ping ${to}: ${out}`);
   }
+  // By name (the agent's forwarder, docs/devices.md "Names through the agent"): resolv.conf names it, B's name (the
+  // Network menu's, adapter 2) and its first label alone (the room's search domain) resolve to B's room address,
+  // and a name off the room still resolves through the demo network's resolver.
+  const servers = await run(a, "grep '^nameserver' /etc/resolv.conf");
+  assert.equal(servers, 'nameserver 127.0.53.53', `the forwarder alone: ${await run(a, 'cat /etc/resolv.conf')}`);
+  await b.locator('#network summary').click();
+  const nameB = await b.locator('#net-room-name-1').inputValue({ timeout: 30_000 });
+  await b.locator('#network summary').click();
+  assert.match(nameB, /^[a-z2-7]+\.demo-room-test-[0-9a-f]+\.p2p\.internal$/, nameB);
+  for (const n of [nameB, nameB.split('.')[0]]) {
+    const out = await run(a, `ping -c 2 -W 5 ${n} 2>&1 | head -1; ping -c 2 -W 5 ${n} 2>&1 | tail -2`, 60_000);
+    assert.match(out, new RegExp(`\\(${addrB}\\)`), `${n} resolves to B's room address: ${out}`);
+    assert.match(out, /[12] packets received/, `ping ${n}: ${out}`);
+  }
+  const cdn = await run(a, 'nslookup dl-cdn.alpinelinux.org 2>&1 | tail -4');
+  assert.match(cdn, /Address:?\s+[0-9a-f.:]+/, `a name off the room, upstream: ${cdn}`);
   assert.deepEqual(errors, []);
 });

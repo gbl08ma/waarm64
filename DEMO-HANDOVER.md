@@ -73,7 +73,8 @@ user's answer on room names are what's left of it.
 
 ### What's left, in order
 
-**1. Loop 15: a second adapter on the global public room for every demo machine — built, not yet through CI.**
+**1. Loop 15 and 15b: a second adapter on the global public room for every demo machine, and its names on Alpine —
+built, not yet through CI.**
 What it is (docs: rooms.md "A demo's room", devices.md "A card nothing else manages", adapters.md §1 rule 2,
 decisions.md "Network"):
 - `demo.room: "global"` (definitions.ts, definition-check.ts: needs two adapters; tools/demo-site.ts carries it);
@@ -91,11 +92,14 @@ decisions.md "Network"):
   **tests/page-demo-room.test.ts** (ci-net.sh's last step: two Alpine demo machines on the fork's server and a room
   through the rig; eth1's address, the /48 on eth1, defaults on eth0, pings both ways: **passed alone, 16 s**).
   tests/page-demos-guest.test.ts strips `room` (CI never joins the public global room).
-- **Asked, not answered:** names on Alpine (musl races resolvers; udhcpc rewrites resolv.conf). Proposed: the page
-  answers the room's suffix on every adapter's resolver (page-only). Backlog has it with the guest not showing its
-  own name and a failed import's leftover connection.
-- **Left:** CI at the loop's commit: ci.sh, ci-net (the agent, the second card), ci-machines, ci-graphics (the desktops
-  rebuilt: link target/demos/{arch-desktop,arch-3d,alpine-term,pieces} into ../waarm64-ci first).
+- **Loop 15b, names on Alpine** (the user's choice of the agent as resolver, "only where the udhcpc logic is used"):
+  agent/src/resolve.rs, a DNS forwarder process forked once the agent brought a card up, on 127.0.53.53:53 (UDP,
+  TCP), holding `/etc/resolv.conf` while a card's lease gave resolvers (udhcpc6's script writes
+  /run/waarm64-dns/<card>), the upstreams udhcpc wrote kept in its comments, given back when the leases go or the
+  agent ends (its pipe closes). devices.md "Names through the agent". The room test pings by full name and by first
+  label, and resolves a name upstream (passed alone, 26 s).
+- **Left:** one CI round at 15b's commit (all three templates rebuilt once, with 15b's agent): ci.sh, ci-net, ci-machines,
+  ci-graphics (link target/demos/{arch-desktop,arch-3d,alpine-term,pieces} into ../waarm64-ci first), then push.
 
 **2. The track's end** (kickoff "The end"), after loop 15 (and a deploy only if the user asks for one):
 - An **out-of-context review** of the page's demo code since review/demo-page-2 (the clipboard pause, loop 12's
@@ -158,6 +162,12 @@ decisions.md "Network"):
   only without systemd/networkd/NetworkManager, IPv6 only, resolvers left alone, never taken down. The udhcpc6 script
   lives at /run/waarm64-udhcpc6.script (outside the agent's tmpfs, so it outlives the service). Template recipes got a
   second random MAC each (a shape change: new snapshots under the same ids).
+- **Loop 15b's engineering calls:** the forwarder listens on 127.0.53.53 (not 127.0.0.1: a user's resolver may be
+  there); it runs only where the agent brought a card up, for any such card's lease with resolvers (a tailnet's
+  MagicDNS on Alpine too, not only a room); non-room names go to every upstream at once, the first answer that isn't
+  SERVFAIL/REFUSED relayed (musl's own behavior); TCP by a child per connection; the upstreams kept in resolv.conf's
+  comments so a restarted forwarder recovers them. A forwarder killed alone (OOM) leaves resolv.conf naming it until
+  udhcpc's next rewrite; the agent starts it again at its next CARDS.
 
 - **Loop 12's engineering calls:** two new demos, neither a template for New machine: **`arch-desktop`** (4 vCPUs,
   2 GiB, 3D, sway at 1280×800, Firefox) and **`arch-3d`** (the same image, the shader demo on virgl; virgl, not Venus,

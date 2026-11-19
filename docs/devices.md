@@ -434,11 +434,29 @@ linux-virt has `CONFIG_IPV6_ROUTE_INFO`), `ip link set <card> up`, and busybox's
 with the agent's script (`/run/waarm64-udhcpc6.script`, outside the agent's own tmpfs so it outlives the service:
 Alpine's default script is IPv4's only), which adds the leased address as a /128 (`ip -6 addr replace`) and flushes
 the card's global addresses at `deconfig`. IPv6 only: a gateway that isn't the primary gives no IPv4 route, and only
-the primary gives default routes (networking/adapters.md §4). The card's resolvers are left alone (musl asks every
-server in `/etc/resolv.conf` at once and takes the first answer). The agent never takes a card down: one the page
+the primary gives default routes (networking/adapters.md §4). The lease's resolvers and domains go to
+`/run/waarm64-dns/<card>`, for the agent's forwarder (below), not to `/etc/resolv.conf`. The agent never takes a card down: one the page
 disconnected keeps its client, asking until its network comes back; after a restore LEASE renews its udhcpc6 as it
 does udhcpc. Tests: the root's rules and steps on a guest's files (agent/src/card.rs), the link's CARDS
 (tests/agent-link.test.ts).
+
+**Names through the agent** (`agent/src/resolve.rs`; the user's choice, 2026-11-19): on such a guest the room's names
+need a resolver by domain, which musl lacks: it asks every server in `/etc/resolv.conf` at once and takes the first
+answer, an NXDOMAIN too, so the room's resolver beside the demo network's would race it; and busybox's udhcpc rewrites
+the file at each lease. So once the agent brought a card up (or finds `/run/waarm64-dns`, an agent started again beside
+a running udhcpc6), it forks a DNS forwarder, a process of its own that runs whether or not the page is connected,
+listening on `127.0.53.53:53` (UDP and TCP; out of the way of a resolver the user runs on 127.0.0.1). While a card's
+lease has given resolvers, the forwarder keeps `/etc/resolv.conf` naming it alone: each time udhcpc rewrites the file,
+its servers and search domains become the upstreams (kept in the file's comments, `# upstream nameserver …`, so a
+forwarder started again finds them) and the file is written again, the cards' domains first in its `search` (so a
+member's first label alone resolves). A name under a card's domains goes to that card's resolvers, anything else to the
+upstreams, all at once, the first answer that isn't SERVFAIL or REFUSED relayed (as musl would); TCP queries (musl's
+after a truncated answer) get a child each. When the cards' resolvers go (a lease lost) and when the agent ends (the
+pipe from the root closes: a stop, a crash), the file is written back with the upstreams alone. Only where the agent
+brought a card up, so only on guests configured card by card (udhcpc's: Alpine); systemd-resolved does it per link on
+the others. Tests: the file taken and given back, routing, and the forwarder end to end on loopback with two servers
+(agent/src/resolve.rs), and on the page `tests/page-demo-room.test.ts` (a member pinged by its name and its first label,
+a name off the room through the demo network).
 
 **The desktop's state** (DESKTOP; the user's decision, 2026-11-13: for the tests only): the session child says when a
 graphical session is up for seat0's active user: Wayland's once its connection to a compositor has the globals (the
