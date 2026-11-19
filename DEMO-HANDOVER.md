@@ -2,15 +2,16 @@
 
 The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-demo.md](docs/plans/first-demo.md).
 
-## Start here (for a new session; 2026-11-19 ~17:30)
+## Start here (for a new session; 2026-11-19 ~20:30)
 
 You're picking up the DEMO track (the first demo: a store of demo machines resumed from template snapshots, and a
 hosted demo network). Read, in order: CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited
 with their OK on 2026-11-19 for the red lines and loop 11), this file, and the fork's `../waarm64-demonet/HANDOVER.md`.
 docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
 deploy** vm.tny.im or vmdisks.tny.im (decision 11) without the user asking. Every loop is done, and so are the third
-out-of-context review and its fixes (cbe02be1). **The demos are deployed** (2026-11-19, the user's go-ahead: "What's left"
-3); next, the user's own check of the deployed page, then the deployed numbers (4) and the track's end (5).
+out-of-context review and its fixes (cbe02be1). **The demos are deployed** (4e81858b) and **the user validated them by
+hand** (2026-11-19: all three on their desktop's Nvidia GPU). **The next piece of work is a fourth out-of-context
+review** ("What's left" 1), then its fixes, the whole CI set, the deployed numbers and the track's end.
 
 ### Where things stand
 
@@ -98,19 +99,31 @@ out-of-context review and its fixes (cbe02be1). **The demos are deployed** (2026
 
 ### What's left, in order
 
-**1–2. Done:** review 3 and its fixes, and the whole CI set at cbe02be1 (above).
+**1. A fourth out-of-context review** (CLAUDE.md "Out-of-context reviews"; docs/testing.md): a fresh agent with only the
+repo and a neutral brief (the area, "find real defects"; never this file's theories), statically, over the code added
+since review 3 (cbe02be1..main): web/gpu.ts `capsRead` (the caps a snapshot carries) and its tests in
+tests/virgl.test.ts; bench/demo/make-template.ts `startOnResume` (a desktop template made before any GL client,
+started after the restore); the agent's CONSOLE (agent/src/tty.rs, frame.rs, main.rs) and the page's side
+(web/app/areas/serial-terminal.ts `follow`/`#refit`, web/app/agent-link.ts `console`, web/app/areas/agent-actions.ts,
+App.svelte's fit rules); tests/page-console.test.ts, tests/page-demos-guest.test.ts. Docs: graphics.md "`capsBacked`",
+remote-disks.md "Building the demos", devices.md "The serial console's size", frontend.md "The serial terminal".
+Findings ranked on a `review/demo-page-4` branch; then each fixed (its confirming test first, failing) or filed in
+docs/backlog.md. A fix to the agent or a template's guest means the agent image and the three templates rebuilt
+(tools/build-demos.ts), once, after the last such fix, and a redeploy (ask the user: decision 11).
 
-**3. The first deploy: done** (2026-11-19, the runbook's steps 1–7 from the CI worktree at c6a947e5). The check from
-headless Chromium (bench/results/local/deployed-check.ts, git-ignored: a fresh profile per demo on
-https://vm.tny.im/demos): the store lists the three; alpine-term running 4.3 s after the click, a command 5.9 s,
-`apk add python3` through wss://demonet.tny.im OK at 15.3 s; arch-desktop running 10.1 s, a command 16.1 s, Firefox's
-window 74.9 s; arch-3d running 9.0 s, a command 11.8 s, the shader demo's window 32.1 s (the dev VM's link to
-Cloudflare, one run each: not the bench's numbers). Left: the kickoff's "Validation", a check by hand with the user.
+**2. The whole CI set** on the head after the fixes: ci.sh, ci-net, ci-debian `--platform`, ci-graphics, ci-machines,
+ci-audio, ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb (one at a time in ../waarm64-ci; link the rebuilt images,
+`target/demos` and `target/vkframes` in first).
 
-**4. The deployed numbers** (runbook step 7; bench/demo has no target for the deployed store yet: add one), into
-bench/demo/REPORT.md and comparison.md §3.
+**3. The deployed numbers** (runbook step 7; bench/demo has no target for the deployed store yet: add one), into
+bench/demo/REPORT.md and comparison.md §3. Today's single runs (not the bench's numbers), the deployed page at
+4e81858b: on the VM (SwiftShader) alpine-term a command at 4.1 s, `apk add python3` at 13.7 s, the terminal 159×55 and
+the guest's tty the same; arch-desktop Firefox's window at 56.3 s; arch-3d the shader demo's at 39.4 s; on the Mac
+(Chrome for Testing, Apple M4 through ANGLE's Metal) arch-desktop 42.4 s, arch-3d 30.3 s, 3D on, no virtio-gpu error.
+The check: bench/results/local/deployed-check.ts (git-ignored: `node <it> <out-dir> [id…]`; on the Mac, copied to
+`~/waarm64-gpu-bench/check/` and run with `CHROMIUM` its Chrome for Testing, under `perl -e 'alarm N'`).
 
-**5. The track's end** (kickoff "The end"): check once more that docs/ says what DEMO-KICKOFF.md,
+**4. The track's end** (kickoff "The end"): check once more that docs/ says what DEMO-KICKOFF.md,
 plans/first-demo.md and this file say that's long-term; drop docs/README.md's row for plans/first-demo.md; PLAN.md's
 DEMO row set to done (one line); then delete DEMO-KICKOFF.md, this file and docs/plans/first-demo.md in that commit.
 "Awaiting the user's review" and "Before you load this build" go to the user first (or into the docs where they're
