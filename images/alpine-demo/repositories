@@ -1,0 +1,4 @@
+# waarm64's alpine-demo image (images/alpine-demo/repositories): main only, so apk reads a quarter of the index;
+# community is enabled by the command-not-found hook (/etc/profile.d/command-not-found.sh) when a command needs it.
+https://dl-cdn.alpinelinux.org/alpine/v3.24/main
+#https://dl-cdn.alpinelinux.org/alpine/v3.24/community

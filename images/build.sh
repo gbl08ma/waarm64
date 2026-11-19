@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi, agent, venus (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi, alpine-demo, agent, venus (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Buildroot's
@@ -70,6 +70,11 @@
 # alpine-uefi: Alpine's published UEFI cloud images (images/alpine-uefi.json,
 #   pinned by SHA512), which the firmware tests boot unmodified: alpine.qcow2
 #   (Limine) and alpine-grub.qcow2 (GRUB). Downloaded on the host, as debian.
+# alpine-demo: the Alpine demo's disk (DEMO-KICKOFF.md loop 3, images/alpine-demo/): alpine-uefi's alpine.qcow2 cut
+#   to Alpine's base (no tiny-cloud, sshd, chronyd, dhcpcd), root logged in on the serial console, udhcpc on eth0,
+#   apk with main (community on demand), a command-not-found hook that installs what's missing, the guest agent's
+#   OpenRC service, Limine without its wait and init_on_free=1; a 1 GiB alpine-demo.qcow2. Built natively in Alpine's
+#   arm64 container, as alpine-user, after alpine-uefi.
 # agent: clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3),
 #   waarm64-agent, a static aarch64-unknown-linux-musl binary the page ships: built
 #   natively in the Rust project's Alpine image (the toolchain agent/rust-toolchain.toml
@@ -130,13 +135,17 @@ AGENT_TOOLS="zopfli=1.0.3_git20260213-r0" # the gzip the page ships (waarm64-age
 VENUS_CONTAINER=docker.io/library/node@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 # 26.13.0-trixie-slim, multi-arch
 VENUS_SNAPSHOT=20261106T000000Z # after the image's Debian (2026-11-05)
 VENUS_TOOLS="git curl ca-certificates build-essential pkg-config meson ninja-build python3 python3-mako python3-yaml python3-packaging bison flex libdrm-dev libvulkan-dev libzstd-dev zlib1g-dev libexpat1-dev glslang-tools"
+# alpine-demo: the tools that take the published image apart (the live repositories'; e2fsprogs is the ISO's), and
+# the cloud image's packages it removes, down to alpine-base, e2fsprogs, linux-virt and Limine.
+DEMO_TOOLS="qemu-img=11.0.3-r0 sfdisk=2.42.3-r1 mtools=4.0.49-r0"
+DEMO_DEL="tiny-cloud chrony dhcpcd doas dosfstools mount nvme-cli openssh sgdisk tzdata"
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi agent venus)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi alpine-demo agent venus)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -595,6 +604,76 @@ build_alpine-uefi() {
     }' "$root" "$root/$out/alpine-uefi"
 }
 
+# The OpenRC service of the guest agent, as the page gives it (web/app/guest-agent.ts `agentOpenrc`).
+agent_openrc() {
+  node --input-type=module -e 'import { agentOpenrc } from "./web/app/guest-agent.ts"; process.stdout.write(agentOpenrc())'
+}
+
+# The demo's Alpine (DEMO-KICKOFF.md loop 3): alpine-uefi's Limine image taken apart in Alpine's arm64 container as its
+# root, its packages cut to Alpine's base (apk del: nothing new installed, so nothing from the live repositories goes
+# in), images/alpine-demo's files and the agent's service added, and put together again on a 1 GiB disk: the EFI
+# partition as published but limine.conf, the root a new ext4 of the rest (fixed UUIDs, every time SOURCE_DATE_EPOCH).
+build_alpine-demo() {
+  local dst=$out/alpine-demo w=$out/build/alpine-demo
+  [ -f "$out/alpine-uefi/alpine.qcow2" ] || { echo "alpine-demo needs the alpine-uefi image: images/build.sh alpine-uefi" >&2; exit 1; }
+  alpine_release
+  rm -rf "$dst" "$w"
+  mkdir -p "$dst" "$w"
+  agent_openrc > "$w/waarm64-agent"
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
+    out=$1 w=$2 iso=$3 dst=$4 del=$5
+    apk add -q --no-cache -X "$iso/apks" $6
+    apk add -q --no-cache $7
+    qemu-img convert -O raw "$out/alpine-uefi/alpine.qcow2" $w/in.raw
+    # The published layout, checked: EFI at 1 MiB (96 MiB), "/" after it.
+    sfdisk -d $w/in.raw | grep -q "in.raw1 : start=        2048, size=      196608, .*name=\"EFI\"" || { echo "alpine-demo: not the EFI partition expected" >&2; exit 1; }
+    set -- $(sfdisk -d $w/in.raw | sed -n "s/.*in.raw2 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
+    [ "$1" = 198656 ] || { echo "alpine-demo: not the root partition expected" >&2; exit 1; }
+    dd if=$w/in.raw of=$w/efi.vfat bs=512 skip=2048 count=196608 status=none
+    dd if=$w/in.raw of=$w/in.ext4 bs=512 skip=$1 count=$2 status=none
+    rm $w/in.raw
+    # Limine: no menu wait, the demo'"'"'s command line (init_on_free=1: what the kernel frees is zero, out of a snapshot).
+    cp images/alpine-demo/limine.conf $w/limine.conf
+    touch -d "@$SOURCE_DATE_EPOCH" $w/limine.conf
+    mcopy -o -m -i $w/efi.vfat $w/limine.conf ::/limine/limine.conf
+    r=/tmp/r
+    mkdir $r
+    debugfs -R "rdump / $r" $w/in.ext4 2>/dev/null
+    rm $w/in.ext4
+    # Alpine'"'"'s base: what the cloud image adds over it removed (tiny-cloud, sshd, chronyd, dhcpcd: udhcpc instead).
+    chroot $r apk del --no-network --no-progress -q $del
+    for l in $r/etc/runlevels/*/*; do [ -e "$r$(readlink "$l")" ] || rm "$l"; done
+    rm -rf $r/var/log/apk.log $r/var/lib/cloud $r/etc/tiny-cloud.conf* $r/etc/ssh $r/etc/chrony $r/etc/doas.d $r/etc/dhcpcd.conf*
+    install -m 644 images/alpine-demo/inittab $r/etc/inittab
+    install -m 644 images/alpine-demo/interfaces $r/etc/network/interfaces
+    install -m 644 images/alpine-demo/repositories $r/etc/apk/repositories
+    install -m 644 images/alpine-demo/motd $r/etc/motd
+    install -m 644 images/alpine-demo/command-not-found.sh $r/etc/profile.d/command-not-found.sh
+    install -m 755 $w/waarm64-agent $r/etc/init.d/waarm64-agent
+    ln -s /etc/init.d/waarm64-agent $r/etc/runlevels/default/waarm64-agent
+    echo alpine > $r/etc/hostname
+    rm -rf $r/etc/apk/cache $r/var/cache/apk/*
+    find $r -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    # A 1 GiB disk: the EFI partition as it was, "/" the rest.
+    truncate -s 1G $w/disk.raw
+    printf "%s\n" "label: gpt" "label-id: 57413634-0000-4000-8000-000000000021" "unit: sectors" \
+      "start=2048, size=196608, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=57413634-0000-4000-8000-000000000022, name=\"EFI\"" \
+      "start=198656, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=57413634-0000-4000-8000-000000000023, name=\"/\"" |
+      sfdisk -q $w/disk.raw
+    set -- $(sfdisk -d $w/disk.raw | sed -n "s/.*disk.raw2 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
+    # Its inode tables and journal written out here (zeros: free in the qcow2 and the pieces), not by the guest
+    # first mount: a lazy init wrote 15 MB of zeros into the overlay of a template made from it.
+    E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d $r -L / -U 57413634-0000-4000-8000-000000000024 \
+      -E hash_seed=57413634-0000-4000-8000-000000000025,no_copy_xattrs,lazy_itable_init=0,lazy_journal_init=0 $w/root.ext4 $(($2 / 2))k
+    e2fsck -fn $w/root.ext4 >/dev/null
+    dd if=$w/efi.vfat of=$w/disk.raw bs=512 seek=2048 conv=notrunc status=none
+    dd if=$w/root.ext4 of=$w/disk.raw bs=512 seek=$1 conv=notrunc status=none
+    # One coroutine: the clusters in order, so the file is the same each time.
+    qemu-img convert -m 1 -c -O qcow2 $w/disk.raw $dst/alpine-demo.qcow2
+    rm $w/disk.raw $w/root.ext4 $w/efi.vfat
+  ' - "$out" "$w" "$out/dl/alpine-$ALPINE-iso" "$dst" "$DEMO_DEL" "$USERLAND_TOOLS" "$DEMO_TOOLS"
+}
+
 # EDK2 (pinned by tag, checked against the commit; its submodules pinned by it)
 # into a fresh copy of the tree, built natively in Debian's arm64 container.
 build_edk2() {
@@ -732,10 +811,11 @@ inputs() {
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/Waarm64XhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
+  [ "$1" = alpine-demo ] && files+=($(find images/alpine-demo -type f | sort) "$out/alpine-uefi/.inputs") && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER|DEMO_)'
   [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml agent/no-unwind.ld $(find agent/src -type f | sort)) && pins='^AGENT_'
   [ "$1" = venus ] && files=(vk/build.sh) && pins='^VENUS_'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; if [ "$1" = venus ]; then vk/build.sh --inputs; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; if [ "$1" = venus ]; then vk/build.sh --inputs; fi; if [ "$1" = alpine-demo ]; then agent_openrc; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -759,6 +839,7 @@ outputs() {
     fptest) echo fptest/initramfs.cpio fptest/fptest.tar ;;
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
+    alpine-demo) echo alpine-demo/alpine-demo.qcow2 ;;
     agent) echo agent/waarm64-agent agent/waarm64-agent.gz ;;
     venus) echo venus/venus.wasm venus/LICENSES.txt ;;
   esac
@@ -812,10 +893,10 @@ build() {
 }
 
 if [ -z "${WAARM64_IN_CONTAINER:-}" ]; then
-  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi= agent= venus=
+  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi= alpine_demo= agent= venus=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = venus ]; then venus=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = alpine-demo ]; then alpine_demo=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = venus ]; then venus=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
   done
   # The Buildroot images, natively in the host's architecture.
   if [ ${#br[@]} -gt 0 ]; then
@@ -837,6 +918,7 @@ if [ -z "${WAARM64_IN_CONTAINER:-}" ]; then
   if [ -n "$kernel" ]; then build linux; fi
   if [ -n "$debian" ]; then build debian; fi # Node on the host (tools/debian.ts)
   if [ -n "$alpine_uefi" ]; then build alpine-uefi; fi # the same
+  if [ -n "$alpine_demo" ]; then build alpine-demo; fi # after alpine-uefi
   if [ -n "$alpine" ]; then build alpine; fi
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$gl" ]; then build alpine-gl; fi

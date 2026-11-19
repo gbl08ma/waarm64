@@ -1,0 +1,92 @@
+{
+ "made": "2026-11-19T06:12:15.987Z",
+ "image": "target/images/alpine-demo/alpine-demo.qcow2",
+ "ram": 512,
+ "cpus": 2,
+ "ready": "agent",
+ "deflate": true,
+ "drop": false,
+ "compact": false,
+ "settle": 5,
+ "snapshot": {
+  "bytes": 15733195,
+  "header": 5540,
+  "tags": {
+   "CORE": {
+    "frames": 2,
+    "raw": 1193049,
+    "stored": 132518
+   },
+   "DEVS": {
+    "frames": 1,
+    "raw": 5390,
+    "stored": 1740
+   },
+   "RAM ": {
+    "frames": 103,
+    "raw": 63855840,
+    "stored": 15574511
+   },
+   "DISK": {
+    "frames": 20,
+    "raw": 307200,
+    "stored": 18854
+   },
+   "END ": {
+    "frames": 1,
+    "raw": 0,
+    "stored": 32
+   }
+  },
+  "pins": [
+   {
+    "slot": 7,
+    "blocks": 75,
+    "overlay": "overlays/7e4206c2cf73",
+    "generation": 1
+   }
+  ],
+  "template": true
+ },
+ "lz4": {
+  "bytes": 24577514,
+  "header": 5524,
+  "tags": {
+   "CORE": {
+    "frames": 2,
+    "raw": 1193049,
+    "stored": 139847
+   },
+   "DEVS": {
+    "frames": 1,
+    "raw": 5390,
+    "stored": 2891
+   },
+   "RAM ": {
+    "frames": 103,
+    "raw": 63855840,
+    "stored": 24401317
+   },
+   "DISK": {
+    "frames": 20,
+    "raw": 307200,
+    "stored": 27903
+   },
+   "END ": {
+    "frames": 1,
+    "raw": 0,
+    "stored": 32
+   }
+  },
+  "pins": [
+   {
+    "slot": 7,
+    "blocks": 75,
+    "overlay": "overlays/7e4206c2cf73",
+    "generation": 1
+   }
+  ],
+  "template": false
+ },
+ "siteBytesBoot": 52040688
+}

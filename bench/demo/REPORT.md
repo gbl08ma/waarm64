@@ -158,3 +158,59 @@ definition's disk match wherever the site is hosted (the template here was made 
 another); a machine from a template restores it at its first start, with no question, its pins by slot forking onto
 the machine's fresh overlays (tests/template.test.ts, tests/page-template-first.test.ts in a fresh profile); and the
 site's one `pieces/` directory (`tools/chunk-image.ts --pieces`, `deploy/disks/_headers`).
+
+## DEMO loop 3: the alpine-demo image, its template deflated (2026-11-19)
+
+**What.** The demo's own guest (`images/build.sh alpine-demo`, docs/images.md): alpine-uefi's Limine image cut to
+Alpine's base (alpine-base, e2fsprogs, linux-virt, Limine: 45 packages, ~75 MB used), root logged in on the serial
+console, udhcpc, apk with `main` (community on demand), the command-not-found hook, the agent's OpenRC service, the
+motd, `init_on_free=1`, Limine without its wait; a 1 GiB disk, `alpine-demo.qcow2` 73.0 MB (35 pieces of 2 MiB, 21
+distinct). Its template by `bench/demo/make-template.ts` (now the demo builder's seed: boots on the page with
+`?ready=guest`, waits for the agent's HELLO, which comes ~17–20 s after the start, clears the console to the motd, keeps
+a snapshot with the agent dropping the guest's caches first, flags it as a template and **deflates its frames**:
+`tools/snapshot-template.ts --deflate`). 2 vCPUs, 512 MiB, an adapter with no connection. Harness as loop 1's (target
+`waarm64-template`, `DEMO_TEMPLATE=alpine-demo`, `DEMO_LINK=100/20`: 100 Mbit/s shared, 20 ms a request; the page's
+files at their brotli size). Dev VM, Chromium 155.0.8059.84 headless, commit df7e54eb plus this loop's changes, the page
+from `npm run dist`, a quiet machine. JSON: `results/demo-3/` (`template-alpine-demo.json`: what the template holds,
+deflated and as LZ4).
+
+**The template** (MB = 10^6 bytes): RAM 64.0 raw (nonzero pages), the overlay 76 blocks (0.3 MB raw, 19 KB stored: what
+the boot wrote), the CPU state 1.2 raw.
+
+| Frames | Snapshot | RAM as stored | CORE | DISK |
+|---|---|---|---|---|
+| LZ4 (the page's codec) | 24.6 | 24.3 | 0.14 | 0.03 |
+| **deflate (codec 3, level 9)** | **15.7** | 15.5 | 0.13 | 0.02 |
+
+A first build's ext4 left its inode tables to the kernel's lazy init, which wrote 3,653 blocks (15 MB of zeros) into the
+template's overlay at the first boot: cheap in the file (34 KB) but 15 MB written into a visitor's OPFS at the restore.
+mke2fs now writes them (`lazy_itable_init=0`, zeros: free in the qcow2 and the pieces).
+
+**Restored, click to a command answered**, the same template as LZ4 (B) and deflated (A), alternated, two rounds of 3
+runs each (medians, IQR; *on the wire*: the page brotli'd 2.5 MiB, the snapshot, the disk's pieces read by the command):
+
+| Arm, link | Click → made | → prompt | → **command** | `apk --version` after | Snapshot | Disk | **On the wire** | PSS prompt / peak |
+|---|---|---|---|---|---|---|---|---|
+| A deflate, 100/20, round 1 | 1.55 (0.08) | 2.56 (0.18) | **3.04 (0.21) s** | 0.72 s | 15.0 MiB | 6.0 | **23.5 MiB (24.7 MB)** | 729 / 783 MiB |
+| B LZ4, 100/20, round 1 | 2.25 (0.06) | 3.16 (0.11) | **3.69 (0.17) s** | 0.70 s | 23.4 | 9.6 | 32.1 MiB (33.6 MB) | 699 / 762 |
+| A deflate, 100/20, round 2 | 1.52 (0.03) | 2.43 (0.08) | **2.91 (0.09) s** | 0.70 s | 15.0 | 6.0 | **23.5 MiB (24.7 MB)** | 711 / 784 |
+| B LZ4, 100/20, round 2 | 2.22 (0.05) | 3.12 (0.10) | **3.59 (0.10) s** | 0.68 s | 23.4 | 6.0 | 32.0 MiB (33.5 MB) | 713 / 757 |
+| A deflate, localhost | 0.19 (0.01) | 0.50 (0.01) | **0.70 (0.01) s** | 0.49 s | 15.0 | 9.6 | — | 728 / 767 |
+| B LZ4, localhost | 0.23 (0.02) | 0.52 (0.04) | **0.73 (0.04) s** | 0.49 s | 23.4 | 9.6 | — | 724 / 755 |
+
+- **Deflate: −0.65 s and −8.5 MiB at 100/20** (the arms' rounds don't overlap: 2.91–3.04 against 3.59–3.69), and no
+  cost seen on localhost (0.70 against 0.73 s: inflating 64 MB at ~200 MB/s a thread, over the load pool's workers, is
+  under the noise). Built (codec 3, docs/platform.md "The snapshot file"); the page's own saves stay LZ4.
+- **Against the goal (≤ 5 s, ≤ 30 MB): met** — 2.9–3.0 s and 24.7 MB from the click (loop 1's spike: 3.49 s, 32.0 MB).
+  unkernel (loop 0): 1.3 s, 6.7 MiB. The disk's pieces read by the command vary between 2 and 3 (4–6 MiB; 9.6 MiB
+  with `apk --version` after): the restore's reads, which a prefetch from a trace would take with the snapshot.
+- PSS: deflate's peak ~20 MiB over LZ4's (not looked into; the browser's floor is ~410).
+
+**The command-not-found flow, checked by hand** (`bench/results/local/try-cnf.ts`, not committed: the template
+restored in a fresh profile, its card on the local helper, so the real dl-cdn through this machine's network): the
+motd and the prompt on the restored console; an address 10.5 s after `running` (busybox's udhcpc, its retries now every
+~3 s: with its default 20 s pause it was 25–30 s, its LEASE renewal having come during the restore's link flap);
+`python3 -c 'print(6*7)'` typed at the prompt installs python3 (16 packages, from main, the index fetched at first use)
+and prints 42 in 4.3–10.3 s; `fastfetch --version` enables `community` and runs (4.8 s); a name no package provides
+says so (127); `apk add lua5.4` 3.5 s. Not in CI: a test would need the network or a local signed repository (the
+virt ISO's `apks/` would serve, with packages this image doesn't have: openssh, chrony, dhcpcd), left in backlog.md.

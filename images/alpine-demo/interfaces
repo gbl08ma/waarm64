@@ -1,0 +1,10 @@
+# waarm64's alpine-demo image (images/alpine-demo/interfaces): the network card by DHCP, through BusyBox's udhcpc
+# (no dhcpcd installed). The guest agent renews its lease after a restore; udhcpc asks again every few seconds while
+# it has none (3 tries 2 s apart, 3 s between rounds; busybox's default waits 20 s), so a template restored onto a
+# network (its link flapping at the restore) has an address within seconds of it.
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+	udhcpc-opts -t 3 -T 2 -A 3

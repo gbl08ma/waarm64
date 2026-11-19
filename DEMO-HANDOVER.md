@@ -8,6 +8,9 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   2), and machine records are unchanged but for an optional `fromDemo`. One thing to know: an exported definition is now
   version 2, which a page from before loop 4 refuses.
 
+- **Loop 3 (snapshot codec 3):** nothing to export first. Kept snapshots stay LZ4 and load as before; only templates made
+  with `--deflate` are the new container version 3, which a page from before loop 3 refuses as newer.
+
 ## How the track runs (the user, 2026-11-19)
 
 - The kickoff's "Needs the user's OK" is red lines (deploys, allowlist rules past `dl-cdn.alpinelinux.org`, new
@@ -64,6 +67,15 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   (bench/results/local/demo/site/alpine-spike): its shape hash matches what the tool computes, and a dry run plus
   `--apply` on a hard-linked copy of target/disks keeps the desktop's files (1009 files).
 
+- **Loop 3, the alpine-demo image, done** (2026-11-19, committed unpushed; docs/images.md `alpine-demo`,
+  [bench/demo/REPORT.md](bench/demo/REPORT.md) "DEMO loop 3"): `images/build.sh alpine-demo` (alpine-uefi's image cut to
+  Alpine's base, `images/alpine-demo/`; 73.0 MB, bit for bit, in SHA256SUMS); `bench/demo/make-template.ts` waits for
+  the agent and deflates the template; **snapshot frame codec 3, raw deflate** (the core's miniz_oxide, no new export:
+  `repackFrames` in web/snapshot-file.ts, `deflateCodec` in web/lz.ts, `tools/snapshot-template.ts --deflate`; the reader
+  and the load pool's workers read 2 and 3; a file with deflate frames is container version 3). **Numbers at 100/20:
+  click → command 2.9–3.0 s, 24.7 MB on the wire** (LZ4: 3.6–3.7 s, 33.5 MB): the goal's numbers met. Checked by hand
+  through the local helper: python3, community's fastfetch and lua installed on first use.
+
 - **Loop 6, the store's page, done** (2026-11-19, committed unpushed; docs/frontend.md "The demo store"): `/demos`
   (`demos.html` beside `index.html` in the copy; the dev server redirects `/demos` to `/web/app/demos`) and `#demos`,
   `?id=`, `?store=` (`web/app/demos-route.ts`); `DemosPage.svelte` in the machine's place with Back, Home's **Demos**
@@ -96,6 +108,12 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   `snapshot.json`, `definition.json`, pieces in `target/demos/pieces/`), then runs `tools/publish-demos.ts`. The tool
   refuses a template whose core format or shape hash differs from the checkout's: that's the cue to rebuild. An id's
   image must not change (a new image is a new id with `replaces`).
+- `bench/demo/make-template.ts` defaults to the alpine-demo image and the name `alpine-demo`: loop 5 passes `--site
+  target/demos --name alpine-term`. It boots with `?ready=guest` (the agent's HELLO, ~20 s), clears the console to the
+  motd, and deflates the snapshot (`--lz4` to skip; ~5 s for 64 MB). The template must be made from the same image the
+  site publishes (an id's image never changes), and remade when the core's format or shape changes.
+- **A restore's link flap vs LEASE** (backlog.md "The Alpine demo's loose ends"): the address comes ~10 s after the
+  restore, not at once; the first `apk` typed sooner fails. The page's fix is in lease-actions/devices.ts.
 - make-template.ts still writes a version-1-looking export (it calls `exportDefinition`, now version 2) with no `demo`:
   the card comes from demos.json, so nothing more is needed. The card's `download` can be left out (the tool writes the
   floor: snapshot + thumbnail + the image's prefetched pieces); a boot trace in the image's manifest makes that floor
@@ -103,31 +121,24 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
 - `scripts/ci-machines.sh` test: make a template from the local build, publish it into a temporary site, and restore
   it through `fetchStore` + `machineFromDemo` (tests/page-template-first.test.ts's second case is the stand-in version).
 
-## Next: loop 3, the alpine-demo image
-
-`images/build.sh alpine-demo` (decision 14, the user's barebones list). What loops 1–2 leave for it:
-- **The agent's service baked in:** `/etc/init.d/waarm64-agent` with `agentOpenrc()`'s text (web/app/guest-agent.ts; e.g.
-  `node -e` importing it, or a small tool, on the host before Podman) and its symlink in `/etc/runlevels/default/`. It
-  runs nothing where the machine gives no agent. **udhcpc** as the client (no dhcpcd package: ifupdown-ng then runs
-  udhcpc), which LEASE renews by SIGUSR1 (seen working in the test: busybox 1.37 logs "sending renew to server").
-- **Measured in loop 1, do these:** `init_on_free=1` on the kernel's command line (−7.7 MB of LZ4), Limine's
-  `timeout: 0` (−10 s of boot), no tiny-cloud, sshd, chronyd. **For loop 5's builder:** drop the guest's caches
-  before the template's snapshot (−7 MB). `bench/demo/make-template.ts` is the builder's seed; with the agent in the
-  image the template's boot reaches `running` (no more `booting` with root logged in), and a restore sets the clock.
-- `tests/page-alpine-agent.test.ts` is the seed for loop 5's ci-machines test (it makes a template on the page and
-  restores it in a fresh profile through `machineFromTemplate`; its card on the local helper).
-- **The next biggest cut (not built, a format change):** the template's RAM frames packed with deflate (the
-  browser's `DecompressionStream('deflate-raw')`, no dependency; the core inflates already) instead of LZ4: the
-  snapshot's RAM 25.0 → 16.0 MB, the whole download ~32 → ~23 MB (REPORT.md "What would close the gap"); loop 3 or 5.
-- The store's click (loop 6) calls `machineFromUrls` (web/app/template.ts) as the `?hooks` hook does; the definition
-  format's `demo.snapshot` (loop 4) replaces the hook's second argument. The site's layout is decision 17's: the
-  publish tool (loop 4) writes it with `chunk-image.ts --pieces`.
-
 ## Open questions
 
 None.
 
 ## Awaiting the user's review
+
+- **The alpine-demo image's contents** (loop 3; the user's barebones brief): Alpine 3.24.2 from alpine-uefi's pinned
+  cloud image, cut to alpine-base, e2fsprogs, linux-virt and Limine (45 packages; removed: tiny-cloud, chrony, dhcpcd,
+  doas, dosfstools, mount, nvme-cli, openssh, sgdisk, tzdata); hostname `alpine`; root logged in on the serial console
+  (`login -f root`), a getty on tty1; `eth0` by udhcpc (retrying every ~3 s); `/etc/apk/repositories` = main, with
+  community commented out; no apk cache; `/etc/profile.d/command-not-found.sh` (a missing command → `apk search -x
+  cmd:<name>` in main, then community, which it enables; installs; runs the typed line again); the motd (what to try,
+  the network reaches dl-cdn only, `curl http://192.168.127.1/status`); the agent's OpenRC service in the default
+  runlevel; Limine `timeout: 0`; the kernel's command line `… console=tty0 console=ttyAMA0 init_on_free=1`. 1 GiB disk.
+- **Loop 3's engineering calls:** the image is built from the pinned cloud image (nothing from the live repositories
+  goes in, so it's reproducible) rather than from the minirootfs; the template's frames are deflated (codec 3), the
+  page's own saves stay LZ4; a deflated file is container version 3, which a page from before loop 3 refuses as newer
+  (no existing snapshot changes: nothing to export first).
 
 - **Review #8 left as is (the user's decision):** a store's definition can turn on clipboard sharing (and shares);
   other stores' definitions get no extra restrictions.

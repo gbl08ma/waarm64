@@ -1,37 +1,40 @@
-// Makes the spike's Alpine template (bench/demo/REPORT.md "DEMO loop 1"; the real demo's build is loop 5's): the
-// image chunked into a site laid out as vmdisks.tny.im's will be (bench/demo/site.ts: one shared `pieces/`), a stored
-// machine made on the page (the dev server) with that image by its URL on the site, booted in a fresh profile to its
-// root prompt on the serial console, a snapshot saved there, flagged as a template (tools/snapshot-template.ts) and
-// chunked beside the image with the machine's definition (its disk's URL relative to it):
+// Makes a demo's template (bench/demo/REPORT.md "DEMO loop 1", "DEMO loop 3"; loop 5's automated build starts from it):
+// the image chunked into a site laid out as vmdisks.tny.im's will be (bench/demo/site.ts: one shared `pieces/`), a
+// stored machine made on the page (the dev server, `?ready=guest`) with that image by its URL on the site, booted in a
+// fresh profile until the guest agent says it's up (the machine `running`) and root's prompt is on the serial console,
+// the console cleared to the motd, a snapshot kept there (the page has the agent drop the guest's caches first), flagged
+// as a template with its frames deflated (tools/snapshot-template.ts `--deflate`) and chunked beside the image with
+// the machine's definition (its disk's URL relative to it):
 //   <site>/pieces/<sha256>.bin, <site>/<name>/manifest.json, definition.json, snapshot.json, template.json (what it holds)
-//   node bench/demo/make-template.ts [--image target/images/remote/alpine-spike.qcow2] [--name alpine-spike]
-//     [--site bench/results/local/demo/site] [--ram 512] [--cpus 2] [--drop] [--compact] [--settle 5]
-// `--drop` drops the guest's page cache before the snapshot (`echo 3 > /proc/sys/vm/drop_caches`), `--compact` that and
-// compacts its memory (`echo 1 > /proc/sys/vm/compact_memory`: free memory in whole blocks the guest reports); `--settle` waits
-// that many seconds at the prompt first (free page reporting hands the freed memory back: SNAPZ leaves it out).
-// The image: bench/demo/spike-image.sh. Bounded: run it under `timeout 600`.
+//   node bench/demo/make-template.ts [--image target/images/alpine-demo/alpine-demo.qcow2] [--name alpine-demo]
+//     [--site bench/results/local/demo/site] [--ram 512] [--cpus 2] [--ready agent|prompt] [--lz4] [--drop] [--compact] [--settle 5]
+// `--ready prompt`: an image without the agent (the spike's: bench/demo/spike-image.sh), whose prompt is the sign; `--lz4`:
+// the frames as the page wrote them (LZ4). `--drop` drops the guest's page cache by the shell before the snapshot (`echo 3 >
+// /proc/sys/vm/drop_caches`: what the agent does), `--compact` that and compacts its memory (`echo 1 >
+// /proc/sys/vm/compact_memory`: free memory in whole blocks the guest reports); `--settle` waits that many seconds at the
+// prompt first (free page reporting hands the freed memory back: SNAPZ leaves it out). Bounded: run it under `timeout 600`.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, openAsBlob, rmSync, writeFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { chromiumEnv } from '../../tools/nosme.ts';
-import { asTemplate } from '../../web/snapshot-file.ts';
 import { siteServer, type Served } from './site.ts';
 import { snapInfo } from './snapinfo.ts';
 
 const { values: a } = parseArgs({
   options: {
-    image: { type: 'string', default: 'target/images/remote/alpine-spike.qcow2' },
-    name: { type: 'string', default: 'alpine-spike' },
+    image: { type: 'string', default: 'target/images/alpine-demo/alpine-demo.qcow2' },
+    name: { type: 'string', default: 'alpine-demo' },
     site: { type: 'string', default: 'bench/results/local/demo/site' },
     ram: { type: 'string', default: '512' },
     cpus: { type: 'string', default: '2' },
     drop: { type: 'boolean', default: false },
     compact: { type: 'boolean', default: false },
     settle: { type: 'string', default: '5' },
+    ready: { type: 'string', default: 'agent' },
+    lz4: { type: 'boolean', default: false },
   },
 });
 const ROOT = new URL('../../', import.meta.url).pathname;
@@ -45,7 +48,8 @@ const chunk = (file: string, out: string, label: string) =>
 rmSync(dir, { recursive: true, force: true });
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
-chunk(resolve(ROOT, a.image!), dir, 'Alpine (DEMO spike)');
+if (a.ready !== 'agent' && a.ready !== 'prompt') throw new Error('--ready is agent or prompt');
+chunk(resolve(ROOT, a.image!), dir, `Alpine (${a.name})`);
 
 const served: Served[] = [];
 const disks = await siteServer(site, served, () => 'site');
@@ -97,19 +101,25 @@ try {
     [url, a.ram!, a.cpus!],
   );
   log('machine', id);
-  await page.goto(`${base}/web/app/?clocksync=0&m=${id}&view=both`);
-  // No login prompt (root is logged in) and no agent: the page's state stays `booting`; the prompt is the sign.
+  await page.goto(`${base}/web/app/?clocksync=0&ready=guest&dropcaches=1&m=${id}&view=both`);
+  // Root is logged in (no login prompt to see); with the agent, the machine is `running` once it says hello. Without
+  // it, the page's state stays `booting`: the prompt is the sign.
   const t0 = Date.now();
+  if (a.ready === 'agent') {
+    await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
+    log('the agent up after', Date.now() - t0, 'ms');
+  }
   await until(page, /~#\s*$/, 300_000);
   log('prompt after', Date.now() - t0, 'ms');
   if (process.env.MEMINFO) {
-    await type(page, 'clear; free -k; grep -E "^(Cached|Buffers|Slab|SReclaimable|AnonPages|Shmem|KernelStack|PageTables|MemFree|Percpu|VmallocUsed)" /proc/meminfo; cat /sys/kernel/mm/transparent_hugepage/enabled 2>&1; cat /proc/cmdline\n');
+    await type(page, 'clear; free -k; grep -E "^(Cached|Buffers|Slab|SReclaimable|AnonPages|Shmem|KernelStack|PageTables|MemFree|Percpu|VmallocUsed)" /proc/meminfo; cat /sys/kernel/mm/transparent_hugepage/enabled 2>&1; cat /proc/cmdline; ip link show eth0\n');
     await page.waitForTimeout(3000);
     log('meminfo', (await page.evaluate(() => [...document.querySelectorAll('.xterm-rows > div')].map((r) => r.textContent?.trimEnd()).filter(Boolean).join('\n'))));
   }
   // Free memory the guest reports (virtio-balloon's free page reporting: whole 4 MiB blocks, 2 s after) is zero in the
   // snapshot; memory freed in small pieces isn't. `--compact` gathers it into whole blocks first.
-  const prep = [a.drop || a.compact ? 'sync; echo 3 > /proc/sys/vm/drop_caches' : '', a.compact ? 'echo 1 > /proc/sys/vm/compact_memory' : '', 'clear'];
+  // The console as a restore shows it (the snapshot carries its tail): the motd and the prompt.
+  const prep = [a.drop || a.compact ? 'sync; echo 3 > /proc/sys/vm/drop_caches' : '', a.compact ? 'echo 1 > /proc/sys/vm/compact_memory' : '', 'clear', 'cat /etc/motd'];
   await type(page, `${prep.filter(Boolean).join('; ')}\n`);
   await page.waitForTimeout(Number(a.settle) * 1000);
   await until(page, /~#\s*$/, 10_000);
@@ -146,9 +156,9 @@ try {
   for (const d of def.disks) if (d.url) d.url = 'manifest.json';
   writeFileSync(join(dir, 'definition.json'), `${JSON.stringify(def, null, 1)}\n`);
   const template = join(work, 'template.waarm64snap');
-  await writeFile(template, (await asTemplate(await openAsBlob(plain))).stream());
-  chunk(template, join(dir, 'snapshot.json'), 'Alpine (DEMO spike), its template');
-  const info = { made: new Date().toISOString(), image: a.image, ram: Number(a.ram), cpus: Number(a.cpus), drop: a.drop, compact: a.compact, settle: Number(a.settle), snapshot: snapInfo(template), siteBytesBoot: served.reduce((n, s) => n + s.bytes, 0) };
+  execFileSync('node', [join(ROOT, 'tools/snapshot-template.ts'), plain, template, ...(a.lz4 ? [] : ['--deflate'])], { stdio: 'inherit' });
+  chunk(template, join(dir, 'snapshot.json'), `Alpine (${a.name}), its template`);
+  const info = { made: new Date().toISOString(), image: a.image, ram: Number(a.ram), cpus: Number(a.cpus), ready: a.ready, deflate: !a.lz4, drop: a.drop, compact: a.compact, settle: Number(a.settle), snapshot: snapInfo(template), lz4: snapInfo(plain), siteBytesBoot: served.reduce((n, s) => n + s.bytes, 0) };
   writeFileSync(join(dir, 'template.json'), `${JSON.stringify(info, null, 1)}\n`);
   log('template', JSON.stringify(info));
 } finally {

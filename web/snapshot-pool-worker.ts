@@ -7,7 +7,7 @@
 // GC (SNAPZ loop 2b). For a load: a piece of the file (transferred) and its frames' jobs, each frame's CRC checked and
 // a RAM frame's unpacked and its pages put straight into guest RAM, nothing posted back but the frames it failed and the
 // times.
-import { codecCore, MAX } from './lz.ts';
+import { codecCore, DEFLATE, MAX } from './lz.ts';
 import { applyRam, frameHeader, gatherPages, scanChunk, type FrameJob, type FrameTimes, type RamFrame } from './snapshot-file.ts';
 
 /**
@@ -90,8 +90,9 @@ function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
   t0 = performance.now();
   const [id, rawLen] = [head.getUint32(4, true), head.getUint32(16, true)];
   let at = c.dst + 32;
-  if (id === 2) {
-    if (rawLen > MAX || c.ex.lz_decompress(c.dst + 32, j.len, c.src, rawLen) >>> 0 !== rawLen) throw new Error('the frame does not unpack to its size');
+  if (id === 2 || id === DEFLATE) {
+    const n = rawLen > MAX ? -1 : (id === 2 ? c.ex.lz_decompress(c.dst + 32, j.len, c.src, rawLen) : c.ex.inflate_raw(c.dst + 32, j.len, c.src, rawLen)) >>> 0;
+    if (n !== rawLen) throw new Error('the frame does not unpack to its size');
     at = c.src;
   } else if (id !== 0 || j.len !== rawLen) throw new Error('a frame of another codec');
   t.unpack += performance.now() - t0;

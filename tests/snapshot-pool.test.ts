@@ -2,14 +2,15 @@
 // a worker's error is handled where the pool is (not passed on to the machine worker's parent), a lost reply or a
 // worker that stops answering fails the pool instead of hanging the save, one worker's failure ends every worker, the
 // workers made are ended when one can't be; and what the writer and the reader make of it: a refusal is the first
-// failing frame's, a codec the workers don't write isn't given to them. The rest of the pool's tests (the file
+// failing frame's, a codec the workers don't write isn't given to them; a template's frames deflated (codec 3) are read
+// through the pool and on one thread alike. The rest of the pool's tests (the file
 // byte-identical for any size, RAM placed as on one thread): tests/snapshot.test.ts.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { crc32 as zlibCrc32 } from 'node:zlib';
-import { lzCodec } from '../web/lz.ts';
-import { applyRam, openSnapshot, SnapshotError, SnapshotWriter, type SnapshotHeader } from '../web/snapshot-file.ts';
+import { deflateCodec as coreDeflate, lzCodec } from '../web/lz.ts';
+import { applyRam, openSnapshot, repackFrames, SnapshotError, SnapshotWriter, type SnapshotHeader } from '../web/snapshot-file.ts';
 import { poolWorker, startPool, type Spawn } from '../web/snapshot-pool.ts';
 import type { PoolInit, PoolJob, PoolReply } from '../web/snapshot-pool-worker.ts';
 import { deflateCodec } from './snapshot-codecs.ts';
@@ -189,6 +190,42 @@ test('a restore through the pool refuses the first damaged frame, not a later on
       assert.equal((e.msg.params?.what as { key?: string })?.key, 'snapshots:snapshot-file.damage.unpack', 'the earlier frame\'s refusal');
       return true;
     });
+  } finally {
+    pool.close();
+  }
+});
+
+test('a file repacked with deflate (codec 3: a template\'s) is smaller and restores the same, through the pool and on one thread', async () => {
+  const codec = await lzCodec(WASM);
+  const view = ram(8);
+  const lz = new Blob([(await fileOf(view, codec)).file]);
+  const file = await repackFrames(lz, codec, await coreDeflate(WASM));
+  assert.ok(file.size < lz.size, `smaller: ${file.size} against LZ4's ${lz.size}`);
+  const head = new DataView(await file.slice(0, 12).arrayBuffer());
+  assert.equal(head.getUint32(8, true), 3, 'version 3');
+  let deflated = 0;
+  const bytes = Buffer.from(await file.arrayBuffer());
+  for (let at = 20 + bytes.readUInt32LE(12); at < bytes.length; at += 32 + bytes.readUInt32LE(at + 20)) if (bytes.readUInt32LE(at + 4) === 3) deflated++;
+  assert.ok(deflated >= 8, `the frames deflated: ${deflated}`);
+  const pool = await startPool(WASM, 2);
+  assert.ok(pool);
+  try {
+    for (const p of [pool, undefined]) {
+      // Through the pool, RAM's deflated frames are the workers' alone: here they'd fail (a worker's failed frame is
+      // done again here).
+      const here: typeof codec = { ...codec, decompress: (b, n, id) => (p && id === 3 && n > 4096 ? Promise.reject(new Error('a RAM frame here')) : codec.decompress(b, n, id)) };
+      const s = await openSnapshot(file, { codec: here, pool: p, piece: 300_001 });
+      const into = new Uint8Array(new SharedArrayBuffer(view.length));
+      let core = 0;
+      for await (const f of s.frames()) {
+        if (f.tag === 'RAM ') f.place!(into, f.index);
+        if (f.tag === 'CORE') core += f.data.filter((b) => b === 9).length;
+      }
+      await s.placed();
+      assert.equal(s.pooled, p ? 2 : 0);
+      assert.equal(core, 3000, 'CORE');
+      assert.ok(Buffer.compare(into, view) === 0, `RAM ${p ? 'through the pool' : 'on one thread'}`);
+    }
   } finally {
     pool.close();
   }

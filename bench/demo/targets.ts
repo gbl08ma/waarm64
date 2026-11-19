@@ -203,7 +203,7 @@ const alpine: Target = {
 };
 
 const SITE = new URL('../results/local/demo/site/', import.meta.url).pathname;
-const SPIKE = process.env.DEMO_TEMPLATE ?? 'alpine-spike';
+const SPIKE = process.env.DEMO_TEMPLATE ?? 'alpine-demo';
 
 /**
  * DEMO loop 1's spike: the spike's Alpine template (bench/demo/make-template.ts) restored in a fresh profile with no
@@ -215,7 +215,7 @@ const SPIKE = process.env.DEMO_TEMPLATE ?? 'alpine-spike';
 const template: Target = {
   name: 'waarm64-template',
   system: 'waarm64',
-  what: `${process.env.DEMO_LINK ? `through one link of ${process.env.DEMO_LINK} (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): ` : ''}the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and the spike's Alpine template (bench/demo/make-template.ts: Alpine 3.24.2's UEFI cloud image with root logged in on the serial console, bench/demo/spike-image.sh) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to the root shell`,
+  what: `${process.env.DEMO_LINK ? `through one link of ${process.env.DEMO_LINK} (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): ` : ''}the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and a demo's template (\`DEMO_TEMPLATE\`, default alpine-demo: bench/demo/make-template.ts from images/build.sh alpine-demo; alpine-spike, loop 1's: bench/demo/spike-image.sh) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to the root shell`,
   offline: true,
   serve: async () => {
     if (!existsSync(`${DIST}index.html`)) throw new Error('build the page first: npm run dist -- --out bench/results/local/demo/dist');

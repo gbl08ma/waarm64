@@ -12,7 +12,7 @@ import { runInNewContext } from 'node:vm';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
 import type { Vm } from '../web/vm.ts';
 import {
-  applyRam, crc32, diskBlocks, diskRuns, openSnapshot, readHeader, SnapshotError, SnapshotWriter,
+  applyRam, crc32, DEFLATE, diskBlocks, diskRuns, openSnapshot, readHeader, repackFrames, SnapshotError, SnapshotWriter,
   type Codec, type SnapshotHeader,
 } from '../web/snapshot-file.ts';
 import { deflateCodec, storedCodec } from './snapshot-codecs.ts';
@@ -254,6 +254,35 @@ test('a pluggable codec round trips, and a frame of another codec is refused', a
   await refused(readAll(whole(file), { codec: { ...tail, id: 3 } }), 'corrupt', /damage\.codec \{codec=2\}/);
 });
 
+test('repackFrames: frames packed again by another codec where smaller (version 3 with deflate\'s), read by a codec that reads both, refused by one that doesn\'t and in an older version', async () => {
+  // The page's reader: its own id (2) and deflate's (3); here both are JS deflate, told apart by the id.
+  const reader: Codec = { ...deflateCodec, reads: [DEFLATE] };
+  const deflate3: Codec = { ...deflateCodec, id: DEFLATE };
+  const content: Content = { core: random(3000, 5), devs: new TextEncoder().encode('{"a":1}'.repeat(400)), ram: new Uint8Array(3 * MiB).fill(7, 4096, 3 * 4096), disk: [{ block: 4, data: new Uint8Array(4096).fill(3) }, { block: 5, data: new Uint8Array(4096).fill(4) }] };
+  const { file } = await write(content, { codec: storedCodec });
+  const packed = new Uint8Array(await (await repackFrames(new Blob([file]), storedCodec, deflate3)).arrayBuffer());
+  assert.ok(packed.length < file.length);
+  assert.equal(new DataView(packed.buffer).getUint32(8, true), 3, 'version 3');
+  const r = await restore(whole(packed), 3 * MiB, { codec: reader });
+  sameBytes(r.core, content.core!, 'core');
+  sameBytes(r.ram, content.ram!, 'ram');
+  // Its incompressible CORE stays stored (codec 0); the rest is codec 3.
+  const ids: number[] = [];
+  for (let at = 20 + new DataView(packed.buffer).getUint32(12, true); at < packed.length; at += 32 + new DataView(packed.buffer).getUint32(at + 20, true)) ids.push(new DataView(packed.buffer).getUint32(at + 4, true));
+  assert.deepEqual([...new Set(ids)].sort(), [0, 3]);
+  await refused(readAll(whole(packed), { codec: deflateCodec }), 'corrupt', /damage\.codec \{codec=3\}/);
+  const older = packed.slice();
+  new DataView(older.buffer).setUint32(8, 2, true);
+  await refused(readAll(whole(older), { codec: reader }), 'corrupt', /damage\.codec \{codec=3\}/);
+  // Packed again by a codec that shrinks nothing: the file as it was (frames, version).
+  const same = new Uint8Array(await (await repackFrames(new Blob([file]), storedCodec, storedCodec)).arrayBuffer());
+  assert.ok(Buffer.compare(same, file) === 0, 'unchanged');
+  // A damaged frame is refused, not packed again.
+  const bad = file.slice();
+  bad[bad.length - 100] ^= 1;
+  await refused(repackFrames(new Blob([bad]), storedCodec, deflate3), 'corrupt', /damage\.checksum/);
+});
+
 test('the codec\'s CRC-32 takes the frames\' checksums, in the writer and the reader (a check pass too); the header\'s is JS\'s', async () => {
   const tail = (crc: (b: Uint8Array, seed?: number) => number): Codec => ({
     id: 2,
@@ -286,8 +315,8 @@ test('refusals: not a snapshot, a newer format, truncated, corrupt', async () =>
   await refused(open(whole(new TextEncoder().encode('SQLite format 3\0 and a long tail of text'))), 'not-snapshot');
   await refused(open(whole(new Uint8Array(0))), 'not-snapshot');
   await refused(open(whole(file.slice(0, 5))), 'not-snapshot');
-  const newer = file.slice(); dv(newer).setUint32(8, 3, true);
-  await refused(open(whole(newer)), 'newer-format', /snapshot-file\.newerFormat \{format=3, reads=2\}/);
+  const newer = file.slice(); dv(newer).setUint32(8, 4, true);
+  await refused(open(whole(newer)), 'newer-format', /snapshot-file\.newerFormat \{format=4, reads=3\}/);
   const old = file.slice(); dv(old).setUint32(8, 0, true);
   await refused(open(whole(old)), 'corrupt');
   const hl = dv(file).getUint32(12, true);
@@ -386,7 +415,7 @@ test('refusals: well-formed frames that say impossible things', async () => {
   await refused(ok([hand('CORE', 2, 0, 1000, long), END(1)]), 'corrupt', /damage\.unpackSize/);
 });
 
-test('a small file: every prefix is refused as truncated (or not-snapshot below the magic), every flipped bit is refused', async () => {
+test('a small file: every prefix is refused as truncated (or not-snapshot below the magic), every flipped bit is refused (but version 1 read as 3: the same file)', async () => {
   const { file } = await write({ core: random(200, 1), devs: new TextEncoder().encode('{"a":1}'), ram: makeRam(65536 * 1).subarray(0, 4 * 4096), disk: [{ block: 3, data: new Uint8Array(4096).fill(9) }] });
   const everything = async (bytes: Uint8Array) => {
     const r = await restore(whole(bytes), 4 * 4096);
@@ -403,6 +432,8 @@ test('a small file: every prefix is refused as truncated (or not-snapshot below 
     for (let bit = 0; bit < 8; bit++) {
       const f = file.slice();
       f[i] ^= 1 << bit;
+      // A later version only allows more frame kinds (BLOB, deflate's): a version 1 file read as 3 is read the same.
+      if (i === 8 && f[i] === 3) { await everything(f); continue; }
       await assert.rejects(everything(f), (e: unknown) => e instanceof SnapshotError, `a flip at byte ${i} bit ${bit} was accepted`);
     }
   }

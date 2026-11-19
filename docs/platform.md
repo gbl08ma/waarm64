@@ -397,7 +397,8 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   Uint8Array in the backends' state, the display's 3D contents, is `{"$blob": n, "length": …}` in the JSON, and blob
   n's 1 MiB chunk k is a frame with `index` = n × 2^24 + k; [graphics.md](graphics.md) "Snapshots with 3D in use");
   `END ` (its `index` is the frame count). A file without its `END ` is truncated. A file with BLOB frames is format
-  version 2 (an older page refuses it as newer), one without is version 1. The header's own fields are `format`,
+  version 2 (an older page refuses it as newer), one with deflate's frames (codec 3, below) version 3, one with
+  neither version 1. The header's own fields are `format`,
   `coreVersion`, `abi`, `created`; the page's are in [frontend.md](frontend.md) "Snapshots".
 - **A zero page** is one whose words all are (`zeroPage`, on a Uint32Array over RAM); its word index is the byte
   offset shifted **unsigned** (`>>> 2`). Until 2026-10-19 a signed shift turned offsets past 2^31 negative, so every
@@ -409,7 +410,14 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   in the core (`core/src/codec.rs`, its safe encoder and decoder; through `web/lz.ts` on one worker), and the frames'
   CRC-32 goes through the core's crc32fast in the writer and the reader: both are given the codec (the header's CRC,
   read before any core instance exists, stays JS's: `crc32` in `web/snapshot-file.ts`, and `readHeader` reads a
-  header alone). Codecs 0 and 2 are all the reader takes. Settled by measurement: an LZ saves 6 times faster than
+  header alone). Codecs 0, 2 and 3 are all the reader takes. **Codec 3 is raw deflate** through the core's
+  miniz_oxide (`inflate_raw`, `deflate_raw`: the exports qcow2's clusters use), written only for a **template's
+  download**: `tools/snapshot-template.ts --deflate` (`repackFrames`, web/lz.ts `deflateCodec`, level 9) packs each
+  frame again where that's smaller; the page's own saves stay LZ4 (deflate writes at ~5 MB/s). The reader unpacks it
+  on one thread (`lzCodec` reads both) and in a load's pool's workers alike. Measured on the Alpine demo's template
+  (bench/demo/REPORT.md "DEMO loop 3"): the file 15.7 MB against LZ4's 24.6 (−36%), its frames unpacked ~5× slower
+  (~200 MB/s a thread against LZ4's ~1.1 GB/s, spread over the load's pool), which a restore on localhost doesn't
+  show; through 100 Mbit/s the click to a command is 0.65 s sooner. Settled by measurement: an LZ saves 6 times faster than
   deflate for a file 1.4 times larger (`bench/boot/REPORT.md` "M8 phase C loop 4"), and lz4_flex replaced the core's
   own LZ (`core/src/lz.rs`, same format) for a desktop save paused 9% less, its RAM frames unpacked 1.6x faster and a
   2% smaller file ("SNAPZ loop 1").

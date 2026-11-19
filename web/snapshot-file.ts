@@ -3,7 +3,7 @@
 // only (ReadableStream, Blob), so it runs in Node and in a worker. It knows nothing of the core but
 // through its codec: CORE is opaque bytes, DEVS is JSON the caller makes, RAM and DISK are cut here.
 //
-//   File  = "WAARMSNP"  u32 version (1, or 2 with BLOB frames)  u32 headerLen  header (JSON)  u32 crc32(header)  Frame*  END
+//   File  = "WAARMSNP"  u32 version (1; 2 with BLOB frames; 3 with deflate's)  u32 headerLen  header (JSON)  u32 crc32(header)  Frame*  END
 //   Frame = u32 tag  u32 codec  u64 index  u32 rawLen  u32 storedLen  u32 crc  u32 reserved (0), then
 //           the stored bytes. Little-endian. The CRC covers the first 24 header bytes (tag to
 //           storedLen: so a flipped index or length is caught) and then the stored bytes. END's
@@ -15,10 +15,13 @@
 // 0's, each memory starting at a whole chunk: web/snapshot.ts `ramStarts`), DISK (a run of 1 to 256 consecutive overlay blocks, index =
 // the first block), BLOB (binary parts of DEVS: blob n's 1 MiB chunk k, index = n × 2^24 + k; a
 // file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 2 the LZ4 block format
-// (web/lz.ts: the core's lz4_flex); each frame is compressed alone, and stored when compressing doesn't shrink it. The
-// writer and the reader are given their codec, whose CRC-32 (the core's crc32fast) takes the frames' checksums; the
-// header's is this file's own (`crc32`: read before there is a codec). A frame of another codec is refused.
+// (web/lz.ts: the core's lz4_flex), 3 raw deflate (the core's miniz_oxide: a template's frames packed again for the wire
+// by `repackFrames`, ~35% smaller than LZ4's and ~5× slower to unpack; a file with them is version 3); each frame is
+// compressed alone, and stored when compressing doesn't shrink it. The writer and the reader are given their codec,
+// whose CRC-32 (the core's crc32fast) takes the frames' checksums; the header's is this file's own (`crc32`: read before
+// there is a codec). A frame of a codec the reader's doesn't read is refused.
 import { msg, MsgError, type Msg, type Params } from './msg.ts';
+import { DEFLATE } from './lz.ts';
 import { isZero } from './qcow2-write.ts';
 
 /**
@@ -57,6 +60,49 @@ export async function asTemplate(file: Blob, on = true): Promise<Blob> {
 }
 
 /**
+ * The snapshot in `file` with each frame packed again by `to` where that makes it smaller than it is (a template's
+ * frames for the wire, by deflate: web/lz.ts `deflateCodec`; tools/snapshot-template.ts `--deflate`), unpacked by `from`
+ * (a codec that reads the file's frames). The header and the frames' order and indices stay as they were; the frames'
+ * checksums are checked and made by `from`'s CRC-32. A file with a frame of {@link DEFLATE} is version 3.
+ */
+export async function repackFrames(file: Blob, from: Codec, to: Codec): Promise<Blob> {
+  const crc: Crc = from.crc32.bind(from);
+  const bytes = async (at: number, n: number) => new Uint8Array(await file.slice(at, at + n).arrayBuffer());
+  const fixed = await bytes(0, 16);
+  if (fixed.length < 16 || MAGIC.some((b, i) => fixed[i] !== b)) throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
+  const fv = new DataView(fixed.buffer);
+  const version = fv.getUint32(8, true);
+  if (version < 1 || version > VERSION) throw corrupt(msg('snapshots:snapshot-file.damage.formatNumber'));
+  const start = 20 + fv.getUint32(12, true);
+  const parts: Uint8Array<ArrayBuffer>[] = [];
+  let deflated = false;
+  for (let at = start; ; ) {
+    const hb = await bytes(at, FRAME_HEADER);
+    if (hb.length < FRAME_HEADER) throw truncated();
+    const h = frameHead(hb, version, from);
+    if (h.tag === 'END ') {
+      if (at + FRAME_HEADER !== file.size) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
+      parts.push(hb);
+      break;
+    }
+    const stored = await bytes(at + FRAME_HEADER, h.storedLen);
+    if (stored.length < h.storedLen) throw truncated();
+    if (frameCrc(hb, stored, crc) !== h.want) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
+    at += FRAME_HEADER + h.storedLen;
+    const raw = h.id === 0 ? stored : await from.decompress(stored, h.rawLen, h.id);
+    if (raw.length !== h.rawLen) throw corrupt(msg('snapshots:snapshot-file.damage.unpackSize'));
+    const packed = await to.compress(raw);
+    if (packed.length < stored.length) {
+      parts.push(encodeFrame(h.tag, to.id, h.index, h.rawLen, packed, crc));
+      deflated ||= to.id === DEFLATE;
+    } else parts.push(hb, stored);
+  }
+  const head = await bytes(0, start);
+  if (deflated) new DataView(head.buffer).setUint32(8, Math.max(version, 3), true);
+  return new Blob([head, ...parts]);
+}
+
+/**
  * Appends bytes to the output, in order. The bytes are the sink's only until it returns (or its promise resolves): a
  * sink copies what it keeps (a pool's frame buffer goes back to its worker then: web/snapshot-pool.ts).
  */
@@ -66,7 +112,11 @@ export type Sink = (bytes: Uint8Array) => void | Promise<void>;
  * web/lz.ts), which takes the frames' checksums in the writer and the reader.
  */
 export type Codec = {
-  id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array>;
+  id: number; compress(raw: Uint8Array): Promise<Uint8Array>;
+  /** `stored`, a frame of codec `id` (this codec's, or one of `reads`), unpacked to its `rawLen` bytes. */
+  decompress(stored: Uint8Array, rawLen: number, id?: number): Promise<Uint8Array>;
+  /** The other codecs' frames this one reads (web/lz.ts: deflate's, 3, beside its own LZ4). */
+  reads?: readonly number[];
   crc32(bytes: Uint8Array, seed?: number): number;
   /**
    * The pool's workers (web/snapshot-pool-worker.ts) write and read this codec's frames: the core's lz4_flex and
@@ -90,7 +140,9 @@ export type WriteTimes = { scan: number; compress: number; crc: number; sink: nu
 export type ReadTimes = { read: number; crc: number; unpack: number; apply: number };
 
 const MAGIC = new TextEncoder().encode('WAARMSNP');
-const VERSION = 2;
+const VERSION = 3;
+/** The codec of raw deflate's frames (web/lz.ts `deflateCodec`), in files of version 3. */
+export { DEFLATE };
 /** A BLOB frame's index: the blob times this, plus the chunk. */
 export const BLOB_CHUNKS = 2 ** 24;
 const FRAME_HEADER = 32;
@@ -716,7 +768,7 @@ type Head = { tag: string; id: number; index: number; rawLen: number; storedLen:
  * The fields of a frame header (`h`, its 32 bytes), checked as far as the header alone tells, in a file of format
  * `version` read with codec `codec`: END's own fields too, but not its count or what follows it (the reader's).
  */
-function frameHead(h: Uint8Array, version: number, codec: number): Head {
+function frameHead(h: Uint8Array, version: number, codec: Codec): Head {
   const v = new DataView(h.buffer, h.byteOffset, FRAME_HEADER);
   const tag = String.fromCharCode(h[0], h[1], h[2], h[3]);
   const id = v.getUint32(4, true);
@@ -732,7 +784,7 @@ function frameHead(h: Uint8Array, version: number, codec: number): Head {
     return { tag, id, index, rawLen, storedLen, want };
   }
   if (rawLen === 0 || rawLen > MAX_RAW || storedLen > rawLen) throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
-  if (id === 0 ? storedLen !== rawLen : id !== codec) {
+  if (id === 0 ? storedLen !== rawLen : (id !== codec.id && !codec.reads?.includes(id)) || (id === DEFLATE && version < 3)) {
     throw corrupt(id === 0 ? msg('snapshots:snapshot-file.damage.frameSize') : msg('snapshots:snapshot-file.damage.codec', { codec: id }));
   }
   if (tag === 'CORE' || tag === 'DEVS' || tag === 'BLOB' ? rawLen > CHUNK : tag === 'DISK' ? rawLen % PAGE !== 0 || rawLen > MAX_RUN * PAGE : false) {
@@ -801,7 +853,7 @@ export async function openSnapshot(
       let data: Uint8Array;
       try {
         const t = performance.now();
-        data = await codec.decompress(stored, rawLen);
+        data = await codec.decompress(stored, rawLen, id);
         times.unpack += performance.now() - t;
       } catch (e) {
         if (e instanceof SnapshotError) throw e;
@@ -829,7 +881,7 @@ export async function openSnapshot(
         const hb = await input.take(FRAME_HEADER);
         times.read += performance.now() - th;
         if (!hb) throw truncated();
-        const h = frameHead(hb, version, codec.id);
+        const h = frameHead(hb, version, codec);
         if (h.tag === 'END ') {
           if (h.index !== count) throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: h.index, came: count }));
           if (await input.more()) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
@@ -949,7 +1001,7 @@ export async function openSnapshot(
           hv = new Uint8Array(FRAME_HEADER);
           if (!(await copy(pos, FRAME_HEADER, hv, 0))) throw truncated();
         }
-        const h = frameHead(hv, version, codec.id);
+        const h = frameHead(hv, version, codec);
         if (h.tag === 'END ') {
           if (h.index !== count) throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: h.index, came: count }));
           if (pos + FRAME_HEADER < b.size) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
