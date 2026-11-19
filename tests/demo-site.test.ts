@@ -87,7 +87,7 @@ test("a site: the store with each demo's definition inline, its files under its 
   mkdirSync(join(s, 'desktop/pieces'), { recursive: true });
   writeFileSync(join(s, 'desktop/manifest.json'), '{}');
   writeFileSync(join(s, 'desktop/pieces/x.bin'), 'x');
-  const p = await plan(source([demo('alpine-term', a, { replaces: ['alpine-old'] })]), s);
+  const p = await plan(source([demo('alpine-term', a, { replaces: ['alpine-old'], template: true })]), s);
   applyPlan(p, s);
   const store = parseStore(readFileSync(join(s, 'store.json'), 'utf8'), 'https://vmdisks.example/store.json');
   assert.equal(store.skipped.length, 0);
@@ -96,6 +96,7 @@ test("a site: the store with each demo's definition inline, its files under its 
   assert.equal(d.disks[0].url, 'https://vmdisks.example/alpine-term/manifest.json');
   assert.equal(d.demo.snapshot?.manifest, 'https://vmdisks.example/alpine-term/snapshot.json');
   assert.deepEqual(d.demo.replaces, ['alpine-old']);
+  assert.equal(d.demo.template, true, "the card's template mark carried");
   const snapManifest = JSON.parse(readFileSync(join(s, 'alpine-term/snapshot.json'), 'utf8'));
   assert.equal(d.demo.snapshot?.id, snapManifest.id, "the card names the snapshot's content");
   assert.equal(d.demo.download, snapManifest.size, 'no download given: what a visit fetches at least (the snapshot)');
@@ -108,7 +109,7 @@ test("a site: the store with each demo's definition inline, its files under its 
   }
   assert.ok(existsSync(join(s, 'desktop/pieces/x.bin')), "another image's files stay as they are");
   assert.equal(readFileSync(join(s, '.assetsignore'), 'utf8'), '.publish.json\n', 'the ledger is not deployed');
-  const again = await plan(source([demo('alpine-term', a, { replaces: ['alpine-old'] })]), s);
+  const again = await plan(source([demo('alpine-term', a, { replaces: ['alpine-old'], template: true })]), s);
   assert.deepEqual([again.added, again.removed], [[], []], 'published again: nothing changes');
 });
 
@@ -129,6 +130,7 @@ test('refused: another core format, another shape, not a template, a download of
   writeFileSync(file, JSON.stringify(source([demo('x', ok, { snapshot: {} })])));
   assert.throws(() => readSource(file), /the tool's/);
   await refused(plan(source([demo('x', ok, { view: 'tty' })]), s), /demo\.view/);
+  await refused(plan(source([demo('x', ok, { template: 'yes' })]), s), /demo\.template/);
 });
 
 test("refused: an id over another image's directory; an id's image changed (a new image is a new id); past the host's budget", async () => {

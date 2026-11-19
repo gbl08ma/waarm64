@@ -7,8 +7,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { checkDefinition, exportDefinition, parseDefinition, type Definition } from '../web/app/definitions.ts';
-import { demoMachines, fetchStore, findDemo, parseStore, STORE_TYPE } from '../web/app/demo-store.ts';
-import { machineFromDemo } from '../web/app/template.ts';
+import { demoMachines, fetchStore, findDemo, parseStore, STORE_TYPE, templatesOf } from '../web/app/demo-store.ts';
+import { machineFromDemo, machineFromStoreTemplate } from '../web/app/template.ts';
 import { attach, createDisk, createMachine } from '../web/app/machines.ts';
 import { Connections } from '../web/app/connections.ts';
 import { Store } from '../web/app/store.ts';
@@ -81,6 +81,7 @@ test("a damaged definition's error names the field at fault: the machine's, a di
   assert.equal(bad((d) => (d.demo!.snapshot = { manifest: 's.json', id: 'short' })), 'demo.snapshot');
   assert.equal(bad((d) => (d.demo!.network = 'local' as 'demo')), 'demo.network');
   assert.equal(bad((d) => (d.demo!.replaces = ['alpine-term'])), 'demo.replaces', 'not itself');
+  assert.equal(bad((d) => (d.demo!.template = 'yes' as unknown as boolean)), 'demo.template');
   assert.equal(bad((d) => (d.demo = 'yes' as unknown as Definition['demo'])), 'demo');
   assert.equal(
     bad((d) => {
@@ -174,6 +175,36 @@ test("a demo's machine: marked with its store and id, its adapter on the demo ne
   await assert.rejects(machineFromDemo(store, findDemo(s, 'gone')!), (e) => msgOf(e)?.key === 'machines:template.gone');
   await assert.rejects(machineFromDemo(store, findDemo(s, 'other')!), (e) => msgOf(e)?.key === 'machines:template.otherSnapshot');
   assert.equal((await store.all('machines')).length, 1, 'no machine from a failed download');
+});
+
+test("templates (New machine's): only the demos marked so; a template's machine is the definition's, cold, the user's own", async () => {
+  const text = JSON.stringify({ type: STORE_TYPE, version: 1, demos: [await demoDef({ template: true }), await demoDef({ id: 'only-demo' }), await demoDef({ id: 'not', template: false })] });
+  const s = parseStore(text, STORE_URL);
+  assert.deepEqual(templatesOf(s).map((d) => d.def.demo.id), ['alpine-term'], 'only `template: true`');
+  const asked: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    asked.push(String(input instanceof Request ? input.url : input));
+    return new Response('no', { status: 404 });
+  }) as typeof fetch;
+  const store = fresh();
+  const d = templatesOf(s)[0];
+  const { machine, toPick } = await machineFromStoreTemplate(store, d);
+  assert.deepEqual(asked, [], 'nothing fetched: no template snapshot');
+  assert.deepEqual(toPick, []);
+  assert.equal(machine.name, 'Alpine');
+  assert.deepEqual([machine.ncpus, machine.ramMiB, machine.display], [2, 512, '2d'], "the definition's settings");
+  assert.equal(machine.fromDemo, undefined, "not the demo's: its card doesn't find it");
+  assert.equal(machine.restoreFirst, undefined, 'a cold boot');
+  assert.equal((await store.all('snapshots')).length, 0);
+  assert.equal(machine.adapters?.length, 1);
+  assert.equal(machine.adapters?.[0].connection, undefined, 'no demo network: the adapter without a connection');
+  assert.equal((await new Connections(store).list()).length, 0);
+  const disks = await store.all('disks');
+  assert.deepEqual(disks.map((x) => [x.kind, x.url]), [['url', 'https://disks.example/alpine-term/manifest.json']], "the definition's disk, its URL resolved");
+  assert.equal((await demoMachines(store, d)).mine.length, 0);
+  const again = await machineFromStoreTemplate(store, d);
+  assert.equal(again.machine.name, 'Alpine (2)', 'another, named past the first');
+  assert.equal((await store.all('disks')).length, 1, 'the same disk, by identity');
 });
 
 test('a machine from a version a demo replaces is found as older', async () => {

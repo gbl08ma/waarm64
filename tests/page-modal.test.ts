@@ -11,6 +11,7 @@ import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 import { MAX_RESIZE } from '../web/app/resize.ts';
+import { newEmptyMachine } from './page-home.ts';
 
 const DEMO = { format: 'waarm64-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: createHash('sha256').update('0'.repeat(64)).digest('hex') };
 let browser: Browser;
@@ -108,7 +109,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
+  await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.waitFor();
   const id = await m.getAttribute('data-selected');
@@ -238,7 +239,7 @@ test('a machine edited on the Home page while it is off on this page starts as i
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
+  await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-action=open]').click();
   // On the page with no disks: it waits, and the Home page offers Start (not a disabled "on this page").
@@ -266,7 +267,7 @@ test("Add a disk's size (ui/SizeField.svelte): a number and its unit, the same s
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
+  await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-tab=disks]').click();
   await page.locator('[data-action=add-disk-open]').click();
@@ -312,7 +313,7 @@ test("a 3D machine's Vulkan box: beside 3D only, its shape note, saved and kept 
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
+  await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.waitFor();
   const id = await m.getAttribute('data-selected');
@@ -370,7 +371,7 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   // Two machines: each click's machine is made and listed (chosen) before the next click; the list is read once both are.
   const picks = modal(page).locator('li > button.pick[data-machine]');
   for (const n of [1, 2]) {
-    await modal(page).locator('[data-action=new-machine]').click();
+    await newEmptyMachine(page);
     await page.waitForFunction((n) => document.querySelectorAll('.machines li > button.pick[data-machine]').length === n && !document.querySelector('.machines[data-busy]'), n, { timeout: 10_000 });
   }
   const ids = await picks.evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.machine!));
@@ -405,7 +406,7 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
+  await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-field=ram]').fill('2048');
   assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 2 GiB');
@@ -456,7 +457,7 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
   await answerAsks(page, (q) => { asked.push(q.text); });
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
+  await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-tab=disks]').click();
   const url = `${base}/tests/qcow2/deflate.qcow2`;
@@ -594,7 +595,7 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await answerAsks(page, (q) => { asked.push(q.text); });
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await modal(page).locator('[data-action=new-machine]').click();
+  await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   const id = await m.getAttribute('data-selected');
   await m.locator('[data-tab=disks]').click();

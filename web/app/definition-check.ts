@@ -130,6 +130,7 @@ const DEMO_CHECKS: Checks = {
   network: (x) => optional(x.network, (v) => v === 'demo'),
   replaces: (x) =>
     optional(x.replaces, (v) => Array.isArray(v) && v.length <= 64 && v.every((r) => isDemoId(r) && r !== x.id)),
+  template: (x) => optional(x.template, isBool),
 };
 
 /** The first of `checks` that `o` fails, as `<at>.<field>` (`at` empty: the field alone). */

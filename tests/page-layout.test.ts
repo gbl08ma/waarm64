@@ -6,6 +6,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
+import { newEmptyMachine } from './page-home.ts';
 
 let browser: Browser;
 let base: string;
@@ -25,7 +26,7 @@ test("the Home page's panes: the title and the body at one place, with buttons i
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await page.click('[data-action=new-machine]');
+  await newEmptyMachine(page);
   await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
   // Every pane (Demos isn't one: it opens the demo store's page in Home's place, tests/page-demos.test.ts).
   const ids = (await page.$$eval('nav [data-machine]', (bs) => bs.map((b) => (b as HTMLElement).dataset.machine!))).filter((id) => id !== 'demos');
@@ -131,7 +132,7 @@ test("the primitives: a form's buttons are one height (ui/Button.svelte), and th
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
-  await page.click('[data-action=new-machine]');
+  await newEmptyMachine(page);
   await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
   const got = await page.evaluate(() => {
     const control = getComputedStyle(document.documentElement).getPropertyValue('--control-h').trim();

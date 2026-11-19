@@ -6,7 +6,8 @@
 // marks the card, and asks Open my machine or Start a fresh copy (named with a suffix). `?id=` opens a demo, an unknown
 // id says so over the cards; `?store=` another store warns before anything past its JSON is fetched; and the failure
 // paths: the store's server down (Try again), the demo's files gone (404), the download cut off. Home's Demos opens the
-// store and its Back returns to Home. (With a guest, a click to a prompt: tests/page-demos-guest.test.ts.)
+// store and its Back returns to Home. New machine offers the store's demo as a template (DEMO loop 13): a machine with
+// its settings, cold, not the demo's; the store down, its empty machine still made. (With a guest, a click to a prompt: tests/page-demos-guest.test.ts.)
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
@@ -38,7 +39,7 @@ before(async () => {
   snapshot = new Uint8Array(made.snapshot);
   piece = createHash('sha256').update(snapshot).digest('hex');
   SNAP = createHash('sha256').update(piece).digest('hex');
-  const demo = { id: 'alpine-term', summary: 'A terminal.', thumbnail: 'alpine/thumb.png', download: snapshot.length, view: 'serial', snapshot: { manifest: 'alpine/snapshot.json', id: SNAP } };
+  const demo = { id: 'alpine-term', summary: 'A terminal.', thumbnail: 'alpine/thumb.png', download: snapshot.length, view: 'serial', snapshot: { manifest: 'alpine/snapshot.json', id: SNAP }, template: true };
   def = { ...made.def, version: 2, disks: made.def.disks.map((x) => ({ ...x, url: 'alpine/manifest.json' })), demo };
 });
 after(async () => {
@@ -145,6 +146,43 @@ test('?id= opens a demo, an unknown one says so over the cards; Home\'s Demos op
   assert.equal(await onPage(page), 'machines', 'Back to Home');
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test("New machine: a store's template makes a machine with its settings that boots (no snapshot, not the demo's); the store down, the empty machine still works", async () => {
+  const s: Site = { requests: [] };
+  const { ctx, page, errors } = await visitor(s);
+  await page.goto(`${base}/web/app/#home`);
+  await ready(page);
+  await page.locator('[data-action="new-machine"]').click();
+  await page.locator('#new-machine [data-template="alpine-term"]').click({ timeout: 30_000 });
+  await page.locator('#new-machine').waitFor({ state: 'detached', timeout: 30_000 });
+  const [m] = await machines(page);
+  const r = m as typeof m & { ncpus: number; ramMiB: number; display: string; adapters?: { connection?: string }[] };
+  assert.equal(r.name, 'Alpine');
+  assert.deepEqual([r.ncpus, r.ramMiB, r.display], [(def.machine as { ncpus: number }).ncpus, (def.machine as { ramMiB: number }).ramMiB, (def.machine as { display: string }).display], "the definition's settings");
+  assert.equal(r.fromDemo, undefined, "not the demo's");
+  assert.equal(r.restoreFirst, undefined, 'no template snapshot to restore');
+  assert.ok(!r.adapters?.some((a) => a.connection), 'no demo network');
+  assert.equal(await page.locator(`[data-machine="${m.id}"]`).count(), 1, 'listed, and chosen');
+  await page.locator('[data-action="open"]').click();
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
+  assert.equal((await starts(page))[0].snapshot, false, 'a cold boot');
+  assert.ok(!s.requests.some((u) => u.includes('snapshot.json') || u.includes('/pieces/')), "the demo's snapshot never fetched");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+
+  const down = await visitor({ down: true, requests: [] });
+  await down.page.goto(`${base}/web/app/#home`);
+  await ready(down.page);
+  await down.page.locator('[data-action="new-machine"]').click();
+  await down.page.locator('[data-field="templates-error"]').waitFor({ timeout: 30_000 });
+  assert.match(await text(down.page, '[data-field="templates-error"]'), new RegExp(t('machines:demo-store.failed')));
+  await down.page.locator('#new-machine [data-template="empty"]').click();
+  await down.page.locator('#new-machine').waitFor({ state: 'detached', timeout: 30_000 });
+  const [blank] = await machines(down.page);
+  assert.equal((blank as unknown as { attachments: unknown[] }).attachments.length, 0, 'an empty machine, no disks');
+  assert.deepEqual(down.errors, []);
+  await down.ctx.close();
 });
 
 test("?store= another store: its warning before anything past its JSON; accepted, its cards", async () => {

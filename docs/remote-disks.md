@@ -120,7 +120,8 @@ cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh
 ## Publishing the demos
 
 `node tools/publish-demos.ts [deploy/disks/demos.json] [--site target/disks] [--budget 15000] [--apply]`
-(`tools/demo-site.ts` is the plan): from the source file (per demo its card, name, thumbnail and its build, a
+(`tools/demo-site.ts` is the plan): from the source file (per demo its card, `template: true` where New machine offers
+it as a template too (docs/machines.md §6.3; a boolean, checked), name, thumbnail and its build, a
 directory as `bench/demo/make-template.ts` writes it: `manifest.json`, `snapshot.json`, `definition.json`), it lays out
 `store.json` (every live demo's definition inline, URLs relative to it: docs/machines.md §6.2), `<id>/manifest.json`,
 `snapshot.json`, `definition.json` (the same definition alone) and `thumb.<ext>`, all pieces in the one `pieces/`;

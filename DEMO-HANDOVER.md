@@ -101,6 +101,14 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   outage, `open()` reports; #9 a copy drops `fromDemo`. `knownDisk` (a URL the user adds) still finds a record of the
   same image from another host: user-initiated and now content-checked, so kept (loop 1's call).
 
+- **Loop 13, templates under New machine, done** (2026-11-19, committed unpushed; machines.md §6.3): New machine opens a
+  dialog (`web/app/NewMachine.svelte`): Empty machine (what it made before) and our store's demos marked
+  `demo.template: true` (`templatesOf`), each made by `machineFromStoreTemplate` (the definition without `demo`: no
+  snapshot, no demo network, no `fromDemo`; a cold boot). The store unreachable: said, Try again, Empty machine works.
+  `deploy/disks/demos.json`'s alpine-term is marked. Tests that clicked New machine use `tests/page-home.ts`
+  `newEmptyMachine` (answers our store empty: no request leaves the machine). Tests: tests/demo-store.test.ts,
+  demo-site.test.ts (Node); tests/page-demos.test.ts's New machine case (Chromium).
+
 ## Next: loop 5, the automated demo build
 
 - One command that makes each demo's build into **`target/demos/<id>/`**, which is where `deploy/disks/demos.json`
@@ -142,6 +150,14 @@ None.
 
 - **Review #8 left as is (the user's decision):** a store's definition can turn on clipboard sharing (and shares);
   other stores' definitions get no extra restrictions.
+
+- **Loop 13's engineering calls:** templates are opt-in per demo (`demo.template: true`; a game or 3D test demo, or a
+  second demo of one image, isn't a starting point), carried and type-checked by the publish tool. A template's machine
+  takes nothing of the demo: no snapshot (cold boot), no demo network (its adapter unconnected, as any new machine's: the
+  user attaches a connection), no `fromDemo`. Only our store's templates are offered (`?store=` is the store page's).
+  New machine is now a dialog (one click more for an empty machine); the store is fetched each time it opens. The
+  choices show name and summary, no thumbnail or download size (a template's download is the disk's reads, not a
+  number the card has).
 
 - **Loop 6's engineering calls:** the first visit opens the store only on a bare address with no machines, and never
   under automation unless `?firstvisit=1` (the tests open the page bare in fresh profiles; `leavewarning`'s precedent).

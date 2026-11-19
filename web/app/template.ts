@@ -5,7 +5,8 @@
 // what a restore onto other overlays is (web/app/snapshots.ts `planRestore`). A demo's (`machineFromDemo`, a store's
 // demo: web/app/demo-store.ts) is that from its definition's `demo`: its snapshot (checked against the content id the
 // definition names), its first adapter on the demo network when it asks (`network: "demo"`), and the record marked
-// with the demo it came from (`fromDemo`). DOM-free but for `fetch`.
+// with the demo it came from (`fromDemo`). A store's demo marked `template` makes a plain machine too
+// (`machineFromStoreTemplate`: its machine and disks only, New machine's). DOM-free but for `fetch`.
 import { checkManifest, contentId, fetchChunked, type Manifest } from '../chunked.ts';
 import { msgOf, MsgError } from '../msg.ts';
 import { importDefinition, parseDefinition, resolveUrls, type Definition } from './definitions.ts';
@@ -114,6 +115,19 @@ export async function machineFromDemo(
   const { machine } = await importDefinition(store, def, (m) => marked(m, store, o));
   return { machine };
 }
+
+/**
+ * A store's demo as a template (`demo.template`: New machine's, web/app/NewMachine.svelte): its definition without its
+ * `demo`, so no template snapshot (a cold boot from its disks), no demo network and no `fromDemo`. The machine is the
+ * user's own, as a copy of a demo's is.
+ */
+export function templateDefinition(d: StoreDemo): Definition {
+  const { demo: _, ...def } = d.def;
+  return def;
+}
+
+/** Makes store demo `d`'s machine as a template (`templateDefinition`); `toPick`: its disks that are files to pick. */
+export const machineFromStoreTemplate = (store: Store, d: StoreDemo) => importDefinition(store, templateDefinition(d));
 
 /**
  * A machine from a definition's URL: a demo's (`machineFromDemo`, the definition its own store), or, with `snapshot`

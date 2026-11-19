@@ -118,7 +118,7 @@ export const AREAS: Record<string, Area> = {
   machines: {
     // Stored machines, the store, the Machines and Home pages.
     heavy: ['tests/storage-full.test.ts'],
-    src: ['web/app/store*.ts', 'web/app/machine*.ts', 'web/app/machines*.ts', 'web/app/Machine*.svelte', 'web/app/MachinesPage.svelte', 'web/app/storage-report.ts', 'web/app/Storage*.svelte', 'web/app/locks.ts', 'web/app/areas/machines-nav.svelte.ts', 'web/app/areas/records.svelte.ts', 'web/app/definitions.ts', 'web/app/template.ts', 'web/app/demo-store.ts', 'web/app/demo-check.ts', 'web/app/demo-open.ts', 'web/app/demos-route.ts', 'web/app/Demo*.svelte', 'web/app/areas/demos.svelte.ts', 'tests/demos-route.test.ts', 'tests/demo-fixture.ts', 'tests/page-demos*.test.ts', 'tools/demo-site.ts', 'tools/publish-demos.ts', 'tests/demo-store.test.ts', 'tests/demo-site.test.ts', 'tests/template.test.ts'],
+    src: ['web/app/store*.ts', 'web/app/machine*.ts', 'web/app/machines*.ts', 'web/app/Machine*.svelte', 'web/app/MachinesPage.svelte', 'web/app/storage-report.ts', 'web/app/Storage*.svelte', 'web/app/locks.ts', 'web/app/areas/machines-nav.svelte.ts', 'web/app/areas/records.svelte.ts', 'web/app/definitions.ts', 'web/app/template.ts', 'web/app/demo-store.ts', 'web/app/demo-check.ts', 'web/app/demo-open.ts', 'web/app/demos-route.ts', 'web/app/Demo*.svelte', 'web/app/NewMachine.svelte', 'tests/page-home.ts', 'web/app/areas/demos.svelte.ts', 'tests/demos-route.test.ts', 'tests/demo-fixture.ts', 'tests/page-demos*.test.ts', 'tools/demo-site.ts', 'tools/publish-demos.ts', 'tests/demo-store.test.ts', 'tests/demo-site.test.ts', 'tests/template.test.ts'],
     push: ['ci-machines.sh'],
   },
   // ---- graphics

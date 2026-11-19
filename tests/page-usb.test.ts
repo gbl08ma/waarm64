@@ -14,6 +14,7 @@ import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { answerAsks, type Question } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
+import { newEmptyMachine } from './page-home.ts';
 
 const PLUGGED = t('usb:Usb.state.plugged');
 const UNGRANTED = t('usb:Usb.state.ungranted');
@@ -96,7 +97,7 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   const a = await profile();
   const { page, errors } = await open(a);
   // A new machine has the controller.
-  await page.click('.machines [data-action=new-machine]');
+  await newEmptyMachine(page);
   await page.locator('.machines [data-selected] [data-tab=settings]').waitFor();
   assert.equal(await page.isChecked('.machines [data-field=usb]'), true);
   await page.click('.machines [data-tab=usb]');

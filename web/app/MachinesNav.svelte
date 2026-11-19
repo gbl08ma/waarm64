@@ -1,7 +1,8 @@
 <!--
   The Home page's left column (MachinesPage.svelte): under its Machines heading, the page's own machine (a transient
   one) and the machines kept in this browser (each with its disks and its state), or a line saying there are none yet;
-  the commands that make one (new, from a disk image, import a definition: docs/machines.md §6), then the browser's
+  the commands that make one (new: NewMachine.svelte's dialog, an empty machine or a template; from a disk image;
+  import a definition: docs/machines.md §6), then the browser's
   panes (Disks, Shared folders, Connections, Preferences, About) with Demos before About, which opens the demo store's
   page (DemosPage.svelte) in Home's place.
 -->
@@ -10,7 +11,7 @@
   import { ABOUT, CONNECTIONS, DISKS, FOLDERS, PAGE, PREFERENCES } from './machines-panes.ts';
   import type { IconName } from './icons.ts';
   import type { Actions } from './actions.svelte.ts';
-  import { createMachine } from './machines.ts';
+  import NewMachine from './NewMachine.svelte';
   import { importDefinition, parseDefinition } from './definitions.ts';
   import { msg, t, type Msg } from '../i18n.ts';
   import type { MachineRecord } from './shape.ts';
@@ -75,10 +76,13 @@
   /** Anything in the list of machines (none: a line says so, and no rule parts it from the commands under it). */
   const listed = $derived(!!current.transient || machines.length > 0);
 
-  const newMachine = () =>
-    actions.run(t('machines:MachinesNav.busy.making'), async () => {
-      onchoose((await createMachine(store)).id);
-    });
+  /** New machine's dialog (NewMachine.svelte: an empty machine, or a template) is open. */
+  let making = $state(false);
+  /** A machine New machine made: chosen, and its disks that are files to pick said. */
+  function made(id: string, toPick?: { name: string; files: string[] }) {
+    onchoose(id);
+    if (toPick) actions.fail(msg('machines:MachinesNav.imported.toPick', toPick));
+  }
 
   let defInput = $state<HTMLInputElement>();
   /** Makes a machine from a definition file (docs/machines.md §6); disks that are files are picked at its first start. */
@@ -122,7 +126,7 @@
     <p class="none" data-empty="machines">{t('machines:MachinesNav.list.empty')}</p>
   {/if}
   <div class="new" class:ruled={listed}>
-    <button onclick={newMachine} data-action="new-machine">
+    <button onclick={() => (making = true)} data-action="new-machine">
       <Icon name="plus" size={16} />{t('machines:MachinesNav.newMachine')}
     </button>
     {#if current.firmware}
@@ -155,6 +159,7 @@
     {/each}
   </div>
 </nav>
+{#if making}<NewMachine {store} act={actions.run} onmade={made} close={() => (making = false)} />{/if}
 
 <style>
   nav {

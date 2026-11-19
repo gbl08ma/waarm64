@@ -54,6 +54,11 @@ export type Demo = {
   network?: 'demo';
   /** The ids of the versions it replaces (a machine made from one is "an older version of this demo"). */
   replaces?: string[];
+  /**
+   * `true`: offered under New machine as a template too, a starting point for the user's own machine (its machine and
+   * disks only: no snapshot, no demo network, no `fromDemo`; web/app/template.ts `machineFromStoreTemplate`).
+   */
+  template?: boolean;
 };
 
 export type DefinitionDisk = {

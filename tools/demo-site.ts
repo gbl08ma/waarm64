@@ -2,7 +2,7 @@
 // tools/publish-demos.ts writes into target/disks/ for vmdisks.tny.im, planned before anything is written.
 //
 // The input is a source file (deploy/disks/demos.json): per demo, its card (`demo`: id, summary, view, network,
-// replaces, download), a name, a thumbnail and its build: a directory as bench/demo/make-template.ts (loop 5's builder)
+// replaces, download, template: whether New machine offers it as a template too), a name, a thumbnail and its build: a directory as bench/demo/make-template.ts (loop 5's builder)
 // writes it, `manifest.json` (the image, chunked), `snapshot.json` (the template snapshot, chunked) and
 // `definition.json` (the machine that made the template, its disk's `url` relative to it), their pieces where their
 // manifests say. The site it makes:
@@ -51,7 +51,7 @@ const STAGED = '.publishing';
 const NOT_SITE = new Set([LEDGER, IGNORE]);
 
 /** The card's fields the source gives (the snapshot's and the thumbnail's are the tool's). */
-const CARD_FIELDS = ['id', 'summary', 'download', 'view', 'network', 'replaces'];
+const CARD_FIELDS = ['id', 'summary', 'download', 'view', 'network', 'replaces', 'template'];
 const ENTRY_FIELDS = ['build', 'name', 'thumbnail', 'demo'];
 const THUMBS = ['.webp', '.png', '.jpg', '.avif'];
 
@@ -234,6 +234,7 @@ export async function buildDemo(d: SourceDemo, root: string): Promise<Built> {
     ...(snapshot ? { snapshot: { manifest: `${prefix}snapshot.json`, id: snapshot.id } } : {}),
     ...(d.demo.network ? { network: d.demo.network } : {}),
     ...(d.demo.replaces?.length ? { replaces: d.demo.replaces } : {}),
+    ...(d.demo.template === undefined ? {} : { template: d.demo.template }),
   });
   const defAt = (prefix: string) => {
     const def = {

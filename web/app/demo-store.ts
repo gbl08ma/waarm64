@@ -4,7 +4,8 @@
 // URL is taken where a store's is: a store of that one demo. Each demo is checked as a definition file is
 // (web/app/definitions.ts `checkDefinition`); one this page can't read (a later version, damaged, an id seen before)
 // is left out and said (`skipped`), so a store with a newer demo still shows the others. A demo is known by its store's
-// URL and its id (`DemoRef`, a machine's `fromDemo`). DOM-free but for `fetch`.
+// URL and its id (`DemoRef`, a machine's `fromDemo`). A demo marked `template` is also offered under New machine
+// (`templatesOf`; web/app/NewMachine.svelte). DOM-free but for `fetch`.
 import { MsgError } from '../msg.ts';
 import { checkDefinition, DEFINITION_TYPE, resolveUrls, type Definition, type Demo } from './definitions.ts';
 import type { MachineRecord } from './shape.ts';
@@ -131,6 +132,9 @@ export async function fetchStore(url: string = OUR_STORE): Promise<DemoStore> {
 
 /** Store `s`'s demo `id`, if it has it. */
 export const findDemo = (s: DemoStore, id: string) => s.demos.find((d) => d.def.demo.id === id);
+
+/** Store `s`'s demos offered as templates under New machine (`demo.template`), in the store's order. */
+export const templatesOf = (s: DemoStore) => s.demos.filter((d) => d.def.demo.template === true);
 
 /** Whether machine `m` was made from demo `ref`. */
 export const madeFrom = (m: MachineRecord, ref: DemoRef) => m.fromDemo?.store === ref.store && m.fromDemo.id === ref.id;

@@ -661,7 +661,7 @@
   },
   "MachinesNav.imported.toPick": {
     "message": "<name>{{name}}</name> was created. You will be asked to select its disk files when it first starts: <name>{{files}}</name>.",
-    "note": "Home page: message bar text after Import a definition… made a machine with disks that are files on the user's computer. {{name}}: the new machine; {{files}}: the files' names, comma-separated."
+    "note": "Home page: message bar text after Import a definition… (or a template in the New machine dialog) made a machine with disks that are files on the user's computer. {{name}}: the new machine; {{files}}: the files' names, comma-separated."
   },
   "MachinePane.delete.confirm": {
     "message": "Delete <name>{{name}}</name>? This will delete its snapshots, its firmware settings, and its suspended state, if any. Its disks and their overlays will remain stored in this browser.",
@@ -867,13 +867,49 @@
     "message": "in this tab",
     "note": "Home page: a machine's state in the list of machines when it is the one open in this tab, off."
   },
-  "MachinesNav.busy.making": {
+  "NewMachine.busy": {
     "message": "Creating a machine",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: New machine."
+    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: the New machine dialog makes the machine chosen (empty, or from a template)."
   },
   "MachinesNav.newMachine": {
     "message": "New machine",
-    "note": "Home page: button under the list of machines that makes a machine with the default settings and no disks."
+    "note": "Home page: button under the list of machines that opens the New machine dialog (an empty machine, or one from a template)."
+  },
+  "NewMachine.title": {
+    "message": "New machine",
+    "note": "New machine dialog (Home page): its title. It offers what a new machine starts from: an empty machine or a template."
+  },
+  "NewMachine.empty": {
+    "message": "Empty machine",
+    "note": "New machine dialog: the choice that makes a machine with the default settings and no disks."
+  },
+  "NewMachine.empty.text": {
+    "message": "A machine with the default settings and no disks. Add a disk image or an empty disk to it afterwards.",
+    "note": "New machine dialog: the line under Empty machine, saying what it makes."
+  },
+  "NewMachine.templates": {
+    "message": "From a template",
+    "note": "New machine dialog: heading over the templates, systems from waarm64's demo store to start a machine from. Each is listed by its name and summary (the store's words)."
+  },
+  "NewMachine.templates.text": {
+    "message": "A ready-made system to start from. Its disk stays on waarm64's server and is read as the machine needs it. The machine starts from power on and is your own.",
+    "note": "New machine dialog: the line under From a template. Unlike a demo, a template's machine boots (no saved state is downloaded) and isn't the demo's."
+  },
+  "NewMachine.loading": {
+    "message": "Loading the templates…",
+    "note": "New machine dialog: said while the list of templates (the demo store's small file) downloads."
+  },
+  "NewMachine.none": {
+    "message": "No templates are offered at the moment.",
+    "note": "New machine dialog: said under From a template when the store offers none."
+  },
+  "NewMachine.retry": {
+    "message": "Try again",
+    "note": "New machine dialog: button under the error when the list of templates couldn't be loaded (the server down, the connection lost): loads it again. Empty machine still works."
+  },
+  "NewMachine.cancel": {
+    "message": "Cancel",
+    "note": "New machine dialog: closes it without making a machine."
   },
   "MachinesNav.fromImage.title": {
     "message": "Create a machine for a disk image on your computer (qcow2, raw, or an ISO) and start it immediately. Dropping the file on this web app does the same.",

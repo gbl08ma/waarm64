@@ -581,7 +581,8 @@ demo's card: `id` (lowercase letters, digits and dashes: what `?id=` and "starte
 text, the store's data, not the catalog's), `thumbnail?`, `download` (the bytes a visit fetches: the publish tool
 checks it), `view` (`serial` or `screen`), `snapshot?` (`{manifest, id}`: the template's chunked file and its content
 id; none: a cold boot), `network?` (`"demo"`: the first adapter on the demo network, which needs `machine.network`),
-`replaces?` (the ids of the versions before: a machine made from one is "an older version of this demo"). What a card
+`replaces?` (the ids of the versions before: a machine made from one is "an older version of this demo"),
+`template?` (`true`: New machine offers it as a template too, §6.3). What a card
 needs from the browser is the machine's own fields (`display: "3d"` for WebGL2, `vulkan` for WebGPU, `ramMiB`), not a
 `needs` of its own that could disagree with them. **Version 1 still reads** (the reader takes both; a `demo` in a
 version 1 file is left out): nothing migrates, and an older page refuses version 2 by its version. Checks live in
@@ -613,6 +614,24 @@ partway is `machines:template.cutOff`; the storage full when the snapshot is kep
 these machines: [frontend.md](frontend.md) "The demo store". Tests: tests/demo-store.test.ts (Node), tests/page-template-first.test.ts (a store's
 demo made and restored at its first start in Chromium).
 
+### 6.3 Templates under New machine
+
+[New machine](ui:machines:MachinesNav.newMachine) opens a dialog (`NewMachine.svelte`; frontend.md "The Home page"):
+**[Empty machine](ui:machines:NewMachine.empty)** (the default settings, no disks: what New machine always made) and,
+**[From a template](ui:machines:NewMachine.templates)**, our store's demos marked `demo.template: true`
+(`demo-store.ts` `templatesOf`, in the store's order, by their name and summary), so a new machine needs no disk image of
+the user's own. A template is the demo's definition without its `demo` (`template.ts` `templateDefinition`,
+`machineFromStoreTemplate`): its machine and disks (the URL disk at the store's URL, the same disk record as the demo's
+by identity, an overlay of its own), and nothing of the demo: no template snapshot (a cold boot from power on, nothing
+downloaded first), no demo network (the adapters without a connection, as any new machine's), no `fromDemo` (its card
+doesn't find it as started before: it's the user's own machine, as a demo's copy is). The flag is opt-in, the store's
+author's choice per demo: a demo made to show one thing (a game, a 3D test) or a second demo of the same image isn't a
+starting point, and a store from before the flag offers none. tools/demo-site.ts carries it to the store and refuses
+it when not a boolean. The store is read each time the dialog opens: while it loads, when it can't be read (said, with
+[Try again](ui:machines:NewMachine.retry)) or offers none, Empty machine still works. Only our store's templates are
+offered (`OUR_STORE`; `?store=` is the store page's alone). Tests: tests/demo-store.test.ts (which are offered, the
+machine made), tests/page-demos.test.ts (the dialog in Chromium: a template to a cold start; the store down).
+
 ## 7. The page
 
 The Home page (`MachinesPage.svelte` and its panes and tabs, `#home` in the address), its tabs, wizards and storage footer:
@@ -629,7 +648,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
   hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
   (the shape now, the restore's plan, `unrestorable`), `web/app/snapshot-lost.ts` (which snapshots can never be restored: `lost`, the disks' generations, `basesOf`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
-  (a switch to an overlay of another size asked), `web/app/definitions.ts` (`definition-check.ts`: its checks), `web/app/template.ts` (a machine from a template, §6.1), `web/app/demo-store.ts` (stores, §6.2), `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
+  (a switch to an overlay of another size asked), `web/app/definitions.ts` (`definition-check.ts`: its checks), `web/app/template.ts` (a machine from a template, §6.1; from a store's template, §6.3), `web/app/demo-store.ts` (stores, §6.2), `web/app/NewMachine.svelte` (New machine's dialog, §6.3), `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Home page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
 - A disk's map (frontend.md "A disk's surface"): `web/surface.ts` (the counts), `web/app/surface-job.ts` and
