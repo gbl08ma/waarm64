@@ -88,7 +88,9 @@ redeploy of the page (ask the user).
 12. **Loop 15** (done) is the user's: a second adapter on the global public room for every demo machine, a node key
     per machine (else they'd share an address), and **the agent configuring an unmanaged, connected card on
     Alpine**, for every Alpine user with the agent (OK'd).
-13. **Images CI or the Desktop Demo use stay as they are** (`alpine-uefi`, `target/arch/desktop.qcow2`).
+13. **Images CI or the Desktop Demo use stay as they are** (`alpine-uefi`, `target/arch/desktop.qcow2`). **Superseded in
+    part (the user, 2026-11-19):** fresh bases for the demos: `target/arch/desktop.qcow2` rebuilt (CI's too), alpine-demo
+    on its own pin (Alpine 3.24.4); `alpine-uefi` stays CI's stock guest at 3.24.2.
 14. **Loop 15's answers** (the user, 2026-11-19): the room **only for demos that ask** (`demo.room: "global"`; all
     three ask); **direct when possible** (not relay only); **incoming connections on**; the start panel's words as
     proposed plus a sentence that only the relays see the IP address and another visitor learns it only by
@@ -128,12 +130,10 @@ rebuild and one whole CI set for all of them):
   `bash -c` too; Ctrl+C must leave the terminal open with a shell (most visitors don't know sway). Copy rules
   (docs/copy.md) for every word; the cards' summaries in deploy/disks/demos.json too.
 
-- **Fresh image bases** (the user, 2026-11-19: `pacman -Syu` in the desktop demos finds plenty to update): rebuild the
-  demos' images from today's bases before the templates are made again: the Arch desktop (`images/arch/desktop.sh`:
-  base.sh's bootstrap tarball and the mirror's packages of the day) and alpine-demo (from alpine-uefi's pinned cloud
-  image: move its pin to Alpine's current release; images/SHA256SUMS moves with it). Decision 13 kept CI's images
-  (`alpine-uefi`, `target/arch/desktop.qcow2`) as they were; the demos build from those same files, so this changes
-  CI's too: decisions.md is updated in the same change (the user's call, made here).
+- **Fresh image bases** (the user, 2026-11-19: `pacman -Syu` in the desktop demos found plenty to update): alpine-demo
+  on its own pin, Alpine 3.24.4's cloud image (`images/alpine-demo/base.json`; its EFI partition 185 MiB, so the
+  build's layout checks moved; 62.1 MB, reproducible: 943029f2); `target/arch/desktop.qcow2` rebuilt from the day's
+  bootstrap and packages (CI's desktop too). `alpine-uefi` stays CI's stock guest at 3.24.2.
 
 **3. The whole CI set** on the head after the fixes: ci.sh, ci-net, ci-debian `--platform`, ci-graphics, ci-machines,
 ci-audio, ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb (one at a time in ../waarm64-ci; link the rebuilt images,
