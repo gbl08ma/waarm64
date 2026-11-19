@@ -75,6 +75,9 @@ pub const GROWN: u8 = 31;
 /// The page's: the cards it has connected now (LEASE's payload: a u8 count, then their MACs), at its HELLO and when
 /// that changes; the agent brings up one nothing in the guest manages (src/card.rs).
 pub const CARDS: u8 = 32;
+/// The page's: its serial terminal's size (`decode_console`: u16 columns, u16 rows), at its HELLO and when it changes;
+/// the agent sets the serial console's window size to it (src/tty.rs).
+pub const CONSOLE: u8 = 33;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -124,6 +127,9 @@ pub mod cap {
     pub const GROW: u32 = 1 << 17;
     /// CARDS: a connected card nothing else manages brought up (the agent's; the page sends CARDS to an agent that says it).
     pub const CARDS: u32 = 1 << 18;
+    /// CONSOLE: the serial console's window size follows the page's terminal (the agent's; the page fits its terminal
+    /// to its box only for an agent that says it).
+    pub const CONSOLE: u32 = 1 << 19;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 
@@ -226,6 +232,16 @@ pub fn decode_display(p: &[u8]) -> Option<(u32, u32)> {
     let mut r = Fields(p);
     let (w, h) = (r.u32()?, r.u32()?);
     (w > 0 && h > 0).then_some((w.min(MAX_SIDE), h.min(MAX_SIDE)))
+}
+
+/// The most columns or rows CONSOLE takes (past any terminal a page fits).
+pub const MAX_CELLS: u16 = 1000;
+
+/// CONSOLE's payload: u16 columns, u16 rows, each at least 1 and at most `MAX_CELLS`; None if short or empty.
+pub fn decode_console(p: &[u8]) -> Option<(u16, u16)> {
+    let cols = u16::from_le_bytes(p.get(..2)?.try_into().ok()?);
+    let rows = u16::from_le_bytes(p.get(2..4)?.try_into().ok()?);
+    (cols > 0 && rows > 0).then_some((cols.min(MAX_CELLS), rows.min(MAX_CELLS)))
 }
 
 /// TIME's payload: u64 nanoseconds since the Unix epoch, the host's wall clock as the page sent it; None if short.
@@ -636,6 +652,12 @@ mod tests {
         assert_eq!((GROW, GROWN, cap::GROW), (30, 31, 131072));
         // tests/agent.test.ts "frames: TIME and SESSION" pins the same.
         assert_eq!((CARDS, cap::CARDS), (32, 262144));
+        // tests/agent.test.ts "frames: TIME and SESSION" pins CONSOLE's too.
+        assert_eq!((CONSOLE, cap::CONSOLE), (33, 524288));
+        assert_eq!(decode_console(&[120, 0, 40, 0]), Some((120, 40)));
+        assert_eq!(decode_console(&[0xff, 0xff, 1, 0]), Some((MAX_CELLS, 1)));
+        assert_eq!(decode_console(&[120, 0, 0, 0]), None, "no rows");
+        assert_eq!(decode_console(&[120, 0, 40]), None, "short");
         let mut p = vec![11];
         p.extend_from_slice(b"waarm64-abc");
         p.extend_from_slice(&(5u64 << 30).to_le_bytes());

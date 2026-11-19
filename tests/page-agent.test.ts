@@ -83,6 +83,33 @@ async function share(page: Page, on: boolean) {
 const typed = (page: Page) => run(page, 'sha256sum </tmp/typed | cut -c1-64; stat -c %s /tmp/typed').then((s) => s.split(/\s+/));
 const TYPE = 5;
 
+/**
+ * The serial console's size (CONSOLE, docs/devices.md "The serial console's size"): the guest's tty is the terminal's
+ * rows (as xterm.js draws them) after the agent's HELLO, and follows a change of the window's height.
+ */
+async function consoleFollows(page: Page, run: (page: Page, cmd: string) => Promise<string>) {
+  // The terminal's size as the page has it (`data-size`, columns × rows), and the guest's (`stty size`: rows columns).
+  const sizes = async () => {
+    const [r, c] = (await run(page, 'stty size < /dev/ttyAMA0')).split(/\s+/).map(Number);
+    const [pc, pr] = (await page.evaluate(() => document.getElementById('terminal')?.dataset.size ?? '0x0')).split('x').map(Number);
+    return { guest: `${c}x${r}`, page: `${pc}x${pr}`, rows: pr };
+  };
+  const agrees = async (what: string) => {
+    let s = await sizes();
+    for (let i = 0; i < 20 && s.guest !== s.page; i++, s = await sizes()) await page.waitForTimeout(250);
+    assert.equal(s.guest, s.page, `${what}: the guest's size is the terminal's (${JSON.stringify(s)})`);
+    return s;
+  };
+  const first = await agrees('at the HELLO');
+  assert.ok(first.rows > 25, `the terminal fits the view: ${JSON.stringify(first)}`);
+  const v = page.viewportSize() ?? { width: 1280, height: 720 };
+  await page.setViewportSize({ width: v.width, height: v.height - 160 });
+  const smaller = await agrees('after the window shrank');
+  assert.ok(smaller.rows < first.rows, `fewer rows: ${JSON.stringify([first, smaller])}`);
+  await page.setViewportSize(v);
+  await agrees('back');
+}
+
 test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing idle, types on the console, copies its screen, pauses; the page carries on without it; the connection echoes', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
@@ -115,6 +142,7 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
   await buttonIs(page, 'sharing');
   assert.equal(await run(page, 'test -d /sys/module/vmw_vsock_virtio_transport && echo vsock'), 'vsock');
   assert.equal(await run(page, 'systemctl is-active waarm64-agent'), 'active');
+  await consoleFollows(page, run);
   const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
   assert.equal(await run(page, `readlink /proc/${pid}/exe`), '/run/waarm64/agent');
   const size = Number(await run(page, `stat -L -c %s /proc/${pid}/exe`));

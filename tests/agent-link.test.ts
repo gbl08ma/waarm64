@@ -179,6 +179,30 @@ test('CARDS: the connected cards said at the HELLO of an agent with CAP.CARDS an
   old.link.close();
 });
 
+test("CONSOLE: the serial terminal's size said at the HELLO of an agent with CAP.CONSOLE and at each change; again at a new connection; never to an agent without it", async () => {
+  const sizes = (a: ReturnType<typeof agent>) => a.got.filter((f) => f.type === FRAME.CONSOLE).map((f) => [...f.payload]);
+  const a = agent(CAP.TIME | CAP.CONSOLE);
+  assert.equal(a.link.console(132, 43), false, 'before the agent: kept for its HELLO');
+  await a.connect();
+  await until(() => sizes(a).length === 1, 'CONSOLE at the HELLO');
+  assert.deepEqual(sizes(a), [[132, 0, 43, 0]], 'u16 columns, u16 rows, little-endian');
+  assert.equal(a.link.console(300, 60), true);
+  await until(() => sizes(a).length === 2, 'CONSOLE at the change');
+  assert.deepEqual(sizes(a)[1], [44, 1, 60, 0]);
+  a.drop();
+  await settle();
+  await a.connect();
+  await until(() => sizes(a).length === 3, 'CONSOLE at the next HELLO');
+  assert.deepEqual(sizes(a)[2], [44, 1, 60, 0]);
+  a.link.close();
+  const old = agent(CAP.TIME | CAP.LEASE);
+  await old.connect();
+  assert.equal(old.link.console(132, 43), false);
+  await settle();
+  assert.deepEqual(sizes(old), [], 'an agent without CAP.CONSOLE gets none');
+  old.link.close();
+});
+
 test("SoftPower: a HELLO while one is pending clears it (the agent came back: the guest isn't shutting down); BUSY and silence fall to the hard one, said", async () => {
   const said: string[] = [];
   const messages = { notify: (m: Msg) => said.push(m.key) };

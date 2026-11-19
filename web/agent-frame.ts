@@ -81,6 +81,8 @@ export const FRAME = {
   GROWN: 31,
   /** The page's: the cards it has connected now (LEASE's payload, `encodeLease`), at the agent's HELLO and when they change: the agent brings up one nothing in the guest manages (agent/src/card.rs). */
   CARDS: 32,
+  /** The page's: its serial terminal's size (`encodeConsole`), at the agent's HELLO and when it changes: the agent sets the serial console's to it (agent/src/tty.rs). */
+  CONSOLE: 33,
 } as const;
 
 /** LEASE's payload (agent/src/lease.rs `decode`): a u8 count, then the MACs (6 bytes each) of the cards to renew. */
@@ -328,6 +330,8 @@ export const CAP = {
   GROW: 1 << 17,
   /** CARDS: a connected card nothing else in the guest manages brought up (the agent's; the page sends CARDS to an agent that says it). */
   CARDS: 1 << 18,
+  /** CONSOLE: the serial console's size follows the page's terminal (the agent's; the page fits its terminal to its box only for an agent that says it). */
+  CONSOLE: 1 << 19,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 
@@ -509,6 +513,15 @@ export function encodeDisplay(width: number, height: number): Uint8Array {
   const v = new DataView(b.buffer);
   v.setUint32(0, width >>> 0, true);
   v.setUint32(4, height >>> 0, true);
+  return b;
+}
+
+/** CONSOLE's payload (agent/src/frame.rs `decode_console`): u16 columns, u16 rows, little-endian. */
+export function encodeConsole(cols: number, rows: number): Uint8Array {
+  const b = new Uint8Array(4);
+  const v = new DataView(b.buffer);
+  v.setUint16(0, cols, true);
+  v.setUint16(2, rows, true);
   return b;
 }
 

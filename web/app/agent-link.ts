@@ -24,6 +24,7 @@ import {
   decodeHello,
   decodeOs,
   decodeRenewed,
+  encodeConsole,
   encodeDisplay,
   encodeFrame,
   encodeGrow,
@@ -107,6 +108,8 @@ export class AgentLink {
   private cardsSent?: string;
   /** The screen's size last given (`display`): said again at each agent's HELLO. */
   private size?: { width: number; height: number };
+  /** The serial terminal's size last given (`console`): said again at each agent's HELLO. */
+  private cells?: { cols: number; rows: number };
   /**
    * RENEW is owed (`renew`) until the agent's RENEWED: sent at the HELLO of an agent that renews, once a connection (one
    * that ends before RENEWED, a reset or the agent's restart, sends it again at the next).
@@ -322,6 +325,20 @@ export class AgentLink {
     return true;
   }
 
+  /**
+   * The page's serial terminal's size, which the agent sets the serial console's to (CONSOLE, agent/src/tty.rs): now, if
+   * the agent said it can, and at each agent's HELLO. False: not sent now.
+   */
+  console(cols: number, rows: number): boolean {
+    this.cells = { cols, rows };
+    return this.sendConsole();
+  }
+
+  private sendConsole() {
+    if (!this.cells || !this.agent || !(this.agent.caps & CAP.CONSOLE)) return false;
+    return this.send(FRAME.CONSOLE, encodeConsole(this.cells.cols, this.cells.rows));
+  }
+
   private sendDisplay() {
     if (!this.size || !this.agent || !(this.agent.caps & CAP.DISPLAY) || !(this.caps & CAP.DISPLAY)) return false;
     return this.send(FRAME.DISPLAY, encodeDisplay(this.size.width, this.size.height));
@@ -417,6 +434,7 @@ export class AgentLink {
     this.agent = h;
     this.sendRenew();
     this.sendDisplay();
+    this.sendConsole();
     this.cardsSent = undefined; // a new connection (a restore, the agent started again): said afresh
     this.sendCards();
     // A copy: a waiter (`hello`) leaves the list as it hears it.

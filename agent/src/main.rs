@@ -50,6 +50,7 @@ mod session;
 mod sway_test;
 mod table;
 mod trim;
+mod tty;
 mod vsock;
 mod wire;
 mod x11;
@@ -75,6 +76,7 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::RENEW
     | frame::cap::LEASE
     | frame::cap::CARDS
+    | frame::cap::CONSOLE
     | frame::cap::DESKTOP
     | frame::cap::TRIM
     | frame::cap::KEYMAP
@@ -196,6 +198,8 @@ struct Agent {
     /// The DNS forwarder for the cards the agent brought up (src/resolve.rs), running; its paths.
     resolver: Option<resolve::Running>,
     resolve: resolve::Paths,
+    /// The serial console whose window size CONSOLE sets (src/tty.rs).
+    tty: tty::Console,
     /// TRIM's mount table, how a filesystem is trimmed (the tests' records it), its child, and TRIMMED's status once done.
     trim: trim::Paths,
     fitrim: trim::Fitrim,
@@ -277,6 +281,7 @@ impl Agent {
             cards_next: None,
             resolver: None,
             resolve: resolve::Paths::default(),
+            tty: tty::Console::new(tty::SERIAL),
             leasing: None,
             leased: None,
             trim: trim::Paths::default(),
@@ -996,6 +1001,15 @@ impl Session<'_> {
                     self.agent.cards_next = Some(macs);
                 } else {
                     self.agent.cards(&macs);
+                }
+            }
+            // The page's serial terminal's size, set on the serial console (src/tty.rs).
+            frame::CONSOLE => {
+                let Some((cols, rows)) = frame::decode_console(payload) else {
+                    return;
+                };
+                if let Err(e) = self.agent.tty.set(cols, rows) {
+                    log("console: the serial console's size", Some(e));
                 }
             }
             // The filesystems trimmed (src/trim.rs). One run at a time: a TRIM while one runs is answered by its

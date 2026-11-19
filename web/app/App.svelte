@@ -216,6 +216,28 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
   }
+  /* Fitting its box (an agent that sets the guest's size: web/app/areas/serial-terminal.ts `follow`, which sets
+     `data-fit`: global, as the template doesn't have it): it takes the view's room, and xterm.js the cells that fit in
+     it. The padding moves onto xterm.js's element, which the fit subtracts (it measures this box whole). */
+  #terminal-view:global(:has(> #terminal[data-fit])) {
+    align-items: stretch;
+  }
+  #terminal:global([data-fit]) {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+  }
+  /* Beside the screen (or above it, stacked), a fitted terminal takes a share of the room: a box sized by its content
+     would shrink with every fit. */
+  :global(body[data-view='both']) #terminal-view:global(:has(> #terminal[data-fit])) {
+    flex: 0 0 40%;
+    min-width: 0;
+  }
+  #terminal:global([data-fit] > .xterm) {
+    height: 100%;
+    padding: var(--space-3);
+  }
   #terminal:focus-within {
     border-color: var(--accent);
   }

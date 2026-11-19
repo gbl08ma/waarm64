@@ -26,6 +26,8 @@ const NOT_SHOWN: AgentShown = { os: () => undefined, canPower: () => undefined, 
 export type CardsSource = { macs(): string[]; listen(f: () => void): void };
 /** What follows each run's link from its start to its end (web/app/areas/grow-actions.ts: the disks grown in the guest). */
 export type LinkFollower = { follow(link: AgentLink): void; end(): void };
+/** The serial terminal's fit (web/app/areas/serial-terminal.ts `follow`): each size it takes told, or 80×25 without. */
+export type ConsoleFit = { follow(tell: ((cols: number, rows: number) => void) | undefined): void };
 
 /** What a run asks of its agent (web/app/run/runner.ts): its link begun and ended; a restore's renewals (`template`: its identity too). */
 export type RunAgent = {
@@ -63,6 +65,7 @@ export class AgentActions {
   readonly #follower: LinkFollower | undefined;
   /** The run's adapters connected now, and their changes (web/app/net-settled.ts). */
   readonly #cards: CardsSource | undefined;
+  readonly #console: ConsoleFit | undefined;
 
   constructor(
     size: () => Size | undefined,
@@ -70,12 +73,14 @@ export class AgentActions {
     shown = NOT_SHOWN,
     follower?: LinkFollower,
     cards?: CardsSource,
+    console?: ConsoleFit,
   ) {
     this.#size = size;
     this.#layout = layout;
     this.#shown = shown;
     this.#follower = follower;
     this.#cards = cards;
+    this.#console = console;
     cards?.listen(() => this.cards());
   }
 
@@ -98,7 +103,10 @@ export class AgentActions {
     desktop(link.desktop);
     link.onDesktop = desktop;
     link.onOs = (os) => this.#shown.os(os);
-    link.onClose.push(() => this.#shown.canPower(false));
+    link.onClose.push(
+      () => this.#shown.canPower(false),
+      () => this.#console?.follow(undefined),
+    );
     if (size) link.display(size);
     link.onHello.push(
       up,
@@ -106,6 +114,8 @@ export class AgentActions {
       () => this.keymap(this.#layout()),
       (h) => this.#shown.canPower((h.caps & CAP.POWER) !== 0),
       () => this.cards(),
+      // The serial terminal fits its box for an agent that sets the guest's size to it (CONSOLE), else stays 80×25.
+      (h) => this.#console?.follow(h.caps & CAP.CONSOLE ? (cols, rows) => link.console(cols, rows) : undefined),
     );
     this.#follower?.follow(link);
     let offset = Date.now() - performance.now();
@@ -121,6 +131,7 @@ export class AgentActions {
   end() {
     this.#link?.close();
     this.#link = undefined;
+    this.#console?.follow(undefined);
     clearInterval(this.#timer);
     this.#timer = undefined;
     window.__agent = undefined;

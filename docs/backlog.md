@@ -1255,6 +1255,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **A divider to drag between the screen and the terminal in Both** (the user's idea, 2026-11-19): today a fitted
+  terminal (an agent that sets the guest's size: devices.md "The serial console's size") takes a fixed 40% of the room
+  beside the screen (or above it, stacked; App.svelte), and a terminal without one keeps its 80×25 box. A split pane
+  with a handle in the middle would let the user give either more: the terminal refits as it moves (its size told once
+  it settles, as now), the screen's room measured again (the display's size follows it on a machine with the agent).
+  Remembered per browser as the view is (`waarm64.settings`); keyboard-movable (a separator role, arrows); the stacked
+  layout's handle horizontal.
 - **The store's sweep never runs** (review demo-page-3, 2026-11-19): `Store.sweep` (web/app/store.ts) removes the
   bytes no record owns, and machines.md §2 says it runs at start, but nothing on the page calls it, so what a crash or a
   closed tab leaves (an import's kept snapshot, a disk's files) stays in OPFS. Before wiring it in: a template's import

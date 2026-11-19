@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, DROPPED, decodeGrown, encodeGrow, FRAME, GROWN_FS, GROWN_PART, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeConsole, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, DROPPED, decodeGrown, encodeGrow, FRAME, GROWN_FS, GROWN_PART, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { TrimActions } from '../web/app/areas/trim-actions.ts';
@@ -1283,6 +1283,9 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   assert.deepEqual([LEASED.RENEWED, LEASED.NO_CLIENT, LEASED.FAILED], [0, 1, 2]);
   // CARDS (agent/src/card.rs): LEASE's payload.
   assert.deepEqual([FRAME.CARDS, CAP.CARDS], [32, 262144]);
+  // CONSOLE (agent/src/tty.rs): u16 columns, u16 rows (agent/src/frame.rs pins the same).
+  assert.deepEqual([FRAME.CONSOLE, CAP.CONSOLE], [33, 524288]);
+  assert.deepEqual([...encodeConsole(120, 40)], [120, 0, 40, 0]);
   // TRIM and TRIMMED (agent/src/trim.rs `status`).
   assert.deepEqual([FRAME.TRIM, FRAME.TRIMMED, CAP.TRIM], [20, 21, 2048]);
   assert.deepEqual([TRIMMED.TRIMMED, TRIMMED.NONE, TRIMMED.FAILED], [0, 1, 2]);

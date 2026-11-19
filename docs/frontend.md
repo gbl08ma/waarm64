@@ -1738,12 +1738,14 @@ at the same ~52 s.
 
 ## The serial terminal
 
-xterm.js 6 (`@xterm/xterm`, MIT; the only runtime dependency), 80×25: the PL011 has no size
+xterm.js 6 (`@xterm/xterm`, MIT), 80×25 until an agent sets the guest's size (then it fits its view, at least 20×5:
+`@xterm/addon-fit`, and the agent's CONSOLE tells the guest: devices.md "The serial console's size"; in Both it keeps
+its width and takes the view's height): the PL011 has no size
 negotiation, so a Linux guest assumes 80×24 unless `stty` says otherwise, and the firmware's
 console is 80×25 (our EDK2 offers no other text mode: `images/build.sh edk2` patches the
 terminal driver's mode table, because GRUB takes the largest mode and asks the terminal to resize
 itself with `CSI 8;r;c t`, which xterm.js doesn't do; docs/backlog.md "EDK2's terminal modes"). `onData` sends what a
-terminal would (`\r` for Enter, escape sequences) to the `serial` port. No addons. The dev server
+terminal would (`\r` for Enter, escape sequences) to the `serial` port. One addon: the fit. The dev server
 **The firmware and GRUB through it** (`tests/page-disk.test.ts`, which drives them end to
 end): arrows, Enter, Esc, F2, Ctrl-N/P/E/X, Home/End and typing all arrive. Two things about
 EDK2's terminal driver: a lone Esc is delivered ~2 s late (it waits to tell it from the start of

@@ -165,7 +165,7 @@ export const AREAS: Record<string, Area> = {
   agent: {
     // The guest agent and what the page does through it: clipboard sharing, the soft power-off, the guest's facts.
     src: ['agent/**', 'web/agent-frame.ts', 'web/app/agent-link.ts', 'web/app/guest-*.ts', 'web/app/clipboard*.ts', 'web/app/Clipboard*.svelte', 'web/app/areas/agent-*.ts', 'web/app/areas/clipboard*.ts', 'web/app/areas/power.svelte.ts', 'images/debian-sway/**', 'tests/debian-unattended.ts'],
-    heavy: ['tests/page-clipboard-ui.test.ts'],
+    heavy: ['tests/page-clipboard-ui.test.ts', 'tests/page-console.test.ts'],
     cargo: ['agent'],
     push: ['ci-debian.sh', 'ci-net.sh'], // ci-net.sh: the agent on Alpine (tests/page-alpine-agent.test.ts)
     end: ['ci-debian.sh --platform'],

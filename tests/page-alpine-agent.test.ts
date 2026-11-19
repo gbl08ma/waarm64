@@ -144,6 +144,33 @@ const attachHelper = (page: Page, id: string) => page.evaluate(async ([id, ws]) 
   await setAdapterConnection(store, id, 0, c.id);
 }, [id, ws] as const);
 
+/**
+ * The serial console's size (CONSOLE, docs/devices.md "The serial console's size"): the guest's tty is the terminal's
+ * rows (as xterm.js draws them) after the agent's HELLO, and follows a change of the window's height.
+ */
+async function consoleFollows(page: Page, run: (page: Page, cmd: string) => Promise<string>) {
+  // The terminal's size as the page has it (`data-size`, columns × rows), and the guest's (`stty size`: rows columns).
+  const sizes = async () => {
+    const [r, c] = (await run(page, 'stty size < /dev/ttyAMA0')).split(/\s+/).map(Number);
+    const [pc, pr] = (await page.evaluate(() => document.getElementById('terminal')?.dataset.size ?? '0x0')).split('x').map(Number);
+    return { guest: `${c}x${r}`, page: `${pc}x${pr}`, rows: pr };
+  };
+  const agrees = async (what: string) => {
+    let s = await sizes();
+    for (let i = 0; i < 20 && s.guest !== s.page; i++, s = await sizes()) await page.waitForTimeout(250);
+    assert.equal(s.guest, s.page, `${what}: the guest's size is the terminal's (${JSON.stringify(s)})`);
+    return s;
+  };
+  const first = await agrees('at the HELLO');
+  assert.ok(first.rows > 25, `the terminal fits the view: ${JSON.stringify(first)}`);
+  const v = page.viewportSize() ?? { width: 1280, height: 720 };
+  await page.setViewportSize({ width: v.width, height: v.height - 160 });
+  const smaller = await agrees('after the window shrank');
+  assert.ok(smaller.rows < first.rows, `fewer rows: ${JSON.stringify([first, smaller])}`);
+  await page.setViewportSize(v);
+  await agrees('back');
+}
+
 test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a template restored with an old clock gets the clock, its lease renewed (dhcpcd, udhcpc) and apk over TLS', { skip, timeout: 15 * 60_000 }, async () => {
   // The template's profile: the machine made through the page's own code, its card on the helper.
   const maker = await browser.newContext({ acceptDownloads: true });
@@ -178,6 +205,14 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   await agentUp(a);
   await a.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 10_000 });
   assert.equal(await run(a, 'rc-status default | grep -c "waarm64-agent.*started"'), '1', 'in the default runlevel, started');
+  await consoleFollows(a, run);
+  // A login that ends and starts again (the getty's respawn) finds the size still set: the agent keeps the tty open.
+  await onSerial(a, 'exit\n');
+  await shows(a, /login: \s*$/, 60_000);
+  await onSerial(a, 'root\n');
+  await shows(a, /:~# \s*$/);
+  const [r, c] = (await run(a, 'stty size')).split(/\s+/).map(Number);
+  assert.equal(`${c}x${r}`, await a.evaluate(() => document.getElementById('terminal')?.dataset.size), 'the size after a new login');
   const addr = await run(a, "ip -4 -o addr show dev eth0 scope global | awk '{print $4}'");
   assert.match(addr, /^192\.168\.127\.\d+\/\d+$/, `the helper's lease: ${addr}`);
   assert.match(await run(a, 'pgrep -l dhcpcd | head -1'), /dhcpcd/, "the cloud image's client");

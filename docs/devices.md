@@ -442,6 +442,20 @@ disconnected keeps its client, asking until its network comes back; after a rest
 does udhcpc. Tests: the root's rules and steps on a guest's files (agent/src/card.rs), the link's CARDS
 (tests/agent-link.test.ts).
 
+**The serial console's size** (CONSOLE; `agent/src/tty.rs`): the PL011 has no size to negotiate, so a guest's serial
+console is 80×24 unless told (`stty`), and the page's terminal is 80×25 (the firmware's text mode). Once an agent says
+`CAP.CONSOLE` in its HELLO, the page's terminal fits its view instead (web/app/areas/serial-terminal.ts `follow`,
+`@xterm/addon-fit` and a `ResizeObserver`; at least 20×5) and says each size it takes, once it has held for 150 ms (a
+window dragged makes many); the agent sets the serial console's window size to it (`TIOCSWINSZ` on `/dev/ttyAMA0`),
+which the kernel follows with a SIGWINCH to its foreground process group, so a shell, `vi` or `less` draws for it. The
+agent keeps the tty open after: a tty's size lives while it is open, so a login that ends and starts again (busybox
+init's respawn) finds it still set; it opens it afresh at each CONSOLE (a getty's vhangup leaves an older file hung
+up), without making it its controlling tty. The connection's end (a restart, the agent stopped) and the run's end put
+the terminal back at 80×25, as before an agent: what it shows is always what the guest was told. The firmware, GRUB and
+the boot before the agent see 80×25. Tests: the tty's size on a pseudo-terminal (agent/src/tty.rs), the link's frames
+(tests/agent-link.test.ts), the terminal in Chromium with the tests' agent end (tests/page-console.test.ts: fitted,
+said, a resize, back at 80×25 without the agent).
+
 **Names through the agent** (`agent/src/resolve.rs`; the user's choice, 2026-11-19): on such a guest the room's names
 need a resolver by domain, which musl lacks: it asks every server in `/etc/resolv.conf` at once and takes the first
 answer, an NXDOMAIN too, so the room's resolver beside the demo network's would race it; and busybox's udhcpc rewrites
@@ -741,11 +755,12 @@ to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's), `CAP.DROP` (bit 16: DROP, the agent's), `CAP.GROW` (bit 17: GROW, the agent's), `CAP.CARDS` (bit 18: CARDS, the agent's; the page sends CARDS to an agent that says it). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's), `CAP.DROP` (bit 16: DROP, the agent's), `CAP.GROW` (bit 17: GROW, the agent's), `CAP.CARDS` (bit 18: CARDS, the agent's; the page sends CARDS to an agent that says it), `CAP.CONSOLE` (bit 19: CONSOLE, the agent's; the page fits its serial terminal only for an agent that says it). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
 | LEASE (17) | u8 count, then that many MACs (6 bytes each): the cards to renew; empty (an earlier page): every card | the page's, after a restore once its connections are up ("The network after a restore" below), to an agent whose HELLO has `CAP.LEASE` (bit 7) |
+| CONSOLE (33) | u16 columns, u16 rows (LE; each 1 to 1000) | the page's, to an agent whose HELLO has `CAP.CONSOLE` (bit 19): its serial terminal's size, at each agent's HELLO and each change, once it settles (`AgentLink.console`); no answer ("The serial console's size" below) |
 | CARDS (32) | LEASE's: u8 count, then that many MACs (6 bytes each), the cards the page has connected now | the page's, to an agent whose HELLO has `CAP.CARDS` (bit 18): at each agent's HELLO and when the set changes, each set once a connection (`AgentLink.cards`); no answer ("A card nothing else manages" below) |
 | LEASED (18) | u8 status: 0 renewed, 1 no network manager the agent knows (or its tool missing), 2 its tool failed | the agent's, when its tool ended (`AgentLink.lease`'s answer) |
 | DESKTOP (19) | u8 state: 0 none, 1 Wayland's, 2 X11's | the agent's, to a page whose HELLO has `CAP.DESKTOP`: the graphical session's state at each change, and at a connection once the page's HELLO came if it isn't none ("The desktop's state" above) |

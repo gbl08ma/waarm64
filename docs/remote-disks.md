@@ -211,8 +211,8 @@ shape's stability, `--out`, the core's lookup).
 ### Deploying the demos
 
 **Only when the user asks** (outward-facing). The page (vm.tny.im) and the demos (vmdisks.tny.im) go out together:
-the publish refuses templates another core made, so a page update that changes the snapshot format or a machine's
-shape needs its demos made again by the copy that's deployed.
+the publish refuses a template whose snapshot format or machine's shape isn't the deployed page's, so a page update
+that changes either needs its demos made again (any build of that commit's core will do: step 5).
 
 1. **A clean checkout at the pushed head**, so nothing uncommitted goes out: the CI worktree (`git -C ../waarm64-ci
    checkout --detach origin/main`), or any clone. Never a stale `target/dist`.
@@ -225,11 +225,13 @@ shape needs its demos made again by the copy that's deployed.
    made by hand and must be at `target/arch/desktop.qcow2` (images/arch/desktop.sh; the same image as
    `https://static.gbl08ma.com/diskimages/desktop.qcow2`, which can be fetched instead: its content id is what the
    ledger has). Link it in as in 3.
-5. **The demos:** `node tools/build-demos.ts --core target/dist` (each demo with a recipe made again under its id
-   into `target/demos/<id>/`, then the publish's plan: read it; it says what each demo's files and the site's file
-   count become, and what a retirement would drop), then the same with `--apply` (writes `target/disks/`). A demo
-   whose image changed is refused: that's a new id with `replaces`. Or, when the builds are already there from this
-   copy, `node tools/publish-demos.ts --apply`.
+5. **The demos:** the templates in `target/demos/` (the checkout's own builds: `node tools/build-demos.ts`, each demo
+   with a recipe made again under its id) published with `node tools/publish-demos.ts`, its plan read first (what each
+   demo's files and the site's file count become, what a retirement would drop), then `--apply` (writes
+   `target/disks/`). A template needn't be made by the deployed copy's core: the publish checks its snapshot's format
+   (`SNAPSHOT_VERSION`) and its machine's shape, which are what a restore needs (the page checks the format and the ABI
+   in the header), and refuses one that differs; make that one again. A demo whose image changed is refused too: that's
+   a new id with `replaces`.
 6. **Deploy both**, the disks first, each with the credentials sourced (`set -a; . ~/.config/cloudflare/waarm64.env;
    set +a`; never print them): `deploy/disks/deploy.sh "<message>"` (vmdisks.tny.im: refuses past 20,000 files), then
    `wrangler deploy` from the checkout's root (vm.tny.im: frontend.md "Deployed at vm.tny.im").

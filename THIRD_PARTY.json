@@ -507,6 +507,26 @@
           }
         },
         {
+          "id": "npm-xterm-addon-fit",
+          "name": "@xterm/addon-fit",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/@xterm/addon-fit/v/0.11.0",
+          "version": "0.11.0",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/xtermjs/xterm.js/blob/f447274f430fd22513f6adbf9862d19524471c04/addons/addon-fit/LICENSE"
+            }
+          ],
+          "md": {
+            "package": "@xterm/addon-fit",
+            "version": "0.11.0",
+            "license": "MIT",
+            "use": "the serial terminal fitted to its box while an agent sets the guest's size (`web/app/areas/serial-terminal.ts`); served from `node_modules`, not vendored"
+          }
+        },
+        {
           "id": "npm-fflate",
           "name": "fflate",
           "about": "page",
