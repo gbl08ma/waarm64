@@ -97,7 +97,10 @@
 
 <style>
   .slider {
-    --thumb: 14px;
+    /* The cap: a key standing in the groove, a lit line down its middle (`--thumb` its width, which the notches
+       follow). */
+    --thumb: 12px;
+    --cap-h: 20px;
     display: flex;
     align-items: center;
     gap: var(--space-4);
@@ -114,7 +117,7 @@
   input {
     appearance: none;
     width: 100%;
-    height: var(--thumb);
+    height: var(--cap-h);
     margin: 0;
     background: transparent;
     cursor: pointer;
@@ -128,32 +131,38 @@
   }
   input::-webkit-slider-runnable-track {
     height: 4px;
-    border-radius: 999px;
-    background: var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--well-bg);
+    box-shadow: var(--groove-edge);
   }
   input::-webkit-slider-thumb {
     appearance: none;
+    box-sizing: border-box;
     width: var(--thumb);
-    height: var(--thumb);
-    margin-top: calc((4px - var(--thumb)) / 2);
-    border-radius: 50%;
-    background: var(--accent);
-    border: none;
+    height: var(--cap-h);
+    margin-top: calc((4px - var(--cap-h)) / 2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--cap-bg);
+    box-shadow: var(--cap-edge);
   }
   input:focus-visible::-webkit-slider-thumb {
     box-shadow: var(--shadow-focus);
   }
   input::-moz-range-track {
     height: 4px;
-    border-radius: 999px;
-    background: var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--well-bg);
+    box-shadow: var(--groove-edge);
   }
   input::-moz-range-thumb {
+    box-sizing: border-box;
     width: var(--thumb);
-    height: var(--thumb);
-    border-radius: 50%;
-    background: var(--accent);
-    border: none;
+    height: var(--cap-h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--cap-bg);
+    box-shadow: var(--cap-edge);
   }
   /* The notches line up with the thumb's centre at their values: the thumb travels the track less its own width. */
   .notches {

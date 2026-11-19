@@ -27,6 +27,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--card-bg, var(--surface-raised));
+    box-shadow: var(--card-edge);
   }
   .what {
     flex: 1;

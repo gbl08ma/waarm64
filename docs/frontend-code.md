@@ -13,13 +13,29 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    `50%`/`999px` for round shapes, `auto`, `none`, `normal`, `inherit`, `currentColor`, `transparent`, `calc()` over
    tokens; layout widths and heights of one component (`minmax(200px, 260px)`, a menu's `260px`: not checked), icon
    sizes passed to `<Icon>`.
-2. **Semantic tokens, not raw palette.** A token is named by its role, so a re-theme changes one file:
+2. **The look is a machine's front panel**, dark only: neutral graphite surfaces parted by dark seams (`--border` is
+   darker than every surface), framed buttons and selects that are raised **keys** with a lit top edge, what's typed
+   or ticked into (a field, a checkbox, a radio button, a slider's groove) a sunk **well**, what's on or chosen sunk
+   too with its legend lit, and **one accent**, an indicator lamp's orange (`--accent`, `#fa6432`), only for what is
+   lit: a pressed tool, a ticked box, the chosen row's rail, a link, the focus, the main button's face. The danger
+   button is a crimson and the warning tone a yellow amber, both clear of it. The typeface is Barlow, bundled
+   (`@fontsource/barlow`, imported by `tokens.css`: 400, 500, 600); monospace is the system's. No control keeps the
+   browser's own look: `theme/base.css` draws the checkbox, the radio button, the select and a disclosure's chevron,
+   `Slider` its cap and groove. The wordmark (the toolbar's `h1`) is the name's two halves by weight: `wa` dim and
+   medium, `arm64` bold. Chosen from four looks and four accents in screenshots of the real page (2026-11-19): a
+   circuit board's green read closest to a terminal's, hairline rules with serif titles and a re-toned palette with a
+   lime accent both read as other generated pages do, and a blue accent, however bright, as today's browser defaults.
+3. **Semantic tokens, not raw palette.** A token is named by its role, so a re-theme changes one file:
    - surfaces `--surface` (the page; a field, a row in a dialog), `--surface-raised` (panes' rows, menus, dialogs, the
      machines' list), `--surface-bar` (the toolbar, the status bar), `--screen-bg`, `--screen-overlay`, `--backdrop`;
      `--border`;
-   - text `--text`, `--text-dim`, `--accent`;
-   - a control's states `--hover-bg`, `--pressed-bg`, `--pressed-border`; the main button `--primary-bg`,
-     `--primary-border`, `--primary-fg`; the destructive one `--danger-bg`, `--danger-border`, `--danger-fg`;
+   - text `--text`, `--text-dim`, `--accent` (`--accent-ink` the words on it, `--accent-glow`, `--lit-text`,
+     `--lit-lamp` its light);
+   - a control's states `--hover-bg`, `--pressed-bg`, `--pressed-border`, `--pressed-edge`, `--chosen-edge`; a key
+     `--key-bg`, `--key-hover-bg`, `--key-edge`, a select's `--select-bg`, a slider's cap `--cap-bg`, `--cap-edge`; a
+     well `--well-bg`, `--well-edge`, `--groove-edge`; a card's lit edge `--card-edge`; the toolbar's `--toolbar-bg`,
+     `--toolbar-edge`; `--chevron` (a mask); the main button `--primary-bg`, `--primary-border`, `--primary-fg`,
+     `--primary-edge`; the destructive one `--danger-bg`, `--danger-border`, `--danger-fg`, `--danger-edge`;
    - tones: words `--ok-fg`, `--warn-fg`, `--error-fg`; the bars that carry one `--warn-bar-fg`, `--warn-bg`,
      `--warn-border`, `--error-bar-fg`, `--error-bg`, `--error-border`; a state's light `--status-ok`, `--status-busy`,
      `--status-bad`, `--status-off`;
@@ -27,19 +43,20 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      `--map-hollow`, `--map-tick`, `--map-read`, `--map-write`, `--map-end`, `--map-pin`: BlockGrid's canvas reads them);
    - shadows `--shadow-menu`, `--shadow-dialog`, `--shadow-rule` (a hairline under tabs), `--shadow-focus`,
      `--shadow-frame`;
-   - fonts `--font`, `--font-mono`, `--line-height`; weights `--weight-normal`, `--weight-bold`;
+   - fonts `--font`, `--font-mono`, `--line-height`, `--label-tracking` (a small capital label's spacing); weights
+     `--weight-normal`, `--weight-medium` (the wordmark's dim half), `--weight-bold`;
    - heights `--control-h` (a button, a field: 28 px), `--tool-h` (a toolbar button: 32 px).
-3. **A small scale.** Spacing: `--space-1` to `--space-6` (2, 4, 8, 12, 16, 24 px). Text: `--text-xs` (11),
-   `--text-sm` (12: notes, small lines), `--text-md` (13: a dialog's explanation, a compact row), `--text-base` (14: the
-   page's words), `--text-lg` (16: titles). Radii: `--radius-sm` (4), `--radius` (6), `--radius-lg` (8). Reach for the
+4. **A small scale.** Spacing: `--space-1` to `--space-6` (2, 4, 8, 12, 16, 24 px). Text (a pixel over a system font's scale: Barlow's letters run small): `--text-xs` (12),
+   `--text-sm` (13: notes, small lines), `--text-md` (14: a dialog's explanation, a compact row), `--text-base` (15: the
+   page's words), `--text-lg` (18: titles). Radii: `--radius-sm` (2), `--radius` (3), `--radius-lg` (4). Reach for the
    nearest step rather than a new size; a new step needs a reason.
-4. **index.html holds no component styles.** The global layer is `theme/tokens.css` (the tokens) and `theme/base.css`
+5. **index.html holds no component styles.** The global layer is `theme/tokens.css` (the tokens) and `theme/base.css`
    (the reset, element defaults, `.sr`); `index.html` links both and keeps only the few rules of its own fallback (the
    page saying its scripts didn't load). The rest belongs to the component that renders it.
-5. **Reaching for a new step is a design smell.** A screen that seems to need a smaller font, a tighter gap or a
+6. **Reaching for a new step is a design smell.** A screen that seems to need a smaller font, a tighter gap or a
    one-off size is usually too dense: split it (more panes, tabs or wizard steps, a details disclosure) before adding
    a token. Consistency and usability come before fitting everything on one screen.
-6. **Names and the page's elements in words.** A name someone gave (a machine's, a disk's, an overlay's, a shared
+7. **Names and the page's elements in words.** A name someone gave (a machine's, a disk's, an overlay's, a shared
    folder's, a snapshot's, a connection's, a file's, a USB device's) is drawn in running text as a soft pill: its own
    color a step brighter (`--name-fg`), on a faint tint of the text's color (`--name-bg`), radius `--radius-sm`, 3 px
    of padding, at the weight around it (`--name-weight`). The words of the page's own elements named in a sentence (a

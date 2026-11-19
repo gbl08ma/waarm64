@@ -176,10 +176,11 @@
   h3 {
     margin: 0 0 calc(-1 * var(--space-2));
     padding: 0 var(--space-4);
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     font-weight: var(--weight-bold);
     color: var(--text-dim);
-    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    letter-spacing: var(--label-tracking);
   }
   .none {
     margin: 0;
@@ -211,6 +212,7 @@
   li.chosen .pick,
   .new .chosen {
     background: var(--pressed-bg);
+    box-shadow: var(--chosen-edge);
   }
   .name {
     font-weight: var(--weight-bold);

@@ -30,6 +30,10 @@
   import type { View } from './areas/screen.svelte.ts';
   import { t } from '../i18n.ts';
 
+  // The wordmark: the name's two halves told apart by weight (wa: WebAssembly, dim and lighter; arm64).
+  const name = t('toolbar:Toolbar.name');
+  const WORDMARK = [name.slice(0, 2), name.slice(2)];
+
   let { audio, net, folders }: { audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
   const running = $derived(isLive(power.state));
@@ -147,7 +151,7 @@
 </script>
 
 <header class="toolbar" bind:this={bar}>
-  <h1>{t('toolbar:Toolbar.name')}</h1>
+  <h1><span>{WORDMARK[0]}</span>{WORDMARK[1]}</h1>
   <Button
     variant="tool"
     labelled
@@ -252,8 +256,9 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
-    background: var(--surface-bar);
+    background: var(--toolbar-bg);
     border-bottom: 1px solid var(--border);
+    box-shadow: var(--toolbar-edge);
     user-select: none;
   }
   /* Full screen with the status bar (Preferences): the page without its toolbar. */
@@ -262,10 +267,13 @@
   }
   h1 {
     margin: 0 var(--space-3) 0 var(--space-2);
-    font-size: var(--text-base);
+    font-size: var(--text-lg);
     font-weight: var(--weight-bold);
+    color: var(--text);
+  }
+  h1 span {
+    font-weight: var(--weight-medium);
     color: var(--text-dim);
-    letter-spacing: 0.02em;
   }
   .sep {
     width: 1px;
