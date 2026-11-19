@@ -50,23 +50,32 @@
   /** The record as stored, else the draft (a tab's lists show what's saved). */
   const saved = $derived(edit.record ?? m);
   const meta = $derived(m.id === current.id ? t('machines:MachinePane.head.stateHere', { state }) : text(state));
-  const tabs = $derived<{ id: MachinesTab; icon: IconName; label: string }[]>([
+  // A tab counts what it holds only when there is some (the Disks tab always).
+  const usbCount = $derived(m.usbDevices?.length ?? 0);
+  const folderCount = $derived(m.folders?.length ?? 0);
+  const tabs = $derived<{ id: MachinesTab; icon: IconName; label: string; count?: number; name?: string }[]>([
     { id: 'settings', icon: 'settings', label: t('machines:MachinePane.tab.settings') },
-    { id: 'disks', icon: 'database', label: t('machines:MachinePane.tab.disksCount', { n: m.attachments.length }) },
+    {
+      id: 'disks',
+      icon: 'database',
+      label: t('machines:MachinePane.tab.disks'),
+      count: m.attachments.length,
+      name: t('machines:MachinePane.tab.disksCount', { n: m.attachments.length }),
+    },
     { id: 'network', icon: 'network', label: t('machines:MachinePane.tab.network') },
     {
       id: 'usb',
       icon: 'usb',
-      label: m.usbDevices?.length
-        ? t('machines:MachinePane.tab.usbCount', { n: m.usbDevices.length })
-        : t('machines:MachinePane.tab.usb'),
+      label: t('machines:MachinePane.tab.usb'),
+      count: usbCount > 0 ? usbCount : undefined,
+      name: usbCount > 0 ? t('machines:MachinePane.tab.usbCount', { n: usbCount }) : undefined,
     },
     {
       id: 'folders',
       icon: 'folder',
-      label: m.folders?.length
-        ? t('machines:MachinePane.tab.foldersCount', { n: m.folders.length })
-        : t('machines:MachinePane.tab.folders'),
+      label: t('machines:MachinePane.tab.folders'),
+      count: folderCount > 0 ? folderCount : undefined,
+      name: folderCount > 0 ? t('machines:MachinePane.tab.foldersCount', { n: folderCount }) : undefined,
     },
     { id: 'snapshots', icon: 'history', label: t('machines:MachinePane.tab.snapshots') },
   ]);

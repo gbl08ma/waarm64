@@ -8,12 +8,15 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import Count from './Count.svelte';
   import Icon from './Icon.svelte';
   import T from '../T.svelte';
   import type { IconName } from '../icons.ts';
   import { isMsg, type Msg } from '../../msg.ts';
 
-  type Tab<K extends string> = { id: K; icon: IconName; label: string };
+  /** A tab: its words, and how many it holds when it counts them (`count` in a pill, `name` the tab's name with the
+   *  count in words). */
+  type Tab<K extends string> = { id: K; icon: IconName; label: string; count?: number; name?: string };
   type Props = {
     /** What the pane shows (`data-selected`: a machine's id, `disks`, `about`…). */
     id: string;
@@ -47,8 +50,13 @@
   {#if tabs}
     <div class="tabs" role="tablist">
       {#each tabs as x (x.id)}
-        <button role="tab" aria-selected={x.id === tab} onclick={() => ontab?.(x.id)} data-tab={x.id}
-          ><Icon name={x.icon} size={16} />{x.label}</button
+        <button
+          role="tab"
+          aria-selected={x.id === tab}
+          aria-label={x.name}
+          onclick={() => ontab?.(x.id)}
+          data-tab={x.id}
+          ><Icon name={x.icon} size={16} />{x.label}{#if x.count !== undefined}<Count n={x.count} />{/if}</button
         >
       {/each}
     </div>

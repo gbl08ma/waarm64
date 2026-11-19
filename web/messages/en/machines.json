@@ -955,25 +955,37 @@
     "message": "Show every disk and ramdisk stored in this browser, whether attached to a machine or not.",
     "note": "Home page: tooltip of the Disks button under the list of machines."
   },
+  "MachinesNav.disks.label": {
+    "message": "Disks",
+    "note": "Home page: button under the list of machines that shows the browser's disks; their count follows in a pill."
+  },
   "MachinesNav.disks": {
     "message": "Disks ({{n}})",
-    "note": "Home page: button under the list of machines that shows the browser's disks. {{n}}: how many."
+    "note": "Home page: the accessible name of the button under the list of machines that shows the browser's disks (the page shows the count in a pill). {{n}}: how many."
   },
   "MachinesNav.folders.title": {
     "message": "Show the shared folders stored in this browser, for any machine.",
     "note": "Home page: tooltip of the Shared folders button under the list of machines."
   },
+  "MachinesNav.folders.label": {
+    "message": "Shared folders",
+    "note": "Home page: button under the list of machines that shows the browser's shared folders; their count follows in a pill."
+  },
   "MachinesNav.folders": {
     "message": "Shared folders ({{n}})",
-    "note": "Home page: button under the list of machines that shows the browser's shared folders. {{n}}: how many."
+    "note": "Home page: the accessible name of the button under the list of machines that shows the browser's shared folders (the page shows the count in a pill). {{n}}: how many."
   },
   "MachinesNav.connections.title": {
     "message": "Show the network connections stored in this browser, such as tailnets and tailcat, for any machine's adapters.",
     "note": "Home page: tooltip of the Connections button under the list of machines."
   },
+  "MachinesNav.connections.label": {
+    "message": "Connections",
+    "note": "Home page: button under the list of machines that shows the browser's connections; their count follows in a pill."
+  },
   "MachinesNav.connections": {
     "message": "Connections ({{n}})",
-    "note": "Home page: button under the list of machines that shows the browser's network connections. {{n}}: how many."
+    "note": "Home page: the accessible name of the button under the list of machines that shows the browser's network connections (the page shows the count in a pill). {{n}}: how many."
   },
   "MachinesNav.preferences.title": {
     "message": "Set how this web app behaves in this browser, for every machine.",
@@ -1335,9 +1347,13 @@
     "message": "Settings",
     "note": "Home page: a tab of a stored machine's pane. Its settings: processors, memory, display, devices."
   },
+  "MachinePane.tab.disks": {
+    "message": "Disks",
+    "note": "Home page: a tab of a stored machine's pane. Its disks; their count follows in a pill."
+  },
   "MachinePane.tab.disksCount": {
     "message": "Disks ({{n}})",
-    "note": "Home page: a tab of a stored machine's pane. Its disks; {{n}}: how many are attached."
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its disks; {{n}}: how many are attached."
   },
   "MachinePane.tab.network": {
     "message": "Network",
@@ -1345,7 +1361,7 @@
   },
   "MachinePane.tab.usbCount": {
     "message": "USB ({{n}})",
-    "note": "Home page: a tab of a stored machine's pane. Its USB controller and devices, when it remembers some; {{n}}: how many."
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its USB controller and devices, when it remembers some; {{n}}: how many."
   },
   "MachinePane.tab.usb": {
     "message": "USB",
@@ -1353,7 +1369,7 @@
   },
   "MachinePane.tab.foldersCount": {
     "message": "Shared folders ({{n}})",
-    "note": "Home page: a tab of a stored machine's pane. Its shared folders, when some are attached; {{n}}: how many."
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its shared folders, when some are attached; {{n}}: how many."
   },
   "MachinePane.tab.folders": {
     "message": "Shared folders",

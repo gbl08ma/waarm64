@@ -94,6 +94,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      of a form folded under a small line (Advanced).
    - `ErrorBanner`: the dismissible error, warning or notice bar, across the page or floating, with a notice's countdown (the message bar, the Home page's error).
    - `StatusDot`: a state's light.
+   - `Count`: how many a tab or a list's button leads to, a number in a small sunk pill after its words (a machine's
+     Disks tab, the Home page's Connections); the button's `aria-label` says the count in words.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
    - `SizeField`: a size typed, a number and its binary unit, bound to bytes, with its least and most and why what's
      typed isn't a size (Add a disk's Blank and Ramdisk, Resize).
