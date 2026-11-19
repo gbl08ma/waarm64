@@ -262,6 +262,32 @@ The user's, or taken with them, 2026-10-18 to 2026-11-18; they bind. Registered 
   Two rooms whose IDs differ only in case (`Gabriel-LAN`, `gabriel-lan`) are two rooms with one such domain: their
   tags still tell them apart.
 
+## A demo's room
+
+A demo whose definition asks for it (`demo.room: "global"`, web/app/definitions.ts; the user, 2026-11-19) joins the
+global public room on its machine's second adapter, so visitors' demo machines can reach one another
+(decisions.md "Network"; adapters.md §1 rule 2's second exception):
+- **A connection per machine** (web/app/net-demo.ts `withDemoRoom`): a stored room connection on `waarm64-room:global`,
+  named as the machine, `forMachine` its id, made with the machine (web/app/template.ts `machineFromDemo`) and deleted
+  with it (`deleteOwnConnections`, from the machine's Delete; one another machine was attached to since stays, the
+  user's now). Its node key is made in the visitor's browser at the machine's first start, as any stored room
+  connection's, so each machine has an address of its own (rule 4 forbids sharing one anyway) and none is in the
+  definition or the snapshot. A fresh copy of the demo is another machine, so another connection and key.
+- **Incoming connections on, WebRTC where it can** (the rooms' defaults; the user chose them over relay only): the
+  Nostr relays and DERP servers see the visitor's IP address, and another visitor's machine learns it only by
+  connecting directly, which takes this machine's name. The store's start panel says so
+  ([The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers, which can see your IP address. Another visitor learns your IP address only if their machine connects to yours, which requires knowing your machine's name.](ui:machines:DemoStart.room)).
+- **The template carries no room address:** it is built with the second adapter present and unconnected (the shape
+  has it); after the restore the page connects it, and the guest asks for its address then: networkd (Arch) takes any
+  card; on Alpine the agent brings the card up and runs udhcpc6 there ([devices.md](../devices.md) "A card nothing
+  else manages"). Only the primary (the demo network, `eth0`) offers default routes, so the room adds its /48 and
+  nothing else.
+- **What it costs:** the room client (`ts.wasm`) loads with the second adapter's connection, after the restore, so
+  click to prompt is unchanged.
+- **Names on Alpine:** the room's resolver isn't in Alpine's `/etc/resolv.conf` (musl asks every server at once and
+  takes the first answer, so the demo network's NXDOMAIN would race it), so a demo on Alpine reaches a peer by its
+  room address, not its name (docs/backlog.md).
+
 ## The direct path
 
 - **Signalling inside the tunnel:** UDP between the two members' addresses, port 1 both ends (`SIGNAL_PORT`; the

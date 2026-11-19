@@ -128,6 +128,7 @@ const DEMO_CHECKS: Checks = {
   view: (x) => x.view === 'serial' || x.view === 'screen',
   snapshot: (x) => optional(x.snapshot, (s) => isRecord(s) && isFileUrl(s.manifest) && isHash(s.id)),
   network: (x) => optional(x.network, (v) => v === 'demo'),
+  room: (x) => optional(x.room, (v) => v === 'global'),
   replaces: (x) =>
     optional(x.replaces, (v) => Array.isArray(v) && v.length <= 64 && v.every((r) => isDemoId(r) && r !== x.id)),
   template: (x) => optional(x.template, isBool),
@@ -156,8 +157,17 @@ function problem(d: Raw): string | undefined {
     if (disk) return disk;
   }
   if (d.version === 1 || d.demo === undefined) return undefined;
-  if (!isRecord(d.demo)) return 'demo';
-  return failed(d.demo, DEMO_CHECKS, 'demo') ?? (d.demo.network && m.network !== true ? 'demo.network' : undefined);
+  return demoProblem(d.demo, m);
+}
+
+/** What's wrong with a definition's `demo` on machine `m`: a field, or a network it asks for with no adapter for it. */
+function demoProblem(demo: unknown, m: Raw): string | undefined {
+  if (!isRecord(demo)) return 'demo';
+  const adapters = Array.isArray(m.macs) ? m.macs.length : m.network === true ? 1 : 0;
+  const bad = failed(demo, DEMO_CHECKS, 'demo');
+  if (bad) return bad;
+  if (demo.network && !adapters) return 'demo.network';
+  return demo.room && adapters < 2 ? 'demo.room' : undefined;
 }
 
 /**

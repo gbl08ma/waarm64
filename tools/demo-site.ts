@@ -1,7 +1,7 @@
 // The demos' site (docs/remote-disks.md "Publishing the demos"; docs/decisions.md "Demos"): what
 // tools/publish-demos.ts writes into target/disks/ for vmdisks.tny.im, planned before anything is written.
 //
-// The input is a source file (deploy/disks/demos.json): per demo, its card (`demo`: id, summary, view, network,
+// The input is a source file (deploy/disks/demos.json): per demo, its card (`demo`: id, summary, view, network, room,
 // replaces, download, template: whether New machine offers it as a template too), a name, a thumbnail, its recipe (how
 // tools/build-demos.ts makes it: `Recipe`; not checked here) and its build: a directory as bench/demo/make-template.ts
 // (which tools/build-demos.ts runs) writes it, `manifest.json` (the image, chunked), `snapshot.json` (the template snapshot, chunked) and
@@ -52,7 +52,7 @@ const STAGED = '.publishing';
 const NOT_SITE = new Set([LEDGER, IGNORE]);
 
 /** The card's fields the source gives (the snapshot's and the thumbnail's are the tool's). */
-const CARD_FIELDS = ['id', 'summary', 'download', 'view', 'network', 'replaces', 'template'];
+const CARD_FIELDS = ['id', 'summary', 'download', 'view', 'network', 'room', 'replaces', 'template'];
 const ENTRY_FIELDS = ['build', 'name', 'thumbnail', 'demo', 'recipe'];
 const THUMBS = ['.webp', '.png', '.jpg', '.avif'];
 
@@ -268,6 +268,7 @@ export async function buildDemo(d: SourceDemo, root: string): Promise<Built> {
     view: d.demo.view,
     ...(snapshot ? { snapshot: { manifest: `${prefix}snapshot.json`, id: snapshot.id } } : {}),
     ...(d.demo.network ? { network: d.demo.network } : {}),
+    ...(d.demo.room ? { room: d.demo.room } : {}),
     ...(d.demo.replaces?.length ? { replaces: d.demo.replaces } : {}),
     ...(d.demo.template === undefined ? {} : { template: d.demo.template }),
   });

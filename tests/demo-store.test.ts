@@ -11,6 +11,7 @@ import { demoMachines, fetchStore, findDemo, parseStore, STORE_TYPE, templatesOf
 import { machineFromDemo, machineFromStoreTemplate, MAX_TEMPLATE } from '../web/app/template.ts';
 import { attach, createDisk, createMachine } from '../web/app/machines.ts';
 import { Connections } from '../web/app/connections.ts';
+import { deleteOwnConnections } from '../web/app/net-demo.ts';
 import { Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { contentId, CHUNKED_FORMAT } from '../web/chunked.ts';
@@ -175,6 +176,49 @@ test("a demo's machine: marked with its store and id, its adapter on the demo ne
   await assert.rejects(machineFromDemo(store, findDemo(s, 'gone')!), (e) => msgOf(e)?.key === 'machines:template.gone');
   await assert.rejects(machineFromDemo(store, findDemo(s, 'other')!), (e) => msgOf(e)?.key === 'machines:template.otherSnapshot');
   assert.equal((await store.all('machines')).length, 1, 'no machine from a failed download');
+});
+
+test("a demo's room (`demo.room`): its second adapter on a room connection of its own on the global room, a key each, deleted with its machine; one adapter is refused", async () => {
+  const two = async () => {
+    const d = await demoDef({ room: 'global' });
+    return { ...d, machine: { ...d.machine, macs: ['52:54:00:12:34:56', '52:54:00:12:34:57'] } };
+  };
+  const one = await demoDef({ room: 'global' });
+  assert.equal(damagedField(() => checkDefinition(JSON.parse(JSON.stringify(one)))), 'demo.room', 'one adapter: no second for the room');
+  assert.equal(damagedField(() => checkDefinition({ ...one, demo: { ...one.demo!, room: 'mine' as 'global' } })), 'demo.room');
+  const { snapshot: _, ...noSnap } = (await two()).demo!;
+  serve({ [STORE_URL]: JSON.stringify({ type: STORE_TYPE, version: 1, demos: [{ ...(await two()), demo: noSnap }] }) });
+  const s = await fetchStore(STORE_URL);
+  const store = fresh();
+  const a = (await machineFromDemo(store, findDemo(s, 'alpine-term')!)).machine;
+  const b = (await machineFromDemo(store, findDemo(s, 'alpine-term')!)).machine; // Start a fresh copy
+  const conns = await new Connections(store).list();
+  const roomOf = (m: typeof a) => conns.find((c) => c.id === m.adapters?.[1].connection);
+  for (const m of [a, b]) {
+    assert.equal(conns.find((c) => c.id === m.adapters?.[0].connection)?.kind, 'demo', 'the first adapter on the demo network');
+    const r = roomOf(m);
+    assert.equal(r?.kind, 'room', 'the second on a room');
+    assert.equal(r?.forMachine, m.id);
+    assert.equal(r?.name, m.name, 'named as its machine');
+    assert.match(r?.room?.link ?? '', /^waarm64-room:global$/);
+    assert.deepEqual([r?.room?.incoming, r?.room?.relayOnly, r?.ephemeral], [true, false, false]);
+    assert.equal(r?.room?.identity, undefined, 'no key in the record: made at its first start');
+  }
+  assert.notEqual(roomOf(a)?.id, roomOf(b)?.id, 'a connection each');
+  assert.notEqual(roomOf(a)?.room?.identityKey, roomOf(b)?.room?.identityKey, 'a key each');
+  assert.equal(conns.filter((c) => c.kind === 'demo').length, 1, 'the demo network shared');
+  // Deleted with its machine; the other machine's stays, and so does one another machine was attached to since.
+  await store.deleteMachine(a.id);
+  await deleteOwnConnections(store, a.id);
+  const left = await new Connections(store).list();
+  assert.equal(left.some((c) => c.id === roomOf(a)?.id), false, "a's room deleted");
+  assert.ok(left.some((c) => c.id === roomOf(b)?.id), "b's kept");
+  const other = await createMachine(store, { name: 'Mine', ncpus: 1, ramMiB: 256, display: '2d', network: true, usb: false, mouse: false, touch: false, shares: false });
+  const { setAdapterConnection } = await import('../web/app/machines.ts');
+  await setAdapterConnection(store, other.id, 0, roomOf(b)!.id);
+  await store.deleteMachine(b.id);
+  await deleteOwnConnections(store, b.id);
+  assert.ok((await new Connections(store).list()).some((c) => c.id === roomOf(b)?.id), 'attached elsewhere since: the user\'s now');
 });
 
 test("templates (New machine's): only the demos marked so; a template's machine is the definition's, cold, the user's own", async () => {

@@ -73,7 +73,7 @@ function store(NAME: string) {
   const at = (u?: string) => (u && !/^[a-z]+:/.test(u) ? `${NAME}/${u}` : u);
   const own = def.demo as { snapshot?: { manifest: string }; thumbnail?: string } | undefined;
   const demo = own
-    ? { ...own, snapshot: own.snapshot && { ...own.snapshot, manifest: at(own.snapshot.manifest) }, ...(own.thumbnail ? { thumbnail: at(own.thumbnail) } : {}), network: undefined }
+    ? { ...own, snapshot: own.snapshot && { ...own.snapshot, manifest: at(own.snapshot.manifest) }, ...(own.thumbnail ? { thumbnail: at(own.thumbnail) } : {}), network: undefined, room: undefined }
     : { id: NAME, summary: 'A demo.', download: snap.size, view: isDesktop(NAME) ? 'screen' : 'serial', snapshot: { manifest: `${NAME}/snapshot.json`, id: snap.id } };
   return { type: 'waarm64-store', version: 1, demos: [{ ...def, version: 2, disks: def.disks.map((d) => ({ ...d, url: at(d.url) })), demo }] };
 }

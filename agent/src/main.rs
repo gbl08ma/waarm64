@@ -27,6 +27,7 @@ mod prelude {
     pub use alloc::{format, vec};
 }
 
+mod card;
 mod clip;
 mod console;
 mod drop;
@@ -72,6 +73,7 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::DISPLAY
     | frame::cap::RENEW
     | frame::cap::LEASE
+    | frame::cap::CARDS
     | frame::cap::DESKTOP
     | frame::cap::TRIM
     | frame::cap::KEYMAP
@@ -186,6 +188,10 @@ struct Agent {
     lease: lease::Paths,
     leasing: Option<lease::Job>,
     leased: Option<u8>,
+    /// CARDS' paths, its run (a card brought up), and the cards it named while one ran (taken next).
+    card: card::Paths,
+    carding: Option<lease::Job>,
+    cards_next: Option<Vec<[u8; 6]>>,
     /// TRIM's mount table, how a filesystem is trimmed (the tests' records it), its child, and TRIMMED's status once done.
     trim: trim::Paths,
     fitrim: trim::Fitrim,
@@ -262,6 +268,9 @@ impl Agent {
             keygen: None,
             renewed: None,
             lease: lease::Paths::default(),
+            card: card::Paths::default(),
+            carding: None,
+            cards_next: None,
             leasing: None,
             leased: None,
             trim: trim::Paths::default(),
@@ -529,6 +538,23 @@ impl Agent {
         self.load_vc(k.vc.clone());
     }
 
+    /// CARDS' cards (`macs`): those nothing else manages brought up in a child (src/card.rs).
+    fn cards(&mut self, macs: &[[u8; 6]]) {
+        let cards = card::unmanaged(&self.lease, &self.card, macs);
+        let Some(steps) = card::steps(&self.card, &cards) else {
+            return;
+        };
+        if let Err(e) = card::write_script(&self.card) {
+            log("cards: udhcpc6's script", Some(e));
+            return;
+        }
+        log(&format!("cards: bringing up {}", cards.join(" ")), None);
+        match lease::spawn_steps(&steps) {
+            Ok(j) => self.carding = Some(j),
+            Err(e) => log("cards: fork", Some(e)),
+        }
+    }
+
     fn load_vc(&mut self, vc: String) {
         let Some(tool) = keymap::found(&self.loadkeys_at) else {
             return;
@@ -620,6 +646,7 @@ enum Tag {
     Child,
     Keygen,
     Lease,
+    Card,
     Trim,
     Drop,
     Grow,
@@ -660,6 +687,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(j) = &s.agent.leasing {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
             tags.push(Tag::Lease);
+        }
+        if let Some(j) = &s.agent.carding {
+            fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
+            tags.push(Tag::Card);
         }
         if let Some(j) = &s.agent.trimming {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
@@ -724,6 +755,22 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                 Tag::Lease => {
                     if let Some(j) = s.agent.leasing.take() {
                         s.agent.leased = Some(lease::done(j));
+                    }
+                }
+                Tag::Card => {
+                    if let Some(j) = s.agent.carding.take() {
+                        let ok = lease::reap(j);
+                        log(
+                            if ok {
+                                "cards: brought up, udhcpc6 started"
+                            } else {
+                                "cards: bringing a card up failed"
+                            },
+                            None,
+                        );
+                    }
+                    if let Some(macs) = s.agent.cards_next.take() {
+                        s.agent.cards(&macs);
                     }
                 }
                 Tag::Trim => {
@@ -896,6 +943,18 @@ impl Session<'_> {
                             self.agent.leased = Some(lease::status::FAILED);
                         }
                     },
+                }
+            }
+            // The cards the page connected: one nothing else manages brought up (src/card.rs); one run at a time, the
+            // latest CARDS taken after it.
+            frame::CARDS => {
+                let Some(macs) = lease::decode(payload) else {
+                    return;
+                };
+                if self.agent.carding.is_some() {
+                    self.agent.cards_next = Some(macs);
+                } else {
+                    self.agent.cards(&macs);
                 }
             }
             // The filesystems trimmed (src/trim.rs). One run at a time: a TRIM while one runs is answered by its

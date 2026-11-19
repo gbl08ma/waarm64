@@ -5,7 +5,8 @@
 // moving away from `performance.now()`, which the guest's counter follows and which may not count a host's sleep); and
 // the screen's size, which the agent's session follows (DISPLAY: the guest's compositor or X server set to it); and the
 // guest's graphical session as the agent says it (DESKTOP), as `body[data-desktop]` for the tests' waits (nothing the
-// user sees: docs/devices.md "The desktop's state"); and the guest's OS as the agent names it (OS), for the status bar; whether it powers the guest off when asked (`canPower`).
+// user sees: docs/devices.md "The desktop's state"); and the guest's OS as the agent names it (OS), for the status bar; whether it powers the guest off when asked (`canPower`);
+// and the cards connected (CARDS, at each HELLO and change: docs/devices.md "A card nothing else manages").
 import { CAP, DESKTOP, type GuestOs } from '../../agent-frame.ts';
 import { AgentLink, pageCaps } from '../agent-link.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
@@ -21,6 +22,8 @@ type Size = { width: number; height: number };
  */
 export type AgentShown = { os(os: GuestOs | undefined): void; canPower(can: boolean): void; ended(): void };
 const NOT_SHOWN: AgentShown = { os: () => undefined, canPower: () => undefined, ended: () => undefined };
+/** The cards connected now (their MACs) and a way to hear of their changes (web/app/net-settled.ts `NetSettled`). */
+export type CardsSource = { macs(): string[]; listen(f: () => void): void };
 /** What follows each run's link from its start to its end (web/app/areas/grow-actions.ts: the disks grown in the guest). */
 export type LinkFollower = { follow(link: AgentLink): void; end(): void };
 
@@ -58,17 +61,22 @@ export class AgentActions {
 
   readonly #shown: AgentShown;
   readonly #follower: LinkFollower | undefined;
+  /** The run's adapters connected now, and their changes (web/app/net-settled.ts). */
+  readonly #cards: CardsSource | undefined;
 
   constructor(
     size: () => Size | undefined,
     layout: () => KeyboardLayout | undefined,
     shown = NOT_SHOWN,
     follower?: LinkFollower,
+    cards?: CardsSource,
   ) {
     this.#size = size;
     this.#layout = layout;
     this.#shown = shown;
     this.#follower = follower;
+    this.#cards = cards;
+    cards?.listen(() => this.cards());
   }
 
   /**
@@ -97,6 +105,7 @@ export class AgentActions {
       () => this.syncClock(),
       () => this.keymap(this.#layout()),
       (h) => this.#shown.canPower((h.caps & CAP.POWER) !== 0),
+      () => this.cards(),
     );
     this.#follower?.follow(link);
     let offset = Date.now() - performance.now();
@@ -132,6 +141,14 @@ export class AgentActions {
    */
   keymap(l: KeyboardLayout | undefined): boolean {
     return !!l && !!this.#link?.keymap(l);
+  }
+
+  /**
+   * The run's adapters connected changed (or the agent said HELLO): the agent is told which cards are connected (CARDS),
+   * and brings up one nothing in the guest manages (agent/src/card.rs).
+   */
+  cards() {
+    if (this.#cards) this.#link?.cards(this.#cards.macs());
   }
 
   /** The run's link, if it has one. */

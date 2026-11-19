@@ -102,6 +102,9 @@ export class AgentLink {
   private port: MessagePort;
   /** What the page's HELLO says (`pageCaps`). */
   readonly caps: number;
+  /** The cards connected now (`cards`: their MACs), and what CARDS last said on this connection (said again at each agent's HELLO). */
+  private connected?: string[];
+  private cardsSent?: string;
   /** The screen's size last given (`display`): said again at each agent's HELLO. */
   private size?: { width: number; height: number };
   /**
@@ -301,6 +304,24 @@ export class AgentLink {
     });
   }
 
+  /**
+   * The cards the page has connected now (their MACs, `macs`), which the agent brings up where nothing else in the guest
+   * manages them (CARDS, agent/src/card.rs): said at each agent's HELLO and whenever they change; false: not sent (the
+   * same as last said, no agent, one without `CAP.CARDS`).
+   */
+  cards(macs: string[]): boolean {
+    this.connected = [...macs];
+    return this.sendCards();
+  }
+
+  private sendCards() {
+    if (!this.connected || !this.agent || !(this.agent.caps & CAP.CARDS)) return false;
+    const said = this.connected.join(',');
+    if (said === this.cardsSent || !this.send(FRAME.CARDS, encodeLease(this.connected))) return false;
+    this.cardsSent = said;
+    return true;
+  }
+
   private sendDisplay() {
     if (!this.size || !this.agent || !(this.agent.caps & CAP.DISPLAY) || !(this.caps & CAP.DISPLAY)) return false;
     return this.send(FRAME.DISPLAY, encodeDisplay(this.size.width, this.size.height));
@@ -396,6 +417,8 @@ export class AgentLink {
     this.agent = h;
     this.sendRenew();
     this.sendDisplay();
+    this.cardsSent = undefined; // a new connection (a restore, the agent started again): said afresh
+    this.sendCards();
     // A copy: a waiter (`hello`) leaves the list as it hears it.
     for (const f of [...this.onHello]) f(h);
   }

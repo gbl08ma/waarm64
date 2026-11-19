@@ -72,6 +72,9 @@ pub const DROPPED: u8 = 29;
 pub const GROW: u8 = 30;
 /// The agent's: what became of a GROW (`grown`: the serial, a status per step, an errno, the size now).
 pub const GROWN: u8 = 31;
+/// The page's: the cards it has connected now (LEASE's payload: a u8 count, then their MACs), at its HELLO and when
+/// that changes; the agent brings up one nothing in the guest manages (src/card.rs).
+pub const CARDS: u8 = 32;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -119,6 +122,8 @@ pub mod cap {
     pub const DROP: u32 = 1 << 16;
     /// GROW and GROWN: a disk the page grew grown in the guest too (its last partition, its mounted filesystem).
     pub const GROW: u32 = 1 << 17;
+    /// CARDS: a connected card nothing else manages brought up (the agent's; the page sends CARDS to an agent that says it).
+    pub const CARDS: u32 = 1 << 18;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 
@@ -629,6 +634,8 @@ mod tests {
     fn grow_and_grown_as_the_page_has_them() {
         // The same bytes as tests/agent.test.ts "frames: GROW and GROWN".
         assert_eq!((GROW, GROWN, cap::GROW), (30, 31, 131072));
+        // tests/agent.test.ts "frames: TIME and SESSION" pins the same.
+        assert_eq!((CARDS, cap::CARDS), (32, 262144));
         let mut p = vec![11];
         p.extend_from_slice(b"waarm64-abc");
         p.extend_from_slice(&(5u64 << 30).to_le_bytes());

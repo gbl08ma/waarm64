@@ -144,7 +144,7 @@ const messages = new Messages(machine, () => {
 void import('./areas/names.svelte.ts').then((n) => n.startPageNames((m) => messages.notify(m)));
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
 const growActions = new GrowActions(messages, store, () => machine.stored?.record.id);
-const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown(power, status), growActions);
+const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown(power, status), growActions, netSettled);
 const leaseActions = new LeaseActions({
   whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
   link: () => agentActions.link,

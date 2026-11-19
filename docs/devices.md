@@ -390,8 +390,9 @@ the guest's network manager through its own tool, where both are there: systemd-
 cards (`/sys/class/net/<name>` with a `device`, its `address` one of LEASE's; each tried, past one that fails), what `networkctl renew` calls (networkctl resolves a link over netlink, even an index, which the unit's
 `RestrictAddressFamilies` refuses: seen on Debian 13), or NetworkManager (`/run/NetworkManager`) through `nmcli
 device connect <name>`; else, card by card, the DHCP clients that run without a manager (Alpine's, from ifupdown),
-found among the processes: the card's **udhcpc** (busybox's; its `-i`, else `eth0`) gets SIGUSR1, busybox's renew (a
-request to the server it had; a NAK, or three unanswered, and it asks afresh), else where **dhcpcd** manages the card
+found among the processes: the card's **udhcpc** (busybox's; its `-i`, else `eth0`) and **udhcpc6** (IPv6's, as the
+agent starts on a card nothing else manages, below) get SIGUSR1, busybox's renew (a request to the server it had; a
+NAK, or three unanswered, and it asks afresh), else where **dhcpcd** manages the card
 (`dhcpcd_manages`, found by its name: it rewrites its argv; a dhcpcd whose title names the card, `dhcpcd: eth0 [ip4]`,
 or the manager, `[manager]`/`[master]`, for a card `/etc/dhcpcd.conf`'s `denyinterfaces`/`allowinterfaces` don't
 leave out; never a card no dhcpcd runs for, where `-n` would start one) `dhcpcd -n <name>`, its rebind (an INIT-REBOOT request, else a discover; unlike `-N` it
@@ -416,6 +417,28 @@ held flaps (tests/net-path.test.ts), on Debian (`tests/page-template.test.ts`) t
 (`tests/page-alpine-agent.test.ts`, ci-net.sh) through dhcpcd and udhcpc after a template's restore (its link's
 `carrier_changes` the same as at the save: no flap). The page says what
 became of a restore's leases as `body[data-lease]` (`agent`, `flap`, `none`, `gone`: the tests' waits).
+
+**A card nothing else manages** (CARDS; `agent/src/card.rs`, `web/app/agent-link.ts` `cards`; the user's OK,
+2026-11-19, for every guest with the agent): the page names the cards it has connected (web/app/net-settled.ts
+`macs`, at each agent's HELLO and when they change: web/app/areas/agent-actions.ts `cards`), and the agent brings up
+one that nothing in the guest manages, for a guest whose network is configured card by card: Alpine's ifupdown-ng
+configures only what `/etc/network/interfaces` lists (`eth0`), so a second adapter the page connected (a demo's room:
+[networking/rooms.md](networking/rooms.md) "A demo's room") would stay down. A card is the agent's only when the guest
+has no systemd (`/run/systemd/system`: there networkd, NetworkManager or the user owns the cards, and the unit is
+sandboxed), neither networkd nor NetworkManager runs, the card is down (IFF_UP clear in its sysfs `flags`), no ifupdown
+file names it (`/etc/network/interfaces`, `/etc/network/interfaces.d/*`: any word of a line that isn't a comment) and no
+DHCP client runs for it (a udhcpc or udhcpc6 of its own, a dhcpcd that manages it). Then, in a forked child as LEASE's
+tools run: `accept_ra_rt_info_max_plen` 128 on the card (the kernel's default, 0, ignores the Route Information
+options the page's gateway routes a non-primary adapter's prefixes by: a room's /48, tailcat's /128s; Alpine's
+linux-virt has `CONFIG_IPV6_ROUTE_INFO`), `ip link set <card> up`, and busybox's `udhcpc6 -i <card> -b -t 3 -T 2 -A 3`
+with the agent's script (`/run/waarm64-udhcpc6.script`, outside the agent's own tmpfs so it outlives the service:
+Alpine's default script is IPv4's only), which adds the leased address as a /128 (`ip -6 addr replace`) and flushes
+the card's global addresses at `deconfig`. IPv6 only: a gateway that isn't the primary gives no IPv4 route, and only
+the primary gives default routes (networking/adapters.md §4). The card's resolvers are left alone (musl asks every
+server in `/etc/resolv.conf` at once and takes the first answer). The agent never takes a card down: one the page
+disconnected keeps its client, asking until its network comes back; after a restore LEASE renews its udhcpc6 as it
+does udhcpc. Tests: the root's rules and steps on a guest's files (agent/src/card.rs), the link's CARDS
+(tests/agent-link.test.ts).
 
 **The desktop's state** (DESKTOP; the user's decision, 2026-11-13: for the tests only): the session child says when a
 graphical session is up for seat0's active user: Wayland's once its connection to a compositor has the globals (the
@@ -691,11 +714,12 @@ to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's), `CAP.DROP` (bit 16: DROP, the agent's), `CAP.GROW` (bit 17: GROW, the agent's). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's), `CAP.DROP` (bit 16: DROP, the agent's), `CAP.GROW` (bit 17: GROW, the agent's), `CAP.CARDS` (bit 18: CARDS, the agent's; the page sends CARDS to an agent that says it). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
 | LEASE (17) | u8 count, then that many MACs (6 bytes each): the cards to renew; empty (an earlier page): every card | the page's, after a restore once its connections are up ("The network after a restore" below), to an agent whose HELLO has `CAP.LEASE` (bit 7) |
+| CARDS (32) | LEASE's: u8 count, then that many MACs (6 bytes each), the cards the page has connected now | the page's, to an agent whose HELLO has `CAP.CARDS` (bit 18): at each agent's HELLO and when the set changes, each set once a connection (`AgentLink.cards`); no answer ("A card nothing else manages" below) |
 | LEASED (18) | u8 status: 0 renewed, 1 no network manager the agent knows (or its tool missing), 2 its tool failed | the agent's, when its tool ended (`AgentLink.lease`'s answer) |
 | DESKTOP (19) | u8 state: 0 none, 1 Wayland's, 2 X11's | the agent's, to a page whose HELLO has `CAP.DESKTOP`: the graphical session's state at each change, and at a connection once the page's HELLO came if it isn't none ("The desktop's state" above) |
 | TRIM (20) | none | the page's, to an agent whose HELLO has `CAP.TRIM`: the guest's filesystems trimmed ("Disk space handed back" above) |

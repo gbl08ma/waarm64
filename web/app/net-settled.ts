@@ -1,6 +1,7 @@
 // When a restored machine's guest may renew its leases (web/app/areas/lease-actions.ts): the page's network settled with
 // a card connected. Its gateway offers nothing while a connection has no lease (web/gateway.ts `dhcp`), so renewing
-// before the connection is up would leave the guest without a lease for long.
+// before the connection is up would leave the guest without a lease for long. Also the cards connected now, for the
+// agent's CARDS (web/app/areas/agent-actions.ts `cards`: docs/devices.md "A card nothing else manages").
 import type { Phase } from './network-view.ts';
 import type { Connected } from './areas/lease-actions.ts';
 
@@ -12,6 +13,8 @@ export class NetSettled {
   readonly #views: () => { phase: Phase; mac: string }[];
   /** `when`'s checks, run at each change (`changed`); each returns true once it is done. */
   #checks: (() => boolean)[] = [];
+  /** Told at each change (`listen`). */
+  #listeners: (() => void)[] = [];
 
   constructor(views: () => { phase: Phase; mac: string }[]) {
     this.#views = views;
@@ -20,6 +23,17 @@ export class NetSettled {
   /** An adapter's state changed (the page's network's `onChange`). */
   changed() {
     this.#checks = this.#checks.filter((c) => !c());
+    for (const f of this.#listeners) f();
+  }
+
+  /** `f` called at each change of an adapter's state. */
+  listen(f: () => void) {
+    this.#listeners.push(f);
+  }
+
+  /** The MACs of the adapters connected now. */
+  macs(): string[] {
+    return this.#views().flatMap((v) => (v.phase === 'connected' ? [v.mac] : []));
   }
 
   /**

@@ -11,7 +11,8 @@
 //! - Else, card by card, the DHCP clients that run without a manager (Alpine's, through ifupdown: decision 14 of
 //!   DEMO-KICKOFF.md), found among the processes (`/proc/<pid>/cmdline`):
 //!   - **udhcpc** (busybox's) for the card (its `-i`, else `eth0`, its default): SIGUSR1, busybox's "renew": a request
-//!     for its lease to the server it had, a NAK (or no answer, after three) and it asks afresh.
+//!     for its lease to the server it had, a NAK (or no answer, after three) and it asks afresh. The same for a
+//!     **udhcpc6** of the card (IPv6's: the one the agent starts on a card nothing else manages, src/card.rs).
 //!   - **dhcpcd** where it manages the card (`dhcpcd_manages`: a dhcpcd of the card's own, `dhcpcd <link>`, its title
 //!     naming it; or the manager, `[manager]`/`[master]`, for every card its configuration doesn't leave out by
 //!     `denyinterfaces`/`allowinterfaces`): `dhcpcd -n <link>`, its rebind (the configuration read again and the lease
@@ -119,7 +120,7 @@ pub fn decode(p: &[u8]) -> Option<Vec<[u8; 6]>> {
     Some(rest.as_chunks::<6>().0.to_vec())
 }
 
-fn found(list: &[String]) -> Option<&String> {
+pub fn found(list: &[String]) -> Option<&String> {
     list.iter()
         .find(|p| rustix::fs::access(p.as_str(), rustix::fs::Access::EXEC_OK).is_ok())
 }
@@ -129,6 +130,8 @@ fn found(list: &[String]) -> Option<&String> {
 pub enum Step {
     Run(Vec<String>),
     Signal(Pid, Signal),
+    /// Bytes written to a file that exists (a sysctl's, under `/proc/sys`).
+    Write(String, Vec<u8>),
 }
 
 /// A process's argv (`/proc/<pid>/cmdline`: NUL-separated), its program's name first (the path's last part); a
@@ -152,7 +155,7 @@ fn argv_of(proc: &str, pid: &str) -> Option<Vec<String>> {
 }
 
 /// The processes: each one's pid, its name (`comm`: the program's, which a rewritten argv keeps) and argv (`argv_of`).
-fn processes(proc: &str) -> Vec<(Pid, String, Vec<String>)> {
+pub fn processes(proc: &str) -> Vec<(Pid, String, Vec<String>)> {
     let Ok(pids) = crate::rt::dir_names(proc) else {
         return Vec::new();
     };
@@ -169,11 +172,17 @@ fn processes(proc: &str) -> Vec<(Pid, String, Vec<String>)> {
         .collect()
 }
 
-/// The options of busybox's udhcpc that take a value (its getopt string), the interface's (`i`) among them.
+/// The options of busybox's udhcpc that take a value (its getopt string), the interface's (`i`) among them (udhcpc6's
+/// are a subset).
 const UDHCPC_VALUED: &[u8] = b"VHhFipsrTtAOxB";
 
-/// The interface a udhcpc's arguments (past its name) give it: `-i <if>`, `-i<if>` (also at a cluster's end, `-bRi
-/// <if>`), `--interface <if>`, `--interface=<if>`; else busybox's default, `eth0`.
+/// Whether argv `a` (`argv_of`'s) is a busybox DHCP client (udhcpc, or udhcpc6 for IPv6) of `card`.
+pub fn udhcpc_of(a: &[String], card: &str) -> bool {
+    (a[0] == "udhcpc" || a[0] == "udhcpc6") && udhcpc_interface(&a[1..]) == card
+}
+
+/// The interface a udhcpc's (or udhcpc6's) arguments (past its name) give it: `-i <if>`, `-i<if>` (also at a cluster's
+/// end, `-bRi <if>`), `--interface <if>`, `--interface=<if>`; else busybox's default, `eth0`.
 pub fn udhcpc_interface(args: &[String]) -> String {
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -279,7 +288,7 @@ pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Step>> {
     for card in &cards {
         let udhcpc: Vec<Step> = procs
             .iter()
-            .filter(|(_, _, a)| a[0] == "udhcpc" && udhcpc_interface(&a[1..]) == *card)
+            .filter(|(_, _, a)| udhcpc_of(a, card))
             .map(|(pid, _, _)| Step::Signal(*pid, Signal::USR1))
             .collect();
         if !udhcpc.is_empty() {
@@ -387,12 +396,14 @@ pub fn spawn_steps(steps: &[Step]) -> Result<Job, Errno> {
     enum Ready {
         Run(Vec<Vec<u8>>),
         Signal(Pid, Signal),
+        Write(String, Vec<u8>),
     }
     let ready: Vec<Ready> = steps
         .iter()
         .map(|s| match s {
             Step::Run(c) => Ready::Run(c.iter().map(|a| cstr(a)).collect()),
             Step::Signal(p, sig) => Ready::Signal(*p, *sig),
+            Step::Write(path, bytes) => Ready::Write(path.clone(), bytes.clone()),
         })
         .collect();
     // SAFETY: the agent is one thread, so the child has the whole process's state in order; it never returns to the
@@ -410,6 +421,13 @@ pub fn spawn_steps(steps: &[Step]) -> Result<Job, Errno> {
             .filter(|r| match r {
                 Ready::Run(a) => !run(a),
                 Ready::Signal(p, sig) => rustix::process::kill_process(*p, *sig).is_err(),
+                Ready::Write(path, bytes) => rustix::fs::open(
+                    path.as_str(),
+                    rustix::fs::OFlags::WRONLY | rustix::fs::OFlags::CLOEXEC,
+                    rustix::fs::Mode::empty(),
+                )
+                .and_then(|fd| rustix::io::write(&fd, bytes))
+                .is_err(),
             })
             .count()
             == 0;

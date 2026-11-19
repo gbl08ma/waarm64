@@ -82,6 +82,11 @@ export type Connection = {
   room?: RoomConnection;
   /** Connect when a machine attached to it starts (off after Disconnect). */
   connectAtStart: boolean;
+  /**
+   * The machine it was made for, by the page (a demo's room: web/app/net-demo.ts `withDemoRoom`), deleted with that
+   * machine (`deleteOwnConnections`); none: the user's.
+   */
+  forMachine?: string;
   /** When a machine last connected it (what the Attach wizard preselects); 0: never. */
   lastUsed: number;
   created: number;
@@ -100,6 +105,7 @@ export type NewConnection = {
   name?: string;
   ephemeral?: boolean;
   connectAtStart?: boolean;
+  forMachine?: string;
   tailnet?: Omit<TailnetConnection, 'stateKey'>;
   tailcat?: Omit<TailcatConnection, 'identityKey' | 'identity'>;
   local?: LocalConnection;
@@ -259,6 +265,7 @@ export class Connections {
       ephemeral,
       ...settingsFor(o, id, ephemeral, room),
       connectAtStart: o.connectAtStart ?? true,
+      ...(o.forMachine ? { forMachine: o.forMachine } : {}),
       lastUsed: 0,
       created: Date.now(),
     };

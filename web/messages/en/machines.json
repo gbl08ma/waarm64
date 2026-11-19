@@ -1867,6 +1867,10 @@
     "message": "Starting it downloads about {{size, bytes}}. The machine's disk stays on its server and is read as the machine uses it, so the machine needs that server to run; what you change is kept in this browser.",
     "note": "Demo store's page, a demo's details: what starting it downloads, and where its files are. {{size}}: the bytes."
   },
+  "DemoStart.room": {
+    "message": "The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers, which can see your IP address. Another visitor learns your IP address only if their machine connects to yours, which requires knowing your machine's name.",
+    "note": "Demo store's page, a demo's details, under what starting it downloads: shown only for a demo whose machine joins the global public room (its second network adapter on a peer-to-peer room of its own). What that means for the visitor's privacy: the Nostr relays and DERP servers see the browser's IP address; another visitor's machine learns it only by connecting directly (WebRTC), which needs this machine's name in the room."
+  },
   "DemoStart.needs": {
     "message": "What it needs",
     "note": "Demo store's page, a demo's details: the heading over what the demo needs of the browser, each checked (machines:DemoChecks.*)."

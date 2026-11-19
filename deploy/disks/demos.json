@@ -15,7 +15,7 @@
      "keyboard": "browser",
      "display": "2d",
      "network": true,
-     "macs": ["52:54:00:bf:f6:6b"],
+     "macs": ["52:54:00:bf:f6:6b", "52:54:00:73:06:50"],
      "clock": true
     },
     "serial": "b3a06b5a0657"
@@ -25,6 +25,7 @@
     "summary": "Alpine Linux at a root prompt, in a few seconds. Type a command it doesn't have and it installs it; apk reaches Alpine's package mirror.",
     "view": "serial",
     "network": "demo",
+    "room": "global",
     "template": true
    }
   },
@@ -41,7 +42,7 @@
      "keyboard": "browser",
      "display": "3d",
      "network": true,
-     "macs": ["52:54:00:44:29:a1"],
+     "macs": ["52:54:00:44:29:a1", "52:54:00:9f:16:25"],
      "mouse": true,
      "touch": true,
      "clock": true
@@ -70,7 +71,8 @@
     "id": "arch-desktop",
     "summary": "Arch Linux's sway desktop, resumed with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it). Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now: Firefox can't open websites, and pacman can't reach Arch's mirror.",
     "view": "screen",
-    "network": "demo"
+    "network": "demo",
+    "room": "global"
    }
   },
   {
@@ -86,7 +88,7 @@
      "keyboard": "browser",
      "display": "3d",
      "network": true,
-     "macs": ["52:54:00:b2:db:99"],
+     "macs": ["52:54:00:b2:db:99", "52:54:00:80:9a:28"],
      "mouse": true,
      "touch": true,
      "clock": true
@@ -115,7 +117,8 @@
     "id": "arch-3d",
     "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it resumes, a shader demo starts, drawn by the guest's Mesa through virgl onto your browser's WebGL2. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now.",
     "view": "screen",
-    "network": "demo"
+    "network": "demo",
+    "room": "global"
    }
   }
  ]

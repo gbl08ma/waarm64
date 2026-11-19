@@ -129,6 +129,7 @@
   </div>
   <Note size="md">{t('machines:DemoStart.about')}</Note>
   <Note size="md" data-field="download">{t('machines:DemoStart.download', { size: def.demo.download })}</Note>
+  {#if def.demo.room}<Note size="md" data-field="room">{t('machines:DemoStart.room')}</Note>{/if}
   <h4>{t('machines:DemoStart.needs')}</h4>
   {#if checks}<DemoChecks {checks} />{:else}<Note>{t('machines:DemoStart.checking')}</Note>{/if}
   {#if mine}

@@ -2,17 +2,19 @@
 
 The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-demo.md](docs/plans/first-demo.md).
 
-## Start here (for a new session; 2026-11-19 ~13:00)
+## Start here (for a new session; 2026-11-19 ~14:00)
 
 You're picking up the DEMO track (the first demo: a store of demo machines resumed from template snapshots, and a
 hosted demo network). Read, in order: CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited
 with their OK on 2026-11-19 for the red lines and loop 11), this file, and the fork's `../waarm64-demonet/HANDOVER.md`.
 docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
-deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. The next piece of work is **loop 15** (below).
+deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. **Loop 15** (below) is built; its CI and the
+user's answer on room names are what's left of it.
 
 ### Where things stand
 
-- **waarm64 `main`** (origin): pushed through this file's commit. Loops 0–6, 10, 10b, 12, 13 are done; two out-of-context
+- **Loop 15 (a demo's room) is built** in the commit after efb166ef (see "What's left" 1 for its state and CI).
+- **waarm64 `main`** (origin): loops 0–6, 10, 10b, 12, 13 are done; two out-of-context
   reviews of the page's demo code (branches `review/demo-page`, `review/demo-page-2`, kept on origin), every finding
   fixed or left by the user's decision ("Awaiting the user's review"). Three demos in deploy/disks/demos.json:
   `alpine-term` (Alpine at a root prompt; also New machine's template), `arch-desktop` and `arch-3d` (the Arch desktop,
@@ -63,50 +65,37 @@ deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. The next piece of
     per machine (else they'd share an address), and **the agent configuring an unmanaged, connected card on
     Alpine**, for every Alpine user with the agent (OK'd).
 13. **Images CI or the Desktop Demo use stay as they are** (`alpine-uefi`, `target/arch/desktop.qcow2`).
+14. **Loop 15's answers** (the user, 2026-11-19): the room **only for demos that ask** (`demo.room: "global"`; all
+    three ask); **direct when possible** (not relay only); **incoming connections on**; the start panel's words as
+    proposed plus a sentence that only the relays see the IP address and another visitor learns it only by
+    connecting, "which requires knowing your machine's name" (the user's wording). The agent configures a card only
+    where no systemd runs (the user checked: networkd's units manage the cards there).
 
 ### What's left, in order
 
-**1. Loop 15: a second adapter on the global public room for every demo machine**, so visitors' demo machines can
-reach one another. Not started. What it takes (worked out with the user):
-- **A key per machine** (the user: else they'd all get the same address; the rooms' one-running-per-key lock,
-  rooms.md "Decisions", forbids sharing anyway): `machineFromDemo` makes the machine's own room connection on
-  `waarm64-room:global` with a fresh node key, made in the visitor's browser at the machine's first start, never in
-  the definition or the snapshot; attached to adapter 1 as `attachDemoNetwork` attaches adapter 0.
-- **The definition:** an optional field beside `demo.network` (e.g. `demo.room: "global"` for adapter 1, or a list of
-  `{adapter, kind}`), additive within version 2 (pages ignore unknown fields); the publish tool and
-  `web/app/definition-check.ts` learn it.
-- **The rules:** adapters.md §1 rule 2 ("no default connection") gets a second exception, a room made by the page
-  for a demo, in decisions.md's Network row (the user's call: ask). Rule 4 holds: one machine per key.
-- **The snapshot carries no room address:** the template is built with adapter 1 present and unconnected; after the
-  restore the page connects it and the guest asks for its address then (the room's gateway gives a /128 by DHCPv6 and
-  the RA: tailnet.md). The restore's hold (devices.md "The network after a restore") and the agent's LEASE must cover
-  the second card and DHCPv6.
-- **The guests, without changing their images** (checked with the user, 2026-11-19): Arch's systemd-networkd already
-  takes any `eth*`/`en*` card with `DHCP=yes`, v4 and v6 (images/arch/build.sh), so its second card configures
-  itself. Alpine's ifupdown-ng configures only what `/etc/network/interfaces` lists (`lo`, `eth0`), so `eth1` stays
-  down, and the room's address is a /128 by DHCPv6 (no SLAAC). Rather than an image change (a new content id, so new
-  demo ids), **the agent does it**: its binary comes from fw_cfg at each start (web/app/guest-agent.ts), so it ships
-  with the page; told a card is connected, it brings up a card nothing else manages (no ifupdown stanza, no
-  dhcpcd/networkd/NetworkManager on it) and runs busybox's `udhcpc6` there, and its LEASE after a restore renews
-  `udhcpc6` as it does `udhcpc` (`agent/src/lease.rs`). Only the primary (the demo network, eth0) offers default
-  routes, so the room adds its /48 and nothing else. With no image changed, the demos keep their ids (no `replaces`):
-  only their snapshots are made again. **The user OK'd the agent configuring such a card** (2026-11-19), for every
-  Alpine user with the agent, not only the demos: a card nothing else manages, and only once the page connected it.
-- **Images CI and others already use stay as they are** (the user, 2026-11-19): `alpine-uefi` is ci.sh's and
-  ci-net.sh's (`alpine-demo` is cut from it), and `target/arch/desktop.qcow2` is the deployed Desktop Demo's and
-  bench/gpu's guest: never edited. If an image must change after all, `alpine-demo`'s own files only (its hash moves
-  in SHA256SUMS, a new demo id), and an Arch change is a new image under a new name.
-- **Every template made again** (a second card is another shape: the shape hash moves), by tools/build-demos.ts.
-- **Costs and words:** the room client (`ts.wasm`, 3.8 MB) after the prompt, not before it (click → command stays);
-  the visitor's browser then talks to six public Nostr relays and Tailscale's DERP servers: the interstitial says so
-  (docs/copy.md). Proposed: the demos' room connection **relay only** (peers never learn the visitor's IP);
-  incoming connections on as rooms default (a demo listens on nothing): both the user's to confirm.
-- **A reason to use it:** a node's name is its key and nothing lists it, so the guest shows its own name (the motd or
-  a login line, from the agent or the page) for the visitor to give out.
-- **Tests:** the definition's field and the connection's making (Node, Chromium with a stand-in); a guest test of two
-  demo machines reaching each other through the rig's derper and Nostr relay (bench/net's rig), skipped without it.
-- **Ask the user first:** the rule 2 exception, relay only, incoming connections, and the interstitial's words.
-- **Then CI** (ci.sh, ci-machines, ci-graphics, ci-net for the agent and the second card) and a commit per slice.
+**1. Loop 15: a second adapter on the global public room for every demo machine — built, not yet through CI.**
+What it is (docs: rooms.md "A demo's room", devices.md "A card nothing else manages", adapters.md §1 rule 2,
+decisions.md "Network"):
+- `demo.room: "global"` (definitions.ts, definition-check.ts: needs two adapters; tools/demo-site.ts carries it);
+  web/app/net-demo.ts `withDemoRoom` makes a room connection per machine (`forMachine`, named as the machine, its key at
+  the first start), `deleteOwnConnections` on the machine's Delete (MachinePane).
+- The agent's CARDS (frame 32, `CAP.CARDS` bit 18; agent/src/card.rs): the page names the connected cards at each HELLO
+  and change (web/app/net-settled.ts `macs`/`listen`, agent-actions `cards`, agent-link `cards`); on a guest without
+  systemd, networkd or NetworkManager, a down card no ifupdown file names and no DHCP client runs for gets
+  `accept_ra_rt_info_max_plen` 128, `ip link set up`, `udhcpc6` with the agent's script (/run/waarm64-udhcpc6.script).
+  LEASE renews udhcpc6 too. The agent image rebuilt (SHA256SUMS).
+- deploy/disks/demos.json: all three demos `room: "global"`, a second MAC each; templates rebuilt in target/demos
+  (alpine-term; the desktops: see below). The start panel's note `DemoStart.room`.
+- Tests: agent/src/card.rs (5), tests/agent-link.test.ts CARDS, tests/agent.test.ts pins, tests/demo-store.test.ts
+  (the room per machine, delete), tests/demo-site.test.ts (a room on one adapter refused), and
+  **tests/page-demo-room.test.ts** (ci-net.sh's last step: two Alpine demo machines on the fork's server and a room
+  through the rig; eth1's address, the /48 on eth1, defaults on eth0, pings both ways: **passed alone, 16 s**).
+  tests/page-demos-guest.test.ts strips `room` (CI never joins the public global room).
+- **Asked, not answered:** names on Alpine (musl races resolvers; udhcpc rewrites resolv.conf). Proposed: the page
+  answers the room's suffix on every adapter's resolver (page-only). Backlog has it with the guest not showing its
+  own name and a failed import's leftover connection.
+- **Left:** CI at the loop's commit: ci.sh, ci-net (the agent, the second card), ci-machines, ci-graphics (the desktops
+  rebuilt: link target/demos/{arch-desktop,arch-3d,alpine-term,pieces} into ../waarm64-ci first).
 
 **2. The track's end** (kickoff "The end"), after loop 15 (and a deploy only if the user asks for one):
 - An **out-of-context review** of the page's demo code since review/demo-page-2 (the clipboard pause, loop 12's
@@ -162,6 +151,13 @@ reach one another. Not started. What it takes (worked out with the user):
   with `--deflate` are the new container version 3, which a page from before loop 3 refuses as newer.
 
 ## Awaiting the user's review
+
+- **Loop 15's engineering calls:** the room's connection is the machine's (`forMachine`), deleted with it unless
+  another machine was attached to it since; a fresh copy of a demo gets its own. CARDS is a new frame (not LEASE at
+  every connection, which would have nmcli reconnect cards a user disconnected). The agent's card: only down cards,
+  only without systemd/networkd/NetworkManager, IPv6 only, resolvers left alone, never taken down. The udhcpc6 script
+  lives at /run/waarm64-udhcpc6.script (outside the agent's tmpfs, so it outlives the service). Template recipes got a
+  second random MAC each (a shape change: new snapshots under the same ids).
 
 - **Loop 12's engineering calls:** two new demos, neither a template for New machine: **`arch-desktop`** (4 vCPUs,
   2 GiB, 3D, sway at 1280×800, Firefox) and **`arch-3d`** (the same image, the shader demo on virgl; virgl, not Venus,

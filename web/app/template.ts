@@ -11,7 +11,7 @@ import { checkManifest, contentId, fetchChunked, type Manifest } from '../chunke
 import { msgOf, MsgError } from '../msg.ts';
 import { importDefinition, parseDefinition, resolveUrls, type Definition } from './definitions.ts';
 import { fetchText, type DemoRef, type StoreDemo } from './demo-store.ts';
-import { withDemoNetwork } from './net-demo.ts';
+import { withDemoNetwork, withDemoRoom } from './net-demo.ts';
 import { newMac, type MachineRecord } from './shape.ts';
 import { importSnapshot } from './snapshots.ts';
 import type { SnapshotRecord, Store } from './store.ts';
@@ -41,7 +41,7 @@ export async function machineFromTemplate(
   store: Store,
   def: Definition,
   snapshot: File,
-  o: { fromDemo?: DemoRef; network?: boolean } = {},
+  o: DemoMarks = {},
 ): Promise<{ machine: MachineRecord; snapshot: SnapshotRecord }> {
   let kept!: SnapshotRecord;
   const { machine } = await importDefinition(store, def, async (m) => {
@@ -55,10 +55,14 @@ export async function machineFromTemplate(
   return { machine, snapshot: kept };
 }
 
-/** Record `m` with a demo's marks: `fromDemo`, and its first adapter on the demo network (`network`). */
-async function marked(m: MachineRecord, store: Store, o: { fromDemo?: DemoRef; network?: boolean }) {
+/** A demo's marks on its machine: `fromDemo`; its first adapter on the demo network (`network`); its second on a room of its own (`room`). */
+type DemoMarks = { fromDemo?: DemoRef; network?: boolean; room?: boolean };
+
+/** Record `m` with a demo's marks (`DemoMarks`). */
+async function marked(m: MachineRecord, store: Store, o: DemoMarks) {
   const withDemo = o.fromDemo ? { ...m, fromDemo: o.fromDemo } : m;
-  return o.network ? withDemoNetwork(store, withDemo) : withDemo;
+  const onNet = o.network ? await withDemoNetwork(store, withDemo) : withDemo;
+  return o.room ? withDemoRoom(store, onNet) : onNet;
 }
 
 /** A snapshot's import refused for want of room, said as a demo's (its cause, the storage's numbers), else undefined. */
@@ -139,8 +143,8 @@ function snapshotManifest(text: string, o: SnapshotFetch): Manifest {
 
 /**
  * Makes store demo `d`'s machine in this browser: its definition imported, marked `fromDemo`, its template snapshot
- * (if it has one) fetched first and kept to restore at its first start; its first adapter on the demo network if it
- * asks. The record is stored once, with all of that: a failure anywhere leaves no machine (so trying again makes one);
+ * (if it has one) fetched first and kept to restore at its first start; its first adapter on the demo network and its
+ * second on a room of its own if it asks. The record is stored once, with all of that: a failure anywhere leaves no machine (so trying again makes one);
  * `signal` aborts the download (its `AbortError` thrown), and nothing is made. Named as the definition says, with a suffix past the visitor's own
  * machines' names (importDefinition's: a fresh copy is `Alpine (2)`). Returns the record as stored.
  */
@@ -153,7 +157,7 @@ export async function machineFromDemo(
   const { def } = d;
   const fromDemo = { store: d.store, id: def.demo.id };
   const snap = def.demo.snapshot;
-  const o = { fromDemo, network: def.demo.network === 'demo' };
+  const o = { fromDemo, network: def.demo.network === 'demo', room: def.demo.room === 'global' };
   if (snap) {
     const { blob } = await fetchSnapshot(snap.manifest, { id: snap.id, download: def.demo.download, progress, signal });
     signal?.throwIfAborted(); // nothing made yet: the page that asked is gone

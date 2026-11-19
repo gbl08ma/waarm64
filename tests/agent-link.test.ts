@@ -2,7 +2,7 @@
 // connections (the track's review, review/betteragent-page and review/betteragent-loop11): a run's end settles what
 // waits on the link, every HELLO listener hears it, a late answer to an ask that gave up isn't taken for the next
 // one's, the close listeners; the trim of a run that ended isn't the next run's; LEASE names the connected cards;
-// SoftPower's pending sign, its BUSY, its notices.
+// CARDS at each HELLO and change; SoftPower's pending sign, its BUSY, its notices.
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { CAP, COPIED, encodeFrame, encodeHello, FRAME, FrameReader, LEASED, POWERED, TRIMMED } from '../web/agent-frame.ts';
@@ -149,6 +149,34 @@ test('LEASE names the connected cards by their MACs; none connected after the gr
   assert.deepEqual(flaps, []);
   assert.deepEqual(settles, [[1], []], 'settled: the renewed card, then none');
   a.link.close();
+});
+
+test('CARDS: the connected cards said at the HELLO of an agent with CAP.CARDS and when they change, once each; again at a new connection; never to an agent without it', async () => {
+  const cards = (a: ReturnType<typeof agent>) => a.got.filter((f) => f.type === FRAME.CARDS).map((f) => f.payload);
+  const eth0 = [0x52, 0x54, 0, 0x12, 0x34, 0x56];
+  const eth1 = [0x52, 0x54, 0, 0xab, 0xcd, 0xef];
+  const a = agent(CAP.TIME | CAP.CARDS);
+  a.link.cards(['52:54:00:12:34:56']); // before the agent connects: kept for its HELLO
+  await a.connect();
+  await until(() => cards(a).length === 1, 'CARDS at the HELLO');
+  assert.deepEqual(cards(a), [[1, ...eth0]]);
+  assert.equal(a.link.cards(['52:54:00:12:34:56']), false, 'the same: not again');
+  assert.equal(a.link.cards(['52:54:00:12:34:56', '52:54:00:ab:cd:ef']), true);
+  await until(() => cards(a).length === 2, 'CARDS at the change');
+  assert.deepEqual(cards(a)[1], [2, ...eth0, ...eth1]);
+  // A new connection (a restore): said afresh.
+  a.drop();
+  await settle();
+  await a.connect();
+  await until(() => cards(a).length === 3, 'CARDS at the next HELLO');
+  assert.deepEqual(cards(a)[2], [2, ...eth0, ...eth1]);
+  a.link.close();
+  const old = agent(CAP.TIME | CAP.LEASE);
+  await old.connect();
+  assert.equal(old.link.cards(['52:54:00:12:34:56']), false);
+  await settle();
+  assert.deepEqual(cards(old), [], 'an agent without CAP.CARDS gets none');
+  old.link.close();
 });
 
 test("SoftPower: a HELLO while one is pending clears it (the agent came back: the guest isn't shutting down); BUSY and silence fall to the hard one, said", async () => {

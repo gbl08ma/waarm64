@@ -19,6 +19,8 @@
   import { msg, t, text, type Msg } from '../i18n.ts';
   import type { Editing } from './machine-edit.svelte.ts';
   import { deleteMachine, duplicateMachine } from './machines.ts';
+  import { deleteOwnConnections } from './net-demo.ts';
+  import { pageConnectionState } from './net-state.ts';
   import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
@@ -91,7 +93,12 @@
       ok: t('machines:MachinePane.delete.ok'),
       danger: true,
     });
-    if (sure) await act(t('machines:MachinePane.busy.deleting'), () => deleteMachine(store, m.id));
+    if (!sure) return;
+    // A demo's room goes with its machine (web/app/net-demo.ts).
+    await act(t('machines:MachinePane.busy.deleting'), async () => {
+      await deleteMachine(store, m.id);
+      await deleteOwnConnections(store, m.id, pageConnectionState);
+    });
   }
   function start() {
     page.closeMachines();

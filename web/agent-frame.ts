@@ -11,7 +11,8 @@
 // COPY and COPIED, `CAP.COPY` (the text console's screen as text, for the host's clipboard); OS, `CAP.OS` (the guest's
 // OS named, for the status bar); POWER and POWERED, `CAP.POWER` (the guest powers off or reboots itself); DROP and
 // DROPPED, `CAP.DROP` (the guest's caches dropped before a snapshot); GROW and GROWN, `CAP.GROW` (a disk the page grew
-// grown in the guest: its last partition and mounted filesystem).
+// grown in the guest: its last partition and mounted filesystem); CARDS, `CAP.CARDS` (a connected card nothing else in the
+// guest manages brought up).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -78,6 +79,8 @@ export const FRAME = {
   GROW: 30,
   /** The agent's: what became of a GROW (`decodeGrown`). */
   GROWN: 31,
+  /** The page's: the cards it has connected now (LEASE's payload, `encodeLease`), at the agent's HELLO and when they change: the agent brings up one nothing in the guest manages (agent/src/card.rs). */
+  CARDS: 32,
 } as const;
 
 /** LEASE's payload (agent/src/lease.rs `decode`): a u8 count, then the MACs (6 bytes each) of the cards to renew. */
@@ -323,6 +326,8 @@ export const CAP = {
   DROP: 1 << 16,
   /** GROW and GROWN: a disk the page grew grown in the guest too (the agent's; the page sends GROW to an agent that says it). */
   GROW: 1 << 17,
+  /** CARDS: a connected card nothing else in the guest manages brought up (the agent's; the page sends CARDS to an agent that says it). */
+  CARDS: 1 << 18,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

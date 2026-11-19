@@ -774,7 +774,8 @@ the query's form serves (decisions.md "Demos").
   together (a reviewed risk the user accepted, 2026-11-19: with the demo server's slow lane on, a guest given the
   host's clipboard could send it out; a demo's machine at least starts each run with sharing paused: clipboard.md).
 - **The interstitial** (`DemoStart.svelte`), before any download: what the project is and needs, the demo's card, its
-  download and that its disk stays on its server, and **[What it needs](ui:machines:DemoStart.needs)**: the browser checked (`demo-check.ts`,
+  download and that its disk stays on its server, for a demo that joins the global room what that means for the
+  visitor's IP address ([The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers, which can see your IP address. Another visitor learns your IP address only if their machine connects to yours, which requires knowing your machine's name.](ui:machines:DemoStart.room)), and **[What it needs](ui:machines:DemoStart.needs)**: the browser checked (`demo-check.ts`,
   `DemoChecks.svelte`): a stop (no Start) for no cross-origin isolation or SharedArrayBuffer, no OPFS, no WebGL2 for a 3D
   machine (`display: "3d"`), no WebGPU adapter for Vulkan, or storage with less room than the download and its first
   writes (`room`: ×1.25, at least +64 MiB); a warning for another browser than Chromium, a phone or tablet, or less

@@ -1275,6 +1275,8 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   // LEASE and LEASED (agent/src/lease.rs `status`).
   assert.deepEqual([FRAME.LEASE, FRAME.LEASED, CAP.LEASE], [17, 18, 128]);
   assert.deepEqual([LEASED.RENEWED, LEASED.NO_CLIENT, LEASED.FAILED], [0, 1, 2]);
+  // CARDS (agent/src/card.rs): LEASE's payload.
+  assert.deepEqual([FRAME.CARDS, CAP.CARDS], [32, 262144]);
   // TRIM and TRIMMED (agent/src/trim.rs `status`).
   assert.deepEqual([FRAME.TRIM, FRAME.TRIMMED, CAP.TRIM], [20, 21, 2048]);
   assert.deepEqual([TRIMMED.TRIMMED, TRIMMED.NONE, TRIMMED.FAILED], [0, 1, 2]);

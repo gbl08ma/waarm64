@@ -52,6 +52,12 @@ export type Demo = {
   snapshot?: { manifest: string; id: string };
   /** `demo`: its first adapter attached to the demo network (web/app/net-demo.ts). */
   network?: 'demo';
+  /**
+   * `global`: its second adapter attached to a room connection of its own on the global public room (`waarm64-room:global`,
+   * web/app/net-demo.ts `withDemoRoom`), so visitors' demo machines can reach one another; its node key is made in the
+   * visitor's browser at the machine's first start (docs/networking/adapters.md §1 rule 2). Needs two adapters.
+   */
+  room?: 'global';
   /** The ids of the versions it replaces (a machine made from one is "an older version of this demo"). */
   replaces?: string[];
   /**

@@ -55,7 +55,7 @@ export const TOPIC = [
   'tests/net-guest.test.ts', 'tests/page-network.test.ts', 'tests/net-tailnet.test.ts', 'tests/tailcat-browser.test.ts',
   'tests/room-browser.test.ts', 'tests/page-room.test.ts', 'tests/net-tailcat.test.ts', 'tests/net-local.test.ts',
   'tests/ts-tailnet.test.ts', 'tests/tailscale-browser.test.ts', 'tests/ts-tailcat.test.ts', 'tests/page-alpine-agent.test.ts',
-  'tests/page-demonet.test.ts',
+  'tests/page-demonet.test.ts', 'tests/page-demo-room.test.ts',
   // scripts/ci-audio.sh, ci-fp.sh, ci-usb.sh, ci-deqp.sh, ci-deqp-vk.sh
   'tests/audio-browser.test.ts', 'tests/fptest.test.ts', 'tests/usb-e2e-webusb.test.ts', 'tests/usb-e2e-hid.test.ts',
   'tests/usb-guest.test.ts', 'tests/page-deqp-vk.test.ts',

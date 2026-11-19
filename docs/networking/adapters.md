@@ -17,9 +17,12 @@ code's comments still cite; machines had first left several adapters for later: 
    local helper on this computer (`local`: [local-helper.md](local-helper.md)), the demo network (`demo`:
    [demo-network.md](demo-network.md)) or a peer-to-peer room (`room`: [rooms.md](rooms.md)). A connection carries its
    own state (a tailnet's node, tailcat's identity and address, a room's node key), so it keeps working as the user
-   moves from one machine to the next. There is no "default" connection, **except the demo network's** (the user,
-   2026-11-18: decisions.md "Network"): the page makes it itself when a demo's definition asks for it
-   (web/app/net-demo.ts `attachDemoNetwork`); it holds no secret.
+   moves from one machine to the next. There is no "default" connection, **except two the page makes for a demo**
+   (decisions.md "Network"): the demo network's (the user, 2026-11-18), made when a demo's definition asks for it
+   (web/app/net-demo.ts `attachDemoNetwork`, `withDemoNetwork`), which holds no secret; and **a demo's room** (the user,
+   2026-11-19), a room connection of the demo machine's own on the global public room, on its second adapter, made
+   with the machine (`withDemoRoom`, its record's `forMachine`) and deleted with it (`deleteOwnConnections`), its key
+   made at the machine's first start ([rooms.md](rooms.md) "A demo's room").
 3. **An adapter with no connection is allowed:** a card with no cable.
 4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3), **except the demo
    network's** (decision 10; `exclusive` in web/app/connections.ts): any number of machines and adapters run it at once,

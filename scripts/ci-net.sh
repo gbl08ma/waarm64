@@ -28,4 +28,9 @@ node --disable-warning=ExperimentalWarning --test tests/net-guest.test.ts tests/
 # on the same ports as the guest's test above.
 step 'the tailnet client in Node and the page'
 node --disable-warning=ExperimentalWarning --test --test-concurrency=1 tests/ts-tailnet.test.ts tests/tailscale-browser.test.ts tests/ts-tailcat.test.ts
+# A demo's room (tests/page-demo-room.test.ts): two Alpine demo machines from target/demos/alpine-term's template
+# (tools/build-demos.ts; skipped when it's another core's) on the demo server and a room through the tailcat rig's
+# derper; after the others, which bring the rig up and down themselves.
+step "a demo's room"
+node --disable-warning=ExperimentalWarning --test tests/page-demo-room.test.ts
 printf '\nCI-NET OK (%d s)\n' "$SECONDS"

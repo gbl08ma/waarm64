@@ -581,6 +581,8 @@ demo's card: `id` (lowercase letters, digits and dashes: what `?id=` and "starte
 text, the store's data, not the catalog's), `thumbnail?`, `download` (the bytes a visit fetches: the publish tool
 checks it), `view` (`serial` or `screen`), `snapshot?` (`{manifest, id}`: the template's chunked file and its content
 id; none: a cold boot), `network?` (`"demo"`: the first adapter on the demo network, which needs `machine.network`),
+`room?` (`"global"`: the second adapter on a room connection of the machine's own on the global public room, which
+needs two adapters, `machine.macs`: [networking/rooms.md](networking/rooms.md) "A demo's room"),
 `replaces?` (the ids of the versions before: a machine made from one is "an older version of this demo"),
 `template?` (`true`: New machine offers it as a template too, §6.3). What a card
 needs from the browser is the machine's own fields (`display: "3d"` for WebGL2, `vulkan` for WebGPU, `ramMiB`), not a
@@ -606,7 +608,7 @@ card's is refused: the site was republished meanwhile; one larger than the card'
 times) and its pieces by that manifest (each kept as a Blob as it comes, which Chromium may keep on disk; the first
 failure aborts the others; `signal` aborts them all: the store's page's interstitial gone); then §6.1's machine, marked
 **`fromDemo: {store, id}`** (the store's URL as fetched, absolute), and its first adapter on the demo network when the
-card asks (`withDemoNetwork`, web/app/net-demo.ts). The snapshot is kept under the machine's id before its record is
+card asks (`withDemoNetwork`, web/app/net-demo.ts), its second on a room of its own when it asks (`withDemoRoom`). The snapshot is kept under the machine's id before its record is
 stored, and the record is stored once with all its marks (`importDefinition`'s `finish`, which runs before any record
 is written: the disks, overlays and machine are written after it, at once, so a tab closed during the snapshot's copy
 leaves only files the store's sweep takes): any failure (the download,

@@ -97,6 +97,7 @@ test("a site: the store with each demo's definition inline, its files under its 
   assert.equal(d.demo.snapshot?.manifest, 'https://vmdisks.example/alpine-term/snapshot.json');
   assert.deepEqual(d.demo.replaces, ['alpine-old']);
   assert.equal(d.demo.template, true, "the card's template mark carried");
+  assert.equal(d.demo.room, undefined, 'no room unless the card asks');
   const snapManifest = JSON.parse(readFileSync(join(s, 'alpine-term/snapshot.json'), 'utf8'));
   assert.equal(d.demo.snapshot?.id, snapManifest.id, "the card names the snapshot's content");
   assert.equal(d.demo.download, snapManifest.size, 'no download given: what a visit fetches at least (the snapshot)');
@@ -138,6 +139,7 @@ test('refused: another core format, another shape, not a template, a download of
   writeFileSync(file, JSON.stringify(source([{ ...demo('x', ok), build: 'target/demos/x' }])));
   assert.equal(readSource(file).demos.length, 1);
   await refused(plan(source([demo('x', ok, { view: 'tty' })]), s), /demo\.view/);
+  await refused(plan(source([demo('x', ok, { room: 'global' })]), s), /demo\.room/); // one adapter: none for the room
   await refused(plan(source([demo('x', ok, { template: 'yes' })]), s), /demo\.template/);
 });
 
