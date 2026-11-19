@@ -59,8 +59,12 @@ export class SerialTerminal {
     this.#el = el;
     this.term.loadAddon(this.#fit);
     this.term.open(el);
+    // The fit at the next frame: a resize inside the observer's callback changes the layout it is observing (a
+    // ResizeObserver loop, while Both's divider is dragged).
+    let frame = 0;
     new ResizeObserver(() => {
-      this.#refit();
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => this.#refit());
     }).observe(el);
     this.term.onResize(({ cols, rows }) => {
       el.dataset.size = `${cols}x${rows}`; // the tests' to read

@@ -186,6 +186,7 @@ test("Both's divider: the terminal keeps 80 columns beside the screen until the 
   await page.locator('#view-divider').focus();
   for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
   await until(cols, (c) => c < wide, 'narrower after ArrowRight');
+  await page.waitForTimeout(800); // the five presses' refits settled
   // An agent's new connection doesn't move it: the same share, the same size.
   const kept = await cols();
   await openPort(page, false);
