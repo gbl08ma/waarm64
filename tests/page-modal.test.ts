@@ -824,12 +824,19 @@ test("remote disks' blocks: in an expiring bucket of their own, cleared while a 
     // A store held open by a worker, as a running machine's device worker holds its disk's.
     const src = `const dc = await import(${JSON.stringify(`${location.origin}/web/diskcache.ts`)});
       const s = await dc.openBlockStore('feedc0de', 64 * 4096, 4096);
+      if (!s) { postMessage('no store'); throw new Error('no store'); }
       for (let b = 0; b < 8; b++) s.put(b, new Uint8Array(4096).fill(b + 1));
       postMessage('ready');
       onmessage = () => postMessage({ active: s.active(), held: s.stats().held });`;
     const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
-    const next = () => new Promise<unknown>((r) => (w.onmessage = (e) => r(e.data)));
-    await next();
+    // Bounded: a worker that fails (no store: no room, the lock held) says so rather than leaving the test waiting.
+    const next = () => new Promise<unknown>((r, j) => {
+      const timer = setTimeout(() => j(new Error('the worker said nothing in 30 s')), 30_000);
+      w.onmessage = (e) => (clearTimeout(timer), r(e.data));
+      w.onerror = (e) => (clearTimeout(timer), j(new Error(`the worker: ${e.message}`)));
+    });
+    const first = await next();
+    if (first !== 'ready') throw new Error(`the worker's block store: ${String(first)} (${JSON.stringify(await navigator.storage.estimate())})`);
     const sb = (navigator as unknown as { storageBuckets: { keys(): Promise<string[]>; open(n: string): Promise<{ expires(): Promise<number | null>; persisted(): Promise<boolean> }> } }).storageBuckets;
     const bucket = await sb.open(dc.CACHE_DIR);
     const days = ((await bucket.expires())! - Date.now()) / 86_400_000;

@@ -49,6 +49,21 @@ function go(url: string, nav: Nav) {
 
 const isView = (v: unknown): v is View => v === 'screen' || v === 'terminal' || v === 'both';
 
+/**
+ * The view a demo opened this tab in (its `view`), kept for this tab's reloads without being the visitor's preference
+ * (review demo-page-2 #9): a view the visitor chooses replaces it. sessionStorage may refuse (then: none).
+ */
+const TAB_VIEW = 'waarm64-demo-view';
+function tabView(v?: View | null): string | null {
+  try {
+    if (v === null) sessionStorage.removeItem(TAB_VIEW);
+    else if (v) sessionStorage.setItem(TAB_VIEW, v);
+    return sessionStorage.getItem(TAB_VIEW);
+  } catch {
+    return null;
+  }
+}
+
 export type WindowDeps = {
   machine: PageMachine;
   screen: ScreenView;
@@ -102,7 +117,10 @@ export class PageWindow {
 
   // Views: the screen first (M8 decision 2), the terminal, or both.
   setView(v: View, save = true) {
-    if (save) remember({ view: v });
+    if (save) {
+      remember({ view: v });
+      tabView(null);
+    }
     screen.view = v;
     if (machinesNav.open) this.closeMachines();
     if (demos.open) this.closeDemos(false);
@@ -112,11 +130,15 @@ export class PageWindow {
     if (v !== 'screen') term.refresh(0, term.rows - 1);
     this.#input().focus();
   }
-  /** The first view: the query's, else the one chosen last in this browser, else the screen (M8 decision 2). */
+  /**
+   * The first view: the query's, else the demo's this tab opened (a reload of it), else the one chosen last in this
+   * browser, else the screen (M8 decision 2).
+   */
   firstView() {
     const asked = params.get('view');
+    const demo = tabView();
     const kept = settings().view;
-    this.setView(isView(asked) ? asked : isView(kept) ? kept : 'screen', false);
+    this.setView(isView(asked) ? asked : isView(demo) ? demo : isView(kept) ? kept : 'screen', false);
   }
   /** The serial log shown: the terminal's view, or both. */
   showLog() {
@@ -239,8 +261,10 @@ export class PageWindow {
       askSwitch: d.askSwitch,
       openDemo: (id, view) => {
         this.closeDemos(false);
-        // Not saved as the visitor's view: it's the demo's (review demo-page-2 #9).
-        this.setView(view === 'serial' ? 'terminal' : 'screen', false);
+        // Not saved as the visitor's view: it's the demo's, kept for this tab's reloads (review demo-page-2 #9).
+        const v = view === 'serial' ? 'terminal' : 'screen';
+        tabView(v);
+        this.setView(v, false);
         return d.switchTo(id);
       },
     };

@@ -136,7 +136,7 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   loop 12's file: add "when it is the command alone"); #4 a snapshot past the card's `download` or `MAX_TEMPLATE` (1 GiB)
   refused before a piece, pieces kept as Blobs as they come; #6 `importDefinition` writes disks, overlays and the machine
   after `finish` (a residual window of a few record writes, ms); #7 a stale store read dropped; #8 history entries for
-  the store's steps, `popstate` followed; #9 a demo's view not saved; #10 the hold's 120 s from `{type: 'connected'}`
+  the store's steps, `popstate` followed; #9 a demo's view not saved (kept for the tab's reloads in sessionStorage: ci-machines' guest test reloads into it); #10 the hold's 120 s from `{type: 'connected'}`
   (when `NetSettled.when` resolves), unbounded before: the flap it's for comes with the connection, and with no
   connection there's nothing to renew; #11 a template's adapters get fresh MACs; #13 snapshot failures as MsgErrors
   (`template.download` + `chunked.malformed`/`pieceStatus`/`pieceWrong`, a piece's 404 `template.gone`), siblings

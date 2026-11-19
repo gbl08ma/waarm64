@@ -769,7 +769,8 @@ page bare in fresh profiles) unless `?firstvisit=1`.
 - **Start** ([Start the demo](ui:machines:DemoStart.start)): the switch asked first when another machine runs on the
   page (`disk-actions.ts` `askSwitch`, the Open the machine question), then `machineFromDemo` (the snapshot downloaded
   with a progress bar, the machine made: machines.md §6.2), then `page.openDemo`: the page closes, the view is the
-  demo's (`serial` → the terminal, `screen` → the screen; not saved as the visitor's view), and `switchMachine` opens
+  demo's (`serial` → the terminal, `screen` → the screen; not saved as the visitor's view, but kept for this tab's
+  reloads in sessionStorage until the visitor chooses a view), and `switchMachine` opens
   it, whose first start restores the template (`restoreFirst`). A reload is the machine's (`?m=`), not the store's. **A
   start belongs to its interstitial:** one at a time on the page (`demos.starting`: every Start waits while one runs);
   when the interstitial goes (another demo, All demos, the store's page left) it's aborted, its download with it, and

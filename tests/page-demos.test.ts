@@ -110,6 +110,7 @@ test("a first visit opens the store; a card's Start makes the machine, opened in
   await page.reload();
   await ready(page);
   assert.equal(await onPage(page), 'machine', 'a reload keeps the machine, not the store');
+  assert.equal(await page.evaluate(() => document.body.dataset.view), 'terminal', "a reload keeps the demo's view (this tab's, not the visitor's preference)");
   assert.equal((await starts(page))[0]?.snapshot, false, 'its own start now, no restore');
 
   await page.goto(`${base}/demos`);
