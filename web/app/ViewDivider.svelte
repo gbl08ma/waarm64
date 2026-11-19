@@ -32,19 +32,31 @@
   /** The room the two views share, along the divider's axis, without the divider: CSS pixels. */
   function room() {
     if (!main || !el) return undefined;
-    const r = main.getBoundingClientRect(), s = getComputedStyle(main), d = el.getBoundingClientRect();
+    const r = main.getBoundingClientRect(),
+      s = getComputedStyle(main),
+      d = el.getBoundingClientRect();
     return stacked
-      ? { from: r.top + parseFloat(s.paddingTop), size: r.height - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom) - d.height }
-      : { from: r.left + parseFloat(s.paddingLeft), size: r.width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) - d.width };
+      ? {
+          from: r.top + parseFloat(s.paddingTop),
+          size: r.height - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom) - d.height,
+        }
+      : {
+          from: r.left + parseFloat(s.paddingLeft),
+          size: r.width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) - d.width,
+        };
   }
   /** The terminal's share now, measured (the default layout's, before the divider was moved). */
   function measured() {
-    const r = room(), term = document.getElementById('terminal-view')?.getBoundingClientRect();
+    const r = room(),
+      term = el?.nextElementSibling?.getBoundingClientRect(); // the terminal's view, after the divider
     if (!r || !term || r.size <= 0) return 0.5;
     return (stacked ? term.height : term.width) / r.size;
   }
   function set(v: number | undefined, save: boolean) {
-    screen.split = { ...screen.split, [key]: v === undefined ? undefined : Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, v)) };
+    screen.split = {
+      ...screen.split,
+      [key]: v === undefined ? undefined : Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, v)),
+    };
     if (save) remember({ split: { ...screen.split } });
   }
 
@@ -70,7 +82,8 @@
     set(screen.split[key], true);
   }
   function keydown(e: KeyboardEvent) {
-    const grow = stacked ? 'ArrowUp' : 'ArrowLeft', shrink = stacked ? 'ArrowDown' : 'ArrowRight';
+    const grow = stacked ? 'ArrowUp' : 'ArrowLeft',
+      shrink = stacked ? 'ArrowDown' : 'ArrowRight';
     if (e.key !== grow && e.key !== shrink) return;
     e.preventDefault();
     set((share ?? measured()) + (e.key === grow ? STEP : -STEP), true);

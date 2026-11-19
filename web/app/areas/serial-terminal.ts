@@ -124,12 +124,17 @@ export class SerialTerminal {
     if (!this.#tell) return;
     const d = this.#fit.proposeDimensions();
     if (!d || !Number.isFinite(d.cols) || !Number.isFinite(d.rows) || d.cols <= 0 || d.rows <= 0) return;
-    const main = this.#el?.closest('main');
-    const stacked = !!main && getComputedStyle(main).flexDirection === 'column';
-    const both = screen.view === 'both' && screen.split[stacked ? 'stacked' : 'across'] === undefined;
+    const { both, stacked } = this.#layout();
     const cols = both ? COLS : Math.max(MIN_COLS, d.cols);
     const rows = both && stacked ? ROWS : Math.max(MIN_ROWS, d.rows);
     if (cols !== this.term.cols || rows !== this.term.rows) this.term.resize(cols, rows);
+  }
+
+  /** Whether the terminal is under the screen (a narrow window), and in Both's default layout (its divider unmoved). */
+  #layout() {
+    const main = this.#el?.closest('main');
+    const stacked = !!main && getComputedStyle(main).flexDirection === 'column';
+    return { stacked, both: screen.view === 'both' && screen.split[stacked ? 'stacked' : 'across'] === undefined };
   }
 
   /** The terminal took a size while fitting: told once it settles. */
