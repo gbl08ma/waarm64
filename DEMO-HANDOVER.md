@@ -50,6 +50,12 @@ says so again** (they allowed it, then withdrew it: "changed my mind, don't depl
    under "What's left" 1). `?disk=<url>&clipboard=1` **stays as is** (security question closed: the transient machine
    has no network unless the user attaches one). **No deploy yet**: ask again later. `target/snapbench` and
    `target/vk2-nvidia-bundle.tar` deleted with the user's OK (32 GB free after).
+10. **(2026-11-19) The desktop demos resume with foot counting down to their app** (the user's idea: Firefox, the
+   shader demo), not with the app in the snapshot; `init_on_free` dropped (its cost on every free in the visitor's
+   machine, the user's concern). **The demo server is hosted** (`wss://demonet.tny.im/`, Docker Compose behind the
+   user's Caddy; `trusted_proxies` checked: `forwarded-ignored` 0 with the fork's 77a669d). **DO NOT DEPLOY** vm.tny.im
+   or vmdisks.tny.im: the user allowed it after loop 12, then withdrew it ("DO NOT DEPLOY", 2026-11-19), so the
+   deployed site's demos don't need replacing when loop 15 changes them. Ask before any deploy.
 8. The old Podman images (`webpc-*`, dangling) and `target/arch/desktop-kde.qcow2`, `desktop-pre-g7.qcow2` were
    deleted with the user's OK; earlier the gdb debug guest and cargo's `target/debug` caches (disk had filled to 100 %).
 
@@ -103,17 +109,40 @@ main). What the WIP holds:
 
 **2. (closed: decision 9, kept as is.)**
 
-**3. The deploy, only when the user says so** (their earlier steps are below in "Before a deploy"). How it was planned,
-so it doesn't touch loop 12's uncommitted state: in the CI worktree `../waarm64-ci` checked out at the pushed head,
-`npm run dist`; `cp -al ../waarm64/target/disks target/disks` (keeps the deployed Desktop Demo's `desktop/`; the
-publish writes by temp-and-rename, so links aren't written through); `node tools/build-demos.ts --core target/dist
---only alpine-term` (a dry run: read its plan), then with `--apply`; `deploy/disks/deploy.sh` (vmdisks.tny.im) and
-`wrangler deploy` (vm.tny.im), each with `set -a; . ~/.config/cloudflare/waarm64.env; set +a` (never print the token;
-docs/frontend.md "Deployed at vm.tny.im"); then check from headless Chromium: `https://vm.tny.im/demos`, Alpine, a
-command answered, and time it with bench/demo (a target for the deployed store is still to add). **The demo network's
-server isn't hosted yet** (no DNS for demonet.tny.im): on the deployed demo `apk` and command-not-found reach nothing,
-and the Network status shows it retrying, until the user hosts the fork. `target/dist` in the main checkout is an old
-copy (27eb7884): never deploy it.
+**2b. Loop 15 (new, after loop 12; the user's, 2026-11-19): a second adapter on the global public room for every demo
+machine**, so visitors' demo machines can reach one another. Not started. What it takes (worked out with the user):
+- **A key per machine** (the user: else they'd all get the same address; the rooms' one-running-per-key lock,
+  rooms.md "Decisions", forbids sharing anyway): `machineFromDemo` makes the machine's own room connection on
+  `waarm64-room:global` with a fresh node key, made in the visitor's browser at the machine's first start, never in
+  the definition or the snapshot; attached to adapter 1 as `attachDemoNetwork` attaches adapter 0.
+- **The definition:** an optional field beside `demo.network` (e.g. `demo.room: "global"` for adapter 1, or a list of
+  `{adapter, kind}`), additive within version 2 (pages ignore unknown fields); the publish tool and
+  `web/app/definition-check.ts` learn it.
+- **The rules:** adapters.md §1 rule 2 ("no default connection") gets a second exception, a room made by the page
+  for a demo, in decisions.md's Network row (the user's call: ask). Rule 4 holds: one machine per key.
+- **The snapshot carries no room address:** the template is built with adapter 1 present and unconnected; after the
+  restore the page connects it and the guest asks for its address then (the room's gateway gives a /128 by DHCPv6 and
+  the RA: tailnet.md). The restore's hold (devices.md "The network after a restore") and the agent's LEASE must cover
+  the second card and DHCPv6.
+- **The guests:** Alpine's busybox `udhcpc` is IPv4 only: `alpine-demo` needs `iface eth1 inet6 dhcp` (`udhcpc6`),
+  so its image's content id changes: a **new demo id** with `replaces: ["alpine-term"]`; `agent/src/lease.rs` learns
+  `udhcpc6`. Arch's network manager probably takes DHCPv6 on any card already: check, else its image changes too (a new
+  hand-made image: new ids for arch-desktop and arch-3d). Only the primary (the demo network, eth0) offers default
+  routes, so the room adds its /48 and nothing else.
+- **Every template made again** (a second card is another shape: the shape hash moves), by tools/build-demos.ts.
+- **Costs and words:** the room client (`ts.wasm`, 3.8 MB) after the prompt, not before it (click → command stays);
+  the visitor's browser then talks to six public Nostr relays and Tailscale's DERP servers: the interstitial says so
+  (docs/copy.md). Proposed: the demos' room connection **relay only** (peers never learn the visitor's IP);
+  incoming connections on as rooms default (a demo listens on nothing): both the user's to confirm.
+- **A reason to use it:** a node's name is its key and nothing lists it, so the guest shows its own name (the motd or
+  a login line, from the agent or the page) for the visitor to give out.
+- **Tests:** the definition's field and the connection's making (Node, Chromium with a stand-in); a guest test of two
+  demo machines reaching each other through the rig's derper and Nostr relay (bench/net's rig), skipped without it.
+- **Then a deploy, when the user says so** (remote-disks.md "Deploying the demos").
+
+**3. The deploy: NOT NOW** (decision 10: "DO NOT DEPLOY"; ask first). The runbook is docs/remote-disks.md "Deploying
+the demos". Not in it: `target/dist` in the main checkout is an old copy (27eb7884), never to deploy; bench/demo
+has no target for the deployed store yet (add one for the deployed numbers).
 
 **4. After a deploy:** the deployed page's numbers (click → command, bytes, `apk add python3` once the fork is
 hosted, PSS) into bench/demo/REPORT.md and comparison.md §3 (replacing the "local, not deployed" note), and the check by
