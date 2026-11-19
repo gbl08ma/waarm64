@@ -247,7 +247,10 @@ async function startOnResume(page: Page, s: Session, id: string) {
   if (c)
     await write(c.script, [
       '#!/bin/sh',
-      `# Opens ${c.name} in ${c.seconds} seconds. Ctrl+C stops it and leaves this terminal as it is.`,
+      `# Opens ${c.name} in ${c.seconds} seconds. Ctrl+C stops it and leaves this terminal open with a shell.`,
+      ...(c.notes?.length ? ["cat <<'NOTES'", ...c.notes, 'NOTES', 'echo'] : []),
+      // Ctrl+C ends the count, not the terminal: the script exits as if done (bash -c, which waits on it, goes on to its shell).
+      "trap 'echo; exit 0' INT",
       `n=${c.seconds}`,
       'while [ "$n" -gt 0 ]; do',
       `  printf '\\r${c.name} opens in %2d s. Press Ctrl+C to stay in the terminal. ' "$n"`,
@@ -259,7 +262,8 @@ async function startOnResume(page: Page, s: Session, id: string) {
       '',
     ].join('\n'));
   // Each app through sway once its socket is there; the last runs the countdown, then a shell (`exec bash`).
-  const runs = s.apps.map((app, k) => (c && k === s.apps.length - 1 ? `${app.run} bash -c '$HOME/${c.script}; exec bash'` : app.run));
+  // The SIGINT of a Ctrl+C goes to bash -c too: it ignores it (a handler, not inherited) until its shell.
+  const runs = s.apps.map((app, k) => (c && k === s.apps.length - 1 ? `${app.run} bash -c 'trap : INT; $HOME/${c.script}; trap - INT; exec bash'` : app.run));
   await write('start-desktop.sh', [
     '#!/bin/sh',
     "# From the demo's build (bench/demo/make-template.ts): the desktop starts once this machine is yours. The demo's",

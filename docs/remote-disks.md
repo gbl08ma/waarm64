@@ -173,8 +173,10 @@ compacted (`--compact`). **No GL client runs before the snapshot:** `~/start-des
 (the snapshot's screen: "Starting the desktop...") for the machine's new id (the agent's RENEW at a template's first
 restore, agent/src/renew.rs) or the build's go (`/run/waarm64-demo-go`, after its snapshot), then starts sway
 (`WLR_RENDERER=gles2` on a 3D machine) and in it each app through `swaymsg exec`, the last (foot) running the
-`countdown` (`{script, run, window, name, seconds}`: `~/open-firefox.sh`, `~/open-shader-demo.sh`, which says what opens
-in how many seconds, Ctrl+C stops it, then `swaymsg exec <run>`, so closing the terminal leaves the app). So the
+`countdown` (`{script, run, window, name, seconds, notes?}`: `~/open-firefox.sh`, `~/open-shader-demo.sh`, which shows
+the `notes` (what else is installed, `sudo pacman -S`, the demo network's web), says what opens in how many seconds,
+then `swaymsg exec <run>`, so closing the terminal leaves the app; Ctrl+C stops the count and leaves the terminal with
+a shell: the script exits by its own trap, and the `bash -c` around it ignores the signal until its `exec bash`). So the
 template's guest has read no 3D caps (the device saves them only once read: graphics.md "The caps"),
 and its visitor's guest reads the caps of the browser that restores it. A template made with sway running carried the
 build's SwiftShader caps, and a browser whose WebGL2 backs less (the Mac's: a smaller `max_aliased_point_size`) had 3D

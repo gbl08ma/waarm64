@@ -57,7 +57,9 @@ test('a recipe checked', () => {
   assert.throws(() => checkRecipe({ ...desk, session: { ...desk.session, cmdline: 'a=$(x)' } }, 'x'), /kernel parameters/);
   const cd = { script: 'open-firefox.sh', run: 'firefox', window: 'firefox', name: 'Firefox', seconds: 10 };
   checkRecipe({ ...desk, session: { ...desk.session, countdown: cd } }, 'x');
-  for (const bad of [{ ...cd, script: '../x.sh' }, { ...cd, run: "firefox'; rm -rf ~" }, { ...cd, name: "GTK's demo" }, { ...cd, seconds: 600 }, { ...cd, extra: 1 }])
+  checkRecipe({ ...desk, session: { ...desk.session, countdown: { ...cd, notes: ["Type sudo pacman -S <package>; it's $HOME's.", ''] } } }, 'x');
+  for (const bad of [{ ...cd, script: '../x.sh' }, { ...cd, run: "firefox'; rm -rf ~" }, { ...cd, name: "GTK's demo" }, { ...cd, seconds: 600 }, { ...cd, extra: 1 },
+    { ...cd, notes: ['NOTES'] }, { ...cd, notes: ['a\nb'] }, { ...cd, notes: 'one' }, { ...cd, notes: Array(9).fill('x') }, { ...cd, seconds: undefined }])
     assert.throws(() => checkRecipe({ ...desk, session: { ...desk.session, countdown: bad } }, 'x'), /countdown is/, JSON.stringify(bad));
 });
 

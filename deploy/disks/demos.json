@@ -63,13 +63,18 @@
       "run": "firefox",
       "window": "firefox",
       "name": "Firefox",
-      "seconds": 10
+      "seconds": 10,
+      "notes": [
+       "Chromium is installed too. To open it, type chromium.",
+       "To install more software, type sudo pacman -S followed by the package's name. The password is arch.",
+       "Websites load slowly on the demo network. For a faster web, attach a connection through tailcat or the helper on your computer instead."
+      ]
      }
     }
    },
    "demo": {
     "id": "arch-desktop",
-    "summary": "Arch Linux's sway desktop, started as the machine resumes, with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it). Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now: Firefox can't open websites, and pacman can't reach Arch's mirror.",
+    "summary": "Arch Linux's sway desktop, started as the machine resumes, with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it and keeps the terminal). Chromium is installed too, and pacman installs more software. Websites load slowly on the demo network.",
     "view": "screen",
     "network": "demo",
     "room": "global"
@@ -109,13 +114,17 @@
       "run": "env GDK_DISABLE=offload gtk4-demo --run=shadertoy",
       "window": "gtk4-demo",
       "name": "The shader demo",
-      "seconds": 10
+      "seconds": 10,
+      "notes": [
+       "Firefox and Chromium are installed too. To open one, type firefox or chromium.",
+       "To install more software, type sudo pacman -S followed by the package's name. The password is arch."
+      ]
      }
     }
    },
    "demo": {
     "id": "arch-3d",
-    "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now.",
+    "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2. pacman installs more software.",
     "view": "screen",
     "network": "demo",
     "room": "global"

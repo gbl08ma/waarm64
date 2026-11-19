@@ -71,10 +71,13 @@ function checkSession(s: Session, at: string) {
   const c = s.countdown;
   if (
     c !== undefined &&
-    !(typeof c === 'object' && c !== null && Object.keys(c).length === 5 && typeof c.script === 'string' && /^[a-z0-9-]+\.sh$/.test(c.script) &&
-      plain(c.run) && plain(c.window) && typeof c.name === 'string' && /^[\w .+-]+$/.test(c.name) && Number.isInteger(c.seconds) && c.seconds >= 3 && c.seconds <= 60)
+    !(typeof c === 'object' && c !== null && Object.keys(c).every((k) => ['script', 'run', 'window', 'name', 'seconds', 'notes'].includes(k)) &&
+      typeof c.script === 'string' && /^[a-z0-9-]+\.sh$/.test(c.script) && plain(c.run) && plain(c.window) && typeof c.name === 'string' &&
+      /^[\w .+-]+$/.test(c.name) && Number.isInteger(c.seconds) && c.seconds >= 3 && c.seconds <= 60 &&
+      // Notes go into a quoted here-document: any printable line but its end marker.
+      (c.notes === undefined || (Array.isArray(c.notes) && c.notes.length <= 8 && c.notes.every((n) => typeof n === 'string' && /^[\x20-\x7e]{0,200}$/.test(n) && n !== 'NOTES'))))
   )
-    throw new Error(`${at}.countdown is { script: <name>.sh, run, window, name, seconds: 3 to 60 } (no quotes or $)`);
+    throw new Error(`${at}.countdown is { script: <name>.sh, run, window, name, seconds: 3 to 60, notes?: up to 8 printable lines } (no quotes or $ but in notes)`);
   if (s.cmdline !== undefined && !(typeof s.cmdline === 'string' && /^[\w.=,-]+( [\w.=,-]+)*$/.test(s.cmdline))) throw new Error(`${at}.cmdline is kernel parameters (no quotes, / or $)`);
 }
 
