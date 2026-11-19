@@ -4,7 +4,7 @@ A comparison for the project's public pages: what each system is, what it can do
 facts** (dated, with sources). **§5 is draft copy** built only from them. Claims about other projects come from their
 public docs and source as of 2026-11-18. Each has a link in §6, and anything we couldn't confirm is marked
 *unverified*. Re-check them before publishing, because these projects move fast. Performance cells marked **TBD** are
-for the measurements of [plans/first-demo.md](plans/first-demo.md) loop 0. No number goes in without a run behind it
+still to measure. No number goes in without a run behind it
 ([benchmarking.md](benchmarking.md) "Rules").
 
 ## 1. The field in one line each
@@ -68,15 +68,19 @@ comparison (the same source compiled for each guest), and the table must say tha
 
 | Workload | waarm64 | unkernel | v86 | WebVM | JSLinux |
 |---|---|---|---|---|---|
-| Click to a shell prompt (cold cache) | TBD | TBD | TBD | TBD | TBD |
-| Bytes downloaded to the prompt | TBD | ~10 MB (their README) | TBD | TBD | TBD |
+| Click to a shell prompt (cold cache): a typed command answered | 31.7 s (the Desktop Demo's first boot, logged in; login prompt 27.8 s) | 1.3 s | 1.8 s (Arch, a saved state); 3.9 s (Buildroot, a boot) | TBD | TBD |
+| Bytes downloaded to the prompt | 420 MiB (6.1 the page, 414 the disk) | 6.7 MiB | 15.3 MiB (Arch); 5.5 MiB (Buildroot) | TBD | TBD |
 | CoreMark, 1 core * | TBD | TBD | TBD | TBD | TBD |
 | CoreMark, all cores * | TBD | TBD (`?smp`) | — | TBD | — |
 | `xz -9` / `gzip` of a fixed file * | TBD | TBD | TBD | TBD | TBD |
 | Python: `python3 -c` a fixed loop / pyperformance subset * | TBD | TBD | TBD | TBD | TBD |
-| `apk add python3` (network + disk) | TBD (with Wisp) | TBD | — | — | — |
+| `apk add python3` (network + disk) | — (no network out of the box) | 7.7 s, 17.8 MiB | — | — | — |
 | fork + exec churn * | TBD | TBD | TBD | TBD | TBD |
-| Peak tab memory at the prompt | TBD | TBD | TBD | TBD | TBD |
+| Tab memory at the prompt (PSS over the browser's own 410 MiB) | 2.2 GiB (the Desktop Demo) | 181 MiB | 28 MiB (Arch; 845 peak in the restore); 355 MiB (Buildroot) | TBD | TBD |
+
+The measured rows (the prompt, the bytes, `apk`, the memory): [bench/demo/REPORT.md](../bench/demo/REPORT.md) "DEMO loop 0" (2026-11-19, the dev VM, Chromium
+155 headless, a fresh profile per run, medians of 3; `node bench/demo/run.ts`). They are the demos as shipped: ours
+is the deployed Desktop Demo (Arch with sway, a first boot from a remote disk), since the page has no Alpine demo yet.
 
 Our own numbers for context (Chromium 153, M4, [benchmarking.md](benchmarking.md) "Current numbers"): CoreMark 10,080
 it/s in user mode (QEMU TCG natively: 12,500); 5,175 integer MIPS; Alpine boot to power-off 9.9 s; Buildroot 0.8 s;
@@ -84,7 +88,7 @@ AES-128-GCM 232 MB/s with the crypto extensions.
 
 ## 4. Where they lead
 
-- **The first minute.** unkernel's demo is an Alpine prompt after ~10 MB. It installs the package for a missing
+- **The first minute.** unkernel's demo answers a command at its Alpine prompt 1.3 s after the link, after 6.7 MiB (§3); our Desktop Demo, 31.7 s and 420 MiB. It installs the package for a missing
   command as you type it, keeps your changes across reloads, and has a network with nothing configured. v86's demos
   work in a similar way. Ours opens on an empty machine that asks for a disk. Closing that gap is
   [plans/first-demo.md](plans/first-demo.md).

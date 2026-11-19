@@ -1,0 +1,252 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "waarm64-desktop",
+ "system": "waarm64",
+ "what": "https://vm.tny.im/?disk=https://vmdisks.tny.im/desktop/prefetch.json (the Desktop Demo, Arch Linux ARM with sway, UEFI) as deployed, its first boot, the page's defaults, the serial terminal shown beside the screen (`view=both`)",
+ "promptIs": "the login prompt on the serial console (the machine `running`)",
+ "url": "https://vm.tny.im/?disk=https%3A%2F%2Fvmdisks.tny.im%2Fdesktop%2Fprefetch.json&view=both",
+ "date": "2026-11-19T02:14:25.967Z",
+ "commit": "241854015878",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "prompt": 27793,
+    "command": 31703
+   },
+   "bytes": {
+    "total": 440607678,
+    "background": 53037,
+    "byHost": {
+     "(dns)": 1784,
+     "accounts.google.com": 6524,
+     "update.googleapis.com": 13996,
+     "www.google.com": 4052,
+     "vm.tny.im": 6408069,
+     "edgedl.me.gvt1.com": 14953,
+     "vmdisks.tny.im": 434183255,
+     "content-autofill.googleapis.com": 6741,
+     "pmwocc": 8983,
+     "android.clients.google.com": 6771,
+     "66.102.1.188:5228": 5587
+    },
+    "prompt": 440607678,
+    "command": 440607678
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 3317,
+     "pssMiB": 2696,
+     "processes": 11,
+     "rendererPssMiB": 2252
+    },
+    "prompt": {
+     "rssMiB": 3203,
+     "pssMiB": 2583,
+     "processes": 11,
+     "rendererPssMiB": 2140
+    },
+    "uasmMiB": 24912
+   },
+   "phases": {
+    "firmware": 1256,
+    "userspace": 16331
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "prompt": 26737,
+    "command": 30967
+   },
+   "bytes": {
+    "total": 440599045,
+    "background": 52503,
+    "byHost": {
+     "(dns)": 1784,
+     "vm.tny.im": 6407741,
+     "update.googleapis.com": 14113,
+     "accounts.google.com": 6521,
+     "www.google.com": 4052,
+     "edgedl.me.gvt1.com": 14953,
+     "vmdisks.tny.im": 434175096,
+     "content-autofill.googleapis.com": 6010,
+     "pmwocc": 8836,
+     "android.clients.google.com": 6854,
+     "66.102.1.188:5228": 5588
+    },
+    "prompt": 440599045,
+    "command": 440599045
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 3331,
+     "pssMiB": 2716,
+     "processes": 11,
+     "rendererPssMiB": 2280
+    },
+    "prompt": {
+     "rssMiB": 3208,
+     "pssMiB": 2595,
+     "processes": 11,
+     "rendererPssMiB": 2160
+    },
+    "uasmMiB": 24912
+   },
+   "phases": {
+    "firmware": 1010,
+    "userspace": 15568
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "prompt": 27790,
+    "command": 31664
+   },
+   "bytes": {
+    "total": 440648175,
+    "background": 52447,
+    "byHost": {
+     "(dns)": 1784,
+     "vm.tny.im": 6422992,
+     "update.googleapis.com": 13974,
+     "www.google.com": 4050,
+     "edgedl.me.gvt1.com": 14953,
+     "accounts.google.com": 6521,
+     "vmdisks.tny.im": 434203224,
+     "content-autofill.googleapis.com": 6139,
+     "pmwocc": 9006,
+     "android.clients.google.com": 6810,
+     "66.102.1.188:5228": 11169
+    },
+    "prompt": 440648175,
+    "command": 440648175
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 3338,
+     "pssMiB": 2716,
+     "processes": 11,
+     "rendererPssMiB": 2271
+    },
+    "prompt": {
+     "rssMiB": 3212,
+     "pssMiB": 2593,
+     "processes": 11,
+     "rendererPssMiB": 2150
+    },
+    "uasmMiB": 24913
+   },
+   "phases": {
+    "firmware": 1009,
+    "userspace": 15822
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "prompt_ms": {
+   "median": 27790,
+   "iqr": 528,
+   "n": 3,
+   "samples": [
+    27793,
+    26737,
+    27790
+   ]
+  },
+  "command_ms": {
+   "median": 31664,
+   "iqr": 368,
+   "n": 3,
+   "samples": [
+    31703,
+    30967,
+    31664
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 420.1962261199951,
+   "iqr": 0.02342700958251953,
+   "n": 3,
+   "samples": [
+    420.1962261199951,
+    420.1879930496216,
+    420.2348470687866
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 420.1962261199951,
+   "iqr": 0.02342700958251953,
+   "n": 3,
+   "samples": [
+    420.1962261199951,
+    420.1879930496216,
+    420.2348470687866
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 420.1962261199951,
+   "iqr": 0.02342700958251953,
+   "n": 3,
+   "samples": [
+    420.1962261199951,
+    420.1879930496216,
+    420.2348470687866
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 2593,
+   "iqr": 6,
+   "n": 3,
+   "samples": [
+    2583,
+    2595,
+    2593
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 2716,
+   "iqr": 10,
+   "n": 3,
+   "samples": [
+    2696,
+    2716,
+    2716
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 3331,
+   "iqr": 10.5,
+   "n": 3,
+   "samples": [
+    3317,
+    3331,
+    3338
+   ]
+  },
+  "uasm_MiB": {
+   "median": 24912,
+   "iqr": 0.5,
+   "n": 3,
+   "samples": [
+    24912,
+    24912,
+    24913
+   ]
+  }
+ }
+}

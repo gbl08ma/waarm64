@@ -34,6 +34,16 @@ block cache's counters) to Firefox's first paint, with a mark per phase; `local:
 or no ranges (`/pages`) added, and logs each request. `summary.ts` sums a run per phase, `simulate.ts` replays its
 trace through a block cache.
 
+**A demo as a visitor meets it** (`bench/demo/`, beside the harness; journal in `bench/demo/REPORT.md`):
+`node bench/demo/run.ts <target> [--runs 3] [--apk] [--out f]` opens a target's page in headless Chromium, a fresh
+profile and cache each run, and times from the navigation to its prompt, to a typed command's answer and (`--apk`)
+`apk add python3`; with the bytes received by each mark (Chromium's net log, `--log-net-log`: every socket's bytes by
+host, Chromium's own traffic apart) and the browser's processes' PSS and RSS (/proc) at the prompt and at their peak.
+The targets (`bench/demo/targets.ts`: a page, how its console is read and typed on, what its prompt is) are the
+others' demos as shipped (`unkernel`, `v86-buildroot`, `v86-arch`), ours (`waarm64-desktop`: the deployed Desktop
+Demo; `waarm64-alpine`: Alpine's UEFI cloud image on an `npm run dist` build) and `blank` (the browser alone). Our
+Alpine demo becomes a target of its own.
+
 **A complex application** (`bench/apps/`, beside the harness; results and journal in `bench/apps/REPORT.md`):
 `node bench/apps/chromium.ts [--ncpus 4] [--json f] [--wasm core.wasm] [--perf N] [page...]` boots the page's
 Debian on images/debian-chromium/build.sh's disk (`?disk=`, a fresh overlay), logs in on the serial terminal and

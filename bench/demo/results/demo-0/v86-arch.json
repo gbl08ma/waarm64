@@ -1,0 +1,231 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "v86-arch",
+ "system": "v86",
+ "what": "https://copy.sh/v86/?profile=archlinux: Arch Linux 32 resumed from a saved state at a root shell (9p root on demand; networking off until `./networking.sh`)",
+ "promptIs": "the emulator running with its state loaded (the prompt is on a canvas: see the command)",
+ "url": "https://copy.sh/v86/?profile=archlinux",
+ "date": "2026-11-19T02:09:16.827Z",
+ "commit": "241854015878",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "prompt": 379,
+    "command": 1768
+   },
+   "bytes": {
+    "total": 16008932,
+    "background": 45938,
+    "byHost": {
+     "(dns)": 1285,
+     "update.googleapis.com": 6941,
+     "www.google.com": 4051,
+     "accounts.google.com": 6522,
+     "copy.sh": 467715,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13471,
+     "c.copy.sh": 15539932
+    },
+    "prompt": 121590,
+    "command": 16008932
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1934,
+     "pssMiB": 1255,
+     "processes": 12,
+     "rendererPssMiB": 854
+    },
+    "prompt": {
+     "rssMiB": 1018,
+     "pssMiB": 438,
+     "processes": 11,
+     "rendererPssMiB": 77
+    },
+    "uasmMiB": 607
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "prompt": 382,
+    "command": 1723
+   },
+   "bytes": {
+    "total": 16008839,
+    "background": 46310,
+    "byHost": {
+     "(dns)": 1285,
+     "update.googleapis.com": 7118,
+     "www.google.com": 4050,
+     "accounts.google.com": 6521,
+     "copy.sh": 467715,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13668,
+     "c.copy.sh": 15539839
+    },
+    "prompt": 121590,
+    "command": 16008839
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1896,
+     "pssMiB": 1217,
+     "processes": 12,
+     "rendererPssMiB": 816
+    },
+    "prompt": {
+     "rssMiB": 1018,
+     "pssMiB": 439,
+     "processes": 11,
+     "rendererPssMiB": 78
+    },
+    "uasmMiB": 607
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "prompt": 379,
+    "command": 1778
+   },
+   "bytes": {
+    "total": 16011155,
+    "background": 46088,
+    "byHost": {
+     "(dns)": 1285,
+     "update.googleapis.com": 6949,
+     "www.google.com": 4052,
+     "accounts.google.com": 6520,
+     "copy.sh": 467715,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13614,
+     "c.copy.sh": 15542155
+    },
+    "prompt": 121590,
+    "command": 16011155
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1939,
+     "pssMiB": 1262,
+     "processes": 12,
+     "rendererPssMiB": 853
+    },
+    "prompt": {
+     "rssMiB": 1015,
+     "pssMiB": 436,
+     "processes": 11,
+     "rendererPssMiB": 78
+    },
+    "uasmMiB": 607
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "prompt_ms": {
+   "median": 379,
+   "iqr": 1.5,
+   "n": 3,
+   "samples": [
+    379,
+    382,
+    379
+   ]
+  },
+  "command_ms": {
+   "median": 1768,
+   "iqr": 27.5,
+   "n": 3,
+   "samples": [
+    1768,
+    1723,
+    1778
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 0.11595726013183594,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    0.11595726013183594,
+    0.11595726013183594,
+    0.11595726013183594
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 15.26730728149414,
+   "iqr": 0.0011043548583984375,
+   "n": 3,
+   "samples": [
+    15.26730728149414,
+    15.267218589782715,
+    15.269427299499512
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 15.26730728149414,
+   "iqr": 0.0011043548583984375,
+   "n": 3,
+   "samples": [
+    15.26730728149414,
+    15.267218589782715,
+    15.269427299499512
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 438,
+   "iqr": 1.5,
+   "n": 3,
+   "samples": [
+    438,
+    439,
+    436
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 1255,
+   "iqr": 22.5,
+   "n": 3,
+   "samples": [
+    1255,
+    1217,
+    1262
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1934,
+   "iqr": 21.5,
+   "n": 3,
+   "samples": [
+    1934,
+    1896,
+    1939
+   ]
+  },
+  "uasm_MiB": {
+   "median": 607,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    607,
+    607,
+    607
+   ]
+  }
+ }
+}

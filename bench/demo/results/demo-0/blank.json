@@ -1,0 +1,192 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "blank",
+ "system": "Chromium",
+ "what": "about:blank: headless Chromium's own processes, the floor under every target's memory",
+ "promptIs": "3 s after the navigation",
+ "url": "about:blank",
+ "date": "2026-11-19T02:07:05.656Z",
+ "commit": "241854015878",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "prompt": 3017
+   },
+   "bytes": {
+    "total": 14808,
+    "background": 46151,
+    "byHost": {
+     "(dns)": 1082,
+     "accounts.google.com": 6522,
+     "www.google.com": 4050,
+     "update.googleapis.com": 14256,
+     "edgedl.me.gvt1.com": 14953,
+     "pmwocc": 8138,
+     "android.clients.google.com": 6370,
+     "108.177.15.188:5228": 5588
+    },
+    "prompt": 14808
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 984,
+     "pssMiB": 421,
+     "processes": 11,
+     "rendererPssMiB": 83
+    },
+    "prompt": {
+     "rssMiB": 969,
+     "pssMiB": 409,
+     "processes": 11,
+     "rendererPssMiB": 83
+    }
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "prompt": 3015
+   },
+   "bytes": {
+    "total": 14674,
+    "background": 45896,
+    "byHost": {
+     "(dns)": 1082,
+     "update.googleapis.com": 14014,
+     "www.google.com": 4051,
+     "accounts.google.com": 6522,
+     "edgedl.me.gvt1.com": 14953,
+     "pmwocc": 8003,
+     "android.clients.google.com": 6356,
+     "108.177.15.188:5228": 5589
+    },
+    "prompt": 14674
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 987,
+     "pssMiB": 422,
+     "processes": 11,
+     "rendererPssMiB": 83
+    },
+    "prompt": {
+     "rssMiB": 972,
+     "pssMiB": 410,
+     "processes": 11,
+     "rendererPssMiB": 82
+    }
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "prompt": 3033
+   },
+   "bytes": {
+    "total": 14872,
+    "background": 45966,
+    "byHost": {
+     "(dns)": 1082,
+     "update.googleapis.com": 14082,
+     "www.google.com": 4052,
+     "accounts.google.com": 6521,
+     "edgedl.me.gvt1.com": 14953,
+     "pmwocc": 8201,
+     "android.clients.google.com": 6358,
+     "108.177.15.188:5228": 5589
+    },
+    "prompt": 14872
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 984,
+     "pssMiB": 422,
+     "processes": 11,
+     "rendererPssMiB": 83
+    },
+    "prompt": {
+     "rssMiB": 969,
+     "pssMiB": 410,
+     "processes": 11,
+     "rendererPssMiB": 83
+    }
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "prompt_ms": {
+   "median": 3017,
+   "iqr": 9,
+   "n": 3,
+   "samples": [
+    3017,
+    3015,
+    3033
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 0.01412200927734375,
+   "iqr": 0.00009441375732421875,
+   "n": 3,
+   "samples": [
+    0.01412200927734375,
+    0.013994216918945312,
+    0.01418304443359375
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 0.01412200927734375,
+   "iqr": 0.00009441375732421875,
+   "n": 3,
+   "samples": [
+    0.01412200927734375,
+    0.013994216918945312,
+    0.01418304443359375
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 410,
+   "iqr": 0.5,
+   "n": 3,
+   "samples": [
+    409,
+    410,
+    410
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 422,
+   "iqr": 0.5,
+   "n": 3,
+   "samples": [
+    421,
+    422,
+    422
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 984,
+   "iqr": 1.5,
+   "n": 3,
+   "samples": [
+    984,
+    987,
+    984
+   ]
+  }
+ }
+}

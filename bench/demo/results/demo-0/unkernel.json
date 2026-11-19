@@ -1,0 +1,248 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "unkernel",
+ "system": "unkernel",
+ "what": "https://unkernel.dev/ as shipped: Alpine 3.24 (riscv64) to its root shell, Wisp networking on",
+ "promptIs": "the shell prompt (`~ ⇒`), logged in",
+ "url": "https://unkernel.dev/",
+ "apk": "apk add python3; python3 -c 'print(6*7*10)'; echo apk-$?-$((6*7))",
+ "date": "2026-11-19T02:08:05.543Z",
+ "commit": "241854015878",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "prompt": 1040,
+    "command": 1303,
+    "apkMs": 7702
+   },
+   "bytes": {
+    "total": 25635110,
+    "background": 46333,
+    "byHost": {
+     "(dns)": 1294,
+     "update.googleapis.com": 7040,
+     "www.google.com": 4050,
+     "accounts.google.com": 6520,
+     "edgedl.me.gvt1.com": 14953,
+     "unkernel.dev": 6971354,
+     "content-autofill.googleapis.com": 13770,
+     "86.106.84.167:6680": 18662462
+    },
+    "prompt": 6972550,
+    "command": 6977651
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1419,
+     "pssMiB": 802,
+     "processes": 11,
+     "rendererPssMiB": 363
+    },
+    "prompt": {
+     "rssMiB": 1201,
+     "pssMiB": 594,
+     "processes": 11,
+     "rendererPssMiB": 207
+    },
+    "uasmMiB": 542
+   },
+   "apkOk": true
+  },
+  {
+   "run": 2,
+   "marks": {
+    "prompt": 971,
+    "command": 1246,
+    "apkMs": 7525
+   },
+   "bytes": {
+    "total": 25635739,
+    "background": 46484,
+    "byHost": {
+     "(dns)": 1294,
+     "update.googleapis.com": 7160,
+     "www.google.com": 4052,
+     "accounts.google.com": 6522,
+     "unkernel.dev": 6971317,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13797,
+     "86.106.84.167:6680": 18663128
+    },
+    "prompt": 6972513,
+    "command": 6977615
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1387,
+     "pssMiB": 769,
+     "processes": 11,
+     "rendererPssMiB": 369
+    },
+    "prompt": {
+     "rssMiB": 1197,
+     "pssMiB": 590,
+     "processes": 11,
+     "rendererPssMiB": 207
+    },
+    "uasmMiB": 542
+   },
+   "apkOk": true
+  },
+  {
+   "run": 3,
+   "marks": {
+    "prompt": 1336,
+    "command": 1678,
+    "apkMs": 8874
+   },
+   "bytes": {
+    "total": 25636936,
+    "background": 46217,
+    "byHost": {
+     "(dns)": 1294,
+     "update.googleapis.com": 7122,
+     "www.google.com": 4051,
+     "accounts.google.com": 6521,
+     "unkernel.dev": 6971438,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13570,
+     "86.106.84.167:6680": 18664204
+    },
+    "prompt": 6972634,
+    "command": 6978041
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1354,
+     "pssMiB": 736,
+     "processes": 11,
+     "rendererPssMiB": 349
+    },
+    "prompt": {
+     "rssMiB": 1197,
+     "pssMiB": 591,
+     "processes": 11,
+     "rendererPssMiB": 205
+    },
+    "uasmMiB": 542
+   },
+   "apkOk": true
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "prompt_ms": {
+   "median": 1040,
+   "iqr": 182.5,
+   "n": 3,
+   "samples": [
+    1040,
+    971,
+    1336
+   ]
+  },
+  "command_ms": {
+   "median": 1303,
+   "iqr": 216,
+   "n": 3,
+   "samples": [
+    1303,
+    1246,
+    1678
+   ]
+  },
+  "apk_ms": {
+   "median": 7702,
+   "iqr": 674.5,
+   "n": 3,
+   "samples": [
+    7702,
+    7525,
+    8874
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 6.649541854858398,
+   "iqr": 0.000057697296142578125,
+   "n": 3,
+   "samples": [
+    6.649541854858398,
+    6.649506568908691,
+    6.649621963500977
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 6.654406547546387,
+   "iqr": 0.00020313262939453125,
+   "n": 3,
+   "samples": [
+    6.654406547546387,
+    6.654372215270996,
+    6.654778480529785
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 24.448145866394043,
+   "iqr": 0.0008707046508789062,
+   "n": 3,
+   "samples": [
+    24.447546005249023,
+    24.448145866394043,
+    24.44928741455078
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 591,
+   "iqr": 2,
+   "n": 3,
+   "samples": [
+    594,
+    590,
+    591
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 769,
+   "iqr": 33,
+   "n": 3,
+   "samples": [
+    802,
+    769,
+    736
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1387,
+   "iqr": 32.5,
+   "n": 3,
+   "samples": [
+    1419,
+    1387,
+    1354
+   ]
+  },
+  "uasm_MiB": {
+   "median": 542,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    542,
+    542,
+    542
+   ]
+  }
+ }
+}

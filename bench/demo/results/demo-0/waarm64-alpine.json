@@ -1,0 +1,228 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "waarm64-alpine",
+ "system": "waarm64",
+ "what": "the page as `npm run dist -- --out bench/results/local/demo/dist` builds it, on Vite's preview server on localhost, with `?disk=` Alpine 3.24.2's published UEFI cloud image (tiny, Limine; `images/build.sh alpine-uefi`) beside it: a first boot to its login prompt (root is locked in the cloud image: no command)",
+ "promptIs": "the login prompt on the serial console (the machine `running`)",
+ "url": "<local>/?disk=/alpine-uefi.qcow2&view=both",
+ "date": "2026-11-19T02:12:13.982Z",
+ "commit": "241854015878",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "prompt": 48437
+   },
+   "bytes": {
+    "total": 82538942,
+    "background": 52980,
+    "byHost": {
+     "(dns)": 1556,
+     "127.0.0.1": 82522829,
+     "www.google.com": 4051,
+     "update.googleapis.com": 14156,
+     "accounts.google.com": 6522,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 6076,
+     "pmwocc": 8969,
+     "android.clients.google.com": 7222,
+     "108.177.15.188:5228": 5588
+    },
+    "prompt": 82538942
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1855,
+     "pssMiB": 1238,
+     "processes": 11,
+     "rendererPssMiB": 815
+    },
+    "prompt": {
+     "rssMiB": 1855,
+     "pssMiB": 1238,
+     "processes": 11,
+     "rendererPssMiB": 815
+    },
+    "uasmMiB": 24701
+   },
+   "phases": {
+    "firmware": 753,
+    "loader": 4300,
+    "kernel": 15644,
+    "userspace": 48625
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "prompt": 48508
+   },
+   "bytes": {
+    "total": 82545231,
+    "background": 52327,
+    "byHost": {
+     "(dns)": 1556,
+     "127.0.0.1": 82523265,
+     "update.googleapis.com": 14029,
+     "www.google.com": 4051,
+     "accounts.google.com": 6522,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 6013,
+     "pmwocc": 9241,
+     "android.clients.google.com": 6759,
+     "108.177.15.188:5228": 11169
+    },
+    "prompt": 82545231
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1870,
+     "pssMiB": 1250,
+     "processes": 11,
+     "rendererPssMiB": 823
+    },
+    "prompt": {
+     "rssMiB": 1870,
+     "pssMiB": 1250,
+     "processes": 11,
+     "rendererPssMiB": 823
+    },
+    "uasmMiB": 24701
+   },
+   "phases": {
+    "firmware": 755,
+    "loader": 4300,
+    "kernel": 15649,
+    "userspace": 48428
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "prompt": 48221
+   },
+   "bytes": {
+    "total": 82544429,
+    "background": 52303,
+    "byHost": {
+     "(dns)": 1556,
+     "127.0.0.1": 82522829,
+     "update.googleapis.com": 13897,
+     "accounts.google.com": 6522,
+     "www.google.com": 4050,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 6113,
+     "pmwocc": 8876,
+     "android.clients.google.com": 6768,
+     "108.177.15.188:5228": 11168
+    },
+    "prompt": 82544429
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1870,
+     "pssMiB": 1250,
+     "processes": 11,
+     "rendererPssMiB": 822
+    },
+    "prompt": {
+     "rssMiB": 1870,
+     "pssMiB": 1250,
+     "processes": 11,
+     "rendererPssMiB": 822
+    },
+    "uasmMiB": 24701
+   },
+   "phases": {
+    "firmware": 753,
+    "loader": 4295,
+    "kernel": 15661
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "prompt_ms": {
+   "median": 48437,
+   "iqr": 143.5,
+   "n": 3,
+   "samples": [
+    48437,
+    48508,
+    48221
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 78.72050189971924,
+   "iqr": 0.002998828887939453,
+   "n": 3,
+   "samples": [
+    78.71526908874512,
+    78.721266746521,
+    78.72050189971924
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 78.72050189971924,
+   "iqr": 0.002998828887939453,
+   "n": 3,
+   "samples": [
+    78.71526908874512,
+    78.721266746521,
+    78.72050189971924
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 1250,
+   "iqr": 6,
+   "n": 3,
+   "samples": [
+    1238,
+    1250,
+    1250
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 1250,
+   "iqr": 6,
+   "n": 3,
+   "samples": [
+    1238,
+    1250,
+    1250
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1870,
+   "iqr": 7.5,
+   "n": 3,
+   "samples": [
+    1855,
+    1870,
+    1870
+   ]
+  },
+  "uasm_MiB": {
+   "median": 24701,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    24701,
+    24701,
+    24701
+   ]
+  }
+ }
+}

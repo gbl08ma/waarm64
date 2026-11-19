@@ -1,0 +1,231 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "v86-buildroot",
+ "system": "v86",
+ "what": "https://copy.sh/v86/?profile=buildroot: Buildroot (i686) booted from its bzImage to a root shell; networking needs `udhcpc` over a relay",
+ "promptIs": "the shell prompt (`~%`), logged in",
+ "url": "https://copy.sh/v86/?profile=buildroot",
+ "date": "2026-11-19T02:08:40.386Z",
+ "commit": "241854015878",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "prompt": 3396,
+    "command": 3843
+   },
+   "bytes": {
+    "total": 5727266,
+    "background": 46348,
+    "byHost": {
+     "(dns)": 1285,
+     "www.google.com": 4051,
+     "update.googleapis.com": 7084,
+     "accounts.google.com": 6520,
+     "copy.sh": 547180,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13740,
+     "c.copy.sh": 5178801
+    },
+    "prompt": 5727266,
+    "command": 5727266
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1531,
+     "pssMiB": 860,
+     "processes": 12,
+     "rendererPssMiB": 465
+    },
+    "prompt": {
+     "rssMiB": 1436,
+     "pssMiB": 765,
+     "processes": 12,
+     "rendererPssMiB": 372
+    },
+    "uasmMiB": 163
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "prompt": 3754,
+    "command": 4173
+   },
+   "bytes": {
+    "total": 5729985,
+    "background": 46415,
+    "byHost": {
+     "(dns)": 1285,
+     "update.googleapis.com": 7104,
+     "accounts.google.com": 6521,
+     "www.google.com": 4051,
+     "edgedl.me.gvt1.com": 14953,
+     "copy.sh": 547180,
+     "content-autofill.googleapis.com": 13786,
+     "c.copy.sh": 5181520
+    },
+    "prompt": 5729985,
+    "command": 5729985
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1545,
+     "pssMiB": 876,
+     "processes": 12,
+     "rendererPssMiB": 483
+    },
+    "prompt": {
+     "rssMiB": 1545,
+     "pssMiB": 876,
+     "processes": 12,
+     "rendererPssMiB": 483
+    },
+    "uasmMiB": 163
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "prompt": 3506,
+    "command": 3924
+   },
+   "bytes": {
+    "total": 5727300,
+    "background": 46285,
+    "byHost": {
+     "(dns)": 1285,
+     "update.googleapis.com": 7068,
+     "www.google.com": 4050,
+     "edgedl.me.gvt1.com": 14953,
+     "accounts.google.com": 6522,
+     "copy.sh": 547180,
+     "content-autofill.googleapis.com": 13692,
+     "c.copy.sh": 5178835
+    },
+    "prompt": 5727300,
+    "command": 5727300
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1537,
+     "pssMiB": 869,
+     "processes": 12,
+     "rendererPssMiB": 478
+    },
+    "prompt": {
+     "rssMiB": 1430,
+     "pssMiB": 762,
+     "processes": 12,
+     "rendererPssMiB": 370
+    },
+    "uasmMiB": 164
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "prompt_ms": {
+   "median": 3506,
+   "iqr": 179,
+   "n": 3,
+   "samples": [
+    3396,
+    3754,
+    3506
+   ]
+  },
+  "command_ms": {
+   "median": 3924,
+   "iqr": 165,
+   "n": 3,
+   "samples": [
+    3843,
+    4173,
+    3924
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 5.461978912353516,
+   "iqr": 0.0012965202331542969,
+   "n": 3,
+   "samples": [
+    5.461946487426758,
+    5.464539527893066,
+    5.461978912353516
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 5.461978912353516,
+   "iqr": 0.0012965202331542969,
+   "n": 3,
+   "samples": [
+    5.461946487426758,
+    5.464539527893066,
+    5.461978912353516
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 5.461978912353516,
+   "iqr": 0.0012965202331542969,
+   "n": 3,
+   "samples": [
+    5.461946487426758,
+    5.464539527893066,
+    5.461978912353516
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 765,
+   "iqr": 57,
+   "n": 3,
+   "samples": [
+    765,
+    876,
+    762
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 869,
+   "iqr": 8,
+   "n": 3,
+   "samples": [
+    860,
+    876,
+    869
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1537,
+   "iqr": 7,
+   "n": 3,
+   "samples": [
+    1531,
+    1545,
+    1537
+   ]
+  },
+  "uasm_MiB": {
+   "median": 163,
+   "iqr": 0.5,
+   "n": 3,
+   "samples": [
+    163,
+    163,
+    164
+   ]
+  }
+ }
+}
