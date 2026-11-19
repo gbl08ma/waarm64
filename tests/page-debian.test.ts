@@ -308,6 +308,10 @@ for (let run = 1; run <= RUNS; run++) {
     // The SMBIOS tables over fw_cfg (core/src/smbios.rs), through EDK2's SMBIOS 3.0 entry point to Linux's DMI.
     await onSerial(page, 'clear; cd /sys/class/dmi/id; echo ==dm""i $(cat sys_vendor product_name product_family chassis_vendor bios_vendor bios_version); cd\n');
     await shows(page, /==dmi waarm64 waarm64 Virtual Machine waarm64 EDK II ArmVirtQemuKernel/);
+    // The CPU's identity (docs/cpu.md "ID registers and identification"): MIDR_EL1's part in /proc/cpuinfo, SMBIOS type 4's
+    // maker and name in lscpu.
+    await onSerial(page, 'clear; echo ==cp""u $(grep -m2 -E "^CPU (implementer|part)" /proc/cpuinfo | tr -d " \\t") $(lscpu | grep -E "^BIOS (Vendor ID|Model name)" | tr -d " ") ==en""d\n');
+    await shows(page, /==cpu CPUimplementer:0x00 CPUpart:0xa64 BIOSVendorID:waarm64 BIOSModelname:waarm64\S* ==end/);
     // The keyboard layout (web/app/keyboard.ts): SMBIOS credentials, a unit that ran before the logins; Debian's
     // /etc/default/keyboard, read back by localed, and XKB_DEFAULT_* in this login's environment.
     await onSerial(page, 'clear; echo ==kb""d $(systemctl show -P Result waarm64-keyboard.service) $(localectl status | grep -o "X11 Layout: [a-z]*" | cut -d" " -f3) $XKB_DEFAULT_LAYOUT $XKB_DEFAULT_MODEL.\n');

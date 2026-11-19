@@ -25,8 +25,11 @@ const fn sr(op0: u32, op1: u32, crn: u32, crm: u32, op2: u32) -> u32 {
 }
 
 // Identification. Everything here describes exactly what the core implements.
-/// Implementer 0 (reserved for software use), architecture 0xf (see the ID registers).
-pub(crate) const MIDR: u64 = 0x000f_0000;
+/// Implementer 0 (reserved for software use), architecture 0xf (see the ID registers), part 0xa64: waarm64's
+/// mark in `/proc/cpuinfo` ("CPU part"). No other CPU with implementer 0 uses it (QEMU's `max` is part 0x051); no
+/// list in Linux or util-linux names implementer 0, so nothing keys behavior on it (docs/cpu.md). Booted-Debian
+/// fixtures key on this line (tests/debian-fixture.ts).
+pub(crate) const MIDR: u64 = 0x000f_a640;
 /// EL0 and EL1 AArch64 only; FP and AdvSIMD 0 (present; 1, with FP16, with
 /// `FEATURE_FP16`: `pfr0`); GIC 0 (no
 /// system register interface; 1 with `FEATURE_GICV3`, `pfr0`). CSV2 and CSV3:

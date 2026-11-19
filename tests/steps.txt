@@ -9,24 +9,26 @@
 # Since "virtio: offer EVENT_IDX": every Linux guest with a virtio device negotiates it (EDK2 doesn't).
 # ABI 59 and 60: the guests' Linux detects SB, LRCPC, DIT and the rest, prints them and patches its alternatives;
 # ABI 62 likewise for RDM and LRCPC2.
-buildroot 40487366
+# MIDR_EL1's part 0xa64 (docs/cpu.md): Buildroot's, Alpine's, LTP's and the crypto kernel's Linux print or hash it;
+# the device, console, EDK2, GPU, sound, USB and litmus guests don't move.
+buildroot 40487428
 # devices: virtio-net offers its offloads (web/offload.ts), receive merging and MRG_RXBUF included, which the guest's driver negotiates;
 # the tablet has a mouse's back and forward buttons (BTN_SIDE, BTN_EXTRA);
 # the tablet and the mouse have the horizontal and high-resolution wheels.
 devices 113984664
-ltp 2774345286
-crypto 5569396575
+ltp 2775108934
+crypto 5569396606
 # alpine: its test devices have virtio-net, whose offloads (web/offload.ts) the guest's driver negotiates, and the tablet
 # with a mouse's back and forward buttons; the tablet and the mouse have the horizontal and high-resolution wheels.
-alpine 2651076469
-alpine-user 10424804310
+alpine 2650367147
+alpine-user 10431311691
 # Alpine's userspace benchmark saved and restored into a new VM at a quarter, half (+1) and three
 # quarters (+2) of alpine-user's steps: a restored VM's TLBs are empty, which Linux can tell (it clears
 # access flags without a TLBI), though since TLBI by VA drops whole blocks it comes out at alpine-user's count.
 # The same count with the TLBs only flushed there (core/tests/distros.rs).
-alpine-user-snapshots 10424804310
-buildroot-2cpu 42530974
-buildroot-4cpu 45090172
+alpine-user-snapshots 10431311691
+buildroot-2cpu 42531021
+buildroot-4cpu 45092321
 litmus-4cpu 869285732
 console-input 36539832
 # edk2-shell: the firmware has the USB stack's way to the DT's xHCI (Waarm64XhciDxe, NonDiscoverablePciDeviceDxe), dispatched on every machine.

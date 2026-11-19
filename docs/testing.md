@@ -1037,7 +1037,7 @@ Parallel test files wait for one maker (a lock directory beside the file). `WAAR
   cards). A restore must describe the machine that saved it, to the disk's virtio features: the maker's disk has an
   overlay as every restore's does (without one a disk is read-only, and the core refuses the state as another machine's).
 - **The key** is what the boot made of the machine: the image's `.inputs` key (or the file's size and time), EDK2's
-  hash, the core's snapshot format and ABI, and the sources that say what the machine is and is given at boot
+  hash, the core's snapshot format, ABI and `MIDR` (`interp/sys.rs`'s line: the guest's Linux caches it at boot), and the sources that say what the machine is and is given at boot
   (`fdt.rs`, `smbios.rs`, `fw_cfg.rs`, `virtio.rs`, `boot.rs`, `snapshot.rs`, the worker, the credentials). The JIT,
   the CPU and `web/devices.ts` are left out (they move often, and a restore of a fixture made by another core is the
   snapshot path working); a change to what the guest sets up at boot that none of these files show (a device's

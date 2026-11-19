@@ -178,7 +178,12 @@ match it step for step.
 
 ### ID registers and identification
 
-- `MIDR_EL1`: implementer 0 (software use).
+- `MIDR_EL1` = `0x000f_a640`: implementer 0 (software use), architecture 0xf, variant 0, part 0xa64 (waarm64's mark:
+  `/proc/cpuinfo` reads "CPU implementer : 0x00", "CPU part : 0xa64"), revision 0. arm64 Linux prints nothing else that
+  names the CPU (mainline has no `model name`; the "Processor" and "Hardware" lines on Android phones are a vendor
+  patch); SMBIOS type 4 carries the name ([platform.md](platform.md) "SMBIOS"). Checked 2026-11-19 against Linux's
+  `cputype.h`, util-linux's `lscpu-arm.c` and QEMU's `target/arm`: no implementer-0 entry in Linux or util-linux
+  (nothing keys errata, mitigations or names on it; `lscpu` prints the raw IDs), and QEMU's `max` is part 0x051.
 - `MPIDR_EL1`: `Cpu::mpidr`, per vCPU (`gicv3::mpidr`: `1 << 31`, Aff1 = i / 16, Aff0 = i % 16;
   `1 << 31` for one CPU).
 - `ID_AA64PFR0_EL1`: FP and AdvSIMD = 0 (present; 1, with FP16, with FEAT_FP16, off by default); **CSV2 and CSV3 set** (nothing

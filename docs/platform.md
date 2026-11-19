@@ -591,8 +591,8 @@ from it at boot (`hctosys`).
   passes to Linux (`/sys/class/dmi/id`, `dmidecode`, `hostnamectl`). Built by the core from the
   configuration, so a deterministic run repeats: the firmware (type 0: EDK II, UEFI, a virtual
   machine), the system and chassis (`waarm64`, family `Virtual Machine`, no serial numbers, a null
-  UUID: systemd takes no machine ID from it), one processor with every vCPU as a core (ARMv8, its
-  ID MIDR_EL1), RAM as one memory device and where it's mapped, OEM strings (type 11: the spill memories' credential,
+  UUID: systemd takes no machine ID from it), one processor with every vCPU as a core (ARMv8, maker and
+  version `waarm64`, which `lscpu` shows as "BIOS Vendor ID" and "BIOS Model name"; its ID MIDR_EL1), RAM as one memory device and where it's mapped, OEM strings (type 11: the spill memories' credential,
   then the host's from fw_cfg's `opt/waarm64/oem-strings`, which isn't served as a file), and a clean boot (type 32); EDK2's setup screen takes its RAM
   size from type 19. The page's Debian test reads them back, and the `edk2-shell` boots' step counts
   (native and Node) include installing them.

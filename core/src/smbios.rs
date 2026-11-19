@@ -90,7 +90,8 @@ fn tables(cfg: &VmConfig, oem: &[&str]) -> Vec<u8> {
     let b = [1, 1, 0, 0, 0, 3, 3, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     structure(&mut t, 3, 0x0300, &b, &[VENDOR]);
     // Type 4, one socket with every vCPU as a core: an ARMv8 (family 2,
-    // 0x0101) whose processor ID is MIDR_EL1, enabled, 64-bit (and multi-core).
+    // 0x0101) made by and named waarm64 (lscpu's "BIOS Vendor ID" and "BIOS
+    // Model name") whose processor ID is MIDR_EL1, enabled, 64-bit (and multi-core).
     let mut b = vec![1, 3, 0xfe, 2];
     b.extend(crate::interp::sys::MIDR.to_le_bytes());
     b.extend([3, 0, 0, 0, 0, 0, 0, 0, 0x41, 2]);
@@ -103,7 +104,7 @@ fn tables(cfg: &VmConfig, oem: &[&str]) -> Vec<u8> {
     for _ in 0..3 {
         b.extend(ncpus.to_le_bytes());
     }
-    structure(&mut t, 4, 0x0400, &b, &["CPU 0", VENDOR, "AArch64"]);
+    structure(&mut t, 4, 0x0400, &b, &["CPU 0", VENDOR, VENDOR]);
     // Type 11, OEM strings: with spill memories (NUMA nodes), a systemd
     // credential that turns NUMA balancing off (its scanner's faults are guest
     // code; docs/spill-memories.md); then the host's. systemd imports SMBIOS

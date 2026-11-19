@@ -2,7 +2,7 @@
 // (tests/browser/tailnet-worker.ts) at its login prompt, made once per shape and key and kept in target/ci/, which the
 // tests that need Debian but not its boot start from instead of booting (~1 s against ~50 s). The shape is what the
 // worker builds the machine from (the card's credential, the cards and their backends, the disk); the key, what the
-// boot made of it: the image (its `.inputs` key, or the file's size and time), EDK2, the core's snapshot format and ABI,
+// boot made of it: the image (its `.inputs` key, or the file's size and time), EDK2, the core's snapshot format, ABI and MIDR,
 // and the sources that say what the machine is and what it is given at boot (the DT, SMBIOS, fw_cfg, virtio, the
 // credentials). A file whose key moved is made again; parallel test files wait for one maker (a lock directory beside
 // the file, as tests/debian-lock.ts's). WAARM64_DEBIAN_FIXTURES=0 boots instead.
@@ -52,8 +52,10 @@ export function fixtureKey(shape: Shape) {
   const image = existsSync(inputs) ? readFileSync(inputs, 'utf8').trim() : `${statSync(disk).size}@${statSync(disk).mtimeMs}`;
   const version = /pub const VERSION: u32 = (\d+);/.exec(readFileSync(join(ROOT, 'core/src/snapshot.rs'), 'utf8'))?.[1];
   const abi = /export const ABI = (\d+);/.exec(readFileSync(join(ROOT, 'web/vm.ts'), 'utf8'))?.[1];
+  // The guest's Linux caches MIDR_EL1 at boot (/proc/cpuinfo); the rest of sys.rs changes too often to key on.
+  const midr = /const MIDR: u64 = (\w+);/.exec(readFileSync(join(ROOT, 'core/src/interp/sys.rs'), 'utf8'))?.[1];
   return sha(JSON.stringify({
-    shape, image, version, abi,
+    shape, image, version, abi, midr,
     edk2: sha(readFileSync(join(ROOT, 'target/images/edk2/QEMU_EFI.fd'))),
     sources: SOURCES.map((f) => sha(readFileSync(join(ROOT, f)))),
   })).slice(0, 16);
