@@ -632,11 +632,11 @@ build_alpine-demo() {
     apk add -q --no-cache -X "$iso/apks" $6
     apk add -q --no-cache $7
     qemu-img convert -O raw $w/base.qcow2 $w/in.raw
-    # The published layout, checked: EFI at 1 MiB (96 MiB), "/" after it.
-    sfdisk -d $w/in.raw | grep -q "in.raw1 : start=        2048, size=      196608, .*name=\"EFI\"" || { echo "alpine-demo: not the EFI partition expected" >&2; exit 1; }
+    # The published layout, checked: EFI at 1 MiB (185 MiB in 3.24.4; 96 MiB in 3.24.2), "/" after it.
+    sfdisk -d $w/in.raw | grep -q "in.raw1 : start=        2048, size=      378880, .*name=\"EFI\"" || { echo "alpine-demo: not the EFI partition expected" >&2; exit 1; }
     set -- $(sfdisk -d $w/in.raw | sed -n "s/.*in.raw2 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
-    [ "$1" = 198656 ] || { echo "alpine-demo: not the root partition expected" >&2; exit 1; }
-    dd if=$w/in.raw of=$w/efi.vfat bs=512 skip=2048 count=196608 status=none
+    [ "$1" = 380928 ] || { echo "alpine-demo: not the root partition expected" >&2; exit 1; }
+    dd if=$w/in.raw of=$w/efi.vfat bs=512 skip=2048 count=378880 status=none
     dd if=$w/in.raw of=$w/in.ext4 bs=512 skip=$1 count=$2 status=none
     rm $w/in.raw
     # Limine: no menu wait, the demo'"'"'s command line (init_on_free=1: what the kernel frees is zero, out of a snapshot).
@@ -664,8 +664,8 @@ build_alpine-demo() {
     # A 1 GiB disk: the EFI partition as it was, "/" the rest.
     truncate -s 1G $w/disk.raw
     printf "%s\n" "label: gpt" "label-id: 57413634-0000-4000-8000-000000000021" "unit: sectors" \
-      "start=2048, size=196608, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=57413634-0000-4000-8000-000000000022, name=\"EFI\"" \
-      "start=198656, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=57413634-0000-4000-8000-000000000023, name=\"/\"" |
+      "start=2048, size=378880, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=57413634-0000-4000-8000-000000000022, name=\"EFI\"" \
+      "start=380928, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=57413634-0000-4000-8000-000000000023, name=\"/\"" |
       sfdisk -q $w/disk.raw
     set -- $(sfdisk -d $w/disk.raw | sed -n "s/.*disk.raw2 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
     # Its inode tables and journal written out here (zeros: free in the qcow2 and the pieces), not by the guest
