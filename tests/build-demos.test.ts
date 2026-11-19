@@ -7,8 +7,8 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { checkRecipe, CHECKOUT_CORE, coreOf, placed, prunePieces, recipeDefinition } from '../tools/build-demos.ts';
-import { readSource, shapeHashOf, type Recipe } from '../tools/demo-site.ts';
+import { checkRecipe, CHECKOUT_CORE, coreOf, placed, placedAll, prunePieces, recipeDefinition } from '../tools/build-demos.ts';
+import { readSource, shapeHashOf, type Recipe, type SourceDemo } from '../tools/demo-site.ts';
 import { checkDefinition } from '../web/app/definitions.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -77,6 +77,14 @@ test('--out: the build under it, its thumbnail with it (one elsewhere kept)', ()
   assert.deepEqual(placed(d, '/o'), { ...d, build: '/o/a', thumbnail: '/o/a/thumb.webp' });
   const other = { ...d, thumbnail: 'deploy/a.png' };
   assert.deepEqual(placed(other, '/o'), { ...other, build: '/o/a' });
+});
+
+test('--out with --only: only the demos built move under it, the others stay at their build', () => {
+  const a = { build: 'target/demos/a', demo: { id: 'a' } } as unknown as SourceDemo;
+  const b = { build: 'target/demos/b', demo: { id: 'b' } } as unknown as SourceDemo;
+  assert.deepEqual(placedAll([a, b], ['a'], '/o').map((d) => d.build), ['/o/a', 'target/demos/b']);
+  assert.deepEqual(placedAll([a, b], undefined, '/o').map((d) => d.build), ['/o/a', '/o/b']);
+  assert.deepEqual(placedAll([a, b], ['a']).map((d) => d.build), ['target/demos/a', 'target/demos/b']);
 });
 
 test("the core: the checkout's, a file, or a copy's assets with its stamp", () => {

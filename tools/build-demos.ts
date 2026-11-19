@@ -15,7 +15,7 @@
 // --core: the core build the template is made with: a wasm file, or a copy of the page (`npm run dist`'s target/dist,
 // its assets/waarm64_core-*.wasm); default the checkout's target/wasm32-unknown-unknown/release/waarm64_core.wasm.
 // The page around it is the checkout's (the dev server), so make a copy's demos from the checkout it was built from.
-// --out: the builds go to <out>/<id> instead of their `build` (CI: scripts/ci-machines.sh), and the publish's plan reads
+// --out: the builds go to <out>/<id> instead of their `build` (CI: scripts/ci-machines.sh; with --only, only those built), and the publish's plan reads
 // them there. Each template ~30 s (the boot to the agent ~18 s, the snapshot, its deflate); the image ~40 s when rebuilt.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -99,6 +99,12 @@ export function placed(d: SourceDemo, out?: string): SourceDemo {
 }
 
 /**
+ * Every demo where the publish reads it: those built here (`only`, or all) under `out`; the others at their `build`
+ * (what a publish after a partial rebuild must read: the site's other demos as they are).
+ */
+export const placedAll = (demos: SourceDemo[], only?: string[], out?: string) => demos.map((d) => (!only || only.includes(d.demo.id) ? placed(d, out) : d));
+
+/**
  * Removes the pieces in `<site>/pieces/` that no `<site>/<name>/manifest.json` or `snapshot.json` names (a rebuilt
  * template's old snapshot pieces, ~16 MB a build); returns how many went.
  */
@@ -142,7 +148,7 @@ async function main() {
   const unknown = only?.filter((id) => !source.demos.some((d) => d.demo.id === id));
   if (unknown?.length) throw new Error(`no demo ${unknown.join(', ')} in ${sourceFile}`);
   const out = a.out && resolve(ROOT, a.out);
-  const demos = source.demos.map((d) => placed(d, out));
+  const demos = placedAll(source.demos, only, out);
   const core = coreOf(a.core);
   if (!existsSync(core.wasm)) throw new Error(`no core at ${core.wasm} (scripts/build-wasm.sh, or --core)`);
   if (core.stamp) {

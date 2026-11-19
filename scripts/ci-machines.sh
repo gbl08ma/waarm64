@@ -19,8 +19,11 @@ export WAARM64_DISTROS=debian WAARM64_DEBIAN_SLOTS=${WAARM64_DEBIAN_SLOTS-3} WAA
 # The demo's template from this build (~1 min; the image as built: images/build.sh alpine-demo is checked above), and
 # the publish's checks on it (the core's format, the shape hash): what a deploy's rebuild does (docs/remote-disks.md).
 step "The Alpine demo's template from this build"
-rm -rf target/ci-demos
-node --disable-warning=ExperimentalWarning tools/build-demos.ts --only alpine-term --out target/ci-demos --no-images --site target/ci-demos/.site
+rm -rf target/ci-demos && mkdir -p target/ci-demos
+# The store's source with the Alpine demo alone: its publish is planned on its own (the desktops are made by hand,
+# not by CI: docs/remote-disks.md "A desktop").
+node -e 'const fs = require("fs"); const s = JSON.parse(fs.readFileSync("deploy/disks/demos.json", "utf8")); s.demos = s.demos.filter((d) => d.demo.id === "alpine-term"); fs.writeFileSync("target/ci-demos/demos.json", JSON.stringify(s))'
+node --disable-warning=ExperimentalWarning tools/build-demos.ts target/ci-demos/demos.json --only alpine-term --out target/ci-demos --no-images --site target/ci-demos/.site
 export WAARM64_DEMO_SITE=target/ci-demos
 step 'Machines on the page (Debian)'
 node --disable-warning=ExperimentalWarning --test tests/page-machines.test.ts tests/page-stored.test.ts tests/page-snapshots.test.ts tests/page-quota.test.ts tests/page-incognito.test.ts tests/page-usb-guest.test.ts tests/page-folders.test.ts tests/page-surface-debian.test.ts tests/page-demos-guest.test.ts
