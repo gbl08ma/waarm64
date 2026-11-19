@@ -190,9 +190,10 @@ the fork (loops 7–10) are independent; the fork's loops can run beside them.
     messages rendered from the catalog (the message bar for budgets, the Network status for the lane, refused
     destinations as a count); the helper unreachable or closing mid-run; `scripts/ci-net.sh` against a fork's build on
     loopback, pinned by commit.
-11. **Review the fork, then host it:** an out-of-context review of the fork before it's public, its fixes; then the
-    server (Caddy, the service, the TOML file's place, monitoring, how releases are built and installed), deployed on
-    the user's word.
+11. **Review the fork:** an out-of-context review of the fork before it's public, and its fixes. **Hosting it** (the
+    server: Caddy, the service, the TOML file's place, monitoring, how releases are built and installed) **is the
+    user's own follow-up, outside the track** (the user, 2026-11-19): the fork's README says how to run it, nothing
+    more.
 12. **The desktop demo as a snapshot** (Arch, sway, Firefox, resumed at the desktop), and a 3D one (glmark2, vkcube or
     a small game on virgl or Venus). Its card says what its network reaches (one rule by default).
 13. **Templates under New machine:** the same definitions without a snapshot.
