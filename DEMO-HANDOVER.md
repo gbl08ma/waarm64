@@ -2,34 +2,40 @@
 
 The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-demo.md](docs/plans/first-demo.md).
 
-## Start here (for a new session; the coordinator, 2026-11-19 ~12:00)
+## Start here (for a new session; 2026-11-19 ~13:00)
 
-You're picking up the DEMO track from a session that ran it overnight as a coordinator of subagents. Read, in order:
-CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited with their OK on 2026-11-19 for the
-red lines and loop 11), this file, [docs/plans/first-demo.md](docs/plans/first-demo.md), and the fork's own
-`../waarm64-demonet/HANDOVER.md`. The user wants the track carried on from here; **don't deploy anything until the user
-says so again** (they allowed it, then withdrew it: "changed my mind, don't deploy just yet", 2026-11-19).
+You're picking up the DEMO track (the first demo: a store of demo machines resumed from template snapshots, and a
+hosted demo network). Read, in order: CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited
+with their OK on 2026-11-19 for the red lines and loop 11), this file, and the fork's `../waarm64-demonet/HANDOVER.md`.
+docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
+deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. The next piece of work is **loop 15** (below).
 
 ### Where things stand
 
-- **waarm64 `main`** (origin): everything through `f18c51a0` is pushed; each commit passed `scripts/ci.sh` plus the
-  topic scripts its area needs (ci-machines, ci-net, ci-debian), run one at a time in the CI worktree (below). Loops 0,
-  1, 2, 3, 4, 5, 6, 10, 10b, 13 are done; two out-of-context reviews of the page's demo code (branches
-  `review/demo-page`, `review/demo-page-2`, kept on origin) and every finding fixed except those the user's decisions
-  cover. After them: the OpenRC install dialog (006d8068, its words fixed in 16990a3e after the user's review:
-  docs/copy.md, no distributions named) and **a demo's machine starts each run with clipboard sharing paused**
-  (1bad1ddf + its test fix f18c51a0).
-- **waarm64-demonet `main`** (origin, private repo): `9061197`. Loops 7, 8, 9, 11 (review: 10 findings fixed), 14 (the
-  slow lane, **off by default**) and the slow lane's own review (8 findings fixed); `go test -race ./...` clean on a
-  quiet machine (241 s); the release workflow's YAML fixed (9061197: a `: ` in a plain scalar made the file unparsable,
-  so every push showed a 0 s failure). Its HANDOVER.md has its state, backlog and the owner's open numbers.
-- **The Alpine demo meets the goal's numbers locally:** click → command answered 2.9–3.0 s, 24.7 MB on the wire, at a
-  modelled 100 Mbit/s / 20 ms (bench/demo/REPORT.md "DEMO loop 3"; comparison.md §3 has them, marked local). Not
-  deployed, so the kickoff's "on the deployed page" isn't met yet.
-- **Loop 12 (the desktop and 3D demos): built, measured, docs moved; CI on `c2bacdcf` running** (branch
-  `wip/demo-loop12`, rebased on main). Both demos resume with foot counting down to their app; click → desktop 12.7 s
-  (arch-desktop) and 13.2 s (arch-3d) at 100/20, 140 and 145 MiB (bench/demo/REPORT.md "DEMO loop 12"). Merges to
-  main once ci.sh, ci-machines.sh and ci-graphics.sh pass.
+- **waarm64 `main`** (origin): pushed through this file's commit. Loops 0–6, 10, 10b, 12, 13 are done; two out-of-context
+  reviews of the page's demo code (branches `review/demo-page`, `review/demo-page-2`, kept on origin), every finding
+  fixed or left by the user's decision ("Awaiting the user's review"). Three demos in deploy/disks/demos.json:
+  `alpine-term` (Alpine at a root prompt; also New machine's template), `arch-desktop` and `arch-3d` (the Arch desktop,
+  resumed with foot counting 10 s down to Firefox or the shader demo). Built locally: `target/demos/{alpine-term,
+  arch-desktop,arch-3d,pieces}` (the desktops from bench/results/local/demo/site, made by the page copy in
+  bench/results/local/demo/dist). **Nothing of the track is deployed.**
+- **Numbers** (bench/demo/REPORT.md, local through a modelled 100 Mbit/s / 20 ms link): Alpine click → command
+  2.9–3.0 s, 24.7 MB ("DEMO loop 3"); arch-desktop click → desktop 12.7 s, 140 MiB, arch-3d 13.2 s, 145 MiB
+  ("DEMO loop 12"). comparison.md §3 has Alpine's, marked local.
+- **Loop 12's CI:** ci.sh at `c2bacdcf` (green but page-open's "a machine running in another tab", 8.9 s against its
+  10 s wait at load ~15: the known timing flake below, passed alone in 2.2 s); ci-machines.sh and ci-graphics.sh at
+  `704702da` (the desktop step ran: desktop 2.5 s, Firefox's window 28.6 s); `704702da`'s own change by its unit test
+  and tsc; the commits after it are this file's only.
+- **The track's docs are in docs/ already** (this session moved them; an Explore agent checked the kickoff, the plan
+  and this file against docs/): decisions.md "Network" and "Demos" (the kickoff's decisions, which docs and code now
+  cite instead of the kickoff), remote-disks.md "Publishing", "Building" and **"Deploying the demos"** (the runbook),
+  networking/demo-network.md (with "Not taken, and why": Wisp, Workers, a mode of the helper), frontend.md "The demo
+  store", machines.md §6, clipboard.md, images.md, backlog.md (the demos' loose ends).
+- **waarm64-demonet `main`** (origin, private): `77a669d`. Loops 7–9, 11, 14 (the slow lane, **off by default**) and
+  their reviews done; `deploy/` (a distroless image, compose.yaml behind the host's Caddy; README "In a container");
+  `forwarded-ignored` counts private peers too (77a669d). **Hosted by the user at `wss://demonet.tny.im/`**
+  (2026-11-19), checked from here: hello, budget, and `forwarded-ignored 0` in its counters. Its HANDOVER.md has its
+  state, backlog and the owner's open numbers.
 
 ### The user's decisions since the kickoff (2026-11-19), all binding
 
@@ -37,42 +43,31 @@ says so again** (they allowed it, then withdrew it: "changed my mind, don't depl
    `dl-cdn.alpinelinux.org`, new dependencies, the slow lane's numbers or turning it on) and **engineering calls**
    (make them, list them under "Awaiting the user's review"). Definition-format changes may skip a migration if it
    costs too much (say so under "Before you load this build").
-2. The `alpine-demo` image is **barebones like unkernel's** (nothing preinstalled beyond Alpine's base; everything else
-   installs on demand).
-3. **Hosting the fork is the user's own follow-up**, outside the track (loop 11 is its review only).
+2. The `alpine-demo` image is **barebones like unkernel's** (nothing preinstalled beyond Alpine's base).
+3. **Hosting the fork is the user's** (done: decision 10).
 4. **CI is the coordinator's**: subagents don't run scripts/ci*.sh; one CI script at a time on the machine.
-5. The demo server's URL **`wss://demonet.tny.im/`** is confirmed (the user adds the DNS record when hosting).
-6. The Alpine agent's install command is shown in an **informational modal from a link under the clipboard-sharing
-   setting** (done: 006d8068, 16990a3e). **Copy rules (docs/copy.md) apply**: the user rejected the first wording for
-   naming Alpine and the demo, and for colons that don't announce.
-7. **Clipboard sharing starts paused for every machine made from a demo, ours included** (done: 1bad1ddf, f18c51a0):
-   each run paused (not remembered), no clipboard read while paused, so no permission prompt until the visitor turns it
-   on in the toolbar's Clipboard menu; a copy of a demo machine drops `fromDemo` and isn't paused.
-9. **(2026-11-19, new session)** Loop 12's build with `cmdline: init_on_free=1` is **approved** (the exact command
-   under "What's left" 1). `?disk=<url>&clipboard=1` **stays as is** (security question closed: the transient machine
-   has no network unless the user attaches one). **No deploy yet**: ask again later. `target/snapbench` and
-   `target/vk2-nvidia-bundle.tar` deleted with the user's OK (32 GB free after).
-10. **(2026-11-19) The desktop demos resume with foot counting down to their app** (the user's idea: Firefox, the
-   shader demo), not with the app in the snapshot; `init_on_free` dropped (its cost on every free in the visitor's
-   machine, the user's concern). **The demo server is hosted** (`wss://demonet.tny.im/`, Docker Compose behind the
-   user's Caddy; `trusted_proxies` checked: `forwarded-ignored` 0 with the fork's 77a669d). **DO NOT DEPLOY** vm.tny.im
-   or vmdisks.tny.im: the user allowed it after loop 12, then withdrew it ("DO NOT DEPLOY", 2026-11-19), so the
-   deployed site's demos don't need replacing when loop 15 changes them. Ask before any deploy.
-8. The old Podman images (`webpc-*`, dangling) and `target/arch/desktop-kde.qcow2`, `desktop-pre-g7.qcow2` were
-   deleted with the user's OK; earlier the gdb debug guest and cargo's `target/debug` caches (disk had filled to 100 %).
+5. The demo server's URL is **`wss://demonet.tny.im/`**.
+6. The Alpine agent's install command is in an **informational modal from a link under the clipboard-sharing
+   setting**. **Copy rules (docs/copy.md) apply** to every word the page shows: no distributions named, colons only to
+   announce (the user rejected a first wording for both).
+7. **Clipboard sharing starts paused for every machine made from a demo** (each run; not remembered).
+8. Disk cleanups done with the user's OK (old Podman images, old desktop qcow2s, `target/debug`, the gdb guest,
+   `target/snapbench`, `target/vk2-nvidia-bundle.tar`); 32 GB free.
+9. `?disk=<url>&clipboard=1` **stays as is** (the transient machine has no network unless the user attaches one):
+   clipboard.md.
+10. **The desktop demos resume with foot counting down to their app** (the user's idea), not with the app in the
+    snapshot; `init_on_free` dropped (its cost on every free in the visitor's machine). The demo server is hosted.
+11. **DO NOT DEPLOY** (the user allowed a deploy after loop 12, then withdrew it: "DO NOT DEPLOY"), so the demos
+    don't have to be replaced on the live site when loop 15 changes them. Ask before any deploy.
+12. **Loop 15** (below) is the user's: a second adapter on the global public room for every demo machine, a node key
+    per machine (else they'd share an address), and **the agent configuring an unmanaged, connected card on
+    Alpine**, for every Alpine user with the agent (OK'd).
+13. **Images CI or the Desktop Demo use stay as they are** (`alpine-uefi`, `target/arch/desktop.qcow2`).
 
 ### What's left, in order
 
-**1. Loop 12's end:** CI in `../waarm64-ci` at the branch head (its `target/demos/{arch-desktop,arch-3d,pieces}`
-linked from main's, which hold the builds from bench/results/local/demo/site): ci.sh, then ci-machines.sh, then
-ci-graphics.sh; on green, fast-forward main and push. The builds' commands (the user approved the first; the others
-ran): `node tools/build-demos.ts --only arch-desktop,arch-3d --core bench/results/local/demo/dist --no-images
---no-publish --out bench/results/local/demo/site`.
-
-**2. (closed: decision 9, kept as is.)**
-
-**2b. Loop 15 (new, after loop 12; the user's, 2026-11-19): a second adapter on the global public room for every demo
-machine**, so visitors' demo machines can reach one another. Not started. What it takes (worked out with the user):
+**1. Loop 15: a second adapter on the global public room for every demo machine**, so visitors' demo machines can
+reach one another. Not started. What it takes (worked out with the user):
 - **A key per machine** (the user: else they'd all get the same address; the rooms' one-running-per-key lock,
   rooms.md "Decisions", forbids sharing anyway): `machineFromDemo` makes the machine's own room connection on
   `waarm64-room:global` with a fresh node key, made in the visitor's browser at the machine's first start, never in
@@ -110,32 +105,24 @@ machine**, so visitors' demo machines can reach one another. Not started. What i
   a login line, from the agent or the page) for the visitor to give out.
 - **Tests:** the definition's field and the connection's making (Node, Chromium with a stand-in); a guest test of two
   demo machines reaching each other through the rig's derper and Nostr relay (bench/net's rig), skipped without it.
-- **Then a deploy, when the user says so** (remote-disks.md "Deploying the demos").
+- **Ask the user first:** the rule 2 exception, relay only, incoming connections, and the interstitial's words.
+- **Then CI** (ci.sh, ci-machines, ci-graphics, ci-net for the agent and the second card) and a commit per slice.
 
-**3. The deploy: NOT NOW** (decision 10: "DO NOT DEPLOY"; ask first). The runbook is docs/remote-disks.md "Deploying
-the demos". Not in it: `target/dist` in the main checkout is an old copy (27eb7884), never to deploy; bench/demo
-has no target for the deployed store yet (add one for the deployed numbers).
+**2. The track's end** (kickoff "The end"), after loop 15 (and a deploy only if the user asks for one):
+- An **out-of-context review** of the page's demo code since review/demo-page-2 (the clipboard pause, loop 12's
+  build and countdown, loop 15), its findings fixed (each with its failing test first) or filed.
+- **The whole CI set** on the final head: ci.sh, ci-net, ci-debian `--platform`, ci-graphics, ci-machines, ci-audio,
+  ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb.
+- **Docs:** check once more that docs/ says what DEMO-KICKOFF.md, plans/first-demo.md and this file say that's
+  long-term (most moved on 2026-11-19); drop docs/README.md's row for plans/first-demo.md; PLAN.md's DEMO row set to
+  done (one line); then delete DEMO-KICKOFF.md, this file and docs/plans/first-demo.md in that commit. "Awaiting the
+  user's review" and "Before you load this build" go to the user first (or into the docs where they're facts).
+- **The deployed numbers** only if a deploy happened (runbook step 7; bench/demo has no target for the deployed store
+  yet), into bench/demo/REPORT.md and comparison.md §3.
 
-**4. After a deploy:** the deployed page's numbers (click → command, bytes, `apk add python3` once the fork is
-hosted, PSS) into bench/demo/REPORT.md and comparison.md §3 (replacing the "local, not deployed" note), and the check by
-hand the kickoff asks for.
+**Deploy facts not in the runbook:** `target/dist` in the main checkout is an old copy (27eb7884): never deploy it.
 
-**5. The track's end** (kickoff "The end"): the whole CI set on the final head (ci.sh, ci-net, ci-debian
-`--platform`, ci-graphics, ci-machines, ci-audio, ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb), the plan's outcome
-moved into docs/ (frontend.md for the store, machines.md for `fromDemo` and definitions, networking/ for the demo
-network, remote-disks.md for hosting: most is there already, check what plans/first-demo.md says that docs don't),
-loose ends into docs/backlog.md, PLAN.md's row set to done, and DEMO-KICKOFF.md, this file and plans/first-demo.md
-deleted in that commit. An out-of-context review of the page's demo code since review/demo-page-2 (the clipboard
-pause, loop 12) before the end.
-
-**6. Smaller loose ends** (in docs/backlog.md or worth adding there): an automated test of command-not-found (a page
-test serving the virt ISO's signed `apks/`); udhcpc's address timing on `alpine-demo` after a restore not measured
-(10b measured dhcpcd's); pieces now fetched whole even where ranges work (an A/B of the Desktop Demo's boot); the
-page's slow-lane additions are done but the guest's motd line for the slow lane (fork HANDOVER "For waarm64's page"
-item 7) isn't; `page-modal`'s bucket test now fails with a cause instead of hanging (it hung once under load, never
-reproduced).
-
-### How to work here (learned overnight)
+### How to work here
 
 - **CI in a worktree:** `../waarm64-ci` is a detached worktree; `git -C ../waarm64-ci checkout --detach <commit>`,
   then run the scripts there under `systemd-run --user --scope -q -p MemoryMax=11G -p MemorySwapMax=0 -- timeout 1500
@@ -154,9 +141,15 @@ reproduced).
   (tests/serial-console.ts `run` returned the end marker's echo for empty output: fixed).
 - **Auto mode refuses some subagent commands with no or a generic reason** (loop 12's builds, a plain unit test): don't
   retry or rephrase around it; report the exact command to the user, who can approve that exact call.
-- **Disk:** 150 GB, 26 GB free at the end. A desktop template build needs ~6 GB of scratch; clean `.work/` and plain
-  snapshots as soon as they're done with. Still there, not asked about: `target/snapbench` 3.9 GB,
-  `target/vk2-nvidia-bundle.tar` 2.6 GB.
+- **Disk:** 150 GB, ~32 GB free. A desktop template build needs ~6 GB of scratch; clean `.work/` and plain
+  snapshots as soon as they're done with.
+- **The demos' builds** (remote-disks.md "Building the demos"): a desktop takes ~3 min; the CI worktree needs
+  `target/demos/{arch-desktop,arch-3d,pieces}` linked in from main (`cp -al`, the old entries removed first) or
+  ci-graphics' desktop step skips. A build's failure leaves a screenshot `<site>/<id>-failed.png`. Commands typed into
+  the guest's shell from make-template.ts: in single quotes, write `"` bare (a `\"` makes GNU grep warn and the count
+  unreadable: it cost one build).
+- **Watch background logs with a Monitor whose filter covers failure too**, and stop it when its log is rewritten (a
+  watch on a reused log path replays the old run's lines).
 - The fork pushes only as `git -C /home/gabriel.guest/Development/waarm64-demonet push` (the user's allow rule).
 
 ## Before you load this build (for the user)
@@ -167,146 +160,6 @@ reproduced).
 
 - **Loop 3 (snapshot codec 3):** nothing to export first. Kept snapshots stay LZ4 and load as before; only templates made
   with `--deflate` are the new container version 3, which a page from before loop 3 refuses as newer.
-
-## Current state (per loop: the record of what each did)
-
-
-- **The fork, loop 7 done** (waarm64-demonet `6de5a2b`, pushed): a network per WebSocket, per-IP budgets, the TOML
-  file with reload and `--check`, close codes 4001/4003/4008–4010; fails closed until loop 8 (running beside).
-- **Loop 0** (pushed): `bench/demo/` and the gap, [bench/demo/REPORT.md](bench/demo/REPORT.md) "DEMO loop 0".
-- **Loop 1, the spike, done** (2026-11-19, pushed f29b3dd5): an Alpine template restored in a fresh profile,
-  offline, through a modelled 100 Mbit/s / 20 ms link: **click → a command answered in ~3.4 s, ~32 MB on the wire**
-  (page 2.5 MiB brotli'd, snapshot 24.0 MiB, disk 4.0 MiB), with the image booted with `init_on_free=1` and the
-  guest's caches dropped before the snapshot (REPORT.md "DEMO loop 1"). Code: a chunked image's identity is its
-  content (`{kind:'url', chunked, bytes}`, machines.md §3.1), a machine from a template (`web/app/template.ts`,
-  `restoreFirst` on the record, machines.md §6.1), a machine's first restore fills its fresh overlays, one shared
-  `pieces/` (`tools/chunk-image.ts --pieces`, `_headers`). The harness: target `waarm64-template` (`DEMO_LINK`,
-  `DEMO_TEMPLATE`), `bench/demo/make-template.ts`, `spike-image.sh`, `site.ts`, `snapinfo.ts`, `ramcodec.ts`.
-- **Loop 2, the agent on Alpine, done** (2026-11-19, pushed): an OpenRC service for the agent
-  (`web/app/guest-agent.ts` `agentOpenrc`), reaching a user's own Alpine through a one-command installer the machine
-  gives over fw_cfg (`opt/waarm64/openrc`: `modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/openrc/raw`),
-  since nothing stock on Alpine reads fw_cfg/SMBIOS/credentials at boot (devices.md "On OpenRC"); LEASE renews udhcpc
-  (SIGUSR1) and dhcpcd (`dhcpcd -n`) found among the processes (`agent/src/lease.rs`); POWER falls back to busybox's
-  `poweroff`/`reboot`; `body[data-lease]` says what a restore's lease renewal did. The clock and "ready" needed no new
-  code: the agent's HELLO sets the clock and marks the machine up. Test: `tests/page-alpine-agent.test.ts` (ci-net.sh,
-  ~2 min).
-
-- **Loop 10, the page's side of the demo network, done** (2026-11-19, pushed;
-  [docs/networking/demo-network.md](docs/networking/demo-network.md)): the connection kind `demo` (no lock: any machines
-  and adapters at once, a socket each; rules 2 and 4 of adapters.md and decisions.md's Network row changed), its client
-  (web/demo-net.ts in web/demo-net-worker.ts: `waarm64-demonet.v1`'s control messages kept as the status and notices,
-  reconnects by close code), its words (web/app/demo-view.ts; the Network menu's status, the message bar, the
-  details), the wizard's step (NetDemoStep.svelte), and **for loop 4: `attachDemoNetwork(store, machine, adapter = 0,
-  url?)` in web/app/net-demo.ts** (what `demo.network: "demo"` calls; `demoConnection` finds or makes the browser's one
-  record). Tests: `tests/demo-net.test.ts` (fake server), `tests/net-live.test.ts`'s demo case, and
-  `tests/page-demonet.test.ts` in `scripts/ci-net.sh` (Alpine against the fork built at the commit
-  `tests/waarm64-demonet.ts` pins, `73d9a2d`; `WAARM64_DEMONET_SRC` overrides; cloud sessions SKIP).
-
-- **Loop 4, definitions and the store's data, done** (2026-11-19, pushed; machines.md §6.2,
-  remote-disks.md "Publishing the demos"): definition version 2 (`demo`: id, summary, thumbnail, download, view,
-  snapshot `{manifest, id}`, network `"demo"`, replaces as a list), with a reader of both versions, checks in
-  `web/app/definition-check.ts` (a damaged one's error names the field); `fromDemo: {store, id}` on the record; the
-  store (`web/app/demo-store.ts`: `parseStore`/`fetchStore`, a single definition's URL as a store of one, unreadable
-  demos `skipped` and the rest shown, `demoMachines` for "started before" and older versions); `machineFromDemo`
-  (web/app/template.ts: the snapshot fetched and checked by content id first, then the machine, `fromDemo`,
-  `attachDemoNetwork`); the publish tool (`tools/publish-demos.ts`, `tools/demo-site.ts`, source
-  `deploy/disks/demos.json`, ledger `target/disks/.publish.json`). Checked on the spike's real template
-  (bench/results/local/demo/site/alpine-spike): its shape hash matches what the tool computes, and a dry run plus
-  `--apply` on a hard-linked copy of target/disks keeps the desktop's files (1009 files).
-
-- **Loop 3, the alpine-demo image, done** (2026-11-19, pushed; docs/images.md `alpine-demo`,
-  [bench/demo/REPORT.md](bench/demo/REPORT.md) "DEMO loop 3"): `images/build.sh alpine-demo` (alpine-uefi's image cut to
-  Alpine's base, `images/alpine-demo/`; 73.0 MB, bit for bit, in SHA256SUMS); `bench/demo/make-template.ts` waits for
-  the agent and deflates the template; **snapshot frame codec 3, raw deflate** (the core's miniz_oxide, no new export:
-  `repackFrames` in web/snapshot-file.ts, `deflateCodec` in web/lz.ts, `tools/snapshot-template.ts --deflate`; the reader
-  and the load pool's workers read 2 and 3; a file with deflate frames is container version 3). **Numbers at 100/20:
-  click → command 2.9–3.0 s, 24.7 MB on the wire** (LZ4: 3.6–3.7 s, 33.5 MB): the goal's numbers met. Checked by hand
-  through the local helper: python3, community's fastfetch and lua installed on first use.
-
-- **Loop 6, the store's page, done** (2026-11-19, pushed; docs/frontend.md "The demo store"): `/demos`
-  (`demos.html` beside `index.html` in the copy; the dev server redirects `/demos` to `/web/app/demos`) and `#demos`,
-  `?id=`, `?store=` (`web/app/demos-route.ts`); `DemosPage.svelte` in the machine's place with Back, Home's **Demos**
-  between Preferences and About, the first visit (no machines, a bare address) opening it; cards (`DemoCard.svelte`),
-  the interstitial with the browser's checks (`DemoStart.svelte`, `DemoChecks.svelte`, `demo-check.ts`), Start →
-  `machineFromDemo` → `page.openDemo` (the demo's view, `switchMachine` asked once up front), started before (Open my
-  machine, the default, its disks' manifests checked; Start a fresh copy), and the failures (`template.cutOff`,
-  `template.full` new; the machine deleted when its snapshot can't be kept). Tests: tests/demos-route.test.ts (Node),
-  tests/page-demos.test.ts (Chromium, stand-in worker), tests/page-demos-guest.test.ts (ci-machines.sh; **needs loop
-  5's `target/demos/alpine-term/`**, `WAARM64_DEMO_SITE`/`WAARM64_DEMO_NAME` override, skipped without it).
-  **For loop 5:** the guest test is its ci-machines check once the build writes `target/demos`; it wraps the site's
-  `definition.json` into a store itself (the `demo` taken from it if it has one, its network dropped: offline).
-
-- **Review fixes (review/demo-page, 2026-11-19, pushed):** R1 a chunked image's bytes checked against its
-  content id (manifest id = its hashes', = the disk record's; each piece hashed before use, so pieces are always fetched
-  whole; `web/sha256.ts` for the synchronous reads) and a definition's URL disk reused only at the same URL; R2 a
-  definition's blank/ramdisk disk always a new record, identities checked by kind; R3 the template snapshot's manifest
-  fetched once and its id checked against its hashes, hashes hex; R4 `importDefinition(store, def, finish)`: the
-  snapshot kept and the demo network set before the record is stored once (any failure leaves nothing); #5
-  `applyPlan` pieces first, the rest staged and renamed, store then ledger last; #6 LEASE's `dhcpcd -n` only for cards
-  dhcpcd manages (`dhcpcd_manages`: its title names the card, or the manager and `/etc/dhcpcd.conf` doesn't deny it);
-  #7 the demo client's backoff resets only after a socket lived 30 s past `hello` (`HEALTHY_MS`), "lost" once per
-  outage, `open()` reports; #9 a copy drops `fromDemo`. `knownDisk` (a URL the user adds) still finds a record of the
-  same image from another host: user-initiated and now content-checked, so kept (loop 1's call).
-
-- **Loop 13, templates under New machine, done** (2026-11-19, pushed; machines.md §6.3): New machine opens a
-  dialog (`web/app/NewMachine.svelte`): Empty machine (what it made before) and our store's demos marked
-  `demo.template: true` (`templatesOf`), each made by `machineFromStoreTemplate` (the definition without `demo`: no
-  snapshot, no demo network, no `fromDemo`; a cold boot). The store unreachable: said, Try again, Empty machine works.
-  `deploy/disks/demos.json`'s alpine-term is marked. Tests that clicked New machine use `tests/page-home.ts`
-  `newEmptyMachine` (answers our store empty: no request leaves the machine). Tests: tests/demo-store.test.ts,
-  demo-site.test.ts (Node); tests/page-demos.test.ts's New machine case (Chromium).
-
-- **Loop 5, the automated demo build, done** (2026-11-19, pushed; remote-disks.md "Building the demos"):
-  `node tools/build-demos.ts [--core <wasm | target/dist>] [--apply]` remakes every demo with a `recipe` in
-  deploy/disks/demos.json (the image name, the machine with a fixed MAC, the disk's serial) under its id into
-  `target/demos/<id>/` (the image rebuilt if stale; make-template.ts with `--definition`, `--core` routed into the page,
-  `--thumbnail`: thumb.webp), prunes the build's unnamed pieces, and plans the publish (dry run; `--apply` writes
-  target/disks). ~32 s for alpine-term; the shape hash the same across builds (aa731d0b…, checked on two builds; the
-  snapshot ids differ: RAM isn't reproducible). `target/demos/alpine-term` is built (from d686e684's core).
-  scripts/ci-machines.sh builds it into target/ci-demos and runs tests/page-demos-guest.test.ts on it (passed: 21 s).
-
-- **Loop 10b, the page's slow lane and the late address, done** (2026-11-19, pushed): the demo client and
-  its words take the fork's slow lane (off on the server by default: forward-compatible; demo-network.md): the lane
-  `slow`, the slow budget and `slow-threshold`, `hello.limits.slow` in the status's details, every refusal's reason in
-  words (`slow-connections`, `slow-spent` among them; an unknown one: the name alone), 4010's `closing.lane`. **The
-  late address after a restore** (devices.md "The network after a restore"): a restored card holds the flap its switch
-  onto the helper's or the demo network's frames owes until `LeaseActions` settles (`{type: 'settled', renewed}`;
-  `HOLD_MS` 120 s at most), so the agent's LEASE no longer runs under a link that's down. page-alpine-agent (passed
-  under load ~13) asserts `carrier_changes` unchanged across the restore; there the address came 5.6 s after the page's
-  load (agent 1.4 s; dhcpcd). Not measured on alpine-demo's udhcpc template yet (loop 5's build, ci-machines).
-
-- **Review fixes (review/demo-page-2, 2026-11-19, pushed):** #1 a demo's start is its interstitial's (one
-  at a time, `demos.starting`; aborted with its download when the interstitial goes; the switch asked again if another
-  machine runs by then); #2 Open my machine for the machine running here goes to it; #3 the command-not-found hook runs
-  the line again only when it's the command alone with plain-word arguments, else "run it again" (**images/alpine-demo
-  changed: the image and the demo's template need a rebuild**; docs/images.md's sentence "runs the line typed again" is
-  loop 12's file: add "when it is the command alone"); #4 a snapshot past the card's `download` or `MAX_TEMPLATE` (1 GiB)
-  refused before a piece, pieces kept as Blobs as they come; #6 `importDefinition` writes disks, overlays and the machine
-  after `finish` (a residual window of a few record writes, ms); #7 a stale store read dropped; #8 history entries for
-  the store's steps, `popstate` followed; #9 a demo's view not saved (kept for the tab's reloads in sessionStorage: ci-machines' guest test reloads into it); #10 the hold's 120 s from `{type: 'connected'}`
-  (when `NetSettled.when` resolves), unbounded before: the flap it's for comes with the connection, and with no
-  connection there's nothing to renew; #11 a template's adapters get fresh MACs; #13 snapshot failures as MsgErrors
-  (`template.download` + `chunked.malformed`/`pieceStatus`/`pieceWrong`, a piece's 404 `template.gone`), siblings
-  aborted; #14 demo-net waits in steps of a day; #15 focus on choose/All demos, `alt=""`, the progress bar named.
-
-## Before a deploy of vm.tny.im (the user)
-
-The demos' templates must be made by the core that's deployed (the publish refuses another core format or shape hash):
-
-1. `npm run dist` (the page into `target/dist/`, from the checkout you deploy);
-2. `node tools/build-demos.ts --core target/dist` (each demo with a recipe made again under its id into
-   `target/demos/<id>/`, the image rebuilt first if stale; a dry run of the publish: read the plan), then the same with
-   `--apply` (writes `target/disks/`: store.json, `<id>/`, the shared `pieces/`). Or `node tools/publish-demos.ts
-   --apply` alone once the builds are there;
-3. deploy both: the page (`npm run dist`'s copy, docs/devenv.md "Deploying") and vmdisks.tny.im
-   (`deploy/disks/deploy.sh`).
-
-~30 s per template (plus ~40 s when `alpine-demo`'s image is rebuilt). When the image itself changed (its content id),
-the publish refuses: that's a new demo id with `replaces` (decision 13).
-
-## Next
-
-See "Start here" › "What's left, in order" above.
 
 ## Awaiting the user's review
 
