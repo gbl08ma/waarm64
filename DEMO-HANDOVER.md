@@ -95,7 +95,8 @@ machine**, so visitors' demo machines can reach one another. Not started. What i
   dhcpcd/networkd/NetworkManager on it) and runs busybox's `udhcpc6` there, and its LEASE after a restore renews
   `udhcpc6` as it does `udhcpc` (`agent/src/lease.rs`). Only the primary (the demo network, eth0) offers default
   routes, so the room adds its /48 and nothing else. With no image changed, the demos keep their ids (no `replaces`):
-  only their snapshots are made again.
+  only their snapshots are made again. **The user OK'd the agent configuring such a card** (2026-11-19), for every
+  Alpine user with the agent, not only the demos: a card nothing else manages, and only once the page connected it.
 - **Images CI and others already use stay as they are** (the user, 2026-11-19): `alpine-uefi` is ci.sh's and
   ci-net.sh's (`alpine-demo` is cut from it), and `target/arch/desktop.qcow2` is the deployed Desktop Demo's and
   bench/gpu's guest: never edited. If an image must change after all, `alpine-demo`'s own files only (its hash moves
