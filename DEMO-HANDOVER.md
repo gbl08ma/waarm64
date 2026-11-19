@@ -2,32 +2,40 @@
 
 The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-demo.md](docs/plans/first-demo.md).
 
-## Start here (for a new session; 2026-11-19 ~14:00)
+## Start here (for a new session; 2026-11-19 ~14:40)
 
 You're picking up the DEMO track (the first demo: a store of demo machines resumed from template snapshots, and a
 hosted demo network). Read, in order: CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited
 with their OK on 2026-11-19 for the red lines and loop 11), this file, and the fork's `../waarm64-demonet/HANDOVER.md`.
 docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
-deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. **Loop 15** (below) is built; its CI and the
-user's answer on room names are what's left of it.
+deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. Every loop is done; **the next piece of work is the
+out-of-context review** ("What's left" 1), then its fixes, then the first deploy (the user's plan, 2026-11-19).
 
 ### Where things stand
 
-- **Loop 15 (a demo's room) is built** in the commit after efb166ef (see "What's left" 1 for its state and CI).
-- **waarm64 `main`** (origin): loops 0–6, 10, 10b, 12, 13 are done; two out-of-context
-  reviews of the page's demo code (branches `review/demo-page`, `review/demo-page-2`, kept on origin), every finding
-  fixed or left by the user's decision ("Awaiting the user's review"). Three demos in deploy/disks/demos.json:
-  `alpine-term` (Alpine at a root prompt; also New machine's template), `arch-desktop` and `arch-3d` (the Arch desktop,
-  resumed with foot counting 10 s down to Firefox or the shader demo). Built locally: `target/demos/{alpine-term,
-  arch-desktop,arch-3d,pieces}` (the desktops from bench/results/local/demo/site, made by the page copy in
-  bench/results/local/demo/dist). **Nothing of the track is deployed.**
+- **waarm64 `main`** (origin): pushed through this file's commit. Loops 0–6, 10, 10b, 12, 13, 15 and 15b are done;
+  two out-of-context reviews of the page's demo code (branches `review/demo-page`, `review/demo-page-2`, kept on
+  origin), every finding fixed or left by the user's decision ("Awaiting the user's review"). Three demos in
+  deploy/disks/demos.json, each with the global room on its second adapter (`room: "global"`): `alpine-term` (Alpine
+  at a root prompt; also New machine's template), `arch-desktop` and `arch-3d` (the Arch desktop, resumed with foot
+  counting 10 s down to Firefox or the shader demo). Built locally, all three with 15b's agent (1e5e7931):
+  `target/demos/{alpine-term,arch-desktop,arch-3d,pieces}`, made by tools/build-demos.ts from the checkout's core.
+  **Nothing of the track is deployed.**
+- **Loop 15 (a demo's room) and 15b (its names on Alpine):** docs rooms.md "A demo's room", devices.md "A card nothing
+  else manages" and "Names through the agent", adapters.md §1 rule 2, decisions.md "Network". A room connection per
+  demo machine (web/app/net-demo.ts `withDemoRoom`, `forMachine`, deleted with it); the agent's CARDS (frame 32,
+  agent/src/card.rs) brings up a connected card nothing manages with udhcpc6 on guests without systemd, networkd or
+  NetworkManager; its DNS forwarder (agent/src/resolve.rs, 127.0.53.53) holds `/etc/resolv.conf` there while such a
+  card has resolvers, so room names resolve on musl. tests/page-demo-room.test.ts (ci-net.sh's last step): two
+  Alpine demo machines on the fork's server and a room through the rig, pinging by address and by name.
 - **Numbers** (bench/demo/REPORT.md, local through a modelled 100 Mbit/s / 20 ms link): Alpine click → command
   2.9–3.0 s, 24.7 MB ("DEMO loop 3"); arch-desktop click → desktop 12.7 s, 140 MiB, arch-3d 13.2 s, 145 MiB
-  ("DEMO loop 12"). comparison.md §3 has Alpine's, marked local.
-- **Loop 12's CI:** ci.sh at `c2bacdcf` (green but page-open's "a machine running in another tab", 8.9 s against its
-  10 s wait at load ~15: the known timing flake below, passed alone in 2.2 s); ci-machines.sh and ci-graphics.sh at
-  `704702da` (the desktop step ran: desktop 2.5 s, Firefox's window 28.6 s); `704702da`'s own change by its unit test
-  and tsc; the commits after it are this file's only.
+  ("DEMO loop 12"). comparison.md §3 has Alpine's, marked local. CI's own runs after loop 15 (local, no link model):
+  Alpine click → command 3.1 s; the desktop shown 2.5 s, Firefox's window 30.0 s.
+- **CI at `1e5e7931`** (15b; 52afe6fa is 15): ci.sh green but browser.test.ts's "the page says what's wrong" (timed
+  out at 180 s under ci.sh's load; passed alone in 9.9 s: a timing flake, not 15's), ci-net.sh OK (411 s, the room
+  test 27 s), ci-machines.sh OK (354 s), ci-graphics.sh OK (195 s, the desktop step ran). This file's commit after it
+  is docs only.
 - **The track's docs are in docs/ already** (this session moved them; an Explore agent checked the kickoff, the plan
   and this file against docs/): decisions.md "Network" and "Demos" (the kickoff's decisions, which docs and code now
   cite instead of the kickoff), remote-disks.md "Publishing", "Building" and **"Deploying the demos"** (the runbook),
@@ -60,8 +68,10 @@ user's answer on room names are what's left of it.
 10. **The desktop demos resume with foot counting down to their app** (the user's idea), not with the app in the
     snapshot; `init_on_free` dropped (its cost on every free in the visitor's machine). The demo server is hosted.
 11. **DO NOT DEPLOY** (the user allowed a deploy after loop 12, then withdrew it: "DO NOT DEPLOY"), so the demos
-    don't have to be replaced on the live site when loop 15 changes them. Ask before any deploy.
-12. **Loop 15** (below) is the user's: a second adapter on the global public room for every demo machine, a node key
+    don't have to be replaced on the live site when loop 15 changes them. Ask before any deploy. **The user's plan
+    (2026-11-19, after loop 15b): the first deploy of the demos system to vm.tny.im and vmdisks.tny.im comes after the
+    out-of-context review and its fixes** (still asked for at the time).
+12. **Loop 15** (done) is the user's: a second adapter on the global public room for every demo machine, a node key
     per machine (else they'd share an address), and **the agent configuring an unmanaged, connected card on
     Alpine**, for every Alpine user with the agent (OK'd).
 13. **Images CI or the Desktop Demo use stay as they are** (`alpine-uefi`, `target/arch/desktop.qcow2`).
@@ -70,48 +80,39 @@ user's answer on room names are what's left of it.
     proposed plus a sentence that only the relays see the IP address and another visitor learns it only by
     connecting, "which requires knowing your machine's name" (the user's wording). The agent configures a card only
     where no systemd runs (the user checked: networkd's units manage the cards there).
+15. **Names on Alpine through the agent** (the user's choice of the options, 2026-11-19): the agent as a resolver,
+    "only on distros like alpine; basically, whenever the udhcpc logic is used" (loop 15b). Coordinated with loop 15
+    so the templates were rebuilt once and CI ran once, at 15b's commit.
 
 ### What's left, in order
 
-**1. Loop 15 and 15b: a second adapter on the global public room for every demo machine, and its names on Alpine —
-built, not yet through CI.**
-What it is (docs: rooms.md "A demo's room", devices.md "A card nothing else manages", adapters.md §1 rule 2,
-decisions.md "Network"):
-- `demo.room: "global"` (definitions.ts, definition-check.ts: needs two adapters; tools/demo-site.ts carries it);
-  web/app/net-demo.ts `withDemoRoom` makes a room connection per machine (`forMachine`, named as the machine, its key at
-  the first start), `deleteOwnConnections` on the machine's Delete (MachinePane).
-- The agent's CARDS (frame 32, `CAP.CARDS` bit 18; agent/src/card.rs): the page names the connected cards at each HELLO
-  and change (web/app/net-settled.ts `macs`/`listen`, agent-actions `cards`, agent-link `cards`); on a guest without
-  systemd, networkd or NetworkManager, a down card no ifupdown file names and no DHCP client runs for gets
-  `accept_ra_rt_info_max_plen` 128, `ip link set up`, `udhcpc6` with the agent's script (/run/waarm64-udhcpc6.script).
-  LEASE renews udhcpc6 too. The agent image rebuilt (SHA256SUMS).
-- deploy/disks/demos.json: all three demos `room: "global"`, a second MAC each; templates rebuilt in target/demos
-  (alpine-term; the desktops: see below). The start panel's note `DemoStart.room`.
-- Tests: agent/src/card.rs (5), tests/agent-link.test.ts CARDS, tests/agent.test.ts pins, tests/demo-store.test.ts
-  (the room per machine, delete), tests/demo-site.test.ts (a room on one adapter refused), and
-  **tests/page-demo-room.test.ts** (ci-net.sh's last step: two Alpine demo machines on the fork's server and a room
-  through the rig; eth1's address, the /48 on eth1, defaults on eth0, pings both ways: **passed alone, 16 s**).
-  tests/page-demos-guest.test.ts strips `room` (CI never joins the public global room).
-- **Loop 15b, names on Alpine** (the user's choice of the agent as resolver, "only where the udhcpc logic is used"):
-  agent/src/resolve.rs, a DNS forwarder process forked once the agent brought a card up, on 127.0.53.53:53 (UDP,
-  TCP), holding `/etc/resolv.conf` while a card's lease gave resolvers (udhcpc6's script writes
-  /run/waarm64-dns/<card>), the upstreams udhcpc wrote kept in its comments, given back when the leases go or the
-  agent ends (its pipe closes). devices.md "Names through the agent". The room test pings by full name and by first
-  label, and resolves a name upstream (passed alone, 26 s).
-- **Left:** one CI round at 15b's commit (all three templates rebuilt once, with 15b's agent): ci.sh, ci-net, ci-machines,
-  ci-graphics (link target/demos/{arch-desktop,arch-3d,alpine-term,pieces} into ../waarm64-ci first), then push.
+**1. The out-of-context review** (CLAUDE.md "Out-of-context reviews"; docs/testing.md): a fresh agent with only the
+repo and a neutral brief (the area, "find real defects"; never this file's theories), reviewing statically the page's
+demo code since `review/demo-page-2`: the clipboard pause (web/app/demo-store.ts `startsPaused`, the toolbar), loop
+12's build and countdown (tools/build-demos.ts, tools/demo-site.ts, bench/demo/make-template.ts, the session's
+countdown), loop 13's templates (web/app/template.ts, NewMachine), loop 15's room (web/app/net-demo.ts,
+template.ts, definition-check.ts, connections.ts `forMachine`, MachinePane's delete, agent-link/agent-actions CARDS,
+net-settled.ts) and the agent's card.rs and resolve.rs. Findings ranked on a `review/demo-page-3` branch. Then each
+one fixed (its confirming test first, failing) or filed in docs/backlog.md; a fix to the agent or a template's guest
+means the agent image and the three templates rebuilt again (tools/build-demos.ts), once, after the last such fix.
 
-**2. The track's end** (kickoff "The end"), after loop 15 (and a deploy only if the user asks for one):
-- An **out-of-context review** of the page's demo code since review/demo-page-2 (the clipboard pause, loop 12's
-  build and countdown, loop 15), its findings fixed (each with its failing test first) or filed.
-- **The whole CI set** on the final head: ci.sh, ci-net, ci-debian `--platform`, ci-graphics, ci-machines, ci-audio,
-  ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb.
-- **Docs:** check once more that docs/ says what DEMO-KICKOFF.md, plans/first-demo.md and this file say that's
-  long-term (most moved on 2026-11-19); drop docs/README.md's row for plans/first-demo.md; PLAN.md's DEMO row set to
-  done (one line); then delete DEMO-KICKOFF.md, this file and docs/plans/first-demo.md in that commit. "Awaiting the
-  user's review" and "Before you load this build" go to the user first (or into the docs where they're facts).
-- **The deployed numbers** only if a deploy happened (runbook step 7; bench/demo has no target for the deployed store
-  yet), into bench/demo/REPORT.md and comparison.md §3.
+**2. The whole CI set** on the head after the fixes: ci.sh, ci-net, ci-debian `--platform`, ci-graphics,
+ci-machines, ci-audio, ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb (one at a time in ../waarm64-ci; link the rebuilt
+images and target/demos in first).
+
+**3. The first deploy** (ask the user first, decision 11): the runbook, remote-disks.md "Deploying the demos"
+(vmdisks.tny.im's demos site from tools/build-demos.ts → tools/publish-demos.ts `--apply`, then vm.tny.im's page
+from a fresh `npm run dist` of the same commit). A last check by hand on the deployed page (the kickoff's
+"Validation"), with the user.
+
+**4. The deployed numbers** (runbook step 7; bench/demo has no target for the deployed store yet: add one), into
+bench/demo/REPORT.md and comparison.md §3.
+
+**5. The track's end** (kickoff "The end"): check once more that docs/ says what DEMO-KICKOFF.md,
+plans/first-demo.md and this file say that's long-term; drop docs/README.md's row for plans/first-demo.md; PLAN.md's
+DEMO row set to done (one line); then delete DEMO-KICKOFF.md, this file and docs/plans/first-demo.md in that commit.
+"Awaiting the user's review" and "Before you load this build" go to the user first (or into the docs where they're
+facts).
 
 **Deploy facts not in the runbook:** `target/dist` in the main checkout is an old copy (27eb7884): never deploy it.
 
@@ -134,7 +135,7 @@ decisions.md "Network"):
   (tests/serial-console.ts `run` returned the end marker's echo for empty output: fixed).
 - **Auto mode refuses some subagent commands with no or a generic reason** (loop 12's builds, a plain unit test): don't
   retry or rephrase around it; report the exact command to the user, who can approve that exact call.
-- **Disk:** 150 GB, ~32 GB free. A desktop template build needs ~6 GB of scratch; clean `.work/` and plain
+- **Disk:** 150 GB, ~31 GB free. A desktop template build needs ~6 GB of scratch; clean `.work/` and plain
   snapshots as soon as they're done with.
 - **The demos' builds** (remote-disks.md "Building the demos"): a desktop takes ~3 min; the CI worktree needs
   `target/demos/{arch-desktop,arch-3d,pieces}` linked in from main (`cp -al`, the old entries removed first) or
