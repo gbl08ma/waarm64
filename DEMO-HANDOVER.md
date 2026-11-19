@@ -120,8 +120,10 @@ rebuild and one whole CI set for all of them):
 - **The desktop demos' countdown, and the others' words** (the templates rebuilt anyway; vmdisks' demo files replaced
   without regard for what's there, the user's words): the Firefox demo's countdown says that on the demo network the
   web is poor next to the local helper or a tailnet; that Chromium is installed too; that packages install with
-  `pacman -S <package>` (the demo network reaches only dl-cdn.alpinelinux.org, so pacman works only on another
-  connection: say so, or ask the user); some of this applies to the other demos too. **Bug:** Ctrl+C at the countdown
+  `sudo pacman -S <package>`, the `arch` user's password being `arch` (the user, 2026-11-19: the hosted demo server's
+  allowlist already has the Arch image's package repository, so pacman works on the demo network; the cards' summaries
+  in deploy/disks/demos.json, which say pacman can't reach its mirror, change with it); some of this applies to the
+  other demos too. **Bug:** Ctrl+C at the countdown
   closes foot (the user's report): the countdown runs as `bash -c '$HOME/<script>; exec bash'`, and the SIGINT likely ends that
   `bash -c` too; Ctrl+C must leave the terminal open with a shell (most visitors don't know sway). Copy rules
   (docs/copy.md) for every word; the cards' summaries in deploy/disks/demos.json too.
