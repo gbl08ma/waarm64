@@ -280,7 +280,9 @@ screen than on the simple framebuffer (backlog).
   guest and turns 3D off (new contexts refused, the saved 3D state not loaded) rather than refusing the machine. The
   caps are the guest's only once it read them (GET_CAPSET, `capsRead`; its kernel keeps them for the boot): a snapshot
   of a guest that never did carries none, and its restore gives the guest this browser's. A context doesn't count:
-  Arch's kernel makes one at boot when a process opens the DRM device, with no caps read. A demo's desktop template is
+  Arch's kernel makes one at boot when a process opens the DRM device, with no caps read; nor does reading the Venus
+  capset (the virgl caps aren't in it). The guest's reset (a reboot) gives it this browser's caps and 3D again: the
+  restored caps were only its last boot's. A demo's desktop template is
   made before any GL client for this (remote-disks.md "Building the demos").
 - virglrenderer's own GLSL on such a host leans on `GL_EXT_clip_cull_distance` (every vertex shader) and
   `GL_EXT_blend_func_extended` (most fragment shaders), extensions at best on WebGL2: ours uses neither.

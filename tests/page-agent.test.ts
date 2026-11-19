@@ -143,6 +143,14 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
   assert.equal(await run(page, 'test -d /sys/module/vmw_vsock_virtio_transport && echo vsock'), 'vsock');
   assert.equal(await run(page, 'systemctl is-active waarm64-agent'), 'active');
   await consoleFollows(page, run);
+  // A login that ends and starts again (systemd starts agetty anew, which hangs the tty up) finds the size still set
+  // (it passes without the agent's hold too: docs/devices.md "The serial console's size").
+  await onSerial(page, 'exit\n');
+  await shows(page, /login: \s*$/, 60_000);
+  await onSerial(page, 'root\n');
+  await shows(page, /root@\S+:~# \s*$/);
+  const [r, c] = (await run(page, 'stty size')).split(/\s+/).map(Number);
+  assert.equal(`${c}x${r}`, await page.evaluate(() => document.getElementById('terminal')?.dataset.size), 'the size after a new login');
   const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
   assert.equal(await run(page, `readlink /proc/${pid}/exe`), '/run/waarm64/agent');
   const size = Number(await run(page, `stat -L -c %s /proc/${pid}/exe`));

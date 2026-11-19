@@ -448,13 +448,17 @@ console is 80×24 unless told (`stty`), and the page's terminal is 80×25 (the f
 `@xterm/addon-fit` and a `ResizeObserver`; at least 20×5) and says each size it takes, once it has held for 150 ms (a
 window dragged makes many); the agent sets the serial console's window size to it (`TIOCSWINSZ` on `/dev/ttyAMA0`),
 which the kernel follows with a SIGWINCH to its foreground process group, so a shell, `vi` or `less` draws for it. The
-agent keeps the tty open after: a tty's size lives while it is open, so a login that ends and starts again (busybox
-init's respawn) finds it still set; it opens it afresh at each CONSOLE (a getty's vhangup leaves an older file hung
-up), without making it its controlling tty. The connection's end (a restart, the agent stopped) and the run's end put
-the terminal back at 80×25, as before an agent: what it shows is always what the guest was told. The firmware, GRUB and
-the boot before the agent see 80×25. Tests: the tty's size on a pseudo-terminal (agent/src/tty.rs), the link's frames
-(tests/agent-link.test.ts), the terminal in Chromium with the tests' agent end (tests/page-console.test.ts: fitted,
-said, a resize, back at 80×25 without the agent).
+agent keeps the tty open after: a tty's size lives while it is open, so a login that ends and starts again finds it
+still set even where nothing else holds the tty. On the guests tested something else does: the re-login checks (Alpine
+and Debian) pass with the hold planted out (review demo-page-4, 2026-11-19), so they don't test it. It opens the tty
+afresh at each CONSOLE (a getty's vhangup leaves an older file hung up), without making it its controlling tty. Nothing gives the size back, so at the connection's end (a restart, the
+agent stopped) the terminal stops fitting and keeps the size last told, which the guest's tty keeps (a hidden terminal
+says that one at the next HELLO, not 80×25); a new run (a start, the guest's reboot, a restore) puts it back at 80×25,
+as before an agent: the firmware, GRUB and the boot before the agent see that. One gap: a restored guest's tty has the
+size the snapshotting page told until its agent's HELLO (seconds; for good if its agent never says HELLO again).
+Tests: the tty's size on a pseudo-terminal (agent/src/tty.rs), the link's frames (tests/agent-link.test.ts), the
+terminal in Chromium with the tests' agent end (tests/page-console.test.ts: fitted, said, a resize, the size kept
+without the agent and said again by a hidden terminal).
 
 **Names through the agent** (`agent/src/resolve.rs`; the user's choice, 2026-11-19): on such a guest the room's names
 need a resolver by domain, which musl lacks: it asks every server in `/etc/resolv.conf` at once and takes the first

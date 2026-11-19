@@ -48,9 +48,11 @@ export class SerialTerminal {
   readonly #fit = new FitAddon();
   /** The terminal's box (`open`'s). */
   #el?: HTMLElement;
-  /** Fitting its box: where each size goes (`follow`); none: 80×25. */
+  /** Fitting its box: where each size goes (`follow`); none: the size last told, or 80×25. */
   #tell?: (cols: number, rows: number) => void;
   #settle?: ReturnType<typeof setTimeout>;
+  /** The size last told this run (the guest's tty keeps it). */
+  #said?: { cols: number; rows: number };
 
   /** Opens the terminal in `el`; what's typed in it goes to `send` (xterm.js sends what a terminal would: \r for Enter, escape sequences). */
   open(el: HTMLElement, send: (d: string) => void) {
@@ -76,7 +78,9 @@ export class SerialTerminal {
 
   /**
    * The terminal fits its box while `tell` is given (an agent that sets the serial console's size said HELLO), each size
-   * it takes told to it, the first at once; without, it is 80×25 again (the run's or the agent's connection's end).
+   * it takes told to it, the first at once. Without, it stops fitting and keeps the size last told: the guest's tty
+   * keeps it past the agent's connection (a restart, the agent stopped), so the terminal still shows what the guest was
+   * told; 80×25 until one was (`unfit`: a new run).
    */
   follow(tell: ((cols: number, rows: number) => void) | undefined) {
     this.#tell = tell;
@@ -86,11 +90,24 @@ export class SerialTerminal {
       else delete this.#el.dataset.fit;
     }
     if (!tell) {
-      if (this.term.cols !== COLS || this.term.rows !== ROWS) this.term.resize(COLS, ROWS);
+      const { cols, rows } = this.#said ?? { cols: COLS, rows: ROWS };
+      if (this.term.cols !== cols || this.term.rows !== rows) this.term.resize(cols, rows);
       return;
     }
     this.#refit();
-    tell(this.term.cols, this.term.rows);
+    this.#say(this.term.cols, this.term.rows);
+  }
+
+  /** The run's end: no guest has been told a size, so the terminal is 80×25 again (the firmware's, the boot's). */
+  unfit() {
+    this.#said = undefined;
+    this.follow(undefined);
+  }
+
+  #say(cols: number, rows: number) {
+    if (!this.#tell) return;
+    this.#said = { cols, rows };
+    this.#tell(cols, rows);
   }
 
   /**
@@ -114,7 +131,7 @@ export class SerialTerminal {
   #told() {
     if (!this.#tell) return;
     clearTimeout(this.#settle);
-    this.#settle = setTimeout(() => this.#tell?.(this.term.cols, this.term.rows), SETTLE_MS);
+    this.#settle = setTimeout(() => this.#say(this.term.cols, this.term.rows), SETTLE_MS);
   }
 
   /** A new run: its log starts empty. */

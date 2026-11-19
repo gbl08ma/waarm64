@@ -1267,6 +1267,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a resize as the window's is (the display follows). A layout that moved by itself at the HELLO changed the screen's
   room after the boot and failed `tests/page-debian.test.ts`'s "the preferred mode at the boot is the screen box"
   (2026-11-19): that test guards it.
+- **A desktop demo's machine can wait for good on "Starting the desktop..."** (review demo-page-4 #5, 2026-11-19):
+  the template's `start-desktop.sh` (bench/demo/make-template.ts `startOnResume`) goes on only when the machine's id
+  changes, which the agent's RENEW does, and RENEW is owed per link (web/app/main.ts `restored(template)` →
+  AgentLink `renew`, sent at the HELLO). A first run that ends before the agent's HELLO (Suspend in the restore's first
+  second or so: its own snapshot is then no template) or the template's snapshot opened as a plain file leaves the
+  script waiting, its loop forking `cat` and `sleep` five times a second. Not seen; the window is the time from the
+  restore to the HELLO. Fix: keep the owed RENEW on the record until a HELLO took it (a page-side field), or end the
+  script's wait on another sign (a template rebuild).
 - **The store's sweep never runs** (review demo-page-3, 2026-11-19): `Store.sweep` (web/app/store.ts) removes the
   bytes no record owns, and machines.md §2 says it runs at start, but nothing on the page calls it, so what a crash or a
   closed tab leaves (an import's kept snapshot, a disk's files) stays in OPFS. Before wiring it in: a template's import

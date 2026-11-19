@@ -1740,7 +1740,8 @@ at the same ~52 s.
 
 xterm.js 6 (`@xterm/xterm`, MIT), 80×25 until an agent sets the guest's size (then it fits its view, at least 20×5:
 `@xterm/addon-fit`, and the agent's CONSOLE tells the guest: devices.md "The serial console's size"; in Both it keeps
-its 80 columns and takes the view's height; stacked, 80×25): the PL011 has no size
+its 80 columns and takes the view's height; stacked, 80×25; the agent gone, it keeps the size last told until the
+run's end): the PL011 has no size
 negotiation, so a Linux guest assumes 80×24 unless `stty` says otherwise, and the firmware's
 console is 80×25 (our EDK2 offers no other text mode: `images/build.sh edk2` patches the
 terminal driver's mode table, because GRUB takes the largest mode and asks the terminal to resize

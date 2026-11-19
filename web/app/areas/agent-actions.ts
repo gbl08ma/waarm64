@@ -27,7 +27,7 @@ export type CardsSource = { macs(): string[]; listen(f: () => void): void };
 /** What follows each run's link from its start to its end (web/app/areas/grow-actions.ts: the disks grown in the guest). */
 export type LinkFollower = { follow(link: AgentLink): void; end(): void };
 /** The serial terminal's fit (web/app/areas/serial-terminal.ts `follow`): each size it takes told, or 80×25 without. */
-export type ConsoleFit = { follow(tell: ((cols: number, rows: number) => void) | undefined): void };
+export type ConsoleFit = { follow(tell: ((cols: number, rows: number) => void) | undefined): void; unfit(): void };
 
 /** What a run asks of its agent (web/app/run/runner.ts): its link begun and ended; a restore's renewals (`template`: its identity too). */
 export type RunAgent = {
@@ -131,7 +131,7 @@ export class AgentActions {
   end() {
     this.#link?.close();
     this.#link = undefined;
-    this.#console?.follow(undefined);
+    this.#console?.unfit();
     clearInterval(this.#timer);
     this.#timer = undefined;
     window.__agent = undefined;

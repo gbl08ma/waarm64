@@ -1226,6 +1226,54 @@ test("virgl snapshots: a guest that never read the caps saves none, and is given
   assert.ok((JSON.parse(JSON.stringify(await c.g.save())) as { caps?: string }).caps, 'carried on');
 });
 
+test("virgl snapshots: a guest's reset after a restore where 3D was off gives it this browser's caps and 3D again; only the virgl capsets count as read", async () => {
+  const ram = new Uint8Array(1 << 16);
+  const capsA = capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsB = capsFromGl(mockGl({ extensions: [] }));
+  const make = (caps: Uint8Array, venus = false) => {
+    const g = new Gpu(() => [ram], ramLayout(ram.length), { width: 640, height: 480, virgl: true, caps, venus });
+    g.host = { call: () => undefined, fence: () => undefined };
+    return g;
+  };
+  const cmd = (type: number, ...fields: number[]) => {
+    const b = new Uint8Array(24 + 4 * fields.length);
+    const v = new DataView(b.buffer);
+    v.setUint32(0, type, true);
+    fields.forEach((f, k) => v.setUint32(24 + 4 * k, f, true));
+    return b;
+  };
+  const ctx = (id: number) => {
+    const c = cmd(0x200, 0, 0);
+    new DataView(c.buffer).setUint32(16, id, true);
+    return c;
+  };
+  const type = (r: Uint8Array) => new DataView(r.buffer, r.byteOffset).getUint32(0, true);
+  const snap = async (g: Gpu) => JSON.parse(JSON.stringify(await g.save())) as { caps?: string; off3d?: string };
+  // The guest read capsA; restored where only capsB is backed: 3D off.
+  const a = make(capsA);
+  assert.equal(type(a.control(cmd(0x109, 2, 2), 64 + capsA.length)), 0x1103);
+  const b = make(capsB);
+  b.restore(await snap(a));
+  assert.equal(type(b.control(ctx(3), 64)), 0x1200, '3D off after the restore');
+  // The guest reboots (a virtio reset): a fresh guest reads this browser's caps, and 3D is on again.
+  b.reset();
+  assert.deepEqual([...b.caps], [...capsB], "this browser's caps after the reset");
+  assert.equal(type(b.control(ctx(3), 64)), 0x1100, '3D on after the reset');
+  // A snapshot after the reset, before any read, carries neither caps nor off3d: 3D on where it's restored.
+  const b2 = make(capsB);
+  b2.restore(await snap(a));
+  b2.reset();
+  const after = await snap(b2);
+  assert.equal(after.caps, undefined, 'no caps saved');
+  assert.equal(after.off3d, undefined, 'no off3d saved');
+  const c = make(capsA);
+  c.restore(after);
+  assert.equal(type(c.control(ctx(4), 64)), 0x1100, '3D on in the next browser');
+  // Reading only the Venus capset (id 4) isn't reading the virgl caps: none saved.
+  const v = make(capsA, true);
+  assert.equal(type(v.control(cmd(0x109, 4, 0), 64 + 4096)), 0x1103, 'the Venus capset read');
+  assert.equal((await snap(v)).caps, undefined, 'no virgl caps saved for a Venus read');
+});
+
 test('virgl cursor: a 3D resource\'s image is read back from the renderer, in its format, and a later update wins', async () => {
   const ram = new Uint8Array(1 << 16);
   const g = new Gpu(() => [ram], ramLayout(ram.length), { width: 640, height: 480, virgl: true });

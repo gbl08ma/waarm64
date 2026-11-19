@@ -242,7 +242,7 @@ export class Gpu {
   private venusContexts = new Set<number>();
   /** Blob resources' bytes, against a bound (the renderer keeps them). */
   private blobBytes = 0;
-  /** Why 3D is off on this machine (a snapshot restored where the browser can't back the caps its guest was given). */
+  /** Why 3D is off on this machine (a snapshot restored where the browser can't back the caps its guest was given), until the guest's reset. */
   private off3d: string | undefined;
   private virgl: VirglCounts = { commands: {}, toHostBytes: 0, fromHostBytes: 0, stream: new VirglStats().json() };
   private stream = new VirglStats();
@@ -259,9 +259,9 @@ export class Gpu {
   private wait: Promise<void> | undefined;
   private capsets: ReturnType<typeof capsets>;
   /**
-   * The guest has read the caps (GET_CAPSET): its kernel keeps them for the boot, so a snapshot carries them for the
-   * restore's check. A guest that never did (a demo's template made before any GL client: docs/graphics.md "Snapshots
-   * with 3D in use") reads the restoring browser's own. A context alone doesn't count: the guest's kernel makes one when
+   * The guest has read the virgl caps (GET_CAPSET of VIRGL or VIRGL2; the Venus capset isn't them): its kernel keeps
+   * them for the boot, so a snapshot carries them for the restore's check. A guest that never did (a demo's template
+   * made before any GL client: docs/graphics.md "The caps") reads the restoring browser's own. A context alone doesn't count: the guest's kernel makes one when
    * a process opens the DRM device (Arch's boot does, ~12 s in), and no caps are read for it.
    */
   private capsRead = false;
@@ -276,7 +276,12 @@ export class Gpu {
     [this.ram, this.layout, this.o] = [ram, layout, o];
     this.wanted = { width: clampSize(o.width), height: clampSize(o.height) };
     [this.width, this.height] = [this.wanted.width, this.wanted.height];
-    this.capsets = capsets(o.caps ?? virglCaps(2), o.venus ? o.venusCaps ?? venusCapset() : undefined);
+    this.capsets = this.ownCapsets();
+  }
+
+  /** This browser's capsets (`GpuOptions.caps`, the Venus capset): what a guest that hasn't read any is given. */
+  private ownCapsets() {
+    return capsets(this.o.caps ?? virglCaps(2), this.o.venus ? this.o.venusCaps ?? venusCapset() : undefined);
   }
 
   /** The wait a fenced command left for the host, if any: its reply waits for it. */
@@ -448,7 +453,7 @@ export class Gpu {
         if (!c || u32(4) > c[1]) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const r = new Uint8Array(HDR + c[2].length);
         r.set(c[2], HDR);
-        this.capsRead = true;
+        if (c[0] !== CAPSET_VENUS) this.capsRead = true; // the virgl caps (VIRGL, VIRGL2: one blob) are the guest's now
         return this.reply(OK_CAPSET, cmd, room, r);
       }
       case CTX_CREATE: {
@@ -990,7 +995,10 @@ export class Gpu {
     this.contexts.clear();
     this.used.clear();
     this.venusContexts.clear();
-    this.capsRead = false; // a guest that starts again reads them again
+    // A guest that starts again reads the caps again: this browser's, so a restore's unbacked caps and its 3D off go.
+    this.capsRead = false;
+    this.capsets = this.ownCapsets();
+    this.off3d = undefined;
     this.blobBytes = 0;
     this.host?.call({ t: 'reset' });
     this.total = 0;
@@ -1007,7 +1015,7 @@ export class Gpu {
    * writes them as frames of their own). Host pixels come back from the backing at `restore`. With 3D in use, the
    * renderer's state comes from the host (`VirglRenderer.save`: objects as data, contents read back; docs/graphics.md
    * "Snapshots with 3D in use"), with the 3D resources and the contexts' attachments here; the caps the guest was given (once it read them: `capsRead`) are kept, for a
-   * restore to check. `unsaveable` (why, as an error for the page: web/msg.ts `toWire`) where the host refuses (a video
+   * restore to check (docs/graphics.md "The caps"). `unsaveable` (why, as an error for the page: web/msg.ts `toWire`) where the host refuses (a video
    * decoding) or can't save; the snapshot refuses it
    * (web/vm.ts), and a test's state read takes the rest all the same.
    */

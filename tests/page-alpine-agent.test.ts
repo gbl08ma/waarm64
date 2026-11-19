@@ -206,7 +206,8 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   await a.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 10_000 });
   assert.equal(await run(a, 'rc-status default | grep -c "waarm64-agent.*started"'), '1', 'in the default runlevel, started');
   await consoleFollows(a, run);
-  // A login that ends and starts again (the getty's respawn) finds the size still set: the agent keeps the tty open.
+  // A login that ends and starts again (the getty's respawn) finds the size still set (busybox init holds the console
+  // too, so this passes without the agent's hold: docs/devices.md "The serial console's size").
   await onSerial(a, 'exit\n');
   await shows(a, /login: \s*$/, 60_000);
   await onSerial(a, 'root\n');

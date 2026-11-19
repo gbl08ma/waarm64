@@ -4,13 +4,15 @@
 // (bench/demo/site.ts, another origin), listed by a store the test makes. In a fresh profile, the store's card →
 // Start → a `#` prompt that answers a command (the template restored, nothing booted); a file written there survives a
 // reload, the machine booting again from its overlay. A desktop's (its card's view the screen: the Arch desktop, DEMO
-// loop 12) → Start → its screen like the template's thumbnail (bench/demo/screen-like.ts: the desktop resumed, sway's
-// 3D state loaded) and a command answered on its serial console; no reload (that's a whole Arch boot). The site:
+// loop 12) → Start → its screen like the one at the template's snapshot (`resume.webp`, bench/demo/screen-like.ts: tty1's
+// "Starting the desktop...", the template made before sway and any GL client), a command answered on its serial
+// console, the guest's virtio-gpu without errors and the session's app's window in sway's tree once the countdown
+// ends; no reload (that's a whole Arch boot). The site:
 // `WAARM64_DEMO_SITE` (default target/demos; scripts/ci-machines.sh makes it from the build under test with
 // tools/build-demos.ts into target/ci-demos) and `WAARM64_DEMO_NAME` (default alpine-term; a comma list, a case each;
 // scripts/ci-graphics.sh runs arch-desktop from target/demos, which the desktop's build leaves there); a demo not built
 // there, or built by another core (its snapshot's format or shape hash: tools/build-demos.ts --only <id> makes it again)
-// is skipped. ~2 min for Alpine, ~1 min for the desktop.
+// is skipped. ~2 min for Alpine, ~1–4 min for the desktop (the app's window under emulation).
 import assert from 'node:assert/strict';
 import { existsSync, openAsBlob, readFileSync } from 'node:fs';
 import { join } from 'node:path';
