@@ -8,9 +8,9 @@ You're picking up the DEMO track (the first demo: a store of demo machines resum
 hosted demo network). Read, in order: CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited
 with their OK on 2026-11-19 for the red lines and loop 11), this file, and the fork's `../waarm64-demonet/HANDOVER.md`.
 docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
-deploy** vm.tny.im or vmdisks.tny.im (decision 11): ask first. Every loop is done, and so are the third
-out-of-context review and its fixes (cbe02be1); **the next piece of work is the first deploy, asked of the user first**
-("What's left" 3).
+deploy** vm.tny.im or vmdisks.tny.im (decision 11) without the user asking. Every loop is done, and so are the third
+out-of-context review and its fixes (cbe02be1). **The demos are deployed** (2026-11-19, the user's go-ahead: "What's left"
+3); next, the user's own check of the deployed page, then the deployed numbers (4) and the track's end (5).
 
 ### Where things stand
 
@@ -24,7 +24,8 @@ out-of-context review and its fixes (cbe02be1); **the next piece of work is the 
   at a root prompt; also New machine's template), `arch-desktop` and `arch-3d` (the Arch desktop, resumed with foot
   counting 10 s down to Firefox or the shader demo). Built locally, all three with review 3's agent (cbe02be1):
   `target/demos/{alpine-term,arch-desktop,arch-3d,pieces}`, made by tools/build-demos.ts from the checkout's core.
-  **Nothing of the track is deployed.**
+  **Deployed 2026-11-19 from c6a947e5** (the page and the demos, built with its dist's core): vmdisks.tny.im version
+  890bc654 (2068 files: the three demos, `store.json`, the Desktop Demo's `desktop/`), vm.tny.im version 986577f5.
 - **Loop 15 (a demo's room) and 15b (its names on Alpine):** docs rooms.md "A demo's room", devices.md "A card nothing
   else manages" and "Names through the agent", adapters.md §1 rule 2, decisions.md "Network". A room connection per
   demo machine (web/app/net-demo.ts `withDemoRoom`, `forMachine`, deleted with it); the agent's CARDS (frame 32,
@@ -73,7 +74,7 @@ out-of-context review and its fixes (cbe02be1); **the next piece of work is the 
    clipboard.md.
 10. **The desktop demos resume with foot counting down to their app** (the user's idea), not with the app in the
     snapshot; `init_on_free` dropped (its cost on every free in the visitor's machine). The demo server is hosted.
-11. **DO NOT DEPLOY** (the user allowed a deploy after loop 12, then withdrew it: "DO NOT DEPLOY"), so the demos
+11. **Deploy only when the user asks** (the first deploy was done on their go-ahead, 2026-11-19, after review 3). Earlier: **DO NOT DEPLOY** (the user allowed a deploy after loop 12, then withdrew it: "DO NOT DEPLOY"), so the demos
     don't have to be replaced on the live site when loop 15 changes them. Ask before any deploy. **The user's plan
     (2026-11-19, after loop 15b): the first deploy of the demos system to vm.tny.im and vmdisks.tny.im comes after the
     out-of-context review and its fixes** (still asked for at the time).
@@ -94,10 +95,12 @@ out-of-context review and its fixes (cbe02be1); **the next piece of work is the 
 
 **1–2. Done:** review 3 and its fixes, and the whole CI set at cbe02be1 (above).
 
-**3. The first deploy** (ask the user first, decision 11): the runbook, remote-disks.md "Deploying the demos"
-(vmdisks.tny.im's demos site from tools/build-demos.ts → tools/publish-demos.ts `--apply`, then vm.tny.im's page
-from a fresh `npm run dist` of the same commit). A last check by hand on the deployed page (the kickoff's
-"Validation"), with the user.
+**3. The first deploy: done** (2026-11-19, the runbook's steps 1–7 from the CI worktree at c6a947e5). The check from
+headless Chromium (bench/results/local/deployed-check.ts, git-ignored: a fresh profile per demo on
+https://vm.tny.im/demos): the store lists the three; alpine-term running 4.3 s after the click, a command 5.9 s,
+`apk add python3` through wss://demonet.tny.im OK at 15.3 s; arch-desktop running 10.1 s, a command 16.1 s, Firefox's
+window 74.9 s; arch-3d running 9.0 s, a command 11.8 s, the shader demo's window 32.1 s (the dev VM's link to
+Cloudflare, one run each: not the bench's numbers). Left: the kickoff's "Validation", a check by hand with the user.
 
 **4. The deployed numbers** (runbook step 7; bench/demo has no target for the deployed store yet: add one), into
 bench/demo/REPORT.md and comparison.md §3.
@@ -109,6 +112,9 @@ DEMO row set to done (one line); then delete DEMO-KICKOFF.md, this file and docs
 facts).
 
 **Deploy facts not in the runbook:** `target/dist` in the main checkout is an old copy (27eb7884): never deploy it.
+The main checkout's `target/disks` is now the deployed site (hard links of the CI worktree's, with the ledger
+`.publish.json`): link it into the next deploy's checkout (runbook step 3). The site's files answer 404 for some
+seconds after `deploy.sh` (seen once for `alpine-term/snapshot.json`): check again before calling a file missing.
 
 ### How to work here
 
