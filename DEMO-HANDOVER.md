@@ -8,10 +8,11 @@ You're picking up the DEMO track (the first demo: a store of demo machines resum
 hosted demo network). Read, in order: CLAUDE.md, [DEMO-KICKOFF.md](DEMO-KICKOFF.md) (binding; the user's words, edited
 with their OK on 2026-11-19 for the red lines and loop 11), this file, and the fork's `../waarm64-demonet/HANDOVER.md`.
 docs/plans/first-demo.md is background only: what binds is now in docs/decisions.md ("Network", "Demos"). **Do not
-deploy** vm.tny.im or vmdisks.tny.im (decision 11) without the user asking. Every loop is done, and so are the third
-out-of-context review and its fixes (cbe02be1). **The demos are deployed** (4e81858b) and **the user validated them by
-hand** (2026-11-19: all three on their desktop's Nvidia GPU). **The next piece of work is a fourth out-of-context
-review** ("What's left" 1), then its fixes, the whole CI set, the deployed numbers and the track's end.
+deploy** vm.tny.im or vmdisks.tny.im (decision 11) without the user asking. Every loop is done, and so are four out-of-context reviews and their fixes (review 4: f6252749). **The demos are
+deployed** (4e81858b) and **the user validated them by hand** (2026-11-19: all three on their desktop's Nvidia GPU).
+**Next: the user's items** ("What's left" 2), then the whole CI set, the deployed numbers and the track's end (a
+CI set at f6252749 ran meanwhile: its results below). Review 4's fixes are page-side only (no agent or template rebuild); they reach vm.tny.im only with a
+redeploy of the page (ask the user).
 
 ### Where things stand
 
@@ -99,23 +100,37 @@ review** ("What's left" 1), then its fixes, the whole CI set, the deployed numbe
 
 ### What's left, in order
 
-**1. A fourth out-of-context review** (CLAUDE.md "Out-of-context reviews"; docs/testing.md): a fresh agent with only the
-repo and a neutral brief (the area, "find real defects"; never this file's theories), statically, over the code added
-since review 3 (cbe02be1..main): web/gpu.ts `capsRead` (the caps a snapshot carries) and its tests in
-tests/virgl.test.ts; bench/demo/make-template.ts `startOnResume` (a desktop template made before any GL client,
-started after the restore); the agent's CONSOLE (agent/src/tty.rs, frame.rs, main.rs) and the page's side
-(web/app/areas/serial-terminal.ts `follow`/`#refit`, web/app/agent-link.ts `console`, web/app/areas/agent-actions.ts,
-App.svelte's fit rules); tests/page-console.test.ts, tests/page-demos-guest.test.ts. Docs: graphics.md "`capsBacked`",
-remote-disks.md "Building the demos", devices.md "The serial console's size", frontend.md "The serial terminal".
-Findings ranked on a `review/demo-page-4` branch; then each fixed (its confirming test first, failing) or filed in
-docs/backlog.md. A fix to the agent or a template's guest means the agent image and the three templates rebuilt
-(tools/build-demos.ts), once, after the last such fix, and a redeploy (ask the user: decision 11).
+**1. Done: the fourth out-of-context review** (`review/demo-page-4`, on origin; fixes f6252749, ci-fast OK): #1 the
+serial terminal now keeps the size last told when the agent's connection ends (the guest's tty keeps it; 80×25 again
+only at a new run), #2 a guest's reset after a restore gives back this browser's caps and 3D, #6 a Venus capset read
+doesn't save the virgl caps, #7 docs; #3 not a defect (the fit's 2 px come out of the bottom padding: a per-height
+check added, green before the change), #4 the re-login checks (Alpine, and now Debian) pass with the agent's tty hold
+planted out (docs say so; the hold kept), #5 filed (backlog "A desktop demo's machine can wait for good").
 
-**2. The whole CI set** on the head after the fixes: ci.sh, ci-net, ci-debian `--platform`, ci-graphics, ci-machines,
+**2. The user's items before the track closes** (2026-11-19, after review 4; each its own loop, then one template
+rebuild and one whole CI set for all of them):
+- **The divider in Both**: backlog "A divider to drag between the screen and the terminal in Both" (its whole design is
+  there); the item leaves the backlog when done.
+- **No padding around the serial terminal in its own view** (Terminal), as the screen has none in its own.
+- **Colors in the serial terminal**: xterm.js has them, but the guest doesn't know (a serial getty's `TERM` is `vt220`
+  or `vt100`, busybox's `login -f root` on Alpine). Find whether the agent can tell the guest (e.g. `TERM` for the
+  serial console's logins: a systemd drop-in for `serial-getty@ttyAMA0` where systemd runs, the inittab/OpenRC line on
+  Alpine), which guests it reaches, and what it costs. A guest-visible change. The templates are then rebuilt so the
+  new agent is in their memory.
+- **The desktop demos' countdown, and the others' words** (the templates rebuilt anyway; vmdisks' demo files replaced
+  without regard for what's there, the user's words): the Firefox demo's countdown says that on the demo network the
+  web is poor next to the local helper or a tailnet; that Chromium is installed too; that packages install with
+  `pacman -S <package>` (the demo network reaches only dl-cdn.alpinelinux.org, so pacman works only on another
+  connection: say so, or ask the user); some of this applies to the other demos too. **Bug:** Ctrl+C at the countdown
+  closes foot (the user's report): the countdown runs as `bash -c '$HOME/<script>; exec bash'`, and the SIGINT likely ends that
+  `bash -c` too; Ctrl+C must leave the terminal open with a shell (most visitors don't know sway). Copy rules
+  (docs/copy.md) for every word; the cards' summaries in deploy/disks/demos.json too.
+
+**3. The whole CI set** on the head after the fixes: ci.sh, ci-net, ci-debian `--platform`, ci-graphics, ci-machines,
 ci-audio, ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb (one at a time in ../waarm64-ci; link the rebuilt images,
 `target/demos` and `target/vkframes` in first).
 
-**3. The deployed numbers** (runbook step 7; bench/demo has no target for the deployed store yet: add one), into
+**4. The deployed numbers** (runbook step 7; bench/demo has no target for the deployed store yet: add one), into
 bench/demo/REPORT.md and comparison.md §3. Today's single runs (not the bench's numbers), the deployed page at
 4e81858b: on the VM (SwiftShader) alpine-term a command at 4.1 s, `apk add python3` at 13.7 s, the terminal 159×55 and
 the guest's tty the same; arch-desktop Firefox's window at 56.3 s; arch-3d the shader demo's at 39.4 s; on the Mac
@@ -123,7 +138,7 @@ the guest's tty the same; arch-desktop Firefox's window at 56.3 s; arch-3d the s
 The check: bench/results/local/deployed-check.ts (git-ignored: `node <it> <out-dir> [id…]`; on the Mac, copied to
 `~/waarm64-gpu-bench/check/` and run with `CHROMIUM` its Chrome for Testing, under `perl -e 'alarm N'`).
 
-**4. The track's end** (kickoff "The end"): check once more that docs/ says what DEMO-KICKOFF.md,
+**5. The track's end** (kickoff "The end"): check once more that docs/ says what DEMO-KICKOFF.md,
 plans/first-demo.md and this file say that's long-term; drop docs/README.md's row for plans/first-demo.md; PLAN.md's
 DEMO row set to done (one line); then delete DEMO-KICKOFF.md, this file and docs/plans/first-demo.md in that commit.
 "Awaiting the user's review" and "Before you load this build" go to the user first (or into the docs where they're
@@ -175,6 +190,11 @@ seconds after `deploy.sh` (seen once for `alpine-term/snapshot.json`): check aga
 
 ## Awaiting the user's review
 
+- **Review 4's engineering calls** (f6252749): when the agent's connection ends, the serial terminal stops fitting and
+  keeps the size last told (not 80×25: the guest's tty keeps it); a new run (start, reboot, restore) is 80×25 again,
+  and a restored guest's tty has the snapshotting page's size until its agent's HELLO. The agent's hold on the tty is
+  kept though neither tested guest needs it. #5 (a desktop demo waiting for good if its first run ends before the
+  HELLO) filed rather than fixed: a record field or a template rebuild for a window of about a second.
 - **Review 3's fixes, the engineering calls** (cbe02be1): a forwarder that dies is given back by the root and started
   again at once unless it lived under 10 s (then at the next CARDS); 8 TCP children at most, each killed with the
   forwarder and after 15 s; the rooms' search domains now **after** the upstream's (musl stops at the first failing
