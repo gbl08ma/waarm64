@@ -26,7 +26,7 @@ import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../w
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
 import { contentHash, HTML, IMAGE_CAP, imageHash, isPasteChord, onMac, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard-host.ts';
 import { REQUEST_WAIT } from '../web/app/clipboard-transfer.ts';
-import { AGENT_FILE, AGENT_OPENRC_NAME, AGENT_PIECE, agentBinary, agentCredentials, agentFiles, agentInstaller, agentOpenrc, agentScript } from '../web/app/guest-agent.ts';
+import { AGENT_FILE, AGENT_OPENRC_FILE, AGENT_OPENRC_INSTALL, AGENT_OPENRC_NAME, AGENT_OPENRC_REMOVE, AGENT_PIECE, agentBinary, agentCredentials, agentFiles, agentInstaller, agentOpenrc, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
 import { words } from './words.ts';
@@ -380,6 +380,14 @@ default_stop() { echo default_stop; }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("the OpenRC installer's commands: the page's (the Settings tab's dialog), the installer's comment and docs/devices.md's agree", () => {
+  assert.equal(AGENT_OPENRC_INSTALL, `modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/${AGENT_OPENRC_FILE}/raw`);
+  assert.ok(agentInstaller().includes(`#   ${AGENT_OPENRC_INSTALL}\n`) && agentInstaller().includes(`#   ${AGENT_OPENRC_REMOVE}\n`), "the installer's comment");
+  const doc = readFileSync(new URL('../docs/devices.md', import.meta.url), 'utf8');
+  assert.ok(doc.includes(`\`${AGENT_OPENRC_INSTALL}\``), `docs/devices.md "On OpenRC" quotes ${AGENT_OPENRC_INSTALL}`);
+  assert.ok(doc.includes(`\`${AGENT_OPENRC_REMOVE}\``), `docs/devices.md "On OpenRC" quotes ${AGENT_OPENRC_REMOVE}`);
 });
 
 test("the agent's fw_cfg files: its gzip in pieces of a page, named in order, the last shorter; none past a thousand", () => {

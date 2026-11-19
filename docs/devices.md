@@ -168,7 +168,10 @@ line comes from the image's own loader (UEFI), and tiny-cloud (the cloud images'
 boot only (and the demo's image has none). So the service is on the guest's disk: **in our images** (`images/`, the
 `alpine-demo` image: docs/images.md), and **for an image of the user's, installed once** from what the machine gives
 beside the binary, the fw_cfg file **`opt/waarm64/openrc`** (`AGENT_OPENRC_FILE`, `agentInstaller`), run as root:
-`modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/openrc/raw`. It writes
+`modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/openrc/raw` (`AGENT_OPENRC_INSTALL`, which
+the page shows to copy from a machine's Settings tab, under the clipboard's switch:
+[Using Alpine or another system without systemd?](ui:machines:DeviceSwitches.openrc.link); tests/agent.test.ts checks
+this line holds it). It writes
 `/etc/init.d/waarm64-agent` (`agentOpenrc`), adds it to the default runlevel and (re)starts it; removing it is
 `rc-update del waarm64-agent; rm /etc/init.d/waarm64-agent`. What is installed is the service alone: at each start it
 loads `qemu_fw_cfg` (a module in Alpine's linux-virt) and the vsock transport, copies the pieces into a tmpfs of its

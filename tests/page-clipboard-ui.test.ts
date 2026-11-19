@@ -8,7 +8,7 @@
 // to the guest, Type the clipboard and Copy the console's text (COPY, the agent's COPIED); Copy the screen (the framebuffer the guest drew, as a PNG on the host's
 // clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=guest`). The PNG worker
 // (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Home page's switches: the agent's, on by default, and
-// the clipboard's under it, off for a machine that hasn't it, its note, ticking it asks for the permission, neither
+// the clipboard's under it, off for a machine that hasn't it, its note, the link to the OpenRC installer's command, ticking it asks for the permission, neither
 // orphaning snapshots, saved into the record.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -19,6 +19,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, type Question } from './page-ask.ts';
 import { CAP, COPIED, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, TYPED, type Frame } from '../web/agent-frame.ts';
 import { pageCaps } from '../web/app/agent-link.ts';
+import { AGENT_OPENRC_INSTALL } from '../web/app/guest-agent.ts';
 import { TEXT } from '../web/app/clipboard-host.ts';
 import { plain, t } from '../web/i18n.ts';
 
@@ -354,7 +355,7 @@ test('the PNG worker (web/app/png.ts): a BMP, a JPEG and RGBA pixels as PNGs of 
   await context.close();
 });
 
-test("the Home page's agent and clipboard switches: the agent on by default, the clipboard off, its note; off without the agent; ticking it asks for the permission; no orphans (not in the shape); saved", { timeout: 120_000 }, async () => {
+test("the Home page's agent and clipboard switches: the agent on by default, the clipboard off, its note, the OpenRC dialog's command; off without the agent; ticking it asks for the permission; no orphans (not in the shape); saved", { timeout: 120_000 }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -389,6 +390,13 @@ test("the Home page's agent and clipboard switches: the agent on by default, the
   assert.equal(await page.isChecked('.machines [data-field=clipboard]'), false);
   const note = await page.locator('.machines .check-field', { has: page.locator('[data-field=clipboard]') }).locator('.note').textContent();
   assert.equal(note?.replace(/\s+/g, ' ').trim(), plain(t('machines:DeviceSwitches.clipboard.note')).replace(/\s+/g, ' ').trim());
+  // The link under it: the OpenRC installer's command in a dialog, to copy (docs/devices.md "On OpenRC"); closed again.
+  await page.click('.machines #agent-openrc-open');
+  await page.locator('dialog#agent-openrc[open]').waitFor();
+  assert.equal(await page.inputValue('#agent-openrc-command'), AGENT_OPENRC_INSTALL);
+  assert.equal(await page.isVisible('#agent-openrc-command-copy'), true);
+  await page.click('#agent-openrc-close');
+  await page.locator('dialog#agent-openrc').waitFor({ state: 'detached' });
   // Ticking it is the click that asks: Chromium prompts (headless: denied at once).
   assert.equal(await readState(page), 'prompt');
   await page.check('.machines [data-field=clipboard]');

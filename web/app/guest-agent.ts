@@ -164,6 +164,16 @@ export const AGENT_OPENRC_FILE = 'opt/waarm64/openrc';
 export const AGENT_OPENRC_NAME = 'waarm64-agent';
 
 /**
+ * The installer's command, run once as root on a guest with OpenRC (`agentInstaller`): the page shows it (the Settings
+ * tab's "without systemd" dialog, DeviceSwitches.svelte) and docs/devices.md "On OpenRC" quotes it (tests/agent.test.ts
+ * checks the two agree).
+ */
+export const AGENT_OPENRC_INSTALL = `modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/${AGENT_OPENRC_FILE}/raw`;
+
+/** The command that removes the service `AGENT_OPENRC_INSTALL` installed. */
+export const AGENT_OPENRC_REMOVE = `rc-update del ${AGENT_OPENRC_NAME}; rm /etc/init.d/${AGENT_OPENRC_NAME}`;
+
+/**
  * The agent's OpenRC service (`/etc/init.d/waarm64-agent`): what the systemd unit does (`agentScript`,
  * `AGENT_SERVICE`) as far as OpenRC has it. At each start the binary out of fw_cfg (`qemu_fw_cfg` loaded first: Alpine's
  * linux-virt has it as a module) into a tmpfs of its own at /run/waarm64 (mounted `exec`, gone when it stops), then run
@@ -223,17 +233,16 @@ stop() {
 
 /**
  * The installer the machine gives as `AGENT_OPENRC_FILE` (docs/devices.md "The guest's agent", "On OpenRC"): run once
- * as root on the guest,
- * `modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/openrc/raw`, it writes the service
+ * as root on the guest (`AGENT_OPENRC_INSTALL`), it writes the service
  * (`agentOpenrc`), adds it to the default runlevel and starts it (again: an update). What it writes is the service
  * alone: the binary comes from the machine at each start.
  */
 export function agentInstaller(): string {
   return `# From waarm64: installs the guest agent's OpenRC service (docs/devices.md, "The guest's agent"). Run it once, as root:
-#   modprobe qemu_fw_cfg; sh /sys/firmware/qemu_fw_cfg/by_name/${AGENT_OPENRC_FILE}/raw
+#   ${AGENT_OPENRC_INSTALL}
 # It writes /etc/init.d/${AGENT_OPENRC_NAME}, adds it to the default runlevel and starts it. The agent itself isn't
 # installed: the service reads it from the machine at each start (a machine without it: nothing runs). To remove it:
-#   rc-update del ${AGENT_OPENRC_NAME}; rm /etc/init.d/${AGENT_OPENRC_NAME}
+#   ${AGENT_OPENRC_REMOVE}
 set -e
 if [ "$(id -u)" != 0 ]; then echo "waarm64: run it as root" >&2; exit 1; fi
 if ! command -v openrc-run > /dev/null; then echo "waarm64: no OpenRC here (a guest with systemd gets the agent without this)" >&2; exit 1; fi
