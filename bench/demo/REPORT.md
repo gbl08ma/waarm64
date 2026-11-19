@@ -214,3 +214,50 @@ motd and the prompt on the restored console; an address 10.5 s after `running` (
 and prints 42 in 4.3–10.3 s; `fastfetch --version` enables `community` and runs (4.8 s); a name no package provides
 says so (127); `apk add lua5.4` 3.5 s. Not in CI: a test would need the network or a local signed repository (the
 virt ISO's `apks/` would serve, with packages this image doesn't have: openssh, chrony, dhcpcd), left in backlog.md.
+
+## DEMO loop 12: the desktop and 3D demos, resumed counting down to their app (2026-11-19)
+
+**What.** Two demos of the Arch desktop image (`target/arch/desktop.qcow2`, the deployed Desktop Demo's: 944 pieces,
+content id c25b9287…), 4 vCPUs, 2 GiB, 3D (virgl on WebGL2), sway at 1280×800, by `tools/build-demos.ts` from the
+page's copy (`npm run dist` at 7687cf40 plus this loop's changes; its core routed into the build): **`arch-desktop`**
+and **`arch-3d`**, each resumed with foot open and a script in it counting 10 s down to the demo's app (Firefox; the
+shader demo, `gtk4-demo --run=shadertoy` with `GDK_DISABLE=offload`), so the app starts in the visitor's machine and
+isn't in the snapshot (docs/remote-disks.md "A desktop"). Harness: targets `waarm64-desktop-template` and
+`waarm64-3d-template` (the restored machine running and its screen like the snapshot's, `resume.webp`:
+bench/demo/screen-like.ts; then a command on the serial console, root logged in there), `DEMO_LINK=100/20`, 3 runs
+each, a fresh profile per run. Dev VM, Chromium 155.0.8059.84 headless, a quiet machine. JSON: `results/demo-12/`
+(`template-*.json`: what each template holds).
+
+**What the snapshot holds, by what the guest ran** (the template's file, deflated; MB = 10^6 bytes; the same image and
+machine, built one after another):
+
+| `arch-desktop` built with | Snapshot | RAM stored |
+|---|---|---|
+| Firefox and foot open | 287.8 | 273 |
+| Firefox and foot open, kernel `init_on_free=1` | 250.9 | 236 |
+| **foot open, counting down to Firefox** | **134.3** (131.6 on the checkout's core) | 131 |
+| `arch-3d`: foot, counting down to the shader demo | **139.8** | 132 |
+
+`init_on_free=1` (what loop 1 used on Alpine: the kernel zeroes what it frees, so the snapshot holds only what's in
+use) took 13% off; not opening the app took 53%, without the kernel parameter, whose clearing of every freed page the
+visitor's machine would pay for as long as it runs. Dropped.
+
+**Restored, click to the desktop** (100 Mbit/s, 20 ms; medians of 3, IQR in brackets; MiB = 2^20 bytes):
+
+| Demo | Click → desktop shown | → command | Snapshot | Page | Disk by the command | **On the wire by the desktop** | By the run's end | PSS at the desktop / peak |
+|---|---|---|---|---|---|---|---|---|
+| `arch-desktop` | **12.7 (0.2) s** | 13.0 (0.2) s | 128.1 | 10.0 | 6.0 | **140.2 MiB** | 268.5 MiB | 1341 / 1748 MiB |
+| `arch-3d` | **13.2 (0.3) s** | 13.4 (0.3) s | 133.3 | 10.0 | 6.0 | **145.4 MiB** | 271.4 MiB | 1333 / 1767 MiB |
+
+- **The snapshot is the wait:** 128 MiB at 100 Mbit/s is ~10.7 s of the 12.7. The rest is the page (~1 s) and the
+  restore.
+- **Then the app's files:** by the run's end (~25 s after the click) another ~125 MiB came from the disk, the
+  countdown's app starting (Firefox's libxul, GTK and Mesa for the shader demo). A second command meanwhile
+  (`pacman --version`, its pages read from the disk) took 11.6–11.8 s, queued behind those reads. On the local link
+  (tests/page-demos-guest.test.ts) Firefox's window came 28.7 s after the click and the shader demo's 19.3 s, the count
+  included. A boot trace of the app's start, prefetched behind the snapshot, would shorten that (backlog).
+- **Is the screen the snapshot's** (bench/demo/screen-like.ts, the mean grey difference at 32×20, 0–255): a resumed
+  desktop scored 0.1–0.2 against its `resume.webp`; another screen 22.8 (a text console) to 36.8 (black) and 99–136
+  (the old Firefox thumbnail, a white page). The threshold, 12, sits in that gap. The two demos' resumed screens
+  differ by 0.2 from each other (both foot and a countdown), which is why the cards' thumbnails are taken later, the
+  app open.

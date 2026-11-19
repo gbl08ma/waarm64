@@ -1,0 +1,122 @@
+{
+ "made": "2026-11-19T12:23:19.920Z",
+ "image": "/home/gabriel.guest/Development/waarm64/target/arch/desktop.qcow2",
+ "core": "/home/gabriel.guest/Development/waarm64/bench/results/local/demo/dist/assets/waarm64_core-BP7OVXMh.wasm",
+ "definition": "/home/gabriel.guest/Development/waarm64/bench/results/local/demo/site/.arch-3d.recipe.json",
+ "session": {
+  "user": "arch",
+  "screen": "1280x800",
+  "apps": [
+   {
+    "run": "foot",
+    "window": "foot"
+   }
+  ],
+  "settle": 20,
+  "countdown": {
+   "script": "open-shader-demo.sh",
+   "run": "env GDK_DISABLE=offload gtk4-demo --run=shadertoy",
+   "window": "gtk4-demo",
+   "name": "The shader demo",
+   "seconds": 10
+  }
+ },
+ "ram": 2048,
+ "cpus": 4,
+ "ready": "agent",
+ "deflate": true,
+ "drop": true,
+ "compact": true,
+ "settle": 5,
+ "snapshot": {
+  "bytes": 139765107,
+  "header": 5164,
+  "tags": {
+   "CORE": {
+    "frames": 2,
+    "raw": 1198588,
+    "stored": 135281
+   },
+   "DEVS": {
+    "frames": 1,
+    "raw": 83886,
+    "stored": 13836
+   },
+   "BLOB": {
+    "frames": 18,
+    "raw": 13230180,
+    "stored": 41446
+   },
+   "RAM ": {
+    "frames": 558,
+    "raw": 482231744,
+    "stored": 138857602
+   },
+   "DISK": {
+    "frames": 619,
+    "raw": 12570624,
+    "stored": 711746
+   },
+   "END ": {
+    "frames": 1,
+    "raw": 0,
+    "stored": 32
+   }
+  },
+  "pins": [
+   {
+    "slot": 9,
+    "blocks": 3069,
+    "overlay": "overlays/0532e37bbc94",
+    "generation": 1
+   }
+  ],
+  "template": true
+ },
+ "lz4": {
+  "bytes": 195846340,
+  "header": 5148,
+  "tags": {
+   "CORE": {
+    "frames": 2,
+    "raw": 1198588,
+    "stored": 143483
+   },
+   "DEVS": {
+    "frames": 1,
+    "raw": 83886,
+    "stored": 20948
+   },
+   "BLOB": {
+    "frames": 18,
+    "raw": 13230180,
+    "stored": 111049
+   },
+   "RAM ": {
+    "frames": 558,
+    "raw": 482231744,
+    "stored": 194495231
+   },
+   "DISK": {
+    "frames": 619,
+    "raw": 12570624,
+    "stored": 1070449
+   },
+   "END ": {
+    "frames": 1,
+    "raw": 0,
+    "stored": 32
+   }
+  },
+  "pins": [
+   {
+    "slot": 9,
+    "blocks": 3069,
+    "overlay": "overlays/0532e37bbc94",
+    "generation": 1
+   }
+  ],
+  "template": false
+ },
+ "siteBytesBoot": 503574456
+}

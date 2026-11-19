@@ -1,0 +1,379 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "waarm64-3d-template",
+ "system": "waarm64",
+ "what": "through one link of 100/20 (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and a demo's template (arch-3d, a desktop: tools/build-demos.ts --out bench/results/local/demo/site; `DEMO_TEMPLATE` another) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to its desktop on the screen",
+ "promptIs": "the restored machine running and its screen like the template's thumbnail (bench/demo/screen-like.ts: the desktop shown); the command on the serial console, root logged in there",
+ "url": "<local>/?hooks",
+ "date": "2026-11-19T12:27:15.654Z",
+ "commit": "4ed76b27cb9d",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "ready": 251,
+    "click": 251,
+    "made": 12216,
+    "prompt": 13907,
+    "command": 14174,
+    "again": 25784
+   },
+   "bytes": {
+    "total": 285045457,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10493747,
+     "localhost": 274551710
+    },
+    "prompt": 152444684,
+    "command": 155001198,
+    "kinds": {
+     "prompt": {
+      "page": 10482620,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10482620,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 6291456
+     },
+     "total": {
+      "page": 10483761,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 136314880
+     }
+    },
+    "pageBrotli": {
+     "prompt": 2731577,
+     "total": 2732677
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 2368,
+     "pssMiB": 1767,
+     "processes": 11,
+     "rendererPssMiB": 1353
+    },
+    "prompt": {
+     "rssMiB": 1927,
+     "pssMiB": 1333,
+     "processes": 11,
+     "rendererPssMiB": 927
+    },
+    "uasmMiB": 24766
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "ready": 220,
+    "click": 220,
+    "made": 11976,
+    "prompt": 13363,
+    "command": 13578,
+    "again": 25013
+   },
+   "bytes": {
+    "total": 282489248,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10493747,
+     "localhost": 271995501
+    },
+    "prompt": 152444684,
+    "command": 154870126,
+    "kinds": {
+     "prompt": {
+      "page": 10482620,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10482620,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 6291456
+     },
+     "total": {
+      "page": 10483761,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 134217728
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 2352,
+     "pssMiB": 1753,
+     "processes": 11,
+     "rendererPssMiB": 1343
+    },
+    "prompt": {
+     "rssMiB": 1933,
+     "pssMiB": 1339,
+     "processes": 11,
+     "rendererPssMiB": 931
+    },
+    "uasmMiB": 24765
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "ready": 207,
+    "click": 207,
+    "made": 11975,
+    "prompt": 13371,
+    "command": 13643,
+    "again": 25223
+   },
+   "bytes": {
+    "total": 284543409,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10493747,
+     "localhost": 274049662
+    },
+    "prompt": 152444684,
+    "command": 155066734,
+    "kinds": {
+     "prompt": {
+      "page": 10482620,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10482620,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 6291456
+     },
+     "total": {
+      "page": 10483761,
+      "meta": 68750,
+      "snapshot": 139765107,
+      "disk": 134217728
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 2372,
+     "pssMiB": 1774,
+     "processes": 11,
+     "rendererPssMiB": 1361
+    },
+    "prompt": {
+     "rssMiB": 1927,
+     "pssMiB": 1333,
+     "processes": 11,
+     "rendererPssMiB": 925
+    },
+    "uasmMiB": 24766
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "ready_ms": {
+   "median": 220,
+   "iqr": 22,
+   "n": 3,
+   "samples": [
+    251,
+    220,
+    207
+   ]
+  },
+  "click_made_ms": {
+   "median": 11768,
+   "iqr": 104.5,
+   "n": 3,
+   "samples": [
+    11965,
+    11756,
+    11768
+   ]
+  },
+  "click_prompt_ms": {
+   "median": 13164,
+   "iqr": 256.5,
+   "n": 3,
+   "samples": [
+    13656,
+    13143,
+    13164
+   ]
+  },
+  "click_command_ms": {
+   "median": 13436,
+   "iqr": 282.5,
+   "n": 3,
+   "samples": [
+    13923,
+    13358,
+    13436
+   ]
+  },
+  "again_ms": {
+   "median": 11580,
+   "iqr": 87.5,
+   "n": 3,
+   "samples": [
+    11610,
+    11435,
+    11580
+   ]
+  },
+  "prompt_ms": {
+   "median": 13371,
+   "iqr": 272,
+   "n": 3,
+   "samples": [
+    13907,
+    13363,
+    13371
+   ]
+  },
+  "command_ms": {
+   "median": 13643,
+   "iqr": 298,
+   "n": 3,
+   "samples": [
+    14174,
+    13578,
+    13643
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 145.3825798034668,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    145.3825798034668,
+    145.3825798034668,
+    145.3825798034668
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 147.8206615447998,
+   "iqr": 0.09375,
+   "n": 3,
+   "samples": [
+    147.8206615447998,
+    147.6956615447998,
+    147.8831615447998
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 271.361741065979,
+   "iqr": 1.218895435333252,
+   "n": 3,
+   "samples": [
+    271.84053134918213,
+    269.4027404785156,
+    271.361741065979
+   ]
+  },
+  "sent_page_command_MiB": {
+   "median": 9.997005462646484,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    9.997005462646484,
+    9.997005462646484,
+    9.997005462646484
+   ]
+  },
+  "sent_meta_command_MiB": {
+   "median": 0.06556510925292969,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    0.06556510925292969,
+    0.06556510925292969,
+    0.06556510925292969
+   ]
+  },
+  "sent_snapshot_command_MiB": {
+   "median": 133.2903928756714,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    133.2903928756714,
+    133.2903928756714,
+    133.2903928756714
+   ]
+  },
+  "sent_disk_command_MiB": {
+   "median": 6,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    6,
+    6,
+    6
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 1333,
+   "iqr": 3,
+   "n": 3,
+   "samples": [
+    1333,
+    1339,
+    1333
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 1767,
+   "iqr": 10.5,
+   "n": 3,
+   "samples": [
+    1767,
+    1753,
+    1774
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 2368,
+   "iqr": 10,
+   "n": 3,
+   "samples": [
+    2368,
+    2352,
+    2372
+   ]
+  },
+  "uasm_MiB": {
+   "median": 24766,
+   "iqr": 0.5,
+   "n": 3,
+   "samples": [
+    24766,
+    24765,
+    24766
+   ]
+  }
+ }
+}

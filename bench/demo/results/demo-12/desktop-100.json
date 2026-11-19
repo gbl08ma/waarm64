@@ -1,0 +1,379 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "waarm64-desktop-template",
+ "system": "waarm64",
+ "what": "through one link of 100/20 (Mbit/s / RTT ms; bench/demo/site.ts throttle, the page's files at their brotli size): the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it (Vite's preview on 127.0.0.1) and a demo's template (arch-desktop, a desktop: tools/build-demos.ts --out bench/results/local/demo/site; `DEMO_TEMPLATE` another) hosted under the demo's layout on localhost (bench/demo/site.ts), offline: the page loaded, then the click (the template's machine made and opened, its snapshot restored at its first start), to its desktop on the screen",
+ "promptIs": "the restored machine running and its screen like the template's thumbnail (bench/demo/screen-like.ts: the desktop shown); the command on the serial console, root logged in there",
+ "url": "<local>/?hooks",
+ "date": "2026-11-19T12:24:59.224Z",
+ "commit": "4ed76b27cb9d",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "ready": 264,
+    "click": 264,
+    "made": 11773,
+    "prompt": 13459,
+    "command": 13734,
+    "again": 25578
+   },
+   "bytes": {
+    "total": 281697024,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10493747,
+     "localhost": 271203277
+    },
+    "prompt": 146998794,
+    "command": 149424236,
+    "kinds": {
+     "prompt": {
+      "page": 10482620,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10482620,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 6291456
+     },
+     "total": {
+      "page": 10483761,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 138412032
+     }
+    },
+    "pageBrotli": {
+     "prompt": 2731577,
+     "total": 2732677
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 2339,
+     "pssMiB": 1740,
+     "processes": 11,
+     "rendererPssMiB": 1330
+    },
+    "prompt": {
+     "rssMiB": 1926,
+     "pssMiB": 1332,
+     "processes": 11,
+     "rendererPssMiB": 924
+    },
+    "uasmMiB": 24766
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "ready": 201,
+    "click": 201,
+    "made": 11510,
+    "prompt": 12911,
+    "command": 13178,
+    "again": 24950
+   },
+   "bytes": {
+    "total": 281565952,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10493747,
+     "localhost": 271072205
+    },
+    "prompt": 146998794,
+    "command": 149817452,
+    "kinds": {
+     "prompt": {
+      "page": 10482620,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10482620,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 6291456
+     },
+     "total": {
+      "page": 10483761,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 138412032
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 2360,
+     "pssMiB": 1757,
+     "processes": 11,
+     "rendererPssMiB": 1345
+    },
+    "prompt": {
+     "rssMiB": 1935,
+     "pssMiB": 1341,
+     "processes": 11,
+     "rendererPssMiB": 935
+    },
+    "uasmMiB": 24766
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "ready": 207,
+    "click": 207,
+    "made": 11524,
+    "prompt": 12915,
+    "command": 13184,
+    "again": 24991
+   },
+   "bytes": {
+    "total": 280385999,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 10493747,
+     "localhost": 269892252
+    },
+    "prompt": 146998794,
+    "command": 149948524,
+    "kinds": {
+     "prompt": {
+      "page": 10482620,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 2097152
+     },
+     "command": {
+      "page": 10482620,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 6291456
+     },
+     "total": {
+      "page": 10483761,
+      "meta": 68636,
+      "snapshot": 134319942,
+      "disk": 136314880
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 2346,
+     "pssMiB": 1748,
+     "processes": 11,
+     "rendererPssMiB": 1338
+    },
+    "prompt": {
+     "rssMiB": 1941,
+     "pssMiB": 1347,
+     "processes": 11,
+     "rendererPssMiB": 940
+    },
+    "uasmMiB": 24766
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "ready_ms": {
+   "median": 207,
+   "iqr": 31.5,
+   "n": 3,
+   "samples": [
+    264,
+    201,
+    207
+   ]
+  },
+  "click_made_ms": {
+   "median": 11317,
+   "iqr": 100,
+   "n": 3,
+   "samples": [
+    11509,
+    11309,
+    11317
+   ]
+  },
+  "click_prompt_ms": {
+   "median": 12710,
+   "iqr": 243.5,
+   "n": 3,
+   "samples": [
+    13195,
+    12710,
+    12708
+   ]
+  },
+  "click_command_ms": {
+   "median": 12977,
+   "iqr": 246.5,
+   "n": 3,
+   "samples": [
+    13470,
+    12977,
+    12977
+   ]
+  },
+  "again_ms": {
+   "median": 11807,
+   "iqr": 36,
+   "n": 3,
+   "samples": [
+    11844,
+    11772,
+    11807
+   ]
+  },
+  "prompt_ms": {
+   "median": 12915,
+   "iqr": 274,
+   "n": 3,
+   "samples": [
+    13459,
+    12911,
+    12915
+   ]
+  },
+  "command_ms": {
+   "median": 13184,
+   "iqr": 278,
+   "n": 3,
+   "samples": [
+    13734,
+    13178,
+    13184
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 140.18897438049316,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    140.18897438049316,
+    140.18897438049316,
+    140.18897438049316
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 142.87705612182617,
+   "iqr": 0.25,
+   "n": 3,
+   "samples": [
+    142.50205612182617,
+    142.87705612182617,
+    143.00205612182617
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 268.522216796875,
+   "iqr": 0.625145435333252,
+   "n": 3,
+   "samples": [
+    268.647216796875,
+    268.522216796875,
+    267.3969259262085
+   ]
+  },
+  "sent_page_command_MiB": {
+   "median": 9.997005462646484,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    9.997005462646484,
+    9.997005462646484,
+    9.997005462646484
+   ]
+  },
+  "sent_meta_command_MiB": {
+   "median": 0.06545639038085938,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    0.06545639038085938,
+    0.06545639038085938,
+    0.06545639038085938
+   ]
+  },
+  "sent_snapshot_command_MiB": {
+   "median": 128.09747886657715,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    128.09747886657715,
+    128.09747886657715,
+    128.09747886657715
+   ]
+  },
+  "sent_disk_command_MiB": {
+   "median": 6,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    6,
+    6,
+    6
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 1341,
+   "iqr": 7.5,
+   "n": 3,
+   "samples": [
+    1332,
+    1341,
+    1347
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 1748,
+   "iqr": 8.5,
+   "n": 3,
+   "samples": [
+    1740,
+    1757,
+    1748
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 2346,
+   "iqr": 10.5,
+   "n": 3,
+   "samples": [
+    2339,
+    2360,
+    2346
+   ]
+  },
+  "uasm_MiB": {
+   "median": 24766,
+   "iqr": 0,
+   "n": 3,
+   "samples": [
+    24766,
+    24766,
+    24766
+   ]
+  }
+ }
+}

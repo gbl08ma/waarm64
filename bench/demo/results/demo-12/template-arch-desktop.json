@@ -1,0 +1,122 @@
+{
+ "made": "2026-11-19T12:20:27.365Z",
+ "image": "/home/gabriel.guest/Development/waarm64/target/arch/desktop.qcow2",
+ "core": "/home/gabriel.guest/Development/waarm64/bench/results/local/demo/dist/assets/waarm64_core-BP7OVXMh.wasm",
+ "definition": "/home/gabriel.guest/Development/waarm64/bench/results/local/demo/site/.arch-desktop.recipe.json",
+ "session": {
+  "user": "arch",
+  "screen": "1280x800",
+  "apps": [
+   {
+    "run": "foot",
+    "window": "foot"
+   }
+  ],
+  "settle": 20,
+  "countdown": {
+   "script": "open-firefox.sh",
+   "run": "firefox",
+   "window": "firefox",
+   "name": "Firefox",
+   "seconds": 10
+  }
+ },
+ "ram": 2048,
+ "cpus": 4,
+ "ready": "agent",
+ "deflate": true,
+ "drop": true,
+ "compact": true,
+ "settle": 5,
+ "snapshot": {
+  "bytes": 134319942,
+  "header": 5709,
+  "tags": {
+   "CORE": {
+    "frames": 2,
+    "raw": 1198588,
+    "stored": 135185
+   },
+   "DEVS": {
+    "frames": 1,
+    "raw": 87531,
+    "stored": 14077
+   },
+   "BLOB": {
+    "frames": 18,
+    "raw": 13230180,
+    "stored": 41195
+   },
+   "RAM ": {
+    "frames": 558,
+    "raw": 488682944,
+    "stored": 133411854
+   },
+   "DISK": {
+    "frames": 601,
+    "raw": 12730368,
+    "stored": 711890
+   },
+   "END ": {
+    "frames": 1,
+    "raw": 0,
+    "stored": 32
+   }
+  },
+  "pins": [
+   {
+    "slot": 9,
+    "blocks": 3108,
+    "overlay": "overlays/e39fa49d82ff",
+    "generation": 1
+   }
+  ],
+  "template": true
+ },
+ "lz4": {
+  "bytes": 189184687,
+  "header": 5693,
+  "tags": {
+   "CORE": {
+    "frames": 2,
+    "raw": 1198588,
+    "stored": 143371
+   },
+   "DEVS": {
+    "frames": 1,
+    "raw": 87531,
+    "stored": 21750
+   },
+   "BLOB": {
+    "frames": 18,
+    "raw": 13230180,
+    "stored": 110174
+   },
+   "RAM ": {
+    "frames": 558,
+    "raw": 488682944,
+    "stored": 187834825
+   },
+   "DISK": {
+    "frames": 601,
+    "raw": 12730368,
+    "stored": 1068842
+   },
+   "END ": {
+    "frames": 1,
+    "raw": 0,
+    "stored": 32
+   }
+  },
+  "pins": [
+   {
+    "slot": 9,
+    "blocks": 3108,
+    "overlay": "overlays/e39fa49d82ff",
+    "generation": 1
+   }
+  ],
+  "template": false
+ },
+ "siteBytesBoot": 625209282
+}

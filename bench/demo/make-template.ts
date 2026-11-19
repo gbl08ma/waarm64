@@ -368,7 +368,7 @@ try {
     const c = session.countdown;
     const uid = (await run(page, `id -u ${session.user}`)).trim();
     const sock = `SWAYSOCK=$(ls /run/user/${uid}/sway-ipc.*.sock)`;
-    const shown = async () => Number(await run(page, `su ${session.user} -c "${sock} swaymsg -t get_tree" | grep -c -E '\\"(app_id|class)\\": \\"${c.window}\\"'`)) > 0;
+    const shown = async () => Number(await run(page, `su ${session.user} -c "${sock} swaymsg -t get_tree" | grep -c -E '"(app_id|class)": "${c.window}"'`)) > 0;
     for (const end = Date.now() + 180_000; !(await shown()); await page.waitForTimeout(2000))
       if (Date.now() > end) {
         await page.screenshot({ path: join(site, `${a.name}-failed.png`) }).catch(() => {});
