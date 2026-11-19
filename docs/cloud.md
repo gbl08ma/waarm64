@@ -84,6 +84,10 @@ pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` 
 `apt-get update` and TCP straight out, which the container allows). The container has **no IPv6 at all** (no
 `AF_INET6` sockets): the helper's probe and the guest's IPv6 out are tested only for being off here. It also hangs `tests/net-tailcat.test.ts`, whose server listens on `::` (`EAFNOSUPPORT`, unhandled, so its `before` never ends; 2026-11-01); the rest of `scripts/ci-net.sh`'s list passes here.
 
+**The demo network's server** (`github.com/gbl08ma/waarm64-demonet`, docs/networking/demo-network.md) is private too,
+and a cloud session has no key for it: `tests/page-demonet.test.ts` says SKIPPED (tests/waarm64-demonet.ts), as does
+anything else that builds it. The page's client is tested without it (`tests/demo-net.test.ts`, a fake server).
+
 ## Images
 
 `images/build.sh` needs Podman and native arm64, so the cloud can't build Alpine, Buildroot, the

@@ -1862,11 +1862,11 @@ and the commands that use it, or the machine's key and the line that lets only i
 wizard's too); a room's name, link and who may connect; and [Edit connection…](ui:network:NetDetails.edit), the
 wizard on the connection. Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
 the submit; a component per step with its own form, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
-`NetLocalStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
+`NetLocalStep`, `NetDemoStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetPickStep.pick.new)
 (without connections it starts at the next step), each with the Connections pane's [Edit…](ui:network:ConnectionEditButton.edit)
 (`ConnectionEditButton.svelte`, inside its choice's frame: `ui/Choice.svelte`'s `after`), which opens the connection's
-editor in the wizard's place (Save and Back return to the choice, that connection chosen; Cancel closes); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
+editor in the wizard's place (Save and Back return to the choice, that connection chosen; Cancel closes); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal), [The demo network](ui:network:NetKindStep.kind.pickDemo) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
 settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
@@ -1893,6 +1893,15 @@ and the guest's default way out (below).
   (`permissions.query({name: 'loopback-network'})`: denied), with where the setting is. Disconnect leaves the card on
   frames to nothing, so connecting again to the same helper doesn't flap the link; another kind brings the gateway
   back (with a flap).
+- [Demo network](ui:network:connections.demoNetwork) (the project's public server, waarm64-demonet:
+  [networking/demo-network.md](networking/demo-network.md)): its step says what it reaches and its limits, with the
+  server's URL folded under [Another server](ui:network:NetDemoStep.demo.advanced) (empty: the project's). A demo's
+  definition attaches it by itself (web/app/net-demo.ts). No lock: every machine may run it at once, each on a network
+  of its own. Its client (web/demo-net-worker.ts) works as the helper's, frames over a WebSocket, and reads the server's
+  control messages: the menu's line says connected (the guest's address), idle, the allowance used up, or why it waits
+  and when it tries again; under it the day's traffic of its limit, the destinations refused (a count, the last few
+  names) and a restart announced. The message bar says 80 % of the day's allowance, the allowance spent or back, a
+  restart announced and a connection lost. The details give the server's URL and `curl http://<gateway>/status`.
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,

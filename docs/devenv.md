@@ -156,6 +156,8 @@ node tools/screens.ts --label <name>   # screenshots of every page state without
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
 (cd ../waarm64-net && go test -race ./...)    # the local network helper, its own repository (its CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
 WAARM64_NET_SRC=../waarm64-net node --test tests/page-local.test.ts   # waarm64's tests against that checkout instead of the commit tests/waarm64-net.ts pins
+(cd ../waarm64-demonet && go test -race ./...)   # the demo network's server, its own repository (a fork of waarm64-net; its CLAUDE.md, PROTOCOL.md)
+WAARM64_DEMONET_SRC=../waarm64-demonet WAARM64_NET_TESTS=1 node --test tests/page-demonet.test.ts   # against that checkout instead of the commit tests/waarm64-demonet.ts pins
 net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale: the page's default) -> target/net/ts.wasm (wasm32-wasip1; networking/tailnet.md)
 node bench/net/tailcat.ts <tc… address> 5   # it against a tailcat exit node on this machine: startup, RTT, echo throughput
 node bench/net/clients.ts 5    # the Tailscale client in Chromium (the Podman tailnet): load, Running, RTT, throughput, the worker's memory and CPU

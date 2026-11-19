@@ -54,6 +54,7 @@ export const TOPIC = [
   'tests/net-guest.test.ts', 'tests/page-network.test.ts', 'tests/net-tailnet.test.ts', 'tests/tailcat-browser.test.ts',
   'tests/room-browser.test.ts', 'tests/page-room.test.ts', 'tests/net-tailcat.test.ts', 'tests/net-local.test.ts',
   'tests/ts-tailnet.test.ts', 'tests/tailscale-browser.test.ts', 'tests/ts-tailcat.test.ts', 'tests/page-alpine-agent.test.ts',
+  'tests/page-demonet.test.ts',
   // scripts/ci-audio.sh, ci-fp.sh, ci-usb.sh, ci-deqp.sh, ci-deqp-vk.sh
   'tests/audio-browser.test.ts', 'tests/fptest.test.ts', 'tests/usb-e2e-webusb.test.ts', 'tests/usb-e2e-hid.test.ts',
   'tests/usb-guest.test.ts', 'tests/page-deqp-vk.test.ts',
@@ -139,7 +140,7 @@ export const AREAS: Record<string, Area> = {
   },
   // ---- the network
   network: {
-    src: ['web/gateway.ts', 'web/net.ts', 'web/local-net*.ts', 'web/local-release.ts', 'web/ip6.ts', 'web/reach6.ts', 'web/tailscale*.ts', 'web/tailnet-worker.ts', 'web/tailcat*.ts', 'web/ts-*.ts', 'web/offload.ts', 'net/**', 'web/app/Net*.svelte', 'web/app/net-*.ts', 'web/app/network*.ts', 'web/app/Network*.svelte', 'web/app/guest-net.ts', 'web/app/Connection*.svelte', 'web/app/connection*.ts', 'web/app/areas/network*.ts', 'web/app/areas/lease-actions.ts', 'tests/net/**', 'tests/waarm64-net.ts', 'tools/tailscale.ts'],
+    src: ['web/gateway.ts', 'web/net.ts', 'web/local-net*.ts', 'web/demo-net*.ts', 'web/app/demo-view.ts', 'web/local-release.ts', 'web/ip6.ts', 'web/reach6.ts', 'web/tailscale*.ts', 'web/tailnet-worker.ts', 'web/tailcat*.ts', 'web/ts-*.ts', 'web/offload.ts', 'net/**', 'web/app/Net*.svelte', 'web/app/net-*.ts', 'web/app/network*.ts', 'web/app/Network*.svelte', 'web/app/guest-net.ts', 'web/app/Connection*.svelte', 'web/app/connection*.ts', 'web/app/areas/network*.ts', 'web/app/areas/lease-actions.ts', 'tests/net/**', 'tests/waarm64-net.ts', 'tests/waarm64-demonet.ts', 'tests/go-pinned.ts', 'tools/tailscale.ts'],
     heavy: ['tests/page-local.test.ts', 'tests/page-connections.test.ts', 'tests/net-path.test.ts'],
     cargo: ['ts'],
     push: ['ci-net.sh'],

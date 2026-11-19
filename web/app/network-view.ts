@@ -5,6 +5,7 @@ import { describe, errorText, msg, t, text, type Msg } from '../i18n.ts';
 import { isMsg } from '../msg.ts';
 import type { NetMap } from '../tailscale.ts';
 import type { Connection } from './connections.ts';
+import { demoView } from './demo-view.ts';
 import type { Network } from './network.ts';
 import type { Adapter } from './shape.ts';
 
@@ -55,6 +56,11 @@ export type NetworkView = {
   /** The local helper's: its lease always routes everything through it, so it is the primary first (`primaryOf`). */
   local?: boolean;
   /**
+   * The demo network's (web/app/demo-view.ts): its lease routes everything through it too, so it is a primary as the
+   * local helper's is; the URL the guest can fetch its numbers from (`http://<gateway>/status`), and the lane.
+   */
+  demo?: { status?: string; lane: 'fast' | 'none' };
+  /**
    * A room's, when connected: the machine's name in it (to give out), the room's link, and whether members may connect;
    * and why members go through the relay where a direct path was wanted (the menu's warning, the details' words):
    * `blocked`, this browser makes none; `peersBlocked`, how many members' browsers make none; `failed`, how many
@@ -79,13 +85,13 @@ export const roomWarned = (r: NetworkView['room']) => !!r && (!!r.blocked || !!r
 
 /**
  * Which of a machine's adapters is the guest's default way out (docs/networking/adapters.md §4): the first connected
- * local helper's; else the first, in order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
+ * local helper's or demo network's; else the first, in order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
  * keeps its default route, as it always had); -1 when none is connected.
  */
-export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet' | 'local'>[]): number {
-  // A local helper's lease always carries a default route (its DHCP, not the page's): it goes first, so a tailnet or
-  // tailcat adapter beside it is the one given only its routes (docs/networking/adapters.md §4).
-  const local = views.findIndex((v) => v.phase === 'connected' && v.local);
+export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet' | 'local' | 'demo'>[]): number {
+  // A local helper's or the demo network's lease always carries a default route (its DHCP, not the page's): it goes
+  // first, so a tailnet or tailcat adapter beside it is the one given only its routes (docs/networking/adapters.md §4).
+  const local = views.findIndex((v) => v.phase === 'connected' && (!!v.local || !!v.demo));
   if (local >= 0) return local;
   const net = views.findIndex((v) => v.phase === 'connected' && v.internet);
   return net >= 0 ? net : views.findIndex((v) => v.phase === 'connected');
@@ -98,7 +104,7 @@ export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet' | 'local
  * server has none); without one, the primary, whose lease then has no IPv6 default (web/reach6.ts `unreached6`).
  */
 export function primary6Of(
-  views: Pick<NetworkView, 'phase' | 'internet' | 'internet6' | 'local'>[],
+  views: Pick<NetworkView, 'phase' | 'internet' | 'internet6' | 'local' | 'demo'>[],
   primary = primaryOf(views),
 ): number {
   if (primary < 0 || views[primary].local || views[primary].internet6) return primary;
@@ -123,6 +129,7 @@ export type ClientReport = {
   error?: unknown;
   tailcat?: boolean;
   local?: boolean;
+  demo?: boolean;
   room?: boolean;
 };
 
@@ -320,6 +327,7 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
     };
   }
   if (c.local) return localView(c);
+  if (c.demo || c.netmap?.via === 'demo') return demoView(c);
   if (c.netmap?.via === 'room' || c.room) return roomView(c);
   if (c.netmap?.via === 'tailcat' || c.tailcat) return tailcatView(c);
   return tailscaleView(c);

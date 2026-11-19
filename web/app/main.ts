@@ -6,9 +6,8 @@ import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { PageAudio } from '../audio.ts';
 import { hasOpfs } from '../overlay.ts';
-import { forgetRoomIdentity, keepRoomIdentity, readRoomIdentity, roomIdentity } from '../room.ts';
-import { forgetTailcatIdentity } from '../tailcat.ts';
-import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
+import { keptProfiles } from '../tailscale-state.ts';
+import { pageConnectionState } from './net-state.ts';
 import { current } from './areas/current.svelte.ts';
 import { isLive, power } from './areas/power.svelte.ts';
 import { records } from './areas/records.svelte.ts';
@@ -96,16 +95,11 @@ const netSettled = new NetSettled(() => net.views().map((v) => ({ phase: v.view.
 const net: PageNetwork = new PageNetwork({
   store,
   onChange: () => netSettled.changed(),
-  state: {
-    forgetTailnet: forgetProfile,
-    forgetTailcat: forgetTailcatIdentity,
-    forgetRoom: forgetRoomIdentity,
-    readRoom: readRoomIdentity,
-    roomIdentity,
-    keepRoom: keepRoomIdentity,
-  },
+  state: pageConnectionState,
   kept: keptProfiles,
   me: () => machineTitle(machine),
+  // The demo network's notices (a budget crossed, a restart announced): `messages` is made below, before any machine runs.
+  notify: (m, kind) => messages.notify(m, kind),
   save: async (i, id) => {
     const s = machine.stored;
     if (!s) return remember({ transientNet: id });

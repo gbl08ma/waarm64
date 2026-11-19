@@ -20,6 +20,7 @@ import {
   type TailscaleConfig,
 } from '../tailscale.ts';
 import type { Reach6Options } from '../reach6.ts';
+import { startDemo, type DemoNotice } from '../demo-net.ts';
 import { startLocal } from '../local-net.ts';
 import { startRoomNet, type RoomNetConfig } from '../room.ts';
 import {
@@ -106,7 +107,8 @@ export function parseHostname(input: string): { hostname: string } | { error: Ms
  * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
  * `tailcatServe`, as the node `tailcatIdentity` names (web/tailcat.ts `identityKey`, `identity`) (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `waarm64-tailscale` (web/tailscale-state.ts), so it is kept and
  * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts). `local`: the
- * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it. `room`: a peer-to-peer
+ * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it; `demo`, the demo
+ * network's server (`wss://…`, web/demo-net.ts), likewise. `room`: a peer-to-peer
  * room (web/room.ts), its link, switches and kept identity.
  */
 export type Connect = {
@@ -121,6 +123,7 @@ export type Connect = {
   tailcatIdentity?: { identityKey?: string; identity?: TailcatIdentity };
   probe6?: Reach6Options;
   local?: string;
+  demo?: string;
   room?: Omit<RoomNetConfig, 'ip'>;
 };
 
@@ -197,19 +200,21 @@ type Starters = {
   startCat: (config: TailcatConfig, onEvent: OnEvent) => Tailscale;
   startHelper: (config: { url: string; ip: MessagePort }, onEvent: OnEvent) => Tailscale;
   startRoom: (config: RoomNetConfig, onEvent: OnEvent) => Tailscale;
+  startDemo: (config: { url: string; ip: MessagePort }, onEvent: OnEvent) => Tailscale;
 };
 
-/** What kind of client `c` asks for: a room's, tailcat's (through a server, or letting clients in) or the local helper's. */
+/** What kind of client `c` asks for: a room's, tailcat's (through a server, or letting clients in), the local helper's or the demo network's. */
 function kindOf(c: Connect) {
   const room = !!c.room;
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no server ('') is none
   const tailcat = !room && !!(c.tailcat || c.tailcatServe);
-  return { room, tailcat, local: !!c.local };
+  return { room, tailcat, local: !!c.local, demo: !!c.demo };
 }
 
-/** The client `c` asks for on the machine's port `ip`: the local helper's, a room's, tailcat's or a tailnet's. */
+/** The client `c` asks for on the machine's port `ip`: the local helper's, the demo network's, a room's, tailcat's or a tailnet's. */
 function startClient(c: Connect, ip: MessagePort, tailcat: boolean, onEvent: OnEvent, s: Starters): Tailscale {
   if (c.local) return s.startHelper({ url: c.local, ip }, onEvent);
+  if (c.demo) return s.startDemo({ url: c.demo, ip }, onEvent);
   if (c.room) return s.startRoom({ ...c.room, ip }, onEvent);
   if (tailcat)
     return s.startCat(
@@ -236,6 +241,8 @@ function startClient(c: Connect, ip: MessagePort, tailcat: boolean, onEvent: OnE
 /** A network's state: the machine's port, its client and what kind it is. */
 type State = {
   onChange: () => void;
+  /** A client's notice for the message bar (the demo network's). */
+  onNotice?: (n: DemoNotice) => void;
   starters: Starters;
   /** The page's end of the machine's port, while no client has it. */
   free?: MessagePort;
@@ -243,8 +250,8 @@ type State = {
   /** How many ports machines have brought. */
   ports: number;
   error?: unknown;
-  kind: { room: boolean; tailcat: boolean; local: boolean };
-  /** The card is on frames (a local client had it last): an IP client brings the page's gateway back first. */
+  kind: { room: boolean; tailcat: boolean; local: boolean; demo: boolean };
+  /** The card is on frames (a local or demo client had it last): an IP client brings the page's gateway back first. */
   onFrames: boolean;
   primary: boolean;
   primary6: boolean;
@@ -272,9 +279,11 @@ function connect(s: State, c: Connect) {
   const ip = s.free;
   s.free = undefined;
   s.kind = kindOf(c);
-  if (s.onFrames && !s.kind.local) ip.postMessage({ type: 'gateway' });
-  s.onFrames = s.kind.local;
+  const framed = s.kind.local || s.kind.demo;
+  if (s.onFrames && !framed) ip.postMessage({ type: 'gateway' });
+  s.onFrames = framed;
   const onEvent = (m: FromTailscale) => {
+    if (m.type === 'notice') return s.onNotice?.(m.notice);
     if (m.type === 'error') s.error = m.error;
     else if (m.type === 'state' && m.state === 'Running') s.error = undefined;
     s.onChange();
@@ -310,18 +319,23 @@ function report(s: State): ClientReport | undefined {
   return c ? { state: c.state(), netmap: c.netmap(), loginURL: c.loginURL(), error: s.error, ...s.kind } : undefined;
 }
 
+/** What `createNetwork` takes besides its starters: the demo network's client, and where its notices go. */
+export type NetworkExtras = { startDemo?: Starters['startDemo']; onNotice?: (n: DemoNotice) => void };
+
 export function createNetwork(
   onChange: () => void,
   start: Starters['start'] = startTailscale,
   startCat: Starters['startCat'] = startTailcat,
   startHelper: Starters['startHelper'] = startLocal,
   startRoom: Starters['startRoom'] = startRoomNet,
+  extras: NetworkExtras = {},
 ): Network {
   const s: State = {
     onChange,
-    starters: { start, startCat, startHelper, startRoom },
+    onNotice: extras.onNotice,
+    starters: { start, startCat, startHelper, startRoom, startDemo: extras.startDemo ?? startDemo },
     ports: 0,
-    kind: { room: false, tailcat: false, local: false },
+    kind: { room: false, tailcat: false, local: false, demo: false },
     onFrames: false,
     primary: true,
     primary6: true,

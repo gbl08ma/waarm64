@@ -23,6 +23,7 @@ export type Step =
   | 'tailscale'
   | 'tailcat'
   | 'local'
+  | 'demo'
   | 'roomPick'
   | 'roomGlobal'
   | 'roomCreate'
@@ -37,6 +38,7 @@ export const MAKING_STEPS: ReadonlySet<Step> = new Set([
   'tailscale',
   'tailcat',
   'local',
+  'demo',
   'roomGlobal',
   'roomCreate',
   'roomJoin',
@@ -46,6 +48,7 @@ export const MAKING_STEPS: ReadonlySet<Step> = new Set([
 export const EDIT_STEP: Record<Connection['kind'], Step> = {
   tailnet: 'tailscale',
   local: 'local',
+  demo: 'demo',
   room: 'roomEdit',
   tailcat: 'tailcat',
 };

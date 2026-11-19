@@ -3,7 +3,7 @@
 // at a time), and the connections whose nodes are being logged out (nobody connects them meanwhile). For
 // web/app/net-live.ts; DOM-free.
 import { MsgError } from '../i18n.ts';
-import { connectionLock, type Connection, type RoomConnection } from './connections.ts';
+import { connectionLock, exclusive, type Connection, type RoomConnection } from './connections.ts';
 import { Locks } from './locks.ts';
 import type { Store } from './store.ts';
 
@@ -60,9 +60,11 @@ export class NetClaims {
 
   /**
    * Takes `c`'s locks for an adapter: the connection's (`HeldError` if another machine has it), then a room's key's.
-   * Why the adapter can't connect, with its lock let go unless it runs `c` already; nothing when they are taken.
+   * Why the adapter can't connect, with its lock let go unless it runs `c` already; nothing when they are taken. A
+   * connection that isn't `exclusive` (the demo network's) has no lock: any number of machines run it at once.
    */
   async claim(c: Connection, here: ClaimHere): Promise<MsgError | undefined> {
+    if (!exclusive(c)) return here.stopped();
     await this.take(c);
     const lock = connectionLock(c.id);
     const stopped = here.stopped();

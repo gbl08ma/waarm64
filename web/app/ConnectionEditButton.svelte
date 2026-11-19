@@ -14,6 +14,7 @@
   const TITLES: Record<Connection['kind'], () => string> = {
     tailnet: () => t('network:ConnectionEditButton.title.tailnet'),
     local: () => t('network:ConnectionEditButton.title.local'),
+    demo: () => t('network:ConnectionEditButton.title.demo'),
     room: () => t('network:ConnectionEditButton.title.room'),
     tailcat: () => t('network:ConnectionEditButton.title.tailcat'),
   };

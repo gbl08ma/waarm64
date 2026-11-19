@@ -40,6 +40,7 @@
   const KINDS: Record<Connection['kind'], (c: Connection) => Msg> = {
     tailnet: (c) => msg('network:NetPickStep.kind.tailnet', { host: new URL(c.tailnet?.controlURL ?? '').host }),
     local: () => msg('network:NetPickStep.kind.local'),
+    demo: () => msg('network:NetPickStep.kind.demo'),
     room: (c) => {
       const l = parseRoomLink(c.room?.link ?? '');
       return 'room' in l && isPrivateRoom(l.room.id)

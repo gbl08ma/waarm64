@@ -6,6 +6,7 @@ import type { Connect } from './network.ts';
 /** What a connection's client is started with (`authKey`: a tailnet's first login, never kept). */
 export function connectOf(c: Connection, authKey?: string): Connect {
   if (c.kind === 'local') return { controlURL: '', hostname: '', local: settingsOf(c, 'local').url };
+  if (c.kind === 'demo') return { controlURL: '', hostname: '', demo: settingsOf(c, 'demo').url };
   if (c.kind === 'room') {
     const r = settingsOf(c, 'room');
     return {

@@ -239,6 +239,15 @@ export const localNetmap = (lease: { address: string; mtu?: number } | undefined
  */
 export function startLocal(config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
   const worker = new Worker(new URL('./local-net-worker.ts', import.meta.url), { type: 'module' });
+  return framedClient(worker, config, onEvent, () => new MsgError('network:local-net.noExitNodes'));
+}
+
+/**
+ * The page's handle on a worker that moves a card's frames over a WebSocket (web/local-net-worker.ts, and the demo
+ * network's web/demo-net-worker.ts), as web/app/network.ts drives a tailnet's client: it speaks `ToLocal`, and posts
+ * the tailnet clients' state, network map, `detached` and errors. `noExits`: the error for an exit node asked of it.
+ */
+export function framedClient(worker: Worker, config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void, noExits: () => Error): Tailscale {
   let detached: ((ip?: MessagePort) => void) | undefined;
   let state = '';
   let netmap: NetMap | undefined;
@@ -259,11 +268,11 @@ export function startLocal(config: { url: string; ip: MessagePort }, onEvent: (m
   });
   running.catch(() => {});
   worker.postMessage({ type: 'start', url: config.url, ip: config.ip } satisfies ToLocal, [config.ip]);
-  const refuse = () => Promise.reject(new MsgError('network:local-net.noExitNodes'));
+  const refuse = () => Promise.reject(noExits());
   return {
     state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToLocal, [ip]),
-    setPrimary: () => {}, // the helper's DHCP always routes everything through it (network.ts `primaryOf` ranks it first)
+    setPrimary: () => {}, // the far end's DHCP always routes everything through it (network.ts `primaryOf` ranks it first)
     detach: () => new Promise((resolve) => {
       const t = setTimeout(() => resolve(undefined), 3000);
       detached = (ip) => { clearTimeout(t); resolve(ip); };

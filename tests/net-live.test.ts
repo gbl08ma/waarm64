@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { connectionLock, memoryState, type Connection, type ConnectionState } from '../web/app/connections.ts';
 import { HeldError } from '../web/app/net-claims.ts';
+import { demoConnection } from '../web/app/net-demo.ts';
+import { DEMO_URL, demoNetmap } from '../web/demo-net.ts';
 import { connectOf } from '../web/app/net-connect.ts';
 import { PageNetwork } from '../web/app/net-live.ts';
 import { NetSettled } from '../web/app/net-settled.ts';
@@ -21,13 +23,13 @@ import type { TailcatConfig } from '../web/tailcat.ts';
 /** Fake clients: what each was started with, and what was asked of it. */
 function clients(onLogout?: () => void) {
   const log: string[] = [];
-  const all: { config: TailscaleConfig | TailcatConfig; set(state: string, nm?: NetMap): void; fail(error: string): void }[] = [];
+  const all: { config: TailscaleConfig | TailcatConfig; set(state: string, nm?: NetMap): void; fail(error: string): void; emit(m: FromTailscale): void }[] = [];
   const make = (kind: string) => (config: TailscaleConfig | TailcatConfig, onEvent: (m: FromTailscale) => void): Tailscale => {
     let state = '';
     let nm: NetMap | undefined;
     let held: MessagePort | undefined = config.ip;
     const n = all.length;
-    all.push({ config, set(s, m) { state = s; nm = m; onEvent({ type: 'state', state: s }); }, fail(error) { onEvent({ type: 'error', error: toWire(new Error(error)) }); } });
+    all.push({ config, set(s, m) { state = s; nm = m; onEvent({ type: 'state', state: s }); }, fail(error) { onEvent({ type: 'error', error: toWire(new Error(error)) }); }, emit: onEvent });
     log.push(`${kind}${n} start ${'persist' in config ? config.persist ?? '-' : ''}`.trim());
     return {
       state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
@@ -40,7 +42,7 @@ function clients(onLogout?: () => void) {
       close: () => { log.push(`${kind}${n} close`); },
     };
   };
-  return { log, all, start: make('ts'), startCat: make('cat') };
+  return { log, all, start: make('ts'), startCat: make('cat'), startDemo: make('demo') as unknown as (c: { url: string; ip: MessagePort }, e: (m: FromTailscale) => void) => Tailscale };
 }
 
 const MAC = '52:54:00:12:34:56';
@@ -55,10 +57,11 @@ function pageOn(channel: string, name: string, records = memoryRecords(), kept: 
   const c = clients(() => { kept.length = 0; }); // the client forgets the node
   const saved: (string | undefined)[] = [];
   const hooks: { change?: () => void } = {};
-  const net = new PageNetwork({ store, state, me: () => name, onChange: () => hooks.change?.(), save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, startRoom: c.start as unknown as NonNullable<ConstructorParameters<typeof PageNetwork>[0]['startRoom']>, kept: async () => kept });
+  const notified: string[] = [];
+  const net = new PageNetwork({ store, state, me: () => name, onChange: () => hooks.change?.(), save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, startRoom: c.start as unknown as NonNullable<ConstructorParameters<typeof PageNetwork>[0]['startRoom']>, startDemo: c.startDemo, notify: (m, kind) => notified.push(`${kind} ${m.key}`), kept: async () => kept });
   const close = () => { net.locks.close(); store.close(); };
   opened.push(close);
-  return { store, records, net, saved, hooks, ...c, close };
+  return { store, records, net, saved, hooks, notified, ...c, close };
 }
 const tailnet = (net: PageNetwork, o: { ephemeral?: boolean } = {}) => net.conns.create({ kind: 'tailnet', ephemeral: o.ephemeral, tailnet: { controlURL: 'https://hs.example', hostname: 'box', exitNode: '' } });
 const adapters = (...conns: (Connection | undefined)[]): Adapter[] => conns.map((c, i) => ({ id: `a${i}`, mac: MAC.replace(/6$/, String(6 + i)), ...(c ? { connection: c.id } : {}) }));
@@ -138,6 +141,39 @@ test('one machine has a connection at a time: another tab is told who has it, an
   assert.ok(a.log.includes('ts0 detach'));
   const twice = await b.net.connect(0, (await b.net.conns.get(c.id))!).then(() => 'ok', (e) => String(e));
   assert.equal(twice, 'ok', 'connecting what it has is nothing to do');
+  a.close();
+  b.close();
+});
+
+test('the demo network: no lock, so machines in two tabs and two adapters of one run it at once; its lease goes first; its notices to the message bar', async () => {
+  const a = pageOn('nl-demo', 'Machine A');
+  const b = pageOn('nl-demo', 'Machine B', a.records);
+  const d = await demoConnection(a.net.conns);
+  assert.equal(d.demo?.url, DEMO_URL);
+  assert.equal(d.name, t('network:connections.demoNetwork'));
+  assert.equal((await demoConnection(b.net.conns)).id, d.id, 'one demo connection in the browser');
+  assert.deepEqual(connectOf(d), { controlURL: '', hostname: '', demo: DEMO_URL });
+  const ts = await tailnet(a.net);
+  a.net.ports('ma', adapters(ts, d, d));
+  await a.net.autoconnect();
+  assert.deepEqual([a.net.views()[1].active, a.net.views()[2].active], [true, true], 'two adapters of one machine, a socket each');
+  assert.ok(!a.net.locks.mine(connectionLock(d.id)), 'no lock taken');
+  b.net.ports('mb', adapters(d));
+  await b.net.autoconnect();
+  await b.net.refresh();
+  assert.equal(b.net.runs(d.id), 0, 'another tab runs it too, nothing taken from A');
+  assert.ok(!b.net.held.has(d.id));
+  assert.equal(a.net.runs(d.id), 1);
+  assert.deepEqual(a.log.filter((l) => l.includes('start')).map((l) => l.split(' ')[0]), ['ts0', 'demo1', 'demo2']);
+  // The demo network's lease routes everything (the server's DHCP): it is the primary over a tailnet's exit node.
+  a.all[0].set('Running', netmap({ exitNode: 'nEXIT' })); // i18n-ignore
+  assert.equal(a.net.views().findIndex((v) => v.primary), 0);
+  a.all[2].set('Running', demoNetmap({ address: '192.168.127.2' }, { phase: 'connected', again: false, lane: 'fast' })); // i18n-ignore
+  assert.equal(a.net.views().findIndex((v) => v.primary), 2);
+  assert.equal(a.net.views()[2].view.text, t('network:demo-view.connected.address', { address: '192.168.127.2' }));
+  a.all[2].emit({ type: 'notice', notice: { kind: 'budget', threshold: 80, used: 4, limit: 5 } });
+  a.all[2].emit({ type: 'notice', notice: { kind: 'lost' } });
+  assert.deepEqual(a.notified, ['info network:demo-view.notice.budget', 'warn network:demo-view.notice.lost']);
   a.close();
   b.close();
 });

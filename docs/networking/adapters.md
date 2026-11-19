@@ -1,7 +1,7 @@
 # Network adapters and connections
 
 A machine has up to four network adapters, and each is attached to one of the browser's **connections** (a tailnet,
-tailcat, the local helper or a peer-to-peer room), or to none. This page is the model and the guest side: what a connection is and where its state lives, the
+tailcat, the local helper, the demo network or a peer-to-peer room), or to none. This page is the model and the guest side: what a connection is and where its state lives, the
 locks between tabs, the guest's routes over several adapters and the numbers measured. The page's menus and wizard
 are in [frontend.md](../frontend.md) "Network" and "The Home page", the gateway's DHCP and router advertisements in
 [devices.md](../devices.md) "net", and the clients in [tailnet.md](tailnet.md). Loose ends are in
@@ -14,11 +14,16 @@ code's comments still cite; machines had first left several adapters for later: 
    of the shape, their order too: virtio-mmio has no hotplug, so adding, removing or moving one needs the machine off
    (as a disk does).
 2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet, tailcat, the
-   local helper on this computer (`local`: [local-helper.md](local-helper.md)) or a peer-to-peer room (`room`:
-   [rooms.md](rooms.md)). A connection carries its own state (a tailnet's node, tailcat's identity and
-   address, a room's node key), so it keeps working as the user moves from one machine to the next. There is no "default" connection.
+   local helper on this computer (`local`: [local-helper.md](local-helper.md)), the demo network (`demo`:
+   [demo-network.md](demo-network.md)) or a peer-to-peer room (`room`: [rooms.md](rooms.md)). A connection carries its
+   own state (a tailnet's node, tailcat's identity and address, a room's node key), so it keeps working as the user
+   moves from one machine to the next. There is no "default" connection, **except the demo network's** (the user,
+   2026-11-18: DEMO-KICKOFF.md decision 10): the page makes it itself when a demo's definition asks for it
+   (web/app/net-demo.ts `attachDemoNetwork`); it holds no secret.
 3. **An adapter with no connection is allowed:** a card with no cable.
-4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3). A machine that
+4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3), **except the demo
+   network's** (decision 10; `exclusive` in web/app/connections.ts): any number of machines and adapters run it at once,
+   a socket each, and its server gives each socket a network of its own. A machine that
    wants a held connection says which machine holds it and offers to take it. A machine that stops (powered off,
    suspended, crashed, or stopped for one that can't start) lets its connections go and connects them again at its next start; a restart keeps them. The
    exception is an ephemeral tailnet's: its node is in the client, so the client stays, and no other tab can want it.

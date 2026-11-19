@@ -6,6 +6,7 @@ import type { Connection } from './connections.ts';
 const KINDS: Record<Connection['kind'], (c: Connection) => Msg> = {
   tailnet: (c) => msg('machines:connection-kind.tailnet', { host: new URL(c.tailnet?.controlURL ?? '').host }),
   local: () => msg('machines:connection-kind.local'),
+  demo: () => msg('machines:connection-kind.demo'),
   room: () => msg('machines:connection-kind.room'),
   tailcat: (c) =>
     c.tailcat?.exit ? msg('machines:connection-kind.tailcatExit') : msg('machines:connection-kind.tailcatServe'),

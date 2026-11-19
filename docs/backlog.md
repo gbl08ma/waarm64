@@ -1952,6 +1952,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The Network menu doesn't say a connection is IPv4-only.
   - `bench/gpu/firefox-load.ts`'s tailcat mode still drops the guest's IPv6 default and pins resolv.conf and
     gai.conf by hand; no longer needed, drop it at its next run.
+- **The demo network's loose ends** ([networking/demo-network.md](networking/demo-network.md), DEMO loop 10): a
+  reconnect gives the guest a new network on the server whose DHCP never leased to it (it ACKs the renewal, and the
+  same first address comes back), but the guest's open TCP connections die with the old one and nothing asks the agent
+  to renew the lease (LEASE) as a restore does; a `notice` of a code the page doesn't know isn't shown (v1 allows new
+  ones: a generic "the server announced something" would do); the message bar's notices don't name the adapter (a
+  machine with two demo adapters says it once each); the browser's `online` event doesn't cut a backoff short; the
+  default URL `wss://demonet.tny.im/` is a placeholder until the server is hosted.
 - **The local helper's loose ends** ([networking/local-helper.md](networking/local-helper.md), waarm64-net's own repository):
   - **Never run on Windows** (nor its install lines in PowerShell): whether gvisor-tap-vsock's DNS forwarder follows the
     host's resolvers there (it asks Go's `net.Resolver` and forwards other types to `/etc/resolv.conf`'s servers,

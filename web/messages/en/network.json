@@ -1338,5 +1338,221 @@
   "names.lastWeek_other": {
     "message": "The domains <name>{{names}}</name> are kept only until about {{when, date}}. Leave this web app open for a few hours, or reopen it before then, to keep them.",
     "note": "Notice in the message bar at load when registered names are in their last week. {{names}} are the names, {{count}} how many, {{when}} when the first stops."
+  },
+  "connections.demoNetwork": {
+    "message": "Demo network",
+    "note": "The default name of a new connection to the demo network (the project's public server that lets the guest reach a few allowed hosts, such as Alpine's package mirror), as the Network wizard, the Network menu and the Home page's Connections show it. It is stored with the connection, which the user can rename."
+  },
+  "NetPickStep.kind.demo": {
+    "message": "the demo network",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), its first step: the kind of a connection to the demo network, under the connection's name."
+  },
+  "ConnectionEditButton.title.demo": {
+    "message": "Change the demo network's server.",
+    "note": "Home page, Connections, and each connection to choose in the Network wizard (Change connection…): tooltip of a demo network connection's Edit… button."
+  },
+  "NetKindStep.kind.pickDemo": {
+    "message": "The demo network",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the step that asks which kind of connection to make: the name of the choice of the demo network (the project's public server)."
+  },
+  "NetKindStep.kind.pickDemo.note": {
+    "message": "The project's server gives the machine a small network that reaches only a few allowed hosts, such as Alpine's package mirror, with a daily allowance. Nothing to install, no account.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the step that asks which kind of connection to make: the line under “The demo network”."
+  },
+  "NetWizard.title.demo": {
+    "message": "New connection to the demo network",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections): its title on the step that makes a connection to the demo network."
+  },
+  "NetDemoStep.demo.note": {
+    "message": "The guest's traffic goes through the project's server, which reaches only the hosts it allows (for now Alpine's package mirror, so apk works) and refuses everything else. Each running machine gets a network of its own; other visitors' machines can't reach it.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step: its first text, what the connection is."
+  },
+  "NetDemoStep.demo.limits": {
+    "message": "Each address has a daily allowance of traffic, and a few machines at once. The page says when the allowance runs low and when it resets.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step: its second text, the server's limits."
+  },
+  "NetDemoStep.demo.advanced": {
+    "message": "Another server",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step: the folded section with the server's address (for a server of one's own)."
+  },
+  "NetDemoStep.demo.server": {
+    "message": "Server",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step, under “Another server”: the label of the field with the server's address (a wss:// URL; empty: the project's)."
+  },
+  "NetDemoStep.demo.server.note": {
+    "message": "Leave it empty for the project's server. Another must be a wss:// URL; only a server on your computer may use ws://.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step, under “Another server”: the note under the server's field."
+  },
+  "NetDetails.demo.note": {
+    "message": "The guest's traffic goes through the demo network's server, which reaches only the hosts it allows. The machine's network is its own: it closes when the guest is idle for a while and opens again when the guest sends something.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection to the demo network: its first text."
+  },
+  "NetDetails.demo.server": {
+    "message": "Server",
+    "note": "An adapter's details, for a connection to the demo network: the label of the server's address (a wss:// URL), with a Copy button."
+  },
+  "NetDetails.demo.status": {
+    "message": "Inside the guest",
+    "note": "An adapter's details, for a connection to the demo network: the label of a command to copy (curl and the gateway's /status URL) that shows the network's numbers inside the guest."
+  },
+  "NetDetails.demo.status.note": {
+    "message": "It prints the allowance used today, when it resets, and the destinations refused, so a script in the guest can tell why a download stopped.",
+    "note": "An adapter's details, for a connection to the demo network: the note under the command that shows the network's numbers inside the guest."
+  },
+  "demo-net.notURL": {
+    "message": "“{{input}}” isn't a URL. Enter one such as wss://demonet.example.org/.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step: the error when the server field isn't a URL. {{input}} is what was typed."
+  },
+  "demo-net.notWss": {
+    "message": "The demo network's server must be a wss:// URL. Only a server on your computer may use ws://.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step: the error when the server's URL isn't wss (or ws on your computer)."
+  },
+  "demo-net.versions": {
+    "message": "The demo network's server speaks another version of the protocol. Reload the page to get the current version of this web app.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the demo network): the server refused this page's protocol version (close code 4001)."
+  },
+  "demo-net.origin": {
+    "message": "The demo network's server doesn't accept this site.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the demo network): the server refused the page's origin (close code 4003), as it does for a copy of the web app hosted elsewhere."
+  },
+  "demo-net.protocol": {
+    "message": "This web app and the demo network's server disagreed (close code {{code}}).",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the demo network): the server closed the connection over a message it couldn't take (a bug of this web app's). {{code}} is the WebSocket close code (1002 or 1009)."
+  },
+  "demo-net.notFrames": {
+    "message": "The demo network's server sent a malformed message.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the demo network): the server sent something that isn't its framing (this web app closed the connection)."
+  },
+  "demo-net.unreached": {
+    "message": "This browser refused the demo network's address.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the demo network): the browser refused to open the WebSocket at all (a URL it blocks)."
+  },
+  "demo-net-worker.closed": {
+    "message": "The demo network's server closed the connection.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the demo network): the connection ended for good for another reason."
+  },
+  "demo-net.noExitNodes": {
+    "message": "A connection to the demo network has no exit nodes to choose from.",
+    "note": "The cause under “Couldn't use that exit node” (Network menu) on a demo network's connection. A detail line."
+  },
+  "demo-view.connecting": {
+    "message": "Connecting to the demo network…",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): opening the connection to the demo network's server."
+  },
+  "demo-view.reconnecting": {
+    "message": "Connecting to the demo network again…",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): opening a new connection after the last one ended (the guest gets a new network from the server)."
+  },
+  "demo-view.connected.address": {
+    "message": "Connected to the demo network ({{address}})",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): connected, the guest has its address from the server. {{address}} is the guest's IPv4 address."
+  },
+  "demo-view.connected": {
+    "message": "Connected to the demo network",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): connected, before the server's DHCP gave the guest an address."
+  },
+  "demo-view.idle": {
+    "message": "The demo network is idle. It connects again when the guest sends something.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server closed the guest's network after a while without traffic; the next packet from the guest opens a new one."
+  },
+  "demo-view.spent": {
+    "message": "Connected, but today's allowance is used up: nothing leaves the guest until {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the address's daily traffic allowance is spent; the guest's network stays but reaches nothing. {{when}} is when the allowance resets (the next UTC midnight)."
+  },
+  "demo-view.spent.noTime": {
+    "message": "Connected, but today's allowance is used up: nothing leaves the guest until it resets.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the address's daily traffic allowance is spent (the server didn't say when it resets)."
+  },
+  "demo-view.wait.unreachable": {
+    "message": "Couldn't reach the demo network's server. Trying again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the connection never opened (the server is down, or no internet here). {{when}} is the date and time it tries again (sooner at first, then less often)."
+  },
+  "demo-view.wait.lost": {
+    "message": "Lost the connection to the demo network. Trying again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the connection closed without the server saying why (the server or the way to it went down). {{when}} is the date and time it tries again."
+  },
+  "demo-view.wait.guests": {
+    "message": "This address already has as many machines on the demo network as the server allows (in this browser or others behind it). Trying again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server refused another network for this visitor's address (close code 4008). {{when}} is the date and time it tries again."
+  },
+  "demo-view.wait.site": {
+    "message": "The network this browser is on (with the addresses around it) already has as many machines on the demo network as the server allows. Trying again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server refused another network for this address's site, e.g. a campus or carrier network sharing addresses (close code 4008, site). {{when}} is the date and time it tries again."
+  },
+  "demo-view.wait.connections": {
+    "message": "Connected to the demo network too often in the last minute. Trying again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server refused this address's connections for a while (close code 4008, connections). {{when}} is the date and time it tries again."
+  },
+  "demo-view.wait.full": {
+    "message": "The demo network's server is full. Trying again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server has as many networks as it takes (close code 4009). {{when}} is the date and time it tries again."
+  },
+  "demo-view.wait.bytes": {
+    "message": "Today's allowance on the demo network is used up. It resets at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server refused the connection because this address's daily traffic allowance is spent (close code 4010). {{when}} is when it resets (the page connects again then)."
+  },
+  "demo-view.wait.maintenance": {
+    "message": "The demo network's server is restarting for maintenance. Trying again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server stopped for a restart (close code 4011). {{when}} is the date and time it tries again (when the server said it would be back)."
+  },
+  "demo-view.wait.session": {
+    "message": "The demo network's session ended after several hours. Connecting again at {{when}}.",
+    "note": "In the Network menu's status line for an adapter on the demo network (also the Home page's Network tab and the status bar's network item): the server ends a network after some hours, so long sessions go through its limits again (close code 4013). {{when}} is the date and time it tries again."
+  },
+  "demo-view.budget": {
+    "message": "{{used, bytes}} of today's {{limit, bytes}} used",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the traffic this address used today, of its daily allowance."
+  },
+  "demo-view.budget.resets": {
+    "message": "{{used, bytes}} of today's {{limit, bytes}} used (resets at {{when}})",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the traffic this address used today, of its daily allowance. {{when}} is when the count starts again (the next UTC midnight)."
+  },
+  "demo-view.refused_one": {
+    "message": "{{count}} destination refused (not allowed): {{names}}",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): how many connections or lookups the server refused because their destination isn't on its allowlist. {{names}} is the last few refused, newest first (host names, or addresses, with a port where there is one)."
+  },
+  "demo-view.refused_other": {
+    "message": "{{count}} destinations refused (not allowed): {{names}}",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): how many connections or lookups the server refused because their destination isn't on its allowlist. {{names}} is the last few refused, newest first (host names, or addresses, with a port where there is one)."
+  },
+  "demo-view.restart": {
+    "message": "The server restarts for maintenance at {{at}}.",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the server's owner announced a restart. {{at}} is when it goes down."
+  },
+  "demo-view.restart.back": {
+    "message": "The server restarts for maintenance at {{at}}, back by {{back}}.",
+    "note": "A line under the status line of an adapter on the demo network (the toolbar's Network menu, the Home page's Network tab): the server's owner announced a restart. {{at}} is when it goes down, {{back}} when it's expected back."
+  },
+  "demo-view.notice.budget": {
+    "message": "The demo network: this address has used {{percent}}% of today's allowance ({{used, bytes}} of {{limit, bytes}}).",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily traffic passed a threshold. {{percent}} is the threshold (80)."
+  },
+  "demo-view.notice.budget.resets": {
+    "message": "The demo network: this address has used {{percent}}% of today's allowance ({{used, bytes}} of {{limit, bytes}}). It resets at {{when}}.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily traffic passed a threshold. {{percent}} is the threshold (80); {{when}} is when the count starts again (the next UTC midnight)."
+  },
+  "demo-view.notice.spent": {
+    "message": "Today's allowance on the demo network is used up: the guest reaches nothing through it until {{when}}.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily traffic allowance is spent. {{when}} is when it resets (the next UTC midnight)."
+  },
+  "demo-view.notice.spent.noTime": {
+    "message": "Today's allowance on the demo network is used up: the guest reaches nothing through it until it resets.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the address's daily traffic allowance is spent (the server didn't say when it resets)."
+  },
+  "demo-view.notice.back": {
+    "message": "The demo network's allowance has reset: the guest reaches the allowed hosts again.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): a new day (or a larger allowance) after it was spent."
+  },
+  "demo-view.notice.restart": {
+    "message": "The demo network's server restarts for maintenance at {{at}}.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the server's owner announced a restart. {{at}} is when it goes down."
+  },
+  "demo-view.notice.restart.back": {
+    "message": "The demo network's server restarts for maintenance at {{at}}, and should be back by {{back}}.",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): the server's owner announced a restart. {{at}} is when it goes down, {{back}} when it's expected back."
+  },
+  "demo-view.notice.lost": {
+    "message": "Lost the connection to the demo network. Trying again…",
+    "note": "The message bar, while a machine runs with an adapter on the demo network (waarm64-demonet, the project's public server): a connected adapter's connection closed without the server saying why; the page tries again by itself."
   }
 }

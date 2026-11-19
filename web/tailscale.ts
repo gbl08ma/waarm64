@@ -4,6 +4,7 @@
 // (`{type: 'net', adapter: {ip: port}}`, web/gateway.ts `portBackend`). The
 // worker sends `{type: 'lease', lease}` on that port whenever the node's address
 // changes, so the guest's DHCP gets the address the client reports.
+import type { DemoNotice, DemoStatus } from './demo-net.ts';
 import type { Lease, Routes } from './gateway.ts';
 import { fromWire, MsgError, type WireError } from './msg.ts';
 import type { Reach6Options } from './reach6.ts';
@@ -25,8 +26,10 @@ export type NetMap = {
   /** The worker's: whether the internet's IPv6 answers through the exit node or tailcat's server (web/reach6.ts), while one is in use. */
   reached6?: boolean;
   /** Not a tailnet: the guest's network goes through a tailcat server (web/tailcat.ts), the local helper (web/local-net.ts),
-   * or a peer-to-peer room (web/room.ts, whose `peers` are the members reached). */
-  via?: 'tailcat' | 'local' | 'room';
+   * the demo network (web/demo-net.ts) or a peer-to-peer room (web/room.ts, whose `peers` are the members reached). */
+  via?: 'tailcat' | 'local' | 'demo' | 'room';
+  /** The demo network: what its client does and what its server last said (the lane, the budget, the refusals). */
+  demo?: DemoStatus;
   /** tailcat: whether an exit node carries the guest's traffic, and the machine's own address when it lets clients in. */
   tailcatExit?: boolean;
   serving?: string;
@@ -97,6 +100,8 @@ export type FromTailscale =
   /** The answer to `exitnode`: no `error` when it took, else the client's reason (web/msg.ts `toWire`). */
   | { type: 'exitnode'; error?: WireError }
   | { type: 'loggedout' }
+  /** Something for the message bar (the demo network's: a budget crossed, the lane changed, a restart announced). */
+  | { type: 'notice'; notice: DemoNotice }
   /** The client failed: why, as web/msg.ts `toWire` posts it (`fromWire` takes it back). */
   | { type: 'error'; error: WireError };
 

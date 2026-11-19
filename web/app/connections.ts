@@ -1,15 +1,17 @@
-// The browser's network connections (docs/networking/adapters.md §2): tailnets, tailcat, the local helper and peer-to-peer
-// rooms, each with its own state, which a machine's adapters attach to. Stored ones are records in IndexedDB `waarm64`
+// The browser's network connections (docs/networking/adapters.md §2): tailnets, tailcat, the local helper, the demo
+// network and peer-to-peer rooms, each with its own state, which a machine's adapters attach to. Stored ones are records in IndexedDB `waarm64`
 // `connections` (web/app/store.ts); their state stays where the clients keep it: a tailnet's node in `waarm64-tailscale`
 // under the profile `stateKey` (web/tailscale-state.ts), tailcat's served identity in `waarm64-tailcat` under
 // `identityKey` (web/tailcat.ts), a room's node key in `waarm64-room` under its `identityKey` (web/room.ts). Ephemeral
 // ones live only in this page's memory, state included. One running machine has a connection at a time: its Web
-// Lock (`connectionLock`, web/app/locks.ts). DOM-free: Node's tests run it over a memory store.
+// Lock (`connectionLock`, web/app/locks.ts); the demo network's excepted (`exclusive`: a socket each, any number). DOM-free: Node's tests run it over a memory store.
+import { DEMO_URL } from '../demo-net.ts';
 import { t } from '../i18n.ts';
 import { newTailcatIdentity, type TailcatIdentity } from '../tailcat.ts';
 import { RoomEntries } from './room-entries.ts';
 import { forgetRoomNames, keepExported, roomExportOf } from './room-export.ts';
 import { newRoomIdentity, parseRoomLink, roomName, type RoomIdentity } from '../room.ts';
+import { memoryState } from './connection-memory.ts';
 import { DEFAULT_CONTROL, parseControlURL, type NetworkSettings } from './network.ts';
 import { newId, uniqueName } from './shape.ts';
 import type { Store } from './store.ts';
@@ -45,6 +47,11 @@ export type LocalConnection = {
   url: string;
 };
 
+export type DemoConnection = {
+  /** The demo network's server, `wss://…` (web/demo-net.ts `DEMO_URL` by default; `parseDemoURL`). Not a secret. */
+  url: string;
+};
+
 export type RoomConnection = {
   /** The room's link (`waarm64-room:<id>?…`, web/room.ts `roomLink`): who has it can join (a secret, for a private room). */
   link: string;
@@ -62,13 +69,15 @@ export type Connection = {
   id: string;
   /** The user's; by default from the kind and the server. */
   name: string;
-  kind: 'tailnet' | 'tailcat' | 'local' | 'room';
+  kind: 'tailnet' | 'tailcat' | 'local' | 'demo' | 'room';
   /** Kept nowhere: gone when this page closes (§1.6). */
   ephemeral: boolean;
   tailnet?: TailnetConnection;
   tailcat?: TailcatConnection;
   /** The local helper on this computer (github.com/gbl08ma/waarm64-net, docs/plans/networking-local.md). */
   local?: LocalConnection;
+  /** The demo network (github.com/gbl08ma/waarm64-demonet, docs/networking/demo-network.md). */
+  demo?: DemoConnection;
   /** A peer-to-peer room (docs/networking/rooms.md). */
   room?: RoomConnection;
   /** Connect when a machine attached to it starts (off after Disconnect). */
@@ -94,6 +103,7 @@ export type NewConnection = {
   tailnet?: Omit<TailnetConnection, 'stateKey'>;
   tailcat?: Omit<TailcatConnection, 'identityKey' | 'identity'>;
   local?: LocalConnection;
+  demo?: DemoConnection;
   /** `keyOf`: another stored room connection's id, whose key this one shares; `key`: a pasted key (web/room.ts
    * `parseRoomKey`), which is another connection's when it has that key; neither: a new key of its own. `names`: the
    * owners' secret and titles a pasted export carried (web/names.ts `parseRoomExport`), kept as the new connection's. */
@@ -118,8 +128,16 @@ export type ConnectionState = {
   forgetNames?(identityKey: string): Promise<void>;
 };
 
+export { memoryState };
+
 /** The connection's Web Lock: held while a running machine has it (in any tab). */
 export const connectionLock = (id: string) => `waarm64-net:${id}`;
+
+/**
+ * Whether one running machine has the connection at a time (its lock, docs/networking/adapters.md §1 rule 4): every
+ * kind but the demo network's, where each adapter has a socket of its own and the server a network per socket.
+ */
+export const exclusive = (c: Pick<Connection, 'kind'>) => c.kind !== 'demo';
 
 /**
  * The lock on room node key `key`, which a running room connection holds beside its own: two connections on one key,
@@ -132,9 +150,10 @@ async function roomKeyLock(key: string): Promise<string> {
   return `waarm64-room-key:#${Array.from(h.subarray(0, 16), (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** A connection's default name: Tailscale, a Headscale's host, tailcat, This computer, or a room's name. */
+/** A connection's default name: Tailscale, a Headscale's host, tailcat, This computer, Demo network, or a room's name. */
 export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet' | 'room'>): string {
   if (c.kind === 'tailcat') return 'tailcat';
+  if (c.kind === 'demo') return t('network:connections.demoNetwork');
   if (c.kind === 'room') {
     const l = parseRoomLink(c.room?.link ?? '');
     return 'error' in l ? 'room' : roomName(l.room.id);
@@ -171,32 +190,29 @@ function roomOf(
   return { ...rest, identityKey, ...(identity ? { identity } : {}) };
 }
 
-/** State kept in memory, `waarm64-room`'s keys included (Node's tests). */
-export function memoryState(): ConnectionState {
-  const rooms = new Map<string, RoomIdentity>();
-  const names = new Map<string, string>();
-  const none = () => Promise.resolve();
-  return {
-    forgetTailnet: none,
-    forgetTailcat: none,
-    forgetRoom: (k) => {
-      rooms.delete(k);
-      return Promise.resolve();
-    },
-    readRoom: (k) => Promise.resolve(rooms.get(k)),
-    roomIdentity: (k) => {
-      const made = rooms.get(k) ?? newRoomIdentity();
-      rooms.set(k, made);
-      return Promise.resolve(made);
-    },
-    keepRoom: (k, i) => {
-      rooms.set(k, i);
-      return Promise.resolve();
-    },
-    exportNames: (k) => Promise.resolve(names.get(k)),
-    keepNames: (k, n) => Promise.resolve(void names.set(k, n)),
-    forgetNames: (k) => Promise.resolve(void names.delete(k)),
-  };
+/** A new connection's settings of its kind (`room`: a room's, made with its key). */
+function settingsFor(
+  o: NewConnection,
+  id: string,
+  ephemeral: boolean,
+  room: (r: NonNullable<NewConnection['room']>) => RoomConnection,
+): Partial<Connection> {
+  switch (o.kind) {
+    case 'tailnet':
+      return {
+        tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'waarm64', exitNode: '', ...o.tailnet, stateKey: id },
+      };
+    case 'local':
+      return { local: { url: o.local?.url ?? '' } };
+    case 'demo':
+      return { demo: { url: o.demo?.url ?? DEMO_URL } };
+    case 'tailcat': {
+      const identity = ephemeral ? { identity: newTailcatIdentity() } : {};
+      return { tailcat: { serve: false, relay: '', ...o.tailcat, identityKey: id, ...identity } };
+    }
+    case 'room':
+      return { room: room({ incoming: true, relayOnly: false, link: '', ...o.room }) };
+  }
 }
 
 /** The page's connections: the store's, and its own ephemeral ones. */
@@ -241,22 +257,7 @@ export class Connections {
       name: uniqueName(o.name?.trim() || defaultName(o), taken),
       kind: o.kind,
       ephemeral,
-      ...(o.kind === 'tailnet'
-        ? { tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'waarm64', exitNode: '', ...o.tailnet, stateKey: id } }
-        : {}),
-      ...(o.kind === 'local' ? { local: { url: o.local?.url ?? '' } } : {}),
-      ...(o.kind === 'tailcat'
-        ? {
-            tailcat: {
-              serve: false,
-              relay: '',
-              ...o.tailcat,
-              identityKey: id,
-              ...(ephemeral ? { identity: newTailcatIdentity() } : {}),
-            },
-          }
-        : {}),
-      ...(o.kind === 'room' ? { room: room({ incoming: true, relayOnly: false, link: '', ...o.room }) } : {}),
+      ...settingsFor(o, id, ephemeral, room),
       connectAtStart: o.connectAtStart ?? true,
       lastUsed: 0,
       created: Date.now(),

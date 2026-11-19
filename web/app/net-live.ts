@@ -5,7 +5,7 @@
 // toolbar's Network menu, the Network wizard and the Home page's Network tab and Connections drive it; web/app/areas/network-actions.ts
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { msg, MsgError } from '../i18n.ts';
-import { connectionLock, Connections, type Connection, type ConnectionState } from './connections.ts';
+import { connectionLock, Connections, exclusive, type Connection } from './connections.ts';
 import type { TailnetConnection } from './connections.ts';
 import type { Locks } from './locks.ts';
 import { NetClaims, type ClaimHere } from './net-claims.ts';
@@ -13,27 +13,12 @@ import { connectOf } from './net-connect.ts';
 import { KeptNodes, notLoggedOut } from './net-nodes.ts';
 import { createNetwork, type Network } from './network.ts';
 import { adapterViews, primary6Of, primaryOf, ranksOf, type AdapterView } from './network-view.ts';
+import { demoNotice } from './demo-view.ts';
+import type { PageNetworkOptions } from './net-options.ts';
 import type { Adapter } from './shape.ts';
-import type { Store } from './store.ts';
 import { Changes } from './changes.ts';
 
-export type PageNetworkOptions = {
-  /** The clients (tests' fakes; the page's: web/tailscale.ts, web/tailcat.ts). */
-  start?: Parameters<typeof createNetwork>[1];
-  startCat?: Parameters<typeof createNetwork>[2];
-  startLocal?: Parameters<typeof createNetwork>[3];
-  startRoom?: Parameters<typeof createNetwork>[4];
-  store: Store;
-  state?: ConnectionState;
-  /** The profiles that hold a kept node (web/tailscale-state.ts `keptProfiles`). */
-  kept?: () => Promise<string[]>;
-  /** The name of this page's machine (what another tab is told holds a connection). */
-  me: () => string;
-  /** Called when anything `views()`, `connections` or `held` show changed (the page's reads track it themselves). */
-  onChange?: () => void;
-  /** Saves adapter `index`'s attachment into the page's machine (its record, or a transient machine's settings). */
-  save: (index: number, connection: string | undefined) => Promise<void>;
-};
+export type { PageNetworkOptions };
 
 export class PageNetwork {
   readonly conns: Connections;
@@ -83,7 +68,13 @@ export class PageNetwork {
   }
 
   private fresh(): Network {
-    return createNetwork(() => this.changed(), this.o.start, this.o.startCat, this.o.startLocal, this.o.startRoom);
+    return createNetwork(() => this.changed(), this.o.start, this.o.startCat, this.o.startLocal, this.o.startRoom, {
+      startDemo: this.o.startDemo,
+      onNotice: (n) => {
+        const w = demoNotice(n);
+        this.o.notify?.(w.message, w.kind);
+      },
+    });
   }
 
   /** Stops adapter `i`'s client, if any, and lets its connection go; the adapter gets a new `Network` (its port goes with the old one). */
@@ -233,10 +224,14 @@ export class PageNetwork {
     await this.refresh();
   }
 
-  /** Why adapter `i` can't connect `c` now: the machine is off, `c`'s node is being logged out, another adapter runs it. */
+  /**
+   * Why adapter `i` can't connect `c` now: the machine is off, `c`'s node is being logged out, another adapter runs it
+   * (unless it isn't `exclusive`: the demo network gives each adapter a socket and a network of its own).
+   */
   private refusal(i: number, c: Connection): MsgError | undefined {
     if (!this.on) return new MsgError('network:net-live.off');
     if (this.claims.leaving.has(c.id)) return new MsgError('network:net-live.loggingOut', { name: c.name });
+    if (!exclusive(c)) return undefined;
     const other = this.running.findIndex((id, k) => id === c.id && k !== i);
     if (other >= 0) return new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 });
     return undefined;

@@ -5,7 +5,7 @@
   opened on it or from the pick step's Edit… (then Save and Back return to the pick step, Cancel closes).
   The shell: the session, the steps' navigation, Keep (a new connection is kept in this browser unless it's off:
   ephemeral, gone when the page closes), the error and the submit; each step is a component with its own form
-  (NetPickStep, NetKindStep, NetTailnetStep, NetTailcatStep, NetLocalStep, NetRoomPickStep, NetRoomStep;
+  (NetPickStep, NetKindStep, NetTailnetStep, NetTailcatStep, NetLocalStep, NetDemoStep, NetRoomPickStep, NetRoomStep;
   web/app/net-wizard.ts). The toolbar's Network menu and the Home page's Network tab and Connections open it; the
   page (web/app/areas/network-actions.ts) attaches and connects.
 -->
@@ -16,6 +16,7 @@
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
   import NetKindStep from './NetKindStep.svelte';
+  import NetDemoStep from './NetDemoStep.svelte';
   import NetLocalStep from './NetLocalStep.svelte';
   import NetPickStep from './NetPickStep.svelte';
   import NetRoomPickStep from './NetRoomPickStep.svelte';
@@ -51,6 +52,7 @@
   let tailnet = $state<StepApi>();
   let tailcat = $state<StepApi>();
   let local = $state<StepApi>();
+  let demo = $state<StepApi>();
   let roomPick = $state<StepApi>();
   let room = $state<StepApi>();
   const steps = $derived<Record<Step, StepApi | undefined>>({
@@ -59,6 +61,7 @@
     tailscale: tailnet,
     tailcat,
     local,
+    demo,
     roomPick,
     roomGlobal: room,
     roomCreate: room,
@@ -110,7 +113,7 @@
     keep = true;
     editFromPick = false;
     editing = o.mode === 'edit' ? net.connections.find((c) => c.id === o.connection) : undefined;
-    for (const s of [pick, kind, tailnet, tailcat, local, roomPick, room]) s?.begin();
+    for (const s of [pick, kind, tailnet, tailcat, local, demo, roomPick, room]) s?.begin();
     wizard?.open();
     if (editing) show(EDIT_STEP[editing.kind]);
     else if (o.localURL)
@@ -160,6 +163,7 @@
     kind: () => t('network:NetWizard.title.kind'),
     tailscale: () => t('network:NetWizard.title.tailnet'),
     local: () => t('network:NetWizard.title.local'),
+    demo: () => t('network:NetWizard.title.demo'),
     roomPick: () => t('network:NetWizard.title.room'),
     roomGlobal: () => t('network:NetWizard.title.roomGlobal'),
     roomCreate: () => t('network:NetWizard.title.roomCreate'),
@@ -185,6 +189,7 @@
   <NetRoomPickStep bind:this={roomPick} {flow} active={step === 'roomPick'} />
   <NetRoomStep bind:this={room} {flow} {net} {step} />
   <NetLocalStep bind:this={local} {flow} active={step === 'local'} />
+  <NetDemoStep bind:this={demo} {flow} active={step === 'demo'} />
   <NetTailnetStep bind:this={tailnet} {flow} active={step === 'tailscale'} />
   <NetTailcatStep bind:this={tailcat} {flow} active={step === 'tailcat'} />
   {#if !editing && MAKING_STEPS.has(step)}

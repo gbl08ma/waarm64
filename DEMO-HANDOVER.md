@@ -35,6 +35,17 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   code: the agent's HELLO sets the clock and marks the machine up. Test: `tests/page-alpine-agent.test.ts` (ci-net.sh,
   ~2 min).
 
+- **Loop 10, the page's side of the demo network, done** (2026-11-19, committed unpushed;
+  [docs/networking/demo-network.md](docs/networking/demo-network.md)): the connection kind `demo` (no lock: any machines
+  and adapters at once, a socket each; rules 2 and 4 of adapters.md and decisions.md's Network row changed), its client
+  (web/demo-net.ts in web/demo-net-worker.ts: `waarm64-demonet.v1`'s control messages kept as the status and notices,
+  reconnects by close code), its words (web/app/demo-view.ts; the Network menu's status, the message bar, the
+  details), the wizard's step (NetDemoStep.svelte), and **for loop 4: `attachDemoNetwork(store, machine, adapter = 0,
+  url?)` in web/app/net-demo.ts** (what `demo.network: "demo"` calls; `demoConnection` finds or makes the browser's one
+  record). Tests: `tests/demo-net.test.ts` (fake server), `tests/net-live.test.ts`'s demo case, and
+  `tests/page-demonet.test.ts` in `scripts/ci-net.sh` (Alpine against the fork built at the commit
+  `tests/waarm64-demonet.ts` pins, `73d9a2d`; `WAARM64_DEMONET_SRC` overrides; cloud sessions SKIP).
+
 ## Next: loop 3, the alpine-demo image
 
 `images/build.sh alpine-demo` (decision 14, the user's barebones list). What loops 1–2 leave for it:
@@ -60,6 +71,13 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
 None.
 
 ## Awaiting the user's review
+
+- **Loop 10:** the default server URL is a placeholder, **`wss://demonet.tny.im/` (web/demo-net.ts `DEMO_URL`): the
+  user's to confirm** once the fork is hosted (a connection keeps its URL: changing the default later needs a new
+  record or an edit). Engineering calls: a demo connection is made by the page itself (one stored record per URL, named
+  "Demo network"); a restarted machine keeps its socket; `budget?` asked each minute only while traffic moves; 4010
+  waits until the budget's reset; frames held (≤ 256 KiB) only while a socket opens; the message bar says 80 %, spent,
+  back, a restart announced and a lost connection, nothing for 4008/4009/4013 (the menu's status says those).
 
 - **Loop 1's engineering calls:** a chunked image's disk identity is now `{kind: 'url', chunked: <manifest id>, bytes}`
   (no path), for disks added from now on; disks added before keep their old identity (path + `etag`), so their

@@ -3,7 +3,8 @@
   (Details…, web/app/areas/network.ts `openDetails`), with what the menu leaves out to stay short. Its connection's
   settings and the values it gives out (the guest's address, a tailcat address or key, a room's name and link), each
   to copy, with what they let in and how to use them: tailcat's commands, the line that lets only this machine through
-  a tailcat server, the local helper's install lines; why a room's members go through the relay, when a direct path was
+  a tailcat server, the local helper's install lines, the demo network's server and the page inside the guest that
+  says its numbers; why a room's members go through the relay, when a direct path was
   wanted (the menu's warning opens it), and what may fix it. Edit connection… opens the Network wizard on the connection.
   It follows the adapter live (`net.views()`); always mounted, as the wizard is.
 -->
@@ -150,6 +151,29 @@
       </Note>
       <NetLocalInstall prefix="net-details-local" open={v.phase !== 'connected'} />
       <Note size="md"><T k="network:NetDetails.local.link" /></Note>
+    {:else if c.kind === 'demo' && c.demo}
+      <Note size="md">{t('network:NetDetails.demo.note')}</Note>
+      <ValueField
+        id="net-details-demo-url"
+        copyId="net-details-demo-url-copy"
+        label={t('network:NetDetails.demo.server')}
+        value={c.demo.url}
+        readonly
+        copy
+        mono
+      />
+      {#if v.demo?.status}
+        <ValueField
+          id="net-details-demo-status"
+          copyId="net-details-demo-status-copy"
+          label={t('network:NetDetails.demo.status')}
+          value={`curl ${v.demo.status}`}
+          readonly
+          copy
+          mono
+        />
+        <Note size="md">{t('network:NetDetails.demo.status.note')}</Note>
+      {/if}
     {:else if c.kind === 'room' && c.room}
       {#if v.room}
         <ValueField

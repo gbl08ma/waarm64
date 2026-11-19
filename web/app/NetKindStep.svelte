@@ -1,6 +1,6 @@
 <!--
   The Network wizard's choice of a new connection's kind (NetWizard.svelte): a tailnet, a tailcat exit or server, the
-  local helper on this computer, a room.
+  local helper on this computer, the demo network, a room.
 -->
 <script lang="ts">
   import Choice from './ui/Choice.svelte';
@@ -38,6 +38,9 @@
   </Choice>
   <Choice id="net-pick-local" label={t('network:NetKindStep.kind.pickLocal')} onclick={() => flow.go('local')}>
     {t('network:NetKindStep.kind.pickLocal.note')}
+  </Choice>
+  <Choice id="net-pick-demo" label={t('network:NetKindStep.kind.pickDemo')} onclick={() => flow.go('demo')}>
+    {t('network:NetKindStep.kind.pickDemo.note')}
   </Choice>
   <Choice id="net-pick-room" label={t('network:NetKindStep.kind.pickRoom')} onclick={() => flow.go('roomPick')}>
     {t('network:NetKindStep.kind.pickRoom.note')}
