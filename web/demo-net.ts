@@ -25,6 +25,8 @@ export const DEMO_URL = 'wss://demonet.tny.im/';
 /** The most a message may hold either way (waarm64-demonet `MaxMessage`): past it the server closes with 1009. */
 export const DEMO_MAX_MESSAGE = 1 << 20;
 
+/** The longest timer a wait arms at once (setTimeout's own limit is ~24.8 days): a longer wait re-arms. */
+const WAIT_STEP_MS = 86_400_000;
 /** The frames held while a socket opens (until its `hello`); past it they're dropped, as a link drops them. */
 export const DEMO_HOLD = 256 << 10;
 
@@ -446,8 +448,16 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
   /** Waits `ms`, then tries again, saying why (`resets`: the budget's, for 4010; `lane`, the slow lane's budget too). */
   function wait(why: DemoWhy, ms: number, resets?: string, lane?: 'slow') {
     setPhase('waiting');
-    status.wait = { why, at: env.now() + ms, ...(resets ? { resets } : {}), ...(lane ? { lane } : {}) };
-    timer = env.setTimeout(open, ms);
+    const at = env.now() + ms;
+    status.wait = { why, at, ...(resets ? { resets } : {}), ...(lane ? { lane } : {}) };
+    // In steps of at most a day: setTimeout fires at once past ~24.8 days (a 32-bit delay), and a maintenance notice or a
+    // budget's reset can be further away than that.
+    const step = () => {
+      const left = at - env.now();
+      timer = left > 0 ? env.setTimeout(step, Math.min(left, WAIT_STEP_MS)) : undefined;
+      if (left <= 0) open();
+    };
+    timer = env.setTimeout(step, Math.min(ms, WAIT_STEP_MS));
     change();
   }
   /** The next backoff's delay: doubling from `BACKOFF_MS`, at most `BACKOFF_MAX_MS`, the second half of it random. */

@@ -12,11 +12,14 @@ import { msgOf, MsgError } from '../msg.ts';
 import { importDefinition, parseDefinition, resolveUrls, type Definition } from './definitions.ts';
 import { fetchText, type DemoRef, type StoreDemo } from './demo-store.ts';
 import { withDemoNetwork } from './net-demo.ts';
-import type { MachineRecord } from './shape.ts';
+import { newMac, type MachineRecord } from './shape.ts';
 import { importSnapshot } from './snapshots.ts';
 import type { SnapshotRecord, Store } from './store.ts';
 
 export { resolveUrls };
+
+/** The largest template snapshot a demo may download (bytes), whatever its card says. */
+export const MAX_TEMPLATE = 1 << 30;
 
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
 const absolute = (url: string) => new URL(url, globalThis.location?.href).href;
@@ -69,47 +72,91 @@ function full(e: unknown) {
 export const gone = (url: string) => () =>
   new MsgError('machines:template.gone', undefined, { cause: new MsgError('machines:template.gone.cause', { url }) });
 
+/** What a template snapshot's download may hold: at most `download` bytes (its card's), and never past `MAX_TEMPLATE`. */
+type SnapshotFetch = {
+  id?: string;
+  download?: number;
+  progress?: (done: number, total: number) => void;
+  signal?: AbortSignal;
+};
+
+/** A download's failure as the visitor reads it (the headline, the cause under it). */
+const failed = (cause: unknown) => new MsgError('machines:template.download', undefined, { cause });
+
 /**
- * A chunked file fetched whole (a template snapshot), checked to be content `id` when given: a 404 says the demo's
- * files are gone; another file under the URL (a site republished meanwhile) is refused.
+ * A chunked file fetched whole (a template snapshot), checked to be content `id` when given, of at most `download`
+ * bytes (a store's card says it; another store's isn't trusted past that) and `MAX_TEMPLATE`: a 404 (the manifest's or
+ * a piece's) says the demo's files are gone; another file under the URL (a site republished meanwhile) is refused;
+ * the rest said as a failed download with why (a manifest that isn't one, a piece refused or wrong, the connection
+ * lost). `signal` aborts it, the browser's `AbortError` thrown.
  */
-async function fetchSnapshot(url: string, id?: string, progress?: (done: number, total: number) => void) {
+async function fetchSnapshot(url: string, o: SnapshotFetch = {}) {
   // The manifest once (its 404 in words), checked, and its pieces by it: each against its hash (fetchChunked).
-  const raw = JSON.parse(await fetchText(url, { demo: true, gone: gone(url) })) as Partial<Manifest>;
-  // The id the definition names must be the manifest's and its content's: the hashes' (the pieces are checked by them).
-  if (id !== undefined && (raw.id !== id || !Array.isArray(raw.hashes) || contentId(raw.hashes) !== id))
-    throw new MsgError('machines:template.otherSnapshot', undefined, {
-      cause: new MsgError('machines:template.otherSnapshot.cause'),
-    });
-  const manifest = checkManifest(raw);
+  const manifest = snapshotManifest(await fetchText(url, { demo: true, gone: gone(url), signal: o.signal }), o);
   try {
-    return await fetchChunked(url, { progress, manifest });
+    return await fetchChunked(url, { progress: o.progress, manifest, signal: o.signal });
   } catch (e) {
-    // A piece refused or the connection lost partway: nothing is kept, and trying again starts over.
-    if (e instanceof MsgError) throw e;
+    if (o.signal?.aborted) throw e;
+    // Nothing is kept, and trying again starts over.
+    const m = msgOf(e);
+    if (m?.key === 'disks:chunked.pieceStatus' && m.params?.status === 404) throw gone(url)();
+    if (m) throw failed(e);
+    // The connection lost partway.
     throw new MsgError('machines:template.cutOff', undefined, {
       cause: new MsgError('machines:template.cutOff.cause', { host: new URL(url).host }, { cause: e }),
     });
   }
 }
 
+/** A template snapshot's manifest `text` checked: a manifest, of content `o.id`, within `o.download` and `MAX_TEMPLATE`. */
+function snapshotManifest(text: string, o: SnapshotFetch): Manifest {
+  let raw: Partial<Manifest> | null;
+  try {
+    raw = JSON.parse(text) as Partial<Manifest> | null;
+  } catch {
+    raw = null;
+  }
+  if (!raw || typeof raw !== 'object') throw failed(new MsgError('disks:chunked.malformed'));
+  // The id the definition names must be the manifest's and its content's: the hashes' (the pieces are checked by them).
+  if (o.id !== undefined && (raw.id !== o.id || !Array.isArray(raw.hashes) || contentId(raw.hashes) !== o.id))
+    throw new MsgError('machines:template.otherSnapshot', undefined, {
+      cause: new MsgError('machines:template.otherSnapshot.cause'),
+    });
+  let manifest: Manifest;
+  try {
+    manifest = checkManifest(raw);
+  } catch (e) {
+    throw failed(e);
+  }
+  // Bounded before a piece is fetched: its pieces may all be one hosted piece named again and again.
+  const most = Math.min(o.download ?? MAX_TEMPLATE, MAX_TEMPLATE);
+  if (manifest.size > most)
+    throw new MsgError('machines:template.tooBig', undefined, {
+      cause: new MsgError('machines:template.tooBig.cause', { size: manifest.size, most }),
+    });
+  return manifest;
+}
+
 /**
  * Makes store demo `d`'s machine in this browser: its definition imported, marked `fromDemo`, its template snapshot
  * (if it has one) fetched first and kept to restore at its first start; its first adapter on the demo network if it
- * asks. The record is stored once, with all of that: a failure anywhere leaves no machine (so trying again makes one). Named as the definition says, with a suffix past the visitor's own
+ * asks. The record is stored once, with all of that: a failure anywhere leaves no machine (so trying again makes one);
+ * `signal` aborts the download (its `AbortError` thrown), and nothing is made. Named as the definition says, with a suffix past the visitor's own
  * machines' names (importDefinition's: a fresh copy is `Alpine (2)`). Returns the record as stored.
  */
 export async function machineFromDemo(
   store: Store,
   d: StoreDemo,
   progress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<{ machine: MachineRecord; snapshot?: SnapshotRecord }> {
   const { def } = d;
   const fromDemo = { store: d.store, id: def.demo.id };
   const snap = def.demo.snapshot;
   const o = { fromDemo, network: def.demo.network === 'demo' };
   if (snap) {
-    const { blob } = await fetchSnapshot(snap.manifest, snap.id, progress);
+    const { blob } = await fetchSnapshot(snap.manifest, { id: snap.id, download: def.demo.download, progress, signal });
+    signal?.throwIfAborted(); // nothing made yet: the page that asked is gone
     return machineFromTemplate(store, def, new File([blob], `${def.machine.name}.waarm64snap`), o);
   }
   const { machine } = await importDefinition(store, def, (m) => marked(m, store, o));
@@ -126,8 +173,23 @@ export function templateDefinition(d: StoreDemo): Definition {
   return def;
 }
 
-/** Makes store demo `d`'s machine as a template (`templateDefinition`); `toPick`: its disks that are files to pick. */
-export const machineFromStoreTemplate = (store: Store, d: StoreDemo) => importDefinition(store, templateDefinition(d));
+/**
+ * Makes store demo `d`'s machine as a template (`templateDefinition`); `toPick`: its disks that are files to pick. Its
+ * adapters get MACs of their own, as an empty machine's: the demo's recipe fixes one (its shape's), which two machines
+ * from the template on one network would share.
+ */
+export async function machineFromStoreTemplate(store: Store, d: StoreDemo) {
+  const taken = (await store.all('machines')).flatMap((m) => (m.adapters ?? []).map((a) => a.mac));
+  const fresh = (m: MachineRecord) => ({
+    ...m,
+    adapters: m.adapters?.map((a) => {
+      const mac = newMac(taken);
+      taken.push(mac);
+      return { ...a, mac };
+    }),
+  });
+  return importDefinition(store, templateDefinition(d), (m) => Promise.resolve(fresh(m)));
+}
 
 /**
  * A machine from a definition's URL: a demo's (`machineFromDemo`, the definition its own store), or, with `snapshot`
@@ -146,6 +208,6 @@ export async function machineFromUrls(
     const { machine } = await importDefinition(store, def);
     return { machine };
   }
-  const { blob } = await fetchSnapshot(new URL(snapshot, url).href, undefined, progress);
+  const { blob } = await fetchSnapshot(new URL(snapshot, url).href, { progress });
   return machineFromTemplate(store, def, new File([blob], `${def.machine.name}.waarm64snap`));
 }

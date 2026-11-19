@@ -1,6 +1,6 @@
 <!--
   A demo's card on the demo store's page (DemosPage.svelte; docs/frontend.md "The demo store"): a button, reached by
-  the keyboard, with its thumbnail (its alt text the demo's name), name, summary and download size, and whether the
+  the keyboard, with its thumbnail (decorative: the button's name is the demo's), name, summary and download size, and whether the
   visitor has it or an older version of it. Its words are the store's data, drawn as plain text, never as messages.
 -->
 <script lang="ts">
@@ -13,21 +13,22 @@
     /** The visitor has a machine from it (`mine`), or from a version it replaces (`older`). */
     mark?: 'mine' | 'older';
     onopen: () => void;
+    /** Takes the focus (the card the visitor came back from: All demos). */
+    focused?: boolean;
   };
-  let { demo, mark, onopen }: Props = $props();
+  let { demo, mark, onopen, focused = false }: Props = $props();
+  let button = $state<HTMLButtonElement>();
+  $effect(() => {
+    if (focused) button?.focus();
+  });
   const d = $derived(demo.def.demo);
   const name = $derived(demo.def.machine.name);
   const MARKS = { mine: 'machines:DemoCard.mine', older: 'machines:DemoCard.older' } as const;
 </script>
 
-<button class="card" onclick={onopen} data-demo={d.id}>
+<button class="card" onclick={onopen} data-demo={d.id} bind:this={button}>
   {#if d.thumbnail}
-    <img
-      src={d.thumbnail}
-      alt={t('machines:DemoCard.thumbnail.alt', { name })}
-      crossorigin="anonymous"
-      loading="lazy"
-    />
+    <img src={d.thumbnail} alt="" crossorigin="anonymous" loading="lazy" />
   {/if}
   <span class="name">{name}</span>
   <span class="summary">{d.summary}</span>

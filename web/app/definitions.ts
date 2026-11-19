@@ -287,8 +287,11 @@ function machineFrom(def: Definition, name: string, attachments: Attachment[], n
  * Makes a machine from definition `def` in this browser; returns it, and the names of the disks to pick at its first
  * start (files, and stored disks this browser doesn't have, which come back as files: their bytes aren't in it).
  * `finish`: what the record needs before it's stored (a template's snapshot kept under its id, its marks), given the
- * record; the machine is stored once, as it returns it. When it throws (or a disk can't be made) nothing is left: the
- * disks and overlays this import made go, and the machine's files (`finish`'s: a kept snapshot) with them.
+ * record; the machine is stored once, as it returns it (its attachments are this import's). `finish` runs before any
+ * record is written (its files are the machine's: without its record, the store's sweep takes them), and the disks,
+ * overlays and machine are written after it, at once: a tab closed during a template's long import leaves no disk record
+ * behind. When it throws (or a disk can't be made) nothing is left: the disks and overlays this import made go, and the
+ * machine's files (`finish`'s: a kept snapshot) with them.
  */
 export async function importDefinition(
   store: Store,
@@ -297,31 +300,49 @@ export async function importDefinition(
 ): Promise<{ machine: MachineRecord; toPick: string[] }> {
   const have = await store.all('disks');
   const now = Date.now();
-  const attachments: Attachment[] = [];
+  const planned: { x: DefinitionDisk; d: DiskRecord; same: boolean; a: Attachment }[] = [];
   const toPick: string[] = [];
+  for (const x of def.disks) {
+    const { d, same, pick } = diskFor(x, have, now);
+    if (pick) toPick.push(x.name);
+    if (!same) have.push(d);
+    planned.push({
+      x,
+      d,
+      same: !!same,
+      a: attachmentOf(
+        x,
+        d,
+        planned.map((p) => p.a),
+      ),
+    });
+  }
+  const names = (await store.all('machines')).map((m) => m.name);
+  let machine: MachineRecord = machineFrom(
+    def,
+    uniqueName(def.machine.name, names),
+    planned.map((p) => p.a),
+    now,
+  );
+  const attachments: Attachment[] = [];
   const made: string[] = [];
-  let machine: MachineRecord | undefined;
   try {
-    for (const x of def.disks) {
-      const { d, same, pick } = diskFor(x, have, now);
-      if (pick) toPick.push(x.name);
+    if (finish) machine = await finish(machine);
+    for (const { x, d, same, a } of planned) {
       if (!same) {
         await store.put('disks', d);
-        have.push(d);
         made.push(d.id);
       }
-      attachments.push(await withGrownOverlay(store, d, attachmentOf(x, d, attachments), x.overlaySize));
+      attachments.push(await withGrownOverlay(store, d, a, x.overlaySize));
     }
-    const names = (await store.all('machines')).map((m) => m.name);
-    machine = machineFrom(def, uniqueName(def.machine.name, names), attachments, now);
-    if (finish) machine = await finish(machine);
+    machine = { ...machine, attachments };
     await store.put('machines', machine);
     return { machine, toPick };
   } catch (e) {
     // Tidying up: the failure thrown is the one to report. The machine's files (and a snapshot's record) first, then the
     // grown overlays it made on disks it found, then the disks it made (their overlays with them).
     const tidy = (f: Promise<unknown>) => f.catch(() => undefined);
-    if (machine) await tidy(store.deleteMachine(machine.id));
+    await tidy(store.deleteMachine(machine.id));
     for (const { overlay, disk } of attachments)
       if (overlay && !made.includes(disk)) await tidy(store.deleteOverlay(overlay));
     for (const id of made) await tidy(store.deleteDisk(id));

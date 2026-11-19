@@ -5,8 +5,11 @@ import type { Browser, Page } from 'playwright-core';
 
 export type Start = { disks: { overlay?: string }[]; plan?: { slot: number; action: string; overlay?: string }[]; snapshot: boolean };
 
-/** The machine worker as a stand-in: each start recorded (`window.__starts`) and answered "off"; a stop, "stopped". */
-export const standIn = (page: Page) => page.addInitScript(() => {
+/**
+ * The machine worker as a stand-in: each start recorded (`window.__starts`) and answered "off" (`live`: "running", a
+ * machine that runs on); a stop, "stopped".
+ */
+export const standIn = (page: Page, live = false) => page.addInitScript((live) => {
   const Real = window.Worker;
   const starts: unknown[] = [];
   (window as unknown as { __starts: unknown[] }).__starts = starts;
@@ -22,12 +25,12 @@ export const standIn = (page: Page) => page.addInitScript(() => {
       const answer = (data: unknown) => setTimeout(() => this.onmessage?.(new MessageEvent('message', { data })));
       if (msg.type === 'start') {
         starts.push({ disks: (msg.disks ?? []).map((d) => ({ overlay: d.overlay })), plan: msg.plan, snapshot: !!msg.snapshot });
-        answer({ type: 'state', state: 'off' });
+        answer({ type: 'state', state: live ? 'running' : 'off' });
       }
       if (msg.type === 'stop') answer({ type: 'stopped' });
     }
   };
-});
+}, live);
 
 /** A template's machine made in a fresh profile: its definition, a snapshot file of it, the snapshot's shape hash. */
 export async function makeTemplate(browser: Browser, base: string): Promise<{ def: { disks: object[] } & Record<string, unknown>; snapshot: number[]; hash: string }> {

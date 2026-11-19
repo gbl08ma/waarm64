@@ -397,7 +397,10 @@ what came of it. A renewal keeps an address
 that is still right (open connections live on), and the gateway's NAK of one it doesn't hold has the client ask afresh.
 Where the agent can't (none within 20 s, no `CAP.LEASE`, LEASED not 0, no answer in 60 s), each connected card's link
 flaps instead: the run's link port to its device (`Run.netLinks`, `{type: 'flap'}`) → `FLAP_MS`, 7 s down (net
-below). **Meanwhile a card's own flaps are held** (web/devices.ts `Backend.restored`, `HOLD_MS` 120 s at most): a
+below). **Meanwhile a card's own flaps are held** (web/devices.ts `Backend.restored`; once the page's network is
+connected, `HOLD_MS` 120 s at most: the page says so on each card's link, `{type: 'connected'}`, when `NetSettled.when`
+resolves, so a demo server that keeps the card waiting for minutes, full or crowded, doesn't use the bound up before the
+LEASE it's for; until then the hold has no bound, and the card nothing to renew a lease from): a
 template made offline (or on the page's gateway) restored onto the local helper or the demo network switches its card
 onto their frames as they connect, which flaps it, and a flap then would take the link down under the agent's LEASE: the
 renewal it starts goes out on a dead link (udhcpc, which doesn't watch the carrier, then waits for its next try: the

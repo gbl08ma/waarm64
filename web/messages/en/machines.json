@@ -1819,10 +1819,6 @@
     "message": "These demos are from {{host}}.",
     "note": "Demo store's page: a small line over the cards of another store than the project's, once the visitor accepted its warning. {{host}}: its server's host name."
   },
-  "DemoCard.thumbnail.alt": {
-    "message": "A screenshot of <name>{{name}}</name>",
-    "note": "Demo store's page: the alt text of a demo's picture, on its card and in its details. {{name}}: the demo's name (the store's words)."
-  },
   "DemoCard.download": {
     "message": "{{size, bytes}} to download",
     "note": "Demo store's page: a line on a demo's card: what choosing it downloads. {{size}}: the bytes."
@@ -1970,5 +1966,17 @@
   "template.full": {
     "message": "There's no room for the demo in this browser",
     "note": "Error headline on the demo store's page when the browser's storage refused the demo's snapshot (full). Its details are the line under it (disks:overlay.storageFull or disks:overlay.storageFull.numbers)."
+  },
+  "template.download": {
+    "message": "Couldn't download the demo",
+    "note": "Error headline on the demo store's page when a demo's snapshot couldn't be downloaded for a reason the line under it says (its manifest isn't one, the server refused a piece, a piece arrived damaged): disks:chunked.malformed, disks:chunked.pieceStatus, disks:chunked.pieceWrong."
+  },
+  "template.tooBig": {
+    "message": "This demo is larger than its card says",
+    "note": "Error headline on the demo store's page when a demo's snapshot on the server is larger than the download its card states (or past the most a demo may download): nothing was downloaded. Its details are the line under it (machines:template.tooBig.cause)."
+  },
+  "template.tooBig.cause": {
+    "message": "Its snapshot is {{size, bytes}}, more than the {{most, bytes}} it may download. The store may be broken: nothing was downloaded.",
+    "note": "Error details, the cause under the headline machines:template.tooBig, on the line under it in the same place. {{size}}: the snapshot's bytes on the server; {{most}}: the card's download, or the page's limit when that is less."
   }
 }

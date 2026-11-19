@@ -17,7 +17,7 @@ import { usb } from './areas/usb.svelte.ts';
 import { AgentActions } from './areas/agent-actions.ts';
 import { agentShown } from './areas/agent-shown.ts';
 import { status } from './areas/status.svelte.ts';
-import { LeaseActions } from './areas/lease-actions.ts';
+import { cardLinks, LeaseActions } from './areas/lease-actions.ts';
 import { compactor, TrimActions } from './areas/trim-actions.ts';
 import { GrowActions } from './areas/grow-actions.ts';
 import { keyboardFollow, runLayout } from './areas/keyboard-follow.ts';
@@ -148,9 +148,7 @@ const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown(p
 const leaseActions = new LeaseActions({
   whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
   link: () => agentActions.link,
-  flap: (i) => machine.run?.netLinks[i]?.postMessage({ type: 'flap' }),
-  settled: (renewed) =>
-    machine.run?.netLinks.forEach((l, i) => l.postMessage({ type: 'settled', renewed: renewed.includes(i) })),
+  ...cardLinks(() => machine.run?.netLinks ?? []),
 });
 const trimActions = new TrimActions(agentActions, messages, compactor(machine, replies.worker), current);
 screen.onSent = (size) => agentActions.display(size);

@@ -175,31 +175,52 @@ export async function chunkedHead(url: string, n = 32): Promise<{ manifest: Mani
 /**
  * A chunked file fetched whole (a template snapshot: docs/machines.md "A machine from a template"): its pieces, `at
  * once` at a time, each checked against its hash (they are content-addressed: a piece that doesn't match is a broken
- * copy), joined into one Blob in order. `progress` is told the bytes so far; `manifest`: its manifest already fetched
- * (and checked again here), not fetched twice. Throws on a piece that is missing or wrong.
+ * copy), joined into one Blob in order (each piece a Blob as it comes, which the browser may keep on disk rather than in
+ * memory). `progress` is told the bytes so far; `manifest`: its manifest already fetched (and checked again here), not
+ * fetched twice; `signal` aborts it (its `AbortError` thrown). Throws on a piece that is missing or wrong
+ * (`disks:chunked.pieceStatus`, with the status; `disks:chunked.pieceWrong`), or the network's error; the first failure
+ * stops the other pieces' downloads.
  */
 export async function fetchChunked(
   url: string,
-  o: { atOnce?: number; progress?: (done: number, total: number) => void; manifest?: Manifest } = {},
+  o: { atOnce?: number; progress?: (done: number, total: number) => void; manifest?: Manifest; signal?: AbortSignal } = {},
 ): Promise<{ manifest: Manifest; blob: Blob }> {
   const abs = new URL(url, globalThis.location?.href).href;
   const m = o.manifest ? checkManifest(o.manifest) : await fetchManifest(abs);
-  const parts: Uint8Array[] = new Array<Uint8Array>(m.hashes.length);
+  const parts: Blob[] = new Array<Blob>(m.hashes.length);
+  const stop = new AbortController();
+  const signal = o.signal ? AbortSignal.any([o.signal, stop.signal]) : stop.signal;
   let next = 0;
   let done = 0;
   const one = async () => {
     while (next < m.hashes.length) {
+      signal.throwIfAborted();
       const i = next++;
-      const r = await fetch(new URL(m.pieces.replace('{hash}', m.hashes[i]), abs));
-      if (!r.ok) throw new Error(`${url}: piece ${i}: ${r.status}`);
+      const r = await fetch(new URL(m.pieces.replace('{hash}', m.hashes[i]), abs), { signal });
+      if (!r.ok) {
+        void r.body?.cancel();
+        throw new MsgError('disks:chunked.pieceStatus', { index: i, status: r.status });
+      }
       const b = new Uint8Array(await r.arrayBuffer());
       if (b.length !== Math.min(m.piece, m.size - i * m.piece) || (await sha256(b)) !== m.hashes[i])
-        throw new Error(`${url}: piece ${i} isn't the one the manifest names`);
-      parts[i] = b;
+        throw new MsgError('disks:chunked.pieceWrong', { index: i });
+      parts[i] = new Blob([b]);
       done += b.length;
       o.progress?.(done, m.size);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(o.atOnce ?? 6, m.hashes.length) }, one));
-  return { manifest: m, blob: new Blob(parts as BlobPart[]) };
+  o.progress?.(0, m.size); // its size known: the progress shows from the start
+  const workers = Array.from({ length: Math.min(o.atOnce ?? 6, m.hashes.length) }, () =>
+    one().catch((e: unknown) => {
+      stop.abort(); // the first failure: the others stop (their AbortErrors aren't the one thrown)
+      throw e;
+    }),
+  );
+  try {
+    await Promise.all(workers);
+  } catch (e) {
+    await Promise.allSettled(workers);
+    throw o.signal?.aborted ? (o.signal.reason as Error) : e;
+  }
+  return { manifest: m, blob: new Blob(parts) };
 }

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEMO_SUBPROTOCOL, DEMO_URL, demoNetmap, HEALTHY_MS, parseDemoURL, startDemoNet, type DemoEnv, type DemoNotice, type FramePort, type SocketLike } from '../web/demo-net.ts';
 import { frameMessage, framesOf } from '../web/local-net.ts';
-import { demoNotice } from '../web/app/demo-view.ts';
+import { demoNotice, refusalText } from '../web/app/demo-view.ts';
 import { viewOf } from '../web/app/network-view.ts';
 import { t } from '../web/i18n.ts';
 import { msgOf } from '../web/msg.ts';
@@ -462,4 +462,30 @@ test("the slow lane's words: the status line, the slow budget and the lane's ter
     const m = demoNotice(n).message;
     assert.doesNotMatch(t(m.key, m.params), /\{\{/);
   }
+});
+
+test("#14: a reconnect or budget reset weeks away waits in steps setTimeout can hold, not at once in a loop", () => {
+  const MAX = 2 ** 31 - 1; // setTimeout's longest delay: a longer one fires at once
+  for (const [code, reason, field] of [[4011, 'maintenance', 'reconnect_after'], [4010, 'bytes', 'resets']] as const) {
+    const h = harness(() => 0);
+    const armed: number[] = [];
+    const set = h.env.setTimeout;
+    h.env.setTimeout = (f, ms) => { armed.push(ms); return set(f, ms); };
+    h.last().accept();
+    h.last().hello();
+    const at = T0 + 40 * 86_400_000; // 40 days on
+    h.last().text({ type: 'closing', code, reason, [field]: iso(at) });
+    h.last().end(code, reason);
+    assert.equal(h.net.status().wait?.at, at, `${code}: said for when the server named`);
+    assert.ok(armed.every((ms) => ms <= MAX), `${code}: a timer of ${Math.max(...armed)} ms`);
+    h.advance(39 * 86_400_000);
+    assert.equal(h.sockets.length, 1, `${code}: not before`);
+    assert.ok(armed.every((ms) => ms <= MAX), `${code}: re-armed past setTimeout's range`);
+    h.advance(86_400_000);
+    assert.equal(h.sockets.length, 2, `${code}: then a new socket`);
+  }
+});
+
+test("the fork's `unresolved` refusal (an allowed name without an IPv4 address) has words of its own", () => {
+  assert.equal(refusalText({ reason: 'unresolved', name: 'gone.example', port: 443 }), t('network:demo-view.refusal', { what: 'gone.example:443', why: t('network:demo-view.reason.unresolved') }));
 });

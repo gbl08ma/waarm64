@@ -601,10 +601,15 @@ another version) is a `MsgError` (`machines:demo-store.*`). `OUR_STORE` is `http
 
 **A demo's machine** (`machineFromDemo`, web/app/template.ts): its snapshot fetched first, its manifest once (a 404 is
 `machines:template.gone`, "this demo's files are gone"; a manifest whose `id`, or its hashes' content id, isn't the
-card's is refused: the site was republished meanwhile) and its pieces by that manifest; then §6.1's machine, marked
+card's is refused: the site was republished meanwhile; one larger than the card's `download`, or than `MAX_TEMPLATE`,
+1 GiB, is refused before a piece is fetched, since a store that isn't ours could name one hosted piece ten thousand
+times) and its pieces by that manifest (each kept as a Blob as it comes, which Chromium may keep on disk; the first
+failure aborts the others; `signal` aborts them all: the store's page's interstitial gone); then §6.1's machine, marked
 **`fromDemo: {store, id}`** (the store's URL as fetched, absolute), and its first adapter on the demo network when the
 card asks (`withDemoNetwork`, web/app/net-demo.ts). The snapshot is kept under the machine's id before its record is
-stored, and the record is stored once with all its marks (`importDefinition`'s `finish`): any failure (the download,
+stored, and the record is stored once with all its marks (`importDefinition`'s `finish`, which runs before any record
+is written: the disks, overlays and machine are written after it, at once, so a tab closed during the snapshot's copy
+leaves only files the store's sweep takes): any failure (the download,
 the storage full, the demo connection) leaves no machine and none of the disks or overlays the import made, so trying
 again makes one machine. `demoMachines` finds this browser's machines from a card (`mine`: "started
 before", the most recently changed first) and from the versions it replaces (`older`). `fromDemo` isn't in the shape or
@@ -622,7 +627,8 @@ demo made and restored at its first start in Chromium).
 (`demo-store.ts` `templatesOf`, in the store's order, by their name and summary), so a new machine needs no disk image of
 the user's own. A template is the demo's definition without its `demo` (`template.ts` `templateDefinition`,
 `machineFromStoreTemplate`): its machine and disks (the URL disk at the store's URL, the same disk record as the demo's
-by identity, an overlay of its own), and nothing of the demo: no template snapshot (a cold boot from power on, nothing
+by identity, an overlay of its own; its adapters with MACs of their own, as an empty machine's, not the recipe's fixed
+one, which two machines from the template on one network would share), and nothing of the demo: no template snapshot (a cold boot from power on, nothing
 downloaded first), no demo network (the adapters without a connection, as any new machine's), no `fromDemo` (its card
 doesn't find it as started before: it's the user's own machine, as a demo's copy is). The flag is opt-in, the store's
 author's choice per demo: a demo made to show one thing (a game, a 3D test) or a second demo of the same image isn't a

@@ -71,7 +71,8 @@ export type Page = {
   closeMachines(): void;
   /** The demo store's page (web/app/DemosPage.svelte): opened (on the store shown last), Back, a demo chosen in it. */
   openDemos(route?: DemosRoute): void;
-  closeDemos(): void;
+  /** `back`: to where it was opened from (Home or the machine); false: to the machine. */
+  closeDemos(back?: boolean): void;
   chooseDemo(id?: string): void;
   /** Whether opening machine `id` (undefined: one not made yet) may stop the one running here: asks if it must. */
   askSwitch(id?: string): Promise<boolean>;

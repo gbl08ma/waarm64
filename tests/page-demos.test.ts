@@ -47,30 +47,32 @@ after(async () => {
   close?.();
 });
 
-type Site = { down?: boolean; gone?: boolean; cut?: boolean; requests: string[] };
+type Site = { down?: boolean; gone?: boolean; cut?: boolean; requests: string[]; held?: Promise<void>; storeHeld?: Promise<boolean> };
 /** A store at `origin` with the demo (`down`: unreachable; `gone`: its snapshot 404s; `cut`: its piece's download fails). */
 const site = (origin: string, s: Site) => async (r: Route) => {
   const url = r.request().url();
   s.requests.push(url);
   const path = new URL(url).pathname;
   if (s.down) return r.abort('connectionrefused');
+  if (path === '/store.json' && s.storeHeld && !(await s.storeHeld)) return r.abort('connectionrefused').catch(() => undefined);
+  if (path === `/pieces/${piece}.bin` && s.held) await s.held;
   if (path === '/store.json') return r.fulfill({ headers: CORS, json: { type: 'waarm64-store', version: 1, name: 'Another', demos: [def] } });
   if (path === '/alpine/manifest.json') return r.fulfill({ headers: CORS, json: {} }); // there (Open my machine checks it)
   if (path === '/alpine/thumb.png') return r.fulfill({ headers: CORS, contentType: 'image/png', body: PNG });
   if (path === '/alpine/snapshot.json' && !s.gone)
     return r.fulfill({ headers: CORS, json: { format: 'waarm64-chunked-1', size: snapshot.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [piece], id: SNAP } });
-  if (path === `/pieces/${piece}.bin`) return s.cut ? r.abort('connectionreset') : r.fulfill({ headers: CORS, body: Buffer.from(snapshot) });
+  if (path === `/pieces/${piece}.bin`) return (s.cut ? r.abort('connectionreset') : r.fulfill({ headers: CORS, body: Buffer.from(snapshot) })).catch(() => undefined); // aborted by the page meanwhile
   return r.fulfill({ status: 404, headers: CORS });
 };
 
 /** A fresh profile's page with the stand-in worker and the stores answered. */
-async function visitor(s: Site = { requests: [] }, other: Site = { requests: [] }): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
+async function visitor(s: Site = { requests: [] }, other: Site = { requests: [] }, live = false): Promise<{ ctx: BrowserContext; page: Page; errors: string[] }> {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
-  await standIn(page);
+  await standIn(page, live);
   await ctx.route(`${OURS}/**`, site(OURS, s));
   await ctx.route(`${OTHER}/**`, site(OTHER, other));
   return { ctx, page, errors };
@@ -89,7 +91,7 @@ test("a first visit opens the store; a card's Start makes the machine, opened in
   await page.goto(`${base}/web/app/?firstvisit=1`);
   await page.locator('[data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
   assert.equal(await onPage(page), 'demos', 'the first visit lands on the store');
-  assert.equal(await page.locator('[data-demo="alpine-term"] img').getAttribute('alt'), t('machines:DemoCard.thumbnail.alt', { name: 'Alpine' }));
+  assert.equal(await page.locator('[data-demo="alpine-term"] img').getAttribute('alt'), '', "decorative: the button's name is the demo's (#15)");
   await page.locator('[data-demo="alpine-term"]').focus();
   await page.keyboard.press('Enter'); // the card is reached and opened by the keyboard
   await page.locator('[data-action="start-demo"]:not([disabled])').waitFor({ timeout: 10_000 });
@@ -217,6 +219,116 @@ test("failures in words: the store's server down (Try again), the demo's files g
   await page.waitForFunction((w) => document.querySelector('.start [role="alert"]')?.textContent?.includes(w), t('machines:template.cutOff'), { timeout: 30_000, polling: 50 });
   assert.equal((await machines(page)).length, 0, 'no machine from a failed download');
   assert.equal(await onPage(page), 'demos');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+// REVIEW.md (review/demo-page-2) #1, #2, #7, #8, #9, #15.
+const focused = (page: Page) => page.evaluate(() => { const a = document.activeElement; return a?.getAttribute('data-demo') ?? a?.tagName; });
+
+test("#1: a demo's start belongs to its interstitial: left mid-download (All demos, Back), its download stops and nothing opens", async () => {
+  for (const leave of ['[data-action="all-demos"]', '.demos [data-action="back"]']) {
+    let release!: () => void;
+    const s: Site = { requests: [], held: new Promise((r) => (release = r)) };
+    const { ctx, page, errors } = await visitor(s);
+    const failed: string[] = [];
+    page.on('requestfailed', (r) => failed.push(r.url()));
+    await page.goto(`${base}/web/app/#home`);
+    await ready(page);
+    await page.locator('[data-machine="demos"]').click();
+    await page.locator('[data-demo="alpine-term"]').click({ timeout: 30_000 });
+    await page.locator('[data-action="start-demo"]:not([disabled])').click({ timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector('progress') || document.querySelector('[data-field="progress"]'), null, { timeout: 30_000, polling: 50 });
+    for (let i = 0; i < 300 && !s.requests.some((u) => u.includes('/pieces/')); i++) await page.waitForTimeout(50);
+    await page.locator(leave).click();
+    for (let i = 0; i < 100 && !failed.some((u) => u.includes('/pieces/')); i++) await page.waitForTimeout(50);
+    assert.ok(failed.some((u) => u.includes('/pieces/')), `${leave}: the download kept going`);
+    release();
+    await page.waitForTimeout(1500);
+    assert.equal((await machines(page)).length, 0, `${leave}: a machine made`);
+    assert.equal((await starts(page)).length, 0, `${leave}: a machine opened`);
+    assert.notEqual(await onPage(page), 'machine', `${leave}: the page jumped to the machine`);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test("#2, #9, #15: Open my machine for the machine running here opens it, not Home; a demo's view isn't saved as the visitor's; focus and names", async () => {
+  const { ctx, page, errors } = await visitor(undefined, undefined, true);
+  await page.goto(`${base}/web/app/#demos?id=alpine-term`);
+  await page.locator('[data-action="start-demo"]:not([disabled])').waitFor({ timeout: 30_000 });
+  assert.equal(await focused(page), 'H3', "the demo's name takes the focus (#15)");
+  await page.locator('[data-action="start-demo"]').click();
+  await page.waitForFunction(() => document.body.dataset.page === 'machine' && document.body.dataset.state === 'running', null, { timeout: 30_000, polling: 50 });
+  assert.equal(await page.evaluate(() => document.body.dataset.view), 'terminal');
+  const kept = await page.evaluate(async () => ((await import('/web/app/settings.ts' as string)).settings() as { view?: string }).view);
+  assert.notEqual(kept, 'terminal', "the demo's view saved as the visitor's (#9)");
+  await page.locator('#machines-open').click();
+  await page.locator('[data-machine="demos"]').click();
+  await page.locator('[data-demo="alpine-term"]').click({ timeout: 30_000 });
+  await page.locator('[data-action="open-mine"]:not([disabled])').click({ timeout: 10_000 });
+  await page.waitForFunction(() => document.body.dataset.page !== 'demos', null, { timeout: 10_000, polling: 50 });
+  assert.equal(await onPage(page), 'machine', 'its machine, not Home (#2)');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("#15: All demos gives the focus back to the demo's card; the download's progress has a name", async () => {
+  let release!: () => void;
+  const s: Site = { requests: [], held: new Promise((r) => (release = r)) };
+  const { ctx, page } = await visitor(s);
+  await page.goto(`${base}/web/app/#demos`);
+  await page.locator('[data-demo="alpine-term"]').click({ timeout: 30_000 });
+  await page.locator('[data-action="all-demos"]').click();
+  await page.locator('[data-demo="alpine-term"]').waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-demo') === 'alpine-term', null, { timeout: 5_000, polling: 50 }).catch(() => undefined);
+  assert.equal(await focused(page), 'alpine-term', 'the focus fell to the body');
+  await page.locator('[data-demo="alpine-term"]').click();
+  await page.locator('[data-action="start-demo"]:not([disabled])').click({ timeout: 10_000 });
+  await page.locator('[data-field="progress"] progress').waitFor({ timeout: 30_000 });
+  assert.equal(await page.locator('[data-field="progress"] progress').getAttribute('aria-label'), t('machines:DemoStart.busy.download'));
+  release();
+  await ctx.close();
+});
+
+test("#7: a store's read that's no longer the one shown doesn't show its failure or its busy state", async () => {
+  let answer!: (ok: boolean) => void;
+  const other: Site = { requests: [], storeHeld: new Promise((r) => (answer = r)) };
+  const { ctx, page, errors } = await visitor(undefined, other);
+  await page.goto(`${base}/web/app/#demos?store=${encodeURIComponent(`${OTHER}/store.json`)}`);
+  await page.locator('.demos [role="status"]').waitFor({ timeout: 30_000 });
+  for (let i = 0; i < 200 && !other.requests.length; i++) await page.waitForTimeout(50);
+  await page.evaluate(() => (location.hash = '#demos')); // our store instead, while theirs still loads
+  await page.locator('[data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
+  answer(false); // theirs fails now
+  await page.waitForTimeout(1000);
+  assert.equal(await page.locator('[data-field="store-error"]').count(), 0, "the old read's failure shown over our store");
+  assert.equal(await page.locator('[data-demo="alpine-term"]').count(), 1);
+  assert.equal(await page.locator('.demos [role="status"]').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("#8: the browser's Back retraces the store: a demo's panel to the cards, the cards to Home; Forward again", async () => {
+  const { ctx, page, errors } = await visitor();
+  await page.goto(`${base}/web/app/#home`);
+  await ready(page);
+  await page.locator('[data-machine="demos"]').click();
+  await page.locator('[data-demo="alpine-term"]').click({ timeout: 30_000 });
+  await page.locator('article[data-demo="alpine-term"]').waitFor();
+  await page.goBack();
+  await page.locator('ul.cards [data-demo="alpine-term"]').waitFor({ timeout: 10_000 });
+  assert.equal(await page.locator('article[data-demo]').count(), 0, "the demo's panel left");
+  assert.equal(await onPage(page), 'demos');
+  await page.goBack();
+  await page.waitForFunction(() => document.body.dataset.page === 'machines', null, { timeout: 10_000, polling: 50 });
+  assert.match(page.url(), /#home$/);
+  await page.goForward();
+  await page.waitForFunction(() => document.body.dataset.page === 'demos', null, { timeout: 10_000, polling: 50 });
+  await page.locator('[data-demo="alpine-term"] [data-mark], ul.cards [data-demo="alpine-term"]').first().waitFor();
+  await page.reload();
+  await page.locator('ul.cards [data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
+  assert.equal(await onPage(page), 'demos', 'a reload keeps the store');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

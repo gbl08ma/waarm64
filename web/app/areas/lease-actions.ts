@@ -29,11 +29,20 @@ export type LeaseDeps = {
   link(): AgentLink | undefined;
   /** Flaps card `i`'s link. */
   flap(i: number): void;
+  /** The page's network is connected: the restore's leases are renewed now (each card's hold is bounded from here). */
+  connected(): void;
   /** Done with the restore's leases: `renewed` the cards the agent renewed (each card's held flap is dropped or done). */
   settled(renewed: number[]): void;
   /** Ms to wait (the tests' are shorter). */
   waits?: { grace: number; agent: number; leased: number };
 };
+
+/** What the actions tell the cards, through their links (web/devices.ts `net`): `links` the run's, by adapter. */
+export const cardLinks = (links: () => MessagePort[]): Pick<LeaseDeps, 'flap' | 'connected' | 'settled'> => ({
+  flap: (i) => links()[i]?.postMessage({ type: 'flap' }),
+  connected: () => links().forEach((l) => l.postMessage({ type: 'connected' })),
+  settled: (renewed) => links().forEach((l, i) => l.postMessage({ type: 'settled', renewed: renewed.includes(i) })),
+});
 
 export class LeaseActions {
   readonly #d: LeaseDeps;
@@ -56,6 +65,7 @@ export class LeaseActions {
       this.#d.settled([]);
       return 'none';
     }
+    this.#d.connected();
     const link = this.#d.link();
     const hello = link && (await link.hello(w.agent));
     if (gone()) return 'gone';

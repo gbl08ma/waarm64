@@ -50,11 +50,15 @@ function fail(key: string, params?: Record<string, string | number>, demo = fals
  * The text at `url` (absolute), or a message for the user: unreachable, or the server's status. For a demo's file
  * (`demo`), under the demo's headline, and a 404 as `gone` when given (the words for a demo whose files are gone).
  */
-export async function fetchText(url: string, o: { demo?: boolean; gone?: () => MsgError } = {}): Promise<string> {
+export async function fetchText(
+  url: string,
+  o: { demo?: boolean; gone?: () => MsgError; signal?: AbortSignal } = {},
+): Promise<string> {
   let r: Response;
   try {
-    r = await fetch(url);
-  } catch {
+    r = await fetch(url, o.signal ? { signal: o.signal } : undefined);
+  } catch (e) {
+    if (o.signal?.aborted) throw e; // aborted: not the network's failure
     throw fail('machines:demo-store.unreachable', { url }, o.demo);
   }
   if (r.status === 404 && o.gone) throw o.gone();

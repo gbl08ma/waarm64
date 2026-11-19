@@ -46,7 +46,8 @@ local helper's `framedClient`). Like the helper's client it moves the card's fra
   `{type: 'notice'}`).
 - **The slow lane** (the fork's README "The slow lane"; off on the server by default, so this is forward-compatible): the
   page shows the lane `slow` as its own, the slow budget and the lane's terms (rate, connections at once, ports), its
-  thresholds (`budget.reason` `slow-threshold`), its refusals (`slow-connections`, `slow-spent`) and 4010's `lane`.
+  thresholds (`budget.reason` `slow-threshold`), its refusals (`slow-connections`, `slow-spent`) and 4010's `lane`. The refusal `unresolved` (any lane: an allowed name
+without an IPv4 address, NXDOMAIN) has its words too ([name not found](ui:network:demo-view.reason.unresolved)).
 - **Frames wait for `hello`:** those the guest sends while a socket opens are held (at most `DEMO_HOLD`, 256 KiB) and go
   out after it, in order; while the client waits to try again they're dropped, as a link drops them.
 - **`budget?`** every minute while the guest's traffic moves the budget (`BUDGET_ASK_MS`), so the status's numbers
@@ -62,6 +63,7 @@ local helper's `framedClient`). Like the helper's client it moves the card's fra
 | 4011 `maintenance`, 4013 `session`, 4008 `connections` | tries again at `reconnect_after` plus a random delay of up to 30 s (`DEMO_JITTER_MS`) |
 | 4008 `guests`, `site`; 4009 `full` | backs off, at least 30 s (`CROWDED_MS`) |
 | 4010 `bytes` | waits until `resets` (the next UTC midnight) plus the random delay |
+| any wait past a day (`reconnect_after`, `resets` far ahead) | waits in steps of a day at most (`WAIT_STEP_MS`): `setTimeout` fires at once past ~24.8 days |
 | never opened (1006) | backs off: 1 s, doubling, to 2 min, the second half of each delay random; a socket that lived `HEALTHY_MS` (30 s) past its `hello` resets it |
 | opened, closed without `closing` | the same backoff (from its start only after a socket healthy that long: a server that drops each socket right after `hello` is backed off); said in the message bar once per outage (a lost socket again before one was healthy isn't said again) |
 | 4001, 4003, 1002, 1009, a malformed message | closed for good: the menu's [Couldn't connect](ui:network:network-view.couldntConnect) with the reason, and its Retry |

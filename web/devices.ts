@@ -118,8 +118,10 @@ export const SEVERAL_ADAPTERS = { leaseSeconds: 120, renewSeconds: 10 };
 export const FLAP_MS = 7000;
 /**
  * How long a restored machine's card holds the flaps its switches owe (`Backend.restored`) when the page never says it
- * settled its leases: past what web/app/areas/lease-actions.ts waits at most once a card is connected (its grace, the
- * agent's HELLO and LEASED: 110 s).
+ * settled its leases, from when the page says its network is connected (`{type: 'connected'}`): past what
+ * web/app/areas/lease-actions.ts waits at most from then (its grace, the agent's HELLO and LEASED: 110 s). Not from the
+ * restore: a connection can take minutes to come (the demo server full or crowded), and the flap its switch owes then is
+ * the one the hold is for. Until it's connected the hold has no bound: the card has nothing to renew a lease from.
  */
 export const HOLD_MS = 120_000;
 /**
@@ -520,17 +522,18 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
   // A restored machine's card holds the flaps its own switches owe (`restored`) until the page settled the restore's
   // leases (web/app/areas/lease-actions.ts: `{type: 'settled', renewed}` on the link): a flap then would take the link
   // down under the agent's LEASE, and the renewal it starts would go out on a dead link (udhcpc then waits for its next
-  // try). Renewed, what was owed is dropped; not, it flaps then. `HOLD_MS` at most.
+  // try). Renewed, what was owed is dropped; not, it flaps then. `HOLD_MS` at most once the page's network is connected.
+  let holding = false;
   let hold: ReturnType<typeof setTimeout> | undefined;
   let owed = false;
   const settled = (renewed: boolean) => {
     clearTimeout(hold);
-    hold = undefined;
+    [holding, hold] = [false, undefined];
     if (owed && !renewed) flap();
     owed = false;
   };
   const flap = () => {
-    if (hold) {
+    if (holding) {
       owed = true;
       return;
     }
@@ -574,6 +577,7 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
         settled(true); // asked for: the page's renewal, past anything held
         flap();
       } else if (e.data?.type === 'settled') settled(e.data.renewed === true);
+      else if (e.data?.type === 'connected' && holding && !hold) hold = setTimeout(() => settled(false), HOLD_MS);
     };
   const out = (f: Uint8Array) => (framesMode ? framesTo?.send(f) : adapter.send(f));
   return {
@@ -602,7 +606,7 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
     },
     // Only a card the page settles (its link): the gateway's, whose switches to the local helper's frames flap.
     restored() {
-      if (link && !hold) hold = setTimeout(() => settled(false), HOLD_MS);
+      if (link) holding = true; // bounded from the connection (`connected`): HOLD_MS
     },
     close: () => {
       clearTimeout(flapping);

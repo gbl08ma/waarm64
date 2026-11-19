@@ -595,6 +595,14 @@
     "message": "The server now has another image under this disk's URL: its content isn't the one the disk was added as.",
     "note": "Error detail when a machine's disks can't be opened because a chunked image's manifest names another content id than the one the disk record was made with (the image was replaced on the server, or another site serves something else under the URL)."
   },
+  "chunked.pieceStatus": {
+    "message": "The server answered {{status}} for piece {{index}} of the download.",
+    "note": "Error details under a failed download of a chunked file (machines:template.download, a demo's snapshot): the server refused one of its pieces. {{status}}: the HTTP status (a number); {{index}}: the piece's number, from 0."
+  },
+  "chunked.pieceWrong": {
+    "message": "Piece {{index}} of the download arrived damaged (it isn't the one the manifest names). Nothing was kept: try again.",
+    "note": "Error details under a failed download of a chunked file (machines:template.download, a demo's snapshot): a piece's bytes don't match the hash its manifest names (a broken copy on the server, or another file under its name). {{index}}: the piece's number, from 0."
+  },
   "overlay.storageFull": {
     "message": "This browser's storage is full. Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes this browser's storage.",
     "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused, and the browser doesn't say how much it holds. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). The <ui-home> marker shows the Home button's icon before its words."

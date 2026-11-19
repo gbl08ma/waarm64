@@ -128,6 +128,20 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   under load ~13) asserts `carrier_changes` unchanged across the restore; there the address came 5.6 s after the page's
   load (agent 1.4 s; dhcpcd). Not measured on alpine-demo's udhcpc template yet (loop 5's build, ci-machines).
 
+- **Review fixes (review/demo-page-2, 2026-11-19, committed unpushed):** #1 a demo's start is its interstitial's (one
+  at a time, `demos.starting`; aborted with its download when the interstitial goes; the switch asked again if another
+  machine runs by then); #2 Open my machine for the machine running here goes to it; #3 the command-not-found hook runs
+  the line again only when it's the command alone with plain-word arguments, else "run it again" (**images/alpine-demo
+  changed: the image and the demo's template need a rebuild**; docs/images.md's sentence "runs the line typed again" is
+  loop 12's file: add "when it is the command alone"); #4 a snapshot past the card's `download` or `MAX_TEMPLATE` (1 GiB)
+  refused before a piece, pieces kept as Blobs as they come; #6 `importDefinition` writes disks, overlays and the machine
+  after `finish` (a residual window of a few record writes, ms); #7 a stale store read dropped; #8 history entries for
+  the store's steps, `popstate` followed; #9 a demo's view not saved; #10 the hold's 120 s from `{type: 'connected'}`
+  (when `NetSettled.when` resolves), unbounded before: the flap it's for comes with the connection, and with no
+  connection there's nothing to renew; #11 a template's adapters get fresh MACs; #13 snapshot failures as MsgErrors
+  (`template.download` + `chunked.malformed`/`pieceStatus`/`pieceWrong`, a piece's 404 `template.gone`), siblings
+  aborted; #14 demo-net waits in steps of a day; #15 focus on choose/All demos, `alt=""`, the progress bar named.
+
 ## Before a deploy of vm.tny.im (the user)
 
 The demos' templates must be made by the core that's deployed (the publish refuses another core format or shape hash):
@@ -146,7 +160,9 @@ the publish refuses: that's a new demo id with `replaces` (decision 13).
 ## Next
 
 - Loop 5 is done (below). The remaining page loops: 12 (the desktop demo; give it a `recipe` in demos.json if it can
-  be built the same way, or a hand-made build without one), 14, 15.
+  be built the same way, or a hand-made build without one; **also review demo-page-2 #12**: `tools/demo-site.ts`
+  `readSource` must require `build` to resolve under target/ (or `--out`) in a directory of its own, and
+  `bench/demo/make-template.ts` refuse a `--name` with `/` or `..`, before its `rmSync(recursive)`), 14, 15.
 
 ## Open questions
 
@@ -177,6 +193,8 @@ None.
 
 - **Review #8 left as is (the user's decision):** a store's definition can turn on clipboard sharing (and shares);
   other stores' definitions get no extra restrictions.
+- **review/demo-page-2 #5, left as is (the same decision):** another store's demo can turn on clipboard sharing and the
+  demo network together; with the server's slow lane on, a guest given the host's clipboard could send it out.
 
 - **Loop 13's engineering calls:** templates are opt-in per demo (`demo.template: true`; a game or 3D test demo, or a
   second demo of one image, isn't a starting point), carried and type-checked by the publish tool. A template's machine

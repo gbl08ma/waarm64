@@ -14,7 +14,7 @@
   import T from './T.svelte';
   import DemoCard from './DemoCard.svelte';
   import DemoStart from './DemoStart.svelte';
-  import { Actions } from './actions.svelte.ts';
+  import { errorView, type ErrorView } from './usb-problems.ts';
   import { fetchStore, findDemo, machinesOf, OUR_STORE, type DemoStore, type StoreDemo } from './demo-store.ts';
   import type { Store } from './store.ts';
   import { demos } from './areas/demos.svelte.ts';
@@ -26,20 +26,35 @@
   let { store }: Props = $props();
 
   const route = $derived(demos.route);
-  const runner = new Actions();
   let shelf = $state.raw<DemoStore>();
+  /** The store's read, while it runs; how it failed. Only the latest read's (an older one's answer is dropped). */
+  let loading = $state(false);
+  let error = $state.raw<ErrorView>();
+  let reads = 0;
   /** Another store's demos accepted (its warning's Show their demos), for the store shown. */
   let accepted = $state(false);
 
   /** The store at `url` read (again: Try again). */
   function load(url: string) {
-    shelf = undefined;
-    accepted = false;
-    void runner.run(t('machines:DemosPage.loading'), async () => {
-      const s = await fetchStore(url);
-      if (demos.route.store === url) shelf = s;
-    });
+    const read = ++reads;
+    [shelf, accepted, error, loading] = [undefined, false, undefined, true];
+    fetchStore(url).then(
+      (s) => {
+        if (read !== reads) return;
+        [shelf, loading] = [s, false];
+      },
+      (e: unknown) => {
+        if (read !== reads) return;
+        [error, loading] = [errorView(e), false];
+      },
+    );
   }
+  /** The demo whose interstitial was left last: its card takes the focus back (All demos). */
+  let left = $state<string>();
+  $effect(() => {
+    const id = route.id;
+    return () => (left = id);
+  });
   // The store the address names, read when it changes (the page's first, a `?store=` link opened in this tab); not when
   // only the demo chosen does (a primitive `$derived` changes only with its value).
   const storeUrl = $derived(demos.route.store);
@@ -58,7 +73,7 @@
   const host = $derived(new URL(route.store).host);
 </script>
 
-<div class="demos" data-busy={runner.busy}>
+<div class="demos" data-busy={loading ? t('machines:DemosPage.loading') : undefined}>
   <div class="bar">
     <Button
       variant="tool"
@@ -73,9 +88,9 @@
   </div>
   <div class="body">
     <h2>{t('machines:DemosPage.heading')}</h2>
-    {#if runner.busy}<Note size="md" role="status">{runner.busy}</Note>{/if}
-    {#if runner.error}
-      <div class="error" role="alert" data-field="store-error"><ErrorWords error={runner.error} /></div>
+    {#if loading}<Note size="md" role="status">{t('machines:DemosPage.loading')}</Note>{/if}
+    {#if error}
+      <div class="error" role="alert" data-field="store-error"><ErrorWords {error} /></div>
       <Button onclick={() => load(route.store)} data-action="retry">{t('machines:DemosPage.retry')}</Button>
     {/if}
     {#if shelf && !shown}
@@ -107,7 +122,14 @@
       {#if shelf.demos.length}
         <ul class="cards">
           {#each shelf.demos as d (d.def.demo.id)}
-            <li><DemoCard demo={d} mark={markOf(d)} onopen={() => page.chooseDemo(d.def.demo.id)} /></li>
+            <li>
+              <DemoCard
+                demo={d}
+                mark={markOf(d)}
+                onopen={() => page.chooseDemo(d.def.demo.id)}
+                focused={route.id === undefined && left === d.def.demo.id}
+              />
+            </li>
           {/each}
         </ul>
       {:else}

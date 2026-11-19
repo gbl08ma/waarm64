@@ -6,6 +6,9 @@
   theirs was last used. Start makes the machine from the definition (web/app/template.ts `machineFromDemo`: the
   template snapshot downloaded first, with its progress), opens it in the demo's view, and its first start restores
   the template. A failure (the files gone, the server down, the download cut off, the storage full) is said here.
+  A start belongs to its interstitial: one at a time on the page (`demos.starting`), aborted (its download with it) when
+  the interstitial goes, and switched to only if the machine running here then is the one the visitor agreed to stop
+  (asked again otherwise).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -21,6 +24,7 @@
   import { machineFromDemo } from './template.ts';
   import type { Store } from './store.ts';
   import { current } from './areas/current.svelte.ts';
+  import { demos } from './areas/demos.svelte.ts';
   import { isLive, power } from './areas/power.svelte.ts';
   import { records } from './areas/records.svelte.ts';
   import { page } from './page.ts';
@@ -45,7 +49,12 @@
   const runner = new Actions({ after: () => records.reread() });
   /** Open my machine, the default: it takes the focus (Enter opens it). */
   let mineButton = $state<HTMLButtonElement>();
-  $effect(() => mineButton?.focus());
+  /** The demo's name, which takes the focus when there's no Open my machine (a card's button, gone, had it). */
+  let heading = $state<HTMLHeadingElement>();
+  $effect(() => (mineButton ?? heading)?.focus());
+  /** This interstitial's start, if one runs: aborted when it goes. */
+  let mineStart: AbortController | undefined;
+  $effect(() => () => mineStart?.abort());
 
   $effect(() => {
     const n = needsOf(def);
@@ -60,19 +69,45 @@
 
   const ready = $derived(!!checks && canStart(checks));
 
-  /** A new machine from the demo (a fresh copy beside the visitor's, if they have one), opened. */
-  const start = () =>
-    runner.run(t('machines:DemoStart.busy.download'), async () => {
-      if (!(await page.askSwitch())) return;
-      progress = undefined;
-      const { machine } = await machineFromDemo(store, demo, (done, total) => (progress = { done, total }));
-      await page.openDemo(machine.id, view);
+  /** The machine running on this page (undefined: none), which opening another stops. */
+  const live = () => (isLive(power.state) ? current.id : undefined);
+  /**
+   * A new machine from the demo (a fresh copy beside the visitor's, if they have one), opened: asked first whether the
+   * machine running here may stop, and again before the switch if another runs by then. Nothing is opened once the
+   * interstitial is gone (its abort: the download stops, or the machine made stays, found as started before).
+   */
+  const start = () => {
+    if (demos.starting) return;
+    const stop = new AbortController();
+    const gone = () => stop.signal.aborted;
+    [mineStart, demos.starting] = [stop, stop];
+    return runner.run(t('machines:DemoStart.busy.download'), async () => {
+      try {
+        const agreed = live();
+        if (!(await page.askSwitch()) || gone()) return;
+        progress = undefined;
+        const { machine } = await machineFromDemo(
+          store,
+          demo,
+          (done, total) => (progress = { done, total }),
+          stop.signal,
+        );
+        if (gone()) return;
+        const now = live();
+        if (now !== undefined && now !== agreed && !(await page.askSwitch(machine.id))) return;
+        if (gone()) return;
+        await page.openDemo(machine.id, view);
+      } finally {
+        if (demos.starting === stop) demos.starting = undefined;
+        if (mineStart === stop) mineStart = undefined;
+      }
     });
+  };
   /** The visitor's machine from it, opened (its disk's files checked first: gone, the server down). */
   const openMine = (id: string) =>
     runner.run(t('machines:DemoStart.busy.opening'), async () => {
       const m = records.machines.find((x) => x.id === id);
-      if (current.id === id && isLive(power.state)) return page.closeDemos(); // it runs here already
+      if (current.id === id && isLive(power.state)) return page.closeDemos(false); // it runs here already: to it
       if (!m || !(await page.askSwitch(id))) return;
       await checkDisks(store, m);
       await page.openDemo(id, view);
@@ -85,14 +120,10 @@
   </Button>
   <div class="card">
     {#if def.demo.thumbnail}
-      <img
-        src={def.demo.thumbnail}
-        alt={t('machines:DemoCard.thumbnail.alt', { name: def.machine.name })}
-        crossorigin="anonymous"
-      />
+      <img src={def.demo.thumbnail} alt="" crossorigin="anonymous" />
     {/if}
     <div class="words">
-      <h3>{def.machine.name}</h3>
+      <h3 tabindex="-1" bind:this={heading}>{def.machine.name}</h3>
       <p class="summary">{def.demo.summary}</p>
     </div>
   </div>
@@ -129,14 +160,14 @@
       >
         {t('machines:DemoStart.openMine')}
       </Button>
-      <Button disabled={!ready || !!runner.busy} onclick={start} data-action="fresh-copy">
+      <Button disabled={!ready || !!runner.busy || !!demos.starting} onclick={start} data-action="fresh-copy">
         {t('machines:DemoStart.fresh')}
       </Button>
     {:else}
       <Button
         variant="primary"
         icon="player-play"
-        disabled={!ready || !!runner.busy}
+        disabled={!ready || !!runner.busy || !!demos.starting}
         onclick={start}
         data-action="start-demo"
       >
@@ -148,7 +179,7 @@
     <div class="busy" role="status" data-field="progress">
       <span>{runner.busy}</span>
       {#if progress}
-        <progress max={progress.total} value={progress.done}></progress>
+        <progress max={progress.total} value={progress.done} aria-label={runner.busy}></progress>
         <Note inline>{t('machines:DemoStart.progress', { done: progress.done, total: progress.total })}</Note>
       {/if}
     </div>
@@ -178,6 +209,7 @@
   }
   h3 {
     margin: 0 0 var(--space-2);
+    outline: none;
     font-size: var(--text-lg);
   }
   h4 {

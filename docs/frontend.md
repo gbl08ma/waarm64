@@ -742,10 +742,16 @@ page bare in fresh profiles) unless `?firstvisit=1`.
   `#demos?` (it wins over the query). The page's own knobs never take `id` or `store`, so the rest of the query is the
   page's (`pageQuery`: a load with only those still opens the last machine). While the page shows, the address follows
   the demo chosen (on `/demos` its query, else `#demos?id=…`), so a reload keeps it; closed, the address is the page's
-  own (`/demos` → `./`, the store's parameters dropped). A `hashchange` to `#demos` opens it. The store's URL is ours,
+  own (`/demos` → `./`, the store's parameters dropped). A `hashchange` to `#demos` opens it. Each step the visitor
+  takes is an entry of the browser's history (`pushState`: the store opened, a demo chosen, All demos, the store left),
+  and `popstate` follows the address back (`page-window.ts` `followAddress`: the store on its route, or closed to Home
+  for `#home`, else to the machine), so Back retraces the store; what the address itself opened only tidies it
+  (`replaceState`). A store's read that is no longer the one shown (another store opened meanwhile) is dropped, its
+  failure and busy state with it. Choosing a card gives the focus to the demo's name (or to Open my machine), All demos
+  gives it back to the card. The store's URL is ours,
   `https://vmdisks.tny.im/store.json` (`OUR_STORE`), unless `?store=` names another (not http(s): ours).
 - **The cards** (`DemoCard.svelte`): a button each (Tab and Enter reach and open it), its thumbnail (`crossorigin`:
-  vmdisks.tny.im sends CORS, the page is cross-origin isolated; its alt text the demo's name), name, summary and
+  vmdisks.tny.im sends CORS, the page is cross-origin isolated; decorative, `alt=""`: the button's name is the demo's), name, summary and
   download size, and a mark when the visitor has a machine from it ([You have this demo](ui:machines:DemoCard.mine)) or
   from a version it replaces ([You have an older version of this demo](ui:machines:DemoCard.older); `demo-store.ts` `machinesOf`). The store's words
   (names, summaries, its `name`) are data, drawn as plain text, never as catalog keys. A store's demos this page can't
@@ -763,17 +769,25 @@ page bare in fresh profiles) unless `?firstvisit=1`.
 - **Start** ([Start the demo](ui:machines:DemoStart.start)): the switch asked first when another machine runs on the
   page (`disk-actions.ts` `askSwitch`, the Open the machine question), then `machineFromDemo` (the snapshot downloaded
   with a progress bar, the machine made: machines.md §6.2), then `page.openDemo`: the page closes, the view is the
-  demo's (`serial` → the terminal, `screen` → the screen; remembered as a chosen view is), and `switchMachine` opens it,
-  whose first start restores the template (`restoreFirst`). A reload is the machine's (`?m=`), not the store's.
+  demo's (`serial` → the terminal, `screen` → the screen; not saved as the visitor's view), and `switchMachine` opens
+  it, whose first start restores the template (`restoreFirst`). A reload is the machine's (`?m=`), not the store's. **A
+  start belongs to its interstitial:** one at a time on the page (`demos.starting`: every Start waits while one runs);
+  when the interstitial goes (another demo, All demos, the store's page left) it's aborted, its download with it, and
+  nothing opens (a machine already made by then stays, found as started before); and the switch is asked again just
+  before it when the machine running then isn't the one the visitor agreed to stop.
 - **Started before** (a machine whose `fromDemo` is the card's): the interstitial says so, with its name and when it was
   last used (when its disks' overlays were last written, `demo-open.ts` `lastUsed`, else its record's change), with
   **[Open my machine](ui:machines:DemoStart.openMine)** (the default: it has the focus) and **[Start a fresh copy](ui:machines:DemoStart.fresh)** (another
   machine; `importDefinition` names it with a suffix, `Alpine (2)`); a note when that machine runs in another tab.
-  Open my machine checks its chunked disks' manifests first (`checkDisks`).
+  Open my machine checks its chunked disks' manifests first (`checkDisks`); for the machine running here already, it
+  closes the store's page to that machine.
 - **Failures**, each in the catalog's words, under the interstitial (or, for the store's own file, with
   **[Try again](ui:machines:DemosPage.retry)**): the store or a demo's server unreachable (`demo-store.unreachable`), a
   status, the demo's files gone (a manifest's 404: `template.gone`), the snapshot republished meanwhile
-  (`template.otherSnapshot`), the download cut off partway (`template.cutOff`, nothing kept), the storage full when the
+  (`template.otherSnapshot`), a snapshot larger than its card says (`template.tooBig`, nothing fetched), a manifest
+  that isn't one or a piece refused or damaged (`template.download`, the cause `disks:chunked.malformed`,
+  `chunked.pieceStatus`, `chunked.pieceWrong`; a piece's 404 is `template.gone`; the first failure stops the other
+  pieces), the download cut off partway (`template.cutOff`, nothing kept), the storage full when the
   snapshot is kept (`template.full`, its cause the storage's numbers; the machine made for it is deleted again), and
   another machine running in the tab (the switch's question; a note says so beforehand). None leaves a machine.
 

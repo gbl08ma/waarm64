@@ -81,6 +81,7 @@
   onblur={view.events.focus}
   onbeforeunload={view.events.beforeUnload}
   onhashchange={view.events.hashChange}
+  onpopstate={view.events.popState}
 />
 <svelte:document
   onfocusin={view.events.focusLater}

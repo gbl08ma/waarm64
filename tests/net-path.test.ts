@@ -2,7 +2,7 @@
 // own (the local helper's client, web/local-net-worker.ts) and back, the link flapping under a driver.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FLAP_MS, net, type Ctx } from '../web/devices.ts';
+import { FLAP_MS, HOLD_MS, net, type Ctx } from '../web/devices.ts';
 
 test("net: a card on an IP port goes to a frame port and back (the local helper's path), flapping the link under a driver", { timeout: 3 * FLAP_MS + 5000 }, async () => {
   const ram = new Uint8Array(1 << 16);
@@ -182,5 +182,41 @@ test("net: a restored card holds its switch's flap until the page settled the le
     assert.deepEqual(renewed.links, [0]);
   } finally {
     for (const x of [renewed, flapped, asked]) x.close();
+  }
+});
+
+test("#10: a restored card's hold is bounded from the connection up, not from the restore: a server that takes minutes to let it in doesn't end the hold early", async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const messages = () => new Promise((r) => setImmediate(r)); // the link's and the client's messages (not timers)
+  const config = new Uint8Array(8);
+  config[6] = 1;
+  const links: number[] = [];
+  const ctx = {
+    ram: () => [new Uint8Array(4096)], complete: () => {}, features: () => 1n, config: () => config, io: new Float64Array(2),
+    changeConfig: (w: (c: Uint8Array) => void) => { w(config); links.push(config[6]); },
+  } as unknown as Ctx;
+  const ip = new MessageChannel();
+  const link = new MessageChannel();
+  const n = net(ctx, { type: 'net', adapter: { ip: ip.port2, link: link.port2 } });
+  try {
+    n.restored?.();
+    t.mock.timers.tick(HOLD_MS + 60_000); // the demo server full for three minutes: nothing connected yet
+    await messages();
+    const f = new MessageChannel();
+    f.port1.close();
+    ip.port1.postMessage({ type: 'frames', port: f.port2 }, [f.port2]); // it lets the card in: the switch's flap is owed
+    link.port1.postMessage({ type: 'connected' }); // the page's network settled: the agent's LEASE starts
+    await messages();
+    await messages();
+    assert.deepEqual(links, [], "held under the agent's LEASE, though the restore was long ago");
+    t.mock.timers.tick(HOLD_MS - 1);
+    await messages();
+    assert.deepEqual(links, [], 'held until HOLD_MS past the connection');
+    t.mock.timers.tick(1);
+    assert.deepEqual(links, [0], 'never settled: the owed flap, HOLD_MS after the connection');
+  } finally {
+    n.close?.();
+    ip.port1.close();
+    link.port1.close();
   }
 });

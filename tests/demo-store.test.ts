@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { checkDefinition, exportDefinition, parseDefinition, type Definition } from '../web/app/definitions.ts';
 import { demoMachines, fetchStore, findDemo, parseStore, STORE_TYPE, templatesOf } from '../web/app/demo-store.ts';
-import { machineFromDemo, machineFromStoreTemplate } from '../web/app/template.ts';
+import { machineFromDemo, machineFromStoreTemplate, MAX_TEMPLATE } from '../web/app/template.ts';
 import { attach, createDisk, createMachine } from '../web/app/machines.ts';
 import { Connections } from '../web/app/connections.ts';
 import { Store } from '../web/app/store.ts';
@@ -265,7 +265,7 @@ test("R3a: a template snapshot's manifest whose id isn't its content's is refuse
   // A hash that isn't hex isn't spliced into a piece's URL.
   const odd = { ...good.manifest, hashes: ['../../x'], id: sha('../../x') };
   serveBytes({ [`${D}/snapshot.json`]: JSON.stringify(odd) });
-  await assert.rejects(machineFromDemo(fresh(), findDemo(await storeWith(odd.id), 'alpine-term')!), (e) => msgOf(e)?.key === 'disks:chunked.malformed');
+  await assert.rejects(machineFromDemo(fresh(), findDemo(await storeWith(odd.id), 'alpine-term')!), (e) => msgOf(e)?.key === 'machines:template.download' && msgOf((e as Error).cause)?.key === 'disks:chunked.malformed');
 });
 
 test("R3b: the snapshot's manifest is fetched once, and its pieces are the checked manifest's", async () => {
@@ -311,4 +311,116 @@ test("#9: a copy of a demo's machine isn't the demo's: its card doesn't find it 
   const copy = await duplicateMachine(store, machine.id);
   assert.equal(copy.fromDemo, undefined);
   assert.deepEqual((await demoMachines(store, findDemo(s, 'alpine-term')!)).mine.map((m) => m.id), [machine.id]);
+});
+
+// REVIEW.md (review/demo-page-2) #1, #4, #6, #11, #13.
+/** `fetch` by a function of the URL and its signal (a piece that hangs until aborted, a status, bytes). */
+function serveWith(f: (url: string, signal?: AbortSignal) => Promise<Response> | Response) {
+  const asked: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    asked.push(url);
+    return f(url, init?.signal ?? undefined);
+  }) as typeof fetch;
+  return asked;
+}
+/** A response that never comes, unless `signal` aborts (then fetch's AbortError). */
+const hang = (signal?: AbortSignal) =>
+  new Promise<Response>((_, reject) => signal?.addEventListener('abort', () => reject(signal.reason as Error)));
+/** A manifest of `pieces` 1 MiB pieces (their hashes `hashes`, else each its own). */
+function manifestOf(n: number, hashes?: string[]) {
+  const hs = hashes ?? Array.from({ length: n }, (_, i) => sha(`piece ${i}`));
+  return { format: CHUNKED_FORMAT, size: n * MiB, piece: MiB, pieces: '{hash}.bin', hashes: hs, id: contentId(hs) };
+}
+const keyOf = (e: unknown) => msgOf(e)?.key;
+const causeKey = (e: unknown) => msgOf((e as Error).cause)?.key;
+
+test("#1: a demo's start aborted mid-download stops its downloads and makes no machine", async () => {
+  const m = manifestOf(3);
+  const signals: AbortSignal[] = [];
+  serveWith((url, signal) => {
+    if (url === `${D}/snapshot.json`) return new Response(JSON.stringify(m));
+    signals.push(signal!);
+    return hang(signal);
+  });
+  const store = fresh();
+  const stop = new AbortController();
+  const started = machineFromDemo(store, findDemo(await storeWith(m.id), 'alpine-term')!, undefined, stop.signal);
+  while (signals.length < 3) await new Promise((r) => setTimeout(r, 1));
+  stop.abort();
+  await assert.rejects(started, (e) => (e as Error).name === 'AbortError');
+  assert.ok(signals.every((s) => s.aborted), 'a piece still downloading');
+  assert.equal((await store.all('machines')).length, 0);
+  assert.equal((await store.all('disks')).length, 0);
+});
+
+test("#4: a store's snapshot past the card's download (or past the cap) is refused before a piece is fetched", async () => {
+  // 40 MiB of one hosted piece named 40 times: the card says 30 MB.
+  const one = sha('the one piece');
+  const m = manifestOf(40, Array<string>(40).fill(one));
+  const asked = serveWith((url) => (url === `${D}/snapshot.json` ? new Response(JSON.stringify(m)) : new Response(new Uint8Array(MiB))));
+  const store = fresh();
+  await assert.rejects(machineFromDemo(store, findDemo(await storeWith(m.id), 'alpine-term')!), (e) => keyOf(e) === 'machines:template.tooBig' && causeKey(e) === 'machines:template.tooBig.cause');
+  assert.deepEqual(asked, [`${D}/snapshot.json`], 'a piece was fetched');
+  // The card says as much, but past what a template may be.
+  const huge = manifestOf(MAX_TEMPLATE / MiB + 1);
+  serveWith((url) => (url === `${D}/snapshot.json` ? new Response(JSON.stringify(huge)) : hang()));
+  const s = await storeWith(huge.id);
+  s.demos[0].def.demo.download = huge.size;
+  await assert.rejects(machineFromDemo(store, s.demos[0]), (e) => keyOf(e) === 'machines:template.tooBig');
+  assert.equal((await store.all('machines')).length, 0);
+});
+
+test("#13: a snapshot's failures said in words: a manifest that isn't JSON, a piece gone, refused or wrong; the other pieces stop at the first", async () => {
+  const store = fresh();
+  const d = async (m: { id: string }) => findDemo(await storeWith(m.id), 'alpine-term')!;
+  for (const body of ['not json', 'null']) {
+    serveWith(() => new Response(body));
+    await assert.rejects(machineFromDemo(store, await d({ id: SNAP })), (e) => keyOf(e) === 'machines:template.download' && causeKey(e) === 'disks:chunked.malformed', body);
+  }
+  const m = manifestOf(3);
+  const first = `${D}/${m.hashes[0]}.bin`;
+  const others: AbortSignal[] = [];
+  const answer = (piece0: () => Response) =>
+    serveWith((url, signal) => {
+      if (url === `${D}/snapshot.json`) return new Response(JSON.stringify(m));
+      if (url === first) return new Promise<Response>((r) => setTimeout(() => r(piece0()), 20));
+      others.push(signal!);
+      return hang(signal);
+    });
+  answer(() => new Response('no', { status: 404 }));
+  await assert.rejects(machineFromDemo(store, await d(m)), (e) => keyOf(e) === 'machines:template.gone');
+  assert.ok(others.length === 2 && others.every((s) => s.aborted), 'the other pieces kept downloading');
+  answer(() => new Response('no', { status: 503 }));
+  await assert.rejects(machineFromDemo(store, await d(m)), (e) => keyOf(e) === 'machines:template.download' && msgOf((e as Error).cause)?.params?.status === 503);
+  answer(() => new Response(new Uint8Array(MiB)));
+  await assert.rejects(machineFromDemo(store, await d(m)), (e) => keyOf(e) === 'machines:template.download' && causeKey(e) === 'disks:chunked.pieceWrong');
+  assert.equal((await store.all('machines')).length, 0);
+});
+
+test('#6: a demo\'s import writes no disk record before its snapshot is kept (a tab closed meanwhile leaves none)', async () => {
+  const snap = chunked(D, new Uint8Array(4096).fill(3)); // not a snapshot: its import fails, as a tab closed then would stop it
+  serveBytes({ [`${D}/snapshot.json`]: JSON.stringify(snap.manifest), ...snap.files });
+  const store = fresh();
+  const puts: string[] = [];
+  const put = store.put.bind(store);
+  store.put = (async (kind: string, r: unknown) => {
+    puts.push(kind);
+    return put(kind as never, r as never);
+  }) as typeof store.put;
+  await assert.rejects(machineFromDemo(store, findDemo(await storeWith(snap.manifest.id), 'alpine-term')!));
+  assert.deepEqual(puts, [], 'records written before the snapshot was kept');
+});
+
+test("#11: a template's machine gets MACs of its own, not the recipe's fixed one", async () => {
+  const def = await demoDef({ template: true });
+  def.machine.macs = ['52:54:00:bf:f6:6b'];
+  const s = parseStore(JSON.stringify({ type: STORE_TYPE, version: 1, demos: [def] }), STORE_URL);
+  serve({});
+  const store = fresh();
+  const a = await machineFromStoreTemplate(store, templatesOf(s)[0]);
+  const b = await machineFromStoreTemplate(store, templatesOf(s)[0]);
+  const macs = [a, b].map((x) => x.machine.adapters?.[0].mac);
+  assert.ok(macs.every((m) => m && m !== '52:54:00:bf:f6:6b' && m !== '52:54:00:12:34:56'), `the recipe's MAC: ${macs.join(', ')}`);
+  assert.notEqual(macs[0], macs[1], 'two machines from it share a MAC');
 });

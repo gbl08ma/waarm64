@@ -31,11 +31,21 @@ export type PageView = {
     focusLater: () => void;
     beforeUnload: (e: BeforeUnloadEvent) => void;
     hashChange: () => void;
+    popState: () => void;
     dragOver: (e: DragEvent) => void;
     drop: (e: DragEvent) => void;
     fullscreenChanged: () => void;
   };
 };
+
+/** How an address is written: a new history entry (a step the visitor took), in place of the current one, or not at all. */
+type Nav = 'push' | 'replace' | 'none';
+/** Address `url` written as `nav` says (nothing when it is the current one). */
+function go(url: string, nav: Nav) {
+  if (nav === 'none' || url === `${location.pathname}${location.search}${location.hash}`) return;
+  if (nav === 'push') history.pushState(null, '', url);
+  else history.replaceState(null, '', url);
+}
 
 const isView = (v: unknown): v is View => v === 'screen' || v === 'terminal' || v === 'both';
 
@@ -75,8 +85,9 @@ export class PageWindow {
         hashChange: () => {
           this.takePairing();
           const r = demosRoute(location);
-          if (r) this.openDemos(r);
+          if (r) this.openDemos(r, 'replace');
         },
+        popState: () => this.followAddress(),
         dragOver: (e) => this.dragOver(e),
         drop: (e) => this.drop(e),
         fullscreenChanged: () => this.fullscreenChanged(),
@@ -181,13 +192,30 @@ export class PageWindow {
 
   // The demo store's page (docs/frontend.md "The demo store"; web/app/DemosPage.svelte): in the machine's place, and
   // Home's, which it closes (its Back returns there). Its address (`/demos`, `#demos`, with `?id=`, `?store=`) keeps it
-  // open across a reload; closed, the address is the page's own again.
-  openDemos(route: DemosRoute = demos.route) {
+  // open across a reload; closed, the address is the page's own again. Each step the visitor takes in it (opened, a demo
+  // chosen, All demos, left) is an entry of the browser's history (`push`), so its Back retraces them
+  // (`followAddress`); what the address itself opened only tidies the address (`replace`).
+  openDemos(route: DemosRoute = demos.route, nav: Nav = 'push') {
     if (!demos.open) demos.from = machinesNav.open ? 'home' : 'machine';
     if (machinesNav.open) machinesNav.open = false;
     demos.route = route;
     demos.open = true;
-    history.replaceState(null, '', demosAddress(location, route));
+    go(demosAddress(location, route), nav);
+  }
+  /**
+   * The browser's Back or Forward (`popstate`): the store's page as the address now says, without writing the history:
+   * opened on its route, or closed (to Home for `#home`, else to the machine).
+   */
+  followAddress() {
+    const r = demosRoute(location);
+    if (r) return this.openDemos(r, 'none');
+    if (!demos.open) return;
+    if (location.hash === '#home') {
+      demos.from = 'home';
+      return this.closeDemos(true, 'none');
+    }
+    demos.from = 'machine';
+    this.closeDemos(true, 'none');
   }
   /**
    * What the address opens at the page's load: the store's page (`/demos`, `#demos`), Home (`#home`, the older
@@ -195,9 +223,9 @@ export class PageWindow {
    */
   openFromAddress(machines: number) {
     const r = demosRoute(location);
-    if (r) this.openDemos(r);
+    if (r) this.openDemos(r, 'replace');
     else if (location.hash === '#home' || location.hash === '#machines') this.openMachines();
-    else if (firstVisit(location, machines, navigator.webdriver)) this.openDemos();
+    else if (firstVisit(location, machines, navigator.webdriver)) this.openDemos(undefined, 'replace');
   }
   /** The store's page's part of `page`: `switchTo` opens a stored machine (asked first by `askSwitch`). */
   demoActions(d: {
@@ -206,12 +234,13 @@ export class PageWindow {
   }): Pick<Page, 'openDemos' | 'closeDemos' | 'chooseDemo' | 'askSwitch' | 'openDemo'> {
     return {
       openDemos: (route) => this.openDemos(route),
-      closeDemos: () => this.closeDemos(),
+      closeDemos: (back) => this.closeDemos(back),
       chooseDemo: (id) => this.chooseDemo(id),
       askSwitch: d.askSwitch,
       openDemo: (id, view) => {
         this.closeDemos(false);
-        this.setView(view === 'serial' ? 'terminal' : 'screen');
+        // Not saved as the visitor's view: it's the demo's (review demo-page-2 #9).
+        this.setView(view === 'serial' ? 'terminal' : 'screen', false);
         return d.switchTo(id);
       },
     };
@@ -222,9 +251,9 @@ export class PageWindow {
     this.openDemos(id ? { ...rest, id } : rest);
   }
   /** Back (`back`: to Home, when it came from there; else to the machine), or a demo's machine opened (not `back`). */
-  closeDemos(back = true) {
+  closeDemos(back = true, nav: Nav = 'push') {
     demos.open = false;
-    history.replaceState(null, '', leftDemos(location));
+    go(leftDemos(location), nav);
     if (back && demos.from === 'home') return this.openMachines();
     queueMicrotask(() => {
       this.#d.screen.fit();
