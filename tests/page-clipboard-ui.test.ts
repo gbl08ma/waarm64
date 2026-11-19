@@ -9,7 +9,8 @@
 // clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=guest`). The PNG worker
 // (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Home page's switches: the agent's, on by default, and
 // the clipboard's under it, off for a machine that hasn't it, its note, the link to the OpenRC installer's command, ticking it asks for the permission, neither
-// orphaning snapshots, saved into the record.
+// orphaning snapshots, saved into the record. A machine made from a demo (`fromDemo`): each run starts paused, with no
+// clipboard read, and one click on the switch shares.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -275,6 +276,92 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await menu(page, true);
   assert.equal(await page.locator('#clipboard-failed').count(), 0);
   await menu(page, false);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+const uefiSkip = !existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES)) && 'SKIPPED: run images/build.sh edk2';
+test("a demo's machine starts each run paused: PAUSE at the agent's opening, no clipboard read (the permission stays prompt) at HELLO or focus, Allow hidden; one click on the switch shares (RESUME, its click asks); a machine not from a demo shares from the start", { skip: uefiSkip, timeout: 120_000 }, async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  // Every read the page makes, counted (any of them while the permission is prompt would make Chromium ask).
+  await page.addInitScript(() => {
+    const w = window as unknown as { __reads: number };
+    w.__reads = 0;
+    const c = Clipboard.prototype;
+    const [readText, read] = [c.readText, c.read];
+    c.readText = function () { w.__reads++; return readText.call(this); };
+    c.read = function (...a) { w.__reads++; return read.apply(this, a); };
+  });
+  const reads = () => page.evaluate(() => (window as unknown as { __reads: number }).__reads);
+  await page.goto(`${base}/web/app/#home`);
+  await page.locator('.machines').waitFor();
+  const demo = { id: 'dddddddddd01', name: 'From a demo', ncpus: 1, ramMiB: 512, display: '2d', network: false, attachments: [], clipboard: true, fromDemo: { store: `${base}/store.json`, id: 'alpine-term' }, created: 0, modified: 0 };
+  const plainOne = { ...demo, id: 'dddddddddd02', name: 'Not from a demo', fromDemo: undefined };
+  await page.evaluate(async (ms) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    for (const m of ms) await store.put('machines', m);
+    store.close();
+  }, [demo, plainOne]);
+  /** The machine `id` started (the firmware, no disk: only the agent's end, the test's, matters), its agent's end the test's. */
+  const start = async (id: string) => {
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=both&agentstub&m=${id}`);
+    await page.waitForFunction(() => !!(window as unknown as { __agentStub?: MessagePort }).__agentStub, null, { timeout: 30_000, polling: 100 });
+    await stub(page);
+  };
+  const helloSize = encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: pageCaps(true) })).length;
+
+  await start(demo.id);
+  let b = await waitButton(page, (x) => x.state === 'paused', 'a demo\'s machine before the agent');
+  await openPort(page);
+  assert.deepEqual((await guestReads(page, helloSize + 5)).map((f) => f.type), [FRAME.HELLO, FRAME.PAUSE], 'PAUSE at the opening');
+  await guestWrites(page, HELLO);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus'))); // headless: bringToFront fires none
+  await page.waitForTimeout(500);
+  b = await waitButton(page, (x) => x.state === 'paused', 'after HELLO');
+  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.pausedDemo') }, { state: 'paused', permission: 'prompt', on: false, dot: 'off', title: true });
+  assert.deepEqual([await reads(), await readState(page)], [0, 'prompt'], 'no read while paused: the browser asked nothing');
+  await menu(page, true);
+  assert.equal(await page.isChecked('#clipboard-on'), false);
+  assert.equal(await page.locator('#clipboard-allow').count(), 0, 'Allow… hidden: the switch is the one click');
+  assert.equal(await page.textContent('#clipboard-paused-demo').then((s) => s?.trim()), t('clipboard:ClipboardMenu.title.pausedDemo'));
+  assert.equal(await page.isDisabled('#clipboard-send'), true);
+  assert.deepEqual([await reads(), await readState(page)], [0, 'prompt'], 'opening the menu reads nothing');
+  // One click: RESUME, sharing; the click's read asks (headless Chromium denies at once).
+  await page.check('#clipboard-on');
+  assert.deepEqual((await guestReads(page, 5)).map((f) => f.type), [FRAME.RESUME]);
+  b = await waitButton(page, (x) => x.state === 'sharing' && x.permission === 'denied', 'after the click');
+  assert.equal(await reads(), 1, "the switch's click read once, to ask");
+  // Allowed: the host's copy reaches the guest.
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
+  await waitButton(page, (x) => x.permission === 'granted', 'after the grant');
+  const copied = 'shared after one click';
+  await page.evaluate((s) => navigator.clipboard.writeText(s), copied);
+  const [offer] = await guestReads(page, offerSize(copied));
+  assert.equal(inline(offer), copied);
+  // The next run starts paused again: the resume isn't remembered.
+  await start(demo.id);
+  await openPort(page);
+  assert.deepEqual((await guestReads(page, helloSize + 5)).map((f) => f.type), [FRAME.HELLO, FRAME.PAUSE], 'paused again at the next run');
+  await guestWrites(page, HELLO);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForTimeout(500);
+  await waitButton(page, (x) => x.state === 'paused', 'the next run');
+  assert.equal(await reads(), 0, 'granted, yet no read while paused');
+
+  // A machine not from a demo: RESUME at the opening, sharing from the start (granted now: its HELLO reads, as before).
+  await start(plainOne.id);
+  await openPort(page);
+  assert.deepEqual((await guestReads(page, helloSize + 5)).map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
+  await guestWrites(page, HELLO);
+  b = await waitButton(page, (x) => x.state === 'sharing', 'not from a demo');
+  assert.equal(b.title, t('clipboard:ClipboardMenu.title.sharing'));
+  const [atHello] = await guestReads(page, offerSize(copied));
+  assert.equal(inline(atHello), copied, "the host's clipboard at HELLO");
   assert.deepEqual(errors, []);
   await context.close();
 });

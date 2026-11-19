@@ -44,7 +44,7 @@ RESUME, TIME) is in devices.md "The guest's agent".
   Chromium's `clipboard-read` permission. Its note says what the guest needs (systemd 256+, a Wayland desktop
   with data-control or an X11 session) and that the toolbar's menu pauses it.
 - **The toolbar's clipboard button** is shown while the running machine has the setting on. Its states are
-  *sharing*, *paused* (for the run: the next start shares again) and *waiting* (before the agent's HELLO, or after
+  *sharing*, *paused* (for the run: the next start shares again, except on a machine made from a demo, below) and *waiting* (before the agent's HELLO, or after
   its connection ended). It has a mark while the read permission is `prompt` or `denied`, or after the focus reads have
   stopped. Its menu has [Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow) (while `prompt`), the
   switch [Share the clipboard](ui:clipboard:ClipboardMenu.share),
@@ -54,6 +54,11 @@ RESUME, TIME) is in devices.md "The guest's agent".
   The menu stays open while Send, Type or a copy runs: it closes when the action succeeds (for Type, when
   the agent's TYPED says it was typed whole), and a failure keeps it open with its note, where the click was.
   frontend.md "The toolbar" has each item's behavior.
+- **A machine made from a demo** (`fromDemo` on its record) starts each run paused, so that a demo reads nothing and
+  Chromium asks nothing before the user wants sharing: the switch off, PAUSE at the agent's connection, no focus,
+  HELLO or paste-chord read, and Allow… hidden. One click on the switch turns it on: it reads on that click while the
+  permission is `prompt` (Chromium asks then; any machine's switch does), and a grant syncs. The next run starts
+  paused again (the choice isn't remembered); a copy of the machine has no `fromDemo` and shares from the start.
 
 ## The host's ways
 
@@ -62,7 +67,8 @@ RESUME, TIME) is in devices.md "The guest's agent".
    SESSION, and when the permission becomes `granted`. It offers what changed. Where `clipboardchange` exists
    (Chromium 155), a focus reads only after one, and the event reads at once. Because the host's copy is already the
    guest's clipboard when the user comes back, every way of pasting in the guest gets it, including its own menus.
-   The page never reads while the permission is `prompt`, except on the user's clicks (the setting, Allow…).
+   The page never reads while the permission is `prompt`, except on the user's clicks (the setting, Allow…, the
+   switch turned on), nor while paused.
 2. **The paste chord** (every browser, no permission). Ctrl+V, Ctrl+Shift+V or Shift+Insert on the screen (on a Mac,
    Cmd+V and Cmd+Shift+V only, since Ctrl+V is the guest's own key) is held without `preventDefault`, and the keys
    that follow wait behind it. The browser's own `paste` event (listened for on the document, while the screen's

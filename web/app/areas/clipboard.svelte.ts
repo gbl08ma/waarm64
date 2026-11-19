@@ -15,12 +15,15 @@ class Clipboard {
    * write, Copy the console's text no text (`console`) or a console that shows graphics (`graphics`).
    */
   failed = $state<'send' | 'type' | 'screen' | 'console' | 'graphics'>();
+  /** The run began paused: a machine made from a demo, whose every run does (web/app/demo-store.ts `startsPaused`). */
+  startedPaused = $state(false);
   readonly #changes = new Changes();
 
-  /** The run's sharing (none: no sharing in this run): it gets the permission, and the menu follows it. */
-  follow(share: ClipboardShare | undefined) {
+  /** The run's sharing (none: no sharing in this run), `paused` from its start: it gets the permission, and the menu follows it. */
+  follow(share: ClipboardShare | undefined, paused = false) {
     this.share = share;
     this.failed = undefined;
+    this.startedPaused = paused;
     if (!share) return;
     share.setPermission(this.permission);
     share.onChange = () => this.#changes.notify();

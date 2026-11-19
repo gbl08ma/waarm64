@@ -140,6 +140,14 @@ export const findDemo = (s: DemoStore, id: string) => s.demos.find((d) => d.def.
 /** Store `s`'s demos offered as templates under New machine (`demo.template`), in the store's order. */
 export const templatesOf = (s: DemoStore) => s.demos.filter((d) => d.def.demo.template === true);
 
+/**
+ * Whether a run's clipboard sharing starts paused (docs/frontend.md "Clipboard"): a machine made from a demo (its
+ * record's `fromDemo`), so that a demo neither reads the clipboard nor makes Chromium ask for its permission before the
+ * user turns sharing on in the toolbar's menu. Every run of it starts so (the user's resume isn't remembered); a copy
+ * of it has no `fromDemo`, so it shares from the start, as other machines do.
+ */
+export const startsPaused = (m: Pick<MachineRecord, 'fromDemo'> | undefined) => !!m?.fromDemo;
+
 /** Whether machine `m` was made from demo `ref`. */
 export const madeFrom = (m: MachineRecord, ref: DemoRef) => m.fromDemo?.store === ref.store && m.fromDemo.id === ref.id;
 

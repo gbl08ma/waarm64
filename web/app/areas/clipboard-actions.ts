@@ -5,6 +5,7 @@ import type { DisplayFromPage } from '../../gpu-present.ts';
 import type { ToGpuWorker } from '../../gpu-worker.ts';
 import type { AgentLink } from '../agent-link.ts';
 import { ClipboardShare } from '../clipboard.ts';
+import { startsPaused } from '../demo-store.ts';
 import { COPIED } from '../../agent-frame.ts';
 import { isPasteChord, onMac, PNG, watchReadPermission, type Host } from '../clipboard-host.ts';
 import type { Grab } from '../hooks.ts';
@@ -59,11 +60,17 @@ export class ClipboardActions {
     [this.#m, this.#replies, this.#canvas] = [m, replies, canvas];
   }
 
-  /** A run's sharing over its agent's link (none: no sharing, the machine has no agent or doesn't share), followed. */
+  /**
+   * A run's sharing over its agent's link (none: no sharing, the machine has no agent or doesn't share), followed; paused
+   * from the start for a machine made from a demo (`startsPaused`).
+   */
   begin(link: AgentLink | undefined, on: boolean) {
     const share = on && link ? new ClipboardShare(link, clipboardHost()) : undefined;
+    // Before the link opens: the agent hears PAUSE at the opening (the link says the switch at each).
+    const paused = !!share && startsPaused(this.#m.stored?.record);
+    if (paused) share.pause();
     this.#link = share && link;
-    clipboard.follow(share);
+    clipboard.follow(share, paused);
     window.__clipboard = share; // the tests' hook
     return share;
   }
@@ -144,7 +151,13 @@ export class ClipboardActions {
       clipboardAsk: () => {
         if (clipboard.permission === 'prompt') void navigator.clipboard.readText().catch(() => undefined);
       },
-      clipboardPause: (paused) => (paused ? clipboard.share?.pause() : clipboard.share?.resume()),
+      clipboardPause: (paused) => {
+        if (paused) return clipboard.share?.pause();
+        clipboard.share?.resume();
+        // Turning sharing on is a click that asks, as the setting's tick is (a demo's machine, started paused, was never
+        // ticked): granted, the sync follows (`setPermission`).
+        if (clipboard.permission === 'prompt') void navigator.clipboard.readText().catch(() => undefined);
+      },
       clipboardSend: async () => {
         clipboard.failed = (await clipboard.share?.send()) ? undefined : 'send';
       },

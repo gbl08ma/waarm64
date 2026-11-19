@@ -221,6 +221,13 @@ None.
   other stores' definitions get no extra restrictions.
 - **review/demo-page-2 #5, left as is (the same decision):** another store's demo can turn on clipboard sharing and the
   demo network together; with the server's slow lane on, a guest given the host's clipboard could send it out.
+- **A demo's machine starts each run with clipboard sharing paused** (the user, 2026-11-19; docs/clipboard.md, frontend.md
+  "The toolbar"): a record with `fromDemo` and the setting on starts with the toolbar's switch off (PAUSE at the agent's
+  opening), the page makes no clipboard read (focus, HELLO, the paste chord, Send/Type all respect the pause) and
+  Allow… is hidden, so Chromium asks nothing until the user ticks Share the clipboard; that one click resumes and, while
+  the permission is `prompt`, reads on the click so Chromium asks (any machine's switch now does). **Choice:** not
+  remembered: every run starts paused (one line to change: web/app/demo-store.ts `startsPaused`, or record a
+  per-machine flag at the resume). A copy of a demo's machine drops `fromDemo` (review #9), so it shares from the start.
 
 - **Loop 13's engineering calls:** templates are opt-in per demo (`demo.template: true`; a game or 3D test demo, or a
   second demo of one image, isn't a starting point), carried and type-checked by the publish tool. A template's machine

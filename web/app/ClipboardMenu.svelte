@@ -2,7 +2,7 @@
   The toolbar's clipboard menu (docs/plans/clipboard.md §5, docs/frontend.md "The toolbar"): shown while the running
   machine shares the clipboard. The button says the state with its light (`tone`, as the network's) and its tooltip,
   never pressed (it isn't a switch): green sharing, amber waiting for the guest's program or sharing with less (the
-  browser's read permission missing, or the focus reads stopped), grey paused (the icon crossed out too). The
+  browser's read permission missing, or the focus reads stopped), grey paused (the icon crossed out too; a demo's machine starts each run so, and says how to turn it on). The
   menu: the permission's item (Allow… while `prompt`, how to allow it while `denied`), the switch (paused for the run),
   Send the clipboard to the guest, Type the clipboard (and what became of it: the agent's TYPED), Copy the screen (a PNG
   of the display to the host's clipboard, with no agent: areas/clipboard-actions.ts `screenPng`), Copy the console's text (the
@@ -33,7 +33,9 @@
   const tone = $derived(marked ? 'busy' : TONES[c.state]);
   const title = $derived(
     c.state === 'paused'
-      ? t('clipboard:ClipboardMenu.title.paused')
+      ? c.startedPaused
+        ? t('clipboard:ClipboardMenu.title.pausedDemo')
+        : t('clipboard:ClipboardMenu.title.paused')
       : c.state === 'waiting'
         ? t('clipboard:ClipboardMenu.title.waiting')
         : marked
@@ -78,7 +80,8 @@
   data-stopped={c.stopped || undefined}
 >
   {#snippet badge()}<StatusDot {tone} aria-hidden="true" data-tone={tone} />{/snippet}
-  {#if c.permission === 'prompt'}
+  {#if c.permission === 'prompt' && !(c.state === 'paused' && c.startedPaused)}
+    <!-- A demo's machine, started paused: its switch is the one click that asks (`clipboardPause`). -->
     <Button
       id="clipboard-allow"
       title={t('clipboard:ClipboardMenu.allow.title')}
@@ -96,6 +99,9 @@
     onchange={(on) => page.clipboardPause(!on)}
     title={t('clipboard:ClipboardMenu.share.title')}>{t('clipboard:ClipboardMenu.share')}</Check
   >
+  {#if c.state === 'paused' && c.startedPaused}<Note id="clipboard-paused-demo">
+      {t('clipboard:ClipboardMenu.title.pausedDemo')}
+    </Note>{/if}
   {#if c.state === 'waiting'}<Note id="clipboard-waiting">
       {t('clipboard:ClipboardMenu.title.waiting')}
     </Note>{/if}

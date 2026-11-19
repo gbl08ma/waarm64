@@ -23,6 +23,7 @@ import { msgOf } from '../web/msg.ts';
 import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { storedCodec } from './snapshot-codecs.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
+import { startsPaused } from '../web/app/demo-store.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
 import { contentHash, HTML, IMAGE_CAP, imageHash, isPasteChord, onMac, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard-host.ts';
 import { REQUEST_WAIT } from '../web/app/clipboard-transfer.ts';
@@ -909,6 +910,8 @@ test("the toolbar's state and actions: waiting, sharing, paused; pause stops bot
   assert.deepEqual(written, []);
   assert.equal(share.chord({ key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false }), undefined);
   assert.equal(await share.send(), false);
+  assert.equal(await share.typeIt(), false);
+  assert.equal(host.reads, reads, "Send and Type don't read while paused");
   // Resume: RESUME and nothing more until the next copy or focus.
   share.resume();
   assert.equal(share.state, 'sharing');
@@ -939,6 +942,51 @@ test("the toolbar's state and actions: waiting, sharing, paused; pause stops bot
   link.onOpen!(false);
   assert.equal(share.state, 'waiting');
   assert.equal(share.canType, false);
+});
+
+test("a demo's machine starts each run paused (startsPaused): PAUSE at the link's opening, no read at HELLO, focus, clipboardchange or the permission's grant; resumed, it syncs; other machines start sharing", async () => {
+  assert.equal(startsPaused({ fromDemo: { store: 'https://example.org/store.json', id: 'alpine-term' } }), true);
+  assert.equal(startsPaused({}), false, 'a machine not from a demo (or a copy of one: the copy drops fromDemo)');
+  assert.equal(startsPaused(undefined), false, 'the transient machine');
+  const { link, deliver, take, sent } = fakeLink();
+  const { host, written } = fakeHost();
+  host.text = 'on the host';
+  // As web/app/areas/clipboard-actions.ts begins a demo machine's run: paused before the link opens.
+  link.open = false;
+  const agent = link.agent;
+  link.agent = undefined;
+  const share = new ClipboardShare(link, host);
+  share.pause();
+  assert.deepEqual([share.state, link.paused], ['paused', true]);
+  assert.deepEqual(sent, [], 'nothing sent before the opening');
+  // The opening (the real link says PAUSE at it: tests' "the link: HELLO and the switch at each opening"), the HELLO.
+  link.open = true;
+  link.onOpen!(true);
+  link.agent = agent;
+  deliver(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | CAP.TEXT }));
+  share.setPermission('prompt');
+  await share.focused();
+  share.setPermission('granted');
+  share.clipboardChanged();
+  await settle();
+  assert.equal(share.state, 'paused');
+  assert.equal(host.reads, 0, 'no read while paused: nothing that would make the browser ask');
+  assert.equal(share.chord({ key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false }), undefined);
+  assert.equal(await share.send(), false);
+  assert.equal(await share.typeIt(), false);
+  guestOffers(deliver, 1, 'from the guest');
+  await settle();
+  assert.deepEqual([host.reads, written, take(FRAME.OFFER).length], [0, [], 0]);
+  // One click: RESUME; the next focus syncs the host's text.
+  share.resume();
+  assert.equal(share.state, 'sharing');
+  assert.equal(take(FRAME.RESUME).length, 1);
+  await share.focused();
+  assert.deepEqual(offered(take), ['on the host']);
+  // A machine not from a demo: sharing from the start, as before.
+  const b = fakeLink();
+  const plain = new ClipboardShare(b.link, fakeHost().host);
+  assert.deepEqual([plain.state, b.link.paused], ['sharing', false]);
 });
 
 test('the read permission, followed: its state at once and at each change; none where the browser has no such permission', async () => {

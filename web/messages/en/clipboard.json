@@ -11,6 +11,10 @@
     "message": "Clipboard sharing is paused. Nothing passes between the guest and your computer until you resume it or the machine starts again.",
     "note": "Tooltip of the toolbar's clipboard button while the user paused the sharing (its icon crossed out). The pause lasts until the machine starts again."
   },
+  "ClipboardMenu.title.pausedDemo": {
+    "message": "Clipboard sharing is off. Tick Share the clipboard to share it with the guest both ways; your browser may ask you first. A machine made from a demo starts with it off each time.",
+    "note": "Tooltip of the toolbar's clipboard button, and a note in its menu, while the sharing is paused on a machine made from a demo: each of its runs starts paused, so the demo doesn't read the clipboard or make the browser ask for its permission before the user wants it. 'Share the clipboard' is ClipboardMenu.share's box."
+  },
   "ClipboardMenu.title.waiting": {
     "message": "Clipboard sharing is waiting for $t(common:product.name)'s guest agent. It starts once the guest has booted, if the guest is running systemd version 256 or above.",
     "note": "Tooltip of the toolbar's clipboard button, and a note in its menu, while the guest's program isn't there: before it started, or since it stopped."

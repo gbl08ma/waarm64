@@ -28,8 +28,10 @@
 //   forgets the guest's, the guest's copy the page's), when the agent refuses an offer (even after `ACK_WAIT`), when
 //   the port opens or closes, at the agent's HELLO and at its SESSION (the guest's clipboard changed hands: a session
 //   child, or its compositor, came or went), which also end the transfers in progress.
-// Sharing stops while paused (the toolbar's switch, §5: `pause`): nothing is read, offered, written or answered. The
-// page holds at most one image from each side (§4.4): the newest it offered, and a guest's while it is written.
+// Sharing stops while paused (the toolbar's switch, §5: `pause`): nothing is read, offered, written or answered. A run
+// of a machine made from a demo starts paused (web/app/demo-store.ts `startsPaused`), so the page reads nothing and Chromium asks nothing
+// until the user turns it on. The page holds at most one image from each side (§4.4): the newest it offered, and a
+// guest's while it is written.
 // The guest-to-host way is web/app/clipboard-guest.ts's, the transfers and ACKs web/app/clipboard-transfer.ts's, the
 // held paste chord web/app/clipboard-chord.ts's, the browser's side and the hashes web/app/clipboard-host.ts's.
 
@@ -293,7 +295,8 @@ export class ClipboardShare {
    * want): the host's text and image offered even if the guest seems to have them. False if there was none to send.
    */
   async send(): Promise<boolean> {
-    const got = await readClick(this.host, this.images);
+    // No read while paused or without the agent: one while the permission is `prompt` would make Chromium ask.
+    const got = this.active ? await readClick(this.host, this.images) : undefined;
     if (!got || !this.active) return false;
     void this.paste(got, true);
     return true;
@@ -303,7 +306,7 @@ export class ClipboardShare {
   async typeIt(): Promise<boolean> {
     this.typed = undefined;
     this.onChange?.();
-    const text = (await readClick(this.host, false))?.text;
+    const text = this.canType ? (await readClick(this.host, false))?.text : undefined; // as `send`'s
     return !!text && this.canType && this.link.type?.(text) === true;
   }
 

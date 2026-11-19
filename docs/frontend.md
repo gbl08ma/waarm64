@@ -299,7 +299,13 @@ too (its tooltip says what is limited) while it shares but Chromium's `clipboard
 permission is `prompt` (its click's read is what makes Chromium ask), how to allow it in the site's settings while
 it is `denied`, a note while it is `granted`; **[Share the clipboard](ui:clipboard:ClipboardMenu.share)**, the switch, which pauses both ways for the run
 (PAUSE to the agent; the pending text dropped; the pause isn't in snapshots: the link says PAUSE or RESUME at every
-opening of the agent's port, so an agent restored paused is resumed); **[Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send)** and
+opening of the agent's port, so an agent restored paused is resumed). A machine made from a demo (its record's
+`fromDemo`: web/app/demo-store.ts `startsPaused`) starts every run paused, the switch off and PAUSE said at the port's
+first opening, so the page makes no read and nothing makes Chromium ask until the user turns it on; the pause isn't
+remembered (each run starts so), and a copy of the machine drops `fromDemo` and shares from the start. Its tooltip and
+a note in the menu say "[Clipboard sharing is off. Tick Share the clipboard to share it with the guest both ways; your browser may ask you first. A machine made from a demo starts with it off each time.](ui:clipboard:ClipboardMenu.title.pausedDemo)", and Allow… is hidden meanwhile: the
+switch is the one click, since turning it on while the permission is `prompt` reads on the click (any machine's), as
+the setting's tick does, and a grant then syncs; **[Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send)** and
 **[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click (Send reads `read()`, for an image too); the menu stays open while one runs and closes when it succeeds (for Type, at the agent's TYPED DONE), a failure keeping it open with its note; after Type, the menu says what went
 wrong as the agent's TYPED says it: "[Nothing was typed, because the guest is showing a graphical desktop rather than a text console. Paste with the keyboard while the guest's screen has the focus instead.](ui:clipboard:ClipboardMenu.notText)"
 or "[Some of the text wasn't typed, as the guest's console didn't consume all of it.](ui:clipboard:ClipboardMenu.untyped)"; and
