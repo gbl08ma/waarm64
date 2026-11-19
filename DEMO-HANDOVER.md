@@ -46,6 +46,10 @@ says so again** (they allowed it, then withdrew it: "changed my mind, don't depl
 7. **Clipboard sharing starts paused for every machine made from a demo, ours included** (done: 1bad1ddf, f18c51a0):
    each run paused (not remembered), no clipboard read while paused, so no permission prompt until the visitor turns it
    on in the toolbar's Clipboard menu; a copy of a demo machine drops `fromDemo` and isn't paused.
+9. **(2026-11-19, new session)** Loop 12's build with `cmdline: init_on_free=1` is **approved** (the exact command
+   under "What's left" 1). `?disk=<url>&clipboard=1` **stays as is** (security question closed: the transient machine
+   has no network unless the user attaches one). **No deploy yet**: ask again later. `target/snapbench` and
+   `target/vk2-nvidia-bundle.tar` deleted with the user's OK (32 GB free after).
 8. The old Podman images (`webpc-*`, dangling) and `target/arch/desktop-kde.qcow2`, `desktop-pre-g7.qcow2` were
    deleted with the user's OK; earlier the gdb debug guest and cargo's `target/debug` caches (disk had filled to 100 %).
 
@@ -97,11 +101,7 @@ main). What the WIP holds:
   in, `cp -al`, or that step skips). Note under "Awaiting the user's review": each new demo, and that the desktop
   image's 944 pieces are duplicated in the shared `pieces/` until `desktop/` is published from there.
 
-**2. An open security question for the user** (ask, don't decide): `?disk=<url>&clipboard=1` still starts the page's
-transient machine on a stranger's disk with clipboard sharing on (web/app/areas/disk-actions.ts `fromAddress`,
-`?clipboard=` in docs/frontend.md). That machine has no network unless the user attaches one, so it can't send the
-clipboard out by itself; the coordinator's suggestion was to let only the user's own setting turn sharing on (the URL
-parameter only under `?hooks`, or only to turn it off). Demos are covered by decision 7.
+**2. (closed: decision 9, kept as is.)**
 
 **3. The deploy, only when the user says so** (their earlier steps are below in "Before a deploy"). How it was planned,
 so it doesn't touch loop 12's uncommitted state: in the CI worktree `../waarm64-ci` checked out at the pushed head,
