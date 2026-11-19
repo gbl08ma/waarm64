@@ -12,9 +12,12 @@ deploy** vm.tny.im or vmdisks.tny.im (decision 11) without the user asking. Ever
 deployed** (4e81858b) and **the user validated them by hand** (2026-11-19: all three on their desktop's Nvidia GPU).
 **Done since: the user's items** ("What's left" 2: the divider in Both, the terminal's own view without a frame,
 colors on the serial console, the countdown's notes and Ctrl+C, fresh image bases), the three templates rebuilt on
-them and checked (page-demos-guest, all three, with its new TERM and Ctrl+C cases: 28cc70ba). **Next: the whole CI
-set at 28cc70ba** (started 2026-11-19 ~21:50), then a redeploy (ask the user: decision 11), the deployed numbers and
-the track's end.
+them and checked (page-demos-guest, all three, with its new TERM and Ctrl+C cases), and **the whole CI set green**:
+every script at 28cc70ba (ci 743 s, ci-net 377, ci-graphics 332, ci-machines 245, ci-audio 48, ci-jit 238, ci-fp 425,
+ci-deqp 649, ci-deqp-vk 1060, ci-usb 9 tests) but ci-debian --platform, which failed twice in page-debian's serial
+logins (backlog "A serial login during the boot's last seconds") and passed at 4c4372c6 (389 s; the test waits for the
+boot's end). **Next: a redeploy** of the page and the demos (ask the user: decision 11; the templates in
+`target/demos` are the checkout's at 28cc70ba), then the deployed numbers and the track's end.
 
 ### Where things stand
 

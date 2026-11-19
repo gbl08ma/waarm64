@@ -1255,6 +1255,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **A serial login during the boot's last seconds can have its lines written over** (2026-11-19): with the serial
+  console's `TERM=xterm-256color` (web/app/firmware-files.ts `SERIAL_TERM`), ci-debian.sh --platform failed twice in
+  tests/page-debian.test.ts's serial logins: systemd's status lines, still coming, and the new login's shell wrote over a
+  command's echo (its regex missed it); without the drop-in it passed, and alone it passed either way. The journal shows
+  one ordinary getty start. Unexplained (a guess: the shell's redraw at the agent's CONSOLE, which xterm's terminfo
+  makes a cursor move). The test now waits for the boot's last target before logging in; a person who types then sees
+  a mangled line, no more.
 - **A desktop demo's machine can wait for good on "Starting the desktop..."** (review demo-page-4 #5, 2026-11-19):
   the template's `start-desktop.sh` (bench/demo/make-template.ts `startOnResume`) goes on only when the machine's id
   changes, which the agent's RENEW does, and RENEW is owed per link (web/app/main.ts `restored(template)` →
