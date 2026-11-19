@@ -128,6 +128,13 @@ rebuild and one whole CI set for all of them):
   `bash -c` too; Ctrl+C must leave the terminal open with a shell (most visitors don't know sway). Copy rules
   (docs/copy.md) for every word; the cards' summaries in deploy/disks/demos.json too.
 
+- **Fresh image bases** (the user, 2026-11-19: `pacman -Syu` in the desktop demos finds plenty to update): rebuild the
+  demos' images from today's bases before the templates are made again: the Arch desktop (`images/arch/desktop.sh`:
+  base.sh's bootstrap tarball and the mirror's packages of the day) and alpine-demo (from alpine-uefi's pinned cloud
+  image: move its pin to Alpine's current release; images/SHA256SUMS moves with it). Decision 13 kept CI's images
+  (`alpine-uefi`, `target/arch/desktop.qcow2`) as they were; the demos build from those same files, so this changes
+  CI's too: decisions.md is updated in the same change (the user's call, made here).
+
 **3. The whole CI set** on the head after the fixes: ci.sh, ci-net, ci-debian `--platform`, ci-graphics, ci-machines,
 ci-audio, ci-jit, ci-fp, ci-deqp, ci-deqp-vk, ci-usb (one at a time in ../waarm64-ci; link the rebuilt images,
 `target/demos` and `target/vkframes` in first).

@@ -251,6 +251,18 @@
   :global(body[data-view='screen']) #screen {
     box-shadow: none;
   }
+  /* The terminal alone, as the screen alone: no frame around it (the page's padding, its border and its own). */
+  :global(body[data-view='terminal']) main {
+    padding: 0;
+  }
+  :global(body[data-view='terminal']) #terminal {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  :global(body[data-view='terminal']) #terminal:global([data-fit] > .xterm) {
+    padding: 0;
+  }
   /* The Home page and the demo store's take the machine's place; the machine runs on behind them. */
   :global(body[data-page='machines']) main,
   :global(body[data-page='demos']) main {

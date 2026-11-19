@@ -99,6 +99,15 @@ test("the serial terminal: 80×25 without an agent that sets the guest's size; w
   const [cols, rows] = first;
   assert.ok(cols > 80 && rows > 25, `a 1400×1000 window fits more than 80×25: ${cols}×${rows}`);
   assert.deepEqual(await shown(page), { rows, size: `${cols}x${rows}`, fit: true }, "the terminal's rows are the size said");
+  // The terminal's own view has no frame, as the screen's has none: its cells start at the window's edge.
+  const frame = await page.evaluate(() => {
+    const s = document.querySelector('#terminal .xterm-screen')!.getBoundingClientRect();
+    const st = getComputedStyle(document.getElementById('terminal')!);
+    return { left: s.left, top: s.top, padding: st.padding, border: st.borderTopWidth };
+  });
+  assert.equal(frame.padding, '0px', `no padding in the terminal's own view: ${JSON.stringify(frame)}`);
+  assert.equal(frame.border, '0px', `no border: ${JSON.stringify(frame)}`);
+  assert.ok(frame.left === 0, `the cells at the window's left edge: ${JSON.stringify(frame)}`);
   // At every window height (a cell's worth, 1 px apart) the rows fitted are all inside the box: none clipped, no scrollbar.
   for (let h = 1000; h < 1020; h++) {
     await page.setViewportSize({ width: 1400, height: h });
