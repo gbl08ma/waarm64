@@ -228,12 +228,6 @@
     min-height: 0;
     padding: 0;
   }
-  /* Beside the screen (or above it, stacked), a fitted terminal takes a share of the room: a box sized by its content
-     would shrink with every fit. */
-  :global(body[data-view='both']) #terminal-view:global(:has(> #terminal[data-fit])) {
-    flex: 0 0 40%;
-    min-width: 0;
-  }
   #terminal:global([data-fit] > .xterm) {
     height: 100%;
     padding: var(--space-3);

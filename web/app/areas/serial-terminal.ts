@@ -93,12 +93,20 @@ export class SerialTerminal {
     tell(this.term.cols, this.term.rows);
   }
 
-  /** The box's size in cells, taken while fitting (none while it isn't shown: its view hidden). */
+  /**
+   * The box's size in cells, taken while fitting (none while it isn't shown: its view hidden). Beside the screen (Both)
+   * only its rows: its width is its content's there, so the screen's room stays what it was (and a fit of it would
+   * shrink it with every fit); stacked under the screen, 80×25.
+   */
   #refit() {
     if (!this.#tell) return;
     const d = this.#fit.proposeDimensions();
     if (!d || !Number.isFinite(d.cols) || !Number.isFinite(d.rows) || d.cols <= 0 || d.rows <= 0) return;
-    const [cols, rows] = [Math.max(MIN_COLS, d.cols), Math.max(MIN_ROWS, d.rows)];
+    const main = this.#el?.closest('main');
+    const stacked = !!main && getComputedStyle(main).flexDirection === 'column';
+    const both = screen.view === 'both';
+    const cols = both ? COLS : Math.max(MIN_COLS, d.cols);
+    const rows = both && stacked ? ROWS : Math.max(MIN_ROWS, d.rows);
     if (cols !== this.term.cols || rows !== this.term.rows) this.term.resize(cols, rows);
   }
 
