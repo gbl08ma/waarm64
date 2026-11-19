@@ -1,0 +1,7 @@
+{
+  "comment": "The alpine-demo image's base (images/build.sh build_alpine-demo, docs/images.md): Alpine's published Limine cloud image, pinned by SHA512 apart from alpine-uefi's (CI's stock guest), so the demo can move to a newer release alone.",
+  "loader": "Limine",
+  "file": "alpine-3.24.4-aarch64-tiny-r0.qcow2",
+  "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/alpine-3.24.4-aarch64-tiny-r0.qcow2",
+  "sha512": "0b82595259ae4602cbebb2abb55c76fe32a85baebf8931ddf7bc377f9b3ffa776166979bf28f3bf17ae0fd8d5b24f4066da35bee86c4f86b5905b50571f30992"
+}

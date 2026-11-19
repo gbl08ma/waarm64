@@ -70,11 +70,12 @@
 # alpine-uefi: Alpine's published UEFI cloud images (images/alpine-uefi.json,
 #   pinned by SHA512), which the firmware tests boot unmodified: alpine.qcow2
 #   (Limine) and alpine-grub.qcow2 (GRUB). Downloaded on the host, as debian.
-# alpine-demo: the Alpine demo's disk (images/alpine-demo/; docs/images.md): alpine-uefi's alpine.qcow2 cut
+# alpine-demo: the Alpine demo's disk (images/alpine-demo/; docs/images.md): Alpine's Limine cloud image (its own pin,
+#   images/alpine-demo/base.json) cut
 #   to Alpine's base (no tiny-cloud, sshd, chronyd, dhcpcd), root logged in on the serial console, udhcpc on eth0,
 #   apk with main (community on demand), a command-not-found hook that installs what's missing, the guest agent's
 #   OpenRC service, Limine without its wait and init_on_free=1; a 1 GiB alpine-demo.qcow2. Built natively in Alpine's
-#   arm64 container, as alpine-user, after alpine-uefi.
+#   arm64 container, as alpine-user.
 # agent: clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3),
 #   waarm64-agent, a static aarch64-unknown-linux-musl binary the page ships: built
 #   natively in the Rust project's Alpine image (the toolchain agent/rust-toolchain.toml
@@ -609,22 +610,28 @@ agent_openrc() {
   node --input-type=module -e 'import { agentOpenrc } from "./web/app/guest-agent.ts"; process.stdout.write(agentOpenrc())'
 }
 
-# The demo's Alpine (docs/images.md `alpine-demo`): alpine-uefi's Limine image taken apart in Alpine's arm64 container as its
+# The demo's Alpine (docs/images.md `alpine-demo`): Alpine's Limine cloud image (images/alpine-demo/base.json) taken apart in Alpine's arm64 container as its
 # root, its packages cut to Alpine's base (apk del: nothing new installed, so nothing from the live repositories goes
 # in), images/alpine-demo's files and the agent's service added, and put together again on a 1 GiB disk: the EFI
 # partition as published but limine.conf, the root a new ext4 of the rest (fixed UUIDs, every time SOURCE_DATE_EPOCH).
 build_alpine-demo() {
   local dst=$out/alpine-demo w=$out/build/alpine-demo
-  [ -f "$out/alpine-uefi/alpine.qcow2" ] || { echo "alpine-demo needs the alpine-uefi image: images/build.sh alpine-uefi" >&2; exit 1; }
   alpine_release
   rm -rf "$dst" "$w"
   mkdir -p "$dst" "$w"
+  # Its base: Alpine's Limine cloud image of images/alpine-demo/base.json (its own pin: alpine-uefi's stays CI's).
+  WAARM64_DL=$root/$out/dl node --disable-warning=ExperimentalWarning --input-type=module -e '
+    import { linkSync, readFileSync } from "node:fs";
+    const { download } = await import(process.argv[1] + "/tools/debian.ts");
+    const pin = JSON.parse(readFileSync(process.argv[1] + "/images/alpine-demo/base.json", "utf8"));
+    linkSync(await download({ ...pin, label: `Alpine (${pin.loader})`, pinFile: "images/alpine-demo/base.json" }), process.argv[2]);
+  ' "$root" "$root/$w/base.qcow2"
   agent_openrc > "$w/waarm64-agent"
   podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
     out=$1 w=$2 iso=$3 dst=$4 del=$5
     apk add -q --no-cache -X "$iso/apks" $6
     apk add -q --no-cache $7
-    qemu-img convert -O raw "$out/alpine-uefi/alpine.qcow2" $w/in.raw
+    qemu-img convert -O raw $w/base.qcow2 $w/in.raw
     # The published layout, checked: EFI at 1 MiB (96 MiB), "/" after it.
     sfdisk -d $w/in.raw | grep -q "in.raw1 : start=        2048, size=      196608, .*name=\"EFI\"" || { echo "alpine-demo: not the EFI partition expected" >&2; exit 1; }
     set -- $(sfdisk -d $w/in.raw | sed -n "s/.*in.raw2 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
@@ -811,7 +818,7 @@ inputs() {
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/Waarm64XhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
-  [ "$1" = alpine-demo ] && files+=($(find images/alpine-demo -type f | sort) "$out/alpine-uefi/.inputs") && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER|DEMO_)'
+  [ "$1" = alpine-demo ] && files+=($(find images/alpine-demo -type f | sort)) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER|DEMO_)'
   [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml agent/no-unwind.ld $(find agent/src -type f | sort)) && pins='^AGENT_'
   [ "$1" = venus ] && files=(vk/build.sh) && pins='^VENUS_'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
