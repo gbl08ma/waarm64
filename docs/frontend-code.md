@@ -22,7 +22,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    (`@fontsource/barlow`, imported by `tokens.css`: 400, 500, 600); monospace is the system's. No control keeps the
    browser's own look: `theme/base.css` draws the checkbox, the radio button, the select and a disclosure's chevron,
    `Slider` its cap and groove. The wordmark (the toolbar's `h1`) is the name's two halves by weight: `wa` dim and
-   medium, `arm64` bold. Chosen from four looks and four accents in screenshots of the real page (2026-11-19): a
+   medium, `arm64` bold. The page's icon (`index.html`, an inline SVG) is a blocky lit w on a key, steam over it in a
+   grey a step off the key (waarm64, warm). Chosen from four looks and four accents in screenshots of the real page (2026-11-19): a
    circuit board's green read closest to a terminal's, hairline rules with serif titles and a re-toned palette with a
    lime accent both read as other generated pages do, and a blue accent, however bright, as today's browser defaults.
 3. **Semantic tokens, not raw palette.** A token is named by its role, so a re-theme changes one file:
