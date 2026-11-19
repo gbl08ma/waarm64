@@ -55,6 +55,10 @@ test('a recipe checked', () => {
   assert.throws(() => checkRecipe({ ...desk, session: { ...desk.session, extra: 1 } }, 'x'), /unknown fields extra/);
   checkRecipe({ ...desk, session: { ...desk.session, cmdline: 'init_on_free=1 quiet' } }, 'x');
   assert.throws(() => checkRecipe({ ...desk, session: { ...desk.session, cmdline: 'a=$(x)' } }, 'x'), /kernel parameters/);
+  const cd = { script: 'open-firefox.sh', run: 'firefox', window: 'firefox', name: 'Firefox', seconds: 10 };
+  checkRecipe({ ...desk, session: { ...desk.session, countdown: cd } }, 'x');
+  for (const bad of [{ ...cd, script: '../x.sh' }, { ...cd, run: "firefox'; rm -rf ~" }, { ...cd, name: "GTK's demo" }, { ...cd, seconds: 600 }, { ...cd, extra: 1 }])
+    assert.throws(() => checkRecipe({ ...desk, session: { ...desk.session, countdown: bad } }, 'x'), /countdown is/, JSON.stringify(bad));
 });
 
 test("the source's desktops: their recipes check, and each its own MAC and serial", () => {

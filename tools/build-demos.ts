@@ -60,14 +60,21 @@ export const imagePath = (image: string) => (/^target\/[\w./-]+\.qcow2$/.test(im
 /** Checks a desktop's session (bench/demo/make-template.ts `--session`). */
 function checkSession(s: Session, at: string) {
   const plain = (v: unknown) => typeof v === 'string' && /^[\w ./:=,+-]+$/.test(v); // typed into a shell's double quotes
-  if (typeof s !== 'object' || s === null || Array.isArray(s)) throw new Error(`${at} is { user, apps, settle?, screen?, cmdline? }`);
-  const extra = Object.keys(s).filter((k) => !['user', 'apps', 'settle', 'screen', 'cmdline'].includes(k));
+  if (typeof s !== 'object' || s === null || Array.isArray(s)) throw new Error(`${at} is { user, apps, settle?, screen?, cmdline?, countdown? }`);
+  const extra = Object.keys(s).filter((k) => !['user', 'apps', 'settle', 'screen', 'cmdline', 'countdown'].includes(k));
   if (extra.length) throw new Error(`${at}: unknown fields ${extra.join(', ')}`);
   if (typeof s.user !== 'string' || !/^[a-z_][a-z0-9_-]*$/.test(s.user)) throw new Error(`${at}.user is a login name`);
   if (!Array.isArray(s.apps) || s.apps.some((x) => !plain(x?.run) || !plain(x?.window) || Object.keys(x).length !== 2))
     throw new Error(`${at}.apps is a list of { run, window } (no quotes or $ in them)`);
   if (s.settle !== undefined && !(Number.isInteger(s.settle) && s.settle >= 0 && s.settle <= 120)) throw new Error(`${at}.settle is 0 to 120 s`);
   if (s.screen !== undefined && !/^\d{3,4}x\d{3,4}$/.test(s.screen)) throw new Error(`${at}.screen is <w>x<h>`);
+  const c = s.countdown;
+  if (
+    c !== undefined &&
+    !(typeof c === 'object' && c !== null && Object.keys(c).length === 5 && typeof c.script === 'string' && /^[a-z0-9-]+\.sh$/.test(c.script) &&
+      plain(c.run) && plain(c.window) && typeof c.name === 'string' && /^[\w .+-]+$/.test(c.name) && Number.isInteger(c.seconds) && c.seconds >= 3 && c.seconds <= 60)
+  )
+    throw new Error(`${at}.countdown is { script: <name>.sh, run, window, name, seconds: 3 to 60 } (no quotes or $)`);
   if (s.cmdline !== undefined && !(typeof s.cmdline === 'string' && /^[\w.=,-]+( [\w.=,-]+)*$/.test(s.cmdline))) throw new Error(`${at}.cmdline is kernel parameters (no quotes, / or $)`);
 }
 

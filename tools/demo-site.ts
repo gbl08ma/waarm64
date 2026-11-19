@@ -66,7 +66,13 @@ const THUMBS = ['.webp', '.png', '.jpg', '.avif'];
  * of `apps` run through it until its `window` (an app_id or X11 class) is up, `settle` s more; `screen` the page's
  * fixed screen size (e.g. `1280x800`).
  */
-export type Session = { user: string; apps: { run: string; window: string }[]; settle?: number; screen?: string; cmdline?: string };
+/**
+ * `countdown`: a script in the user's home (`script`, e.g. open-firefox.sh) that counts `seconds` down and then runs
+ * `run` through sway, typed into the last app's window (a terminal) just before the snapshot, so a visitor's machine
+ * resumes counting: what it starts isn't in the snapshot, and Ctrl+C stops it. `name` is what the countdown says opens, `window` its app_id or X11 class (what the tests wait for after a restore).
+ */
+export type Countdown = { script: string; run: string; window: string; name: string; seconds: number };
+export type Session = { user: string; apps: { run: string; window: string }[]; settle?: number; screen?: string; cmdline?: string; countdown?: Countdown };
 /**
  * How tools/build-demos.ts makes a demo: its image (an images/build.sh name, or a qcow2's path in the checkout, made by
  * hand and never rebuilt), the definition's machine, the disk's serial and, for a desktop, its session.

@@ -52,21 +52,23 @@
      "screen": "1280x800",
      "apps": [
       {
-       "run": "firefox",
-       "window": "firefox"
-      },
-      {
        "run": "foot",
        "window": "foot"
       }
      ],
      "settle": 20,
-     "cmdline": "init_on_free=1"
+     "countdown": {
+      "script": "open-firefox.sh",
+      "run": "firefox",
+      "window": "firefox",
+      "name": "Firefox",
+      "seconds": 10
+     }
     }
    },
    "demo": {
     "id": "arch-desktop",
-    "summary": "Arch Linux's sway desktop with Firefox and a terminal, resumed where it was saved. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now: Firefox can't open websites, and pacman can't reach Arch's mirror.",
+    "summary": "Arch Linux's sway desktop, resumed with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it). Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now: Firefox can't open websites, and pacman can't reach Arch's mirror.",
     "view": "screen",
     "network": "demo"
    }
@@ -95,17 +97,23 @@
      "screen": "1280x800",
      "apps": [
       {
-       "run": "gtk4-demo --run=shadertoy",
-       "window": "org.gtk.Demo4"
+       "run": "foot",
+       "window": "foot"
       }
      ],
      "settle": 20,
-     "cmdline": "init_on_free=1"
+     "countdown": {
+      "script": "open-shader-demo.sh",
+      "run": "gtk4-demo --run=shadertoy",
+      "window": "org.gtk.Demo4",
+      "name": "The shader demo",
+      "seconds": 10
+     }
     }
    },
    "demo": {
     "id": "arch-3d",
-    "summary": "OpenGL running on Arch Linux's sway desktop: the guest's Mesa draws through virgl onto your browser's WebGL2. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now.",
+    "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it resumes, a shader demo starts, drawn by the guest's Mesa through virgl onto your browser's WebGL2. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now.",
     "view": "screen",
     "network": "demo"
    }

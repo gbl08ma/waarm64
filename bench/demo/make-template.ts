@@ -222,6 +222,37 @@ async function desktop(page: Page, s: Session, id: string) {
   }
   await page.waitForTimeout((s.settle ?? 15) * 1000);
 }
+/**
+ * The session's countdown (tools/demo-site.ts `Countdown`): the script written into the user's home (from root's
+ * console), then typed into the last app's window, the terminal sway focused; the snapshot follows at once, so a
+ * visitor's machine resumes the count. What it runs goes through sway, so closing the terminal leaves it open.
+ */
+async function countdown(page: Page, s: Session) {
+  const c = s.countdown!;
+  const script = [
+    '#!/bin/sh',
+    `# Opens ${c.name} in ${c.seconds} seconds. Ctrl+C stops it and leaves this terminal as it is.`,
+    `n=${c.seconds}`,
+    'while [ "$n" -gt 0 ]; do',
+    `  printf '\\r${c.name} opens in %2d s. Press Ctrl+C to stay in the terminal. ' "$n"`,
+    '  sleep 1',
+    '  n=$((n - 1))',
+    'done',
+    `printf '\\rOpening ${c.name}...%50s\\n' ''`,
+    `exec swaymsg -q exec '${c.run}'`,
+    '',
+  ].join('\n');
+  const home = (await run(page, `getent passwd ${s.user} | cut -d: -f6`)).trim();
+  if (!/^\/[\w/-]+$/.test(home)) throw new Error(`${s.user}'s home: ${home}`);
+  const file = `${home}/${c.script}`;
+  await run(page, `echo ${Buffer.from(script).toString('base64')} | base64 -d > ${file} && chmod 755 ${file} && chown ${s.user}: ${file}`);
+  await onScreen(page, `clear\n./${c.script}\n`);
+  for (let i = 0; i < 20 && (await run(page, `pgrep -u ${s.user} -f ${c.script} >/dev/null && echo up`)) !== 'up'; i++) await page.waitForTimeout(500);
+  if ((await run(page, `pgrep -u ${s.user} -f ${c.script} >/dev/null && echo up`)) !== 'up') throw new Error(`${c.script} didn't start in the terminal`);
+  await type(page, 'clear\n');
+  await page.waitForTimeout(1500);
+  log('the countdown started');
+}
 try {
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   page.on('pageerror', (e) => log('[page error]', e.message.slice(0, 300)));
@@ -284,6 +315,7 @@ try {
   await type(page, `${prep.filter(Boolean).join('; ')}\n`);
   await page.waitForTimeout(Number(a.settle) * 1000);
   await until(page, session ? /\]#\s*$/ : /~#\s*$/, 10_000);
+  if (session?.countdown) await countdown(page, session);
   if (a.thumbnail) {
     // The console as the card shows it: its top, 16:10, as WebP (Chromium's canvas encodes it).
     // The guest's screen alone: the page's own layers over it (the "Click to type" hint, the cursor, the boot card) hidden.

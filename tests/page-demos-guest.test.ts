@@ -18,7 +18,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { siteServer } from '../bench/demo/site.ts';
 import { untilLike } from '../bench/demo/screen-like.ts';
-import { shapeHashOf } from '../tools/demo-site.ts';
+import { shapeHashOf, type Session } from '../tools/demo-site.ts';
 import { checkDefinition } from '../web/app/definitions.ts';
 import { readHeader, SNAPSHOT_VERSION } from '../web/snapshot-file.ts';
 import { startServer } from '../tools/serve.ts';
@@ -113,6 +113,15 @@ for (const NAME of NAMES) {
     await run(page, 'echo demo-$((6*7)) > /root/demo-file; cat /root/demo-file; sync', /demo-42/, 120_000);
     console.log(`# click to a command answered: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     if (screen) {
+      // The session's countdown (tools/demo-site.ts `Countdown`) resumed: its app's window comes in sway's tree.
+      const c = (JSON.parse(readFileSync(join(SITE, NAME, 'template.json'), 'utf8')) as { session: Session }).session.countdown;
+      if (c) {
+        const sock = `SWAYSOCK=$(ls /run/user/$(id -u arch)/sway-ipc.*.sock)`;
+        // Up to 120 s after the restore: the count, then the app's start under emulation (Firefox's ~30 s).
+        await run(page, `clear; for i in $(seq 120); do su arch -c "${sock} swaymsg -t get_tree" | grep -q -E '"(app_id|class)": "${c.window}"' && break; sleep 1; done; [ "$i" -lt 120 ] && echo WIN""DOW-UP || echo WIN""DOW-NONE`, /WINDOW-(UP|NONE)/, 180_000);
+        assert.match(await terminal(page), /WINDOW-UP/, `${c.name}'s window (${c.window}) never came after the countdown`);
+        console.log(`# click to ${c.name}'s window (the countdown resumed): ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+      }
       assert.deepEqual(errors, []);
       return void (await ctx.close());
     }
