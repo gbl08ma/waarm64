@@ -168,21 +168,25 @@ the publish above (a dry run; `--apply` writes `target/disks/`). Per demo, into 
 it is and never rebuilt (a new one is a new demo id), and its `session` (`user`, `apps`: `{run, window}`, `settle`,
 `screen`, `countdown`, `cmdline`: tools/demo-site.ts `Session`) makes the template a desktop's: root logged in on the
 serial console (`root`/`root`, staying logged in there, as Alpine's); the user logged in on the screen (tty1) once
-logind has the session and its `XDG_RUNTIME_DIR` (typed sooner, sway found none), sway (`WLR_RENDERER=gles2` on a 3D
-machine), each app run through `swaymsg exec` until its window is in sway's tree, `settle` s, the caches dropped and
-memory compacted (`--compact`). **The demo's own app isn't in the snapshot:** both demos resume with foot open and a
-`countdown` in it (`{script, run, window, name, seconds}`): a script written into the user's home
-(`~/open-firefox.sh`, `~/open-shader-demo.sh`: it says what opens in how many seconds, Ctrl+C stops it, then
-`swaymsg exec <run>`, so closing the terminal leaves the app), typed into foot just before the snapshot, so a
-visitor's machine resumes the count and starts the app itself. That halves the download (arch-desktop: 131.6 MB, with
-Firefox open 287.8 MB; arch-3d: 132.8 MB, no GL app's state in the snapshot) and starts the app fresh rather than
-restored (bench/demo/REPORT.md "DEMO loop 12"). The screen at the snapshot is `resume.webp` (what a resumed screen is
-compared with: bench/demo/screen-like.ts); the card's `thumb.webp` is taken after it, the build's machine having
-counted down and opened the app (the page's layers over the screen, such as its
-[Click to type](ui:common:App.screen.hint) hint, hidden). The snapshot keeps sway's own 3D state (the page's question
-past 64 MiB answered yes). `cmdline` (kernel parameters added to systemd-boot's entry on the ESP, booted again once:
+logind has the session and its `XDG_RUNTIME_DIR` (typed sooner, sway found none), the caches dropped and memory
+compacted (`--compact`). **No GL client runs before the snapshot:** `~/start-desktop.sh`, typed on tty1, waits there
+(the snapshot's screen: "Starting the desktop...") for the machine's new id (the agent's RENEW at a template's first
+restore, agent/src/renew.rs) or the build's go (`/run/waarm64-demo-go`, after its snapshot), then starts sway
+(`WLR_RENDERER=gles2` on a 3D machine) and in it each app through `swaymsg exec`, the last (foot) running the
+`countdown` (`{script, run, window, name, seconds}`: `~/open-firefox.sh`, `~/open-shader-demo.sh`, which says what opens
+in how many seconds, Ctrl+C stops it, then `swaymsg exec <run>`, so closing the terminal leaves the app). So the
+template's guest has read no 3D caps (the device saves them only once read: graphics.md "Snapshots with 3D in use"),
+and its visitor's guest reads the caps of the browser that restores it. A template made with sway running carried the
+build's SwiftShader caps, and a browser whose WebGL2 backs less (the Mac's: a smaller `max_aliased_point_size`) had 3D
+off: a black screen, `INVALID_CONTEXT_ID` for every submit (2026-11-19). The cost is sway's start in the visitor's
+machine: click to Firefox's window 36.9 s, to the shader demo's 26.5 s (CI's runs, `tests/page-demos-guest.test.ts`,
+which restores with a format out of the caps to stand for such a browser); the snapshot is smaller (arch-desktop 96
+MB: no 3D state). The screen at the snapshot is `resume.webp` (what a resumed screen is compared with:
+bench/demo/screen-like.ts); the card's `thumb.webp` is taken after it, the build's machine having started the desktop
+and opened the app (the page's layers over the screen, such as its [Click to type](ui:common:App.screen.hint) hint,
+hidden). `cmdline` (kernel parameters added to systemd-boot's entry on the ESP, booted again once:
 the change in the template's overlay) is unused: `init_on_free=1` cost every free in the visitor's machine for a
-snapshot the countdown already made small. `arch-3d` is on virgl (WebGL2), not Venus: a snapshot is refused while a Venus context exists. The shader demo runs with `GDK_DISABLE=offload` (graphics.md "GTK4": the
+snapshot the countdown already made small. `settle` isn't used either. `arch-3d` is on virgl (WebGL2), not Venus: a snapshot is refused while a Venus context exists. The shader demo runs with `GDK_DISABLE=offload` (graphics.md "GTK4": the
 offloaded GL area is disconnected on virgl) and its window is `gtk4-demo`. The screen is fixed at `screen` (sway keeps
 the size it started with; the page letterboxes it). Its card's `view` is `screen`. ~2.5 min a desktop. The image is
 the deployed Desktop Demo's (`desktop/`, its content id the same); the demos' copy of its pieces is in the shared

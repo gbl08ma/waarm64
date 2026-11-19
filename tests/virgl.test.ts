@@ -1138,6 +1138,8 @@ test('virgl snapshots: contexts that never submitted are made again; one in use 
   const type = (r: Uint8Array) => new DataView(r.buffer, r.byteOffset).getUint32(0, true);
   const capsA = capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsB = capsFromGl(mockGl({ extensions: [] }));
   const a = make(capsA);
+  // The guest's Mesa reads the caps first (GET_CAPSET, VIRGL2 at version 2): a snapshot from here on carries them.
+  assert.equal(type(a.g.control(ctxCmd(0x109, 0, 2, 2), 64 + capsA.length)), 0x1103);
   assert.equal(type(a.g.control(ctxCmd(0x200, 7, 0, 0), 64)), 0x1100);
   // The console on the screen: a 2D resource on the scanout (RESOURCE_CREATE_2D, SET_SCANOUT).
   assert.equal(type(a.g.control(ctxCmd(0x101, 0, 1, 1, 64, 32), 64)), 0x1100);
@@ -1177,6 +1179,51 @@ test('virgl snapshots: contexts that never submitted are made again; one in use 
   a.g.control(ctxCmd(0x201, 7), 64);
   assert.equal((await a.g.save() as { unsaveable?: WireError }).unsaveable, undefined);
   assert.equal(await a.g.refusal(), undefined);
+});
+
+test("virgl snapshots: a guest that never read the caps saves none, and is given this browser's at the restore (a demo's template made before any GL client)", async () => {
+  const ram = new Uint8Array(1 << 16);
+  const capsA = capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsB = capsFromGl(mockGl({ extensions: [] }));
+  const make = (caps: Uint8Array) => {
+    const calls: HostCall[] = [];
+    const g = new Gpu(() => [ram], ramLayout(ram.length), { width: 640, height: 480, virgl: true, caps });
+    g.host = { call: (c) => calls.push(c), fence: () => undefined };
+    return { g, calls };
+  };
+  const cmd = (type: number, ...fields: number[]) => {
+    const b = new Uint8Array(24 + 4 * fields.length);
+    const v = new DataView(b.buffer);
+    v.setUint32(0, type, true);
+    fields.forEach((f, k) => v.setUint32(24 + 4 * k, f, true));
+    return b;
+  };
+  const type = (r: Uint8Array) => new DataView(r.buffer, r.byteOffset).getUint32(0, true);
+  // The kernel asks the capsets' sizes at its probe (GET_CAPSET_INFO), not their data.
+  const a = make(capsA);
+  assert.equal(type(a.g.control(cmd(0x108, 1), 64)), 0x1102);
+  // A context the kernel makes when a process opens the DRM device (Arch's boot): no caps read for it.
+  const early = cmd(0x200, 0, 0);
+  new DataView(early.buffer).setUint32(16, 1, true);
+  assert.equal(type(a.g.control(early, 64)), 0x1100);
+  const saved = JSON.parse(JSON.stringify(await a.g.save())) as { caps?: string };
+  assert.equal(saved.caps, undefined, 'no caps saved: the guest has none');
+  // Restored where they differ: the guest reads this browser's, and 3D is on.
+  const b = make(capsB);
+  b.g.restore(saved);
+  assert.deepEqual([...b.g.caps], [...capsB], "this browser's caps");
+  assert.equal(type(b.g.control(cmd(0x200), 64)), 0x1204, 'context 0 is no context (the command\'s own check)');
+  const ctx = cmd(0x200, 0, 0);
+  new DataView(ctx.buffer).setUint32(16, 9, true);
+  assert.equal(type(b.g.control(ctx, 64)), 0x1100, 'a context is made: 3D on');
+  // Once read (GET_CAPSET), they are the guest's: saved, and checked at the next restore.
+  assert.equal(type(b.g.control(cmd(0x109, 2, 2), 64 + capsB.length)), 0x1103);
+  const read = JSON.parse(JSON.stringify(await b.g.save())) as { caps?: string };
+  assert.ok(read.caps, 'saved once read');
+  const c = make(capsA);
+  c.g.restore(read);
+  assert.deepEqual([...c.g.caps], [...capsB], 'the guest keeps the caps it read');
+  // And a snapshot of that restored machine still carries them, read or not since.
+  assert.ok((JSON.parse(JSON.stringify(await c.g.save())) as { caps?: string }).caps, 'carried on');
 });
 
 test('virgl cursor: a 3D resource\'s image is read back from the renderer, in its format, and a later update wins', async () => {

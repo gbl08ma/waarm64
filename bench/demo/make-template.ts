@@ -10,8 +10,9 @@
 //   node bench/demo/make-template.ts [--image target/images/alpine-demo/alpine-demo.qcow2] [--name alpine-demo]
 //     [--site bench/results/local/demo/site] [--ram 512] [--cpus 2] [--definition <file>] [--core <wasm>] [--thumbnail]
 //     [--ready agent|prompt] [--lz4] [--drop] [--compact] [--settle 5] [--label <the image's name>] [--session <json>]
-// `--session` (a desktop: DEMO loop 12): root logged in on the serial console, the recipe's user on the screen, sway and
-// the session's apps up, the thumbnail the screen's (tools/demo-site.ts `Session`); the snapshot is the desktop's.
+// `--session` (a desktop: DEMO loop 12): root logged in on the serial console, the recipe's user on the screen, the
+// snapshot taken before sway starts (`startOnResume`: no 3D caps read yet), the thumbnail the screen's once the session
+// is up after it (tools/demo-site.ts `Session`).
 // tools/build-demos.ts (the demos' build: docs/remote-disks.md "Building the demos") runs it per demo with
 // `--definition`: the machine made by importing that definition (its MAC, the disk's serial, its CPUs and RAM: what the
 // shape hash covers, so a rebuild gives the same hash), its one URL disk's `url`, `name`, `identity` and `size` filled in here
@@ -56,12 +57,13 @@ const { values: a } = parseArgs({
 });
 const ROOT = new URL('../../', import.meta.url).pathname;
 /**
- * `--session <json>`: a desktop resumed on the screen (tools/build-demos.ts's recipe `session`): `user` logged in on the
- * screen (tty1; its password the same, as images/arch's logins are), sway started there (`WLR_RENDERER=gles2` on a 3D
- * machine, `pixman` on 2D), then each of `apps` run through sway (`swaymsg exec`) until its window (`window`, an app_id
- * or X11 class in sway's tree) is up; `settle` s more, then the snapshot. `screen` is the page's fixed screen size (its
- * Size menu's: sway keeps the size it started with). Root is logged in on the serial console first (`root`/`root`) to
- * drive it, and stays logged in there (the demo's serial console, as the Alpine demo's).
+ * `--session <json>`: a desktop started on the screen as the machine resumes (tools/build-demos.ts's recipe `session`):
+ * `user` logged in on the screen (tty1; its password the same, as images/arch's logins are), `start-desktop.sh` waiting
+ * there, then the snapshot; after a restore it starts sway (`WLR_RENDERER=gles2` on a 3D machine, `pixman` on 2D) and
+ * each of `apps` through sway (`swaymsg exec`; the last runs the countdown). `window` is an app_id or X11 class in sway's
+ * tree (the build's thumbnail waits for the last's, or the countdown's). `screen` is the page's fixed screen size (its
+ * Size menu's: sway takes the size the screen has). Root is logged in on the serial console first (`root`/`root`) to
+ * drive it, and stays logged in there (the demo's serial console, as the Alpine demo's). `settle` isn't used.
  */
 // The site's `<name>/` and `.work/<name>/` are removed first: a name is one plain path part.
 if (!/^[A-Za-z0-9._-]+$/.test(a.name!) || a.name === '.' || a.name === '..') throw new Error(`--name must be one plain name (not ${JSON.stringify(a.name)})`);
@@ -155,8 +157,8 @@ const onScreen = async (page: Page, s: string) => {
   }
 };
 /**
- * `--session`: root on the serial console, the user's session on the screen, sway, its apps' windows up. A step that
- * doesn't come throws with what the guest says of it (sway's log, the processes).
+ * `--session`: root on the serial console, the user's session on the screen (logind's, on tty1); no sway yet
+ * (`startOnResume`). A step that doesn't come throws with what the guest says of it.
  */
 async function desktop(page: Page, s: Session, id: string) {
   if (/login:\s*$/.test(await text(page))) {
@@ -202,25 +204,6 @@ async function desktop(page: Page, s: Session, id: string) {
   // XDG_RUNTIME_DIR once), then a moment for the shell's prompt.
   await wait('the session', async () => (await run(page, `pgrep -u ${s.user} -x bash >/dev/null && test -d /run/user/${uid} && loginctl list-sessions --no-legend | grep -c ' ${s.user} .*tty1'`)) === '1', 120_000, 'loginctl list-sessions --no-legend; ps -eo user,args | tail -n 8');
   await page.waitForTimeout(2000);
-  const display = await page.evaluate(async (id) => {
-    const { Store } = await import('/web/app/store.ts' as string);
-    return ((await (await Store.open()).get('machines', id)) as { display: string }).display;
-  }, id);
-  await onScreen(page, `WLR_RENDERER=${display === '3d' ? 'gles2' : 'pixman'} sway 2>/tmp/sway.log\n`);
-  const rt = `/run/user/${uid}`;
-  await wait('sway', async () => (await run(page, `ls ${rt}/ | grep -c sway-ipc`)) === '1', 180_000, 'tail -n 8 /tmp/sway.log');
-  const asUser = (cmd: string) => `su ${s.user} -c "export XDG_RUNTIME_DIR=${rt} WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$(ls ${rt}/sway-ipc.*.sock); ${cmd}"`;
-  for (const app of s.apps) {
-    const shown = async () => Number(await run(page, asUser(`swaymsg -t get_tree | grep -c -E '\\"(app_id|class)\\": \\"${app.window}\\"'`))) > 0;
-    // Again until it runs: sway may not take commands at once.
-    // (`run` is typed into su's double-quoted command: no quotes in it.)
-    for (let i = 0; i < 5 && !(await shown()); i++) {
-      await run(page, asUser(`swaymsg exec '${app.run}' >/dev/null`));
-      for (let k = 0; k < 30 && !(await shown()); k++) await page.waitForTimeout(2000);
-    }
-    await wait(`the window ${app.window}`, shown, 120_000, 'ps -eo args | tail -n 8; tail -n 5 /tmp/sway.log');
-  }
-  await page.waitForTimeout((s.settle ?? 15) * 1000);
 }
 /** The screen (a desktop's) or the console as the card shows it: its top, 16:10, 480×300 WebP (Chromium's canvas). */
 async function thumbnail(page: Page, file: string, screen: boolean) {
@@ -237,36 +220,69 @@ async function thumbnail(page: Page, file: string, screen: boolean) {
   }, png);
   writeFileSync(file, Uint8Array.from(webp));
 }
+/** Where the build tells the start script to go on after its snapshot (root's: the user's script only looks). */
+const GO = '/run/waarm64-demo-go';
+
 /**
- * The session's countdown (tools/demo-site.ts `Countdown`): the script written into the user's home (from root's
- * console), then typed into the last app's window, the terminal sway focused; the snapshot follows at once, so a
- * visitor's machine resumes the count. What it runs goes through sway, so closing the terminal leaves it open.
+ * The desktop started once the machine is a visitor's, not before the snapshot: no program has used the GPU when it is
+ * taken, so its guest has read no 3D caps, and reads those of the browser that restores it (a template made on
+ * SwiftShader restored on a GPU whose limits are lower would otherwise have 3D off: docs/graphics.md "Snapshots with 3D
+ * in use"). `start-desktop.sh` in the user's home, typed on tty1, waits for the agent's renewal of the machine's id
+ * (RENEW, at a template's first restore: agent/src/renew.rs) or the build's `GO`, then starts sway (`WLR_RENDERER`
+ * the machine's display's) and in it `apps` through `swaymsg exec`, the last with the countdown's script (tools/
+ * demo-site.ts `Countdown`: a terminal that counts down to its app, then stays a shell).
  */
-async function countdown(page: Page, s: Session) {
-  const c = s.countdown!;
-  const script = [
-    '#!/bin/sh',
-    `# Opens ${c.name} in ${c.seconds} seconds. Ctrl+C stops it and leaves this terminal as it is.`,
-    `n=${c.seconds}`,
-    'while [ "$n" -gt 0 ]; do',
-    `  printf '\\r${c.name} opens in %2d s. Press Ctrl+C to stay in the terminal. ' "$n"`,
-    '  sleep 1',
-    '  n=$((n - 1))',
-    'done',
-    `printf '\\rOpening ${c.name}...%50s\\n' ''`,
-    `exec swaymsg -q exec '${c.run}'`,
-    '',
-  ].join('\n');
+async function startOnResume(page: Page, s: Session, id: string) {
+  const display = await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    return ((await (await Store.open()).get('machines', id)) as { display: string }).display;
+  }, id);
   const home = (await run(page, `getent passwd ${s.user} | cut -d: -f6`)).trim();
   if (!/^\/[\w/-]+$/.test(home)) throw new Error(`${s.user}'s home: ${home}`);
-  const file = `${home}/${c.script}`;
-  await run(page, `echo ${Buffer.from(script).toString('base64')} | base64 -d > ${file} && chmod 755 ${file} && chown ${s.user}: ${file}`);
-  await onScreen(page, `clear\n./${c.script}\n`);
-  for (let i = 0; i < 20 && (await run(page, `pgrep -u ${s.user} -f ${c.script} >/dev/null && echo up`)) !== 'up'; i++) await page.waitForTimeout(500);
-  if ((await run(page, `pgrep -u ${s.user} -f ${c.script} >/dev/null && echo up`)) !== 'up') throw new Error(`${c.script} didn't start in the terminal`);
+  const write = async (name: string, text: string) => {
+    const file = `${home}/${name}`;
+    await run(page, `echo ${Buffer.from(text).toString('base64')} | base64 -d > ${file} && chmod 755 ${file} && chown ${s.user}: ${file}`);
+  };
+  const c = s.countdown;
+  if (c)
+    await write(c.script, [
+      '#!/bin/sh',
+      `# Opens ${c.name} in ${c.seconds} seconds. Ctrl+C stops it and leaves this terminal as it is.`,
+      `n=${c.seconds}`,
+      'while [ "$n" -gt 0 ]; do',
+      `  printf '\\r${c.name} opens in %2d s. Press Ctrl+C to stay in the terminal. ' "$n"`,
+      '  sleep 1',
+      '  n=$((n - 1))',
+      'done',
+      `printf '\\rOpening ${c.name}...%50s\\n' ''`,
+      `exec swaymsg -q exec '${c.run}'`,
+      '',
+    ].join('\n'));
+  // Each app through sway once its socket is there; the last runs the countdown, then a shell (`exec bash`).
+  const runs = s.apps.map((app, k) => (c && k === s.apps.length - 1 ? `${app.run} bash -c '$HOME/${c.script}; exec bash'` : app.run));
+  await write('start-desktop.sh', [
+    '#!/bin/sh',
+    "# From the demo's build (bench/demo/make-template.ts): the desktop starts once this machine is yours. The demo's",
+    '# snapshot was taken while this waited, before any program used the GPU, so the desktop gets what your browser',
+    "# backs. It waits for the machine's new identity (the guest agent's, after the first restore), then starts sway.",
+    'id=$(cat /etc/machine-id)',
+    "printf 'Starting the desktop...\\n'",
+    `while [ "$(cat /etc/machine-id)" = "$id" ] && [ ! -e ${GO} ]; do sleep 0.2; done`,
+    `export WLR_RENDERER=${display === '3d' ? 'gles2' : 'pixman'}`,
+    '(',
+    '  until s=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null); do sleep 0.5; done',
+    ...runs.map((r) => `  SWAYSOCK=$s swaymsg -q exec "${r}" >/dev/null`),
+    ') &',
+    'exec sway 2>/tmp/sway.log',
+    '',
+  ].join('\n'));
+  await onScreen(page, 'clear\n./start-desktop.sh\n');
+  const waiting = async () => (await run(page, `pgrep -u ${s.user} -f start-desktop.sh >/dev/null && ! pgrep -x sway >/dev/null && echo waiting`)) === 'waiting';
+  for (let i = 0; i < 20 && !(await waiting()); i++) await page.waitForTimeout(500);
+  if (!(await waiting())) throw new Error(`start-desktop.sh isn't waiting on tty1: ${await run(page, 'ps -eo user,args | tail -n 8')}`);
   await type(page, 'clear\n');
   await page.waitForTimeout(1500);
-  log('the countdown started');
+  log('the desktop waits for the restore');
 }
 try {
   const page = ctx.pages()[0] ?? (await ctx.newPage());
@@ -330,10 +346,10 @@ try {
   await type(page, `${prep.filter(Boolean).join('; ')}\n`);
   await page.waitForTimeout(Number(a.settle) * 1000);
   await until(page, session ? /\]#\s*$/ : /~#\s*$/, 10_000);
-  if (session?.countdown) await countdown(page, session);
-  // The screen as a restore shows it. With a countdown, the card's thumbnail is taken later, its app open (below), and
-  // this one is `resume.webp`: what the tests and the bench compare a resumed screen with (bench/demo/screen-like.ts).
-  if (a.thumbnail) await thumbnail(page, join(dir, session?.countdown ? 'resume.webp' : 'thumb.webp'), Boolean(session));
+  if (session) await startOnResume(page, session, id);
+  // The screen as a restore shows it. A desktop's card thumbnail is taken later, its session up (below), and this one
+  // is `resume.webp`: what the tests and the bench compare a resumed screen with (bench/demo/screen-like.ts).
+  if (a.thumbnail) await thumbnail(page, join(dir, session ? 'resume.webp' : 'thumb.webp'), Boolean(session));
   // The toolbar's Snapshot keeps it in the machine (a stored machine's), then the kept file is downloaded.
   await page.locator('#save-snapshot').click();
   const kept = (id: string) =>
@@ -363,13 +379,14 @@ try {
   ]);
   const plain = join(work, 'plain.waarm64snap');
   await download.saveAs(plain);
-  // The countdown ran on in this machine after the snapshot: the card's thumbnail with its app open.
-  if (a.thumbnail && session?.countdown) {
-    const c = session.countdown;
+  // The desktop started in this machine after the snapshot (the build's go): the card's thumbnail with its app open.
+  if (session) await run(page, `touch ${GO}`);
+  if (a.thumbnail && session) {
+    const c = session.countdown ?? { window: session.apps.at(-1)!.window, name: session.apps.at(-1)!.run, script: 'start-desktop.sh', run: 'sway' };
     const uid = (await run(page, `id -u ${session.user}`)).trim();
     const sock = `SWAYSOCK=$(ls /run/user/${uid}/sway-ipc.*.sock)`;
     const shown = async () => Number(await run(page, `su ${session.user} -c "${sock} swaymsg -t get_tree" | grep -c -E '"(app_id|class)": "${c.window}"'`)) > 0;
-    for (const end = Date.now() + 180_000; !(await shown()); await page.waitForTimeout(2000))
+    for (const end = Date.now() + 300_000; !(await shown()); await page.waitForTimeout(2000))
       if (Date.now() > end) {
         await page.screenshot({ path: join(site, `${a.name}-failed.png`) }).catch(() => {});
         throw new Error(`${c.name}'s window (${c.window}) didn't come after the countdown (the page: ${join(site, `${a.name}-failed.png`)}): ${await run(page, `tail -n 8 /tmp/sway.log; ps -eo stat,etime,args | grep -E '${c.script}|sleep|${c.run.split(' ').at(-1)!.split('=')[0]}' | grep -v grep`)}`);

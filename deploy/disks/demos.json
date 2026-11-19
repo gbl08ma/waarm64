@@ -69,7 +69,7 @@
    },
    "demo": {
     "id": "arch-desktop",
-    "summary": "Arch Linux's sway desktop, resumed with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it). Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now: Firefox can't open websites, and pacman can't reach Arch's mirror.",
+    "summary": "Arch Linux's sway desktop, started as the machine resumes, with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it). Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now: Firefox can't open websites, and pacman can't reach Arch's mirror.",
     "view": "screen",
     "network": "demo",
     "room": "global"
@@ -115,7 +115,7 @@
    },
    "demo": {
     "id": "arch-3d",
-    "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it resumes, a shader demo starts, drawn by the guest's Mesa through virgl onto your browser's WebGL2. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now.",
+    "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2. Its network reaches only Alpine's package mirror (dl-cdn.alpinelinux.org) for now.",
     "view": "screen",
     "network": "demo",
     "room": "global"

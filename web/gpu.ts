@@ -258,6 +258,13 @@ export class Gpu {
   /** A fenced command's wait for the host (taken by the backend, which holds the reply until it resolves). */
   private wait: Promise<void> | undefined;
   private capsets: ReturnType<typeof capsets>;
+  /**
+   * The guest has read the caps (GET_CAPSET): its kernel keeps them for the boot, so a snapshot carries them for the
+   * restore's check. A guest that never did (a demo's template made before any GL client: docs/graphics.md "Snapshots
+   * with 3D in use") reads the restoring browser's own. A context alone doesn't count: the guest's kernel makes one when
+   * a process opens the DRM device (Arch's boot does, ~12 s in), and no caps are read for it.
+   */
+  private capsRead = false;
   private ram: () => Ram;
   private layout: RamLayout;
   private o: GpuOptions;
@@ -441,6 +448,7 @@ export class Gpu {
         if (!c || u32(4) > c[1]) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const r = new Uint8Array(HDR + c[2].length);
         r.set(c[2], HDR);
+        this.capsRead = true;
         return this.reply(OK_CAPSET, cmd, room, r);
       }
       case CTX_CREATE: {
@@ -982,6 +990,7 @@ export class Gpu {
     this.contexts.clear();
     this.used.clear();
     this.venusContexts.clear();
+    this.capsRead = false; // a guest that starts again reads them again
     this.blobBytes = 0;
     this.host?.call({ t: 'reset' });
     this.total = 0;
@@ -997,7 +1006,7 @@ export class Gpu {
    * A snapshot's state: `state` plus the cursor's image, JSON but for the 3D contents (Uint8Arrays: web/snapshot.ts
    * writes them as frames of their own). Host pixels come back from the backing at `restore`. With 3D in use, the
    * renderer's state comes from the host (`VirglRenderer.save`: objects as data, contents read back; docs/graphics.md
-   * "Snapshots with 3D in use"), with the 3D resources and the contexts' attachments here; the caps the guest was given are kept, for a
+   * "Snapshots with 3D in use"), with the 3D resources and the contexts' attachments here; the caps the guest was given (once it read them: `capsRead`) are kept, for a
    * restore to check. `unsaveable` (why, as an error for the page: web/msg.ts `toWire`) where the host refuses (a video
    * decoding) or can't save; the snapshot refuses it
    * (web/vm.ts), and a test's state read takes the rest all the same.
@@ -1012,7 +1021,7 @@ export class Gpu {
       else renderer = got.state;
     }
     const three = this.o.virgl ? {
-      contexts: [...this.contexts.keys()], caps: toBase64(this.caps), ...(this.off3d ? { off3d: this.off3d } : {}),
+      contexts: [...this.contexts.keys()], ...(this.capsRead ? { caps: toBase64(this.caps) } : {}), ...(this.off3d ? { off3d: this.off3d } : {}),
       attached: [...this.contexts].map(([id, set]) => [id, [...set]]), used: [...this.used],
       three: [...this.resources.values()].filter((r) => r.three).map((r) => [r.id, r.three]),
       ...(renderer ? { renderer } : {}),
@@ -1076,6 +1085,7 @@ export class Gpu {
     this.contexts.clear();
     this.used.clear();
     this.off3d = t.off3d;
+    this.capsRead = !!t.caps;
     if (this.o.virgl && t.caps) {
       const saved = Uint8Array.from(atob(t.caps), (c) => c.charCodeAt(0));
       const now = this.caps;

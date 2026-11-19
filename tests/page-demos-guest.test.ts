@@ -95,10 +95,15 @@ for (const NAME of NAMES) {
     const page = await ctx.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
+    // The device's word on 3D at the restore (web/gpu.ts: "3D is off: …", "the machine's 3D state isn't restored …").
+    page.on('console', (m) => /^virtio-gpu:/.test(m.text()) && console.log(`# ${m.text()}`));
     page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
     const url = `${site.base}/store.json`;
     await ctx.route(url, (r) => r.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: store(NAME) }));
-    await page.goto(`${base}/demos?store=${encodeURIComponent(url)}`);
+    // A desktop restored where the browser backs less than the build's (a format out of the caps, as a GPU whose WebGL2
+    // lacks one): its template was made before any GL client, so the guest reads these caps and 3D is on (docs/graphics.md
+    // "Snapshots with 3D in use"); a template whose guest had read the build's would have 3D off, its screen black.
+    await page.goto(`${base}/demos?store=${encodeURIComponent(url)}${screen ? '&gpu=capsno=B5G6R5_UNORM' : ''}`);
     await page.locator('[data-action="accept-store"]').click({ timeout: 30_000 });
     await page.locator('.cards [data-demo]').first().click();
     const t0 = Date.now();
@@ -107,7 +112,7 @@ for (const NAME of NAMES) {
     if (screen) {
       // The screen at the snapshot: `resume.webp` where the card's thumbnail shows the countdown's app (make-template.ts).
       const d = await untilLike(page, readFileSync(join(SITE, NAME, existsSync(join(SITE, NAME, 'resume.webp')) ? 'resume.webp' : 'thumb.webp')), 120_000);
-      console.log(`# click to the desktop shown: ${((Date.now() - t0) / 1000).toFixed(1)} s (its difference from the thumbnail ${d.toFixed(1)})`);
+      console.log(`# click to the screen as it was saved: ${((Date.now() - t0) / 1000).toFixed(1)} s (its difference from it ${d.toFixed(1)})`);
       // The serial console, root logged in there, beside the screen.
       await page.locator('[data-view-button="both"]').click();
     }
@@ -118,14 +123,18 @@ for (const NAME of NAMES) {
       const c = (JSON.parse(readFileSync(join(SITE, NAME, 'template.json'), 'utf8')) as { session: Session }).session.countdown;
       if (c) {
         const sock = `SWAYSOCK=$(ls /run/user/$(id -u arch)/sway-ipc.*.sock)`;
-        // Up to 120 s after the restore: the count, then the app's start under emulation (Firefox's ~30 s).
-        await run(page, `clear; for i in $(seq 120); do su arch -c "${sock} swaymsg -t get_tree" | grep -q -E '"(app_id|class)": "${c.window}"' && break; sleep 1; done; [ "$i" -lt 120 ] && echo WIN""DOW-UP || echo WIN""DOW-NONE`, /WINDOW-(UP|NONE)/, 180_000);
+        // Up to 240 s after the restore: sway's start, the count, then the app's start under emulation (Firefox's ~30 s).
+        await run(page, `clear; for i in $(seq 240); do su arch -c "${sock} swaymsg -t get_tree" 2>/dev/null | grep -q -E '"(app_id|class)": "${c.window}"' && break; sleep 1; done; [ "$i" -lt 240 ] && echo WIN""DOW-UP || echo WIN""DOW-NONE`, /WINDOW-(UP|NONE)/, 300_000);
         if (!/WINDOW-UP/.test(await terminal(page))) {
           // What the guest says of it: sway's log (the app's stderr, sway started it), the app_ids sway has, its processes.
-          await run(page, `clear; tail -n 25 /tmp/sway.log; su arch -c "${sock} swaymsg -t get_tree" | grep -o -E '"(app_id|class)": "[^"]*"'; ps -eo args | grep -v -E '^\\[|ps -eo' | tail -n 6; echo DI""AG-END`, /DIAG-END/, 60_000);
+          await page.locator('#screen').screenshot({ path: join(ROOT, `bench/results/local/${NAME}-failed.png`) }).catch(() => undefined);
+          await run(page, `clear; tail -n 12 /tmp/sway.log; su arch -c "${sock} swaymsg -t get_tree" | grep -o -E '"(app_id|class)": "[^"]*"'; ps -eo etime,args | grep -E 'sway|foot|firefox|gtk4|open-|start-desktop|bash -c' | grep -v grep | cut -c1-100; cat /proc/uptime; journalctl -u waarm64-agent --no-pager -n 14 -o short-monotonic | cut -c1-110; echo DI""AG-END`, /DIAG-END/, 60_000);
           assert.fail(`${c.name}'s window (${c.window}) never came after the countdown; the guest: ${(await terminal(page)).slice(-2500)}`);
         }
         console.log(`# click to ${c.name}'s window (the countdown resumed): ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+        // 3D on: sway renders with GLES, and its log says no virtio-gpu error (a context refused is `INVALID_CONTEXT_ID`).
+        await run(page, `clear; dmesg | grep -c 'virtio_gpu_dequeue_ctrl_func.*ERROR'; dmesg | grep 'virtio_gpu.*ERROR' | sed 's/^\\[[ 0-9.]*\\] //' | sort | uniq -c | head -n 5; echo DM""ESG-END`, /DMESG-END/, 30_000);
+        assert.match(await terminal(page), /(^|\s)0\s*DMESG-END/, `virtio-gpu errors in the guest: ${(await terminal(page)).slice(-800)}`);
         // `WAARM64_DEMO_SHOT=<dir>`: the screen 10 s after the window came, to see what the app drew (a person's check).
         if (process.env.WAARM64_DEMO_SHOT) {
           await page.waitForTimeout(10_000);
