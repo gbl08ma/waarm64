@@ -24,8 +24,13 @@ out-of-context review and its fixes (cbe02be1). **The demos are deployed** (2026
   at a root prompt; also New machine's template), `arch-desktop` and `arch-3d` (the Arch desktop, resumed with foot
   counting 10 s down to Firefox or the shader demo). Built locally, all three with review 3's agent (cbe02be1):
   `target/demos/{alpine-term,arch-desktop,arch-3d,pieces}`, made by tools/build-demos.ts from the checkout's core.
-  **Deployed 2026-11-19 from c6a947e5** (the page and the demos, built with its dist's core): vmdisks.tny.im version
-  890bc654 (2068 files: the three demos, `store.json`, the Desktop Demo's `desktop/`), vm.tny.im version 986577f5.
+  **Deployed 2026-11-19 from 4e81858b** (the page, and the demos built by the checkout: the publish checks only the
+  snapshot's format and shape): vmdisks.tny.im version af485190 (2047 files; the first deploy's templates' pieces
+  removed, the user's go-ahead), vm.tny.im version dc7c6b87. Since the first deploy (c6a947e5): the desktops' templates
+  are made before any GL client (d9fa199c: the first ones restored black on the Mac, its WebGL2's point size below
+  SwiftShader's, so 3D was off), and the serial terminal fits its view with the agent's CONSOLE (ac51d59f, 4e81858b).
+  Checked on the deployed page: the VM (SwiftShader) all three, the Mac's Chrome for Testing (Apple M4, Metal) both
+  desktops with 3D on and no virtio-gpu error (bench/results/local/deployed-check.ts).
 - **Loop 15 (a demo's room) and 15b (its names on Alpine):** docs rooms.md "A demo's room", devices.md "A card nothing
   else manages" and "Names through the agent", adapters.md §1 rule 2, decisions.md "Network". A room connection per
   demo machine (web/app/net-demo.ts `withDemoRoom`, `forMachine`, deleted with it); the agent's CARDS (frame 32,
