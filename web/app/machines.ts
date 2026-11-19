@@ -105,6 +105,7 @@ export async function duplicateMachine(store: Store, id: string) {
     adapters: adaptersOf(m).map((a) => ({ id: newId(), mac: a.mac })),
     network: undefined,
     ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}),
+    restoreFirst: undefined, // the template kept is the machine's own snapshot, which a copy hasn't
     created: now,
     modified: now,
   };

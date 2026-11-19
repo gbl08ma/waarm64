@@ -36,11 +36,11 @@ declare global {
     /** `?iostats`: the disks' timers and base-read traces (web/iostats.ts). */
     __ioStats?: () => Promise<unknown>;
     /**
-     * A machine from a template (web/app/template.ts `machineFromUrls`: a definition's URL, its snapshot's chunked
-     * manifest), opened on the page, whose first start restores the snapshot; its id (bench/demo/targets.ts, until the
+     * A machine from a template (web/app/template.ts `machineFromUrls`: a definition's URL, and its snapshot's chunked
+     * manifest unless the definition is a demo's, which names its own), opened on the page, whose first start restores the snapshot; its id (bench/demo/targets.ts, until the
      * demo store's page clicks it).
      */
-    __waarm64FromTemplate?: (definition: string, snapshot: string) => Promise<string>;
+    __waarm64FromTemplate?: (definition: string, snapshot?: string) => Promise<string>;
     /** `?avprobe`: when the screen's centre turned bright (ms on this page's clock; bench/audio/avsync.ts). */
     __flashes?: number[];
     /** `?displaystats`: the display's and the GPU worker's reports, and the device's events and presents in them. */

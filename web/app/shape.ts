@@ -178,6 +178,8 @@ export type MachineRecord = {
    * overlays. Cleared by that restore. Not in the shape.
    */
   restoreFirst?: string;
+  /** The demo it was made from (web/app/demo-store.ts `DemoRef`; "started before"). Not in the shape or a definition. */
+  fromDemo?: { store: string; id: string };
   /** In slot order (the guest's vda, vdb…). */
   attachments: Attachment[];
   created: number;
@@ -353,15 +355,8 @@ export function shapeOf(
   // Vulkan needs 3D (`vulkan`: what the machine runs with when the page asks for it beside its record's).
   const vulkan = display === '3d' && (opts.vulkan ?? !!m.vulkan);
   const macs = adaptersOf(m).map((a) => a.mac.toLowerCase());
-  const list = slots({
-    nets: macs.length,
-    display,
-    mouse: m.mouse,
-    touch: m.touch,
-    clock: m.clock,
-    shares: m.shares,
-    attachments: m.attachments,
-  });
+  const { mouse, touch, clock, shares, attachments } = m;
+  const list = slots({ nets: macs.length, display, mouse, touch, clock, shares, attachments });
   return {
     version: SHAPE_VERSION,
     ncpus: m.ncpus,

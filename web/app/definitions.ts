@@ -1,5 +1,5 @@
 // Machine definitions in and out (docs/machines.md §6): a machine's shape as a small JSON file (`waarm64-machine`,
-// version 1): its settings, and per attachment the disk's kind, name, size and identity (a URL as is; a file's name,
+// version 2, which reads version 1 too: version 2 only added `demo`, a demo's card, docs/machines.md §6.2): its settings, and per attachment the disk's kind, name, size and identity (a URL as is; a file's name,
 // size, date and hash where known; a blank disk's or ramdisk's size), read-only, written in place, a ramdisk as swap, its serial. No
 // overlays, snapshots or file contents ("export a machine", the bundle, is later and named apart). An import makes a
 // new machine (its name made unique): URL, blank and ramdisk disks come back as they were (a disk this browser has, by
@@ -11,19 +11,16 @@
 // A grown overlay goes as its size (`overlaySize`, docs/machines.md §4.5): the import gives the attachment an empty
 // overlay of that size, marked to grow (its base's partition doesn't fill it), so the machine sees the same disk; a
 // stored disk grown since it was made, as the size it was made with (the image to pick) and the size seen as `overlaySize`.
+// A damaged definition's error names the field at fault (`machine.ramMiB`, `disks[0].url`, `demo.view`).
 import { MsgError } from '../msg.ts';
-import { grownSize, validGrownSize, withGrownOverlay } from './resize.ts';
+import { grownSize, withGrownOverlay } from './resize.ts';
 import { sizeSeen } from './disk-size.ts';
-import { sharesPathError } from './shares-mount.ts';
-import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
-import { validKeyboard } from './keyboard.ts';
+import { fromDefinition, toDefinition, type DefinitionUsb } from './usb-ports.ts';
+import { checkDefinition, DEFINITION_TYPE, DEFINITION_VERSION, SWITCHES } from './definition-check.ts';
 import {
   adaptersOf,
   canonical,
   DEFAULT_MAC,
-  isMac,
-  MAX_ADAPTERS,
-  MAX_DISKS,
   newId,
   uniqueName,
   type Attachment,
@@ -34,10 +31,30 @@ import {
   type MachineRecord,
 } from './shape.ts';
 import type { OverlayRecord, Store } from './store.ts';
-import { ramSplitError } from './machine.ts';
 
-export const DEFINITION_TYPE = 'waarm64-machine';
-export const DEFINITION_VERSION = 1;
+export { checkDefinition, DEFINITION_TYPE, DEFINITION_VERSION, isDemoId, isFileUrl } from './definition-check.ts';
+
+/**
+ * A demo (DEMO-KICKOFF.md decisions 11–15; docs/machines.md §6.2): what its card in a store shows and what its first
+ * start does. Its URLs, as its disks', are relative to the file it's in (a store's or a definition's).
+ */
+export type Demo = {
+  /** Unique in its store; a new version of a demo gets a new id (`replaces` names the ones before). */
+  id: string;
+  /** The card's text (plain text: the store's data, not the catalog's). */
+  summary: string;
+  thumbnail?: string;
+  /** The bytes a visitor downloads to reach its first prompt (tools/publish-demos.ts checks it against the files). */
+  download: number;
+  /** What the page shows when it opens: the serial console or the screen. */
+  view: 'serial' | 'screen';
+  /** The template snapshot its first start restores (a chunked file's manifest and its content id); none: a cold boot. */
+  snapshot?: { manifest: string; id: string };
+  /** `demo`: its first adapter attached to the demo network (web/app/net-demo.ts). */
+  network?: 'demo';
+  /** The ids of the versions it replaces (a machine made from one is "an older version of this demo"). */
+  replaces?: string[];
+};
 
 export type DefinitionDisk = {
   kind: DiskKind;
@@ -81,11 +98,9 @@ export type Definition = {
   };
   disks: DefinitionDisk[];
   usbDevices?: DefinitionUsb[];
+  /** Version 2: a demo's card, which a store lists (web/app/demo-store.ts). */
+  demo?: Demo;
 };
-
-/** The switches a definition writes only when they are on (`usb`, `mouse` and the rest), in its order. */
-const SWITCHES = ['usb', 'mouse', 'touch', 'clock', 'shares', 'clipboard'] as const;
-type Switch = (typeof SWITCHES)[number];
 
 /** The switches of `m` that are on, as `{ name: true }` in `keys`' order (those off are left out). */
 const onOf = <K extends string>(m: Partial<Record<K, boolean>>, keys: readonly K[]) =>
@@ -155,87 +170,6 @@ export async function exportDefinition(store: Store, id: string): Promise<Defini
   return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: settingsOf(m), disks, ...usb };
 }
 
-type Raw = Record<string, unknown>;
-const isRecord = (v: unknown): v is Raw => typeof v === 'object' && v !== null;
-/** `v` is absent, or `ok`. */
-const optional = (v: unknown, ok: (v: unknown) => boolean) => v === undefined || ok(v);
-const isBool = (v: unknown) => typeof v === 'boolean';
-const isFalse = (v: unknown) => v === false;
-/** An integer in [min, max]. */
-const isInt = (v: unknown, min: number, max = Infinity) =>
-  typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
-const isNumbers = (v: unknown): v is number[] => Array.isArray(v) && v.every((n) => typeof n === 'number');
-
-/** A split of the RAM over memory 0 and the spill memories that adds up to it and can be laid out. */
-const validSplit = (m: Raw) =>
-  optional(
-    m.ramSplit,
-    (v) => isNumbers(v) && !ramSplitError(v, m.vulkan === true) && v.reduce((a, b) => a + b, 0) === m.ramMiB,
-  );
-/** The adapters' MACs: one to `MAX_ADAPTERS` of them, on a machine with a network. */
-const validMacs = (m: Raw) =>
-  optional(
-    m.macs,
-    (v) =>
-      Array.isArray(v) &&
-      v.length >= 1 &&
-      v.length <= MAX_ADAPTERS &&
-      v.every((x) => typeof x === 'string' && isMac(x)) &&
-      m.network === true,
-  );
-
-/** A definition's machine settings, each checked. */
-const MACHINE_CHECKS: ((m: Raw) => boolean)[] = [
-  (m) => typeof m.name === 'string',
-  (m) => isInt(m.ncpus, 1, 64),
-  (m) => isInt(m.ramMiB, 64),
-  validSplit,
-  (m) => optional(m.jitMiB, (v) => isInt(v, 1, 4096)),
-  (m) => optional(m.keyboard, (v) => typeof v === 'string' && validKeyboard(v)),
-  (m) => optional(m.netConfig, isFalse),
-  (m) => optional(m.agent, isFalse),
-  (m) => m.display === '2d' || m.display === '3d',
-  (m) => optional(m.vulkan, isBool),
-  (m) => isBool(m.network),
-  validMacs,
-  (m) => SWITCHES.every((k: Switch) => optional(m[k], isBool)),
-  (m) => optional(m.sharesMount, isFalse),
-  (m) => optional(m.sharesPath, (v) => typeof v === 'string' && !sharesPathError(v)),
-];
-
-const DISK_KINDS: unknown[] = ['url', 'file', 'stored', 'blank', 'ramdisk'];
-/** A definition's disk: its kind, size, name, identity, serial and switches checked. */
-function validDisk(x: unknown) {
-  if (!isRecord(x)) return false;
-  const size = x.size;
-  return (
-    DISK_KINDS.includes(x.kind) &&
-    Number.isSafeInteger(size) &&
-    (size as number) > 0 &&
-    typeof x.name === 'string' &&
-    isRecord(x.identity) &&
-    !!x.identity.kind &&
-    typeof x.serial === 'string' &&
-    /^[0-9a-f]{12}$/.test(x.serial) &&
-    optional(x.inPlace, isBool) &&
-    optional(x.swap, isBool) &&
-    optional(x.overlaySize, (v) => validGrownSize(v, size as number))
-  );
-}
-
-/** Whether a parsed definition (its type and version checked) has what an import needs, each field as it should be. */
-function valid(d: Raw) {
-  const m = d.machine;
-  return (
-    isRecord(m) &&
-    MACHINE_CHECKS.every((check) => check(m)) &&
-    optional(d.usbDevices, validDefinitionUsb) &&
-    Array.isArray(d.disks) &&
-    d.disks.length <= MAX_DISKS &&
-    d.disks.every(validDisk)
-  );
-}
-
 /** Parses a definition file's text; throws a message for the user when it isn't one this page reads. */
 export function parseDefinition(text: string): Definition {
   let d: unknown;
@@ -246,22 +180,25 @@ export function parseDefinition(text: string): Definition {
       cause: new MsgError('machines:definitions.notJson.cause'),
     });
   }
-  if (!isRecord(d) || d.type !== DEFINITION_TYPE)
-    throw new MsgError('machines:definitions.notDefinition', undefined, {
-      cause: new MsgError('machines:definitions.notDefinition.cause'),
-    });
-  if (d.version !== DEFINITION_VERSION)
-    throw new MsgError('machines:definitions.version', undefined, {
-      cause: new MsgError('machines:definitions.version.cause', {
-        version: String(d.version),
-        reads: DEFINITION_VERSION,
-      }),
-    });
-  if (!valid(d))
-    throw new MsgError('machines:definitions.damaged', undefined, {
-      cause: new MsgError('machines:definitions.damaged.cause'),
-    });
-  return d as Definition;
+  return checkDefinition(d);
+}
+
+/**
+ * `def` with its relative URLs (its URL disks', its demo's snapshot and thumbnail) made absolute against `base`: where
+ * the definition was fetched from, or its store.
+ */
+export function resolveUrls<D extends Definition>(def: D, base: string): D {
+  const abs = (u: string) => new URL(u, base).href;
+  const demo = def.demo && {
+    ...def.demo,
+    ...(def.demo.thumbnail ? { thumbnail: abs(def.demo.thumbnail) } : {}),
+    ...(def.demo.snapshot ? { snapshot: { ...def.demo.snapshot, manifest: abs(def.demo.snapshot.manifest) } } : {}),
+  };
+  return {
+    ...def,
+    disks: def.disks.map((d) => (d.url ? { ...d, url: abs(d.url) } : d)),
+    ...(demo ? { demo } : {}),
+  };
 }
 
 /**

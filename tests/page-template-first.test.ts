@@ -2,8 +2,9 @@
 // a guest: the machine worker is a stand-in that records the start message and says the machine is off. A template's
 // machine in one fresh profile (a chunked image's disk), its definition and a snapshot of it made there; in another
 // fresh profile the page's hook makes the machine from both and opens it, and its first start restores the snapshot
-// without asking: a fork onto the machine's overlay, the mark cleared, the snapshot kept. (The whole of it with a guest,
-// timed: bench/demo/run.ts waarm64-template.)
+// without asking: a fork onto the machine's overlay, the mark cleared, the snapshot kept. The same from a store's demo
+// (web/app/demo-store.ts; DEMO loop 4): the store's file with the definition inline, its URLs relative to the store, the
+// machine marked with the demo it came from. (The whole of it with a guest, timed: bench/demo/run.ts waarm64-template.)
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
@@ -47,7 +48,8 @@ const standIn = (page: Page) => page.addInitScript(() => {
   };
 });
 
-test("a machine from a template, made in a fresh profile, restores the template at its first start: a fork onto its overlay, nothing asked", async () => {
+/** A template's machine made in a fresh profile: its definition, a snapshot file of it, the snapshot's shape hash. */
+async function makeTemplate(): Promise<{ def: { disks: object[] } & Record<string, unknown>; snapshot: number[]; hash: string }> {
   // Where the template is made: its machine, its definition, a snapshot pinning its overlay at a later generation.
   const maker = await browser.newContext();
   const a = await maker.newPage();
@@ -76,7 +78,12 @@ test("a machine from a template, made in a fresh profile, restores the template 
     return { def: await exportDefinition(store, m.id), snapshot: [...file], hash: hash as string };
   });
   await maker.close();
+  return made;
 
+}
+
+test("a machine from a template, made in a fresh profile, restores the template at its first start: a fork onto its overlay, nothing asked", async () => {
+  const made = await makeTemplate();
   // A visitor's fresh profile: the hook (a demo's click) makes the machine from the definition and the snapshot.
   const visitor = await browser.newContext();
   const page = await visitor.newPage();
@@ -115,6 +122,55 @@ test("a machine from a template, made in a fresh profile, restores the template 
   assert.deepEqual(after.snapshots.map((s: { machine: string; shapeHash: string }) => [s.machine, s.shapeHash]), [[id, made.hash]], 'the template kept as its snapshot');
   assert.equal(after.disk.url, `${base}/site/alpine/manifest.json`, "its disk's URL resolved against the definition's");
   assert.deepEqual(after.disk.identity, { kind: 'url', chunked: 'ab'.repeat(32), bytes: 1 << 20 });
+  assert.deepEqual(errors, []);
+  await visitor.close();
+});
+
+test("a machine from a store's demo: the definition inline, its URLs relative to the store; marked with the demo; its first start the template's restore", async () => {
+  const made = await makeTemplate();
+  const visitor = await browser.newContext();
+  const page = await visitor.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
+  await standIn(page);
+  const piece = new Uint8Array(made.snapshot);
+  const PIECE = createHash('sha256').update(piece).digest('hex');
+  const SNAP = 'cd'.repeat(32);
+  const demo = { id: 'alpine-term', summary: 'A terminal.', download: piece.length, view: 'serial', snapshot: { manifest: 'alpine/snapshot.json', id: SNAP } };
+  const def = { ...made.def, version: 2, disks: made.def.disks.map((x) => ({ ...x, url: 'alpine/manifest.json' })), demo };
+  await page.route('**/site/**', (r) => {
+    const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/store.json')) return r.fulfill({ json: { type: 'waarm64-store', version: 1, demos: [def] } });
+    if (path.endsWith('/alpine/snapshot.json'))
+      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: SNAP } });
+    if (path.endsWith(`/pieces/${PIECE}.bin`)) return r.fulfill({ body: Buffer.from(piece) });
+    return r.fulfill({ status: 404 });
+  });
+  await page.goto(`${base}/web/app/`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
+  const id = await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { fetchStore, findDemo } = await import('/web/app/demo-store.ts' as string);
+    const { machineFromDemo } = await import('/web/app/template.ts' as string);
+    const s = await fetchStore('/site/store.json');
+    const { machine } = await machineFromDemo(await Store.open(), findDemo(s, 'alpine-term'));
+    return machine.id as string;
+  });
+  await page.goto(`${base}/web/app/?m=${id}`);
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
+  const [start] = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
+  const after = await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const m = await store.get('machines', id);
+    return { m, disk: await store.get('disks', m.attachments[0].disk), snapshots: await store.all('snapshots') };
+  }, id);
+  assert.equal(start.snapshot, true, 'the first start is the restore');
+  assert.deepEqual(after.m.fromDemo, { store: `${base}/site/store.json`, id: 'alpine-term' });
+  assert.equal(after.m.restoreFirst, undefined, 'the mark cleared');
+  assert.deepEqual(after.snapshots.map((s: { machine: string; shapeHash: string }) => [s.machine, s.shapeHash]), [[id, made.hash]]);
+  assert.equal(after.disk.url, `${base}/site/alpine/manifest.json`, "its disk's URL resolved against the store's");
   assert.deepEqual(errors, []);
   await visitor.close();
 });

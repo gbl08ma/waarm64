@@ -108,11 +108,35 @@ cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh
   `<site>/<demo>/manifest.json` (the image), `snapshot.json` (the template snapshot, chunked the same way and fetched
   whole: docs/machines.md §6.1), `definition.json` (its disk's `url` relative to it). `_headers` makes `/pieces/*`
   immutable; the desktop's older `<name>/pieces/` stays until it's published again. The site's file budget counts
-  distinct pieces (deploy.sh counts the files), and a deploy still replaces the whole site: what the publish tool does
-  about both is the demos' publish loop's.
+  distinct pieces (deploy.sh counts the files), and a deploy still replaces the whole site: the demos' publish tool
+  (below) handles both.
 - **A template snapshot on the wire** (bench/demo/REPORT.md "DEMO loop 1"): Alpine's at a prompt is 24–40 MB of
   LZ4 frames, nearly all RAM; the overlay blocks a boot wrote are ~8–29 KB of it. Pieces are served as they are
   (`.bin`, not compressed by the host), though a host's brotli would take a quarter off an LZ4 file's pieces.
+
+## Publishing the demos
+
+`node tools/publish-demos.ts [deploy/disks/demos.json] [--site target/disks] [--budget 15000] [--apply]`
+(`tools/demo-site.ts` is the plan): from the source file (per demo its card, name, thumbnail and its build, a
+directory as `bench/demo/make-template.ts` writes it: `manifest.json`, `snapshot.json`, `definition.json`), it lays out
+`store.json` (every live demo's definition inline, URLs relative to it: docs/machines.md §6.2), `<id>/manifest.json`,
+`snapshot.json`, `definition.json` (the same definition alone) and `thumb.<ext>`, all pieces in the one `pieces/`;
+other directories (the desktop's) stay as they are and count. It prints the plan and writes nothing without `--apply`.
+It refuses the whole publish on: a source field it doesn't know, an id twice or over a directory that isn't a demo's;
+a build whose definition's URL disk isn't its image (by content id), or that has file or stored disks; a snapshot that
+isn't a template, or whose core format (`SNAPSHOT_VERSION`) or shape hash (computed by this checkout for the
+definition's machine: CPU features, devices, disks) isn't this build's, so a page update that would orphan a demo
+refuses until loop 5's build makes its template again; a missing or wrong-sized piece (new pieces are hashed as they're
+copied); a card's `download` outside [the snapshot + the thumbnail + the pieces the image's boot trace names, that +
+the whole image] (left out, it's that floor); an id whose image changed (a new image is a new id with `replaces`; only
+the snapshot is made again under an id, decision 13); the site past its budget.
+
+**Retention:** a demo left out of the source is retired: out of `store.json`, its directory and pieces kept, so
+machines made from it keep working. Only when the site would pass its budget (15,000 files by default, never past
+deploy.sh's 20,000) do retired demos go, the oldest retired first, until it fits; the plan names each (`DROPPED …`)
+before `--apply` removes it. Pieces no manifest on the site names go. The ledger, `.publish.json` (each id's first
+publish, last change, retirement, image and snapshot ids), sits in the site and isn't deployed (`.assetsignore`;
+deploy.sh doesn't count it). Tests: tests/demo-site.test.ts.
 
 ## Where our images are
 

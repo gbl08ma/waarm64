@@ -415,29 +415,93 @@
     "message": "The file isn't JSON, so it isn't a machine definition.",
     "note": "Error details: the cause under the headline machines:definitions.notJson, on the line under it in the same place; what happened, and what the user can do if anything."
   },
-  "definitions.notDefinition": {
+  "definition-check.notDefinition": {
     "message": "Couldn't import the definition",
-    "note": "Error in the Home page's message bar after Import a definition…: the file is JSON, but not a machine definition. The headline; its details are the line under it (machines:definitions.notDefinition.cause)."
+    "note": "Error in the Home page's message bar after Import a definition…: the file is JSON, but not a machine definition. The headline; its details are the line under it (machines:definition-check.notDefinition.cause)."
   },
-  "definitions.notDefinition.cause": {
+  "definition-check.notDefinition.cause": {
     "message": "The file isn't a machine definition.",
-    "note": "Error details: the cause under the headline machines:definitions.notDefinition, on the line under it in the same place; what happened, and what the user can do if anything."
+    "note": "Error details: the cause under the headline machines:definition-check.notDefinition, on the line under it in the same place; what happened, and what the user can do if anything."
   },
-  "definitions.version": {
+  "definition-check.version": {
     "message": "Couldn't import the definition",
-    "note": "Error in the Home page's message bar after Import a definition…: a definition of another version. The headline; its details are the line under it (machines:definitions.version.cause). {{version}}: the file's; {{reads}}: the one this web app reads."
+    "note": "Error in the Home page's message bar after Import a definition…: a definition of another version. The headline; its details are the line under it (machines:definition-check.version.cause). {{version}}: the file's; {{reads}}: the one this web app reads."
   },
-  "definitions.version.cause": {
+  "definition-check.version.cause": {
+    "message": "It's version {{version}}, and this web app reads versions up to {{reads}}.",
+    "note": "Error details: the cause under the headline machines:definition-check.version, on the line under it in the same place; what happened, and what the user can do if anything. {{version}}, {{reads}}: as that entry's note says."
+  },
+  "definition-check.damaged": {
+    "message": "Couldn't import the definition",
+    "note": "Error in the Home page's message bar after Import a definition…: a field is missing or out of range. The headline; its details are the line under it (machines:definition-check.damaged.cause)."
+  },
+  "definition-check.damaged.cause": {
+    "message": "The definition is damaged: {{field}} is missing or out of range.",
+    "note": "Error details: the cause under the headline machines:definition-check.damaged, on the line under it in the same place; what happened, and what the user can do if anything. {{field}}: the field at fault as the file names it (machine.ramMiB, disks[0].url, demo.view)."
+  },
+  "demo-store.failed": {
+    "message": "Couldn't load the demos",
+    "note": "Error headline: the demo store's page couldn't read a store of demos (ours, or one a ?store= link names). Its details are the line under it (one of the machines:demo-store.* or machines:template.* causes)."
+  },
+  "demo-store.demoFailed": {
+    "message": "Couldn't download the demo",
+    "note": "Error headline: a demo's files (its definition, its snapshot) couldn't be downloaded when the user chose it. Its details are the line under it (one of the machines:demo-store.* or machines:template.* causes)."
+  },
+  "demo-store.unreachable": {
+    "message": "{{url}} couldn't be reached. Check the connection and try again.",
+    "note": "Error details, the cause under the headline machines:demo-store.failed or machines:demo-store.demoFailed, on the line under it in the same place: the server didn't answer (offline, down, or refused by the browser). {{url}}: the file's address."
+  },
+  "demo-store.status": {
+    "message": "The server answered {{status}} for {{url}}.",
+    "note": "Error details, the cause under the headline machines:demo-store.failed or machines:demo-store.demoFailed, on the line under it in the same place: the server answered with an error. {{status}}: the HTTP status (a number); {{url}}: the file's address."
+  },
+  "demo-store.notJson": {
+    "message": "The file at {{url}} isn't JSON, so it isn't a store of demos.",
+    "note": "Error details, the cause under the headline machines:demo-store.failed, on the line under it in the same place: what was downloaded isn't JSON. {{url}}: its address."
+  },
+  "demo-store.notStore": {
+    "message": "The file at {{url}} isn't a store of demos or a demo's definition.",
+    "note": "Error details, the cause under the headline machines:demo-store.failed, on the line under it in the same place: the JSON is something else. {{url}}: its address."
+  },
+  "demo-store.version": {
     "message": "It's version {{version}}, and this web app reads version {{reads}}.",
-    "note": "Error details: the cause under the headline machines:definitions.version, on the line under it in the same place; what happened, and what the user can do if anything. {{version}}, {{reads}}: as that entry's note says."
+    "note": "Error details, the cause under the headline machines:demo-store.failed, on the line under it in the same place: the store is of another version of the format. {{version}}: the file's; {{reads}}: the one this web app reads."
   },
-  "definitions.damaged": {
-    "message": "Couldn't import the definition",
-    "note": "Error in the Home page's message bar after Import a definition…: a field is missing or out of range. The headline; its details are the line under it (machines:definitions.damaged.cause)."
+  "demo-store.damaged": {
+    "message": "The store is damaged: {{field}} is missing or out of range.",
+    "note": "Error details, the cause under the headline machines:demo-store.failed, on the line under it in the same place: a field of the store itself is wrong. {{field}}: the field as the file names it (demos, name)."
   },
-  "definitions.damaged.cause": {
-    "message": "The definition is damaged. A field is missing or out of range.",
-    "note": "Error details: the cause under the headline machines:definitions.damaged, on the line under it in the same place; what happened, and what the user can do if anything."
+  "demo-store.notDemo": {
+    "message": "Couldn't read this demo",
+    "note": "Error headline for one demo a store lists (or the definition a ?store= link names) that isn't a demo: the store's page leaves it out and says why. Its details are the line under it (machines:demo-store.notDemo.cause)."
+  },
+  "demo-store.notDemo.cause": {
+    "message": "The definition of <name>{{name}}</name> has no demo's card.",
+    "note": "Error details, the cause under the headline machines:demo-store.notDemo, on the line under it in the same place: the machine definition has no `demo` part. {{name}}: the machine's name in it."
+  },
+  "demo-store.duplicate": {
+    "message": "Couldn't read this demo",
+    "note": "Error headline for one demo a store lists twice under one id: the store's page leaves the later one out and says why. Its details are the line under it (machines:demo-store.duplicate.cause)."
+  },
+  "demo-store.duplicate.cause": {
+    "message": "Another demo in the store has the id {{id}}.",
+    "note": "Error details, the cause under the headline machines:demo-store.duplicate, on the line under it in the same place: the store is wrong; only its publisher can fix it. {{id}}: the demo's id (short, lowercase, as in a link's ?id=)."
+  },
+  "template.gone": {
+    "message": "This demo's files are gone",
+    "note": "Error headline when the user chooses a demo (or starts a machine made from one) and the server no longer has its files (a 404): it was retired. Its details are the line under it (machines:template.gone.cause)."
+  },
+  "template.gone.cause": {
+    "message": "The server no longer has them ({{url}}). The demo may have been replaced by a newer one.",
+    "note": "Error details, the cause under the headline machines:template.gone, on the line under it in the same place: what happened, and what the user can do. {{url}}: the missing file's address."
+  },
+  "template.otherSnapshot": {
+    "message": "Couldn't download the demo",
+    "note": "Error headline when a demo's snapshot on the server isn't the one its definition names (the demo was republished meanwhile). Its details are the line under it (machines:template.otherSnapshot.cause)."
+  },
+  "template.otherSnapshot.cause": {
+    "message": "The demo's snapshot on the server isn't the one its card names. The demo may have just been updated: reload the demos and try again.",
+    "note": "Error details, the cause under the headline machines:template.otherSnapshot, on the line under it in the same place: what happened, and what the user can do."
   },
   "store.diskAttached": {
     "message": "Couldn't delete the disk",

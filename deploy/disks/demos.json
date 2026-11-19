@@ -1,0 +1,16 @@
+{
+ "type": "waarm64-demos-source",
+ "name": "waarm64's demos",
+ "demos": [
+  {
+   "build": "target/demos/alpine-term",
+   "name": "Alpine (terminal)",
+   "demo": {
+    "id": "alpine-term",
+    "summary": "Alpine Linux at a root prompt, in a few seconds. Type a command it doesn't have and it installs it; apk reaches Alpine's package mirror.",
+    "view": "serial",
+    "network": "demo"
+   }
+  }
+ ]
+}

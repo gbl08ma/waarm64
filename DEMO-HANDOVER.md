@@ -2,6 +2,12 @@
 
 The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-demo.md](docs/plans/first-demo.md).
 
+## Before you load this build
+
+- **Loop 4 (definitions v2):** nothing to export first. Definitions of version 1 still import (the reader takes 1 and
+  2), and machine records are unchanged but for an optional `fromDemo`. One thing to know: an exported definition is now
+  version 2, which a page from before loop 4 refuses.
+
 ## How the track runs (the user, 2026-11-19)
 
 - The kickoff's "Needs the user's OK" is red lines (deploys, allowlist rules past `dl-cdn.alpinelinux.org`, new
@@ -46,6 +52,32 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
   `tests/page-demonet.test.ts` in `scripts/ci-net.sh` (Alpine against the fork built at the commit
   `tests/waarm64-demonet.ts` pins, `73d9a2d`; `WAARM64_DEMONET_SRC` overrides; cloud sessions SKIP).
 
+- **Loop 4, definitions and the store's data, done** (2026-11-19, committed unpushed; machines.md §6.2,
+  remote-disks.md "Publishing the demos"): definition version 2 (`demo`: id, summary, thumbnail, download, view,
+  snapshot `{manifest, id}`, network `"demo"`, replaces as a list), with a reader of both versions, checks in
+  `web/app/definition-check.ts` (a damaged one's error names the field); `fromDemo: {store, id}` on the record; the
+  store (`web/app/demo-store.ts`: `parseStore`/`fetchStore`, a single definition's URL as a store of one, unreadable
+  demos `skipped` and the rest shown, `demoMachines` for "started before" and older versions); `machineFromDemo`
+  (web/app/template.ts: the snapshot fetched and checked by content id first, then the machine, `fromDemo`,
+  `attachDemoNetwork`); the publish tool (`tools/publish-demos.ts`, `tools/demo-site.ts`, source
+  `deploy/disks/demos.json`, ledger `target/disks/.publish.json`). Checked on the spike's real template
+  (bench/results/local/demo/site/alpine-spike): its shape hash matches what the tool computes, and a dry run plus
+  `--apply` on a hard-linked copy of target/disks keeps the desktop's files (1009 files).
+
+## Next: loop 5, the automated demo build
+
+- One command that makes each demo's build into **`target/demos/<id>/`**, which is where `deploy/disks/demos.json`
+  points (`bench/demo/make-template.ts --site target/demos --name alpine-term` writes that layout: `manifest.json`,
+  `snapshot.json`, `definition.json`, pieces in `target/demos/pieces/`), then runs `tools/publish-demos.ts`. The tool
+  refuses a template whose core format or shape hash differs from the checkout's: that's the cue to rebuild. An id's
+  image must not change (a new image is a new id with `replaces`).
+- make-template.ts still writes a version-1-looking export (it calls `exportDefinition`, now version 2) with no `demo`:
+  the card comes from demos.json, so nothing more is needed. The card's `download` can be left out (the tool writes the
+  floor: snapshot + thumbnail + the image's prefetched pieces); a boot trace in the image's manifest makes that floor
+  include the disk's reads.
+- `scripts/ci-machines.sh` test: make a template from the local build, publish it into a temporary site, and restore
+  it through `fetchStore` + `machineFromDemo` (tests/page-template-first.test.ts's second case is the stand-in version).
+
 ## Next: loop 3, the alpine-demo image
 
 `images/build.sh alpine-demo` (decision 14, the user's barebones list). What loops 1–2 leave for it:
@@ -71,6 +103,14 @@ The kickoff is [DEMO-KICKOFF.md](DEMO-KICKOFF.md); the plan [docs/plans/first-de
 None.
 
 ## Awaiting the user's review
+
+- **Loop 4's engineering calls:** version 2 is version 1 plus `demo`, so there's no migration; exports write 2. No
+  `needs` field: 3D, Vulkan and RAM come from the machine's own fields, so they can't disagree. `replaces` is a list,
+  so v3 can name v1 and v2 both. The page ignores fields it doesn't know, while the publish tool refuses them. A
+  store's unreadable demo is skipped and said, not fatal. `fromDemo.store` is the store's absolute URL (another host's
+  store with the same id is another demo). A copy keeps `fromDemo` and drops `restoreFirst` (that mark used to be copied:
+  a small bug). Publishing is a dry run unless `--apply`. Retired demos keep their files until the 15,000-file budget,
+  then the oldest retired go first. The ledger lives in the site, excluded by `.assetsignore`.
 
 - **Loop 10:** the default server URL is a placeholder, **`wss://demonet.tny.im/` (web/demo-net.ts `DEMO_URL`): the
   user's to confirm** once the fork is hosted (a connection keeps its URL: changing the default later needs a new

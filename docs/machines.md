@@ -568,6 +568,40 @@ shape: said) boots the machine instead. Afterwards it's an ordinary machine: its
 kept as a snapshot to go back to. The page's hook `window.__waarm64FromTemplate(definition, snapshot)` (`?hooks`) is
 bench/demo's click; tests/template.test.ts the identity and the plan in Node.
 
+### 6.2 Version 2, demos and stores
+
+**Version 2** of the definition (`DEFINITION_VERSION`, what an export writes) is version 1 plus an optional `demo`, a
+demo's card: `id` (lowercase letters, digits and dashes: what `?id=` and "started before" use), `summary` (plain
+text, the store's data, not the catalog's), `thumbnail?`, `download` (the bytes a visit fetches: the publish tool
+checks it), `view` (`serial` or `screen`), `snapshot?` (`{manifest, id}`: the template's chunked file and its content
+id; none: a cold boot), `network?` (`"demo"`: the first adapter on the demo network, which needs `machine.network`),
+`replaces?` (the ids of the versions before: a machine made from one is "an older version of this demo"). What a card
+needs from the browser is the machine's own fields (`display: "3d"` for WebGL2, `vulkan` for WebGPU, `ramMiB`), not a
+`needs` of its own that could disagree with them. **Version 1 still reads** (the reader takes both; a `demo` in a
+version 1 file is left out): nothing migrates, and an older page refuses version 2 by its version. Checks live in
+`web/app/definition-check.ts`: each field as an import needs it, a URL disk with its URL (http, https or relative),
+and a damaged definition's error names the field at fault (`machine.ramMiB`, `disks[0].url`, `demo.view`). Fields the
+page doesn't know are ignored, so a later page's additions within a version still read; the publish tool refuses them
+(a typo in a store's source).
+
+**A store** (`web/app/demo-store.ts`, decision 15) is one file, `{type: "waarm64-store", version: 1, name?, demos: [...]}`,
+each demo a whole version-2 definition with a `demo`; relative URLs (disks, snapshot, thumbnail) resolve against the
+store's URL (`resolveUrls`). A single definition's URL is taken where a store's is (`parseStore` tells them apart by
+`type`): a store of that one demo, the definition's URL its store. A demo the page can't read (a later version,
+damaged, not a demo, an id seen before in the store) is left out and listed in `skipped` with its error, so a store
+with a newer demo still shows the others; the store itself unreadable (unreachable, a status, not JSON, not a store,
+another version) is a `MsgError` (`machines:demo-store.*`). `OUR_STORE` is `https://vmdisks.tny.im/store.json`.
+
+**A demo's machine** (`machineFromDemo`, web/app/template.ts): its snapshot fetched first (a 404 is
+`machines:template.gone`, "this demo's files are gone"; a manifest whose content id isn't the card's is refused: the site
+was republished meanwhile), so a failed download leaves no machine; then §6.1's machine, marked **`fromDemo: {store,
+id}`** (the store's URL as fetched, absolute), and its first adapter attached to the demo network when the card asks
+(`attachDemoNetwork`, web/app/net-demo.ts). `demoMachines` finds this browser's machines from a card (`mine`: "started
+before", the most recently changed first) and from the versions it replaces (`older`). `fromDemo` isn't in the shape or
+a definition; a copy keeps it (it's still that demo's machine) and drops `restoreFirst` (the template is a snapshot of
+the original, not of the copy). Tests: tests/demo-store.test.ts (Node), tests/page-template-first.test.ts (a store's
+demo made and restored at its first start in Chromium).
+
 ## 7. The page
 
 The Home page (`MachinesPage.svelte` and its panes and tabs, `#home` in the address), its tabs, wizards and storage footer:
@@ -584,7 +618,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
   hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts` (Merge into the disk), `web/app/snapshots.ts`
   (the shape now, the restore's plan, `unrestorable`), `web/app/snapshot-lost.ts` (which snapshots can never be restored: `lost`, the disks' generations, `basesOf`), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
-  (a switch to an overlay of another size asked), `web/app/definitions.ts`, `web/app/template.ts` (a machine from a template, §6.1), `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
+  (a switch to an overlay of another size asked), `web/app/definitions.ts` (`definition-check.ts`: its checks), `web/app/template.ts` (a machine from a template, §6.1), `web/app/demo-store.ts` (stores, §6.2), `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Home page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
 - A disk's map (frontend.md "A disk's surface"): `web/surface.ts` (the counts), `web/app/surface-job.ts` and
