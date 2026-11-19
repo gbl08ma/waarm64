@@ -121,6 +121,18 @@ decisions in §11).
   The slots are full from the start to ~+175 s, so the first-second order isn't worth a change: only slot-seconds are.
   Passed ci-machines (twice), the fast lane (107 s) and ci.sh (627 s).
 
+- **Two flakes seen with the MIDR change** (2026-11-19; its new key remade every fixture at once):
+  - **A bad `ip` fixture made under load:** ci-net remade all five shapes on its 3 slots (`ip` in 42 s, the others
+    75–104 s); net-tailnet and net-tailcat then failed on it every time (no IPv4 lease: eth0 had only its IPv6
+    addresses; 2 of 2 runs alone). A real boot (`WAARM64_DEBIAN_FIXTURES=0`) and a fixture made alone (28 s) both
+    pass, net-tailcat too. The bad file and that run's log: `bench/results/local/ci/bad-fixture/`. Not found yet: what
+    the save under load caught (a DHCP client already started? the link's state?); a maker could check that before it
+    saves.
+  - **The names test** `a_release_beats_a_renewal_waiting_at_its_parent` failed once in ci.sh, 1 of 30 alone
+    (docs/backlog.md "net/ts's other draws are unseeded"; it may be the server's bug, not the test's).
+  - The MIDR commit passed the fast lane, ci-debian, ci-machines and ci.sh (a second run, after the names flake);
+    ci-net's two failures passed again on a fixture made alone.
+
 ## Next, in order
 
 1. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility

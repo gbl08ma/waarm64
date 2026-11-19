@@ -2123,7 +2123,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`room/names/server.rs`) draws from a stream seeded by the test's name under `cfg(test)`, which ended three names
   tests' flakes (2 of 12 runs of the lib failed four at a time; 28 of 28 passed after). The crate's other
   `getrandom::fill` calls (room.rs's keys and nonces, `zone.rs`'s slots, `agent.rs`, the DERP and tailnet nonces) still
-  draw from the OS in tests; seed them the same way if a test that reaches them turns flaky.
+  draw from the OS in tests; seed them the same way if a test that reaches them turns flaky. One has (2026-11-19,
+  `scripts/ci.sh`): `server_tests::a_release_beats_a_renewal_waiting_at_its_parent` failed 1 of 30 runs alone (server
+  0, `renewal_first` false: the name still resolves to its node, not Nx). `entry.rs` `sign` draws BIP-340's aux bytes
+  from the OS, which changes the entries' signatures and so their ids. Before seeding it, find which draw loses: if an
+  id's order decides whether a release beats a waiting renewal, that's the server's bug, not the test's.
 - [B] **`tests/browser.test.ts` "the page says what's wrong…" stalled once** (2026-11-18, `scripts/ci.sh`): 600 s at
   idle CPU, no step named; 24 runs alone and 20 with every CPU busy passed in 8-18 s. A page-side hang would fail its
   30 s waits, so a Playwright call with no timeout (an `evaluate`, `close`, `newPage`) didn't return. It now notes each
