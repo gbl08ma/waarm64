@@ -1679,7 +1679,9 @@ strings (systemd 256+; the keyboard's paragraph above says how they get there). 
 the setting has no unit. Guests without systemd 256 ignore them. Shared folders' **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)**
 gives a `.mount` and an `.automount` the same way ([shares.md](shares.md) §5). A ramdisk's **swap** box on the Home page gives an `fstab.extra`
 credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap"). Every firmware machine's strings also hold a drop-in that keeps systemd's vsock ssh hint off the login prompt
-([devices.md](devices.md) "vsock"). The fw_cfg files a start gives a firmware machine (these strings, the
+([devices.md](devices.md) "vsock"), and one that tells the serial console's logins the page's terminal
+(`serial-getty@ttyAMA0.service`'s `TERM=xterm-256color`, not systemd's `vt220`, so programs use colors: `SERIAL_TERM`;
+a login already running keeps its own; the alpine-demo image, without systemd, sets it in its `inittab`). The fw_cfg files a start gives a firmware machine (these strings, the
 credentials, clipboard sharing's agent) are one pure function of its start message, `web/app/firmware-files.ts`
 `firmwareFiles` (tests/firmware-files.test.ts pins their bytes).
 

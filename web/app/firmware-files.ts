@@ -1,7 +1,7 @@
 // What a `firmware` machine's fw_cfg holds at a start (docs/frontend.md "What the page sets in the guest"): the
 // systemd credentials (the notify socket's, the machine's network card's, the page's `?credential=`), the units the page has the guest run
 // as OEM strings in SMBIOS (the keyboard layout, the network's settings, the shared folders' mount, swap ramdisks, the
-// clipboard agent, the vsock ssh hint's drop-in; too long for fw_cfg's names: core/src/smbios.rs), and the agent's binary
+// clipboard agent, the vsock ssh hint's drop-in, the serial console's TERM; too long for fw_cfg's names: core/src/smbios.rs), and the agent's binary
 // with its OpenRC installer (a guest without systemd: web/app/guest-agent.ts `agentInstaller`). Pure: the worker's start
 // (web/app/worker.ts) calls it with the agent's bytes once fetched; tests/firmware-files.test.ts pins its bytes.
 import { AGENT_OPENRC_FILE, agentCredentials, agentFiles, agentInstaller } from './guest-agent.ts';
@@ -25,6 +25,16 @@ type Start = Extract<ToWorker, { type: 'start' }>;
 export const NO_SSH_VSOCK_ISSUE: Credential = {
   name: 'systemd.unit-dropin.sshd-vsock.socket~waarm64-no-issue',
   data: '[Socket]\nExecStartPost=\nExecStopPre=\n',
+};
+
+/**
+ * The serial console's logins are told the page's terminal (xterm.js: colors, 256 of them) instead of systemd's
+ * `vt220`, which has none: `serial-getty@.service` passes `$TERM` to agetty. A login that started before keeps its own.
+ * Guests without systemd set it themselves (images/alpine-demo/inittab).
+ */
+export const SERIAL_TERM: Credential = {
+  name: 'systemd.unit-dropin.serial-getty@ttyAMA0.service~waarm64-term',
+  data: '[Service]\nEnvironment=TERM=xterm-256color\n',
 };
 
 /**
@@ -54,6 +64,7 @@ export function firmwareFiles(
     ...swapCredentials(disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : []))),
     ...(agentBytes ? agentCredentials(words.agent) : []),
     NO_SSH_VSOCK_ISSUE,
+    SERIAL_TERM,
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   const agent = agentBytes ? [{ name: AGENT_OPENRC_FILE, data: agentInstaller() }, ...agentFiles(agentBytes)] : [];

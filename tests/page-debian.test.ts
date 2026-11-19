@@ -305,6 +305,9 @@ for (let run = 1; run <= RUNS; run++) {
     // no sshd and systemd 257: no socket to apply it to; web/app/firmware-files.ts).
     await onSerial(page, 'clear; echo ==vs""ock $(for d in /sys/bus/virtio/devices/*; do [ $(cat $d/device) = 0x0013 ] && basename $(readlink $d/driver); done) $(cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/vmm.notify_socket/raw) $(journalctl -b -o cat _PID=1 | grep -c "readiness notification\\|notify_socket") $(cat /run/systemd/generator.early/sshd-vsock.socket.d/waarm64-no-issue.conf).\n');
     await shows(page, /==vsock vmw_vsock_virtio_transport vsock-stream:2:8573 0 \[Socket\] ExecStartPost= ExecStopPre=\./);
+    // The serial console's login told the page's terminal (web/app/firmware-files.ts SERIAL_TERM): colors.
+    await onSerial(page, 'clear; echo ==te""rm $TERM $(tput colors).\n');
+    await shows(page, /==term xterm-256color 256\./);
     // The SMBIOS tables over fw_cfg (core/src/smbios.rs), through EDK2's SMBIOS 3.0 entry point to Linux's DMI.
     await onSerial(page, 'clear; cd /sys/class/dmi/id; echo ==dm""i $(cat sys_vendor product_name product_family chassis_vendor bios_vendor bios_version); cd\n');
     await shows(page, /==dmi waarm64 waarm64 Virtual Machine waarm64 EDK II ArmVirtQemuKernel/);

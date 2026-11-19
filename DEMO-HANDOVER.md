@@ -112,11 +112,11 @@ rebuild and one whole CI set for all of them):
 - **The divider in Both**: backlog "A divider to drag between the screen and the terminal in Both" (its whole design is
   there); the item leaves the backlog when done.
 - **No padding around the serial terminal in its own view** (Terminal), as the screen has none in its own.
-- **Colors in the serial terminal**: xterm.js has them, but the guest doesn't know (a serial getty's `TERM` is `vt220`
-  or `vt100`, busybox's `login -f root` on Alpine). Find whether the agent can tell the guest (e.g. `TERM` for the
-  serial console's logins: a systemd drop-in for `serial-getty@ttyAMA0` where systemd runs, the inittab/OpenRC line on
-  Alpine), which guests it reaches, and what it costs. A guest-visible change. The templates are then rebuilt so the
-  new agent is in their memory.
+- **Colors in the serial terminal** (the user's approach, 2026-11-19: no agent change): a systemd drop-in in the
+  page's SMBIOS strings (`SERIAL_TERM`, web/app/firmware-files.ts: `serial-getty@ttyAMA0.service`'s
+  `TERM=xterm-256color`) for every firmware machine with systemd, and alpine-demo's `inittab` (`env
+  TERM=xterm-256color login -f root`); alpine-uefi stays the stock cloud image. Written (local commit); checked by
+  page-debian's `==term` line and, after the rebuild, by hand on the demos. A guest-visible change, the user's.
 - **The desktop demos' countdown, and the others' words** (the templates rebuilt anyway; vmdisks' demo files replaced
   without regard for what's there, the user's words): the Firefox demo's countdown says that on the demo network the
   web is poor next to the local helper or a tailnet; that Chromium is installed too; that packages install with

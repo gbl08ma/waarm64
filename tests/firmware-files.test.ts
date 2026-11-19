@@ -36,6 +36,8 @@ function before(c: Case) {
     ...(agentBytes ? agentCredentials(m.guest.agent) : []),
     // Since: systemd-ssh-issue's lines cleared from the generator's sshd-vsock.socket (docs/devices.md "vsock").
     { name: 'systemd.unit-dropin.sshd-vsock.socket~waarm64-no-issue', data: '[Socket]\nExecStartPost=\nExecStopPre=\n' },
+    // Since: the serial console's logins told the page's terminal, colors and all (DEMO, after review 4).
+    { name: 'systemd.unit-dropin.serial-getty@ttyAMA0.service~waarm64-term', data: '[Service]\nEnvironment=TERM=xterm-256color\n' },
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   // Since: the agent's OpenRC installer beside its binary (DEMO loop 2: a guest without systemd, docs/devices.md).
