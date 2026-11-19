@@ -105,7 +105,8 @@ for (const NAME of NAMES) {
     await page.locator('[data-action="start-demo"]:not([disabled])').click({ timeout: 30_000 });
     await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 120_000, polling: 100 });
     if (screen) {
-      const d = await untilLike(page, readFileSync(join(SITE, NAME, 'thumb.webp')), 120_000);
+      // The screen at the snapshot: `resume.webp` where the card's thumbnail shows the countdown's app (make-template.ts).
+      const d = await untilLike(page, readFileSync(join(SITE, NAME, existsSync(join(SITE, NAME, 'resume.webp')) ? 'resume.webp' : 'thumb.webp')), 120_000);
       console.log(`# click to the desktop shown: ${((Date.now() - t0) / 1000).toFixed(1)} s (its difference from the thumbnail ${d.toFixed(1)})`);
       // The serial console, root logged in there, beside the screen.
       await page.locator('[data-view-button="both"]').click();

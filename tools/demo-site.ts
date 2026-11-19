@@ -1,4 +1,4 @@
-// The demos' site (docs/remote-disks.md "Publishing the demos"; DEMO-KICKOFF.md decisions 13, 15, 17): what
+// The demos' site (docs/remote-disks.md "Publishing the demos"; docs/decisions.md "Demos"): what
 // tools/publish-demos.ts writes into target/disks/ for vmdisks.tny.im, planned before anything is written.
 //
 // The input is a source file (deploy/disks/demos.json): per demo, its card (`demo`: id, summary, view, network,
@@ -20,7 +20,7 @@
 // the shape, the CPU features or the format refuses until the template is made again: tools/build-demos.ts); the
 // pieces there, their sizes and, for those new to the site, their hashes; the card's `download` between what a visit
 // fetches (the snapshot, the thumbnail and the image's pieces its boot trace names) and that plus the whole image (left
-// out, it's that floor); an id's image never changes (a new image is a new id: decision 13; only the snapshot is made
+// out, it's that floor); an id's image never changes (a new image is a new id: docs/decisions.md "Demos"; only the snapshot is made
 // again under an id); no file over 25 MiB; the site's distinct files under the budget (~15,000: a version's old and new
 // pieces side by side), never past 20,000 (deploy/disks/deploy.sh's limit).
 //

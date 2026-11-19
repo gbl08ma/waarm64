@@ -2,8 +2,9 @@
 
 The fourth kind of connection beside a tailnet, tailcat and the local helper ([adapters.md](adapters.md) §1): **`demo`**,
 a public server that gives each page's machine a network of its own whose way out reaches only the hosts its owner's
-allowlist names (for the Alpine demo, `dl-cdn.alpinelinux.org` on port 443, so `apk add` works out of the box). It is
-DEMO-KICKOFF.md's decisions 1–10 (the user's, 2026-11-18); the plan is [plans/first-demo.md](../plans/first-demo.md) §3.2.
+allowlist names (for the Alpine demo, `dl-cdn.alpinelinux.org` on port 443, so `apk add` works out of the box). What
+binds it is [decisions.md](../decisions.md) "Network" (the user, 2026-11-18); why it has this shape is "Not taken, and
+why" below.
 
 The server is its own repository, [`github.com/gbl08ma/waarm64-demonet`](https://github.com/gbl08ma/waarm64-demonet)
 (private for now), a fork of the local helper ([local-helper.md](local-helper.md)) with its history: Go over
@@ -16,15 +17,16 @@ waarm64's side.
 
 - **`demo`** (web/app/connections.ts): its record holds the server's URL, `demo.url`, `wss://…` (`parseDemoURL`;
   `ws://` only on this computer, for testing a server of one's own). Not a secret: no token, no pairing, and no Local
-  Network Access prompt (the server is public). The default is `DEMO_URL` in web/demo-net.ts, **`wss://demonet.tny.im/`,
-  a placeholder** until the user hosts the fork (DEMO-HANDOVER.md).
+  Network Access prompt (the server is public). The default is `DEMO_URL` in web/demo-net.ts, **`wss://demonet.tny.im/`**
+  (the user's, hosted since 2026-11-19: remote-disks.md "Deploying the demos"). A stored connection keeps its URL, so
+  changing the default later needs a new record or an edit of each browser's.
 - **No lock** (`exclusive`: false): any number of machines, in any tabs, and several adapters of one, run it at once,
   each with a socket of its own and so a network of its own on the server (adapters.md §1 rule 4's exception).
   `NetClaims.claim` takes no Web Lock for it and `PageNetwork`'s "on another adapter" refusal doesn't apply.
 - **Made by the page itself** (adapters.md §1 rule 2's exception): `demoConnection` (web/app/net-demo.ts) finds the
   browser's stored demo connection to a URL or makes one ([Demo network](ui:network:connections.demoNetwork)), and
   `attachDemoNetwork(store, machine, adapter = 0, url?)` attaches a stored machine's adapter to it: what a demo's
-  definition asks for with `demo.network: "demo"` (DEMO loop 4's field). The Network wizard makes one too
+  definition asks for with `demo.network: "demo"` (machines.md §6.2). The Network wizard makes one too
   ([The demo network](ui:network:NetKindStep.kind.pickDemo), its server under [Another server](ui:network:NetDemoStep.demo.advanced)).
 - **A primary as the local helper's is:** its DHCP is the server's, which always gives a default route, so a connected
   demo adapter ranks first (`primaryOf`). The server's guests are IPv4 only: no IPv6 default comes from it
@@ -110,3 +112,28 @@ The words are the catalog's (web/app/demo-view.ts; codes to keys, a note each):
 `target/net/waarm64-demonet`; `WAARM64_DEMONET_SRC=../waarm64-demonet` builds a checkout of yours instead. Where it
 can't be fetched (a cloud session, while the repository is private) the test says SKIPPED. Move the pin with a change
 of the server the page needs, after its tests passed.
+
+## Not taken, and why
+
+Settled with the user, 2026-11-18; written down so it isn't looked up again.
+
+- **A stream proxy (Wisp, or a protocol of our own) instead of frames:** the page would run TCP/IP itself (a new stack
+  at the gateway, DNS answered with fake addresses, a stream client), and the guest would get TCP alone (UDP only
+  with Wisp v2's extension), IPv4 only. Frames to a server-side netstack reuse the local helper whole and give the
+  guest TCP, UDP (DNS, NTP, QUIC) and ICMP, with no TCP stack or smoltcp in the page; the allowlist's work moves to
+  the server's dial. A Wisp connection kind stays possible later, for users who bring their own unrestricted server
+  (backlog). If it's built: **smoltcp** (Rust wasm, 0BSD, sans-I/O as `net/ts` is; a dependency to ask for) over a
+  port of unkernel's ~530-line `net.ts` or v86's stack (minimal TCPs: v86's showed no retransmission or window); and
+  unkernel's DNS trick (A queries answered from a reserved range, a connect to one becoming a CONNECT by name), but
+  not its 198.18.0.0/15, which our echo backend's leases use.
+- **A mode of the local helper instead of a fork:** the local helper stays small enough for a user to read and trust
+  on their own computer; what only a public server needs (budgets, the allowlist, egress, one network per socket)
+  lives in waarm64-demonet.
+- **Cloudflare Workers:** a plain Worker's 10 ms of CPU likely covers a WebSocket's whole life, not each message; a
+  `connect()` socket can't outlive the request that opened it, so only a Durable Object could hold one (the free
+  plan's 13,000 GB-s a day is ~29 object-hours, awake while a socket is open); a browser's streaming `fetch` upload
+  is half duplex; and on any plan `connect()` refuses Cloudflare's own ranges (npm's registry among them) and has no
+  UDP.
+- **Inbound:** none, by design. The server forwards no ports; rooms, tailnets and the local helper stay the ways in.
+  A guest's connections don't survive a resume (the server's side is gone): a demo is snapshotted at an idle prompt,
+  and its lease is renewed at the resume (devices.md "The network after a restore").

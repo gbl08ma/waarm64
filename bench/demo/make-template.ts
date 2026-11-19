@@ -222,6 +222,21 @@ async function desktop(page: Page, s: Session, id: string) {
   }
   await page.waitForTimeout((s.settle ?? 15) * 1000);
 }
+/** The screen (a desktop's) or the console as the card shows it: its top, 16:10, 480×300 WebP (Chromium's canvas). */
+async function thumbnail(page: Page, file: string, screen: boolean) {
+  // The guest's screen alone: the page's own layers over it (the "Click to type" hint, the cursor, the boot card) hidden.
+  const png = (await page.locator(screen ? '#screen' : '.xterm').screenshot({ style: '#screen-frame > :not(#screen) { visibility: hidden !important; }' })).toString('base64');
+  const webp = await page.evaluate(async (png) => {
+    const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+    const w = Math.min(img.width, Math.round((img.height * 16) / 10));
+    const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 300 });
+    canvas.getContext('2d')!.drawImage(img, 0, 0, w, (w * 10) / 16, 0, 0, 480, 300);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', 0.85));
+    if (blob?.type !== 'image/webp') throw new Error('this Chromium encodes no WebP');
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  }, png);
+  writeFileSync(file, Uint8Array.from(webp));
+}
 /**
  * The session's countdown (tools/demo-site.ts `Countdown`): the script written into the user's home (from root's
  * console), then typed into the last app's window, the terminal sway focused; the snapshot follows at once, so a
@@ -316,21 +331,9 @@ try {
   await page.waitForTimeout(Number(a.settle) * 1000);
   await until(page, session ? /\]#\s*$/ : /~#\s*$/, 10_000);
   if (session?.countdown) await countdown(page, session);
-  if (a.thumbnail) {
-    // The console as the card shows it: its top, 16:10, as WebP (Chromium's canvas encodes it).
-    // The guest's screen alone: the page's own layers over it (the "Click to type" hint, the cursor, the boot card) hidden.
-    const png = (await page.locator(session ? '#screen' : '.xterm').screenshot({ style: '#screen-frame > :not(#screen) { visibility: hidden !important; }' })).toString('base64');
-    const webp = await page.evaluate(async (png) => {
-      const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
-      const w = Math.min(img.width, Math.round((img.height * 16) / 10));
-      const canvas = Object.assign(document.createElement('canvas'), { width: 480, height: 300 });
-      canvas.getContext('2d')!.drawImage(img, 0, 0, w, (w * 10) / 16, 0, 0, 480, 300);
-      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', 0.85));
-      if (blob?.type !== 'image/webp') throw new Error('this Chromium encodes no WebP');
-      return [...new Uint8Array(await blob.arrayBuffer())];
-    }, png);
-    writeFileSync(join(dir, 'thumb.webp'), Uint8Array.from(webp));
-  }
+  // The screen as a restore shows it. With a countdown, the card's thumbnail is taken later, its app open (below), and
+  // this one is `resume.webp`: what the tests and the bench compare a resumed screen with (bench/demo/screen-like.ts).
+  if (a.thumbnail) await thumbnail(page, join(dir, session?.countdown ? 'resume.webp' : 'thumb.webp'), Boolean(session));
   // The toolbar's Snapshot keeps it in the machine (a stored machine's), then the kept file is downloaded.
   await page.locator('#save-snapshot').click();
   const kept = (id: string) =>
@@ -360,12 +363,28 @@ try {
   ]);
   const plain = join(work, 'plain.waarm64snap');
   await download.saveAs(plain);
+  // The countdown ran on in this machine after the snapshot: the card's thumbnail with its app open.
+  if (a.thumbnail && session?.countdown) {
+    const c = session.countdown;
+    const uid = (await run(page, `id -u ${session.user}`)).trim();
+    const sock = `SWAYSOCK=$(ls /run/user/${uid}/sway-ipc.*.sock)`;
+    const shown = async () => Number(await run(page, `su ${session.user} -c "${sock} swaymsg -t get_tree" | grep -c -E '\\"(app_id|class)\\": \\"${c.window}\\"'`)) > 0;
+    for (const end = Date.now() + 180_000; !(await shown()); await page.waitForTimeout(2000))
+      if (Date.now() > end) {
+        await page.screenshot({ path: join(site, `${a.name}-failed.png`) }).catch(() => {});
+        throw new Error(`${c.name}'s window (${c.window}) didn't come after the countdown (the page: ${join(site, `${a.name}-failed.png`)}): ${await run(page, `tail -n 8 /tmp/sway.log; ps -eo stat,etime,args | grep -E '${c.script}|sleep|${c.run.split(' ').at(-1)!.split('=')[0]}' | grep -v grep`)}`);
+      }
+    await page.waitForTimeout(10_000);
+    await type(page, 'clear\n');
+    await thumbnail(page, join(dir, 'thumb.webp'), true);
+    log(`the thumbnail with ${c.name} open`);
+  }
   const def = await page.evaluate(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { exportDefinition } = await import('/web/app/definitions.ts' as string);
     return exportDefinition(await Store.open(), id);
   }, id);
-  // The disk's URL relative to the definition (the store's rule: docs/plans/first-demo.md §4), so the site moves whole.
+  // The disk's URL relative to the definition (the store's rule: docs/machines.md §6.2), so the site moves whole.
   for (const d of def.disks) if (d.url) d.url = 'manifest.json';
   writeFileSync(join(dir, 'definition.json'), `${JSON.stringify(def, null, 1)}\n`);
   const template = join(work, 'template.waarm64snap');

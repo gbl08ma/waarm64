@@ -1,4 +1,4 @@
-// The demo network on the page (docs/networking/demo-network.md; DEMO-KICKOFF.md decision 10, loop 10), in Chromium,
+// The demo network on the page (docs/networking/demo-network.md), in Chromium,
 // against the real server (github.com/gbl08ma/waarm64-demonet at the commit tests/waarm64-demonet.ts pins, built with
 // Go) on loopback, without TLS, as its README runs it locally: Alpine's published UEFI cloud image as a stored machine
 // whose first adapter is attached to a `demo` connection to it (web/app/net-demo.ts `attachDemoNetwork`, what a demo's

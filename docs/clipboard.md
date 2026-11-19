@@ -36,7 +36,10 @@ RESUME, TIME) is in devices.md "The guest's agent".
 ## The setting and the toolbar
 
 - **The setting** is per machine, off by default, on the Home page's Settings tab (`MachineRecord.clipboard`;
-  a transient machine has it only from `?clipboard=1`, which, like `?clipboard=0`, is over a stored machine's too),
+  a transient machine has it only from `?clipboard=1`, which, like `?clipboard=0`, is over a stored machine's too;
+  `?disk=<url>&clipboard=1` thus starts the transient machine on anyone's disk with sharing on, kept so by the user's
+  choice, 2026-11-19: that machine has no network unless the user attaches one, so it can't send the clipboard out by
+  itself),
   under [Run the guest agent](ui:machines:DeviceSwitches.agent) (on by default, `MachineRecord.agent`, `?agent=`),
   which it needs: off with it. Neither is in the machine's shape (the agent talks over the vsock every firmware
   machine has, and the page's HELLO says whether the clipboard is shared), so neither orphans snapshots; both apply

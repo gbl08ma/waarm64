@@ -162,7 +162,7 @@ sets), …) with the capabilities it needs: `CAP_SYS_TIME` for the clock, `CAP_S
 (logind grants a power-off to a caller that has it; else polkit decides, and a guest may have none), `CAP_SYS_RESOURCE`
 for GROW's ext4 resize ("A disk grown" below); no DAC override.
 
-**On OpenRC** (Alpine: DEMO-KICKOFF.md decision 14, for every Alpine user). Nothing in a stock Alpine reads what the
+**On OpenRC** (Alpine, for every Alpine user: decisions.md "Demos"). Nothing in a stock Alpine reads what the
 machine gives at boot: OpenRC has no credentials or generators, nothing reads fw_cfg or SMBIOS, the kernel's command
 line comes from the image's own loader (UEFI), and tiny-cloud (the cloud images') reads a NoCloud seed at the first
 boot only (and the demo's image has none). So the service is on the guest's disk: **in our images** (`images/`, the

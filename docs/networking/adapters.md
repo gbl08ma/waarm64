@@ -18,7 +18,7 @@ code's comments still cite; machines had first left several adapters for later: 
    [demo-network.md](demo-network.md)) or a peer-to-peer room (`room`: [rooms.md](rooms.md)). A connection carries its
    own state (a tailnet's node, tailcat's identity and address, a room's node key), so it keeps working as the user
    moves from one machine to the next. There is no "default" connection, **except the demo network's** (the user,
-   2026-11-18: DEMO-KICKOFF.md decision 10): the page makes it itself when a demo's definition asks for it
+   2026-11-18: decisions.md "Network"): the page makes it itself when a demo's definition asks for it
    (web/app/net-demo.ts `attachDemoNetwork`); it holds no secret.
 3. **An adapter with no connection is allowed:** a card with no cable.
 4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3), **except the demo

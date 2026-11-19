@@ -1,4 +1,4 @@
-// The browser checked before a demo's download (docs/frontend.md "The demo store"; plans/first-demo.md §8 finding 11):
+// The browser checked before a demo's download (docs/frontend.md "The demo store"):
 // what the demo needs of the browser and the computer, each said as met, a warning (it may still run: another browser,
 // a phone, little memory) or a stop (it can't: no cross-origin isolation, no OPFS, no WebGL2 for 3D, no WebGPU for
 // Vulkan, the storage too full for the download). `checkDemo` is the rules over what the browser says (`BrowserEnv`,

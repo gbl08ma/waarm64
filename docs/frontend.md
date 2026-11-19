@@ -439,8 +439,8 @@ request after it still works. Tests answer them by clicking (`tests/page-ask.ts`
 floats over the machine rather than taking a row of the page: the screen keeps its size while it shows (a bar that
 pushed the screen down made a guest that follows its display's size resize twice, and one that doesn't scaled and
 blurred). Over the Home page it is not shown: the Home page's own error banner, under its top bar,
-shows the message instead, so there is never both a floating banner and the page's banner at once. The message bar
-floats again when the Home page closes. Between the two places it moves (a 250 ms crossfade,
+shows the message instead, so there is never both a floating banner and the page's banner at once. The demo store's
+page hides it too and shows its own errors. The message bar floats again when the Home page closes. Between the two places it moves (a 250 ms crossfade,
 `web/app/ui/crossfade.ts`: `ErrorBanner`'s `crossfade` key, kept as `data-crossfade` because a transition's parameter
 from a prop is a derived Svelte won't compute once its component is going); the closing Home page, kept in the DOM
 for that time, leaves the flow (fixed where it was) and fades, so the machine's page isn't pushed aside beside it
@@ -735,13 +735,16 @@ noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 
 ## The demo store
 
-The demo store's page (`DemosPage.svelte`; DEMO-KICKOFF.md decisions 11–16; the data: [machines.md](machines.md)
+The demo store's page (`DemosPage.svelte`; decisions.md "Demos"; the data: [machines.md](machines.md)
 §6.2) takes the machine's place as Home does (`body[data-page=demos]`; the machine runs on behind it), with
 **[Back](ui:machines:DemosPage.back)** to where the visitor came from (Home, when opened from there; else the machine).
 It's reached three ways: **[Demos](ui:machines:MachinesNav.demos)** in Home's left column (between Preferences and
 About: it opens the page, not a pane); its address; and a **first visit**, a load with no machines kept and nothing
 asked (no query, no fragment: `demos-route.ts` `firstVisit`), which opens it. Not under automation (the tests open the
-page bare in fresh profiles) unless `?firstvisit=1`.
+page bare in fresh profiles) unless `?firstvisit=1`. Its icon is Tabler's `apps`. **Path-style links**
+(`/demos/<id>`) would need a Worker script on `/demos/*` (`assets.run_worker_first`), counted against the free plan's
+100,000 requests a day (error 1027 past it) and answering the page with `<base href="/">` (HTMLRewriter): not built,
+the query's form serves (decisions.md "Demos").
 
 - **Its address** (`web/app/demos-route.ts`, parsed once; `areas/demos.svelte.ts` holds what shows): `/demos` (the
   copy's `demos.html`, below, "A static copy"; `/demos.html` too) or `#demos` on any copy. Parameters go in the query,
@@ -766,7 +769,10 @@ page bare in fresh profiles) unless `?firstvisit=1`.
   read are counted over the cards; an `?id=` the store doesn't have opens the cards and says so.
 - **Another store** (`?store=` not ours): its JSON is fetched, then a warning ([These demos aren't waarm64's](ui:machines:DemosPage.notOurs.title), its host,
   the name it gives itself) before anything past it (no thumbnail, no snapshot) until **[Show their demos](ui:machines:DemosPage.notOurs.show)**;
-  or [Show waarm64's demos](ui:machines:DemosPage.notOurs.ours). Its definitions are otherwise as trusted as an imported one (decision 15).
+  or [Show waarm64's demos](ui:machines:DemosPage.notOurs.ours). Its definitions are otherwise as trusted as an imported one (decisions.md "Demos"):
+  no extra limits, so another store's demo may turn on clipboard sharing, folder shares and the demo network
+  together (a reviewed risk the user accepted, 2026-11-19: with the demo server's slow lane on, a guest given the
+  host's clipboard could send it out; a demo's machine at least starts each run with sharing paused: clipboard.md).
 - **The interstitial** (`DemoStart.svelte`), before any download: what the project is and needs, the demo's card, its
   download and that its disk stays on its server, and **[What it needs](ui:machines:DemoStart.needs)**: the browser checked (`demo-check.ts`,
   `DemoChecks.svelte`): a stop (no Start) for no cross-origin isolation or SharedArrayBuffer, no OPFS, no WebGL2 for a 3D

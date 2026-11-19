@@ -47,7 +47,7 @@ still to measure. No number goes in without a run behind it
 | Sound | virtio-snd, playback **and microphone** | ALSA / OSS | *unverified* | SoundBlaster 16 | — |
 | Input | keyboard (layouts), tablet, raw mouse lock, touchscreen, on-screen keyboard, gamepads | keyboard, mouse, touch | — | PS/2 | — |
 | USB | **Real devices through WebUSB and WebHID** passed to the guest; virtual devices | no | no | no | no |
-| Network | **Up to 4 adapters**; Tailscale and tailcat (our own client, Rust/wasm); a local helper (full LAN and internet through your computer); **peer-to-peer rooms between browsers** (WireGuard in WebRTC) with **registered names**; IPv6. Wisp: proposed ([plans/first-demo.md](plans/first-demo.md) §3) | **Wisp, on by default** (TCP only, IPv4, outbound only) | Tailscale only | relay, Wisp, fetch, between tabs | WS VPN, 40 kB/s |
+| Network | **Up to 4 adapters**; Tailscale and tailcat (our own client, Rust/wasm); a local helper (full LAN and internet through your computer); **peer-to-peer rooms between browsers** (WireGuard in WebRTC) with **registered names**; IPv6. the **demo network**: a hosted server with an allowlist, no setup ([networking/demo-network.md](networking/demo-network.md); not Wisp) | **Wisp, on by default** (TCP only, IPv4, outbound only) | Tailscale only | relay, Wisp, fetch, between tabs | WS VPN, 40 kB/s |
 | Disk images | **qcow2 (compressed too) and raw**, stock cloud images as published; up to 16 disks; ramdisks; chunked images over HTTP with boot-trace prefetch | ext4 | ext2 | raw, ISO | own format |
 | Storage | disks and overlays in the browser (OPFS), files read in place, URLs, blank disks; merge, resize | IndexedDB ext4 overlay | IndexedDB overlay | — | VFsync |
 | Import / export | export a disk or just its changes as qcow2 or raw; import changes; machine definitions in and out; snapshot files | export and reset of the data disk | — | state files | VFsync |
@@ -92,8 +92,9 @@ AES-128-GCM 232 MB/s with the crypto extensions.
 
 - **The first minute.** unkernel's demo answers a command at its Alpine prompt 1.3 s after the link, after 6.7 MiB (§3); our Desktop Demo, 31.7 s and 420 MiB. It installs the package for a missing
   command as you type it, keeps your changes across reloads, and has a network with nothing configured. v86's demos
-  work in a similar way. Ours opens on an empty machine that asks for a disk. Closing that gap is
-  [plans/first-demo.md](plans/first-demo.md).
+  work in a similar way. Ours did open on an empty machine that asks for a disk; the demo store (frontend.md "The demo
+  store") now starts the Alpine demo from a template snapshot, with the same install-as-you-type and the demo network
+  (its numbers in §3).
 - **Browsers:** unkernel runs on Firefox, Safari and iOS; we are Chromium only (decisions.md).
 - **Memory:** a 48 MiB guest on a native-wasm kernel is smaller than any whole machine. Not a goal for us.
 - **Syscall-heavy work:** unkernel's kernel is native wasm, so a syscall is a call, not an exception. They claim fork

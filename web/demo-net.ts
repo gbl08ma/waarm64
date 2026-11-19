@@ -17,8 +17,8 @@ import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 export const DEMO_SUBPROTOCOL = 'waarm64-demonet.v1';
 
 /**
- * The demo network's server, where a `demo` connection made without a URL goes. A placeholder until the user hosts
- * the fork (DEMO-HANDOVER.md: the user's to confirm).
+ * The demo network's server, where a `demo` connection made without a URL goes: the user's (docs/networking/
+ * demo-network.md). A stored connection keeps its URL, so changing this later needs a new record or an edit.
  */
 export const DEMO_URL = 'wss://demonet.tny.im/';
 

@@ -328,27 +328,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **A hosted image's first boot** runs its update jobs (`ldconfig.service`: `ConditionNeedsUpdate`): ~2–5 s of the
     guest's time, no more bytes (measured: 565 against 567 MB). Building with `/etc/.updated` and `/var/.updated`
     newer than `/usr` would skip it.
-- **A public demo that resumes instead of booting** (the user's, 2026-10-17; with remote disks above and PLAN.md's
-  proposed preloaded image and snapshot): the deployed page opens a hosted image by resuming a snapshot taken just
-  before a first-boot script, which then gives this copy its own identity and per-machine setup. Every visitor resumes
-  the same memory. **Built (BETTERAGENT):** a snapshot flagged as a template (`tools/snapshot-template.ts`) has the
-  guest agent renew the kernel's entropy (and force the CRNG's reseed), `/etc/machine-id`, systemd's random seed and
-  the SSH host keys at its restore (devices.md "A template's identity"); the hostname stays (the user's choice). Left:
-  what derives from the machine id in programs already running (systemd-networkd's DHCP DUID/IAID, journald's file
-  names: until they restart; the network job, BETTERAGENT job 3, reconfigures the link), the network card's MAC (a
-  page-side choice), any tailnet node key (the page's, host-side), and a VM generation ID (`microsoft,vmgenid`, which
-  the kernel reseeds on by itself: the agent's forced reseed stands in for it, and userspace generators that key on
-  the generation, the vDSO's `getrandom`, follow the reseed). The demo's per-machine setup script, if one is wanted,
-  can wait on the renewal (the agent's journal line `renew: done`). The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
-  change under it (a chunked image's `id`, [remote-disks.md](remote-disks.md), makes that check exact; a whole file's
-  URL doesn't). **How a visitor gets there** (the user's decision, 2026-10-23): an interstitial page first says what
-  the project is, that it needs a host with enough memory and CPU, and that hundreds of MB will be downloaded; one
-  click then starts the machine, downloads the snapshot (chunked like a disk image, fetched whole before the resume:
-  no prefetch logic) and drops into the demo's workload. Nothing is fetched before that click. Two consequences of
-  the remote disk's reader: the snapshot's pieces belong in the same expiring Storage Bucket as the disk's blocks
-  (`web/diskcache.ts`'s `cacheRoot`: not persisted, a week after its last use, 2 GiB shared), and a disk's boot trace
-  (`prefetch` in its manifest) doesn't fit a resumed guest, so the demo's manifest carries a trace recorded from the
-  resume instead (or none: the paced prefetch then costs nothing).
+- **A template's identity, what's left** (devices.md "A template's identity": the agent renews the kernel's entropy,
+  `/etc/machine-id`, systemd's random seed and the SSH host keys at a template's restore; the hostname stays, the
+  user's choice): what derives from the machine id in programs already running (systemd-networkd's DHCP DUID/IAID,
+  journald's file names: until they restart), any tailnet node key (the page's, host-side), and a VM generation ID
+  (`microsoft,vmgenid`; the agent's forced reseed stands in for it). A demo's per-machine setup script, if one is
+  wanted, can wait on the renewal (the agent's journal line `renew: done`). (The demos themselves: machines.md §6,
+  frontend.md "The demo store".)
 - Overlay: the base identified by path and size only. (A full storage: machines.md "Storage".)
 - Overlay's two-level map (devices.md "blk"): a zeroing of whole ranges still makes a leaf per range (all `ZERO`),
   as costly as the flat map was (a restore with the whole disk of a stored disk grown to 1 TiB: 1 GiB of leaves); a
@@ -1272,9 +1258,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The demo store's loose ends** (DEMO loop 6, frontend.md "The demo store"): a demo machine started from Home (not
   the store) whose disk's files are gone fails as a start does, not with "this demo's files are gone" (only the store's
   Open my machine checks the manifests first); the store's URL is set only by `?store=` (no Preferences field); a 3D or
-  Vulkan demo's card doesn't fall back to a cold boot when its snapshot can't be restored (plans/first-demo.md §8
-  finding 3); "started before" doesn't say whether the machine has changes.
-- **The Alpine demo's loose ends** (DEMO loop 3, bench/demo/REPORT.md "DEMO loop 3"), ranked:
+  Vulkan demo's card doesn't fall back to a cold boot when its snapshot can't be restored; "started before" doesn't say whether the machine has changes.
+- **The Alpine demo's loose ends** (bench/demo/REPORT.md "DEMO loop 3"), ranked:
   - **The resume's disk reads, prefetched with the snapshot:** 2–3 dependent 2 MiB misses before the first command (a
     trace from the resume, as loop 1 ranked it: ~0.3 s each at 100/20).
   - **The command-not-found hook has no automated test** (checked by hand against dl-cdn: the REPORT): a page test
@@ -1283,6 +1268,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The hook runs the typed line again in a child shell (ash 1.37's hook hangs on a pipeline or `$(builtin)` in it),
     so a `cd` or a variable set on that line doesn't stay; a line that doesn't start with the command (`FOO=1 x`,
     `a; x`, a pipeline's later stage) gets "installed: run it again".
+  - udhcpc's address after a restore on the `alpine-demo` template isn't measured (devices.md "The network after a
+    restore" measured dhcpcd's: 5.6 s after the page's load).
+  - Pieces are fetched whole where the host has ranges too (each piece hashed before use); an A/B of the Desktop
+    Demo's boot with ranges would say whether that costs anything.
+- **The desktop demos' loose ends** (arch-desktop, arch-3d; remote-disks.md "A desktop"):
+  - **The desktop image's 944 pieces are in the site twice** (`desktop/`'s own and the shared `pieces/`) until the
+    Desktop Demo's `desktop/` is published from the shared `pieces/` (a manifest pointing there, then its old pieces
+    dropped): ~1.9 GB and 944 of the site's files.
+  - The countdown's app (Firefox, the shader demo) is fetched from the disk as it starts, after the desktop shows:
+    a boot trace of that start, prefetched behind the snapshot, would shorten it.
 - **What the i18n checks can't see** (tools/i18n-check.ts, [i18n.md](i18n.md) "Checks"; 2026-11-02, when the
   headline-and-line errors were split and the AST rules added). Each needs data flow across functions or modules, which
   the checker doesn't have (it reads one file's syntax, no types):
@@ -1974,7 +1969,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   to renew the lease (LEASE) as a restore does; a `notice` of a code the page doesn't know isn't shown (v1 allows new
   ones: a generic "the server announced something" would do); the message bar's notices don't name the adapter (a
   machine with two demo adapters says it once each); the browser's `online` event doesn't cut a backoff short; the
-  default URL `wss://demonet.tny.im/` is a placeholder until the server is hosted.
+  guest's motd says nothing of the slow lane (which hosts are fast and that the rest is slow), wanted once the server
+  turns it on; whether the demo network should also be a new machine's default first adapter, or stay the demos' (an
+  open question, the user's).
+- **A Wisp connection kind** ("bring your own server": [networking/demo-network.md](networking/demo-network.md) "Not
+  taken, and why"): for users who want their own unrestricted way out without the local helper; the page would need a
+  TCP/IP endpoint (smoltcp, recommended there) and fake-address DNS. Not planned.
 - **The local helper's loose ends** ([networking/local-helper.md](networking/local-helper.md), waarm64-net's own repository):
   - **Never run on Windows** (nor its install lines in PowerShell): whether gvisor-tap-vsock's DNS forwarder follows the
     host's resolvers there (it asks Go's `net.Resolver` and forwards other types to `/etc/resolv.conf`'s servers,

@@ -1,5 +1,5 @@
 <!--
-  The demo store's page (docs/frontend.md "The demo store"; DEMO-KICKOFF.md decisions 15, 16): full screen in the
+  The demo store's page (docs/frontend.md "The demo store"; docs/decisions.md "Demos"): full screen in the
   machine's place, as Home is, with Back to where the visitor came from. It reads the store the address names
   (web/app/demos-route.ts: ours, `?store=` another's, a single definition's URL a store of one) and shows its cards
   (DemoCard.svelte), or the chosen demo's interstitial (DemoStart.svelte: `?id=`). Another store's demos are shown only

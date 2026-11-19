@@ -264,7 +264,7 @@ const templateTarget = (name: string, SPIKE: string, view: 'terminal' | 'screen'
         // The desktop visible: the screen like the template's thumbnail (bench/demo/screen-like.ts), the machine running.
         prompt: async (page: Page, ms: number) => {
           await ours.prompt(page, ms);
-          await untilLike(page, readFileSync(`${SITE}${SPIKE}/thumb.webp`), ms);
+          await untilLike(page, readFileSync(`${SITE}${SPIKE}/${existsSync(`${SITE}${SPIKE}/resume.webp`) ? 'resume' : 'thumb'}.webp`), ms);
         },
         promptIs: "the restored machine running and its screen like the template's thumbnail (bench/demo/screen-like.ts: the desktop shown); the command on the serial console, root logged in there",
         echo: ECHO,

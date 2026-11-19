@@ -1,4 +1,4 @@
-// What the demo store's page does with a demo (docs/frontend.md "The demo store"; DEMO-KICKOFF.md decisions 11–13):
+// What the demo store's page does with a demo (docs/frontend.md "The demo store"; docs/decisions.md "Demos"):
 // when a machine the visitor has from it was last used ("started before"), and a machine the visitor has checked before it's opened (its disk's files still on the server: a
 // manifest's 404 says "this demo's files are gone" rather than the guest's I/O errors). DOM-free but for `fetch` and
 // OPFS.

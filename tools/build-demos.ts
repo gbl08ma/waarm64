@@ -162,7 +162,7 @@ async function main() {
     const tImage = Date.now();
     const file = imagePath(r.image);
     // An image made by hand (the Arch desktop's, images/arch/desktop.sh: Arch's packages of the day, so never the same
-    // twice) is taken as it is: a new one is a new demo id (decision 13), never rebuilt here.
+    // twice) is taken as it is: a new one is a new demo id (docs/decisions.md "Demos"), never rebuilt here.
     if (file) {
       if (!existsSync(join(ROOT, file))) throw new Error(`${id}: no ${file} (made by hand: docs/images.md; a new one is a new demo id)`);
     } else {

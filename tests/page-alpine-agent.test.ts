@@ -1,4 +1,4 @@
-// The guest agent on Alpine (DEMO-KICKOFF.md decision 14; docs/devices.md "The guest's agent", "On OpenRC"), on the
+// The guest agent on Alpine (docs/decisions.md "Demos"; docs/devices.md "The guest's agent", "On OpenRC"), on the
 // page through the local helper (its DHCP, and TCP to this machine's loopback: tests/net-local.test.ts): Alpine's
 // published UEFI cloud image, unmodified (root unlocked by a NoCloud seed disk, as tests/uefi.test.ts does), as a
 // stored machine whose card is attached to the helper. Under `?ready=guest` the machine stays `booting` past its login

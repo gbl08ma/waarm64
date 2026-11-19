@@ -562,8 +562,8 @@ copy stale.
 
 ### 6.1 A machine from a template
 
-`web/app/template.ts` (the demos' first start: DEMO-KICKOFF.md decision 11; the store's page, which clicks it, is a
-later loop of the track): a definition imported as above (`fetchDefinition`: its disks' relative URLs resolved against
+`web/app/template.ts` (the demos' first start, decisions.md "Demos"; the store's page clicks it: frontend.md "The
+demo store"): a definition imported as above (`fetchDefinition`: its disks' relative URLs resolved against
 the definition's own URL, so a site moves whole), the template snapshot (a chunked file: `fetchChunked`, each piece
 checked against its hash) kept as the new machine's first snapshot, and the record marked `restoreFirst: <its id>`.
 The machine's first start (`PowerActions.startOpened`, or Start after a page that didn't start it) restores that

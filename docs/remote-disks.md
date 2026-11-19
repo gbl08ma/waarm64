@@ -104,7 +104,7 @@ cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh
   MB/s); the trace is the guest's, so a local run's is a remote one's. Not part of the `id`: `manifest.json` and
   `prefetch.json` are the same image, with and without it.
 - Publish the pieces before the manifests, so a manifest never names a piece that isn't there yet.
-- **One `pieces/` for the site** (the demos' layout, DEMO-KICKOFF.md decision 17): `--pieces <site>/pieces` writes the
+- **One `pieces/` for the site** (the demos' layout: decisions.md "Demos"): `--pieces <site>/pieces` writes the
   pieces there and the manifest names them relative to itself (`../pieces/{hash}.bin`), so every image, template
   snapshot and version shares one directory, and a new version costs only the pieces it changed. `<out>` ending in
   `.json` is the manifest file itself, so a template's snapshot sits beside its image:
@@ -149,7 +149,7 @@ deploy.sh doesn't count it). Tests: tests/demo-site.test.ts.
 
 `node tools/build-demos.ts [deploy/disks/demos.json] [--only <id>,…] [--core <wasm | target/dist>] [--out <dir>]
 [--no-images] [--no-publish] [--site target/disks] [--apply]` makes every demo that has a `recipe` again from a core
-build, under its existing id (DEMO-KICKOFF.md decision 13: when only the emulator changed, the id stays), then plans
+build, under its existing id (decisions.md "Demos": when only the emulator changed, the id stays), then plans
 the publish above (a dry run; `--apply` writes `target/disks/`). Per demo, into its `build` (`target/demos/<id>/`):
 
 1. its image: `images/build.sh <recipe.image>` when `--check` calls it missing or stale (Podman, ~40 s for
@@ -166,17 +166,27 @@ the publish above (a dry run; `--apply` writes `target/disks/`). Per demo, into 
 **A desktop** (`arch-desktop`, `arch-3d`: DEMO loop 12): its recipe's `image` is a qcow2 in the checkout made by hand
 (`target/arch/desktop.qcow2`, images/arch/desktop.sh: Arch's packages of the day, so never the same twice), taken as
 it is and never rebuilt (a new one is a new demo id), and its `session` (`user`, `apps`: `{run, window}`, `settle`,
-`screen`, `cmdline`: tools/demo-site.ts `Session`) makes the template a desktop's: root logged in on the serial console
-(`root`/`root`, staying logged in there, as Alpine's); `cmdline`'s kernel parameters added to systemd-boot's entry on the
-ESP and the guest booted again once (the change is in the template's overlay, the image untouched); the user logged in
-on the screen (tty1) once logind has the session and its `XDG_RUNTIME_DIR` (typed sooner, sway found none), sway (`WLR_RENDERER=gles2`
-on a 3D machine), each app run through `swaymsg exec` until its window is in sway's tree, `settle` s, the caches
-dropped and memory compacted (`--compact`), the thumbnail the screen's (the page's layers over it, such as its
-[Click to type](ui:common:App.screen.hint) hint, hidden), the snapshot with sway's 3D state (the page's
-question past 64 MiB answered yes). The screen is fixed at `screen` (sway keeps the size it started with; the page
-letterboxes it). Its card's `view` is `screen`. ~3 min a desktop (the boot ~70 s, the session ~40 s, the snapshot of ~1 GiB
-of RAM and its deflate). The image is the deployed Desktop Demo's (`desktop/`, its content id the same); the demos' copy
-of its pieces is in the shared `pieces/` (944 files more until `desktop/` is published again from there: backlog).
+`screen`, `countdown`, `cmdline`: tools/demo-site.ts `Session`) makes the template a desktop's: root logged in on the
+serial console (`root`/`root`, staying logged in there, as Alpine's); the user logged in on the screen (tty1) once
+logind has the session and its `XDG_RUNTIME_DIR` (typed sooner, sway found none), sway (`WLR_RENDERER=gles2` on a 3D
+machine), each app run through `swaymsg exec` until its window is in sway's tree, `settle` s, the caches dropped and
+memory compacted (`--compact`). **The demo's own app isn't in the snapshot:** both demos resume with foot open and a
+`countdown` in it (`{script, run, window, name, seconds}`): a script written into the user's home
+(`~/open-firefox.sh`, `~/open-shader-demo.sh`: it says what opens in how many seconds, Ctrl+C stops it, then
+`swaymsg exec <run>`, so closing the terminal leaves the app), typed into foot just before the snapshot, so a
+visitor's machine resumes the count and starts the app itself. That halves the download (arch-desktop: 131.6 MB, with
+Firefox open 287.8 MB; arch-3d: 132.8 MB, no GL app's state in the snapshot) and starts the app fresh rather than
+restored (bench/demo/REPORT.md "DEMO loop 12"). The screen at the snapshot is `resume.webp` (what a resumed screen is
+compared with: bench/demo/screen-like.ts); the card's `thumb.webp` is taken after it, the build's machine having
+counted down and opened the app (the page's layers over the screen, such as its
+[Click to type](ui:common:App.screen.hint) hint, hidden). The snapshot keeps sway's own 3D state (the page's question
+past 64 MiB answered yes). `cmdline` (kernel parameters added to systemd-boot's entry on the ESP, booted again once:
+the change in the template's overlay) is unused: `init_on_free=1` cost every free in the visitor's machine for a
+snapshot the countdown already made small. `arch-3d` is on virgl (WebGL2), not Venus: a snapshot is refused while a Venus context exists. The shader demo runs with `GDK_DISABLE=offload` (graphics.md "GTK4": the
+offloaded GL area is disconnected on virgl) and its window is `gtk4-demo`. The screen is fixed at `screen` (sway keeps
+the size it started with; the page letterboxes it). Its card's `view` is `screen`. ~2.5 min a desktop. The image is
+the deployed Desktop Demo's (`desktop/`, its content id the same); the demos' copy of its pieces is in the shared
+`pieces/` (944 files more until `desktop/` is published again from there: backlog).
 
 **What's reproducible:** the shape hash. The recipe fixes everything it covers (the MAC, the disk's serial, CPUs, RAM,
 display, the devices) and the image is bit for bit, so its content id is too: a rebuild from the same checkout gives the
@@ -186,14 +196,49 @@ the previous ones leave the site at the publish that replaces them: machines mad
 image (another content id) is refused by the publish: that's a new id with `replaces`.
 
 The template is made by the checkout's page around the given core, so a copy's demos are made from the checkout it was
-built from (its `SNAPSHOT_VERSION` and shape code are the ones the publish checks). Before a deploy of vm.tny.im:
-`npm run dist`, then `node tools/build-demos.ts --core target/dist --apply`, then deploy both (the page, and
-`deploy/disks/deploy.sh` for vmdisks.tny.im). ~30 s per template, plus the image when rebuilt. `scripts/ci-machines.sh`
+built from (its `SNAPSHOT_VERSION` and shape code are the ones the publish checks): the deploy below. ~30 s per Alpine
+template (plus ~40 s when its image is rebuilt), ~2.5 min per desktop. `scripts/ci-machines.sh`
 runs it for `alpine-term` into `target/ci-demos/` (`--out`, `--no-images`, the publish's plan only) and restores what it
 made through the store's page (tests/page-demos-guest.test.ts); `scripts/ci-graphics.sh` restores `arch-desktop` from
 `target/demos/` (not made by CI: skipped when it isn't there or another core made it) and checks its screen shows the
 desktop (bench/demo/screen-like.ts: like the thumbnail). Tests: tests/build-demos.test.ts (the recipe, the
 shape's stability, `--out`, the core's lookup).
+
+### Deploying the demos
+
+**Only when the user asks** (outward-facing). The page (vm.tny.im) and the demos (vmdisks.tny.im) go out together:
+the publish refuses templates another core made, so a page update that changes the snapshot format or a machine's
+shape needs its demos made again by the copy that's deployed.
+
+1. **A clean checkout at the pushed head**, so nothing uncommitted goes out: the CI worktree (`git -C ../waarm64-ci
+   checkout --detach origin/main`), or any clone. Never a stale `target/dist`.
+2. **The page:** `npm run dist` there (into its `target/dist/`).
+3. **The site as deployed:** `target/disks/` must hold every image that stays (a deploy replaces the whole site). In
+   another checkout, link the main one's in: `cp -al ../waarm64/target/disks target/disks` (the publish writes by
+   temp-and-rename, so it never writes through a link into the original). The Desktop Demo's `desktop/` and the
+   ledger `.publish.json` come with it.
+4. **The images the recipes name:** `alpine-demo` is rebuilt by the build when stale (Podman). The desktops' is
+   made by hand and must be at `target/arch/desktop.qcow2` (images/arch/desktop.sh; the same image as
+   `https://static.gbl08ma.com/diskimages/desktop.qcow2`, which can be fetched instead: its content id is what the
+   ledger has). Link it in as in 3.
+5. **The demos:** `node tools/build-demos.ts --core target/dist` (each demo with a recipe made again under its id
+   into `target/demos/<id>/`, then the publish's plan: read it; it says what each demo's files and the site's file
+   count become, and what a retirement would drop), then the same with `--apply` (writes `target/disks/`). A demo
+   whose image changed is refused: that's a new id with `replaces`. Or, when the builds are already there from this
+   copy, `node tools/publish-demos.ts --apply`.
+6. **Deploy both**, the disks first, each with the credentials sourced (`set -a; . ~/.config/cloudflare/waarm64.env;
+   set +a`; never print them): `deploy/disks/deploy.sh "<message>"` (vmdisks.tny.im: refuses past 20,000 files), then
+   `wrangler deploy` from the checkout's root (vm.tny.im: frontend.md "Deployed at vm.tny.im").
+7. **Check from headless Chromium:** `https://vm.tny.im/demos` lists every demo; each starts (Alpine to a command
+   answered, `apk add python3` through the demo network; a desktop to its screen and the countdown's app); then the
+   numbers with bench/demo (bench/demo/REPORT.md).
+
+**The demo network's server** (`wss://demonet.tny.im/`, the page's default: web/demo-net.ts `DEMO_URL`) is
+[waarm64-demonet](https://github.com/gbl08ma/waarm64-demonet), hosted by the user outside these deploys: its README
+"In a container" (a distroless image and Docker Compose behind the host's Caddy; `trusted_proxies` naming the Docker
+bridge's gateway, `public_addresses` the host's), its config's `server.origins` listing the page's origin (only
+`https://vm.tny.im`: a page on another origin, a local one included, is refused). The page's side:
+[networking/demo-network.md](networking/demo-network.md).
 
 ## Where our images are
 

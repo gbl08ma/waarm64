@@ -1,6 +1,6 @@
 // Whether a desktop demo's screen shows what its template saw (DEMO loop 12): the page's screen (`#screen`, as the
-// visitor sees it, at any scale) against the template's thumbnail (bench/demo/make-template.ts: the screen's top at
-// 16:10, 480×300), both cut the same way and shrunk to 32×20 grey levels; the mean difference of a level, 0–255. A
+// visitor sees it, at any scale) against the template's screen at the snapshot (bench/demo/make-template.ts: `resume.webp` where the card's
+// thumbnail shows the countdown's app, else `thumb.webp`; the screen's top at 16:10, 480×300), both cut the same way and shrunk to 32×20 grey levels; the mean difference of a level, 0–255. A
 // black screen or the firmware's console is far off (tens); the desktop resumed is near (a clock, a cursor: a few).
 import type { Page } from 'playwright-core';
 
@@ -30,7 +30,10 @@ export async function screenDiff(page: Page, thumb: Uint8Array): Promise<number>
   );
 }
 
-/** Mean grey difference under which the screen counts as the template's (measured: DEMO loop 12, bench/demo/REPORT.md). */
+/**
+ * Mean grey difference under which the screen counts as the template's (DEMO loop 12, bench/demo/REPORT.md): a resumed
+ * desktop scored 0.1–0.2 against its `resume.webp`; another screen 22.8 (a text console) to 36.8 (black) and more.
+ */
 export const LIKE = 12;
 
 /** Waits until the screen looks like the thumbnail (`screenDiff` under `LIKE`); throws with the last difference. */

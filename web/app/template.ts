@@ -1,4 +1,4 @@
-// A machine from a template (docs/machines.md "A machine from a template"; the demos' first start, DEMO-KICKOFF.md
+// A machine from a template (docs/machines.md "A machine from a template"; the demos' first start, docs/decisions.md "Demos"
 // decision 11): a machine definition imported as a new stored machine (its disks by identity, a URL disk's at the same
 // URL: web/app/definitions.ts), its template snapshot kept as the machine's first snapshot, and the record marked to
 // restore it at its first start (`restoreFirst`), with no question: a fork onto the machine's fresh overlays, which is
@@ -68,7 +68,7 @@ function full(e: unknown) {
   return new MsgError('machines:template.full', undefined, { cause });
 }
 
-/** The words for a demo whose files the server no longer has (a manifest's 404: decision 12). */
+/** The words for a demo whose files the server no longer has (a manifest's 404: docs/decisions.md "Demos"). */
 export const gone = (url: string) => () =>
   new MsgError('machines:template.gone', undefined, { cause: new MsgError('machines:template.gone.cause', { url }) });
 

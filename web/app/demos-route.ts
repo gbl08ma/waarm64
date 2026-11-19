@@ -1,4 +1,4 @@
-// Where the demo store's page is (docs/frontend.md "The demo store"; DEMO-KICKOFF.md decisions 15, 16): its address,
+// Where the demo store's page is (docs/frontend.md "The demo store"; docs/decisions.md "Demos"): its address,
 // parsed once. The page is the store at `/demos` (the page's copy `demos.html` beside `index.html`, served there by the
 // host's trailing-slash handling: the assets stay `./assets/…`) and at `#demos` on any copy. Its parameters go in the
 // query, never the path: `?id=<id>` opens our store's demo `<id>`, `?store=<url>` another store's cards (or a single
@@ -102,7 +102,7 @@ export function demosAddress(w: Where, r: { store?: string; id?: string }): stri
 }
 
 /**
- * Whether the page's load is a first visit, which opens the store (decision 16): no machines kept in this browser,
+ * Whether the page's load is a first visit, which opens the store (docs/decisions.md "Demos"): no machines kept in this browser,
  * and an address with nothing to open (no query, no fragment). Not under automation (the tests open the page bare in
  * fresh profiles), unless the query asks for it (`?firstvisit=1`).
  */

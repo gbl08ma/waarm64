@@ -70,7 +70,7 @@
 # alpine-uefi: Alpine's published UEFI cloud images (images/alpine-uefi.json,
 #   pinned by SHA512), which the firmware tests boot unmodified: alpine.qcow2
 #   (Limine) and alpine-grub.qcow2 (GRUB). Downloaded on the host, as debian.
-# alpine-demo: the Alpine demo's disk (DEMO-KICKOFF.md loop 3, images/alpine-demo/): alpine-uefi's alpine.qcow2 cut
+# alpine-demo: the Alpine demo's disk (images/alpine-demo/; docs/images.md): alpine-uefi's alpine.qcow2 cut
 #   to Alpine's base (no tiny-cloud, sshd, chronyd, dhcpcd), root logged in on the serial console, udhcpc on eth0,
 #   apk with main (community on demand), a command-not-found hook that installs what's missing, the guest agent's
 #   OpenRC service, Limine without its wait and init_on_free=1; a 1 GiB alpine-demo.qcow2. Built natively in Alpine's
@@ -609,7 +609,7 @@ agent_openrc() {
   node --input-type=module -e 'import { agentOpenrc } from "./web/app/guest-agent.ts"; process.stdout.write(agentOpenrc())'
 }
 
-# The demo's Alpine (DEMO-KICKOFF.md loop 3): alpine-uefi's Limine image taken apart in Alpine's arm64 container as its
+# The demo's Alpine (docs/images.md `alpine-demo`): alpine-uefi's Limine image taken apart in Alpine's arm64 container as its
 # root, its packages cut to Alpine's base (apk del: nothing new installed, so nothing from the live repositories goes
 # in), images/alpine-demo's files and the agent's service added, and put together again on a 1 GiB disk: the EFI
 # partition as published but limine.conf, the root a new ext4 of the rest (fixed UUIDs, every time SOURCE_DATE_EPOCH).
