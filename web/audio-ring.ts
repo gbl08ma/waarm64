@@ -48,7 +48,10 @@ export const WAKE_QUANTA = 2;
 export const newRing = () => new SharedArrayBuffer(HEADER_BYTES + CAPACITY * 2 * 4);
 
 /** The header's words and the frames of `ring`. */
-export const ringViews = (ring: SharedArrayBuffer) => ({ h: new Int32Array(ring, 0, HEADER_WORDS), data: new Float32Array(ring, HEADER_BYTES, CAPACITY * 2) });
+export const ringViews = (ring: SharedArrayBuffer) => ({
+  h: new Int32Array(ring, 0, HEADER_WORDS),
+  data: new Float32Array(ring, HEADER_BYTES, CAPACITY * 2),
+});
 
 /** The microphone's ring: times, and frames, the worklet had no room for (the device worker didn't read in time). */
 export const DROPS = UNDERRUNS;

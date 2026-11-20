@@ -57,7 +57,9 @@ export const cpuFromQuery = (q: URLSearchParams): CpuFeature[] =>
  * The `VmConfig.features` mask: bit 0 unless `crypto` is false, then each feature's bit when `cpu` lists it (without
  * a list: each default one unless its option is false, each other one when its option is true).
  */
-export function cpuMask(o: { crypto?: boolean; cpu?: readonly CpuFeature[] } & { [F in CpuFeature]?: boolean }): bigint {
+export function cpuMask(
+  o: { crypto?: boolean; cpu?: readonly CpuFeature[] } & { [F in CpuFeature]?: boolean },
+): bigint {
   let mask = o.crypto === false ? 0n : 1n;
   for (const f of CPU_FEATURES) {
     const on = o.cpu ? o.cpu.includes(f) : CPU_BITS[f].on ? o[f] !== false : o[f] === true;

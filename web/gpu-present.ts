@@ -36,10 +36,49 @@ export type DisplayToPage =
    * whose WebGL2 renders on the CPU, or without one: no renderer to name). A machine without virtio-gpu sends it from
    * its machine worker, `framebuffer`: the simple framebuffer's draws (web/display.ts), from the start on.
    */
-  | { type: 'screen-stats'; screen: 'webgl2' | 'canvas2d' | 'framebuffer'; presents: number; renderer?: string; vendor?: string; software?: boolean }
+  | {
+      type: 'screen-stats';
+      screen: 'webgl2' | 'canvas2d' | 'framebuffer';
+      presents: number;
+      renderer?: string;
+      vendor?: string;
+      software?: boolean;
+    }
   | ScreenPng
-  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { events?: number[]; request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
-export type DisplayFromPage = { type: 'size'; width: number; height: number } | /** "Copy the screen" (docs/plans/clipboard.md §4.4): the screen as a PNG, answered by `ScreenPng`. */ { type: 'png'; id: number };
+  | {
+      type: 'draw-stats';
+      n: number;
+      median: number;
+      max: number;
+      lag: number;
+      busy: {
+        events?: number[];
+        request: number;
+        transfer: number;
+        draw: number;
+        requests: number;
+        transfers: number;
+        pixels: number;
+        flushes: number;
+        submits: number;
+        submitBytes: number;
+        commands: Record<string, number>;
+        fences: number;
+        fenceMs: number;
+        fenceMaxMs: number;
+        heldMs: number;
+        behindMs: number;
+        fullMs: number;
+        heldMax: number;
+        fenceBack: { n: number; ms: number; maxMs: number };
+      };
+    };
+export type DisplayFromPage =
+  | { type: 'size'; width: number; height: number }
+  | /** "Copy the screen" (docs/plans/clipboard.md §4.4): the screen as a PNG, answered by `ScreenPng`. */ {
+      type: 'png';
+      id: number;
+    };
 /** The answer to `png`: the screen as it shows now, as a PNG; none before the guest showed anything. */
 export type ScreenPng = { type: 'png'; id: number; png?: Blob };
 
@@ -77,7 +116,14 @@ function cursorSender(port?: MessagePort) {
       return;
     }
     [cursorImage, cursorHot, cursorAt] = [image, hot, where];
-    port?.postMessage({ type: 'cursor', image: image ? image.slice().buffer : image, hotX, hotY, x, y } satisfies DisplayToPage);
+    port?.postMessage({
+      type: 'cursor',
+      image: image ? image.slice().buffer : image,
+      hotX,
+      hotY,
+      x,
+      y,
+    } satisfies DisplayToPage);
   };
 }
 
@@ -93,18 +139,45 @@ export function softwareGl() {
   return software;
 }
 
-export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false, probe = false, which: Screen2d = 'auto'): GpuHooks {
-  const sample = probe && port ? flashProbe((t) => port.postMessage({ type: 'flash', t } satisfies DisplayToPage)) : undefined;
-  const gl = which === 'canvas2d' || (which === 'auto' && softwareGl()) ? null : canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false }) as WebGL2RenderingContext | null;
+export function canvasPresenter(
+  canvas: OffscreenCanvas,
+  port?: MessagePort,
+  stats = false,
+  probe = false,
+  which: Screen2d = 'auto',
+): GpuHooks {
+  const sample =
+    probe && port ? flashProbe((t) => port.postMessage({ type: 'flash', t } satisfies DisplayToPage)) : undefined;
+  const gl =
+    which === 'canvas2d' || (which === 'auto' && softwareGl())
+      ? null
+      : (canvas.getContext('webgl2', {
+          alpha: false,
+          antialias: false,
+          depth: false,
+          stencil: false,
+          premultipliedAlpha: false,
+          preserveDrawingBuffer: false,
+        }) as WebGL2RenderingContext | null);
   let screen = gl ? new Screen(gl) : undefined;
   const info = gl ? glInfo(gl) : undefined;
-  let presents = 0, reporting = false;
+  let presents = 0,
+    reporting = false;
   const report = () => {
     if (reporting || !port) return;
     reporting = true;
-    setInterval(() => port.postMessage({ type: 'screen-stats', screen: info ? 'webgl2' : 'canvas2d', presents, ...info } satisfies DisplayToPage), 1000);
+    setInterval(
+      () =>
+        port.postMessage({
+          type: 'screen-stats',
+          screen: info ? 'webgl2' : 'canvas2d',
+          presents,
+          ...info,
+        } satisfies DisplayToPage),
+      1000,
+    );
   };
-  const ctx = gl ? undefined : canvas.getContext('2d', { alpha: false }) as OffscreenCanvasRenderingContext2D;
+  const ctx = gl ? undefined : (canvas.getContext('2d', { alpha: false }) as OffscreenCanvasRenderingContext2D);
   let src: ScanoutSource | null = null;
   let img: ImageData | undefined;
   let dirty: Rect | null = null;
@@ -114,13 +187,42 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
   let drawMs = 0;
   if (stats && port) {
     // The device worker's own event loop: the longest a 4 ms timer was late in the second (what a key's release, a doorbell or a flush waits behind).
-    let lag = 0, tick = performance.now();
-    setInterval(() => { const n = performance.now(); lag = Math.max(lag, n - tick - 4); tick = n; }, 4);
+    let lag = 0,
+      tick = performance.now();
+    setInterval(() => {
+      const n = performance.now();
+      lag = Math.max(lag, n - tick - 4);
+      tick = n;
+    }, 4);
     setInterval(() => {
       const s = lat.splice(0).sort((a, b) => a - b);
-      port.postMessage({ type: 'draw-stats', n: s.length, median: s[s.length >> 1] ?? 0, max: s[s.length - 1] ?? 0, lag, busy: { ...busy, commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: drawMs } } satisfies DisplayToPage);
+      port.postMessage({
+        type: 'draw-stats',
+        n: s.length,
+        median: s[s.length >> 1] ?? 0,
+        max: s[s.length - 1] ?? 0,
+        lag,
+        busy: { ...busy, commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: drawMs },
+      } satisfies DisplayToPage);
       lag = 0;
-      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {}, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 });
+      Object.assign(busy, {
+        request: 0,
+        transfer: 0,
+        requests: 0,
+        transfers: 0,
+        pixels: 0,
+        flushes: 0,
+        submits: 0,
+        submitBytes: 0,
+        commands: {},
+        fences: 0,
+        fenceMs: 0,
+        fenceMaxMs: 0,
+        heldMs: 0,
+        behindMs: 0,
+        fullMs: 0,
+        heldMax: 0,
+      });
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });
       drawMs = 0;
     }, 1000);
@@ -160,7 +262,13 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
       lost = false;
       screen = new Screen(gl);
       if (!src) return screen.clear();
-      screen.set({ pixels: src.pixels, swizzle: src.swizzle, width: src.width, height: src.height, rect: { x: src.x, y: src.y, w: canvas.width, h: canvas.height } });
+      screen.set({
+        pixels: src.pixels,
+        swizzle: src.swizzle,
+        width: src.width,
+        height: src.height,
+        rect: { x: src.x, y: src.y, w: canvas.width, h: canvas.height },
+      });
       dirty = { x: 0, y: 0, w: canvas.width, h: canvas.height };
       since = performance.now();
       schedule();
@@ -190,7 +298,18 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     png: () => scanoutPng(src, canvas.width, canvas.height),
     scanout(width, height, source) {
       src = source;
-      img = source && !gl ? new ImageData(new Uint8ClampedArray(source.pixels.buffer as ArrayBuffer, source.pixels.byteOffset, source.pixels.length), source.width, source.height) : undefined;
+      img =
+        source && !gl
+          ? new ImageData(
+              new Uint8ClampedArray(
+                source.pixels.buffer as ArrayBuffer,
+                source.pixels.byteOffset,
+                source.pixels.length,
+              ),
+              source.width,
+              source.height,
+            )
+          : undefined;
       if (canvas.width !== width || canvas.height !== height) {
         // A canvas resized is cleared; the mode goes to the page so it refits its box.
         if (width && height) [canvas.width, canvas.height] = [width, height];
@@ -198,7 +317,14 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
       }
       dirty = src ? { x: 0, y: 0, w: width, h: height } : null;
       if (src) report();
-      if (screen && source) screen.set({ pixels: source.pixels, swizzle: source.swizzle, width: source.width, height: source.height, rect: { x: source.x, y: source.y, w: width, h: height } });
+      if (screen && source)
+        screen.set({
+          pixels: source.pixels,
+          swizzle: source.swizzle,
+          width: source.width,
+          height: source.height,
+          rect: { x: source.x, y: source.y, w: width, h: height },
+        });
       if (!src) {
         if (screen) {
           if (!lost) screen.clear();
@@ -210,8 +336,10 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
         dirty = { ...r };
         since = performance.now();
       } else {
-        const x1 = Math.min(dirty.x, r.x), y1 = Math.min(dirty.y, r.y);
-        const x2 = Math.max(dirty.x + dirty.w, r.x + r.w), y2 = Math.max(dirty.y + dirty.h, r.y + r.h);
+        const x1 = Math.min(dirty.x, r.x),
+          y1 = Math.min(dirty.y, r.y);
+        const x2 = Math.max(dirty.x + dirty.w, r.x + r.w),
+          y2 = Math.max(dirty.y + dirty.h, r.y + r.h);
         dirty = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
       }
       // At most one draw per frame: at once if the last was a frame ago (a key's echo shows without waiting for a timer), else on the timer.
@@ -227,15 +355,51 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
  * size (`mode`) and the cursor, and with `stats` the device's busy counters once a second (`n` is the flushes).
  */
 export function pagePresenter(port?: MessagePort, stats = false): GpuHooks {
-  let width = 0, height = 0;
+  let width = 0,
+    height = 0;
   if (stats && port) {
     busy.events = [];
     // The device worker's event loop, as canvasPresenter's: the longest a 4 ms timer was late in the second.
-    let lag = 0, tick = performance.now();
-    setInterval(() => { const n = performance.now(); lag = Math.max(lag, n - tick - 4); tick = n; }, 4);
+    let lag = 0,
+      tick = performance.now();
     setInterval(() => {
-      port.postMessage({ type: 'draw-stats', n: busy.flushes, median: 0, max: 0, lag, busy: { ...busy, events: busy.events!.splice(0), commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: 0 } } satisfies DisplayToPage);
-      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {}, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 });
+      const n = performance.now();
+      lag = Math.max(lag, n - tick - 4);
+      tick = n;
+    }, 4);
+    setInterval(() => {
+      port.postMessage({
+        type: 'draw-stats',
+        n: busy.flushes,
+        median: 0,
+        max: 0,
+        lag,
+        busy: {
+          ...busy,
+          events: busy.events!.splice(0),
+          commands: { ...busy.commands },
+          fenceBack: { ...fenceLag },
+          draw: 0,
+        },
+      } satisfies DisplayToPage);
+      Object.assign(busy, {
+        request: 0,
+        transfer: 0,
+        requests: 0,
+        transfers: 0,
+        pixels: 0,
+        flushes: 0,
+        submits: 0,
+        submitBytes: 0,
+        commands: {},
+        fences: 0,
+        fenceMs: 0,
+        fenceMaxMs: 0,
+        heldMs: 0,
+        behindMs: 0,
+        fullMs: 0,
+        heldMax: 0,
+      });
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });
       lag = 0;
     }, 1000);

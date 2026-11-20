@@ -6,7 +6,14 @@ import { toWire } from './msg.ts';
 import { batchSender, packetsOf } from './net.ts';
 import { failureOf, TsClient, TsModule, type RoomConfig } from './ts-client.ts';
 import { ranked, routedLease, type Lease, type Prefix } from './gateway.ts';
-import { parseRoomLink, roomIdentity, roomNamesStore, type FromRoom, type RoomNamesStore, type ToRoom } from './room.ts';
+import {
+  parseRoomLink,
+  roomIdentity,
+  roomNamesStore,
+  type FromRoom,
+  type RoomNamesStore,
+  type ToRoom,
+} from './room.ts';
 import { idbNamesStore, NAMES_CHANNEL, roomTitles, serviceFetch } from './names.ts';
 import { namesOp } from './names-ops.ts';
 
@@ -24,10 +31,14 @@ let names: RoomNamesStore | undefined;
 /** The names agent's word that a connection's titles changed (web/names.ts): the running room's are given again. */
 let titlesChannel: BroadcastChannel | undefined;
 /** On another adapter, the room offers its /48 only (docs/networking/adapters.md §4). */
-const offered = () => ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }, primary6), rank);
+const offered = () =>
+  ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }, primary6), rank);
 
 function attach(port: MessagePort) {
-  if (ip) { ip.onmessage = null; ip.close(); }
+  if (ip) {
+    ip.onmessage = null;
+    ip.close();
+  }
   ip = port;
   send = batchSender(port);
   port.onmessage = (ev: MessageEvent) => {
@@ -40,16 +51,21 @@ function attach(port: MessagePort) {
 self.onmessage = async (e: MessageEvent<ToRoom>) => {
   const m = e.data;
   switch (m.type) {
-    case 'attach': return attach(m.ip);
+    case 'attach':
+      return attach(m.ip);
     case 'primary':
       primary = m.primary;
       primary6 = m.primary6 ?? m.primary;
       rank = m.rank ?? 0;
       return ip?.postMessage({ type: 'lease', lease: offered() });
-    case 'rtc-channel': return client?.rtcChannel(m.rtc, m.channel);
-    case 'rtc-signal': return client?.rtcSignal(m.rtc, m.json);
-    case 'rtc-closed': return client?.rtcClosed(m.rtc);
-    case 'rtc-blocked': return client?.rtcBlocked(m.blocked);
+    case 'rtc-channel':
+      return client?.rtcChannel(m.rtc, m.channel);
+    case 'rtc-signal':
+      return client?.rtcSignal(m.rtc, m.json);
+    case 'rtc-closed':
+      return client?.rtcClosed(m.rtc);
+    case 'rtc-blocked':
+      return client?.rtcBlocked(m.blocked);
     case 'detach': {
       titlesChannel?.close();
       lease = null;
@@ -91,13 +107,19 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     const parsed = parseRoomLink(m.config.room.link);
     // The connection's titles (the names agent's, web/names.ts): with them the node serves the room's names.
     const ids = m.identityKey;
-    const titlesOf = async () => ids !== undefined && 'room' in parsed
-      ? roomTitles(idbNamesStore(), (op, input) => namesOp(mod, op, input), ids, parsed.room.id).catch(() => [])
-      : [];
+    const titlesOf = async () =>
+      ids !== undefined && 'room' in parsed
+        ? roomTitles(idbNamesStore(), (op, input) => namesOp(mod, op, input), ids, parsed.room.id).catch(() => [])
+        : [];
     const titles = await titlesOf();
     const withKey = id ? { ...m.config, key: id.key } : m.config;
-    const config = titles.length ? { ...withKey, room: { ...withKey.room, names: { ...withKey.room.names, titles } } } : withKey;
-    const store = m.identityKey !== undefined && 'room' in parsed ? await roomNamesStore(parsed.room.id, m.identityKey).catch(() => undefined) : undefined;
+    const config = titles.length
+      ? { ...withKey, room: { ...withKey.room, names: { ...withKey.room.names, titles } } }
+      : withKey;
+    const store =
+      m.identityKey !== undefined && 'room' in parsed
+        ? await roomNamesStore(parsed.room.id, m.identityKey).catch(() => undefined)
+        : undefined;
     const records = (await store?.load().catch(() => undefined)) ?? [];
     if (!ip) return; // detached meanwhile
     names = store;
@@ -106,7 +128,9 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
       // A server's asks outside the room: the compiled calendars and explorers only (web/names.ts `serviceFetch`).
       namesFetch: (fid, url) => {
         const asker = client; // an answer that comes after a restart isn't the new client's
-        void serviceFetch(url).then((r) => { if (asker && client === asker) asker.namesFetched(fid, r.status, r.body); });
+        void serviceFetch(url).then((r) => {
+          if (asker && client === asker) asker.namesFetched(fid, r.status, r.body);
+        });
       },
       packet: (p) => send?.(p),
       rtc: {
@@ -134,7 +158,9 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
           const now = await titlesOf();
           client?.namesTitles(now);
         };
-      } catch { /* no channel: the titles at the start */ }
+      } catch {
+        /* no channel: the titles at the start */
+      }
     }
   } catch (err) {
     post({ type: 'error', error: toWire(err) });

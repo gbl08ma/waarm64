@@ -22,13 +22,20 @@ const PREFETCH_FETCHES = 4;
  * AHEAD_STEP each time the guest waits on a block of the list while the prefetch sat idle on its window (a wider one
  * would have had it), up to AHEAD_MAX. A guest at a boot menu, or one a fast host keeps up with, costs a window.
  */
-export const AHEAD_START = 16, AHEAD_STEP = 8, AHEAD_MAX = 128;
+export const AHEAD_START = 16,
+  AHEAD_STEP = 8,
+  AHEAD_MAX = 128;
 
 /** R1's choice (bench/remote-disk/REPORT.md): 1 MiB blocks, 256 MiB kept. */
 export const BLOCK_CACHE: BlockCacheOptions = { block: 1 << 20, bytes: 256 << 20 };
 
 export type BlockCacheStats = {
-  hits: number; misses: number; requests: number; fetched: number; ms: number; store?: ReturnType<BlockStore['stats']> & { hits: number };
+  hits: number;
+  misses: number;
+  requests: number;
+  fetched: number;
+  ms: number;
+  store?: ReturnType<BlockStore['stats']> & { hits: number };
   /**
    * `prefetch`'s: blocks fetched ahead, how many the guest then read before they went, how far it got in the list, the
    * window (blocks ahead of the guest) and how many times the guest waited on the list's blocks (`late`; `widened`: of
@@ -42,14 +49,19 @@ export type BlockCacheStats = {
  * is looked for there before it is fetched, and what is fetched is kept there too. `stats` counts block hits and
  * misses, the requests made, the bytes fetched and the ms inside them, and the store's.
  */
-export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, store?: BlockStore): Source & { stats: BlockCacheStats; prefetch(blocks: number[]): Promise<void>; kept: NonNullable<Source['kept']> } {
+export function cachedSource(
+  src: Source,
+  o: BlockCacheOptions = BLOCK_CACHE,
+  store?: BlockStore,
+): Source & { stats: BlockCacheStats; prefetch(blocks: number[]): Promise<void>; kept: NonNullable<Source['kept']> } {
   const { block } = o;
   const max = Math.max(1, Math.floor(o.bytes / block));
   const blocks = new Map<number, Uint8Array>(); // insertion order: least recently used first
   const counts = { hits: 0, misses: 0, requests: 0, fetched: 0, ms: 0 };
   let storeHits = 0;
   const stats = counts as BlockCacheStats;
-  if (store) Object.defineProperty(stats, 'store', { enumerable: true, get: () => ({ ...store.stats(), hits: storeHits }) });
+  if (store)
+    Object.defineProperty(stats, 'store', { enumerable: true, get: () => ({ ...store.stats(), hits: storeHits }) });
   const last = Math.floor((src.size - 1) / block);
   const keep = (b: number, bytes: Uint8Array) => {
     blocks.delete(b);
@@ -68,7 +80,14 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
    * Keeps blocks `a`..`b` fetched as `bytes` (undefined: the read failed); false if it failed. A prefetch's go to the
    * store alone where there is one, so they don't push the guest's blocks out of memory.
    */
-  const fetched = (a: number, b: number, len: number, bytes: Uint8Array | undefined, ms: number, background = false) => {
+  const fetched = (
+    a: number,
+    b: number,
+    len: number,
+    bytes: Uint8Array | undefined,
+    ms: number,
+    background = false,
+  ) => {
     stats.ms += ms;
     stats.requests++;
     if (!bytes) return false;
@@ -90,15 +109,20 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
   };
   /** Blocks being fetched without blocking (`readAsync`): a read that needs one waits for that fetch. */
   const pending = new Map<number, Promise<boolean>>();
-  let fetching = 0, prefetching = 0;
+  let fetching = 0,
+    prefetching = 0;
   /**
    * The fetches' slots: taken when granted (so a fetch woken and not yet running counts), first come first served,
    * the guest's reads before the prefetch's, which also stays under PREFETCH_FETCHES.
    */
   const queued: (() => void)[] = [];
   const queuedAhead: (() => void)[] = [];
-  const free = (background: boolean) => fetching < MAX_FETCHES && (!background || (prefetching < PREFETCH_FETCHES && !queued.length));
-  const take = (background: boolean) => { fetching++; if (background) prefetching++; };
+  const free = (background: boolean) =>
+    fetching < MAX_FETCHES && (!background || (prefetching < PREFETCH_FETCHES && !queued.length));
+  const take = (background: boolean) => {
+    fetching++;
+    if (background) prefetching++;
+  };
   const acquire = (background: boolean) => {
     if (free(background) && !queued.length && !(background && queuedAhead.length)) return take(background);
     return new Promise<void>((go) => (background ? queuedAhead : queued).push(go));
@@ -136,13 +160,18 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
    * if a synchronous fetch failed. `sync` (a synchronous read: the image's opening) can't wait: a block being fetched
    * (a prefetch's) is fetched again.
    */
-  const gather = (first: number, end: number, get: (a: number, b: number) => boolean | Promise<boolean>, sync = false) => {
+  const gather = (
+    first: number,
+    end: number,
+    get: (a: number, b: number) => boolean | Promise<boolean>,
+    sync = false,
+  ) => {
     const waits: Promise<boolean>[] = [];
     let run = -1;
     for (let k = first; k <= end; k++) {
       const at = order.get(k);
       if (at !== undefined && !blocks.has(k) && !store?.has(k)) late(k);
-      if (at !== undefined && at > reached) (reached = at, moved());
+      if (at !== undefined && at > reached) ((reached = at), moved());
       if (ahead.delete(k)) prefetched.used++;
     }
     for (let k = first; k <= end + 1; k++) {
@@ -169,13 +198,17 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
   let order = new Map<number, number>();
   let reached = -1;
   let wake: (() => void) | undefined;
-  const moved = () => { wake?.(); wake = undefined; };
+  const moved = () => {
+    wake?.();
+    wake = undefined;
+  };
   const prefetched = { fetched: 0, used: 0, done: false, window: 0, late: 0, widened: 0 };
   /**
    * The window's ceiling (`prefetch`), whether the prefetch sat on its window since it last widened, and the blocks it
    * is fetching that the window held back (fetched once the guest moved).
    */
-  let ceiling = 0, idled = false;
+  let ceiling = 0,
+    idled = false;
   const heldBack = new Set<number>();
   /**
    * The guest's read needs block `k` of the list from the network: the window widens if it held the prefetch back (the
@@ -208,10 +241,15 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
     let outstanding = 0; // the prefetch's fetches not yet done: at most PREFETCH_FETCHES, so none waits long in the queue
     // It stops if the store gives up (the page's Clear, or the storage full): what it fetched would have nowhere to go.
     for (let i = 0; i < list.length && !closed && (!store || store.active());) {
-      if (held(list[i]) || list[i] > last) { i++; continue; }
+      if (held(list[i]) || list[i] > last) {
+        i++;
+        continue;
+      }
       if (i - reached > prefetched.window) {
         idled = parked = true;
-        await new Promise<void>((go) => { wake = go; });
+        await new Promise<void>((go) => {
+          wake = go;
+        });
         continue;
       }
       let j = i + 1;
@@ -228,7 +266,10 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
       i = j;
       // Its slots all busy: what it fetches next, the network held back, not the window.
       if (outstanding >= PREFETCH_FETCHES) parked = false;
-      while (outstanding >= PREFETCH_FETCHES && !closed) await new Promise<void>((go) => { wake = go; });
+      while (outstanding >= PREFETCH_FETCHES && !closed)
+        await new Promise<void>((go) => {
+          wake = go;
+        });
     }
     prefetched.done = true;
   };
@@ -239,7 +280,8 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
       const b = blocks.get(k);
       if (!b) return undefined;
       keep(k, b);
-      const from = Math.max(off, k * block), to = Math.min(off + len, k * block + b.length);
+      const from = Math.max(off, k * block),
+        to = Math.min(off + len, k * block + b.length);
       out.set(b.subarray(from - k * block, to - k * block), from - off);
     }
     return out;
@@ -259,7 +301,8 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
     read(off, len) {
       if (off < 0 || len < 0 || off + len > src.size) return undefined;
       if (len === 0) return new Uint8Array(0);
-      const first = Math.floor(off / block), end = Math.floor((off + len - 1) / block);
+      const first = Math.floor(off / block),
+        end = Math.floor((off + len - 1) / block);
       if (end - first + 1 > max) return src.read(off, len); // larger than the cache: past it
       return gather(first, end, fetch, true) === false ? undefined : assemble(off, len, first, end);
     },
@@ -267,7 +310,8 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
       async readAsync(off: number, len: number) {
         if (off < 0 || len < 0 || off + len > src.size) return undefined;
         if (len === 0) return new Uint8Array(0);
-        const first = Math.floor(off / block), end = Math.floor((off + len - 1) / block);
+        const first = Math.floor(off / block),
+          end = Math.floor((off + len - 1) / block);
         if (end - first + 1 > max) return src.readAsync!(off, len);
         // Other reads' fetches may evict this one's blocks while it waits: then it looks again.
         for (let tries = 0; tries < 3; tries++) {
@@ -277,7 +321,6 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
           if (out) return out;
         }
         return src.readAsync!(off, len); // evicted each time: past the cache
-
       },
     }),
   };

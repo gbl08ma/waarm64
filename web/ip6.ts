@@ -4,7 +4,24 @@
 import { checksum } from './net.ts';
 
 /** The gateway's link-local address, from its MAC (modified EUI-64): the router the guest's RAs name. */
-export const linkLocal = (mac: ArrayLike<number>) => [0xfe, 0x80, 0, 0, 0, 0, 0, 0, mac[0] ^ 2, mac[1], mac[2], 0xff, 0xfe, mac[3], mac[4], mac[5]];
+export const linkLocal = (mac: ArrayLike<number>) => [
+  0xfe,
+  0x80,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  mac[0] ^ 2,
+  mac[1],
+  mac[2],
+  0xff,
+  0xfe,
+  mac[3],
+  mac[4],
+  mac[5],
+];
 
 export const ALL_NODES = [0xff, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
 export const ALL_ROUTERS = [0xff, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
@@ -39,7 +56,15 @@ export function sum6(src: ArrayLike<number>, dst: ArrayLike<number>, next: numbe
 }
 
 /** An ICMPv6 message (type, code, 4 bytes after the checksum, then `body`) in an IPv6 packet. */
-export function icmp6(src: ArrayLike<number>, dst: ArrayLike<number>, type: number, code: number, rest: ArrayLike<number>, body: ArrayLike<number> = [], hop = 64) {
+export function icmp6(
+  src: ArrayLike<number>,
+  dst: ArrayLike<number>,
+  type: number,
+  code: number,
+  rest: ArrayLike<number>,
+  body: ArrayLike<number> = [],
+  hop = 64,
+) {
   const m = new Uint8Array(8 + body.length);
   m[0] = type;
   m[1] = code;
@@ -65,7 +90,15 @@ export function udp6(src: ArrayLike<number>, dst: ArrayLike<number>, sport: numb
 /** A Route Information option's preference (RFC 4191 §2.1). */
 export type RoutePref = 'high' | 'medium' | 'low';
 /** `routes`: Route Information options (RFC 4191), each with `dnsLifetime` as its lifetime, at `pref` (default medium). */
-export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: number[][]; dnsLifetime: number; routes?: [number[], number][]; pref?: RoutePref };
+export type RouterAdvert = {
+  mac: number[];
+  lifetime: number;
+  mtu: number;
+  dns: number[][];
+  dnsLifetime: number;
+  routes?: [number[], number][];
+  pref?: RoutePref;
+};
 
 /**
  * A router advertisement: managed (the address comes from DHCPv6) and other-config flags, a
@@ -74,14 +107,48 @@ export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: 
  * everything to the router and uses the address DHCPv6 gives it.
  */
 export function routerAdvert(src: number[], a: RouterAdvert) {
-  const rdnss = a.dns.length ? [25, 1 + 2 * a.dns.length, 0, 0, a.dnsLifetime >>> 24, (a.dnsLifetime >>> 16) & 255, (a.dnsLifetime >>> 8) & 255, a.dnsLifetime & 255, ...a.dns.flat()] : [];
+  const rdnss = a.dns.length
+    ? [
+        25,
+        1 + 2 * a.dns.length,
+        0,
+        0,
+        a.dnsLifetime >>> 24,
+        (a.dnsLifetime >>> 16) & 255,
+        (a.dnsLifetime >>> 8) & 255,
+        a.dnsLifetime & 255,
+        ...a.dns.flat(),
+      ]
+    : [];
   const lt = [a.dnsLifetime >>> 24, (a.dnsLifetime >>> 16) & 255, (a.dnsLifetime >>> 8) & 255, a.dnsLifetime & 255];
   // Route Information: type 24, length 3 (the whole prefix), its length, the preference (high 01, medium 00, low 11), the lifetime, the prefix.
   const prf = { high: 0x08, medium: 0, low: 0x18 }[a.pref ?? 'medium'];
   const rio = (a.routes ?? []).flatMap(([p, len]) => [24, 3, len, prf, ...lt, ...p]);
-  const body = [1, 1, ...a.mac, 5, 1, 0, 0, a.mtu >>> 24, (a.mtu >>> 16) & 255, (a.mtu >>> 8) & 255, a.mtu & 255, ...rdnss, ...rio];
+  const body = [
+    1,
+    1,
+    ...a.mac,
+    5,
+    1,
+    0,
+    0,
+    a.mtu >>> 24,
+    (a.mtu >>> 16) & 255,
+    (a.mtu >>> 8) & 255,
+    a.mtu & 255,
+    ...rdnss,
+    ...rio,
+  ];
   // hop limit 64, flags M|O, router lifetime, reachable time and retransmit timer unspecified
-  return icmp6(src, ALL_NODES, 134, 0, [64, 0xc0, a.lifetime >> 8, a.lifetime & 255], [0, 0, 0, 0, 0, 0, 0, 0, ...body], 255);
+  return icmp6(
+    src,
+    ALL_NODES,
+    134,
+    0,
+    [64, 0xc0, a.lifetime >> 8, a.lifetime & 255],
+    [0, 0, 0, 0, 0, 0, 0, 0, ...body],
+    255,
+  );
 }
 
 /** A neighbor advertisement for `target` (router, solicited, override), with the link-layer address. */

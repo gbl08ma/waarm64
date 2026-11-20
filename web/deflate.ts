@@ -24,10 +24,14 @@ export type Deflate = {
 export async function deflateOn(module: WebAssembly.Module): Promise<Deflate> {
   const { ex: raw, memory } = await codecCore(module);
   const ex = raw as DeflateExports;
-  if (typeof ex.inflate_raw !== 'function' || typeof ex.deflate_raw !== 'function') throw new Error('the core has no inflate_raw or deflate_raw');
+  if (typeof ex.inflate_raw !== 'function' || typeof ex.deflate_raw !== 'function')
+    throw new Error('the core has no inflate_raw or deflate_raw');
   // Two buffers in the instance's memory, grown as a call needs (a cluster is at most 2 MiB; the old ones are left:
   // the core exports no free, and what is left is at most what the largest call took).
-  const buf = [{ at: 0, cap: 0 }, { at: 0, cap: 0 }];
+  const buf = [
+    { at: 0, cap: 0 },
+    { at: 0, cap: 0 },
+  ];
   const room = (k: 0 | 1, n: number) => {
     const b = buf[k];
     if (n > b.cap) {
@@ -73,7 +77,9 @@ function retried<T>(p: Promise<T>, drop: (p: Promise<T>) => void): Promise<T> {
  * failure is tried again at the next call).
  */
 export function coreModule(given?: WebAssembly.Module): Promise<WebAssembly.Module> {
-  return (module ??= retried(given ? Promise.resolve(given) : loadCore(), (p) => { if (module === p) module = undefined; }));
+  return (module ??= retried(given ? Promise.resolve(given) : loadCore(), (p) => {
+    if (module === p) module = undefined;
+  }));
 }
 
 async function loadCore() {
@@ -88,4 +94,6 @@ async function loadCore() {
 
 /** This thread's codec (one instance, made at its first use; one that failed to start is tried again at the next). */
 export const threadDeflate = (): Promise<Deflate> =>
-  (codec ??= retried(coreModule().then(deflateOn), (p) => { if (codec === p) codec = undefined; }));
+  (codec ??= retried(coreModule().then(deflateOn), (p) => {
+    if (codec === p) codec = undefined;
+  }));

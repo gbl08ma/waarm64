@@ -7,7 +7,13 @@
 
 /** Doubles per vCPU: chunks, enteredAt, lastReturn, maxRunMs, maxRunAt, maxHostMs, maxHostAt, spare. */
 export const SLOTS = 8;
-export const CHUNKS = 0, ENTERED = 1, RETURNED = 2, MAX_RUN = 3, MAX_RUN_AT = 4, MAX_HOST = 5, MAX_HOST_AT = 6;
+export const CHUNKS = 0,
+  ENTERED = 1,
+  RETURNED = 2,
+  MAX_RUN = 3,
+  MAX_RUN_AT = 4,
+  MAX_HOST = 5,
+  MAX_HOST_AT = 6;
 
 export const epochMs = () => performance.timeOrigin + performance.now();
 
@@ -73,8 +79,14 @@ export function readLiveness(block: Float64Array, now = epochMs): VcpuLiveness[]
     const entered = block[at + ENTERED];
     const returned = block[at + RETURNED];
     return {
-      cpu, chunks: block[at + CHUNKS], runningMs: entered ? t - entered : 0, sinceReturnMs: returned ? t - returned : 0,
-      maxRunMs: block[at + MAX_RUN], maxRunAt: block[at + MAX_RUN_AT], maxHostMs: block[at + MAX_HOST], maxHostAt: block[at + MAX_HOST_AT],
+      cpu,
+      chunks: block[at + CHUNKS],
+      runningMs: entered ? t - entered : 0,
+      sinceReturnMs: returned ? t - returned : 0,
+      maxRunMs: block[at + MAX_RUN],
+      maxRunAt: block[at + MAX_RUN_AT],
+      maxHostMs: block[at + MAX_HOST],
+      maxHostAt: block[at + MAX_HOST_AT],
     };
   });
 }

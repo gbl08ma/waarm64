@@ -1,4 +1,5 @@
-// Prettier's options for the page's code (web/app/**: .svelte, .ts, .svelte.ts; docs/frontend-code.md §7):
+// Prettier's options for the page's code (web/app/**: .svelte, .ts, .svelte.ts; docs/frontend-code.md §7) and the host's
+// (web/*.ts; docs/host-code.md):
 // the repository's style (two spaces, single quotes, semicolons, trailing commas) at 120 columns.
 import type { Config } from 'prettier';
 import { fileURLToPath } from 'node:url';

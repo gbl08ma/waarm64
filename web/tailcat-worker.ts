@@ -44,11 +44,15 @@ const offered = () => {
 
 /** The network map for the page, with whether the server's IPv6 reaches the internet (`reached6`). */
 function postNetmap() {
-  if (lease) post({ type: 'netmap', netmap: { ...netmapOf(lease, serving, exit, selfKey), reached6: !!reach?.reached() } });
+  if (lease)
+    post({ type: 'netmap', netmap: { ...netmapOf(lease, serving, exit, selfKey), reached6: !!reach?.reached() } });
 }
 
 function attach(port: MessagePort) {
-  if (ip) { ip.onmessage = null; ip.close(); }
+  if (ip) {
+    ip.onmessage = null;
+    ip.close();
+  }
   ip = port;
   send = batchSender(port);
   port.onmessage = (ev: MessageEvent) => {
@@ -90,16 +94,30 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
     if (!ip) return; // detached meanwhile
     exit = !!m.addr;
     const config: TailcatConfig = { addr: m.addr, derpMapURL: m.derpMapURL };
-    const id = m.identity ?? (m.identityKey !== undefined || m.serve ? await tailcatIdentity(m.identityKey) : undefined);
+    const id =
+      m.identity ?? (m.identityKey !== undefined || m.serve ? await tailcatIdentity(m.identityKey) : undefined);
     if (id) config.key = id.key;
     if (m.serve && id) {
-      const region = m.addr || m.serve.relay ? 0 : await nearestRegion(m.derpMapURL ?? 'https://tailcat.dev/derpmap.json').catch(() => 0);
+      const region =
+        m.addr || m.serve.relay
+          ? 0
+          : await nearestRegion(m.derpMapURL ?? 'https://tailcat.dev/derpmap.json').catch(() => 0);
       config.serve = { psk: id.psk, relay: m.addr ? '' : m.serve.relay, region, allow: m.serve.allow ?? [] };
     }
     if (!ip) return; // detached meanwhile
-    if (exit) reach = reach6((p) => client?.guest(p), () => { ip?.postMessage({ type: 'lease', lease: offered() }); postNetmap(); }, m.probe6);
+    if (exit)
+      reach = reach6(
+        (p) => client?.guest(p),
+        () => {
+          ip?.postMessage({ type: 'lease', lease: offered() });
+          postNetmap();
+        },
+        m.probe6,
+      );
     client = new TsClient(mod, config, {
-      packet: (p) => { if (!reach?.take(p)) send?.(p); },
+      packet: (p) => {
+        if (!reach?.take(p)) send?.(p);
+      },
       event(ev) {
         if (ev.type === 'log') return console.log('tailcat:', ev.msg);
         if (ev.type === 'self') {
@@ -107,7 +125,10 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
           return;
         }
         if (ev.type === 'client' || ev.type === 'client-gone') {
-          console.log(ev.type === 'client' ? 'tailcat: a client came in,' : 'tailcat: a client that made room is forgotten,', ev.key);
+          console.log(
+            ev.type === 'client' ? 'tailcat: a client came in,' : 'tailcat: a client that made room is forgotten,',
+            ev.key,
+          );
           const same = (p: Prefix) => p[0].every((b, k) => b === ev.address6[k]);
           clients = clients.filter((p) => !same(p));
           if (ev.type === 'client') clients.push([ev.address6, 128]);
@@ -124,7 +145,11 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
           return postNetmap();
         }
         if (ev.type !== 'state') return; // the Tailscale client's events
-        if (ev.state === 'Failed') return post({ type: 'error', error: toWire(ev.code ? failureOf(ev) : new MsgError('network:tailcat-worker.failed')) });
+        if (ev.state === 'Failed')
+          return post({
+            type: 'error',
+            error: toWire(ev.code ? failureOf(ev) : new MsgError('network:tailcat-worker.failed')),
+          });
         post({ type: 'state', state: ev.state });
       },
     });

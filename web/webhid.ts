@@ -7,7 +7,17 @@
 
 import type { Setup, UsbIdentity, UsbProblem, UsbResult, UsbTransfer } from './usb-device.ts';
 import { VirtualDevice, type ControlAnswer } from './usb-virtual.ts';
-import { encodeReportDescriptor, normalizeCollections, protectedCollections, reportSizes, usesReportIds, visibleCollections, type HidCollectionInfo, type HidCollectionLike, type ReportKind } from './hid-descriptor.ts';
+import {
+  encodeReportDescriptor,
+  normalizeCollections,
+  protectedCollections,
+  reportSizes,
+  usesReportIds,
+  visibleCollections,
+  type HidCollectionInfo,
+  type HidCollectionLike,
+  type ReportKind,
+} from './hid-descriptor.ts';
 import { UsbOpenError, notFound, openFailed, pickDevice } from './webusb.ts';
 
 export type WebHidInputReport = { reportId: number; data: DataView };
@@ -71,16 +81,39 @@ export function hidLayout(vendorId: number, productId: number, collections: HidC
   const outMax = sizes.output.size ? Math.min(1024, Math.max(1, largest(sizes.output))) : 0;
   const speed = inMax > 64 || outMax > 64 ? 'high' : 'full';
   const interval = speed === 'high' ? 4 : 1; // 2^(4-1) microframes = 1 ms; 1 frame = 1 ms
-  const device = Uint8Array.from([18, 1, ...u16(0x0200), 0, 0, 0, 64, ...u16(vendorId), ...u16(productId), ...u16(0x0100), 0, 1, 2, 1]);
+  const device = Uint8Array.from([
+    18,
+    1,
+    ...u16(0x0200),
+    0,
+    0,
+    0,
+    64,
+    ...u16(vendorId),
+    ...u16(productId),
+    ...u16(0x0100),
+    0,
+    1,
+    2,
+    1,
+  ]);
   const hid = Uint8Array.from([9, 0x21, ...u16(0x0111), 0, 1, 0x22, ...u16(report.length)]);
-  const eps = [[7, 5, EP_IN, 3, ...u16(inMax), interval], ...(outMax ? [[7, 5, EP_OUT, 3, ...u16(outMax), interval]] : [])];
+  const eps = [
+    [7, 5, EP_IN, 3, ...u16(inMax), interval],
+    ...(outMax ? [[7, 5, EP_OUT, 3, ...u16(outMax), interval]] : []),
+  ];
   const body = [9, 4, 0, 0, eps.length, 3, 0, 0, 0, ...hid, ...eps.flat()];
   const total = 9 + body.length;
   const config = Uint8Array.from([9, 2, ...u16(total), 1, 1, 0, 0x80, 50, ...body]);
   return { collections, report, ids, sizes, speed, inMax, outMax, device, config, hid };
 }
 
-const GET_REPORT = 0x01, GET_IDLE = 0x02, GET_PROTOCOL = 0x03, SET_REPORT = 0x09, SET_IDLE = 0x0a, SET_PROTOCOL = 0x0b;
+const GET_REPORT = 0x01,
+  GET_IDLE = 0x02,
+  GET_PROTOCOL = 0x03,
+  SET_REPORT = 0x09,
+  SET_IDLE = 0x0a,
+  SET_PROTOCOL = 0x0b;
 const KINDS: Record<number, ReportKind> = { 1: 'input', 2: 'output', 3: 'feature' };
 
 type InTd = { tag: number; length: number; done: (r: UsbResult) => void };
@@ -107,7 +140,8 @@ export class WebHidDevice extends VirtualDevice {
       device: layout.device,
       configs: [layout.config],
       strings: [dev.productName || 'HID device', opts.serial ?? 'waarm64-hid'],
-      extra: (type, index) => (index !== 0 ? undefined : type === 0x21 ? layout.hid : type === 0x22 ? layout.report : undefined),
+      extra: (type, index) =>
+        index !== 0 ? undefined : type === 0x21 ? layout.hid : type === 0x22 ? layout.report : undefined,
     });
     this.dev = dev;
     this.layout = layout;
@@ -141,13 +175,17 @@ export class WebHidDevice extends VirtualDevice {
 
   protected override control(s: Setup, data?: Uint8Array): ControlAnswer | Promise<ControlAnswer> {
     if ((s.requestType & 0x60) !== 0x20 || (s.requestType & 0x1f) !== 1 || (s.index & 0xff) !== 0) return undefined;
-    const kind = KINDS[s.value >> 8], id = s.value & 0xff;
+    const kind = KINDS[s.value >> 8],
+      id = s.value & 0xff;
     switch (s.request) {
       case GET_REPORT: {
         if (!kind) return undefined;
         if (kind === 'feature') {
           // Chromium's buffer already starts with the report ID when the device uses IDs (and has none otherwise): as the guest wants it.
-          return this.dev.receiveFeatureReport(id).then((dv) => bytesOf(dv), () => undefined);
+          return this.dev.receiveFeatureReport(id).then(
+            (dv) => bytesOf(dv),
+            () => undefined,
+          );
         }
         const size = this.layout.sizes[kind].get(id);
         if (size === undefined) return undefined;
@@ -156,15 +194,27 @@ export class WebHidDevice extends VirtualDevice {
       case SET_REPORT: {
         if (kind !== 'output' && kind !== 'feature') return undefined;
         const [rid, payload] = this.split(data ?? new Uint8Array(0), id);
-        const send = kind === 'output' ? this.dev.sendReport(rid, payload as Uint8Array<ArrayBuffer>) : this.dev.sendFeatureReport(rid, payload as Uint8Array<ArrayBuffer>);
+        const send =
+          kind === 'output'
+            ? this.dev.sendReport(rid, payload as Uint8Array<ArrayBuffer>)
+            : this.dev.sendFeatureReport(rid, payload as Uint8Array<ArrayBuffer>);
         if (kind === 'output') this.last.set(`output:${rid}`, this.framed(rid, payload.slice()));
-        return send.then(() => true, () => undefined);
+        return send.then(
+          () => true,
+          () => undefined,
+        );
       }
-      case SET_IDLE: this.idle = s.value >> 8; return true;
-      case GET_IDLE: return Uint8Array.of(this.idle);
-      case SET_PROTOCOL: return true;
-      case GET_PROTOCOL: return Uint8Array.of(1); // the report protocol: no boot protocol is offered
-      default: return undefined;
+      case SET_IDLE:
+        this.idle = s.value >> 8;
+        return true;
+      case GET_IDLE:
+        return Uint8Array.of(this.idle);
+      case SET_PROTOCOL:
+        return true;
+      case GET_PROTOCOL:
+        return Uint8Array.of(1); // the report protocol: no boot protocol is offered
+      default:
+        return undefined;
     }
   }
 
@@ -181,7 +231,14 @@ export class WebHidDevice extends VirtualDevice {
       const p = this.outChain.then(() => this.dev.sendReport(id, payload as Uint8Array<ArrayBuffer>));
       this.outChain = p.catch(() => {});
       this.last.set(`output:${id}`, this.framed(id, payload.slice()));
-      p.then(() => { if (!this.gone) done({ code: 'success', actual: data.length }); }, () => { if (!this.gone) done({ code: 'stall', actual: 0 }); });
+      p.then(
+        () => {
+          if (!this.gone) done({ code: 'success', actual: data.length });
+        },
+        () => {
+          if (!this.gone) done({ code: 'stall', actual: 0 });
+        },
+      );
       return;
     }
     done({ code: 'error', actual: 0 });
@@ -219,7 +276,8 @@ export async function openWebHid(dev: WebHidDeviceLike, opts: WebHidOptions = {}
   // Only what the page can use: a protected collection's input and output reports never arrive and can't be sent.
   const all = normalizeCollections(dev.collections);
   const collections = visibleCollections(all);
-  if (collections.length === 0) throw new UsbOpenError('usb:webhid.noCollections', undefined, [{ kind: 'no-collections' }]);
+  if (collections.length === 0)
+    throw new UsbOpenError('usb:webhid.noCollections', undefined, [{ kind: 'no-collections' }]);
   try {
     if (!dev.opened) await dev.open();
   } catch (e) {

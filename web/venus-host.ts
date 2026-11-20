@@ -6,7 +6,15 @@
 // driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `retired` says when a fence has.
 import type { ShaderCache } from './venus-cache.ts';
-import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps, type L9Suspect, type VenusEmulStats } from './venus-gpu.ts';
+import {
+  gpuFeatures,
+  gpuLimits,
+  HELD_FEATURES,
+  VenusGpu,
+  type GpuCaps,
+  type L9Suspect,
+  type VenusEmulStats,
+} from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { VENUS_ARENA } from './ram.ts';
 import { WindowWatch } from './window.ts';
@@ -18,10 +26,20 @@ import { WindowWatch } from './window.ts';
 export type VenusWindow = { at: number; bytes: number; watch: number; core?: WebAssembly.Memory };
 
 export type VenusStats = {
-  submits: number; completed: number; fences: number; polls: number; dirtyPages: number; dirtyLooks: number; contexts: number;
+  submits: number;
+  completed: number;
+  fences: number;
+  polls: number;
+  dirtyPages: number;
+  dirtyLooks: number;
+  contexts: number;
   /** The poller's (VK3 L2): ms between its polls while it ran (sum, longest) and how many; fences' ms from sent to
    * retired (sum, longest). */
-  gaps: number; gapMs: number; gapMaxMs: number; fenceMs: number; fenceMaxMs: number;
+  gaps: number;
+  gapMs: number;
+  gapMaxMs: number;
+  fenceMs: number;
+  fenceMaxMs: number;
   /** The pump's turns' own ms (polling and nudging: what its pace costs the GPU worker; VK4 T13). */
   turnMs: number;
 };
@@ -47,27 +65,60 @@ export type VenusPoll = 'timeout' | 'pump' | 'ticker';
  * ms between them while the pump ran (`gap*`); the GPU's submits, the ms until WebGPU said done (`done*`) and then until
  * they completed in order (`orderMs`), the nudges; the fences the guest sent and their ms until retired.
  */
-export type VenusTimes = { polls: number; gaps: number; gapMs: number; gapMaxMs: number; submits: number; done: number; doneMs: number; doneMaxMs: number; orderMs: number; nudges: number; fences: number; fenceMs: number; fenceMaxMs: number;
+export type VenusTimes = {
+  polls: number;
+  gaps: number;
+  gapMs: number;
+  gapMaxMs: number;
+  submits: number;
+  done: number;
+  doneMs: number;
+  doneMaxMs: number;
+  orderMs: number;
+  nudges: number;
+  fences: number;
+  fenceMs: number;
+  fenceMaxMs: number;
   /** A submit's parts (VK3 L2b, web/venus-gpu.ts `VenusGpuStats`): summed over the second's submits. */
-  encodeMs: number; submitCallMs: number; uploads: number; uploadBytes: number; readbacks: number; passes: number; draws: number; gpuTimed: number; gpuMs: number; workDone: number; workDoneMs: number;
+  encodeMs: number;
+  submitCallMs: number;
+  uploads: number;
+  uploadBytes: number;
+  readbacks: number;
+  passes: number;
+  draws: number;
+  gpuTimed: number;
+  gpuMs: number;
+  workDone: number;
+  workDoneMs: number;
   /** Bind groups made (VK3 L6b: kept by their layouts' content since). */
   bindGroups: number;
   /** vkr's (vk/README.md "Calls and rings"): the commands it ran from the rings, the virtqueue and nested streams; those
    * that asked for a reply (the guest waits for each); rings gone idle and woken by a notify. */
-  ringCmds: number; queueCmds: number; nestedCmds: number; replies: number; idles: number; notifies: number;
+  ringCmds: number;
+  queueCmds: number;
+  nestedCmds: number;
+  replies: number;
+  idles: number;
+  notifies: number;
   /** The pump's turns' own ms (`VenusStats.turnMs`), and the ticker's ticks (web/venus-ticker.ts). */
-  turnMs: number; ticks: number };
+  turnMs: number;
+  ticks: number;
+};
 
 /**
  * How the renderer's pipelines are made (`?gpu=vkpipelines=sync`: at once, as before VK3 L3, for A/B) and where its
  * shaders persist across runs (`cache`: the store for a renderer build, web/venus-cache.ts; none with `?gpu=vkcache=off`).
  */
-export type VenusOptions = { syncPipelines?: boolean;
+export type VenusOptions = {
+  syncPipelines?: boolean;
   /** `?gpu=vkpipedelay=<ms>`: each pipeline made asynchronously ready that much later (web/venus-gpu.ts; tests, VK3 L4e). */
-  pipelineDelayMs?: number; cache?: (buildId: string) => Promise<ShaderCache | undefined>;
+  pipelineDelayMs?: number;
+  cache?: (buildId: string) => Promise<ShaderCache | undefined>;
   /** `?gpu=vknudge=<ms>`: the pump's nudges at most this often (0: none; default `NUDGE_MS`); `?gpu=vkgputime`: each
    * submit's passes timed on the GPU (VK3 L2b, A/B and diagnosis). */
-  nudgeMs?: number; gpuTime?: boolean;
+  nudgeMs?: number;
+  gpuTime?: boolean;
   /** `?gpu=vkidle=<ms>`: a ring stays active (polled, so the guest's next command needs no notify) at least this long
    * after its last command, whatever the guest's idle timeout (Mesa's 1 ms; vk/README.md "Calls and rings"). */
   ringIdleMs?: number;
@@ -78,7 +129,8 @@ export type VenusOptions = { syncPipelines?: boolean;
   tickerUrl?: URL;
   /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
-  hold?: readonly string[]; heldFormats?: boolean;
+  hold?: readonly string[];
+  heldFormats?: boolean;
   /** Ballots, elections and reads of the first invocation anchored by an add of the subgroup (web/venus-gpu.ts
    * `subgroupsRight`'s `anchor`: a WebGPU whose are wrong in divergent control flow without). */
   subgroupAnchor?: boolean;
@@ -98,7 +150,8 @@ export type VenusOptions = { syncPipelines?: boolean;
   queueFamilies?: number;
   /** `?gpu=vkskip=<path>` (A/B, VK4 T23): an emulated path's work left out (`SKIPS`): what it leaves is wrong pixels,
    * never a command WebGPU refuses. */
-  skip?: readonly string[] };
+  skip?: readonly string[];
+};
 
 /**
  * The emulated paths' work `?gpu=vkskip=` can leave out (VK4 T23): the driver's (vk/driver/wg_private.h `WG_SKIP_*`:
@@ -108,8 +161,23 @@ export type VenusOptions = { syncPipelines?: boolean;
  */
 export const SKIPS = { views: 1, words: 2, feedback: 4, meta: 0, rgb9e5: 8 } as const;
 /** The driver's counts (vk/driver/wg_private.h `enum wg_emul`), in its order. */
-export const EMUL_COUNTS = ['shadowCopies', 'shadowBytes', 'shadowBackBytes', 'scopeCuts', 'viewCopies', 'viewBytes', 'wordsCopies', 'wordsBytes',
-  'feedbackCopies', 'feedbackBytes', 'pulledDraws', 'variants', 'keyedDraws', 'prepasses', 'vsPrepasses'] as const;
+export const EMUL_COUNTS = [
+  'shadowCopies',
+  'shadowBytes',
+  'shadowBackBytes',
+  'scopeCuts',
+  'viewCopies',
+  'viewBytes',
+  'wordsCopies',
+  'wordsBytes',
+  'feedbackCopies',
+  'feedbackBytes',
+  'pulledDraws',
+  'variants',
+  'keyedDraws',
+  'prepasses',
+  'vsPrepasses',
+] as const;
 /** What the emulated paths did over a span (the render stats' `venusEmul`): the driver's counts and the worker's
  * (web/venus-gpu.ts `VenusEmulStats`). */
 export type VenusEmul = Record<(typeof EMUL_COUNTS)[number], number> & VenusEmulStats;
@@ -122,7 +190,8 @@ const SUBGROUP_ANCHOR = 1 << 27;
 export const L9_FLAGS: Partial<Record<L9Suspect, number>> = { bindgroups: 1 << 29, pad: 1 << 28 };
 
 /** The pump's wait between turns, and how often it nudges at most (ms). */
-const PERIOD_MS = 0.25, NUDGE_MS = 1;
+const PERIOD_MS = 0.25,
+  NUDGE_MS = 1;
 /**
  * The ticker's sleep between turns (ms): ~0.08 ms a turn on the Mac, ~0.17 on Linux (bench/vulkan/wake.ts). GSK's
  * iconscroll on the M4 ran at 16.8 frames/s at 0.25, 25.8 at 0.1 and 31.4 at 0.05 (GL's 27); VK0's scene no worse
@@ -130,7 +199,8 @@ const PERIOD_MS = 0.25, NUDGE_MS = 1;
  */
 const TICK_MS = 0.05;
 /** The knobs' ranges (ms): a tick of 0 would spin, NaN sleep for ever; an idle floor past ~1 s only keeps the pump busy. */
-const TICK_RANGE = [0.01, 10], IDLE_RANGE = [0, 1000];
+const TICK_RANGE = [0.01, 10],
+  IDLE_RANGE = [0, 1000];
 /** A knob's value if it's a number in its range; else a warning and undefined (the default). */
 function knob(name: string, v: number | undefined, [lo, hi]: number[]) {
   if (v === undefined) return undefined;
@@ -180,17 +250,22 @@ type Exports = {
 /** The WASI calls the module imports, stubbed: no files, no environment, the clock from `performance.now()`. */
 function wasi(memory: WebAssembly.Memory) {
   const dv = () => new DataView(memory.buffer);
-  const EBADF = 8, ENOSYS = 52;
+  const EBADF = 8,
+    ENOSYS = 52;
   let line = '';
   return {
-    clock_time_get: (_id: number, _precision: bigint, out: number) => { dv().setBigUint64(out >>> 0, BigInt(Math.round(performance.now() * 1e6)), true); return 0; },
+    clock_time_get: (_id: number, _precision: bigint, out: number) => {
+      dv().setBigUint64(out >>> 0, BigInt(Math.round(performance.now() * 1e6)), true);
+      return 0;
+    },
     // Pointers past 2 GiB (the window, past a large arena) come as negative i32s.
     fd_write: (fd: number, iovs: number, n: number, written: number) => {
       iovs >>>= 0;
       written >>>= 0;
       let len = 0;
       for (let i = 0; i < n; i++) {
-        const p = dv().getUint32(iovs + i * 8, true), l = dv().getUint32(iovs + i * 8 + 4, true);
+        const p = dv().getUint32(iovs + i * 8, true),
+          l = dv().getUint32(iovs + i * 8 + 4, true);
         if (fd === 2) line += new TextDecoder().decode(new Uint8Array(memory.buffer, p, l).slice());
         len += l;
       }
@@ -199,16 +274,43 @@ function wasi(memory: WebAssembly.Memory) {
       return 0;
     },
     environ_get: () => 0,
-    environ_sizes_get: (count: number, size: number) => { dv().setUint32(count >>> 0, 0, true); dv().setUint32(size >>> 0, 0, true); return 0; },
-    fd_close: () => 0, fd_fdstat_get: () => EBADF, fd_fdstat_set_flags: () => ENOSYS, fd_prestat_get: () => EBADF,
-    fd_prestat_dir_name: () => EBADF, fd_read: () => EBADF, fd_pread: () => EBADF, fd_seek: () => EBADF, path_open: () => ENOSYS,
+    environ_sizes_get: (count: number, size: number) => {
+      dv().setUint32(count >>> 0, 0, true);
+      dv().setUint32(size >>> 0, 0, true);
+      return 0;
+    },
+    fd_close: () => 0,
+    fd_fdstat_get: () => EBADF,
+    fd_fdstat_set_flags: () => ENOSYS,
+    fd_prestat_get: () => EBADF,
+    fd_prestat_dir_name: () => EBADF,
+    fd_read: () => EBADF,
+    fd_pread: () => EBADF,
+    fd_seek: () => EBADF,
+    path_open: () => ENOSYS,
     sched_yield: () => 0,
-    proc_exit: (code: number) => { throw new Error(`venus: proc_exit(${code})`); },
+    proc_exit: (code: number) => {
+      throw new Error(`venus: proc_exit(${code})`);
+    },
   };
 }
 
 export class VenusRenderer {
-  readonly stats: VenusStats = { submits: 0, completed: 0, fences: 0, polls: 0, dirtyPages: 0, dirtyLooks: 0, contexts: 0, gaps: 0, gapMs: 0, gapMaxMs: 0, fenceMs: 0, fenceMaxMs: 0, turnMs: 0 };
+  readonly stats: VenusStats = {
+    submits: 0,
+    completed: 0,
+    fences: 0,
+    polls: 0,
+    dirtyPages: 0,
+    dirtyLooks: 0,
+    contexts: 0,
+    gaps: 0,
+    gapMs: 0,
+    gapMaxMs: 0,
+    fenceMs: 0,
+    fenceMaxMs: 0,
+    turnMs: 0,
+  };
   /** The VENUS capset vkr writes (the device's `venusCaps`). */
   readonly capset: Uint8Array;
   private readonly ex: Exports;
@@ -242,7 +344,19 @@ export class VenusRenderer {
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = [], ycbcr = false, l9: readonly L9Suspect[] = [], subgroupAnchor = false) {
+  private constructor(
+    instance: WebAssembly.Instance,
+    memory: WebAssembly.Memory,
+    window: VenusWindow,
+    gpu: VenusGpu,
+    device: GPUDevice | undefined,
+    caps: GpuCaps | undefined,
+    poll: VenusPoll,
+    hold: readonly string[] = [],
+    ycbcr = false,
+    l9: readonly L9Suspect[] = [],
+    subgroupAnchor = false,
+  ) {
     this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
@@ -256,7 +370,16 @@ export class VenusRenderer {
     const limits = gpuLimits(caps);
     const at = this.ex.venus_alloc(limits.byteLength);
     new Uint32Array(memory.buffer, at, limits.length).set(limits);
-    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold) | (ycbcr ? YCBCR : 0) | (subgroupAnchor ? SUBGROUP_ANCHOR : 0) | l9.reduce((f, x) => f | (L9_FLAGS[x] ?? 0), 0), at, limits.length, window.at, window.bytes);
+    const ok = this.ex.venus_init(
+      gpuFeatures(caps, !!device, hold) |
+        (ycbcr ? YCBCR : 0) |
+        (subgroupAnchor ? SUBGROUP_ANCHOR : 0) |
+        l9.reduce((f, x) => f | (L9_FLAGS[x] ?? 0), 0),
+      at,
+      limits.length,
+      window.at,
+      window.bytes,
+    );
     this.ex.venus_free(at);
     if (!ok) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
@@ -270,13 +393,29 @@ export class VenusRenderer {
    * `VENUS_ARENA` bytes) is unused and the window after it; its driver draws on `device` (none: it keeps objects and draws nothing, as in Node's tests) and advertises
    * what `caps` has (the device's features and limits; a test's stand-in, or WebGPU's defaults).
    */
-  static async create(module: WebAssembly.Module, memory: WebAssembly.Memory, window: VenusWindow, device?: GPUDevice, caps: GpuCaps | undefined = device, poll: VenusPoll = typeof Worker !== 'undefined' && typeof SharedArrayBuffer !== 'undefined' ? 'ticker' : 'pump', options: VenusOptions = {}) {
+  static async create(
+    module: WebAssembly.Module,
+    memory: WebAssembly.Memory,
+    window: VenusWindow,
+    device?: GPUDevice,
+    caps: GpuCaps | undefined = device,
+    poll: VenusPoll = typeof Worker !== 'undefined' && typeof SharedArrayBuffer !== 'undefined' ? 'ticker' : 'pump',
+    options: VenusOptions = {},
+  ) {
     let self: VenusRenderer | undefined;
-    const gpu = new VenusGpu(device, memory, (serial) => self?.completed(serial), () => self?.dirty(), { syncPipelines: options.syncPipelines, pipelineDelayMs: options.pipelineDelayMs, gpuTime: options.gpuTime });
+    const gpu = new VenusGpu(
+      device,
+      memory,
+      (serial) => self?.completed(serial),
+      () => self?.dirty(),
+      { syncPipelines: options.syncPipelines, pipelineDelayMs: options.pipelineDelayMs, gpuTime: options.gpuTime },
+    );
     const imports = {
       env: {
         memory,
-        venus_retire: (ctx: number, ring: number, fence: bigint) => { self?.retire(`${ctx}:${ring}:${fence}`); },
+        venus_retire: (ctx: number, ring: number, fence: bigint) => {
+          self?.retire(`${ctx}:${ring}:${fence}`);
+        },
         venus_submitted: () => {},
       },
       wg: gpu.imports(),
@@ -289,15 +428,37 @@ export class VenusRenderer {
     if (!WebAssembly.Module.exports(module).some((e) => e.name === 'venus_arena_end')) throw new Error(stale);
     // One built before vkr's counts (VK4 T13) or the alive table (GD G3) lacks their exports, which the stats and the ticker use.
     const names = new Set(WebAssembly.Module.exports(module).map((e) => e.name));
-    const missing = ['venus_cmd_counts', 'venus_cmd_types', 'venus_ring_events', 'venus_cmd_name', 'venus_ring_idle', 'venus_ring_alive'].filter((n) => !names.has(n));
-    if (missing.length) throw new Error(`Vulkan's renderer (target/vk/venus.wasm) is older than this page (no ${missing.join(', ')}): rebuild it (vk/build.sh)`);
+    const missing = [
+      'venus_cmd_counts',
+      'venus_cmd_types',
+      'venus_ring_events',
+      'venus_cmd_name',
+      'venus_ring_idle',
+      'venus_ring_alive',
+    ].filter((n) => !names.has(n));
+    if (missing.length)
+      throw new Error(
+        `Vulkan's renderer (target/vk/venus.wasm) is older than this page (no ${missing.join(', ')}): rebuild it (vk/build.sh)`,
+      );
     const instance = await WebAssembly.instantiate(module, imports);
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
     // VK4 T46: Vulkan's timestamps stay the CPU's on Apple's GPUs: with them on the GPU the M4 lost its WebGPU device
     // ("Insufficient Memory") in 3 of 6 runs of dEQP's query cases, at the first timestamps after ~740 other cases, and
     // never without (docs/backlog.md "Queries").
     const apple = caps?.adapterInfo?.vendor.toLowerCase() === 'apple' ? ['timestamp-query'] : [];
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...apple, ...(options.hold ?? [])], options.ycbcr ?? true, options.l9, options.subgroupAnchor);
+    self = new VenusRenderer(
+      instance,
+      memory,
+      window,
+      gpu,
+      device,
+      caps,
+      poll,
+      [...(options.heldFormats ? HELD_FEATURES : []), ...apple, ...(options.hold ?? [])],
+      options.ycbcr ?? true,
+      options.l9,
+      options.subgroupAnchor,
+    );
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     self.ex.venus_premake?.(options.premake ? 1 : 0);
     if (options.queueFamilies) self.ex.venus_queue_families?.(options.queueFamilies);
@@ -371,13 +532,17 @@ export class VenusRenderer {
       for (const [k, t] of this.sentAt) {
         if (now - t < 5000 || this.warnedStuck.has(k)) continue;
         this.warnedStuck.add(k);
-        console.warn(`venus: fence ${k} unretired for ${((now - t) / 1000).toFixed(0)} s (submits ${this.stats.submits}, GPU submits ${this.gpu.stats.submits}, completed ${this.stats.completed}, pending fences ${this.pending.size})`);
+        console.warn(
+          `venus: fence ${k} unretired for ${((now - t) / 1000).toFixed(0)} s (submits ${this.stats.submits}, GPU submits ${this.gpu.stats.submits}, completed ${this.stats.completed}, pending fences ${this.pending.size})`,
+        );
       }
     }, 2000);
   }
 
   /** Whether a fence sent has retired (or its context ended). */
-  retired(ctx: number, ring: number, id: bigint) { return !this.pending.has(`${ctx}:${ring}:${id}`); }
+  retired(ctx: number, ring: number, id: bigint) {
+    return !this.pending.has(`${ctx}:${ring}:${id}`);
+  }
 
   /** Copies `bytes` into the module's heap for a call, then frees them. */
   private withBytes<T>(bytes: Uint8Array, f: (p: number) => T): T {
@@ -403,7 +568,8 @@ export class VenusRenderer {
         } else this.destroy(c.id);
         return;
       case 'blob':
-        if (this.ex.venus_resource_create(c.ctx, c.res, c.blobId, BigInt(c.size), c.flags)) this.owner.set(c.res, c.ctx);
+        if (this.ex.venus_resource_create(c.ctx, c.res, c.blobId, BigInt(c.size), c.flags))
+          this.owner.set(c.res, c.ctx);
         else console.warn(`venus: blob ${c.res} (object ${c.blobId}) couldn't be made`);
         return;
       case 'blob-map': {
@@ -437,7 +603,8 @@ export class VenusRenderer {
         return;
       case 'vsubmit': {
         this.stats.submits++;
-        if (!this.withBytes(c.bytes, (p) => this.ex.venus_submit(c.ctx, p, c.bytes.length))) console.warn(`venus: context ${c.ctx}'s submit failed`);
+        if (!this.withBytes(c.bytes, (p) => this.ex.venus_submit(c.ctx, p, c.bytes.length)))
+          console.warn(`venus: context ${c.ctx}'s submit failed`);
         const fence = c.fence;
         if (fence) {
           // Retired once the queue's work before it is done (`retired`); a ring fence of no queue's work retires at
@@ -495,10 +662,38 @@ export class VenusRenderer {
   nudgeMs = NUDGE_MS;
   /** The fence's way back since the last call (`VenusTimes`); the longest times start again. */
   times(): VenusTimes {
-    const r = this.stats, g = this.gpu.stats;
-    const now: VenusTimes = { polls: r.polls, gaps: r.gaps, gapMs: r.gapMs, gapMaxMs: r.gapMaxMs, submits: g.submits, done: g.done, doneMs: g.doneMs, doneMaxMs: g.doneMaxMs, orderMs: g.orderMs, nudges: g.nudges, fences: r.fences, fenceMs: r.fenceMs, fenceMaxMs: r.fenceMaxMs,
-      encodeMs: g.encodeMs, submitCallMs: g.submitCallMs, uploads: g.uploads, uploadBytes: g.uploadBytes, readbacks: g.readbacks, passes: g.passes, draws: g.draws, gpuTimed: g.gpuTimed, gpuMs: g.gpuMs, workDone: g.workDone, workDoneMs: g.workDoneMs, bindGroups: g.bindGroups,
-      ...this.cmdTotals(), turnMs: r.turnMs, ticks: this.counted?.ticks ?? 0 };
+    const r = this.stats,
+      g = this.gpu.stats;
+    const now: VenusTimes = {
+      polls: r.polls,
+      gaps: r.gaps,
+      gapMs: r.gapMs,
+      gapMaxMs: r.gapMaxMs,
+      submits: g.submits,
+      done: g.done,
+      doneMs: g.doneMs,
+      doneMaxMs: g.doneMaxMs,
+      orderMs: g.orderMs,
+      nudges: g.nudges,
+      fences: r.fences,
+      fenceMs: r.fenceMs,
+      fenceMaxMs: r.fenceMaxMs,
+      encodeMs: g.encodeMs,
+      submitCallMs: g.submitCallMs,
+      uploads: g.uploads,
+      uploadBytes: g.uploadBytes,
+      readbacks: g.readbacks,
+      passes: g.passes,
+      draws: g.draws,
+      gpuTimed: g.gpuTimed,
+      gpuMs: g.gpuMs,
+      workDone: g.workDone,
+      workDoneMs: g.workDoneMs,
+      bindGroups: g.bindGroups,
+      ...this.cmdTotals(),
+      turnMs: r.turnMs,
+      ticks: this.counted?.ticks ?? 0,
+    };
     const last = this.lastTimes;
     this.lastTimes = now;
     r.gapMaxMs = g.doneMaxMs = r.fenceMaxMs = 0;
@@ -517,9 +712,11 @@ export class VenusRenderer {
   /** vkr's counts (`venus_cmd_counts`: [where][reply][type]) and the ticks, totalled across their wraps (each a sum of differences modulo 2^32). */
   private counts() {
     const n = this.cmdTypes * 6;
-    const cmds = new Uint32Array(this.memory.buffer, this.ex.venus_cmd_counts() >>> 0, n).slice(), events = new Uint32Array(this.memory.buffer, this.ex.venus_ring_events() >>> 0, 2).slice();
+    const cmds = new Uint32Array(this.memory.buffer, this.ex.venus_cmd_counts() >>> 0, n).slice(),
+      events = new Uint32Array(this.memory.buffer, this.ex.venus_ring_events() >>> 0, 2).slice();
     const ticks = this.ticks ? Atomics.load(this.ticks, 0) >>> 0 : 0;
-    const last = this.lastRaw, c = (this.counted ??= { cmds: new Float64Array(n), events: new Float64Array(2), ticks: 0 });
+    const last = this.lastRaw,
+      c = (this.counted ??= { cmds: new Float64Array(n), events: new Float64Array(2), ticks: 0 });
     for (let i = 0; i < n; i++) c.cmds[i] += (cmds[i] - (last?.cmds[i] ?? 0)) >>> 0;
     for (let i = 0; i < 2; i++) c.events[i] += (events[i] - (last?.events[i] ?? 0)) >>> 0;
     c.ticks += (ticks - (last?.ticks ?? 0)) >>> 0;
@@ -528,19 +725,30 @@ export class VenusRenderer {
   }
 
   private cmdTotals() {
-    const { cmds, events } = this.counts(), CMD_TYPES = this.cmdTypes;
-    const sum = (from: number, to: number) => cmds.subarray(from * CMD_TYPES, to * CMD_TYPES).reduce((n, x) => n + x, 0);
+    const { cmds, events } = this.counts(),
+      CMD_TYPES = this.cmdTypes;
+    const sum = (from: number, to: number) =>
+      cmds.subarray(from * CMD_TYPES, to * CMD_TYPES).reduce((n, x) => n + x, 0);
     // [where][reply][type]: where 0 the rings, 1 the virtqueue, 2 nested streams; reply 1 at odd rows.
-    return { ringCmds: sum(0, 2), queueCmds: sum(2, 4), nestedCmds: sum(4, 6), replies: sum(1, 2) + sum(3, 4) + sum(5, 6), idles: events[0], notifies: events[1] };
+    return {
+      ringCmds: sum(0, 2),
+      queueCmds: sum(2, 4),
+      nestedCmds: sum(4, 6),
+      replies: sum(1, 2) + sum(3, 4) + sum(5, 6),
+      idles: events[0],
+      notifies: events[1],
+    };
   }
 
   /** The emulated work left out from now on (`VenusOptions.skip`; the bench hook `window.__waarm64VkSkip`), none with []. */
   skip(paths: readonly string[]) {
     const known = paths.filter((k): k is keyof typeof SKIPS => k in SKIPS);
-    for (const k of paths) if (!(k in SKIPS)) console.warn(`venus: vkskip=${k} ignored (not one of ${Object.keys(SKIPS).join(', ')})`);
+    for (const k of paths)
+      if (!(k in SKIPS)) console.warn(`venus: vkskip=${k} ignored (not one of ${Object.keys(SKIPS).join(', ')})`);
     this.ex.venus_emul_skip?.(known.reduce((m, k) => m | SKIPS[k], 0));
     this.gpu.skipMeta = known.includes('meta');
-    if (known.length) console.warn(`venus: vkskip=${known.join(',')}: that emulated work is left out (wrong pixels; an A/B only)`);
+    if (known.length)
+      console.warn(`venus: vkskip=${known.join(',')}: that emulated work is left out (wrong pixels; an A/B only)`);
   }
 
   private lastEmul: number[] | undefined;
@@ -551,10 +759,14 @@ export class VenusRenderer {
     const n = this.ex.venus_emul_count?.();
     if (!n) return undefined;
     const now = [...new Float64Array(this.memory.buffer, this.ex.venus_emul_counts!() >>> 0, n)];
-    const last = this.lastEmul, lastGpu = this.lastGpuEmul, gpu = { ...this.gpu.emul };
+    const last = this.lastEmul,
+      lastGpu = this.lastGpuEmul,
+      gpu = { ...this.gpu.emul };
     [this.lastEmul, this.lastGpuEmul] = [now, gpu];
     const out = {} as Record<string, number>;
-    EMUL_COUNTS.forEach((k, i) => { out[k] = (now[i] ?? 0) - (last?.[i] ?? 0); });
+    EMUL_COUNTS.forEach((k, i) => {
+      out[k] = (now[i] ?? 0) - (last?.[i] ?? 0);
+    });
     for (const k of Object.keys(gpu) as (keyof VenusEmulStats)[]) out[k] = gpu[k] - (lastGpu?.[k] ?? 0);
     return out as VenusEmul;
   }
@@ -567,14 +779,16 @@ export class VenusRenderer {
    * `<name>@queue` (each submit an execbuffer of the guest's: notifies, fenced submits' waits; `+reply` if it asked).
    */
   calls(): Record<string, number> {
-    const cmds = this.counts().cmds.slice(), CMD_TYPES = this.cmdTypes;
+    const cmds = this.counts().cmds.slice(),
+      CMD_TYPES = this.cmdTypes;
     const last = this.lastCalls;
     this.lastCalls = cmds;
     const out: Record<string, number> = {};
     for (let where = 0; where < 3; where++) {
       for (let reply = where === 1 ? 0 : 1; reply < 2; reply++) {
         for (let t = 0; t < CMD_TYPES; t++) {
-          const i = (where * 2 + reply) * CMD_TYPES + t, d = cmds[i] - (last?.[i] ?? 0);
+          const i = (where * 2 + reply) * CMD_TYPES + t,
+            d = cmds[i] - (last?.[i] ?? 0);
           if (!d) continue;
           const k = `${this.cmdName(t)}${where === 1 ? `@queue${reply ? '+reply' : ''}` : ''}`;
           out[k] = (out[k] ?? 0) + d;
@@ -587,7 +801,8 @@ export class VenusRenderer {
   private cmdName(t: number) {
     let s = this.names.get(t);
     if (s === undefined) {
-      const p = this.ex.venus_cmd_name(t) >>> 0, bytes = new Uint8Array(this.memory.buffer, p, 96);
+      const p = this.ex.venus_cmd_name(t) >>> 0,
+        bytes = new Uint8Array(this.memory.buffer, p, 96);
       s = new TextDecoder().decode(bytes.slice(0, Math.max(0, bytes.indexOf(0)))) || `#${t}`;
       this.names.set(t, s);
     }
@@ -595,7 +810,9 @@ export class VenusRenderer {
   }
 
   /** Whether `res` is one of Venus's blobs. */
-  has(res: number) { return this.owner.has(res); }
+  has(res: number) {
+    return this.owner.has(res);
+  }
 
   /**
    * The WebGPU texture of the image a blob was exported from (a WSI image, which the guest's compositor imports into
@@ -642,7 +859,8 @@ export class VenusRenderer {
     this.lastPoll = now;
     this.stats.polls++;
     const active = this.ex.venus_poll();
-    if (this.nudgeMs > 0 && this.gpu.inFlight && now - this.lastNudge >= this.nudgeMs && this.gpu.nudge()) this.lastNudge = now;
+    if (this.nudgeMs > 0 && this.gpu.inFlight && now - this.lastNudge >= this.nudgeMs && this.gpu.nudge())
+      this.lastNudge = now;
     this.running = !!active || this.gpu.inFlight > 0;
     this.stats.turnMs += performance.now() - now;
     // The ticker stops while nothing runs (a notify or a submit starts it again: `schedule`), but never under a turn
@@ -672,10 +890,17 @@ export class VenusRenderer {
       this.ticks = undefined;
       this.wait = undefined;
     };
-    if (typeof (Atomics as { waitAsync?: unknown }).waitAsync !== 'function' || typeof SharedArrayBuffer === 'undefined' || typeof Worker === 'undefined') return fallBack('no Atomics.waitAsync, shared memory or workers');
+    if (
+      typeof (Atomics as { waitAsync?: unknown }).waitAsync !== 'function' ||
+      typeof SharedArrayBuffer === 'undefined' ||
+      typeof Worker === 'undefined'
+    )
+      return fallBack('no Atomics.waitAsync, shared memory or workers');
     try {
       const sab = new SharedArrayBuffer(8);
-      const worker = url ? new Worker(url, { type: 'module' }) : new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' });
+      const worker = url
+        ? new Worker(url, { type: 'module' })
+        : new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' });
       worker.onerror = (e) => {
         e.preventDefault();
         worker.terminate();
@@ -697,7 +922,16 @@ export class VenusRenderer {
       };
       const ticks = this.ticks;
       if (this.poll === 'ticker' && ticks) {
-        const waitAsync = (Atomics as unknown as { waitAsync(a: Int32Array, i: number, v: number, t: number): { async: boolean; value: Promise<string> | string } }).waitAsync;
+        const waitAsync = (
+          Atomics as unknown as {
+            waitAsync(
+              a: Int32Array,
+              i: number,
+              v: number,
+              t: number,
+            ): { async: boolean; value: Promise<string> | string };
+          }
+        ).waitAsync;
         this.wait = () => {
           if (!Atomics.load(ticks, 1)) {
             Atomics.store(ticks, 1, 1);
@@ -712,7 +946,16 @@ export class VenusRenderer {
         return;
       }
       // (The pump alone.)
-      const waitAsync = (Atomics as unknown as { waitAsync?(a: Int32Array, i: number, v: number, t: number): { async: boolean; value: Promise<string> | string } }).waitAsync;
+      const waitAsync = (
+        Atomics as unknown as {
+          waitAsync?(
+            a: Int32Array,
+            i: number,
+            v: number,
+            t: number,
+          ): { async: boolean; value: Promise<string> | string };
+        }
+      ).waitAsync;
       if (waitAsync && typeof SharedArrayBuffer !== 'undefined') {
         // A word nobody notifies: the wait ends at its timeout.
         const word = new Int32Array(new SharedArrayBuffer(4));

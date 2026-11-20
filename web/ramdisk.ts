@@ -36,7 +36,11 @@ export const SWAP_MIN_PAGES = 10;
  * bytes: blkid's `LABEL=`), and `SWAPSPACE2` at the page's end. A guest whose pages are larger than 4 KiB doesn't
  * find the signature (its `swapon` refuses the disk).
  */
-export function swapHeader(size: number, label: string, uuid: Uint8Array = crypto.getRandomValues(new Uint8Array(16))): Uint8Array {
+export function swapHeader(
+  size: number,
+  label: string,
+  uuid: Uint8Array = crypto.getRandomValues(new Uint8Array(16)),
+): Uint8Array {
   const pages = Math.floor(size / SWAP_PAGE);
   const name = new TextEncoder().encode(label);
   if (pages < SWAP_MIN_PAGES) throw new Error(`a swap area needs ${SWAP_MIN_PAGES} pages of ${SWAP_PAGE} bytes`);
@@ -54,7 +58,16 @@ export function swapHeader(size: number, label: string, uuid: Uint8Array = crypt
 }
 
 /** A ramdisk of `size` bytes (a multiple of 512), empty. `chunks()` says how many are held (tests: the memory given back). */
-export function ramDisk(size: number, init: [number, Uint8Array][] = [], opts: { sabBudget?: number; onFull?: () => void } = {}): WritableDisk & { chunks(): number; arenaBytes(): number; chunkList(): [number, Uint8Array][]; chunkKeys(): Iterable<number> } {
+export function ramDisk(
+  size: number,
+  init: [number, Uint8Array][] = [],
+  opts: { sabBudget?: number; onFull?: () => void } = {},
+): WritableDisk & {
+  chunks(): number;
+  arenaBytes(): number;
+  chunkList(): [number, Uint8Array][];
+  chunkKeys(): Iterable<number>;
+} {
   // `init`: a restored ramdisk's chunks (a snapshot's blocks, written by web/snapshot.ts into another ramDisk: shared memory, not copied).
   const chunks = new Map<number, Uint8Array>(init);
   const budget = opts.sabBudget ?? SAB_BUDGET;
@@ -118,7 +131,10 @@ export function ramDisk(size: number, init: [number, Uint8Array][] = [], opts: {
   const read = async (off: number, len: number) => {
     if (!inside(off, len)) return undefined;
     const out = new Uint8Array(len);
-    each(off, len, (c, at, n, pos) => { const k = chunks.get(c); if (k) out.set(k.subarray(at, at + n), pos - off); });
+    each(off, len, (c, at, n, pos) => {
+      const k = chunks.get(c);
+      if (k) out.set(k.subarray(at, at + n), pos - off);
+    });
     return out;
   };
   const write = async (off: number, bytes: Uint8Array) => {
@@ -168,7 +184,8 @@ export function ramDisk(size: number, init: [number, Uint8Array][] = [], opts: {
     written() {
       const out: number[] = [];
       for (const c of [...chunks.keys()].sort((x, y) => x - y)) {
-        for (let b = c * BLOCKS_PER_CHUNK; b < (c + 1) * BLOCKS_PER_CHUNK && b * BLOCK < size; b++) if (blockOf(b)!.some((x) => x !== 0)) out.push(b);
+        for (let b = c * BLOCKS_PER_CHUNK; b < (c + 1) * BLOCKS_PER_CHUNK && b * BLOCK < size; b++)
+          if (blockOf(b)!.some((x) => x !== 0)) out.push(b);
       }
       return out;
     },

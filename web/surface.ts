@@ -150,7 +150,12 @@ export function rangeCounts(m: Leaves, size: number): RangeCounts {
 }
 
 /** A layer of `size` bytes from its per-range counts (with `unknown`, a qcow2's: its units not examined yet, if any), at `cellBytes` a cell. */
-export function layerOf(id: string, size: number, counts: RangeCounts & { unknown?: Uint16Array }, cellBytes: number): SurfaceLayer {
+export function layerOf(
+  id: string,
+  size: number,
+  counts: RangeCounts & { unknown?: Uint16Array },
+  cellBytes: number,
+): SurfaceLayer {
   const per = cellBytes / RANGE;
   const cells = cellCount(size, cellBytes);
   const held = new Uint32Array(cells);
@@ -166,7 +171,8 @@ export function layerOf(id: string, size: number, counts: RangeCounts & { unknow
 }
 
 /** Map `m`'s layer, of `size` bytes, at `cellBytes` a cell: what its blocks hold, counted. */
-export const summarize = (m: Leaves, id: string, size: number, cellBytes: number) => layerOf(id, size, rangeCounts(m, size), cellBytes);
+export const summarize = (m: Leaves, id: string, size: number, cellBytes: number) =>
+  layerOf(id, size, rangeCounts(m, size), cellBytes);
 
 /** A layer that holds nothing (a blank disk). */
 export function blankLayer(id: string, size: number, cellBytes: number): SurfaceLayer {
@@ -184,7 +190,14 @@ function unitsPerCell(size: number, cellBytes: number) {
 
 /** A layer whose contents aren't examined (a file's or a URL's image): every unit counts as held. */
 export function opaqueLayer(id: string, size: number, cellBytes: number, why?: OpaqueWhy): SurfaceLayer {
-  return { id, size, known: 'opaque', held: unitsPerCell(size, cellBytes), zero: new Uint32Array(cellCount(size, cellBytes)), ...(why ? { why } : {}) };
+  return {
+    id,
+    size,
+    known: 'opaque',
+    held: unitsPerCell(size, cellBytes),
+    zero: new Uint32Array(cellCount(size, cellBytes)),
+    ...(why ? { why } : {}),
+  };
 }
 
 /** Which of an image file's blocks this browser keeps (web/devices.ts `Source.kept`). */
@@ -226,7 +239,12 @@ export function allocationCounts(a: Allocation, size: number, into?: ImageCounts
   const tables = Math.ceil(units / span);
   let out = into;
   if (!out) {
-    out = { held: new Uint16Array(ranges), zero: new Uint16Array(ranges), unknown: new Uint16Array(ranges), done: new Uint8Array(tables) };
+    out = {
+      held: new Uint16Array(ranges),
+      zero: new Uint16Array(ranges),
+      unknown: new Uint16Array(ranges),
+      done: new Uint8Array(tables),
+    };
     for (let r = 0; r < ranges; r++) out.unknown[r] = Math.min(LEAF, units - r * LEAF);
   }
   for (let t = 0; t < tables; t++) {
@@ -284,17 +302,39 @@ function unitBlocks(a: Allocation, u: number, block: number): [number, number] |
  * (a cluster of 4 KiB or more, else a unit) its first unit, its units, and the first and the last of the file's blocks
  * (of `block` bytes: the block cache's) its bytes take (of a unit of small clusters, from its first one's to its last's).
  */
-export type KeptIndex = { block: number; done: Uint8Array; unit: Uint32Array; n: Uint16Array; b0: Uint32Array; b1: Uint32Array; length: number; blocks: number };
+export type KeptIndex = {
+  block: number;
+  done: Uint8Array;
+  unit: Uint32Array;
+  n: Uint16Array;
+  b0: Uint32Array;
+  b1: Uint32Array;
+  length: number;
+  blocks: number;
+};
 
 /** `ix` (or a new index) with the tables of `a` known since added. */
 export function keptIndex(a: Allocation, size: number, block: number, ix?: KeptIndex): KeptIndex {
   const units = Math.ceil(size / UNIT);
   const span = (a.perTable * a.clusterBytes) / UNIT;
   const tables = Math.ceil(units / span);
-  const out = ix ?? { block, done: new Uint8Array(tables), unit: new Uint32Array(1024), n: new Uint16Array(1024), b0: new Uint32Array(1024), b1: new Uint32Array(1024), length: 0, blocks: 0 };
+  const out = ix ?? {
+    block,
+    done: new Uint8Array(tables),
+    unit: new Uint32Array(1024),
+    n: new Uint16Array(1024),
+    b0: new Uint32Array(1024),
+    b1: new Uint32Array(1024),
+    length: 0,
+    blocks: 0,
+  };
   const push = (u: number, n: number, b0: number, b1: number) => {
     if (out.length === out.unit.length) {
-      const grow = <T extends Uint32Array | Uint16Array>(x: T, make: (n: number) => T) => { const y = make(x.length * 2); y.set(x); return y; };
+      const grow = <T extends Uint32Array | Uint16Array>(x: T, make: (n: number) => T) => {
+        const y = make(x.length * 2);
+        y.set(x);
+        return y;
+      };
       out.unit = grow(out.unit, (k) => new Uint32Array(k));
       out.n = grow(out.n, (k) => new Uint16Array(k));
       out.b0 = grow(out.b0, (k) => new Uint32Array(k));
@@ -374,7 +414,13 @@ export function surfaceOf(cellBytes: number, layers: SurfaceLayer[]): Surface {
     size,
     cellBytes,
     unitBytes: UNIT,
-    layers: layers.map((l) => ({ ...l, held: widen(l.held, cells), zero: widen(l.zero, cells), ...(l.unknown ? { unknown: widen(l.unknown, cells) } : {}), ...(l.kept ? { kept: widen(l.kept, cells) } : {}) })),
+    layers: layers.map((l) => ({
+      ...l,
+      held: widen(l.held, cells),
+      zero: widen(l.zero, cells),
+      ...(l.unknown ? { unknown: widen(l.unknown, cells) } : {}),
+      ...(l.kept ? { kept: widen(l.kept, cells) } : {}),
+    })),
   };
 }
 
@@ -396,7 +442,12 @@ export type DetailLayer =
  * whose it is (the overlay's first), and per map layer the runs of consecutive slots its held blocks take in its
  * `data` (block after block: a run is the blocks one read gets).
  */
-export function rangeDetail(range: number, size: number, disk: DetailLayer, overlay?: Extract<DetailLayer, { kind: 'map' }>): RangeDetail {
+export function rangeDetail(
+  range: number,
+  size: number,
+  disk: DetailLayer,
+  overlay?: Extract<DetailLayer, { kind: 'map' }>,
+): RangeDetail {
   const blocks = new Uint8Array(LEAF);
   let kept: Uint8Array | undefined;
   const first = range * LEAF;
@@ -408,13 +459,18 @@ export function rangeDetail(range: number, size: number, disk: DetailLayer, over
   };
   for (let i = 0; i < LEAF; i++) {
     const b = first + i;
-    if (b * UNIT >= size) { blocks[i] = 4; continue; }
+    if (b * UNIT >= size) {
+      blocks[i] = 4;
+      continue;
+    }
     const o = overlay ? entry(overlay, b) : 0;
     if (o === 0xffffffff) blocks[i] = 3;
     else if (o) blocks[i] = 2;
     else if (b * UNIT < disk.size) {
-      if (disk.kind === 'map') { const e = entry(disk, b); blocks[i] = e && e !== 0xffffffff ? 1 : 0; }
-      else if (disk.kind === 'opaque') {
+      if (disk.kind === 'map') {
+        const e = entry(disk, b);
+        blocks[i] = e && e !== 0xffffffff ? 1 : 0;
+      } else if (disk.kind === 'opaque') {
         blocks[i] = 5;
         if (disk.kept && keptUnit(disk.kept, b)) (kept ??= new Uint8Array(LEAF))[i] = 1;
       } else if (disk.kind === 'clusters') {
@@ -449,7 +505,10 @@ export function rangeDetail(range: number, size: number, disk: DetailLayer, over
  * The content check of a range's detail: its held blocks (the disk's, 1, and the overlay's, 2; not those not examined)
  * read with `read` (block number, its state), and how many are all zeros. A block that can't be read isn't counted.
  */
-export async function contentOf(d: RangeDetail, read: (b: number, state: number) => Uint8Array | undefined | Promise<Uint8Array | undefined>) {
+export async function contentOf(
+  d: RangeDetail,
+  read: (b: number, state: number) => Uint8Array | undefined | Promise<Uint8Array | undefined>,
+) {
   let [n, zeros] = [0, 0];
   for (let i = 0; i < d.blocks.length; i++) {
     const s = d.blocks[i];
@@ -489,7 +548,9 @@ export function carryActivity(prev: Pick<Surface, 'activity' | 'cellBytes'>, s: 
 /** The buffers of an answer's arrays, to transfer it to another thread (each its own buffer). */
 export function answerBuffers(a: InspectAnswer): ArrayBuffer[] {
   const out = new Set<ArrayBuffer>();
-  const add = (x: Uint8Array | Uint32Array | undefined) => { if (x && x.buffer instanceof ArrayBuffer && x.byteLength === x.buffer.byteLength) out.add(x.buffer); };
+  const add = (x: Uint8Array | Uint32Array | undefined) => {
+    if (x && x.buffer instanceof ArrayBuffer && x.byteLength === x.buffer.byteLength) out.add(x.buffer);
+  };
   if (a.kind === 'disk-surface' || a.kind === 'ram-surface') {
     add(a.surface.activity);
     for (const l of a.surface.layers) [l.held, l.zero, l.unknown, l.kept].forEach(add);
@@ -515,13 +576,23 @@ export type LiveDisk = {
  * A running disk's image: what can be known of it now (a qcow2's clusters under the tables read so far, more as the
  * guest reads them; a raw image not examined).
  */
-export type LiveImage = { kind: 'image'; id: string; size: number; examine(): Extract<DetailLayer, { kind: 'clusters' | 'opaque' }> };
+export type LiveImage = {
+  kind: 'image';
+  id: string;
+  size: number;
+  examine(): Extract<DetailLayer, { kind: 'clusters' | 'opaque' }>;
+};
 
 /**
  * An image's layer at `cellBytes` a cell: its clusters counted (`counts`: the caller's, kept between asks; `index`: its
  * kept index, likewise), with what isn't known yet and what is kept, else opaque with what is kept.
  */
-export function imageLayer(d: Extract<DetailLayer, { kind: 'clusters' | 'opaque' }>, cellBytes: number, counts?: ImageCounts, index?: KeptIndex): SurfaceLayer {
+export function imageLayer(
+  d: Extract<DetailLayer, { kind: 'clusters' | 'opaque' }>,
+  cellBytes: number,
+  counts?: ImageCounts,
+  index?: KeptIndex,
+): SurfaceLayer {
   if (d.kind === 'opaque') {
     const l = opaqueLayer(d.id, d.size, cellBytes, d.why);
     if (d.kept) l.kept = keptUnits(d.size, d.kept, cellBytes);
@@ -529,7 +600,8 @@ export function imageLayer(d: Extract<DetailLayer, { kind: 'clusters' | 'opaque'
   }
   const l = layerOf(d.id, d.size, allocationCounts(d.allocation, d.size, counts), cellBytes);
   if (l.unknown && d.why) l.why = d.why;
-  if (d.kept) l.kept = keptCounts(keptIndex(d.allocation, d.size, d.kept.block, index), d.kept, cellBytes, l.held.length);
+  if (d.kept)
+    l.kept = keptCounts(keptIndex(d.allocation, d.size, d.kept.block, index), d.kept, cellBytes, l.held.length);
   return l;
 }
 
@@ -555,18 +627,21 @@ const DIRTY = 4;
  * again (a whole walk of a large overlay's leaves takes tens of ms), and one answer every `fullMs` (`FULL_WALK_MS`)
  * walks it whole all the same.
  */
-export function diskInspector(live: LiveDisk, hooks: {
-  /**
-   * Puts the wrapper on: `mark(first, last, write)` is to be called with the ranges (4 MiB) a request reads or changes
-   * (a write, a zeroing, a discard), and again with a change's once it ended.
-   */
-  install(mark: (first: number, last: number, write: boolean) => void): void;
-  uninstall(): void;
-  idleMs?: number;
-  fullMs?: number;
-  /** The clock the full walks go by (ms; tests). */
-  now?: () => number;
-}) {
+export function diskInspector(
+  live: LiveDisk,
+  hooks: {
+    /**
+     * Puts the wrapper on: `mark(first, last, write)` is to be called with the ranges (4 MiB) a request reads or changes
+     * (a write, a zeroing, a discard), and again with a change's once it ended.
+     */
+    install(mark: (first: number, last: number, write: boolean) => void): void;
+    uninstall(): void;
+    idleMs?: number;
+    fullMs?: number;
+    /** The clock the full walks go by (ms; tests). */
+    now?: () => number;
+  },
+) {
   const size = Math.max(live.disk.size, live.overlay?.size ?? 0);
   const ranges = rangesOf(size);
   /** A stored disk's per-range counts (its map doesn't change under its machines), made at the first query. */

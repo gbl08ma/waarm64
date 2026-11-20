@@ -14,8 +14,26 @@
 // rebased on the CPU); no border colors (edge clamp); one blend state for all color buffers.
 import { E } from './gl-enums.ts';
 import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
-import { generate, parseTgsi, samplerUnit, uboBinding, type ColorKey, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
-import { padPlane, VideoContext, videoStats, type DecodedPicture, type DecoderFactory, type VideoStats, type VideoStream } from './virgl-video.ts';
+import {
+  generate,
+  parseTgsi,
+  samplerUnit,
+  uboBinding,
+  type ColorKey,
+  type ProgramKey,
+  type ProgramLayout,
+  type SamplerKey,
+  type Tgsi,
+} from './virgl-tgsi.ts';
+import {
+  padPlane,
+  VideoContext,
+  videoStats,
+  type DecodedPicture,
+  type DecoderFactory,
+  type VideoStats,
+  type VideoStream,
+} from './virgl-video.ts';
 import { bytes, type Ram, type Segment } from './ram.ts';
 import { walk } from './virgl.ts';
 import { msg, type Msg } from './msg.ts';
@@ -25,24 +43,50 @@ import { msg, type Msg } from './msg.ts';
 export type Backing = Segment[];
 
 export type ResourceDesc = {
-  id: number; target: number; format: number; bind: number; width: number; height: number;
-  depth: number; arraySize: number; lastLevel: number; samples: number; flags: number;
+  id: number;
+  target: number;
+  format: number;
+  bind: number;
+  width: number;
+  height: number;
+  depth: number;
+  arraySize: number;
+  lastLevel: number;
+  samples: number;
+  flags: number;
 };
 
 export type Box = { x: number; y: number; z: number; w: number; h: number; d: number };
 
 /** What a renderer does with the device's commands (the device worker calls these through `VirglHost`). */
-export type RendererStats = { submits: number; commands: number; draws: number; errors: number; programs: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; compileMs: number; /** Textures copied because a draw sampled what it drew into (`feedbackCopies`). */ feedbackCopies: number };
+export type RendererStats = {
+  submits: number;
+  commands: number;
+  draws: number;
+  errors: number;
+  programs: number;
+  uploads: number;
+  uploadBytes: number;
+  readbacks: number;
+  readbackBytes: number;
+  compileMs: number;
+  /** Textures copied because a draw sampled what it drew into (`feedbackCopies`). */ feedbackCopies: number;
+};
 
 type Res = ResourceDesc & {
   fmt?: Format;
   backing: Backing | null;
   /** A buffer: its GL buffer (ARRAY_BUFFER and the like), its CPU copy, and an element-array twin made on demand. */
-  buf?: WebGLBuffer; shadow?: Uint8Array; ibuf?: WebGLBuffer; idirty?: boolean;
+  buf?: WebGLBuffer;
+  shadow?: Uint8Array;
+  ibuf?: WebGLBuffer;
+  idirty?: boolean;
   /** Whether ranges of an index buffer hold the type's largest index (`holdsMax`), by offset, count and size. */
   imax?: Map<string, boolean>;
   /** A texture (or a renderbuffer, multisampled or stencil-only). */
-  tex?: WebGLTexture; glTarget?: number; rb?: WebGLRenderbuffer;
+  tex?: WebGLTexture;
+  glTarget?: number;
+  rb?: WebGLRenderbuffer;
   /** A multisampled resource sampled: its resolved texture, made again at each draw that samples it. */
   msResolved?: Res;
   /** A texture sampled by a draw into it: the copy it is sampled from, made again at each such draw (`feedbackCopies`). */
@@ -73,7 +117,14 @@ type Res = ResourceDesc & {
  * whose bytes the other renderer writes (`ExternalSource`, `VirglRenderer.writeExternal`).
  */
 /** `stride`: the bytes between rows of the guest's import (its first plane's; 0 if it didn't say): a prime blit's buffer is read with it. */
-export type ExternalResource = { readonly id: number; readonly width: number; readonly height: number; readonly format: number; readonly stride?: number; readonly dead?: boolean };
+export type ExternalResource = {
+  readonly id: number;
+  readonly width: number;
+  readonly height: number;
+  readonly format: number;
+  readonly stride?: number;
+  readonly dead?: boolean;
+};
 /** Where external resources' bytes come from (web/venus-share.ts). */
 export type ExternalSource = {
   /** Whether `id` is one of its blobs (the guest may type it). */
@@ -82,21 +133,98 @@ export type ExternalSource = {
   refresh(r: ExternalResource): void;
 };
 
-type Blend = { independent: boolean; logicop: boolean; alphaToCoverage: boolean; rt: { enable: boolean; rgbFunc: number; rgbSrc: number; rgbDst: number; aFunc: number; aSrc: number; aDst: number; mask: number }[] };
-type Dsa = { depth: { enabled: boolean; write: boolean; func: number }; alpha: { enabled: boolean; func: number; ref: number }; stencil: { enabled: boolean; func: number; fail: number; zpass: number; zfail: number; valueMask: number; writeMask: number }[] };
-type Rasterizer = {
-  flatshade: boolean; depthClip: boolean; clipHalfz: boolean; discard: boolean; lightTwoSide: boolean; spriteUpperLeft: boolean; pointQuad: boolean;
-  cullFace: number; scissor: boolean; frontCcw: boolean; clampFragmentColor: boolean; offsetTri: boolean; stipple: boolean;
-  pointSizePerVertex: boolean; multisample: boolean; pointSize: number; spriteCoordEnable: number; lineWidth: number;
-  offsetUnits: number; offsetScale: number;
+type Blend = {
+  independent: boolean;
+  logicop: boolean;
+  alphaToCoverage: boolean;
+  rt: {
+    enable: boolean;
+    rgbFunc: number;
+    rgbSrc: number;
+    rgbDst: number;
+    aFunc: number;
+    aSrc: number;
+    aDst: number;
+    mask: number;
+  }[];
 };
-type Shader = { serial: number; type: number; tgsi?: Tgsi; error?: string; text: string; expected: number; so?: { strides: number[]; outputs: { reg: number; start: number; comps: number; buffer: number; offset: number }[] } };
+type Dsa = {
+  depth: { enabled: boolean; write: boolean; func: number };
+  alpha: { enabled: boolean; func: number; ref: number };
+  stencil: {
+    enabled: boolean;
+    func: number;
+    fail: number;
+    zpass: number;
+    zfail: number;
+    valueMask: number;
+    writeMask: number;
+  }[];
+};
+type Rasterizer = {
+  flatshade: boolean;
+  depthClip: boolean;
+  clipHalfz: boolean;
+  discard: boolean;
+  lightTwoSide: boolean;
+  spriteUpperLeft: boolean;
+  pointQuad: boolean;
+  cullFace: number;
+  scissor: boolean;
+  frontCcw: boolean;
+  clampFragmentColor: boolean;
+  offsetTri: boolean;
+  stipple: boolean;
+  pointSizePerVertex: boolean;
+  multisample: boolean;
+  pointSize: number;
+  spriteCoordEnable: number;
+  lineWidth: number;
+  offsetUnits: number;
+  offsetScale: number;
+};
+type Shader = {
+  serial: number;
+  type: number;
+  tgsi?: Tgsi;
+  error?: string;
+  text: string;
+  expected: number;
+  so?: { strides: number[]; outputs: { reg: number; start: number; comps: number; buffer: number; offset: number }[] };
+};
 type VertexElements = { offset: number; divisor: number; vb: number; format: number }[];
-type SamplerView = { res: number; format: number; target: number; first: number; last: number; firstLevel: number; lastLevel: number; swizzle: number[] };
-type SamplerState = { wrap: number[]; minImg: number; minMip: number; magImg: number; compare: boolean; compareFunc: number; maxAniso: number; lodBias: number; minLod: number; maxLod: number; sampler?: WebGLSampler };
+type SamplerView = {
+  res: number;
+  format: number;
+  target: number;
+  first: number;
+  last: number;
+  firstLevel: number;
+  lastLevel: number;
+  swizzle: number[];
+};
+type SamplerState = {
+  wrap: number[];
+  minImg: number;
+  minMip: number;
+  magImg: number;
+  compare: boolean;
+  compareFunc: number;
+  maxAniso: number;
+  lodBias: number;
+  minLod: number;
+  maxLod: number;
+  sampler?: WebGLSampler;
+};
 type Surface = { res: number; format: number; level: number; firstLayer: number; lastLayer: number };
 type Query = {
-  type: number; index: number; res: number; offset: number; pending?: boolean; result: number; /** Begun and not ended. */ active?: boolean;
+  type: number;
+  index: number;
+  res: number;
+  offset: number;
+  pending?: boolean;
+  result: number;
+  /** Begun and not ended. */ active?: boolean;
   /** An occlusion query's spans: the WebGL queries that counted its sub-context's draws while it was active (`countQueries`). */
   spans?: Span[];
   /** Whether a span already read passed (`foldSpans`: a query left active keeps few spans). */
@@ -116,18 +244,32 @@ type SoOutput = NonNullable<Shader['so']>['outputs'][number];
  * index used, its stride in words). GLES 3.0's own layouts (one buffer packed, or one output a buffer, a few words
  * each) can't express Gallium's (several outputs a buffer, several buffers, gaps).
  */
-type SoPlan = { outputs: SoOutput[]; total: number; targets: { buffer: number; t: SoTarget; r: Res; stride: number }[] };
+type SoPlan = {
+  outputs: SoOutput[];
+  total: number;
+  targets: { buffer: number; t: SoTarget; r: Res; stride: number }[];
+};
 type Obj =
-  | { kind: 'blend'; v: Blend } | { kind: 'dsa'; v: Dsa } | { kind: 'rs'; v: Rasterizer } | { kind: 'shader'; v: Shader }
-  | { kind: 've'; v: VertexElements } | { kind: 'view'; v: SamplerView } | { kind: 'sampler'; v: SamplerState }
-  | { kind: 'surface'; v: Surface } | { kind: 'query'; v: Query } | { kind: 'so'; v: SoTarget };
+  | { kind: 'blend'; v: Blend }
+  | { kind: 'dsa'; v: Dsa }
+  | { kind: 'rs'; v: Rasterizer }
+  | { kind: 'shader'; v: Shader }
+  | { kind: 've'; v: VertexElements }
+  | { kind: 'view'; v: SamplerView }
+  | { kind: 'sampler'; v: SamplerState }
+  | { kind: 'surface'; v: Surface }
+  | { kind: 'query'; v: Query }
+  | { kind: 'so'; v: SoTarget };
 
 type Stage = 'vs' | 'fs';
 type Sub = {
   id: number;
   objects: Map<number, Obj>;
   shaders: { vs?: Shader; fs?: Shader };
-  blend?: Blend; dsa?: Dsa; rs?: Rasterizer; ve?: VertexElements;
+  blend?: Blend;
+  dsa?: Dsa;
+  rs?: Rasterizer;
+  ve?: VertexElements;
   vbs: { stride: number; offset: number; res: number }[];
   ib: { res: number; size: number; offset: number } | null;
   consts: Record<Stage, Uint32Array>;
@@ -157,13 +299,26 @@ export type SavedResource = { desc: ResourceDesc; backing: Backing | null; level
 type SavedObject = { handle: number; kind: Obj['kind']; v: unknown };
 /** A sub-context in a snapshot: its objects, and its bound state naming them by their place in `objects` (null: none). */
 type SavedSub = {
-  id: number; objects: SavedObject[];
-  shaders: { vs: number | null; fs: number | null }; blend: number | null; dsa: number | null; rs: number | null; ve: number | null;
-  vbs: Sub['vbs']; ib: Sub['ib']; consts: Record<Stage, number[]>;
+  id: number;
+  objects: SavedObject[];
+  shaders: { vs: number | null; fs: number | null };
+  blend: number | null;
+  dsa: number | null;
+  rs: number | null;
+  ve: number | null;
+  vbs: Sub['vbs'];
+  ib: Sub['ib'];
+  consts: Record<Stage, number[]>;
   ubos: Record<Stage, [number, { res: number; offset: number; length: number }][]>;
-  views: Record<Stage, (number | null)[]>; samplers: Record<Stage, (number | null)[]>;
+  views: Record<Stage, (number | null)[]>;
+  samplers: Record<Stage, (number | null)[]>;
   fb: { cbufs: (number | null)[]; zs: number | null };
-  viewport: Sub['viewport']; scissor: Sub['scissor']; stencilRef: [number, number]; blendColor: number[]; stipple: number[]; sampleMask: number;
+  viewport: Sub['viewport'];
+  scissor: Sub['scissor'];
+  stencilRef: [number, number];
+  blendColor: number[];
+  stipple: number[];
+  sampleMask: number;
   so: { targets: (number | null)[]; seen: string[] };
   longShader: [number, { handle: number; shader: number }][];
 };
@@ -174,10 +329,18 @@ export type RendererSnapshot = { version: 1; resources: SavedResource[]; context
 
 type Program = { prog: WebGLProgram; layout: ProgramLayout; loc: Map<string, WebGLUniformLocation | null> };
 
-const PIPE_BUFFER = 0, PIPE_TEXTURE_1D = 1, PIPE_TEXTURE_2D = 2, PIPE_TEXTURE_3D = 3, PIPE_TEXTURE_CUBE = 4, PIPE_TEXTURE_RECT = 5;
-const PIPE_TEXTURE_1D_ARRAY = 6, PIPE_TEXTURE_2D_ARRAY = 7;
-const BIND_STAGING = 1 << 19, BIND_INDEX = 1 << 5;
-const SHADER_VERTEX = 0, SHADER_FRAGMENT = 1;
+const PIPE_BUFFER = 0,
+  PIPE_TEXTURE_1D = 1,
+  PIPE_TEXTURE_2D = 2,
+  PIPE_TEXTURE_3D = 3,
+  PIPE_TEXTURE_CUBE = 4,
+  PIPE_TEXTURE_RECT = 5;
+const PIPE_TEXTURE_1D_ARRAY = 6,
+  PIPE_TEXTURE_2D_ARRAY = 7;
+const BIND_STAGING = 1 << 19,
+  BIND_INDEX = 1 << 5;
+const SHADER_VERTEX = 0,
+  SHADER_FRAGMENT = 1;
 /** Texture units: the fragment shader's samplers from 0, the vertex shader's from here. */
 const VS_UNIT_BASE = 16;
 /**
@@ -189,9 +352,21 @@ const MAX_SLOTS = 32;
 const MAX_BUFFER = 256 << 20;
 
 const BLEND_FACTOR: Record<number, number> = {
-  0x1: E.ONE, 0x2: E.SRC_COLOR, 0x3: E.SRC_ALPHA, 0x4: E.DST_ALPHA, 0x5: E.DST_COLOR, 0x6: E.SRC_ALPHA_SATURATE,
-  0x7: E.CONSTANT_COLOR, 0x8: E.CONSTANT_ALPHA, 0x11: E.ZERO, 0x12: E.ONE_MINUS_SRC_COLOR, 0x13: E.ONE_MINUS_SRC_ALPHA,
-  0x14: E.ONE_MINUS_DST_ALPHA, 0x15: E.ONE_MINUS_DST_COLOR, 0x17: E.ONE_MINUS_CONSTANT_COLOR, 0x18: E.ONE_MINUS_CONSTANT_ALPHA,
+  0x1: E.ONE,
+  0x2: E.SRC_COLOR,
+  0x3: E.SRC_ALPHA,
+  0x4: E.DST_ALPHA,
+  0x5: E.DST_COLOR,
+  0x6: E.SRC_ALPHA_SATURATE,
+  0x7: E.CONSTANT_COLOR,
+  0x8: E.CONSTANT_ALPHA,
+  0x11: E.ZERO,
+  0x12: E.ONE_MINUS_SRC_COLOR,
+  0x13: E.ONE_MINUS_SRC_ALPHA,
+  0x14: E.ONE_MINUS_DST_ALPHA,
+  0x15: E.ONE_MINUS_DST_COLOR,
+  0x17: E.ONE_MINUS_CONSTANT_COLOR,
+  0x18: E.ONE_MINUS_CONSTANT_ALPHA,
 };
 const BLEND_FUNC = [E.FUNC_ADD, E.FUNC_SUBTRACT, E.FUNC_REVERSE_SUBTRACT, E.MIN, E.MAX];
 const COMPARE = [E.NEVER, E.LESS, E.EQUAL, E.LEQUAL, E.GREATER, E.NOTEQUAL, E.GEQUAL, E.ALWAYS];
@@ -202,35 +377,68 @@ const COMPARE = [E.NEVER, E.LESS, E.EQUAL, E.LEQUAL, E.GREATER, E.NOTEQUAL, E.GE
 function foldedBlend(rt?: Blend['rt'][number]): number | undefined {
   if (!rt?.enable) return undefined;
   const kind = (g: number) => (g === 7 || g === 0x17 ? 'color' : g === 8 || g === 0x18 ? 'alpha' : undefined);
-  const s = kind(rt.rgbSrc), d = kind(rt.rgbDst);
+  const s = kind(rt.rgbSrc),
+    d = kind(rt.rgbDst);
   return s && d && s !== d ? rt.rgbSrc : undefined;
 }
 
 /** Query types as virgl numbers them (VIRGL_QUERY_*: not Gallium's PIPE_QUERY_*, whose PRIMITIVES_GENERATED is 6). */
-const Q_OCCLUSION_COUNTER = 0, Q_OCCLUSION_PREDICATE = 1, Q_GENERATED = 5, Q_EMITTED = 6, Q_OCCLUSION_CONSERVATIVE = 11;
+const Q_OCCLUSION_COUNTER = 0,
+  Q_OCCLUSION_PREDICATE = 1,
+  Q_GENERATED = 5,
+  Q_EMITTED = 6,
+  Q_OCCLUSION_CONSERVATIVE = 11;
 const OCCLUSION = new Set([Q_OCCLUSION_COUNTER, Q_OCCLUSION_PREDICATE, Q_OCCLUSION_CONSERVATIVE]);
 const STENCIL_OP = [E.KEEP, E.ZERO, E.REPLACE, E.INCR, E.DECR, E.INCR_WRAP, E.DECR_WRAP, E.INVERT];
-const WRAP = [E.REPEAT, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT];
+const WRAP = [
+  E.REPEAT,
+  E.CLAMP_TO_EDGE,
+  E.CLAMP_TO_EDGE,
+  E.CLAMP_TO_EDGE,
+  E.MIRRORED_REPEAT,
+  E.MIRRORED_REPEAT,
+  E.MIRRORED_REPEAT,
+  E.MIRRORED_REPEAT,
+];
 const PRIM = [E.POINTS, E.LINES, E.LINE_LOOP, E.LINE_STRIP, E.TRIANGLES, E.TRIANGLE_STRIP, E.TRIANGLE_FAN];
 /** The primitives `n` vertices make, per Gallium primitive (PRIM's order). */
-const primitives = (mode: number, n: number) => [n, n >> 1, n >= 2 ? n : 0, Math.max(0, n - 1), Math.floor(n / 3), Math.max(0, n - 2), Math.max(0, n - 2)][mode] ?? 0;
+const primitives = (mode: number, n: number) =>
+  [n, n >> 1, n >= 2 ? n : 0, Math.max(0, n - 1), Math.floor(n / 3), Math.max(0, n - 2), Math.max(0, n - 2)][mode] ?? 0;
 
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-const uif = (b: number) => { u32[0] = b; return f32[0]; };
+const f32 = new Float32Array(1),
+  u32 = new Uint32Array(f32.buffer);
+const uif = (b: number) => {
+  u32[0] = b;
+  return f32[0];
+};
 
 /** The typed-array view WebGL wants for pixel data of a GL type. */
 function viewFor(type: number, bytes: Uint8Array): ArrayBufferView | null {
-  const size = type === E.UNSIGNED_BYTE || type === E.BYTE ? 1 : [E.UNSIGNED_SHORT, E.SHORT, E.HALF_FLOAT, 0x8363, 0x8033, 0x8034].includes(type) ? 2 : 4;
+  const size =
+    type === E.UNSIGNED_BYTE || type === E.BYTE
+      ? 1
+      : [E.UNSIGNED_SHORT, E.SHORT, E.HALF_FLOAT, 0x8363, 0x8033, 0x8034].includes(type)
+        ? 2
+        : 4;
   if (bytes.byteOffset % size) bytes = bytes.slice();
-  const buf = bytes.buffer, off = bytes.byteOffset, n = Math.floor(bytes.byteLength / size);
+  const buf = bytes.buffer,
+    off = bytes.byteOffset,
+    n = Math.floor(bytes.byteLength / size);
   switch (type) {
-    case E.UNSIGNED_BYTE: return bytes;
-    case E.BYTE: return new Int8Array(buf, off, n);
-    case E.SHORT: return new Int16Array(buf, off, n);
-    case E.INT: return new Int32Array(buf, off, n);
-    case E.FLOAT: return new Float32Array(buf, off, n);
-    case 0x8dad: return null; // FLOAT_32_UNSIGNED_INT_24_8_REV: WebGL takes no data for it
-    default: return size === 2 ? new Uint16Array(buf, off, n) : new Uint32Array(buf, off, n);
+    case E.UNSIGNED_BYTE:
+      return bytes;
+    case E.BYTE:
+      return new Int8Array(buf, off, n);
+    case E.SHORT:
+      return new Int16Array(buf, off, n);
+    case E.INT:
+      return new Int32Array(buf, off, n);
+    case E.FLOAT:
+      return new Float32Array(buf, off, n);
+    case 0x8dad:
+      return null; // FLOAT_32_UNSIGNED_INT_24_8_REV: WebGL takes no data for it
+    default:
+      return size === 2 ? new Uint16Array(buf, off, n) : new Uint32Array(buf, off, n);
   }
 }
 
@@ -244,7 +452,19 @@ export class VirglRenderer {
   /** The programs made with each shader (by serial): deleted with it (`forgetShader`), so the cache doesn't grow for good. */
   private programsOf = new Map<number, string[]>();
   private serial = 0;
-  readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0, feedbackCopies: 0 };
+  readonly stats: RendererStats = {
+    submits: 0,
+    commands: 0,
+    draws: 0,
+    errors: 0,
+    programs: 0,
+    uploads: 0,
+    uploadBytes: 0,
+    readbacks: 0,
+    readbackBytes: 0,
+    compileMs: 0,
+    feedbackCopies: 0,
+  };
   /** The contexts' video codecs and buffers, and the pictures decoded (web/virgl-video.ts). */
   readonly videoStats: VideoStats = videoStats();
   /** The video decoders (the GPU worker's WebCodecs; none: pictures are only counted) and the profiles decoded in hardware. */
@@ -303,7 +523,15 @@ export class VirglRenderer {
   /** With `debug`: each resource's creation time and what passed through it, for its `life` line at its unref. */
   private life = new Map<number, { t0: number; uploads: number; bytes: number; staged: number }>();
 
-  constructor(gl: WebGL2RenderingContext, o: { ram: () => Ram; log?: (m: string) => void; debug?: (m: string) => void; video?: { decoders: DecoderFactory; hardware: readonly number[] } }) {
+  constructor(
+    gl: WebGL2RenderingContext,
+    o: {
+      ram: () => Ram;
+      log?: (m: string) => void;
+      debug?: (m: string) => void;
+      video?: { decoders: DecoderFactory; hardware: readonly number[] };
+    },
+  ) {
     this.gl = gl;
     this.ram = o.ram;
     this.video = o.video;
@@ -314,15 +542,29 @@ export class VirglRenderer {
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
     this.indexed = gl.getExtension('OES_draw_buffers_indexed') as OES_draw_buffers_indexed | null;
-    this.clipControl = gl.getExtension('EXT_clip_control') as { clipControlEXT(origin: number, depth: number): void } | null;
+    this.clipControl = gl.getExtension('EXT_clip_control') as {
+      clipControlEXT(origin: number, depth: number): void;
+    } | null;
     this.maxSamples = gl.getParameter(E.MAX_SAMPLES) as number;
     const p = (n: number) => gl.getParameter(n) as number;
-    this.limits = { size: p(E.MAX_TEXTURE_SIZE), size3d: p(E.MAX_3D_TEXTURE_SIZE), cube: p(E.MAX_CUBE_MAP_TEXTURE_SIZE), layers: p(E.MAX_ARRAY_TEXTURE_LAYERS) };
+    this.limits = {
+      size: p(E.MAX_TEXTURE_SIZE),
+      size3d: p(E.MAX_3D_TEXTURE_SIZE),
+      cube: p(E.MAX_CUBE_MAP_TEXTURE_SIZE),
+      layers: p(E.MAX_ARRAY_TEXTURE_LAYERS),
+    };
     this.colorAttachments = Math.min(gl.getParameter(E.MAX_COLOR_ATTACHMENTS) as number, 8);
     gl.getExtension('EXT_color_buffer_half_float');
     gl.getExtension('EXT_texture_norm16');
     gl.getExtension('OES_texture_float_linear');
-    for (const e of ['WEBGL_compressed_texture_s3tc', 'WEBGL_compressed_texture_s3tc_srgb', 'WEBGL_compressed_texture_etc', 'EXT_texture_compression_rgtc', 'EXT_texture_compression_bptc']) gl.getExtension(e);
+    for (const e of [
+      'WEBGL_compressed_texture_s3tc',
+      'WEBGL_compressed_texture_s3tc_srgb',
+      'WEBGL_compressed_texture_etc',
+      'EXT_texture_compression_rgtc',
+      'EXT_texture_compression_bptc',
+    ])
+      gl.getExtension(e);
     gl.pixelStorei(E.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(E.PACK_ALIGNMENT, 1);
   }
@@ -331,7 +573,8 @@ export class VirglRenderer {
   private error(m: string) {
     this.stats.errors++;
     // A kind is the message without its numbers (most begin with a context's and a resource's), so each is said a few times.
-    const kind = m.replace(/\d+/g, '#').slice(0, 60), n = this.errorKinds.get(kind) ?? 0;
+    const kind = m.replace(/\d+/g, '#').slice(0, 60),
+      n = this.errorKinds.get(kind) ?? 0;
     this.errorKinds.set(kind, n + 1);
     if (n < 5 && this.errorsLogged++ < 200) this.log(m);
   }
@@ -355,7 +598,9 @@ export class VirglRenderer {
     return true;
   }
 
-  get contextCount() { return this.contexts.size; }
+  get contextCount() {
+    return this.contexts.size;
+  }
 
   /** A virtio reset: every context and resource is gone. */
   reset() {
@@ -369,13 +614,25 @@ export class VirglRenderer {
 
   private newSub(id: number): Sub {
     return {
-      id, objects: new Map(), shaders: {}, vbs: [], ib: null,
+      id,
+      objects: new Map(),
+      shaders: {},
+      vbs: [],
+      ib: null,
       consts: { vs: new Uint32Array(0), fs: new Uint32Array(0) },
       ubos: { vs: new Map(), fs: new Map() },
-      views: { vs: [], fs: [] }, samplers: { vs: [], fs: [] },
-      fb: { cbufs: [] }, viewport: { scale: [1, 1, 1], translate: [0, 0, 0] }, scissor: { minx: 0, miny: 0, maxx: 0, maxy: 0 },
-      stencilRef: [0, 0], blendColor: [0, 0, 0, 0], stipple: new Uint32Array(32).fill(0xffffffff), sampleMask: ~0,
-      so: { targets: [], seen: new Set() }, longShader: new Map(), occlusion: new Set(),
+      views: { vs: [], fs: [] },
+      samplers: { vs: [], fs: [] },
+      fb: { cbufs: [] },
+      viewport: { scale: [1, 1, 1], translate: [0, 0, 0] },
+      scissor: { minx: 0, miny: 0, maxx: 0, maxy: 0 },
+      stencilRef: [0, 0],
+      blendColor: [0, 0, 0, 0],
+      stipple: new Uint32Array(32).fill(0xffffffff),
+      sampleMask: ~0,
+      so: { targets: [], seen: new Set() },
+      longShader: new Map(),
+      occlusion: new Set(),
     };
   }
 
@@ -420,7 +677,9 @@ export class VirglRenderer {
     if (this.resources.has(d.id)) return false;
     const gl = this.gl;
     const res: Res = { ...d, fmt: FORMATS.get(d.format), backing: null, refs: new Set() };
-    this.debug?.(`resource ${d.id} ${res.fmt?.name ?? d.format} ${d.width}x${d.height} target ${d.target} bind ${d.bind.toString(16)}`);
+    this.debug?.(
+      `resource ${d.id} ${res.fmt?.name ?? d.format} ${d.width}x${d.height} target ${d.target} bind ${d.bind.toString(16)}`,
+    );
     this.resources.set(d.id, res);
     if (this.debug) this.life.set(d.id, { t0: performance.now(), uploads: 0, bytes: 0, staged: 0 });
     // Past the limits (as vrend's check_resource_valid) the guest's object exists with nothing on the host: a buffer's
@@ -449,13 +708,22 @@ export class VirglRenderer {
     if (d.samples > 1 || f.kind === 'stencil') {
       res.rb = gl.createRenderbuffer()!;
       gl.bindRenderbuffer(E.RENDERBUFFER, res.rb);
-      if (d.samples > 1) gl.renderbufferStorageMultisample(E.RENDERBUFFER, Math.min(d.samples, this.maxSamples), f.internal, d.width, d.height);
+      if (d.samples > 1)
+        gl.renderbufferStorageMultisample(
+          E.RENDERBUFFER,
+          Math.min(d.samples, this.maxSamples),
+          f.internal,
+          d.width,
+          d.height,
+        );
       else gl.renderbufferStorage(E.RENDERBUFFER, f.internal, d.width, d.height);
       return true;
     }
     res.tex = gl.createTexture()!;
     switch (d.target) {
-      case PIPE_TEXTURE_1D: case PIPE_TEXTURE_2D: case PIPE_TEXTURE_RECT:
+      case PIPE_TEXTURE_1D:
+      case PIPE_TEXTURE_2D:
+      case PIPE_TEXTURE_RECT:
         res.glTarget = E.TEXTURE_2D;
         gl.bindTexture(E.TEXTURE_2D, res.tex);
         gl.texStorage2D(E.TEXTURE_2D, levels, f.internal, d.width, d.target === PIPE_TEXTURE_1D ? 1 : d.height);
@@ -470,10 +738,18 @@ export class VirglRenderer {
         gl.bindTexture(E.TEXTURE_3D, res.tex);
         gl.texStorage3D(E.TEXTURE_3D, levels, f.internal, d.width, d.height, d.depth);
         break;
-      case PIPE_TEXTURE_1D_ARRAY: case PIPE_TEXTURE_2D_ARRAY:
+      case PIPE_TEXTURE_1D_ARRAY:
+      case PIPE_TEXTURE_2D_ARRAY:
         res.glTarget = E.TEXTURE_2D_ARRAY;
         gl.bindTexture(E.TEXTURE_2D_ARRAY, res.tex);
-        gl.texStorage3D(E.TEXTURE_2D_ARRAY, levels, f.internal, d.width, d.target === PIPE_TEXTURE_1D_ARRAY ? 1 : d.height, d.arraySize);
+        gl.texStorage3D(
+          E.TEXTURE_2D_ARRAY,
+          levels,
+          f.internal,
+          d.width,
+          d.target === PIPE_TEXTURE_1D_ARRAY ? 1 : d.height,
+          d.arraySize,
+        );
         break;
       default:
         this.error(`resource ${d.id}: target ${d.target} isn't supported`);
@@ -491,8 +767,14 @@ export class VirglRenderer {
   private tooBig(d: ResourceDesc) {
     const l = this.limits;
     if (d.target === PIPE_BUFFER) return d.width > MAX_BUFFER ? `a buffer of ${d.width} bytes` : undefined;
-    const [size, layers] = d.target === PIPE_TEXTURE_3D ? [l.size3d, l.size3d] : d.target === PIPE_TEXTURE_CUBE ? [l.cube, 6] : [l.size, l.layers];
-    if (d.width > size || d.height > size || (d.target === PIPE_TEXTURE_3D ? d.depth : d.arraySize) > layers) return `a texture of ${d.width}x${d.height}x${d.target === PIPE_TEXTURE_3D ? d.depth : d.arraySize}`;
+    const [size, layers] =
+      d.target === PIPE_TEXTURE_3D
+        ? [l.size3d, l.size3d]
+        : d.target === PIPE_TEXTURE_CUBE
+          ? [l.cube, 6]
+          : [l.size, l.layers];
+    if (d.width > size || d.height > size || (d.target === PIPE_TEXTURE_3D ? d.depth : d.arraySize) > layers)
+      return `a texture of ${d.width}x${d.height}x${d.target === PIPE_TEXTURE_3D ? d.depth : d.arraySize}`;
     if (d.lastLevel > 31) return `${d.lastLevel + 1} levels`;
     return undefined;
   }
@@ -505,7 +787,9 @@ export class VirglRenderer {
     const l = this.life.get(id);
     if (l) {
       this.life.delete(id);
-      this.debug?.(`life ${id} ${r.fmt?.name ?? r.format} ${r.width}x${r.height} target ${r.target} bind ${r.bind.toString(16)}: ${(performance.now() - l.t0).toFixed(0)} ms, ${l.uploads} uploads of ${l.bytes} bytes, ${l.staged} bytes staged`);
+      this.debug?.(
+        `life ${id} ${r.fmt?.name ?? r.format} ${r.width}x${r.height} target ${r.target} bind ${r.bind.toString(16)}: ${(performance.now() - l.t0).toFixed(0)} ms, ${l.uploads} uploads of ${l.bytes} bytes, ${l.staged} bytes staged`,
+      );
     }
     for (const c of r.refs) this.contexts.get(c)?.attached.delete(id);
     if (r.external) {
@@ -527,9 +811,24 @@ export class VirglRenderer {
     let r = this.resources.get(id);
     if (!r) {
       if (!this.external?.has(id)) return this.error(`ctx ${c.id}: resource ${id} isn't a blob of another renderer`);
-      this.createResource({ id, target: PIPE_TEXTURE_2D, format: p[1], bind: p[2], width: p[3], height: p[4], depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+      this.createResource({
+        id,
+        target: PIPE_TEXTURE_2D,
+        format: p[1],
+        bind: p[2],
+        width: p[3],
+        height: p[4],
+        depth: 1,
+        arraySize: 1,
+        lastLevel: 0,
+        samples: 0,
+        flags: 0,
+      });
       r = this.resources.get(id)!;
-      if (!r.tex || !r.fmt || r.fmt.block !== 1 || (r.fmt.kind !== 'unorm' && r.fmt.kind !== 'float')) this.error(`resource ${id}: an imported blob of format ${r.fmt?.name ?? p[1]} isn't shared (colour formats only)`);
+      if (!r.tex || !r.fmt || r.fmt.block !== 1 || (r.fmt.kind !== 'unorm' && r.fmt.kind !== 'float'))
+        this.error(
+          `resource ${id}: an imported blob of format ${r.fmt?.name ?? p[1]} isn't shared (colour formats only)`,
+        );
       else {
         r.external = true;
         // The first plane's stride (VIRGL_PIPE_RES_SET_TYPE_PLANE_STRIDE(0)), past the modifier.
@@ -545,10 +844,21 @@ export class VirglRenderer {
    * texels' stored channels (for a format kept as its bytes, B8G8R8A8's, the bytes in memory order; premultiplied
    * alpha left as it is), converted to the texture's format; or the texels' bytes, rows `stride` bytes apart.
    */
-  writeExternal(id: number, src: TexImageSource | { bytes: Uint8Array; stride: number; width: number; height: number }) {
+  writeExternal(
+    id: number,
+    src: TexImageSource | { bytes: Uint8Array; stride: number; width: number; height: number },
+  ) {
     const r = this.resources.get(id);
     if (!r?.external || r.dead || !r.tex || !r.fmt) return;
-    if ('bytes' in src) return this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(r.width, src.width), h: Math.min(r.height, src.height), d: 1 }, src.bytes, src.stride, 0);
+    if ('bytes' in src)
+      return this.upload(
+        r,
+        0,
+        { x: 0, y: 0, z: 0, w: Math.min(r.width, src.width), h: Math.min(r.height, src.height), d: 1 },
+        src.bytes,
+        src.stride,
+        0,
+      );
     const gl = this.gl;
     gl.bindTexture(E.TEXTURE_2D, r.tex);
     gl.bindBuffer(E.PIXEL_UNPACK_BUFFER, null);
@@ -623,7 +933,8 @@ export class VirglRenderer {
   }
 
   attach(ctx: number, res: number) {
-    const c = this.contexts.get(ctx), r = this.resources.get(res);
+    const c = this.contexts.get(ctx),
+      r = this.resources.get(res);
     if (!c || !r) return false;
     c.attached.add(res);
     r.refs.add(ctx);
@@ -631,7 +942,8 @@ export class VirglRenderer {
   }
 
   detach(ctx: number, res: number) {
-    const c = this.contexts.get(ctx), r = this.resources.get(res);
+    const c = this.contexts.get(ctx),
+      r = this.resources.get(res);
     c?.attached.delete(res);
     r?.refs.delete(ctx);
     return !!c;
@@ -656,7 +968,10 @@ export class VirglRenderer {
     let skip = offset;
     for (let k = 0; k < r.backing.length; k++) {
       const b = r.backing[k];
-      if (skip >= b.len) { skip -= b.len; continue; }
+      if (skip >= b.len) {
+        skip -= b.len;
+        continue;
+      }
       if (skip + len <= b.len) return bytes(ram, b).subarray(skip, skip + len);
       const out = new Uint8Array(len);
       let at = 0;
@@ -675,9 +990,13 @@ export class VirglRenderer {
   private writeBacking(r: Res, offset: number, data: Uint8Array) {
     if (!r.backing) return false;
     const ram = this.ram();
-    let skip = offset, at = 0;
+    let skip = offset,
+      at = 0;
     for (const b of r.backing) {
-      if (skip >= b.len) { skip -= b.len; continue; }
+      if (skip >= b.len) {
+        skip -= b.len;
+        continue;
+      }
       const n = Math.min(b.len - skip, data.length - at);
       bytes(ram, b).set(data.subarray(at, at + n), skip);
       at += n;
@@ -703,12 +1022,20 @@ export class VirglRenderer {
     this.stats.uploads++;
     this.stats.uploadBytes += data.length;
     const l = this.life.get(r.id);
-    if (l) { l.uploads++; l.bytes += data.length; }
+    if (l) {
+      l.uploads++;
+      l.bytes += data.length;
+    }
     if (r.target !== PIPE_BUFFER && this.debug) {
       // For 4-byte formats: how many texels have alpha (the fourth byte) 0, 255 and in between, and the first texel.
-      let a0 = 0, a255 = 0, mid = 0;
-      if (r.fmt?.bpp === 4) for (let k = 3; k < data.length; k += 4) data[k] === 0 ? a0++ : data[k] === 255 ? a255++ : mid++;
-      this.debug(`upload ${r.id}:${r.fmt?.name} ${box.w}x${box.h}${box.w === r.width && box.h === r.height ? ' (all)' : ''} stride ${stride}${r.fmt?.bpp === 4 ? ` alpha 0:${a0} 255:${a255} other:${mid} first ${[...data.subarray(0, 4)].join(',')}` : ''}`);
+      let a0 = 0,
+        a255 = 0,
+        mid = 0;
+      if (r.fmt?.bpp === 4)
+        for (let k = 3; k < data.length; k += 4) data[k] === 0 ? a0++ : data[k] === 255 ? a255++ : mid++;
+      this.debug(
+        `upload ${r.id}:${r.fmt?.name} ${box.w}x${box.h}${box.w === r.width && box.h === r.height ? ' (all)' : ''} stride ${stride}${r.fmt?.bpp === 4 ? ` alpha 0:${a0} 255:${a255} other:${mid} first ${[...data.subarray(0, 4)].join(',')}` : ''}`,
+      );
     }
     if (r.target === PIPE_BUFFER) {
       if (!r.shadow) return; // staging: nothing on the host
@@ -736,14 +1063,21 @@ export class VirglRenderer {
     stride ||= rowBytes;
     const rows = Math.ceil(box.h / b);
     layerStride ||= stride * rows;
-    if (data.length < boxBytes(f, box.w, box.h, box.d, stride, layerStride)) return this.error(`upload to resource ${r.id}: ${data.length} bytes for the box`);
+    if (data.length < boxBytes(f, box.w, box.h, box.d, stride, layerStride))
+      return this.error(`upload to resource ${r.id}: ${data.length} bytes for the box`);
     if (stride % f.bpp && b === 1) {
       // A stride that isn't a whole number of pixels: repack.
       const out = new Uint8Array(rowBytes * rows * box.d);
-      for (let z = 0; z < box.d; z++) for (let y = 0; y < rows; y++) out.set(data.subarray(z * layerStride + y * stride, z * layerStride + y * stride + rowBytes), (z * rows + y) * rowBytes);
+      for (let z = 0; z < box.d; z++)
+        for (let y = 0; y < rows; y++)
+          out.set(
+            data.subarray(z * layerStride + y * stride, z * layerStride + y * stride + rowBytes),
+            (z * rows + y) * rowBytes,
+          );
       [data, stride, layerStride] = [out, rowBytes, rowBytes * rows];
     }
-    if (!f.write && b === 1 && f.kind !== 'depth' && f.kind !== 'depthstencil' && f.kind !== 'stencil') this.keepTexels(r, level, box, data, stride, layerStride);
+    if (!f.write && b === 1 && f.kind !== 'depth' && f.kind !== 'depthstencil' && f.kind !== 'stencil')
+      this.keepTexels(r, level, box, data, stride, layerStride);
     const t = r.glTarget!;
     gl.bindTexture(t, r.tex);
     gl.bindBuffer(E.PIXEL_UNPACK_BUFFER, null);
@@ -759,7 +1093,17 @@ export class VirglRenderer {
         }
         this.keepBlocks(r, level, box, box.z + z, layer);
         if (t === E.TEXTURE_2D) gl.compressedTexSubImage2D(t, level, box.x, box.y, box.w, box.h, f.internal, layer);
-        else if (t === E.TEXTURE_CUBE_MAP) gl.compressedTexSubImage2D(E.TEXTURE_CUBE_MAP_POSITIVE_X + box.z + z, level, box.x, box.y, box.w, box.h, f.internal, layer);
+        else if (t === E.TEXTURE_CUBE_MAP)
+          gl.compressedTexSubImage2D(
+            E.TEXTURE_CUBE_MAP_POSITIVE_X + box.z + z,
+            level,
+            box.x,
+            box.y,
+            box.w,
+            box.h,
+            f.internal,
+            layer,
+          );
         else gl.compressedTexSubImage3D(t, level, box.x, box.y, box.z + z, box.w, box.h, 1, f.internal, layer);
       }
       return;
@@ -768,12 +1112,23 @@ export class VirglRenderer {
     gl.pixelStorei(E.UNPACK_IMAGE_HEIGHT, layerStride / stride);
     const view = viewFor(f.type, data.subarray(0, boxBytes(f, box.w, box.h, box.d, stride, layerStride)));
     if (t === E.TEXTURE_2D) {
-      const y = r.target === PIPE_TEXTURE_1D ? 0 : box.y, h = r.target === PIPE_TEXTURE_1D ? 1 : box.h;
+      const y = r.target === PIPE_TEXTURE_1D ? 0 : box.y,
+        h = r.target === PIPE_TEXTURE_1D ? 1 : box.h;
       gl.texSubImage2D(t, level, box.x, y, box.w, h, f.format, f.type, view);
     } else if (t === E.TEXTURE_CUBE_MAP) {
       for (let z = 0; z < box.d; z++) {
         const v = viewFor(f.type, data.subarray(z * layerStride, z * layerStride + stride * box.h));
-        gl.texSubImage2D(E.TEXTURE_CUBE_MAP_POSITIVE_X + box.z + z, level, box.x, box.y, box.w, box.h, f.format, f.type, v);
+        gl.texSubImage2D(
+          E.TEXTURE_CUBE_MAP_POSITIVE_X + box.z + z,
+          level,
+          box.x,
+          box.y,
+          box.w,
+          box.h,
+          f.format,
+          f.type,
+          v,
+        );
       }
     } else if (r.target === PIPE_TEXTURE_1D_ARRAY) {
       // A 1D array's box: y is the first layer, h the layer count.
@@ -788,7 +1143,14 @@ export class VirglRenderer {
    * Reads a resource's box back, laid out with `stride`/`layerStride` (0: packed), for the guest. Null if the format
    * can't be read back (the guest isn't told it can: `supported_readback_formats`).
    */
-  private readback(r: Res, level: number, box: Box, stride: number, layerStride: number, reader = r.fmt && readbackOf(r.fmt, this.colorBufferFloat)): Uint8Array | null {
+  private readback(
+    r: Res,
+    level: number,
+    box: Box,
+    stride: number,
+    layerStride: number,
+    reader = r.fmt && readbackOf(r.fmt, this.colorBufferFloat),
+  ): Uint8Array | null {
     const gl = this.gl;
     this.stats.readbacks++;
     if (r.target === PIPE_BUFFER) {
@@ -807,9 +1169,23 @@ export class VirglRenderer {
     const tmp = new Uint8Array(box.w * box.h * reader.bytes);
     for (let z = 0; z < box.d; z++) {
       if (!this.bindForRead(r, level, box.z + z)) return null;
-      const view = reader.type === E.FLOAT ? new Float32Array(tmp.buffer) : reader.type === E.UNSIGNED_INT ? new Uint32Array(tmp.buffer) : reader.type === E.INT ? new Int32Array(tmp.buffer) : reader.type === E.UNSIGNED_INT_2_10_10_10_REV ? new Uint32Array(tmp.buffer) : tmp;
+      const view =
+        reader.type === E.FLOAT
+          ? new Float32Array(tmp.buffer)
+          : reader.type === E.UNSIGNED_INT
+            ? new Uint32Array(tmp.buffer)
+            : reader.type === E.INT
+              ? new Int32Array(tmp.buffer)
+              : reader.type === E.UNSIGNED_INT_2_10_10_10_REV
+                ? new Uint32Array(tmp.buffer)
+                : tmp;
       gl.readPixels(box.x, box.y, box.w, box.h, reader.format, reader.type, view);
-      for (let y = 0; y < box.h; y++) reader.pack(tmp.subarray(y * box.w * reader.bytes, (y + 1) * box.w * reader.bytes), out.subarray(z * layerStride + y * stride, z * layerStride + y * stride + rowBytes), box.w);
+      for (let y = 0; y < box.h; y++)
+        reader.pack(
+          tmp.subarray(y * box.w * reader.bytes, (y + 1) * box.w * reader.bytes),
+          out.subarray(z * layerStride + y * stride, z * layerStride + y * stride + rowBytes),
+          box.w,
+        );
     }
     gl.bindFramebuffer(E.READ_FRAMEBUFFER, null);
     return out;
@@ -822,10 +1198,23 @@ export class VirglRenderer {
    */
   private inLevel(r: Res, level: number, box: Box) {
     if (level > r.lastLevel) return false;
-    const b = r.fmt?.block ?? 1, { w, h, d } = this.levelSize(r, level);
-    const [rows, layers] = r.target === PIPE_TEXTURE_1D ? [1, 1] : r.target === PIPE_TEXTURE_1D_ARRAY ? [Math.max(1, r.arraySize), Math.max(1, r.arraySize)] : r.target === PIPE_TEXTURE_CUBE ? [h, Math.max(6, d)] : [h, d];
-    const fits = (at: number, n: number, size: number, block: number) => Math.ceil((at + n) / block) <= Math.ceil(size / block);
-    return fits(box.x, box.w, w, b) && fits(box.y, box.h, rows, r.target === PIPE_TEXTURE_1D_ARRAY ? 1 : b) && box.z + box.d <= layers;
+    const b = r.fmt?.block ?? 1,
+      { w, h, d } = this.levelSize(r, level);
+    const [rows, layers] =
+      r.target === PIPE_TEXTURE_1D
+        ? [1, 1]
+        : r.target === PIPE_TEXTURE_1D_ARRAY
+          ? [Math.max(1, r.arraySize), Math.max(1, r.arraySize)]
+          : r.target === PIPE_TEXTURE_CUBE
+            ? [h, Math.max(6, d)]
+            : [h, d];
+    const fits = (at: number, n: number, size: number, block: number) =>
+      Math.ceil((at + n) / block) <= Math.ceil(size / block);
+    return (
+      fits(box.x, box.w, w, b) &&
+      fits(box.y, box.h, rows, r.target === PIPE_TEXTURE_1D_ARRAY ? 1 : b) &&
+      box.z + box.d <= layers
+    );
   }
 
   /** The read framebuffer with the resource's level (and layer) as its color attachment. */
@@ -838,16 +1227,29 @@ export class VirglRenderer {
 
   private attachTo(target: number, point: number, r: Res | undefined, level: number, layer: number) {
     const gl = this.gl;
-    if (!r) { gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, null); return; }
+    if (!r) {
+      gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, null);
+      return;
+    }
     if (target === E.DRAW_FRAMEBUFFER) this.dropPicture(r); // drawn into: the plane is what's current
     if (r.rb) gl.framebufferRenderbuffer(target, point, E.RENDERBUFFER, r.rb);
     else if (r.glTarget === E.TEXTURE_2D) gl.framebufferTexture2D(target, point, E.TEXTURE_2D, r.tex!, level);
-    else if (r.glTarget === E.TEXTURE_CUBE_MAP) gl.framebufferTexture2D(target, point, E.TEXTURE_CUBE_MAP_POSITIVE_X + layer, r.tex!, level);
+    else if (r.glTarget === E.TEXTURE_CUBE_MAP)
+      gl.framebufferTexture2D(target, point, E.TEXTURE_CUBE_MAP_POSITIVE_X + layer, r.tex!, level);
     else gl.framebufferTextureLayer(target, point, r.tex!, level, layer);
   }
 
   /** TRANSFER_TO_HOST_3D / TRANSFER_FROM_HOST_3D (the virtio commands): the resource's own backing at `offset`. */
-  transfer(ctx: number, id: number, level: number, box: Box, offset: number, stride: number, layerStride: number, toHost: boolean) {
+  transfer(
+    ctx: number,
+    id: number,
+    level: number,
+    box: Box,
+    offset: number,
+    stride: number,
+    layerStride: number,
+    toHost: boolean,
+  ) {
     const r = this.resources.get(id);
     if (!r) return false;
     void ctx;
@@ -861,24 +1263,42 @@ export class VirglRenderer {
   private levelStrides(r: Res, level: number, stride: number, layerStride: number) {
     const f = r.fmt;
     if (!f || r.target === PIPE_BUFFER) return [stride, layerStride];
-    const b = f.block, { w, h } = this.levelSize(r, level);
+    const b = f.block,
+      { w, h } = this.levelSize(r, level);
     stride ||= Math.ceil(w / b) * f.bpp;
     layerStride ||= stride * (r.target === PIPE_TEXTURE_1D_ARRAY ? 1 : Math.ceil(h / b));
     return [stride, layerStride];
   }
 
-  private transferIov(r: Res, level: number, box: Box, offset: number, stride: number, layerStride: number, toHost: boolean) {
+  private transferIov(
+    r: Res,
+    level: number,
+    box: Box,
+    offset: number,
+    stride: number,
+    layerStride: number,
+    toHost: boolean,
+  ) {
     [stride, layerStride] = this.levelStrides(r, level, stride, layerStride);
     const n = r.target === PIPE_BUFFER ? box.w : boxBytes(r.fmt, box.w, box.h, box.d, stride, layerStride);
-    if (offset + n > this.backingSize(r)) { this.error(`transfer past resource ${r.id}'s backing`); return false; }
+    if (offset + n > this.backingSize(r)) {
+      this.error(`transfer past resource ${r.id}'s backing`);
+      return false;
+    }
     if (toHost) {
       const data = this.readBacking(r, offset, n);
       if (!data) return false;
       this.upload(r, level, box, data, stride, layerStride);
     } else {
       const data = this.readback(r, level, box, stride, layerStride);
-      if (!data) { this.error(`can't read back resource ${r.id} (format ${r.format})`); return false; }
-      if (r.target === PIPE_BUFFER) this.debug?.(`read back ${r.id} [${box.x}, +${box.w}) to its backing at ${offset}: ${[...data.subarray(0, 16)].join(',')}`);
+      if (!data) {
+        this.error(`can't read back resource ${r.id} (format ${r.format})`);
+        return false;
+      }
+      if (r.target === PIPE_BUFFER)
+        this.debug?.(
+          `read back ${r.id} [${box.x}, +${box.w}) to its backing at ${offset}: ${[...data.subarray(0, 16)].join(',')}`,
+        );
       this.writeBacking(r, offset, data);
     }
     return true;
@@ -918,28 +1338,49 @@ export class VirglRenderer {
   private command(c: Ctx, cmd: number, obj: number, p: Uint32Array) {
     const s = c.sub;
     switch (cmd) {
-      case 0: return; // NOP
-      case 1: return this.createObject(c, obj, p);
-      case 2: return this.bindObject(s, obj, p);
-      case 3: { const o = s.objects.get(p[0]); if (o) { this.destroyObject(o, s); s.objects.delete(p[0]); } return; }
-      case 4: { // SET_VIEWPORT_STATE: start slot, then scale xyz, translate xyz per viewport
-        if (p.length >= 7 && p[0] === 0) s.viewport = { scale: [uif(p[1]), uif(p[2]), uif(p[3])], translate: [uif(p[4]), uif(p[5]), uif(p[6])] };
+      case 0:
+        return; // NOP
+      case 1:
+        return this.createObject(c, obj, p);
+      case 2:
+        return this.bindObject(s, obj, p);
+      case 3: {
+        const o = s.objects.get(p[0]);
+        if (o) {
+          this.destroyObject(o, s);
+          s.objects.delete(p[0]);
+        }
         return;
       }
-      case 5: { // SET_FRAMEBUFFER_STATE: nr_cbufs, zsurf, cbufs
+      case 4: {
+        // SET_VIEWPORT_STATE: start slot, then scale xyz, translate xyz per viewport
+        if (p.length >= 7 && p[0] === 0)
+          s.viewport = { scale: [uif(p[1]), uif(p[2]), uif(p[3])], translate: [uif(p[4]), uif(p[5]), uif(p[6])] };
+        return;
+      }
+      case 5: {
+        // SET_FRAMEBUFFER_STATE: nr_cbufs, zsurf, cbufs
         const n = p[0];
         if (p.length !== 2 + n || n > 8) throw new Error('bad SET_FRAMEBUFFER_STATE');
         s.fb = { cbufs: Array.from({ length: n }, (_, k) => this.surface(s, p[2 + k])), zs: this.surface(s, p[1]) };
         return;
       }
-      case 6: { // SET_VERTEX_BUFFERS: stride, offset, handle per buffer
+      case 6: {
+        // SET_VERTEX_BUFFERS: stride, offset, handle per buffer
         if (p.length % 3) throw new Error('bad SET_VERTEX_BUFFERS');
-        s.vbs = Array.from({ length: p.length / 3 }, (_, k) => ({ stride: p[3 * k], offset: p[3 * k + 1], res: p[3 * k + 2] }));
+        s.vbs = Array.from({ length: p.length / 3 }, (_, k) => ({
+          stride: p[3 * k],
+          offset: p[3 * k + 1],
+          res: p[3 * k + 2],
+        }));
         return;
       }
-      case 7: return this.clear(c, p);
-      case 8: return this.draw(c, p);
-      case 9: { // RESOURCE_INLINE_WRITE: transfer header then data
+      case 7:
+        return this.clear(c, p);
+      case 8:
+        return this.draw(c, p);
+      case 9: {
+        // RESOURCE_INLINE_WRITE: transfer header then data
         if (p.length < 11) throw new Error('bad RESOURCE_INLINE_WRITE');
         const r = this.lookup(c, p[0]);
         if (!r) return;
@@ -947,7 +1388,8 @@ export class VirglRenderer {
         this.upload(r, p[1], box, new Uint8Array(p.buffer, p.byteOffset + 44, (p.length - 11) * 4), p[3], p[4]);
         return;
       }
-      case 10: { // SET_SAMPLER_VIEWS: shader, start slot, handles
+      case 10: {
+        // SET_SAMPLER_VIEWS: shader, start slot, handles
         const st = this.stage(p[0]);
         if (!st) return;
         if (p[1] + p.length - 2 > MAX_SLOTS) throw new Error('bad SET_SAMPLER_VIEWS');
@@ -957,22 +1399,37 @@ export class VirglRenderer {
         }
         return;
       }
-      case 11: s.ib = p.length >= 3 ? { res: p[0], size: p[1], offset: p[2] } : p[0] ? { res: p[0], size: 0, offset: 0 } : null; return;
-      case 12: { // SET_CONSTANT_BUFFER: shader, index, data
+      case 11:
+        s.ib =
+          p.length >= 3 ? { res: p[0], size: p[1], offset: p[2] } : p[0] ? { res: p[0], size: 0, offset: 0 } : null;
+        return;
+      case 12: {
+        // SET_CONSTANT_BUFFER: shader, index, data
         const st = this.stage(p[0]);
         if (st) s.consts[st] = p.slice(2);
         return;
       }
-      case 13: s.stencilRef = [p[0] & 0xff, (p[0] >>> 8) & 0xff]; return;
-      case 14: s.blendColor = [uif(p[0]), uif(p[1]), uif(p[2]), uif(p[3])]; return;
-      case 15: { // SET_SCISSOR_STATE: start slot, minx|miny, maxx|maxy
-        if (p.length >= 3 && p[0] === 0) s.scissor = { minx: p[1] & 0xffff, miny: p[1] >>> 16, maxx: p[2] & 0xffff, maxy: p[2] >>> 16 };
+      case 13:
+        s.stencilRef = [p[0] & 0xff, (p[0] >>> 8) & 0xff];
+        return;
+      case 14:
+        s.blendColor = [uif(p[0]), uif(p[1]), uif(p[2]), uif(p[3])];
+        return;
+      case 15: {
+        // SET_SCISSOR_STATE: start slot, minx|miny, maxx|maxy
+        if (p.length >= 3 && p[0] === 0)
+          s.scissor = { minx: p[1] & 0xffff, miny: p[1] >>> 16, maxx: p[2] & 0xffff, maxy: p[2] >>> 16 };
         return;
       }
       // A blit or a copy counts no samples (one may be a draw: `drawBlit`; ANGLE's may be too).
-      case 16: this.pauseQueries(); return this.blit(c, p);
-      case 17: this.pauseQueries(); return this.copyRegion(c, p);
-      case 18: { // BIND_SAMPLER_STATES: shader, start slot, handles
+      case 16:
+        this.pauseQueries();
+        return this.blit(c, p);
+      case 17:
+        this.pauseQueries();
+        return this.copyRegion(c, p);
+      case 18: {
+        // BIND_SAMPLER_STATES: shader, start slot, handles
         const st = this.stage(p[0]);
         if (!st) return;
         if (p[1] + p.length - 2 > MAX_SLOTS) throw new Error('bad BIND_SAMPLER_STATES');
@@ -982,17 +1439,29 @@ export class VirglRenderer {
         }
         return;
       }
-      case 19: return this.beginQuery(c, p[0]);
-      case 20: return this.endQuery(c, p[0]);
-      case 21: return this.getQueryResult(c, p[0]);
-      case 22: s.stipple = p.slice(0, 32); return; // SET_POLYGON_STIPPLE
-      case 23: return; // SET_CLIP_STATE: user clip planes need clip distances (not advertised)
-      case 24: s.sampleMask = p[0]; return;
-      case 25: { // SET_STREAMOUT_TARGETS: append mask (Mesa sends 0; vrend ignores it), handles
+      case 19:
+        return this.beginQuery(c, p[0]);
+      case 20:
+        return this.endQuery(c, p[0]);
+      case 21:
+        return this.getQueryResult(c, p[0]);
+      case 22:
+        s.stipple = p.slice(0, 32);
+        return; // SET_POLYGON_STIPPLE
+      case 23:
+        return; // SET_CLIP_STATE: user clip planes need clip distances (not advertised)
+      case 24:
+        s.sampleMask = p[0];
+        return;
+      case 25: {
+        // SET_STREAMOUT_TARGETS: append mask (Mesa sends 0; vrend ignores it), handles
         // As vrend: a set of targets seen before resumes where it stopped (Mesa's resume after a pause sets the same
         // targets again); a new set starts at its targets' beginnings (Mesa makes new targets at each Begin).
         const handles = [...p.subarray(1)];
-        s.so.targets = handles.map((h) => { const o = s.objects.get(h); return o?.kind === 'so' ? o.v : undefined; });
+        s.so.targets = handles.map((h) => {
+          const o = s.objects.get(h);
+          return o?.kind === 'so' ? o.v : undefined;
+        });
         const key = handles.join();
         if (handles.length && !s.so.seen.has(key)) {
           s.so.seen.add(key);
@@ -1000,22 +1469,28 @@ export class VirglRenderer {
         }
         return;
       }
-      case 26: return; // SET_RENDER_CONDITION: not advertised
-      case 27: { // SET_UNIFORM_BUFFER: shader, index, offset, length, handle
+      case 26:
+        return; // SET_RENDER_CONDITION: not advertised
+      case 27: {
+        // SET_UNIFORM_BUFFER: shader, index, offset, length, handle
         const st = this.stage(p[0]);
         if (!st) return;
         if (p[4]) s.ubos[st].set(p[1], { res: p[4], offset: p[2], length: p[3] });
         else s.ubos[st].delete(p[1]);
         return;
       }
-      case 28: { // SET_SUB_CTX
+      case 28: {
+        // SET_SUB_CTX
         const sub = c.subs.get(p[0]);
         if (sub) c.sub = sub;
         else this.error(`ctx ${c.id}: no sub-context ${p[0]}`);
         return;
       }
-      case 29: if (!c.subs.has(p[0])) c.subs.set(p[0], this.newSub(p[0])); return;
-      case 30: { // DESTROY_SUB_CTX (0 stays)
+      case 29:
+        if (!c.subs.has(p[0])) c.subs.set(p[0], this.newSub(p[0]));
+        return;
+      case 30: {
+        // DESTROY_SUB_CTX (0 stays)
         const sub = c.subs.get(p[0]);
         if (!sub || p[0] === 0) return;
         this.destroySub(sub);
@@ -1023,55 +1498,89 @@ export class VirglRenderer {
         if (c.sub === sub) c.sub = c.subs.get(0)!;
         return;
       }
-      case 31: { // BIND_SHADER: handle, type
+      case 31: {
+        // BIND_SHADER: handle, type
         const st = this.stage(p[1]);
         const o = s.objects.get(p[0]);
         if (st) s.shaders[st] = o?.kind === 'shader' ? o.v : undefined;
         return;
       }
-      case 32: case 33: return; // SET_TESS_STATE, SET_MIN_SAMPLES
-      case 36: case 39: return; // MEMORY_BARRIER, TEXTURE_BARRIER: one context, in order
-      case 41: case 46: case 51: return; // SET_DEBUG_FLAGS, SET_TWEAKS, SEND_STRING_MARKER
-      case 43: { // TRANSFER3D: the resource's own backing at DATA_OFFSET, direction
+      case 32:
+      case 33:
+        return; // SET_TESS_STATE, SET_MIN_SAMPLES
+      case 36:
+      case 39:
+        return; // MEMORY_BARRIER, TEXTURE_BARRIER: one context, in order
+      case 41:
+      case 46:
+      case 51:
+        return; // SET_DEBUG_FLAGS, SET_TWEAKS, SEND_STRING_MARKER
+      case 43: {
+        // TRANSFER3D: the resource's own backing at DATA_OFFSET, direction
         if (p.length < 13) throw new Error('bad TRANSFER3D');
         const r = this.lookup(c, p[0]);
         if (!r) return;
-        this.transferIov(r, p[1], { x: p[5], y: p[6], z: p[7], w: p[8], h: p[9], d: p[10] }, p[11], p[3], p[4], p[12] === 1);
+        this.transferIov(
+          r,
+          p[1],
+          { x: p[5], y: p[6], z: p[7], w: p[8], h: p[9], d: p[10] },
+          p[11],
+          p[3],
+          p[4],
+          p[12] === 1,
+        );
         return;
       }
-      case 44: return; // END_TRANSFERS
-      case 45: return this.copyTransfer(c, p);
-      case 47: return this.clearTexture(c, p);
-      case 49: return this.setType(c, p);
-      case 52: return; // LINK_SHADER: programs are made at the draw that needs them
-      case 53: case 54: case 55: case 56: case 57: case 58: case 59: case 60: case 61:
+      case 44:
+        return; // END_TRANSFERS
+      case 45:
+        return this.copyTransfer(c, p);
+      case 47:
+        return this.clearTexture(c, p);
+      case 49:
+        return this.setType(c, p);
+      case 52:
+        return; // LINK_SHADER: programs are made at the draw that needs them
+      case 53:
+      case 54:
+      case 55:
+      case 56:
+      case 57:
+      case 58:
+      case 59:
+      case 60:
+      case 61:
         return (c.video ??= this.videoContext(c)).command(cmd, p);
-      case 62: return this.clearSurface(c, p);
+      case 62:
+        return this.clearSurface(c, p);
       default:
         this.error(`ctx ${c.id}: command ${cmd} isn't supported`);
     }
   }
 
   private videoContext(c: Ctx) {
-    return new VideoContext({
-      read: (res, len) => {
-        const r = this.lookup(c, res);
-        return r ? this.readBacking(r, 0, len) : null;
+    return new VideoContext(
+      {
+        read: (res, len) => {
+          const r = this.lookup(c, res);
+          return r ? this.readBacking(r, 0, len) : null;
+        },
+        size: (res) => {
+          const r = this.lookup(c, res);
+          return r ? this.backingSize(r) : 0;
+        },
+        error: (m) => this.error(`ctx ${c.id}: ${m}`),
+        caught: (e) => this.onCaught?.(e),
+        debug: this.debug,
+        decoders: this.video?.decoders,
+        hardware: this.video?.hardware,
+        write: (planes, pic) => this.writePicture(planes, pic),
+        settled: () => this.onVideoSettled?.(),
+        order: () => this.videoOrder,
+        mayWrite: (planes, order) => this.videoMayWrite?.(planes, order) ?? true,
       },
-      size: (res) => {
-        const r = this.lookup(c, res);
-        return r ? this.backingSize(r) : 0;
-      },
-      error: (m) => this.error(`ctx ${c.id}: ${m}`),
-      caught: (e) => this.onCaught?.(e),
-      debug: this.debug,
-      decoders: this.video?.decoders,
-      hardware: this.video?.hardware,
-      write: (planes, pic) => this.writePicture(planes, pic),
-      settled: () => this.onVideoSettled?.(),
-      order: () => this.videoOrder,
-      mayWrite: (planes, order) => this.videoMayWrite?.(planes, order) ?? true,
-    }, this.videoStats);
+      this.videoStats,
+    );
   }
 
   /**
@@ -1080,7 +1589,8 @@ export class VirglRenderer {
    * at END_FRAME, when virglrenderer writes them (`VideoEnv.write`).
    */
   private writePicture(planes: number[], pic: DecodedPicture) {
-    const cw = (pic.width + 1) >> 1, ch = (pic.height + 1) >> 1;
+    const cw = (pic.width + 1) >> 1,
+      ch = (pic.height + 1) >> 1;
     // Each plane filled to its texture's size, the picture's edges repeated (`padPlane`), and a picture smaller than
     // its plane also kept alone, for draws to sample (`Res.picture`).
     const put = (res: number, data: Uint8Array, w: number, h: number, bpp: number) => {
@@ -1090,10 +1600,21 @@ export class VirglRenderer {
       const prev = r.picture;
       r.picture = undefined;
       const p = padPlane(data, w, h, bpp, r.width, r.height);
-      this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(p.w, r.width), h: Math.min(p.h, r.height), d: 1 }, p.data, p.w * bpp, 0);
+      this.upload(
+        r,
+        0,
+        { x: 0, y: 0, z: 0, w: Math.min(p.w, r.width), h: Math.min(p.h, r.height), d: 1 },
+        p.data,
+        p.w * bpp,
+        0,
+      );
       this.onPlane?.(res, p.data, p.w, p.h, bpp);
-      const t = r.tex && r.fmt && r.target === PIPE_TEXTURE_2D && r.lastLevel === 0 && (w < r.width || h < r.height)
-        ? (prev?.width === w && prev.height === h ? prev : this.pictureTexture(r, w, h)) : undefined;
+      const t =
+        r.tex && r.fmt && r.target === PIPE_TEXTURE_2D && r.lastLevel === 0 && (w < r.width || h < r.height)
+          ? prev?.width === w && prev.height === h
+            ? prev
+            : this.pictureTexture(r, w, h)
+          : undefined;
       if (prev && prev !== t) this.gl.deleteTexture(prev.tex!);
       if (t) {
         this.upload(t, 0, { x: 0, y: 0, z: 0, w, h, d: 1 }, p.data, p.w * bpp, 0);
@@ -1103,7 +1624,8 @@ export class VirglRenderer {
     put(planes[0], pic.y, pic.width, pic.height, 1);
     if (planes.length === 2) put(planes[1], pic.uv, cw, ch, 2);
     else if (planes.length === 3) {
-      const u = new Uint8Array(cw * ch), v = new Uint8Array(cw * ch);
+      const u = new Uint8Array(cw * ch),
+        v = new Uint8Array(cw * ch);
       for (let k = 0; k < u.length; k++) {
         u[k] = pic.uv[2 * k];
         v[k] = pic.uv[2 * k + 1];
@@ -1115,11 +1637,22 @@ export class VirglRenderer {
 
   /** A picture texture for the plane `r` (`Res.picture`), `w`×`h`. */
   private pictureTexture(r: Res, w: number, h: number): Res {
-    const gl = this.gl, tex = gl.createTexture()!;
+    const gl = this.gl,
+      tex = gl.createTexture()!;
     gl.bindTexture(E.TEXTURE_2D, tex);
     gl.texStorage2D(E.TEXTURE_2D, 1, r.fmt!.internal, w, h);
     gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAX_LEVEL, 0);
-    return { ...r, width: w, height: h, tex, msResolved: undefined, feedback: undefined, picture: undefined, backing: null, refs: new Set() };
+    return {
+      ...r,
+      width: w,
+      height: h,
+      tex,
+      msResolved: undefined,
+      feedback: undefined,
+      picture: undefined,
+      backing: null,
+      refs: new Set(),
+    };
   }
 
   /** Drops `r`'s picture texture (`Res.picture`): the plane itself is what's sampled again. */
@@ -1152,7 +1685,8 @@ export class VirglRenderer {
     },
     res: (id: number, before = Infinity) => this.pendingPlanes(before).includes(id),
     shared: (a: number, b: number) => {
-      const x = this.contexts.get(a)?.attached, y = this.contexts.get(b)?.attached;
+      const x = this.contexts.get(a)?.attached,
+        y = this.contexts.get(b)?.attached;
       if (!x || !y) return false;
       const [small, big] = x.size <= y.size ? [x, y] : [y, x];
       for (const r of small) if (big.has(r)) return true;
@@ -1186,35 +1720,112 @@ export class VirglRenderer {
     const res = (h: number) => {
       if (made.has(h)) return made.get(h);
       const o = sub.objects.get(h);
-      return !o ? undefined : o.kind === 'view' || o.kind === 'surface' || o.kind === 'so' || o.kind === 'query' ? o.v.res : undefined;
+      return !o
+        ? undefined
+        : o.kind === 'view' || o.kind === 'surface' || o.kind === 'so' || o.kind === 'query'
+          ? o.v.res
+          : undefined;
     };
-    const add = (r: number | undefined) => { if (r) out.add(r); };
+    const add = (r: number | undefined) => {
+      if (r) out.add(r);
+    };
     let known = true;
     const n = walk(words, (cmd, obj, at, len) => {
       const p = words.subarray(at, at + len);
       subs.add(sub);
       switch (cmd) {
         case 1: // CREATE_OBJECT: a view's, a surface's and a stream output target's resource is p[1], a query's p[3]
-          if (obj === 6 || obj === 8 || obj === 10) { made.set(p[0], p[1]); add(p[1]); }
-          else if (obj === 9) { made.set(p[0], p[3]); add(p[3]); }
+          if (obj === 6 || obj === 8 || obj === 10) {
+            made.set(p[0], p[1]);
+            add(p[1]);
+          } else if (obj === 9) {
+            made.set(p[0], p[3]);
+            add(p[3]);
+          }
           return;
-        case 5: case 10: case 25: // SET_FRAMEBUFFER_STATE, SET_SAMPLER_VIEWS, SET_STREAMOUT_TARGETS: object handles
+        case 5:
+        case 10:
+        case 25: // SET_FRAMEBUFFER_STATE, SET_SAMPLER_VIEWS, SET_STREAMOUT_TARGETS: object handles
           for (let k = cmd === 10 ? 2 : 1; k < p.length; k++) add(res(p[k]));
           return;
-        case 6: for (let k = 2; k < p.length; k += 3) add(p[k]); return; // SET_VERTEX_BUFFERS
-        case 9: case 11: case 43: case 47: case 49: add(p[0]); return; // INLINE_WRITE, SET_INDEX_BUFFER, TRANSFER3D, CLEAR_TEXTURE, SET_TYPE
-        case 16: add(p[3]); add(p[12]); return; // BLIT
-        case 17: add(p[0]); add(p[5]); return; // RESOURCE_COPY_REGION
-        case 45: add(p[0]); add(p[11]); return; // COPY_TRANSFER3D
-        case 19: case 20: case 21: case 62: add(res(p[cmd === 62 ? 1 : 0])); return; // queries, CLEAR_SURFACE
-        case 27: add(p[4]); return; // SET_UNIFORM_BUFFER
-        case 59: add(p[2]); add(p[3]); return; // DECODE_BITSTREAM's staging buffers (its picture: VideoContext's order)
-        case 28: { const x = c.subs.get(p[0]); if (x) sub = x; return; } // SET_SUB_CTX
-        case 0: case 2: case 3: case 4: case 7: case 8: case 12: case 13: case 14: case 15: case 18: case 22: case 23: case 24:
-        case 26: case 29: case 30: case 31: case 32: case 33: case 36: case 39: case 41: case 44: case 46: case 51: case 52:
-        case 53: case 54: case 55: case 56: case 57: case 58: case 60: case 61:
+        case 6:
+          for (let k = 2; k < p.length; k += 3) add(p[k]);
+          return; // SET_VERTEX_BUFFERS
+        case 9:
+        case 11:
+        case 43:
+        case 47:
+        case 49:
+          add(p[0]);
+          return; // INLINE_WRITE, SET_INDEX_BUFFER, TRANSFER3D, CLEAR_TEXTURE, SET_TYPE
+        case 16:
+          add(p[3]);
+          add(p[12]);
+          return; // BLIT
+        case 17:
+          add(p[0]);
+          add(p[5]);
+          return; // RESOURCE_COPY_REGION
+        case 45:
+          add(p[0]);
+          add(p[11]);
+          return; // COPY_TRANSFER3D
+        case 19:
+        case 20:
+        case 21:
+        case 62:
+          add(res(p[cmd === 62 ? 1 : 0]));
+          return; // queries, CLEAR_SURFACE
+        case 27:
+          add(p[4]);
+          return; // SET_UNIFORM_BUFFER
+        case 59:
+          add(p[2]);
+          add(p[3]);
+          return; // DECODE_BITSTREAM's staging buffers (its picture: VideoContext's order)
+        case 28: {
+          const x = c.subs.get(p[0]);
+          if (x) sub = x;
+          return;
+        } // SET_SUB_CTX
+        case 0:
+        case 2:
+        case 3:
+        case 4:
+        case 7:
+        case 8:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+        case 18:
+        case 22:
+        case 23:
+        case 24:
+        case 26:
+        case 29:
+        case 30:
+        case 31:
+        case 32:
+        case 33:
+        case 36:
+        case 39:
+        case 41:
+        case 44:
+        case 46:
+        case 51:
+        case 52:
+        case 53:
+        case 54:
+        case 55:
+        case 56:
+        case 57:
+        case 58:
+        case 60:
+        case 61:
           return; // state, draws and clears (they use what's bound: below), video commands
-        default: known = false;
+        default:
+          known = false;
       }
     });
     if (n < 0 || !known) return undefined;
@@ -1278,76 +1889,174 @@ export class VirglRenderer {
     if (!h) throw new Error('object handle 0');
     let o: Obj | undefined;
     switch (type) {
-      case 1: { // BLEND: s0, s1 (logicop), 8 per-RT words
+      case 1: {
+        // BLEND: s0, s1 (logicop), 8 per-RT words
         if (p.length !== 11) throw new Error('bad blend');
-        o = { kind: 'blend', v: { independent: !!(p[1] & 1), logicop: !!(p[1] & 2), alphaToCoverage: !!(p[1] & 8), rt: Array.from({ length: 8 }, (_, k) => {
-          const t = p[3 + k];
-          return { enable: !!(t & 1), rgbFunc: (t >>> 1) & 7, rgbSrc: (t >>> 4) & 0x1f, rgbDst: (t >>> 9) & 0x1f, aFunc: (t >>> 14) & 7, aSrc: (t >>> 17) & 0x1f, aDst: (t >>> 22) & 0x1f, mask: (t >>> 27) & 0xf };
-        }) } };
+        o = {
+          kind: 'blend',
+          v: {
+            independent: !!(p[1] & 1),
+            logicop: !!(p[1] & 2),
+            alphaToCoverage: !!(p[1] & 8),
+            rt: Array.from({ length: 8 }, (_, k) => {
+              const t = p[3 + k];
+              return {
+                enable: !!(t & 1),
+                rgbFunc: (t >>> 1) & 7,
+                rgbSrc: (t >>> 4) & 0x1f,
+                rgbDst: (t >>> 9) & 0x1f,
+                aFunc: (t >>> 14) & 7,
+                aSrc: (t >>> 17) & 0x1f,
+                aDst: (t >>> 22) & 0x1f,
+                mask: (t >>> 27) & 0xf,
+              };
+            }),
+          },
+        };
         break;
       }
-      case 2: { // RASTERIZER
+      case 2: {
+        // RASTERIZER
         if (p.length !== 9) throw new Error('bad rasterizer');
         const t = p[1];
         const bit = (b: number) => !!((t >>> b) & 1);
-        o = { kind: 'rs', v: {
-          flatshade: bit(0), depthClip: bit(1), clipHalfz: bit(2), discard: bit(3), lightTwoSide: bit(5), spriteUpperLeft: bit(6), pointQuad: bit(7),
-          cullFace: (t >>> 8) & 3, scissor: bit(14), frontCcw: bit(15), clampFragmentColor: bit(17), offsetTri: bit(20), stipple: bit(22),
-          pointSizePerVertex: bit(24), multisample: bit(25), pointSize: uif(p[2]), spriteCoordEnable: p[3], lineWidth: uif(p[5]),
-          offsetUnits: uif(p[6]), offsetScale: uif(p[7]),
-        } };
+        o = {
+          kind: 'rs',
+          v: {
+            flatshade: bit(0),
+            depthClip: bit(1),
+            clipHalfz: bit(2),
+            discard: bit(3),
+            lightTwoSide: bit(5),
+            spriteUpperLeft: bit(6),
+            pointQuad: bit(7),
+            cullFace: (t >>> 8) & 3,
+            scissor: bit(14),
+            frontCcw: bit(15),
+            clampFragmentColor: bit(17),
+            offsetTri: bit(20),
+            stipple: bit(22),
+            pointSizePerVertex: bit(24),
+            multisample: bit(25),
+            pointSize: uif(p[2]),
+            spriteCoordEnable: p[3],
+            lineWidth: uif(p[5]),
+            offsetUnits: uif(p[6]),
+            offsetScale: uif(p[7]),
+          },
+        };
         break;
       }
-      case 3: { // DSA
+      case 3: {
+        // DSA
         if (p.length !== 5) throw new Error('bad dsa');
         const t = p[1];
-        o = { kind: 'dsa', v: {
-          depth: { enabled: !!(t & 1), write: !!(t & 2), func: (t >>> 2) & 7 },
-          alpha: { enabled: !!((t >>> 8) & 1), func: (t >>> 9) & 7, ref: uif(p[4]) },
-          stencil: [p[2], p[3]].map((x) => ({ enabled: !!(x & 1), func: (x >>> 1) & 7, fail: (x >>> 4) & 7, zpass: (x >>> 7) & 7, zfail: (x >>> 10) & 7, valueMask: (x >>> 13) & 0xff, writeMask: (x >>> 21) & 0xff })),
-        } };
+        o = {
+          kind: 'dsa',
+          v: {
+            depth: { enabled: !!(t & 1), write: !!(t & 2), func: (t >>> 2) & 7 },
+            alpha: { enabled: !!((t >>> 8) & 1), func: (t >>> 9) & 7, ref: uif(p[4]) },
+            stencil: [p[2], p[3]].map((x) => ({
+              enabled: !!(x & 1),
+              func: (x >>> 1) & 7,
+              fail: (x >>> 4) & 7,
+              zpass: (x >>> 7) & 7,
+              zfail: (x >>> 10) & 7,
+              valueMask: (x >>> 13) & 0xff,
+              writeMask: (x >>> 21) & 0xff,
+            })),
+          },
+        };
         break;
       }
-      case 4: return this.createShader(s, p);
-      case 5: { // VERTEX_ELEMENTS: offset, divisor, vb index, format
+      case 4:
+        return this.createShader(s, p);
+      case 5: {
+        // VERTEX_ELEMENTS: offset, divisor, vb index, format
         if ((p.length - 1) % 4) throw new Error('bad vertex elements');
-        o = { kind: 've', v: Array.from({ length: (p.length - 1) / 4 }, (_, k) => ({ offset: p[1 + 4 * k], divisor: p[2 + 4 * k], vb: p[3 + 4 * k], format: p[4 + 4 * k] })) };
+        o = {
+          kind: 've',
+          v: Array.from({ length: (p.length - 1) / 4 }, (_, k) => ({
+            offset: p[1 + 4 * k],
+            divisor: p[2 + 4 * k],
+            vb: p[3 + 4 * k],
+            format: p[4 + 4 * k],
+          })),
+        };
         break;
       }
-      case 6: { // SAMPLER_VIEW: res, format | target << 24, layer/element range, level range, swizzle
+      case 6: {
+        // SAMPLER_VIEW: res, format | target << 24, layer/element range, level range, swizzle
         if (p.length !== 6) throw new Error('bad sampler view');
         const r = this.lookup(c, p[1]);
         if (!r) return;
         const sw = p[5];
-        this.debug?.(`view res ${p[1]} (${r.fmt?.name}) as ${FORMATS.get(p[2] & 0xffffff)?.name ?? p[2] & 0xffffff} swizzle ${[0, 3, 6, 9].map((b) => (sw >>> b) & 7).join('')}`);
-        o = { kind: 'view', v: { res: p[1], format: p[2] & 0xffffff, target: p[2] >>> 24, first: p[3] & 0xffff, last: p[3] >>> 16, firstLevel: p[4] & 0xff, lastLevel: (p[4] >>> 8) & 0xff, swizzle: [sw & 7, (sw >>> 3) & 7, (sw >>> 6) & 7, (sw >>> 9) & 7] } };
+        this.debug?.(
+          `view res ${p[1]} (${r.fmt?.name}) as ${FORMATS.get(p[2] & 0xffffff)?.name ?? p[2] & 0xffffff} swizzle ${[0, 3, 6, 9].map((b) => (sw >>> b) & 7).join('')}`,
+        );
+        o = {
+          kind: 'view',
+          v: {
+            res: p[1],
+            format: p[2] & 0xffffff,
+            target: p[2] >>> 24,
+            first: p[3] & 0xffff,
+            last: p[3] >>> 16,
+            firstLevel: p[4] & 0xff,
+            lastLevel: (p[4] >>> 8) & 0xff,
+            swizzle: [sw & 7, (sw >>> 3) & 7, (sw >>> 6) & 7, (sw >>> 9) & 7],
+          },
+        };
         break;
       }
-      case 7: { // SAMPLER_STATE
+      case 7: {
+        // SAMPLER_STATE
         if (p.length !== 9) throw new Error('bad sampler state');
         const t = p[1];
-        o = { kind: 'sampler', v: { wrap: [t & 7, (t >>> 3) & 7, (t >>> 6) & 7], minImg: (t >>> 9) & 1, minMip: (t >>> 11) & 3, magImg: (t >>> 13) & 1, compare: !!((t >>> 15) & 1), compareFunc: (t >>> 16) & 7, maxAniso: (t >>> 20) & 0x1f, lodBias: uif(p[2]), minLod: uif(p[3]), maxLod: uif(p[4]) } };
+        o = {
+          kind: 'sampler',
+          v: {
+            wrap: [t & 7, (t >>> 3) & 7, (t >>> 6) & 7],
+            minImg: (t >>> 9) & 1,
+            minMip: (t >>> 11) & 3,
+            magImg: (t >>> 13) & 1,
+            compare: !!((t >>> 15) & 1),
+            compareFunc: (t >>> 16) & 7,
+            maxAniso: (t >>> 20) & 0x1f,
+            lodBias: uif(p[2]),
+            minLod: uif(p[3]),
+            maxLod: uif(p[4]),
+          },
+        };
         break;
       }
-      case 8: case 11: { // SURFACE (and MSAA_SURFACE): res, format, level (or first element), layers
+      case 8:
+      case 11: {
+        // SURFACE (and MSAA_SURFACE): res, format, level (or first element), layers
         if (p.length < 5) throw new Error('bad surface');
         const r = this.lookup(c, p[1]);
         if (!r) return;
         this.debug?.(`surface res ${p[1]} (${r.fmt?.name}) as ${FORMATS.get(p[2])?.name ?? p[2]}`);
-        o = { kind: 'surface', v: { res: p[1], format: p[2], level: p[3], firstLayer: p[4] & 0xffff, lastLayer: p[4] >>> 16 } };
+        o = {
+          kind: 'surface',
+          v: { res: p[1], format: p[2], level: p[3], firstLayer: p[4] & 0xffff, lastLayer: p[4] >>> 16 },
+        };
         break;
       }
-      case 9: { // QUERY: type | index << 16, offset, res
+      case 9: {
+        // QUERY: type | index << 16, offset, res
         if (p.length !== 4) throw new Error('bad query');
         o = { kind: 'query', v: { type: p[1] & 0xffff, index: p[1] >>> 16, offset: p[2], res: p[3], result: 0 } };
         break;
       }
-      case 10: { // STREAMOUT_TARGET: res, offset, size
+      case 10: {
+        // STREAMOUT_TARGET: res, offset, size
         if (p.length !== 4) throw new Error('bad streamout target');
         o = { kind: 'so', v: { res: p[1], offset: p[2], size: p[3], filled: 0 } };
         break;
       }
-      default: throw new Error(`object type ${type}`);
+      default:
+        throw new Error(`object type ${type}`);
     }
     if (o) {
       const old = s.objects.get(h);
@@ -1374,7 +2083,20 @@ export class VirglRenderer {
       return;
     }
     let so: Shader['so'];
-    if (nso) so = { strides: [p[5], p[6], p[7], p[8]], outputs: Array.from({ length: nso }, (_, k) => { const t = p[9 + 2 * k]; return { reg: t & 0xff, start: (t >>> 8) & 3, comps: (t >>> 10) & 7, buffer: (t >>> 13) & 7, offset: (t >>> 16) & 0xffff }; }) };
+    if (nso)
+      so = {
+        strides: [p[5], p[6], p[7], p[8]],
+        outputs: Array.from({ length: nso }, (_, k) => {
+          const t = p[9 + 2 * k];
+          return {
+            reg: t & 0xff,
+            start: (t >>> 8) & 3,
+            comps: (t >>> 10) & 7,
+            buffer: (t >>> 13) & 7,
+            offset: (t >>> 16) & 0xffff,
+          };
+        }),
+      };
     const shader: Shader = { serial: ++this.serial, type, text: new TextDecoder().decode(chunk), expected: offlen, so };
     const old = s.objects.get(h);
     if (old) this.destroyObject(old, s);
@@ -1386,7 +2108,13 @@ export class VirglRenderer {
   private finishShader(sh: Shader) {
     const nul = sh.text.indexOf('\0');
     if (nul >= 0) sh.text = sh.text.slice(0, nul);
-    if (sh.so) this.debug?.(`shader ${sh.serial} so ${JSON.stringify(sh.so)}: ${sh.text.split('\n').filter((l) => /^DCL (IN|OUT)|^ *[0-9]+: /.test(l)).join(' | ')}`);
+    if (sh.so)
+      this.debug?.(
+        `shader ${sh.serial} so ${JSON.stringify(sh.so)}: ${sh.text
+          .split('\n')
+          .filter((l) => /^DCL (IN|OUT)|^ *[0-9]+: /.test(l))
+          .join(' | ')}`,
+      );
     try {
       sh.tgsi = parseTgsi(sh.text);
     } catch (e) {
@@ -1399,11 +2127,20 @@ export class VirglRenderer {
   private bindObject(s: Sub, type: number, p: Uint32Array) {
     const o = p[0] ? s.objects.get(p[0]) : undefined;
     switch (type) {
-      case 1: s.blend = o?.kind === 'blend' ? o.v : undefined; return;
-      case 2: s.rs = o?.kind === 'rs' ? o.v : undefined; return;
-      case 3: s.dsa = o?.kind === 'dsa' ? o.v : undefined; return;
-      case 5: s.ve = o?.kind === 've' ? o.v : undefined; return;
-      default: throw new Error(`bind of object type ${type}`);
+      case 1:
+        s.blend = o?.kind === 'blend' ? o.v : undefined;
+        return;
+      case 2:
+        s.rs = o?.kind === 'rs' ? o.v : undefined;
+        return;
+      case 3:
+        s.dsa = o?.kind === 'dsa' ? o.v : undefined;
+        return;
+      case 5:
+        s.ve = o?.kind === 've' ? o.v : undefined;
+        return;
+      default:
+        throw new Error(`bind of object type ${type}`);
     }
   }
 
@@ -1413,10 +2150,12 @@ export class VirglRenderer {
     // dst, level, usage, stride, layer stride, box, src (staging), src offset, flags (2: read from the host)
     if (p.length !== 14) throw new Error('bad COPY_TRANSFER3D');
     const readBack = !!(p[13] & 2);
-    const r = this.lookup(c, p[0]), staging = this.lookup(c, p[11]);
+    const r = this.lookup(c, p[0]),
+      staging = this.lookup(c, p[11]);
     if (!r || !staging) return;
     const box = { x: p[5], y: p[6], z: p[7], w: p[8], h: p[9], d: p[10] };
-    const [stride, layerStride] = this.levelStrides(r, p[1], p[3], p[4]), offset = p[12];
+    const [stride, layerStride] = this.levelStrides(r, p[1], p[3], p[4]),
+      offset = p[12];
     const n = r.target === PIPE_BUFFER ? box.w : boxBytes(r.fmt, box.w, box.h, box.d, stride, layerStride);
     if (offset + n > this.backingSize(staging)) return this.error(`COPY_TRANSFER3D past staging ${staging.id}`);
     const l = this.life.get(staging.id);
@@ -1424,7 +2163,10 @@ export class VirglRenderer {
     if (readBack) {
       const data = this.readback(r, p[1], box, stride, layerStride);
       if (!data) return this.error(`can't read back resource ${r.id} (format ${r.format})`);
-      if (r.target === PIPE_BUFFER) this.debug?.(`read back ${r.id} [${box.x}, +${box.w}) to staging ${staging.id} at ${offset}: ${[...data.subarray(0, 16)].join(',')}`);
+      if (r.target === PIPE_BUFFER)
+        this.debug?.(
+          `read back ${r.id} [${box.x}, +${box.w}) to staging ${staging.id} at ${offset}: ${[...data.subarray(0, 16)].join(',')}`,
+        );
       this.writeBacking(staging, offset, data);
     } else {
       const data = this.readBacking(staging, offset, n);
@@ -1434,13 +2176,23 @@ export class VirglRenderer {
 
   /** A level's size in texels: width, height and depth (or layers). */
   private levelSize(r: Res, level: number) {
-    return { w: Math.max(1, r.width >> level), h: Math.max(1, r.height >> level), d: r.target === 3 ? Math.max(1, r.depth >> level) : Math.max(1, r.arraySize) };
+    return {
+      w: Math.max(1, r.width >> level),
+      h: Math.max(1, r.height >> level),
+      d: r.target === 3 ? Math.max(1, r.depth >> level) : Math.max(1, r.arraySize),
+    };
   }
 
   /** Copies a compressed upload's layer (rows of blocks, packed) into the texture's copy of the level (`Res.blocks`). */
   private keepBlocks(r: Res, level: number, box: Box, layer: number, data: Uint8Array) {
-    const f = r.fmt!, b = f.block, { w, h, d } = this.levelSize(r, level);
-    const bw = Math.ceil(w / b), bh = Math.ceil(h / b), row = Math.ceil(box.w / b) * f.bpp, x0 = Math.floor(box.x / b), y0 = Math.floor(box.y / b);
+    const f = r.fmt!,
+      b = f.block,
+      { w, h, d } = this.levelSize(r, level);
+    const bw = Math.ceil(w / b),
+      bh = Math.ceil(h / b),
+      row = Math.ceil(box.w / b) * f.bpp,
+      x0 = Math.floor(box.x / b),
+      y0 = Math.floor(box.y / b);
     r.blocks ??= new Map();
     let lv = r.blocks.get(level);
     if (!lv) r.blocks.set(level, (lv = new Uint8Array(bw * bh * d * f.bpp)));
@@ -1452,23 +2204,29 @@ export class VirglRenderer {
 
   /** Copies an upload into the texture's CPU copy of the level (`Res.texels`). */
   private keepTexels(r: Res, level: number, box: Box, data: Uint8Array, stride: number, layerStride: number) {
-    const bpp = r.fmt!.bpp, { w, h, d } = this.levelSize(r, level);
+    const bpp = r.fmt!.bpp,
+      { w, h, d } = this.levelSize(r, level);
     r.texels ??= new Map();
     let lv = r.texels.get(level);
     if (!lv) r.texels.set(level, (lv = new Uint8Array(w * h * d * bpp)));
     const row = box.w * bpp;
-    for (let z = 0; z < box.d; z++) for (let y = 0; y < box.h; y++) {
-      const at = (((box.z + z) * h + box.y + y) * w + box.x) * bpp;
-      if (at + row <= lv.length) lv.set(data.subarray(z * layerStride + y * stride, z * layerStride + y * stride + row), at);
-    }
+    for (let z = 0; z < box.d; z++)
+      for (let y = 0; y < box.h; y++) {
+        const at = (((box.z + z) * h + box.y + y) * w + box.x) * bpp;
+        if (at + row <= lv.length)
+          lv.set(data.subarray(z * layerStride + y * stride, z * layerStride + y * stride + row), at);
+      }
   }
 
   private copyRegion(c: Ctx, p: Uint32Array) {
     // dst, dst level, dst x y z, src, src level, src box
     if (p.length !== 13) throw new Error('bad RESOURCE_COPY_REGION');
-    const dst = this.lookup(c, p[0]), src = this.lookup(c, p[5]);
+    const dst = this.lookup(c, p[0]),
+      src = this.lookup(c, p[5]);
     if (!dst || !src) return;
-    this.debug?.(`copy ctx ${c.id} ${p[5]}:${src.fmt?.name} level ${p[6]} box ${p.slice(7, 13).join(',')} -> ${p[0]}:${dst.fmt?.name} level ${p[1]} at ${p.slice(2, 5).join(',')}`);
+    this.debug?.(
+      `copy ctx ${c.id} ${p[5]}:${src.fmt?.name} level ${p[6]} box ${p.slice(7, 13).join(',')} -> ${p[0]}:${dst.fmt?.name} level ${p[1]} at ${p.slice(2, 5).join(',')}`,
+    );
     const gl = this.gl;
     const [dx, dy, dz] = [p[2], p[3], p[4]];
     const box = { x: p[7], y: p[8], z: p[9], w: p[10], h: p[11], d: p[12] };
@@ -1483,16 +2241,30 @@ export class VirglRenderer {
     // A source no framebuffer can read (a format WebGL can't render to): from its texels' CPU copy, uploaded again.
     const lv = !src.fmt?.write && src.texels?.get(p[6]);
     if (lv) {
-      const bpp = src.fmt!.bpp, { w, h } = this.levelSize(src, p[6]), row = box.w * bpp;
+      const bpp = src.fmt!.bpp,
+        { w, h } = this.levelSize(src, p[6]),
+        row = box.w * bpp;
       const out = new Uint8Array(row * box.h * box.d);
-      for (let z = 0; z < box.d; z++) for (let y = 0; y < box.h; y++) out.set(lv.subarray((((box.z + z) * h + box.y + y) * w + box.x) * bpp, (((box.z + z) * h + box.y + y) * w + box.x) * bpp + row), (z * box.h + y) * row);
+      for (let z = 0; z < box.d; z++)
+        for (let y = 0; y < box.h; y++)
+          out.set(
+            lv.subarray(
+              (((box.z + z) * h + box.y + y) * w + box.x) * bpp,
+              (((box.z + z) * h + box.y + y) * w + box.x) * bpp + row,
+            ),
+            (z * box.h + y) * row,
+          );
       this.upload(dst, p[1], { x: dx, y: dy, z: dz, w: box.w, h: box.h, d: box.d }, out, row, row * box.h);
       return;
     }
     // Textures: a raw copy of texels, layer by layer, through a blit (same storage formats: same bytes).
     for (let z = 0; z < box.d; z++) {
       const depth = src.fmt && (src.fmt.kind === 'depth' || src.fmt.kind === 'depthstencil');
-      const point = depth ? (src.fmt!.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT) : E.COLOR_ATTACHMENT0;
+      const point = depth
+        ? src.fmt!.kind === 'depth'
+          ? E.DEPTH_ATTACHMENT
+          : E.DEPTH_STENCIL_ATTACHMENT
+        : E.COLOR_ATTACHMENT0;
       if (depth) {
         // A depth source is read from its depth attachment (as a color one it can't be: Mesa copies its depth
         // textures' uploads this way, and shadow lookups sampled empty textures).
@@ -1501,17 +2273,29 @@ export class VirglRenderer {
         this.attachTo(E.READ_FRAMEBUFFER, point, src, p[6], box.z + z);
         if (gl.checkFramebufferStatus(E.READ_FRAMEBUFFER) !== E.FRAMEBUFFER_COMPLETE) {
           this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
-          return this.error('copy region: the depth source can\'t be read');
+          return this.error("copy region: the depth source can't be read");
         }
-      } else if (!this.bindForRead(src, p[6], box.z + z)) return this.error('copy region: the source can\'t be read');
+      } else if (!this.bindForRead(src, p[6], box.z + z)) return this.error("copy region: the source can't be read");
       gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-      for (let k = 1; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+      for (let k = 1; k < this.colorAttachments; k++)
+        this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, depth ? undefined : dst, p[1], dz + z);
       if (depth) this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, p[1], dz + z);
       gl.drawBuffers([depth ? E.NONE : E.COLOR_ATTACHMENT0]);
       gl.disable(E.SCISSOR_TEST);
-      gl.blitFramebuffer(box.x, box.y, box.x + box.w, box.y + box.h, dx, dy, dx + box.w, dy + box.h, depth ? E.DEPTH_BUFFER_BIT | (src.fmt!.kind === 'depthstencil' ? E.STENCIL_BUFFER_BIT : 0) : E.COLOR_BUFFER_BIT, E.NEAREST);
+      gl.blitFramebuffer(
+        box.x,
+        box.y,
+        box.x + box.w,
+        box.y + box.h,
+        dx,
+        dy,
+        dx + box.w,
+        dy + box.h,
+        depth ? E.DEPTH_BUFFER_BIT | (src.fmt!.kind === 'depthstencil' ? E.STENCIL_BUFFER_BIT : 0) : E.COLOR_BUFFER_BIT,
+        E.NEAREST,
+      );
       if (depth) this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
     }
     this.fbCache.clear();
@@ -1520,19 +2304,37 @@ export class VirglRenderer {
   private blit(c: Ctx, p: Uint32Array) {
     if (p.length !== 21) throw new Error('bad BLIT');
     const gl = this.gl;
-    const mask = p[0] & 0xff, filter = (p[0] >>> 8) & 3, scissor = !!((p[0] >>> 10) & 1);
+    const mask = p[0] & 0xff,
+      filter = (p[0] >>> 8) & 3,
+      scissor = !!((p[0] >>> 10) & 1);
     const dst = this.lookup(c, p[3]);
     let src = this.lookup(c, p[12]);
     if (!dst || !src) return;
     const db = { level: p[4], format: p[5], x: p[6] | 0, y: p[7] | 0, z: p[8], w: p[9] | 0, h: p[10] | 0, d: p[11] };
-    const sb = { level: p[13], format: p[14], x: p[15] | 0, y: p[16] | 0, z: p[17], w: p[18] | 0, h: p[19] | 0, d: p[20] };
-    const color = !!(mask & 0xf), zs = mask & 0x30;
-    const sf = FORMATS.get(sb.format) ?? src.fmt, df = FORMATS.get(db.format) ?? dst.fmt;
+    const sb = {
+      level: p[13],
+      format: p[14],
+      x: p[15] | 0,
+      y: p[16] | 0,
+      z: p[17],
+      w: p[18] | 0,
+      h: p[19] | 0,
+      d: p[20],
+    };
+    const color = !!(mask & 0xf),
+      zs = mask & 0x30;
+    const sf = FORMATS.get(sb.format) ?? src.fmt,
+      df = FORMATS.get(db.format) ?? dst.fmt;
     if (!sf || !df) return this.error('blit: unknown formats');
-    this.debug?.(`blit ctx ${c.id} mask ${mask.toString(16)} ${p[12]}:${sf.name}(${src.fmt?.name}) -> ${p[3]}:${df.name}(${dst.fmt?.name})`);
+    this.debug?.(
+      `blit ctx ${c.id} mask ${mask.toString(16)} ${p[12]}:${sf.name}(${src.fmt?.name}) -> ${p[3]}:${df.name}(${dst.fmt?.name})`,
+    );
     // Same stored layout (both RGBA-order bytes, or the same format): a framebuffer blit. Otherwise a draw that
     // samples the source through its format's swizzle and writes through the destination's.
-    const same = sf.internal === df.internal && sf.sample.join() === df.sample.join() && (sf.kind === 'uint' || sf.kind === 'sint' ? sf.kind === df.kind : true);
+    const same =
+      sf.internal === df.internal &&
+      sf.sample.join() === df.sample.join() &&
+      (sf.kind === 'uint' || sf.kind === 'sint' ? sf.kind === df.kind : true);
     // Integer formats of one signedness, stored in GL's channel order: GL's blit converts between them (and an
     // integer texture can't be sampled as a float one, which the draw below would need).
     const plain = (f: Format) => f.sample.every((q, k) => q === k || q === SW_0 || q === SW_1);
@@ -1540,9 +2342,20 @@ export class VirglRenderer {
     // A multisampled source resolves only onto the same rectangle and between equal formats (GL copies the bytes:
     // RGBA8 onto a B8G8R8A8 window swapped red and blue), and Mesa's blits onto a window are flipped: it is resolved
     // into a texture of its own format first, then blitted or drawn from there.
-    if (src.rb && src.samples > 1 && (sb.x !== db.x || sb.y !== db.y || sb.w !== db.w || sb.h !== db.h || (color && !same && !ints))) {
-      const tmp = this.resolve(src, color ? E.COLOR_BUFFER_BIT : (src.fmt?.kind === 'depth' ? E.DEPTH_BUFFER_BIT : E.DEPTH_BUFFER_BIT | E.STENCIL_BUFFER_BIT));
-      if (!tmp) return this.error('blit: the multisampled source can\'t be resolved');
+    if (
+      src.rb &&
+      src.samples > 1 &&
+      (sb.x !== db.x || sb.y !== db.y || sb.w !== db.w || sb.h !== db.h || (color && !same && !ints))
+    ) {
+      const tmp = this.resolve(
+        src,
+        color
+          ? E.COLOR_BUFFER_BIT
+          : src.fmt?.kind === 'depth'
+            ? E.DEPTH_BUFFER_BIT
+            : E.DEPTH_BUFFER_BIT | E.STENCIL_BUFFER_BIT,
+      );
+      if (!tmp) return this.error("blit: the multisampled source can't be resolved");
       src = tmp;
     }
     // The destination's layers the box covers (a guest's depth of 2^32 was a loop of as many blits: tests/virgl-fuzz.ts).
@@ -1551,18 +2364,35 @@ export class VirglRenderer {
       const sz = sb.z + Math.floor((z * sb.d) / Math.max(1, db.d));
       if (color) {
         if (same || ints || src.rb) {
-          if (!this.bindForRead(src, sb.level, sz)) return this.error('blit: the source can\'t be read');
+          if (!this.bindForRead(src, sb.level, sz)) return this.error("blit: the source can't be read");
           gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
           this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
           this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, db.z + z);
           gl.drawBuffers([E.COLOR_ATTACHMENT0]);
           this.blitScissor(scissor, p);
           gl.colorMask(true, true, true, true);
-          gl.blitFramebuffer(sb.x, sb.y, sb.x + sb.w, sb.y + sb.h, db.x, db.y, db.x + db.w, db.y + db.h, E.COLOR_BUFFER_BIT, filter ? E.LINEAR : E.NEAREST);
-        } else this.drawBlit(src, sf, sb, sz, dst, df, db, db.z + z, filter ? E.LINEAR : E.NEAREST, scissor ? p : undefined);
+          gl.blitFramebuffer(
+            sb.x,
+            sb.y,
+            sb.x + sb.w,
+            sb.y + sb.h,
+            db.x,
+            db.y,
+            db.x + db.w,
+            db.y + db.h,
+            E.COLOR_BUFFER_BIT,
+            filter ? E.LINEAR : E.NEAREST,
+          );
+        } else
+          this.drawBlit(src, sf, sb, sz, dst, df, db, db.z + z, filter ? E.LINEAR : E.NEAREST, scissor ? p : undefined);
       }
       if (zs && src.fmt && dst.fmt) {
-        const pt = (f: Format) => (f.kind === 'depth' ? E.DEPTH_ATTACHMENT : f.kind === 'stencil' ? E.STENCIL_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT);
+        const pt = (f: Format) =>
+          f.kind === 'depth'
+            ? E.DEPTH_ATTACHMENT
+            : f.kind === 'stencil'
+              ? E.STENCIL_ATTACHMENT
+              : E.DEPTH_STENCIL_ATTACHMENT;
         gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
         this.attachTo(E.READ_FRAMEBUFFER, E.COLOR_ATTACHMENT0, undefined, 0, 0);
         this.attachTo(E.READ_FRAMEBUFFER, pt(src.fmt), src, sb.level, sz);
@@ -1573,7 +2403,18 @@ export class VirglRenderer {
         this.blitScissor(scissor, p);
         gl.depthMask(true);
         gl.stencilMask(0xff);
-        gl.blitFramebuffer(sb.x, sb.y, sb.x + sb.w, sb.y + sb.h, db.x, db.y, db.x + db.w, db.y + db.h, (mask & 0x10 ? E.DEPTH_BUFFER_BIT : 0) | (mask & 0x20 ? E.STENCIL_BUFFER_BIT : 0), E.NEAREST);
+        gl.blitFramebuffer(
+          sb.x,
+          sb.y,
+          sb.x + sb.w,
+          sb.y + sb.h,
+          db.x,
+          db.y,
+          db.x + db.w,
+          db.y + db.h,
+          (mask & 0x10 ? E.DEPTH_BUFFER_BIT : 0) | (mask & 0x20 ? E.STENCIL_BUFFER_BIT : 0),
+          E.NEAREST,
+        );
         this.attachTo(E.READ_FRAMEBUFFER, pt(src.fmt), undefined, 0, 0);
         this.attachTo(E.DRAW_FRAMEBUFFER, pt(dst.fmt), undefined, 0, 0);
       }
@@ -1584,7 +2425,10 @@ export class VirglRenderer {
 
   private blitScissor(on: boolean, p: Uint32Array) {
     const gl = this.gl;
-    if (!on) { gl.disable(E.SCISSOR_TEST); return; }
+    if (!on) {
+      gl.disable(E.SCISSOR_TEST);
+      return;
+    }
     gl.enable(E.SCISSOR_TEST);
     const [x0, y0, x1, y1] = [p[1] & 0xffff, p[1] >>> 16, p[2] & 0xffff, p[2] >>> 16];
     gl.scissor(x0, y0, x1 - x0, y1 - y0);
@@ -1596,7 +2440,8 @@ export class VirglRenderer {
    * depth and stencil), kept for the next (one texture, remade when the format or size changes).
    */
   private resolve(src: Res, bits: number, own = false): Res | undefined {
-    const gl = this.gl, f = src.fmt;
+    const gl = this.gl,
+      f = src.fmt;
     if (!f) return undefined;
     let t = own ? src.msResolved : this.resolved;
     if (!(t?.fmt?.internal === f.internal && t.width === src.width && t.height === src.height)) {
@@ -1604,17 +2449,29 @@ export class VirglRenderer {
       const tex = gl.createTexture()!;
       gl.bindTexture(E.TEXTURE_2D, tex);
       gl.texStorage2D(E.TEXTURE_2D, 1, f.internal, src.width, src.height);
-      t = { ...src, rb: undefined, msResolved: undefined, samples: 0, lastLevel: 0, tex, glTarget: E.TEXTURE_2D, backing: null, refs: new Set() };
+      t = {
+        ...src,
+        rb: undefined,
+        msResolved: undefined,
+        samples: 0,
+        lastLevel: 0,
+        tex,
+        glTarget: E.TEXTURE_2D,
+        backing: null,
+        refs: new Set(),
+      };
       if (own) src.msResolved = t;
       else this.resolved = t;
     }
     const color = bits === E.COLOR_BUFFER_BIT;
     const point = color ? E.COLOR_ATTACHMENT0 : f.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
     gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
-    for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT]) this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
+    for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT])
+      this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
     this.attachTo(E.READ_FRAMEBUFFER, point, src, 0, 0);
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-    for (let k = 0; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    for (let k = 0; k < this.colorAttachments; k++)
+      this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, point, t, 0, 0);
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
@@ -1632,7 +2489,18 @@ export class VirglRenderer {
   }
 
   /** A blit as a draw: the source sampled through its format's swizzle, written through the destination's. */
-  private drawBlit(src: Res, sf: Format, sb: { level: number; x: number; y: number; w: number; h: number }, sz: number, dst: Res, df: Format, db: { level: number; x: number; y: number; w: number; h: number }, dz: number, filter: number, scissor?: Uint32Array) {
+  private drawBlit(
+    src: Res,
+    sf: Format,
+    sb: { level: number; x: number; y: number; w: number; h: number },
+    sz: number,
+    dst: Res,
+    df: Format,
+    db: { level: number; x: number; y: number; w: number; h: number },
+    dz: number,
+    filter: number,
+    scissor?: Uint32Array,
+  ) {
     const gl = this.gl;
     if (!src.tex || src.glTarget !== E.TEXTURE_2D) return this.error('blit: only 2D sources are converted');
     this.pauseQueries(); // a blit counts no samples (also a resource copy's or an upload's)
@@ -1640,7 +2508,8 @@ export class VirglRenderer {
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
     // Only the destination attached: the source may still be another of the last draw's targets, and sampling an
     // attached texture is a feedback loop WebGL refuses (dEQP-GLES3 fragment_out: the second of three outputs).
-    for (let k = 1; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    for (let k = 1; k < this.colorAttachments; k++)
+      this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, dz);
     gl.drawBuffers([E.COLOR_ATTACHMENT0]);
@@ -1652,15 +2521,24 @@ export class VirglRenderer {
     gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MIN_FILTER, filter);
     gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAG_FILTER, filter);
     gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_BASE_LEVEL, sb.level);
-    const w = src.width >> sb.level || 1, h = src.height >> sb.level || 1;
+    const w = src.width >> sb.level || 1,
+      h = src.height >> sb.level || 1;
     gl.uniform4f(b.loc.get('u_src')!, sb.x / w, sb.y / h, sb.w / w, sb.h / h);
     // u_swz: for each logical channel, the source's stored component or a constant; u_wr: per stored destination component, the logical channel.
-    gl.uniform4iv(b.loc.get('u_swz')!, sf.sample.map((s) => (s === SW_0 ? -1 : s === SW_1 ? -2 : s)));
+    gl.uniform4iv(
+      b.loc.get('u_swz')!,
+      sf.sample.map((s) => (s === SW_0 ? -1 : s === SW_1 ? -2 : s)),
+    );
     gl.uniform4iv(b.loc.get('u_wr')!, (df.write ?? [0, 1, 2, 3]).concat([3, 3, 3]).slice(0, 4));
     gl.viewport(db.x, db.y, db.w, db.h);
-    gl.disable(E.BLEND); gl.disable(E.DEPTH_TEST); gl.disable(E.STENCIL_TEST); gl.disable(E.CULL_FACE); gl.disable(E.RASTERIZER_DISCARD);
+    gl.disable(E.BLEND);
+    gl.disable(E.DEPTH_TEST);
+    gl.disable(E.STENCIL_TEST);
+    gl.disable(E.CULL_FACE);
+    gl.disable(E.RASTERIZER_DISCARD);
     gl.colorMask(true, true, true, true);
-    if (scissor) this.blitScissor(true, scissor); else gl.disable(E.SCISSOR_TEST);
+    if (scissor) this.blitScissor(true, scissor);
+    else gl.disable(E.SCISSOR_TEST);
     gl.drawArrays(E.TRIANGLE_STRIP, 0, 4);
     gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_BASE_LEVEL, 0);
   }
@@ -1676,12 +2554,13 @@ export class VirglRenderer {
   private drawZ32S8(r: Res, level: number, box: Box, data: Uint8Array, stride: number, layerStride: number) {
     const dv = new DataView(data.buffer, data.byteOffset, data.length);
     this.drawZs(r, level, box, (z, depth, sten) => {
-      for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) {
-        const o = z * layerStride + y * stride + x * 8;
-        if (o + 8 > data.length) continue;
-        depth[y * box.w + x] = dv.getFloat32(o, true);
-        sten[y * box.w + x] = data[o + 4];
-      }
+      for (let y = 0; y < box.h; y++)
+        for (let x = 0; x < box.w; x++) {
+          const o = z * layerStride + y * stride + x * 8;
+          if (o + 8 > data.length) continue;
+          depth[y * box.w + x] = dv.getFloat32(o, true);
+          sten[y * box.w + x] = data[o + 4];
+        }
     });
   }
 
@@ -1690,12 +2569,20 @@ export class VirglRenderer {
    * or a renderbuffer, multisampled too: every sample takes the value): `fill` gives layer `z`'s, a texel a value in
    * rows of `box.w`. Without `depth` (or `stencil`), that part is left as it is.
    */
-  private drawZs(r: Res, level: number, box: Box, fill: (z: number, depth: Float32Array, sten: Uint8Array) => void, parts = { depth: true, stencil: true }) {
+  private drawZs(
+    r: Res,
+    level: number,
+    box: Box,
+    fill: (z: number, depth: Float32Array, sten: Uint8Array) => void,
+    parts = { depth: true, stencil: true },
+  ) {
     const gl = this.gl;
     this.pauseQueries(); // an upload counts no samples
     if (!this.zsProg) {
-      const prog = this.link(`#version 300 es
-void main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1); gl_Position = vec4(p * 4.0 - 1.0, 0.0, 1.0); }`, `#version 300 es
+      const prog = this.link(
+        `#version 300 es
+void main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1); gl_Position = vec4(p * 4.0 - 1.0, 0.0, 1.0); }`,
+        `#version 300 es
 precision highp float;
 uniform highp sampler2D u_d;
 uniform highp usampler2D u_s;
@@ -1705,20 +2592,24 @@ void main() {
   ivec2 p = ivec2(gl_FragCoord.xy) - u_org;
   gl_FragDepth = texelFetch(u_d, p, 0).r;
   if (u_bit != 0u && (texelFetch(u_s, p, 0).r & u_bit) == 0u) discard;
-}`);
-      if (!prog) return this.error('the depth-stencil upload program doesn\'t compile');
+}`,
+      );
+      if (!prog) return this.error("the depth-stencil upload program doesn't compile");
       const loc = new Map<string, WebGLUniformLocation | null>();
       for (const n of ['u_d', 'u_s', 'u_org', 'u_bit']) loc.set(n, gl.getUniformLocation(prog, n));
       this.zsProg = { prog, loc };
       this.zsTex = [gl.createTexture()!, gl.createTexture()!];
     }
     const kind = r.fmt?.kind;
-    const point = kind === 'depth' ? E.DEPTH_ATTACHMENT : kind === 'stencil' ? E.STENCIL_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
-    const writeDepth = parts.depth && kind !== 'stencil', writeStencil = parts.stencil && kind !== 'depth';
+    const point =
+      kind === 'depth' ? E.DEPTH_ATTACHMENT : kind === 'stencil' ? E.STENCIL_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
+    const writeDepth = parts.depth && kind !== 'stencil',
+      writeStencil = parts.stencil && kind !== 'depth';
     const { prog, loc } = this.zsProg;
     const [dt, st] = this.zsTex!;
     const n = box.w * box.h;
-    const depth = new Float32Array(n), sten = new Uint8Array(n);
+    const depth = new Float32Array(n),
+      sten = new Uint8Array(n);
     gl.bindVertexArray(null);
     gl.useProgram(prog);
     gl.uniform1i(loc.get('u_d')!, 0);
@@ -1734,10 +2625,20 @@ void main() {
       gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAG_FILTER, E.NEAREST);
     }
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-    for (let k = 0; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    for (let k = 0; k < this.colorAttachments; k++)
+      this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     gl.drawBuffers([E.NONE]);
-    for (const e of [E.BLEND, E.CULL_FACE, E.SCISSOR_TEST, E.POLYGON_OFFSET_FILL, E.RASTERIZER_DISCARD, E.SAMPLE_COVERAGE, E.SAMPLE_ALPHA_TO_COVERAGE]) gl.disable(e);
+    for (const e of [
+      E.BLEND,
+      E.CULL_FACE,
+      E.SCISSOR_TEST,
+      E.POLYGON_OFFSET_FILL,
+      E.RASTERIZER_DISCARD,
+      E.SAMPLE_COVERAGE,
+      E.SAMPLE_ALPHA_TO_COVERAGE,
+    ])
+      gl.disable(e);
     gl.viewport(box.x, box.y, box.w, box.h);
     gl.enable(E.DEPTH_TEST);
     gl.depthFunc(E.ALWAYS);
@@ -1765,12 +2666,13 @@ void main() {
       gl.uniform1ui(loc.get('u_bit')!, 0);
       gl.drawArrays(E.TRIANGLES, 0, 3);
       gl.depthMask(false);
-      if (writeStencil) for (let b = 0; b < 8; b++) {
-        gl.stencilFuncSeparate(E.FRONT_AND_BACK, E.ALWAYS, 0xff, 0xff);
-        gl.stencilMaskSeparate(E.FRONT_AND_BACK, 1 << b);
-        gl.uniform1ui(loc.get('u_bit')!, 1 << b);
-        gl.drawArrays(E.TRIANGLES, 0, 3);
-      }
+      if (writeStencil)
+        for (let b = 0; b < 8; b++) {
+          gl.stencilFuncSeparate(E.FRONT_AND_BACK, E.ALWAYS, 0xff, 0xff);
+          gl.stencilMaskSeparate(E.FRONT_AND_BACK, 1 << b);
+          gl.uniform1ui(loc.get('u_bit')!, 1 << b);
+          gl.drawArrays(E.TRIANGLES, 0, 3);
+        }
     }
     this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
     gl.depthMask(true);
@@ -1797,7 +2699,7 @@ void main() {
   o = vec4(u_wr.x < 0 ? 1.0 : l[u_wr.x], u_wr.y < 0 ? 1.0 : l[u_wr.y], u_wr.z < 0 ? 1.0 : l[u_wr.z], u_wr.w < 0 ? 1.0 : l[u_wr.w]);
 }`;
     const prog = this.link(vs, fs);
-    if (!prog) throw new Error('the blit program doesn\'t compile');
+    if (!prog) throw new Error("the blit program doesn't compile");
     const loc = new Map<string, WebGLUniformLocation | null>();
     for (const n of ['u_src', 'u_swz', 'u_wr', 's']) loc.set(n, this.gl.getUniformLocation(prog, n));
     this.gl.useProgram(prog);
@@ -1807,8 +2709,14 @@ void main() {
 
   private link(vs: string, fs: string, tf?: ProgramLayout['tf']): WebGLProgram | null {
     const gl = this.gl;
-    const compile = (type: number, src: string) => { const sh = gl.createShader(type)!; gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
-    const v = compile(E.VERTEX_SHADER, vs), f = compile(E.FRAGMENT_SHADER, fs);
+    const compile = (type: number, src: string) => {
+      const sh = gl.createShader(type)!;
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      return sh;
+    };
+    const v = compile(E.VERTEX_SHADER, vs),
+      f = compile(E.FRAGMENT_SHADER, fs);
     const prog = gl.createProgram()!;
     gl.attachShader(prog, v);
     gl.attachShader(prog, f);
@@ -1816,12 +2724,19 @@ void main() {
     gl.linkProgram(prog);
     const ok = gl.getProgramParameter(prog, E.LINK_STATUS);
     if (!ok) {
-      const which = !gl.getShaderParameter(v, E.COMPILE_STATUS) ? `vertex: ${gl.getShaderInfoLog(v)}\n${vs}` : !gl.getShaderParameter(f, E.COMPILE_STATUS) ? `fragment: ${gl.getShaderInfoLog(f)}\n${fs}` : `link: ${gl.getProgramInfoLog(prog)}`;
+      const which = !gl.getShaderParameter(v, E.COMPILE_STATUS)
+        ? `vertex: ${gl.getShaderInfoLog(v)}\n${vs}`
+        : !gl.getShaderParameter(f, E.COMPILE_STATUS)
+          ? `fragment: ${gl.getShaderInfoLog(f)}\n${fs}`
+          : `link: ${gl.getProgramInfoLog(prog)}`;
       this.error(`program: ${which}`);
     }
     gl.deleteShader(v);
     gl.deleteShader(f);
-    if (!ok) { gl.deleteProgram(prog); return null; }
+    if (!ok) {
+      gl.deleteProgram(prog);
+      return null;
+    }
     return prog;
   }
 
@@ -1845,7 +2760,8 @@ void main() {
   private bindFramebuffer(c: Ctx, s: Sub): { width: number; height: number } | null {
     const gl = this.gl;
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-    let width = 0, height = 0;
+    let width = 0,
+      height = 0;
     const bufs: number[] = [];
     for (let k = 0; k < this.colorAttachments; k++) {
       const sf = s.fb.cbufs[k];
@@ -1859,7 +2775,12 @@ void main() {
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.STENCIL_ATTACHMENT, undefined, 0, 0);
     if (zs?.fmt) {
-      const point = zs.fmt.kind === 'depth' ? E.DEPTH_ATTACHMENT : zs.fmt.kind === 'stencil' ? E.STENCIL_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
+      const point =
+        zs.fmt.kind === 'depth'
+          ? E.DEPTH_ATTACHMENT
+          : zs.fmt.kind === 'stencil'
+            ? E.STENCIL_ATTACHMENT
+            : E.DEPTH_STENCIL_ATTACHMENT;
       this.attachTo(E.DRAW_FRAMEBUFFER, point, zs, s.fb.zs!.level, s.fb.zs!.firstLayer);
       if (!width) [width, height] = [Math.max(1, zs.width >> s.fb.zs!.level), Math.max(1, zs.height >> s.fb.zs!.level)];
     }
@@ -1876,7 +2797,9 @@ void main() {
     const fb = this.bindFramebuffer(c, s);
     if (!fb) return;
     const buffers = p[0];
-    this.debug?.(`clear ctx ${c.id} buffers ${buffers.toString(16)} [${s.fb.cbufs.map((cb) => cb ? `${cb.res}:${FORMATS.get(cb.format)?.name}` : '-').join(' ')}] color ${[1, 2, 3, 4].map((k) => uif(p[k]).toFixed(2)).join(',')}`);
+    this.debug?.(
+      `clear ctx ${c.id} buffers ${buffers.toString(16)} [${s.fb.cbufs.map((cb) => (cb ? `${cb.res}:${FORMATS.get(cb.format)?.name}` : '-')).join(' ')}] color ${[1, 2, 3, 4].map((k) => uif(p[k]).toFixed(2)).join(',')}`,
+    );
     // Gallium's clear ignores the scissor and the write masks.
     gl.disable(E.SCISSOR_TEST);
     gl.disable(E.RASTERIZER_DISCARD);
@@ -1891,7 +2814,8 @@ void main() {
       const f = (sf && FORMATS.get(sf.format)) ?? r?.fmt;
       if (!f) continue;
       const write = f.write ?? [0, 1, 2, 3];
-      const pick = (arr: ArrayLike<number>, one: number) => [0, 1, 2, 3].map((q) => (write[q] === undefined ? 0 : write[q] < 0 ? one : arr[write[q]]));
+      const pick = (arr: ArrayLike<number>, one: number) =>
+        [0, 1, 2, 3].map((q) => (write[q] === undefined ? 0 : write[q] < 0 ? one : arr[write[q]]));
       if (f.kind === 'uint') gl.clearBufferuiv(E.COLOR, k, pick(bits, 1));
       else if (f.kind === 'sint') gl.clearBufferiv(E.COLOR, k, pick(new Int32Array(bits.buffer), 1));
       else gl.clearBufferfv(E.COLOR, k, pick(new Float32Array(bits.buffer), 1));
@@ -1899,7 +2823,8 @@ void main() {
     const depth = new Float64Array(new Uint32Array([p[5], p[6]]).buffer)[0];
     const zs = s.fb.zs && this.resources.get(s.fb.zs.res)?.fmt;
     if (zs && buffers & 3) {
-      const hasD = zs.kind !== 'stencil', hasS = zs.kind === 'stencil' || zs.kind === 'depthstencil';
+      const hasD = zs.kind !== 'stencil',
+        hasS = zs.kind === 'stencil' || zs.kind === 'depthstencil';
       if (buffers & 1 && buffers & 2 && hasD && hasS) gl.clearBufferfi(E.DEPTH_STENCIL, 0, depth, p[7]);
       else {
         if (buffers & 1 && hasD) gl.clearBufferfv(E.DEPTH, 0, [depth]);
@@ -1927,7 +2852,8 @@ void main() {
     const f = FORMATS.get(sf.format);
     const write = f?.write ?? [0, 1, 2, 3];
     const bits = new Uint32Array([p[2], p[3], p[4], p[5]]);
-    const pick = (arr: ArrayLike<number>) => [0, 1, 2, 3].map((q) => (write[q] === undefined ? 0 : write[q] < 0 ? 1 : arr[write[q]]));
+    const pick = (arr: ArrayLike<number>) =>
+      [0, 1, 2, 3].map((q) => (write[q] === undefined ? 0 : write[q] < 0 ? 1 : arr[write[q]]));
     if (f?.kind === 'uint') gl.clearBufferuiv(E.COLOR, 0, pick(bits));
     else if (f?.kind === 'sint') gl.clearBufferiv(E.COLOR, 0, pick(new Int32Array(bits.buffer)));
     else gl.clearBufferfv(E.COLOR, 0, pick(new Float32Array(bits.buffer)));
@@ -1945,9 +2871,22 @@ void main() {
     // output reads); a depth-stencil texture sampled reads depth in R.
     const fsw = f.kind === 'depth' || f.kind === 'depthstencil' ? [0, SW_0, SW_0, SW_1] : f.sample;
     const swizzle = v.swizzle.map((q) => (q < 4 ? fsw[q] : q === 4 ? SW_0 : SW_1));
-    const gl = r.glTarget === E.TEXTURE_3D ? '3D' : r.glTarget === E.TEXTURE_CUBE_MAP ? 'CUBE' : r.glTarget === E.TEXTURE_2D_ARRAY ? '2D_ARRAY' : '2D';
+    const gl =
+      r.glTarget === E.TEXTURE_3D
+        ? '3D'
+        : r.glTarget === E.TEXTURE_CUBE_MAP
+          ? 'CUBE'
+          : r.glTarget === E.TEXTURE_2D_ARRAY
+            ? '2D_ARRAY'
+            : '2D';
     void c;
-    return { type, swizzle, gl, rect: r.target === PIPE_TEXTURE_RECT, oneD: r.target === PIPE_TEXTURE_1D || r.target === PIPE_TEXTURE_1D_ARRAY };
+    return {
+      type,
+      swizzle,
+      gl,
+      rect: r.target === PIPE_TEXTURE_RECT,
+      oneD: r.target === PIPE_TEXTURE_1D || r.target === PIPE_TEXTURE_1D_ARRAY,
+    };
   }
 
   /** Color buffer `k`'s blend target: its own with independent blending (where the browser backs it), else the first's. */
@@ -1977,15 +2916,33 @@ void main() {
     const t0 = performance.now();
     const prog = this.link(layout.vs, layout.fs, layout.tf);
     this.stats.compileMs += performance.now() - t0; // translating aside: the browser's compile and link (synchronous here)
-    if (!prog) { this.programs.set(id, null); return null; }
+    if (!prog) {
+      this.programs.set(id, null);
+      return null;
+    }
     this.stats.programs++;
     const loc = new Map<string, WebGLUniformLocation | null>();
-    const names = ['vc0', 'fc0', 'u_adjy', 'u_adjz', 'u_fbh', 'u_alpharef', 'u_psize', 'u_stipple', 'u_blendc', ...layout.samplers.vs.map((n) => `vs${n}`), ...layout.samplers.fs.map((n) => `fs${n}`)];
+    const names = [
+      'vc0',
+      'fc0',
+      'u_adjy',
+      'u_adjz',
+      'u_fbh',
+      'u_alpharef',
+      'u_psize',
+      'u_stipple',
+      'u_blendc',
+      ...layout.samplers.vs.map((n) => `vs${n}`),
+      ...layout.samplers.fs.map((n) => `fs${n}`),
+    ];
     for (const n of names) loc.set(n, gl.getUniformLocation(prog, n));
     gl.useProgram(prog);
     for (const n of layout.samplers.fs) gl.uniform1i(loc.get(`fs${n}`)!, samplerUnit('fs', n, VS_UNIT_BASE));
     for (const n of layout.samplers.vs) gl.uniform1i(loc.get(`vs${n}`)!, samplerUnit('vs', n, VS_UNIT_BASE));
-    for (const [st, ubos] of [['vs', layout.ubos.vs], ['fs', layout.ubos.fs]] as const) {
+    for (const [st, ubos] of [
+      ['vs', layout.ubos.vs],
+      ['fs', layout.ubos.fs],
+    ] as const) {
       for (const k of ubos.keys()) {
         const idx = gl.getUniformBlockIndex(prog, `${st[0].toUpperCase()}B${k}`);
         if (idx !== 0xffffffff) gl.uniformBlockBinding(prog, idx, uboBinding(st, k));
@@ -2013,16 +2970,17 @@ void main() {
     if (!targets.size) return undefined;
     // The levels sampled of each target texture, over every view of it that takes in a level drawn into.
     const sampled = new Map<Res, [number, number]>();
-    for (const st of ['vs', 'fs'] as const) s.views[st].forEach((v, n) => {
-      const r = v && this.resources.get(v.res);
-      const levels = r && targets.get(r);
-      if (!levels) return;
-      const first = v!.firstLevel;
-      const last = s.samplers[st][n]?.minMip === 2 ? first : Math.max(first, Math.min(v!.lastLevel, r!.lastLevel));
-      if (!levels.some((l) => l >= first && l <= last)) return;
-      const had = sampled.get(r!);
-      sampled.set(r!, had ? [Math.min(had[0], first), Math.max(had[1], last)] : [first, last]);
-    });
+    for (const st of ['vs', 'fs'] as const)
+      s.views[st].forEach((v, n) => {
+        const r = v && this.resources.get(v.res);
+        const levels = r && targets.get(r);
+        if (!levels) return;
+        const first = v!.firstLevel;
+        const last = s.samplers[st][n]?.minMip === 2 ? first : Math.max(first, Math.min(v!.lastLevel, r!.lastLevel));
+        if (!levels.some((l) => l >= first && l <= last)) return;
+        const had = sampled.get(r!);
+        sampled.set(r!, had ? [Math.min(had[0], first), Math.max(had[1], last)] : [first, last]);
+      });
     if (!sampled.size) return undefined;
     const copies = new Map<Res, Res>();
     for (const [r, [first, last]] of sampled) {
@@ -2034,7 +2992,8 @@ void main() {
 
   /** `src`'s levels `first`..`last`, every layer, copied into its feedback texture (same target, format and size). */
   private copyLevels(src: Res, first: number, last: number): Res | undefined {
-    const gl = this.gl, f = src.fmt;
+    const gl = this.gl,
+      f = src.fmt;
     if (!f || !src.tex) return undefined;
     this.pauseQueries(); // a copy counts no samples
     let t = src.feedback;
@@ -2043,19 +3002,34 @@ void main() {
       gl.bindTexture(src.glTarget!, tex);
       const levels = src.lastLevel + 1;
       if (src.glTarget === E.TEXTURE_3D || src.glTarget === E.TEXTURE_2D_ARRAY) {
-        gl.texStorage3D(src.glTarget, levels, f.internal, src.width, src.target === PIPE_TEXTURE_1D_ARRAY ? 1 : src.height, src.glTarget === E.TEXTURE_3D ? src.depth : src.arraySize);
-      } else gl.texStorage2D(src.glTarget!, levels, f.internal, src.width, src.target === PIPE_TEXTURE_1D ? 1 : src.height);
+        gl.texStorage3D(
+          src.glTarget,
+          levels,
+          f.internal,
+          src.width,
+          src.target === PIPE_TEXTURE_1D_ARRAY ? 1 : src.height,
+          src.glTarget === E.TEXTURE_3D ? src.depth : src.arraySize,
+        );
+      } else
+        gl.texStorage2D(src.glTarget!, levels, f.internal, src.width, src.target === PIPE_TEXTURE_1D ? 1 : src.height);
       gl.texParameteri(src.glTarget!, E.TEXTURE_MAX_LEVEL, src.lastLevel);
       t = { ...src, msResolved: undefined, feedback: undefined, tex, backing: null, refs: new Set() };
       src.feedback = t;
     }
-    const bits = f.kind === 'depth' ? E.DEPTH_BUFFER_BIT : f.kind === 'depthstencil' ? E.DEPTH_BUFFER_BIT | E.STENCIL_BUFFER_BIT : E.COLOR_BUFFER_BIT;
+    const bits =
+      f.kind === 'depth'
+        ? E.DEPTH_BUFFER_BIT
+        : f.kind === 'depthstencil'
+          ? E.DEPTH_BUFFER_BIT | E.STENCIL_BUFFER_BIT
+          : E.COLOR_BUFFER_BIT;
     const color = bits === E.COLOR_BUFFER_BIT;
     const point = color ? E.COLOR_ATTACHMENT0 : f.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
     gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
-    for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT]) this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
+    for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT])
+      this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-    for (let k = 0; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    for (let k = 0; k < this.colorAttachments; k++)
+      this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
     gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
@@ -2065,7 +3039,14 @@ void main() {
     gl.stencilMask(0xff);
     for (let level = first; level <= last; level++) {
       const { w, h } = this.levelSize(src, level);
-      const layers = src.glTarget === E.TEXTURE_CUBE_MAP ? 6 : src.glTarget === E.TEXTURE_3D ? Math.max(1, src.depth >> level) : src.glTarget === E.TEXTURE_2D_ARRAY ? src.arraySize : 1;
+      const layers =
+        src.glTarget === E.TEXTURE_CUBE_MAP
+          ? 6
+          : src.glTarget === E.TEXTURE_3D
+            ? Math.max(1, src.depth >> level)
+            : src.glTarget === E.TEXTURE_2D_ARRAY
+              ? src.arraySize
+              : 1;
       for (let z = 0; z < layers; z++) {
         this.attachTo(E.READ_FRAMEBUFFER, point, src, level, z);
         this.attachTo(E.DRAW_FRAMEBUFFER, point, t, level, z);
@@ -2082,20 +3063,36 @@ void main() {
 
   private draw(c: Ctx, p: Uint32Array) {
     if (p.length !== 12 && p.length !== 14 && p.length !== 20) throw new Error('bad DRAW_VBO');
-    if (p.length === 20 && p[14]) return this.error('indirect draws aren\'t supported');
+    if (p.length === 20 && p[14]) return this.error("indirect draws aren't supported");
     const gl = this.gl;
     const s = c.sub;
-    const [start, count, mode, indexed, instances, indexBias, , restart, restartIndex] = [p[0], p[1], p[2], p[3], p[4], p[5] | 0, p[6], p[7], p[8]];
+    const [start, count, mode, indexed, instances, indexBias, , restart, restartIndex] = [
+      p[0],
+      p[1],
+      p[2],
+      p[3],
+      p[4],
+      p[5] | 0,
+      p[6],
+      p[7],
+      p[8],
+    ];
     if (mode >= PRIM.length) return this.error(`primitive ${mode} isn't supported`);
     const { vs, fs } = s.shaders;
     if (!vs?.tgsi || !fs?.tgsi || !s.ve) return;
     // Stream output (transform feedback): what the vertex shader writes, captured into the bound targets.
     const so = vs.so && s.so.targets.some((t) => t) ? this.soPlan(vs.so, s.so.targets) : undefined;
     // Multisampled textures sampled are resolved first (it rebinds the framebuffers).
-    for (const st of ['vs', 'fs'] as const) for (const v of s.views[st]) {
-      const r = v && this.resources.get(v.res);
-      if (r?.rb && r.samples > 1 && r.fmt) this.resolve(r, r.fmt.kind === 'depth' || r.fmt.kind === 'depthstencil' ? E.DEPTH_BUFFER_BIT : E.COLOR_BUFFER_BIT, true);
-    }
+    for (const st of ['vs', 'fs'] as const)
+      for (const v of s.views[st]) {
+        const r = v && this.resources.get(v.res);
+        if (r?.rb && r.samples > 1 && r.fmt)
+          this.resolve(
+            r,
+            r.fmt.kind === 'depth' || r.fmt.kind === 'depthstencil' ? E.DEPTH_BUFFER_BIT : E.COLOR_BUFFER_BIT,
+            true,
+          );
+      }
     // Textures the draw also draws into are sampled from copies (it rebinds the framebuffers too).
     const copies = this.feedbackCopies(c, s);
     let fb = this.bindFramebuffer(c, s);
@@ -2104,10 +3101,13 @@ void main() {
     if (captureOnly) fb = this.bindNullFramebuffer();
     if (!fb) {
       // Nothing to draw on and nothing captured: only a primitives-generated query sees the draw.
-      for (const [q, ctx] of this.counting) if (ctx === c.id && q.type === Q_GENERATED) q.result += primitives(mode, count) * Math.max(1, instances);
+      for (const [q, ctx] of this.counting)
+        if (ctx === c.id && q.type === Q_GENERATED) q.result += primitives(mode, count) * Math.max(1, instances);
       return;
     }
-    const rs = s.rs, dsa = s.dsa, blend = s.blend;
+    const rs = s.rs,
+      dsa = s.dsa,
+      blend = s.blend;
     // The program for this state.
     const key: ProgramKey = {
       attribs: s.ve.map((e) => VERTEX_FORMATS.get(e.format)?.int ?? 'f'),
@@ -2117,13 +3117,26 @@ void main() {
         const f = FORMATS.get(sf.format) ?? this.resources.get(sf.res)?.fmt;
         if (!f) return undefined;
         const type = f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f';
-        return { type, write: [...(f.write ?? [0, 1, 2, 3])], blendSrc: type === 'f' ? foldedBlend(this.blendTarget(blend, k)) : undefined };
+        return {
+          type,
+          write: [...(f.write ?? [0, 1, 2, 3])],
+          blendSrc: type === 'f' ? foldedBlend(this.blendTarget(blend, k)) : undefined,
+        };
       }),
       alphaFunc: dsa?.alpha.enabled ? dsa.alpha.func : undefined,
-      flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple,
-      points: mode === 0, pointSizePerVertex: rs?.pointSizePerVertex,
-      spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined, spriteUpperLeft: rs?.spriteUpperLeft,
-      ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) } : vs.so ? this.soKey(vs.so) : {}),
+      flatshade: rs?.flatshade,
+      twoSide: rs?.lightTwoSide,
+      clampColor: rs?.clampFragmentColor,
+      stipple: rs?.stipple,
+      points: mode === 0,
+      pointSizePerVertex: rs?.pointSizePerVertex,
+      spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined,
+      spriteUpperLeft: rs?.spriteUpperLeft,
+      ...(so
+        ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) }
+        : vs.so
+          ? this.soKey(vs.so)
+          : {}),
     };
     const prog = this.program(vs, fs, key);
     if (!prog) return;
@@ -2133,12 +3146,19 @@ void main() {
       const n = prog.layout.consts[st];
       if (!n) continue;
       let data = s.consts[st];
-      if (data.length < n * 4) { const d = new Uint32Array(n * 4); d.set(data); data = d; }
+      if (data.length < n * 4) {
+        const d = new Uint32Array(n * 4);
+        d.set(data);
+        data = d;
+      }
       gl.uniform4uiv(prog.loc.get(`${st[0]}c0`)!, data, 0, n * 4);
     }
     const vp = s.viewport;
     const negative = vp.scale[1] < 0;
-    const set1 = (n: string, v: number) => { const l = prog.loc.get(n); if (l) gl.uniform1f(l, v); };
+    const set1 = (n: string, v: number) => {
+      const l = prog.loc.get(n);
+      if (l) gl.uniform1f(l, v);
+    };
     set1('u_adjy', negative ? -1 : 1);
     // Clip control's 0-to-1 depth (the rasterizer's clip_halfz, CLIP_HALFZ in the caps), where the browser has it.
     const halfz = !!rs?.clipHalfz && !!this.clipControl;
@@ -2173,7 +3193,11 @@ void main() {
         }
         gl.bindTexture(r.glTarget!, r.tex);
         gl.texParameteri(r.glTarget!, E.TEXTURE_BASE_LEVEL, v!.firstLevel);
-        gl.texParameteri(r.glTarget!, E.TEXTURE_MAX_LEVEL, Math.max(v!.firstLevel, Math.min(v!.lastLevel, r.lastLevel)));
+        gl.texParameteri(
+          r.glTarget!,
+          E.TEXTURE_MAX_LEVEL,
+          Math.max(v!.firstLevel, Math.min(v!.lastLevel, r.lastLevel)),
+        );
         gl.bindSampler(unit, this.glSampler(s.samplers[st][n], r));
       }
     }
@@ -2184,7 +3208,8 @@ void main() {
         const r = u && this.resources.get(u.res);
         const need = prog.layout.ubos[st].get(k)! * 16;
         // Without a buffer (or a long enough one) nothing is bound: another context's would be read.
-        if (r?.buf && u!.offset + need <= r.width) gl.bindBufferRange(E.UNIFORM_BUFFER, uboBinding(st, k), r.buf, u!.offset, need);
+        if (r?.buf && u!.offset + need <= r.width)
+          gl.bindBufferRange(E.UNIFORM_BUFFER, uboBinding(st, k), r.buf, u!.offset, need);
         else {
           gl.bindBufferBase(E.UNIFORM_BUFFER, uboBinding(st, k), null);
           if (r?.buf) this.error(`uniform buffer ${k} is shorter than the shader's block`);
@@ -2192,29 +3217,37 @@ void main() {
       }
     }
     // Rasterizer, viewport, scissor.
-    const fbw = fb.width, fbh = fb.height;
-    const x = vp.translate[0] - vp.scale[0], w = vp.scale[0] * 2;
+    const fbw = fb.width,
+      fbh = fb.height;
+    const x = vp.translate[0] - vp.scale[0],
+      w = vp.scale[0] * 2;
     const h = Math.abs(vp.scale[1]) * 2;
     const y = negative ? vp.translate[1] - Math.abs(vp.scale[1]) : vp.translate[1] - vp.scale[1];
     gl.viewport(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
     // WebGL refuses a depth range whose near is above its far (GLES allows it): such a range goes the right way round,
     // with z negated in the vertex shader (u_adjz), which lands every depth where the inverted range would.
-    const near = halfz ? vp.translate[2] : vp.translate[2] - vp.scale[2], far = vp.translate[2] + vp.scale[2];
+    const near = halfz ? vp.translate[2] : vp.translate[2] - vp.scale[2],
+      far = vp.translate[2] + vp.scale[2];
     const clamp01 = (v: number) => Math.min(Math.max(v, 0), 1);
     gl.depthRange(clamp01(Math.min(near, far)), clamp01(Math.max(near, far)));
     if (rs?.scissor) {
       gl.enable(E.SCISSOR_TEST);
       gl.scissor(s.scissor.minx, s.scissor.miny, s.scissor.maxx - s.scissor.minx, s.scissor.maxy - s.scissor.miny);
     } else gl.disable(E.SCISSOR_TEST);
-    void fbw; void fbh;
+    void fbw;
+    void fbh;
     if (rs && rs.cullFace) {
       gl.enable(E.CULL_FACE);
       gl.cullFace([0, E.FRONT, E.BACK, E.FRONT_AND_BACK][rs.cullFace]);
     } else gl.disable(E.CULL_FACE);
     // Gallium's front face is in its y-down window space: the opposite winding of GL's for the same rows.
     gl.frontFace(rs?.frontCcw ? E.CW : E.CCW);
-    if (rs?.offsetTri) { gl.enable(E.POLYGON_OFFSET_FILL); gl.polygonOffset(rs.offsetScale, rs.offsetUnits); } else gl.disable(E.POLYGON_OFFSET_FILL);
-    if (rs?.discard || captureOnly) gl.enable(E.RASTERIZER_DISCARD); else gl.disable(E.RASTERIZER_DISCARD);
+    if (rs?.offsetTri) {
+      gl.enable(E.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(rs.offsetScale, rs.offsetUnits);
+    } else gl.disable(E.POLYGON_OFFSET_FILL);
+    if (rs?.discard || captureOnly) gl.enable(E.RASTERIZER_DISCARD);
+    else gl.disable(E.RASTERIZER_DISCARD);
     gl.disable(E.DITHER);
     // Blend and color mask, through each buffer's stored layout: per buffer where the browser can
     // (OES_draw_buffers_indexed, which backs the caps' independent blending and leaves an integer buffer beside a float
@@ -2237,10 +3270,22 @@ void main() {
         // A constant color and a constant alpha together, which WebGL refuses: the source RGB factor is the shader's
         // (`ColorKey.blendSrc`); on alpha, constant color is constant alpha.
         const asAlpha = (g: number) => (g === 7 ? 8 : g === 0x17 ? 0x18 : g);
-        const func = [cb.blendSrc ? E.ONE : fac(rt.rgbSrc), fac(rt.rgbDst), fac(asAlpha(rt.aSrc)), fac(asAlpha(rt.aDst))] as const;
+        const func = [
+          cb.blendSrc ? E.ONE : fac(rt.rgbSrc),
+          fac(rt.rgbDst),
+          fac(asAlpha(rt.aSrc)),
+          fac(asAlpha(rt.aDst)),
+        ] as const;
         const eq = [BLEND_FUNC[rt.rgbFunc] ?? E.FUNC_ADD, BLEND_FUNC[rt.aFunc] ?? E.FUNC_ADD] as const;
-        if (ix) { ix.enableiOES(E.BLEND, k); ix.blendFuncSeparateiOES(k, ...func); ix.blendEquationSeparateiOES(k, ...eq); }
-        else { gl.enable(E.BLEND); gl.blendFuncSeparate(...func); gl.blendEquationSeparate(...eq); }
+        if (ix) {
+          ix.enableiOES(E.BLEND, k);
+          ix.blendFuncSeparateiOES(k, ...func);
+          ix.blendEquationSeparateiOES(k, ...eq);
+        } else {
+          gl.enable(E.BLEND);
+          gl.blendFuncSeparate(...func);
+          gl.blendEquationSeparate(...eq);
+        }
         blendColorOf ??= cb;
       } else if (ix) ix.disableiOES(E.BLEND, k);
       else gl.disable(E.BLEND);
@@ -2256,10 +3301,19 @@ void main() {
     // not a stored component: the guest's where the layout stores no channel there (RGB565, an X: dEQP-GLES3
     // draw_buffers_indexed.random.max_implementation_draw_buffers.0, an RGB565 buffer first).
     if (blendColorOf) {
-      const bc = s.blendColor, wr = blendColorOf.write;
-      gl.blendColor(...([0, 1, 2, 3].map((q) => (wr[q] !== undefined && wr[q] >= 0 ? bc[wr[q]] : q === 3 ? bc[3] : 1)) as [number, number, number, number]));
+      const bc = s.blendColor,
+        wr = blendColorOf.write;
+      gl.blendColor(
+        ...([0, 1, 2, 3].map((q) => (wr[q] !== undefined && wr[q] >= 0 ? bc[wr[q]] : q === 3 ? bc[3] : 1)) as [
+          number,
+          number,
+          number,
+          number,
+        ]),
+      );
     }
-    if (blend?.alphaToCoverage) gl.enable(E.SAMPLE_ALPHA_TO_COVERAGE); else gl.disable(E.SAMPLE_ALPHA_TO_COVERAGE);
+    if (blend?.alphaToCoverage) gl.enable(E.SAMPLE_ALPHA_TO_COVERAGE);
+    else gl.disable(E.SAMPLE_ALPHA_TO_COVERAGE);
     this.sampleMask(c, s);
     // Depth and stencil.
     if (dsa?.depth.enabled) {
@@ -2284,10 +3338,12 @@ void main() {
       if (split) {
         const cull = rs?.cullFace ?? 0;
         const tris = mode >= 4 && mode <= 6; // points and lines are front-facing
-        faces = tris ? [
-          ...(cull === 1 || cull === 3 ? [] : [{ cull: E.BACK, st: st0, ref: s.stencilRef[0] }]),
-          ...(cull === 2 || cull === 3 ? [] : [{ cull: E.FRONT, st: back, ref: refBack }]),
-        ] : [{ st: st0, ref: s.stencilRef[0] }];
+        faces = tris
+          ? [
+              ...(cull === 1 || cull === 3 ? [] : [{ cull: E.BACK, st: st0, ref: s.stencilRef[0] }]),
+              ...(cull === 2 || cull === 3 ? [] : [{ cull: E.FRONT, st: back, ref: refBack }]),
+            ]
+          : [{ st: st0, ref: s.stencilRef[0] }];
         stencil(E.FRONT_AND_BACK, st0, s.stencilRef[0]);
       } else {
         stencil(E.FRONT, st0, s.stencilRef[0]);
@@ -2300,7 +3356,10 @@ void main() {
     let maxVertex = 0;
     for (let k = 0; k < 16; k++) {
       const e = s.ve[k];
-      if (!e || !prog.layout.attribs.includes(k)) { gl.disableVertexAttribArray(k); continue; }
+      if (!e || !prog.layout.attribs.includes(k)) {
+        gl.disableVertexAttribArray(k);
+        continue;
+      }
       const vf = VERTEX_FORMATS.get(e.format);
       const vb = s.vbs[e.vb];
       const r = vb && this.resources.get(vb.res);
@@ -2317,7 +3376,16 @@ void main() {
       }
       gl.enableVertexAttribArray(k);
       let [stride, at] = [vb.stride, vb.offset + e.offset];
-      const comp = vf.type === E.FLOAT || vf.type === E.INT || vf.type === E.UNSIGNED_INT || vf.type === 0x8368 || vf.type === 0x8d9f ? 4 : vf.type === E.SHORT || vf.type === E.UNSIGNED_SHORT || vf.type === E.HALF_FLOAT ? 2 : 1;
+      const comp =
+        vf.type === E.FLOAT ||
+        vf.type === E.INT ||
+        vf.type === E.UNSIGNED_INT ||
+        vf.type === 0x8368 ||
+        vf.type === 0x8d9f
+          ? 4
+          : vf.type === E.SHORT || vf.type === E.UNSIGNED_SHORT || vf.type === E.HALF_FLOAT
+            ? 2
+            : 1;
       if (stride % comp || at % comp || stride > 255) {
         // WebGL refuses a stride or offset that isn't a multiple of the type's size, and strides over 255 (GLES allows
         // both): the attribute repacked from the buffer's copy, every element the buffer holds, 4-byte aligned.
@@ -2339,24 +3407,37 @@ void main() {
     this.stats.draws++;
     this.countQueries(c.sub);
     if (this.debug) {
-      const s = c.sub, rt = s.blend?.rt[0];
+      const s = c.sub,
+        rt = s.blend?.rt[0];
       const fmt = (res: number, f: number) => `${res}:${FORMATS.get(f)?.name ?? f}`;
-      this.debug(`draw ctx ${c.id} into [${s.fb.cbufs.map((cb) => cb ? fmt(cb.res, cb.format) : '-').join(' ')}]${s.fb.zs ? ` zs ${fmt(s.fb.zs.res, s.fb.zs.format)}` : ''} vp ${s.viewport.scale[1] < 0 ? '-y' : '+y'} ${s.rs ? `ccw ${+s.rs.frontCcw} cull ${s.rs.cullFace}` : ''}${s.dsa?.stencil[0].enabled ? ` stencil ${JSON.stringify(s.dsa.stencil)}` : ''} blend ${rt?.enable ? `${rt.rgbSrc},${rt.rgbDst},${rt.aSrc},${rt.aDst} mask ${rt.mask}` : 'off'} sampling [${s.views.fs.map((v) => v ? `${fmt(v.res, v.format)}/${v.swizzle.join('')}` : '-').join(' ')}] samplers [${s.samplers.fs.map((x) => (x ? `${x.compare ? `cmp ${x.compareFunc}` : 'nocmp'} min ${x.minImg}/${x.minMip} mag ${x.magImg}` : '-')).join(' ')}]`);
+      this.debug(
+        `draw ctx ${c.id} into [${s.fb.cbufs.map((cb) => (cb ? fmt(cb.res, cb.format) : '-')).join(' ')}]${s.fb.zs ? ` zs ${fmt(s.fb.zs.res, s.fb.zs.format)}` : ''} vp ${s.viewport.scale[1] < 0 ? '-y' : '+y'} ${s.rs ? `ccw ${+s.rs.frontCcw} cull ${s.rs.cullFace}` : ''}${s.dsa?.stencil[0].enabled ? ` stencil ${JSON.stringify(s.dsa.stencil)}` : ''} blend ${rt?.enable ? `${rt.rgbSrc},${rt.rgbDst},${rt.aSrc},${rt.aDst} mask ${rt.mask}` : 'off'} sampling [${s.views.fs.map((v) => (v ? `${fmt(v.res, v.format)}/${v.swizzle.join('')}` : '-')).join(' ')}] samplers [${s.samplers.fs.map((x) => (x ? `${x.compare ? `cmp ${x.compareFunc}` : 'nocmp'} min ${x.minImg}/${x.minMip} mag ${x.magImg}` : '-')).join(' ')}]`,
+      );
     }
     const inst = Math.max(1, instances);
-    let drawCount = count, drawInstances = instances, emitted = 0;
+    let drawCount = count,
+      drawInstances = instances,
+      emitted = 0;
     let capture: { plan: SoPlan; vertices: number } | undefined;
     if (so) {
       // WebGL2 (GLES 3.0) captures unindexed point, line and triangle lists only, and refuses a draw that would overflow
       // a buffer: Gallium stops writing at the end instead, so the draw is cut to the primitives that fit (and what it
       // draws with them: a draw that overflows its targets is rare and draws partly).
       const vpp = mode === 0 ? 1 : mode === 1 ? 2 : mode === 4 ? 3 : 0;
-      if (!vpp || indexed) this.error(`stream output from ${indexed ? 'an indexed draw' : `primitive ${mode}`}: WebGL2 captures unindexed lists only`);
+      if (!vpp || indexed)
+        this.error(
+          `stream output from ${indexed ? 'an indexed draw' : `primitive ${mode}`}: WebGL2 captures unindexed lists only`,
+        );
       else {
-        const fit = Math.min(...so.plan.targets.map((b) => Math.floor(Math.max(0, b.t.size - b.t.filled) / (b.stride * 4 * vpp))));
+        const fit = Math.min(
+          ...so.plan.targets.map((b) => Math.floor(Math.max(0, b.t.size - b.t.filled) / (b.stride * 4 * vpp))),
+        );
         const per = Math.floor(count / vpp);
         if (inst === 1) emitted = Math.min(per, fit);
-        else { drawInstances = per ? Math.min(inst, Math.floor(fit / per)) : inst; emitted = drawInstances * per; }
+        else {
+          drawInstances = per ? Math.min(inst, Math.floor(fit / per)) : inst;
+          emitted = drawInstances * per;
+        }
         if (emitted > 0) {
           if (inst === 1) drawCount = emitted * vpp;
           capture = { plan: so.plan, vertices: emitted * vpp };
@@ -2366,16 +3447,21 @@ void main() {
     if (so && this.debug) {
       // The first vertex's attributes, from the buffers' copies (as words).
       const attrs = (s.ve ?? []).map((e, k) => {
-        const vb = s.vbs[e.vb], r = vb && this.resources.get(vb.res);
+        const vb = s.vbs[e.vb],
+          r = vb && this.resources.get(vb.res);
         if (!r?.shadow) return `${k}:-`;
         const at = vb.offset + e.offset + start * vb.stride;
         const dv = new DataView(r.shadow.buffer, r.shadow.byteOffset);
-        return `${k}:res ${vb.res} @${at} stride ${vb.stride} fmt ${e.format} = ${[0, 1, 2, 3].map((q) => at + 4 * q + 4 <= r.shadow!.length ? dv.getUint32(at + 4 * q, true).toString(16) : '?').join(' ')}`;
+        return `${k}:res ${vb.res} @${at} stride ${vb.stride} fmt ${e.format} = ${[0, 1, 2, 3].map((q) => (at + 4 * q + 4 <= r.shadow!.length ? dv.getUint32(at + 4 * q, true).toString(16) : '?')).join(' ')}`;
       });
       this.debug(`stream output draw start ${start}: ${attrs.join('; ')}`);
     }
-    if (so) this.debug?.(`stream output: mode ${mode} count ${count} x${inst}${indexed ? ' indexed' : ''}: ${emitted} primitives captured; targets ${so.plan.targets.map((t) => `${t.t.res}@${t.t.offset}+${t.t.size} filled ${t.t.filled} stride ${t.stride}`).join(', ')}; outputs ${so.outputs.map((o) => `${o.buffer}:${o.offset}+${o.comps}`).join(' ')}`);
-    for (const [q, ctx] of this.counting) if (ctx === c.id) q.result += q.type === Q_GENERATED ? primitives(mode, count) * inst : emitted;
+    if (so)
+      this.debug?.(
+        `stream output: mode ${mode} count ${count} x${inst}${indexed ? ' indexed' : ''}: ${emitted} primitives captured; targets ${so.plan.targets.map((t) => `${t.t.res}@${t.t.offset}+${t.t.size} filled ${t.t.filled} stride ${t.stride}`).join(', ')}; outputs ${so.outputs.map((o) => `${o.buffer}:${o.offset}+${o.comps}`).join(' ')}`,
+      );
+    for (const [q, ctx] of this.counting)
+      if (ctx === c.id) q.result += q.type === Q_GENERATED ? primitives(mode, count) * inst : emitted;
     if (capture) this.beginCapture(s, capture.plan, capture.vertices, prim);
     if (indexed) {
       const ib = s.ib;
@@ -2386,7 +3472,8 @@ void main() {
       let offset = ib.offset;
       // Indices of a size GL has, aligned and in the buffer (WebGL refuses the others too); the rebasing below reads
       // them on the CPU, so a guest's count can't size its work past the buffer (tests/virgl-fuzz.ts).
-      if ((size !== 1 && size !== 2 && size !== 4) || offset % size || offset + count * size > r.shadow.length) return this.error(`an indexed draw past index buffer ${r.id} (${count} of size ${size} at ${offset})`);
+      if ((size !== 1 && size !== 2 && size !== 4) || offset % size || offset + count * size > r.shadow.length)
+        return this.error(`an indexed draw past index buffer ${r.id} (${count} of size ${size} at ${offset})`);
       if (r.idirty || !r.ibuf) {
         r.ibuf ??= gl.createBuffer()!;
         gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, r.ibuf);
@@ -2403,7 +3490,8 @@ void main() {
         // No base vertex in WebGL2 either: the indices rebased into a scratch buffer.
         const n = count;
         const src = r.shadow.subarray(offset, offset + n * size);
-        const inp = size === 1 ? src : size === 2 ? new Uint16Array(src.slice().buffer) : new Uint32Array(src.slice().buffer);
+        const inp =
+          size === 1 ? src : size === 2 ? new Uint16Array(src.slice().buffer) : new Uint32Array(src.slice().buffer);
         if (widen) size *= 2;
         const out = size === 1 ? new Uint8Array(n) : size === 2 ? new Uint16Array(n) : new Uint32Array(n);
         const outMax = size === 1 ? 0xff : size === 2 ? 0xffff : 0xffffffff;
@@ -2417,7 +3505,8 @@ void main() {
         if (instances > 1) gl.drawElementsInstanced(prim, count, type, offset, instances);
         else gl.drawElements(prim, count, type, offset);
       });
-    } else if (drawInstances > 1) this.byFace(faces, () => gl.drawArraysInstanced(prim, start, drawCount, drawInstances));
+    } else if (drawInstances > 1)
+      this.byFace(faces, () => gl.drawArraysInstanced(prim, start, drawCount, drawInstances));
     else if (drawInstances === 1 || instances <= 1) this.byFace(faces, () => gl.drawArrays(prim, start, drawCount));
     gl.bindVertexArray(null);
     if (capture) this.endCapture(capture.plan, capture.vertices);
@@ -2455,7 +3544,10 @@ void main() {
       gl.stencilFuncSeparate(E.FRONT_AND_BACK, COMPARE[f.st.func], f.ref, f.st.valueMask);
       gl.stencilOpSeparate(E.FRONT_AND_BACK, STENCIL_OP[f.st.fail], STENCIL_OP[f.st.zfail], STENCIL_OP[f.st.zpass]);
       gl.stencilMaskSeparate(E.FRONT_AND_BACK, f.st.writeMask);
-      if (f.cull !== undefined) { gl.enable(E.CULL_FACE); gl.cullFace(f.cull); }
+      if (f.cull !== undefined) {
+        gl.enable(E.CULL_FACE);
+        gl.cullFace(f.cull);
+      }
       draw();
     }
   }
@@ -2475,21 +3567,37 @@ void main() {
   /** A draw's program key's stream output when nothing is captured (`soOutputs`). */
   private soKey(so: NonNullable<Shader['so']>): { so?: ProgramKey['so'] } {
     const all = this.soOutputs(so);
-    return all.length && all.reduce((n, o) => n + o.comps, 0) <= 64 ? { so: all.map(({ reg, start, comps }) => ({ reg, start, comps })) } : {};
+    return all.length && all.reduce((n, o) => n + o.comps, 0) <= 64
+      ? { so: all.map(({ reg, start, comps }) => ({ reg, start, comps })) }
+      : {};
   }
 
   /** How a vertex shader's stream outputs (to the targets bound) are captured (`SoPlan`). */
-  private soPlan(so: NonNullable<Shader['so']>, targets: (SoTarget | undefined)[]): { plan: SoPlan; outputs: SoOutput[] } | undefined {
+  private soPlan(
+    so: NonNullable<Shader['so']>,
+    targets: (SoTarget | undefined)[],
+  ): { plan: SoPlan; outputs: SoOutput[] } | undefined {
     if (!so.outputs.some((o) => targets[o.buffer])) return undefined;
     const outputs = this.soOutputs(so, targets);
     if (!outputs.length) return undefined;
     const plan: SoPlan = { outputs, total: outputs.reduce((n, o) => n + o.comps, 0), targets: [] };
-    if (plan.total > 64) { this.error(`stream output of ${plan.total} words a vertex (WebGL2 captures 64)`); return undefined; }
+    if (plan.total > 64) {
+      this.error(`stream output of ${plan.total} words a vertex (WebGL2 captures 64)`);
+      return undefined;
+    }
     for (const buffer of new Set(outputs.map((o) => o.buffer).filter((b) => targets[b]))) {
-      const t = targets[buffer]!, r = this.resources.get(t.res);
-      if (!r?.buf || !r.shadow) { this.error(`stream output to resource ${t.res}, not a buffer`); return undefined; }
-      if ((t.offset & 3) !== 0) { this.error(`stream output at offset ${t.offset} (not a multiple of 4)`); return undefined; }
-      const stride = so.strides[buffer] || Math.max(...outputs.filter((o) => o.buffer === buffer).map((o) => o.offset + o.comps));
+      const t = targets[buffer]!,
+        r = this.resources.get(t.res);
+      if (!r?.buf || !r.shadow) {
+        this.error(`stream output to resource ${t.res}, not a buffer`);
+        return undefined;
+      }
+      if ((t.offset & 3) !== 0) {
+        this.error(`stream output at offset ${t.offset} (not a multiple of 4)`);
+        return undefined;
+      }
+      const stride =
+        so.strides[buffer] || Math.max(...outputs.filter((o) => o.buffer === buffer).map((o) => o.offset + o.comps));
       plan.targets.push({ buffer, t, r, stride });
     }
     return { plan, outputs };
@@ -2524,7 +3632,8 @@ void main() {
       for (const o of plan.outputs) {
         if (o.buffer === tg.buffer) {
           for (let v = 0; v < vertices; v++) {
-            for (let c = 0; c < o.comps; c++) dv.setUint32(base + (v * tg.stride + o.offset + c) * 4, words[v * plan.total + at + c], true);
+            for (let c = 0; c < o.comps; c++)
+              dv.setUint32(base + (v * tg.stride + o.offset + c) * 4, words[v * plan.total + at + c], true);
           }
         }
         at += o.comps;
@@ -2582,21 +3691,41 @@ void main() {
     return this.scratch;
   }
 
-  private constantAttrib(k: number, vf: { size: number; type: number; normalized: boolean; int?: 'i' | 'u' }, shadow: Uint8Array, at: number) {
+  private constantAttrib(
+    k: number,
+    vf: { size: number; type: number; normalized: boolean; int?: 'i' | 'u' },
+    shadow: Uint8Array,
+    at: number,
+  ) {
     const gl = this.gl;
     const dv = new DataView(shadow.buffer, shadow.byteOffset, shadow.length);
     const get = (i: number): number => {
-      const o = at + i * (vf.type === E.FLOAT || vf.type === E.INT || vf.type === E.UNSIGNED_INT ? 4 : vf.type === E.SHORT || vf.type === E.UNSIGNED_SHORT || vf.type === E.HALF_FLOAT ? 2 : 1);
+      const o =
+        at +
+        i *
+          (vf.type === E.FLOAT || vf.type === E.INT || vf.type === E.UNSIGNED_INT
+            ? 4
+            : vf.type === E.SHORT || vf.type === E.UNSIGNED_SHORT || vf.type === E.HALF_FLOAT
+              ? 2
+              : 1);
       if (o + 4 > shadow.length && vf.type === E.FLOAT) return 0;
       switch (vf.type) {
-        case E.FLOAT: return dv.getFloat32(o, true);
-        case E.UNSIGNED_BYTE: return vf.normalized ? dv.getUint8(o) / 255 : dv.getUint8(o);
-        case E.BYTE: return vf.normalized ? Math.max(-1, dv.getInt8(o) / 127) : dv.getInt8(o);
-        case E.UNSIGNED_SHORT: return vf.normalized ? dv.getUint16(o, true) / 65535 : dv.getUint16(o, true);
-        case E.SHORT: return vf.normalized ? Math.max(-1, dv.getInt16(o, true) / 32767) : dv.getInt16(o, true);
-        case E.UNSIGNED_INT: return dv.getUint32(o, true);
-        case E.INT: return dv.getInt32(o, true);
-        default: return 0;
+        case E.FLOAT:
+          return dv.getFloat32(o, true);
+        case E.UNSIGNED_BYTE:
+          return vf.normalized ? dv.getUint8(o) / 255 : dv.getUint8(o);
+        case E.BYTE:
+          return vf.normalized ? Math.max(-1, dv.getInt8(o) / 127) : dv.getInt8(o);
+        case E.UNSIGNED_SHORT:
+          return vf.normalized ? dv.getUint16(o, true) / 65535 : dv.getUint16(o, true);
+        case E.SHORT:
+          return vf.normalized ? Math.max(-1, dv.getInt16(o, true) / 32767) : dv.getInt16(o, true);
+        case E.UNSIGNED_INT:
+          return dv.getUint32(o, true);
+        case E.INT:
+          return dv.getInt32(o, true);
+        default:
+          return 0;
       }
     };
     const v = [0, 0, 0, 1].map((d, i) => (i < vf.size ? get(i) : d)) as [number, number, number, number];
@@ -2614,8 +3743,18 @@ void main() {
     gl.samplerParameteri(sm, E.TEXTURE_WRAP_T, WRAP[st.wrap[1]]);
     gl.samplerParameteri(sm, E.TEXTURE_WRAP_R, WRAP[st.wrap[2]]);
     const mag = st.magImg ? E.LINEAR : E.NEAREST;
-    const min = st.minMip === 2 ? (st.minImg ? E.LINEAR : E.NEAREST)
-      : st.minImg ? (st.minMip ? E.LINEAR_MIPMAP_LINEAR : E.LINEAR_MIPMAP_NEAREST) : (st.minMip ? E.NEAREST_MIPMAP_LINEAR : E.NEAREST_MIPMAP_NEAREST);
+    const min =
+      st.minMip === 2
+        ? st.minImg
+          ? E.LINEAR
+          : E.NEAREST
+        : st.minImg
+          ? st.minMip
+            ? E.LINEAR_MIPMAP_LINEAR
+            : E.LINEAR_MIPMAP_NEAREST
+          : st.minMip
+            ? E.NEAREST_MIPMAP_LINEAR
+            : E.NEAREST_MIPMAP_NEAREST;
     gl.samplerParameteri(sm, E.TEXTURE_MAG_FILTER, mag);
     gl.samplerParameteri(sm, E.TEXTURE_MIN_FILTER, min);
     gl.samplerParameterf(sm, E.TEXTURE_MIN_LOD, st.minLod);
@@ -2697,7 +3836,12 @@ void main() {
     // The spans read so far folded in; queries that already passed need no more.
     const counted = [...s.occlusion].filter((q) => (this.foldSpans(q), !q.passed));
     if (!counted.length) return;
-    const span: Span = { q: this.spareQueries.pop() ?? this.gl.createQuery()!, done: false, passed: false, users: counted.length };
+    const span: Span = {
+      q: this.spareQueries.pop() ?? this.gl.createQuery()!,
+      done: false,
+      passed: false,
+      users: counted.length,
+    };
     this.gl.beginQuery(E.ANY_SAMPLES_PASSED, span.q);
     for (const q of counted) q.spans!.push(span);
     this.counter = { span, sub: s };
@@ -2813,7 +3957,8 @@ void main() {
    */
   snapshotRefusal(): Msg | undefined {
     for (const c of this.contexts.values()) {
-      if (c.video && (c.video.codecs.size || c.video.buffers.size)) return msg('display:virgl-renderer.unsaveable.video');
+      if (c.video && (c.video.codecs.size || c.video.buffers.size))
+        return msg('display:virgl-renderer.unsaveable.video');
     }
     return undefined;
   }
@@ -2826,14 +3971,20 @@ void main() {
    */
   save(): RendererSnapshot {
     const resources = [...this.resources.values()].map((r) => this.saveResource(r));
-    const contexts = [...this.contexts.values()].map((c) => ({ id: c.id, sub: c.sub.id, attached: [...c.attached], subs: [...c.subs.values()].map((s) => this.saveSub(c, s)) }));
+    const contexts = [...this.contexts.values()].map((c) => ({
+      id: c.id,
+      sub: c.sub.id,
+      attached: [...c.attached],
+      subs: [...c.subs.values()].map((s) => this.saveSub(c, s)),
+    }));
     this.resetAfterSnapshot();
     return { version: 1, resources, contexts };
   }
 
   /** A snapshot's state into this renderer: what it had is gone (a virtio reset), then the resources and contexts are made again. */
   load(s: RendererSnapshot) {
-    if (s?.version !== 1 || !Array.isArray(s.resources) || !Array.isArray(s.contexts)) throw new Error('the 3D state is not one this page reads');
+    if (s?.version !== 1 || !Array.isArray(s.resources) || !Array.isArray(s.contexts))
+      throw new Error('the 3D state is not one this page reads');
     this.reset();
     for (const sr of s.resources) {
       this.createResource(sr.desc);
@@ -2855,16 +4006,24 @@ void main() {
   }
 
   /** The bytes a snapshot of `desc` holds (before compression): a buffer's, each level's texels or blocks, 5 a depth-stencil texel. */
-  static snapshotBytes(desc: Pick<ResourceDesc, 'target' | 'format' | 'width' | 'height' | 'depth' | 'arraySize' | 'lastLevel' | 'bind'>) {
+  static snapshotBytes(
+    desc: Pick<ResourceDesc, 'target' | 'format' | 'width' | 'height' | 'depth' | 'arraySize' | 'lastLevel' | 'bind'>,
+  ) {
     if (desc.target === PIPE_BUFFER) return desc.bind & BIND_STAGING ? 0 : desc.width;
     const f = FORMATS.get(desc.format);
     if (!f) return 0;
     const zs = f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil';
     let n = 0;
     for (let level = 0; level <= desc.lastLevel; level++) {
-      const w = Math.max(1, desc.width >> level), h = desc.target === PIPE_TEXTURE_1D || desc.target === PIPE_TEXTURE_1D_ARRAY ? 1 : Math.max(1, desc.height >> level);
+      const w = Math.max(1, desc.width >> level),
+        h =
+          desc.target === PIPE_TEXTURE_1D || desc.target === PIPE_TEXTURE_1D_ARRAY
+            ? 1
+            : Math.max(1, desc.height >> level);
       const d = desc.target === PIPE_TEXTURE_3D ? Math.max(1, desc.depth >> level) : Math.max(1, desc.arraySize);
-      n += zs ? w * h * d * ((f.kind === 'stencil' ? 0 : 4) + (f.kind === 'depth' ? 0 : 1)) : Math.ceil(w / f.block) * Math.ceil(h / f.block) * d * f.bpp;
+      n += zs
+        ? w * h * d * ((f.kind === 'stencil' ? 0 : 4) + (f.kind === 'depth' ? 0 : 1))
+        : Math.ceil(w / f.block) * Math.ceil(h / f.block) * d * f.bpp;
     }
     return n;
   }
@@ -2877,7 +4036,19 @@ void main() {
   }
 
   private saveResource(r: Res): SavedResource {
-    const desc: ResourceDesc = { id: r.id, target: r.target, format: r.format, bind: r.bind, width: r.width, height: r.height, depth: r.depth, arraySize: r.arraySize, lastLevel: r.lastLevel, samples: r.samples, flags: r.flags };
+    const desc: ResourceDesc = {
+      id: r.id,
+      target: r.target,
+      format: r.format,
+      bind: r.bind,
+      width: r.width,
+      height: r.height,
+      depth: r.depth,
+      arraySize: r.arraySize,
+      lastLevel: r.lastLevel,
+      samples: r.samples,
+      flags: r.flags,
+    };
     const out: SavedResource = { desc, backing: r.backing?.map((b) => ({ ...b })) ?? null, levels: [] };
     if (r.target === PIPE_BUFFER) {
       if (r.shadow) out.levels.push({ level: 0, how: 'bytes', data: r.shadow.slice() });
@@ -2896,7 +4067,8 @@ void main() {
 
   /** A level's contents (every layer), what's lost instead, or null where there's nothing to keep (blocks never uploaded). */
   private saveLevel(r: Res, level: number): SavedLevel | string | null {
-    const f = r.fmt!, { w, h, d } = this.levelSize(r, level);
+    const f = r.fmt!,
+      { w, h, d } = this.levelSize(r, level);
     if (f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil') return this.readZs(r, level, w, h, d);
     if (f.block > 1) {
       const b = r.blocks?.get(level);
@@ -2906,30 +4078,43 @@ void main() {
       const t = r.texels?.get(level);
       return t ? { level, how: 'bytes', data: t.slice() } : null;
     }
-    let src = r, temp: WebGLTexture | undefined;
+    let src = r,
+      temp: WebGLTexture | undefined;
     if (r.rb) {
       // Multisampled: its samples resolved into a texture of its format (what a load gives every sample back).
-      if (f.kind === 'uint' || f.kind === 'sint') return 'a multisampled integer format isn\'t kept';
+      if (f.kind === 'uint' || f.kind === 'sint') return "a multisampled integer format isn't kept";
       temp = this.tempTexture(f, w, h);
       this.blitLayer(r, 0, 0, this.asTexture(r, temp), E.COLOR_ATTACHMENT0, E.COLOR_BUFFER_BIT, w, h);
       src = this.asTexture(r, temp);
     }
-    const data = this.readback(src, level, { x: 0, y: 0, z: 0, w, h, d }, 0, 0, readbackOf(f, this.colorBufferFloat) ?? snapshotReader(f, this.colorBufferFloat));
+    const data = this.readback(
+      src,
+      level,
+      { x: 0, y: 0, z: 0, w, h, d },
+      0,
+      0,
+      readbackOf(f, this.colorBufferFloat) ?? snapshotReader(f, this.colorBufferFloat),
+    );
     if (temp) this.gl.deleteTexture(temp);
     return data ? { level, how: 'bytes', data } : `${f.name} can't be read back`;
   }
 
   private loadLevel(r: Res, l: SavedLevel) {
     const f = r.fmt;
-    if (r.target === PIPE_BUFFER) return this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(l.data.length, r.width), h: 1, d: 1 }, l.data, 0, 0);
+    if (r.target === PIPE_BUFFER)
+      return this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(l.data.length, r.width), h: 1, d: 1 }, l.data, 0, 0);
     if (!f || l.level > r.lastLevel) return;
     const { w, h, d } = this.levelSize(r, l.level);
     if (l.how === 'zs') {
-      const n = w * h, hasD = f.kind !== 'stencil', hasS = f.kind !== 'depth';
-      if (l.data.length < (hasD ? 4 * n * d : 0) + (hasS ? n * d : 0)) return this.error(`snapshot: resource ${r.id} level ${l.level} is short`);
+      const n = w * h,
+        hasD = f.kind !== 'stencil',
+        hasS = f.kind !== 'depth';
+      if (l.data.length < (hasD ? 4 * n * d : 0) + (hasS ? n * d : 0))
+        return this.error(`snapshot: resource ${r.id} level ${l.level} is short`);
       const depths = hasD ? new Float32Array(l.data.slice(0, 4 * n * d).buffer) : null;
       // A 16-bit depth goes a quarter step up: a GL that truncates its conversion (SwiftShader's) keeps the value.
-      if (depths && f.internal === GL.DEPTH_COMPONENT16) for (let k = 0; k < depths.length; k++) depths[k] = Math.min(1, (Math.round(depths[k] * 65535) + 0.25) / 65535);
+      if (depths && f.internal === GL.DEPTH_COMPONENT16)
+        for (let k = 0; k < depths.length; k++) depths[k] = Math.min(1, (Math.round(depths[k] * 65535) + 0.25) / 65535);
       const stens = hasS ? l.data.subarray(hasD ? 4 * n * d : 0) : null;
       return this.drawZs(r, l.level, { x: 0, y: 0, z: 0, w, h, d }, (z, depth, sten) => {
         if (depths) depth.set(depths.subarray(z * n, (z + 1) * n));
@@ -2945,13 +4130,15 @@ void main() {
       return;
     }
     // A 1D array's layers are its box's rows (`upload`).
-    const box = r.target === PIPE_TEXTURE_1D_ARRAY ? { x: 0, y: 0, z: 0, w, h: d, d: 1 } : { x: 0, y: 0, z: 0, w, h, d };
+    const box =
+      r.target === PIPE_TEXTURE_1D_ARRAY ? { x: 0, y: 0, z: 0, w, h: d, d: 1 } : { x: 0, y: 0, z: 0, w, h, d };
     this.upload(r, l.level, box, l.data, 0, 0);
   }
 
   /** A 2D texture of `f`, `w`×`h`, one level. */
   private tempTexture(f: Format, w: number, h: number) {
-    const gl = this.gl, t = gl.createTexture()!;
+    const gl = this.gl,
+      t = gl.createTexture()!;
     gl.bindTexture(E.TEXTURE_2D, t);
     gl.texStorage2D(E.TEXTURE_2D, 1, f.internal, w, h);
     return t;
@@ -2959,7 +4146,20 @@ void main() {
 
   /** `r` as if it were the 2D texture `tex` (or the renderbuffer `rb`) of its format, with no samples: what readback, upload and attachTo take. */
   private asTexture(r: Res, tex: WebGLTexture | undefined, rb?: WebGLRenderbuffer): Res {
-    return { ...r, target: PIPE_TEXTURE_2D, samples: 0, lastLevel: 0, depth: 1, arraySize: 1, rb, tex, glTarget: tex ? E.TEXTURE_2D : undefined, texels: undefined, blocks: undefined, refs: new Set() };
+    return {
+      ...r,
+      target: PIPE_TEXTURE_2D,
+      samples: 0,
+      lastLevel: 0,
+      depth: 1,
+      arraySize: 1,
+      rb,
+      tex,
+      glTarget: tex ? E.TEXTURE_2D : undefined,
+      texels: undefined,
+      blocks: undefined,
+      refs: new Set(),
+    };
   }
 
   /** The snapshot's framebuffers (read, draw), kept apart from the draws' (their attachments are cached: `fbCache`). */
@@ -2980,7 +4180,16 @@ void main() {
   }
 
   /** Copies `src`'s level and layer to `dst`'s level 0 through attachment `point` (resolving samples), `w`×`h`. */
-  private blitLayer(src: Res, level: number, layer: number, dst: Res, point: number, mask: number, w: number, h: number) {
+  private blitLayer(
+    src: Res,
+    level: number,
+    layer: number,
+    dst: Res,
+    point: number,
+    mask: number,
+    w: number,
+    h: number,
+  ) {
     const gl = this.gl;
     this.snapFramebuffers();
     this.attachTo(E.READ_FRAMEBUFFER, point, src, level, layer);
@@ -2995,7 +4204,9 @@ void main() {
     gl.readBuffer(E.COLOR_ATTACHMENT0);
   }
 
-  private snapProgs: Partial<Record<'depth' | 'mark' | 'copy', { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> }>> = {};
+  private snapProgs: Partial<
+    Record<'depth' | 'mark' | 'copy', { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> }>
+  > = {};
 
   /** One of the snapshot's programs: a triangle over the viewport and `fs`, its uniforms' locations. */
   private snapProgram(name: 'depth' | 'mark' | 'copy') {
@@ -3003,13 +4214,17 @@ void main() {
     if (got) return got;
     const fs = {
       // A depth texture's values as their float bits.
-      depth: 'uniform highp sampler2D u_t;\nout highp uvec4 o;\nvoid main() { o = uvec4(floatBitsToUint(texelFetch(u_t, ivec2(gl_FragCoord.xy), 0).r)); }',
+      depth:
+        'uniform highp sampler2D u_t;\nout highp uvec4 o;\nvoid main() { o = uvec4(floatBitsToUint(texelFetch(u_t, ivec2(gl_FragCoord.xy), 0).r)); }',
       // A constant (a stencil bit's weight, added up by blending).
       mark: 'uniform highp float u_v;\nout highp vec4 o;\nvoid main() { o = vec4(u_v); }',
       // A texture's texels as they are.
       copy: 'uniform highp sampler2D u_t;\nout highp vec4 o;\nvoid main() { o = texelFetch(u_t, ivec2(gl_FragCoord.xy), 0); }',
     }[name];
-    const prog = this.link('#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1); gl_Position = vec4(p * 4.0 - 1.0, 0.0, 1.0); }', `#version 300 es\nprecision highp float;\n${fs}`);
+    const prog = this.link(
+      '#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1); gl_Position = vec4(p * 4.0 - 1.0, 0.0, 1.0); }',
+      `#version 300 es\nprecision highp float;\n${fs}`,
+    );
     if (!prog) throw new Error(`the snapshot's ${name} program doesn't compile`);
     const loc = new Map<string, WebGLUniformLocation | null>();
     for (const n of ['u_t', 'u_v']) loc.set(n, this.gl.getUniformLocation(prog, n));
@@ -3019,7 +4234,18 @@ void main() {
   /** State for the snapshot's draws: nothing tested or blended, the whole `w`×`h`. */
   private snapDrawState(w: number, h: number) {
     const gl = this.gl;
-    for (const e of [E.BLEND, E.CULL_FACE, E.SCISSOR_TEST, E.POLYGON_OFFSET_FILL, E.RASTERIZER_DISCARD, E.SAMPLE_COVERAGE, E.SAMPLE_ALPHA_TO_COVERAGE, E.DEPTH_TEST, E.STENCIL_TEST]) gl.disable(e);
+    for (const e of [
+      E.BLEND,
+      E.CULL_FACE,
+      E.SCISSOR_TEST,
+      E.POLYGON_OFFSET_FILL,
+      E.RASTERIZER_DISCARD,
+      E.SAMPLE_COVERAGE,
+      E.SAMPLE_ALPHA_TO_COVERAGE,
+      E.DEPTH_TEST,
+      E.STENCIL_TEST,
+    ])
+      gl.disable(e);
     gl.colorMask(true, true, true, true);
     gl.depthMask(false);
     gl.stencilMask(0);
@@ -3042,7 +4268,8 @@ void main() {
 
   /** Draws `tex`'s texels into `r` (a multisampled renderbuffer: every sample takes its pixel's value). */
   private drawTexture(tex: WebGLTexture, r: Res, w: number, h: number) {
-    const gl = this.gl, p = this.snapProgram('copy');
+    const gl = this.gl,
+      p = this.snapProgram('copy');
     this.snapFramebuffers();
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, r, 0, 0);
     gl.drawBuffers([E.COLOR_ATTACHMENT0]);
@@ -3061,10 +4288,18 @@ void main() {
    * the bit's weight is added into an RGBA8 texture. The level: every depth (floats), then every stencil byte.
    */
   private readZs(r: Res, level: number, w: number, h: number, d: number): SavedLevel {
-    const gl = this.gl, f = r.fmt!;
-    const n = w * h, hasD = f.kind !== 'stencil', hasS = f.kind !== 'depth';
+    const gl = this.gl,
+      f = r.fmt!;
+    const n = w * h,
+      hasD = f.kind !== 'stencil',
+      hasS = f.kind !== 'depth';
     const out = new Uint8Array((hasD ? 4 * n * d : 0) + (hasS ? n * d : 0));
-    const point = f.kind === 'depth' ? E.DEPTH_ATTACHMENT : f.kind === 'stencil' ? E.STENCIL_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
+    const point =
+      f.kind === 'depth'
+        ? E.DEPTH_ATTACHMENT
+        : f.kind === 'stencil'
+          ? E.STENCIL_ATTACHMENT
+          : E.DEPTH_STENCIL_ATTACHMENT;
     const mask = (hasD ? E.DEPTH_BUFFER_BIT : 0) | (hasS ? E.STENCIL_BUFFER_BIT : 0);
     gl.bindBuffer(E.PIXEL_PACK_BUFFER, null);
     for (let z = 0; z < d; z++) {
@@ -3162,19 +4397,32 @@ void main() {
     };
     for (const [h, o] of s.objects) add(h, o);
     // A bound value no handle names any more (its object deleted or made again): kept unnamed.
-    const ref = <K extends Obj['kind']>(kind: K, v: Extract<Obj, { kind: K }>['v'] | undefined) => (v ? add(0, { kind, v } as Obj) : null);
+    const ref = <K extends Obj['kind']>(kind: K, v: Extract<Obj, { kind: K }>['v'] | undefined) =>
+      v ? add(0, { kind, v } as Obj) : null;
     return {
-      id: s.id, objects,
+      id: s.id,
+      objects,
       shaders: { vs: ref('shader', s.shaders.vs), fs: ref('shader', s.shaders.fs) },
-      blend: ref('blend', s.blend), dsa: ref('dsa', s.dsa), rs: ref('rs', s.rs), ve: ref('ve', s.ve),
-      vbs: s.vbs.map((b) => ({ ...b })), ib: s.ib && { ...s.ib },
+      blend: ref('blend', s.blend),
+      dsa: ref('dsa', s.dsa),
+      rs: ref('rs', s.rs),
+      ve: ref('ve', s.ve),
+      vbs: s.vbs.map((b) => ({ ...b })),
+      ib: s.ib && { ...s.ib },
       consts: { vs: [...s.consts.vs], fs: [...s.consts.fs] },
       ubos: { vs: [...s.ubos.vs].map(([k, u]) => [k, { ...u }]), fs: [...s.ubos.fs].map(([k, u]) => [k, { ...u }]) },
       views: { vs: Array.from(s.views.vs, (v) => ref('view', v)), fs: Array.from(s.views.fs, (v) => ref('view', v)) },
-      samplers: { vs: Array.from(s.samplers.vs, (v) => ref('sampler', v)), fs: Array.from(s.samplers.fs, (v) => ref('sampler', v)) },
+      samplers: {
+        vs: Array.from(s.samplers.vs, (v) => ref('sampler', v)),
+        fs: Array.from(s.samplers.fs, (v) => ref('sampler', v)),
+      },
       fb: { cbufs: Array.from(s.fb.cbufs, (v) => ref('surface', v)), zs: ref('surface', s.fb.zs) },
-      viewport: structuredClone(s.viewport), scissor: { ...s.scissor }, stencilRef: [...s.stencilRef], blendColor: [...s.blendColor],
-      stipple: [...s.stipple], sampleMask: s.sampleMask,
+      viewport: structuredClone(s.viewport),
+      scissor: { ...s.scissor },
+      stencilRef: [...s.stencilRef],
+      blendColor: [...s.blendColor],
+      stipple: [...s.stipple],
+      sampleMask: s.sampleMask,
       so: { targets: Array.from(s.so.targets, (v) => ref('so', v)), seen: [...s.so.seen] },
       longShader: [...s.longShader].map(([type, l]) => [type, { handle: l.handle, shader: ref('shader', l.shader)! }]),
     };
@@ -3183,17 +4431,40 @@ void main() {
   /** An object's value as data (no GL objects). */
   private saveValue(o: Obj, c: Ctx): unknown {
     switch (o.kind) {
-      case 'shader': return { type: o.v.type, text: o.v.text, expected: o.v.expected, so: o.v.so, done: o.v.tgsi !== undefined || o.v.error !== undefined };
-      case 'sampler': { const { sampler, ...v } = o.v; void sampler; return structuredClone(v); }
-      case 'query': return { type: o.v.type, index: o.v.index, res: o.v.res, offset: o.v.offset, result: o.v.result, active: !!o.v.active, counting: this.counting.get(o.v) === c.id };
-      default: return structuredClone(o.v);
+      case 'shader':
+        return {
+          type: o.v.type,
+          text: o.v.text,
+          expected: o.v.expected,
+          so: o.v.so,
+          done: o.v.tgsi !== undefined || o.v.error !== undefined,
+        };
+      case 'sampler': {
+        const { sampler, ...v } = o.v;
+        void sampler;
+        return structuredClone(v);
+      }
+      case 'query':
+        return {
+          type: o.v.type,
+          index: o.v.index,
+          res: o.v.res,
+          offset: o.v.offset,
+          result: o.v.result,
+          active: !!o.v.active,
+          counting: this.counting.get(o.v) === c.id,
+        };
+      default:
+        return structuredClone(o.v);
     }
   }
 
   private loadSub(ss: SavedSub, c: Ctx): Sub {
     const s = this.newSub(ss.id);
     const values: Obj[] = ss.objects.map((so) => this.loadValue(so, c));
-    ss.objects.forEach((so, k) => { if (so.handle) s.objects.set(so.handle, values[k]); });
+    ss.objects.forEach((so, k) => {
+      if (so.handle) s.objects.set(so.handle, values[k]);
+    });
     for (const o of values) if (o.kind === 'query' && o.v.spans) s.occlusion.add(o.v);
     const v = <K extends Obj['kind']>(k: number | null, kind: K) => {
       const o = k === null ? undefined : values[k];
@@ -3215,7 +4486,9 @@ void main() {
     s.stipple = Uint32Array.from(ss.stipple);
     s.sampleMask = ss.sampleMask;
     s.so = { targets: ss.so.targets.map((k) => v(k, 'so')), seen: new Set(ss.so.seen) };
-    s.longShader = new Map(ss.longShader.map(([type, l]) => [type, { handle: l.handle, shader: v(l.shader, 'shader')! }]));
+    s.longShader = new Map(
+      ss.longShader.map(([type, l]) => [type, { handle: l.handle, shader: v(l.shader, 'shader')! }]),
+    );
     return s;
   }
 
@@ -3223,12 +4496,24 @@ void main() {
     const v = so.v as Record<string, unknown>;
     switch (so.kind) {
       case 'shader': {
-        const sh: Shader = { serial: ++this.serial, type: v.type as number, text: v.text as string, expected: v.expected as number, so: v.so as Shader['so'] };
+        const sh: Shader = {
+          serial: ++this.serial,
+          type: v.type as number,
+          text: v.text as string,
+          expected: v.expected as number,
+          so: v.so as Shader['so'],
+        };
         if (v.done) this.finishShader(sh);
         return { kind: 'shader', v: sh };
       }
       case 'query': {
-        const q: Query = { type: v.type as number, index: v.index as number, res: v.res as number, offset: v.offset as number, result: v.result as number };
+        const q: Query = {
+          type: v.type as number,
+          index: v.index as number,
+          res: v.res as number,
+          offset: v.offset as number,
+          result: v.result as number,
+        };
         if (v.counting) this.counting.set(q, c.id);
         // Active, an occlusion query counts what its sub-context draws from here on (`loadSub` adds it there; its count
         // before the snapshot is a draw's "any samples passed").
@@ -3236,7 +4521,8 @@ void main() {
         q.active = !!v.active;
         return { kind: 'query', v: q };
       }
-      default: return { kind: so.kind, v: structuredClone(so.v) } as Obj;
+      default:
+        return { kind: so.kind, v: structuredClone(so.v) } as Obj;
     }
   }
 
@@ -3255,51 +4541,102 @@ void main() {
 }
 
 /** How a format's texels are read back: the readPixels format and type, bytes a pixel read, and the packer. */
-export function readbackOf(f: Format, floats: boolean): { format: number; type: number; bytes: number; pack: (src: Uint8Array, dst: Uint8Array, w: number) => void } | null {
+export function readbackOf(
+  f: Format,
+  floats: boolean,
+): { format: number; type: number; bytes: number; pack: (src: Uint8Array, dst: Uint8Array, w: number) => void } | null {
   if (f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil' || f.block > 1) return null;
   const take = (comps: number[], size: number) => (src: Uint8Array, dst: Uint8Array, w: number) => {
-    for (let x = 0; x < w; x++) for (let k = 0; k < comps.length; k++) for (let b = 0; b < size; b++) dst[x * comps.length * size + k * size + b] = src[x * 4 * size + comps[k] * size + b];
+    for (let x = 0; x < w; x++)
+      for (let k = 0; k < comps.length; k++)
+        for (let b = 0; b < size; b++)
+          dst[x * comps.length * size + k * size + b] = src[x * 4 * size + comps[k] * size + b];
   };
-  if (f.internal === E.RGBA8 || f.internal === 0x8c43) return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: (s, d, w) => d.set(s.subarray(0, w * 4)) };
-  if (f.type === E.UNSIGNED_BYTE && f.kind === 'unorm' && f.bpp <= 2) return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: take(f.bpp === 1 ? [0] : [0, 1], 1) };
-  if (f.type === E.UNSIGNED_INT_2_10_10_10_REV && f.kind === 'unorm') return { format: E.RGBA, type: E.UNSIGNED_INT_2_10_10_10_REV, bytes: 4, pack: (s, d, w) => d.set(s.subarray(0, w * 4)) };
+  if (f.internal === E.RGBA8 || f.internal === 0x8c43)
+    return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: (s, d, w) => d.set(s.subarray(0, w * 4)) };
+  if (f.type === E.UNSIGNED_BYTE && f.kind === 'unorm' && f.bpp <= 2)
+    return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: take(f.bpp === 1 ? [0] : [0, 1], 1) };
+  if (f.type === E.UNSIGNED_INT_2_10_10_10_REV && f.kind === 'unorm')
+    return {
+      format: E.RGBA,
+      type: E.UNSIGNED_INT_2_10_10_10_REV,
+      bytes: 4,
+      pack: (s, d, w) => d.set(s.subarray(0, w * 4)),
+    };
   if (f.type === 0x8363) {
     // RGB565: read as RGBA8 and packed again (8 → 5/6 bits round-trips).
-    return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: (s, d, w) => {
-      for (let x = 0; x < w; x++) {
-        const v = (Math.round((s[4 * x] * 31) / 255) << 11) | (Math.round((s[4 * x + 1] * 63) / 255) << 5) | Math.round((s[4 * x + 2] * 31) / 255);
-        d[2 * x] = v & 0xff;
-        d[2 * x + 1] = v >> 8;
-      }
-    } };
+    return {
+      format: E.RGBA,
+      type: E.UNSIGNED_BYTE,
+      bytes: 4,
+      pack: (s, d, w) => {
+        for (let x = 0; x < w; x++) {
+          const v =
+            (Math.round((s[4 * x] * 31) / 255) << 11) |
+            (Math.round((s[4 * x + 1] * 63) / 255) << 5) |
+            Math.round((s[4 * x + 2] * 31) / 255);
+          d[2 * x] = v & 0xff;
+          d[2 * x + 1] = v >> 8;
+        }
+      },
+    };
   }
   if (f.kind === 'uint' && f.type === E.UNSIGNED_INT_2_10_10_10_REV) {
     // RGB10_A2UI: read as four integers, packed again into 10, 10, 10 and 2 bits.
-    return { format: E.RGBA_INTEGER, type: E.UNSIGNED_INT, bytes: 16, pack: (s, d, w) => {
-      const sv = new DataView(s.buffer, s.byteOffset, w * 16), dv = new DataView(d.buffer, d.byteOffset, w * 4);
-      for (let x = 0; x < w; x++) {
-        const c = (k: number) => sv.getUint32(x * 16 + k * 4, true);
-        dv.setUint32(x * 4, ((c(0) & 0x3ff) | (c(1) & 0x3ff) << 10 | (c(2) & 0x3ff) << 20 | (c(3) & 3) << 30) >>> 0, true);
-      }
-    } };
+    return {
+      format: E.RGBA_INTEGER,
+      type: E.UNSIGNED_INT,
+      bytes: 16,
+      pack: (s, d, w) => {
+        const sv = new DataView(s.buffer, s.byteOffset, w * 16),
+          dv = new DataView(d.buffer, d.byteOffset, w * 4);
+        for (let x = 0; x < w; x++) {
+          const c = (k: number) => sv.getUint32(x * 16 + k * 4, true);
+          dv.setUint32(
+            x * 4,
+            ((c(0) & 0x3ff) | ((c(1) & 0x3ff) << 10) | ((c(2) & 0x3ff) << 20) | ((c(3) & 3) << 30)) >>> 0,
+            true,
+          );
+        }
+      },
+    };
   }
   if (f.kind === 'uint' || f.kind === 'sint') {
-    const comps = f.bpp / (([E.UNSIGNED_BYTE, E.BYTE] as number[]).includes(f.type) ? 1 : ([E.UNSIGNED_SHORT, E.SHORT] as number[]).includes(f.type) ? 2 : 4);
+    const comps =
+      f.bpp /
+      (([E.UNSIGNED_BYTE, E.BYTE] as number[]).includes(f.type)
+        ? 1
+        : ([E.UNSIGNED_SHORT, E.SHORT] as number[]).includes(f.type)
+          ? 2
+          : 4);
     const size = f.bpp / comps;
-    return { format: E.RGBA_INTEGER, type: f.kind === 'uint' ? E.UNSIGNED_INT : E.INT, bytes: 16, pack: (s, d, w) => {
-      for (let x = 0; x < w; x++) for (let k = 0; k < comps; k++) for (let b = 0; b < size; b++) d[x * f.bpp + k * size + b] = s[x * 16 + k * 4 + b];
-    } };
+    return {
+      format: E.RGBA_INTEGER,
+      type: f.kind === 'uint' ? E.UNSIGNED_INT : E.INT,
+      bytes: 16,
+      pack: (s, d, w) => {
+        for (let x = 0; x < w; x++)
+          for (let k = 0; k < comps; k++)
+            for (let b = 0; b < size; b++) d[x * f.bpp + k * size + b] = s[x * 16 + k * 4 + b];
+      },
+    };
   }
   if (f.kind === 'float' && floats && (f.type === E.FLOAT || f.type === E.HALF_FLOAT)) {
     const comps = f.bpp / (f.type === E.FLOAT ? 4 : 2);
-    return { format: E.RGBA, type: E.FLOAT, bytes: 16, pack: (s, d, w) => {
-      const fv = new Float32Array(s.buffer, s.byteOffset, w * 4);
-      const dv = new DataView(d.buffer, d.byteOffset, d.length);
-      for (let x = 0; x < w; x++) for (let k = 0; k < comps; k++) {
-        if (f.type === E.FLOAT) dv.setFloat32((x * comps + k) * 4, fv[x * 4 + k], true);
-        else dv.setUint16((x * comps + k) * 2, toHalf(fv[x * 4 + k]), true);
-      }
-    } };
+    return {
+      format: E.RGBA,
+      type: E.FLOAT,
+      bytes: 16,
+      pack: (s, d, w) => {
+        const fv = new Float32Array(s.buffer, s.byteOffset, w * 4);
+        const dv = new DataView(d.buffer, d.byteOffset, d.length);
+        for (let x = 0; x < w; x++)
+          for (let k = 0; k < comps; k++) {
+            if (f.type === E.FLOAT) dv.setFloat32((x * comps + k) * 4, fv[x * 4 + k], true);
+            else dv.setUint16((x * comps + k) * 2, toHalf(fv[x * 4 + k]), true);
+          }
+      },
+    };
   }
   return null;
 }
@@ -3311,22 +4648,38 @@ export function readbackOf(f: Format, floats: boolean): { format: number; type: 
  */
 function snapshotReader(f: Format, floats: boolean): ReturnType<typeof readbackOf> {
   if (f.type === GL.UNSIGNED_SHORT_4_4_4_4 && f.kind === 'unorm') {
-    return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: (s, d, w) => {
-      const four = (x: number) => Math.round((x * 15) / 255);
-      for (let x = 0; x < w; x++) {
-        const v = (four(s[4 * x]) << 12) | (four(s[4 * x + 1]) << 8) | (four(s[4 * x + 2]) << 4) | four(s[4 * x + 3]);
-        d[2 * x] = v & 0xff;
-        d[2 * x + 1] = v >> 8;
-      }
-    } };
+    return {
+      format: E.RGBA,
+      type: E.UNSIGNED_BYTE,
+      bytes: 4,
+      pack: (s, d, w) => {
+        const four = (x: number) => Math.round((x * 15) / 255);
+        for (let x = 0; x < w; x++) {
+          const v = (four(s[4 * x]) << 12) | (four(s[4 * x + 1]) << 8) | (four(s[4 * x + 2]) << 4) | four(s[4 * x + 3]);
+          d[2 * x] = v & 0xff;
+          d[2 * x + 1] = v >> 8;
+        }
+      },
+    };
   }
   if (f.type === GL.UNSIGNED_INT_10F_11F_11F_REV && floats) {
-    return { format: E.RGBA, type: E.FLOAT, bytes: 16, pack: (s, d, w) => {
-      const fv = new Float32Array(s.buffer, s.byteOffset, w * 4), dv = new DataView(d.buffer, d.byteOffset, d.length);
-      // A half's sign dropped and its mantissa cut to 6 (or 5) bits: the unsigned small floats.
-      const small = (v: number, shift: number) => (toHalf(v) & 0x7fff) >> shift;
-      for (let x = 0; x < w; x++) dv.setUint32(4 * x, (small(fv[4 * x], 4) | small(fv[4 * x + 1], 4) << 11 | small(fv[4 * x + 2], 5) << 22) >>> 0, true);
-    } };
+    return {
+      format: E.RGBA,
+      type: E.FLOAT,
+      bytes: 16,
+      pack: (s, d, w) => {
+        const fv = new Float32Array(s.buffer, s.byteOffset, w * 4),
+          dv = new DataView(d.buffer, d.byteOffset, d.length);
+        // A half's sign dropped and its mantissa cut to 6 (or 5) bits: the unsigned small floats.
+        const small = (v: number, shift: number) => (toHalf(v) & 0x7fff) >> shift;
+        for (let x = 0; x < w; x++)
+          dv.setUint32(
+            4 * x,
+            (small(fv[4 * x], 4) | (small(fv[4 * x + 1], 4) << 11) | (small(fv[4 * x + 2], 5) << 22)) >>> 0,
+            true,
+          );
+      },
+    };
   }
   return null;
 }
@@ -3345,7 +4698,8 @@ export function toHalf(v: number) {
     mant |= 0x800000;
     const shift = 14 - exp;
     let h = mant >>> shift;
-    const rem = mant & ((1 << shift) - 1), half = 1 << (shift - 1);
+    const rem = mant & ((1 << shift) - 1),
+      half = 1 << (shift - 1);
     if (rem > half || (rem === half && h & 1)) h++;
     return sign | h;
   }

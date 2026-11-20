@@ -38,7 +38,10 @@ export class WindowWatch {
     let all = false;
     for (let c = 0; c < w[NCPUS]; c++) {
       while (Atomics.load(w, RUNNING + c) !== 0 && ((Atomics.load(w, ACK + c) - gen) | 0) < 0) {
-        if (performance.now() > deadline) { all = true; break; }
+        if (performance.now() > deadline) {
+          all = true;
+          break;
+        }
         Atomics.wait(w, ACK + c, Atomics.load(w, ACK + c), 0.05);
       }
     }

@@ -15,16 +15,31 @@ const K = new Int32Array([
 
 /** Hash state `h` advanced by the 64-byte blocks of `b` from `at` to `end` (`w`: the schedule's scratch). */
 function blocks(h: Int32Array, w: Int32Array, b: Uint8Array, at: number, end: number) {
-  let h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3], h4 = h[4], h5 = h[5], h6 = h[6], h7 = h[7];
+  let h0 = h[0],
+    h1 = h[1],
+    h2 = h[2],
+    h3 = h[3],
+    h4 = h[4],
+    h5 = h[5],
+    h6 = h[6],
+    h7 = h[7];
   for (; at < end; at += 64) {
     for (let i = 0, j = at; i < 16; i++, j += 4) w[i] = (b[j] << 24) | (b[j + 1] << 16) | (b[j + 2] << 8) | b[j + 3];
     for (let i = 16; i < 64; i++) {
-      const x = w[i - 15], y = w[i - 2];
+      const x = w[i - 15],
+        y = w[i - 2];
       const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
       const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
       w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
     }
-    let a = h0, c1 = h1, c2 = h2, d = h3, e = h4, f = h5, g = h6, k = h7;
+    let a = h0,
+      c1 = h1,
+      c2 = h2,
+      d = h3,
+      e = h4,
+      f = h5,
+      g = h6,
+      k = h7;
     for (let i = 0; i < 64; i++) {
       const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
       const t1 = (k + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
@@ -39,16 +54,31 @@ function blocks(h: Int32Array, w: Int32Array, b: Uint8Array, at: number, end: nu
       c1 = a;
       a = (t1 + t2) | 0;
     }
-    h0 = (h0 + a) | 0; h1 = (h1 + c1) | 0; h2 = (h2 + c2) | 0; h3 = (h3 + d) | 0;
-    h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + k) | 0;
+    h0 = (h0 + a) | 0;
+    h1 = (h1 + c1) | 0;
+    h2 = (h2 + c2) | 0;
+    h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0;
+    h5 = (h5 + f) | 0;
+    h6 = (h6 + g) | 0;
+    h7 = (h7 + k) | 0;
   }
-  h[0] = h0; h[1] = h1; h[2] = h2; h[3] = h3; h[4] = h4; h[5] = h5; h[6] = h6; h[7] = h7;
+  h[0] = h0;
+  h[1] = h1;
+  h[2] = h2;
+  h[3] = h3;
+  h[4] = h4;
+  h[5] = h5;
+  h[6] = h6;
+  h[7] = h7;
 }
 
 /** The SHA-256 of `data` (a string as UTF-8), as lowercase hex. */
 export function sha256Hex(data: Uint8Array | string): string {
   const msg = typeof data === 'string' ? new TextEncoder().encode(data) : data;
-  const h = new Int32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const h = new Int32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ]);
   const w = new Int32Array(64);
   // The message's whole blocks are read in place; the last one or two (the padding, the length) from a copy.
   const whole = msg.length - (msg.length % 64);

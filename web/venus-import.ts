@@ -27,16 +27,32 @@ import { FORMATS } from './virgl-formats.ts';
 import type { VirglRenderer } from './virgl-renderer.ts';
 
 /** Binds, of them those that made a texture (`made`), pictures taken, readbacks, bytes written, and the thread's ms for them. */
-export type ImportStats = { binds: number; made: number; pictures: number; readbacks: number; bytes: number; ms: number };
+export type ImportStats = {
+  binds: number;
+  made: number;
+  pictures: number;
+  readbacks: number;
+  bytes: number;
+  ms: number;
+};
 
 /** A plane's bytes as written: rows of `w` texels of `bpp` bytes, `h` of them. */
 type Plane = { data: Uint8Array; w: number; h: number; bpp: number };
 
 /** Bytes a texel of the formats an imported texture may have (WebGPU's 8-bit ones: VA-API's planes are R8 and RG8). */
-const BYTES: Partial<Record<GPUTextureFormat, number>> = { r8unorm: 1, rg8unorm: 2, rgba8unorm: 4, 'rgba8unorm-srgb': 4, bgra8unorm: 4, 'bgra8unorm-srgb': 4 };
+const BYTES: Partial<Record<GPUTextureFormat, number>> = {
+  r8unorm: 1,
+  rg8unorm: 2,
+  rgba8unorm: 4,
+  'rgba8unorm-srgb': 4,
+  bgra8unorm: 4,
+  'bgra8unorm-srgb': 4,
+};
 
 /** What the import needs of the virgl renderer: resources' formats, sizes and bytes, and whether a picture is pending. */
-export type ImportSource = Pick<VirglRenderer, 'resourceInfo' | 'readResource'> & { videoPending: Pick<VirglRenderer['videoPending'], 'res'> };
+export type ImportSource = Pick<VirglRenderer, 'resourceInfo' | 'readResource'> & {
+  videoPending: Pick<VirglRenderer['videoPending'], 'res'>;
+};
 
 export class VenusImport {
   readonly stats: ImportStats = { binds: 0, made: 0, pictures: 0, readbacks: 0, bytes: 0, ms: 0 };
@@ -60,7 +76,12 @@ export class VenusImport {
    * `renderer`: the virgl renderer whose resources these are. `later`: the queue order the textures' writes take
    * (`VenusGpu.later`; at once by default). `rewrite` (`?gpu=vkimport=rewrite`): no texture of the resource's own.
    */
-  constructor(device: GPUDevice, renderer: ImportSource, later: (f: () => void) => void = (f) => f(), options: { rewrite?: boolean } = {}) {
+  constructor(
+    device: GPUDevice,
+    renderer: ImportSource,
+    later: (f: () => void) => void = (f) => f(),
+    options: { rewrite?: boolean } = {},
+  ) {
     [this.device, this.renderer, this.later] = [device, renderer, later];
     this.rewrite = !!options.rewrite;
   }
@@ -88,7 +109,8 @@ export class VenusImport {
       const t = this.device.createTexture(desc);
       own.set(key, t);
       this.stats.made++;
-      const resets = this.resets, ends = this.ends.get(res) ?? 0;
+      const resets = this.resets,
+        ends = this.ends.get(res) ?? 0;
       this.later(() => {
         if (resets !== this.resets || ends !== (this.ends.get(res) ?? 0)) return;
         this.fill(t, res);
@@ -96,7 +118,8 @@ export class VenusImport {
       return t;
     }
     const texture = typeof image === 'function' ? image() : image;
-    const resets = this.resets, ends = this.ends.get(res) ?? 0;
+    const resets = this.resets,
+      ends = this.ends.get(res) ?? 0;
     this.later(() => {
       this.untrack(texture);
       // Gone since the call (its id perhaps another resource's now): nothing of it to take.
@@ -127,7 +150,7 @@ export class VenusImport {
 
   /** A picture's plane written into virgl resource `res` (web/virgl-renderer.ts `onPlane`). */
   plane(res: number, data: Uint8Array, w: number, h: number, bpp: number) {
-    const own = [...this.own.get(res)?.values() ?? []];
+    const own = [...(this.own.get(res)?.values() ?? [])];
     this.later(() => {
       if (!this.last.has(res) && !this.textures.has(res) && !own.length) return;
       const t0 = performance.now();
@@ -192,7 +215,8 @@ export class VenusImport {
       this.warn(`a ${texture.format} texture can't take a plane of ${p.bpp} bytes a texel`);
       return;
     }
-    const w = Math.min(p.w, texture.width), h = Math.min(p.h, texture.height);
+    const w = Math.min(p.w, texture.width),
+      h = Math.min(p.h, texture.height);
     if (!w || !h) return;
     this.device.queue.writeTexture({ texture }, p.data, { bytesPerRow: p.w * p.bpp, rowsPerImage: p.h }, [w, h]);
     this.stats.bytes += w * h * bpp;
@@ -201,5 +225,13 @@ export class VenusImport {
 
 /** What tells two textures of a resource apart: their description, as the driver makes it. */
 function descKey(d: GPUTextureDescriptor): string {
-  return JSON.stringify([d.size, d.format, d.usage, d.mipLevelCount ?? 1, d.sampleCount ?? 1, d.dimension ?? '2d', d.viewFormats ?? []]);
+  return JSON.stringify([
+    d.size,
+    d.format,
+    d.usage,
+    d.mipLevelCount ?? 1,
+    d.sampleCount ?? 1,
+    d.dimension ?? '2d',
+    d.viewFormats ?? [],
+  ]);
 }

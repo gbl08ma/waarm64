@@ -200,7 +200,12 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
     const r = events.shift()!;
     ctx.complete(r.w0, scatter(ctx.ram(), r.write, new Uint8Array(4))); // le32 id 0: TRANSPORT_RESET
   };
-  const header = (port: number, from: number, op: number, o: { flags?: number; len?: number; bufAlloc?: number; fwdCnt?: number } = {}) =>
+  const header = (
+    port: number,
+    from: number,
+    op: number,
+    o: { flags?: number; len?: number; bufAlloc?: number; fwdCnt?: number } = {},
+  ) =>
     encodeHeader({
       srcCid: HOST_CID,
       dstCid: GUEST_CID,
@@ -266,7 +271,7 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
           a.fwdCnt = (a.fwdCnt + payload.length) >>> 0;
           const bytes = payload.slice();
           toPage({ type: 'data', bytes, conn: a.id }, [bytes.buffer]);
-          if (((a.fwdCnt - a.told) >>> 0) >= CREDIT_STEP) send(port, AGENT_PORT, OP.CREDIT_UPDATE);
+          if ((a.fwdCnt - a.told) >>> 0 >= CREDIT_STEP) send(port, AGENT_PORT, OP.CREDIT_UPDATE);
         }
         break;
       case OP.CREDIT_REQUEST:
@@ -386,7 +391,12 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
 /** The first `n` bytes (at most) of a queue of chunks, taken off it. */
 function take(q: Uint8Array[], n: number): Uint8Array {
   if (q[0].length <= n && q.length === 1) return q.shift()!;
-  const out = new Uint8Array(Math.min(n, q.reduce((a, b) => a + b.length, 0)));
+  const out = new Uint8Array(
+    Math.min(
+      n,
+      q.reduce((a, b) => a + b.length, 0),
+    ),
+  );
   let k = 0;
   while (k < out.length) {
     const c = q[0];

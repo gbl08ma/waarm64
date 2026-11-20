@@ -16,7 +16,8 @@ import { decodeVideoCaps, encodeVideoCaps, type VideoCap } from './virgl-video.t
  */
 export function withoutFormats(caps: Uint8Array, names: readonly string[]): { caps: Uint8Array; unknown: string[] } {
   const ids = new Map([...FORMATS].map(([id, f]) => [f.name, id]));
-  const drop = new Set<number>(), unknown: string[] = [];
+  const drop = new Set<number>(),
+    unknown: string[] = [];
   for (const n of names) {
     const id = ids.get(n);
     if (id === undefined) unknown.push(n);
@@ -24,11 +25,14 @@ export function withoutFormats(caps: Uint8Array, names: readonly string[]): { ca
   }
   if (!drop.size) return { caps, unknown };
   // Each mask's bits cleared in a copy: everything else as it was.
-  const out = caps.slice(), v = new DataView(out.buffer);
+  const out = caps.slice(),
+    v = new DataView(out.buffer);
   for (const [name, at, n, kind] of CAPS_FIELDS) {
     if (kind !== 'm' || (at + n) * 4 > out.length) continue;
     void name;
-    for (const id of drop) if (id < n * 32) v.setUint32((at + (id >>> 5)) * 4, v.getUint32((at + (id >>> 5)) * 4, true) & ~(1 << (id & 31)), true);
+    for (const id of drop)
+      if (id < n * 32)
+        v.setUint32((at + (id >>> 5)) * 4, v.getUint32((at + (id >>> 5)) * 4, true) & ~(1 << (id & 31)), true);
   }
   return { caps: out, unknown };
 }
@@ -36,8 +40,14 @@ export function withoutFormats(caps: Uint8Array, names: readonly string[]): { ca
 /** The capability bits `?gpu=capsyes=` can offer (virglrenderer's VIRGL_CAP_* and VIRGL_CAP_V2_* names, without the
  * prefix), those vrend offers and we don't (web/virgl.ts `virglCaps`' "Out:"): word 0 `capability_bits`, 1 `_v2`. */
 const CAP_BITS: Record<string, [0 | 1, number]> = {
-  COPY_IMAGE: [0, 3], TGSI_FBFETCH: [0, 10], SRGB_WRITE_CONTROL: [0, 15], '3D_ASTC': [0, 24], INDIRECT_INPUT_ADDR: [0, 25],
-  V2_BLEND_EQUATION: [1, 0], V2_TEXTURE_SHADOW_LOD: [1, 10], V2_MIRROR_CLAMP_TO_EDGE: [1, 16],
+  COPY_IMAGE: [0, 3],
+  TGSI_FBFETCH: [0, 10],
+  SRGB_WRITE_CONTROL: [0, 15],
+  '3D_ASTC': [0, 24],
+  INDIRECT_INPUT_ADDR: [0, 25],
+  V2_BLEND_EQUATION: [1, 0],
+  V2_TEXTURE_SHADOW_LOD: [1, 10],
+  V2_MIRROR_CLAMP_TO_EDGE: [1, 16],
 };
 
 /**
@@ -46,11 +56,16 @@ const CAP_BITS: Record<string, [0 | 1, number]> = {
  * wrong). Unknown names are returned.
  */
 export function withBits(caps: Uint8Array, names: readonly string[]): { caps: Uint8Array; unknown: string[] } {
-  const out = caps.slice(), v = new DataView(out.buffer), unknown: string[] = [];
+  const out = caps.slice(),
+    v = new DataView(out.buffer),
+    unknown: string[] = [];
   const at = (k: string) => CAPS_FIELDS.find(([n]) => n === k)![1] * 4;
   for (const n of names) {
     const b = CAP_BITS[n];
-    if (!b) { unknown.push(n); continue; }
+    if (!b) {
+      unknown.push(n);
+      continue;
+    }
     const off = at(b[0] ? 'capability_bits_v2' : 'capability_bits');
     v.setUint32(off, (v.getUint32(off, true) | (1 << b[1])) >>> 0, true);
   }
@@ -82,17 +97,33 @@ export function capsFromGl(gl: WebGL2RenderingContext): Uint8Array {
   // format is sampleable without filtering, as GLES 3.0 has it.
   caps.sampler = formats.filter((f) => f.kind !== 'stencil' && has(f.needs)).map((f) => f.id);
   caps.render = formats.filter((f) => f.write && has(f.needs) && has(f.renderNeeds)).map((f) => f.id);
-  caps.depthstencil = formats.filter((f) => f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil').map((f) => f.id);
+  caps.depthstencil = formats
+    .filter((f) => f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil')
+    .map((f) => f.id);
   caps.vertexbuffer = [...VERTEX_FORMATS.keys()];
-  caps.supported_readback_formats = readbackFormats(ext.has('EXT_color_buffer_float')).filter((id) => has(FORMATS.get(id)!.needs));
+  caps.supported_readback_formats = readbackFormats(ext.has('EXT_color_buffer_float')).filter((id) =>
+    has(FORMATS.get(id)!.needs),
+  );
   caps.scanout = [1, 2, 67, 134].filter((id) => FORMATS.has(id));
   // Multisampled rendering is renderbuffers (WebGL2 samples no multisampled texture): color formats WebGL renders to
   // and depth formats. Mesa allows any sample count above 1 only with texture_multisample (below).
-  caps.supported_multisample_formats = formats.filter((f) => (f.write && (f.kind === 'unorm' || f.kind === 'float') && has(f.needs) && has(f.renderNeeds)) || f.kind === 'depth' || f.kind === 'depthstencil').map((f) => f.id);
+  caps.supported_multisample_formats = formats
+    .filter(
+      (f) =>
+        (f.write && (f.kind === 'unorm' || f.kind === 'float') && has(f.needs) && has(f.renderNeeds)) ||
+        f.kind === 'depth' ||
+        f.kind === 'depthstencil',
+    )
+    .map((f) => f.id);
   const range = (e: number) => Array.from(gl.getParameter(e) as Float32Array);
   const [, pointMax] = range(E.ALIASED_POINT_SIZE_RANGE);
   const [, lineMax] = range(E.ALIASED_LINE_WIDTH_RANGE);
-  const blocks = Math.min(p(E.MAX_VERTEX_UNIFORM_BLOCKS), p(E.MAX_FRAGMENT_UNIFORM_BLOCKS), Math.floor(p(E.MAX_UNIFORM_BUFFER_BINDINGS) / 2), 12);
+  const blocks = Math.min(
+    p(E.MAX_VERTEX_UNIFORM_BLOCKS),
+    p(E.MAX_FRAGMENT_UNIFORM_BLOCKS),
+    Math.floor(p(E.MAX_UNIFORM_BUFFER_BINDINGS) / 2),
+    12,
+  );
   Object.assign(caps, {
     max_texture_2d_size: p(E.MAX_TEXTURE_SIZE),
     max_texture_3d_size: p(E.MAX_3D_TEXTURE_SIZE),
@@ -118,7 +149,14 @@ export function capsFromGl(gl: WebGL2RenderingContext): Uint8Array {
     max_smooth_line_width: lineMax,
     max_anisotropy: ext.has('EXT_texture_filter_anisotropic') ? p(E.MAX_TEXTURE_MAX_ANISOTROPY) : 1,
     max_texture_samplers: Math.min(p(E.MAX_TEXTURE_IMAGE_UNITS), p(E.MAX_VERTEX_TEXTURE_IMAGE_UNITS), 16),
-    max_const_buffer_size: [Math.max(0, p(E.MAX_VERTEX_UNIFORM_VECTORS) - SYS_VECTORS) * 16, Math.max(0, p(E.MAX_FRAGMENT_UNIFORM_VECTORS) - SYS_VECTORS) * 16, 0, 0, 0, 0],
+    max_const_buffer_size: [
+      Math.max(0, p(E.MAX_VERTEX_UNIFORM_VECTORS) - SYS_VECTORS) * 16,
+      Math.max(0, p(E.MAX_FRAGMENT_UNIFORM_VECTORS) - SYS_VECTORS) * 16,
+      0,
+      0,
+      0,
+      0,
+    ],
   });
   for (const [e, field, b] of EXTENSION_BITS) if (ext.has(e)) caps[field] = ((caps[field] as number) | b) >>> 0;
   return encodeCaps(caps);
@@ -138,7 +176,8 @@ export function withVideo(caps: Uint8Array, video: VideoCap[]): Uint8Array {
  * format and capability bit given is still there, and no limit given is above today's.
  */
 export function capsBacked(saved: Uint8Array, now: Uint8Array): string | null {
-  const a = decodeCaps(saved), b = decodeCaps(now);
+  const a = decodeCaps(saved),
+    b = decodeCaps(now);
   for (const [k, v] of Object.entries(a)) {
     const w = b[k];
     if (k === 'num_video_caps') continue;
@@ -146,13 +185,26 @@ export function capsBacked(saved: Uint8Array, now: Uint8Array): string | null {
       // Every decoder the guest was told of, at no larger a size.
       const now = decodeVideoCaps(w as number[], b.num_video_caps as number);
       for (const c of decodeVideoCaps(v as number[], a.num_video_caps as number)) {
-        if (!now.some((d) => d.profile === c.profile && d.maxWidth >= c.maxWidth && d.maxHeight >= c.maxHeight && d.maxLevel >= c.maxLevel)) return `no video decoder for profile ${c.profile}`;
+        if (
+          !now.some(
+            (d) =>
+              d.profile === c.profile &&
+              d.maxWidth >= c.maxWidth &&
+              d.maxHeight >= c.maxHeight &&
+              d.maxLevel >= c.maxLevel,
+          )
+        )
+          return `no video decoder for profile ${c.profile}`;
       }
       continue;
     }
     if (Array.isArray(v) && Array.isArray(w)) {
       // Format masks (lists of set formats) and the per-stage limits.
-      if (/^(sampler|render|depthstencil|vertexbuffer|supported_readback_formats|scanout|supported_multisample_formats)$/.test(k)) {
+      if (
+        /^(sampler|render|depthstencil|vertexbuffer|supported_readback_formats|scanout|supported_multisample_formats)$/.test(
+          k,
+        )
+      ) {
         const set = new Set(w);
         const missing = v.filter((f) => !set.has(f));
         if (missing.length) return `${k} lacks formats ${missing.join(', ')}`;

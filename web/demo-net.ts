@@ -76,7 +76,13 @@ export type DemoBudget = { used: number; limit: number; resets?: string };
  * reached slowly, at `rate` bytes a second for this visitor (`totalRate` the whole lane's), `connections` at once,
  * on `ports`, with a day's budget of its own.
  */
-export type DemoSlowLimits = { rate: number; connections: number; bytesPerDay: number; totalRate?: number; ports: number[] };
+export type DemoSlowLimits = {
+  rate: number;
+  connections: number;
+  bytesPerDay: number;
+  totalRate?: number;
+  ports: number[];
+};
 
 /**
  * The lane the visitor's traffic is in (PROTOCOL.md "lane"): `fast`, the allowlist at full speed (and the slow lane beside
@@ -89,7 +95,8 @@ export type DemoLane = 'fast' | 'slow' | 'none';
  * server saying why; else the server's close reason (`guests`, `site`, `connections`: 4008; `full`: 4009; `bytes`:
  * 4010; `maintenance`: 4011; `session`: 4013).
  */
-export type DemoWhy = 'unreachable' | 'lost' | 'guests' | 'site' | 'connections' | 'full' | 'bytes' | 'maintenance' | 'session';
+export type DemoWhy =
+  'unreachable' | 'lost' | 'guests' | 'site' | 'connections' | 'full' | 'bytes' | 'maintenance' | 'session';
 
 /** What the adapter's status shows of the demo network: what the client does, and what the server last said. */
 export type DemoStatus = {
@@ -140,9 +147,13 @@ export type DemoNotice =
 export function demoCloseError(code: number, reason = ''): MsgError | undefined {
   const cause = reason ? { cause: new Error(reason) } : undefined;
   switch (code) {
-    case 4001: return new MsgError('network:demo-net.versions');
-    case 4003: return new MsgError('network:demo-net.origin');
-    case 1002: case 1009: return new MsgError('network:demo-net.protocol', { code }, cause);
+    case 4001:
+      return new MsgError('network:demo-net.versions');
+    case 4003:
+      return new MsgError('network:demo-net.origin');
+    case 1002:
+    case 1009:
+      return new MsgError('network:demo-net.protocol', { code }, cause);
   }
   return undefined;
 }
@@ -208,12 +219,19 @@ const budgetOf = (v: unknown): DemoBudget | undefined => {
   const b = v as Record<string, unknown> | null;
   const used = num(b?.used);
   const limit = num(b?.limit);
-  return used === undefined || limit === undefined ? undefined : { used, limit, ...(str(b?.resets) ? { resets: str(b?.resets) } : {}) };
+  return used === undefined || limit === undefined
+    ? undefined
+    : { used, limit, ...(str(b?.resets) ? { resets: str(b?.resets) } : {}) };
 };
 const laneOf = (v: unknown): DemoLane => (v === 'none' || v === 'slow' ? v : 'fast');
 const slowOf = (v: unknown): DemoSlowLimits | undefined => {
   const l = v as Record<string, unknown> | null;
-  const [rate, connections, bytesPerDay, totalRate] = [num(l?.rate), num(l?.connections), num(l?.bytes_per_day), num(l?.total_rate)];
+  const [rate, connections, bytesPerDay, totalRate] = [
+    num(l?.rate),
+    num(l?.connections),
+    num(l?.bytes_per_day),
+    num(l?.total_rate),
+  ];
   if (rate === undefined || connections === undefined || bytesPerDay === undefined) return undefined;
   const ports = Array.isArray(l?.ports) ? l.ports.filter((p): p is number => num(p) !== undefined) : [];
   return { rate, connections, bytesPerDay, ...(totalRate !== undefined ? { totalRate } : {}), ports };
@@ -223,14 +241,24 @@ const refusalOf = (v: unknown): DemoRefusal => {
   const name = str(r?.name);
   const address = str(r?.address);
   const port = num(r?.port);
-  return { reason: str(r?.reason) ?? '', ...(name ? { name } : {}), ...(address ? { address } : {}), ...(port !== undefined ? { port } : {}) };
+  return {
+    reason: str(r?.reason) ?? '',
+    ...(name ? { name } : {}),
+    ...(address ? { address } : {}),
+    ...(port !== undefined ? { port } : {}),
+  };
 };
 
 /**
  * Connects the card behind `frames` to the demo network's server at `url`, and keeps it connected by the close codes'
  * rules until `close()`, or until the server closes for good (another version, another origin, a protocol error).
  */
-export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = {}, env: DemoEnv = browserEnv()): DemoNet {
+export function startDemoNet(
+  url: string,
+  frames: FramePort,
+  hooks: DemoHooks = {},
+  env: DemoEnv = browserEnv(),
+): DemoNet {
   const change = () => hooks.change?.();
   /** The last notice given: a lost socket's "trying again" is followed by the spent budget's, if that's what it meets. */
   let said: DemoNotice['kind'] | undefined;
@@ -323,7 +351,8 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
     let s: SocketLike;
     try {
       s = env.socket(url, DEMO_SUBPROTOCOL);
-    } catch (e) { // a URL the browser refuses outright
+    } catch (e) {
+      // a URL the browser refuses outright
       return end(new MsgError('network:demo-net.unreached', undefined, { cause: e }));
     }
     ws = s;
@@ -402,7 +431,8 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
         else delete status.slowBudget;
         const threshold = num(m.threshold);
         if (threshold === undefined) break;
-        if (m.reason === 'threshold') notice({ kind: 'budget', threshold, ...fast, ...(slow ? { slowLane: true as const } : {}) });
+        if (m.reason === 'threshold')
+          notice({ kind: 'budget', threshold, ...fast, ...(slow ? { slowLane: true as const } : {}) });
         // The slow lane's spent: said while the fast lane goes on (only the hosts off the allowlist are lost); in the
         // lane `slow` the lane's own message says it (`none`: nothing leaves).
         else if (m.reason === 'slow-threshold' && slow && (threshold < 100 || status.lane === 'fast'))
@@ -513,7 +543,8 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
         }
         // Said unless the lane's message said it, and nothing said otherwise since (a socket lost past the grace, whose
         // reconnect meets this: the message bar's "trying again" would stay until the reset).
-        if (status.lane !== 'none' || said === 'lost') notice({ kind: 'spent', ...(resets ? { resets } : {}), ...slow });
+        if (status.lane !== 'none' || said === 'lost')
+          notice({ kind: 'spent', ...(resets ? { resets } : {}), ...slow });
         status.lane = 'none';
         if (resets) status.laneResets = resets;
         return wait('bytes', until(resets, CROWDED_MS), resets, slow.lane);
@@ -557,7 +588,15 @@ export function startDemoNet(url: string, frames: FramePort, hooks: DemoHooks = 
 
 /** A demo connection's network map: the guest's address once the server leased it, and the status (`demo`). */
 export const demoNetmap = (lease: { address: string; mtu?: number } | undefined, demo: DemoStatus): NetMap => ({
-  name: '', addresses: lease ? [`${lease.address}/32`] : [], peers: [], mtu: lease?.mtu ?? 1500, dns: null, domains: null, exitNode: '', via: 'demo', demo,
+  name: '',
+  addresses: lease ? [`${lease.address}/32`] : [],
+  peers: [],
+  mtu: lease?.mtu ?? 1500,
+  dns: null,
+  domains: null,
+  exitNode: '',
+  via: 'demo',
+  demo,
 });
 
 /**
@@ -565,7 +604,10 @@ export const demoNetmap = (lease: { address: string; mtu?: number } | undefined,
  * (web/demo-net-worker.ts) puts the card on a frame port to the server, and posts the status in its network map and
  * the message bar's notices (`{type: 'notice'}`). State `Running` while connected or idle.
  */
-export function startDemo(config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
+export function startDemo(
+  config: { url: string; ip: MessagePort },
+  onEvent: (m: FromTailscale) => void = () => {},
+): Tailscale {
   const worker = new Worker(new URL('./demo-net-worker.ts', import.meta.url), { type: 'module' });
   return framedClient(worker, config, onEvent, () => new MsgError('network:demo-net.noExitNodes'));
 }

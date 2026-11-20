@@ -17,24 +17,69 @@ const KEYS = new Map<string, number>([
   ...ROW('KeyA KeyS KeyD KeyF KeyG KeyH KeyJ KeyK KeyL Semicolon Quote Backquote ShiftLeft Backslash', 30),
   ...ROW('KeyZ KeyX KeyC KeyV KeyB KeyN KeyM Comma Period Slash ShiftRight NumpadMultiply AltLeft Space CapsLock', 44),
   ...ROW('F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 NumLock ScrollLock', 59),
-  ...ROW('Numpad7 Numpad8 Numpad9 NumpadSubtract Numpad4 Numpad5 Numpad6 NumpadAdd Numpad1 Numpad2 Numpad3 Numpad0 NumpadDecimal', 71),
-  ['IntlBackslash', 86], ['F11', 87], ['F12', 88], ['NumpadEnter', 96], ['ControlRight', 97], ['NumpadDivide', 98],
-  ['PrintScreen', 99], ['AltRight', 100], ['Home', 102], ['ArrowUp', 103], ['PageUp', 104], ['ArrowLeft', 105],
-  ['ArrowRight', 106], ['End', 107], ['ArrowDown', 108], ['PageDown', 109], ['Insert', 110], ['Delete', 111],
-  ['Pause', 119], ['MetaLeft', 125], ['MetaRight', 126], ['ContextMenu', 127],
+  ...ROW(
+    'Numpad7 Numpad8 Numpad9 NumpadSubtract Numpad4 Numpad5 Numpad6 NumpadAdd Numpad1 Numpad2 Numpad3 Numpad0 NumpadDecimal',
+    71,
+  ),
+  ['IntlBackslash', 86],
+  ['F11', 87],
+  ['F12', 88],
+  ['NumpadEnter', 96],
+  ['ControlRight', 97],
+  ['NumpadDivide', 98],
+  ['PrintScreen', 99],
+  ['AltRight', 100],
+  ['Home', 102],
+  ['ArrowUp', 103],
+  ['PageUp', 104],
+  ['ArrowLeft', 105],
+  ['ArrowRight', 106],
+  ['End', 107],
+  ['ArrowDown', 108],
+  ['PageDown', 109],
+  ['Insert', 110],
+  ['Delete', 111],
+  ['Pause', 119],
+  ['MetaLeft', 125],
+  ['MetaRight', 126],
+  ['ContextMenu', 127],
   // Keys a US keyboard lacks (ABNT2's and JIS's; the guest's layout gives them characters: web/app/keyboard.ts).
-  ['IntlRo', 89], ['Convert', 92], ['KanaMode', 93], ['NonConvert', 94], ['Lang1', 122], ['Lang2', 123], ['IntlYen', 124],
+  ['IntlRo', 89],
+  ['Convert', 92],
+  ['KanaMode', 93],
+  ['NonConvert', 94],
+  ['Lang1', 122],
+  ['Lang2', 123],
+  ['IntlYen', 124],
   // Keys past a PC's 105 (the keyboard advertises every code to KEY_MICMUTE): the numpad's extras, F13 to F24, media keys.
-  ['NumpadEqual', 117], ['NumpadComma', 121], ...ROW('F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24', 183),
-  ['AudioVolumeMute', 113], ['AudioVolumeDown', 114], ['AudioVolumeUp', 115],
-  ['MediaTrackNext', 163], ['MediaPlayPause', 164], ['MediaTrackPrevious', 165], ['MediaStop', 166],
+  ['NumpadEqual', 117],
+  ['NumpadComma', 121],
+  ...ROW('F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24', 183),
+  ['AudioVolumeMute', 113],
+  ['AudioVolumeDown', 114],
+  ['AudioVolumeUp', 115],
+  ['MediaTrackNext', 163],
+  ['MediaPlayPause', 164],
+  ['MediaTrackPrevious', 165],
+  ['MediaStop', 166],
   // The power keys (systemd-logind powers off, suspends on them); nothing of the page's presses them by itself.
-  ['Power', 116], ['Sleep', 142], ['WakeUp', 143],
+  ['Power', 116],
+  ['Sleep', 142],
+  ['WakeUp', 143],
 ]);
 // `PointerEvent.buttons`' bits: left, right, middle, back, forward → BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA.
-const BUTTON_BITS = [[1, 0x110], [2, 0x111], [4, 0x112], [8, 0x113], [16, 0x114]] as const;
+const BUTTON_BITS = [
+  [1, 0x110],
+  [2, 0x111],
+  [4, 0x112],
+  [8, 0x113],
+  [16, 0x114],
+] as const;
 const BTN_TOUCH = 0x14a;
-const ABS_MT_SLOT = 0x2f, ABS_MT_POSITION_X = 0x35, ABS_MT_POSITION_Y = 0x36, ABS_MT_TRACKING_ID = 0x39;
+const ABS_MT_SLOT = 0x2f,
+  ABS_MT_POSITION_X = 0x35,
+  ABS_MT_POSITION_Y = 0x36,
+  ABS_MT_TRACKING_ID = 0x39;
 /** The touchscreen's slots (web/devices.ts `TOUCH_SLOTS`). */
 const TOUCH_SLOTS = 10;
 /** A wheel's notch (REL_WHEEL 1, REL_WHEEL_HI_RES 120) in CSS pixels: a mouse's notch comes as one event of at least this, a touchpad's motion as many small ones, summed. */
@@ -97,9 +142,28 @@ export type InputOptions = Pointers & {
 };
 
 const CSI: Record<string, string> = {
-  ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D', Home: '\x1b[H', End: '\x1b[F',
-  PageUp: '\x1b[5~', PageDown: '\x1b[6~', Insert: '\x1b[2~', Delete: '\x1b[3~',
-  F1: '\x1bOP', F2: '\x1bOQ', F3: '\x1bOR', F4: '\x1bOS', F5: '\x1b[15~', F6: '\x1b[17~', F7: '\x1b[18~', F8: '\x1b[19~', F9: '\x1b[20~', F10: '\x1b[21~', F11: '\x1b[23~', F12: '\x1b[24~',
+  ArrowUp: '\x1b[A',
+  ArrowDown: '\x1b[B',
+  ArrowRight: '\x1b[C',
+  ArrowLeft: '\x1b[D',
+  Home: '\x1b[H',
+  End: '\x1b[F',
+  PageUp: '\x1b[5~',
+  PageDown: '\x1b[6~',
+  Insert: '\x1b[2~',
+  Delete: '\x1b[3~',
+  F1: '\x1bOP',
+  F2: '\x1bOQ',
+  F3: '\x1bOR',
+  F4: '\x1bOS',
+  F5: '\x1b[15~',
+  F6: '\x1b[17~',
+  F7: '\x1b[18~',
+  F8: '\x1b[19~',
+  F9: '\x1b[20~',
+  F10: '\x1b[21~',
+  F11: '\x1b[23~',
+  F12: '\x1b[24~',
 };
 
 /** What a key event says beside its code: its `key` (the character or the key's name) and the modifiers down with it. */
@@ -109,7 +173,8 @@ export type KeyLike = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKe
 export type KeySource = 'screen' | 'osk' | 'menu' | 'hold';
 
 /** A `KeyboardEvent.key` for code `code` on a US keyboard, as a terminal reads it (a letter or digit, else the code: `Escape`, `Tab`, `F4`). */
-const keyName = (code: string, shift: boolean) => (/^Key[A-Z]$/.test(code) ? (shift ? code[3] : code[3].toLowerCase()) : /^Digit\d$/.test(code) ? code[5] : code);
+const keyName = (code: string, shift: boolean) =>
+  /^Key[A-Z]$/.test(code) ? (shift ? code[3] : code[3].toLowerCase()) : /^Digit\d$/.test(code) ? code[5] : code;
 
 /** Key `code`'s (a `KeyboardEvent.code` name) Linux keycode, if the guest's keyboard has it. */
 export const codeOf = (code: string) => KEYS.get(code);
@@ -117,7 +182,8 @@ export const codeOf = (code: string) => KEYS.get(code);
 /** What a terminal sends for a key event (what EDK2's and GRUB's serial console read), or null for one that sends nothing (a modifier, an unknown key). */
 export function terminalBytes(e: KeyLike): string | null {
   if (e.metaKey) return null;
-  const special = CSI[e.key] ?? ({ Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b' } as Record<string, string>)[e.key];
+  const special =
+    CSI[e.key] ?? ({ Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b' } as Record<string, string>)[e.key];
   if (special !== undefined) return e.altKey ? `\x1b${special}` : special;
   if (e.key.length !== 1) return null;
   let c = e.key;
@@ -161,7 +227,10 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
   const sendKey = (code: number, value: number) => {
     if (value === 0) keys.delete(code);
     else keys.add(code);
-    keyboard?.postMessage([[EV_KEY, code, value], [EV_SYN, 0, 0]]);
+    keyboard?.postMessage([
+      [EV_KEY, code, value],
+      [EV_SYN, 0, 0],
+    ]);
   };
   /** Key `name` down or up to the guest, whoever holds it: whether it took it. */
   const deliver = (name: string, down: boolean, e: KeyLike): boolean => {
@@ -195,7 +264,7 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     if (down) {
       // The same holder's repeat goes on as before (the serial console types it; the keyboard drops it).
       if (h?.has(from)) return deliver(name, true, e);
-      if (h) return h.add(from), true;
+      if (h) return (h.add(from), true);
       holders.set(name, new Set([from]));
       return deliver(name, true, e);
     }
@@ -243,17 +312,22 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
   const released: (() => void)[] = [];
   let held = false;
   /** A listener that does nothing while the input is held (a key's browser action prevented). */
-  const unlessHeld = <E extends Event>(f: (e: E) => unknown) => (e: E) => {
-    if (!held) return void f(e);
-    if (e.type.startsWith('key')) e.preventDefault();
-  };
+  const unlessHeld =
+    <E extends Event>(f: (e: E) => unknown) =>
+    (e: E) => {
+      if (!held) return void f(e);
+      if (e.type.startsWith('key')) e.preventDefault();
+    };
   const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
   /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked in the `pointer` mode, the page's cursor. */
   const spot = { x: 16384, y: 16384 };
   const abs = (e: MouseEvent) => {
     const r = el.getBoundingClientRect();
     [spot.x, spot.y] = [at(e.clientX - r.left, r.width), at(e.clientY - r.top, r.height)];
-    return [[EV_ABS, 0, spot.x], [EV_ABS, 1, spot.y]];
+    return [
+      [EV_ABS, 0, spot.x],
+      [EV_ABS, 1, spot.y],
+    ];
   };
   const { mouse, touch } = pointers;
   const locked = () => document.pointerLockElement === el;
@@ -269,11 +343,24 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
   /** What a pointer event moves: the tablet to the pointer; while locked, the tablet by the motion (`pointer`) or the mouse (`raw`). */
   const motion = (e: PointerEvent): { port?: MessagePort; events: number[][] } => {
     if (!locked()) return { port: tablet, events: abs(e) };
-    if (raw()) return { port: mouse, events: [...(e.movementX ? [[EV_REL, 0, e.movementX]] : []), ...(e.movementY ? [[EV_REL, 1, e.movementY]] : [])] };
+    if (raw())
+      return {
+        port: mouse,
+        events: [
+          ...(e.movementX ? [[EV_REL, 0, e.movementX]] : []),
+          ...(e.movementY ? [[EV_REL, 1, e.movementY]] : []),
+        ],
+      };
     const r = el.getBoundingClientRect();
     spot.x = Math.max(0, Math.min(32767, Math.round(spot.x + (e.movementX / r.width) * 32767)));
     spot.y = Math.max(0, Math.min(32767, Math.round(spot.y + (e.movementY / r.height) * 32767)));
-    return { port: tablet, events: [[EV_ABS, 0, spot.x], [EV_ABS, 1, spot.y]] };
+    return {
+      port: tablet,
+      events: [
+        [EV_ABS, 0, spot.x],
+        [EV_ABS, 1, spot.y],
+      ],
+    };
   };
   const releaseButtons = () => {
     if (buttons.size) buttonsOn?.postMessage([...[...buttons].map((b) => [EV_KEY, b, 0]), [EV_SYN, 0, 0]]);
@@ -312,7 +399,12 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       const slot = Array.from({ length: TOUCH_SLOTS }, (_, k) => k).find((k) => !used.has(k));
       if (slot === undefined) return; // more fingers than slots
       fingers.set(e.pointerId, (f = { slot, x, y }));
-      ev.push([EV_ABS, ABS_MT_SLOT, slot], [EV_ABS, ABS_MT_TRACKING_ID, tracking], [EV_ABS, ABS_MT_POSITION_X, x], [EV_ABS, ABS_MT_POSITION_Y, y]);
+      ev.push(
+        [EV_ABS, ABS_MT_SLOT, slot],
+        [EV_ABS, ABS_MT_TRACKING_ID, tracking],
+        [EV_ABS, ABS_MT_POSITION_X, x],
+        [EV_ABS, ABS_MT_POSITION_Y, y],
+      );
       tracking = (tracking + 1) & 0xffff;
       if (fingers.size === 1) ev.push([EV_KEY, BTN_TOUCH, 1]);
     } else if (!f) {
@@ -333,7 +425,14 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
   };
   const liftFingers = () => {
     if (!fingers.size) return;
-    touch!.postMessage([...[...fingers.values()].flatMap(({ slot }) => [[EV_ABS, ABS_MT_SLOT, slot], [EV_ABS, ABS_MT_TRACKING_ID, -1]]), [EV_KEY, BTN_TOUCH, 0], [EV_SYN, 0, 0]]);
+    touch!.postMessage([
+      ...[...fingers.values()].flatMap(({ slot }) => [
+        [EV_ABS, ABS_MT_SLOT, slot],
+        [EV_ABS, ABS_MT_TRACKING_ID, -1],
+      ]),
+      [EV_KEY, BTN_TOUCH, 0],
+      [EV_SYN, 0, 0],
+    ]);
     fingers.clear();
   };
   const touched = (e: PointerEvent) => !!touch && e.pointerType === 'touch';
@@ -358,7 +457,10 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     return !mine;
   };
   /** Each wheel's motion (vertical, horizontal) since it last turned: high-resolution units (120 a notch) not yet sent, and sent but not yet a notch. */
-  const wheels = [{ rest: 0, units: 0 }, { rest: 0, units: 0 }];
+  const wheels = [
+    { rest: 0, units: 0 },
+    { rest: 0, units: 0 },
+  ];
   const takeMouse = () => {
     // The pointer mode moves as the host's pointer does (the browser's motion is accelerated as it is).
     // A refusal (the browser's: too soon after Esc, no gesture) leaves the mouse the page's: the next click asks again.
@@ -390,23 +492,35 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
   const off = [
     on(el, 'keydown', unlessHeld(key(1))),
     on(el, 'keyup', unlessHeld(key(0))),
-    on(el, 'pointerdown', unlessHeld((e: PointerEvent) => {
-      if (touched(e)) return finger(e, 'down');
-      if (stray(e, 'down')) return;
-      if (lockOn && !locked() && e.pointerType === 'mouse') {
-        // The click that takes the mouse isn't the guest's.
-        ignored = e.buttons;
-        el.focus();
-        takeMouse();
-        return;
-      }
-      if (!locked()) el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here (a locked pointer can't be captured)
-      pointer(e);
-    })),
-    on(el, 'pointerup', unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || pointer(e)))),
+    on(
+      el,
+      'pointerdown',
+      unlessHeld((e: PointerEvent) => {
+        if (touched(e)) return finger(e, 'down');
+        if (stray(e, 'down')) return;
+        if (lockOn && !locked() && e.pointerType === 'mouse') {
+          // The click that takes the mouse isn't the guest's.
+          ignored = e.buttons;
+          el.focus();
+          takeMouse();
+          return;
+        }
+        if (!locked()) el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here (a locked pointer can't be captured)
+        pointer(e);
+      }),
+    ),
+    on(
+      el,
+      'pointerup',
+      unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || pointer(e))),
+    ),
     // A cancelled pointer (the browser took a touch, a pen left) sends no up: what it held is released.
     on(el, 'pointercancel', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || releaseButtons())),
-    on(el, 'pointermove', unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e, 'move') || pointer(e)))),
+    on(
+      el,
+      'pointermove',
+      unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e, 'move') || pointer(e))),
+    ),
     on(el, 'mousedown', sideButton),
     on(el, 'mouseup', sideButton),
     on(el, 'auxclick', sideButton),
@@ -417,12 +531,18 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       e.preventDefault();
       const ev: number[][] = [];
       // Vertical: REL_WHEEL and REL_WHEEL_HI_RES, up positive (deltaY's opposite); horizontal: REL_HWHEEL and REL_HWHEEL_HI_RES, right positive.
-      for (const [k, delta, dir, notch, hiRes] of [[0, e.deltaY, -1, 8, 11], [1, e.deltaX, 1, 6, 12]] as const) {
+      for (const [k, delta, dir, notch, hiRes] of [
+        [0, e.deltaY, -1, 8, 11],
+        [1, e.deltaX, 1, 6, 12],
+      ] as const) {
         if (!delta) continue;
         const w = wheels[k];
         // Lines and pages (Firefox's deltaMode 1, 2) are a notch each; pixels count at 120 units a notch, a notch per event at most.
         // (`rest` counts units × NOTCH_PX, so whole pixels add up exactly.)
-        const scaled = dir * (e.deltaMode === 0 ? Math.max(-NOTCH_PX, Math.min(NOTCH_PX, delta)) : Math.sign(delta) * NOTCH_PX) * 120;
+        const scaled =
+          dir *
+          (e.deltaMode === 0 ? Math.max(-NOTCH_PX, Math.min(NOTCH_PX, delta)) : Math.sign(delta) * NOTCH_PX) *
+          120;
         if (Math.sign(scaled) !== Math.sign(w.rest + w.units || scaled)) [w.rest, w.units] = [0, 0]; // turning back starts over
         w.rest += scaled;
         const hi = Math.trunc(w.rest / NOTCH_PX);

@@ -19,7 +19,20 @@ export async function startSampler(memory: WebAssembly.Memory, counters: number 
 }
 
 /** Per vCPU in each timeline row, after the row's time (epoch ms): counters (web/vm.ts `Counter`) and liveness. */
-export const TIMELINE_FIELDS = ['steps', 'compileNs', 'syscalls', 'irqs', 'outNs', 'dsbWaitNs', 'lockWaitNs', 'invalidations', 'enteredAt', 'chunks', 'jitSteps', 'flushes'] as const;
+export const TIMELINE_FIELDS = [
+  'steps',
+  'compileNs',
+  'syscalls',
+  'irqs',
+  'outNs',
+  'dsbWaitNs',
+  'lockWaitNs',
+  'invalidations',
+  'enteredAt',
+  'chunks',
+  'jitSteps',
+  'flushes',
+] as const;
 /**
  * The timeline's rows, flat: each is the time (epoch ms), then TIMELINE_FIELDS for each vCPU (`enteredAt`: when the
  * vCPU entered the `vm_run_cpu` call it's in, epoch ms, 0 when outside one; `chunks`: calls returned; `jitSteps`: steps
@@ -28,7 +41,13 @@ export const TIMELINE_FIELDS = ['steps', 'compileNs', 'syscalls', 'irqs', 'outNs
 export type Timeline = { ncpus: number; periodMs: number; fields: string[]; rows: number[] };
 
 /** The vCPU timeline every `periodMs` (up to `maxRows` rows); stop() resolves to it. */
-export async function startTimeline(memory: WebAssembly.Memory, counters: number[], live: Float64Array | undefined, periodMs = 10, maxRows = 60_000) {
+export async function startTimeline(
+  memory: WebAssembly.Memory,
+  counters: number[],
+  live: Float64Array | undefined,
+  periodMs = 10,
+  maxRows = 60_000,
+) {
   const worker = new Worker(new URL('./timeline-worker.ts', import.meta.url), { type: 'module' });
   const ctl = new SharedArrayBuffer(8);
   const flag = new Int32Array(ctl);

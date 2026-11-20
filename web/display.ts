@@ -34,7 +34,12 @@ export function changedRows(h: number, changed: (y: number) => boolean): [number
  * `onContent` is called once, at the first draw that shows a pixel that isn't
  * black (the guest's console took the screen: web/app/ hides its boot card).
  */
-export function showFramebuffer(canvas: HTMLCanvasElement | OffscreenCanvas, memory: WebAssembly.Memory, fb: Framebuffer, onContent?: () => void) {
+export function showFramebuffer(
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+  memory: WebAssembly.Memory,
+  fb: Framebuffer,
+  onContent?: () => void,
+) {
   const { width: w, height: h } = fb;
   [canvas.width, canvas.height] = [w, h];
   const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;

@@ -50,7 +50,12 @@ export type BlockStore = {
 const stores = new Map<BlockStore, string>();
 
 type Bucket = { getDirectory(): Promise<FileSystemDirectoryHandle>; setExpires(t: number): Promise<void> };
-type Buckets = { open(name: string, o?: { persisted?: boolean; durability?: string; quota?: number; expires?: number }): Promise<Bucket> };
+type Buckets = {
+  open(
+    name: string,
+    o?: { persisted?: boolean; durability?: string; quota?: number; expires?: number },
+  ): Promise<Bucket>;
+};
 /** Storage Buckets (Chromium; not in the DOM types yet). */
 const buckets = () => (navigator as unknown as { storageBuckets?: Buckets }).storageBuckets;
 
@@ -61,7 +66,12 @@ const buckets = () => (navigator as unknown as { storageBuckets?: Buckets }).sto
 export async function cacheRoot(use = false): Promise<FileSystemDirectoryHandle> {
   const sb = buckets();
   if (!sb) return opfsDir(CACHE_DIR, true);
-  const bucket = await sb.open(CACHE_DIR, { persisted: false, durability: 'relaxed', quota: BUCKET_QUOTA, expires: Date.now() + CACHE_EXPIRY_MS });
+  const bucket = await sb.open(CACHE_DIR, {
+    persisted: false,
+    durability: 'relaxed',
+    quota: BUCKET_QUOTA,
+    expires: Date.now() + CACHE_EXPIRY_MS,
+  });
   if (use) await bucket.setExpires(Date.now() + CACHE_EXPIRY_MS);
   await (await navigator.storage.getDirectory()).removeEntry(CACHE_DIR, { recursive: true }).catch(() => {});
   return bucket.getDirectory();
@@ -121,12 +131,20 @@ export async function cacheKey(identity: string) {
 function tryLock(key: string, waitMs = 0): Promise<(() => void) | undefined> {
   return new Promise((resolve) => {
     let release!: () => void;
-    const held = new Promise<void>((r) => { release = r; });
-    navigator.locks.request(`waarm64-cache:${key}`, waitMs ? { signal: AbortSignal.timeout(waitMs) } : { ifAvailable: true }, (lock) => {
-      if (!lock) return void resolve(undefined);
-      resolve(release);
-      return held;
-    }).catch(() => resolve(undefined));
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    navigator.locks
+      .request(
+        `waarm64-cache:${key}`,
+        waitMs ? { signal: AbortSignal.timeout(waitMs) } : { ifAvailable: true },
+        (lock) => {
+          if (!lock) return void resolve(undefined);
+          resolve(release);
+          return held;
+        },
+      )
+      .catch(() => resolve(undefined));
   });
 }
 
@@ -146,10 +164,16 @@ async function entries(root?: FileSystemDirectoryHandle): Promise<Entry[]> {
   } catch {
     return out;
   }
-  for await (const [key, h] of (root as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries()) {
+  for await (const [key, h] of (
+    root as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }
+  ).entries()) {
     if (h.kind !== 'directory') continue;
     const d = h as FileSystemDirectoryHandle;
-    const file = (n: string) => d.getFileHandle(n).then((f) => f.getFile(), () => undefined);
+    const file = (n: string) =>
+      d.getFileHandle(n).then(
+        (f) => f.getFile(),
+        () => undefined,
+      );
     const [data, map] = await Promise.all([file('data'), file('map')]);
     out.push({ key, bytes: (data?.size ?? 0) + (map?.size ?? 0), used: map?.lastModified ?? 0 });
   }
@@ -199,7 +223,8 @@ export async function clearCaches() {
     await new Promise<void>((done) => {
       const timer = setTimeout(done, CLEAR_WAIT_MS);
       ch.onmessage = (e) => {
-        for (const key of (e.data?.cleared ?? []) as string[]) if (open.has(key)) (freed += open.get(key)!, open.delete(key));
+        for (const key of (e.data?.cleared ?? []) as string[])
+          if (open.has(key)) ((freed += open.get(key)!), open.delete(key));
         if (!open.size) (clearTimeout(timer), done());
       };
       ch.postMessage({ clear: true });
@@ -265,7 +290,14 @@ export async function openBlockStore(key: string, size: number, block: number): 
 }
 
 /** The store over its two files (memory files in the tests): `slots` blocks at most. */
-export function blockStore(data: SyncFile, mapFile: SyncFile, size: number, block: number, slots: number, close: () => void = () => {}): BlockStore {
+export function blockStore(
+  data: SyncFile,
+  mapFile: SyncFile,
+  size: number,
+  block: number,
+  slots: number,
+  close: () => void = () => {},
+): BlockStore {
   [data, mapFile] = [shortOnFull(data), shortOnFull(mapFile)]; // a refused write gives up, as a short one does, never throws into a read
   const blocks = Math.ceil(size / block);
   const map = new Uint32Array(blocks);
@@ -275,8 +307,9 @@ export function blockStore(data: SyncFile, mapFile: SyncFile, size: number, bloc
   for (let b = 0; b < blocks; b++) {
     const s = map[b] - 1;
     if (s < 0) continue;
-    if (s >= slots || owner[s] >= 0) map[b] = 0; // past a smaller budget, or a slot claimed twice: not held
-    else (owner[s] = b, used = Math.max(used, s + 1));
+    if (s >= slots || owner[s] >= 0)
+      map[b] = 0; // past a smaller budget, or a slot claimed twice: not held
+    else ((owner[s] = b), (used = Math.max(used, s + 1)));
   }
   let next = used % slots; // once full, slots are reused from here on
   const lengthOf = (b: number) => Math.min(block, size - b * block);

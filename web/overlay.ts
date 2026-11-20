@@ -132,7 +132,9 @@ export async function storageNumbers(): Promise<{ used: number; quota: number } 
 /** The cause of a write the browser's storage refused (docs/machines.md "Storage"): it's full, with its numbers where the browser gives them. */
 export async function storageFullError(): Promise<MsgError> {
   const n = await storageNumbers();
-  return n ? new MsgError('disks:overlay.storageFull.numbers', { used: n.used, quota: n.quota }) : new MsgError('disks:overlay.storageFull');
+  return n
+    ? new MsgError('disks:overlay.storageFull.numbers', { used: n.used, quota: n.quota })
+    : new MsgError('disks:overlay.storageFull');
 }
 
 /**
@@ -142,7 +144,8 @@ export async function storageFullError(): Promise<MsgError> {
  */
 export function withRoom(makeRoom?: () => Promise<boolean>) {
   let room = !!makeRoom;
-  return async (w: () => boolean | Promise<boolean>) => (await w()) || (room && (room = await makeRoom!().catch(() => false)) && (await w()));
+  return async (w: () => boolean | Promise<boolean>) =>
+    (await w()) || (room && (room = await makeRoom!().catch(() => false)) && (await w()));
 }
 
 /**
@@ -214,7 +217,11 @@ export function readMeta(f: SyncFile): Meta {
   if (n < 8) return { generation: 0, merging: '', size: 0 };
   const v = new DataView(b.buffer);
   const merging = new TextDecoder().decode(b.subarray(8, 8 + Math.min(24, Math.max(0, n - 8)))).replace(/\0+$/, '');
-  return { generation: Number(v.getBigUint64(0, true)), merging, size: n >= META_SIZE ? Number(v.getBigUint64(32, true)) : 0 };
+  return {
+    generation: Number(v.getBigUint64(0, true)),
+    merging,
+    size: n >= META_SIZE ? Number(v.getBigUint64(32, true)) : 0,
+  };
 }
 
 /** Writes a `meta` file, durably (flushed). False on a failed write. */
@@ -282,7 +289,8 @@ export function readMap(f: SyncFile, blocks: number): MapLeaves {
     const at = Number(head.getBigUint64(8, true));
     const n = Math.max(0, Math.floor((size - at) / REC_BYTES)); // a record the file doesn't hold whole was never added
     const recs = new Uint32Array(n * REC);
-    for (let k = 0; k < n; k += 256) whole(new Uint8Array(recs.buffer, k * REC_BYTES, Math.min(256, n - k) * REC_BYTES), at + k * REC_BYTES);
+    for (let k = 0; k < n; k += 256)
+      whole(new Uint8Array(recs.buffer, k * REC_BYTES, Math.min(256, n - k) * REC_BYTES), at + k * REC_BYTES);
     // A range's leaf is its first record. A record without a range, or a later one of a range that has one (what a
     // conversion interrupted before its last cut leaves past the records: zeros, then the records' first copy), is
     // dead: zeros in memory, so no walk (free slots, compaction's owners, `written`) sees its entries.
@@ -351,7 +359,14 @@ export const mapEntry = (m: MapLeaves, b: number) => {
  * gave it): past `base`'s end it reads as zeros until written, and its map grows as blocks there are. A flat map
  * (from before leaves) is converted at the first change (`convert`); until then it is read as it is.
  */
-export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile, size = 0, opts: { ordered?: boolean } = {}): WritableDisk & { generation(): number; epoch(): void } {
+export function overlay(
+  base: Disk,
+  data: SyncFile,
+  mapFile: SyncFile,
+  meta?: SyncFile,
+  size = 0,
+  opts: { ordered?: boolean } = {},
+): WritableDisk & { generation(): number; epoch(): void } {
   [data, mapFile, meta] = [shortOnFull(data), shortOnFull(mapFile), meta && shortOnFull(meta)];
   const ordered = opts.ordered ?? ORDERED;
   base = grown(base, Math.max(size, meta ? readMeta(meta).size : 0));
@@ -396,12 +411,17 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
       fill(k, recs.subarray(q, q + LEAF));
       recs[q + LEAF] = r + 1;
     });
-    if (mapFile.write(new Uint8Array(recs.buffer, p * 4, rs.length * REC_BYTES), { at: end }) !== rs.length * REC_BYTES) {
+    if (
+      mapFile.write(new Uint8Array(recs.buffer, p * 4, rs.length * REC_BYTES), { at: end }) !==
+      rs.length * REC_BYTES
+    ) {
       recs.fill(0, p, p + rs.length * REC);
       mapFile.truncate(end);
       return false;
     }
-    rs.forEach((r) => { top[r] = ++n; });
+    rs.forEach((r) => {
+      top[r] = ++n;
+    });
     return true;
   };
   /**
@@ -429,7 +449,10 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   const setRun = (b: number, e: number, slot1: number) => {
     const r = Math.floor(b / LEAF);
     const i = b % LEAF;
-    if (!top[r]) return addLeaves([r], (_, entries) => { for (let k = 0; k < e - b; k++) entries[i + k] = slot1 + k; });
+    if (!top[r])
+      return addLeaves([r], (_, entries) => {
+        for (let k = 0; k < e - b; k++) entries[i + k] = slot1 + k;
+      });
     const p = (top[r] - 1) * REC + i;
     const old = recs.slice(p, p + e - b);
     for (let k = 0; k < e - b; k++) recs[p + k] = slot1 + k;
@@ -473,12 +496,18 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     }
     trimmed = true;
     const flat = loaded.flat;
-    const undo = () => { mapFile.truncate(flat); return false; };
+    const undo = () => {
+      mapFile.truncate(flat);
+      return false;
+    };
     if (mapFile.getSize() > flat) mapFile.truncate(flat); // what an interrupted conversion left
     if (n === 0) {
       // Nothing written (an empty file, or entries all 0): the header alone.
       mapFile.truncate(0);
-      if (!writeHead(HEAD)) { mapFile.truncate(0); return false; }
+      if (!writeHead(HEAD)) {
+        mapFile.truncate(0);
+        return false;
+      }
       mapFile.flush();
       at = HEAD;
       return true;
@@ -512,7 +541,12 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
       }
       return true;
     };
-    if (from > HEAD && n * REC_BYTES <= from - HEAD && mapFile.write(new Uint8Array(recs.buffer, 0, n * REC_BYTES), { at: HEAD }) === n * REC_BYTES && zeroRoom()) {
+    if (
+      from > HEAD &&
+      n * REC_BYTES <= from - HEAD &&
+      mapFile.write(new Uint8Array(recs.buffer, 0, n * REC_BYTES), { at: HEAD }) === n * REC_BYTES &&
+      zeroRoom()
+    ) {
       mapFile.flush();
       if (writeHead(HEAD)) {
         mapFile.flush();
@@ -526,7 +560,10 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   // The slots no block maps. `free` may also hold slots that were cut off or taken since: `isFree` decides.
   const isFree = new Set<number>();
   const free: number[] = [];
-  const release = (slot: number) => { isFree.add(slot); free.push(slot); };
+  const release = (slot: number) => {
+    isFree.add(slot);
+    free.push(slot);
+  };
   /** Whether a slot was freed by a map change the map file may not hold durably yet (`ordered`: `settle` first). */
   let unsettled = false;
   const settle = () => {
@@ -564,7 +601,8 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     // Each slot's entry, as its place in `recs` + 1: the leaves' entries, every leaf's.
     const owner = new Uint32Array(slots);
     for (let q = 0; q < n * REC; q += REC) {
-      for (let i = q; i < q + LEAF; i++) if (recs[i] && recs[i] !== ZERO && recs[i] <= slots) owner[recs[i] - 1] = i + 1;
+      for (let i = q; i < q + LEAF; i++)
+        if (recs[i] && recs[i] !== ZERO && recs[i] <= slots) owner[recs[i] - 1] = i + 1;
     }
     if (ordered) settle();
     const buf = new Uint8Array(BLOCK);
@@ -577,19 +615,33 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
       for (; h < holes.length && moves.length < 256; h++) {
         const hole = holes[h];
         while (hi > hole && isFree.has(hi)) hi--;
-        if (hi <= hole) { h = holes.length; break; }
+        if (hi <= hole) {
+          h = holes.length;
+          break;
+        }
         const p = owner[hi] - 1;
-        if (p < 0) { ok = false; break; } // a slot neither free nor a block's: none is
+        if (p < 0) {
+          ok = false;
+          break;
+        } // a slot neither free nor a block's: none is
         moves.push({ from: hi--, to: hole, p });
       }
       let copied = 0;
-      while (copied < moves.length && data.read(buf, { at: moves[copied].from * BLOCK }) === BLOCK && data.write(buf, { at: moves[copied].to * BLOCK }) === BLOCK) copied++;
+      while (
+        copied < moves.length &&
+        data.read(buf, { at: moves[copied].from * BLOCK }) === BLOCK &&
+        data.write(buf, { at: moves[copied].to * BLOCK }) === BLOCK
+      )
+        copied++;
       if (copied < moves.length) ok = false;
       if (ordered && copied) data.flush();
       for (const { from, to, p } of moves.slice(0, copied)) {
         const old = recs.slice(p, p + 1);
         recs[p] = to + 1;
-        if (!putMap(p, 1, old)) { ok = false; break; }
+        if (!putMap(p, 1, old)) {
+          ok = false;
+          break;
+        }
         isFree.delete(to);
         isFree.add(from);
         unsettled = true;
@@ -609,7 +661,10 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     for (let s = slots - 1; s >= 0; s--) if (!used[s]) release(s); // the lowest are taken first
   }
 
-  const held = (b: number) => { const e = ent(b); return e !== 0 && e !== ZERO; };
+  const held = (b: number) => {
+    const e = ent(b);
+    return e !== 0 && e !== ZERO;
+  };
 
   let gen = meta ? readMeta(meta) : { generation: 0, merging: '', size: 0 };
   let bumped = false;
@@ -635,8 +690,10 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
         // `out` is zeros there already.
       } else if (e) {
         // Blocks in consecutive slots are one read (an OPFS call costs the same whatever its size).
-        for (let c = b, x = e; end < stop && held(c + 1) && ent(c + 1) === x + 1; c++, x++) end = Math.min(end + BLOCK, stop);
-        if (data.read(out.subarray(pos - off, end - off), { at: (e - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return undefined;
+        for (let c = b, x = e; end < stop && held(c + 1) && ent(c + 1) === x + 1; c++, x++)
+          end = Math.min(end + BLOCK, stop);
+        if (data.read(out.subarray(pos - off, end - off), { at: (e - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos)
+          return undefined;
       } else {
         // Runs of blocks that aren't in the overlay go to the base in one read.
         while (end < stop && !ent(end / BLOCK)) end = Math.min(end + BLOCK, stop);
@@ -669,7 +726,11 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
         let c = b;
         while (c < last && held(c + 1) && ent(c + 1) === ent(c) + 1) c++;
         const end = Math.min(stop, (c + 1) * BLOCK);
-        if (data.write(bytes.subarray(pos - off, end - off), { at: (ent(b) - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return false;
+        if (
+          data.write(bytes.subarray(pos - off, end - off), { at: (ent(b) - 1) * BLOCK + (pos - b * BLOCK) }) !==
+          end - pos
+        )
+          return false;
         b = c + 1;
       } else if (!full(b)) {
         // First write to a block it covers in part: its slot starts as the base's contents (or as the zeros it was).
@@ -683,9 +744,17 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
         block.set(bytes.subarray(pos - off, end - off), pos - b * BLOCK);
         const { slot, reused } = take();
         if (ordered && reused) settle();
-        if (data.write(block, { at: slot * BLOCK }) !== BLOCK) { release(slot); shrink(); return false; }
+        if (data.write(block, { at: slot * BLOCK }) !== BLOCK) {
+          release(slot);
+          shrink();
+          return false;
+        }
         if (ordered) data.flush();
-        if (!setRun(b, b + 1, slot + 1)) { release(slot); shrink(); return false; }
+        if (!setRun(b, b + 1, slot + 1)) {
+          release(slot);
+          shrink();
+          return false;
+        }
         b++;
       } else {
         // A run of whole blocks the overlay doesn't hold: their data (a write per run of consecutive slots), then
@@ -733,7 +802,10 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   };
 
   /** The whole blocks of [off, off + len) (the disk's last block is whole when the range ends with the disk). */
-  const whole = (off: number, len: number) => [Math.ceil(off / BLOCK), off + len === base.size ? blocks : Math.floor((off + len) / BLOCK)];
+  const whole = (off: number, len: number) => [
+    Math.ceil(off / BLOCK),
+    off + len === base.size ? blocks : Math.floor((off + len) / BLOCK),
+  ];
   /**
    * Blocks [first, end) become zeros without slots (`heldOnly`: only those the overlay holds), a leaf at a time, each
    * leaf's entries to its file before its slots are free; whole ranges without a leaf get theirs in one write (up to
@@ -743,7 +815,10 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     for (let s = first; s < end;) {
       const r = Math.floor(s / LEAF);
       const e = Math.min(end, (r + 1) * LEAF);
-      if (!top[r] && heldOnly) { s = e; continue; }
+      if (!top[r] && heldOnly) {
+        s = e;
+        continue;
+      }
       if (!top[r] && s === r * LEAF && e === (r + 1) * LEAF) {
         const rs = [r];
         while (rs.length < 256 && (r + rs.length + 1) * LEAF <= end && !top[r + rs.length]) rs.push(r + rs.length);
@@ -775,7 +850,11 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     const [first, end] = whole(off, len);
     if (end <= first) return write(off, new Uint8Array(len));
     const tail = off + len - end * BLOCK; // none when the range ends with the disk
-    return (await write(off, new Uint8Array(first * BLOCK - off))) && unmap(first, end, false) && (tail <= 0 || (await write(end * BLOCK, new Uint8Array(tail))));
+    return (
+      (await write(off, new Uint8Array(first * BLOCK - off))) &&
+      unmap(first, end, false) &&
+      (tail <= 0 || (await write(end * BLOCK, new Uint8Array(tail))))
+    );
   };
 
   /** The blocks written, ascending, as they're walked: the leaves' entries, the leaves in their ranges' order. */
@@ -794,7 +873,10 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     for (let k = 0; k < list.length;) {
       const e = ent(list[k]);
       if (!e) return undefined;
-      if (e === ZERO) { k++; continue; } // `out` is zeros there already
+      if (e === ZERO) {
+        k++;
+        continue;
+      } // `out` is zeros there already
       let j = k + 1;
       while (j < list.length && ent(list[j]) === e + (j - k)) j++;
       if (data.read(out.subarray(k * BLOCK, j * BLOCK), { at: (e - 1) * BLOCK }) !== (j - k) * BLOCK) return undefined;
@@ -803,7 +885,30 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     return out;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, blocks: blocksOf, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); unsettled = false; }, generation: () => gen.generation, epoch: () => { bumped = false; }, leaves: () => ({ top, recs, n }) };
+  return {
+    size: base.size,
+    format: base.format,
+    read,
+    write,
+    discard,
+    zero,
+    written,
+    block,
+    blocks: blocksOf,
+    zeroed: (b) => ent(b) === ZERO,
+    compact: () => compact(true),
+    bytes: () => data.getSize() + mapFile.getSize(),
+    flush: () => {
+      data.flush();
+      mapFile.flush();
+      unsettled = false;
+    },
+    generation: () => gen.generation,
+    epoch: () => {
+      bumped = false;
+    },
+    leaves: () => ({ top, recs, n }),
+  };
 }
 
 /**
@@ -818,15 +923,30 @@ export function memFile(): SyncFile & { bytes: () => Uint8Array } {
   let b = new Uint8Array(0);
   let size = 0;
   return {
-    read: (buf, { at }) => { const n = Math.max(0, Math.min(buf.length, size - at)); buf.set(b.subarray(at, at + n)); return n; },
+    read: (buf, { at }) => {
+      const n = Math.max(0, Math.min(buf.length, size - at));
+      buf.set(b.subarray(at, at + n));
+      return n;
+    },
     write: (buf, { at }) => {
-      if (at + buf.length > b.length) { const g = new Uint8Array(Math.max(at + buf.length, 2 * b.length)); g.set(b); b = g; }
+      if (at + buf.length > b.length) {
+        const g = new Uint8Array(Math.max(at + buf.length, 2 * b.length));
+        g.set(b);
+        b = g;
+      }
       b.set(buf, at);
       size = Math.max(size, at + buf.length);
       return buf.length;
     },
     getSize: () => size,
-    truncate: (n) => { if (n > b.length) { const g = new Uint8Array(n); g.set(b); b = g; } else b.fill(0, n, size); size = n; },
+    truncate: (n) => {
+      if (n > b.length) {
+        const g = new Uint8Array(n);
+        g.set(b);
+        b = g;
+      } else b.fill(0, n, size);
+      size = n;
+    },
     flush: () => {},
     bytes: () => b.subarray(0, size),
   };
@@ -839,9 +959,13 @@ let opfs: Promise<boolean> | undefined;
  * Node), and the page's store in the page's (`Store.open`): a machine runs, and nothing outlives the tab.
  */
 export function hasOpfs(): Promise<boolean> {
-  return (opfs ??= typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function'
-    ? Promise.resolve(false)
-    : navigator.storage.getDirectory().then(() => true, () => false));
+  return (opfs ??=
+    typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function'
+      ? Promise.resolve(false)
+      : navigator.storage.getDirectory().then(
+          () => true,
+          () => false,
+        ));
 }
 
 /**
@@ -904,19 +1028,29 @@ export async function locksInUse(): Promise<Set<string>> {
  * previous holder, then rejects with "overlay <name> is in use" (a developer's words: its `problem` is
  * `'overlay-in-use'`, for the page to say it).
  */
-export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: LockMode = 'exclusive'): Promise<() => void> {
+export async function lockOverlay(
+  name: string,
+  ms = OVERLAY_WAIT_MS,
+  mode: LockMode = 'exclusive',
+): Promise<() => void> {
   let release!: () => void;
-  const held = new Promise<void>((resolve) => { release = resolve; });
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   try {
     await new Promise<void>((granted, reject) => {
-      navigator.locks.request(overlayLock(name), { mode, signal: AbortSignal.timeout(ms) }, () => {
-        granted();
-        return held;
-      }).catch(reject);
+      navigator.locks
+        .request(overlayLock(name), { mode, signal: AbortSignal.timeout(ms) }, () => {
+          granted();
+          return held;
+        })
+        .catch(reject);
     });
   } catch (e) {
     if ((e as DOMException).name !== 'TimeoutError') throw e;
-    throw Object.assign(new Error(`overlay ${name} is in use: another machine held it for ${ms / 1000} s`), { problem: 'overlay-in-use' });
+    throw Object.assign(new Error(`overlay ${name} is in use: another machine held it for ${ms / 1000} s`), {
+      problem: 'overlay-in-use',
+    });
   }
   return release;
 }
@@ -932,7 +1066,12 @@ export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: Lock
  * (sync access handles).
  */
 // ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place.
-export async function openOverlay(name: string, want: string | undefined, waitMs = OVERLAY_WAIT_MS, opts: { readOnly?: boolean } = {}): Promise<OverlayFiles> {
+export async function openOverlay(
+  name: string,
+  want: string | undefined,
+  waitMs = OVERLAY_WAIT_MS,
+  opts: { readOnly?: boolean } = {},
+): Promise<OverlayFiles> {
   const release = await lockOverlay(name, waitMs, opts.readOnly ? 'shared' : 'exclusive');
   const handles: FileSystemSyncAccessHandle[] = [];
   const done = () => {
@@ -944,7 +1083,10 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
       if (opts.readOnly && !inMemory.has(name)) throw new DOMException(`no overlay ${name}`, 'NotFoundError');
       const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), meta: memFile(), base: want ?? '' };
       if (o.base === '' && want !== undefined && !opts.readOnly) o.base = want;
-      if (want !== undefined && o.base !== want) throw Object.assign(new Error(`overlay ${name} belongs to ${o.base}, not ${want}`), { problem: 'overlay-mismatch' });
+      if (want !== undefined && o.base !== want)
+        throw Object.assign(new Error(`overlay ${name} belongs to ${o.base}, not ${want}`), {
+          problem: 'overlay-mismatch',
+        });
       inMemory.set(name, o);
       return { data: o.data, map: o.map, meta: o.meta, close: done };
     }
@@ -952,7 +1094,11 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
     const open = async (f: string) => {
       // Read-only handles may be open in several workers at once (machines reading a stored disk under their overlays).
       const file = await dir.getFileHandle(f, { create: !opts.readOnly });
-      const h = await (opts.readOnly ? (file.createSyncAccessHandle as (o: object) => Promise<FileSystemSyncAccessHandle>).call(file, { mode: 'read-only' }) : file.createSyncAccessHandle());
+      const h = await (opts.readOnly
+        ? (file.createSyncAccessHandle as (o: object) => Promise<FileSystemSyncAccessHandle>).call(file, {
+            mode: 'read-only',
+          })
+        : file.createSyncAccessHandle());
       handles.push(h);
       return h;
     };
@@ -970,7 +1116,8 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
     const bytes = new Uint8Array(base.getSize());
     base.read(bytes, { at: 0 });
     const got = new TextDecoder().decode(bytes);
-    if (want !== undefined && got !== want) throw Object.assign(new Error(`overlay ${name} belongs to ${got}, not ${want}`), { problem: 'overlay-mismatch' });
+    if (want !== undefined && got !== want)
+      throw Object.assign(new Error(`overlay ${name} belongs to ${got}, not ${want}`), { problem: 'overlay-mismatch' });
     base.close();
     handles.pop();
     return { data, map, meta, close: done };
@@ -1017,7 +1164,8 @@ const SUSPEND = 'suspend';
  * It pins each overlay's generation (docs/machines.md §5.3): a start resumes it only while every pin matches, and
  * drops it (`dropSuspend`) before the machine runs, resumed or booted. This writes it (`fileWriter`, `makeRoom` as there).
  */
-export const suspendWriter = (name: string, makeRoom?: () => Promise<boolean>) => fileWriter(`${name}/${SUSPEND}`, makeRoom);
+export const suspendWriter = (name: string, makeRoom?: () => Promise<boolean>) =>
+  fileWriter(`${name}/${SUSPEND}`, makeRoom);
 
 /**
  * Writes the OPFS file at `path` (made with its directories; a kept snapshot's, a suspended machine's): a sink for the
@@ -1026,11 +1174,24 @@ export const suspendWriter = (name: string, makeRoom?: () => Promise<boolean>) =
  * `makeRoom` for room (the remote disks' kept blocks: `makeRoom` in web/diskcache.ts) and is tried again if it made
  * some; still refused, it throws `storageFullError()`. Dedicated workers only in a browser (a sync access handle).
  */
-export async function fileWriter(path: string, makeRoom?: () => Promise<boolean>): Promise<{ write(bytes: Uint8Array): void | Promise<void>; close(): void; abort(): Promise<void> }> {
+export async function fileWriter(
+  path: string,
+  makeRoom?: () => Promise<boolean>,
+): Promise<{ write(bytes: Uint8Array): void | Promise<void>; close(): void; abort(): Promise<void> }> {
   if (!(await hasOpfs())) {
     const parts: Uint8Array[] = [];
     inMemoryFiles.delete(path);
-    return { write: (b) => { parts.push(b.slice()); }, close: () => { inMemoryFiles.set(path, parts); }, abort: async () => { inMemoryFiles.delete(path); } };
+    return {
+      write: (b) => {
+        parts.push(b.slice());
+      },
+      close: () => {
+        inMemoryFiles.set(path, parts);
+      },
+      abort: async () => {
+        inMemoryFiles.delete(path);
+      },
+    };
   }
   const parts = path.split('/');
   const file = parts.pop()!;
@@ -1136,7 +1297,14 @@ export async function overlayBytes(name: string) {
     return 0;
   }
   let n = 0;
-  for (const f of ['data', 'map']) n += await dir.getFileHandle(f).then((h) => h.getFile()).then((file) => file.size, () => 0);
+  for (const f of ['data', 'map'])
+    n += await dir
+      .getFileHandle(f)
+      .then((h) => h.getFile())
+      .then(
+        (file) => file.size,
+        () => 0,
+      );
   return n;
 }
 

@@ -23,7 +23,10 @@ self.onmessage = async (e: MessageEvent<InflateInit | InflateRequest>) => {
     let at = 0;
     lengths.forEach((len, k) => {
       const data = z.inflate(packed.subarray(at, (at += len)), size);
-      if (data) { out.set(data, k * size); ok[k] = 1; }
+      if (data) {
+        out.set(data, k * size);
+        ok[k] = 1;
+      }
     });
     self.postMessage({ id, ok, out } satisfies InflateResult, { transfer: [ok.buffer, out.buffer] });
   } catch (err) {

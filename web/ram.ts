@@ -85,8 +85,10 @@ export const MAX_SPILL = 8;
 export function splitRam(total: number, reserve = 0): { ramSize: number; spill: number[] } {
   const ramSize = Math.min(total, MAX_MEMORY0_RAM);
   const spill: number[] = [];
-  for (let left = total - ramSize; left > 0; left -= spill.at(-1)!) spill.push(Math.min(left, MAX_SPILL_BYTES - (spill.length ? 0 : reserve)));
-  if (spill.length > MAX_SPILL) throw new RangeError(`${total} bytes of RAM need more than ${MAX_SPILL} spill memories`);
+  for (let left = total - ramSize; left > 0; left -= spill.at(-1)!)
+    spill.push(Math.min(left, MAX_SPILL_BYTES - (spill.length ? 0 : reserve)));
+  if (spill.length > MAX_SPILL)
+    throw new RangeError(`${total} bytes of RAM need more than ${MAX_SPILL} spill memories`);
   return { ramSize, spill };
 }
 
@@ -114,6 +116,7 @@ export function splitError(ramSize: number, spill: number[], reserve = 0): Split
   if (spill.length > MAX_SPILL) return { code: 'nodes', max: MAX_SPILL };
   const bad = spill.find((s) => !Number.isSafeInteger(s) || s < 65536 || s % 65536 || s > MAX_SPILL_BYTES);
   if (bad !== undefined) return { code: 'node', max: mib(MAX_SPILL_BYTES), mib: mib(bad) };
-  if (spill.length && spill[0] > MAX_SPILL_BYTES - reserve) return { code: 'vulkan', max: mib(MAX_SPILL_BYTES - reserve) };
+  if (spill.length && spill[0] > MAX_SPILL_BYTES - reserve)
+    return { code: 'vulkan', max: mib(MAX_SPILL_BYTES - reserve) };
   return undefined;
 }

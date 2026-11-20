@@ -39,7 +39,10 @@ const PAGE = 4096;
  * are already; hinting is unaffected (the hinted blocks are allocated, and freed through the allocator after DONE).
  * Reporting needs a queue of at least 32 (PAGE_REPORTING_CAPACITY).
  */
-export const balloonEntry = () => ({ entry: [BigInt(BALLOON_ID), F_FREE_PAGE_HINT | F_REPORTING, 4n, 128n, BigInt(BALLOON_CONFIG)], config: new Uint8Array(BALLOON_CONFIG) });
+export const balloonEntry = () => ({
+  entry: [BigInt(BALLOON_ID), F_FREE_PAGE_HINT | F_REPORTING, 4n, 128n, BigInt(BALLOON_CONFIG)],
+  config: new Uint8Array(BALLOON_CONFIG),
+});
 
 /** Zeroes each 4 KiB page of `b` (page-aligned, a whole number of pages) that isn't zero; the pages written. */
 export function zeroPages(b: Uint8Array): number {
@@ -82,7 +85,8 @@ export function balloon(ctx: Ctx): Balloon {
     if (hint && q === 2) return 'hint';
     return (ctx.features() & F_REPORTING) !== 0n && q === (hint ? 3 : 2) ? 'report' : 'other';
   };
-  const setCmd = (id: number) => ctx.changeConfig((c) => new DataView(c.buffer, c.byteOffset, BALLOON_CONFIG).setUint32(CMD_ID, id, true));
+  const setCmd = (id: number) =>
+    ctx.changeConfig((c) => new DataView(c.buffer, c.byteOffset, BALLOON_CONFIG).setUint32(CMD_ID, id, true));
   const finish = () => {
     const a = active;
     if (!a) return;
@@ -102,7 +106,10 @@ export function balloon(ctx: Ctx): Balloon {
           return 0;
         case 'hint': {
           // A command id (the driver's start, or STOP: 4 bytes the device reads), or a block it hands over (written by no one).
-          const id = r.read.length && r.read[0].len >= 4 ? new DataView(bytes(ram, r.read[0]).slice(0, 4).buffer).getUint32(0, true) : undefined;
+          const id =
+            r.read.length && r.read[0].len >= 4
+              ? new DataView(bytes(ram, r.read[0]).slice(0, 4).buffer).getUint32(0, true)
+              : undefined;
           if (id !== undefined && active) {
             if (id === active.id) active.started = true;
             else if (id === CMD_STOP && active.started) finish();

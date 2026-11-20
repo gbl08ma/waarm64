@@ -20,7 +20,17 @@ export type HostCall =
   | { t: 'unref'; id: number }
   | { t: 'backing'; id: number; backing: Backing | null }
   | { t: 'ctxres'; ctx: number; res: number; attach: boolean }
-  | { t: 'transfer'; ctx: number; res: number; level: number; box: Box; offset: number; stride: number; layerStride: number; toHost: boolean }
+  | {
+      t: 'transfer';
+      ctx: number;
+      res: number;
+      level: number;
+      box: Box;
+      offset: number;
+      stride: number;
+      layerStride: number;
+      toHost: boolean;
+    }
   | { t: 'submit'; ctx: number; words: Uint32Array }
   /**
    * The screen shows a 2D resource's pixels (rows `width` pixels apart, in shared memory: the guest's bytes, with the
@@ -50,7 +60,12 @@ export type VenusCall =
   /** A SUBMIT_3D's bytes, and with the fence flag its fence (the renderer retires it before the device answers). */
   | { t: 'vsubmit'; ctx: number; bytes: Uint8Array; fence?: { flags: number; ring: number; id: bigint } }
   /** The renderer's memory (memory 1: the GPU worker instantiates it there), the window in it, and memory 0 (`core`), where the write-watch's words are. */
-  | { t: 'venus-init'; memory: WebAssembly.Memory; core: WebAssembly.Memory; window: { at: number; bytes: number; watch: number } };
+  | {
+      t: 'venus-init';
+      memory: WebAssembly.Memory;
+      core: WebAssembly.Memory;
+      window: { at: number; bytes: number; watch: number };
+    };
 
 /** What a host's `save` answers: the renderer's state, or why it can't be saved now. */
 export type HostSave = { state: RendererSnapshot } | { refused: WireError };
@@ -96,22 +111,34 @@ export function snapshotBuffers(s: RendererSnapshot): ArrayBuffer[] {
 /** Runs a host call on a renderer and a screen (the GPU worker's loop, or a test's in-thread host). */
 export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
   switch (c.t) {
-    case 'ctx': return c.create ? r.createContext(c.id) : r.destroyContext(c.id);
-    case 'res': return r.createResource(c.desc);
-    case 'unref': return r.unrefResource(c.id);
-    case 'backing': return c.backing ? r.attachBacking(c.id, c.backing) : r.detachBacking(c.id);
-    case 'ctxres': return c.attach ? r.attach(c.ctx, c.res) : r.detach(c.ctx, c.res);
-    case 'transfer': return r.transfer(c.ctx, c.res, c.level, c.box, c.offset, c.stride, c.layerStride, c.toHost);
-    case 'submit': return r.submit(c.ctx, c.words);
-    case 'scanout': return screen?.scanout(c);
-    case 'damage': return screen?.damage(c.rect);
+    case 'ctx':
+      return c.create ? r.createContext(c.id) : r.destroyContext(c.id);
+    case 'res':
+      return r.createResource(c.desc);
+    case 'unref':
+      return r.unrefResource(c.id);
+    case 'backing':
+      return c.backing ? r.attachBacking(c.id, c.backing) : r.detachBacking(c.id);
+    case 'ctxres':
+      return c.attach ? r.attach(c.ctx, c.res) : r.detach(c.ctx, c.res);
+    case 'transfer':
+      return r.transfer(c.ctx, c.res, c.level, c.box, c.offset, c.stride, c.layerStride, c.toHost);
+    case 'submit':
+      return r.submit(c.ctx, c.words);
+    case 'scanout':
+      return screen?.scanout(c);
+    case 'damage':
+      return screen?.damage(c.rect);
     case 'reset': {
       screen?.scanout({ width: 0, height: 0, rect: { x: 0, y: 0, w: 0, h: 0 } });
       return r.reset();
     }
-    case 'load': return r.load(c.state);
-    case 'ram': return;
-    default: return; // Venus's calls: its own renderer's
+    case 'load':
+      return r.load(c.state);
+    case 'ram':
+      return;
+    default:
+      return; // Venus's calls: its own renderer's
   }
 }
 
@@ -125,7 +152,9 @@ export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
 export class FenceGate<F> {
   private held: { f: F; settled: () => boolean; lane?: string }[] = [];
   private readonly answer: (f: F) => void;
-  constructor(answer: (f: F) => void) { this.answer = answer; }
+  constructor(answer: (f: F) => void) {
+    this.answer = answer;
+  }
   /** A fence after the calls so far; `settled` says whether what it waits for has happened. */
   fence(f: F, settled: () => boolean, lane?: string) {
     if (!this.held.some((h) => h.lane === lane) && settled()) return this.answer(f);
@@ -143,9 +172,13 @@ export class FenceGate<F> {
       return false;
     });
   }
-  get waiting() { return this.held.length; }
+  get waiting() {
+    return this.held.length;
+  }
   /** The oldest fence held in the unnamed lane (a ring's may wait for the guest as long as it likes). */
-  get oldest(): F | undefined { return this.held.find((h) => h.lane === undefined)?.f; }
+  get oldest(): F | undefined {
+    return this.held.find((h) => h.lane === undefined)?.f;
+  }
 }
 
 /** The lane of `FenceGate` a fence goes in. */
@@ -172,13 +205,19 @@ export const SPIN_MS = 2;
  * (the page terminates the GPU worker, and a worker's dedicated workers end with their owner); one GPU worker has one
  * scheduler, made once. `clock` is `spin`'s (ms; tests give their own).
  */
-export function queryScheduler(way: QueryPoll, poll: () => void, ticker?: () => Worker, clock: () => number = () => performance.now()): { next(pending: number, changes: number): true; idle(): void } {
+export function queryScheduler(
+  way: QueryPoll,
+  poll: () => void,
+  ticker?: () => Worker,
+  clock: () => number = () => performance.now(),
+): { next(pending: number, changes: number): true; idle(): void } {
   const idle = () => {};
   if (way === 'spin' && typeof MessageChannel !== 'undefined') {
     const ch = new MessageChannel();
     ch.port1.onmessage = () => poll();
     (ch.port1 as { unref?: () => void }).unref?.(); // Node's (tests): the port alone doesn't keep the process
-    let since = 0, last = -1;
+    let since = 0,
+      last = -1;
     return {
       next: (_pending, changes) => {
         const now = clock();
@@ -187,11 +226,19 @@ export function queryScheduler(way: QueryPoll, poll: () => void, ticker?: () => 
         else setTimeout(poll, 4);
         return true;
       },
-      idle: () => { last = -1; },
+      idle: () => {
+        last = -1;
+      },
     };
   }
-  if (way === 'ticker' && ticker && typeof Atomics.waitAsync === 'function' && typeof SharedArrayBuffer !== 'undefined') {
-    const sab = new SharedArrayBuffer(8), w = new Int32Array(sab);
+  if (
+    way === 'ticker' &&
+    ticker &&
+    typeof Atomics.waitAsync === 'function' &&
+    typeof SharedArrayBuffer !== 'undefined'
+  ) {
+    const sab = new SharedArrayBuffer(8),
+      w = new Int32Array(sab);
     let worker: Worker | undefined;
     return {
       next: () => {
@@ -232,7 +279,14 @@ export function queryScheduler(way: QueryPoll, poll: () => void, ticker?: () => 
  * ring may wait for what the guest does once this one is answered) or virgl's queries. A hold of the device's (a blob's,
  * a context's end) has no scope: those calls run at once, and they mustn't wait for a queue's work.
  */
-export function fenceSettled(scope: FenceScope | undefined, host: { queries(): () => boolean; backlog(): boolean; venus(): { retired(ctx: number, ring: number, id: bigint): boolean } | undefined }) {
+export function fenceSettled(
+  scope: FenceScope | undefined,
+  host: {
+    queries(): () => boolean;
+    backlog(): boolean;
+    venus(): { retired(ctx: number, ring: number, id: bigint): boolean } | undefined;
+  },
+) {
   const queries = scope ? undefined : host.queries();
   return () => {
     if (host.backlog()) return false;
@@ -242,7 +296,12 @@ export function fenceSettled(scope: FenceScope | undefined, host: { queries(): (
 }
 
 /** What the GPU worker takes from the device worker's port: the calls, fences and reads (`portHost`). */
-export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number; scope?: FenceScope } | { t: 'read'; id: number; res: number } | { t: 'save'; id: number } | { t: 'refusal'; id: number };
+export type WorkerCall =
+  | HostCall
+  | { t: 'fence'; id: number; at: number; scope?: FenceScope }
+  | { t: 'read'; id: number; res: number }
+  | { t: 'save'; id: number }
+  | { t: 'refusal'; id: number };
 
 /**
  * Whether a submit only decodes: video commands (CCMD 53–61: codecs, buffers, a picture's BEGIN/DECODE/END_FRAME)
@@ -250,7 +309,9 @@ export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number; scope?
  */
 export function decodeOnly(words: Uint32Array) {
   let only = true;
-  const n = walk(words, (cmd) => { if (!DECODE_SUBMIT.has(cmd)) only = false; });
+  const n = walk(words, (cmd) => {
+    if (!DECODE_SUBMIT.has(cmd)) only = false;
+  });
   return n > 0 && only;
 }
 // CREATE_OBJECT, SET_SUB_CTX, CREATE_SUB_CTX, DESTROY_SUB_CTX, TRANSFER3D, END_TRANSFERS, SET_TWEAKS, 53–61.
@@ -259,7 +320,9 @@ const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58
 /** Whether a submit destroys a sub-context (DESTROY_SUB_CTX): it doesn't pass its context's waiting calls, which may use it. */
 function destroysSub(words: Uint32Array) {
   let yes = false;
-  walk(words, (cmd) => { if (cmd === 30) yes = true; });
+  walk(words, (cmd) => {
+    if (cmd === 30) yes = true;
+  });
   return yes;
 }
 
@@ -293,18 +356,27 @@ export class CallQueue<M extends WorkerCall> {
      * in common and whether a context has a resource attached.
      */
     pending: {
-      ctx(id: number, before: number): boolean; res(id: number, before: number): boolean; shared(a: number, b: number): boolean; holds(ctx: number, res: number): boolean;
+      ctx(id: number, before: number): boolean;
+      res(id: number, before: number): boolean;
+      shared(a: number, b: number): boolean;
+      holds(ctx: number, res: number): boolean;
       /** Whether a submit (its context's first waiting one) could see a pending plane: finer than `ctx` (a context that decodes and draws has every picture's planes attached). Without it, `ctx`. */
       submit?(ctx: number, words: Uint32Array, before: number): boolean;
     };
     /** After the calls that could run ran: pictures held back from their planes (`sees`) may be written now. */
     ran?(): void;
-    nudge?(): void; drain(): void; giveUp(): void; nudgeMs?: number; drainMs?: number; giveUpMs?: number;
+    nudge?(): void;
+    drain(): void;
+    giveUp(): void;
+    nudgeMs?: number;
+    drainMs?: number;
+    giveUpMs?: number;
     /**
      * Gives up the pictures pending since before a time, called while calls wait with `now - oldMs`: one a decoder
      * never outputs while later ones come out (so `giveUp` never comes) would hold them as long as decoding goes on.
      */
-    giveUpOld?(before: number): void; oldMs?: number;
+    giveUpOld?(before: number): void;
+    oldMs?: number;
   };
   /** Since when nothing has come out while calls wait (undefined: none wait). */
   private since?: number;
@@ -314,9 +386,13 @@ export class CallQueue<M extends WorkerCall> {
   ahead = 0;
   maxWaitMs = 0;
 
-  constructor(o: CallQueue<M>['o']) { this.o = o; }
+  constructor(o: CallQueue<M>['o']) {
+    this.o = o;
+  }
 
-  get length() { return this.q.length; }
+  get length() {
+    return this.q.length;
+  }
 
   push(m: M, now = performance.now()) {
     this.q.push({ m, n: this.next++ });
@@ -333,7 +409,12 @@ export class CallQueue<M extends WorkerCall> {
     for (const { m, n } of this.q) {
       if (n >= before) break;
       const ctx = m.t === 'submit' || m.t === 'ctxres' || m.t === 'transfer' ? m.ctx : undefined;
-      const res = m.t === 'transfer' || m.t === 'read' || m.t === 'ctxres' ? m.res : m.t === 'unref' || m.t === 'backing' ? m.id : undefined;
+      const res =
+        m.t === 'transfer' || m.t === 'read' || m.t === 'ctxres'
+          ? m.res
+          : m.t === 'unref' || m.t === 'backing'
+            ? m.id
+            : undefined;
       for (const r of planes) if (r === res || (ctx !== undefined && p.holds(ctx, r))) return true;
     }
     return false;
@@ -352,7 +433,9 @@ export class CallQueue<M extends WorkerCall> {
   }
 
   /** Whether calls wait for pictures. */
-  get stalled() { return this.since !== undefined; }
+  get stalled() {
+    return this.since !== undefined;
+  }
 
   /** A picture came out (or was given up). */
   progress(now = performance.now()) {
@@ -385,14 +468,22 @@ export class CallQueue<M extends WorkerCall> {
   private pass() {
     const p = this.o.pending;
     // What the waiting calls so far hold back: their contexts and the resources they name.
-    const busy = new Set<number>(), named = new Set<number>();
+    const busy = new Set<number>(),
+      named = new Set<number>();
     // The contexts with a waiting call other than a draw (a transfer, an attach or detach, the context's end): a
     // decode, which may read what it brings, doesn't pass it.
     const strict = new Set<number>();
     // Whether a call of `ctx` could see what a waiting context draws (through a resource they share).
-    const sees = (ctx: number) => { for (const b of busy) if (p.shared(ctx, b)) return true; return false; };
-    const held = (res: number) => { for (const b of busy) if (p.holds(b, res)) return true; return false; };
-    let waits = false, ran = false;
+    const sees = (ctx: number) => {
+      for (const b of busy) if (p.shared(ctx, b)) return true;
+      return false;
+    };
+    const held = (res: number) => {
+      for (const b of busy) if (p.holds(b, res)) return true;
+      return false;
+    };
+    let waits = false,
+      ran = false;
     for (let k = 0; k < this.q.length;) {
       const { m, n } = this.q[k];
       let go: boolean;
@@ -453,15 +544,19 @@ export class CallQueue<M extends WorkerCall> {
           if (waits || p.res(m.res, n)) return ran;
           go = true;
           break;
-        case 'save': case 'refusal':
+        case 'save':
+        case 'refusal':
           if (waits) return ran;
           go = true;
           break;
-        case 'fence': case 'scanout': case 'damage':
+        case 'fence':
+        case 'scanout':
+        case 'damage':
           // After every earlier call (a fence says they've all run; the screen shows what they drew), in order.
           go = !waits;
           break;
-        case 'vctx': case 'blob-ctx':
+        case 'vctx':
+        case 'blob-ctx':
           // Venus's calls that end things are as an unref: after every earlier call, and nothing passes them.
           if (!(m.t === 'vctx' ? m.create : m.attach)) {
             if (waits) return ran;
@@ -469,7 +564,9 @@ export class CallQueue<M extends WorkerCall> {
             break;
           }
         // falls through: one that makes a context or attaches a resource runs at once, as do the others below
-        case 'blob': case 'blob-map': case 'vsubmit':
+        case 'blob':
+        case 'blob-map':
+        case 'vsubmit':
           // Venus's own: no virgl call waits on them, and its rings, which are polled and pass every queued call,
           // may name what they make (a resource the guest imports: web/venus-import.ts) before the queue would run it.
           go = true;
@@ -494,7 +591,13 @@ export class CallQueue<M extends WorkerCall> {
 
 /** A host in this thread: calls run at once. */
 export function localHost(r: VirglRenderer, screen?: Screen): VirglHost {
-  return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)), save: () => Promise.resolve(saveRenderer(r)), refusal: () => Promise.resolve(rendererRefusal(r)) };
+  return {
+    call: (c) => void runCall(c, r, screen),
+    fence: () => undefined,
+    read: (res) => Promise.resolve(r.readResource(res)),
+    save: () => Promise.resolve(saveRenderer(r)),
+    refusal: () => Promise.resolve(rendererRefusal(r)),
+  };
 }
 
 /** How long the device worker took to see the GPU worker's `fenced` answers (bench/gpu's stats): their count, total and longest ms. */
@@ -524,13 +627,22 @@ export function portHost(port: MessagePort): VirglHost {
       if (clock() - at <= STUCK_MS) break;
       if (stuck.has(id)) continue;
       stuck.add(id);
-      console.warn(`virgl: fence ${id} unanswered for ${((clock() - at) / 1000).toFixed(0)} s (the guest's 3D waits behind it)`);
+      console.warn(
+        `virgl: fence ${id} unanswered for ${((clock() - at) / 1000).toFixed(0)} s (the guest's 3D waits behind it)`,
+      );
     }
   };
   const reads = new Map<number, (bytes: Uint8Array | null) => void>();
   const saves = new Map<number, (s: HostSave) => void>();
   const refusals = new Map<number, (why: WireError | undefined) => void>();
-  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number; at: number } | { t: 'read'; id: number; bytes: Uint8Array | null } | ({ t: 'saved'; id: number } & HostSave) | { t: 'refusal'; id: number; refused?: WireError }>) => {
+  port.onmessage = (
+    e: MessageEvent<
+      | { t: 'fenced'; id: number; at: number }
+      | { t: 'read'; id: number; bytes: Uint8Array | null }
+      | ({ t: 'saved'; id: number } & HostSave)
+      | { t: 'refusal'; id: number; refused?: WireError }
+    >,
+  ) => {
     if (e.data?.t === 'refusal') {
       refusals.get(e.data.id)?.(e.data.refused);
       refusals.delete(e.data.id);
@@ -554,10 +666,12 @@ export function portHost(port: MessagePort): VirglHost {
     fenceLag.ms += lag;
     fenceLag.maxMs = Math.max(fenceLag.maxMs, lag);
     // This one alone: a ring's fences are answered out of the others' order (`FenceGate`).
-    const id = e.data.id, done = waiting.get(id);
+    const id = e.data.id,
+      done = waiting.get(id);
     if (!done) return;
     waiting.delete(id);
-    if (stuck.delete(id)) console.warn(`virgl: fence ${id} answered after ${((clock() - sent.get(id)!) / 1000).toFixed(0)} s`);
+    if (stuck.delete(id))
+      console.warn(`virgl: fence ${id} answered after ${((clock() - sent.get(id)!) / 1000).toFixed(0)} s`);
     sent.delete(id);
     done();
   };

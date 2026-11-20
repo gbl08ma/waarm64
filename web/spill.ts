@@ -35,7 +35,14 @@ export function spillModule(n: number): Uint8Array<ArrayBuffer> {
     [0x60, ...vec([[I32], [I32], [I32], [I64], [I64]]), 1, I64], // cas(m, off, size, expected, new) -> i64
   ];
   // Shared, limits 0..65536 pages: any shared wasm32 memory matches.
-  const imports = Array.from({ length: n }, (_, k) => [...str('ram'), ...str(`m${k + 1}`), 0x02, 0x03, 0, ...leb(65536)]);
+  const imports = Array.from({ length: n }, (_, k) => [
+    ...str('ram'),
+    ...str(`m${k + 1}`),
+    0x02,
+    0x03,
+    0,
+    ...leb(65536),
+  ]);
   /** Chained ifs on `local` against `cases`, each case's code, `unreachable` after the last. */
   const select = (local: number, cases: [number, number[]][], bt: number): number[] => {
     if (!cases.length) return [0x00];
@@ -47,7 +54,14 @@ export function spillModule(n: number): Uint8Array<ArrayBuffer> {
   const body = (bt: number, access: (size: number, m: number) => number[]) => {
     const code = select(
       0,
-      Array.from({ length: n }, (_, k) => [k + 1, select(2, [8, 4, 2, 1].map((s) => [s, access(s, k + 1)]), bt)]),
+      Array.from({ length: n }, (_, k) => [
+        k + 1,
+        select(
+          2,
+          [8, 4, 2, 1].map((s) => [s, access(s, k + 1)]),
+          bt,
+        ),
+      ]),
       bt,
     );
     const f = [0, ...code, 0x0b]; // no locals
@@ -60,7 +74,14 @@ export function spillModule(n: number): Uint8Array<ArrayBuffer> {
   ];
   const exports = ['load', 'store', 'cas'].map((name, k) => [...str(name), 0x00, k]);
   return new Uint8Array([
-    0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
+    0x00,
+    0x61,
+    0x73,
+    0x6d,
+    1,
+    0,
+    0,
+    0,
     ...section(1, vec(types)),
     ...section(2, vec(imports)),
     ...section(3, vec([[0], [1], [2]])),
@@ -72,5 +93,6 @@ export function spillModule(n: number): Uint8Array<ArrayBuffer> {
 /** The core's `ram` imports over `spill` (memory 1 first); with none, every call traps. */
 export function spillImports(spill: WebAssembly.Memory[]): WebAssembly.ModuleImports {
   const ram = Object.fromEntries(spill.map((m, k) => [`m${k + 1}`, m]));
-  return new WebAssembly.Instance(new WebAssembly.Module(spillModule(spill.length)), { ram }).exports as WebAssembly.ModuleImports;
+  return new WebAssembly.Instance(new WebAssembly.Module(spillModule(spill.length)), { ram })
+    .exports as WebAssembly.ModuleImports;
 }

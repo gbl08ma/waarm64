@@ -23,7 +23,9 @@ export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: Com
   const done = new Set<number>();
   let epoch = 0;
   const kept: { module?: WebAssembly.Module; epoch: number; at: number }[] = [];
-  let compiled = 0, failed = 0, ms = 0;
+  let compiled = 0,
+    failed = 0,
+    ms = 0;
   return {
     job(j: CompileJob) {
       const t0 = performance.now();
@@ -35,7 +37,7 @@ export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: Com
       }
       ms += performance.now() - t0;
       compiled++;
-      if (j.epoch !== epoch && (j.epoch - epoch | 0) > 0) {
+      if (j.epoch !== epoch && ((j.epoch - epoch) | 0) > 0) {
         // A flush: the old epoch's modules are dead (each table moves on before it installs this epoch's).
         epoch = j.epoch;
         for (let i = kept.length - 1; i >= 0; i--) if (kept[i].epoch !== epoch) kept.splice(i, 1);
@@ -67,6 +69,7 @@ if ('WorkerGlobalScope' in globalThis) {
   // (No parent port: imported by a test on Node's main thread.)
   parentPort?.once('message', (init: CompileInit) => {
     const c = compiler(init.memory, init.ports as never);
-    for (const p of init.ports) (p as unknown as import('node:worker_threads').MessagePort).on('message', (m: CompileJob) => c.job(m));
+    for (const p of init.ports)
+      (p as unknown as import('node:worker_threads').MessagePort).on('message', (m: CompileJob) => c.job(m));
   });
 }

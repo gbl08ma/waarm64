@@ -61,7 +61,9 @@ export class BitReader {
     this.b = b;
   }
 
-  get left() { return this.b.length * 8 - this.at; }
+  get left() {
+    return this.b.length * 8 - this.at;
+  }
 
   u(bits: number): number {
     let v = 0;
@@ -73,7 +75,9 @@ export class BitReader {
     return v;
   }
 
-  flag() { return this.u(1) === 1; }
+  flag() {
+    return this.u(1) === 1;
+  }
 
   ue(): number {
     let zeros = 0;
@@ -92,7 +96,10 @@ export function unescape(nal: Uint8Array): Uint8Array {
   const out: number[] = [];
   let zeros = 0;
   for (const x of nal) {
-    if (zeros >= 2 && x === 3) { zeros = 0; continue; }
+    if (zeros >= 2 && x === 3) {
+      zeros = 0;
+      continue;
+    }
     zeros = x === 0 ? zeros + 1 : 0;
     out.push(x);
   }
@@ -104,7 +111,10 @@ export function nal(type: number, refIdc: number, rbsp: Uint8Array): Uint8Array 
   const out = [0, 0, 0, 1, (refIdc << 5) | type];
   let zeros = 0;
   for (const x of rbsp) {
-    if (zeros >= 2 && x <= 3) { out.push(3); zeros = 0; }
+    if (zeros >= 2 && x <= 3) {
+      out.push(3);
+      zeros = 0;
+    }
     zeros = x === 0 ? zeros + 1 : 0;
     out.push(x);
   }
@@ -131,46 +141,97 @@ export function splitAnnexB(b: Uint8Array): Uint8Array[] {
 export type H264Params = {
   profile: number;
   sps: {
-    levelIdc: number; chromaFormatIdc: number; separateColourPlane: boolean; bitDepthLumaMinus8: number; bitDepthChromaMinus8: number;
-    log2MaxFrameNumMinus4: number; pocType: number; log2MaxPocLsbMinus4: number; deltaPicOrderAlwaysZero: boolean;
-    offsetForNonRefPic: number; offsetForTopToBottomField: number; offsetForRefFrame: number[];
-    maxNumRefFrames: number; frameMbsOnly: boolean; mbAdaptiveFrameField: boolean; direct8x8Inference: boolean;
+    levelIdc: number;
+    chromaFormatIdc: number;
+    separateColourPlane: boolean;
+    bitDepthLumaMinus8: number;
+    bitDepthChromaMinus8: number;
+    log2MaxFrameNumMinus4: number;
+    pocType: number;
+    log2MaxPocLsbMinus4: number;
+    deltaPicOrderAlwaysZero: boolean;
+    offsetForNonRefPic: number;
+    offsetForTopToBottomField: number;
+    offsetForRefFrame: number[];
+    maxNumRefFrames: number;
+    frameMbsOnly: boolean;
+    mbAdaptiveFrameField: boolean;
+    direct8x8Inference: boolean;
   };
   pps: {
-    entropyCodingMode: boolean; bottomFieldPicOrderInFramePresent: boolean; numSliceGroupsMinus1: number;
-    numRefIdxL0DefaultActiveMinus1: number; numRefIdxL1DefaultActiveMinus1: number; weightedPred: boolean; weightedBipredIdc: number;
-    picInitQpMinus26: number; picInitQsMinus26: number; chromaQpIndexOffset: number; deblockingFilterControlPresent: boolean;
-    constrainedIntraPred: boolean; redundantPicCntPresent: boolean; transform8x8Mode: boolean;
-    scaling4x4: number[][]; scaling8x8: number[][]; secondChromaQpIndexOffset: number;
+    entropyCodingMode: boolean;
+    bottomFieldPicOrderInFramePresent: boolean;
+    numSliceGroupsMinus1: number;
+    numRefIdxL0DefaultActiveMinus1: number;
+    numRefIdxL1DefaultActiveMinus1: number;
+    weightedPred: boolean;
+    weightedBipredIdc: number;
+    picInitQpMinus26: number;
+    picInitQsMinus26: number;
+    chromaQpIndexOffset: number;
+    deblockingFilterControlPresent: boolean;
+    constrainedIntraPred: boolean;
+    redundantPicCntPresent: boolean;
+    transform8x8Mode: boolean;
+    scaling4x4: number[][];
+    scaling8x8: number[][];
+    secondChromaQpIndexOffset: number;
   };
   fieldPic: boolean;
 };
 
 export const H264_DESC_SIZE = 2624;
-const SPS = 264, PPS = SPS + 1532;
+const SPS = 264,
+  PPS = SPS + 1532;
 
 export function parseH264Desc(d: Uint8Array): H264Params {
   if (d.length < H264_DESC_SIZE) throw new Error(`H.264: a picture desc of ${d.length} bytes`);
   const v = new DataView(d.buffer, d.byteOffset, d.length);
-  const u8 = (at: number) => d[at], i8 = (at: number) => v.getInt8(at), i32 = (at: number) => v.getInt32(at, true);
-  const lists = (at: number, n: number, len: number) => Array.from({ length: n }, (_, k) => [...d.subarray(at + k * len, at + (k + 1) * len)]);
+  const u8 = (at: number) => d[at],
+    i8 = (at: number) => v.getInt8(at),
+    i32 = (at: number) => v.getInt32(at, true);
+  const lists = (at: number, n: number, len: number) =>
+    Array.from({ length: n }, (_, k) => [...d.subarray(at + k * len, at + (k + 1) * len)]);
   const cycle = u8(SPS + 1524);
   return {
     profile: v.getUint16(0, true),
     sps: {
-      levelIdc: u8(SPS), chromaFormatIdc: u8(SPS + 1), separateColourPlane: !!u8(SPS + 2), bitDepthLumaMinus8: u8(SPS + 3), bitDepthChromaMinus8: u8(SPS + 4),
-      log2MaxFrameNumMinus4: u8(SPS + 486), pocType: u8(SPS + 487), log2MaxPocLsbMinus4: u8(SPS + 488), deltaPicOrderAlwaysZero: !!u8(SPS + 489),
-      offsetForNonRefPic: i32(SPS + 492), offsetForTopToBottomField: i32(SPS + 496),
+      levelIdc: u8(SPS),
+      chromaFormatIdc: u8(SPS + 1),
+      separateColourPlane: !!u8(SPS + 2),
+      bitDepthLumaMinus8: u8(SPS + 3),
+      bitDepthChromaMinus8: u8(SPS + 4),
+      log2MaxFrameNumMinus4: u8(SPS + 486),
+      pocType: u8(SPS + 487),
+      log2MaxPocLsbMinus4: u8(SPS + 488),
+      deltaPicOrderAlwaysZero: !!u8(SPS + 489),
+      offsetForNonRefPic: i32(SPS + 492),
+      offsetForTopToBottomField: i32(SPS + 496),
       offsetForRefFrame: Array.from({ length: cycle }, (_, k) => i32(SPS + 500 + 4 * k)),
       // Mesa's VA frontend leaves the SPS's max_num_ref_frames 0; VA's num_ref_frames is the picture's.
-      maxNumRefFrames: u8(SPS + 1525) || u8(2621), frameMbsOnly: !!u8(SPS + 1526), mbAdaptiveFrameField: !!u8(SPS + 1527), direct8x8Inference: !!u8(SPS + 1528),
+      maxNumRefFrames: u8(SPS + 1525) || u8(2621),
+      frameMbsOnly: !!u8(SPS + 1526),
+      mbAdaptiveFrameField: !!u8(SPS + 1527),
+      direct8x8Inference: !!u8(SPS + 1528),
     },
     pps: {
-      entropyCodingMode: !!u8(PPS), bottomFieldPicOrderInFramePresent: !!u8(PPS + 1), numSliceGroupsMinus1: u8(PPS + 2),
-      numRefIdxL0DefaultActiveMinus1: u8(PPS + 5), numRefIdxL1DefaultActiveMinus1: u8(PPS + 6), weightedPred: !!u8(PPS + 7), weightedBipredIdc: u8(PPS + 8),
-      picInitQpMinus26: i8(PPS + 9), picInitQsMinus26: i8(PPS + 10), chromaQpIndexOffset: i8(PPS + 11), deblockingFilterControlPresent: !!u8(PPS + 12),
-      constrainedIntraPred: !!u8(PPS + 13), redundantPicCntPresent: !!u8(PPS + 14), transform8x8Mode: !!u8(PPS + 15),
-      scaling4x4: lists(PPS + 16, 6, 16), scaling8x8: lists(PPS + 112, 6, 64), secondChromaQpIndexOffset: i8(PPS + 496),
+      entropyCodingMode: !!u8(PPS),
+      bottomFieldPicOrderInFramePresent: !!u8(PPS + 1),
+      numSliceGroupsMinus1: u8(PPS + 2),
+      numRefIdxL0DefaultActiveMinus1: u8(PPS + 5),
+      numRefIdxL1DefaultActiveMinus1: u8(PPS + 6),
+      weightedPred: !!u8(PPS + 7),
+      weightedBipredIdc: u8(PPS + 8),
+      picInitQpMinus26: i8(PPS + 9),
+      picInitQsMinus26: i8(PPS + 10),
+      chromaQpIndexOffset: i8(PPS + 11),
+      deblockingFilterControlPresent: !!u8(PPS + 12),
+      constrainedIntraPred: !!u8(PPS + 13),
+      redundantPicCntPresent: !!u8(PPS + 14),
+      transform8x8Mode: !!u8(PPS + 15),
+      scaling4x4: lists(PPS + 16, 6, 16),
+      scaling8x8: lists(PPS + 112, 6, 64),
+      secondChromaQpIndexOffset: i8(PPS + 496),
     },
     fieldPic: !!u8(2300),
   };
@@ -179,13 +240,20 @@ export function parseH264Desc(d: Uint8Array): H264Params {
 /** profile_idc and the constraint flags for a pipe profile. */
 function profileIdc(profile: number): [number, number] {
   switch (profile) {
-    case PROFILE.AVC_CONSTRAINED_BASELINE: return [66, 0b0100_0000]; // constraint_set1
-    case PROFILE.AVC_BASELINE: return [66, 0];
-    case PROFILE.AVC_MAIN: return [77, 0];
-    case PROFILE.AVC_EXTENDED: return [88, 0];
-    case PROFILE.AVC_HIGH: return [100, 0];
-    case PROFILE.AVC_HIGH10: return [110, 0];
-    default: throw new Error(`H.264: profile ${profile}`);
+    case PROFILE.AVC_CONSTRAINED_BASELINE:
+      return [66, 0b0100_0000]; // constraint_set1
+    case PROFILE.AVC_BASELINE:
+      return [66, 0];
+    case PROFILE.AVC_MAIN:
+      return [77, 0];
+    case PROFILE.AVC_EXTENDED:
+      return [88, 0];
+    case PROFILE.AVC_HIGH:
+      return [100, 0];
+    case PROFILE.AVC_HIGH10:
+      return [110, 0];
+    default:
+      throw new Error(`H.264: profile ${profile}`);
   }
 }
 
@@ -206,7 +274,13 @@ export function codecString(profile: number, level: number) {
  * that comes after one it has output in display order, so it must be told at least the stream's depth). `'learn'`
  * writes no bitstream restriction (FFmpeg then guesses the depth from the POCs, and drops a picture while it learns).
  */
-export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level = 0, reorder: Exclude<H264Reorder, 'stream'> = 'none'): Uint8Array {
+export function buildSps(
+  p: H264Params,
+  mbWidth: number,
+  mbHeight: number,
+  level = 0,
+  reorder: Exclude<H264Reorder, 'stream'> = 'none',
+): Uint8Array {
   const s = p.sps;
   const [idc, flags] = profileIdc(p.profile);
   const w = new BitWriter();
@@ -270,7 +344,7 @@ const flat = (l: number[]) => l.every((x) => x === 16);
 /** A PPS (`id`, on SPS 0). */
 export function buildPps(p: H264Params, id: number): Uint8Array {
   const q = p.pps;
-  if (q.numSliceGroupsMinus1) throw new Error('H.264: slice groups (FMO) aren\'t supported');
+  if (q.numSliceGroupsMinus1) throw new Error("H.264: slice groups (FMO) aren't supported");
   const w = new BitWriter();
   w.ue(id);
   w.ue(0); // seq_parameter_set_id
@@ -384,12 +458,14 @@ export class H264Stream {
   }
 
   /** The deepest reordering seen. */
-  get depth() { return this.learned; }
+  get depth() {
+    return this.learned;
+  }
 
   /** The chunk for one picture: its desc and its bitstream (Annex B slices); the picture's POC. */
   chunk(desc: Uint8Array, bits: Uint8Array): { data: Uint8Array; key: boolean; poc: number } {
     const p = parseH264Desc(desc);
-    if (p.fieldPic || !p.sps.frameMbsOnly) throw new Error('H.264: interlaced pictures aren\'t supported');
+    if (p.fieldPic || !p.sps.frameMbsOnly) throw new Error("H.264: interlaced pictures aren't supported");
     const nals = splitAnnexB(bits).filter((n) => n.length > 1);
     const slices = nals.filter((n) => (n[0] & 0x1f) === 1 || (n[0] & 0x1f) === 5);
     if (!slices.length) throw new Error('H.264: a picture without slices');
@@ -403,7 +479,13 @@ export class H264Stream {
     this.pocs.push(poc);
     if (this.pocs.length > 32) this.pocs.shift(); // depths are at most 16
     if (key) this.said = Math.min(16, Math.max(this.said, this.learned, p.sps.maxNumRefFrames));
-    const sps = buildSps(p, this.mbWidth, this.mbHeight, this.level, this.reorder === 'stream' ? this.said : this.reorder);
+    const sps = buildSps(
+      p,
+      this.mbWidth,
+      this.mbHeight,
+      this.level,
+      this.reorder === 'stream' ? this.said : this.reorder,
+    );
     const spsChanged = !this.sps || !same(this.sps, sps);
     if (spsChanged || key) {
       this.sps = sps;
@@ -413,7 +495,8 @@ export class H264Stream {
       }
       out.push(nal(7, 3, sps));
     }
-    const l0 = desc[2302], l1 = desc[2303];
+    const l0 = desc[2302],
+      l1 = desc[2303];
     const ids = new Map<number, boolean>();
     for (const n of slices) {
       const h = sliceRefs(n, p);
@@ -425,7 +508,10 @@ export class H264Stream {
     }
     for (const id of ids.keys()) {
       const [d0, d1] = this.refDefaults.get(id) ?? [0, 0];
-      const pps = buildPps({ ...p, pps: { ...p.pps, numRefIdxL0DefaultActiveMinus1: d0, numRefIdxL1DefaultActiveMinus1: d1 } }, id);
+      const pps = buildPps(
+        { ...p, pps: { ...p.pps, numRefIdxL0DefaultActiveMinus1: d0, numRefIdxL1DefaultActiveMinus1: d1 } },
+        id,
+      );
       const was = this.pps.get(id);
       if (key || spsChanged || !was || !same(was, pps)) {
         this.pps.set(id, pps);
@@ -435,7 +521,10 @@ export class H264Stream {
     for (const n of nals) out.push(new Uint8Array([0, 0, 0, 1]), n);
     const data = new Uint8Array(out.reduce((k, b) => k + b.length, 0));
     let at = 0;
-    for (const b of out) { data.set(b, at); at += b.length; }
+    for (const b of out) {
+      data.set(b, at);
+      at += b.length;
+    }
     return { data, key, poc };
   }
 }

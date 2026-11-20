@@ -15,7 +15,14 @@ const i18n = i18next.createInstance();
 void i18n.init({
   lng: LANGUAGE,
   fallbackLng: false,
-  resources: { [LANGUAGE]: Object.fromEntries(Object.entries(CATALOGS).map(([ns, c]) => [ns, Object.fromEntries(Object.entries(c).map(([k, e]) => [k, e.message]))])) },
+  resources: {
+    [LANGUAGE]: Object.fromEntries(
+      Object.entries(CATALOGS).map(([ns, c]) => [
+        ns,
+        Object.fromEntries(Object.entries(c).map(([k, e]) => [k, e.message])),
+      ]),
+    ),
+  },
   ns: Object.keys(CATALOGS),
   defaultNS: 'common',
   // Keys are `<Source>.<name>` as they are, not paths into nested objects.
@@ -32,7 +39,11 @@ void i18n.init({
 const EDIT_FLAG = 'copy-edit';
 const EDITS = 'copy-edit.changes';
 const storage = (kind: 'sessionStorage' | 'localStorage'): Storage | undefined => {
-  try { return (globalThis as Record<string, unknown>)[kind] as Storage | undefined; } catch { return undefined; }
+  try {
+    return (globalThis as Record<string, unknown>)[kind] as Storage | undefined;
+  } catch {
+    return undefined;
+  }
 };
 /** Whether the copy editor is on in this tab (for the whole load: turning it on or off takes a reload). */
 export const COPY_EDITING = storage('sessionStorage')?.getItem(EDIT_FLAG) === 'on';
@@ -61,13 +72,18 @@ function mark(key: string, params: Record<string, unknown>, words: string, rich 
 
 /** The changed words kept in this browser, by full key (plural forms by their own: `ns:Source.name_one`). */
 export function copyEdits(): Record<string, string> {
-  try { return JSON.parse(storage('localStorage')?.getItem(EDITS) ?? '{}') as Record<string, string>; } catch { return {}; }
+  try {
+    return JSON.parse(storage('localStorage')?.getItem(EDITS) ?? '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
 }
 
 /** The copy editor's view of the messages (web/app/copy-edit-ui.ts). */
 export const copyEditor = {
   /** The marks in `s`: the numbers of the messages, in order. */
-  marks: (s: string) => [...s.matchAll(MARK)].map((m) => parseInt(m[1].replace(/\u200b/g, '0').replace(/\u200c/g, '1'), 2)),
+  marks: (s: string) =>
+    [...s.matchAll(MARK)].map((m) => parseInt(m[1].replace(/\u200b/g, '0').replace(/\u200c/g, '1'), 2)),
   shown: (id: number): Shown | undefined => shown[id],
   /** Every message shown so far with key `key`. */
   shownOf: (key: string) => shown.flatMap((s, id) => (s.key === key ? [id] : [])),
@@ -76,7 +92,9 @@ export const copyEditor = {
     const [ns, k] = key.split(/:(.*)/s);
     const c = CATALOGS[ns] ?? {};
     if (c[k]) return [{ key, ...c[k] }];
-    return Object.entries(c).filter(([f]) => f.replace(/_(zero|one|two|few|many|other)$/, '') === k).map(([f, e]) => ({ key: `${ns}:${f}`, ...e }));
+    return Object.entries(c)
+      .filter(([f]) => f.replace(/_(zero|one|two|few|many|other)$/, '') === k)
+      .map(([f, e]) => ({ key: `${ns}:${f}`, ...e }));
   },
   /** Changes entry `full`'s words to `words` (the catalog's again when `undefined`), here and in this browser. */
   change(full: string, words: string | undefined) {
@@ -116,7 +134,9 @@ i18n.services.formatter?.add('minutes', (v: unknown) =>
 
 /** A list's words: its items rendered and, where the message doesn't format it, joined with commas. */
 class Items extends Array<string> {
-  override toString() { return this.join(', '); }
+  override toString() {
+    return this.join(', ');
+  }
 }
 
 function param(v: Param): unknown {
@@ -155,7 +175,8 @@ function holed(key: string, params: Params | undefined, rich: boolean): { words:
     return (typeof r === 'string' && r.includes('<')) || (rich && item) ? hole({ text: String(r), item }) : r;
   };
   const p: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(params ?? {})) p[k] = Array.isArray(v) ? Items.from(v as Param[], (x) => String(one(x, true))) : one(v);
+  for (const [k, v] of Object.entries(params ?? {}))
+    p[k] = Array.isArray(v) ? Items.from(v as Param[], (x) => String(one(x, true))) : one(v);
   return { words: i18n.t(key, p) as string, holes };
 }
 const filled = (s: string, holes: Hole[]) => s.replace(HOLE, (_, i: string) => holes[Number(i)].text);
@@ -213,14 +234,16 @@ export function marked(key: string, params?: Params): Piece[] {
     }
     push(between, piece.text.slice(at));
   }
-  if (COPY_EDITING && out.length) out[0] = { ...out[0], text: mark(key, rendered(params), out.map((x) => x.text).join(''), true) + out[0].text };
+  if (COPY_EDITING && out.length)
+    out[0] = { ...out[0], text: mark(key, rendered(params), out.map((x) => x.text).join(''), true) + out[0].text };
   return out;
 }
 
 /** A message's words cut at its markers: plain text (`tag` undefined) and the text each `<tag>…</tag>` wraps. */
 export function parts(s: string): Piece[] {
   const out: Piece[] = [];
-  let at = 0, open: string | undefined;
+  let at = 0,
+    open: string | undefined;
   for (const m of s.matchAll(MARKER)) {
     const [whole, close, tag] = m;
     if (!close && open) continue;
@@ -267,7 +290,11 @@ export function describe(e: unknown): Described {
 /** What the page says somewhere (the message bar, a dialog): words already rendered, a message, an error. */
 export type Said = string | Msg | Error | Described | WireError;
 
-const isDescribed = (v: unknown): v is Described => typeof v === 'object' && v !== null && typeof (v as Described).headline === 'string' && Array.isArray((v as Described).details);
+const isDescribed = (v: unknown): v is Described =>
+  typeof v === 'object' &&
+  v !== null &&
+  typeof (v as Described).headline === 'string' &&
+  Array.isArray((v as Described).details);
 
 /** `s` as a headline and its details (rendered words are a headline alone). */
 export function said(s: Said | undefined): Described {

@@ -46,9 +46,26 @@ export const ESTALE = 116;
 export type Async<T> = T | Promise<T>;
 /** Seconds and nanoseconds. */
 export type P9Time = [number, number];
-export type P9Stat = { mode: number; uid: number; gid: number; nlink: number; size: number; atime: P9Time; mtime: P9Time; ctime: P9Time };
+export type P9Stat = {
+  mode: number;
+  uid: number;
+  gid: number;
+  nlink: number;
+  size: number;
+  atime: P9Time;
+  mtime: P9Time;
+  ctime: P9Time;
+};
 /** Tsetattr's fields: `valid` says which (1 mode, 2 uid, 4 gid, 8 size, 16 atime, 32 mtime, 128 and 256 the times as given). */
-export type P9SetAttr = { valid: number; mode: number; uid: number; gid: number; size: number; atime: P9Time; mtime: P9Time };
+export type P9SetAttr = {
+  valid: number;
+  mode: number;
+  uid: number;
+  gid: number;
+  size: number;
+  atime: P9Time;
+  mtime: P9Time;
+};
 /** What Tstatfs answers. */
 export type P9StatFs = { bsize: number; blocks: number; bfree: number; bavail: number; files: number; ffree: number };
 /** A directory's entry: its name, its node and its offset, the cookie a readdir resumes after (ascending, never 0). */
@@ -58,7 +75,13 @@ export type P9Entry<N> = [name: string, node: N, offset: number];
  * `xattr`: a Txattrwalk's fid (what it reads: a value or the names) or a Txattrcreate's (`set`: what it writes, set at
  * its clunk), the server's own.
  */
-export type P9Fid<N> = { node: N; uid: number; flags?: number; list?: P9Entry<N>[]; xattr?: { data: Uint8Array; set?: { name: string; written: number } } };
+export type P9Fid<N> = {
+  node: N;
+  uid: number;
+  flags?: number;
+  list?: P9Entry<N>[];
+  xattr?: { data: Uint8Array; set?: { name: string; written: number } };
+};
 
 /** Txattrcreate's flags (setxattr(2)'s). */
 export const XATTR_CREATE = 1;
@@ -117,11 +140,21 @@ class Reader {
     this.b = b;
     this.v = new DataView(b.buffer, b.byteOffset, b.byteLength);
   }
-  u8() { return this.v.getUint8((this.k += 1) - 1); }
-  u16() { return this.v.getUint16((this.k += 2) - 2, true); }
-  u32() { return this.v.getUint32((this.k += 4) - 4, true); }
-  u64() { return Number(this.v.getBigUint64((this.k += 8) - 8, true)); }
-  str() { return new TextDecoder().decode(this.bytes(this.u16())); }
+  u8() {
+    return this.v.getUint8((this.k += 1) - 1);
+  }
+  u16() {
+    return this.v.getUint16((this.k += 2) - 2, true);
+  }
+  u32() {
+    return this.v.getUint32((this.k += 4) - 4, true);
+  }
+  u64() {
+    return Number(this.v.getBigUint64((this.k += 8) - 8, true));
+  }
+  str() {
+    return new TextDecoder().decode(this.bytes(this.u16()));
+  }
   bytes(n: number) {
     if (this.k + n > this.b.length) throw new RangeError('truncated');
     return this.b.subarray(this.k, (this.k += n));
@@ -137,14 +170,44 @@ class Writer {
     b.set(this.b);
     this.b = b;
   }
-  u8(v: number) { this.room(1); this.b[this.k++] = v; return this; }
-  u16(v: number) { this.room(2); new DataView(this.b.buffer).setUint16(this.k, v, true); this.k += 2; return this; }
-  u32(v: number) { this.room(4); new DataView(this.b.buffer).setUint32(this.k, v >>> 0, true); this.k += 4; return this; }
-  u64(v: number) { this.room(8); new DataView(this.b.buffer).setBigUint64(this.k, BigInt(v), true); this.k += 8; return this; }
-  str(s: string) { const e = new TextEncoder().encode(s); this.u16(e.length); return this.bytes(e); }
-  bytes(e: Uint8Array) { this.room(e.length); this.b.set(e, this.k); this.k += e.length; return this; }
+  u8(v: number) {
+    this.room(1);
+    this.b[this.k++] = v;
+    return this;
+  }
+  u16(v: number) {
+    this.room(2);
+    new DataView(this.b.buffer).setUint16(this.k, v, true);
+    this.k += 2;
+    return this;
+  }
+  u32(v: number) {
+    this.room(4);
+    new DataView(this.b.buffer).setUint32(this.k, v >>> 0, true);
+    this.k += 4;
+    return this;
+  }
+  u64(v: number) {
+    this.room(8);
+    new DataView(this.b.buffer).setBigUint64(this.k, BigInt(v), true);
+    this.k += 8;
+    return this;
+  }
+  str(s: string) {
+    const e = new TextEncoder().encode(s);
+    this.u16(e.length);
+    return this.bytes(e);
+  }
+  bytes(e: Uint8Array) {
+    this.room(e.length);
+    this.b.set(e, this.k);
+    this.k += e.length;
+    return this;
+  }
   qid(type: number, id: number, version: number) {
-    return this.u8(type === S_IFDIR ? 0x80 : type === S_IFLNK ? 0x02 : 0).u32(version).u64(id);
+    return this.u8(type === S_IFDIR ? 0x80 : type === S_IFLNK ? 0x02 : 0)
+      .u32(version)
+      .u64(id);
   }
 }
 
@@ -178,7 +241,8 @@ function aclEntries(v: Uint8Array): [number, number][] | undefined {
   const count = new Map<number, number>();
   for (let k = 4; k < v.length; k += 8) {
     const [tag, perm] = [d.getUint16(k, true), d.getUint16(k + 2, true)];
-    if (![ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER].includes(tag) || perm > 7) return undefined;
+    if (![ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER].includes(tag) || perm > 7)
+      return undefined;
     count.set(tag, (count.get(tag) ?? 0) + 1);
     out.push([tag, perm]);
   }
@@ -192,14 +256,19 @@ function aclEntries(v: Uint8Array): [number, number][] | undefined {
 function aclMap(v: Uint8Array, perm: (tag: number, old: number) => number) {
   const out = v.slice();
   const d = new DataView(out.buffer);
-  for (let k = 4; k < out.length; k += 8) d.setUint16(k + 2, perm(d.getUint16(k, true), d.getUint16(k + 2, true)), true);
+  for (let k = 4; k < out.length; k += 8)
+    d.setUint16(k + 2, perm(d.getUint16(k, true), d.getUint16(k + 2, true)), true);
   return out;
 }
 
 /** The permission bits an ACL stands for: the owner's, the mask's (the owning group's without one) and the others'. */
 function aclMode(e: [number, number][]) {
   const perm = (tag: number) => e.find(([t]) => t === tag)?.[1] ?? 0;
-  return perm(ACL_USER_OBJ) << 6 | (e.some(([t]) => t === ACL_MASK) ? perm(ACL_MASK) : perm(ACL_GROUP_OBJ)) << 3 | perm(ACL_OTHER);
+  return (
+    (perm(ACL_USER_OBJ) << 6) |
+    ((e.some(([t]) => t === ACL_MASK) ? perm(ACL_MASK) : perm(ACL_GROUP_OBJ)) << 3) |
+    perm(ACL_OTHER)
+  );
 }
 
 /** Whether the mode says all an ACL does (no named users or groups, no mask). */
@@ -208,7 +277,15 @@ const aclEquiv = (e: [number, number][]) => e.length === 3;
 /** `chmod` on an access ACL: the owner's, the mask's (the owning group's without one) and the others' perms. */
 function aclChmod(v: Uint8Array, mode: number) {
   const mask = aclEntries(v)!.some(([t]) => t === ACL_MASK);
-  return aclMap(v, (tag, old) => tag === ACL_USER_OBJ ? mode >> 6 & 7 : tag === ACL_OTHER ? mode & 7 : tag === (mask ? ACL_MASK : ACL_GROUP_OBJ) ? mode >> 3 & 7 : old);
+  return aclMap(v, (tag, old) =>
+    tag === ACL_USER_OBJ
+      ? (mode >> 6) & 7
+      : tag === ACL_OTHER
+        ? mode & 7
+        : tag === (mask ? ACL_MASK : ACL_GROUP_OBJ)
+          ? (mode >> 3) & 7
+          : old,
+  );
 }
 
 /** A new file's access ACL from its directory's default ACL and the mode it's created with (posix_acl_create_masq): both narrowed to what the other allows. */
@@ -216,7 +293,9 @@ function aclCreate(def: Uint8Array, mode: number): { acl: Uint8Array; mode: numb
   const e = aclEntries(def)!;
   const mask = e.some(([t]) => t === ACL_MASK);
   const group = mask ? ACL_MASK : ACL_GROUP_OBJ;
-  const acl = aclMap(def, (tag, old) => tag === ACL_USER_OBJ ? old & mode >> 6 : tag === ACL_OTHER ? old & mode : tag === group ? old & mode >> 3 : old);
+  const acl = aclMap(def, (tag, old) =>
+    tag === ACL_USER_OBJ ? old & (mode >> 6) : tag === ACL_OTHER ? old & mode : tag === group ? old & (mode >> 3) : old,
+  );
   return { acl, mode: (mode & ~0o777) | aclMode(aclEntries(acl)!) };
 }
 
@@ -260,7 +339,8 @@ export class MemoryTree implements P9Tree<Node> {
     for (const [path, text] of Object.entries(files)) {
       let dir = this.root;
       const parts = path.split('/').filter(Boolean);
-      for (const p of parts.slice(0, -1)) dir = dir.children!.get(p) ?? this.linked(dir, p, this.node(S_IFDIR | 0o755, dir));
+      for (const p of parts.slice(0, -1))
+        dir = dir.children!.get(p) ?? this.linked(dir, p, this.node(S_IFDIR | 0o755, dir));
       const f = this.linked(dir, parts.at(-1)!, this.node(S_IFREG | 0o644, dir));
       f.data = new TextEncoder().encode(text);
       f.size = f.data.length;
@@ -269,7 +349,22 @@ export class MemoryTree implements P9Tree<Node> {
 
   private node(mode: number, parent: Node | undefined, uid = 0, gid = 0): Node {
     const t = this.now();
-    const n: Node = { id: ++this.ids, mode, uid, gid, data: new Uint8Array(0), size: 0, target: '', parent: parent!, offset: 2, nlink: 1, version: 0, atime: t, mtime: t, ctime: t };
+    const n: Node = {
+      id: ++this.ids,
+      mode,
+      uid,
+      gid,
+      data: new Uint8Array(0),
+      size: 0,
+      target: '',
+      parent: parent!,
+      offset: 2,
+      nlink: 1,
+      version: 0,
+      atime: t,
+      mtime: t,
+      ctime: t,
+    };
     if ((mode & S_IFMT) === S_IFDIR) [n.children, n.offsets, n.nlink] = [new Map(), new Map(), 2];
     n.parent ??= n;
     return n;
@@ -332,9 +427,15 @@ export class MemoryTree implements P9Tree<Node> {
     dir.mtime = dir.ctime = n.ctime = this.now();
   }
 
-  id(n: Node) { return n.id; }
-  type(n: Node) { return n.mode & S_IFMT; }
-  version(n: Node) { return n.version; }
+  id(n: Node) {
+    return n.id;
+  }
+  type(n: Node) {
+    return n.mode & S_IFMT;
+  }
+  version(n: Node) {
+    return n.version;
+  }
 
   walk(d: Node, name: string) {
     return !d.children ? undefined : name === '..' ? d.parent : name === '.' ? d : d.children.get(name);
@@ -367,12 +468,25 @@ export class MemoryTree implements P9Tree<Node> {
 
   entries(f: P9Fid<Node>): P9Entry<Node>[] {
     const d = this.dir(f);
-    return [['.', d, 1], ['..', d.parent, 2], ...[...d.children!].map(([k, n]): P9Entry<Node> => [k, n, d.offsets!.get(k)!])];
+    return [
+      ['.', d, 1],
+      ['..', d.parent, 2],
+      ...[...d.children!].map(([k, n]): P9Entry<Node> => [k, n, d.offsets!.get(k)!]),
+    ];
   }
 
   stat(f: P9Fid<Node>): P9Stat {
     const n = f.node;
-    return { mode: n.mode, uid: n.uid, gid: n.gid, nlink: n.nlink, size: n.size, atime: n.atime, mtime: n.mtime, ctime: n.ctime };
+    return {
+      mode: n.mode,
+      uid: n.uid,
+      gid: n.gid,
+      nlink: n.nlink,
+      size: n.size,
+      atime: n.atime,
+      mtime: n.mtime,
+      ctime: n.ctime,
+    };
   }
 
   setattr(f: P9Fid<Node>, a: P9SetAttr) {
@@ -465,7 +579,7 @@ export class MemoryTree implements P9Tree<Node> {
   }
 
   listxattr(f: P9Fid<Node>) {
-    return [...f.node.xattrs?.keys() ?? []];
+    return [...(f.node.xattrs?.keys() ?? [])];
   }
 
   getxattr(f: P9Fid<Node>, name: string) {
@@ -510,7 +624,9 @@ export class P9Server<N = unknown> {
   }
 
   /** Every fid (a tree's snapshot, web/9p-folders.ts), by number. */
-  get open() { return this.fids; }
+  get open() {
+    return this.fids;
+  }
 
   private fid(r: Reader) {
     const f = this.fids.get(r.u32());
@@ -526,7 +642,7 @@ export class P9Server<N = unknown> {
 
   /** Answers the T-message `m` into at most `room` bytes. */
   handle(m: Uint8Array, room: number): Uint8Array | Promise<Uint8Array> {
-    const tag = m[5] | m[6] << 8;
+    const tag = m[5] | (m[6] << 8);
     const type = m[4];
     const w = new Writer();
     const failed = (e: unknown) => {
@@ -535,7 +651,8 @@ export class P9Server<N = unknown> {
       w.u32(e instanceof Err ? e.errno : EINVAL);
       return finish(w, 7, m);
     };
-    if (type === 108) { // Tflush: oldtag
+    if (type === 108) {
+      // Tflush: oldtag
       const old = this.running.get(new Reader(m).u16());
       if (old) return old.then(() => finish(w, 109, m));
     }
@@ -545,7 +662,11 @@ export class P9Server<N = unknown> {
       try {
         for (let s = next(); ; s = g.next(s.value)) {
           if (s.done) return finish(w, type + 1, m);
-          if (s.value instanceof Promise) return s.value.then((v) => on(() => g.next(v)), (e) => on(() => g.throw(e)));
+          if (s.value instanceof Promise)
+            return s.value.then(
+              (v) => on(() => g.next(v)),
+              (e) => on(() => g.throw(e)),
+            );
         }
       } catch (e) {
         return failed(e);
@@ -564,19 +685,23 @@ export class P9Server<N = unknown> {
     const t = this.tree;
     const qid = (n: N) => w.qid(t.type(n), t.id(n), t.version?.(n) ?? 0);
     switch (type) {
-      case 100: { // Tversion: msize, version
+      case 100: {
+        // Tversion: msize, version
         const msize = r.u32();
         const open = [...this.fids.values()];
         this.fids.clear();
         for (const f of open.filter((f) => !f.xattr)) {
           try {
             yield t.clunk?.(f);
-          } catch { /* each fid ends once, whatever its clunk says */ }
+          } catch {
+            /* each fid ends once, whatever its clunk says */
+          }
         }
         w.u32(Math.min(msize, MSIZE)).str(r.str() === '9P2000.L' ? '9P2000.L' : 'unknown');
         return;
       }
-      case 104: { // Tattach: fid, afid, uname, aname, n_uname
+      case 104: {
+        // Tattach: fid, afid, uname, aname, n_uname
         const fid = r.u32();
         r.u32();
         r.str();
@@ -586,7 +711,8 @@ export class P9Server<N = unknown> {
         qid(t.root);
         return;
       }
-      case 110: { // Twalk: fid, newfid, nwname, names
+      case 110: {
+        // Twalk: fid, newfid, nwname, names
         const f = this.fid(r);
         let n = f.node;
         const newfid = r.u32();
@@ -603,7 +729,8 @@ export class P9Server<N = unknown> {
         for (const q of qids) qid(q);
         return;
       }
-      case 12: { // Tlopen: fid, flags
+      case 12: {
+        // Tlopen: fid, flags
         const f = this.fid(r);
         const flags = r.u32();
         yield t.open(f, flags);
@@ -611,7 +738,8 @@ export class P9Server<N = unknown> {
         qid(f.node).u32(0);
         return;
       }
-      case 14: { // Tlcreate: fid (the directory, then the new file), name, flags, mode, gid
+      case 14: {
+        // Tlcreate: fid (the directory, then the new file), name, flags, mode, gid
         const k = r.k;
         const d = this.dir(r);
         const name = r.str();
@@ -623,21 +751,28 @@ export class P9Server<N = unknown> {
         qid(n).u32(0);
         return;
       }
-      case 116: { // Tread: fid, offset, count
+      case 116: {
+        // Tread: fid, offset, count
         const f = this.fid(r);
         const off = r.u64();
         const count = Math.min(r.u32(), room - 11);
         const x = f.xattr;
-        const data: Uint8Array = x ? (x.set ? new Uint8Array(0) : x.data.subarray(Math.min(off, x.data.length), Math.min(off + count, x.data.length))) : yield t.read(f, off, count);
+        const data: Uint8Array = x
+          ? x.set
+            ? new Uint8Array(0)
+            : x.data.subarray(Math.min(off, x.data.length), Math.min(off + count, x.data.length))
+          : yield t.read(f, off, count);
         w.u32(data.length).bytes(data);
         return;
       }
-      case 118: { // Twrite: fid, offset, count, data
+      case 118: {
+        // Twrite: fid, offset, count, data
         const f = this.fid(r);
         const off = r.u64();
         let data = r.bytes(r.u32());
         const x = f.xattr;
-        if (x) { // a Txattrcreate's value, up to the size it gave
+        if (x) {
+          // a Txattrcreate's value, up to the size it gave
           if (!x.set) throw new Err(EBADF);
           if (off > x.data.length) throw new Err(ENOSPC);
           data = data.subarray(0, x.data.length - off);
@@ -647,7 +782,8 @@ export class P9Server<N = unknown> {
         w.u32(data.length);
         return;
       }
-      case 40: { // Treaddir: fid, offset, count; entries qid, offset, type, name
+      case 40: {
+        // Treaddir: fid, offset, count; entries qid, offset, type, name
         const d = this.dir(r);
         const off = r.u64();
         const count = Math.min(r.u32(), room - 11);
@@ -658,7 +794,10 @@ export class P9Server<N = unknown> {
           if (next <= off) continue;
           const type = t.type(n);
           const before = e.k;
-          e.qid(type, t.id(n), t.version?.(n) ?? 0).u64(next).u8(type === S_IFDIR ? 4 : type === S_IFLNK ? 10 : type === S_IFREG ? 8 : 0).str(name);
+          e.qid(type, t.id(n), t.version?.(n) ?? 0)
+            .u64(next)
+            .u8(type === S_IFDIR ? 4 : type === S_IFLNK ? 10 : type === S_IFREG ? 8 : 0)
+            .str(name);
           if (e.k > count) {
             e.k = before;
             break;
@@ -667,35 +806,48 @@ export class P9Server<N = unknown> {
         w.u32(e.k).bytes(e.b.subarray(0, e.k));
         return;
       }
-      case 24: { // Tgetattr: fid, request_mask
+      case 24: {
+        // Tgetattr: fid, request_mask
         const f = this.fid(r);
         const s: P9Stat = yield t.stat(f);
         w.u64(0x7ff);
-        qid(f.node).u32(s.mode).u32(s.uid).u32(s.gid).u64(s.nlink).u64(0).u64(s.size).u64(4096).u64(Math.ceil(s.size / 512));
+        qid(f.node)
+          .u32(s.mode)
+          .u32(s.uid)
+          .u32(s.gid)
+          .u64(s.nlink)
+          .u64(0)
+          .u64(s.size)
+          .u64(4096)
+          .u64(Math.ceil(s.size / 512));
         for (const [sec, ns] of [s.atime, s.mtime, s.ctime, [0, 0]]) w.u64(sec).u64(ns);
         w.u64(0).u64(0); // gen, data_version
         return;
       }
-      case 26: { // Tsetattr: fid, valid, mode, uid, gid, size, atime, mtime (seconds, nanoseconds)
+      case 26: {
+        // Tsetattr: fid, valid, mode, uid, gid, size, atime, mtime (seconds, nanoseconds)
         const f = this.fid(r);
         const [valid, mode, uid, gid, size] = [r.u32(), r.u32(), r.u32(), r.u32(), r.u64()];
         const atime: P9Time = [r.u64(), r.u64()];
         yield t.setattr(f, { valid, mode, uid, gid, size, atime, mtime: [r.u64(), r.u64()] });
         return;
       }
-      case 72: { // Tmkdir: dfid, name, mode, gid
+      case 72: {
+        // Tmkdir: dfid, name, mode, gid
         const d = this.dir(r);
         const name = r.str();
         qid(yield t.mkdir(d, name, r.u32(), r.u32()));
         return;
       }
-      case 16: { // Tsymlink: fid, name, target, gid
+      case 16: {
+        // Tsymlink: fid, name, target, gid
         const d = this.dir(r);
         const [name, target] = [r.str(), r.str()];
         qid(yield t.symlink(d, name, target, r.u32()));
         return;
       }
-      case 18: { // Tmknod: dfid, name, mode, major, minor, gid
+      case 18: {
+        // Tmknod: dfid, name, mode, major, minor, gid
         const d = this.dir(r);
         const name = r.str();
         const mode = r.u32();
@@ -707,29 +859,33 @@ export class P9Server<N = unknown> {
       case 22: // Treadlink: fid
         w.str(yield t.readlink(this.fid(r)));
         return;
-      case 70: { // Tlink: dfid, fid, name
+      case 70: {
+        // Tlink: dfid, fid, name
         const d = this.dir(r);
         const f = this.fid(r);
         yield t.link(d, f, r.str());
         return;
       }
-      case 74: { // Trenameat: olddirfid, oldname, newdirfid, newname
+      case 74: {
+        // Trenameat: olddirfid, oldname, newdirfid, newname
         const od = this.dir(r);
         const oname = r.str();
         const nd = this.dir(r);
         yield t.rename(od, oname, nd, r.str());
         return;
       }
-      case 76: { // Tunlinkat: dirfd, name, flags (AT_REMOVEDIR 0x200)
+      case 76: {
+        // Tunlinkat: dirfd, name, flags (AT_REMOVEDIR 0x200)
         const d = this.dir(r);
         const name = r.str();
         yield t.unlink(d, name, (r.u32() & 0x200) !== 0);
         return;
       }
-      case 120: { // Tclunk: fid; a Txattrcreate's sets its attribute now (a value of 0 bytes removes it, as QEMU's)
+      case 120: {
+        // Tclunk: fid; a Txattrcreate's sets its attribute now (a value of 0 bytes removes it, as QEMU's)
         const k = r.k;
         const f = this.fid(r);
-        this.fids.delete((r.k = k, r.u32()));
+        this.fids.delete(((r.k = k), r.u32()));
         const set = f.xattr?.set;
         if (set) {
           if (set.written !== f.xattr!.data.length) throw new Err(EINVAL);
@@ -737,7 +893,8 @@ export class P9Server<N = unknown> {
         } else if (!f.xattr) yield t.clunk?.(f);
         return;
       }
-      case 30: { // Txattrwalk: fid, newfid, name (empty: the names, each ending in a NUL) → the value's size; newfid reads it
+      case 30: {
+        // Txattrwalk: fid, newfid, name (empty: the names, each ending in a NUL) → the value's size; newfid reads it
         const f = this.fid(r);
         const newfid = r.u32();
         const name = r.str();
@@ -751,7 +908,8 @@ export class P9Server<N = unknown> {
         w.u64(data.length);
         return;
       }
-      case 32: { // Txattrcreate: fid (becomes the value's to write), name, attr_size, flags (XATTR_CREATE, XATTR_REPLACE)
+      case 32: {
+        // Txattrcreate: fid (becomes the value's to write), name, attr_size, flags (XATTR_CREATE, XATTR_REPLACE)
         const f = this.fid(r);
         const [name, size, flags] = [r.str(), r.u64(), r.u32()];
         if (!t.getxattr || !t.setxattr) throw new Err(EOPNOTSUPP);
@@ -767,10 +925,11 @@ export class P9Server<N = unknown> {
         f.xattr = { data: new Uint8Array(size), set: { name, written: 0 } };
         return;
       }
-      case 122: { // Tremove: fid, clunked even if the remove fails
+      case 122: {
+        // Tremove: fid, clunked even if the remove fails
         const k = r.k;
         const f = this.fid(r);
-        this.fids.delete((r.k = k, r.u32()));
+        this.fids.delete(((r.k = k), r.u32()));
         try {
           yield t.remove(f);
         } finally {
@@ -783,15 +942,25 @@ export class P9Server<N = unknown> {
       case 50: // Tfsync: fid, datasync
         yield t.fsync?.(this.fid(r));
         return;
-      case 8: { // Tstatfs: type V9FS_MAGIC, bsize, blocks, bfree, bavail, files, ffree, fsid, namelen
+      case 8: {
+        // Tstatfs: type V9FS_MAGIC, bsize, blocks, bfree, bavail, files, ffree, fsid, namelen
         const s: P9StatFs = yield t.statfs(this.fid(r));
-        w.u32(0x01021997).u32(s.bsize).u64(s.blocks).u64(s.bfree).u64(s.bavail).u64(s.files).u64(s.ffree).u64(0).u32(255);
+        w.u32(0x01021997)
+          .u32(s.bsize)
+          .u64(s.blocks)
+          .u64(s.bfree)
+          .u64(s.bavail)
+          .u64(s.files)
+          .u64(s.ffree)
+          .u64(0)
+          .u32(255);
         return;
       }
       case 52: // Tlock: success (one client)
         w.u8(0);
         return;
-      case 54: { // Tgetlock: fid, type, start, length, proc_id, client_id → unlocked
+      case 54: {
+        // Tgetlock: fid, type, start, length, proc_id, client_id → unlocked
         this.fid(r);
         r.u8();
         const [start, len, pid, client] = [r.u64(), r.u64(), r.u32(), r.str()];
@@ -834,7 +1003,9 @@ export function p9Backend<N>(ctx: Ctx, server: P9Server<N>) {
       const reply = server.handle(m.slice(0, size), room);
       return reply instanceof Promise ? reply.then(send) : send(reply);
     },
-    reset() { epoch++; },
+    reset() {
+      epoch++;
+    },
   };
 }
 
@@ -843,6 +1014,8 @@ export function p9(ctx: Ctx, files: P9Files, deterministic: boolean) {
   return {
     ...p9Backend(ctx, new P9Server(new MemoryTree(files, deterministic))),
     // The in-memory tree is the tests' and Alpine's only: its tree and fids aren't saved (docs/shares.md §6).
-    save(): unknown { throw new Error("a machine with a 9p device can't be saved to a snapshot yet"); },
+    save(): unknown {
+      throw new Error("a machine with a 9p device can't be saved to a snapshot yet");
+    },
   };
 }

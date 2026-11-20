@@ -8,7 +8,15 @@
 // a RAM frame's unpacked and its pages put straight into guest RAM, nothing posted back but the frames it failed and the
 // times.
 import { codecCore, DEFLATE, MAX } from './lz.ts';
-import { applyRam, frameHeader, gatherPages, scanChunk, type FrameJob, type FrameTimes, type RamFrame } from './snapshot-file.ts';
+import {
+  applyRam,
+  frameHeader,
+  gatherPages,
+  scanChunk,
+  type FrameJob,
+  type FrameTimes,
+  type RamFrame,
+} from './snapshot-file.ts';
 
 /**
  * Coordinator → worker: the core first, then RAM chunks (`id` is the coordinator's), each with the frames' buffers
@@ -32,7 +40,13 @@ export type PoolReply =
 const BITMAP = 32;
 const PAGE = 4096;
 
-type Core = Awaited<ReturnType<typeof codecCore>> & { src: number; dst: number; cap: number; free: ArrayBuffer[]; made: number };
+type Core = Awaited<ReturnType<typeof codecCore>> & {
+  src: number;
+  dst: number;
+  cap: number;
+  free: ArrayBuffer[];
+  made: number;
+};
 
 async function init(module: WebAssembly.Module): Promise<Core> {
   const core = await codecCore(module);
@@ -84,14 +98,20 @@ function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
   const mem = new Uint8Array(c.memory.buffer);
   mem.set(new Uint8Array(piece, j.at, 32 + j.len), c.dst);
   const head = new DataView(piece, j.at, 32);
-  if ((c.ex.crc32(c.ex.crc32(0, c.dst, 24), c.dst + 32, j.len) >>> 0) !== head.getUint32(24, true)) throw new Error('the frame\'s checksum fails');
+  if (c.ex.crc32(c.ex.crc32(0, c.dst, 24), c.dst + 32, j.len) >>> 0 !== head.getUint32(24, true))
+    throw new Error("the frame's checksum fails");
   t.crc += performance.now() - t0;
   if (!j.place && !j.unpack) return;
   t0 = performance.now();
   const [id, rawLen] = [head.getUint32(4, true), head.getUint32(16, true)];
   let at = c.dst + 32;
   if (id === 2 || id === DEFLATE) {
-    const n = rawLen > MAX ? -1 : (id === 2 ? c.ex.lz_decompress(c.dst + 32, j.len, c.src, rawLen) : c.ex.inflate_raw(c.dst + 32, j.len, c.src, rawLen)) >>> 0;
+    const n =
+      rawLen > MAX
+        ? -1
+        : (id === 2
+            ? c.ex.lz_decompress(c.dst + 32, j.len, c.src, rawLen)
+            : c.ex.inflate_raw(c.dst + 32, j.len, c.src, rawLen)) >>> 0;
     if (n !== rawLen) throw new Error('the frame does not unpack to its size');
     at = c.src;
   } else if (id !== 0 || j.len !== rawLen) throw new Error('a frame of another codec');
@@ -117,29 +137,48 @@ function frames(c: Core, piece: ArrayBuffer, jobs: FrameJob[]) {
   return { failed, ...t };
 }
 
-function serve(post: (m: PoolReply, transfer?: ArrayBuffer[]) => void, listen: (on: (m: PoolInit | PoolJob) => void) => void) {
+function serve(
+  post: (m: PoolReply, transfer?: ArrayBuffer[]) => void,
+  listen: (on: (m: PoolInit | PoolJob) => void) => void,
+) {
   let core: Promise<Core> | undefined;
   listen((m) => {
     if (m.type === 'init') {
       core = init(m.module);
-      core.then((c) => post({ type: 'ready', frame: c.cap + 32 }), (e: unknown) => post({ type: 'failed', message: String((e as Error)?.message ?? e) }));
+      core.then(
+        (c) => post({ type: 'ready', frame: c.cap + 32 }),
+        (e: unknown) => post({ type: 'failed', message: String((e as Error)?.message ?? e) }),
+      );
       return;
     }
     const { id } = m;
     if (!core) return post({ type: 'error', id, message: 'a job before the core' }); // i18n-ignore: never shown (the writer makes a failed chunk itself)
-    core.then((c) => {
-      if (m.type === 'frames') return post({ type: 'loaded', id, ...frames(c, m.piece, m.jobs) });
-      for (const b of m.give ?? []) if (b.byteLength === c.cap + 32) c.free.push(b);
-      const r = ram(c, m.buffer, m.off, m.len, m.index);
-      post({ type: 'done', id, ...r, buffers: c.made }, r.frame ? [r.frame.buffer as ArrayBuffer] : []);
-    }).catch((e: unknown) => post({ type: 'error', id, message: String((e as Error)?.message ?? e) }));
+    core
+      .then((c) => {
+        if (m.type === 'frames') return post({ type: 'loaded', id, ...frames(c, m.piece, m.jobs) });
+        for (const b of m.give ?? []) if (b.byteLength === c.cap + 32) c.free.push(b);
+        const r = ram(c, m.buffer, m.off, m.len, m.index);
+        post({ type: 'done', id, ...r, buffers: c.made }, r.frame ? [r.frame.buffer as ArrayBuffer] : []);
+      })
+      .catch((e: unknown) => post({ type: 'error', id, message: String((e as Error)?.message ?? e) }));
   });
 }
 
 if ('WorkerGlobalScope' in globalThis) {
-  const self = globalThis as unknown as { onmessage: (e: MessageEvent<PoolInit | PoolJob>) => void; postMessage(m: unknown, t?: Transferable[]): void };
-  serve((m, t) => self.postMessage(m, t ?? []), (on) => { self.onmessage = (e) => on(e.data); });
+  const self = globalThis as unknown as {
+    onmessage: (e: MessageEvent<PoolInit | PoolJob>) => void;
+    postMessage(m: unknown, t?: Transferable[]): void;
+  };
+  serve(
+    (m, t) => self.postMessage(m, t ?? []),
+    (on) => {
+      self.onmessage = (e) => on(e.data);
+    },
+  );
 } else {
   const { parentPort } = await import('node:worker_threads');
-  serve((m, t) => parentPort!.postMessage(m, t ?? []), (on) => parentPort!.on('message', on));
+  serve(
+    (m, t) => parentPort!.postMessage(m, t ?? []),
+    (on) => parentPort!.on('message', on),
+  );
 }

@@ -23,11 +23,26 @@ import { inflateSync } from 'fflate';
  * An entry as stored: its key (hex), the renderer build it is of, its bytes (deflated when `packed`; `size`, their
  * length inflated, where known) and when it was last used (ms since 1970).
  */
-export type CacheEntry = { key: string; version: string; bytes: Uint8Array; used: number; packed?: boolean; size?: number };
+export type CacheEntry = {
+  key: string;
+  version: string;
+  bytes: Uint8Array;
+  used: number;
+  packed?: boolean;
+  size?: number;
+};
 
 /** An entry in memory: until its write-back, its bytes as the renderer gave them (`bytes`); from then on what is stored
  * of them (`stored`, deflated or not: `packed`, `size` long inflated). The budget counts what it holds. */
-type Held = { key: string; version: string; used: number; bytes?: Uint8Array; stored?: Uint8Array; packed?: boolean; size?: number };
+type Held = {
+  key: string;
+  version: string;
+  used: number;
+  bytes?: Uint8Array;
+  stored?: Uint8Array;
+  packed?: boolean;
+  size?: number;
+};
 const size = (e: Held) => (e.stored ?? e.bytes)!.length;
 
 /** Where entries persist: IndexedDB in the browser (`idbBackend`), memory in tests. */
@@ -39,7 +54,17 @@ export interface CacheBackend {
 
 /** `bytes`: what the entries take stored (the budget's measure); `held`: their bytes in memory (more than `bytes` only
  * by the entries not yet written back); `inflateMs`: the lookups' inflates, in all. */
-export type CacheStats = { hits: number; misses: number; stores: number; evicted: number; bytes: number; held: number; entries: number; dropped: number; inflateMs: number };
+export type CacheStats = {
+  hits: number;
+  misses: number;
+  stores: number;
+  evicted: number;
+  bytes: number;
+  held: number;
+  entries: number;
+  dropped: number;
+  inflateMs: number;
+};
 
 /** The default budget (bytes): VK3 L3 measured the programs' sets (bench/vulkan/REPORT.md "VK3 L3"). */
 export const CACHE_BUDGET = 32 << 20;
@@ -49,7 +74,17 @@ export const CACHE_BUDGET_CHOICES = [8, 16, 32, 64];
 const FLUSH_MS = 1000;
 
 export class ShaderCache {
-  readonly stats: CacheStats = { hits: 0, misses: 0, stores: 0, evicted: 0, bytes: 0, held: 0, entries: 0, dropped: 0, inflateMs: 0 };
+  readonly stats: CacheStats = {
+    hits: 0,
+    misses: 0,
+    stores: 0,
+    evicted: 0,
+    bytes: 0,
+    held: 0,
+    entries: 0,
+    dropped: 0,
+    inflateMs: 0,
+  };
   private readonly entries = new Map<string, Held>();
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
@@ -95,7 +130,9 @@ export class ShaderCache {
     return c;
   }
 
-  private now() { return (this.clock = Math.max(this.clock + 1, Date.now())); }
+  private now() {
+    return (this.clock = Math.max(this.clock + 1, Date.now()));
+  }
 
   get(key: string): Uint8Array | undefined {
     const e = this.entries.get(key);
@@ -178,56 +215,83 @@ export class ShaderCache {
 
   private schedule() {
     if (!this.backend || this.timer) return;
-    this.timer = setTimeout(() => { this.timer = undefined; void this.flush(); }, FLUSH_MS);
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.flush();
+    }, FLUSH_MS);
   }
 
   /** Writes the changes back now (tests; the worker's timer otherwise), deflating what isn't yet: from then on that is
    * what is held. */
   flush(): Promise<void> {
-    if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
     const put = [...this.dirty].map((k) => this.entries.get(k)!).filter(Boolean);
     const remove = [...this.removed];
     this.dirty.clear();
     this.removed.clear();
     if (!this.backend || (!put.length && !remove.length)) return this.writing;
-    this.writing = this.writing.then(async () => {
-      for (const e of put) {
-        if (e.stored || !e.bytes) continue;
-        const raw = e.bytes;
-        const packed = await deflate(raw).catch(() => undefined);
-        const before = size(e);
-        [e.stored, e.packed, e.bytes] = packed && packed.length < raw.length ? [packed, true, undefined] : [raw, false, undefined];
-        // Still held: what it takes now counts.
-        if (this.entries.get(e.key) === e) {
-          this.stats.bytes += size(e) - before;
-          this.stats.held += size(e) - before;
+    this.writing = this.writing
+      .then(async () => {
+        for (const e of put) {
+          if (e.stored || !e.bytes) continue;
+          const raw = e.bytes;
+          const packed = await deflate(raw).catch(() => undefined);
+          const before = size(e);
+          [e.stored, e.packed, e.bytes] =
+            packed && packed.length < raw.length ? [packed, true, undefined] : [raw, false, undefined];
+          // Still held: what it takes now counts.
+          if (this.entries.get(e.key) === e) {
+            this.stats.bytes += size(e) - before;
+            this.stats.held += size(e) - before;
+          }
         }
-      }
-      await this.backend!.save(put.map((e) => ({ key: e.key, version: e.version, bytes: e.stored!, used: e.used, packed: e.packed, size: e.size })), remove);
-    }).catch((err) => console.warn('venus-cache: the shaders could not be stored', err));
+        await this.backend!.save(
+          put.map((e) => ({
+            key: e.key,
+            version: e.version,
+            bytes: e.stored!,
+            used: e.used,
+            packed: e.packed,
+            size: e.size,
+          })),
+          remove,
+        );
+      })
+      .catch((err) => console.warn('venus-cache: the shaders could not be stored', err));
     return this.writing;
   }
 }
 
 /** Bytes through a CompressionStream (deflate-raw: what inflateSync reads). */
 async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await new Response(new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
+  return new Uint8Array(
+    await new Response(
+      new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CompressionStream('deflate-raw')),
+    ).arrayBuffer(),
+  );
 }
 
 /** The backend in the browser: IndexedDB `waarm64-shaders`, store `entries` keyed by `key`. */
 export function idbBackend(name = 'waarm64-shaders'): CacheBackend & { clear(): Promise<void>; close(): void } {
-  const open = () => new Promise<IDBDatabase>((resolve, reject) => {
-    const r = indexedDB.open(name, 1);
-    r.onupgradeneeded = () => { r.result.createObjectStore('entries', { keyPath: 'key' }); };
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
+  const open = () =>
+    new Promise<IDBDatabase>((resolve, reject) => {
+      const r = indexedDB.open(name, 1);
+      r.onupgradeneeded = () => {
+        r.result.createObjectStore('entries', { keyPath: 'key' });
+      };
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
   let db: Promise<IDBDatabase> | undefined;
-  const done = (t: IDBTransaction) => new Promise<void>((resolve, reject) => {
-    t.oncomplete = () => resolve();
-    t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error);
-  });
+  const done = (t: IDBTransaction) =>
+    new Promise<void>((resolve, reject) => {
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    });
   return {
     async load() {
       const d = await (db ??= open());
@@ -251,7 +315,10 @@ export function idbBackend(name = 'waarm64-shaders'): CacheBackend & { clear(): 
       await done(t);
     },
     close() {
-      void db?.then((d) => d.close(), () => {});
+      void db?.then(
+        (d) => d.close(),
+        () => {},
+      );
       db = undefined;
     },
   };
@@ -283,7 +350,9 @@ export function memoryBackend(): CacheBackend & { entries: Map<string, CacheEntr
   const entries = new Map<string, CacheEntry>();
   return {
     entries,
-    async load() { return [...entries.values()].map((e) => ({ ...e, bytes: e.bytes.slice() })); },
+    async load() {
+      return [...entries.values()].map((e) => ({ ...e, bytes: e.bytes.slice() }));
+    },
     async save(put, remove) {
       for (const k of remove) entries.delete(k);
       for (const e of put) entries.set(e.key, { ...e, bytes: e.bytes.slice() });

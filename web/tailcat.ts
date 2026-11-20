@@ -36,7 +36,17 @@ export type TailcatServe = { relay: string; allow?: string[] };
 
 /** Messages to the worker. */
 export type ToTailcat =
-  | { type: 'start'; wasm: string; addr: string; serve?: TailcatServe; identityKey?: string; identity?: TailcatIdentity; derpMapURL?: string; probe6?: Reach6Options; ip: MessagePort }
+  | {
+      type: 'start';
+      wasm: string;
+      addr: string;
+      serve?: TailcatServe;
+      identityKey?: string;
+      identity?: TailcatIdentity;
+      derpMapURL?: string;
+      probe6?: Reach6Options;
+      ip: MessagePort;
+    }
   | { type: 'attach'; ip: MessagePort }
   | { type: 'primary'; primary: boolean; rank?: number; primary6?: boolean }
   | { type: 'detach' };
@@ -92,13 +102,20 @@ function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T
     open.onsuccess = () => {
       const db = open.result;
       const r = f(db.transaction('identity', mode).objectStore('identity'));
-      r.onsuccess = () => { db.close(); resolve(r.result); };
-      r.onerror = () => { db.close(); reject(r.error); };
+      r.onsuccess = () => {
+        db.close();
+        resolve(r.result);
+      };
+      r.onerror = () => {
+        db.close();
+        reject(r.error);
+      };
     };
   });
 }
 
-const hex32 = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
+const hex32 = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
 /** A new identity (an ephemeral connection's lives in memory: docs/networking/adapters.md §2.1). */
 export const newTailcatIdentity = (): TailcatIdentity => ({ key: hex32(), psk: hex32() });
@@ -116,7 +133,11 @@ export async function tailcatIdentity(key = 'served'): Promise<TailcatIdentity> 
 }
 
 /** Whether there's a kept identity under `key` (an address to forget). */
-export const hasTailcatIdentity = (key = 'served') => idb<number>('readonly', (s) => s.count(key)).then((n) => n > 0, () => false);
+export const hasTailcatIdentity = (key = 'served') =>
+  idb<number>('readonly', (s) => s.count(key)).then(
+    (n) => n > 0,
+    () => false,
+  );
 
 /** Forgets the identity under `key`: the next serve has a new address, and the old one stops working. */
 export const forgetTailcatIdentity = (key = 'served') => idb('readwrite', (s) => s.delete(key)).then(() => {});
@@ -124,23 +145,25 @@ export const forgetTailcatIdentity = (key = 'served') => idb('readwrite', (s) =>
 /** The region of a DERP map with the fastest `/derp/probe` (what tailcat's own server picks by), or 0 if none answers. */
 export async function nearestRegion(derpMapURL: string, timeoutMs = 3000): Promise<number> {
   type Node = { HostName: string; DERPPort?: number; STUNOnly?: boolean };
-  const map = await (await fetch(derpMapURL)).json() as { Regions: Record<string, { Nodes?: Node[] }> };
-  const timed = await Promise.all(Object.entries(map.Regions).map(async ([id, r]) => {
-    const n = r.Nodes?.find((x) => !x.STUNOnly && x.HostName);
-    if (!n) return [Number(id), Infinity] as const;
-    const url = `https://${n.HostName}${n.DERPPort && n.DERPPort !== 443 ? `:${n.DERPPort}` : ''}/derp/probe`;
-    let best = Infinity;
-    for (let k = 0; k < 3; k++) {
-      const t = performance.now();
-      try {
-        await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
-        best = Math.min(best, performance.now() - t);
-      } catch {
-        break;
+  const map = (await (await fetch(derpMapURL)).json()) as { Regions: Record<string, { Nodes?: Node[] }> };
+  const timed = await Promise.all(
+    Object.entries(map.Regions).map(async ([id, r]) => {
+      const n = r.Nodes?.find((x) => !x.STUNOnly && x.HostName);
+      if (!n) return [Number(id), Infinity] as const;
+      const url = `https://${n.HostName}${n.DERPPort && n.DERPPort !== 443 ? `:${n.DERPPort}` : ''}/derp/probe`;
+      let best = Infinity;
+      for (let k = 0; k < 3; k++) {
+        const t = performance.now();
+        try {
+          await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
+          best = Math.min(best, performance.now() - t);
+        } catch {
+          break;
+        }
       }
-    }
-    return [Number(id), best] as const;
-  }));
+      return [Number(id), best] as const;
+    }),
+  );
   const [id, ms] = timed.reduce((a, b) => (b[1] < a[1] ? b : a), [0, Infinity] as const);
   return ms < Infinity ? id : 0;
 }
@@ -148,7 +171,15 @@ export async function nearestRegion(derpMapURL: string, timeoutMs = 3000): Promi
 /** What the menu shows of a tailcat connection: the guest's addresses and resolvers, no peers. */
 export function netmapOf(lease: Lease, serving?: string, exit = true, key?: string): NetMap {
   return {
-    name: '', via: 'tailcat', peers: [], mtu: lease.mtu, exitNode: '', domains: [], serving, tailcatExit: exit, tailcatKey: key,
+    name: '',
+    via: 'tailcat',
+    peers: [],
+    mtu: lease.mtu,
+    exitNode: '',
+    domains: [],
+    serving,
+    tailcatExit: exit,
+    tailcatKey: key,
     addresses: [`${lease.address.join('.')}/32`, ...(lease.address6 ? [`${v6text(lease.address6)}/128`] : [])],
     dns: [...lease.dns.map((d) => d.join('.')), ...(lease.dns6 ?? []).map(v6text)],
   };
@@ -156,7 +187,10 @@ export function netmapOf(lease: Lease, serving?: string, exit = true, key?: stri
 
 /** Whether the server has the client (target/net/ts.wasm). */
 export const tailcatBuilt = (wasm = new URL('../target/net/ts.wasm', import.meta.url).href) =>
-  fetch(wasm, { method: 'HEAD' }).then((r) => r.ok, () => false);
+  fetch(wasm, { method: 'HEAD' }).then(
+    (r) => r.ok,
+    () => false,
+  );
 
 export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
   const worker = new Worker(new URL('./tailcat-worker.ts', import.meta.url), { type: 'module' });
@@ -185,16 +219,39 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
   });
   running.catch(() => {});
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;
-  worker.postMessage({ type: 'start', wasm, addr: config.addr, serve: config.serve, identityKey: config.identityKey, identity: config.identity, derpMapURL: config.derpMapURL, probe6: config.probe6, ip: port1 } satisfies ToTailcat, [port1]);
+  worker.postMessage(
+    {
+      type: 'start',
+      wasm,
+      addr: config.addr,
+      serve: config.serve,
+      identityKey: config.identityKey,
+      identity: config.identity,
+      derpMapURL: config.derpMapURL,
+      probe6: config.probe6,
+      ip: port1,
+    } satisfies ToTailcat,
+    [port1],
+  );
   return {
-    ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
+    ip: own?.port2,
+    state: () => state,
+    netmap: () => netmap,
+    loginURL: () => undefined,
+    running,
+    timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailcat, [ip]),
-    setPrimary: (primary, rank, primary6) => worker.postMessage({ type: 'primary', primary, rank, primary6 } satisfies ToTailcat),
-    detach: () => new Promise((resolve) => {
-      const t = setTimeout(() => resolve(undefined), 3000);
-      detached = (ip) => { clearTimeout(t); resolve(ip); };
-      worker.postMessage({ type: 'detach' } satisfies ToTailcat);
-    }),
+    setPrimary: (primary, rank, primary6) =>
+      worker.postMessage({ type: 'primary', primary, rank, primary6 } satisfies ToTailcat),
+    detach: () =>
+      new Promise((resolve) => {
+        const t = setTimeout(() => resolve(undefined), 3000);
+        detached = (ip) => {
+          clearTimeout(t);
+          resolve(ip);
+        };
+        worker.postMessage({ type: 'detach' } satisfies ToTailcat);
+      }),
     setExitNode: () => Promise.reject(new MsgError('network:tailcat.noExitNodes')),
     setAcceptRoutes: () => {},
     logout: () => Promise.resolve(),

@@ -14,7 +14,20 @@ import { busy, gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d, type ScreenPng } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
-import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_FRAME, MAX_GSO_FRAME, MAX_PORT_FRAME, NET_HDR, OFFLOADS, receive, transmit, type RxFrame } from './offload.ts';
+import {
+  F_GUEST_CSUM,
+  F_GUEST_TSO4,
+  F_GUEST_TSO6,
+  F_MRG_RXBUF,
+  MAX_FRAME,
+  MAX_GSO_FRAME,
+  MAX_PORT_FRAME,
+  NET_HDR,
+  OFFLOADS,
+  receive,
+  transmit,
+  type RxFrame,
+} from './offload.ts';
 
 /** The largest frame for the guest: a merged packet, IPv6's largest, behind Ethernet and a VLAN tag. */
 const MAX_RX = NET_HDR + 18 + 40 + 65_535;
@@ -22,8 +35,23 @@ import { IoStats } from './iostats.ts';
 import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts';
 import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
 import { chunkedSource, isManifestUrl } from './chunked.ts';
-import { blockList, openOverlay, overlay, storageNumbers, type MapLeaves, type OverlayFiles, type WritableDisk } from './overlay.ts';
-import { diskInspector, RANGE, type InspectAnswer, type InspectQuery, type LiveDisk, type LiveImage } from './surface.ts';
+import {
+  blockList,
+  openOverlay,
+  overlay,
+  storageNumbers,
+  type MapLeaves,
+  type OverlayFiles,
+  type WritableDisk,
+} from './overlay.ts';
+import {
+  diskInspector,
+  RANGE,
+  type InspectAnswer,
+  type InspectQuery,
+  type LiveDisk,
+  type LiveImage,
+} from './surface.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
 import { coreModule } from './deflate.ts';
@@ -69,7 +97,24 @@ export type DeviceSpec =
   | { type: 'balloon' }
   | VsockSpec;
 
-export type BlkSpec = { type: 'blk'; url?: string; chunked?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; diskSize?: number; ramInit?: [number, Uint8Array][]; swap?: string };
+export type BlkSpec = {
+  type: 'blk';
+  url?: string;
+  chunked?: string;
+  keep?: boolean;
+  source?: 'zero' | 'ram';
+  stored?: string;
+  size?: number;
+  overlay?: string;
+  file?: Blob;
+  discard?: boolean;
+  stats?: boolean;
+  serial?: string;
+  identity?: string;
+  diskSize?: number;
+  ramInit?: [number, Uint8Array][];
+  swap?: string;
+};
 
 /**
  * What the page says when a disk's write found the browser's storage full (docs/machines.md "Storage"), with the storage's
@@ -77,11 +122,14 @@ export type BlkSpec = { type: 'blk'; url?: string; chunked?: string; keep?: bool
  */
 export async function storageFull(): Promise<Msg> {
   const n = await storageNumbers();
-  return n ? msg('disks:devices.storageFull.numbers', { used: n.used, quota: n.quota }) : msg('disks:devices.storageFull');
+  return n
+    ? msg('disks:devices.storageFull.numbers', { used: n.used, quota: n.quota })
+    : msg('disks:devices.storageFull');
 }
 
 /** Whether `m` is `storageFull`'s (the page then has the guest trim: web/app/areas/trim-actions.ts `full`). */
-export const isStorageFull = (m: Msg) => m.key === 'disks:devices.storageFull' || m.key === 'disks:devices.storageFull.numbers';
+export const isStorageFull = (m: Msg) =>
+  m.key === 'disks:devices.storageFull' || m.key === 'disks:devices.storageFull.numbers';
 
 /** How often the page is told at most that the storage is full. */
 const FULL_REPEAT_MS = 60_000;
@@ -101,7 +149,14 @@ export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
  * machine with several adapters has `SEVERAL_ADAPTERS`, so that the IPv4 default route moves from one to another at the
  * next renewal.
  */
-export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSeconds?: number; renewSeconds?: number; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort; link?: MessagePort } };
+export type NetSpec = {
+  type: 'net';
+  mac?: string;
+  gateway?: number;
+  leaseSeconds?: number;
+  renewSeconds?: number;
+  adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort; link?: MessagePort };
+};
 /**
  * The DHCP timers of a machine with several adapters (docs/networking/adapters.md §4): the guest renews every 10 s,
  * so the IPv4 default route follows the primary within that (IPv6's moves with the router advertisement), and the lease
@@ -193,7 +248,19 @@ export type SndSpec = {
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? (d.adapter instanceof MessagePort ? [d.adapter] : [d.adapter.ip, ...(d.adapter.link ? [d.adapter.link] : [])]) : (d.type === 'input' || d.type === 'snd' || d.type === '9p') && d.port ? [d.port] : d.type === 'vsock' ? [...(d.port ? [d.port] : []), ...(d.agent ? [d.agent] : [])] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
+  specs.flatMap((d) =>
+    d.type === 'net' && typeof d.adapter !== 'string'
+      ? d.adapter instanceof MessagePort
+        ? [d.adapter]
+        : [d.adapter.ip, ...(d.adapter.link ? [d.adapter.link] : [])]
+      : (d.type === 'input' || d.type === 'snd' || d.type === '9p') && d.port
+        ? [d.port]
+        : d.type === 'vsock'
+          ? [...(d.port ? [d.port] : []), ...(d.agent ? [d.agent] : [])]
+          : d.type === 'gpu'
+            ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])]
+            : [],
+  );
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -224,14 +291,19 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     // id, features, queues, queue size, config length. Console: no optional
     // features, so one port (receiveq 0, transmitq 1); config is cols, rows,
     // max_nr_ports, emerg_wr, unused without them.
-    case 'console': return { entry: [3n, 0n, 2n, 64n, 12n], config: new Uint8Array(12) };
-    case 'rng': return { entry: [4n, 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
+    case 'console':
+      return { entry: [3n, 0n, 2n, 64n, 12n], config: new Uint8Array(12) };
+    case 'rng':
+      return { entry: [4n, 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
     // virtio-rtc (web/clock.ts): no features (no alarms), the requestq alone; no config space.
-    case 'clock': return { entry: [BigInt(CLOCK_ID), 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
+    case 'clock':
+      return { entry: [BigInt(CLOCK_ID), 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
     // Free page reporting and hinting (web/balloon.ts): never inflated.
-    case 'balloon': return balloonEntry();
+    case 'balloon':
+      return balloonEntry();
     // systemd's notify socket and the guest agent's port (web/vsock-device.ts): a virtio-vsock, the guest's CID 3.
-    case 'vsock': return vsockEntry();
+    case 'vsock':
+      return vsockEntry();
     case 'blk': {
       // Features SEG_MAX (2), and RO (5) or, with an overlay, FLUSH (9); config:
       // capacity in sectors (u64 at 0), seg_max (u32 at 12) = queue size - 2, as QEMU.
@@ -252,14 +324,23 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
         v.setUint32(52, 1, true);
         v.setUint8(56, 1);
       }
-      return { entry: [2n, 1n << 2n | (writable(d) ? 1n << 9n : 1n << 5n) | (discard ? 1n << 13n | 1n << 14n : 0n), 1n, 128n, BigInt(config.length)], config };
+      return {
+        entry: [
+          2n,
+          (1n << 2n) | (writable(d) ? 1n << 9n : 1n << 5n) | (discard ? (1n << 13n) | (1n << 14n) : 0n),
+          1n,
+          128n,
+          BigInt(config.length),
+        ],
+        config,
+      };
     }
     case 'net': {
       // Features MAC (5), STATUS (16) and the offloads (web/offload.ts); config: mac, status = LINK_UP. receiveq, transmitq.
       const config = new Uint8Array(8);
       config.set((d.mac ?? '52:54:00:12:34:56').split(':').map((h) => parseInt(h, 16)));
       config[6] = 1;
-      return { entry: [1n, 1n << 5n | 1n << 16n | OFFLOADS, 2n, 256n, 8n], config };
+      return { entry: [1n, (1n << 5n) | (1n << 16n) | OFFLOADS, 2n, 256n, 8n], config };
     }
     case '9p': {
       // Feature MOUNT_TAG (0); config: tag length (u16), tag. One request queue.
@@ -270,7 +351,8 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
       return { entry: [9n, 1n, 1n, 128n, BigInt(config.length)], config };
     }
     // eventq, statusq; config: select, subsel, size, 5 reserved, 128 bytes of answer.
-    case 'input': return { entry: [18n, 0n, 2n, 64n, 136n], config: new Uint8Array(136) };
+    case 'input':
+      return { entry: [18n, 0n, 2n, 64n, 136n], config: new Uint8Array(136) };
     // Feature EDID (1); controlq and cursorq; config: events_read, events_clear, num_scanouts = 1, num_capsets = 0.
     case 'gpu': {
       // Features EDID (1) and, with `virgl`, VIRGL (0); with `venus` also RESOURCE_UUID (2), RESOURCE_BLOB (3) and
@@ -283,16 +365,20 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     }
     // No features, or with `mixer` CTLS (0); controlq, eventq, txq, rxq; config: jacks 0, streams 2 (out, in), chmaps 0,
     // and with CTLS controls 2 (the Master volume and switch).
-    case 'snd': return d.mixer
-      ? { entry: [25n, 1n, 4n, 64n, 16n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0]) }
-      : { entry: [25n, 0n, 4n, 64n, 12n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]) };
+    case 'snd':
+      return d.mixer
+        ? { entry: [25n, 1n, 4n, 64n, 16n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0]) }
+        : { entry: [25n, 0n, 4n, 64n, 12n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]) };
   }
 }
 
 export { RAM_BASE, bytes, locate, ramLayout, type Ram, type RamLayout, type Segment } from './ram.ts';
 export type Request = { w0: number; queue: number; read: Segment[]; write: Segment[] };
 export type Ctx = {
-  ram: () => Ram; layout: RamLayout; complete: (w0: number, len: number) => void; config: () => Uint8Array;
+  ram: () => Ram;
+  layout: RamLayout;
+  complete: (w0: number, len: number) => void;
+  config: () => Uint8Array;
   /** Completions given (`complete`) that the core hasn't taken yet: it takes them when a vCPU runs. */
   untaken: () => number;
   /** Changes the config space under a running driver (docs/abi.md, ABI 31): `write` gets it, and the guest gets a config-change interrupt. */
@@ -312,7 +398,10 @@ export type Ctx = {
 export const CLOSE_MS = 2500;
 
 export type Backend = {
-  request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void; config?(): void;
+  request(r: Request): number | Promise<number> | undefined;
+  reset(): void;
+  close?(): void;
+  config?(): void;
   /** Its requests may complete in any order (a remote disk's, R4): in realtime mode `Devices.poll` doesn't wait for them. */
   concurrent?: boolean;
   /** Lands what it holds back (a shared folder's write sessions): before a snapshot and at the end of the machine. */
@@ -324,13 +413,15 @@ export type Backend = {
    * as JSON, and the same given to a new backend. The core posts held requests to a restored VM's
    * backends again, so one that only holds buffers has neither.
    */
-  save?(): unknown | Promise<unknown>; restore?(state: unknown): void;
+  save?(): unknown | Promise<unknown>;
+  restore?(state: unknown): void;
   /** The VM was restored from a snapshot (or a suspended copy): called on every backend, after `restore`. */
   restored?(): void;
   /** Why `save` would refuse now (`unsaveable` in its state), or undefined: asked before a snapshot touches the machine. */
   refusal?(): Promise<WireError | undefined>;
   /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
-  written?(): { blocks: Uint32Array; generation?: number }; blocks?(blocks: Uint32Array): Uint8Array;
+  written?(): { blocks: Uint32Array; generation?: number };
+  blocks?(blocks: Uint32Array): Uint8Array;
   /** A disk's overlay compacted once no request of its runs (web/overlay.ts `compact`; `measure`: only its size): the bytes its files took before and after. */
   compact?(measure?: boolean): Promise<{ before: number; after: number }>;
   /** A disk's surface or a range of it (web/surface.ts), from what it has in memory: answered while it runs. */
@@ -350,7 +441,9 @@ function console_(out: (text: string) => void, ctx: Ctx): Backend {
       for (const s of r.read) out(decoder.decode(bytes(ram, s).slice(), { stream: true })); // a copy: TextDecoder refuses shared memory
       return 0;
     },
-    reset() { rx.length = 0; },
+    reset() {
+      rx.length = 0;
+    },
   };
 }
 
@@ -363,7 +456,8 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
         const ram = ctx.ram();
         let n = 0;
         for (const s of r.write) {
-          for (let k = 0; k < s.len; k += 65536) bytes(ram, s).set(crypto.getRandomValues(new Uint8Array(Math.min(65536, s.len - k))), k); // not on shared memory directly
+          for (let k = 0; k < s.len; k += 65536)
+            bytes(ram, s).set(crypto.getRandomValues(new Uint8Array(Math.min(65536, s.len - k))), k); // not on shared memory directly
           n += s.len;
         }
         return n;
@@ -405,7 +499,8 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
     save: () => ({ s: s.toString(16), word: word.toString(16), left }),
     restore(state) {
       const t = state as { s: string; word: string; left: number };
-      if (typeof t?.s !== 'string' || typeof t.word !== 'string' || !(t.left >= 0 && t.left <= 8)) throw new Error('the snapshot has no state for the random number device');
+      if (typeof t?.s !== 'string' || typeof t.word !== 'string' || !(t.left >= 0 && t.left <= 8))
+        throw new Error('the snapshot has no state for the random number device');
       [s, word, left] = [BigInt(`0x${t.s}`) & M64, BigInt(`0x${t.word}`) & M64, t.left];
     },
   };
@@ -422,7 +517,10 @@ function clock(ctx: Ctx, deterministic: boolean): Backend {
       const ram = ctx.ram();
       const answer = clockAnswer(gather(ram, r.read, 64), now);
       scatter(ram, r.write, answer);
-      return Math.min(answer.length, r.write.reduce((n, s) => n + s.len, 0));
+      return Math.min(
+        answer.length,
+        r.write.reduce((n, s) => n + s.len, 0),
+      );
     },
     reset() {},
   };
@@ -477,7 +575,13 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
     const f = ctx.features();
     const mrg = (f & F_MRG_RXBUF) !== 0n;
     if (frames.length) {
-      ready.push(...receive(frames.splice(0), { csum: (f & F_GUEST_CSUM) !== 0n, merge4: mrg && (f & F_GUEST_TSO4) !== 0n, merge6: mrg && (f & F_GUEST_TSO6) !== 0n }));
+      ready.push(
+        ...receive(frames.splice(0), {
+          csum: (f & F_GUEST_CSUM) !== 0n,
+          merge4: mrg && (f & F_GUEST_TSO4) !== 0n,
+          merge6: mrg && (f & F_GUEST_TSO6) !== 0n,
+        }),
+      );
       if (ready.length > RX_QUEUE) ready.splice(0, ready.length - RX_QUEUE);
     }
     while (rx.length && ready.length) {
@@ -538,10 +642,14 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
       return;
     }
     if (!ctx.features() || flapping) return;
-    ctx.changeConfig((c) => { c[6] = 0; });
+    ctx.changeConfig((c) => {
+      c[6] = 0;
+    });
     flapping = setTimeout(() => {
       flapping = undefined;
-      ctx.changeConfig((c) => { c[6] = 1; });
+      ctx.changeConfig((c) => {
+        c[6] = 1;
+      });
     }, FLAP_MS);
   };
   const a = d.adapter;
@@ -562,12 +670,27 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
     framesMode = false;
   };
   /** The page's gateway's frames: none while the card is on the helper's frames (it is bypassed; what it says is stale). */
-  const fromGateway = (f: Uint8Array) => { if (!framesMode) receiveFrame(f); };
+  const fromGateway = (f: Uint8Array) => {
+    if (!framesMode) receiveFrame(f);
+  };
   const adapter: NetAdapter =
-    a === 'loopback' ? loopback(receiveFrame)
-    : a === 'echo' ? gateway(receiveFrame, echoBackend(echoLease(d.gateway ?? 0)), { ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds })
-    : a instanceof MessagePort ? portAdapter(a, receiveFrame)
-    : gateway(fromGateway, portBackend(a.ip, { frames: toFrames, gateway: toGateway }), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds, stale: flap });
+    a === 'loopback'
+      ? loopback(receiveFrame)
+      : a === 'echo'
+        ? gateway(receiveFrame, echoBackend(echoLease(d.gateway ?? 0)), {
+            ...gatewayOf(d.gateway ?? 0),
+            leaseSeconds: d.leaseSeconds,
+            renewSeconds: d.renewSeconds,
+          })
+        : a instanceof MessagePort
+          ? portAdapter(a, receiveFrame)
+          : gateway(fromGateway, portBackend(a.ip, { frames: toFrames, gateway: toGateway }), {
+              advertiseMs: 60_000,
+              ...gatewayOf(d.gateway ?? 0),
+              leaseSeconds: d.leaseSeconds,
+              renewSeconds: d.renewSeconds,
+              stale: flap,
+            });
   if (a instanceof MessagePort) framesTo = adapter; // a frame port from the start: its own, the card's frames go to it
   // The page's: a flap asked for (a restored guest whose agent couldn't renew its lease: web/app/areas/lease-actions.ts).
   const link = typeof a === 'object' && !(a instanceof MessagePort) ? a.link : undefined;
@@ -630,7 +753,10 @@ const EV_ABS = 3;
 const EV_LED = 0x11;
 const EV_REP = 0x14;
 const INPUT_PROP_DIRECT = 1;
-const ABS_MT_SLOT = 0x2f, ABS_MT_POSITION_X = 0x35, ABS_MT_POSITION_Y = 0x36, ABS_MT_TRACKING_ID = 0x39;
+const ABS_MT_SLOT = 0x2f,
+  ABS_MT_POSITION_X = 0x35,
+  ABS_MT_POSITION_Y = 0x36,
+  ABS_MT_TRACKING_ID = 0x39;
 /** The touchscreen's slots (fingers at once). */
 export const TOUCH_SLOTS = 10;
 /** BTN_LEFT, RIGHT, MIDDLE, SIDE, EXTRA (a mouse's back and forward). */
@@ -647,15 +773,23 @@ function bitmap(bits: number[]) {
 const absInfo = (min: number, max: number) => new Uint8Array(new Int32Array([min, max, 0, 0, 0]).buffer);
 
 /** What each kind is called and its product id (BUS_VIRTUAL, vendor 0). */
-const INPUT_IDS = { keyboard: ['waarm64 keyboard', 1], tablet: ['waarm64 tablet', 2], mouse: ['waarm64 mouse', 3], touch: ['waarm64 touchscreen', 4] } as const;
+const INPUT_IDS = {
+  keyboard: ['waarm64 keyboard', 1],
+  tablet: ['waarm64 tablet', 2],
+  mouse: ['waarm64 mouse', 3],
+  touch: ['waarm64 touchscreen', 4],
+} as const;
 
 /** The answer to a config query (select, subsel) about an input device of `kind`. */
 export function inputConfig(kind: InputSpec['kind'], select: number, subsel: number): Uint8Array {
   const none = new Uint8Array(0);
   switch (select) {
-    case CFG_ID_NAME: return new TextEncoder().encode(INPUT_IDS[kind][0]);
-    case CFG_ID_DEVIDS: return new Uint8Array(new Uint16Array([6, 0, INPUT_IDS[kind][1], 1]).buffer); // BUS_VIRTUAL, vendor, product, version
-    case CFG_PROP_BITS: return kind === 'touch' && subsel === 0 ? bitmap([INPUT_PROP_DIRECT]) : none;
+    case CFG_ID_NAME:
+      return new TextEncoder().encode(INPUT_IDS[kind][0]);
+    case CFG_ID_DEVIDS:
+      return new Uint8Array(new Uint16Array([6, 0, INPUT_IDS[kind][1], 1]).buffer); // BUS_VIRTUAL, vendor, product, version
+    case CFG_PROP_BITS:
+      return kind === 'touch' && subsel === 0 ? bitmap([INPUT_PROP_DIRECT]) : none;
     case CFG_EV_BITS:
       switch (kind) {
         case 'keyboard':
@@ -674,7 +808,8 @@ export function inputConfig(kind: InputSpec['kind'], select: number, subsel: num
           return none;
         case 'touch':
           if (subsel === EV_KEY) return bitmap([0x14a]); // BTN_TOUCH
-          if (subsel === EV_ABS) return bitmap([0, 1, ABS_MT_SLOT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_TRACKING_ID]);
+          if (subsel === EV_ABS)
+            return bitmap([0, 1, ABS_MT_SLOT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_TRACKING_ID]);
           return none;
       }
       return none;
@@ -685,7 +820,8 @@ export function inputConfig(kind: InputSpec['kind'], select: number, subsel: num
       if (subsel === ABS_MT_SLOT) return absInfo(0, TOUCH_SLOTS - 1);
       if (subsel === ABS_MT_TRACKING_ID) return absInfo(0, 65535);
       return none;
-    default: return none;
+    default:
+      return none;
   }
 }
 
@@ -834,8 +970,16 @@ export function httpSource(url: string): Source & { validator?: string } {
  */
 async function remoteSource(url: string, keep: boolean, realtime: boolean, chunked?: string) {
   const src = isManifestUrl(url) ? chunkedSource(url, undefined, chunked) : httpSource(url);
-  const identity = 'manifest' in src ? `chunked:${src.manifest.id}` : src.validator ? JSON.stringify({ url, size: src.size, validator: src.validator }) : undefined;
-  const store = identity && keep ? await openBlockStore(await cacheKey(identity), src.size, BLOCK_CACHE.block).catch(() => undefined) : undefined;
+  const identity =
+    'manifest' in src
+      ? `chunked:${src.manifest.id}`
+      : src.validator
+        ? JSON.stringify({ url, size: src.size, validator: src.validator })
+        : undefined;
+  const store =
+    identity && keep
+      ? await openBlockStore(await cacheKey(identity), src.size, BLOCK_CACHE.block).catch(() => undefined)
+      : undefined;
   const cached = cachedSource(src, BLOCK_CACHE, store);
   // A chunked image's boot trace, fetched ahead of the guest (realtime: the deterministic mode reads one at a time).
   const trace = 'manifest' in src ? src.manifest.prefetch : undefined;
@@ -847,7 +991,8 @@ async function remoteSource(url: string, keep: boolean, realtime: boolean, chunk
 function reblock(blocks: number[], from: number, to: number) {
   if (from === to) return blocks;
   const out = new Set<number>();
-  for (const b of blocks) for (let k = Math.floor((b * from) / to); k <= Math.floor(((b + 1) * from - 1) / to); k++) out.add(k);
+  for (const b of blocks)
+    for (let k = Math.floor((b * from) / to); k <= Math.floor(((b + 1) * from - 1) / to); k++) out.add(k);
   return [...out];
 }
 
@@ -874,10 +1019,22 @@ export function blobSource(file: Blob): Source {
  * source (a blank disk); and the virtual size.
  */
 export const diskIdentity = (d: { url?: string; file?: Blob; source?: string; identity?: string }, size: number) =>
-  d.identity ?? JSON.stringify(d.file ? { file: (d.file as File).name, bytes: d.file.size, modified: (d.file as File).lastModified, size } : d.url ? { path: new URL(d.url, 'http://x').pathname, size } : { source: d.source, size });
+  d.identity ??
+  JSON.stringify(
+    d.file
+      ? { file: (d.file as File).name, bytes: d.file.size, modified: (d.file as File).lastModified, size }
+      : d.url
+        ? { path: new URL(d.url, 'http://x').pathname, size }
+        : { source: d.source, size },
+  );
 
 /** A blank disk's bytes: zeros. */
-export const zeroSource = (size: number): Source => ({ size, read: (off, len) => (off >= 0 && off + len <= size ? new Uint8Array(len) : undefined), held: () => [], leaves: () => NO_LEAVES });
+export const zeroSource = (size: number): Source => ({
+  size,
+  read: (off, len) => (off >= 0 && off + len <= size ? new Uint8Array(len) : undefined),
+  held: () => [],
+  leaves: () => NO_LEAVES,
+});
 /** A map with nothing in it (a blank disk's). */
 const NO_LEAVES = { top: new Uint32Array(0), recs: new Uint32Array(0), n: 0 };
 
@@ -909,7 +1066,18 @@ export async function fileSource(url: string): Promise<Source> {
  * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too);
  * `diskSize`: then a stored or blank source's own size (its source is opened at the guest's), for the surface alone.
  */
-export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void, size?: number, diskSize?: number): Backend {
+export function blk(
+  ctx: Ctx,
+  src: Source | WritableDisk,
+  files?: OverlayFiles,
+  discard = false,
+  st?: IoStats,
+  serial = 'waarm64-blk',
+  concurrent = false,
+  onFull?: () => void,
+  size?: number,
+  diskSize?: number,
+): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
   let pool: ReturnType<typeof inflatePool> | undefined;
@@ -919,13 +1087,22 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
   } else {
     if (st) {
       const { read, readAsync } = src;
-      src = { ...src, read: (off, len) => st.read(off, len, () => read(off, len)), readAsync: readAsync && ((off, len) => st.readAsync(off, len, () => readAsync(off, len))) };
+      src = {
+        ...src,
+        read: (off, len) => st.read(off, len, () => read(off, len)),
+        readAsync: readAsync && ((off, len) => st.readAsync(off, len, () => readAsync(off, len))),
+      };
       if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
     }
     const s = src;
     pool = typeof Worker === 'function' ? inflatePool() : undefined; // Node has none
     concurrent &&= !!s.readAsync;
-    base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)), s.size, pool, concurrent ? (off, len) => (len === 0 ? Promise.resolve(new Uint8Array(0)) : s.readAsync!(off, len)) : undefined);
+    base = openDisk(
+      (off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)),
+      s.size,
+      pool,
+      concurrent ? (off, len) => (len === 0 ? Promise.resolve(new Uint8Array(0)) : s.readAsync!(off, len)) : undefined,
+    );
     rw = files && overlay(base, files.data, files.map, files.meta, size);
   }
   const disk: Disk = rw ?? base;
@@ -974,7 +1151,11 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       const room = data.reduce((n, s) => n + s.len, 0);
       const h = new DataView(gather(ram, r.read, 16).slice().buffer);
       const op = h.byteLength === 16 ? h.getUint32(0, true) : -1;
-      if (st) st.size(({ 0: 'read', 1: 'write', 4: 'flush' } as Record<number, string>)[op] ?? `op${op}`, op === T_OUT ? r.read.reduce((k, x) => k + x.len, 0) - 16 : room);
+      if (st)
+        st.size(
+          ({ 0: 'read', 1: 'write', 4: 'flush' } as Record<number, string>)[op] ?? `op${op}`,
+          op === T_OUT ? r.read.reduce((k, x) => k + x.len, 0) - 16 : room,
+        );
       let [status, n] = [S_UNSUPP, 0];
       if (h.byteLength === 16 && h.getUint32(0, true) === T_IN) {
         const bytes = await disk.read(Number(h.getBigUint64(8, true)) * 512, room).catch(() => undefined); // IOERR, not a failed device
@@ -990,13 +1171,20 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         // The data follows the header in the readable buffers. Read-only: IOERR.
         const len = r.read.reduce((k, s) => k + s.len, 0);
         const payload = st ? st.time('gather', len, () => gather(ram, r.read, len)) : gather(ram, r.read, len);
-        const ok = rw ? await change(() => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16))) : false;
+        const ok = rw
+          ? await change(() => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16)))
+          : false;
         status = ok ? S_OK : S_IOERR;
         if (ok) io[1] += len - 16;
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
         st ? st.time('flush', 0, () => rw.flush()) : rw.flush();
         status = S_OK;
-      } else if (h.byteLength === 16 && (h.getUint32(0, true) === T_DISCARD || h.getUint32(0, true) === T_WRITE_ZEROES) && rw && discard) {
+      } else if (
+        h.byteLength === 16 &&
+        (h.getUint32(0, true) === T_DISCARD || h.getUint32(0, true) === T_WRITE_ZEROES) &&
+        rw &&
+        discard
+      ) {
         // One segment after the header (max_*_seg is 1): sector (u64), sectors (u32), flags (u32; bit 0: unmap,
         // which a WRITE_ZEROES may set and we always do, and a DISCARD must not: UNSUPP, as for unknown flags).
         const zeroes = h.getUint32(0, true) === T_WRITE_ZEROES;
@@ -1006,7 +1194,10 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         else if (seg.getUint32(12, true) & (zeroes ? ~1 : ~0)) status = S_UNSUPP;
         else {
           const [off, bytes] = [Number(seg.getBigUint64(0, true)) * 512, seg.getUint32(8, true) * 512];
-          const ok = bytes <= BLK_MAX_UNMAP_SECTORS * 512 && off + bytes <= disk.size && (await change(zeroes ? () => rw.zero(off, bytes) : async () => rw.discard(off, bytes)));
+          const ok =
+            bytes <= BLK_MAX_UNMAP_SECTORS * 512 &&
+            off + bytes <= disk.size &&
+            (await change(zeroes ? () => rw.zero(off, bytes) : async () => rw.discard(off, bytes)));
           status = ok ? S_OK : S_IOERR;
         }
       }
@@ -1015,26 +1206,33 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
     },
     reset() {},
     // For a snapshot, the VM paused: the blocks, and the generation it pins, with the next change set to move it on.
-    written: rw && (() => {
-      const generation = rw.generation?.();
-      rw.epoch?.();
-      return { blocks: blockList(rw), generation };
-    }),
-    blocks: rw && ((blocks) => {
-      if (rw.blocks) {
-        // An overlay's: runs of slots in one read each.
-        const out = rw.blocks(blocks);
-        if (!out) throw new Error(`the disk's changes can't be read from the browser's storage (blocks ${blocks[0]} to ${blocks[blocks.length - 1]})`);
+    written:
+      rw &&
+      (() => {
+        const generation = rw.generation?.();
+        rw.epoch?.();
+        return { blocks: blockList(rw), generation };
+      }),
+    blocks:
+      rw &&
+      ((blocks) => {
+        if (rw.blocks) {
+          // An overlay's: runs of slots in one read each.
+          const out = rw.blocks(blocks);
+          if (!out)
+            throw new Error(
+              `the disk's changes can't be read from the browser's storage (blocks ${blocks[0]} to ${blocks[blocks.length - 1]})`,
+            );
+          return out;
+        }
+        const out = new Uint8Array(blocks.length * 4096);
+        blocks.forEach((b, k) => {
+          const bytes = rw.block(b);
+          if (!bytes) throw new Error(`the disk's changes can't be read from the browser's storage (block ${b})`);
+          out.set(bytes, k * 4096);
+        });
         return out;
-      }
-      const out = new Uint8Array(blocks.length * 4096);
-      blocks.forEach((b, k) => {
-        const bytes = rw.block(b);
-        if (!bytes) throw new Error(`the disk's changes can't be read from the browser's storage (block ${b})`);
-        out.set(bytes, k * 4096);
-      });
-      return out;
-    }),
+      }),
     close() {
       if (!('write' in src)) src.close?.();
       files?.close();
@@ -1063,7 +1261,10 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       const read = h.byteLength === 16 && new DataView(h.slice().buffer).getUint32(0, true) === T_IN;
       const p = (read ? barrier : Promise.all(inflight)).then(() => request.call(backend, r)) as Promise<number>;
       inflight.add(p);
-      const settled = p.then(() => {}, () => {});
+      const settled = p.then(
+        () => {},
+        () => {},
+      );
       void settled.then(() => inflight.delete(p));
       if (!read) barrier = settled;
       return p;
@@ -1078,7 +1279,10 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       const p = request.call(backend, r);
       if (p instanceof Promise) {
         running.add(p);
-        void p.then(() => running.delete(p), () => running.delete(p));
+        void p.then(
+          () => running.delete(p),
+          () => running.delete(p),
+        );
       }
       return p;
     };
@@ -1113,7 +1317,8 @@ function rangesOfRequest(ram: Ram, r: Request): [number, number, boolean] | unde
   let [off, len] = [Number(v.getBigUint64(8, true)) * 512, 0];
   if (op === T_IN) len = r.write.reduce((k, x) => k + x.len, 0) - 1;
   else if (op === T_OUT) len = r.read.reduce((k, x) => k + x.len, 0) - 16;
-  else if ((op === T_DISCARD || op === T_WRITE_ZEROES) && h.byteLength === 32) [off, len] = [Number(v.getBigUint64(16, true)) * 512, v.getUint32(24, true) * 512];
+  else if ((op === T_DISCARD || op === T_WRITE_ZEROES) && h.byteLength === 32)
+    [off, len] = [Number(v.getBigUint64(16, true)) * 512, v.getUint32(24, true) * 512];
   else return undefined;
   if (len <= 0) return undefined;
   return [Math.floor(off / RANGE), Math.floor((off + len - 1) / RANGE), op !== T_IN];
@@ -1125,35 +1330,66 @@ function rangesOfRequest(ram: Ram, r: Request): [number, number, boolean] | unde
  * outermost `backend.request` (the stats', concurrent and compaction wrappers are made before it, at the build, and
  * `Devices` calls `request` from the backend at each request), and the request it wrapped is put back as it was.
  */
-function blkInspector(ctx: Ctx, backend: Backend, src: Source | WritableDisk, base: Disk, ov: WritableDisk | undefined, diskSize?: number) {
+function blkInspector(
+  ctx: Ctx,
+  backend: Backend,
+  src: Source | WritableDisk,
+  base: Disk,
+  ov: WritableDisk | undefined,
+  diskSize?: number,
+) {
   let disk: LiveDisk['disk'];
   if ('write' in src) {
     const ram = src;
-    disk = { kind: 'ram', id: 'disk', size: ram.size, get chunks() { return ram.chunkKeys?.() ?? []; }, read: (b) => ram.block(b) };
+    disk = {
+      kind: 'ram',
+      id: 'disk',
+      size: ram.size,
+      get chunks() {
+        return ram.chunkKeys?.() ?? [];
+      },
+      read: (b) => ram.block(b),
+    };
   } else if (src.leaves) {
     // A stored or blank disk under a grown overlay is opened at the guest's size: its own is the spec's `diskSize`.
     const [s, own] = [src, Math.min(src.size, diskSize ?? src.size)];
-    disk = { kind: 'map', id: 'disk', size: own, leaves: s.leaves!(), read: (b) => (b * 4096 < own ? s.read(b * 4096, Math.min(4096, own - b * 4096)) : undefined) };
+    disk = {
+      kind: 'map',
+      id: 'disk',
+      size: own,
+      leaves: s.leaves!(),
+      read: (b) => (b * 4096 < own ? s.read(b * 4096, Math.min(4096, own - b * 4096)) : undefined),
+    };
   } else disk = liveImage(src, base);
   const o = ov?.leaves && ov;
   let inner: Backend['request'] | undefined;
-  return diskInspector({ disk, overlay: o ? { id: 'overlay', size: o.size, leaves: () => o.leaves!(), read: (b) => o.block(b) } : undefined }, {
-    install(mark) {
-      const request = (inner = backend.request);
-      backend.request = (r) => {
-        const span = rangesOfRequest(ctx.ram(), r);
-        if (span) mark(...span);
-        const p = request.call(backend, r);
-        // A change counted again once it ended (an answer between its start and its end saw it half made).
-        if (span?.[2] && p instanceof Promise) void p.then(() => mark(...span), () => {});
-        return p;
-      };
+  return diskInspector(
+    {
+      disk,
+      overlay: o ? { id: 'overlay', size: o.size, leaves: () => o.leaves!(), read: (b) => o.block(b) } : undefined,
     },
-    uninstall() {
-      if (inner) backend.request = inner;
-      inner = undefined;
+    {
+      install(mark) {
+        const request = (inner = backend.request);
+        backend.request = (r) => {
+          const span = rangesOfRequest(ctx.ram(), r);
+          if (span) mark(...span);
+          const p = request.call(backend, r);
+          // A change counted again once it ended (an answer between its start and its end saw it half made).
+          if (span?.[2] && p instanceof Promise)
+            void p.then(
+              () => mark(...span),
+              () => {},
+            );
+          return p;
+        };
+      },
+      uninstall() {
+        if (inner) backend.request = inner;
+        inner = undefined;
+      },
     },
-  });
+  );
 }
 
 /**
@@ -1168,17 +1404,27 @@ function liveImage(src: Source, base: Disk): LiveDisk['disk'] {
   const kept = src.kept;
   const here = (off: number, len: number) => {
     if (!kept) return true;
-    for (let k = Math.floor(off / kept.block); k <= Math.floor((off + len - 1) / kept.block); k++) if (!kept.has(k)) return false;
+    for (let k = Math.floor(off / kept.block); k <= Math.floor((off + len - 1) / kept.block); k++)
+      if (!kept.has(k)) return false;
     return true;
   };
   const size = base.size;
   const examine = (): ReturnType<LiveImage['examine']> => {
-    if (base.format === 'raw' || !base.allocation) return { kind: 'opaque', id: 'disk', size, why: 'raw', ...(kept ? { kept } : {}) };
+    if (base.format === 'raw' || !base.allocation)
+      return { kind: 'opaque', id: 'disk', size, why: 'raw', ...(kept ? { kept } : {}) };
     const allocation = base.allocation((off, n) => (here(off, n) ? src.read(off, n) : undefined));
-    return { kind: 'clusters', id: 'disk', size, allocation, why: kept ? 'tables' : 'large', ...(kept ? { kept } : {}) };
+    return {
+      kind: 'clusters',
+      id: 'disk',
+      size,
+      allocation,
+      why: kept ? 'tables' : 'large',
+      ...(kept ? { kept } : {}),
+    };
   };
   // A raw image's blocks aren't examined (nor read); a remote qcow2's would be fetched.
-  const read = (b: number) => (base.format === 'raw' || kept ? undefined : base.read(b * 4096, Math.min(4096, size - b * 4096)));
+  const read = (b: number) =>
+    base.format === 'raw' || kept ? undefined : base.read(b * 4096, Math.min(4096, size - b * 4096));
   return { kind: 'image', id: 'disk', size, examine, read };
 }
 
@@ -1188,7 +1434,7 @@ export function ring(bell: Int32Array, wait: boolean) {
   Atomics.notify(bell, 0);
   if (!wait) return;
   // Other threads ring too: the backends may have handled past `n` (wrapping compare).
-  for (let a; ((a = Atomics.load(bell, 1)) - n | 0) < 0;) {
+  for (let a; (((a = Atomics.load(bell, 1)) - n) | 0) < 0;) {
     if (a === -1) throw new Error('device backends failed (see their error)');
     Atomics.wait(bell, 1, a, 1000);
   }
@@ -1234,8 +1480,9 @@ export type DevicesInit = {
 export function stateBuffers(state: unknown): ArrayBuffer[] {
   const out = new Set<ArrayBuffer>();
   const walk = (v: unknown) => {
-    if (v instanceof Uint8Array) { if (v.buffer instanceof ArrayBuffer) out.add(v.buffer); }
-    else if (Array.isArray(v)) v.forEach(walk);
+    if (v instanceof Uint8Array) {
+      if (v.buffer instanceof ArrayBuffer) out.add(v.buffer);
+    } else if (Array.isArray(v)) v.forEach(walk);
     else if (v && typeof v === 'object') Object.values(v).forEach(walk);
   };
   walk(state);
@@ -1266,11 +1513,46 @@ export class Devices {
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, stops, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void, onFull?: () => void) {
-    [this.memory, this.shared, this.signal, this.wakes, this.stops, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], stops ?? [], sources, deterministic];
+  private constructor(
+    {
+      memory,
+      shared,
+      ram,
+      ramSize,
+      layout: given,
+      window,
+      spill = [],
+      signal,
+      specs,
+      deterministic,
+      wakes,
+      stops,
+      state,
+      xhci,
+      io,
+    }: DevicesInit,
+    overlays: (OverlayFiles | undefined)[],
+    sources: (Source | WritableDisk | undefined)[],
+    out: (device: number, text: string) => void,
+    onFull?: () => void,
+  ) {
+    [this.memory, this.shared, this.signal, this.wakes, this.stops, this.sources, this.deterministic] = [
+      memory,
+      shared,
+      signal,
+      wakes ?? [],
+      stops ?? [],
+      sources,
+      deterministic,
+    ];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
-    const layout = given ?? ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
+    const layout =
+      given ??
+      ramLayout(
+        ramSize,
+        spill.map((m) => m.buffer.byteLength),
+      );
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
         ram: () => [new Uint8Array(this.memory.buffer, ram), ...spillViews],
@@ -1281,34 +1563,75 @@ export class Devices {
         changeConfig: (write) => this.changeConfig(i, write),
         features: () => {
           const f = new Uint32Array(this.memory.buffer, shared[i] + FEATURES, 2);
-          return BigInt(Atomics.load(f, 0)) | BigInt(Atomics.load(f, 1)) << 32n;
+          return BigInt(Atomics.load(f, 0)) | (BigInt(Atomics.load(f, 1)) << 32n);
         },
         io: io?.subarray(2 * i, 2 * i + 2),
       };
       switch (d.type) {
-        case 'console': return console_((t) => out(i, t), ctx);
-        case 'rng': return rng(ctx, deterministic);
-        case 'clock': return clock(ctx, deterministic);
-        case 'balloon': return (this.balloon = balloon(ctx));
-        case 'vsock': return vsockDevice(ctx, d);
+        case 'console':
+          return console_((t) => out(i, t), ctx);
+        case 'rng':
+          return rng(ctx, deterministic);
+        case 'clock':
+          return clock(ctx, deterministic);
+        case 'balloon':
+          return (this.balloon = balloon(ctx));
+        case 'vsock':
+          return vsockDevice(ctx, d);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
-          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull, d.size, d.diskSize);
+          return blk(
+            ctx,
+            sources[i]!,
+            overlays[i],
+            d.discard || d.source === 'ram',
+            st,
+            d.serial,
+            !deterministic,
+            overlays[i] && onFull,
+            d.size,
+            d.diskSize,
+          );
         }
-        case 'net': return net(ctx, d);
-        case '9p': return d.folders ? folders9p(ctx, d.folders, d.port) : p9(ctx, d.files ?? {}, deterministic);
-        case 'input': return input(ctx, d);
+        case 'net':
+          return net(ctx, d);
+        case '9p':
+          return d.folders ? folders9p(ctx, d.folders, d.port) : p9(ctx, d.files ?? {}, deterministic);
+        case 'input':
+          return input(ctx, d);
         case 'gpu': {
-          const b = gpuBackend(ctx, d, d.renderer ? pagePresenter(d.port, d.stats) : d.canvas ? canvasPresenter(d.canvas, d.port, d.stats, d.probe, d.screen2d) : {});
+          const b = gpuBackend(
+            ctx,
+            d,
+            d.renderer
+              ? pagePresenter(d.port, d.stats)
+              : d.canvas
+                ? canvasPresenter(d.canvas, d.port, d.stats, d.probe, d.screen2d)
+                : {},
+          );
           if (d.renderer && d.virgl) {
             // The GPU worker reads and writes guest RAM in place: it gets the shared memory first.
             const host = portHost(d.renderer);
-            host.call({ t: 'ram', ram: ctx.ram().map((r, k) => ({ buffer: r.buffer, offset: r.byteOffset, length: k ? r.byteLength : ctx.layout[0].size })) });
+            host.call({
+              t: 'ram',
+              ram: ctx.ram().map((r, k) => ({
+                buffer: r.buffer,
+                offset: r.byteOffset,
+                length: k ? r.byteLength : ctx.layout[0].size,
+              })),
+            });
             // Venus's renderer runs on memory 1 itself (web/venus-host.ts), the window there; the watch's words are memory 0's.
-            if (d.venus && window) host.call({ t: 'venus-init', memory: spill[0], core: memory, window: d.noWatch ? { ...window, watch: 0 } : window });
+            if (d.venus && window)
+              host.call({
+                t: 'venus-init',
+                memory: spill[0],
+                core: memory,
+                window: d.noWatch ? { ...window, watch: 0 } : window,
+              });
             b.gpu.host = host;
           }
-          if (!d.renderer && d.canvas) console.info(`waarm64: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);
+          if (!d.renderer && d.canvas)
+            console.info(`waarm64: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);
           if (d.port) {
             const port = d.port;
             port.onmessage = (e: MessageEvent<DisplayFromPage>) => {
@@ -1316,27 +1639,51 @@ export class Devices {
               // "Copy the screen": a 2D machine's scanout as a PNG (a 3D machine's is the GPU worker's to read back).
               if (e.data?.type === 'png') {
                 const id = e.data.id;
-                void Promise.resolve(b.gpu.hooks.png?.()).catch(() => undefined).then((png) => port.postMessage({ type: 'png', id, png } satisfies ScreenPng));
+                void Promise.resolve(b.gpu.hooks.png?.())
+                  .catch(() => undefined)
+                  .then((png) => port.postMessage({ type: 'png', id, png } satisfies ScreenPng));
               }
             };
           }
-          if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
+          if (d.capture && d.port)
+            b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
         case 'snd': {
           const mixer = d.mixer && { ...d.mixer, port: d.port };
-          return deterministic ? sndBackend(ctx, checksumSink(), patternSource(), mixer) : sndBackend(ctx, ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }), micSource({ ring: d.mic, port: d.port, untaken: () => ctx.untaken() }), mixer);
+          return deterministic
+            ? sndBackend(ctx, checksumSink(), patternSource(), mixer)
+            : sndBackend(
+                ctx,
+                ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }),
+                micSource({ ring: d.mic, port: d.port, untaken: () => ctx.untaken() }),
+                mixer,
+              );
         }
       }
     });
     this.epochs = specs.map(() => 0);
-    if (xhci) this.usb = new Usb({ memory, shared: xhci.shared, ram, ramSize, spill, deterministic, kick: () => this.kick(), port: xhci.port, attach: xhci.attach, io: io?.subarray(2 * specs.length, 2 * specs.length + 2) });
+    if (xhci)
+      this.usb = new Usb({
+        memory,
+        shared: xhci.shared,
+        ram,
+        ramSize,
+        spill,
+        deterministic,
+        kick: () => this.kick(),
+        port: xhci.port,
+        attach: xhci.attach,
+        io: io?.subarray(2 * specs.length, 2 * specs.length + 2),
+      });
     if (state) {
       if (state.length !== specs.length) throw new Error('the snapshot is of a machine with other devices');
       // The devices are as the snapshot left them (their epoch is not a reset), with the backends' state.
       const u32 = new Uint32Array(memory.buffer);
       this.epochs = shared.map((at) => Atomics.load(u32, (at + EPOCH) / 4) & 0xff);
-      this.backends.forEach((b, i) => { if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]); });
+      this.backends.forEach((b, i) => {
+        if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]);
+      });
       for (const b of this.backends) b.restored?.();
     }
   }
@@ -1401,26 +1748,41 @@ export class Devices {
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
   /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory, the storage full). */
-  static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (m: Msg) => void = () => {}) {
+  static async open(
+    init: DevicesInit,
+    out: (device: number, text: string) => void,
+    notice: (m: Msg) => void = () => {},
+  ) {
     if (init.core) void coreModule(init.core);
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
-    const overlays = await Promise.all(init.specs.map((d) => (d.type !== 'blk' || !d.overlay ? undefined : d.overlay.startsWith('disks/') ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0) : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)))));
-    const sources = await Promise.all(init.specs.map(async (d) => {
-      if (d.type !== 'blk') return undefined;
-      if (d.source) {
-        if (!d.size) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
-        if (d.source !== 'ram') return zeroSource(d.size);
-        const ram = ramDisk(d.size, d.ramInit, { onFull: () => notice(msg('disks:devices.ramdiskFull')) });
-        // A swap ramdisk starts as a swap area (a restored one has its own first page in its chunks).
-        if (d.swap && !d.ramInit && !(await ram.write(0, swapHeader(d.size, d.swap)))) throw new Error("the swap ramdisk's first page couldn't be written");
-        return ram;
-      }
-      if (d.stored) return openStored(d.stored, d.size ?? 0);
-      if (d.file) return blobSource(d.file);
-      if (!d.url) throw new Error('a disk with no image (url, file or source)');
-      if (d.url.startsWith('file:')) return fileSource(d.url);
-      return remoteSource(d.url, d.keep ?? true, !init.deterministic, d.chunked);
-    }));
+    const overlays = await Promise.all(
+      init.specs.map((d) =>
+        d.type !== 'blk' || !d.overlay
+          ? undefined
+          : d.overlay.startsWith('disks/')
+            ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0)
+            : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)),
+      ),
+    );
+    const sources = await Promise.all(
+      init.specs.map(async (d) => {
+        if (d.type !== 'blk') return undefined;
+        if (d.source) {
+          if (!d.size) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
+          if (d.source !== 'ram') return zeroSource(d.size);
+          const ram = ramDisk(d.size, d.ramInit, { onFull: () => notice(msg('disks:devices.ramdiskFull')) });
+          // A swap ramdisk starts as a swap area (a restored one has its own first page in its chunks).
+          if (d.swap && !d.ramInit && !(await ram.write(0, swapHeader(d.size, d.swap))))
+            throw new Error("the swap ramdisk's first page couldn't be written");
+          return ram;
+        }
+        if (d.stored) return openStored(d.stored, d.size ?? 0);
+        if (d.file) return blobSource(d.file);
+        if (!d.url) throw new Error('a disk with no image (url, file or source)');
+        if (d.url.startsWith('file:')) return fileSource(d.url);
+        return remoteSource(d.url, d.keep ?? true, !init.deterministic, d.chunked);
+      }),
+    );
     // At most once a minute for all disks: while it's full, overwrites of blocks an overlay holds still land (they
     // don't grow its file), and each disk tells again after one.
     let toldAt = -Infinity;
@@ -1434,7 +1796,12 @@ export class Devices {
 
   /** The I/O timers of the blk devices that have them (spec `stats`), by device index. */
   stats() {
-    return Object.fromEntries(Object.entries(this.ioStats).map(([i, st]) => [i, { ...st.json(), cache: (this.sources[+i] as { stats?: BlockCacheStats } | undefined)?.stats }]));
+    return Object.fromEntries(
+      Object.entries(this.ioStats).map(([i, st]) => [
+        i,
+        { ...st.json(), cache: (this.sources[+i] as { stats?: BlockCacheStats } | undefined)?.stats },
+      ]),
+    );
   }
 
   /** Releases the backends' files (an overlay's handles lock them). */
@@ -1481,7 +1848,8 @@ export class Devices {
         const r = { w0, queue: (w0 >>> 16) & 0xff, read: segs(n & 0xffff), write: segs(n >>> 16) };
         tail >>>= 0;
         Atomics.store(u32, ring + 1, tail);
-        if (w0 >>> 24 !== epoch) { // posted before a reset
+        if (w0 >>> 24 !== epoch) {
+          // posted before a reset
           skipped = true;
           continue;
         }
@@ -1490,7 +1858,14 @@ export class Devices {
         if (typeof len === 'number') this.complete(i, w0, len);
         else if (b.concurrent && !this.deterministic) {
           // Completed when it resolves, whatever came before: the device worker serves the rest meanwhile.
-          const p: Promise<void> = len.then((n) => this.complete(i, w0, n), (e) => { this.failed ??= e; }).finally(() => this.detached.delete(p));
+          const p: Promise<void> = len
+            .then(
+              (n) => this.complete(i, w0, n),
+              (e) => {
+                this.failed ??= e;
+              },
+            )
+            .finally(() => this.detached.delete(p));
           this.detached.add(p);
         } else this.complete(i, w0, await len);
       }
@@ -1557,7 +1932,11 @@ export class Devices {
     // (`waitAsync` on a changed word returns at once): timers and the ports' messages (a key's release, the page's size)
     // starve behind it, for up to a second. Yield to the event loop every few ms of work.
     const turn = new MessageChannel();
-    const macrotask = () => new Promise<void>((resolve) => { turn.port1.onmessage = () => resolve(); turn.port2.postMessage(0); });
+    const macrotask = () =>
+      new Promise<void>((resolve) => {
+        turn.port1.onmessage = () => resolve();
+        turn.port2.postMessage(0);
+      });
     // The listening port keeps Node's process alive: closed on every way out.
     let since = performance.now();
     try {

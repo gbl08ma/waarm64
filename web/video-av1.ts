@@ -68,7 +68,9 @@ export class Av1Writer {
     return new Uint8Array(this.bytes);
   }
 
-  get bitPos() { return this.bytes.length * 8 + this.n; }
+  get bitPos() {
+    return this.bytes.length * 8 + this.n;
+  }
 
   private bit(b: number) {
     this.cur = (this.cur << 1) | b;
@@ -110,31 +112,115 @@ const DEFAULT_GM = [0, 0, 1 << 16, 0, 0, 1 << 16];
 
 /** What `virgl_av1_picture_desc` says of a frame (Mesa 26.2's layout). */
 export type Av1Params = {
-  ref: number[]; filmGrainTarget: number;
-  profile: number; orderHintBits: number; bitDepthIdx: number;
-  seq: { use128: boolean; filterIntra: boolean; intraEdge: boolean; interintra: boolean; masked: boolean; dualFilter: boolean; orderHint: boolean; jntComp: boolean; cdef: boolean; mono: boolean; refFrameMvs: boolean; filmGrain: boolean };
-  width: number; height: number; maxWidth: number; maxHeight: number;
-  refFrameIdx: number[]; primaryRefFrame: number; orderHint: number;
-  seg: { enabled: boolean; updateMap: boolean; updateData: boolean; temporalUpdate: boolean; data: number[][]; mask: number[] };
+  ref: number[];
+  filmGrainTarget: number;
+  profile: number;
+  orderHintBits: number;
+  bitDepthIdx: number;
+  seq: {
+    use128: boolean;
+    filterIntra: boolean;
+    intraEdge: boolean;
+    interintra: boolean;
+    masked: boolean;
+    dualFilter: boolean;
+    orderHint: boolean;
+    jntComp: boolean;
+    cdef: boolean;
+    mono: boolean;
+    refFrameMvs: boolean;
+    filmGrain: boolean;
+  };
+  width: number;
+  height: number;
+  maxWidth: number;
+  maxHeight: number;
+  refFrameIdx: number[];
+  primaryRefFrame: number;
+  orderHint: number;
+  seg: {
+    enabled: boolean;
+    updateMap: boolean;
+    updateData: boolean;
+    temporalUpdate: boolean;
+    data: number[][];
+    mask: number[];
+  };
   grain: {
-    apply: boolean; csfl: boolean; scalingMinus8: number; arLag: number; arShiftMinus6: number; scaleShift: number; overlap: boolean; clip: boolean;
-    seed: number; y: [number, number][]; cb: [number, number][]; cr: [number, number][]; arY: number[]; arCb: number[]; arCr: number[];
-    cbMult: number; cbLumaMult: number; cbOffset: number; crMult: number; crLumaMult: number; crOffset: number;
+    apply: boolean;
+    csfl: boolean;
+    scalingMinus8: number;
+    arLag: number;
+    arShiftMinus6: number;
+    scaleShift: number;
+    overlap: boolean;
+    clip: boolean;
+    seed: number;
+    y: [number, number][];
+    cb: [number, number][];
+    cr: [number, number][];
+    arY: number[];
+    arCb: number[];
+    arCr: number[];
+    cbMult: number;
+    cbLumaMult: number;
+    cbOffset: number;
+    crMult: number;
+    crLumaMult: number;
+    crOffset: number;
   };
-  tileCols: number; tileRows: number; widthInSbs: number[]; heightInSbs: number[]; contextUpdateTileId: number;
+  tileCols: number;
+  tileRows: number;
+  widthInSbs: number[];
+  heightInSbs: number[];
+  contextUpdateTileId: number;
   pic: {
-    frameType: number; show: boolean; showable: boolean; errorResilient: boolean; disableCdfUpdate: boolean; screenContent: boolean; forceIntegerMv: boolean;
-    intrabc: boolean; superres: boolean; highPrecisionMv: boolean; motionModeSwitchable: boolean; refFrameMvs: boolean; disableFrameEndUpdateCdf: boolean;
-    uniformTiles: boolean; warpedMotion: boolean; largeScaleTile: boolean;
+    frameType: number;
+    show: boolean;
+    showable: boolean;
+    errorResilient: boolean;
+    disableCdfUpdate: boolean;
+    screenContent: boolean;
+    forceIntegerMv: boolean;
+    intrabc: boolean;
+    superres: boolean;
+    highPrecisionMv: boolean;
+    motionModeSwitchable: boolean;
+    refFrameMvs: boolean;
+    disableFrameEndUpdateCdf: boolean;
+    uniformTiles: boolean;
+    warpedMotion: boolean;
+    largeScaleTile: boolean;
   };
-  superresDenom: number; interpFilter: number; filterLevel: [number, number]; filterLevelU: number; filterLevelV: number;
-  sharpness: number; deltaEnabled: boolean; refDeltas: number[]; modeDeltas: number[];
-  baseQIdx: number; dq: { yDc: number; uDc: number; uAc: number; vDc: number; vAc: number };
+  superresDenom: number;
+  interpFilter: number;
+  filterLevel: [number, number];
+  filterLevelU: number;
+  filterLevelV: number;
+  sharpness: number;
+  deltaEnabled: boolean;
+  refDeltas: number[];
+  modeDeltas: number[];
+  baseQIdx: number;
+  dq: { yDc: number; uDc: number; uAc: number; vDc: number; vAc: number };
   qm: { using: boolean; y: number; u: number; v: number };
-  deltaQPresent: boolean; deltaQRes: number; deltaLfPresent: boolean; deltaLfRes: number; deltaLfMulti: boolean; txMode: number; referenceSelect: boolean; reducedTxSet: boolean; skipModePresent: boolean;
-  cdefDampingMinus3: number; cdefBits: number; cdefY: number[]; cdefUv: number[];
+  deltaQPresent: boolean;
+  deltaQRes: number;
+  deltaLfPresent: boolean;
+  deltaLfRes: number;
+  deltaLfMulti: boolean;
+  txMode: number;
+  referenceSelect: boolean;
+  reducedTxSet: boolean;
+  skipModePresent: boolean;
+  cdefDampingMinus3: number;
+  cdefBits: number;
+  cdefY: number[];
+  cdefUv: number[];
   /** Loop restoration: each plane's type, the luma unit's shift (its size 64 << shift) and chroma's (virgl doesn't copy the unit sizes). */
-  lrType: number[]; lrUnitShift: number; lrUvShift: number;
+  lrType: number[];
+  lrUnitShift: number;
+  lrUvShift: number;
   wm: { type: number; params: number[] }[];
   tiles: { size: number; offset: number; row: number; col: number }[];
 };
@@ -144,52 +230,146 @@ export const AV1_DESC_SIZE = 5132;
 export function parseAv1Desc(d: Uint8Array): Av1Params {
   if (d.length < AV1_DESC_SIZE) throw new Error(`AV1: a picture desc of ${d.length} bytes`);
   const v = new DataView(d.buffer, d.byteOffset, d.length);
-  const u8 = (at: number) => d[at], i8 = (at: number) => v.getInt8(at), u16 = (at: number) => v.getUint16(at, true), i16 = (at: number) => v.getInt16(at, true);
-  const u32 = (at: number) => v.getUint32(at, true), i32 = (at: number) => v.getInt32(at, true);
-  const bit = (w: number, k: number) => !!((w >>> k) & 1), bits = (w: number, k: number, n: number) => (w >>> k) & ((1 << n) - 1);
-  const seq = u32(336), seg = u32(364), fg = u32(504), pic = u32(1448), lf = u8(1458), qm = u16(1476), mode = u32(1480), lr = u16(1502);
-  const points = (n: number, at: number, len: number) => Array.from({ length: Math.min(n, len) }, (_, k): [number, number] => [u8(at + k), u8(at + len + k)]);
-  const tileCols = u8(664), tileRows = u8(665), count = u16(5128);
+  const u8 = (at: number) => d[at],
+    i8 = (at: number) => v.getInt8(at),
+    u16 = (at: number) => v.getUint16(at, true),
+    i16 = (at: number) => v.getInt16(at, true);
+  const u32 = (at: number) => v.getUint32(at, true),
+    i32 = (at: number) => v.getInt32(at, true);
+  const bit = (w: number, k: number) => !!((w >>> k) & 1),
+    bits = (w: number, k: number, n: number) => (w >>> k) & ((1 << n) - 1);
+  const seq = u32(336),
+    seg = u32(364),
+    fg = u32(504),
+    pic = u32(1448),
+    lf = u8(1458),
+    qm = u16(1476),
+    mode = u32(1480),
+    lr = u16(1502);
+  const points = (n: number, at: number, len: number) =>
+    Array.from({ length: Math.min(n, len) }, (_, k): [number, number] => [u8(at + k), u8(at + len + k)]);
+  const tileCols = u8(664),
+    tileRows = u8(665),
+    count = u16(5128);
   return {
-    ref: Array.from({ length: 8 }, (_, k) => u32(264 + 4 * k)), filmGrainTarget: u32(328),
-    profile: u8(332), orderHintBits: u8(333) + 1, bitDepthIdx: u8(334),
+    ref: Array.from({ length: 8 }, (_, k) => u32(264 + 4 * k)),
+    filmGrainTarget: u32(328),
+    profile: u8(332),
+    orderHintBits: u8(333) + 1,
+    bitDepthIdx: u8(334),
     seq: {
-      use128: bit(seq, 0), filterIntra: bit(seq, 1), intraEdge: bit(seq, 2), interintra: bit(seq, 3), masked: bit(seq, 4), dualFilter: bit(seq, 5),
-      orderHint: bit(seq, 6), jntComp: bit(seq, 7), cdef: bit(seq, 8), mono: bit(seq, 9), refFrameMvs: bit(seq, 10), filmGrain: bit(seq, 11),
+      use128: bit(seq, 0),
+      filterIntra: bit(seq, 1),
+      intraEdge: bit(seq, 2),
+      interintra: bit(seq, 3),
+      masked: bit(seq, 4),
+      dualFilter: bit(seq, 5),
+      orderHint: bit(seq, 6),
+      jntComp: bit(seq, 7),
+      cdef: bit(seq, 8),
+      mono: bit(seq, 9),
+      refFrameMvs: bit(seq, 10),
+      filmGrain: bit(seq, 11),
     },
-    width: u16(344), height: u16(346), maxWidth: u16(348), maxHeight: u16(350),
-    refFrameIdx: Array.from({ length: 7 }, (_, k) => u8(352 + k)), primaryRefFrame: u8(359), orderHint: u8(360),
+    width: u16(344),
+    height: u16(346),
+    maxWidth: u16(348),
+    maxHeight: u16(350),
+    refFrameIdx: Array.from({ length: 7 }, (_, k) => u8(352 + k)),
+    primaryRefFrame: u8(359),
+    orderHint: u8(360),
     seg: {
-      enabled: bit(seg, 0), updateMap: bit(seg, 1), updateData: bit(seg, 2), temporalUpdate: bit(seg, 3),
+      enabled: bit(seg, 0),
+      updateMap: bit(seg, 1),
+      updateData: bit(seg, 2),
+      temporalUpdate: bit(seg, 3),
       data: Array.from({ length: 8 }, (_, s) => Array.from({ length: 8 }, (_, f) => i16(368 + 16 * s + 2 * f))),
       mask: Array.from({ length: 8 }, (_, s) => u8(496 + s)),
     },
     grain: {
-      apply: bit(fg, 0), csfl: bit(fg, 1), scalingMinus8: bits(fg, 2, 2), arLag: bits(fg, 4, 2), arShiftMinus6: bits(fg, 6, 2), scaleShift: bits(fg, 8, 2),
-      overlap: bit(fg, 10), clip: bit(fg, 11), seed: u16(508),
-      y: points(u8(510), 511, 14), cb: points(u8(539), 540, 10), cr: points(u8(560), 561, 10),
-      arY: Array.from({ length: 24 }, (_, k) => i8(581 + k)), arCb: Array.from({ length: 25 }, (_, k) => i8(605 + k)), arCr: Array.from({ length: 25 }, (_, k) => i8(630 + k)),
-      cbMult: u8(655), cbLumaMult: u8(656), cbOffset: u16(658), crMult: u8(660), crLumaMult: u8(661), crOffset: u16(662),
+      apply: bit(fg, 0),
+      csfl: bit(fg, 1),
+      scalingMinus8: bits(fg, 2, 2),
+      arLag: bits(fg, 4, 2),
+      arShiftMinus6: bits(fg, 6, 2),
+      scaleShift: bits(fg, 8, 2),
+      overlap: bit(fg, 10),
+      clip: bit(fg, 11),
+      seed: u16(508),
+      y: points(u8(510), 511, 14),
+      cb: points(u8(539), 540, 10),
+      cr: points(u8(560), 561, 10),
+      arY: Array.from({ length: 24 }, (_, k) => i8(581 + k)),
+      arCb: Array.from({ length: 25 }, (_, k) => i8(605 + k)),
+      arCr: Array.from({ length: 25 }, (_, k) => i8(630 + k)),
+      cbMult: u8(655),
+      cbLumaMult: u8(656),
+      cbOffset: u16(658),
+      crMult: u8(660),
+      crLumaMult: u8(661),
+      crOffset: u16(662),
     },
-    tileCols, tileRows,
-    widthInSbs: Array.from({ length: tileCols }, (_, k) => u16(1188 + 2 * k)), heightInSbs: Array.from({ length: tileRows }, (_, k) => u16(1316 + 2 * k)),
+    tileCols,
+    tileRows,
+    widthInSbs: Array.from({ length: tileCols }, (_, k) => u16(1188 + 2 * k)),
+    heightInSbs: Array.from({ length: tileRows }, (_, k) => u16(1316 + 2 * k)),
     contextUpdateTileId: u16(1444),
     pic: {
-      frameType: bits(pic, 0, 2), show: bit(pic, 2), showable: bit(pic, 3), errorResilient: bit(pic, 4), disableCdfUpdate: bit(pic, 5), screenContent: bit(pic, 6),
-      forceIntegerMv: bit(pic, 7), intrabc: bit(pic, 8), superres: bit(pic, 9), highPrecisionMv: bit(pic, 10), motionModeSwitchable: bit(pic, 11), refFrameMvs: bit(pic, 12),
-      disableFrameEndUpdateCdf: bit(pic, 13), uniformTiles: bit(pic, 14), warpedMotion: bit(pic, 15), largeScaleTile: bit(pic, 16),
+      frameType: bits(pic, 0, 2),
+      show: bit(pic, 2),
+      showable: bit(pic, 3),
+      errorResilient: bit(pic, 4),
+      disableCdfUpdate: bit(pic, 5),
+      screenContent: bit(pic, 6),
+      forceIntegerMv: bit(pic, 7),
+      intrabc: bit(pic, 8),
+      superres: bit(pic, 9),
+      highPrecisionMv: bit(pic, 10),
+      motionModeSwitchable: bit(pic, 11),
+      refFrameMvs: bit(pic, 12),
+      disableFrameEndUpdateCdf: bit(pic, 13),
+      uniformTiles: bit(pic, 14),
+      warpedMotion: bit(pic, 15),
+      largeScaleTile: bit(pic, 16),
     },
-    superresDenom: u8(1452), interpFilter: u8(1453), filterLevel: [u8(1454), u8(1455)], filterLevelU: u8(1456), filterLevelV: u8(1457),
-    sharpness: bits(lf, 0, 3), deltaEnabled: bit(lf, 3),
-    refDeltas: Array.from({ length: 8 }, (_, k) => i8(1459 + k)), modeDeltas: [i8(1467), i8(1468)],
-    baseQIdx: u8(1469), dq: { yDc: i8(1470), uDc: i8(1471), uAc: i8(1472), vDc: i8(1473), vAc: i8(1474) },
+    superresDenom: u8(1452),
+    interpFilter: u8(1453),
+    filterLevel: [u8(1454), u8(1455)],
+    filterLevelU: u8(1456),
+    filterLevelV: u8(1457),
+    sharpness: bits(lf, 0, 3),
+    deltaEnabled: bit(lf, 3),
+    refDeltas: Array.from({ length: 8 }, (_, k) => i8(1459 + k)),
+    modeDeltas: [i8(1467), i8(1468)],
+    baseQIdx: u8(1469),
+    dq: { yDc: i8(1470), uDc: i8(1471), uAc: i8(1472), vDc: i8(1473), vAc: i8(1474) },
     qm: { using: bit(qm, 0), y: bits(qm, 1, 4), u: bits(qm, 5, 4), v: bits(qm, 9, 4) },
-    deltaQPresent: bit(mode, 0), deltaQRes: bits(mode, 1, 2), deltaLfPresent: bit(mode, 3), deltaLfRes: bits(mode, 4, 2), deltaLfMulti: bit(mode, 6),
-    txMode: bits(mode, 7, 2), referenceSelect: bit(mode, 9), reducedTxSet: bit(mode, 10), skipModePresent: bit(mode, 11),
-    cdefDampingMinus3: u8(1484), cdefBits: u8(1485), cdefY: Array.from({ length: 8 }, (_, k) => u8(1486 + k)), cdefUv: Array.from({ length: 8 }, (_, k) => u8(1494 + k)),
-    lrType: [bits(lr, 0, 2), bits(lr, 2, 2), bits(lr, 4, 2)], lrUnitShift: bits(lr, 6, 2), lrUvShift: bits(lr, 8, 1),
-    wm: Array.from({ length: 7 }, (_, k) => ({ type: u32(1512 + 40 * k), params: Array.from({ length: 6 }, (_, j) => i32(1512 + 40 * k + 8 + 4 * j)) })),
-    tiles: Array.from({ length: Math.min(count, 256) }, (_, k) => ({ size: u32(1800 + 4 * k), offset: u32(2824 + 4 * k), row: u16(3848 + 2 * k), col: u16(4360 + 2 * k) })),
+    deltaQPresent: bit(mode, 0),
+    deltaQRes: bits(mode, 1, 2),
+    deltaLfPresent: bit(mode, 3),
+    deltaLfRes: bits(mode, 4, 2),
+    deltaLfMulti: bit(mode, 6),
+    txMode: bits(mode, 7, 2),
+    referenceSelect: bit(mode, 9),
+    reducedTxSet: bit(mode, 10),
+    skipModePresent: bit(mode, 11),
+    cdefDampingMinus3: u8(1484),
+    cdefBits: u8(1485),
+    cdefY: Array.from({ length: 8 }, (_, k) => u8(1486 + k)),
+    cdefUv: Array.from({ length: 8 }, (_, k) => u8(1494 + k)),
+    lrType: [bits(lr, 0, 2), bits(lr, 2, 2), bits(lr, 4, 2)],
+    lrUnitShift: bits(lr, 6, 2),
+    lrUvShift: bits(lr, 8, 1),
+    wm: Array.from({ length: 7 }, (_, k) => ({
+      type: u32(1512 + 40 * k),
+      params: Array.from({ length: 6 }, (_, j) => i32(1512 + 40 * k + 8 + 4 * j)),
+    })),
+    tiles: Array.from({ length: Math.min(count, 256) }, (_, k) => ({
+      size: u32(1800 + 4 * k),
+      offset: u32(2824 + 4 * k),
+      row: u16(3848 + 2 * k),
+      col: u16(4360 + 2 * k),
+    })),
   };
 }
 
@@ -251,15 +431,18 @@ export function buildSequenceHeader(p: Av1Params, level = 13): Uint8Array {
 function geometry(p: Av1Params) {
   const denom = p.pic.superres ? p.superresDenom : 8;
   const frameWidth = Math.floor((p.width * 8 + (denom >> 1)) / denom);
-  const miCols = 2 * ((frameWidth + 7) >> 3), miRows = 2 * ((p.height + 7) >> 3);
-  const sbShift = p.seq.use128 ? 5 : 4, sbSize = sbShift + 2;
-  const sbCols = (miCols + (1 << sbShift) - 1) >> sbShift, sbRows = (miRows + (1 << sbShift) - 1) >> sbShift;
+  const miCols = 2 * ((frameWidth + 7) >> 3),
+    miRows = 2 * ((p.height + 7) >> 3);
+  const sbShift = p.seq.use128 ? 5 : 4,
+    sbSize = sbShift + 2;
+  const sbCols = (miCols + (1 << sbShift) - 1) >> sbShift,
+    sbRows = (miRows + (1 << sbShift) - 1) >> sbShift;
   return { frameWidth, sbCols, sbRows, sbSize };
 }
 
 const tileLog2 = (blk: number, target: number) => {
   let k = 0;
-  while ((blk << k) < target) k++;
+  while (blk << k < target) k++;
   return k;
 };
 
@@ -274,7 +457,10 @@ function relDist(a: number, b: number, bits: number) {
 
 /** The frame header OBU's payload (§5.9) with this side's references and refresh. `hidden`: written not shown (a
  * frame decoded again to store it), `shown`: written shown (a hidden frame the guest may show later). */
-export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: number; slots: (Slot | undefined)[]; show: boolean; showable: boolean }): Uint8Array {
+export function buildFrameHeader(
+  p: Av1Params,
+  o: { refs: number[]; refresh: number; slots: (Slot | undefined)[]; show: boolean; showable: boolean },
+): Uint8Array {
   const w = new Av1Writer();
   const t = p.pic.frameType;
   const intra = t === FRAME.KEY || t === FRAME.INTRA_ONLY;
@@ -308,7 +494,8 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
     if (p.pic.superres) w.f(3, p.superresDenom - 9);
     w.flag(0); // render_and_frame_size_different
   };
-  let intrabc = false, highPrecisionMv = false;
+  let intrabc = false,
+    highPrecisionMv = false;
   if (intra) {
     frameSize();
     if (p.pic.screenContent && frameWidth === p.width) w.flag((intrabc = p.pic.intrabc));
@@ -325,8 +512,11 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
   }
   if (!p.pic.disableCdfUpdate) w.flag(p.pic.disableFrameEndUpdateCdf);
   // tile_info (§5.9.15)
-  const maxTileWidthSb = 4096 >> sbSize, maxTileAreaSb = (4096 * 2304) >> (2 * sbSize);
-  const minLog2TileCols = tileLog2(maxTileWidthSb, sbCols), maxLog2TileCols = tileLog2(1, Math.min(sbCols, 64)), maxLog2TileRows = tileLog2(1, Math.min(sbRows, 64));
+  const maxTileWidthSb = 4096 >> sbSize,
+    maxTileAreaSb = (4096 * 2304) >> (2 * sbSize);
+  const minLog2TileCols = tileLog2(maxTileWidthSb, sbCols),
+    maxLog2TileCols = tileLog2(1, Math.min(sbCols, 64)),
+    maxLog2TileRows = tileLog2(1, Math.min(sbRows, 64));
   const minLog2Tiles = Math.max(minLog2TileCols, tileLog2(maxTileAreaSb, sbRows * sbCols));
   w.flag(p.pic.uniformTiles);
   let colsLog2: number, rowsLog2: number;
@@ -343,7 +533,8 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
       if (k >= rowsLog2) break;
     }
   } else {
-    let widestTileSb = 0, start = 0;
+    let widestTileSb = 0,
+      start = 0;
     for (let k = 0; k < p.tileCols; k++) {
       const maxWidth = Math.min(sbCols - start, maxTileWidthSb);
       w.ns(maxWidth, p.widthInSbs[k] - 1);
@@ -390,9 +581,13 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
   }
   // segmentation_params (§5.9.14): the data always written (the effective values: FFmpeg's CBS loads them from the
   // reference when a frame doesn't update them).
-  const BITS = [8, 6, 6, 6, 6, 3, 0, 0], SIGNED = [1, 1, 1, 1, 1, 0, 0, 0], MAX = [255, 63, 63, 63, 63, 7, 0, 0];
+  const BITS = [8, 6, 6, 6, 6, 3, 0, 0],
+    SIGNED = [1, 1, 1, 1, 1, 0, 0, 0],
+    MAX = [255, 63, 63, 63, 63, 7, 0, 0];
   w.flag(p.seg.enabled);
-  const segData = p.seg.data.map((f, s) => f.map((x, j) => (p.seg.enabled && (p.seg.mask[s] >> j) & 1 ? Math.max(-MAX[j], Math.min(MAX[j], x)) : 0)));
+  const segData = p.seg.data.map((f, s) =>
+    f.map((x, j) => (p.seg.enabled && (p.seg.mask[s] >> j) & 1 ? Math.max(-MAX[j], Math.min(MAX[j], x)) : 0)),
+  );
   if (p.seg.enabled) {
     if (primary !== PRIMARY_REF_NONE) {
       w.flag(p.seg.updateMap);
@@ -424,7 +619,7 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
   let codedLossless = true;
   for (let s = 0; s < 8; s++) {
     let q = p.baseQIdx;
-    if (p.seg.enabled && (p.seg.mask[s] & 1)) q = Math.max(0, Math.min(255, q + segData[s][0]));
+    if (p.seg.enabled && p.seg.mask[s] & 1) q = Math.max(0, Math.min(255, q + segData[s][0]));
     if (q || p.dq.yDc || p.dq.uDc || p.dq.uAc || p.dq.vDc || p.dq.vAc) codedLossless = false;
   }
   const allLossless = codedLossless && frameWidth === p.width;
@@ -462,7 +657,8 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
   // lr_params (§5.9.20): VA's types are FrameRestorationType (NONE, WIENER, SGRPROJ, SWITCHABLE), coded as lr_type.
   if (!allLossless && !intrabc) {
     const coded = [0, 2, 3, 1];
-    let usesLr = false, usesChromaLr = false;
+    let usesLr = false,
+      usesChromaLr = false;
     for (let k = 0; k < numPlanes; k++) {
       w.f(2, coded[p.lrType[k]]);
       if (p.lrType[k]) {
@@ -487,7 +683,10 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
   let skipModeAllowed = false;
   if (!intra && p.referenceSelect && bitsOh) {
     const hint = (k: number) => o.slots[o.refs[k]]?.orderHint ?? 0;
-    let fwd = -1, bwd = -1, fwdHint = 0, bwdHint = 0;
+    let fwd = -1,
+      bwd = -1,
+      fwdHint = 0,
+      bwdHint = 0;
     for (let k = 0; k < 7; k++) {
       const h = hint(k);
       if (relDist(h, p.orderHint, bitsOh) < 0) {
@@ -499,10 +698,12 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
     if (fwd < 0) skipModeAllowed = false;
     else if (bwd >= 0) skipModeAllowed = true;
     else {
-      let second = -1, secondHint = 0;
+      let second = -1,
+        secondHint = 0;
       for (let k = 0; k < 7; k++) {
         const h = hint(k);
-        if (relDist(h, fwdHint, bitsOh) < 0 && (second < 0 || relDist(h, secondHint, bitsOh) > 0)) [second, secondHint] = [k, h];
+        if (relDist(h, fwdHint, bitsOh) < 0 && (second < 0 || relDist(h, secondHint, bitsOh) > 0))
+          [second, secondHint] = [k, h];
       }
       skipModeAllowed = second >= 0;
     }
@@ -521,7 +722,8 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
         if (type !== GM.ROTZOOM) w.flag(type === GM.TRANSLATION);
       }
       const prevParams = prev?.[r] ?? DEFAULT_GM;
-      const param = (idx: number) => writeGlobalParam(w, type, idx, p.wm[r].params[idx], prevParams[idx], highPrecisionMv);
+      const param = (idx: number) =>
+        writeGlobalParam(w, type, idx, p.wm[r].params[idx], prevParams[idx], highPrecisionMv);
       if (type >= GM.ROTZOOM) {
         param(2);
         param(3);
@@ -562,7 +764,8 @@ export function buildFrameHeader(p: Av1Params, o: { refs: number[]; refresh: num
           w.f(8, s);
         }
       }
-      const cb = chroma ? g.cb.length : 0, cr = chroma ? g.cr.length : 0;
+      const cb = chroma ? g.cb.length : 0,
+        cr = chroma ? g.cr.length : 0;
       w.f(2, g.scalingMinus8);
       w.f(2, g.arLag);
       const numPosLuma = 2 * g.arLag * (g.arLag + 1);
@@ -599,7 +802,8 @@ export function buildShowExisting(slot: number): Uint8Array {
 
 /** One global motion parameter (§5.9.25 read_global_param, inverted): `v` coded against the previous frame's. */
 function writeGlobalParam(w: Av1Writer, type: number, idx: number, v: number, prev: number, highPrecisionMv: boolean) {
-  let absBits = 12, precBits = 15; // GM_ABS_ALPHA_BITS, GM_ALPHA_PREC_BITS
+  let absBits = 12,
+    precBits = 15; // GM_ABS_ALPHA_BITS, GM_ALPHA_PREC_BITS
   if (idx < 2) {
     if (type === GM.TRANSLATION) {
       absBits = 9 - (highPrecisionMv ? 0 : 1);
@@ -610,12 +814,14 @@ function writeGlobalParam(w: Av1Writer, type: number, idx: number, v: number, pr
     }
   }
   const precDiff = 16 - precBits;
-  const round = idx % 3 === 2 ? 1 << 16 : 0, sub = idx % 3 === 2 ? 1 << precBits : 0;
+  const round = idx % 3 === 2 ? 1 << 16 : 0,
+    sub = idx % 3 === 2 ? 1 << precBits : 0;
   const mx = 1 << absBits;
   const r = (prev >> precDiff) - sub;
   const x = (v - round) >> precDiff;
   // decode_signed_subexp_with_ref(-mx, mx + 1, r)
-  const low = -mx, high = mx + 1;
+  const low = -mx,
+    high = mx + 1;
   writeUnsignedSubexpWithRef(w, high - low, r - low, x - low);
 }
 
@@ -627,9 +833,10 @@ function recenter(r: number, x: number) {
 
 /** The unsigned sub-exponential code with a reference (§5.9.27-28, inverted): `x` of `mx` values near `r`. */
 export function writeUnsignedSubexpWithRef(w: Av1Writer, mx: number, r: number, x: number) {
-  const v = (r << 1) <= mx ? recenter(r, x) : recenter(mx - 1 - r, mx - 1 - x);
+  const v = r << 1 <= mx ? recenter(r, x) : recenter(mx - 1 - r, mx - 1 - x);
   // decode_subexp(mx)
-  let i = 0, mk = 0;
+  let i = 0,
+    mk = 0;
   const k = 3;
   for (;;) {
     const b2 = i ? k + i - 1 : k;
@@ -706,7 +913,9 @@ export class Av1Stream {
   }
 
   /** Whether a frame waits for the next one (`flush` writes it now). */
-  get holding() { return !!this.waiting; }
+  get holding() {
+    return !!this.waiting;
+  }
 
   /**
    * The temporal units one frame makes (its desc, its bitstream: the tiles at the desc's offsets, its target surface,
@@ -715,13 +924,17 @@ export class Av1Stream {
    */
   chunks(desc: Uint8Array, bits: Uint8Array, target: number, ts: number): Av1Chunk[] {
     const p = parseAv1Desc(desc);
-    if (p.pic.largeScaleTile) throw new Error('AV1: large scale tiles aren\'t supported');
+    if (p.pic.largeScaleTile) throw new Error("AV1: large scale tiles aren't supported");
     const t = p.pic.frameType;
-    const tiles = [...p.tiles].sort((a, b) => a.row - b.row || a.col - b.col).map((x) => {
-      if (x.offset + x.size > bits.length) throw new Error(`AV1: a tile at ${x.offset}+${x.size} past the data's ${bits.length} bytes`);
-      return bits.subarray(x.offset, x.offset + x.size);
-    });
-    if (tiles.length !== p.tileCols * p.tileRows) throw new Error(`AV1: ${tiles.length} tiles of ${p.tileCols}x${p.tileRows}`);
+    const tiles = [...p.tiles]
+      .sort((a, b) => a.row - b.row || a.col - b.col)
+      .map((x) => {
+        if (x.offset + x.size > bits.length)
+          throw new Error(`AV1: a tile at ${x.offset}+${x.size} past the data's ${bits.length} bytes`);
+        return bits.subarray(x.offset, x.offset + x.size);
+      });
+    if (tiles.length !== p.tileCols * p.tileRows)
+      throw new Error(`AV1: ${tiles.length} tiles of ${p.tileCols}x${p.tileRows}`);
     const out: Unit[] = [];
     const key = t === FRAME.KEY && p.pic.show;
     // The guest's reference map: the surfaces it may still reference. A slot holding none of them is free.
@@ -794,14 +1007,27 @@ export class Av1Stream {
       if (u.key) this.queued = [];
       this.queued.push(...u.obus);
       if (u.ts === undefined) continue;
-      chunks.push({ data: concat([obu(OBU.TEMPORAL_DELIMITER, new Uint8Array(0)), ...this.queued]), key: u.key, ts: u.ts });
+      chunks.push({
+        data: concat([obu(OBU.TEMPORAL_DELIMITER, new Uint8Array(0)), ...this.queued]),
+        key: u.key,
+        ts: u.ts,
+      });
       this.queued = [];
     }
     return chunks;
   }
 
   /** A frame's OBUs (the sequence header before a shown key frame), the slots updated. */
-  private unit(p: Av1Params, tiles: Uint8Array[], surface: number, refresh: number, show: boolean, showable: boolean, ts: number | undefined, refs: number[]): Unit {
+  private unit(
+    p: Av1Params,
+    tiles: Uint8Array[],
+    surface: number,
+    refresh: number,
+    show: boolean,
+    showable: boolean,
+    ts: number | undefined,
+    refs: number[],
+  ): Unit {
     const t = p.pic.frameType;
     const intra = t === FRAME.KEY || t === FRAME.INTRA_ONLY;
     const key = t === FRAME.KEY && show;

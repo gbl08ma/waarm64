@@ -7,15 +7,52 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { BLOB_CHUNKS, CHUNK, corrupt, diskRuns, openSnapshot, readHeader, snapshotBound, SnapshotError, SnapshotWriter, truncated, type Codec, type LoadPool, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
+import {
+  BLOB_CHUNKS,
+  CHUNK,
+  corrupt,
+  diskRuns,
+  openSnapshot,
+  readHeader,
+  snapshotBound,
+  SnapshotError,
+  SnapshotWriter,
+  truncated,
+  type Codec,
+  type LoadPool,
+  type RamPool,
+  type ReadTimes,
+  type Sink,
+  type SnapshotHeader,
+  type WriteTimes,
+} from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { msg, MsgError, type Param } from './msg.ts';
-import { openOverlay, overlay, overlayMeta, removeOverlay, storageFullError, withRoom, writeMeta, type WritableDisk } from './overlay.ts';
+import {
+  openOverlay,
+  overlay,
+  overlayMeta,
+  removeOverlay,
+  storageFullError,
+  withRoom,
+  writeMeta,
+  type WritableDisk,
+} from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
 import { zeroDisk } from './stored.ts';
-import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
+import {
+  ABI,
+  bootVm,
+  compileCore,
+  Exit,
+  type BootOptions,
+  type ConsoleInput,
+  type Restore,
+  type Vm,
+  type VmState,
+} from './vm.ts';
 
 /**
  * Each memory's first RAM chunk in the file, for memories of `sizes` bytes (memory 0's RAM, then the spill memories,
@@ -36,7 +73,16 @@ export type SnapshotMeta = Record<string, unknown>;
  * carries, and the base image's SHA-256 where the writer knew it (for a base that is the same
  * bytes under another name or date).
  */
-export type SnapshotDisk = { slot: number; identity: string; size: number; blocks: number; sha256?: string; overlay?: string; generation?: number; ram?: boolean };
+export type SnapshotDisk = {
+  slot: number;
+  identity: string;
+  size: number;
+  blocks: number;
+  sha256?: string;
+  overlay?: string;
+  generation?: number;
+  ram?: boolean;
+};
 
 /**
  * What a restore does with a writable disk the file pins (docs/machines.md §5.2): `keep` its overlay as it is
@@ -46,7 +92,9 @@ export type SnapshotDisk = { slot: number; identity: string; size: number; block
  * first (a stored disk written in place, forked over its moved store: the file has the whole disk). A ramdisk's
  * blocks always go to its new chunks.
  */
-export type DiskPlan = { slot: number; action: 'keep'; generation: number } | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean };
+export type DiskPlan =
+  | { slot: number; action: 'keep'; generation: number }
+  | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean };
 
 /**
  * Where a save's time went, ms (`writeSnapshot`; tools read it in `#message`'s `data-snapshot`, docs/frontend.md
@@ -65,7 +113,15 @@ export type SavePhases = { state: number; blobs: number; ram: number; disk: numb
  * that took the CRCs and RAM's frames (`pool`, 0: this thread; then `checkCrc`, and RAM's share of `crc`, `unpack` and
  * `apply`, are their sums: CPU time).
  */
-export type RestorePhases = { check: number; checkRead: number; checkCrc: number; state: number; ram: number; disk: number; pool: number } & ReadTimes;
+export type RestorePhases = {
+  check: number;
+  checkRead: number;
+  checkCrc: number;
+  state: number;
+  ram: number;
+  disk: number;
+  pool: number;
+} & ReadTimes;
 
 /** A DISK frame's index: the device slot times this, plus the first block. */
 const SLOT = 2 ** 40;
@@ -78,7 +134,20 @@ const BLOCK = 4096;
  * image's hash, if the caller has it. `pool`: workers that make RAM's frames (web/snapshot-pool.ts), else this thread
  * does; the file is the same.
  */
-export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean; pool?: RamPool; sized?: (bound: number) => void | Promise<void> } = {}) {
+export async function writeSnapshot(
+  vm: Vm,
+  sink: Sink,
+  meta: SnapshotMeta,
+  codec: Codec,
+  opts: {
+    progress?: (done: number, total: number) => void;
+    sha256?: (slot: number) => string | undefined;
+    suspend?: boolean;
+    omit?: (slot: number) => boolean;
+    pool?: RamPool;
+    sized?: (bound: number) => void | Promise<void>;
+  } = {},
+) {
   const t0 = performance.now();
   const state = await vm.snapshot();
   // How long the devices' state took (a 3D machine's renderer read back is in it): tools split a snapshot's pause with it.
@@ -88,15 +157,44 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   // only while they are as it left them (`readSnapshot`'s `resume`). A ramdisk's are always in the file (they are
   // nowhere else). `omit`: disks whose blocks the caller leaves out (a stored disk written in place: its whole store).
   const carried = (d: (typeof all)[number]) => d.ram || (!opts.suspend && !opts.omit?.(d.slot));
-  const pinned: SnapshotDisk[] = all.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: carried(d) ? d.blocks.length : 0, sha256: opts.sha256?.(d.slot), overlay: d.overlay, generation: d.generation, ...(d.ram ? { ram: true } : {}) }));
+  const pinned: SnapshotDisk[] = all.map((d) => ({
+    slot: d.slot,
+    identity: d.identity,
+    size: d.size,
+    blocks: carried(d) ? d.blocks.length : 0,
+    sha256: opts.sha256?.(d.slot),
+    overlay: d.overlay,
+    generation: d.generation,
+    ...(d.ram ? { ram: true } : {}),
+  }));
   const disks = all.filter(carried);
-  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, ...(vm.spillRam().length ? { spill: vm.spillRam().map((v) => v.length) } : {}), disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
+  const header: SnapshotHeader = {
+    ...meta,
+    format: 1,
+    coreVersion: state.version,
+    abi: ABI,
+    created: new Date().toISOString(),
+    ramSize: vm.ramSize,
+    ...(vm.spillRam().length ? { spill: vm.spillRam().map((v) => v.length) } : {}),
+    disks: pinned,
+    ...(opts.suspend ? { suspend: true } : {}),
+  };
   // The state's Uint8Arrays go in BLOB frames; DEVS names each by its number and length.
   const blobs: Uint8Array[] = [];
-  const devs = JSON.stringify(state.host, (_k, v: unknown) => (v instanceof Uint8Array ? { $blob: blobs.push(v) - 1, length: v.length } : v));
+  const devs = JSON.stringify(state.host, (_k, v: unknown) =>
+    v instanceof Uint8Array ? { $blob: blobs.push(v) - 1, length: v.length } : v,
+  );
   // The file's largest size, before its first byte goes to the sink (`sized`: a picked file's staging checks its room).
   const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
-  await opts.sized?.(snapshotBound({ core: state.core.length, devs: devs.length * 3, blobs: blobs.map((b) => b.length), ram: views.map((v) => v.length), blocks: disks.reduce((n, d) => n + d.blocks.length, 0) }));
+  await opts.sized?.(
+    snapshotBound({
+      core: state.core.length,
+      devs: devs.length * 3,
+      blobs: blobs.map((b) => b.length),
+      ram: views.map((v) => v.length),
+      blocks: disks.reduce((n, d) => n + d.blocks.length, 0),
+    }),
+  );
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0 });
   let at = performance.now();
   /** The ms since the last call (or `at`'s start). */
@@ -115,22 +213,40 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const starts = ramStarts(views.map((v) => v.length));
   const ram = { pages: 0, frames: 0 };
   for (let k = 0, before = 0; k < views.length; before += views[k].length, k++) {
-    const r = await w.ram(views[k], opts.progress && ((done) => opts.progress!(before + done, total)), starts[k], opts.pool);
+    const r = await w.ram(
+      views[k],
+      opts.progress && ((done) => opts.progress!(before + done, total)),
+      starts[k],
+      opts.pool,
+    );
     [ram.pages, ram.frames] = [ram.pages + r.pages, ram.frames + r.frames];
   }
   const ramMs = since();
   for (const d of disks) {
-    await w.disk((async function* () {
-      for (let k = 0; k < d.blocks.length; k += 256) {
-        const part = d.blocks.slice(k, k + 256);
-        const bytes = await vm.diskBlocks(d.slot, part);
-        for (const [i, b] of part.entries()) yield { block: d.slot * SLOT + b, data: bytes.subarray(i * BLOCK, (i + 1) * BLOCK) };
-      }
-    })());
+    await w.disk(
+      (async function* () {
+        for (let k = 0; k < d.blocks.length; k += 256) {
+          const part = d.blocks.slice(k, k + 256);
+          const bytes = await vm.diskBlocks(d.slot, part);
+          for (const [i, b] of part.entries())
+            yield { block: d.slot * SLOT + b, data: bytes.subarray(i * BLOCK, (i + 1) * BLOCK) };
+        }
+      })(),
+    );
   }
   const end = await w.end();
   const phases: SavePhases = { state: stateMs, blobs: blobsMs, ram: ramMs, disk: since(), pool: w.pooled, ...w.times };
-  return { ...end, pages: ram.pages, state: state.core.length, stateMs, devsBytes: devs.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned, phases };
+  return {
+    ...end,
+    pages: ram.pages,
+    state: state.core.length,
+    stateMs,
+    devsBytes: devs.length,
+    blobBytes: blobs.reduce((n, b) => n + b.length, 0),
+    diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0),
+    pins: pinned,
+    phases,
+  };
 }
 
 /**
@@ -139,7 +255,11 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
  */
 export function otherVersion(header: SnapshotHeader, coreVersion: number): SnapshotError | undefined {
   if (header.coreVersion === coreVersion) return undefined;
-  return new SnapshotError('snapshots:snapshot.otherVersion', { format: header.coreVersion, reads: coreVersion }, 'other-version');
+  return new SnapshotError(
+    'snapshots:snapshot.otherVersion',
+    { format: header.coreVersion, reads: coreVersion },
+    'other-version',
+  );
 }
 
 /**
@@ -161,8 +281,16 @@ export function otherVersion(header: SnapshotHeader, coreVersion: number): Snaps
  * pool"; a Blob only, else this thread reads it all). The caller closes it once `fill` is done.
  */
 export async function readSnapshot(
-  source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
-  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[]; pool?: LoadPool } = {},
+  source: ReadableStream<Uint8Array> | Blob,
+  codec: Codec,
+  coreVersion: number,
+  opts: {
+    devices?: DeviceSpec[];
+    sha256?: (slot: number) => string | Promise<string>;
+    resume?: boolean;
+    plan?: DiskPlan[];
+    pool?: LoadPool;
+  } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore; phases: RestorePhases }> {
   let at = performance.now();
   /** The ms since the last call (or `at`'s start). */
@@ -171,10 +299,25 @@ export async function readSnapshot(
     at = performance.now();
     return at - was;
   };
-  const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, disk: 0, pool: 0, read: 0, crc: 0, unpack: 0, apply: 0 };
+  const phases: RestorePhases = {
+    check: 0,
+    checkRead: 0,
+    checkCrc: 0,
+    state: 0,
+    ram: 0,
+    disk: 0,
+    pool: 0,
+    read: 0,
+    crc: 0,
+    unpack: 0,
+    apply: 0,
+  };
   // What each pinned disk's blocks do, by slot: an overlay written (emptied first), skipped (the overlay is kept as it
   // is), or a ramdisk's chunks (handed to its new device: `BlkSpec.ramInit`).
-  type Target = { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean } | { kind: 'skip' } | { kind: 'ram'; spec: BlkSpec; size: number };
+  type Target =
+    | { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean }
+    | { kind: 'skip' }
+    | { kind: 'ram'; spec: BlkSpec; size: number };
   const targets = new Map<number, Target>();
   /** The header's refusals (another version, a suspend's file or not, the disks it pins against `devices`), `targets` made. */
   const aim = async (header: SnapshotHeader) => {
@@ -186,20 +329,33 @@ export async function readSnapshot(
         : corrupt(msg('snapshots:snapshot.damage.notSuspended'));
     }
     const pinned = (header.disks ?? []) as SnapshotDisk[];
-    if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt(msg('snapshots:snapshot.damage.diskList'));
+    if (
+      !Array.isArray(pinned) ||
+      pinned.some(
+        (d) =>
+          !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0,
+      )
+    )
+      throw corrupt(msg('snapshots:snapshot.damage.diskList'));
     for (const d of pinned) {
       const spec = opts.devices?.[d.slot];
       if (d.ram) {
-        if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('snapshots:snapshot.noRamdisk', {}, 'other-machine');
+        if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size)
+          throw new SnapshotError('snapshots:snapshot.noRamdisk', {}, 'other-machine');
         targets.set(d.slot, { kind: 'ram', spec, size: d.size });
         continue;
       }
-      if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('snapshots:snapshot.noDisk', {}, 'other-machine');
+      if (spec?.type !== 'blk' || !spec.overlay)
+        throw new SnapshotError('snapshots:snapshot.noDisk', {}, 'other-machine');
       const identity = diskIdentity(spec, d.size);
       if (identity !== d.identity) {
         const same = d.sha256 !== undefined && opts.sha256 !== undefined && (await opts.sha256(d.slot)) === d.sha256;
         if (!same) {
-          throw new SnapshotError('snapshots:snapshot.otherDisk', { was: describe(d.identity), here: describe(identity) }, 'other-disk');
+          throw new SnapshotError(
+            'snapshots:snapshot.otherDisk',
+            { was: describe(d.identity), here: describe(identity) },
+            'other-disk',
+          );
         }
       }
       const plan = opts.plan?.find((p) => p.slot === d.slot);
@@ -208,14 +364,22 @@ export async function readSnapshot(
       if (!opts.resume && plan?.action === 'keep' && (await overlayMeta(spec.overlay)).generation !== plan.generation) {
         throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
       }
-      targets.set(d.slot, opts.resume || plan?.action === 'keep' ? { kind: 'skip' } : plan?.action === 'write' ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole } : { kind: 'overlay', name: spec.overlay, identity, size: d.size });
+      targets.set(
+        d.slot,
+        opts.resume || plan?.action === 'keep'
+          ? { kind: 'skip' }
+          : plan?.action === 'write'
+            ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole }
+            : { kind: 'overlay', name: spec.overlay, identity, size: d.size },
+      );
     }
   };
   /** DISK frame `index` of `rawLen` bytes refused if its slot isn't pinned or it goes past its disk's end. */
   const diskFrame = (index: number, rawLen: number) => {
     const t = targets.get(Math.floor(index / SLOT));
     if (!t) throw corrupt(msg('snapshots:snapshot.damage.unlistedDisk'));
-    if (t.kind !== 'skip' && (index % SLOT + rawLen / BLOCK - 1) * BLOCK >= t.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
+    if (t.kind !== 'skip' && ((index % SLOT) + rawLen / BLOCK - 1) * BLOCK >= t.size)
+      throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
     return t;
   };
   /** The stages of a file's frames, in the order a restore reads them: a frame of an earlier stage after a later one is refused. */
@@ -263,7 +427,8 @@ export async function readSnapshot(
     p.reduce((at, b) => (out.set(b, at), at + b.length), 0);
     return out;
   };
-  if (!parts.CORE.length || !parts.DEVS.length) throw next.done ? truncated() : corrupt(msg('snapshots:snapshot.damage.stateMissing'));
+  if (!parts.CORE.length || !parts.DEVS.length)
+    throw next.done ? truncated() : corrupt(msg('snapshots:snapshot.damage.stateMissing'));
   let host: VmState['host'];
   // The blobs DEVS names (`writeSnapshot`), made at their lengths and filled from the BLOB frames that follow.
   const blobs: Uint8Array[] = [];
@@ -271,7 +436,15 @@ export async function readSnapshot(
     host = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(join(parts.DEVS)), (_k, v: unknown) => {
       if (!v || typeof v !== 'object' || !('$blob' in v)) return v;
       const { $blob: n, length } = v as { $blob: unknown; length: unknown };
-      if (!Number.isInteger(n) || !Number.isSafeInteger(length) || (n as number) < 0 || (length as number) < 0 || (length as number) > 2 ** 32 || blobs[n as number]) throw corrupt(msg('snapshots:snapshot.damage.devices'));
+      if (
+        !Number.isInteger(n) ||
+        !Number.isSafeInteger(length) ||
+        (n as number) < 0 ||
+        (length as number) < 0 ||
+        (length as number) > 2 ** 32 ||
+        blobs[n as number]
+      )
+        throw corrupt(msg('snapshots:snapshot.damage.devices'));
       return (blobs[n as number] = new Uint8Array(length as number));
     });
   } catch {
@@ -280,28 +453,46 @@ export async function readSnapshot(
   const filled = blobs.map(() => 0);
   for (; !next.done && next.value.tag === 'BLOB'; next = await frames.next()) {
     const { index, data } = next.value;
-    const n = Math.floor(index / BLOB_CHUNKS), at = (index % BLOB_CHUNKS) * 2 ** 20;
+    const n = Math.floor(index / BLOB_CHUNKS),
+      at = (index % BLOB_CHUNKS) * 2 ** 20;
     if (!blobs[n] || at + data.length > blobs[n].length) throw corrupt(msg('snapshots:snapshot.damage.blobFit'));
     blobs[n].set(data, at);
     filled[n] += data.length;
   }
   if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt(msg('snapshots:snapshot.damage.blobMissing'));
-  if (!Array.isArray(host?.devices) || !Array.isArray(host.input) || host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)) throw corrupt(msg('snapshots:snapshot.damage.devices'));
+  if (
+    !Array.isArray(host?.devices) ||
+    !Array.isArray(host.input) ||
+    host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)
+  )
+    throw corrupt(msg('snapshots:snapshot.damage.devices'));
   phases.state = since();
   read();
   const restore: Restore = {
     core: join(parts.CORE),
     host,
     async fill(ram, spill = []) {
-      if (ram.length !== header.ramSize) throw new SnapshotError('snapshots:snapshot.otherRam', { had: Number(header.ramSize) / 2 ** 20, has: ram.length / 2 ** 20 }, 'other-machine');
+      if (ram.length !== header.ramSize)
+        throw new SnapshotError(
+          'snapshots:snapshot.otherRam',
+          { had: Number(header.ramSize) / 2 ** 20, has: ram.length / 2 ** 20 },
+          'other-machine',
+        );
       const had = header.spill === undefined ? [] : header.spill;
-      if (!Array.isArray(had) || had.some((n) => !Number.isSafeInteger(n) || n <= 0)) throw corrupt(msg('snapshots:snapshot.damage.memorySizes'));
+      if (!Array.isArray(had) || had.some((n) => !Number.isSafeInteger(n) || n <= 0))
+        throw corrupt(msg('snapshots:snapshot.damage.memorySizes'));
       const mib = (sizes: number[]) => sizes.map((n) => `${n / 2 ** 20} MiB`).join(' + '); // i18n-ignore: numbers and their unit
       if (had.join() !== spill.map((v) => v.length).join()) {
-        throw new SnapshotError('snapshots:snapshot.otherNuma', {
-          had: had.length ? msg('snapshots:snapshot.otherNuma.had', { sizes: mib(had) }) : msg('snapshots:snapshot.otherNuma.hadNone'),
-          has: spill.length ? mib(spill.map((v) => v.length)) : msg('snapshots:snapshot.otherNuma.hasNone'),
-        }, 'other-machine');
+        throw new SnapshotError(
+          'snapshots:snapshot.otherNuma',
+          {
+            had: had.length
+              ? msg('snapshots:snapshot.otherNuma.had', { sizes: mib(had) })
+              : msg('snapshots:snapshot.otherNuma.hadNone'),
+            has: spill.length ? mib(spill.map((v) => v.length)) : msg('snapshots:snapshot.otherNuma.hasNone'),
+          },
+          'other-machine',
+        );
       }
       const views = [ram, ...spill];
       const starts = ramStarts(views.map((v) => v.length));
@@ -321,11 +512,15 @@ export async function readSnapshot(
       // A write the storage refused gets the remote disks' kept blocks out of the way (`makeRoom`) and is tried once more
       // (until there's nothing left to give).
       const lands = withRoom(makeRoom);
-      const full = async () => new MsgError('snapshots:snapshot.storageFull', undefined, { cause: await storageFullError() });
+      const full = async () =>
+        new MsgError('snapshots:snapshot.storageFull', undefined, { cause: await storageFullError() });
       const rams: { spec: BlkSpec; disk: ReturnType<typeof ramDisk> }[] = [];
       try {
         for (const [slot, t] of targets) {
-          if (t.kind === 'skip') { open.set(slot, 'skip'); continue; }
+          if (t.kind === 'skip') {
+            open.set(slot, 'skip');
+            continue;
+          }
           if (t.kind === 'ram') {
             const disk = ramDisk(t.size);
             rams.push({ spec: t.spec, disk });
@@ -338,14 +533,16 @@ export async function readSnapshot(
           const was = (await overlayMeta(t.name)).generation;
           await removeOverlay(t.name);
           const files = await openOverlay(t.name, t.identity);
-          if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '', size: t.size })))) throw await full();
+          if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '', size: t.size }))))
+            throw await full();
           // Over zeros: the file's blocks are written whole, but the disk's last one may be shorter than 4 KiB, and its
           // write reads the rest of its block (none: zeros). No meta: its generation is set.
           // Unordered (no flush between a run's data and its map entries): until the restore's end the overlay is half
           // a snapshot's whatever its order, and the end flushes both (docs/devices.md "Crash and refusal").
           const disk = overlay(zeroDisk(t.size), files.data, files.map, undefined, 0, { ordered: false });
           open.set(slot, { disk, close: files.close, size: t.size });
-          if (t.whole && !(await lands(() => disk.zero(0, t.size)))) throw new MsgError('snapshots:snapshot.storageFull.whole', undefined, { cause: await storageFullError() });
+          if (t.whole && !(await lands(() => disk.zero(0, t.size))))
+            throw new MsgError('snapshots:snapshot.storageFull.whole', undefined, { cause: await storageFullError() });
         }
         for (; !next.done; next = await frames.next()) {
           const { tag, index, data } = next.value;
@@ -360,7 +557,8 @@ export async function readSnapshot(
           for (const run of diskRuns(index % SLOT, data)) {
             const at = run.block * BLOCK;
             const len = Math.min(run.count * BLOCK, o.size - at);
-            if (!(await lands(() => (run.zero ? o.disk.zero(at, len) : o.disk.write(at, run.data.subarray(0, len)))))) throw await full();
+            if (!(await lands(() => (run.zero ? o.disk.zero(at, len) : o.disk.write(at, run.data.subarray(0, len))))))
+              throw await full();
           }
         }
         for (const o of open.values()) if (o !== 'skip') o.disk.flush();
@@ -379,7 +577,9 @@ export async function readSnapshot(
 function describe(identity: string): Param {
   try {
     const d = JSON.parse(identity) as { file?: string; path?: string; size?: number; modified?: number };
-    return d.file !== undefined ? msg('snapshots:snapshot.diskFile', { file: d.file, when: new Date(d.modified ?? 0) }) : `${d.path}`;
+    return d.file !== undefined
+      ? msg('snapshots:snapshot.diskFile', { file: d.file, when: new Date(d.modified ?? 0) })
+      : `${d.path}`;
   } catch {
     return identity;
   }
@@ -392,7 +592,14 @@ function describe(identity: string): Param {
  * say). A deterministic guest takes the steps and prints what an unbroken run does. `files` has
  * each snapshot's size and the ms it took to write and to start from.
  */
-export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Module, o: BootOptions, at: number[], maxSteps = 20e9, input?: ConsoleInput, options?: (k: number) => Partial<BootOptions>) {
+export async function runThroughSnapshots(
+  wasm: BufferSource | WebAssembly.Module,
+  o: BootOptions,
+  at: number[],
+  maxSteps = 20e9,
+  input?: ConsoleInput,
+  options?: (k: number) => Partial<BootOptions>,
+) {
   const module = wasm instanceof WebAssembly.Module ? wasm : await compileCore(wasm);
   const codec = await lzCodec(module);
   let vm = await bootVm(module, o);
@@ -401,12 +608,18 @@ export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Modul
   let [console, hvc, steps] = ['', '', 0];
   const t0 = performance.now();
   for (;;) {
-    const stop = Math.min(points[0] ?? Infinity, input?.step !== undefined && steps < input.step ? input.step : Infinity);
+    const stop = Math.min(
+      points[0] ?? Infinity,
+      input?.step !== undefined && steps < input.step ? input.step : Infinity,
+    );
     const r = await vm.runAsync(Math.max(1, Math.min(100_000_000, stop - steps)));
     steps += r.steps;
     console += vm.drain();
     const idle = r.kind === Exit.IDLE;
-    if (input && (idle || steps >= (input.step ?? Infinity) || (input.after !== undefined && console.includes(input.after)))) {
+    if (
+      input &&
+      (idle || steps >= (input.step ?? Infinity) || (input.after !== undefined && console.includes(input.after)))
+    ) {
       vm.send(input.data);
       input = undefined;
       if (idle) continue;
@@ -418,13 +631,22 @@ export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Modul
       const parts: Uint8Array[] = [];
       const t = performance.now();
       if (!(await vm.pause())) throw new Error('the machine ended as it was paused');
-      const w = await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
+      const w = await writeSnapshot(
+        vm,
+        (b) => {
+          parts.push(b.slice());
+        },
+        { machine: 'test' },
+        codec,
+      );
       const saveMs = performance.now() - t;
       await vm.flush();
       hvc += vm.hvc();
       await vm.close();
       const t1 = performance.now();
-      const { restore } = await readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, { devices: o.devices });
+      const { restore } = await readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, {
+        devices: o.devices,
+      });
       vm = await bootVm(module, { ...o, ...options?.(files.length), restore });
       files.push({ bytes: w.bytes, pages: w.pages, saveMs, restoreMs: performance.now() - t1 });
     }
@@ -432,6 +654,15 @@ export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Modul
     const ms = performance.now() - t0;
     await vm.flush();
     await vm.close();
-    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: hvc + vm.hvc(), ms, pc: vm.pc(), files };
+    return {
+      ...r,
+      kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind,
+      steps,
+      console,
+      hvc: hvc + vm.hvc(),
+      ms,
+      pc: vm.pc(),
+      files,
+    };
   }
 }

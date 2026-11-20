@@ -37,15 +37,49 @@ export const BUTTONS = [12, 13, 14, 15, 8, 9, -1, -1, 5, 4, 6, 7, 0, 1, 2, 3, 10
 /** The input report's length. */
 export const REPORT_LENGTH = 20;
 /** The OUT endpoint's commands. */
-const RUMBLE = 0x08, LED = 0x03;
+const RUMBLE = 0x08,
+  LED = 0x03;
 
-const u16 = (v: number) => [v & 0xff, v >> 8 & 0xff];
+const u16 = (v: number) => [v & 0xff, (v >> 8) & 0xff];
 const CONFIG = [
-  9, 4, 0, 0, 2, 0xff, 0x5d, 0x01, 0, // interface 0: vendor class, subclass 0x5d, protocol 1 (a wired controller's)
-  7, 5, 0x81, 3, ...u16(32), 4, // interrupt IN 0x81, 32 bytes, 4 ms
-  7, 5, 0x02, 3, ...u16(32), 8, // interrupt OUT 0x02, 32 bytes, 8 ms
+  9,
+  4,
+  0,
+  0,
+  2,
+  0xff,
+  0x5d,
+  0x01,
+  0, // interface 0: vendor class, subclass 0x5d, protocol 1 (a wired controller's)
+  7,
+  5,
+  0x81,
+  3,
+  ...u16(32),
+  4, // interrupt IN 0x81, 32 bytes, 4 ms
+  7,
+  5,
+  0x02,
+  3,
+  ...u16(32),
+  8, // interrupt OUT 0x02, 32 bytes, 8 ms
 ];
-const DEVICE = new Uint8Array([18, 1, ...u16(0x0200), 0xff, 0xff, 0xff, 8, ...u16(GAMEPAD_VENDOR), ...u16(GAMEPAD_PRODUCT), ...u16(0x0114), 1, 2, 3, 1]);
+const DEVICE = new Uint8Array([
+  18,
+  1,
+  ...u16(0x0200),
+  0xff,
+  0xff,
+  0xff,
+  8,
+  ...u16(GAMEPAD_VENDOR),
+  ...u16(GAMEPAD_PRODUCT),
+  ...u16(0x0114),
+  1,
+  2,
+  3,
+  1,
+]);
 const CONFIGURATION = new Uint8Array([9, 2, ...u16(9 + CONFIG.length), 1, 1, 0, 0x80, 250, ...CONFIG]);
 /** Reports kept for a host that isn't reading: past this, the oldest go (the newest says where the pad is). */
 const QUEUE = 32;
@@ -60,9 +94,11 @@ const trigger = (v: number | undefined) => Math.round(clamp(Number.isFinite(v) ?
 export function padReport(s: PadState): Uint8Array {
   const r = new Uint8Array(REPORT_LENGTH);
   r[1] = REPORT_LENGTH;
-  const down = (i: number) => (s.pressed >>> i & 1) === 1;
+  const down = (i: number) => ((s.pressed >>> i) & 1) === 1;
   let bits = 0;
-  BUTTONS.forEach((b, i) => { if (b >= 0 && down(i)) bits |= 1 << b; });
+  BUTTONS.forEach((b, i) => {
+    if (b >= 0 && down(i)) bits |= 1 << b;
+  });
   r[2] = bits & 0xff;
   r[3] = bits >> 8;
   // A trigger that says it's pressed without a value (a digital one) is all the way in.
@@ -70,7 +106,9 @@ export function padReport(s: PadState): Uint8Array {
   r[5] = trigger(s.values[7]) || (down(7) ? 255 : 0);
   const v = new DataView(r.buffer);
   // Y up positive on the wire, as xpad reads it (ABS_Y is its complement, so ABS_Y is the Gamepad API's value scaled).
-  [axis(s.axes[0]), ~axis(s.axes[1]), axis(s.axes[2]), ~axis(s.axes[3])].forEach((a, i) => v.setInt16(6 + 2 * i, a, true));
+  [axis(s.axes[0]), ~axis(s.axes[1]), axis(s.axes[2]), ~axis(s.axes[3])].forEach((a, i) =>
+    v.setInt16(6 + 2 * i, a, true),
+  );
   return r;
 }
 
@@ -91,7 +129,11 @@ export class UsbGamepad extends VirtualDevice {
 
   /** `name`: the product string (the host's pad's name). */
   constructor(o: { name?: string; serial?: string } = {}) {
-    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['waarm64', o.name?.trim() || 'waarm64 game pad', o.serial || 'waarm64-pad'] });
+    super('full', {
+      device: DEVICE,
+      configs: [CONFIGURATION],
+      strings: ['waarm64', o.name?.trim() || 'waarm64 game pad', o.serial || 'waarm64-pad'],
+    });
   }
 
   /** The current input report. */
@@ -106,7 +148,8 @@ export class UsbGamepad extends VirtualDevice {
     this.now = r;
     if (!this.endpoint(0x81)) return; // not configured: nothing reads it (the state is kept)
     const w = this.waiting.shift();
-    if (w) return w.done({ code: 'success', actual: Math.min(REPORT_LENGTH, w.t.length), data: r.slice(0, w.t.length) });
+    if (w)
+      return w.done({ code: 'success', actual: Math.min(REPORT_LENGTH, w.t.length), data: r.slice(0, w.t.length) });
     this.queue.push(r);
     if (this.queue.length > QUEUE) this.queue.shift();
   }

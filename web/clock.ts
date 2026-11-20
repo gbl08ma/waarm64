@@ -56,7 +56,10 @@ export function clockAnswer(req: Uint8Array, now: () => bigint): Uint8Array {
 }
 
 /** The answer's status: OK, or the error a request got (for tests). */
-export const clockStatus = (answer: Uint8Array) => (answer[0] === OK ? 'ok' : ({ [EOPNOTSUPP]: 'eopnotsupp', [ENODEV]: 'enodev', [EINVAL]: 'einval' } as Record<number, string>)[answer[0]]);
+export const clockStatus = (answer: Uint8Array) =>
+  answer[0] === OK
+    ? 'ok'
+    : ({ [EOPNOTSUPP]: 'eopnotsupp', [ENODEV]: 'enodev', [EINVAL]: 'einval' } as Record<number, string>)[answer[0]];
 
 /**
  * The browser's wall clock in ns: `performance.now()`'s resolution (µs) on `Date.now()`'s time, anchored again when

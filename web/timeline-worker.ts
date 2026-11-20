@@ -5,15 +5,32 @@ import { CHUNKS, ENTERED, SLOTS } from './liveness.ts';
 import { Counter } from './vm.ts';
 import { TIMELINE_FIELDS, type Timeline } from './profiler.ts';
 
-type Start = { memory: WebAssembly.Memory; counters: number[]; live?: Float64Array; ctl: SharedArrayBuffer; periodMs: number; maxRows: number };
-const WORDS = [Counter.STEPS, Counter.JIT_COMPILE_NS, Counter.EXCEPTIONS + 0x15, Counter.IRQS, Counter.PAR_OUT_NS, Counter.PAR_DSB_WAIT_NS, Counter.PAR_LOCK_WAIT_NS, Counter.JIT_INVALIDATIONS];
+type Start = {
+  memory: WebAssembly.Memory;
+  counters: number[];
+  live?: Float64Array;
+  ctl: SharedArrayBuffer;
+  periodMs: number;
+  maxRows: number;
+};
+const WORDS = [
+  Counter.STEPS,
+  Counter.JIT_COMPILE_NS,
+  Counter.EXCEPTIONS + 0x15,
+  Counter.IRQS,
+  Counter.PAR_OUT_NS,
+  Counter.PAR_DSB_WAIT_NS,
+  Counter.PAR_LOCK_WAIT_NS,
+  Counter.JIT_INVALIDATIONS,
+];
 /** After the liveness fields: TIMELINE_FIELDS' `jitSteps`, `flushes`. */
 const TAIL = [Counter.JIT_STEPS, Counter.JIT_FLUSHES];
 
 self.onmessage = (e: MessageEvent<Start>) => {
   const { memory, counters, live, ctl, periodMs, maxRows } = e.data;
   const flag = new Int32Array(ctl);
-  const n = counters.length, width = 1 + n * TIMELINE_FIELDS.length;
+  const n = counters.length,
+    width = 1 + n * TIMELINE_FIELDS.length;
   const rows = new Float64Array(width * maxRows);
   let views = () => counters.map((c) => new BigUint64Array(memory.buffer, c, Counter.LEN));
   let vs = views();
@@ -33,6 +50,11 @@ self.onmessage = (e: MessageEvent<Start>) => {
     k++;
     Atomics.wait(flag, 0, 0, periodMs);
   }
-  const t: Timeline = { ncpus: n, periodMs, fields: [...TIMELINE_FIELDS], rows: Array.from(rows.subarray(0, k * width)) };
+  const t: Timeline = {
+    ncpus: n,
+    periodMs,
+    fields: [...TIMELINE_FIELDS],
+    rows: Array.from(rows.subarray(0, k * width)),
+  };
   self.postMessage(t);
 };

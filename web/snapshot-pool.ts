@@ -42,14 +42,14 @@ export const poolWorker: Spawn = async (heard, failed) => {
       e.preventDefault();
       failed(new Error(`a snapshot pool worker failed: ${e.message}`));
     };
-    w.onmessageerror = () => failed(new Error('a snapshot pool worker\'s reply could not be read'));
+    w.onmessageerror = () => failed(new Error("a snapshot pool worker's reply could not be read"));
     return { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => w.terminate() };
   }
   const { Worker: NodeWorker } = await import('node:worker_threads');
   const w = new NodeWorker(new URL(NODE_WORKER.pool, import.meta.url));
   w.on('message', heard);
   w.on('error', (e: Error) => failed(new Error(`a snapshot pool worker failed: ${e.message}`)));
-  w.on('messageerror', () => failed(new Error('a snapshot pool worker\'s reply could not be read')));
+  w.on('messageerror', () => failed(new Error("a snapshot pool worker's reply could not be read")));
   return { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => void w.terminate() };
 };
 
@@ -77,12 +77,16 @@ export async function startPool(
   const made: number[] = Array.from({ length: n }, () => 0);
   let broken: Error | undefined;
   let handles: Handle[] = [];
-  const end = () => { for (const h of handles) h.terminate(); };
+  const end = () => {
+    for (const h of handles) h.terminate();
+  };
   /** No reply for `stallMs` while jobs are out: the pool has failed. */
   let stall: ReturnType<typeof setTimeout> | undefined;
   const watch = () => {
     clearTimeout(stall);
-    stall = waiting.size ? setTimeout(() => fail(new Error('a snapshot pool worker stopped answering')), stallMs) : undefined;
+    stall = waiting.size
+      ? setTimeout(() => fail(new Error('a snapshot pool worker stopped answering')), stallMs)
+      : undefined;
   };
   const fail = (e: Error) => {
     broken ??= e;
@@ -95,7 +99,9 @@ export async function startPool(
   /** The size of the workers' frame buffers (their `ready`'s): a frame in one is given back to its worker. */
   let frameSize = 0;
   let settle: (ok: boolean) => void = () => {};
-  const started = new Promise<boolean>((resolve) => { settle = resolve; });
+  const started = new Promise<boolean>((resolve) => {
+    settle = resolve;
+  });
   const heard = (m: PoolReply) => {
     if (m.type === 'ready') {
       frameSize = m.frame;

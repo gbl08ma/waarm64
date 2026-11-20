@@ -13,7 +13,23 @@ import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbState, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
 import { WindowWatch } from './window.ts';
-import { CLOSE_MS, Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, stateBuffers, type DeviceSpec, type DevicesInit } from './devices.ts';
+import {
+  CLOSE_MS,
+  Devices,
+  ENTRY_WORDS,
+  EV_CONFIG,
+  VENUS_ARENA,
+  VENUS_WINDOW,
+  deviceEntry,
+  deviceShm,
+  diskIdentity,
+  fileSource,
+  ring,
+  specPorts,
+  stateBuffers,
+  type DeviceSpec,
+  type DevicesInit,
+} from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { corrupt, SnapshotError } from './snapshot-file.ts';
@@ -84,7 +100,11 @@ export type VmState = { version: number; core: Uint8Array; host: { devices: unkn
  * and `fill`, which writes the snapshot's RAM into the new VM's (zeroed) RAM, memory 0's and each spill memory's, before the core
  * restores its state.
  */
-export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8Array, spill?: Uint8Array[]): void | Promise<void> };
+export type Restore = {
+  core: Uint8Array;
+  host: VmState['host'];
+  fill(ram: Uint8Array, spill?: Uint8Array[]): void | Promise<void>;
+};
 
 /**
  * The core's imports: the shared memory, the host clock for realtime mode,
@@ -93,12 +113,23 @@ export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8
  * port to the compile worker (web/jit-compile-worker.ts; parallel SMP). `ram`: the spill memories'
  * accessor over `spill`, memory 1 first (web/spill.ts).
  */
-export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin, stall: Stall[] = [], compile?: MessagePort, spill: WebAssembly.Memory[] = []) {
+export function coreImports(
+  memory: WebAssembly.Memory,
+  clock = performance.timeOrigin,
+  stall: Stall[] = [],
+  compile?: MessagePort,
+  spill: WebAssembly.Memory[] = [],
+) {
   const hooks = stall.map((s) => stallHook(memory, s));
-  const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
+  const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) =>
+    hooks.reduce((g, h) => h(where, g), f);
   const now_ms = wrap('clock', () => clock + performance.now());
   const jit = jitHost(memory, now_ms, compile, spill);
-  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
+  return {
+    env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile },
+    ram: spillImports(spill),
+    jit,
+  };
 }
 
 /**
@@ -111,7 +142,14 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
  * inside `vm_run_cpu` (the vCPU is RUN: other vCPUs' DSBs wait for it);
  * `idle` is web/vcpu-worker.ts after `vm_run_cpu` returned IDLE (the vCPU is OUT).
  */
-export type Stall = { cpu: number; on: 'clock' | 'install' | 'idle'; addr: number; ms: number; arm?: number; after?: number };
+export type Stall = {
+  cpu: number;
+  on: 'clock' | 'install' | 'idle';
+  addr: number;
+  ms: number;
+  arm?: number;
+  after?: number;
+};
 
 /** The stall's hook for one worker: wraps an import (`clock`, `install`), or, for `idle`, returns a function that blocks if armed. */
 export function stallHook(memory: WebAssembly.Memory, s: Stall) {
@@ -129,8 +167,14 @@ export function stallHook(memory: WebAssembly.Memory, s: Stall) {
   };
   return <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F): F => {
     if (where !== s.on) return f;
-    if (where === 'idle') return (() => { block(3); }) as unknown as F;
-    return ((...a: never[]) => { block(1); return f(...a); }) as F;
+    if (where === 'idle')
+      return (() => {
+        block(3);
+      }) as unknown as F;
+    return ((...a: never[]) => {
+      block(1);
+      return f(...a);
+    }) as F;
   };
 }
 
@@ -161,7 +205,29 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * RAM puts the core's later allocations there, M8 loop 0).
  */
 /** The core's exports that return an address (every `-> *` export: tests/core-wasm.test.ts checks), past 2 GiB in a big memory. */
-export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_cpu_stop', 'vm_device', 'vm_xhci', 'vm_counters', 'vm_jit_gauge', 'vm_window_watch', 'jit_helper_report', 'panic_message'];
+export const POINTERS = [
+  'thread_alloc',
+  'vcpu_new',
+  'mem_new',
+  'jit_new',
+  'jit_stats',
+  'vm_new',
+  'vm_flash',
+  'vm_cpu',
+  'vm_exit',
+  'vm_exit_cpu',
+  'vm_console',
+  'vm_signal',
+  'vm_cpu_signal',
+  'vm_cpu_stop',
+  'vm_device',
+  'vm_xhci',
+  'vm_counters',
+  'vm_jit_gauge',
+  'vm_window_watch',
+  'jit_helper_report',
+  'panic_message',
+];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -174,14 +240,19 @@ export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
 }
 
 /** The bytes behind each core module {@link compileCore} compiled, and its copies with exact memory limits by size. */
-const coreBytes = new WeakMap<WebAssembly.Module, { bytes: Uint8Array; exact: Map<number, Promise<WebAssembly.Module>> }>();
+const coreBytes = new WeakMap<
+  WebAssembly.Module,
+  { bytes: Uint8Array; exact: Map<number, Promise<WebAssembly.Module>> }
+>();
 
 /**
  * Compiles the core and keeps its bytes, so that `bootVm` can make the copy that runs a fixed-size memory
  * ({@link exactCore}). A module compiled otherwise still boots, without that copy.
  */
 export async function compileCore(wasm: BufferSource): Promise<WebAssembly.Module> {
-  const bytes = new Uint8Array(ArrayBuffer.isView(wasm) ? wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) : wasm.slice(0));
+  const bytes = new Uint8Array(
+    ArrayBuffer.isView(wasm) ? wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) : wasm.slice(0),
+  );
   const module = await WebAssembly.compile(bytes);
   coreBytes.set(module, { bytes, exact: new Map() });
   return module;
@@ -253,20 +324,23 @@ export function memoryLimits(wasm: Uint8Array, pages: number): Uint8Array<ArrayB
         continue;
       }
       const desc = at;
-      if (kind === 0) leb(); // a function's type
+      if (kind === 0)
+        leb(); // a function's type
       else if (kind === 1) {
         at++; // the element type, then the limits
         const flags = wasm[at++];
         leb();
         if (flags & 1) leb();
-      } else if (kind === 3) at += 2; // a global's type and mutability
+      } else if (kind === 3)
+        at += 2; // a global's type and mutability
       else if (kind === 4) {
         at++;
         leb();
       } else throw new Error(`import kind ${kind}`);
       out.push(...wasm.subarray(desc, at));
     }
-    if (at !== start + size || found !== 1) throw new Error(`the import section: ${found} memories, ${at - start} of ${size} bytes`);
+    if (at !== start + size || found !== 1)
+      throw new Error(`the import section: ${found} memories, ${at - start} of ${size} bytes`);
     const section = [2, ...enc(out.length), ...out];
     const r = new Uint8Array(sectionAt + section.length + wasm.length - at);
     r.set(wasm.subarray(0, sectionAt));
@@ -316,7 +390,8 @@ export function withPanic(err: unknown, ex: WebAssembly.Exports, memory: WebAsse
     const was = e.message;
     e.message = `${was}: core panic: ${m}`;
     // Hosts report the stack, which V8 fixes (message included) once anything reads it.
-    if (e.stack !== undefined && !e.stack.includes(e.message)) e.stack = e.stack.includes(was) ? e.stack.replace(was, e.message) : `core panic: ${m}\n${e.stack}`;
+    if (e.stack !== undefined && !e.stack.includes(e.message))
+      e.stack = e.stack.includes(was) ? e.stack.replace(was, e.message) : `core panic: ${m}\n${e.stack}`;
   }
   return e;
 }
@@ -345,7 +420,15 @@ export function threadAlloc(ex: WebAssembly.Exports): ThreadBlock {
  * instance gets its own stack and TLS from `block`. Its JIT is bound to it.
  * `clock`: see {@link clockOffset}.
  */
-export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number, stall?: Stall[], compile?: MessagePort, spill: WebAssembly.Memory[] = []) {
+export function instantiateThread(
+  module: WebAssembly.Module,
+  memory: WebAssembly.Memory,
+  block: ThreadBlock,
+  clock?: number,
+  stall?: Stall[],
+  compile?: MessagePort,
+  spill: WebAssembly.Memory[] = [],
+) {
   const imports = coreImports(memory, clock, stall, compile, spill);
   const instance = new WebAssembly.Instance(module, imports);
   (instance.exports.__stack_pointer as WebAssembly.Global).value = block.stack + THREAD_STACK;
@@ -392,7 +475,12 @@ function collect() {
  * port to the compile worker (`compile`), the core hands it each module it
  * emits first, and installs it once compiled there: a hit in V8's module cache.
  */
-function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: MessagePort, spill: WebAssembly.Memory[] = []) {
+function jitHost(
+  memory: WebAssembly.Memory,
+  now_ms: () => number,
+  port?: MessagePort,
+  spill: WebAssembly.Memory[] = [],
+) {
   let table: WebAssembly.Table | undefined;
   let base = 0;
   let imports: WebAssembly.Imports = {};
@@ -410,7 +498,9 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
       const now = performance.now();
       received.set(e.data.seq, { module: e.data.module, at: now });
       // A table that doesn't install (a vCPU asleep) keeps nothing alive for long.
-      for (const [k, v] of received) if (now - v.at > RECEIVED_KEEP_MS || received.size > RECEIVED_MAX) received.delete(k); else break;
+      for (const [k, v] of received)
+        if (now - v.at > RECEIVED_KEEP_MS || received.size > RECEIVED_MAX) received.delete(k);
+        else break;
     };
     (port as { unref?(): void }).unref?.(); // Node: listening doesn't keep the worker alive
   }
@@ -419,7 +509,9 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
       table = core.exports.__indirect_function_table as WebAssembly.Table;
       base = table.length;
       // The spill memories as `env.ram1`…, which modules import for their loads' and stores' spill arms (docs/spill-memories.md).
-      imports = { env: { ...core.exports, memory, table, now_ms, ...Object.fromEntries(spill.map((m, k) => [`ram${k + 1}`, m])) } };
+      imports = {
+        env: { ...core.exports, memory, table, now_ms, ...Object.fromEntries(spill.map((m, k) => [`ram${k + 1}`, m])) },
+      };
     },
     install(ptr: number, len: number, slot: number, seq: number): number {
       if (!table) return -1;
@@ -467,7 +559,10 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
       // timelines (bench/gpu/guest-session.ts collects `waarm64-slow` lines).
       const ms = performance.now() - t0;
-      if (ms >= SLOW_INSTALL_MS) console.debug(`waarm64-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
+      if (ms >= SLOW_INSTALL_MS)
+        console.debug(
+          `waarm64-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`,
+        );
       return at;
     },
     /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
@@ -475,7 +570,10 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
       if (!port || !table) return 0;
       const bytes = new Uint8Array(len);
       bytes.set(new Uint8Array(memory.buffer, ptr >>> 0, len));
-      port.postMessage({ seq: seq >>> 0, epoch: epoch >>> 0, ready: ready >>> 0, bytes: bytes.buffer } satisfies CompileJob, [bytes.buffer]);
+      port.postMessage(
+        { seq: seq >>> 0, epoch: epoch >>> 0, ready: ready >>> 0, bytes: bytes.buffer } satisfies CompileJob,
+        [bytes.buffer],
+      );
       return 1;
     },
   };
@@ -483,13 +581,33 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
 
 /** u64 word indexes in `vm::Counters` (core/src/vm.rs). */
 export const Counter = {
-  STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MISSES: 67, TLB_WALKS: 68, TLB_FLUSHES: 69, PC: 70,
+  STEPS: 0,
+  EXCEPTIONS: 1,
+  IRQS: 65,
+  TLB_HITS: 66,
+  TLB_MISSES: 67,
+  TLB_WALKS: 68,
+  TLB_FLUSHES: 69,
+  PC: 70,
   // The JIT's (ABI 10, `jit::Stats`).
-  JIT_BLOCKS: 71, JIT_MODULES: 72, JIT_BYTES: 73, JIT_COMPILE_NS: 74, JIT_STEPS: 75, JIT_DISPATCHES: 76, JIT_INVALIDATIONS: 77, JIT_FLUSHES: 78,
+  JIT_BLOCKS: 71,
+  JIT_MODULES: 72,
+  JIT_BYTES: 73,
+  JIT_COMPILE_NS: 74,
+  JIT_STEPS: 75,
+  JIT_DISPATCHES: 76,
+  JIT_INVALIDATIONS: 77,
+  JIT_FLUSHES: 78,
   // ABI 12: instructions compiled inline and as helper calls, inline instructions run.
-  JIT_INLINE: 79, JIT_HELPERS: 80, JIT_INLINE_STEPS: 81,
+  JIT_INLINE: 79,
+  JIT_HELPERS: 80,
+  JIT_INLINE_STEPS: 81,
   // ABI 13 (static): lazy flag setters stored and elided; conditions direct, computed and from memory.
-  JIT_FLAGS_STORED: 82, JIT_FLAGS_ELIDED: 83, JIT_COND_DIRECT: 84, JIT_COND_COMPUTED: 85, JIT_COND_MEMORY: 86,
+  JIT_FLAGS_STORED: 82,
+  JIT_FLAGS_ELIDED: 83,
+  JIT_COND_DIRECT: 84,
+  JIT_COND_COMPUTED: 85,
+  JIT_COND_MEMORY: 86,
   // ABI 15: blocks in the compiled regions (JIT_BLOCKS counts regions).
   JIT_REGION_BLOCKS: 87,
   // ABI 16: edges back to a region's head (static).
@@ -500,21 +618,42 @@ export const Counter = {
   JIT_STALE: 90,
   // ABI 26 (parallel SMP): DSBs that waited for TLBI IS and their ns, TLBI IS and IC broadcasts,
   // queue drains, IDLE exits, contended platform-lock acquisitions and their ns, WFEs.
-  PAR_DSB_WAITS: 91, PAR_DSB_WAIT_NS: 92, PAR_TLBI_IS: 93, PAR_IC: 94, PAR_DRAINS: 95, PAR_IDLES: 96, PAR_LOCK_CONTENDED: 97, PAR_LOCK_WAIT_NS: 98, PAR_WFES: 99,
+  PAR_DSB_WAITS: 91,
+  PAR_DSB_WAIT_NS: 92,
+  PAR_TLBI_IS: 93,
+  PAR_IC: 94,
+  PAR_DRAINS: 95,
+  PAR_IDLES: 96,
+  PAR_LOCK_CONTENDED: 97,
+  PAR_LOCK_WAIT_NS: 98,
+  PAR_WFES: 99,
   // ns out of vm_run_cpu between runs (idle, or in the host).
   PAR_OUT_NS: 100,
   // ABI 33: instructions the block interpreter ran, blocks it decoded, times its cache started over.
-  DEC_STEPS: 101, DEC_BLOCKS: 102, DEC_CLEARS: 103,
+  DEC_STEPS: 101,
+  DEC_BLOCKS: 102,
+  DEC_CLEARS: 103,
   // ABI 36: modules installed from the compile worker, and compiled on the vCPU after waiting for it too long.
-  JIT_WORKER_INSTALLS: 104, JIT_OVERDUE: 105,
+  JIT_WORKER_INSTALLS: 104,
+  JIT_OVERDUE: 105,
   // ABI 37: times the worker's compiled module hadn't reached the vCPU yet, and runs ended early for it to arrive.
-  JIT_PARKS: 106, JIT_PARK_EXITS: 107,
+  JIT_PARKS: 106,
+  JIT_PARK_EXITS: 107,
   // ABI 46: the JIT cache's lock (acquisitions, contended ones, ns waited), ns emitting, of those under the lock, ns
   // forming batches into regions.
-  JIT_LOCKS: 108, JIT_LOCK_CONTENDED: 109, JIT_LOCK_WAIT_NS: 110, JIT_EMIT_NS: 111, JIT_EMIT_LOCKED_NS: 112, JIT_PLAN_NS: 113,
+  JIT_LOCKS: 108,
+  JIT_LOCK_CONTENDED: 109,
+  JIT_LOCK_WAIT_NS: 110,
+  JIT_EMIT_NS: 111,
+  JIT_EMIT_LOCKED_NS: 112,
+  JIT_PLAN_NS: 113,
   // ABI 47: the core's heap: the JIT block map's prunes, flushes for a heap with no room for a map to grow, flushes for a
   // table that lacked modules whose bytes were dropped; the heap bytes a table's decoded blocks and its known blocks take.
-  JIT_PRUNES: 114, JIT_RESCUES: 115, JIT_LAG_FLUSHES: 116, JIT_DEC_BYTES: 117, JIT_KNOWN_BYTES: 118,
+  JIT_PRUNES: 114,
+  JIT_RESCUES: 115,
+  JIT_LAG_FLUSHES: 116,
+  JIT_DEC_BYTES: 117,
+  JIT_KNOWN_BYTES: 118,
   // ABI 48: jump-cache misses that found the lock held and ran their block interpreted instead of waiting.
   JIT_LOCK_SKIPPED: 119,
   // ABI 50: ns the block map's prunes took (under the cache's lock).
@@ -690,7 +829,11 @@ export type BootOptions = {
 /** A plug (with `device`) or an unplug of `connector` at `step` (`BootOptions.usb.events`). */
 export type UsbEvent = { step: number; connector: number; device?: UsbIdentity | UsbVirtual };
 
-export type Firmware = { flash?: Uint8Array; flashSize?: number; fwCfg?: { name: string; data: string | Uint8Array }[] };
+export type Firmware = {
+  flash?: Uint8Array;
+  flashSize?: number;
+  fwCfg?: { name: string; data: string | Uint8Array }[];
+};
 
 /** The PL031's start in deterministic firmware runs: 2026-09-01 00:00 UTC (as core/tests/common's). */
 export const FIRMWARE_EPOCH_MS = 1_788_220_800_000;
@@ -721,7 +864,11 @@ export function fwCfgBuffer(files: { name: string; data: string | Uint8Array }[]
  * `disk` (a URL) is /dev/vda, read-only, or writable through the OPFS overlay
  * directory `overlay`.
  */
-export const guestDevices = (disk: string, overlay?: string): DeviceSpec[] => [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: disk, overlay }];
+export const guestDevices = (disk: string, overlay?: string): DeviceSpec[] => [
+  { type: 'console' },
+  { type: 'rng' },
+  { type: 'blk', url: disk, overlay },
+];
 /**
  * The Buildroot guest's device tests (`/test-devices.sh`, `/test-input.sh`):
  * its devices plus net on the loopback adapter, 9p (tag `host`, with
@@ -735,8 +882,20 @@ export const testDevices = (disk: string, keyboard?: MessagePort, tablet?: Messa
   { type: 'input', kind: 'tablet', port: tablet },
 ];
 /** What the test agents inject when the guest sets a keyboard LED (core/tests/common `KEY_EVENTS`, `TABLET_EVENTS`). */
-export const KEY_EVENTS = [[1, 30, 1], [0, 0, 0], [1, 30, 0], [0, 0, 0]];
-export const TABLET_EVENTS = [[3, 0, 16384], [3, 1, 8192], [1, 272, 1], [0, 0, 0], [1, 272, 0], [0, 0, 0]];
+export const KEY_EVENTS = [
+  [1, 30, 1],
+  [0, 0, 0],
+  [1, 30, 0],
+  [0, 0, 0],
+];
+export const TABLET_EVENTS = [
+  [3, 0, 16384],
+  [3, 1, 8192],
+  [1, 272, 1],
+  [0, 0, 0],
+  [1, 272, 0],
+  [0, 0, 0],
+];
 /**
  * The console input test (core/tests/common `CONSOLE_INPUT`): the Buildroot
  * guest with `-- /bin/sh` gets this on its serial console at step
@@ -744,21 +903,32 @@ export const TABLET_EVENTS = [[3, 0, 16384], [3, 1, 8192], [1, 272, 1], [0, 0, 0
  * `read`, then 100 lines (5.5 KB with the rest: more than the 4 KiB RX ring)
  * whose md5sum it prints before it exits.
  */
-export const CONSOLE_INPUT = 'stty -echo; read l; echo "waarm64: got [$l]"; head -n 100 | md5sum; exit\nhello from the host\n' +
-  Array.from({ length: 100 }, (_, i) => `line ${String(i).padStart(3, '0')}: the quick brown fox jumps over the lazy dog\n`).join('');
+export const CONSOLE_INPUT =
+  'stty -echo; read l; echo "waarm64: got [$l]"; head -n 100 | md5sum; exit\nhello from the host\n' +
+  Array.from(
+    { length: 100 },
+    (_, i) => `line ${String(i).padStart(3, '0')}: the quick brown fox jumps over the lazy dog\n`,
+  ).join('');
 export const CONSOLE_INPUT_STEP = 30_000_000;
 export const CONSOLE_INPUT_WANT = 'waarm64: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n';
 /** Their kernel command line. */
 /** `jit_helper_report` of the vCPU at `cpu` (a `jit_new` vCPU, or `vm_cpu`), parsed. */
-export function helperReport(ex: { jit_helper_report(v: number): number }, memory: WebAssembly.Memory, cpu: number): { op: string; calls: number }[] {
+export function helperReport(
+  ex: { jit_helper_report(v: number): number },
+  memory: WebAssembly.Memory,
+  cpu: number,
+): { op: string; calls: number }[] {
   const p = ex.jit_helper_report(cpu);
   if (!p) return [];
   const bytes = new Uint8Array(memory.buffer, p);
   const text = new TextDecoder().decode(bytes.slice(0, bytes.indexOf(0)));
-  return text.split('\n').filter(Boolean).map((l) => {
-    const [op, n] = l.split(' ');
-    return { op, calls: Number(n) };
-  });
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => {
+      const [op, n] = l.split(' ');
+      return { op, calls: Number(n) };
+    });
 }
 
 export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
@@ -768,7 +938,12 @@ export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro
  * Alpine: OpenRC's local service runs images/alpine/waarm64.start.
  */
 export const DISTROS = {
-  alpine: { kernel: 'alpine/Image', initrd: 'alpine/initramfs-virt', disk: 'alpine/rootfs.ext4', cmdline: 'console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro' },
+  alpine: {
+    kernel: 'alpine/Image',
+    initrd: 'alpine/initramfs-virt',
+    disk: 'alpine/rootfs.ext4',
+    cmdline: 'console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro',
+  },
 } as const;
 
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.
@@ -828,10 +1003,17 @@ export function warmWorkers(ncpus: number, compile: boolean): WarmWorkers | unde
   const failed = new WeakSet<Worker>();
   const spawn = (which: WorkerKind) => {
     const w = newWorker(which);
-    w.onerror = (e) => { e.preventDefault(); failed.add(w); };
+    w.onerror = (e) => {
+      e.preventDefault();
+      failed.add(w);
+    };
     return w;
   };
-  const ready: Record<WorkerKind, Worker[]> = { device: [spawn('device')], vcpu: Array.from({ length: ncpus }, () => spawn('vcpu')), compile: compile ? [spawn('compile')] : [] };
+  const ready: Record<WorkerKind, Worker[]> = {
+    device: [spawn('device')],
+    vcpu: Array.from({ length: ncpus }, () => spawn('vcpu')),
+    compile: compile ? [spawn('compile')] : [],
+  };
   return {
     take(which) {
       const w = ready[which].shift();
@@ -864,7 +1046,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   // after a Venus machine's renderer arena there (web/venus-host.ts, vk/README.md), before node 1's RAM.
   const venus = (o.devices ?? []).some((d) => d.type === 'gpu' && d.virgl && d.venus);
   const windowBytes = o.window ?? (venus ? VENUS_WINDOW : 0);
-  const windowAt = windowBytes ? o.windowAt ?? (venus ? VENUS_ARENA : 0) : 0;
+  const windowAt = windowBytes ? (o.windowAt ?? (venus ? VENUS_ARENA : 0)) : 0;
   const spillAt = windowBytes ? windowAt + windowBytes : 0;
   const rest = 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
   const pages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest))) + rest) / 65536;
@@ -873,12 +1055,17 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   // Memories 1 and up (docs/spill-memories.md), each at its final size: the spill memories' RAM, memory 1's after
   // what it holds before it (`VmConfig::memory_sizes`).
   const spillSizes = o.spill ?? [];
-  if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES)) throw new RangeError(`spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`);
+  if (spillSizes.length > MAX_SPILL || spillSizes.some((s) => !s || s % 65536 || s > MAX_SPILL_BYTES))
+    throw new RangeError(
+      `spill memories ${spillSizes.join(', ')}: at most ${MAX_SPILL}, each 64 KiB to 4 GiB in 64 KiB steps`,
+    );
   const memSizes = spillAt ? [spillAt + (spillSizes[0] ?? 0), ...spillSizes.slice(1)] : spillSizes;
-  if (memSizes[0] > MAX_SPILL_BYTES) throw new RangeError(`memory 1 holds the window at ${windowAt} and node 1's ${spillSizes[0]} bytes: past 4 GiB`);
+  if (memSizes[0] > MAX_SPILL_BYTES)
+    throw new RangeError(`memory 1 holds the window at ${windowAt} and node 1's ${spillSizes[0]} bytes: past 4 GiB`);
   const spill = memSizes.map((s) => new WebAssembly.Memory({ initial: s / 65536, maximum: s / 65536, shared: true }));
   /** Each spill memory's RAM, memory 1 first (node 1's after the window there). */
-  const spillRam = () => spill.slice(0, spillSizes.length).map((m, k) => new Uint8Array(m.buffer, k ? 0 : spillAt, spillSizes[k]));
+  const spillRam = () =>
+    spill.slice(0, spillSizes.length).map((m, k) => new Uint8Array(m.buffer, k ? 0 : spillAt, spillSizes[k]));
   const first = wasm instanceof WebAssembly.Module ? wasm : await compileCore(wasm);
   // The core that runs a fixed memory declares its exact size: compiled while the first instance lays the memory out.
   const exact = fixed && o.exactCore !== false ? exactCore(first, pages) : undefined;
@@ -894,31 +1081,34 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const scratch = memory.grow(1) * 65536;
   const ram = memory.grow(o.ramSize / 65536) * 65536;
   const bytes = () => new Uint8Array(memory.buffer);
-  const specs = await Promise.all((o.devices ?? []).map(async (d) => {
-    if (d.type === 'gpu' && d.venus) return { ...d, window: windowBytes };
-    if (d.type !== 'blk' || d.size !== undefined) return d;
-    if (d.source || d.stored) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : d.stored ? 'stored disk' : 'blank disk'} needs a size`);
-    if (!d.url && !d.file) throw new Error('a disk with no image (url, file or source)');
-    // The capacity: a qcow2 header's virtual size, or the file size.
-    if (d.file) {
-      const head = new Uint8Array(await d.file.slice(0, 32).arrayBuffer());
-      return { ...d, size: isQcow2(head) ? qcow2Size(head) : d.file.size };
-    }
-    if (d.url!.startsWith('file:')) {
-      const f = await fileSource(d.url!);
-      const head = f.read(0, 32)!;
-      f.close?.();
-      return { ...d, size: isQcow2(head) ? qcow2Size(head) : f.size };
-    }
-    if (isManifestUrl(d.url!)) {
-      const { manifest, head } = await chunkedHead(d.url!);
-      return { ...d, size: isQcow2(head) ? qcow2Size(head) : manifest.size };
-    }
-    const r = await fetch(d.url!, { headers: { Range: 'bytes=0-31' } });
-    if (r.status !== 206) throw new Error(`${d.url}: ${r.status}`);
-    const head = new Uint8Array(await r.arrayBuffer());
-    return { ...d, size: isQcow2(head) ? qcow2Size(head) : Number(r.headers.get('content-range')?.split('/')[1]) };
-  }));
+  const specs = await Promise.all(
+    (o.devices ?? []).map(async (d) => {
+      if (d.type === 'gpu' && d.venus) return { ...d, window: windowBytes };
+      if (d.type !== 'blk' || d.size !== undefined) return d;
+      if (d.source || d.stored)
+        throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : d.stored ? 'stored disk' : 'blank disk'} needs a size`);
+      if (!d.url && !d.file) throw new Error('a disk with no image (url, file or source)');
+      // The capacity: a qcow2 header's virtual size, or the file size.
+      if (d.file) {
+        const head = new Uint8Array(await d.file.slice(0, 32).arrayBuffer());
+        return { ...d, size: isQcow2(head) ? qcow2Size(head) : d.file.size };
+      }
+      if (d.url!.startsWith('file:')) {
+        const f = await fileSource(d.url!);
+        const head = f.read(0, 32)!;
+        f.close?.();
+        return { ...d, size: isQcow2(head) ? qcow2Size(head) : f.size };
+      }
+      if (isManifestUrl(d.url!)) {
+        const { manifest, head } = await chunkedHead(d.url!);
+        return { ...d, size: isQcow2(head) ? qcow2Size(head) : manifest.size };
+      }
+      const r = await fetch(d.url!, { headers: { Range: 'bytes=0-31' } });
+      if (r.status !== 206) throw new Error(`${d.url}: ${r.status}`);
+      const head = new Uint8Array(await r.arrayBuffer());
+      return { ...d, size: isQcow2(head) ? qcow2Size(head) : Number(r.headers.get('content-range')?.split('/')[1]) };
+    }),
+  );
   const parallel = o.parallel ?? false;
   const deterministic = !o.realtime && !parallel;
   const ncpus = o.ncpus ?? 1;
@@ -943,21 +1133,52 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     // laid the memory out (it can grow it; the exact one can't) and isn't called again.
     if (exact) {
       module = await exact;
-      instance = instantiateThread(module, memory, threadAlloc(instance.exports), undefined, undefined, undefined, spill);
+      instance = instantiateThread(
+        module,
+        memory,
+        threadAlloc(instance.exports),
+        undefined,
+        undefined,
+        undefined,
+        spill,
+      );
       ex = unsigned(instance.exports) as unknown as Exports;
     }
   }
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = cpuMask(o);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 36).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
-    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 36).set([
+    BigInt(o.ramSize),
+    deterministic ? 1n : 0n,
+    0n,
+    0n,
+    BigInt(scratch + S_DEVICES),
+    BigInt(specs.length),
+    BigInt(fb.width),
+    BigInt(fb.height),
+    BigInt(o.jit ?? 0),
+    features,
+    BigInt(ncpus),
+    0n,
+    parallel ? 1n : 0n,
+    rtc,
+    fw ? 1n : 0n,
+    fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n,
+    BigInt(fwCfgAt),
+    BigInt(fwCfg?.length ?? 0),
+    fixed ? BigInt(pages) : 0n,
+    ...seed,
+    o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
     BigInt(o.jitBytes ?? 0), // the JIT's code cache budget (ABI 44)
     BigInt(windowBytes), // the host-visible window (ABI 53)
     BigInt(windowAt), // where it is in memory 1 (ABI 55)
-    o.fma !== false && fusedFma() ? 1n : 0n]); // the JIT's FMA forms on the host's fused madd (ABI 58)
-  new BigUint64Array(memory.buffer, scratch + S_DEVICES, ENTRY_WORDS * specs.length).set(specs.flatMap((d) => [...deviceEntry(d).entry, deviceShm(d)]));
+    o.fma !== false && fusedFma() ? 1n : 0n,
+  ]); // the JIT's FMA forms on the host's fused madd (ABI 58)
+  new BigUint64Array(memory.buffer, scratch + S_DEVICES, ENTRY_WORDS * specs.length).set(
+    specs.flatMap((d) => [...deviceEntry(d).entry, deviceShm(d)]),
+  );
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
   // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB.
@@ -979,7 +1200,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize), spillRam());
     const { core } = o.restore;
     const at = ex.thread_alloc(core.length, 16);
-    if (!at) throw new Error('no memory for the snapshot\'s state');
+    if (!at) throw new Error("no memory for the snapshot's state");
     bytes().set(core, at);
     let r: number;
     try {
@@ -987,16 +1208,27 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     } catch (err) {
       throw withPanic(err, ex, memory);
     }
-    if (r === 1) throw new SnapshotError('snapshots:vm.otherVersion', { format: ex.snapshot_version() }, 'other-version');
+    if (r === 1)
+      throw new SnapshotError('snapshots:vm.otherVersion', { format: ex.snapshot_version() }, 'other-version');
     if (r === 2) throw new SnapshotError('snapshots:vm.otherHardware', {}, 'other-machine');
     if (r) throw corrupt(msg('snapshots:vm.damage.inconsistent'));
   } else {
     if (fw?.flash) {
-      if (fw.flash.length !== flashSize) throw new Error(`firmware.flash: ${fw.flash.length} bytes, the bank has ${flashSize}`);
+      if (fw.flash.length !== flashSize)
+        throw new Error(`firmware.flash: ${fw.flash.length} bytes, the bank has ${flashSize}`);
       bytes().set(fw.flash, flashAt);
     }
     const initrdLen = BigInt(o.initrd?.length ?? 0);
-    if (ex.vm_boot(vm, BigInt(RAM_BASE + kernelOff), BigInt(RAM_BASE + initrdOff), initrdLen, scratch + S_CMDLINE, cmd.length)) {
+    if (
+      ex.vm_boot(
+        vm,
+        BigInt(RAM_BASE + kernelOff),
+        BigInt(RAM_BASE + initrdOff),
+        initrdLen,
+        scratch + S_CMDLINE,
+        cmd.length,
+      )
+    ) {
       throw new Error('vm_boot rejected the Image or layout');
     }
     Devices.writeConfig(memory, shared, specs);
@@ -1007,14 +1239,41 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const stops = parallel ? Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_stop(vm, i)) : [];
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
-  const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
+  const xhci = o.usb
+    ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach }
+    : undefined;
   // Each device's two I/O byte counters (`DevicesInit.io`), shared with the device worker that adds to them, then the xHCI's.
   const ioBytes = 16 * (specs.length + 1);
-  const io = new Float64Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(ioBytes) : new ArrayBuffer(ioBytes));
+  const io = new Float64Array(
+    typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(ioBytes) : new ArrayBuffer(ioBytes),
+  );
   // The window is memory 1's bytes at `windowAt`; its write-watch's words are memory 0's.
   const venusWindow = windowBytes ? { at: windowAt, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
   const layout = ramLayout(o.ramSize, spillSizes, windowBytes, spillAt);
-  const devices = await deviceHost({ memory, core: first, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, stops, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice, o.warm);
+  const devices = await deviceHost(
+    {
+      memory,
+      core: first,
+      shared,
+      ram,
+      ramSize: o.ramSize,
+      layout,
+      window: venusWindow,
+      spill,
+      signal,
+      specs,
+      deterministic,
+      wakes,
+      stops,
+      state: o.restore?.host.devices,
+      xhci,
+      io,
+    },
+    scratch + S_BELL,
+    parallel,
+    o.onNotice,
+    o.warm,
+  );
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -1057,7 +1316,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     const tail = Atomics.load(u32, rx / 4 + 1);
     const start = Atomics.load(u32, rx / 4);
     let head = start;
-    while (queued.length && ((head - tail) >>> 0) < RING) {
+    while (queued.length && (head - tail) >>> 0 < RING) {
       const chunk = queued[0];
       const n = Math.min(chunk.length, RING - ((head - tail) >>> 0));
       for (let k = 0; k < n; k++) buf[rx + 8 + (((head + k) >>> 0) % RING)] = chunk[k];
@@ -1086,9 +1345,31 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const gauge = ex.vm_jit_gauge(vm);
   const counters = blocks[0];
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
-  const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
+  const counter = (i: number) =>
+    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS, warm: o.warm }) : undefined;
+  const par = parallel
+    ? coordinator({
+        module,
+        memory,
+        spill,
+        instance,
+        vm,
+        ncpus,
+        bell: scratch + S_BELL,
+        ctl: scratch + S_CTL,
+        pause: scratch + S_PAUSE,
+        parked: scratch + S_PARKED,
+        start: scratch + S_START,
+        raise,
+        clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP),
+        quiesce: () => devices.quiesce(),
+        stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })),
+        compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false,
+        yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS,
+        warm: o.warm,
+      })
+    : undefined;
   if (!par) o.warm?.end();
   const RING_HALF = RING / 2;
   const txUsed = () => {
@@ -1145,7 +1426,12 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
       for (let tries = 0, until = performance.now() + QUIET_MS; tries < 1000 || performance.now() < until; tries++) {
         // Takes the completions the backends left, as the run loop would at its next boundary.
         const n = ex.vm_snapshot_size(vm);
-        if (n === 0xffff_ffff_ffff_ffffn) throw new MsgError('snapshots:vm.cantSaveNow', {}, { cause: o.usb ? msg('snapshots:vm.cantSaveNow.usb') : msg('snapshots:vm.cantSaveNow.buffers') });
+        if (n === 0xffff_ffff_ffff_ffffn)
+          throw new MsgError(
+            'snapshots:vm.cantSaveNow',
+            {},
+            { cause: o.usb ? msg('snapshots:vm.cantSaveNow.usb') : msg('snapshots:vm.cantSaveNow.buffers') },
+          );
         if (n === 0n) {
           // A device has something for its backend (chains that hadn't fit, an event): serve it.
           await devices.quiesce();
@@ -1178,12 +1464,31 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
      * (docs/machines.md §5.1: what the snapshot pins; asking moves the next change's generation on);
      * `diskBlocks` reads some of them.
      */
-    async disks(): Promise<{ slot: number; identity: string; size: number; blocks: Uint32Array; overlay?: string; generation?: number; ram?: boolean }[]> {
+    async disks(): Promise<
+      {
+        slot: number;
+        identity: string;
+        size: number;
+        blocks: Uint32Array;
+        overlay?: string;
+        generation?: number;
+        ram?: boolean;
+      }[]
+    > {
       const out = [];
       for (const [slot, d] of specs.entries()) {
         if (d.type !== 'blk' || !(d.overlay || d.source === 'ram')) continue;
         const w = await devices.written(slot);
-        if (w) out.push({ slot, identity: diskIdentity(d, d.size ?? 0), size: d.size ?? 0, blocks: w.blocks, overlay: d.overlay, generation: w.generation, ...(d.source === 'ram' ? { ram: true } : {}) });
+        if (w)
+          out.push({
+            slot,
+            identity: diskIdentity(d, d.size ?? 0),
+            size: d.size ?? 0,
+            blocks: w.blocks,
+            overlay: d.overlay,
+            generation: w.generation,
+            ...(d.source === 'ram' ? { ram: true } : {}),
+          });
       }
       return out;
     },
@@ -1217,7 +1522,10 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     /** The backends' state (`Devices.save`: for a snapshot; a test reads the display's hashes from it), with the devices quiet. */
     /** Device `i`'s virtio status register (bit 2 is DRIVER_OK: a guest driver is using it). */
     deviceStatus: (i: number) => Atomics.load(new Uint32Array(memory.buffer), (shared[i] + 4) / 4),
-    deviceState: async () => { await devices.quiesce(); return devices.save(); },
+    deviceState: async () => {
+      await devices.quiesce();
+      return devices.save();
+    },
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
     framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,
     /** A copy of the firmware configuration's flash bank (the variable store), to save once the vCPUs stopped; undefined without one. */
@@ -1241,27 +1549,56 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     hostUse: () => {
       const h = new BigUint64Array(memory.buffer, scratch + S_HEAP, 2);
       ex.heap_stats(scratch + S_HEAP);
-      const g = (i: number) => (gauge ? Number(Atomics.load(new BigUint64Array(memory.buffer, gauge, GAUGE_WORDS), i)) : 0);
-      return { ramBytes: o.ramSize + spillSizes.reduce((a, b) => a + b, 0), heapLive: Number(h[0]), heapPeak: Number(h[1]), jitLiveBytes: g(0), jitModules: g(1), jitBudget: g(2), jitEpochs: g(3), jitLimit: g(4), jitKeys: g(5), jitKeyBytes: g(6), jitHeld: g(7) };
+      const g = (i: number) =>
+        gauge ? Number(Atomics.load(new BigUint64Array(memory.buffer, gauge, GAUGE_WORDS), i)) : 0;
+      return {
+        ramBytes: o.ramSize + spillSizes.reduce((a, b) => a + b, 0),
+        heapLive: Number(h[0]),
+        heapPeak: Number(h[1]),
+        jitLiveBytes: g(0),
+        jitModules: g(1),
+        jitBudget: g(2),
+        jitEpochs: g(3),
+        jitLimit: g(4),
+        jitKeys: g(5),
+        jitKeyBytes: g(6),
+        jitHeld: g(7),
+      };
     },
     /** Caps the JIT's budget at `bytes` (the gauge's limit word, ABI 45; at least 16 MiB; 0: the machine's budget): the page's memory signal. */
-    setJitLimit: (bytes: number) => { if (gauge) Atomics.store(new BigUint64Array(memory.buffer, gauge, GAUGE_WORDS), 4, BigInt(Math.max(0, Math.round(bytes)))); },
+    setJitLimit: (bytes: number) => {
+      if (gauge)
+        Atomics.store(new BigUint64Array(memory.buffer, gauge, GAUGE_WORDS), 4, BigInt(Math.max(0, Math.round(bytes))));
+    },
     heapUse: () => {
       const w = new Uint32Array(memory.buffer);
-      const nonzero = (page: number) => { for (let i = page * 1024, e = i + 1024; i < e; i++) if (w[i]) return true; return false; };
+      const nonzero = (page: number) => {
+        for (let i = page * 1024, e = i + 1024; i < e; i++) if (w[i]) return true;
+        return false;
+      };
       const reserve = (fwCfg ? fwCfgAt + Math.ceil(fwCfg.length / 65536) * 65536 : ram + o.ramSize) / 4096;
-      let below = 0, touched = 0, high = 0;
+      let below = 0,
+        touched = 0,
+        high = 0;
       const buckets: number[] = []; // MiB touched in each 32 MiB of the reserve
       for (let p = 0; p < scratch / 4096; p++) if (nonzero(p)) below++;
       // A Venus machine's renderer arena, memory 1's first bytes, is counted apart (its data and stack at its base, its
       // heap upward from them: the highest touched page is its high-water mark).
       const arena = venus ? VENUS_ARENA : 0;
       const w1 = arena ? new Uint32Array(spill[0].buffer, 0, arena / 4) : undefined;
-      let arenaTouched = 0, arenaHigh = 0;
+      let arenaTouched = 0,
+        arenaHigh = 0;
       for (let p = 0; p < arena / 4096; p++) {
         let any = false;
-        for (let i = p * 1024, e = i + 1024; i < e; i++) if (w1![i]) { any = true; break; }
-        if (any) { arenaTouched++; arenaHigh = p + 1; }
+        for (let i = p * 1024, e = i + 1024; i < e; i++)
+          if (w1![i]) {
+            any = true;
+            break;
+          }
+        if (any) {
+          arenaTouched++;
+          arenaHigh = p + 1;
+        }
       }
       // The allocator's segment record sits at the reserve's end: the high-water mark leaves out the last 64 KiB.
       const top = memory.buffer.byteLength / 4096;
@@ -1272,7 +1609,16 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
         const b = Math.floor((p - reserve) / 8192);
         buckets[b] = (buckets[b] ?? 0) + 1 / 256;
       }
-      return { belowBytes: below * 4096, reserveBytes: top * 4096 - reserve * 4096, touchedBytes: touched * 4096, highBytes: high * 4096, buckets: Array.from(buckets, (x) => Math.round(x ?? 0)), arenaBytes: arena, arenaTouchedBytes: arenaTouched * 4096, arenaHighBytes: arenaHigh * 4096 };
+      return {
+        belowBytes: below * 4096,
+        reserveBytes: top * 4096 - reserve * 4096,
+        touchedBytes: touched * 4096,
+        highBytes: high * 4096,
+        buckets: Array.from(buckets, (x) => Math.round(x ?? 0)),
+        arenaBytes: arena,
+        arenaTouchedBytes: arenaTouched * 4096,
+        arenaHighBytes: arenaHigh * 4096,
+      };
     },
     cpu: ex.vm_cpu(vm, 0),
     /** Byte address of vCPU 0's `vm::Counters` in `memory` (u64s, read with Atomics.load; its PC word is vCPU 0's). */
@@ -1295,7 +1641,8 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
      */
     deviceIo: () => io,
     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
-    cpuStats: () => blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
+    cpuStats: () =>
+      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
     helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
     /**
@@ -1335,7 +1682,9 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
           const none = ns === 0xffff_ffff_ffff_ffffn;
           const ms = none ? (o.idleLimitMs ?? Infinity) : Number(ns) / 1e6;
           if (Atomics.load(sig, 0) === 0 && Atomics.wait(sig, 0, 0, ms) === 'timed-out' && none) {
-            throw new Error(`idle ${ms} ms with no timer deadline and no signal at pc 0x${new BigUint64Array(memory.buffer, ex.vm_cpu(vm, 0) + 256, 1)[0].toString(16)}; device requests in flight: ${devices.inFlight()}`);
+            throw new Error(
+              `idle ${ms} ms with no timer deadline and no signal at pc 0x${new BigUint64Array(memory.buffer, ex.vm_cpu(vm, 0) + 256, 1)[0].toString(16)}; device requests in flight: ${devices.inFlight()}`,
+            );
           }
           continue;
         }
@@ -1404,7 +1753,11 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     /** What a pause leaves: the doorbell's rung and served words, the signal word and whether the vCPUs are held. */
     paused: () => {
       const i32 = new Int32Array(memory.buffer);
-      return { bell: [i32[(scratch + S_BELL) / 4], i32[(scratch + S_BELL) / 4 + 1]], signal: i32[signal / 4], held: par?.held() ?? false };
+      return {
+        bell: [i32[(scratch + S_BELL) / 4], i32[(scratch + S_BELL) / 4 + 1]],
+        signal: i32[signal / 4],
+        held: par?.held() ?? false,
+      };
     },
     /** Stops the vCPUs and releases the backends; resolves once their files are closed. */
     close: () => {
@@ -1425,26 +1778,68 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
 /** A snapshot of counters read through `n` (word index → value); exceptions by EC only where non-zero. */
 function stats(n: (i: number) => number) {
   const exceptions: Record<string, number> = {};
-  for (let ec = 0; ec < 64; ec++) if (n(Counter.EXCEPTIONS + ec)) exceptions[`0x${ec.toString(16)}`] = n(Counter.EXCEPTIONS + ec);
+  for (let ec = 0; ec < 64; ec++)
+    if (n(Counter.EXCEPTIONS + ec)) exceptions[`0x${ec.toString(16)}`] = n(Counter.EXCEPTIONS + ec);
   return {
-    steps: n(Counter.STEPS), irqs: n(Counter.IRQS), exceptions, tlbMisses: n(Counter.TLB_MISSES), tlbWalks: n(Counter.TLB_WALKS), tlbFlushes: n(Counter.TLB_FLUSHES),
+    steps: n(Counter.STEPS),
+    irqs: n(Counter.IRQS),
+    exceptions,
+    tlbMisses: n(Counter.TLB_MISSES),
+    tlbWalks: n(Counter.TLB_WALKS),
+    tlbFlushes: n(Counter.TLB_FLUSHES),
     jit: {
-      blocks: n(Counter.JIT_BLOCKS), modules: n(Counter.JIT_MODULES), bytes: n(Counter.JIT_BYTES), compileNs: n(Counter.JIT_COMPILE_NS),
-      steps: n(Counter.JIT_STEPS), dispatches: n(Counter.JIT_DISPATCHES), invalidations: n(Counter.JIT_INVALIDATIONS), flushes: n(Counter.JIT_FLUSHES),
-      inline: n(Counter.JIT_INLINE), helpers: n(Counter.JIT_HELPERS), inlineSteps: n(Counter.JIT_INLINE_STEPS),
-      flagsStored: n(Counter.JIT_FLAGS_STORED), flagsElided: n(Counter.JIT_FLAGS_ELIDED),
-      condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
-      regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
-      decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
-      workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
-      locks: n(Counter.JIT_LOCKS), lockContended: n(Counter.JIT_LOCK_CONTENDED), lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
-      emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
-      prunes: n(Counter.JIT_PRUNES), rescues: n(Counter.JIT_RESCUES), lagFlushes: n(Counter.JIT_LAG_FLUSHES),
-      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED), pruneNs: n(Counter.JIT_PRUNE_NS),
+      blocks: n(Counter.JIT_BLOCKS),
+      modules: n(Counter.JIT_MODULES),
+      bytes: n(Counter.JIT_BYTES),
+      compileNs: n(Counter.JIT_COMPILE_NS),
+      steps: n(Counter.JIT_STEPS),
+      dispatches: n(Counter.JIT_DISPATCHES),
+      invalidations: n(Counter.JIT_INVALIDATIONS),
+      flushes: n(Counter.JIT_FLUSHES),
+      inline: n(Counter.JIT_INLINE),
+      helpers: n(Counter.JIT_HELPERS),
+      inlineSteps: n(Counter.JIT_INLINE_STEPS),
+      flagsStored: n(Counter.JIT_FLAGS_STORED),
+      flagsElided: n(Counter.JIT_FLAGS_ELIDED),
+      condDirect: n(Counter.JIT_COND_DIRECT),
+      condComputed: n(Counter.JIT_COND_COMPUTED),
+      condMemory: n(Counter.JIT_COND_MEMORY),
+      regionBlocks: n(Counter.JIT_REGION_BLOCKS),
+      backEdges: n(Counter.JIT_BACK_EDGES),
+      tierUps: n(Counter.JIT_TIER_UPS),
+      stale: n(Counter.JIT_STALE),
+      decSteps: n(Counter.DEC_STEPS),
+      decoded: n(Counter.DEC_BLOCKS),
+      decClears: n(Counter.DEC_CLEARS),
+      workerInstalls: n(Counter.JIT_WORKER_INSTALLS),
+      overdue: n(Counter.JIT_OVERDUE),
+      parks: n(Counter.JIT_PARKS),
+      parkExits: n(Counter.JIT_PARK_EXITS),
+      locks: n(Counter.JIT_LOCKS),
+      lockContended: n(Counter.JIT_LOCK_CONTENDED),
+      lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
+      emitNs: n(Counter.JIT_EMIT_NS),
+      emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS),
+      planNs: n(Counter.JIT_PLAN_NS),
+      prunes: n(Counter.JIT_PRUNES),
+      rescues: n(Counter.JIT_RESCUES),
+      lagFlushes: n(Counter.JIT_LAG_FLUSHES),
+      decBytes: n(Counter.JIT_DEC_BYTES),
+      knownBytes: n(Counter.JIT_KNOWN_BYTES),
+      lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
+      pruneNs: n(Counter.JIT_PRUNE_NS),
     },
     par: {
-      dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
-      drains: n(Counter.PAR_DRAINS), idles: n(Counter.PAR_IDLES), lockContended: n(Counter.PAR_LOCK_CONTENDED), lockWaitNs: n(Counter.PAR_LOCK_WAIT_NS), wfes: n(Counter.PAR_WFES), outNs: n(Counter.PAR_OUT_NS),
+      dsbWaits: n(Counter.PAR_DSB_WAITS),
+      dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS),
+      tlbiIs: n(Counter.PAR_TLBI_IS),
+      ic: n(Counter.PAR_IC),
+      drains: n(Counter.PAR_DRAINS),
+      idles: n(Counter.PAR_IDLES),
+      lockContended: n(Counter.PAR_LOCK_CONTENDED),
+      lockWaitNs: n(Counter.PAR_LOCK_WAIT_NS),
+      wfes: n(Counter.PAR_WFES),
+      outNs: n(Counter.PAR_OUT_NS),
     },
   };
 }
@@ -1459,7 +1854,26 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number; warm?: WarmWorkers }) {
+function coordinator(c: {
+  module: WebAssembly.Module;
+  memory: WebAssembly.Memory;
+  spill: WebAssembly.Memory[];
+  instance: WebAssembly.Instance;
+  vm: number;
+  ncpus: number;
+  bell: number;
+  ctl: number;
+  pause: number;
+  parked: number;
+  start: number;
+  raise: (bits: number) => void;
+  clearStop: () => void;
+  quiesce: () => Promise<void>;
+  stall: Stall[];
+  compileWorker: boolean;
+  yieldMs: number;
+  warm?: WarmWorkers;
+}) {
   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -1488,7 +1902,8 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   };
   const ended = (m: VcpuEnd) => {
     stopped++;
-    if (m.type === 'error') error ??= new Error(`vCPU ${m.cpu}: ${m.message}${panicNote(m.message, c.instance.exports, c.memory)}`);
+    if (m.type === 'error')
+      error ??= new Error(`vCPU ${m.cpu}: ${m.message}${panicNote(m.message, c.instance.exports, c.memory)}`);
     else if (m.kind !== Exit.STOP) end ??= { kind: m.kind, value: m.value, x: m.x };
     if (stopped === 1) c.raise(STOP);
     release();
@@ -1563,7 +1978,27 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     const made = Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();
       const compile = channels[cpu]?.port1;
-      h.post({ module: c.module, memory: c.memory, spill: c.spill, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live, compile, yieldMs: c.yieldMs }, compile ? [compile] : []);
+      h.post(
+        {
+          module: c.module,
+          memory: c.memory,
+          spill: c.spill,
+          block: threadAlloc(c.instance.exports),
+          vm: c.vm,
+          cpu,
+          bell: c.bell,
+          ctl: c.ctl,
+          pause: c.pause,
+          parked: c.parked,
+          start: c.start,
+          ncpus: c.ncpus,
+          stall: c.stall.filter((x) => x.cpu === cpu),
+          live,
+          compile,
+          yieldMs: c.yieldMs,
+        },
+        compile ? [compile] : [],
+      );
       return h;
     });
     c.warm?.end(); // every worker is taken (synchronously, in `spawn`): the ones started ahead and not wanted end
@@ -1618,7 +2053,12 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     },
     resume,
     held: () => state === 'paused',
-    pcs: () => Array.from({ length: c.ncpus }, (_, i) => `0x${new BigUint64Array(c.memory.buffer, (unsigned(c.instance.exports).vm_cpu as (vm: number, i: number) => number)(c.vm, i) + 256, 1)[0].toString(16)}`),
+    pcs: () =>
+      Array.from(
+        { length: c.ncpus },
+        (_, i) =>
+          `0x${new BigUint64Array(c.memory.buffer, (unsigned(c.instance.exports).vm_cpu as (vm: number, i: number) => number)(c.vm, i) + 256, 1)[0].toString(16)}`,
+      ),
     close() {
       closed = true;
       c.raise(STOP);
@@ -1645,7 +2085,14 @@ export type ConsoleInput = { step?: number; after?: string; data: string };
  * waiting with its timers running retires too few steps for `maxSteps`, and
  * too many for `idleLimitMs`, to end the run.
  */
-export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: BootOptions, maxSteps = 20e9, booted?: (vm: Vm) => void, input?: ConsoleInput, maxMs = Infinity) {
+export async function runToPowerOff(
+  wasm: BufferSource | WebAssembly.Module,
+  o: BootOptions,
+  maxSteps = 20e9,
+  booted?: (vm: Vm) => void,
+  input?: ConsoleInput,
+  maxMs = Infinity,
+) {
   const vm = await bootVm(wasm, o);
   booted?.(vm);
   let console = '';
@@ -1663,12 +2110,18 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
         const m = await (e.device ? vm.usb.attach(e.connector, e.device) : vm.usb.detach(e.connector));
         if (m.state === 'error') throw new Error(`USB connector ${e.connector}: ${m.message}`);
       }
-      const until = Math.min(input?.step !== undefined && steps < input.step ? input.step : Infinity, usbEvents[0]?.step ?? Infinity);
+      const until = Math.min(
+        input?.step !== undefined && steps < input.step ? input.step : Infinity,
+        usbEvents[0]?.step ?? Infinity,
+      );
       const r = await vm.runAsync(Math.min(100_000_000, until - steps));
       steps += r.steps;
       console += vm.drain();
       const idle = r.kind === Exit.IDLE; // deterministic, with no deadline: waiting for input or for nothing
-      if (input && (idle || steps >= (input.step ?? Infinity) || (input.after !== undefined && console.includes(input.after)))) {
+      if (
+        input &&
+        (idle || steps >= (input.step ?? Infinity) || (input.after !== undefined && console.includes(input.after)))
+      ) {
         vm.send(input.data);
         input = undefined;
         if (idle) continue;
@@ -1682,10 +2135,22 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
       // virtio-snd played (its sink's checksum) and the control requests it took.
       const slot = (type: string) => (o.devices ?? []).findIndex((d) => d.type === type);
       const states = slot('gpu') >= 0 || slot('snd') >= 0 ? await vm.deviceState() : [];
-      const gpu = slot('gpu') >= 0 ? states[slot('gpu')] as GpuState : undefined;
-      const snd = slot('snd') >= 0 ? states[slot('snd')] as SndState : undefined;
+      const gpu = slot('gpu') >= 0 ? (states[slot('gpu')] as GpuState) : undefined;
+      const snd = slot('snd') >= 0 ? (states[slot('snd')] as SndState) : undefined;
       vm.close();
-      return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu, snd, stats: vm.stats() };
+      return {
+        ...r,
+        kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind,
+        steps,
+        console,
+        hvc: vm.hvc(),
+        ms,
+        pc: vm.pc(),
+        flash: vm.flash(),
+        gpu,
+        snd,
+        stats: vm.stats(),
+      };
     }
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1695,7 +2160,14 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
       const pcs = Array.from({ length: o.ncpus ?? 1 }, (_, i) => `0x${vm.pc(i).toString(16)}`).join(' ');
       console += vm.drain();
       // The whole console goes with it (`console`), for a caller that keeps it.
-      reject(late = Object.assign(new Error(`no power-off in ${maxMs / 1000} s (${steps} steps, pcs ${pcs}); the console's end:\n${console.slice(-3000)}`), { console }));
+      reject(
+        (late = Object.assign(
+          new Error(
+            `no power-off in ${maxMs / 1000} s (${steps} steps, pcs ${pcs}); the console's end:\n${console.slice(-3000)}`,
+          ),
+          { console },
+        )),
+      );
     }, maxMs);
   });
   const running = run();
@@ -1718,10 +2190,11 @@ function usbHost(port: MessagePort) {
     const i = waiting.findIndex((w) => w.connector === e.data.connector);
     if (i >= 0) waiting.splice(i, 1)[0].resolve(e.data);
   };
-  const ask = (m: UsbToWorker) => new Promise<UsbState>((resolve) => {
-    waiting.push({ connector: m.connector, resolve });
-    port.postMessage(m);
-  });
+  const ask = (m: UsbToWorker) =>
+    new Promise<UsbState>((resolve) => {
+      waiting.push({ connector: m.connector, resolve });
+      port.postMessage(m);
+    });
   return {
     attach: (connector: number, device: UsbIdentity | UsbVirtual) => ask({ type: 'usb-attach', connector, device }),
     detach: (connector: number) => ask({ type: 'usb-detach', connector }),
@@ -1735,7 +2208,7 @@ function usbHost(port: MessagePort) {
 async function ringAsync(bell: Int32Array, stopped: () => boolean) {
   const n = Atomics.add(bell, 0, 1) + 1;
   Atomics.notify(bell, 0);
-  for (let a; ((a = Atomics.load(bell, 1)) - n | 0) < 0;) {
+  for (let a; (((a = Atomics.load(bell, 1)) - n) | 0) < 0;) {
     if (a === -1) throw new Error('device backends failed (see their error)');
     if (stopped()) return;
     const w = Atomics.waitAsync(bell, 1, a, 100);
@@ -1748,9 +2221,17 @@ async function ringAsync(bell: Int32Array, stopped: () => boolean) {
  * worker), inline otherwise. `kick` hands them what a DEVICE exit posted and
  * returns once they've taken all of it (deterministic mode).
  */
-async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean, notice?: (m: Msg) => void, warm?: WarmWorkers) {
+async function deviceHost(
+  init: DevicesInit,
+  bellAddr: number,
+  parallel: boolean,
+  notice?: (m: Msg) => void,
+  warm?: WarmWorkers,
+) {
   let text = '';
-  const out = (_device: number, t: string) => { text += t; };
+  const out = (_device: number, t: string) => {
+    text += t;
+  };
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
   if (parallel && !inWorker) {
     // The vCPU workers ring the doorbell; this thread serves it between its awaits.
@@ -1758,11 +2239,17 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     let failed: unknown;
     let closed = false;
     const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
-    void d.serve(bell).catch((e) => { failed = e; });
+    void d.serve(bell).catch((e) => {
+      failed = e;
+    });
     return {
-      kick: (_wait: boolean) => { throw new Error('parallel: the vCPU workers ring the doorbell'); },
+      kick: (_wait: boolean) => {
+        throw new Error('parallel: the vCPU workers ring the doorbell');
+      },
       inFlight: () => false,
-      settle: async () => { if (failed) throw failed; },
+      settle: async () => {
+        if (failed) throw failed;
+      },
       quiesce: () => ringAsync(bell, () => closed),
       save: async () => d.save(),
       refusal: () => d.refusal(),
@@ -1772,7 +2259,10 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       inspect: (i: number, query: InspectQuery) => d.inspect(i, query),
       hint: (ms: number) => d.hint(ms),
       release: () => d.release(),
-      output: () => text, flush: async () => { if (failed) throw failed; },
+      output: () => text,
+      flush: async () => {
+        if (failed) throw failed;
+      },
       close: async () => {
         closed = true;
         Atomics.notify(bell, 1); // a quiesce waiting for its answer
@@ -1789,10 +2279,20 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     // caller awaits `settle` before resuming: the same step as in a worker.
     let pending: Promise<void> | undefined;
     return {
-      kick: (_wait: boolean) => { pending = d.poll(); },
+      kick: (_wait: boolean) => {
+        pending = d.poll();
+      },
       inFlight: () => pending !== undefined,
-      settle: async () => { await pending; pending = undefined; },
-      quiesce: async () => { await pending; pending = d.poll(); await pending; pending = undefined; },
+      settle: async () => {
+        await pending;
+        pending = undefined;
+      },
+      quiesce: async () => {
+        await pending;
+        pending = d.poll();
+        await pending;
+        pending = undefined;
+      },
       save: async () => d.save(),
       refusal: () => d.refusal(),
       written: async (i: number) => d.written(i),
@@ -1801,7 +2301,9 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       inspect: (i: number, query: InspectQuery) => d.inspect(i, query),
       hint: (ms: number) => d.hint(ms),
       release: () => d.release(),
-      output: () => text, flush: async () => {}, close: async () => (d.close(), d.stats()),
+      output: () => text,
+      flush: async () => {},
+      close: async () => (d.close(), d.stats()),
     };
   }
   const worker = warm?.take('device') ?? newWorker('device');
@@ -1814,22 +2316,31 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   type DiskAnswer = Extract<FromDeviceWorker, { type: 'disk' }>;
   const asked = new Map<number, (m: DiskAnswer) => void>();
   let askId = 0;
-  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: Uint32Array } | { type: 'compact'; measure?: boolean } | { type: 'hint'; ms: number } | { type: 'inspect'; device: number; query: InspectQuery }) => new Promise<DiskAnswer>((resolve, reject) => {
-    const id = askId++;
-    asked.set(id, (a) => {
-      asked.delete(id);
-      if (a.error) reject(new Error(a.error));
-      else resolve(a);
+  const ask = (
+    m:
+      | { type: 'written'; device: number }
+      | { type: 'blocks'; device: number; blocks: Uint32Array }
+      | { type: 'compact'; measure?: boolean }
+      | { type: 'hint'; ms: number }
+      | { type: 'inspect'; device: number; query: InspectQuery },
+  ) =>
+    new Promise<DiskAnswer>((resolve, reject) => {
+      const id = askId++;
+      asked.set(id, (a) => {
+        asked.delete(id);
+        if (a.error) reject(new Error(a.error));
+        else resolve(a);
+      });
+      worker.postMessage({ ...m, id } satisfies ToDeviceWorker);
     });
-    worker.postMessage({ ...m, id } satisfies ToDeviceWorker);
-  });
   let closing: Promise<unknown> | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent<FromDeviceWorker>) => {
       if (e.data.type === 'ready') resolve();
       // The error as the device worker had it (its fields, an overlay's `problem`, kept: web/app/worker-errors.ts `explain`).
-      else if (e.data.type === 'error') reject(e.data.error ? fromWire(e.data.error) : new Error(`device worker: ${e.data.message}`));
+      else if (e.data.type === 'error')
+        reject(e.data.error ? fromWire(e.data.error) : new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
       else if (e.data.type === 'notice') notice?.(e.data.message);
       else if (e.data.type === 'flushed') flushed();
@@ -1846,7 +2357,11 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   });
   // A restore's state is the device worker's from here: its bytes (a 3D renderer's contents, ~100 MB on a desktop)
   // moved, not copied (a copy took ~80 ms of the start; bench/boot/REPORT.md "SNAPZ loop 7").
-  worker.postMessage({ type: 'init', ...init, bell: bellAddr } satisfies ToDeviceWorker, [...specPorts(init.specs), ...(init.xhci?.port ? [init.xhci.port] : []), ...stateBuffers(init.state ?? [])]);
+  worker.postMessage({ type: 'init', ...init, bell: bellAddr } satisfies ToDeviceWorker, [
+    ...specPorts(init.specs),
+    ...(init.xhci?.port ? [init.xhci.port] : []),
+    ...stateBuffers(init.state ?? []),
+  ]);
   await ready; // before anything blocks on it
   const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
   return {
@@ -1862,39 +2377,58 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       });
     },
     /** The backends' state for a snapshot (web/devices.ts `Devices.save`). */
-    save: () => new Promise<unknown[]>((resolve, reject) => {
-      saved = (m) => (m.state ? resolve(m.state) : reject(m.wire ? fromWire(m.wire) : new Error(m.error ?? 'the device worker has no state')));
-      worker.postMessage({ type: 'save' });
-    }),
+    save: () =>
+      new Promise<unknown[]>((resolve, reject) => {
+        saved = (m) =>
+          m.state
+            ? resolve(m.state)
+            : reject(m.wire ? fromWire(m.wire) : new Error(m.error ?? 'the device worker has no state'));
+        worker.postMessage({ type: 'save' });
+      }),
     /** Why a snapshot would be refused now (web/devices.ts `Devices.refusal`), or undefined. */
-    refusal: () => new Promise<WireError | undefined>((resolve) => {
-      if (closing) return resolve(undefined);
-      refusals.push(resolve);
-      worker.postMessage({ type: 'refusal' });
-    }),
+    refusal: () =>
+      new Promise<WireError | undefined>((resolve) => {
+        if (closing) return resolve(undefined);
+        refusals.push(resolve);
+        worker.postMessage({ type: 'refusal' });
+      }),
     written: async (i: number) => (await ask({ type: 'written', device: i })).written,
     blocks: async (i: number, blocks: Uint32Array) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,
-    compact: async (measure?: boolean) => (await ask({ type: 'compact', measure })).compacted ?? { before: 0, after: 0 },
-    inspect: async (i: number, query: InspectQuery): Promise<InspectAnswer> => (closing ? { kind: 'none' } : (await ask({ type: 'inspect', device: i, query })).inspected ?? { kind: 'none' }),
+    compact: async (measure?: boolean) =>
+      (await ask({ type: 'compact', measure })).compacted ?? { before: 0, after: 0 },
+    inspect: async (i: number, query: InspectQuery): Promise<InspectAnswer> =>
+      closing ? { kind: 'none' } : ((await ask({ type: 'inspect', device: i, query })).inspected ?? { kind: 'none' }),
     // Bounded here too: a worker that closes meanwhile answers nothing.
-    hint: async (ms: number) => (closing ? undefined : (await Promise.race([ask({ type: 'hint', ms }), new Promise<Partial<DiskAnswer>>((r) => setTimeout(() => r({}), ms + 2000))])).hinted),
-    release: () => { if (!closing) worker.postMessage({ type: 'release' } satisfies ToDeviceWorker); },
+    hint: async (ms: number) =>
+      closing
+        ? undefined
+        : (
+            await Promise.race([
+              ask({ type: 'hint', ms }),
+              new Promise<Partial<DiskAnswer>>((r) => setTimeout(() => r({}), ms + 2000)),
+            ])
+          ).hinted,
+    release: () => {
+      if (!closing) worker.postMessage({ type: 'release' } satisfies ToDeviceWorker);
+    },
     kick: (wait: boolean) => ring(bell, wait), // completions come back through SIGNAL_DEVICE
     output: () => text,
-    flush: () => new Promise<void>((resolve) => {
-      flushed = resolve;
-      worker.postMessage({ type: 'flush' });
-    }),
+    flush: () =>
+      new Promise<void>((resolve) => {
+        flushed = resolve;
+        worker.postMessage({ type: 'flush' });
+      }),
     /**
      * Resolves once it released its files (so another VM can open the overlay), or after `CLOSE_MS` and a little
      * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call. The value is
      * the blk timers of devices with `stats` (web/iostats.ts), if any.
      */
-    close: () => (closing ??= new Promise<unknown>((resolve) => {
-      closed = resolve;
-      setTimeout(resolve, CLOSE_MS + 500);
-      worker.postMessage({ type: 'close' });
-      Atomics.notify(bell, 1); // a quiesce waiting for its answer
-    })),
+    close: () =>
+      (closing ??= new Promise<unknown>((resolve) => {
+        closed = resolve;
+        setTimeout(resolve, CLOSE_MS + 500);
+        worker.postMessage({ type: 'close' });
+        Atomics.notify(bell, 1); // a quiesce waiting for its answer
+      })),
   };
 }

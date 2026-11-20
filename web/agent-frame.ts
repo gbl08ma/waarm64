@@ -89,7 +89,12 @@ export const FRAME = {
 export function encodeLease(macs: string[]): Uint8Array {
   const out = new Uint8Array(1 + 6 * macs.length);
   out[0] = macs.length;
-  macs.forEach((m, i) => out.set(m.split(':').map((h) => parseInt(h, 16)), 1 + 6 * i));
+  macs.forEach((m, i) =>
+    out.set(
+      m.split(':').map((h) => parseInt(h, 16)),
+      1 + 6 * i,
+    ),
+  );
   return out;
 }
 
@@ -217,7 +222,14 @@ export function decodeGrown(p: Uint8Array): Grown | undefined {
   const f = fields(p);
   const [serial, part, fs, errno] = [f.str(), f.u8(), f.u8(), f.u32()];
   const [lo, hi] = [f.u32(), f.u32()];
-  if (serial === undefined || part === undefined || fs === undefined || errno === undefined || lo === undefined || hi === undefined)
+  if (
+    serial === undefined ||
+    part === undefined ||
+    fs === undefined ||
+    errno === undefined ||
+    lo === undefined ||
+    hi === undefined
+  )
     return undefined;
   return { serial, part, fs, errno, size: hi * 2 ** 32 + lo };
 }

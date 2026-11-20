@@ -10,7 +10,19 @@
 // ones a page registers in the device worker (`registerUsbOpener`). The page attaches and detaches
 // them with `usb-attach`/`usb-detach` messages on a port and hears `usb-state` back.
 
-import type { UsbDevice, UsbFromWorker, UsbIdentity, UsbState, UsbOpener, UsbProblem, UsbResult, UsbSpeed, UsbToWorker, UsbTransfer, UsbVirtual } from './usb-device.ts';
+import type {
+  UsbDevice,
+  UsbFromWorker,
+  UsbIdentity,
+  UsbState,
+  UsbOpener,
+  UsbProblem,
+  UsbResult,
+  UsbSpeed,
+  UsbToWorker,
+  UsbTransfer,
+  UsbVirtual,
+} from './usb-device.ts';
 import { GadgetZero } from './usb-gadget-zero.ts';
 import { UsbKeyboard } from './usb-keyboard.ts';
 import { UsbGamepad } from './usb-gamepad.ts';
@@ -132,12 +144,20 @@ export class Usb {
    */
   async attach(connector: number, device: UsbIdentity | UsbVirtual, reply = true): Promise<UsbState> {
     const fail = (e: unknown, detail?: UsbProblem[]): UsbState => {
-      const m: UsbState = { type: 'usb-state', connector, state: 'error', message: String((e as Error)?.message ?? e), error: toWire(e), ...(detail?.length ? { detail } : {}) };
+      const m: UsbState = {
+        type: 'usb-state',
+        connector,
+        state: 'error',
+        message: String((e as Error)?.message ?? e),
+        error: toWire(e),
+        ...(detail?.length ? { detail } : {}),
+      };
       if (reply) this.post(m);
       return m;
     };
     if (!(connector >= 0 && connector < CONNECTORS)) return fail(new Error(`no connector ${connector}`));
-    if (this.plugged[connector] || this.opening.has(connector)) return fail(new Error(`connector ${connector} has a device`));
+    if (this.plugged[connector] || this.opening.has(connector))
+      return fail(new Error(`connector ${connector} has a device`));
     let dev: UsbDevice;
     if (device.api === 'virtual') {
       try {
@@ -150,16 +170,26 @@ export class Usb {
         return fail(e);
       }
     } else {
-      if (this.init.deterministic) return fail(new Error('a real device in deterministic mode: its timing would make the run differ'));
+      if (this.init.deterministic)
+        return fail(new Error('a real device in deterministic mode: its timing would make the run differ'));
       const open = openers.get(device.api);
-      if (!open) return fail(device.api === 'usb' ? new MsgError('usb:usb.noWebUsb') : new MsgError('usb:usb.noWebHid'));
+      if (!open)
+        return fail(device.api === 'usb' ? new MsgError('usb:usb.noWebUsb') : new MsgError('usb:usb.noWebHid'));
       const gen = this.gens[connector];
       let resolve = () => {};
-      this.opening.set(connector, new Promise<void>((r) => { resolve = r; }));
+      this.opening.set(
+        connector,
+        new Promise<void>((r) => {
+          resolve = r;
+        }),
+      );
       try {
         dev = await open(device, { connector, gone: () => this.gone(connector, gen) });
       } catch (e) {
-        return fail(new MsgError('usb:usb.openFailed', undefined, { cause: e }), (e as { problems?: UsbProblem[] }).problems);
+        return fail(
+          new MsgError('usb:usb.openFailed', undefined, { cause: e }),
+          (e as { problems?: UsbProblem[] }).problems,
+        );
       } finally {
         this.opening.delete(connector);
         resolve();
@@ -170,8 +200,15 @@ export class Usb {
       }
     }
     this.plugged[connector] = { dev, device };
-    this.completion([connector, CPL_ATTACH | SPEEDS[dev.speed] << 8, 0]);
-    const m: UsbState = { type: 'usb-state', connector, state: 'attached', device, speed: dev.speed, ...(dev.problems?.length ? { problems: dev.problems } : {}) };
+    this.completion([connector, CPL_ATTACH | (SPEEDS[dev.speed] << 8), 0]);
+    const m: UsbState = {
+      type: 'usb-state',
+      connector,
+      state: 'attached',
+      device,
+      speed: dev.speed,
+      ...(dev.problems?.length ? { problems: dev.problems } : {}),
+    };
     if (reply) this.post(m);
     return m;
   }
@@ -230,11 +267,11 @@ export class Usb {
       else if (r.w1 >>> 16 === REQ_TRANSFER && cancelled.delete(r.w0 & 0xff_ffff)) skip.add(i);
     }
     for (const [i, { w0, w1, words }] of records.entries()) {
-      const [connector, dci, kind] = [w1 & 0xff, w1 >>> 8 & 0xff, w1 >>> 16];
+      const [connector, dci, kind] = [w1 & 0xff, (w1 >>> 8) & 0xff, w1 >>> 16];
       const gen = w0 >>> 24;
       const p = this.plugged[connector];
       if (!p || gen !== this.gens[connector]) continue; // for a device that's gone
-      const ep = dci === 1 ? 0 : dci >> 1 | (dci & 1) << 7;
+      const ep = dci === 1 ? 0 : (dci >> 1) | ((dci & 1) << 7);
       // A device that throws fails its TD (or loses the call), not the device worker with its disks and network.
       const guarded = (what: string, f: () => void) => {
         try {
@@ -252,11 +289,13 @@ export class Usb {
           } catch (e) {
             console.error(`waarm64: USB device on connector ${connector}: a transfer threw`, e);
             if (this.inflight.has(tag)) this.done(tag, { code: 'error', actual: 0 });
-            else this.completion([tag | gen << 24, CPL_DONE | CODES.error << 8, 0]);
+            else this.completion([tag | (gen << 24), CPL_DONE | (CODES.error << 8), 0]);
           }
           break;
         }
-        case REQ_RESET: guarded('reset', () => p.dev.reset()); break;
+        case REQ_RESET:
+          guarded('reset', () => p.dev.reset());
+          break;
         case REQ_CANCEL: {
           const tags = words.slice(1, 1 + words[0]).filter((t) => this.inflight.has(t));
           for (const t of tags) this.inflight.delete(t);
@@ -267,12 +306,19 @@ export class Usb {
           const eps = Array.from({ length: words[0] }, (_, i) => {
             const [a, b] = [words[1 + 2 * i], words[2 + 2 * i]];
             const d = a & 0xff;
-            return { ep: d >> 1 | (d & 1) << 7, type: TYPES[a >>> 8 & 7] as 'bulk' | 'interrupt' | 'isoch', maxPacket: b & 0x7ff, interval: a >>> 16 & 0xff };
+            return {
+              ep: (d >> 1) | ((d & 1) << 7),
+              type: TYPES[(a >>> 8) & 7] as 'bulk' | 'interrupt' | 'isoch',
+              maxPacket: b & 0x7ff,
+              interval: (a >>> 16) & 0xff,
+            };
           });
           guarded('configured', () => p.dev.configured?.(eps));
           break;
         }
-        case REQ_CLEAR_HALT: guarded('clearHalt', () => p.dev.clearHalt?.(ep)); break;
+        case REQ_CLEAR_HALT:
+          guarded('clearHalt', () => p.dev.clearHalt?.(ep));
+          break;
       }
     }
     // In realtime mode the core holds the command that cancelled until this has read the cancel (no
@@ -281,13 +327,19 @@ export class Usb {
   }
 
   private transfer(p: Plugged, connector: number, gen: number, tag: number, ep: number, w: number[]) {
-    const [nseg, eptype, hasSetup] = [w[0] & 0xffff, w[0] >>> 16 & 0xff, w[0] >>> 24 & 1];
+    const [nseg, eptype, hasSetup] = [w[0] & 0xffff, (w[0] >>> 16) & 0xff, (w[0] >>> 24) & 1];
     const length = w[1];
     let k = 2;
     let setup: UsbTransfer['setup'];
     if (hasSetup) {
       const [a, b] = [w[2], w[3]];
-      setup = { requestType: a & 0xff, request: a >>> 8 & 0xff, value: a >>> 16, index: b & 0xffff, length: b >>> 16 };
+      setup = {
+        requestType: a & 0xff,
+        request: (a >>> 8) & 0xff,
+        value: a >>> 16,
+        index: b & 0xffff,
+        length: b >>> 16,
+      };
       k = 4;
     }
     const segs: Segment[] = [];
@@ -298,7 +350,7 @@ export class Usb {
         new DataView(bytes.buffer).setUint32(0, w[k++], true);
         new DataView(bytes.buffer).setUint32(4, w[k++], true);
         segs.push({ off: 0, len: len & 0xff, mem: 0, imm: bytes.subarray(0, len & 0xff) });
-      } else segs.push({ off, len: len & 0xff_ffff, mem: len >>> SEG_MEM_SHIFT & 0xf });
+      } else segs.push({ off, len: len & 0xff_ffff, mem: (len >>> SEG_MEM_SHIFT) & 0xf });
     }
     const into = setup ? (setup.requestType & 0x80) !== 0 : (ep & 0x80) !== 0;
     const type = TYPES[eptype & 7];
@@ -310,7 +362,10 @@ export class Usb {
   }
 
   private ram(): Ram {
-    return [new Uint8Array(this.init.memory.buffer, this.init.ram, this.init.ramSize), ...(this.init.spill ?? []).map((m) => new Uint8Array(m.buffer))];
+    return [
+      new Uint8Array(this.init.memory.buffer, this.init.ram, this.init.ramSize),
+      ...(this.init.spill ?? []).map((m) => new Uint8Array(m.buffer)),
+    ];
   }
 
   private gather(segs: Segment[], length: number) {
@@ -342,7 +397,7 @@ export class Usb {
       }
     }
     if (this.init.io) this.init.io[f.into ? 0 : 1] += actual;
-    this.completion([tag | f.gen << 24, CPL_DONE | CODES[r.code] << 8, actual]);
+    this.completion([tag | (f.gen << 24), CPL_DONE | (CODES[r.code] << 8), actual]);
   }
 
   /** A record for the core's completion ring (it is sized for every TD in flight), then the signal. */

@@ -11,10 +11,28 @@
 // backing pages are guest-physical addresses inside the command's payload, which the core's chain
 // checks don't cover: every entry is checked to lie in RAM before it is kept, and a transfer
 // reads only through those entries.
-import { bytes, gather, locate, scatter, type Ctx, type Ram, type RamLayout, type Request, type Segment } from './devices.ts';
+import {
+  bytes,
+  gather,
+  locate,
+  scatter,
+  type Ctx,
+  type Ram,
+  type RamLayout,
+  type Request,
+  type Segment,
+} from './devices.ts';
 import { EDID_MAX, EDID_MIN, edid } from './edid.ts';
 import { VirglStats, virglCaps, walk } from './virgl.ts';
-import { BLOB_FLAG_USE_MAPPABLE, BLOB_MEM_HOST3D, CAPSET_VENUS, CONTEXT_INIT_CAPSET_ID_MASK, FLAG_INFO_RING_IDX, MAP_CACHE_CACHED, venusCapset } from './venus.ts';
+import {
+  BLOB_FLAG_USE_MAPPABLE,
+  BLOB_MEM_HOST3D,
+  CAPSET_VENUS,
+  CONTEXT_INIT_CAPSET_ID_MASK,
+  FLAG_INFO_RING_IDX,
+  MAP_CACHE_CACHED,
+  venusCapset,
+} from './venus.ts';
 import { FORMATS as VIRGL_FORMATS, boxBytes } from './virgl-formats.ts';
 import { encodeRecord } from './virgl-trace.ts';
 import type { VirglHost } from './virgl-host.ts';
@@ -22,20 +40,46 @@ import type { RendererSnapshot } from './virgl-renderer.ts';
 import { capsBacked } from './virgl-caps.ts';
 import { msg, toWire, type WireError } from './msg.ts';
 
-
 // Command and response types (virtio 1.2 §5.7.6).
-const GET_DISPLAY_INFO = 0x100, RESOURCE_CREATE_2D = 0x101, RESOURCE_UNREF = 0x102, SET_SCANOUT = 0x103;
-const RESOURCE_FLUSH = 0x104, TRANSFER_TO_HOST_2D = 0x105, RESOURCE_ATTACH_BACKING = 0x106;
-const RESOURCE_DETACH_BACKING = 0x107, GET_CAPSET_INFO = 0x108, GET_CAPSET = 0x109, GET_EDID = 0x10a;
-const RESOURCE_ASSIGN_UUID = 0x10b, RESOURCE_CREATE_BLOB = 0x10c, SET_SCANOUT_BLOB = 0x10d;
-const RESOURCE_MAP_BLOB = 0x208, RESOURCE_UNMAP_BLOB = 0x209;
-const CTX_CREATE = 0x200, CTX_DESTROY = 0x201, CTX_ATTACH_RESOURCE = 0x202, CTX_DETACH_RESOURCE = 0x203;
-const RESOURCE_CREATE_3D = 0x204, TRANSFER_TO_HOST_3D = 0x205, TRANSFER_FROM_HOST_3D = 0x206, SUBMIT_3D = 0x207;
-const UPDATE_CURSOR = 0x300, MOVE_CURSOR = 0x301;
-const OK_NODATA = 0x1100, OK_DISPLAY_INFO = 0x1101, OK_CAPSET_INFO = 0x1102, OK_CAPSET = 0x1103, OK_EDID = 0x1104;
-const OK_RESOURCE_UUID = 0x1105, OK_MAP_INFO = 0x1106;
-const ERR_UNSPEC = 0x1200, ERR_OUT_OF_MEMORY = 0x1201, ERR_INVALID_SCANOUT_ID = 0x1202;
-const ERR_INVALID_RESOURCE_ID = 0x1203, ERR_INVALID_CONTEXT_ID = 0x1204, ERR_INVALID_PARAMETER = 0x1205;
+const GET_DISPLAY_INFO = 0x100,
+  RESOURCE_CREATE_2D = 0x101,
+  RESOURCE_UNREF = 0x102,
+  SET_SCANOUT = 0x103;
+const RESOURCE_FLUSH = 0x104,
+  TRANSFER_TO_HOST_2D = 0x105,
+  RESOURCE_ATTACH_BACKING = 0x106;
+const RESOURCE_DETACH_BACKING = 0x107,
+  GET_CAPSET_INFO = 0x108,
+  GET_CAPSET = 0x109,
+  GET_EDID = 0x10a;
+const RESOURCE_ASSIGN_UUID = 0x10b,
+  RESOURCE_CREATE_BLOB = 0x10c,
+  SET_SCANOUT_BLOB = 0x10d;
+const RESOURCE_MAP_BLOB = 0x208,
+  RESOURCE_UNMAP_BLOB = 0x209;
+const CTX_CREATE = 0x200,
+  CTX_DESTROY = 0x201,
+  CTX_ATTACH_RESOURCE = 0x202,
+  CTX_DETACH_RESOURCE = 0x203;
+const RESOURCE_CREATE_3D = 0x204,
+  TRANSFER_TO_HOST_3D = 0x205,
+  TRANSFER_FROM_HOST_3D = 0x206,
+  SUBMIT_3D = 0x207;
+const UPDATE_CURSOR = 0x300,
+  MOVE_CURSOR = 0x301;
+const OK_NODATA = 0x1100,
+  OK_DISPLAY_INFO = 0x1101,
+  OK_CAPSET_INFO = 0x1102,
+  OK_CAPSET = 0x1103,
+  OK_EDID = 0x1104;
+const OK_RESOURCE_UUID = 0x1105,
+  OK_MAP_INFO = 0x1106;
+const ERR_UNSPEC = 0x1200,
+  ERR_OUT_OF_MEMORY = 0x1201,
+  ERR_INVALID_SCANOUT_ID = 0x1202;
+const ERR_INVALID_RESOURCE_ID = 0x1203,
+  ERR_INVALID_CONTEXT_ID = 0x1204,
+  ERR_INVALID_PARAMETER = 0x1205;
 const FLAG_FENCE = 1;
 const HDR = 24;
 const EVENT_DISPLAY = 1;
@@ -47,7 +91,10 @@ const EVENT_DISPLAY = 1;
 function capsets(caps: Uint8Array, venus?: Uint8Array) {
   const v1 = caps.slice(0, 77 * 4);
   new DataView(v1.buffer).setUint32(0, 1, true);
-  const out: (readonly [number, number, Uint8Array])[] = [[1, 1, v1], [2, 2, caps]];
+  const out: (readonly [number, number, Uint8Array])[] = [
+    [1, 1, v1],
+    [2, 2, caps],
+  ];
   if (venus) out.push([CAPSET_VENUS, 0, venus]);
   return out;
 }
@@ -84,7 +131,10 @@ const FORMATS = new Map<number, [number, number, number, number]>([
 
 export type Rect = { x: number; y: number; w: number; h: number };
 type Resource = {
-  id: number; format: number; width: number; height: number;
+  id: number;
+  format: number;
+  width: number;
+  height: number;
   /** RGBA, rows of `width` pixels; with `raw`, the guest's bytes in its format. */
   pixels: Uint8Array;
   /** Made with a host or `GpuHooks.raw`: `pixels` are copied as they are, for a screen that swizzles them in its draw. */
@@ -107,13 +157,15 @@ type Resource = {
 /** What the null renderer counted (`state().virgl`): the 3D commands, the bytes each way, and each context's stream. */
 export type VirglCounts = {
   commands: Record<string, number>;
-  toHostBytes: number; fromHostBytes: number;
+  toHostBytes: number;
+  fromHostBytes: number;
   stream: ReturnType<VirglStats['json']>;
 };
 
 export type GpuOptions = {
   /** The display's size: what GET_DISPLAY_INFO and the EDID say (the page's, `resize` changes it). */
-  width: number; height: number;
+  width: number;
+  height: number;
   /**
    * Keep fbcon's console whole under size changes (the EDID's fallback modes, the crop floor: devices.md
    * "Display size and events"). The page's machine sets it; the test guests leave it off so their bytes
@@ -168,7 +220,14 @@ export type GpuOptions = {
  * Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless) and the scanout's
  * origin in it; with `swizzle` (`GpuHooks.raw`) the guest's bytes, R, G and B at those byte positions of a pixel.
  */
-export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number; swizzle?: number[] };
+export type ScanoutSource = {
+  pixels: Uint8Array;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  swizzle?: number[];
+};
 
 /** What the page draws from: the scanout and its damage, and the cursor. All optional (tests read the state). */
 export type GpuHooks = {
@@ -193,12 +252,13 @@ const clampSize = (n: number) => Math.min(EDID_MAX, Math.max(1, Math.floor(n)));
 
 /** A word-wise hash of RGBA bytes (alpha forced opaque for the screen), two 32-bit lanes: what tests compare. */
 export function hashRgba(words: Uint32Array[], opaque: boolean) {
-  let a = 0x811c9dc5, b = 0x9e3779b9;
+  let a = 0x811c9dc5,
+    b = 0x9e3779b9;
   for (const row of words) {
     for (let k = 0; k < row.length; k++) {
       const w = opaque ? (row[k] | 0xff000000) >>> 0 : row[k];
       a = Math.imul(a ^ w, 0x01000193);
-      b = Math.imul((b ^ w) << 13 | (b ^ w) >>> 19, 0x9e3779b1);
+      b = Math.imul(((b ^ w) << 13) | ((b ^ w) >>> 19), 0x9e3779b1);
     }
   }
   return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
@@ -207,7 +267,25 @@ export function hashRgba(words: Uint32Array[], opaque: boolean) {
 /** Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the transfers inside them; the control commands by type (hex). */
 /** `events` (bench/imgdecode/desktop.ts, `?displaystats` only): [epoch ms, what] pairs, flat: a control command's
  * arrival (its type), a held reply's release (0x10000 + its type), a key injected into virtio-input (1). */
-export const busy = { events: undefined as number[] | undefined, request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {} as Record<string, number>, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 };
+export const busy = {
+  events: undefined as number[] | undefined,
+  request: 0,
+  transfer: 0,
+  requests: 0,
+  transfers: 0,
+  pixels: 0,
+  flushes: 0,
+  submits: 0,
+  submitBytes: 0,
+  commands: {} as Record<string, number>,
+  fences: 0,
+  fenceMs: 0,
+  fenceMaxMs: 0,
+  heldMs: 0,
+  behindMs: 0,
+  fullMs: 0,
+  heldMax: 0,
+};
 
 export class Gpu {
   readonly resources = new Map<number, Resource>();
@@ -281,7 +359,7 @@ export class Gpu {
 
   /** This browser's capsets (`GpuOptions.caps`, the Venus capset): what a guest that hasn't read any is given. */
   private ownCapsets() {
-    return capsets(this.o.caps ?? virglCaps(2), this.o.venus ? this.o.venusCaps ?? venusCapset() : undefined);
+    return capsets(this.o.caps ?? virglCaps(2), this.o.venus ? (this.o.venusCaps ?? venusCapset()) : undefined);
   }
 
   /** The wait a fenced command left for the host, if any: its reply waits for it. */
@@ -292,10 +370,14 @@ export class Gpu {
   }
 
   /** New resources keep the guest's bytes: their screen swizzles them (a host's, or the page's: `GpuHooks.raw`). */
-  private get raw() { return !!this.host || !!this.hooks.raw; }
+  private get raw() {
+    return !!this.host || !!this.hooks.raw;
+  }
 
   /** The caps blob the guest is given (VIRGL2). */
-  get caps() { return this.capsets[1][2]; }
+  get caps() {
+    return this.capsets[1][2];
+  }
 
   /** A control command (the whole readable payload) → the response to write (empty: none fits). */
   control(cmd: Uint8Array, room: number): Uint8Array {
@@ -321,7 +403,10 @@ export class Gpu {
         if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
         if (u32(0) !== 0) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const r = new Uint8Array(HDR + 8 + 1024);
-        const e = edid(Math.max(this.width, EDID_MIN.width), Math.max(this.height, EDID_MIN.height), { dpi: this.o.dpi, extra: this.o.keepConsole ? this.fallbackModes() : [] });
+        const e = edid(Math.max(this.width, EDID_MIN.width), Math.max(this.height, EDID_MIN.height), {
+          dpi: this.o.dpi,
+          extra: this.o.keepConsole ? this.fallbackModes() : [],
+        });
         new DataView(r.buffer).setUint32(HDR, e.length, true);
         r.set(e, HDR + 8);
         return this.reply(OK_EDID, cmd, room, r);
@@ -368,7 +453,8 @@ export class Gpu {
         if (res.three && !res.pixels.length && !this.host) {
           // A virgl resource shown on the null renderer: black pixels for the page.
           const bytes = res.width * res.height * 4;
-          if (res.three.target !== TARGET_2D || bytes > MAX_RESOURCE || this.total + bytes > MAX_TOTAL) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+          if (res.three.target !== TARGET_2D || bytes > MAX_RESOURCE || this.total + bytes > MAX_TOTAL)
+            return this.reply(ERR_INVALID_PARAMETER, cmd, room);
           this.total += bytes;
           res.pixels = new Uint8Array(bytes);
         }
@@ -405,7 +491,8 @@ export class Gpu {
         const res = this.resources.get(id);
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (res.backing) return this.reply(ERR_UNSPEC, cmd, room);
-        if (n === 0 || n > MAX_ENTRIES || cmd.length < HDR + 8 + 16 * n) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (n === 0 || n > MAX_ENTRIES || cmd.length < HDR + 8 + 16 * n)
+          return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const backing = [];
         for (let k = 0; k < n; k++) {
           const at = HDR + 8 + 16 * k;
@@ -435,7 +522,9 @@ export class Gpu {
     const need = (n: number) => cmd.length >= n;
     const u32 = (at: number) => v.getUint32(HDR + at, true);
     const ctxId = v.getUint32(16, true);
-    const count = (name: string) => { this.virgl.commands[name] = (this.virgl.commands[name] ?? 0) + 1; };
+    const count = (name: string) => {
+      this.virgl.commands[name] = (this.virgl.commands[name] ?? 0) + 1;
+    };
     switch (type) {
       case GET_CAPSET_INFO: {
         count('GET_CAPSET_INFO');
@@ -458,16 +547,23 @@ export class Gpu {
       }
       case CTX_CREATE: {
         count('CTX_CREATE');
-        if (ctxId === 0 || this.contexts.has(ctxId) || this.contexts.size >= MAX_CONTEXTS) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        if (ctxId === 0 || this.contexts.has(ctxId) || this.contexts.size >= MAX_CONTEXTS)
+          return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
         if (this.off3d) return this.reply(ERR_UNSPEC, cmd, room);
         // CONTEXT_INIT (with `venus`): the capset the context speaks in `context_init`'s low byte; 0 is virgl's.
         const capset = this.o.venus && need(HDR + 8) ? u32(4) & CONTEXT_INIT_CAPSET_ID_MASK : 0;
-        if (capset !== 0 && capset !== 1 && capset !== 2 && capset !== CAPSET_VENUS) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (capset !== 0 && capset !== 1 && capset !== 2 && capset !== CAPSET_VENUS)
+          return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         this.contexts.set(ctxId, new Set());
         if (capset === CAPSET_VENUS) {
           this.venusContexts.add(ctxId);
           const nlen = Math.min(u32(0), 64, Math.max(0, cmd.length - HDR - 8));
-          this.host?.call({ t: 'vctx', id: ctxId, create: true, name: new TextDecoder().decode(cmd.subarray(HDR + 8, HDR + 8 + nlen)) });
+          this.host?.call({
+            t: 'vctx',
+            id: ctxId,
+            create: true,
+            name: new TextDecoder().decode(cmd.subarray(HDR + 8, HDR + 8 + nlen)),
+          });
         } else this.host?.call({ t: 'ctx', id: ctxId, create: true });
         return this.reply(OK_NODATA, cmd, room);
       }
@@ -481,7 +577,8 @@ export class Gpu {
         } else this.host?.call({ t: 'ctx', id: ctxId, create: false });
         return this.reply(OK_NODATA, cmd, room);
       }
-      case CTX_ATTACH_RESOURCE: case CTX_DETACH_RESOURCE: {
+      case CTX_ATTACH_RESOURCE:
+      case CTX_DETACH_RESOURCE: {
         count(type === CTX_ATTACH_RESOURCE ? 'CTX_ATTACH_RESOURCE' : 'CTX_DETACH_RESOURCE');
         if (!need(HDR + 4)) return this.reply(ERR_UNSPEC, cmd, room);
         const set = this.contexts.get(ctxId);
@@ -493,11 +590,15 @@ export class Gpu {
         // A virgl resource attached to a Venus context: the guest imports it into Vulkan as a dma-buf (a VA-API
         // surface's plane: web/venus-import.ts), as many bytes as its pages (the guest's dma-buf), or its texels at 4 a texel.
         if (res.three && this.venusContexts.has(ctxId)) {
-          const t = res.three, pages = (res.backing ?? []).reduce((n, s) => n + s.len, 0);
-          const size = Math.ceil(Math.max(pages, res.width * res.height * t.depth * t.arraySize * 4, 4096) / 4096) * 4096;
+          const t = res.three,
+            pages = (res.backing ?? []).reduce((n, s) => n + s.len, 0);
+          const size =
+            Math.ceil(Math.max(pages, res.width * res.height * t.depth * t.arraySize * 4, 4096) / 4096) * 4096;
           this.host?.call({ t: 'blob-ctx', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE, size });
-        } else if (res.three) this.host?.call({ t: 'ctxres', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
-        else if (res.blob && this.venusContexts.has(ctxId)) this.host?.call({ t: 'blob-ctx', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
+        } else if (res.three)
+          this.host?.call({ t: 'ctxres', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
+        else if (res.blob && this.venusContexts.has(ctxId))
+          this.host?.call({ t: 'blob-ctx', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
         return this.reply(OK_NODATA, cmd, room);
       }
       case RESOURCE_CREATE_BLOB: {
@@ -505,15 +606,26 @@ export class Gpu {
         if (!this.o.venus) return this.reply(ERR_UNSPEC, cmd, room);
         if (!need(HDR + 32)) return this.reply(ERR_UNSPEC, cmd, room);
         const [id, mem, flags, entries] = [u32(0), u32(4), u32(8), u32(12)];
-        const blobId = v.getBigUint64(HDR + 16, true), size = Number(v.getBigUint64(HDR + 24, true));
-        if (id === 0 || this.resources.has(id) || this.resources.size >= MAX_RESOURCES) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        const blobId = v.getBigUint64(HDR + 16, true),
+          size = Number(v.getBigUint64(HDR + 24, true));
+        if (id === 0 || this.resources.has(id) || this.resources.size >= MAX_RESOURCES)
+          return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         // Host memory of a Venus context only (Venus's shared memory and its objects' memory): guest-backed blobs
         // (BLOB_MEM_GUEST, HOST3D_GUEST) aren't offered (the capset says no guest VRAM).
         if (!this.venusContexts.has(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
-        if (mem !== BLOB_MEM_HOST3D || entries !== 0 || size === 0 || size % 4096 || flags & ~7) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (mem !== BLOB_MEM_HOST3D || entries !== 0 || size === 0 || size % 4096 || flags & ~7)
+          return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         if (this.blobBytes + size > MAX_BLOB_TOTAL) return this.reply(ERR_OUT_OF_MEMORY, cmd, room);
         this.blobBytes += size;
-        this.resources.set(id, { id, format: 0, width: 0, height: 0, pixels: new Uint8Array(0), backing: null, blob: { ctx: ctxId, mem, flags, blobId, size } });
+        this.resources.set(id, {
+          id,
+          format: 0,
+          width: 0,
+          height: 0,
+          pixels: new Uint8Array(0),
+          backing: null,
+          blob: { ctx: ctxId, mem, flags, blobId, size },
+        });
         this.host?.call({ t: 'blob', ctx: ctxId, res: id, mem, flags, blobId, size });
         this.hold();
         return this.reply(OK_NODATA, cmd, room);
@@ -525,12 +637,15 @@ export class Gpu {
         const offset = Number(v.getBigUint64(HDR + 8, true));
         if (!res?.blob) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         const b = res.blob;
-        if (!(b.flags & BLOB_FLAG_USE_MAPPABLE) || b.mapped !== undefined) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (!(b.flags & BLOB_FLAG_USE_MAPPABLE) || b.mapped !== undefined)
+          return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         // In the window, page-aligned, and over no other mapping (Linux's allocator picks the offset).
-        if (offset % 4096 || offset + b.size > (this.o.window ?? 0)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (offset % 4096 || offset + b.size > (this.o.window ?? 0))
+          return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         for (const r of this.resources.values()) {
           const m = r.blob?.mapped;
-          if (m !== undefined && offset < m + r.blob!.size && m < offset + b.size) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+          if (m !== undefined && offset < m + r.blob!.size && m < offset + b.size)
+            return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         }
         b.mapped = offset;
         this.host?.call({ t: 'blob-map', res: res.id, offset, size: b.size });
@@ -571,15 +686,31 @@ export class Gpu {
       case RESOURCE_CREATE_3D: {
         count('RESOURCE_CREATE_3D');
         if (!need(HDR + 44)) return this.reply(ERR_UNSPEC, cmd, room);
-        const [id, target, format, bind, width, height, depth, arraySize, lastLevel, samples] = [0, 4, 8, 12, 16, 20, 24, 28, 32, 36].map(u32);
-        if (id === 0 || this.resources.has(id) || this.resources.size >= MAX_RESOURCES) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
-        if (target > 8 || width === 0 || height === 0 || depth === 0 || arraySize === 0) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
-        this.resources.set(id, { id, format, width, height, pixels: new Uint8Array(0), backing: null, three: { target, bind, depth, arraySize, lastLevel, samples } });
-        this.host?.call({ t: 'res', desc: { id, target, format, bind, width, height, depth, arraySize, lastLevel, samples, flags: u32(40) } });
+        const [id, target, format, bind, width, height, depth, arraySize, lastLevel, samples] = [
+          0, 4, 8, 12, 16, 20, 24, 28, 32, 36,
+        ].map(u32);
+        if (id === 0 || this.resources.has(id) || this.resources.size >= MAX_RESOURCES)
+          return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        if (target > 8 || width === 0 || height === 0 || depth === 0 || arraySize === 0)
+          return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        this.resources.set(id, {
+          id,
+          format,
+          width,
+          height,
+          pixels: new Uint8Array(0),
+          backing: null,
+          three: { target, bind, depth, arraySize, lastLevel, samples },
+        });
+        this.host?.call({
+          t: 'res',
+          desc: { id, target, format, bind, width, height, depth, arraySize, lastLevel, samples, flags: u32(40) },
+        });
         this.fenced(cmd);
         return this.reply(OK_NODATA, cmd, room);
       }
-      case TRANSFER_TO_HOST_3D: case TRANSFER_FROM_HOST_3D: {
+      case TRANSFER_TO_HOST_3D:
+      case TRANSFER_FROM_HOST_3D: {
         const to = type === TRANSFER_TO_HOST_3D;
         count(to ? 'TRANSFER_TO_HOST_3D' : 'TRANSFER_FROM_HOST_3D');
         if (!need(HDR + 48)) return this.reply(ERR_UNSPEC, cmd, room);
@@ -592,7 +723,17 @@ export class Gpu {
         const bytes = res.three.target === 0 ? w : d > 1 ? layerStride * d : stride * h;
         if (to) this.virgl.toHostBytes += bytes;
         else this.virgl.fromHostBytes += bytes;
-        this.host?.call({ t: 'transfer', ctx: ctxId, res: res.id, level: u32(36), box: { x: u32(0), y: u32(4), z: u32(8), w, h, d }, offset: Number(v.getBigUint64(HDR + 24, true)), stride, layerStride, toHost: to });
+        this.host?.call({
+          t: 'transfer',
+          ctx: ctxId,
+          res: res.id,
+          level: u32(36),
+          box: { x: u32(0), y: u32(4), z: u32(8), w, h, d },
+          offset: Number(v.getBigUint64(HDR + 24, true)),
+          stride,
+          layerStride,
+          toHost: to,
+        });
         this.fenced(cmd);
         return this.reply(OK_NODATA, cmd, room);
       }
@@ -608,9 +749,27 @@ export class Gpu {
           busy.submitBytes += size;
           this.used.add(ctxId);
           const flags = v.getUint32(4, true);
-          const fence = flags & FLAG_FENCE ? { flags: flags & (FLAG_FENCE | FLAG_INFO_RING_IDX), ring: flags & FLAG_INFO_RING_IDX ? v.getUint8(20) : 0, id: v.getBigUint64(8, true) } : undefined;
-          this.host?.call({ t: 'vsubmit', ctx: ctxId, bytes: cmd.slice(HDR + 8, HDR + 8 + size), ...(fence ? { fence } : {}) });
-          if (fence && this.host) this.wait = this.host.fence({ ctx: ctxId, ring: fence.ring, id: fence.id, ringed: !!(flags & FLAG_INFO_RING_IDX) });
+          const fence =
+            flags & FLAG_FENCE
+              ? {
+                  flags: flags & (FLAG_FENCE | FLAG_INFO_RING_IDX),
+                  ring: flags & FLAG_INFO_RING_IDX ? v.getUint8(20) : 0,
+                  id: v.getBigUint64(8, true),
+                }
+              : undefined;
+          this.host?.call({
+            t: 'vsubmit',
+            ctx: ctxId,
+            bytes: cmd.slice(HDR + 8, HDR + 8 + size),
+            ...(fence ? { fence } : {}),
+          });
+          if (fence && this.host)
+            this.wait = this.host.fence({
+              ctx: ctxId,
+              ring: fence.ring,
+              id: fence.id,
+              ringed: !!(flags & FLAG_INFO_RING_IDX),
+            });
           return this.reply(OK_NODATA, cmd, room);
         }
         const words = new Uint32Array(cmd.buffer.slice(cmd.byteOffset + HDR + 8, cmd.byteOffset + HDR + 8 + size));
@@ -668,7 +827,8 @@ export class Gpu {
           const dst = this.resources.get(words[at]);
           if (!dst?.three) return;
           const [w, h, d] = [words[at + 8], words[at + 9], words[at + 10]];
-          const n = dst.three.target === 0 ? w : boxBytes(VIRGL_FORMATS.get(dst.format), w, h, d, words[at + 3], words[at + 4]);
+          const n =
+            dst.three.target === 0 ? w : boxBytes(VIRGL_FORMATS.get(dst.format), w, h, d, words[at + 3], words[at + 4]);
           if (copy) data(words[at + 11], words[at + 12], n);
           else data(dst.id, words[at + 11], n);
         });
@@ -677,17 +837,29 @@ export class Gpu {
       const res = this.resources.get(u32(32));
       if (res?.three) {
         const [w, h, d] = [u32(12), u32(16), u32(20)];
-        data(res.id, Number(v.getBigUint64(HDR + 24, true)), res.three.target === 0 ? w : boxBytes(VIRGL_FORMATS.get(res.format), w, h, d, u32(40), u32(44)));
+        data(
+          res.id,
+          Number(v.getBigUint64(HDR + 24, true)),
+          res.three.target === 0 ? w : boxBytes(VIRGL_FORMATS.get(res.format), w, h, d, u32(40), u32(44)),
+        );
       }
     }
-    const wanted = (type >= CTX_CREATE && type <= SUBMIT_3D) || type === SET_SCANOUT || type === GET_CAPSET
-      || ((type === RESOURCE_ATTACH_BACKING || type === RESOURCE_DETACH_BACKING || type === RESOURCE_UNREF || type === RESOURCE_FLUSH) && three(u32(type === RESOURCE_FLUSH ? 16 : 0)));
+    const wanted =
+      (type >= CTX_CREATE && type <= SUBMIT_3D) ||
+      type === SET_SCANOUT ||
+      type === GET_CAPSET ||
+      ((type === RESOURCE_ATTACH_BACKING ||
+        type === RESOURCE_DETACH_BACKING ||
+        type === RESOURCE_UNREF ||
+        type === RESOURCE_FLUSH) &&
+        three(u32(type === RESOURCE_FLUSH ? 16 : 0)));
     if (wanted) this.onCapture!(encodeRecord({ kind: 'command', bytes: cmd.slice() }));
   }
 
   /** A command with a fence waits for the host to have run everything before its reply goes. */
   private fenced(cmd: Uint8Array) {
-    if (this.host && new DataView(cmd.buffer, cmd.byteOffset, 8).getUint32(4, true) & FLAG_FENCE) this.wait = this.host.fence();
+    if (this.host && new DataView(cmd.buffer, cmd.byteOffset, 8).getUint32(4, true) & FLAG_FENCE)
+      this.wait = this.host.fence();
   }
 
   /** The reply waits for the host whatever the command's flags: a blob's map must be in the window before the guest reads it. */
@@ -762,7 +934,11 @@ export class Gpu {
     const modes: { width: number; height: number }[] = [];
     for (const m of [this.shown, this.floor]) {
       if (m.width < EDID_MIN.width || m.height < EDID_MIN.height) continue;
-      if ((m.width === this.width && m.height === this.height) || modes.some((x) => x.width === m.width && x.height === m.height)) continue;
+      if (
+        (m.width === this.width && m.height === this.height) ||
+        modes.some((x) => x.width === m.width && x.height === m.height)
+      )
+        continue;
       modes.push(m);
     }
     return modes;
@@ -821,16 +997,27 @@ export class Gpu {
     const s = this.scanout;
     const res = s && this.resources.get(s.id);
     if (!s || !res) this.host.call({ t: 'scanout', width: 0, height: 0, rect: { x: 0, y: 0, w: 0, h: 0 } });
-    else if (res.three) this.host.call({ t: 'scanout', res: res.id, width: res.width, height: res.height, rect: { ...s.rect } });
-    else this.host.call({ t: 'scanout', pixels: res.pixels, swizzle: res.raw ? FORMATS.get(res.format)!.slice(0, 3) : undefined, width: res.width, height: res.height, rect: { ...s.rect } });
+    else if (res.three)
+      this.host.call({ t: 'scanout', res: res.id, width: res.width, height: res.height, rect: { ...s.rect } });
+    else
+      this.host.call({
+        t: 'scanout',
+        pixels: res.pixels,
+        swizzle: res.raw ? FORMATS.get(res.format)!.slice(0, 3) : undefined,
+        width: res.width,
+        height: res.height,
+        rect: { ...s.rect },
+      });
   }
 
   /** Copies the part of `r` that is on the scanout to the page. */
   private draw(res: Resource, r: Rect) {
     const s = this.scanout;
     if (!s || s.id !== res.id) return;
-    const x0 = Math.max(r.x, s.rect.x), y0 = Math.max(r.y, s.rect.y);
-    const x1 = Math.min(r.x + r.w, s.rect.x + s.rect.w), y1 = Math.min(r.y + r.h, s.rect.y + s.rect.h);
+    const x0 = Math.max(r.x, s.rect.x),
+      y0 = Math.max(r.y, s.rect.y);
+    const x1 = Math.min(r.x + r.w, s.rect.x + s.rect.w),
+      y1 = Math.min(r.y + r.h, s.rect.y + s.rect.h);
     if (x1 <= x0 || y1 <= y0) return;
     const rect = { x: x0 - s.rect.x, y: y0 - s.rect.y, w: x1 - x0, h: y1 - y0 };
     this.hooks.damage?.(rect);
@@ -841,7 +1028,20 @@ export class Gpu {
   private announce() {
     const s = this.scanout;
     const res = s && this.resources.get(s.id);
-    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y, swizzle: res.raw ? FORMATS.get(res.format)!.slice(0, 3) : undefined } : null);
+    this.hooks.scanout?.(
+      s ? s.rect.w : 0,
+      s ? s.rect.h : 0,
+      s && res
+        ? {
+            pixels: res.pixels,
+            width: res.width,
+            height: res.height,
+            x: s.rect.x,
+            y: s.rect.y,
+            swizzle: res.raw ? FORMATS.get(res.format)!.slice(0, 3) : undefined,
+          }
+        : null,
+    );
   }
 
   private flush(res: Resource, r: Rect) {
@@ -873,7 +1073,8 @@ export class Gpu {
     if (res.raw) {
       // For the host's screen: the bytes as they are, a backing page's run at a time.
       const px = res.pixels;
-      let seg = 0, segStart = 0;
+      let seg = 0,
+        segStart = 0;
       for (let y = 0; y < r.h; y++) {
         let at = offset + stride * y;
         let d = ((r.y + y) * res.width + r.x) * 4;
@@ -894,12 +1095,18 @@ export class Gpu {
     // with the channels swapped in registers, ~4 times the bytewise loop (a console scrolling at full screen
     // sends hundreds of these a second, and the guest waits for each).
     const swap = res.format === 1 || res.format === 2;
-    if ((swap || res.format === 67 || res.format === 134) && ram.every((m) => m.byteOffset % 4 === 0) && offset % 4 === 0 && backing.every((b) => b.off % 4 === 0 && b.len % 4 === 0)) {
+    if (
+      (swap || res.format === 67 || res.format === 134) &&
+      ram.every((m) => m.byteOffset % 4 === 0) &&
+      offset % 4 === 0 &&
+      backing.every((b) => b.off % 4 === 0 && b.len % 4 === 0)
+    ) {
       const srcs = ram.map((m) => new Uint32Array(m.buffer, m.byteOffset, m.length >>> 2));
       const dst = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >>> 2);
       const opaque = res.opaque ? 0xff000000 : 0;
       const words = r.w;
-      let seg = 0, segStart = 0; // the backing page holding the byte at `at`, and where it starts: rows only move forward
+      let seg = 0,
+        segStart = 0; // the backing page holding the byte at `at`, and where it starts: rows only move forward
       for (let y = 0; y < r.h; y++) {
         let at = offset + stride * y;
         while (at >= segStart + backing[seg].len) segStart += backing[seg++].len;
@@ -909,10 +1116,12 @@ export class Gpu {
           const src = srcs[b.mem];
           const s0 = (b.off + (at - segStart)) >>> 2;
           const n = Math.min(left, (b.len - (at - segStart)) >>> 2);
-          if (swap) for (let k = 0; k < n; k++) {
-            const v = src[s0 + k];
-            dst[d + k] = (v & 0xff00ff00 | v >>> 16 & 0xff | (v & 0xff) << 16 | opaque) >>> 0;
-          } else for (let k = 0; k < n; k++) dst[d + k] = (src[s0 + k] | opaque) >>> 0;
+          if (swap)
+            for (let k = 0; k < n; k++) {
+              const v = src[s0 + k];
+              dst[d + k] = ((v & 0xff00ff00) | ((v >>> 16) & 0xff) | ((v & 0xff) << 16) | opaque) >>> 0;
+            }
+          else for (let k = 0; k < n; k++) dst[d + k] = (src[s0 + k] | opaque) >>> 0;
           d += n;
           left -= n;
           at += n * 4;
@@ -978,12 +1187,22 @@ export class Gpu {
     const screen = this.screenHash();
     const c = this.cursorImage;
     return {
-      width: this.width, height: this.height, flushes: this.flushes,
-      resources: [...this.resources.values()].map((r) => ({ id: r.id, format: r.format, width: r.width, height: r.height, backing: r.backing?.map((b) => (b.mem ? [b.off, b.len, b.mem] : [b.off, b.len])) ?? null })),
+      width: this.width,
+      height: this.height,
+      flushes: this.flushes,
+      resources: [...this.resources.values()].map((r) => ({
+        id: r.id,
+        format: r.format,
+        width: r.width,
+        height: r.height,
+        backing: r.backing?.map((b) => (b.mem ? [b.off, b.len, b.mem] : [b.off, b.len])) ?? null,
+      })),
       scanout: s ? { id: s.id, ...s.rect } : null,
       screen,
       trace: this.trace,
-      cursor: c ? { ...this.cursorState, hash: hashRgba([new Uint32Array(c.buffer, c.byteOffset, c.length / 4)], false) } : null,
+      cursor: c
+        ? { ...this.cursorState, hash: hashRgba([new Uint32Array(c.buffer, c.byteOffset, c.length / 4)], false) }
+        : null,
       ...(this.o.virgl ? { virgl: { ...this.virgl, contexts: this.contexts.size, stream: this.stream.json() } } : {}),
     };
   }
@@ -1028,13 +1247,24 @@ export class Gpu {
       if ('refused' in got) unsaveable = got.refused;
       else renderer = got.state;
     }
-    const three = this.o.virgl ? {
-      contexts: [...this.contexts.keys()], ...(this.capsRead ? { caps: toBase64(this.caps) } : {}), ...(this.off3d ? { off3d: this.off3d } : {}),
-      attached: [...this.contexts].map(([id, set]) => [id, [...set]]), used: [...this.used],
-      three: [...this.resources.values()].filter((r) => r.three).map((r) => [r.id, r.three]),
-      ...(renderer ? { renderer } : {}),
-    } : {};
-    return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown, ...three, ...(unsaveable ? { unsaveable } : {}) };
+    const three = this.o.virgl
+      ? {
+          contexts: [...this.contexts.keys()],
+          ...(this.capsRead ? { caps: toBase64(this.caps) } : {}),
+          ...(this.off3d ? { off3d: this.off3d } : {}),
+          attached: [...this.contexts].map(([id, set]) => [id, [...set]]),
+          used: [...this.used],
+          three: [...this.resources.values()].filter((r) => r.three).map((r) => [r.id, r.three]),
+          ...(renderer ? { renderer } : {}),
+        }
+      : {};
+    return {
+      ...this.state(),
+      cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null,
+      shown: this.shown,
+      ...three,
+      ...(unsaveable ? { unsaveable } : {}),
+    };
   }
 
   /** 3D in use: a context's resources, or a 3D resource. */
@@ -1060,8 +1290,17 @@ export class Gpu {
 
   /** `save`'s state back: the tables, then every resource with a backing read again from the (restored) RAM, and the scanout drawn. */
   restore(state: unknown) {
-    const t = state as Awaited<ReturnType<Gpu['save']>> & { contexts?: number[]; caps?: string; off3d?: string; attached?: [number, number[]][]; used?: number[]; three?: [number, NonNullable<Resource['three']>][]; renderer?: RendererSnapshot };
-    if (!Array.isArray(t?.resources) || !(t.width > 0) || !(t.height > 0)) throw new Error('the snapshot has no state for the display device');
+    const t = state as Awaited<ReturnType<Gpu['save']>> & {
+      contexts?: number[];
+      caps?: string;
+      off3d?: string;
+      attached?: [number, number[]][];
+      used?: number[];
+      three?: [number, NonNullable<Resource['three']>][];
+      renderer?: RendererSnapshot;
+    };
+    if (!Array.isArray(t?.resources) || !(t.width > 0) || !(t.height > 0))
+      throw new Error('the snapshot has no state for the display device');
     this.resources.clear();
     this.total = 0;
     this.scanout = null;
@@ -1076,18 +1315,38 @@ export class Gpu {
       const t3 = three.get(r.id);
       if (t3) {
         // A virgl resource: its contents are the renderer's (`renderer` below).
-        this.resources.set(r.id, { id: r.id, format: r.format, width: r.width, height: r.height, pixels: new Uint8Array(0), backing, three: t3 });
+        this.resources.set(r.id, {
+          id: r.id,
+          format: r.format,
+          width: r.width,
+          height: r.height,
+          pixels: new Uint8Array(0),
+          backing,
+          three: t3,
+        });
         continue;
       }
-      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing, raw: this.raw };
+      const res: Resource = {
+        id: r.id,
+        format: r.format,
+        width: r.width,
+        height: r.height,
+        pixels: this.pixels(r.width * r.height * 4),
+        backing,
+        raw: this.raw,
+      };
       this.total += res.pixels.length;
       this.resources.set(res.id, res);
       if (res.backing) this.transfer(res, { x: 0, y: 0, w: res.width, h: res.height }, 0);
     }
-    this.scanout = t.scanout ? { id: t.scanout.id, rect: { x: t.scanout.x, y: t.scanout.y, w: t.scanout.w, h: t.scanout.h } } : null;
+    this.scanout = t.scanout
+      ? { id: t.scanout.id, rect: { x: t.scanout.x, y: t.scanout.y, w: t.scanout.w, h: t.scanout.h } }
+      : null;
     this.cursorImage = t.cursorImage ? Uint8Array.from(atob(t.cursorImage), (c) => c.charCodeAt(0)) : null;
     this.cursorSerial++;
-    this.cursorState = t.cursor ? { hotX: t.cursor.hotX, hotY: t.cursor.hotY, x: t.cursor.x, y: t.cursor.y } : { hotX: 0, hotY: 0, x: 0, y: 0 };
+    this.cursorState = t.cursor
+      ? { hotX: t.cursor.hotX, hotY: t.cursor.hotY, x: t.cursor.x, y: t.cursor.y }
+      : { hotX: 0, hotY: 0, x: 0, y: 0 };
     // 3D: the guest keeps the caps it read at boot. The device gives them again, and if this browser can't back them,
     // 3D is off (a context can't be made; the guest's GL falls back or fails) rather than the machine refused.
     this.contexts.clear();
@@ -1109,7 +1368,10 @@ export class Gpu {
     for (const id of t.used ?? []) this.used.add(id);
     if (t.renderer && this.host && !this.off3d) this.host.call({ t: 'load', state: t.renderer });
     else {
-      if (t.renderer) console.warn(`virtio-gpu: the machine's 3D state isn't restored (${this.off3d ?? 'no renderer'}): its GL programs will fail`);
+      if (t.renderer)
+        console.warn(
+          `virtio-gpu: the machine's 3D state isn't restored (${this.off3d ?? 'no renderer'}): its GL programs will fail`,
+        );
       if (!this.off3d) for (const id of t.contexts ?? []) this.host?.call({ t: 'ctx', id, create: true });
     }
     const s = this.scanout;
@@ -1117,12 +1379,30 @@ export class Gpu {
     if (sr?.three && !this.host) sr.pixels = new Uint8Array(sr.width * sr.height * 4); // the null renderer's black
     if (s) makeOpaque(this.resources.get(s.id)!);
     const shown = s && this.resources.get(s.id);
-    this.shown = shown ? { width: shown.width, height: shown.height } : t.shown?.width > 0 && t.shown.height > 0 ? { width: t.shown.width, height: t.shown.height } : { width: 0, height: 0 };
-    if (this.o.keepConsole && s && shown && s.rect.x === 0 && s.rect.y === 0 && (s.rect.w < shown.width || s.rect.h < shown.height)) this.floor = { width: shown.width, height: shown.height };
+    this.shown = shown
+      ? { width: shown.width, height: shown.height }
+      : t.shown?.width > 0 && t.shown.height > 0
+        ? { width: t.shown.width, height: t.shown.height }
+        : { width: 0, height: 0 };
+    if (
+      this.o.keepConsole &&
+      s &&
+      shown &&
+      s.rect.x === 0 &&
+      s.rect.y === 0 &&
+      (s.rect.w < shown.width || s.rect.h < shown.height)
+    )
+      this.floor = { width: shown.width, height: shown.height };
     this.announce();
     this.hostScanout();
     if (s) this.draw(this.resources.get(s.id)!, s.rect);
-    this.hooks.cursor?.(this.cursorImage, this.cursorState.hotX, this.cursorState.hotY, this.cursorState.x, this.cursorState.y);
+    this.hooks.cursor?.(
+      this.cursorImage,
+      this.cursorState.hotX,
+      this.cursorState.hotY,
+      this.cursorState.x,
+      this.cursorState.y,
+    );
   }
 }
 
@@ -1136,14 +1416,17 @@ function makeOpaque(res: Resource) {
 /** `n` pixels of a raw resource from pixel `at`, as RGBA. */
 function rgba(res: Resource, at: number, n: number) {
   const [ri, gi, bi, ai] = FORMATS.get(res.format)!;
-  const px = res.pixels, out = new Uint8Array(n * 4);
-  for (let k = 0, s = at * 4; k < out.length; k += 4, s += 4) [out[k], out[k + 1], out[k + 2], out[k + 3]] = [px[s + ri], px[s + gi], px[s + bi], px[s + ai]];
+  const px = res.pixels,
+    out = new Uint8Array(n * 4);
+  for (let k = 0, s = at * 4; k < out.length; k += 4, s += 4)
+    [out[k], out[k + 1], out[k + 2], out[k + 3]] = [px[s + ri], px[s + gi], px[s + bi], px[s + ai]];
   return out;
 }
 
 /** Reads `out.length` bytes at `offset` of the concatenated backing pages. */
 function readBacking(ram: Ram, backing: Segment[], offset: number, out: Uint8Array) {
-  let skip = offset, k = 0;
+  let skip = offset,
+    k = 0;
   for (const b of backing) {
     if (skip >= b.len) {
       skip -= b.len;
@@ -1167,13 +1450,24 @@ function toBase64(b: Uint8Array) {
 export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   const gpu = new Gpu(() => ctx.ram(), ctx.layout, o);
   gpu.hooks = hooks;
-  gpu.raise = () => ctx.changeConfig((c) => {
-    const v = new DataView(c.buffer, c.byteOffset, 16);
-    v.setUint32(0, v.getUint32(0, true) | EVENT_DISPLAY, true);
-  });
+  gpu.raise = () =>
+    ctx.changeConfig((c) => {
+      const v = new DataView(c.buffer, c.byteOffset, 16);
+      v.setUint32(0, v.getUint32(0, true) | EVENT_DISPLAY, true);
+    });
   // Replies not sent yet, in order: a fenced command's waits for the host (`ready` once it has run), and with
   // `paceFlushes` a flush that follows the last within a frame waits for the frame's end, with all behind it.
-  type Held = { w0: number; len: number; flush: boolean; ready: boolean; behind: boolean; at: number; type: number; write: Request['write']; reply: Uint8Array };
+  type Held = {
+    w0: number;
+    len: number;
+    flush: boolean;
+    ready: boolean;
+    behind: boolean;
+    at: number;
+    type: number;
+    write: Request['write'];
+    reply: Uint8Array;
+  };
   let held: Held[] = [];
   // Replies to ring fences (Venus's), sent when their fence retires. They are out of line: such a fence stands for a
   // queue's work, which may wait for the guest's own signal, and the replies held behind it would fill the queue before
@@ -1189,7 +1483,9 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   // when the guest sends nothing for `CARRY_MS`, the display event's GET_DISPLAY_INFO, which the kernel sends from its
   // own work (the review of R1 to R4's C2, VK4 T36).
   type Ringed = Held & { lane: string; id: bigint; seq: number; due: boolean };
-  const QUEUE_FULL = 16, RING_STALL_MS = 250, CARRY_MS = 20;
+  const QUEUE_FULL = 16,
+    RING_STALL_MS = 250,
+    CARRY_MS = 20;
   const rings = new Set<Ringed>();
   let loose: Ringed[] = [];
   let ringSeq = 0;
@@ -1245,7 +1541,8 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   // `performance.now()` says it is due (a cloud host's mostly do), and the guest's queue would then wait for twice the stall;
   // the same for activity since the timer was armed.
   const armRings = () => {
-    if (full()) ringWatch ??= setTimeout(watchRings, Math.max(1, Math.ceil(ringActive + RING_STALL_MS - performance.now())));
+    if (full())
+      ringWatch ??= setTimeout(watchRings, Math.max(1, Math.ceil(ringActive + RING_STALL_MS - performance.now())));
   };
   // The stats' queue occupancy (`?displaystats`): the most replies held at once, and the time QUEUE_FULL of them were
   // (the page's queue size: the guest's ring had no free entry, so its next command waited).
@@ -1254,7 +1551,10 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     busy.heldMax = Math.max(busy.heldMax, held.length);
     const now = performance.now();
     if (held.length >= QUEUE_FULL && fullSince < 0) fullSince = now;
-    else if (held.length < QUEUE_FULL && fullSince >= 0) { busy.fullMs += now - fullSince; fullSince = -1; }
+    else if (held.length < QUEUE_FULL && fullSince >= 0) {
+      busy.fullMs += now - fullSince;
+      fullSince = -1;
+    }
   };
   let lastFlush = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1266,7 +1566,13 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       if (h.flush && o.paceFlushes) {
         const now = performance.now();
         if (!fromTimer && now - lastFlush < FRAME_MS) {
-          timer ??= setTimeout(() => { timer = undefined; pump(true); }, Math.max(0, lastFlush + FRAME_MS - now));
+          timer ??= setTimeout(
+            () => {
+              timer = undefined;
+              pump(true);
+            },
+            Math.max(0, lastFlush + FRAME_MS - now),
+          );
           return;
         }
         // A frame's end is a frame after the last, not when the timer got to run (timers are late: the rate would sag below 60).
@@ -1293,7 +1599,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         return 0;
       }
       const room = r.write.reduce((n, s) => n + s.len, 0);
-      const t0 = ringActive = performance.now();
+      const t0 = (ringActive = performance.now());
       const type = cmd.length >= 4 ? new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) : 0;
       busy.events?.push(performance.timeOrigin + t0, type);
       const reply = gpu.control(cmd, room);
@@ -1303,9 +1609,27 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       const wait = gpu.takeWait();
       const flush = !!o.paceFlushes && type === RESOURCE_FLUSH;
       const now = performance.now();
-      if (wait && type === SUBMIT_3D && new DataView(cmd.buffer, cmd.byteOffset, cmd.length).getUint32(4, true) & FLAG_INFO_RING_IDX) {
+      if (
+        wait &&
+        type === SUBMIT_3D &&
+        new DataView(cmd.buffer, cmd.byteOffset, cmd.length).getUint32(4, true) & FLAG_INFO_RING_IDX
+      ) {
         const c = new DataView(cmd.buffer, cmd.byteOffset, cmd.length);
-        const h: Ringed = { w0: r.w0, len: reply.length, flush, ready: false, behind: false, at: now, type, lane: `${c.getUint32(16, true)}:${c.getUint8(20)}`, write: r.write, reply, id: c.getBigUint64(8, true), seq: ringSeq++, due: false };
+        const h: Ringed = {
+          w0: r.w0,
+          len: reply.length,
+          flush,
+          ready: false,
+          behind: false,
+          at: now,
+          type,
+          lane: `${c.getUint32(16, true)}:${c.getUint8(20)}`,
+          write: r.write,
+          reply,
+          id: c.getBigUint64(8, true),
+          seq: ringSeq++,
+          due: false,
+        };
         rings.add(h);
         void wait.then(() => {
           ringActive = performance.now();
@@ -1323,7 +1647,17 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       }
       if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
         // `behind`: neither fenced nor a paced flush, held only for the replies before it.
-        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, behind: !wait && !flush, at: now, type, write: r.write, reply };
+        const h: Held = {
+          w0: r.w0,
+          len: reply.length,
+          flush,
+          ready: !wait,
+          behind: !wait && !flush,
+          at: now,
+          type,
+          write: r.write,
+          reply,
+        };
         held.push(h);
         occupancy();
         armRings();
@@ -1336,8 +1670,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
             h.ready = true;
             pump();
           });
-        }
-        else pump();
+        } else pump();
         return undefined;
       }
       if (flush) lastFlush = now;

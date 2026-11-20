@@ -29,8 +29,12 @@ export async function freeRoom(room?: number): Promise<number | undefined> {
 
 /** Whether this context can stage: OPFS and Web Locks. */
 export async function canStage(): Promise<boolean> {
-  if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.storage?.getDirectory !== 'function') return false;
-  return navigator.storage.getDirectory().then(() => true, () => false);
+  if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.storage?.getDirectory !== 'function')
+    return false;
+  return navigator.storage.getDirectory().then(
+    () => true,
+    () => false,
+  );
 }
 
 /** Staging file `name` removed (none is fine). */
@@ -80,7 +84,9 @@ export async function holdStaging(): Promise<Staging | undefined> {
   if (!(await canStage())) return undefined;
   const name = `${Date.now().toString(36)}-${crypto.randomUUID()}`;
   let free!: () => void;
-  const held = new Promise<void>((resolve) => { free = resolve; });
+  const held = new Promise<void>((resolve) => {
+    free = resolve;
+  });
   const got = await new Promise<boolean>((resolve) => {
     navigator.locks
       .request(stagingLock(name), { ifAvailable: true }, (lock) => {
@@ -91,7 +97,10 @@ export async function holdStaging(): Promise<Staging | undefined> {
   });
   if (!got) return undefined;
   let released: Promise<void> | undefined;
-  const end = () => removeStaged(name).catch(() => undefined).finally(free);
+  const end = () =>
+    removeStaged(name)
+      .catch(() => undefined)
+      .finally(free);
   return {
     name,
     release(after = 0) {
@@ -118,7 +127,10 @@ export async function removeStale(): Promise<number> {
   for (const name of names) {
     await navigator.locks.request(stagingLock(name), { ifAvailable: true }, async (lock) => {
       if (!lock) return; // a save in progress (this page's or another tab's)
-      await dir.removeEntry(name).then(() => removed++, () => undefined);
+      await dir.removeEntry(name).then(
+        () => removed++,
+        () => undefined,
+      );
     });
   }
   return removed;

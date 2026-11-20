@@ -55,7 +55,12 @@ export function namesOp<T>(m: TsModule, op: NamesOp, input: object): T {
  * Puts `items` through a publisher in the room with link `link` (module `m`): resolves with each item's answers once
  * every item has two, or one and SECOND_ANSWER_MS more, or `nobody`; or at PUBLISH_MS with what came.
  */
-export function publishWith(m: TsModule, link: string, items: { id: string; item: string }[], o: { derpMapURL?: string; log?: (s: string) => void } = {}): Promise<Map<string, PutAnswer[]>> {
+export function publishWith(
+  m: TsModule,
+  link: string,
+  items: { id: string; item: string }[],
+  o: { derpMapURL?: string; log?: (s: string) => void } = {},
+): Promise<Map<string, PutAnswer[]>> {
   const answers = new Map<string, PutAnswer[]>(items.map((i) => [i.id, []]));
   return new Promise((resolve) => {
     let client: TsClient | undefined;
@@ -75,24 +80,30 @@ export function publishWith(m: TsModule, link: string, items: { id: string; item
       done();
     };
     try {
-      client = new TsClient(m, { room: { link, publish: true }, ...(o.derpMapURL ? { derpMapURL: o.derpMapURL } : {}) }, {
-        packet() {},
-        event(e) {
-          if (e.type === 'log') return o.log?.(e.msg);
-          if (e.type === 'state' && e.state === 'Failed') return queueMicrotask(failAll);
-          if (e.type === 'state' && e.state === 'Running' && !put) {
-            put = true;
-            // Not from inside the client's pump: on the next turn.
-            queueMicrotask(() => {
-              for (const i of items) if (!client?.namesPut(hexBytes(i.item))) answers.get(i.id)?.push({ id: i.id, server: null, result: 'failed', item: null });
-            });
-          }
-          if (e.type !== 'names-put') return;
-          answers.get(e.id)?.push({ id: e.id, server: e.server, result: e.result, item: e.item });
-          if (settled()) return queueMicrotask(done);
-          if ([...answers.values()].every((a) => a.length > 0)) second ??= setTimeout(done, SECOND_ANSWER_MS);
+      client = new TsClient(
+        m,
+        { room: { link, publish: true }, ...(o.derpMapURL ? { derpMapURL: o.derpMapURL } : {}) },
+        {
+          packet() {},
+          event(e) {
+            if (e.type === 'log') return o.log?.(e.msg);
+            if (e.type === 'state' && e.state === 'Failed') return queueMicrotask(failAll);
+            if (e.type === 'state' && e.state === 'Running' && !put) {
+              put = true;
+              // Not from inside the client's pump: on the next turn.
+              queueMicrotask(() => {
+                for (const i of items)
+                  if (!client?.namesPut(hexBytes(i.item)))
+                    answers.get(i.id)?.push({ id: i.id, server: null, result: 'failed', item: null });
+              });
+            }
+            if (e.type !== 'names-put') return;
+            answers.get(e.id)?.push({ id: e.id, server: e.server, result: e.result, item: e.item });
+            if (settled()) return queueMicrotask(done);
+            if ([...answers.values()].every((a) => a.length > 0)) second ??= setTimeout(done, SECOND_ANSWER_MS);
+          },
         },
-      });
+      );
     } catch (err) {
       o.log?.(`no publisher: ${String(err)}`);
       failAll();
@@ -103,7 +114,10 @@ export function publishWith(m: TsModule, link: string, items: { id: string; item
 /** The servers' answers to one check: each `ids` answer's list, kept apart (the agent's `check` weighs them). */
 export function mergeIds(answers: NamesIds[]): IdsAnswer {
   const said = answers.filter((a) => a.result === 'ids');
-  return { result: said.length ? 'ids' : answers.some((a) => a.result === 'nobody') ? 'nobody' : 'failed', lists: said.map((a) => a.ids ?? []) };
+  return {
+    result: said.length ? 'ids' : answers.some((a) => a.result === 'nobody') ? 'nobody' : 'failed',
+    lists: said.map((a) => a.ids ?? []),
+  };
 }
 
 /** A check's longest wait (finding servers, then their answers). */
@@ -115,7 +129,12 @@ const CHECK_MS = 20_000;
  * can link one press of Register to another. Resolves once two servers answered, or one and SECOND_ANSWER_MS more, or
  * nobody serves, or at CHECK_MS: with the ids of every server that answered, a list each (`mergeIds`).
  */
-export function idsWith(m: TsModule, link: string, first: number, o: { derpMapURL?: string; log?: (s: string) => void } = {}): Promise<IdsAnswer> {
+export function idsWith(
+  m: TsModule,
+  link: string,
+  first: number,
+  o: { derpMapURL?: string; log?: (s: string) => void } = {},
+): Promise<IdsAnswer> {
   const answers: NamesIds[] = [];
   return new Promise((resolve) => {
     let client: TsClient | undefined;
@@ -132,18 +151,23 @@ export function idsWith(m: TsModule, link: string, first: number, o: { derpMapUR
     };
     const timer = setTimeout(done, CHECK_MS);
     try {
-      client = new TsClient(m, { room: { link, publish: true }, ...(o.derpMapURL ? { derpMapURL: o.derpMapURL } : {}) }, {
-        packet() {},
-        event(e) {
-          if (e.type === 'log') return o.log?.(e.msg);
-          // Not from inside the client's pump.
-          if (e.type === 'state' && e.state === 'Failed') return queueMicrotask(done);
-          if (e.type !== 'names-ids' || e.first !== first) return;
-          answers.push(e);
-          if (e.result === 'nobody' || answers.length >= 2 || (e.result === 'failed' && !e.server)) return queueMicrotask(done);
-          if (e.result === 'ids') second ??= setTimeout(done, SECOND_ANSWER_MS);
+      client = new TsClient(
+        m,
+        { room: { link, publish: true }, ...(o.derpMapURL ? { derpMapURL: o.derpMapURL } : {}) },
+        {
+          packet() {},
+          event(e) {
+            if (e.type === 'log') return o.log?.(e.msg);
+            // Not from inside the client's pump.
+            if (e.type === 'state' && e.state === 'Failed') return queueMicrotask(done);
+            if (e.type !== 'names-ids' || e.first !== first) return;
+            answers.push(e);
+            if (e.result === 'nobody' || answers.length >= 2 || (e.result === 'failed' && !e.server))
+              return queueMicrotask(done);
+            if (e.result === 'ids') second ??= setTimeout(done, SECOND_ANSWER_MS);
+          },
         },
-      });
+      );
       if (!client.namesIds(first)) queueMicrotask(done);
     } catch (err) {
       o.log?.(`no checker: ${String(err)}`);

@@ -16,18 +16,24 @@ export const VENUS_CAPSET_BYTES = (5 + 32 + 3) * 4;
  * into it). The guest reads the mask to know what the renderer can carry, so it must be vkr's: tests/venus-renderer.test.ts
  * checks these words against the built module's.
  */
-export const VENUS_CAPSET_WORDS = [1, 4211045, 1, 4, 1, 536985601, 809508864, 6253551, 3260440768, 4038813977, 2724564492,
-  1093731682, 4041505551, 2519053428, 134481229, 850856538, 3321889331, 1342314299, 524490, 9240912, 135888900,
-  12836865, 2166915143, 536871568, 8396834, 262152, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0];
+export const VENUS_CAPSET_WORDS = [
+  1, 4211045, 1, 4, 1, 536985601, 809508864, 6253551, 3260440768, 4038813977, 2724564492, 1093731682, 4041505551,
+  2519053428, 134481229, 850856538, 3321889331, 1342314299, 524490, 9240912, 135888900, 12836865, 2166915143, 536871568,
+  8396834, 262152, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+];
 
 export function venusCapset(): Uint8Array {
   return new Uint8Array(Uint32Array.from(VENUS_CAPSET_WORDS).buffer);
 }
 
 /** RESOURCE_CREATE_BLOB's `blob_mem`. */
-export const BLOB_MEM_GUEST = 1, BLOB_MEM_HOST3D = 2, BLOB_MEM_HOST3D_GUEST = 3;
+export const BLOB_MEM_GUEST = 1,
+  BLOB_MEM_HOST3D = 2,
+  BLOB_MEM_HOST3D_GUEST = 3;
 /** Its `blob_flags`. */
-export const BLOB_FLAG_USE_MAPPABLE = 1, BLOB_FLAG_USE_SHAREABLE = 2, BLOB_FLAG_USE_CROSS_DEVICE = 4;
+export const BLOB_FLAG_USE_MAPPABLE = 1,
+  BLOB_FLAG_USE_SHAREABLE = 2,
+  BLOB_FLAG_USE_CROSS_DEVICE = 4;
 /** RESOURCE_MAP_BLOB's answer: the mapping's cache type (VIRTIO_GPU_MAP_CACHE_CACHED). */
 export const MAP_CACHE_CACHED = 1;
 /** CTX_CREATE's `context_init`: the capset in its low byte. */

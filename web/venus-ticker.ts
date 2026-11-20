@@ -14,16 +14,19 @@
 type Start = { sab: SharedArrayBuffer; period: number; alive?: { memory: WebAssembly.Memory; table: number } };
 
 /** The alive bit (Venus's `VK_RING_STATUS_ALIVE_BIT_MESA`) and how often it's set at most (ms) whatever the period asked. */
-const ALIVE_BIT = 4, ALIVE_MIN_MS = 10;
+const ALIVE_BIT = 4,
+  ALIVE_MIN_MS = 10;
 
 /**
  * Sets the alive bit of the table's rings, under its lock (vkr holds it while it changes the table, so no word is written
  * after its ring is gone). Returns the next pause (ms), or undefined if vkr held the lock (tried again at the next wake).
  */
 export function setAlive(memory: WebAssembly.Memory, table: number): number | undefined {
-  const u = new Uint32Array(memory.buffer), at = table >>> 2;
+  const u = new Uint32Array(memory.buffer),
+    at = table >>> 2;
   if (Atomics.compareExchange(u, at, 0, 1) !== 0) return undefined;
-  const periodUs = u[at + 1], n = u[at + 2];
+  const periodUs = u[at + 1],
+    n = u[at + 2];
   for (let i = 0; i < n; i++) Atomics.or(u, u[at + 3 + i] >>> 2, ALIVE_BIT);
   Atomics.store(u, at, 0);
   // No ring asks yet: looked at again at the default's pace (Mesa's 3 s).
@@ -33,8 +36,10 @@ export function setAlive(memory: WebAssembly.Memory, table: number): number | un
 // (On globalThis: imported in Node, tests/venus-ticker.test.ts, the module defines `setAlive` and nothing runs.)
 (globalThis as { onmessage?: unknown }).onmessage = (e: MessageEvent<Start>) => {
   const { sab, period, alive } = e.data;
-  const w = new Int32Array(sab), sleep = new Int32Array(new SharedArrayBuffer(4));
-  let every = 1000, last = -Infinity;
+  const w = new Int32Array(sab),
+    sleep = new Int32Array(new SharedArrayBuffer(4));
+  let every = 1000,
+    last = -Infinity;
   for (;;) {
     if (alive) {
       const now = performance.now();

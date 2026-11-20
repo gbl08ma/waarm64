@@ -43,7 +43,16 @@ export type FromDeviceWorker =
   | { type: 'drained' }
   | { type: 'saved'; state?: unknown[]; error?: string; wire?: WireError }
   | { type: 'refusal'; refused?: WireError }
-  | { type: 'disk'; id: number; written?: { blocks: Uint32Array; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; hinted?: Hinted; inspected?: InspectAnswer; error?: string }
+  | {
+      type: 'disk';
+      id: number;
+      written?: { blocks: Uint32Array; generation?: number };
+      bytes?: Uint8Array;
+      compacted?: { before: number; after: number };
+      hinted?: Hinted;
+      inspected?: InspectAnswer;
+      error?: string;
+    }
   | { type: 'closed'; stats?: unknown };
 
 // The xHCI's real devices (docs/usb.md): WebUSB's and WebHID's, where this worker has them (the page grants them).
@@ -53,64 +62,88 @@ if (nav.hid) registerUsbOpener('hid', webHidOpener(nav.hid));
 
 let devices: Devices | undefined;
 
-
 self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
-  if (e.data.type === 'init') start(e.data).catch((err) => self.postMessage({ type: 'error', message: String(err), error: toWire(err) } satisfies FromDeviceWorker));
-  else if (e.data.type === 'flush') self.postMessage({ type: 'flushed' } satisfies FromDeviceWorker); // after every earlier message
-  else if (e.data.type === 'drain') void devices!.drain().then(() => self.postMessage({ type: 'drained' } satisfies FromDeviceWorker));
+  if (e.data.type === 'init')
+    start(e.data).catch((err) =>
+      self.postMessage({ type: 'error', message: String(err), error: toWire(err) } satisfies FromDeviceWorker),
+    );
+  else if (e.data.type === 'flush')
+    self.postMessage({ type: 'flushed' } satisfies FromDeviceWorker); // after every earlier message
+  else if (e.data.type === 'drain')
+    void devices!.drain().then(() => self.postMessage({ type: 'drained' } satisfies FromDeviceWorker));
   else if (e.data.type === 'save') {
     // The backends' state for a snapshot (the owner has the devices quiet).
     devices!.save().then(
       (state) => self.postMessage({ type: 'saved', state } satisfies FromDeviceWorker, stateBuffers(state)),
-      (err) => self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err), wire: toWire(err) } satisfies FromDeviceWorker),
+      (err) =>
+        self.postMessage({
+          type: 'saved',
+          error: String(err instanceof Error ? err.message : err),
+          wire: toWire(err),
+        } satisfies FromDeviceWorker),
     );
-  }
-  else if (e.data.type === 'refusal') {
+  } else if (e.data.type === 'refusal') {
     // Why a snapshot would be refused now, asked before it touches the machine (a failed ask refuses nothing: `save` decides).
     devices!.refusal().then(
       (refused) => self.postMessage({ type: 'refusal', refused } satisfies FromDeviceWorker),
       () => self.postMessage({ type: 'refusal' } satisfies FromDeviceWorker),
     );
-  }
-  else if (e.data.type === 'written' || e.data.type === 'blocks') {
+  } else if (e.data.type === 'written' || e.data.type === 'blocks') {
     // A disk's changes for a snapshot: the blocks its overlay holds, then their bytes in batches.
     const m = e.data;
     const { id, device } = m;
     try {
-      if (m.type === 'written') self.postMessage({ type: 'disk', id, written: devices!.written(device) } satisfies FromDeviceWorker);
+      if (m.type === 'written')
+        self.postMessage({ type: 'disk', id, written: devices!.written(device) } satisfies FromDeviceWorker);
       else {
         const bytes = devices!.blocks(device, m.blocks);
         self.postMessage({ type: 'disk', id, bytes } satisfies FromDeviceWorker, { transfer: [bytes.buffer] });
       }
     } catch (err) {
-      self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker);
+      self.postMessage({
+        type: 'disk',
+        id,
+        error: String(err instanceof Error ? err.message : err),
+      } satisfies FromDeviceWorker);
     }
-  }
-  else if (e.data.type === 'compact') {
+  } else if (e.data.type === 'compact') {
     // The overlays compacted after a trim the page asked for (web/devices.ts `Devices.compact`).
     const id = e.data.id;
     devices!.compact(e.data.measure).then(
       (compacted) => self.postMessage({ type: 'disk', id, compacted } satisfies FromDeviceWorker),
-      (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
+      (err) =>
+        self.postMessage({
+          type: 'disk',
+          id,
+          error: String(err instanceof Error ? err.message : err),
+        } satisfies FromDeviceWorker),
     );
-  }
-  else if (e.data.type === 'hint') {
+  } else if (e.data.type === 'hint') {
     // The balloon's free page hint before a snapshot (web/balloon.ts), answered when the guest said STOP or the wait ended.
     const id = e.data.id;
     devices!.hint(e.data.ms).then(
       (hinted) => self.postMessage({ type: 'disk', id, hinted } satisfies FromDeviceWorker),
-      (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
+      (err) =>
+        self.postMessage({
+          type: 'disk',
+          id,
+          error: String(err instanceof Error ? err.message : err),
+        } satisfies FromDeviceWorker),
     );
-  }
-  else if (e.data.type === 'inspect') {
+  } else if (e.data.type === 'inspect') {
     // A disk's surface or one of its ranges (web/surface.ts), from the maps in memory; the arrays transferred.
     const id = e.data.id;
     devices!.inspect(e.data.device, e.data.query).then(
-      (inspected) => self.postMessage({ type: 'disk', id, inspected } satisfies FromDeviceWorker, answerBuffers(inspected)),
-      (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
+      (inspected) =>
+        self.postMessage({ type: 'disk', id, inspected } satisfies FromDeviceWorker, answerBuffers(inspected)),
+      (err) =>
+        self.postMessage({
+          type: 'disk',
+          id,
+          error: String(err instanceof Error ? err.message : err),
+        } satisfies FromDeviceWorker),
     );
-  }
-  else if (e.data.type === 'release') devices!.release();
+  } else if (e.data.type === 'release') devices!.release();
   else if (e.data.type === 'close') {
     // What the backends hold back (a shared folder's write sessions) lands first, bounded: a host that doesn't answer doesn't keep the page.
     void Promise.race([devices?.drain().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_MS))]).then(() => {
@@ -123,9 +156,16 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
 };
 
 async function start(init: Init) {
-  devices = await Devices.open(init, (device, text) => self.postMessage({ type: 'console', device, text } satisfies FromDeviceWorker), (message) => self.postMessage({ type: 'notice', message } satisfies FromDeviceWorker));
+  devices = await Devices.open(
+    init,
+    (device, text) => self.postMessage({ type: 'console', device, text } satisfies FromDeviceWorker),
+    (message) => self.postMessage({ type: 'notice', message } satisfies FromDeviceWorker),
+  );
   // The page's `?iostats` (bench/remote-disk): the blk timers whenever the page asks, between requests.
-  if (init.specs.some((d) => d.type === 'blk' && d.stats)) new BroadcastChannel('waarm64-iostats').onmessage = (e) => { if (e.data === 'ask') (e.target as BroadcastChannel).postMessage(devices!.stats()); };
+  if (init.specs.some((d) => d.type === 'blk' && d.stats))
+    new BroadcastChannel('waarm64-iostats').onmessage = (e) => {
+      if (e.data === 'ask') (e.target as BroadcastChannel).postMessage(devices!.stats());
+    };
   self.postMessage({ type: 'ready' } satisfies FromDeviceWorker);
   await devices.serve(new Int32Array(init.memory.buffer, init.bell, 2));
 }

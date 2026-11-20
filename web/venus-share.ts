@@ -34,15 +34,39 @@ export type SharedTexture = { texture: GPUTexture; written: number; bytes?: bool
 /** A buffer Venus's driver wrote a frame into (Mesa's prime blit), and the submit that last wrote it (web/venus-gpu.ts `buffer`). */
 export type SharedBuffer = { buffer: GPUBuffer; written: number };
 
-export type ShareStats = { refreshes: number; bitmaps: number; canvases: number; readbacks: number; readbackBytes: number; skipped: number; ms: number; checks: number; checksWrong: number; checksUnclear: number; unshared: number; fromBuffers: number };
+export type ShareStats = {
+  refreshes: number;
+  bitmaps: number;
+  canvases: number;
+  readbacks: number;
+  readbackBytes: number;
+  skipped: number;
+  ms: number;
+  checks: number;
+  checksWrong: number;
+  checksUnclear: number;
+  unshared: number;
+  fromBuffers: number;
+};
 
 /** Where the check stands (web/gpu-worker.ts's render stats; bench/vulkan/present.ts records it). */
-export type ShareCheck = { way: ShareMode; state: 'checking' | 'right' | 'reference'; dropped: { way: ShareMode; why: string }[] };
+export type ShareCheck = {
+  way: ShareMode;
+  state: 'checking' | 'right' | 'reference';
+  dropped: { way: ShareMode; why: string }[];
+};
 
 /** GPUTextureUsage's and GPUBufferUsage's values (the globals may be missing where this module is only imported). */
-const RENDER_ATTACHMENT = 16, COPY_DST = 8, MAP_READ = 1, MAP_MODE_READ = 1, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4;
+const RENDER_ATTACHMENT = 16,
+  COPY_DST = 8,
+  MAP_READ = 1,
+  MAP_MODE_READ = 1,
+  TEX_COPY_SRC = 1,
+  TEX_COPY_DST = 2,
+  TEXTURE_BINDING = 4;
 /** Rows of the image a check reads back, spread over its height, and the conclusive checks a GPU way must pass. */
-const CHECK_ROWS = 8, CHECKS = 3;
+const CHECK_ROWS = 8,
+  CHECKS = 3;
 /** Within this of each other (of 1), a channel copied is right: a GPU way goes through 8 bits (and a 10-bit or float image). */
 const TOLERANCE = 1.5 / 255;
 /** A check whose sampled texels are all darker than this says nothing (a black frame looks the same either way). */
@@ -54,7 +78,14 @@ type Kind = 8 | 10 | 16 | 565;
 /** The texture formats of WSI images whose samples are the image's colours: a packed format's texture holds them as
  * values (the driver's `WG_FMT_PACKED`: R5G6B5 an `rgba8unorm` texture, A2R10G10B10 an `rgb10a2unorm` one with R in
  * red). The surface formats the desktop guest's WSI offers under sway: these and those two (VK4 T48). */
-const SAMPLED = new Set<string>(['bgra8unorm', 'bgra8unorm-srgb', 'rgba8unorm', 'rgba8unorm-srgb', 'rgb10a2unorm', 'rgba16float']);
+const SAMPLED = new Set<string>([
+  'bgra8unorm',
+  'bgra8unorm-srgb',
+  'rgba8unorm',
+  'rgba8unorm-srgb',
+  'rgb10a2unorm',
+  'rgba16float',
+]);
 
 /**
  * What a shared image is to the virgl texture it is copied into: `swizzle`, of its sampled colour, gives the virgl
@@ -63,7 +94,10 @@ const SAMPLED = new Set<string>(['bgra8unorm', 'bgra8unorm-srgb', 'rgba8unorm', 
  * packed in the shader); `raw`, whether the image's texture already holds them, so that a copy of it is the virgl
  * texture's bytes. Undefined: not shared.
  */
-export function stored(texture: GPUTextureFormat, virgl: number): { swizzle: string; kind: Kind; bytes: number; target: GPUTextureFormat; raw: boolean } | undefined {
+export function stored(
+  texture: GPUTextureFormat,
+  virgl: number,
+): { swizzle: string; kind: Kind; bytes: number; target: GPUTextureFormat; raw: boolean } | undefined {
   const f = FORMATS.get(virgl);
   if (!SAMPLED.has(texture) || !f || f.block !== 1) return undefined;
   const kind = glKind(f.type, f.bpp);
@@ -73,9 +107,11 @@ export function stored(texture: GPUTextureFormat, virgl: number): { swizzle: str
     const j = f.sample.indexOf(i);
     swizzle += 'rgba'[j < 0 ? 3 : j];
   }
-  const target: GPUTextureFormat = kind === 8 ? 'rgba8unorm' : kind === 10 ? 'rgb10a2unorm' : kind === 16 ? 'rgba16float' : 'r16uint';
+  const target: GPUTextureFormat =
+    kind === 8 ? 'rgba8unorm' : kind === 10 ? 'rgb10a2unorm' : kind === 16 ? 'rgba16float' : 'r16uint';
   const linear = texture.replace('-srgb', '');
-  const raw = (linear === target && swizzle === 'rgba') || (linear === 'bgra8unorm' && kind === 8 && swizzle === 'bgra');
+  const raw =
+    (linear === target && swizzle === 'rgba') || (linear === 'bgra8unorm' && kind === 8 && swizzle === 'bgra');
   return { swizzle, kind, bytes: kind === 16 ? 8 : kind === 565 ? 2 : 4, target, raw };
 }
 
@@ -88,13 +124,21 @@ export function bufferFormat(virgl: number): { format: GPUTextureFormat; bytes: 
   const f = FORMATS.get(virgl);
   if (!f || f.block !== 1) return undefined;
   const k = glKind(f.type, f.bpp);
-  return k === 8 ? { format: 'rgba8unorm', bytes: 4 } : k === 10 ? { format: 'rgb10a2unorm', bytes: 4 } : k === 16 ? { format: 'rgba16float', bytes: 8 } : undefined;
+  return k === 8
+    ? { format: 'rgba8unorm', bytes: 4 }
+    : k === 10
+      ? { format: 'rgb10a2unorm', bytes: 4 }
+      : k === 16
+        ? { format: 'rgba16float', bytes: 8 }
+        : undefined;
 }
 
 /** A half float's value. */
 function unhalf(h: number) {
-  const e = (h >> 10) & 31, m = h & 1023, s = h & 0x8000 ? -1 : 1;
-  return s * (e === 0 ? m / 1024 * 2 ** -14 : e === 31 ? (m ? NaN : Infinity) : 2 ** (e - 15) * (1 + m / 1024));
+  const e = (h >> 10) & 31,
+    m = h & 1023,
+    s = h & 0x8000 ? -1 : 1;
+  return s * (e === 0 ? (m / 1024) * 2 ** -14 : e === 31 ? (m ? NaN : Infinity) : 2 ** (e - 15) * (1 + m / 1024));
 }
 
 /**
@@ -108,9 +152,13 @@ function decode(bytes: Uint8Array, texels: number, kind: Kind): Float32Array {
     for (let c = 0; c < 4; c++) {
       let v: number;
       if (kind === 8) v = bytes[i * 4 + c] / 255;
-      else if (kind === 565) { const w = dv.getUint16(i * 2, true); v = c === 0 ? (w >>> 11) / 31 : c === 1 ? ((w >>> 5) & 63) / 63 : c === 2 ? (w & 31) / 31 : 1; }
-      else if (kind === 10) { const w = dv.getUint32(i * 4, true); v = c < 3 ? ((w >>> (10 * c)) & 1023) / 1023 : (w >>> 30) / 3; }
-      else v = unhalf(dv.getUint16(i * 8 + c * 2, true));
+      else if (kind === 565) {
+        const w = dv.getUint16(i * 2, true);
+        v = c === 0 ? (w >>> 11) / 31 : c === 1 ? ((w >>> 5) & 63) / 63 : c === 2 ? (w & 31) / 31 : 1;
+      } else if (kind === 10) {
+        const w = dv.getUint32(i * 4, true);
+        v = c < 3 ? ((w >>> (10 * c)) & 1023) / 1023 : (w >>> 30) / 3;
+      } else v = unhalf(dv.getUint16(i * 8 + c * 2, true));
       out[i * 4 + c] = Math.min(1, Math.max(0, Number.isNaN(v) ? 0 : v));
     }
   }
@@ -118,27 +166,46 @@ function decode(bytes: Uint8Array, texels: number, kind: Kind): Float32Array {
 }
 
 /** How a GL type's texels decode (`decode`'s kind), or undefined. */
-const glKind = (type: number, bpp: number): Kind | undefined => (type === 0x1401 && bpp === 4 ? 8 : type === 0x8368 && bpp === 4 ? 10 : type === 0x140b && bpp === 8 ? 16 : type === 0x8363 && bpp === 2 ? 565 : undefined);
+const glKind = (type: number, bpp: number): Kind | undefined =>
+  type === 0x1401 && bpp === 4
+    ? 8
+    : type === 0x8368 && bpp === 4
+      ? 10
+      : type === 0x140b && bpp === 8
+        ? 16
+        : type === 0x8363 && bpp === 2
+          ? 565
+          : undefined;
 
 /**
  * The verdict of a check: the image's texels (`want`) against the virgl texture's (`got`), both decoded; `x`: the
  * virgl format ignores alpha. Colour is compared where the image is opaque (a premultiplied canvas may keep a
  * translucent texel's colour otherwise), alpha everywhere it counts.
  */
-export function compareTexels(want: Float32Array, got: Float32Array, x: boolean): { verdict: 'right' | 'wrong' | 'unclear'; why: string } {
-  let lit = false, wrong = 0, first = '';
+export function compareTexels(
+  want: Float32Array,
+  got: Float32Array,
+  x: boolean,
+): { verdict: 'right' | 'wrong' | 'unclear'; why: string } {
+  let lit = false,
+    wrong = 0,
+    first = '';
   const n = Math.min(want.length, got.length) / 4;
   for (let i = 0; i < n; i++) {
-    const a = want.subarray(i * 4, i * 4 + 4), b = got.subarray(i * 4, i * 4 + 4);
+    const a = want.subarray(i * 4, i * 4 + 4),
+      b = got.subarray(i * 4, i * 4 + 4);
     const opaque = x || a[3] >= 254 / 255;
     if (opaque && Math.max(a[0], a[1], a[2]) > DARK) lit = true;
     let bad = !x && Math.abs(a[3] - b[3]) > TOLERANCE;
     if (opaque) for (let c = 0; c < 3; c++) if (Math.abs(a[c] - b[c]) > TOLERANCE) bad = true;
-    if (bad && !wrong++) first = `texel ${i}: ${[...b].map((v) => Math.round(v * 255))} for ${[...a].map((v) => Math.round(v * 255))}`;
+    if (bad && !wrong++)
+      first = `texel ${i}: ${[...b].map((v) => Math.round(v * 255))} for ${[...a].map((v) => Math.round(v * 255))}`;
   }
   // A dark image says nothing either way: a way that gives black copies it as well as one that works.
   if (!lit) return { verdict: 'unclear', why: 'a dark image' };
-  return wrong ? { verdict: 'wrong', why: `${wrong} of ${n} texels differ (${first})` } : { verdict: 'right', why: `${n} texels` };
+  return wrong
+    ? { verdict: 'wrong', why: `${wrong} of ${n} texels differ (${first})` }
+    : { verdict: 'right', why: `${n} texels` };
 }
 
 export type ShareOptions = {
@@ -153,7 +220,20 @@ export type ShareOptions = {
 };
 
 export class VenusShare {
-  readonly stats: ShareStats = { refreshes: 0, bitmaps: 0, canvases: 0, readbacks: 0, readbackBytes: 0, skipped: 0, ms: 0, checks: 0, checksWrong: 0, checksUnclear: 0, unshared: 0, fromBuffers: 0 };
+  readonly stats: ShareStats = {
+    refreshes: 0,
+    bitmaps: 0,
+    canvases: 0,
+    readbacks: 0,
+    readbackBytes: 0,
+    skipped: 0,
+    ms: 0,
+    checks: 0,
+    checksWrong: 0,
+    checksUnclear: 0,
+    unshared: 0,
+    fromBuffers: 0,
+  };
   /** The submit each external resource's bytes were copied from (by resource id). */
   private readonly copied = new Map<number, number>();
   private readonly canvases = new Map<string, { canvas: OffscreenCanvas; ctx: GPUCanvasContext }>();
@@ -186,13 +266,21 @@ export class VenusShare {
   private readonly renderer: VirglRenderer;
   private readonly source: (id: number) => SharedTexture | SharedBuffer | undefined;
   private readonly options: ShareOptions;
-  constructor(device: GPUDevice, mode: ShareMode, renderer: VirglRenderer, source: (id: number) => SharedTexture | SharedBuffer | undefined, options: ShareOptions = {}) {
+  constructor(
+    device: GPUDevice,
+    mode: ShareMode,
+    renderer: VirglRenderer,
+    source: (id: number) => SharedTexture | SharedBuffer | undefined,
+    options: ShareOptions = {},
+  ) {
     [this.device, this.renderer, this.source, this.options] = [device, renderer, source, options];
     this.check = { way: mode, state: mode === 'readback' ? 'reference' : 'checking', dropped: [] };
   }
 
   /** The way in use. */
-  get mode(): ShareMode { return this.check.way; }
+  get mode(): ShareMode {
+    return this.check.way;
+  }
 
   private warn(m: string) {
     if (this.warned.has(m)) return;
@@ -221,7 +309,9 @@ export class VenusShare {
       // A swapchain's images may go before the compositor lets go of them (vkcube's first, at 500×500).
       this.unshared.add(r.id);
       this.stats.unshared++;
-      this.warn(`resource ${r.id} (${r.width}x${r.height}) isn't (or no longer) a Vulkan image's or buffer's memory: not shown`);
+      this.warn(
+        `resource ${r.id} (${r.width}x${r.height}) isn't (or no longer) a Vulkan image's or buffer's memory: not shown`,
+      );
     }
     return src;
   }
@@ -239,21 +329,42 @@ export class VenusShare {
     }
     let t = this.blits.get(r.id);
     if (t && t.written === src.written) return t;
-    const w = r.width, h = r.height, row = w * f.bytes;
+    const w = r.width,
+      h = r.height,
+      row = w * f.bytes;
     const stride = r.stride || Math.ceil(row / 256) * 256;
     if (stride < row || stride * (h - 1) + row > src.buffer.size) {
-      this.warn(`resource ${r.id}: a ${r.width}x${r.height} frame with rows ${stride} bytes apart is past its ${src.buffer.size}-byte buffer`);
+      this.warn(
+        `resource ${r.id}: a ${r.width}x${r.height} frame with rows ${stride} bytes apart is past its ${src.buffer.size}-byte buffer`,
+      );
       return undefined;
     }
     if (!t || t.texture.width !== w || t.texture.height !== h || t.texture.format !== f.format) {
       t?.texture.destroy();
-      t = { texture: this.device.createTexture({ size: [w, h], format: f.format, usage: TEX_COPY_SRC | TEX_COPY_DST | TEXTURE_BINDING }), written: -1, bytes: true };
+      t = {
+        texture: this.device.createTexture({
+          size: [w, h],
+          format: f.format,
+          usage: TEX_COPY_SRC | TEX_COPY_DST | TEXTURE_BINDING,
+        }),
+        written: -1,
+        bytes: true,
+      };
       this.blits.set(r.id, t);
     }
     const enc = this.device.createCommandEncoder();
     // WebGPU's rows are 256 bytes apart at least as far; a stride that isn't (Mesa's always is) goes a row at a time.
-    if (stride % 256 === 0) enc.copyBufferToTexture({ buffer: src.buffer, bytesPerRow: stride, rowsPerImage: h }, { texture: t.texture }, [w, h]);
-    else for (let y = 0; y < h; y++) enc.copyBufferToTexture({ buffer: src.buffer, offset: y * stride }, { texture: t.texture, origin: [0, y] }, [w, 1]);
+    if (stride % 256 === 0)
+      enc.copyBufferToTexture({ buffer: src.buffer, bytesPerRow: stride, rowsPerImage: h }, { texture: t.texture }, [
+        w,
+        h,
+      ]);
+    else
+      for (let y = 0; y < h; y++)
+        enc.copyBufferToTexture({ buffer: src.buffer, offset: y * stride }, { texture: t.texture, origin: [0, y] }, [
+          w,
+          1,
+        ]);
     this.device.queue.submit([enc.finish()]);
     t.written = src.written;
     this.stats.fromBuffers++;
@@ -279,7 +390,10 @@ export class VenusShare {
     // Submits held for their pipelines may draw what this one samples: it waits for them first.
     const idle = this.options.idle?.();
     if (idle) {
-      const ids = this.renderer.externalsOf(ctx).filter((r) => this.sourceOf(r)).map((r) => r.id);
+      const ids = this.renderer
+        .externalsOf(ctx)
+        .filter((r) => this.sourceOf(r))
+        .map((r) => r.id);
       if (ids.length) {
         for (const id of ids) this.hold(id);
         void idle.then(() => {
@@ -313,65 +427,82 @@ export class VenusShare {
     const way = this.mode;
     if (!this.copyGpu(r, src)) return;
     this.copied.set(r.id, src.written);
-    const fmt = FORMATS.get(r.format), st = this.storedOf(r, src);
+    const fmt = FORMATS.get(r.format),
+      st = this.storedOf(r, src);
     if (!fmt || !st) return;
     const { kind, bytes } = st;
-    const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height);
-    const ys = [...new Set(Array.from({ length: CHECK_ROWS }, (_, k) => Math.floor((k + 0.5) * h / CHECK_ROWS)))];
-    const bpr = Math.ceil(w * bytes / 256) * 256;
+    const w = Math.min(r.width, src.texture.width),
+      h = Math.min(r.height, src.texture.height);
+    const ys = [...new Set(Array.from({ length: CHECK_ROWS }, (_, k) => Math.floor(((k + 0.5) * h) / CHECK_ROWS)))];
+    const bpr = Math.ceil((w * bytes) / 256) * 256;
     const buffer = this.device.createBuffer({ size: bpr * ys.length, usage: MAP_READ | COPY_DST });
     const enc = this.device.createCommandEncoder();
-    ys.forEach((y, i) => enc.copyTextureToBuffer({ texture: st.texture, origin: [0, y] }, { buffer, offset: i * bpr, bytesPerRow: bpr }, [w, 1]));
+    ys.forEach((y, i) =>
+      enc.copyTextureToBuffer({ texture: st.texture, origin: [0, y] }, { buffer, offset: i * bpr, bytesPerRow: bpr }, [
+        w,
+        1,
+      ]),
+    );
     this.device.queue.submit([enc.finish()]);
     this.inFlight.add(r.id);
     this.hold(r.id);
     // Set when this frame goes to the next way, whose copy is in flight then.
     let handed = false;
-    buffer.mapAsync(MAP_MODE_READ).then(() => {
-      if (r.dead || this.mode !== way) return;
-      const mapped = new Uint8Array(buffer.getMappedRange());
-      const got = this.renderer.readExternalRows(r.id, ys, w);
-      if (!got) return;
-      const want = new Float32Array(ys.length * w * 4), have = new Float32Array(ys.length * w * 4);
-      ys.forEach((_, i) => {
-        want.set(decode(mapped.subarray(i * bpr, i * bpr + w * bytes), w, kind), i * w * 4);
-        have.set(decode(got[i], w, kind), i * w * 4);
+    buffer
+      .mapAsync(MAP_MODE_READ)
+      .then(
+        () => {
+          if (r.dead || this.mode !== way) return;
+          const mapped = new Uint8Array(buffer.getMappedRange());
+          const got = this.renderer.readExternalRows(r.id, ys, w);
+          if (!got) return;
+          const want = new Float32Array(ys.length * w * 4),
+            have = new Float32Array(ys.length * w * 4);
+          ys.forEach((_, i) => {
+            want.set(decode(mapped.subarray(i * bpr, i * bpr + w * bytes), w, kind), i * w * 4);
+            have.set(decode(got[i], w, kind), i * w * 4);
+          });
+          const v = compareTexels(want, have, !!fmt.x);
+          this.stats.checks++;
+          if (v.verdict === 'unclear') {
+            this.stats.checksUnclear++;
+            return;
+          }
+          if (v.verdict === 'right') {
+            if (++this.passed >= CHECKS) {
+              this.check.state = 'right';
+              console.log(`venus-share: the ${way} way checked right (${CHECKS} frames)`);
+            }
+            return;
+          }
+          this.stats.checksWrong++;
+          if (this.options.forced) {
+            this.warn(`the ${way} way (forced) copies wrong: ${v.why}`);
+            return;
+          }
+          const next = SHARE_WAYS[SHARE_WAYS.indexOf(way) + 1];
+          this.check.dropped.push({ way, why: v.why });
+          console.warn(`venus-share: the ${way} way copies wrong (${v.why}): the ${next} way from now on`);
+          this.check.way = next;
+          this.check.state = next === 'readback' ? 'reference' : 'checking';
+          this.passed = 0;
+          // This frame by the next way, before the submit goes on (the hold below is let go after the next way's).
+          this.copied.delete(r.id);
+          this.inFlight.delete(r.id);
+          handed = true;
+          const now = this.sourceOf(r);
+          if (now) {
+            if (next === 'readback') this.readback(r, now);
+            else this.copyChecked(r, now);
+          }
+        },
+        (err) => this.warn(`a check failed: ${err}`),
+      )
+      .finally(() => {
+        buffer.destroy();
+        if (!handed) this.inFlight.delete(r.id);
+        this.unhold(r.id);
       });
-      const v = compareTexels(want, have, !!fmt.x);
-      this.stats.checks++;
-      if (v.verdict === 'unclear') { this.stats.checksUnclear++; return; }
-      if (v.verdict === 'right') {
-        if (++this.passed >= CHECKS) {
-          this.check.state = 'right';
-          console.log(`venus-share: the ${way} way checked right (${CHECKS} frames)`);
-        }
-        return;
-      }
-      this.stats.checksWrong++;
-      if (this.options.forced) {
-        this.warn(`the ${way} way (forced) copies wrong: ${v.why}`);
-        return;
-      }
-      const next = SHARE_WAYS[SHARE_WAYS.indexOf(way) + 1];
-      this.check.dropped.push({ way, why: v.why });
-      console.warn(`venus-share: the ${way} way copies wrong (${v.why}): the ${next} way from now on`);
-      this.check.way = next;
-      this.check.state = next === 'readback' ? 'reference' : 'checking';
-      this.passed = 0;
-      // This frame by the next way, before the submit goes on (the hold below is let go after the next way's).
-      this.copied.delete(r.id);
-      this.inFlight.delete(r.id);
-      handed = true;
-      const now = this.sourceOf(r);
-      if (now) {
-        if (next === 'readback') this.readback(r, now);
-        else this.copyChecked(r, now);
-      }
-    }, (err) => this.warn(`a check failed: ${err}`)).finally(() => {
-      buffer.destroy();
-      if (!handed) this.inFlight.delete(r.id);
-      this.unhold(r.id);
-    });
   }
 
   /** The bitmap way's or the canvas way's copy. */
@@ -379,18 +510,23 @@ export class VenusShare {
     const way = this.mode;
     const kind = stored(src.texture.format, r.format);
     if (!kind) {
-      this.warn(`a ${src.texture.format} image isn't shared as virgl's format ${FORMATS.get(r.format)?.name ?? r.format}`);
+      this.warn(
+        `a ${src.texture.format} image isn't shared as virgl's format ${FORMATS.get(r.format)?.name ?? r.format}`,
+      );
       return false;
     }
     if (this.options.broken?.has(way)) {
       // Black, as a way that fails silently would give (no WebGPU canvas: SwiftShader's would lose the GPU channel).
-      const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height), bpp = FORMATS.get(r.format)?.bpp ?? 4;
+      const w = Math.min(r.width, src.texture.width),
+        h = Math.min(r.height, src.texture.height),
+        bpp = FORMATS.get(r.format)?.bpp ?? 4;
       this.renderer.writeExternal(r.id, { bytes: new Uint8Array(w * h * bpp), stride: w * bpp, width: w, height: h });
       this.stats.refreshes++;
       return true;
     }
     const order = src.bytes ? 'rgba' : kind.swizzle;
-    const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height);
+    const w = Math.min(r.width, src.texture.width),
+      h = Math.min(r.height, src.texture.height);
     const key = `${w}x${h}`;
     let c = this.canvases.get(key);
     if (!c) {
@@ -400,7 +536,12 @@ export class VenusShare {
         this.warn('no WebGPU canvas context');
         return false;
       }
-      ctx.configure({ device: this.device, format: 'bgra8unorm', alphaMode: 'premultiplied', usage: RENDER_ATTACHMENT });
+      ctx.configure({
+        device: this.device,
+        format: 'bgra8unorm',
+        alphaMode: 'premultiplied',
+        usage: RENDER_ATTACHMENT,
+      });
       c = { canvas, ctx };
       if (this.canvases.size > 8) this.canvases.clear();
       this.canvases.set(key, c);
@@ -416,7 +557,8 @@ export class VenusShare {
     const x = !!FORMATS.get(r.format)?.x;
     let pipeline = this.pipelines.get(order + x);
     if (!pipeline) {
-      const module = this.device.createShaderModule({ code: `
+      const module = this.device.createShaderModule({
+        code: `
 @group(0) @binding(0) var src: texture_2d<f32>;
 @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
   return vec4f(f32(i & 1u) * 4.0 - 1.0, f32(i >> 1u) * 4.0 - 1.0, 0.0, 1.0);
@@ -424,14 +566,30 @@ export class VenusShare {
 @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
   let c = textureLoad(src, vec2u(p.xy), 0).${order};
   return ${x ? 'vec4f(c.rgb, 1.0)' : 'c'};
-}` });
-      pipeline = this.device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'bgra8unorm' }] }, primitive: { topology: 'triangle-list' } });
+}`,
+      });
+      pipeline = this.device.createRenderPipeline({
+        layout: 'auto',
+        vertex: { module, entryPoint: 'vs' },
+        fragment: { module, entryPoint: 'fs', targets: [{ format: 'bgra8unorm' }] },
+        primitive: { topology: 'triangle-list' },
+      });
       this.pipelines.set(order + x, pipeline);
     }
     const enc = this.device.createCommandEncoder();
-    const pass = enc.beginRenderPass({ colorAttachments: [{ view: c.ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] });
+    const pass = enc.beginRenderPass({
+      colorAttachments: [
+        { view: c.ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] },
+      ],
+    });
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view }] }));
+    pass.setBindGroup(
+      0,
+      this.device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: view }],
+      }),
+    );
     pass.draw(3);
     pass.end();
     this.device.queue.submit([enc.finish()]);
@@ -451,12 +609,15 @@ export class VenusShare {
   private readback(r: ExternalResource, src: SharedTexture) {
     const kind = this.storedOf(r, src);
     if (!kind) {
-      this.warn(`a ${src.texture.format} image isn't shared as virgl's format ${FORMATS.get(r.format)?.name ?? r.format}`);
+      this.warn(
+        `a ${src.texture.format} image isn't shared as virgl's format ${FORMATS.get(r.format)?.name ?? r.format}`,
+      );
       this.copied.set(r.id, src.written);
       return;
     }
-    const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height);
-    const bpr = Math.ceil(w * kind.bytes / 256) * 256;
+    const w = Math.min(r.width, src.texture.width),
+      h = Math.min(r.height, src.texture.height);
+    const bpr = Math.ceil((w * kind.bytes) / 256) * 256;
     const buffer = this.staging(r.id, bpr * h);
     const enc = this.device.createCommandEncoder();
     enc.copyTextureToBuffer({ texture: kind.texture }, { buffer, bytesPerRow: bpr }, [w, h]);
@@ -466,20 +627,31 @@ export class VenusShare {
     this.hold(r.id);
     this.stats.readbacks++;
     this.stats.readbackBytes += bpr * h;
-    buffer.mapAsync(MAP_MODE_READ).then(() => {
-      const t0 = performance.now();
-      if (!r.dead) {
-        this.renderer.writeExternal(r.id, { bytes: new Uint8Array(buffer.getMappedRange()), stride: bpr, width: w, height: h });
-        this.copied.set(r.id, written);
-        this.stats.refreshes++;
-      }
-      this.stats.ms += performance.now() - t0;
-    }, (err) => this.warn(`a readback failed: ${err}`)).finally(() => {
-      if (buffer.mapState === 'mapped') buffer.unmap();
-      if (r.dead) this.dropStaging(r.id);
-      this.inFlight.delete(r.id);
-      this.unhold(r.id);
-    });
+    buffer
+      .mapAsync(MAP_MODE_READ)
+      .then(
+        () => {
+          const t0 = performance.now();
+          if (!r.dead) {
+            this.renderer.writeExternal(r.id, {
+              bytes: new Uint8Array(buffer.getMappedRange()),
+              stride: bpr,
+              width: w,
+              height: h,
+            });
+            this.copied.set(r.id, written);
+            this.stats.refreshes++;
+          }
+          this.stats.ms += performance.now() - t0;
+        },
+        (err) => this.warn(`a readback failed: ${err}`),
+      )
+      .finally(() => {
+        if (buffer.mapState === 'mapped') buffer.unmap();
+        if (r.dead) this.dropStaging(r.id);
+        this.inFlight.delete(r.id);
+        this.unhold(r.id);
+      });
   }
 
   /**
@@ -491,7 +663,8 @@ export class VenusShare {
     const st = stored(src.texture.format, r.format);
     if (!st) return undefined;
     if (st.raw || src.bytes) return { ...st, swizzle: 'rgba', raw: true, texture: src.texture };
-    const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height);
+    const w = Math.min(r.width, src.texture.width),
+      h = Math.min(r.height, src.texture.height);
     let t = this.converted.get(r.id);
     if (!t || t.width !== w || t.height !== h || t.format !== st.target) {
       t?.destroy();
@@ -503,10 +676,14 @@ export class VenusShare {
     let pipeline = this.pipelines.get(key);
     if (!pipeline) {
       const c = `textureLoad(src, vec2u(p.xy), 0).${st.swizzle}`;
-      const ret = st.kind === 565
-        ? 'vec4u((u32(round(c.r * 31.0)) << 11u) | (u32(round(c.g * 63.0)) << 5u) | u32(round(c.b * 31.0)), 0u, 0u, 0u)'
-        : x ? 'vec4f(c.rgb, 1.0)' : 'c';
-      const module = this.device.createShaderModule({ code: `
+      const ret =
+        st.kind === 565
+          ? 'vec4u((u32(round(c.r * 31.0)) << 11u) | (u32(round(c.g * 63.0)) << 5u) | u32(round(c.b * 31.0)), 0u, 0u, 0u)'
+          : x
+            ? 'vec4f(c.rgb, 1.0)'
+            : 'c';
+      const module = this.device.createShaderModule({
+        code: `
 @group(0) @binding(0) var src: texture_2d<f32>;
 @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
   return vec4f(f32(i & 1u) * 4.0 - 1.0, f32(i >> 1u) * 4.0 - 1.0, 0.0, 1.0);
@@ -514,8 +691,14 @@ export class VenusShare {
 @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) ${st.kind === 565 ? 'vec4u' : 'vec4f'} {
   let c = clamp(${c}, vec4f(0.0), vec4f(1.0));
   return ${ret};
-}` });
-      pipeline = this.device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: st.target }] }, primitive: { topology: 'triangle-list' } });
+}`,
+      });
+      pipeline = this.device.createRenderPipeline({
+        layout: 'auto',
+        vertex: { module, entryPoint: 'vs' },
+        fragment: { module, entryPoint: 'fs', targets: [{ format: st.target }] },
+        primitive: { topology: 'triangle-list' },
+      });
       this.pipelines.set(key, pipeline);
     }
     let view = this.views.get(src.texture);
@@ -524,9 +707,17 @@ export class VenusShare {
       this.views.set(src.texture, view);
     }
     const enc = this.device.createCommandEncoder();
-    const pass = enc.beginRenderPass({ colorAttachments: [{ view: t.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] });
+    const pass = enc.beginRenderPass({
+      colorAttachments: [{ view: t.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }],
+    });
     pass.setPipeline(pipeline);
-    pass.setBindGroup(0, this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view }] }));
+    pass.setBindGroup(
+      0,
+      this.device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: view }],
+      }),
+    );
     pass.draw(3);
     pass.end();
     this.device.queue.submit([enc.finish()]);
@@ -562,5 +753,9 @@ export class VenusShare {
  */
 export function shareMode(adapter: GPUAdapter, glRenderer: string): ShareMode {
   const info = adapter.info as GPUAdapterInfo & { isFallbackAdapter?: boolean };
-  return info.isFallbackAdapter || /swiftshader|llvmpipe/i.test(`${info.vendor} ${info.architecture} ${info.description}`) || softwareRenderer(glRenderer) ? 'readback' : 'bitmap';
+  return info.isFallbackAdapter ||
+    /swiftshader|llvmpipe/i.test(`${info.vendor} ${info.architecture} ${info.description}`) ||
+    softwareRenderer(glRenderer)
+    ? 'readback'
+    : 'bitmap';
 }

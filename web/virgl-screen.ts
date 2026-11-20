@@ -54,7 +54,8 @@ export function glInfo(gl: WebGL2RenderingContext) {
 }
 
 /** A WebGL renderer string that names a CPU rasterizer (SwiftShader, Mesa's llvmpipe or softpipe, Windows' WARP). */
-export const softwareRenderer = (renderer: string) => /SwiftShader|llvmpipe|softpipe|Basic Render Driver/i.test(renderer);
+export const softwareRenderer = (renderer: string) =>
+  /SwiftShader|llvmpipe|softpipe|Basic Render Driver/i.test(renderer);
 
 export class Screen {
   private gl: WebGL2RenderingContext;
@@ -63,7 +64,14 @@ export class Screen {
   private loc: { src: WebGLUniformLocation | null; swz: WebGLUniformLocation | null; s: WebGLUniformLocation | null };
   private tex2d: WebGLTexture;
   private size2d = { width: 0, height: 0 };
-  private src: { pixels?: Uint8Array; swizzle?: number[]; res?: number; width: number; height: number; rect: Rect } | null = null;
+  private src: {
+    pixels?: Uint8Array;
+    swizzle?: number[];
+    res?: number;
+    width: number;
+    height: number;
+    rect: Rect;
+  } | null = null;
   /** Presents since the last read (`?displaystats`), and the time spent drawing them. */
   presents = 0;
   drawMs = 0;
@@ -80,12 +88,21 @@ export class Screen {
   constructor(gl: WebGL2RenderingContext, r?: VirglRenderer) {
     this.gl = gl;
     this.r = r;
-    const sh = (type: number, src: string) => { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const sh = (type: number, src: string) => {
+      const s = gl.createShader(type)!;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      return s;
+    };
     this.prog = gl.createProgram()!;
     gl.attachShader(this.prog, sh(E.VERTEX_SHADER, VS));
     gl.attachShader(this.prog, sh(E.FRAGMENT_SHADER, FS));
     gl.linkProgram(this.prog);
-    this.loc = { src: gl.getUniformLocation(this.prog, 'u_src'), swz: gl.getUniformLocation(this.prog, 'u_swz'), s: gl.getUniformLocation(this.prog, 's') };
+    this.loc = {
+      src: gl.getUniformLocation(this.prog, 'u_src'),
+      swz: gl.getUniformLocation(this.prog, 'u_swz'),
+      s: gl.getUniformLocation(this.prog, 's'),
+    };
     this.tex2d = gl.createTexture()!;
   }
 
@@ -123,7 +140,8 @@ export class Screen {
 
   /** Copies a rectangle of the 2D scanout (scanout coordinates) into the texture. */
   upload(r: Rect) {
-    const gl = this.gl, s = this.src!;
+    const gl = this.gl,
+      s = this.src!;
     gl.activeTexture(E.TEXTURE0);
     gl.bindTexture(E.TEXTURE_2D, this.tex2d);
     gl.bindBuffer(E.PIXEL_UNPACK_BUFFER, null);
@@ -134,7 +152,8 @@ export class Screen {
       this.size2d = { width: s.width, height: s.height };
       r = { x: 0, y: 0, w: s.rect.w, h: s.rect.h };
     }
-    const x = s.rect.x + r.x, y = s.rect.y + r.y;
+    const x = s.rect.x + r.x,
+      y = s.rect.y + r.y;
     gl.pixelStorei(E.UNPACK_ROW_LENGTH, s.width);
     gl.texSubImage2D(E.TEXTURE_2D, 0, x, y, r.w, r.h, E.RGBA, E.UNSIGNED_BYTE, s.pixels!, (y * s.width + x) * 4);
     gl.pixelStorei(E.UNPACK_ROW_LENGTH, 0);
@@ -152,7 +171,10 @@ export class Screen {
   present() {
     if (this.scheduled) return;
     this.scheduled = true;
-    const frame = () => { this.scheduled = false; this.draw(); };
+    const frame = () => {
+      this.scheduled = false;
+      this.draw();
+    };
     if (this.frames) {
       try {
         requestAnimationFrame(frame);
@@ -172,7 +194,10 @@ export class Screen {
     const t0 = performance.now();
     const canvas = gl.canvas as OffscreenCanvas;
     if (canvas.width !== s.rect.w || canvas.height !== s.rect.h) [canvas.width, canvas.height] = [s.rect.w, s.rect.h];
-    let tex: WebGLTexture, swz = [0, 1, 2], tw = s.width, th = s.height;
+    let tex: WebGLTexture,
+      swz = [0, 1, 2],
+      tw = s.width,
+      th = s.height;
     if (s.pixels) {
       tex = this.tex2d;
       swz = s.swizzle ?? swz;
@@ -194,7 +219,8 @@ export class Screen {
     // The scanout's rectangle in texture coordinates, top row first.
     gl.uniform4f(this.loc.src, s.rect.x / tw, s.rect.y / th, s.rect.w / tw, s.rect.h / th);
     gl.uniform4iv(this.loc.swz, [...swz.map((q) => (q === SW_0 ? -1 : q === SW_1 ? -2 : q)), -2]);
-    for (const cap of [E.BLEND, E.DEPTH_TEST, E.STENCIL_TEST, E.CULL_FACE, E.SCISSOR_TEST, E.RASTERIZER_DISCARD]) gl.disable(cap);
+    for (const cap of [E.BLEND, E.DEPTH_TEST, E.STENCIL_TEST, E.CULL_FACE, E.SCISSOR_TEST, E.RASTERIZER_DISCARD])
+      gl.disable(cap);
     gl.colorMask(true, true, true, true);
     gl.drawArrays(E.TRIANGLE_STRIP, 0, 4);
     this.presents++;
@@ -212,9 +238,12 @@ export class Screen {
   /** The screen drawn now and read back (bench hooks: `window.__waarm64Grab`): RGBA, top row first; 0×0 before a scanout. */
   grab(): { width: number; height: number; pixels: Uint8Array } {
     this.draw();
-    const s = this.src, gl = this.gl;
+    const s = this.src,
+      gl = this.gl;
     if (!s) return { width: 0, height: 0, pixels: new Uint8Array(0) };
-    const { w, h } = s.rect, px = new Uint8Array(w * h * 4), out = new Uint8Array(w * h * 4);
+    const { w, h } = s.rect,
+      px = new Uint8Array(w * h * 4),
+      out = new Uint8Array(w * h * 4);
     gl.bindFramebuffer(E.FRAMEBUFFER, null);
     gl.readPixels(0, 0, w, h, E.RGBA, E.UNSIGNED_BYTE, px);
     for (let y = 0; y < h; y++) out.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);

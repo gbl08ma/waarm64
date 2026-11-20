@@ -41,11 +41,13 @@ export type SnapshotHeader = { format: 1; coreVersion: number; abi: number; crea
 export async function asTemplate(file: Blob, on = true): Promise<Blob> {
   const fixed = new DataView(await file.slice(0, 16).arrayBuffer());
   const magic = new Uint8Array(fixed.buffer, 0, Math.min(8, fixed.byteLength));
-  if (fixed.byteLength < 16 || MAGIC.some((b, i) => magic[i] !== b)) throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
+  if (fixed.byteLength < 16 || MAGIC.some((b, i) => magic[i] !== b))
+    throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
   const len = fixed.getUint32(12, true);
   const json = new Uint8Array(await file.slice(16, 16 + len).arrayBuffer());
   const crc = new DataView(await file.slice(16 + len, 20 + len).arrayBuffer());
-  if (json.length !== len || crc.byteLength !== 4 || crc.getUint32(0, true) !== crc32(json)) throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
+  if (json.length !== len || crc.byteLength !== 4 || crc.getUint32(0, true) !== crc32(json))
+    throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
   const header = JSON.parse(new TextDecoder().decode(json)) as Record<string, unknown>;
   if (on) header.template = true;
   else delete header.template;
@@ -69,14 +71,15 @@ export async function repackFrames(file: Blob, from: Codec, to: Codec): Promise<
   const crc: Crc = from.crc32.bind(from);
   const bytes = async (at: number, n: number) => new Uint8Array(await file.slice(at, at + n).arrayBuffer());
   const fixed = await bytes(0, 16);
-  if (fixed.length < 16 || MAGIC.some((b, i) => fixed[i] !== b)) throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
+  if (fixed.length < 16 || MAGIC.some((b, i) => fixed[i] !== b))
+    throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
   const fv = new DataView(fixed.buffer);
   const version = fv.getUint32(8, true);
   if (version < 1 || version > VERSION) throw corrupt(msg('snapshots:snapshot-file.damage.formatNumber'));
   const start = 20 + fv.getUint32(12, true);
   const parts: Uint8Array<ArrayBuffer>[] = [];
   let deflated = false;
-  for (let at = start; ; ) {
+  for (let at = start; ;) {
     const hb = await bytes(at, FRAME_HEADER);
     if (hb.length < FRAME_HEADER) throw truncated();
     const h = frameHead(hb, version, from);
@@ -112,7 +115,8 @@ export type Sink = (bytes: Uint8Array) => void | Promise<void>;
  * web/lz.ts), which takes the frames' checksums in the writer and the reader.
  */
 export type Codec = {
-  id: number; compress(raw: Uint8Array): Promise<Uint8Array>;
+  id: number;
+  compress(raw: Uint8Array): Promise<Uint8Array>;
   /** `stored`, a frame of codec `id` (this codec's, or one of `reads`), unpacked to its `rawLen` bytes. */
   decompress(stored: Uint8Array, rawLen: number, id?: number): Promise<Uint8Array>;
   /** The other codecs' frames this one reads (web/lz.ts: deflate's, 3, beside its own LZ4). */
@@ -155,7 +159,8 @@ const MAX_RUN = 256; // blocks in a DISK frame
 const TAGS = new Set(['CORE', 'DEVS', 'BLOB', 'RAM ', 'DISK', 'END ']);
 
 /** Why a snapshot was refused (`SnapshotError.problem`). */
-export type SnapshotProblem = 'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt' | 'other-version' | 'other-machine' | 'other-disk';
+export type SnapshotProblem =
+  'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt' | 'other-version' | 'other-machine' | 'other-disk';
 
 /**
  * Why a snapshot was refused: `not-snapshot`, `newer-format`, `truncated` or `corrupt` (the file),
@@ -203,8 +208,14 @@ export function crc32(bytes: Uint8Array, seed = 0): number {
   for (; i + 8 <= n; i += 8) {
     const a = c ^ (bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24));
     c =
-      t[1792 + (a & 255)] ^ t[1536 + ((a >>> 8) & 255)] ^ t[1280 + ((a >>> 16) & 255)] ^ t[1024 + (a >>> 24)] ^
-      t[768 + bytes[i + 4]] ^ t[512 + bytes[i + 5]] ^ t[256 + bytes[i + 6]] ^ t[bytes[i + 7]];
+      t[1792 + (a & 255)] ^
+      t[1536 + ((a >>> 8) & 255)] ^
+      t[1280 + ((a >>> 16) & 255)] ^
+      t[1024 + (a >>> 24)] ^
+      t[768 + bytes[i + 4]] ^
+      t[512 + bytes[i + 5]] ^
+      t[256 + bytes[i + 6]] ^
+      t[bytes[i + 7]];
   }
   for (; i < n; i++) c = (c >>> 8) ^ t[(c ^ bytes[i]) & 255];
   return ~c >>> 0;
@@ -227,13 +238,23 @@ function zeroPage(w: Uint32Array, off: number) {
 export function scanChunk(w: Uint32Array, off: number, len: number, bitmap: Uint8Array): number {
   let present = 0;
   for (let p = 0; p < len / PAGE; p++) {
-    if (!zeroPage(w, off + p * PAGE)) { bitmap[p >> 3] |= 1 << (p & 7); present++; }
+    if (!zeroPage(w, off + p * PAGE)) {
+      bitmap[p >> 3] |= 1 << (p & 7);
+      present++;
+    }
   }
   return present;
 }
 
 /** Copies the pages `bitmap` marks, of the `len` bytes at `off` of `src`, one after another into `dst` from `at`. */
-export function gatherPages(src: Uint8Array, off: number, len: number, bitmap: Uint8Array, dst: Uint8Array, at: number): void {
+export function gatherPages(
+  src: Uint8Array,
+  off: number,
+  len: number,
+  bitmap: Uint8Array,
+  dst: Uint8Array,
+  at: number,
+): void {
   for (let p = 0; p < len / PAGE; p++) {
     if (!(bitmap[p >> 3] & (1 << (p & 7)))) continue;
     dst.set(src.subarray(off + p * PAGE, off + (p + 1) * PAGE), at);
@@ -245,14 +266,18 @@ function popcount(bitmap: Uint8Array) {
   let n = 0;
   for (let i = 0; i < BITMAP; i++) {
     let b = bitmap[i];
-    while (b) { n++; b &= b - 1; }
+    while (b) {
+      n++;
+      b &= b - 1;
+    }
   }
   return n;
 }
 
 /** Checks a RAM frame's payload is a bitmap and exactly as many pages as it has bits set; returns the page count. */
 function checkRam(data: Uint8Array) {
-  if (data.length < BITMAP + PAGE || (data.length - BITMAP) % PAGE !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.memoryBlockSize'));
+  if (data.length < BITMAP + PAGE || (data.length - BITMAP) % PAGE !== 0)
+    throw corrupt(msg('snapshots:snapshot-file.damage.memoryBlockSize'));
   const pages = popcount(data.subarray(0, BITMAP));
   if (pages * PAGE !== data.length - BITMAP) throw corrupt(msg('snapshots:snapshot-file.damage.pageMap'));
   return pages;
@@ -277,17 +302,23 @@ export function applyRam(ram: Uint8Array, index: number, data: Uint8Array): void
 
 /** A DISK frame's blocks (4 KiB each, as views of `data`). */
 export function* diskBlocks(index: number, data: Uint8Array): Generator<{ block: number; data: Uint8Array }> {
-  if (data.length === 0 || data.length % PAGE !== 0 || data.length > MAX_RUN * PAGE) throw corrupt(msg('snapshots:snapshot-file.damage.diskRunSize'));
-  for (let i = 0; i < data.length / PAGE; i++) yield { block: index + i, data: data.subarray(i * PAGE, (i + 1) * PAGE) };
+  if (data.length === 0 || data.length % PAGE !== 0 || data.length > MAX_RUN * PAGE)
+    throw corrupt(msg('snapshots:snapshot-file.damage.diskRunSize'));
+  for (let i = 0; i < data.length / PAGE; i++)
+    yield { block: index + i, data: data.subarray(i * PAGE, (i + 1) * PAGE) };
 }
 
 /**
  * A DISK frame's blocks as runs: consecutive blocks that are all zeros (`zero`) or all not, `count` of them from
  * `block`, their bytes a view of `data`. A restore writes a run in one overlay call (web/snapshot.ts).
  */
-export function* diskRuns(index: number, data: Uint8Array): Generator<{ block: number; count: number; zero: boolean; data: Uint8Array }> {
+export function* diskRuns(
+  index: number,
+  data: Uint8Array,
+): Generator<{ block: number; count: number; zero: boolean; data: Uint8Array }> {
   const n = data.length / PAGE;
-  if (data.length === 0 || !Number.isInteger(n) || n > MAX_RUN) throw corrupt(msg('snapshots:snapshot-file.damage.diskRunSize'));
+  if (data.length === 0 || !Number.isInteger(n) || n > MAX_RUN)
+    throw corrupt(msg('snapshots:snapshot-file.damage.diskRunSize'));
   const zero = (i: number) => isZero(data.subarray(i * PAGE, (i + 1) * PAGE));
   for (let i = 0, z = zero(0); i < n;) {
     let j = i + 1;
@@ -328,7 +359,12 @@ export type FrameTimes = { crc: number; unpack: number; apply: number };
  * `chunk` of the `len` bytes at `off` of `ram` (shared memory); with `unpack` (a check pass's DISK frame), it is
  * unpacked to its size and dropped.
  */
-export type FrameJob = { at: number; len: number; unpack?: true; place?: { ram: SharedArrayBuffer; off: number; len: number; chunk: number } };
+export type FrameJob = {
+  at: number;
+  len: number;
+  unpack?: true;
+  place?: { ram: SharedArrayBuffer; off: number; len: number; chunk: number };
+};
 /**
  * Workers that check and unpack a reader's frames (web/snapshot-pool.ts): `frames` gives one of them a piece of the
  * file (transferred) and its frames' jobs, and resolves to the jobs it failed (their positions in `jobs`), which the
@@ -383,17 +419,24 @@ export class SnapshotWriter {
    * written, in order.
    */
   #push(bytes: Promise<Uint8Array | null>, then?: (b: Uint8Array | null) => void) {
-    const written = this.#tail.then(() => bytes).then(async (b) => {
-      if (b) {
-        this.#bytes += b.length;
-        const t = performance.now();
-        await this.#sink(b);
-        this.times.sink += performance.now() - t;
-      }
-      then?.(b);
-    });
+    const written = this.#tail
+      .then(() => bytes)
+      .then(async (b) => {
+        if (b) {
+          this.#bytes += b.length;
+          const t = performance.now();
+          await this.#sink(b);
+          this.times.sink += performance.now() - t;
+        }
+        then?.(b);
+      });
     this.#tail = written;
-    written.catch((e) => { if (!this.#hasFailed) { this.#hasFailed = true; this.#failed = e; } });
+    written.catch((e) => {
+      if (!this.#hasFailed) {
+        this.#hasFailed = true;
+        this.#failed = e;
+      }
+    });
     this.#inflight.push(written);
   }
 
@@ -407,20 +450,25 @@ export class SnapshotWriter {
     await this.#drain(this.#concurrency - 1);
     this.#frames++;
     const codec = this.#codec;
-    this.#push((async () => {
-      let id = 0;
-      let stored = raw;
-      let t = performance.now();
-      if (codec.id !== 0) {
-        const packed = await codec.compress(raw);
-        if (packed.length < raw.length) { id = codec.id; stored = packed; }
-        this.times.compress += performance.now() - t;
-        t = performance.now();
-      }
-      const frame = encodeFrame(tag, id, index, raw.length, stored, this.#crc);
-      this.times.crc += performance.now() - t;
-      return frame;
-    })());
+    this.#push(
+      (async () => {
+        let id = 0;
+        let stored = raw;
+        let t = performance.now();
+        if (codec.id !== 0) {
+          const packed = await codec.compress(raw);
+          if (packed.length < raw.length) {
+            id = codec.id;
+            stored = packed;
+          }
+          this.times.compress += performance.now() - t;
+          t = performance.now();
+        }
+        const frame = encodeFrame(tag, id, index, raw.length, stored, this.#crc);
+        this.times.crc += performance.now() - t;
+        return frame;
+      })(),
+    );
     await this.#drain(this.#concurrency);
   }
 
@@ -436,8 +484,10 @@ export class SnapshotWriter {
 
   /** Blob `n` (after DEVS, before RAM), in frames of at most 1 MiB; an empty blob has none. */
   async blob(n: number, data: Uint8Array): Promise<void> {
-    if (!Number.isInteger(n) || n < 0 || n >= 2 ** 29 || data.length > BLOB_CHUNKS * CHUNK) throw new RangeError('a blob out of range');
-    for (let k = 0; k * CHUNK < data.length; k++) await this.#frame('BLOB', n * BLOB_CHUNKS + k, data.slice(k * CHUNK, Math.min((k + 1) * CHUNK, data.length)));
+    if (!Number.isInteger(n) || n < 0 || n >= 2 ** 29 || data.length > BLOB_CHUNKS * CHUNK)
+      throw new RangeError('a blob out of range');
+    for (let k = 0; k * CHUNK < data.length; k++)
+      await this.#frame('BLOB', n * BLOB_CHUNKS + k, data.slice(k * CHUNK, Math.min((k + 1) * CHUNK, data.length)));
   }
 
   /**
@@ -445,10 +495,16 @@ export class SnapshotWriter {
    * be a view of shared memory. Its length is a multiple of 4096. `first`: its first chunk's index (a
    * spill memory's, after memory 0's chunks).
    */
-  async ram(ram: Uint8Array, progress?: (done: number, total: number) => void, first = 0, pool?: RamPool): Promise<{ pages: number; frames: number }> {
+  async ram(
+    ram: Uint8Array,
+    progress?: (done: number, total: number) => void,
+    first = 0,
+    pool?: RamPool,
+  ): Promise<{ pages: number; frames: number }> {
     if (ram.length % PAGE !== 0) throw new RangeError('RAM is a whole number of 4 KiB pages');
     // The pool's frames are the core's codec's (web/snapshot-pool-worker.ts): only a writer of that codec takes them.
-    if (pool?.size && this.#codec.pooled && ram.buffer instanceof SharedArrayBuffer && ram.byteOffset % 4 === 0) return this.#poolRam(ram, pool, progress, first);
+    if (pool?.size && this.#codec.pooled && ram.buffer instanceof SharedArrayBuffer && ram.byteOffset % 4 === 0)
+      return this.#poolRam(ram, pool, progress, first);
     // Scanned where it lies when 4-aligned (the usual case); otherwise a chunk is copied first.
     const aligned = ram.byteOffset % 4 === 0 ? new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2) : null;
     let pages = 0;
@@ -488,7 +544,12 @@ export class SnapshotWriter {
    * written), so a failed worker costs time, not the file. `times` sums the workers' scan, codec and CRC (CPU time, not
    * the wall's).
    */
-  async #poolRam(ram: Uint8Array<ArrayBufferLike>, pool: RamPool, progress: ((done: number, total: number) => void) | undefined, first: number) {
+  async #poolRam(
+    ram: Uint8Array<ArrayBufferLike>,
+    pool: RamPool,
+    progress: ((done: number, total: number) => void) | undefined,
+    first: number,
+  ) {
     if (this.#ended) throw new Error('the snapshot is already ended');
     const buffer = ram.buffer as SharedArrayBuffer;
     const limit = pool.size * 3;
@@ -500,22 +561,35 @@ export class SnapshotWriter {
       const index = first + base / CHUNK;
       await this.#drain(limit - 1);
       // Once the write has failed (the sink), a chunk is not made here: RAM may be running again by then.
-      const made = pool.ram(buffer, ram.byteOffset + base, len, index).catch(() =>
-        this.#hasFailed ? { frame: null, pages: 0, scan: 0, compress: 0, crc: 0 } : this.#ramHere(ram, words, base, len, index));
-      this.#push(made.then((r) => {
-        this.times.scan += r.scan;
-        this.times.compress += r.compress;
-        this.times.crc += r.crc;
-        return r.frame;
-      }), (frame) => {
-        if (frame) {
-          this.#frames++;
-          counts.frames++;
-          pool.recycle?.(frame, index);
-        }
-        progress?.(base + len, ram.length);
-      });
-      made.then((r) => { counts.pages += r.pages; }, () => {});
+      const made = pool
+        .ram(buffer, ram.byteOffset + base, len, index)
+        .catch(() =>
+          this.#hasFailed
+            ? { frame: null, pages: 0, scan: 0, compress: 0, crc: 0 }
+            : this.#ramHere(ram, words, base, len, index),
+        );
+      this.#push(
+        made.then((r) => {
+          this.times.scan += r.scan;
+          this.times.compress += r.compress;
+          this.times.crc += r.crc;
+          return r.frame;
+        }),
+        (frame) => {
+          if (frame) {
+            this.#frames++;
+            counts.frames++;
+            pool.recycle?.(frame, index);
+          }
+          progress?.(base + len, ram.length);
+        },
+      );
+      made.then(
+        (r) => {
+          counts.pages += r.pages;
+        },
+        () => {},
+      );
     }
     await this.#drain(0);
     return counts;
@@ -536,7 +610,10 @@ export class SnapshotWriter {
     let stored: Uint8Array = raw;
     if (this.#codec.id !== 0) {
       const packed = await this.#codec.compress(raw);
-      if (packed.length < raw.length) { id = this.#codec.id; stored = packed; }
+      if (packed.length < raw.length) {
+        id = this.#codec.id;
+        stored = packed;
+      }
     }
     const compress = performance.now() - t;
     t = performance.now();
@@ -545,7 +622,9 @@ export class SnapshotWriter {
   }
 
   /** The overlay's blocks (4 KiB each) in ascending block order; consecutive blocks share frames of up to 256. */
-  async disk(blocks: AsyncIterable<{ block: number; data: Uint8Array }> | Iterable<{ block: number; data: Uint8Array }>): Promise<{ blocks: number }> {
+  async disk(
+    blocks: AsyncIterable<{ block: number; data: Uint8Array }> | Iterable<{ block: number; data: Uint8Array }>,
+  ): Promise<{ blocks: number }> {
     let n = 0;
     let first = 0;
     let run: Uint8Array[] = [];
@@ -560,7 +639,8 @@ export class SnapshotWriter {
     let next = -1;
     for await (const { block, data } of blocks) {
       if (data.length !== PAGE) throw new RangeError('an overlay block is 4096 bytes');
-      if (block < next || !Number.isSafeInteger(block)) throw new RangeError('overlay blocks must come in ascending order');
+      if (block < next || !Number.isSafeInteger(block))
+        throw new RangeError('overlay blocks must come in ascending order');
       if (run.length && (block !== next || run.length >= MAX_RUN)) await flush();
       if (!run.length) first = block;
       run.push(data.slice()); // a copy: the caller may reuse the buffer
@@ -589,10 +669,25 @@ export class SnapshotWriter {
  * RAM chunk stored whole with its bitmap (`ram`: each memory's bytes), every disk block a frame of its own, and the end.
  * A frame is never stored larger than its raw bytes (the writer's rule), so no file of these parts is larger.
  */
-export function snapshotBound(p: { core: number; devs: number; blobs: number[]; ram: number[]; blocks: number }): number {
+export function snapshotBound(p: {
+  core: number;
+  devs: number;
+  blobs: number[];
+  ram: number[];
+  blocks: number;
+}): number {
   const frames = (n: number) => n + FRAME_HEADER * Math.ceil(n / CHUNK);
   const ram = p.ram.reduce((t, n) => t + n + (FRAME_HEADER + BITMAP) * Math.ceil(n / CHUNK), 0);
-  return 20 + MAX_HEADER + frames(p.core) + frames(p.devs) + p.blobs.reduce((t, n) => t + frames(n), 0) + ram + p.blocks * (PAGE + FRAME_HEADER) + FRAME_HEADER;
+  return (
+    20 +
+    MAX_HEADER +
+    frames(p.core) +
+    frames(p.devs) +
+    p.blobs.reduce((t, n) => t + frames(n), 0) +
+    ram +
+    p.blocks * (PAGE + FRAME_HEADER) +
+    FRAME_HEADER
+  );
 }
 
 /** A frame's 32-byte header, its CRC (bytes 24 to 28) left 0 for the caller. */
@@ -608,7 +703,15 @@ export function frameHeader(tag: string, codec: number, index: number, rawLen: n
   return out;
 }
 
-function encodeFrame(tag: string, codec: number, index: number, rawLen: number, stored: Uint8Array, crc: Crc, end = false) {
+function encodeFrame(
+  tag: string,
+  codec: number,
+  index: number,
+  rawLen: number,
+  stored: Uint8Array,
+  crc: Crc,
+  end = false,
+) {
   const out = new Uint8Array(FRAME_HEADER + stored.length);
   out.set(frameHeader(tag, codec, index, rawLen, stored.length));
   out.set(stored, FRAME_HEADER);
@@ -649,20 +752,35 @@ class Input {
       while (this.#ahead.length < AHEAD && this.#at < b.size) {
         const at = this.#at;
         this.#at = Math.min(at + PIECE, b.size);
-        const p = b.slice(at, this.#at).arrayBuffer().then((x) => new Uint8Array(x));
+        const p = b
+          .slice(at, this.#at)
+          .arrayBuffer()
+          .then((x) => new Uint8Array(x));
         p.catch(() => {}); // a failed read is thrown when its piece is taken (and not as unhandled if it never is)
         this.#ahead.push(p);
       }
       const p = this.#ahead.shift();
-      if (!p) { this.#done = true; return; }
+      if (!p) {
+        this.#done = true;
+        return;
+      }
       const value = await p;
-      if (value.length) { this.#chunks.push(value); this.#avail += value.length; }
+      if (value.length) {
+        this.#chunks.push(value);
+        this.#avail += value.length;
+      }
       return;
     }
     const { done, value } = await this.#reader!.read();
-    if (done) { this.#done = true; return; }
+    if (done) {
+      this.#done = true;
+      return;
+    }
     if (!(value instanceof Uint8Array)) throw corrupt(msg('snapshots:snapshot-file.damage.notBytes'));
-    if (value.length) { this.#chunks.push(value); this.#avail += value.length; }
+    if (value.length) {
+      this.#chunks.push(value);
+      this.#avail += value.length;
+    }
   }
 
   /** The next `n` bytes (valid until the next call), or null when the stream ends first. */
@@ -677,7 +795,10 @@ class Input {
     if (head.length - this.#off >= n) {
       out = head.subarray(this.#off, this.#off + n);
       this.#off += n;
-      if (this.#off === head.length) { this.#ci++; this.#off = 0; }
+      if (this.#off === head.length) {
+        this.#ci++;
+        this.#off = 0;
+      }
     } else {
       out = new Uint8Array(n);
       let at = 0;
@@ -687,12 +808,18 @@ class Input {
         out.set(c.subarray(this.#off, this.#off + k), at);
         at += k;
         this.#off += k;
-        if (this.#off === c.length) { this.#ci++; this.#off = 0; }
+        if (this.#off === c.length) {
+          this.#ci++;
+          this.#off = 0;
+        }
       }
     }
     this.#avail -= n;
     // Consumed chunks go at once: the file is up to GiBs, and a read rarely ends where a chunk does.
-    if (this.#ci > 0) { this.#chunks.splice(0, this.#ci); this.#ci = 0; }
+    if (this.#ci > 0) {
+      this.#chunks.splice(0, this.#ci);
+      this.#ci = 0;
+    }
     return out;
   }
 
@@ -729,14 +856,16 @@ async function header(input: Input): Promise<{ header: SnapshotHeader; version: 
   const json = await input.take(headerLen);
   const crcBytes = json && (await input.take(4));
   if (!json || !crcBytes) throw truncated();
-  if (new DataView(crcBytes.buffer, crcBytes.byteOffset, 4).getUint32(0, true) !== crc32(json)) throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
+  if (new DataView(crcBytes.buffer, crcBytes.byteOffset, 4).getUint32(0, true) !== crc32(json))
+    throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
   let h: SnapshotHeader;
   try {
     h = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json));
   } catch {
     throw corrupt(msg('snapshots:snapshot-file.damage.headerUnreadable'));
   }
-  if (typeof h !== 'object' || h === null || Array.isArray(h) || h.format !== 1) throw corrupt(msg('snapshots:snapshot-file.damage.headerUnknown'));
+  if (typeof h !== 'object' || h === null || Array.isArray(h) || h.format !== 1)
+    throw corrupt(msg('snapshots:snapshot-file.damage.headerUnknown'));
   return { header: h, version, size: 20 + headerLen };
 }
 
@@ -753,13 +882,18 @@ export async function readHeader(source: ReadableStream<Uint8Array> | Blob): Pro
   }
 }
 
-
 /**
  * A frame as the reader yields it. A RAM frame's `place` puts its pages into `ram`, a view of guest RAM, as chunk
  * `chunk` (`applyRam`'s), called before the next frame is asked for; through a pool its `data` is empty and the pool's
  * workers do it: `placed()` then waits for every frame placed so far (and throws the first one's refusal).
  */
-export type ReadFrame = { tag: string; index: number; data: Uint8Array; size?: number; place?: (ram: Uint8Array, chunk: number) => void };
+export type ReadFrame = {
+  tag: string;
+  index: number;
+  data: Uint8Array;
+  size?: number;
+  place?: (ram: Uint8Array, chunk: number) => void;
+};
 
 /** A frame header's fields. */
 type Head = { tag: string; id: number; index: number; rawLen: number; storedLen: number; want: number };
@@ -777,17 +911,32 @@ function frameHead(h: Uint8Array, version: number, codec: Codec): Head {
   const rawLen = v.getUint32(16, true);
   const storedLen = v.getUint32(20, true);
   const want = v.getUint32(24, true);
-  if (!TAGS.has(tag) || (tag === 'BLOB' && version < 2)) throw corrupt(msg('snapshots:snapshot-file.damage.unknownKind'));
+  if (!TAGS.has(tag) || (tag === 'BLOB' && version < 2))
+    throw corrupt(msg('snapshots:snapshot-file.damage.unknownKind'));
   if (v.getUint32(28, true) !== 0 || hi >= 2 ** 21) throw corrupt(msg('snapshots:snapshot-file.damage.frameFields'));
   if (tag === 'END ') {
-    if (rawLen !== 0 || storedLen !== 0 || want !== 0 || id !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.endMalformed'));
+    if (rawLen !== 0 || storedLen !== 0 || want !== 0 || id !== 0)
+      throw corrupt(msg('snapshots:snapshot-file.damage.endMalformed'));
     return { tag, id, index, rawLen, storedLen, want };
   }
-  if (rawLen === 0 || rawLen > MAX_RAW || storedLen > rawLen) throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
-  if (id === 0 ? storedLen !== rawLen : (id !== codec.id && !codec.reads?.includes(id)) || (id === DEFLATE && version < 3)) {
-    throw corrupt(id === 0 ? msg('snapshots:snapshot-file.damage.frameSize') : msg('snapshots:snapshot-file.damage.codec', { codec: id }));
+  if (rawLen === 0 || rawLen > MAX_RAW || storedLen > rawLen)
+    throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
+  if (
+    id === 0 ? storedLen !== rawLen : (id !== codec.id && !codec.reads?.includes(id)) || (id === DEFLATE && version < 3)
+  ) {
+    throw corrupt(
+      id === 0
+        ? msg('snapshots:snapshot-file.damage.frameSize')
+        : msg('snapshots:snapshot-file.damage.codec', { codec: id }),
+    );
   }
-  if (tag === 'CORE' || tag === 'DEVS' || tag === 'BLOB' ? rawLen > CHUNK : tag === 'DISK' ? rawLen % PAGE !== 0 || rawLen > MAX_RUN * PAGE : false) {
+  if (
+    tag === 'CORE' || tag === 'DEVS' || tag === 'BLOB'
+      ? rawLen > CHUNK
+      : tag === 'DISK'
+        ? rawLen % PAGE !== 0 || rawLen > MAX_RUN * PAGE
+        : false
+  ) {
     throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
   }
   return { tag, id, index, rawLen, storedLen, want };
@@ -813,7 +962,13 @@ function frameHead(h: Uint8Array, version: number, codec: Codec): Head {
 export async function openSnapshot(
   source: ReadableStream<Uint8Array> | Blob,
   opts: { codec: Codec; check?: boolean; pool?: LoadPool; piece?: number },
-): Promise<{ header: SnapshotHeader; frames(): AsyncGenerator<ReadFrame>; placed(): Promise<void>; times: ReadTimes; pooled: number }> {
+): Promise<{
+  header: SnapshotHeader;
+  frames(): AsyncGenerator<ReadFrame>;
+  placed(): Promise<void>;
+  times: ReadTimes;
+  pooled: number;
+}> {
   const { codec } = opts;
   const crc: Crc = codec.crc32.bind(codec);
   const pool = opts.pool?.size && codec.pooled && source instanceof Blob ? opts.pool : undefined;
@@ -823,7 +978,14 @@ export async function openSnapshot(
   // The pool's work in file order: each resolves to its first refusal (or undefined) and none rejects, so none goes
   // unhandled while earlier ones are awaited.
   const jobs: Promise<unknown>[] = [];
-  const settle = (p: Promise<unknown>) => { jobs.push(p.then(() => undefined, (e: unknown) => e ?? new Error('a frame failed'))); };
+  const settle = (p: Promise<unknown>) => {
+    jobs.push(
+      p.then(
+        () => undefined,
+        (e: unknown) => e ?? new Error('a frame failed'),
+      ),
+    );
+  };
   /** The refusal `settleOne` threw: the oldest work's, earlier in the file than any still queued. */
   let jobRefusal: unknown;
   /** The oldest work settled; its refusal thrown. */
@@ -883,7 +1045,8 @@ export async function openSnapshot(
         if (!hb) throw truncated();
         const h = frameHead(hb, version, codec);
         if (h.tag === 'END ') {
-          if (h.index !== count) throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: h.index, came: count }));
+          if (h.index !== count)
+            throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: h.index, came: count }));
           if (await input.more()) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
           return;
         }
@@ -901,8 +1064,7 @@ export async function openSnapshot(
         if (opts.check) {
           if (h.tag === 'DISK') await unpack(h.id, stored, h.rawLen);
           yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen };
-        }
-        else if (h.tag === 'RAM ') {
+        } else if (h.tag === 'RAM ') {
           const data = await unpack(h.id, stored, h.rawLen);
           checkRam(data);
           yield { tag: h.tag, index: h.index, data, place: (ram, chunk) => apply(ram, chunk, data) };
@@ -922,7 +1084,10 @@ export async function openSnapshot(
         while (ahead.length < AHEAD && next < b.size) {
           const at = next;
           next = Math.min(at + (opts.piece ?? PIECE), b.size);
-          const piece = b.slice(at, next).arrayBuffer().then((x) => new Uint8Array(x));
+          const piece = b
+            .slice(at, next)
+            .arrayBuffer()
+            .then((x) => new Uint8Array(x));
           piece.catch(() => {}); // thrown when its piece is taken (and not as unhandled if it never is)
           ahead.push({ at, piece });
         }
@@ -950,15 +1115,26 @@ export async function openSnapshot(
       const give = async (piece: ArrayBuffer, mine: Job[]) => {
         if (!mine.length) return;
         while (jobs.length >= limit) await settleOne();
-        settle(p.frames(piece, mine.map((j) => j.job)).then(
-          (r) => {
-            times.crc += r.crc;
-            times.unpack += r.unpack;
-            times.apply += r.apply;
-            return redo(mine, r.failed);
-          },
-          () => redo(mine, mine.map((_, k) => k)),
-        ));
+        settle(
+          p
+            .frames(
+              piece,
+              mine.map((j) => j.job),
+            )
+            .then(
+              (r) => {
+                times.crc += r.crc;
+                times.unpack += r.unpack;
+                times.apply += r.apply;
+                return redo(mine, r.failed);
+              },
+              () =>
+                redo(
+                  mine,
+                  mine.map((_, k) => k),
+                ),
+            ),
+        );
       };
       /** The next piece in hand, the one before given away with its jobs (dropped without); false at the file's end. */
       const advance = async () => {
@@ -1003,7 +1179,8 @@ export async function openSnapshot(
         }
         const h = frameHead(hv, version, codec);
         if (h.tag === 'END ') {
-          if (h.index !== count) throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: h.index, came: count }));
+          if (h.index !== count)
+            throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: h.index, came: count }));
           if (pos + FRAME_HEADER < b.size) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
           await give(cur.buffer as ArrayBuffer, batch);
           batch = [];

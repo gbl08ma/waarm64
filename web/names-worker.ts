@@ -11,8 +11,7 @@ export type ToNames =
   | { type: 'ids'; n: number; link: string; first: number };
 
 export type FromNames =
-  | { type: 'answer'; n: number; value: unknown }
-  | { type: 'refused'; n: number; code: string; message: string };
+  { type: 'answer'; n: number; value: unknown } | { type: 'refused'; n: number; code: string; message: string };
 
 let backend: Promise<NamesBackend> | undefined;
 
@@ -26,7 +25,12 @@ self.onmessage = async (e: MessageEvent<ToNames>) => {
   try {
     if (!backend) throw new Error('the names worker has no module');
     const b = await backend;
-    const value = m.type === 'op' ? await b.op(m.op, m.input) : m.type === 'ids' ? await b.ids(m.link, m.first) : Object.fromEntries(await b.publish(m.link, m.items));
+    const value =
+      m.type === 'op'
+        ? await b.op(m.op, m.input)
+        : m.type === 'ids'
+          ? await b.ids(m.link, m.first)
+          : Object.fromEntries(await b.publish(m.link, m.items));
     self.postMessage({ type: 'answer', n: m.n, value } satisfies FromNames);
   } catch (err) {
     const code = err instanceof NamesError ? err.code : '';

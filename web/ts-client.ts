@@ -43,7 +43,20 @@ type Exports = {
 };
 
 /** The names agent's operations (web/names-ops.ts calls them). */
-export type NamesOp = 'key' | 'make' | 'mine' | 'sign' | 'add' | 'pending' | 'commitment' | 'finish' | 'anchor' | 'zone' | 'status' | 'judge' | 'drop';
+export type NamesOp =
+  | 'key'
+  | 'make'
+  | 'mine'
+  | 'sign'
+  | 'add'
+  | 'pending'
+  | 'commitment'
+  | 'finish'
+  | 'anchor'
+  | 'zone'
+  | 'status'
+  | 'judge'
+  | 'drop';
 
 /** A room's member (net/ts/src/room.rs, docs/networking/rooms.md). */
 /** The most messages a WebSocket holds before it opens (a room's lookups while a Nostr relay connects, say). */
@@ -80,11 +93,23 @@ export type NamesTitle = { key: string; item: string };
 
 /** What a server said to an item a publisher put: `taken`, `better` (with the server's item, hex), `failed` (no answer), or
  * `nobody` (nobody serves the room's names; no server). */
-export type NamesPut = { type: 'names-put'; id: string; server: string | null; result: 'taken' | 'better' | 'failed' | 'nobody'; item: string | null };
+export type NamesPut = {
+  type: 'names-put';
+  id: string;
+  server: string | null;
+  result: 'taken' | 'better' | 'failed' | 'nobody';
+  item: string | null;
+};
 
 /** A server's answer to a publisher's check for the dialog (`namesIds`): the ids it holds under the first byte asked, each
  * with until when its owner holds it (Unix seconds, 0: nobody now); `failed` (no answer) or `nobody` (no server). */
-export type NamesIds = { type: 'names-ids'; first: number; server: string | null; result: 'ids' | 'failed' | 'nobody'; ids: [string, number][] | null };
+export type NamesIds = {
+  type: 'names-ids';
+  first: number;
+  server: string | null;
+  result: 'ids' | 'failed' | 'nobody';
+  ids: [string, number][] | null;
+};
 
 /** A room node's names line, when it changes: a server's names held and the servers it synced with lately (`serving`),
  * or a member's names resolved and servers held now. */
@@ -120,11 +145,22 @@ export type TailnetConfig = {
 export type TsFailure = { code?: string; detail?: string };
 
 export type TsEvent =
-  | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
+  | ({
+      type: 'state';
+      state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed';
+    } & TsFailure)
   | { type: 'lease'; lease: Lease }
   /** This node; a room's member also has the room's tag, its own name (`<key>.<room name or tag>.p2p.internal`), the link and the
    * parameters its names are checked with (`production`; `test` only in the page tests' module, ts-test.wasm). */
-  | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string; params?: 'production' | 'test' }
+  | {
+      type: 'self';
+      key: string;
+      address6: number[];
+      tag?: string;
+      name?: string;
+      link?: string;
+      params?: 'production' | 'test';
+    }
   | { type: 'serving'; addr: string }
   | { type: 'client' | 'client-gone'; key: string; address6: number[] }
   /** A room: a peer whose data decrypted, and the path a peer's packets take. */
@@ -183,16 +219,25 @@ export type RtcHandlers = {
 export function failureOf(f: TsFailure): Error {
   const detail = f.detail ? new Error(f.detail) : undefined;
   switch (f.code) {
-    case 'no-browser-relay': return new MsgError('network:ts-client.noBrowserRelay');
-    case 'region-no-browser-relay': return new MsgError('network:ts-client.regionNoBrowserRelay');
-    case 'derp-map': return new MsgError('network:ts-client.derpMap', { url: f.detail ?? '' });
-    case 'server-silent': return new MsgError('network:ts-client.serverSilent');
-    case 'handshake': return new MsgError('network:ts-client.handshake');
-    case 'control-refused': return new MsgError('network:ts-client.controlRefused', undefined, { cause: detail });
-    case 'not-authorized': return new MsgError('network:ts-client.notAuthorized');
-    case 'tailnet-lock': return new MsgError('network:ts-client.tailnetLock');
+    case 'no-browser-relay':
+      return new MsgError('network:ts-client.noBrowserRelay');
+    case 'region-no-browser-relay':
+      return new MsgError('network:ts-client.regionNoBrowserRelay');
+    case 'derp-map':
+      return new MsgError('network:ts-client.derpMap', { url: f.detail ?? '' });
+    case 'server-silent':
+      return new MsgError('network:ts-client.serverSilent');
+    case 'handshake':
+      return new MsgError('network:ts-client.handshake');
+    case 'control-refused':
+      return new MsgError('network:ts-client.controlRefused', undefined, { cause: detail });
+    case 'not-authorized':
+      return new MsgError('network:ts-client.notAuthorized');
+    case 'tailnet-lock':
+      return new MsgError('network:ts-client.tailnetLock');
     // `relay`, `derp-map-invalid`, `control-answer` and codes newer than this page: the detail says it.
-    default: return detail ?? new Error(f.code ?? '');
+    default:
+      return detail ?? new Error(f.code ?? '');
   }
 }
 
@@ -202,7 +247,10 @@ export function exitNodeError(e: TsFailure & { id?: string }): Error {
   return failureOf(e);
 }
 
-export const DNS4 = [[1, 1, 1, 1], [1, 0, 0, 1]];
+export const DNS4 = [
+  [1, 1, 1, 1],
+  [1, 0, 0, 1],
+];
 export const DNS6 = [[0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]];
 
 /** How long a fetch (the control server's key, a DERP map or probe, DNS over HTTPS) may take. */
@@ -217,12 +265,21 @@ export const RTC_BUFFER = 64 * 1024;
 
 /** A room's WireGuard packet on a peer's data channel (`RtcSend`): whether it went (a full channel drops it). */
 export function rtcSend(
-  dc: { readonly readyState: RTCDataChannelState; readonly bufferedAmount: number; send(b: Uint8Array<ArrayBuffer>): void },
+  dc: {
+    readonly readyState: RTCDataChannelState;
+    readonly bufferedAmount: number;
+    send(b: Uint8Array<ArrayBuffer>): void;
+  },
   b: Uint8Array<ArrayBuffer>,
 ): boolean {
   if (dc.readyState !== 'open' || dc.bufferedAmount > RTC_BUFFER) return false;
   // A send queue full in spite of that throws: lost too.
-  try { dc.send(b); return true; } catch { return false; }
+  try {
+    dc.send(b);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const encoder = new TextEncoder();
@@ -236,14 +293,18 @@ export class TsModule {
   }
 
   /** Loads target/net/ts.wasm from `source` (a URL, streamed, the bytes, or compiled: a benchmark's many instances). */
-  static async load(source: string | URL | BufferSource | WebAssembly.Module, log?: (line: string) => void): Promise<TsModule> {
+  static async load(
+    source: string | URL | BufferSource | WebAssembly.Module,
+    log?: (line: string) => void,
+  ): Promise<TsModule> {
     let memory: WebAssembly.Memory | undefined;
     const imports = wasi(() => memory!, log);
-    const { instance } = source instanceof WebAssembly.Module
-      ? { instance: await WebAssembly.instantiate(source, imports) }
-      : source instanceof ArrayBuffer || ArrayBuffer.isView(source)
-      ? await WebAssembly.instantiate(source, imports)
-      : await WebAssembly.instantiateStreaming(fetch(source), imports);
+    const { instance } =
+      source instanceof WebAssembly.Module
+        ? { instance: await WebAssembly.instantiate(source, imports) }
+        : source instanceof ArrayBuffer || ArrayBuffer.isView(source)
+          ? await WebAssembly.instantiate(source, imports)
+          : await WebAssembly.instantiateStreaming(fetch(source), imports);
     const x = instance.exports as unknown as Exports;
     memory = x.memory;
     x._initialize();
@@ -268,7 +329,10 @@ export class TsClient {
   private readonly m: TsModule;
   private readonly h: number;
   private readonly on: TsHandlers;
-  private readonly sockets = new Map<number, { ws: WebSocket; text: boolean; queue: Uint8Array<ArrayBuffer>[] | null }>();
+  private readonly sockets = new Map<
+    number,
+    { ws: WebSocket; text: boolean; queue: Uint8Array<ArrayBuffer>[] | null }
+  >();
   /** A room's data channels, by connection. */
   private readonly channels = new Map<number, RTCDataChannel>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -325,7 +389,12 @@ export class TsClient {
     this.channels.set(rtc, dc);
     dc.binaryType = 'arraybuffer';
     const live = () => !this.closed && this.channels.get(rtc) === dc;
-    const opened = () => { if (live()) { this.m.x.ts_rtc_open(this.h, rtc); this.pump(); } };
+    const opened = () => {
+      if (live()) {
+        this.m.x.ts_rtc_open(this.h, rtc);
+        this.pump();
+      }
+    };
     dc.onopen = opened;
     dc.onmessage = (e: MessageEvent) => {
       if (!live() || !(e.data instanceof ArrayBuffer)) return;
@@ -428,8 +497,9 @@ export class TsClient {
         case 2: {
           const s = this.sockets.get(id);
           // Until it opens; a socket that never does holds at most SOCKET_QUEUE messages.
-          if (s?.queue) { if (s.queue.length < SOCKET_QUEUE) s.queue.push(rest); }
-          else if (s?.ws.readyState === WebSocket.OPEN) s.ws.send(s.text ? decoder.decode(rest) : rest);
+          if (s?.queue) {
+            if (s.queue.length < SOCKET_QUEUE) s.queue.push(rest);
+          } else if (s?.ws.readyState === WebSocket.OPEN) s.ws.send(s.text ? decoder.decode(rest) : rest);
           break;
         }
         case 3:
@@ -473,7 +543,11 @@ export class TsClient {
     }
     clearTimeout(this.timer);
     const ms = this.closed ? -1 : x.ts_deadline(this.h);
-    if (ms >= 0) this.timer = setTimeout(() => { this.m.x.ts_tick(this.h); this.pump(); }, Math.ceil(ms));
+    if (ms >= 0)
+      this.timer = setTimeout(() => {
+        this.m.x.ts_tick(this.h);
+        this.pump();
+      }, Math.ceil(ms));
   }
 
   /** A WebSocket for the module: binary with a subprotocol (DERP), text without one (a room's Nostr relays: the
@@ -485,7 +559,12 @@ export class TsClient {
       ws = text ? new WebSocket(url) : new WebSocket(url, protocol);
     } catch {
       // A URL the browser refuses: closed at once, as far as the module knows (not from inside this pump).
-      setTimeout(() => { if (!this.closed) { this.m.x.ts_ws_closed(this.h, conn); this.pump(); } });
+      setTimeout(() => {
+        if (!this.closed) {
+          this.m.x.ts_ws_closed(this.h, conn);
+          this.pump();
+        }
+      });
       return;
     }
     ws.binaryType = 'arraybuffer';
@@ -497,7 +576,12 @@ export class TsClient {
     };
     ws.onmessage = (e: MessageEvent) => {
       if (this.closed) return;
-      const b = typeof e.data === 'string' && text ? encoder.encode(e.data) : e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : undefined;
+      const b =
+        typeof e.data === 'string' && text
+          ? encoder.encode(e.data)
+          : e.data instanceof ArrayBuffer
+            ? new Uint8Array(e.data)
+            : undefined;
       if (!b) return;
       this.m.x.ts_ws_message(this.h, conn, ...this.m.put(b));
       this.pump();
@@ -526,4 +610,3 @@ export class TsClient {
     this.pump();
   }
 }
-

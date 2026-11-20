@@ -27,18 +27,34 @@ export type CodecExports = {
  * An instance of the core `wasm` (its bytes or its compiled module) on a small memory of its own, for its codec's
  * exports: this file's codec, and each of a save's pool workers (web/snapshot-pool-worker.ts).
  */
-export async function codecCore(wasm: BufferSource | WebAssembly.Module): Promise<{ ex: CodecExports; memory: WebAssembly.Memory }> {
+export async function codecCore(
+  wasm: BufferSource | WebAssembly.Module,
+): Promise<{ ex: CodecExports; memory: WebAssembly.Memory }> {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   // The codec's exports call none of the core's imports (the clock, the JIT's, the spill memories' accessors: web/vm.ts
   // `coreImports`), so each is a stub that says so: this file needs none of web/vm.ts, and a pool worker loads little.
   const imports: Record<string, Record<string, WebAssembly.ImportValue>> = {};
   for (const i of WebAssembly.Module.imports(module)) {
-    (imports[i.module] ??= {})[i.name] = i.kind === 'memory' ? memory : () => { throw new Error(`the snapshot codec's core called ${i.module}.${i.name}`); };
+    (imports[i.module] ??= {})[i.name] =
+      i.kind === 'memory'
+        ? memory
+        : () => {
+            throw new Error(`the snapshot codec's core called ${i.module}.${i.name}`);
+          };
   }
   const instance = await WebAssembly.instantiate(module, imports);
   const raw = instance.exports as unknown as CodecExports;
-  for (const name of ['thread_alloc', 'lz_bound', 'lz_compress', 'lz_decompress', 'inflate_raw', 'deflate_raw', 'crc32', 'snapshot_version'] as const) {
+  for (const name of [
+    'thread_alloc',
+    'lz_bound',
+    'lz_compress',
+    'lz_decompress',
+    'inflate_raw',
+    'deflate_raw',
+    'crc32',
+    'snapshot_version',
+  ] as const) {
     if (typeof raw[name] !== 'function') throw new Error(`the core has no ${name}`);
   }
   return { ex: raw, memory };
@@ -50,7 +66,9 @@ export async function codecCore(wasm: BufferSource | WebAssembly.Module): Promis
  * pool starts its workers on it). It reads raw deflate's frames too (codec 3: a template's, `deflateCodec`'s), through
  * the core's miniz_oxide.
  */
-export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<Codec & { snapshotVersion: number; module: WebAssembly.Module }> {
+export async function lzCodec(
+  wasm: BufferSource | WebAssembly.Module,
+): Promise<Codec & { snapshotVersion: number; module: WebAssembly.Module }> {
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   const { ex, memory } = await codecCore(module);
   const cap = ex.lz_bound(MAX) >>> 0;
@@ -72,9 +90,12 @@ export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<
     },
     reads: [DEFLATE],
     async decompress(stored, rawLen, id = 2) {
-      if (rawLen > MAX || stored.length > cap) throw new RangeError('a frame is over the codec\'s size');
+      if (rawLen > MAX || stored.length > cap) throw new RangeError("a frame is over the codec's size");
       bytes().set(stored, src);
-      const n = (id === DEFLATE ? ex.inflate_raw(src, stored.length, dst, rawLen) : ex.lz_decompress(src, stored.length, dst, rawLen)) >>> 0;
+      const n =
+        (id === DEFLATE
+          ? ex.inflate_raw(src, stored.length, dst, rawLen)
+          : ex.lz_decompress(src, stored.length, dst, rawLen)) >>> 0;
       if (n !== rawLen) throw new Error('the frame does not unpack to its size');
       return bytes().slice(dst, dst + n);
     },
@@ -110,7 +131,7 @@ export async function deflateCodec(wasm: BufferSource | WebAssembly.Module, leve
       return n ? bytes().slice(dst, dst + n) : raw.slice(); // 0: it didn't fit, so it wouldn't have shrunk
     },
     async decompress(stored, rawLen) {
-      if (rawLen > MAX || stored.length > cap) throw new RangeError('a frame is over the codec\'s size');
+      if (rawLen > MAX || stored.length > cap) throw new RangeError("a frame is over the codec's size");
       bytes().set(stored, src);
       const n = ex.inflate_raw(src, stored.length, dst, rawLen) >>> 0;
       if (n !== rawLen) throw new Error('the frame does not unpack to its size');

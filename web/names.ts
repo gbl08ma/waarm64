@@ -98,7 +98,8 @@ export type TitleRecord = {
 
 /** The dialog's check of a name: as typed, by this page alone (`NamesAgent.checkHere`: `invalid`, `yours`, or `valid`,
  * the servers not asked); at Register, with the room's servers too (`NamesAgent.check`): `until` in Unix seconds. */
-export type NameCheck = { state: 'invalid' | 'yours' | 'valid' | 'free' | 'unknown' } | { state: 'taken' | 'disputed'; until: number };
+export type NameCheck =
+  { state: 'invalid' | 'yours' | 'valid' | 'free' | 'unknown' } | { state: 'taken' | 'disputed'; until: number };
 
 /** What a title is now, for the page (N5's dialog and the adapter's states). */
 export type TitleState = 'preparing' | 'reserved' | 'active' | 'grace' | 'lapsed' | 'released' | 'lost';
@@ -123,15 +124,46 @@ export type TitleView = {
   publishedAt?: number;
 };
 
-type Chain = { ids: string[]; owner: string; seniority: number; resolveEnd: number; coverEnd: number; released: boolean };
+type Chain = {
+  ids: string[];
+  owner: string;
+  seniority: number;
+  resolveEnd: number;
+  coverEnd: number;
+  released: boolean;
+};
 /** `linkEnd`: until when an anchor can make the entry link (the entry before's `t + TERM + GRACE`; null for a claim);
  * `stale`: unanchored and past it. */
-type EntryStatus = { id: string; kind: 'claim' | 'renew' | 'release'; prev: string; owner: string; time: number | null; linkEnd: number | null; stale: boolean; pending: boolean };
+type EntryStatus = {
+  id: string;
+  kind: 'claim' | 'renew' | 'release';
+  prev: string;
+  owner: string;
+  time: number | null;
+  linkEnd: number | null;
+  stale: boolean;
+  pending: boolean;
+};
 /** `zone.seq` in decimal: 64 bits, past what a number holds. */
-export type TitleStatus = { id: string; entries: EntryStatus[]; owner: Chain | null; best: Chain | null; zone: { seq: string; owner: string } | null; term: number; grace: number };
+export type TitleStatus = {
+  id: string;
+  entries: EntryStatus[];
+  owner: Chain | null;
+  best: Chain | null;
+  zone: { seq: string; owner: string } | null;
+  term: number;
+  grace: number;
+};
 /** A server's chain judged against the title; for `lost`, the winning chain's first block (as explorers name it) and
  * its header, checked at an explorer before the title is called lost. */
-type Judged = { verdict: 'ours' | 'branch' | 'lost' | 'none'; item: string; by?: string; pending: boolean; block?: string | null; header?: string | null };
+type Judged = {
+  verdict: 'ours' | 'branch' | 'lost' | 'none';
+  item: string;
+  by?: string;
+  pending: boolean;
+  block?: string | null;
+  header?: string | null;
+};
 
 // ---- Storage ----
 
@@ -150,7 +182,8 @@ export type NamesStore = {
 };
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-const unhex = (s: string) => Uint8Array.from({ length: s.length >> 1 }, (_, i) => parseInt(s.slice(2 * i, 2 * i + 2), 16));
+const unhex = (s: string) =>
+  Uint8Array.from({ length: s.length >> 1 }, (_, i) => parseInt(s.slice(2 * i, 2 * i + 2), 16));
 
 /** A room's ID as a key: a hash (the ID itself is a private room's secret, and Web Locks' names are listed). */
 async function roomHash(room: string): Promise<string> {
@@ -169,10 +202,19 @@ export function memoryNamesStore(): NamesStore {
       if (!secrets.has(i)) secrets.set(i, s);
       return Promise.resolve(secrets.get(i)!);
     },
-    titles: (i) => Promise.resolve([...titles.values()].filter((t) => i === undefined || t.identityKey === i).map((t) => structuredClone(t))),
+    titles: (i) =>
+      Promise.resolve(
+        [...titles.values()].filter((t) => i === undefined || t.identityKey === i).map((t) => structuredClone(t)),
+      ),
     get: (i, r, n) => Promise.resolve(structuredClone(titles.get(k(i, r, n)))),
-    put: (t) => { titles.set(k(t.identityKey, t.room, t.name), structuredClone(t)); return Promise.resolve(); },
-    delete: (i, r, n) => { titles.delete(k(i, r, n)); return Promise.resolve(); },
+    put: (t) => {
+      titles.set(k(t.identityKey, t.room, t.name), structuredClone(t));
+      return Promise.resolve();
+    },
+    delete: (i, r, n) => {
+      titles.delete(k(i, r, n));
+      return Promise.resolve();
+    },
     forget: (i) => {
       secrets.delete(i);
       for (const [key, t] of titles) if (t.identityKey === i) titles.delete(key);
@@ -184,7 +226,10 @@ export function memoryNamesStore(): NamesStore {
 function req<T>(r: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     r.onsuccess = () => resolve(r.result);
-    r.onerror = (e) => { e.preventDefault(); reject(r.error); };
+    r.onerror = (e) => {
+      e.preventDefault();
+      reject(r.error);
+    };
   });
 }
 
@@ -192,7 +237,10 @@ async function tx<T>(stores: string[], mode: IDBTransactionMode, f: (t: IDBTrans
   const db = await openIdb();
   try {
     const t = db.transaction(stores, mode);
-    const done = new Promise<void>((resolve, reject) => { t.oncomplete = () => resolve(); t.onerror = t.onabort = () => reject(t.error); });
+    const done = new Promise<void>((resolve, reject) => {
+      t.oncomplete = () => resolve();
+      t.onerror = t.onabort = () => reject(t.error);
+    });
     const out = await f(t);
     await done;
     return out;
@@ -204,20 +252,37 @@ async function tx<T>(stores: string[], mode: IDBTransactionMode, f: (t: IDBTrans
 /** The page's: IndexedDB `waarm64-room`, stores `owner` (the secret under the connection's `identityKey`, as `identity`
  * keeps its node key) and `titles` (under [identityKey, room hash, name]). */
 export function idbNamesStore(): NamesStore {
-  const key = async (t: { identityKey: string; room: string; name: string }) => [t.identityKey, await roomHash(t.room), t.name];
+  const key = async (t: { identityKey: string; room: string; name: string }) => [
+    t.identityKey,
+    await roomHash(t.room),
+    t.name,
+  ];
   return {
-    secret: (i) => tx(['owner'], 'readonly', (t) => req(t.objectStore('owner').get(i) as IDBRequest<{ secret: string } | undefined>)).then((v) => v?.secret),
-    addSecret: (i, s) => tx(['owner'], 'readwrite', async (t) => {
-      const o = t.objectStore('owner');
-      const have = await req(o.get(i) as IDBRequest<{ secret: string } | undefined>);
-      if (have) return have.secret;
-      await req(o.add({ secret: s }, i));
-      return s;
-    }),
-    titles: (i) => tx(['titles'], 'readonly', (t) => req(t.objectStore('titles').getAll(i === undefined ? undefined : IDBKeyRange.bound([i], [i, []])) as IDBRequest<TitleRecord[]>)),
+    secret: (i) =>
+      tx(['owner'], 'readonly', (t) =>
+        req(t.objectStore('owner').get(i) as IDBRequest<{ secret: string } | undefined>),
+      ).then((v) => v?.secret),
+    addSecret: (i, s) =>
+      tx(['owner'], 'readwrite', async (t) => {
+        const o = t.objectStore('owner');
+        const have = await req(o.get(i) as IDBRequest<{ secret: string } | undefined>);
+        if (have) return have.secret;
+        await req(o.add({ secret: s }, i));
+        return s;
+      }),
+    titles: (i) =>
+      tx(['titles'], 'readonly', (t) =>
+        req(
+          t.objectStore('titles').getAll(i === undefined ? undefined : IDBKeyRange.bound([i], [i, []])) as IDBRequest<
+            TitleRecord[]
+          >,
+        ),
+      ),
     get: async (i, r, n) => {
       const k = await key({ identityKey: i, room: r, name: n });
-      return tx(['titles'], 'readonly', (t) => req(t.objectStore('titles').get(k) as IDBRequest<TitleRecord | undefined>));
+      return tx(['titles'], 'readonly', (t) =>
+        req(t.objectStore('titles').get(k) as IDBRequest<TitleRecord | undefined>),
+      );
     },
     put: async (v) => {
       const k = await key(v);
@@ -227,10 +292,11 @@ export function idbNamesStore(): NamesStore {
       const k = await key({ identityKey: i, room: r, name: n });
       await tx(['titles'], 'readwrite', (t) => req(t.objectStore('titles').delete(k)));
     },
-    forget: (i) => tx(['owner', 'titles'], 'readwrite', async (t) => {
-      await req(t.objectStore('owner').delete(i));
-      await req(t.objectStore('titles').delete(IDBKeyRange.bound([i], [i, []])));
-    }),
+    forget: (i) =>
+      tx(['owner', 'titles'], 'readwrite', async (t) => {
+        await req(t.objectStore('owner').delete(i));
+        await req(t.objectStore('titles').delete(IDBKeyRange.bound([i], [i, []])));
+      }),
   };
 }
 
@@ -250,15 +316,20 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
   };
   const post = (m: ToNames) => worker.postMessage(m);
   post({ type: 'start', wasm });
-  type Ask = { type: 'op'; op: NamesOp; input: object } | { type: 'publish'; link: string; items: { id: string; item: string }[] } | { type: 'ids'; link: string; first: number };
-  const ask = <T>(m: Ask) => new Promise<T>((resolve, reject) => {
-    const k = ++n;
-    waiting.set(k, { resolve: (v) => resolve(v as T), reject });
-    post({ ...m, n: k } as ToNames);
-  });
+  type Ask =
+    | { type: 'op'; op: NamesOp; input: object }
+    | { type: 'publish'; link: string; items: { id: string; item: string }[] }
+    | { type: 'ids'; link: string; first: number };
+  const ask = <T>(m: Ask) =>
+    new Promise<T>((resolve, reject) => {
+      const k = ++n;
+      waiting.set(k, { resolve: (v) => resolve(v as T), reject });
+      post({ ...m, n: k } as ToNames);
+    });
   return {
     op: <T>(op: NamesOp, input: object) => ask<T>({ type: 'op', op, input }),
-    publish: (link, items) => ask<Record<string, PutAnswer[]>>({ type: 'publish', link, items }).then((r) => new Map(Object.entries(r))),
+    publish: (link, items) =>
+      ask<Record<string, PutAnswer[]>>({ type: 'publish', link, items }).then((r) => new Map(Object.entries(r))),
     ids: (link, first) => ask<IdsAnswer>({ type: 'ids', link, first }),
     close: () => worker.terminate(),
   };
@@ -334,7 +405,9 @@ export class NamesAgent {
       this.channel = new BroadcastChannel(NAMES_CHANNEL);
       // Node's (the tests'): it mustn't keep the process alive.
       (this.channel as { unref?: () => void }).unref?.();
-    } catch { /* none: no room worker to tell */ }
+    } catch {
+      /* none: no room worker to tell */
+    }
   }
 
   // ---- N5's API ----
@@ -351,14 +424,23 @@ export class NamesAgent {
     await this.b.op('key', { room, secret, name }); // the rules: `Name` if refused
     void (globalThis.navigator as Navigator | undefined)?.storage?.persist?.().catch(() => false);
     const have = await this.store.get(c.identityKey, room, name);
-    if (have && !have.lost && !have.released && (await this.view(have)).state !== 'lapsed') throw new NamesError('Held');
+    if (have && !have.lost && !have.released && (await this.view(have)).state !== 'lapsed')
+      throw new NamesError('Held');
     // The zones' count starts past the old record's and at the Unix time: a name registered again (let go, lost or
     // lapsed) is signed by the same owner key (one a secret, room and name), and the earlier tenure's zones, public and
     // signed by it, mustn't outrank the new claim's (the final review, finding 9). The time puts it past a count that
     // another copy of the old title reached too (one a second at most; 32 bits hold it until 2106).
     const t: TitleRecord = {
-      identityKey: c.identityKey, room, link: c.link, name, item: '', stamps: {}, collect: {}, points,
-      zone: { n: Math.max(have?.zone.n ?? 0, nowS()), branch: newBranch() }, made: Date.now(),
+      identityKey: c.identityKey,
+      room,
+      link: c.link,
+      name,
+      item: '',
+      stamps: {},
+      collect: {},
+      points,
+      zone: { n: Math.max(have?.zone.n ?? 0, nowS()), branch: newBranch() },
+      made: Date.now(),
     };
     await this.store.put(t);
     const k = titleKey(t);
@@ -415,7 +497,8 @@ export class NamesAgent {
       const t = await this.mustGet(c.identityKey, room, name);
       // Renewals waiting for their anchors go: one collected later would be a branch whose cover outlasts the
       // release's, and the name would stay (review 2).
-      const waiting = (await this.status(t))?.entries.filter((e) => e.kind === 'renew' && e.time === null).map((e) => e.id) ?? [];
+      const waiting =
+        (await this.status(t))?.entries.filter((e) => e.kind === 'renew' && e.time === null).map((e) => e.id) ?? [];
       if (waiting.length) await this.dropEntries(t, waiting);
       const st = await this.status(t);
       if (st?.owner && !t.lost && !st.owner.released) await this.makeEntry(t, 'release', st.owner.ids.at(-1));
@@ -432,7 +515,10 @@ export class NamesAgent {
    * The dialog's check of `name` in connection `c`'s room as typed, **asking nothing of any server**: not a valid name
    * (the rules, by the module), this connection's own already, or `valid` (the servers not asked: `check` asks them).
    */
-  async checkHere(c: NamesConn, name: string): Promise<{ state: 'invalid' | 'yours' } | { state: 'valid'; id: string }> {
+  async checkHere(
+    c: NamesConn,
+    name: string,
+  ): Promise<{ state: 'invalid' | 'yours' } | { state: 'valid'; id: string }> {
     const room = roomOf(c.link);
     let id: string;
     try {
@@ -443,7 +529,8 @@ export class NamesAgent {
       throw err;
     }
     const have = await this.store.get(c.identityKey, room, name);
-    if (have && !have.lost && !have.released && !['lapsed', 'released', 'lost'].includes((await this.view(have)).state)) return { state: 'yours' };
+    if (have && !have.lost && !have.released && !['lapsed', 'released', 'lost'].includes((await this.view(have)).state))
+      return { state: 'yours' };
     return { state: 'valid', id };
   }
 
@@ -516,7 +603,9 @@ export class NamesAgent {
     };
     // One pass at a time in a page.
     const p = (this.passing ?? Promise.resolve()).then(run, run);
-    this.passing = p.finally(() => { if (this.passing === p) this.passing = undefined; });
+    this.passing = p.finally(() => {
+      if (this.passing === p) this.passing = undefined;
+    });
     return p;
   }
 
@@ -573,7 +662,11 @@ export class NamesAgent {
   }
 
   /** `f` under the title's Web Lock: waiting for it (`wait`), or not at all when another tab has it (undefined). */
-  private async locked<T>(t: { identityKey: string; room: string; name: string }, wait: boolean, f: () => Promise<T>): Promise<T | undefined> {
+  private async locked<T>(
+    t: { identityKey: string; room: string; name: string },
+    wait: boolean,
+    f: () => Promise<T>,
+  ): Promise<T | undefined> {
     const name = `waarm64-names:${t.identityKey}:${await roomHash(t.room)}:${t.name}`;
     return navigator.locks.request(name, { ifAvailable: !wait }, async (l) => (l ? f() : undefined));
   }
@@ -595,7 +688,8 @@ export class NamesAgent {
     for (const e of st?.entries ?? []) {
       // One past its link end may still have an anchor timed before it (the page wasn't open): asked now, whatever the
       // backoff.
-      if (e.time !== null || !t.stamps[e.id]?.length || (!e.stale && (t.collect[e.id]?.next ?? 0) > Date.now())) continue;
+      if (e.time !== null || !t.stamps[e.id]?.length || (!e.stale && (t.collect[e.id]?.next ?? 0) > Date.now()))
+        continue;
       // A calendar's junk, an explorer's odd header or a clock behind is asked again later, and another calendar or
       // explorer may do (review 2): no anchor is refused for good.
       const item = await this.collect(t, e.id);
@@ -611,7 +705,9 @@ export class NamesAgent {
     // An entry unanchored past its link end may still have an anchor timed before it, finished while no page was open
     // (a renewal so collected still links): it is kept and asked for, beside a new one where one is due, and dropped
     // only a week past its link end, when the calendars would long have served it (review 2).
-    const stale = (st?.entries ?? []).filter((e) => e.stale && nowS() > (e.linkEnd ?? Infinity) + STALE_KEEP_S).map((e) => e.id);
+    const stale = (st?.entries ?? [])
+      .filter((e) => e.stale && nowS() > (e.linkEnd ?? Infinity) + STALE_KEEP_S)
+      .map((e) => e.id);
     if (stale.length) {
       this.log(`${t.name}: ${stale.length} entry(s) never anchored in time to link; dropped`);
       await this.dropEntries(t, stale);
@@ -638,7 +734,9 @@ export class NamesAgent {
     // The title's own key, from its secret: a chain of another key's (a secret that doesn't sign this title) isn't
     // renewed with it.
     const secret = t.secret ?? (await this.store.secret(t.identityKey));
-    const ownKey = secret ? (await this.b.op<{ owner: string }>('key', { room: t.room, secret, name: t.name })).owner : undefined;
+    const ownKey = secret
+      ? (await this.b.op<{ owner: string }>('key', { room: t.room, secret, name: t.name })).owner
+      : undefined;
     const last = o.ids.at(-1)!;
     const lastTime = st.entries.find((e) => e.id === last)?.time ?? 0;
     const due = nowS() >= lastTime + st.term / 2;
@@ -665,7 +763,9 @@ export class NamesAgent {
     let prev: string | undefined;
     if (st.owner) {
       const secret = t.secret ?? (await this.store.secret(t.identityKey));
-      const ownKey = secret ? (await this.b.op<{ owner: string }>('key', { room: t.room, secret, name: t.name })).owner : undefined;
+      const ownKey = secret
+        ? (await this.b.op<{ owner: string }>('key', { room: t.room, secret, name: t.name })).owner
+        : undefined;
       if (st.owner.released || st.owner.owner !== ownKey) return false;
       const last = st.owner.ids.at(-1)!;
       prev = st.entries.find((e) => live(e) && e.kind === 'renew' && e.prev === last)?.id ?? last;
@@ -691,28 +791,46 @@ export class NamesAgent {
    * the title, stamped at the calendars (each receipt a pending anchor the owner key signs). With no receipt it can never
    * be anchored: dropped, made again later. A claim carries the title's zone.
    */
-  private async makeEntry(t: TitleRecord, kind: 'claim' | 'renew' | 'release', prev?: string, made?: string): Promise<string | undefined> {
+  private async makeEntry(
+    t: TitleRecord,
+    kind: 'claim' | 'renew' | 'release',
+    prev?: string,
+    made?: string,
+  ): Promise<string | undefined> {
     const secret = t.secret ?? (await this.store.secret(t.identityKey));
     if (!secret) throw new NamesError('NoSecret');
     const base = { room: t.room, secret, name: t.name };
     const entry = made ?? (await this.prepare(t, kind, prev));
-    const added = await this.b.op<{ item: string; id: string }>('add', { room: t.room, item: t.item || undefined, entry, now: nowS() });
+    const added = await this.b.op<{ item: string; id: string }>('add', {
+      room: t.room,
+      item: t.item || undefined,
+      entry,
+      now: nowS(),
+    });
     let item = added.item;
     const id = added.id;
     if (kind === 'claim') item = await this.sealed(t, item);
-    const receipts = await Promise.all(CALENDARS.map(async (c, calendar) => {
-      try {
-        const res = await get(`${c}/digest`, { method: 'POST', body: unhex(id) });
-        return res.ok ? { calendar, receipt: hex(new Uint8Array(await res.arrayBuffer())) } : undefined;
-      } catch {
-        return undefined;
-      }
-    }));
+    const receipts = await Promise.all(
+      CALENDARS.map(async (c, calendar) => {
+        try {
+          const res = await get(`${c}/digest`, { method: 'POST', body: unhex(id) });
+          return res.ok ? { calendar, receipt: hex(new Uint8Array(await res.arrayBuffer())) } : undefined;
+        } catch {
+          return undefined;
+        }
+      }),
+    );
     const stamps: string[] = [];
     for (const x of receipts) {
       if (!x) continue;
       try {
-        const p = await this.b.op<{ item: string; pending: string }>('pending', { ...base, item, id, ...x, now: nowS() });
+        const p = await this.b.op<{ item: string; pending: string }>('pending', {
+          ...base,
+          item,
+          id,
+          ...x,
+          now: nowS(),
+        });
         item = p.item;
         stamps.push(p.pending);
       } catch (err) {
@@ -759,10 +877,23 @@ export class NamesAgent {
     const secret = t.secret ?? (await this.store.secret(t.identityKey));
     const st = await this.b.op<TitleStatus>('status', { item, now: nowS() });
     const held = st.zone?.seq;
-    const seq = this.nextSeq(t, seen !== undefined && (held === undefined || BigInt(seen) > BigInt(held)) ? seen : held);
+    const seq = this.nextSeq(
+      t,
+      seen !== undefined && (held === undefined || BigInt(seen) > BigInt(held)) ? seen : held,
+    );
     // Past four points, sixteen slots (review 2: a fifth failed with the module's bare `Zone`).
     const wide = t.points.length > ZONE_NARROW;
-    return (await this.b.op<{ item: string }>('zone', { room: t.room, secret, name: t.name, seq, points: t.points, item, wide })).item;
+    return (
+      await this.b.op<{ item: string }>('zone', {
+        room: t.room,
+        secret,
+        name: t.name,
+        seq,
+        points: t.points,
+        item,
+        wide,
+      })
+    ).item;
   }
 
   private async seal(t: TitleRecord) {
@@ -792,7 +923,9 @@ export class NamesAgent {
           const header = await this.header(e, a.height, a.root);
           if (!header) continue;
           try {
-            return (await this.b.op<{ item: string }>('anchor', { item: t.item, id, anchor: a.anchor, header, now: nowS() })).item;
+            return (
+              await this.b.op<{ item: string }>('anchor', { item: t.item, id, anchor: a.anchor, header, now: nowS() })
+            ).item;
           } catch (err) {
             if (!(err instanceof NamesError)) throw err;
             this.log(`${t.name}: an anchor refused (${err.code})`);
@@ -805,7 +938,10 @@ export class NamesAgent {
 
   /** Whether an explorer knows block `hash` with this `header`: `known` at the first that serves it, `denied` when every
    * explorer answers 404, `unchecked` when one couldn't be asked (or there is nothing to ask). */
-  private async blockKnown(hash: string | null | undefined, header: string | null | undefined): Promise<'known' | 'denied' | 'unchecked'> {
+  private async blockKnown(
+    hash: string | null | undefined,
+    header: string | null | undefined,
+  ): Promise<'known' | 'denied' | 'unchecked'> {
     if (!hash || !header || !/^[0-9a-f]{64}$/.test(hash)) return 'unchecked';
     let denied = 0;
     for (const e of EXPLORERS) {
@@ -867,7 +1003,8 @@ export class NamesAgent {
           const ours = st.zone?.seq;
           if (ours !== undefined && theirs !== ours) {
             zoneAgain = true;
-            if (theirs !== undefined && BigInt(theirs) >= BigInt(ours)) roomSeq = roomSeq !== undefined && roomSeq > BigInt(theirs) ? roomSeq : BigInt(theirs);
+            if (theirs !== undefined && BigInt(theirs) >= BigInt(ours))
+              roomSeq = roomSeq !== undefined && roomSeq > BigInt(theirs) ? roomSeq : BigInt(theirs);
           }
         }
         if (j.verdict === 'ours') shown = true;
@@ -891,7 +1028,9 @@ export class NamesAgent {
     if (lost) {
       const known = await this.blockKnown(lostBlock.block, lostBlock.header);
       if (known !== 'known') {
-        this.log(`${t.name}: a better chain on a block ${known === 'denied' ? 'no explorer knows: refused' : 'not checked yet: judged again'}`);
+        this.log(
+          `${t.name}: a better chain on a block ${known === 'denied' ? 'no explorer knows: refused' : 'not checked yet: judged again'}`,
+        );
         lost = undefined;
       }
     }
@@ -917,7 +1056,9 @@ export class NamesAgent {
     // chain alive and beaten stays beaten: a renewal doesn't change its seniority.
     const waiting = !st.owner && st.entries.some((e) => e.time === null && (t.stamps[e.id]?.length ?? 0) > 0);
     if (lost && waiting) {
-      this.log(`${t.name}: another key's chain owns it while an entry of ours waits for its anchor; judged again later`);
+      this.log(
+        `${t.name}: another key's chain owns it while an entry of ours waits for its anchor; judged again later`,
+      );
       lost = undefined;
       if (!shown && !branches.length) return;
     }
@@ -951,23 +1092,46 @@ export class NamesAgent {
 
   private async view(t: TitleRecord): Promise<TitleView> {
     const st = await this.status(t);
-    const base = { identityKey: t.identityKey, room: t.room, link: t.link, name: t.name, points: t.points, publishedAt: t.publishedAt };
+    const base = {
+      identityKey: t.identityKey,
+      room: t.room,
+      link: t.link,
+      name: t.name,
+      points: t.points,
+      publishedAt: t.publishedAt,
+    };
     if (t.lost) return { ...base, state: 'lost', lostTo: t.lost.by };
     const o = st?.owner;
     const now = nowS();
     if (o) {
       const lastTime = st.entries.find((e) => e.id === o.ids.at(-1))?.time ?? o.seniority;
       const state: TitleState = o.released || t.released ? 'released' : now < o.resolveEnd ? 'active' : 'grace';
-      return { ...base, state, claimedAt: o.seniority, keptUntil: o.resolveEnd, lapsesAt: o.coverEnd, renewAt: lastTime + st.term / 2 };
+      return {
+        ...base,
+        state,
+        claimedAt: o.seniority,
+        keptUntil: o.resolveEnd,
+        lapsesAt: o.coverEnd,
+        renewAt: lastTime + st.term / 2,
+      };
     }
-    if (st?.best) return { ...base, state: t.released ? 'released' : 'lapsed', claimedAt: st.best.seniority, keptUntil: st.best.resolveEnd, lapsesAt: st.best.coverEnd };
+    if (st?.best)
+      return {
+        ...base,
+        state: t.released ? 'released' : 'lapsed',
+        claimedAt: st.best.seniority,
+        keptUntil: st.best.resolveEnd,
+        lapsesAt: st.best.coverEnd,
+      };
     const claim = st?.entries.find((e) => e.kind === 'claim' && !e.stale);
-    if (claim && !this.making.has(titleKey(t))) return { ...base, state: 'reserved', publicAbout: (t.stampedAt ?? t.made) + PUBLIC_IN_MS };
+    if (claim && !this.making.has(titleKey(t)))
+      return { ...base, state: 'reserved', publicAbout: (t.stampedAt ?? t.made) + PUBLIC_IN_MS };
     return { ...base, state: 'preparing' };
   }
 }
 
-const titleKey = (t: { identityKey: string; room: string; name: string }) => JSON.stringify([t.identityKey, t.room, t.name]);
+const titleKey = (t: { identityKey: string; room: string; name: string }) =>
+  JSON.stringify([t.identityKey, t.room, t.name]);
 
 // ---- Export and import (with a room connection's key) ----
 
@@ -1031,7 +1195,12 @@ export { parseRoomExport, roomExport } from './room.ts';
  * The titles connection `identityKey` holds in room `room`, as the module's config takes them (`room.names.titles`): the
  * owner key from the secret (by the room's own module `m`) and the item. Lost and empty titles aren't served.
  */
-export async function roomTitles(store: NamesStore, ops: (op: NamesOp, input: object) => Record<string, unknown>, identityKey: string, room: string): Promise<NamesTitle[]> {
+export async function roomTitles(
+  store: NamesStore,
+  ops: (op: NamesOp, input: object) => Record<string, unknown>,
+  identityKey: string,
+  room: string,
+): Promise<NamesTitle[]> {
   const kept = await store.secret(identityKey);
   const out: NamesTitle[] = [];
   for (const t of await store.titles(identityKey)) {
@@ -1039,13 +1208,14 @@ export async function roomTitles(store: NamesStore, ops: (op: NamesOp, input: ob
     if (t.room !== room || t.lost || !t.item || !secret) continue;
     try {
       out.push({ key: ops('key', { room, secret, name: t.name }).key as string, item: t.item });
-    } catch { /* a name the rules refuse: not served */ }
+    } catch {
+      /* a name the rules refuse: not served */
+    }
   }
   return out;
 }
 
 // ---- The page ----
-
 
 let shared: NamesAgent | undefined;
 
@@ -1058,7 +1228,9 @@ export function namesAgent(o: { wasm?: string } = {}): NamesAgent {
 /** At every page load (web/app/main.ts): the agent starts (a pass now, then hourly, no machine needed) when there are
  * titles to look after; none, no worker. */
 export async function startNamesAgent(o: { wasm?: string } = {}): Promise<NamesAgent | undefined> {
-  const have = await idbNamesStore().titles().catch(() => []);
+  const have = await idbNamesStore()
+    .titles()
+    .catch(() => []);
   if (!have.length) return undefined;
   const a = namesAgent(o);
   await a.start();
@@ -1072,6 +1244,9 @@ export const LAST_WEEK_S = 7 * 24 * 60 * 60;
  * from now; the soonest first. */
 export function inLastWeek(views: TitleView[], now: number): TitleView[] {
   return views
-    .filter((v) => (v.state === 'active' || v.state === 'grace') && v.keptUntil !== undefined && v.keptUntil - now < LAST_WEEK_S)
+    .filter(
+      (v) =>
+        (v.state === 'active' || v.state === 'grace') && v.keptUntil !== undefined && v.keptUntil - now < LAST_WEEK_S,
+    )
     .sort((a, b) => (a.keptUntil ?? 0) - (b.keptUntil ?? 0));
 }

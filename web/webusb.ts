@@ -10,7 +10,17 @@
 // MessagePort proxy from the page could stand in for a worker without `navigator.usb`.
 
 import { MsgError, type Params } from './msg.ts';
-import type { Setup, UsbCode, UsbDevice, UsbEndpoint, UsbIdentity, UsbProblem, UsbResult, UsbSpeed, UsbTransfer } from './usb-device.ts';
+import type {
+  Setup,
+  UsbCode,
+  UsbDevice,
+  UsbEndpoint,
+  UsbIdentity,
+  UsbProblem,
+  UsbResult,
+  UsbSpeed,
+  UsbTransfer,
+} from './usb-device.ts';
 
 // ---- The WebUSB surface we use -------------------------------------------------------------------
 
@@ -31,7 +41,10 @@ export interface WebUsbDeviceLike {
   readonly serialNumber?: string | null;
   readonly productName?: string | null;
   readonly opened: boolean;
-  readonly configuration: { configurationValue: number; interfaces: readonly { interfaceNumber: number; claimed: boolean }[] } | null;
+  readonly configuration: {
+    configurationValue: number;
+    interfaces: readonly { interfaceNumber: number; claimed: boolean }[];
+  } | null;
   open(): Promise<void>;
   close(): Promise<void>;
   selectConfiguration(value: number): Promise<void>;
@@ -70,14 +83,13 @@ export const DT_SSP_ISOC_EP_COMPANION = 0x31;
 /** WebUSB's protected interface classes (docs/usb.md "What the browser allows"). */
 export const PROTECTED_CLASSES: ReadonlySet<number> = new Set([0x01, 0x03, 0x08, 0x09, 0x0b, 0x0e, 0x10, 0xe0]);
 
-
 /** One descriptor of a configuration's chain. */
 export type Desc = { type: number; bytes: Uint8Array };
 
 /** Splits a configuration descriptor (with what follows it) into its descriptors; a malformed tail is dropped. */
 export function splitDescriptors(b: Uint8Array): Desc[] {
   const out: Desc[] = [];
-  for (let o = 0; o + 2 <= b.length; ) {
+  for (let o = 0; o + 2 <= b.length;) {
     const len = b[o];
     if (len < 2 || o + len > b.length) break;
     out.push({ type: b[o + 1], bytes: b.subarray(o, o + len) });
@@ -87,7 +99,15 @@ export function splitDescriptors(b: Uint8Array): Desc[] {
 }
 
 export type EpInfo = { address: number; attributes: number; maxPacket: number; interval: number; companion: boolean };
-export type AltInfo = { number: number; alternate: number; cls: number; subclass: number; protocol: number; iInterface: number; endpoints: EpInfo[] };
+export type AltInfo = {
+  number: number;
+  alternate: number;
+  cls: number;
+  subclass: number;
+  protocol: number;
+  iInterface: number;
+  endpoints: EpInfo[];
+};
 export type ConfigInfo = {
   value: number;
   iConfiguration: number;
@@ -102,12 +122,26 @@ export function parseConfig(raw: Uint8Array): ConfigInfo {
   for (const d of ds) {
     const b = d.bytes;
     if (d.type === DT_INTERFACE && b.length >= 9) {
-      alt = { number: b[2], alternate: b[3], cls: b[5], subclass: b[6], protocol: b[7], iInterface: b[8], endpoints: [] };
+      alt = {
+        number: b[2],
+        alternate: b[3],
+        cls: b[5],
+        subclass: b[6],
+        protocol: b[7],
+        iInterface: b[8],
+        endpoints: [],
+      };
       const list = c.interfaces.get(alt.number) ?? [];
       list.push(alt);
       c.interfaces.set(alt.number, list);
     } else if (d.type === DT_ENDPOINT && b.length >= 7 && alt) {
-      alt.endpoints.push({ address: b[2], attributes: b[3], maxPacket: b[4] | (b[5] << 8), interval: b[6], companion: false });
+      alt.endpoints.push({
+        address: b[2],
+        attributes: b[3],
+        maxPacket: b[4] | (b[5] << 8),
+        interval: b[6],
+        companion: false,
+      });
     } else if (d.type === DT_SS_EP_COMPANION && alt && alt.endpoints.length) {
       alt.endpoints[alt.endpoints.length - 1].companion = true;
     } else if (d.type === DT_IAD && b.length >= 8) {
@@ -136,11 +170,15 @@ export function filterConfig(raw: Uint8Array, drop: ReadonlySet<number>): Uint8A
   let skipping = false;
   for (let i = 0; i < ds.length; i++) {
     const d = ds[i];
-    if (i === 0) { kept.push(d.bytes.slice()); continue; }
+    if (i === 0) {
+      kept.push(d.bytes.slice());
+      continue;
+    }
     if (d.type === DT_INTERFACE) skipping = drop.has(d.bytes[2]);
     else if (d.type === DT_IAD) {
       skipping = false;
-      const first = d.bytes[2], count = d.bytes[3];
+      const first = d.bytes[2],
+        count = d.bytes[3];
       const left = [...present].filter((n) => n >= first && n < first + count).sort((a, b) => a - b);
       if (left.length === 0) continue;
       const iad = d.bytes.slice();
@@ -154,7 +192,10 @@ export function filterConfig(raw: Uint8Array, drop: ReadonlySet<number>): Uint8A
   const total = kept.reduce((n, b) => n + b.length, 0);
   const out = new Uint8Array(total);
   let o = 0;
-  for (const b of kept) { out.set(b, o); o += b.length; }
+  for (const b of kept) {
+    out.set(b, o);
+    o += b.length;
+  }
   out[2] = total & 0xff;
   out[3] = total >> 8;
   out[4] = present.size;
@@ -174,8 +215,11 @@ export function inferSpeed(device: Uint8Array, configs: ConfigInfo[]): UsbSpeed 
   if (device[7] === 9 || eps.some((e) => e.companion)) return 'super';
   const size = (e: EpInfo) => e.maxPacket & 0x7ff;
   const type = (e: EpInfo) => e.attributes & 3;
-  const highOnly = (e: EpInfo) => (type(e) === 2 && size(e) === 512) || (type(e) === 3 && size(e) > 64) || (type(e) === 1 && size(e) > 1023)
-    || ((type(e) === 1 || type(e) === 3) && (e.maxPacket & 0x1800) !== 0);
+  const highOnly = (e: EpInfo) =>
+    (type(e) === 2 && size(e) === 512) ||
+    (type(e) === 3 && size(e) > 64) ||
+    (type(e) === 1 && size(e) > 1023) ||
+    ((type(e) === 1 || type(e) === 3) && (e.maxPacket & 0x1800) !== 0);
   if (eps.some(highOnly)) return 'high';
   if (device[7] === 8 && eps.every((e) => type(e) === 3 && size(e) <= 8)) return 'low';
   return 'full';
@@ -184,9 +228,16 @@ export function inferSpeed(device: Uint8Array, configs: ConfigInfo[]): UsbSpeed 
 // ---- The backend ---------------------------------------------------------------------------------
 
 const RT_IN = 0x80;
-const REQ_GET_STATUS = 0, REQ_CLEAR_FEATURE = 1, REQ_SET_FEATURE = 3, REQ_GET_DESCRIPTOR = 6;
-const REQ_GET_CONFIGURATION = 8, REQ_SET_CONFIGURATION = 9, REQ_GET_INTERFACE = 10, REQ_SET_INTERFACE = 11;
-const REQ_SET_SEL = 48, REQ_SET_ISOCH_DELAY = 49;
+const REQ_GET_STATUS = 0,
+  REQ_CLEAR_FEATURE = 1,
+  REQ_SET_FEATURE = 3,
+  REQ_GET_DESCRIPTOR = 6;
+const REQ_GET_CONFIGURATION = 8,
+  REQ_SET_CONFIGURATION = 9,
+  REQ_GET_INTERFACE = 10,
+  REQ_SET_INTERFACE = 11;
+const REQ_SET_SEL = 48,
+  REQ_SET_ISOCH_DELAY = 49;
 const FEATURE_ENDPOINT_HALT = 0;
 
 const TYPES = ['standard', 'class', 'vendor'] as const;
@@ -199,7 +250,8 @@ export function webUsbSetup(s: Setup): WebUsbSetup | null {
   return { requestType: type, recipient, request: s.request, value: s.value, index: s.index };
 }
 
-const bytesOf = (dv: DataView | undefined): Uint8Array => (dv ? new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice() : new Uint8Array(0));
+const bytesOf = (dv: DataView | undefined): Uint8Array =>
+  dv ? new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice() : new Uint8Array(0);
 const statusCode = (s: WebUsbStatus): UsbCode => (s === 'stall' ? 'stall' : s === 'babble' ? 'babble' : 'success');
 
 /** An IN result of `data` for a TD of `length` bytes: Short Packet when fewer. */
@@ -213,7 +265,9 @@ type Td = { tag: number; length: number; result?: UsbResult; done: (r: UsbResult
 /** TDs of one endpoint, completed in submit order whatever order their results come in. */
 class Order {
   q: Td[] = [];
-  add(td: Td) { this.q.push(td); }
+  add(td: Td) {
+    this.q.push(td);
+  }
   finish(td: Td, r: UsbResult) {
     if (!this.q.includes(td)) return;
     td.result = r;
@@ -222,7 +276,9 @@ class Order {
       t.done(t.result!);
     }
   }
-  drop(tags: ReadonlySet<number>) { this.q = this.q.filter((t) => !tags.has(t.tag)); }
+  drop(tags: ReadonlySet<number>) {
+    this.q = this.q.filter((t) => !tags.has(t.tag));
+  }
 }
 
 type Chunk = { data: Uint8Array; code: UsbCode };
@@ -261,12 +317,22 @@ export class UsbOpenError extends MsgError {
 }
 
 /** The browser couldn't open the device (`e`: its error, whose words are the browser's). WebHID's opener says it too. */
-export const openFailed = (e: unknown) => new UsbOpenError('usb:webusb.openFailed', undefined, [{ kind: 'open-failed', message: (e as Error).message }], { cause: e });
+export const openFailed = (e: unknown) =>
+  new UsbOpenError('usb:webusb.openFailed', undefined, [{ kind: 'open-failed', message: (e as Error).message }], {
+    cause: e,
+  });
 /** The granted device isn't among those the browser lists now. WebHID's opener says it too. */
-export const notFound = () => new UsbOpenError('usb:webusb.notFound', undefined, [{ kind: 'open-failed', message: 'not found' }]); // i18n-ignore: stands for the browser's own error
+export const notFound = () =>
+  new UsbOpenError('usb:webusb.notFound', undefined, [{ kind: 'open-failed', message: 'not found' }]); // i18n-ignore: stands for the browser's own error
 
 const GET = (type: number, index: number, lang: number, length: number): [WebUsbSetup, number] => [
-  { requestType: 'standard', recipient: 'device', request: REQ_GET_DESCRIPTOR, value: (type << 8) | index, index: lang },
+  {
+    requestType: 'standard',
+    recipient: 'device',
+    request: REQ_GET_DESCRIPTOR,
+    value: (type << 8) | index,
+    index: lang,
+  },
   length,
 ];
 
@@ -287,7 +353,12 @@ export async function openWebUsb(dev: WebUsbDeviceLike, opts: WebUsbOptions = {}
   } catch (e) {
     await dev.close().catch(() => {});
     if (e instanceof UsbOpenError) throw e;
-    throw new UsbOpenError('usb:webusb.readFailed', undefined, [{ kind: 'open-failed', message: (e as Error).message }], { cause: e });
+    throw new UsbOpenError(
+      'usb:webusb.readFailed',
+      undefined,
+      [{ kind: 'open-failed', message: (e as Error).message }],
+      { cause: e },
+    );
   }
   return p;
 }
@@ -366,7 +437,8 @@ export class WebUsbPassthrough implements UsbDevice {
     await this.claimActive();
     // A configuration without interfaces is the guest's to use (control requests only); one whose every interface is out of reach isn't.
     const ifaces = this.active()?.interfaces.size ?? 0;
-    if (ifaces > 0 && this.claimed.size === 0) throw new UsbOpenError('usb:webusb.noInterface', undefined, this.problems);
+    if (ifaces > 0 && this.claimed.size === 0)
+      throw new UsbOpenError('usb:webusb.noInterface', undefined, this.problems);
   }
 
   private async readStrings() {
@@ -466,13 +538,19 @@ export class WebUsbPassthrough implements UsbDevice {
 
   private inEp(ep: number): InEndpoint {
     let e = this.ins.get(ep);
-    if (!e) { e = new InEndpoint(new Order()); this.ins.set(ep, e); }
+    if (!e) {
+      e = new InEndpoint(new Order());
+      this.ins.set(ep, e);
+    }
     return e;
   }
 
   private outOrder(ep: number): Order {
     let o = this.outs.get(ep);
-    if (!o) { o = new Order(); this.outs.set(ep, o); }
+    if (!o) {
+      o = new Order();
+      this.outs.set(ep, o);
+    }
     return o;
   }
 
@@ -503,7 +581,10 @@ export class WebUsbPassthrough implements UsbDevice {
         e.order.finish(td, inResult(c.data.subarray(0, td.length), td.length));
       } else {
         e.carry.shift();
-        e.order.finish(td, c.code === 'stall' || c.code === 'error' ? { code: c.code, actual: 0 } : inResult(c.data, td.length, c.code));
+        e.order.finish(
+          td,
+          c.code === 'stall' || c.code === 'error' ? { code: c.code, actual: 0 } : inResult(c.data, td.length, c.code),
+        );
       }
     }
     while (e.inflight < e.waiting.length) {
@@ -511,7 +592,10 @@ export class WebUsbPassthrough implements UsbDevice {
       e.inflight++;
       this.issue(() => this.dev.transferIn(ep & 0x0f, length)).then(
         (r) => this.arrived(ep, e, { data: bytesOf(r.data), code: statusCode(r.status) }),
-        (err) => { this.lost(err); this.arrived(ep, e, { data: new Uint8Array(0), code: 'error' }); },
+        (err) => {
+          this.lost(err);
+          this.arrived(ep, e, { data: new Uint8Array(0), code: 'error' });
+        },
       );
     }
   }
@@ -548,7 +632,10 @@ export class WebUsbPassthrough implements UsbDevice {
 
   cancel(ep: number, tags: number[]): void {
     const set = new Set(tags);
-    if (ep === 0) { this.ctrl.drop(set); return; }
+    if (ep === 0) {
+      this.ctrl.drop(set);
+      return;
+    }
     if (ep & 0x80) {
       const e = this.ins.get(ep);
       if (!e) return;
@@ -625,26 +712,48 @@ export class WebUsbPassthrough implements UsbDevice {
   private control(t: UsbTransfer, td: Td) {
     const s = t.setup!;
     const ctrl = this.ctrl;
-    const finish = (r: UsbResult) => { if (!this.dead && this.ctrl === ctrl) ctrl.finish(td, r); };
+    const finish = (r: UsbResult) => {
+      if (!this.dead && this.ctrl === ctrl) ctrl.finish(td, r);
+    };
     const local = this.standard(s, t);
     if (local) {
-      local.then(finish, (err) => { this.lost(err); finish({ code: 'error', actual: 0 }); });
+      local.then(finish, (err) => {
+        this.lost(err);
+        finish({ code: 'error', actual: 0 });
+      });
       return;
     }
     const ws = webUsbSetup(s);
-    if (!ws) { finish({ code: 'stall', actual: 0 }); return; }
+    if (!ws) {
+      finish({ code: 'stall', actual: 0 });
+      return;
+    }
     // An interface we don't hold (a filtered one) can't be reached: stall as a device without it would.
-    if (ws.recipient === 'interface' && !this.claimed.has(s.index & 0xff)) { finish({ code: 'stall', actual: 0 }); return; }
+    if (ws.recipient === 'interface' && !this.claimed.has(s.index & 0xff)) {
+      finish({ code: 'stall', actual: 0 });
+      return;
+    }
     if (s.requestType & RT_IN) {
       this.issue(() => this.dev.controlTransferIn(ws, s.length)).then(
-        (r) => finish(r.status === 'stall' ? { code: 'stall', actual: 0 } : inResult(bytesOf(r.data), s.length, statusCode(r.status))),
-        (err) => { this.lost(err); finish({ code: 'error', actual: 0 }); },
+        (r) =>
+          finish(
+            r.status === 'stall'
+              ? { code: 'stall', actual: 0 }
+              : inResult(bytesOf(r.data), s.length, statusCode(r.status)),
+          ),
+        (err) => {
+          this.lost(err);
+          finish({ code: 'error', actual: 0 });
+        },
       );
     } else {
       const data = (t.data ?? new Uint8Array(0)).subarray(0, s.length);
       this.issue(() => this.dev.controlTransferOut(ws, data as Uint8Array<ArrayBuffer>)).then(
         (r) => finish({ code: statusCode(r.status), actual: r.status === 'ok' ? r.bytesWritten : 0 }),
-        (err) => { this.lost(err); finish({ code: 'error', actual: 0 }); },
+        (err) => {
+          this.lost(err);
+          finish({ code: 'error', actual: 0 });
+        },
       );
     }
   }
@@ -658,9 +767,11 @@ export class WebUsbPassthrough implements UsbDevice {
     switch (s.request) {
       case REQ_GET_DESCRIPTOR: {
         if (recipient !== 0) return null;
-        const type = s.value >> 8, index = s.value & 0xff;
+        const type = s.value >> 8,
+          index = s.value & 0xff;
         if (type === DT_DEVICE) return reply(this.deviceDesc);
-        if (type === DT_CONFIG) return index < this.served.length ? reply(this.served[index]) : Promise.resolve({ code: 'stall', actual: 0 });
+        if (type === DT_CONFIG)
+          return index < this.served.length ? reply(this.served[index]) : Promise.resolve({ code: 'stall', actual: 0 });
         if (type === DT_BOS) return this.bos ? reply(this.bos) : Promise.resolve({ code: 'stall', actual: 0 });
         if (type === DT_STRING) {
           const c = this.strings.get(index === 0 ? '0:0' : `${index}:${s.index}`);
@@ -692,14 +803,16 @@ export class WebUsbPassthrough implements UsbDevice {
         return ok();
       case REQ_SET_FEATURE:
         // ENDPOINT_HALT is ours (see `halted`); the rest (remote wakeup, U1/U2, LTM) is the controller's to hide.
-        if (recipient === 2 && s.value === FEATURE_ENDPOINT_HALT && (s.index & 0x7f) !== 0) this.halted.add(s.index & 0xff);
+        if (recipient === 2 && s.value === FEATURE_ENDPOINT_HALT && (s.index & 0x7f) !== 0)
+          this.halted.add(s.index & 0xff);
         return ok();
       case REQ_SET_SEL:
       case REQ_SET_ISOCH_DELAY:
         return ok();
       case REQ_GET_STATUS:
         // An endpoint's: halted by us, or endpoint 0 (WebUSB names only a claimed interface's endpoints); the rest pass through.
-        if (recipient === 2 && ((s.index & 0x7f) === 0 || this.halted.has(s.index & 0xff))) return reply(Uint8Array.of(this.halted.has(s.index & 0xff) ? 1 : 0, 0));
+        if (recipient === 2 && ((s.index & 0x7f) === 0 || this.halted.has(s.index & 0xff)))
+          return reply(Uint8Array.of(this.halted.has(s.index & 0xff) ? 1 : 0, 0));
         return null;
       default:
         void t;
@@ -724,7 +837,8 @@ export class WebUsbPassthrough implements UsbDevice {
       await this.dev.selectConfiguration(value);
     } else {
       // The same configuration again (every enumeration sends it): alternates go back to 0, as SET_CONFIGURATION does.
-      for (const [n, alt] of this.alternates) if (alt !== 0) await this.dev.selectAlternateInterface(n, 0).catch(() => {});
+      for (const [n, alt] of this.alternates)
+        if (alt !== 0) await this.dev.selectAlternateInterface(n, 0).catch(() => {});
     }
     await this.claimActive();
     return { code: 'success', actual: 0 };
@@ -735,11 +849,12 @@ export class WebUsbPassthrough implements UsbDevice {
     const act = this.active();
     const alts = act?.interfaces.get(n) ?? [];
     if (!alts.some((a) => a.alternate === alt)) return { code: 'stall', actual: 0 };
-    for (const a of alts) for (const e of a.endpoints) {
-      this.halted.delete(e.address);
-      if (e.address & 0x80) this.ins.delete(e.address);
-      else this.outs.delete(e.address);
-    }
+    for (const a of alts)
+      for (const e of a.endpoints) {
+        this.halted.delete(e.address);
+        if (e.address & 0x80) this.ins.delete(e.address);
+        else this.outs.delete(e.address);
+      }
     await this.dev.selectAlternateInterface(n, alt);
     this.alternates.set(n, alt);
     return { code: 'success', actual: 0 };
@@ -749,8 +864,16 @@ export class WebUsbPassthrough implements UsbDevice {
 // ---- The opener ----------------------------------------------------------------------------------
 
 /** The device `getDevices()` lists for an identity: vendor, product and serial, `index` among identical serial-less ones. */
-export function pickDevice<D extends { vendorId: number; productId: number; serialNumber?: string | null }>(devices: readonly D[], id: UsbIdentity): D | undefined {
-  const same = devices.filter((d) => d.vendorId === id.vendorId && d.productId === id.productId && (id.serialNumber ? d.serialNumber === id.serialNumber : !d.serialNumber));
+export function pickDevice<D extends { vendorId: number; productId: number; serialNumber?: string | null }>(
+  devices: readonly D[],
+  id: UsbIdentity,
+): D | undefined {
+  const same = devices.filter(
+    (d) =>
+      d.vendorId === id.vendorId &&
+      d.productId === id.productId &&
+      (id.serialNumber ? d.serialNumber === id.serialNumber : !d.serialNumber),
+  );
   return same[id.serialNumber ? 0 : (id.index ?? 0)];
 }
 
@@ -769,7 +892,13 @@ export function webUsbOpener(usb: WebUsbLike) {
       gone();
     };
     let fired = false;
-    const gone = () => { if (!fired) { fired = true; usb.removeEventListener('disconnect', onDisconnect); ctx.gone?.(); } };
+    const gone = () => {
+      if (!fired) {
+        fired = true;
+        usb.removeEventListener('disconnect', onDisconnect);
+        ctx.gone?.();
+      }
+    };
     usb.addEventListener('disconnect', onDisconnect);
     try {
       p = await openWebUsb(dev, { gone });

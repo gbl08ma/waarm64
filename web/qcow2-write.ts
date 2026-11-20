@@ -63,7 +63,13 @@ export type Backing = { name: string; format: 'qcow2' | 'raw'; hash: string };
  * `true` deflates on this thread, a `Packer` wherever it does. The file is the same either way.
  * Resolves to the clusters stored and the file's size.
  */
-export async function writeQcow2(o: { size: number; clusters: AsyncIterable<DataCluster>; backing?: Backing; compress?: boolean | Packer; sink: Sink }) {
+export async function writeQcow2(o: {
+  size: number;
+  clusters: AsyncIterable<DataCluster>;
+  backing?: Backing;
+  compress?: boolean | Packer;
+  sink: Sink;
+}) {
   const { size, sink } = o;
   await sink(new Uint8Array(CLUSTER)); // the header's place
   // The data goes out in pieces of CHUNK (a compressed cluster is a small write of its own otherwise).
@@ -76,24 +82,36 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
       chunk.set(bytes.subarray(at, at + k), fill);
       fill += k;
       at += k;
-      if (fill === CHUNK) { await sink(chunk); chunk = new Uint8Array(CHUNK); fill = 0; } // a new buffer: the sink may keep the old one
+      if (fill === CHUNK) {
+        await sink(chunk);
+        chunk = new Uint8Array(CHUNK);
+        fill = 0;
+      } // a new buffer: the sink may keep the old one
     }
     pos += bytes.length;
   };
-  const align = () => emit(ZEROS.subarray(0, (CLUSTER - pos % CLUSTER) % CLUSTER));
+  const align = () => emit(ZEROS.subarray(0, (CLUSTER - (pos % CLUSTER)) % CLUSTER));
 
   let indices = new Uint32Array(1024);
   let entries = new BigUint64Array(1024); // their L2 entries
   let refs = new Uint16Array(1024).fill(1, 0, 1); // the refcounts of the header and the data's host clusters
   let n = 0;
   const ref = (host: number) => {
-    if (host >= refs.length) { const g = new Uint16Array(2 * Math.max(host, refs.length)); g.set(refs); refs = g; }
+    if (host >= refs.length) {
+      const g = new Uint16Array(2 * Math.max(host, refs.length));
+      g.set(refs);
+      refs = g;
+    }
     refs[host]++;
   };
   const store = async (c: DataCluster, packed?: Uint8Array) => {
     if (n === indices.length) {
-      const g = new Uint32Array(2 * n); g.set(indices); indices = g;
-      const e = new BigUint64Array(2 * n); e.set(entries); entries = e;
+      const g = new Uint32Array(2 * n);
+      g.set(indices);
+      indices = g;
+      const e = new BigUint64Array(2 * n);
+      e.set(entries);
+      entries = e;
     }
     indices[n] = c.index;
     if (c.zero) {
@@ -102,7 +120,7 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
       // A compressed cluster starts where the last one ended; its entry counts the 512-byte sectors after the first
       // (bits 58 on, with 4 KiB clusters), and every host cluster it touches counts it once.
       const last = pos + packed.length - 1;
-      entries[n] = COMPRESSED | BigInt(Math.floor(last / 512) - Math.floor(pos / 512)) << CSIZE_SHIFT | BigInt(pos);
+      entries[n] = COMPRESSED | (BigInt(Math.floor(last / 512) - Math.floor(pos / 512)) << CSIZE_SHIFT) | BigInt(pos);
       for (let host = Math.floor(pos / CLUSTER); host <= Math.floor(last / CLUSTER); host++) ref(host);
       await emit(packed);
     } else {
@@ -133,7 +151,10 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
     let k = 0;
     for (const c of batch.clusters) {
       if (c.zero) await store({ index: c.index, zero: true });
-      else { await store({ index: c.index, data: batch.bytes.subarray(k * CLUSTER, (k + 1) * CLUSTER) }, packed[k]); k++; }
+      else {
+        await store({ index: c.index, data: batch.bytes.subarray(k * CLUSTER, (k + 1) * CLUSTER) }, packed[k]);
+        k++;
+      }
     }
   };
   let last = -1;
@@ -141,9 +162,15 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
     if (!c.zero && c.data.length !== CLUSTER) throw new Error(`cluster ${c.index} is ${c.data.length} bytes`);
     if (c.index <= last) throw new Error(`cluster ${c.index} out of order`);
     last = c.index;
-    if (!packer) { await store(c); continue; }
+    if (!packer) {
+      await store(c);
+      continue;
+    }
     if (c.zero) batch.clusters.push({ index: c.index, zero: true });
-    else { batch.clusters.push({ index: c.index }); batch.bytes.set(c.data, batch.data++ * CLUSTER); }
+    else {
+      batch.clusters.push({ index: c.index });
+      batch.bytes.set(c.data, batch.data++ * CLUSTER);
+    }
     if (batch.clusters.length === PACK_CLUSTERS) {
       send();
       if (packing.length === packer.atOnce) await settle();
@@ -161,12 +188,16 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
   let l2Tables = 0;
   for (let i = 0, last = -1; i < n; i++) {
     const t = Math.floor(indices[i] / L2_ENTRIES);
-    if (t !== last) { l2Tables++; last = t; }
+    if (t !== last) {
+      l2Tables++;
+      last = t;
+    }
   }
   const fixed = dataEnd + l2Tables + l1Clusters;
   let blocks = 1;
   let tableClusters = 1;
-  for (;;) { // the refcount structures count themselves
+  for (;;) {
+    // the refcount structures count themselves
     const b = Math.ceil((fixed + blocks + tableClusters) / REFS_PER_BLOCK);
     const t = Math.ceil((b * 8) / CLUSTER);
     if (b === blocks && t === tableClusters) break;
@@ -193,7 +224,8 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
   // The metadata's clusters are used once each; the data's as counted.
   for (let b = 0; b < blocks; b++) {
     const out = new DataView(new ArrayBuffer(CLUSTER));
-    for (let k = 0, c = b * REFS_PER_BLOCK; k < REFS_PER_BLOCK && c < total; k++, c++) out.setUint16(k * 2, c < dataEnd ? refs[c] : 1);
+    for (let k = 0, c = b * REFS_PER_BLOCK; k < REFS_PER_BLOCK && c < total; k++, c++)
+      out.setUint16(k * 2, c < dataEnd ? refs[c] : 1);
     await sink(new Uint8Array(out.buffer));
   }
   const table = new DataView(new ArrayBuffer(tableClusters * CLUSTER));
@@ -220,7 +252,8 @@ export async function deflate(data: Uint8Array) {
 export async function deflateEach(clusters: Uint8Array) {
   const z = await threadDeflate();
   const out: (Uint8Array | undefined)[] = [];
-  for (let at = 0; at < clusters.length; at += CLUSTER) out.push(z.deflate(clusters.subarray(at, at + CLUSTER), LEVEL, CLUSTER - 1));
+  for (let at = 0; at < clusters.length; at += CLUSTER)
+    out.push(z.deflate(clusters.subarray(at, at + CLUSTER), LEVEL, CLUSTER - 1));
   return out;
 }
 
@@ -264,7 +297,10 @@ function header(size: number, l1Size: number, l1At: number, tableAt: number, tab
 /** The overlay's written blocks as clusters, in disk order (the changes over the base). */
 export async function* changedClusters(disk: WritableDisk): AsyncGenerator<DataCluster> {
   for (const index of disk.written()) {
-    if (disk.zeroed(index)) { yield { index, zero: true }; continue; }
+    if (disk.zeroed(index)) {
+      yield { index, zero: true };
+      continue;
+    }
     const bytes = await disk.read(index * CLUSTER, Math.min(CLUSTER, disk.size - index * CLUSTER));
     if (!bytes) throw new MsgError('disks:qcow2-write.overlayUnreadable', { block: index });
     yield { index, data: pad(bytes) };
@@ -276,7 +312,12 @@ export async function* changedClusters(disk: WritableDisk): AsyncGenerator<DataC
  * may not be zeros, ascending: a stored disk's, `Source.held`), only those are read, a run of consecutive ones at a time:
  * an export of a large disk that holds little reads what it holds, not its size.
  */
-export async function* nonZeroClusters(disk: Disk, chunk = 1 << 20, progress?: (done: number) => void, held?: Iterable<number>): AsyncGenerator<DataCluster> {
+export async function* nonZeroClusters(
+  disk: Disk,
+  chunk = 1 << 20,
+  progress?: (done: number) => void,
+  held?: Iterable<number>,
+): AsyncGenerator<DataCluster> {
   if (held) {
     let run: number[] = [];
     const flush = async function* () {

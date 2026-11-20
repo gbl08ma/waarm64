@@ -77,8 +77,15 @@ export class IoStats {
   json() {
     return {
       trace: this.trace,
-      stages: Object.fromEntries([...this.stages].map(([k, s]) => [k, { n: s.n, ms: +s.ms.toFixed(2), bytes: s.bytes }])),
-      sizes: Object.fromEntries([...this.sizes].map(([k, m]) => [k, Object.fromEntries([...m].sort((a, b) => a[0] - b[0]).map(([b, n]) => [`<=${2 ** b}`, n]))])),
+      stages: Object.fromEntries(
+        [...this.stages].map(([k, s]) => [k, { n: s.n, ms: +s.ms.toFixed(2), bytes: s.bytes }]),
+      ),
+      sizes: Object.fromEntries(
+        [...this.sizes].map(([k, m]) => [
+          k,
+          Object.fromEntries([...m].sort((a, b) => a[0] - b[0]).map(([b, n]) => [`<=${2 ** b}`, n])),
+        ]),
+      ),
     };
   }
 }

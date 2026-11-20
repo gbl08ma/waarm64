@@ -15,7 +15,15 @@ export type NetMap = {
   addresses: string[];
   /** `routes`: the subnets a peer routes (approved by the tailnet's admin); `direct`: a room's, whether its packets take a
    * direct (WebRTC) path rather than the relay. */
-  peers: { id: string; name: string; addresses: string[]; online?: boolean; exitNodeOption: boolean; routes?: string[]; direct?: boolean }[];
+  peers: {
+    id: string;
+    name: string;
+    addresses: string[];
+    online?: boolean;
+    exitNodeOption: boolean;
+    routes?: string[];
+    direct?: boolean;
+  }[];
   /** Whether the peers' subnet routes are installed. */
   acceptRoutes?: boolean;
   mtu: number;
@@ -40,7 +48,13 @@ export type NetMap = {
    * `directFailed`: how many members reached through the relay have a failed attempt behind them (gathering worked here:
    * something between the two is in the way); `peersBlocked`: how many said their browser makes none. */
   room?: {
-    name: string; link: string; incoming: boolean; relayOnly: boolean; directBlocked?: boolean; directFailed?: number; peersBlocked?: number;
+    name: string;
+    link: string;
+    incoming: boolean;
+    relayOnly: boolean;
+    directBlocked?: boolean;
+    directFailed?: number;
+    peersBlocked?: number;
     /** The node key (64 hex digits): where a name registered on this machine points. */
     key?: string;
     /** The registry's line (names.md "What the user sees"): a server's names held and servers synced with
@@ -76,7 +90,18 @@ export type TailscaleConfig = {
 
 /** Messages to the worker. */
 export type ToTailscale =
-  | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; acceptRoutes?: boolean; ip: MessagePort; persist?: string; probe6?: Reach6Options }
+  | {
+      type: 'start';
+      wasm: string;
+      controlURL: string;
+      authKey?: string;
+      hostname?: string;
+      exitNode?: string;
+      acceptRoutes?: boolean;
+      ip: MessagePort;
+      persist?: string;
+      probe6?: Reach6Options;
+    }
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
   /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/networking/adapters.md §4). */
@@ -114,7 +139,10 @@ const ip6 = (s: string) => {
   if (tail === undefined ? a.length !== 8 : a.length + b.length > 7) return undefined;
   if (![...a, ...b].every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return undefined;
   const all = tail === undefined ? a : [...a, ...Array(8 - a.length - b.length).fill('0'), ...b];
-  const bytes = all.flatMap((g) => { const n = parseInt(g, 16); return [n >> 8, n & 255]; });
+  const bytes = all.flatMap((g) => {
+    const n = parseInt(g, 16);
+    return [n >> 8, n & 255];
+  });
   return bytes;
 };
 
@@ -182,7 +210,10 @@ export type Tailscale = {
 
 /** Whether the server has the client (target/net/ts.wasm): the page says so before it restarts a machine for a card. */
 export const tailscaleBuilt = (wasm = new URL('../target/net/ts.wasm', import.meta.url).href) =>
-  fetch(wasm, { method: 'HEAD' }).then((r) => r.ok, () => false);
+  fetch(wasm, { method: 'HEAD' }).then(
+    (r) => r.ok,
+    () => false,
+  );
 
 export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
   const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
@@ -202,10 +233,16 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
       const m = e.data;
       if (m.type === 'state') {
         state = m.state;
-        if (state === 'Running' && netmap) { timings.runningMs = performance.now() - t0; resolve(netmap); }
+        if (state === 'Running' && netmap) {
+          timings.runningMs = performance.now() - t0;
+          resolve(netmap);
+        }
       } else if (m.type === 'netmap') {
         netmap = m.netmap;
-        if (state === 'Running' && timings.runningMs === undefined) { timings.runningMs = performance.now() - t0; resolve(netmap); }
+        if (state === 'Running' && timings.runningMs === undefined) {
+          timings.runningMs = performance.now() - t0;
+          resolve(netmap);
+        }
       } else if (m.type === 'login') loginURL = m.url;
       else if (m.type === 'loaded') timings.loadMs = m.ms;
       else if (m.type === 'detached') detached?.(m.ip);
@@ -217,29 +254,58 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   });
   running.catch(() => {}); // the caller decides whether to look
   worker.postMessage(
-    { type: 'start', wasm: config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, acceptRoutes: config.acceptRoutes, ip: port1, persist: config.persist, probe6: config.probe6 } satisfies ToTailscale,
+    {
+      type: 'start',
+      wasm: config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href,
+      controlURL: config.controlURL,
+      authKey: config.authKey,
+      hostname: config.hostname,
+      exitNode: config.exitNode,
+      acceptRoutes: config.acceptRoutes,
+      ip: port1,
+      persist: config.persist,
+      probe6: config.probe6,
+    } satisfies ToTailscale,
     [port1],
   );
   return {
-    ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => loginURL, running, timings: () => timings,
+    ip: own?.port2,
+    state: () => state,
+    netmap: () => netmap,
+    loginURL: () => loginURL,
+    running,
+    timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailscale, [ip]),
-    setPrimary: (primary, rank, primary6) => worker.postMessage({ type: 'primary', primary, rank, primary6 } satisfies ToTailscale),
-    detach: () => new Promise((resolve) => {
-      const t = setTimeout(() => resolve(undefined), 3000);
-      detached = (ip) => { clearTimeout(t); resolve(ip); };
-      worker.postMessage({ type: 'detach' } satisfies ToTailscale);
-    }),
-    setExitNode: (id) => new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new MsgError('network:tailscale.noAnswer')), 10_000);
-      exitDone = (error) => { clearTimeout(t); error ? reject(fromWire(error)) : resolve(); };
-      worker.postMessage({ type: 'exitnode', id } satisfies ToTailscale);
-    }),
+    setPrimary: (primary, rank, primary6) =>
+      worker.postMessage({ type: 'primary', primary, rank, primary6 } satisfies ToTailscale),
+    detach: () =>
+      new Promise((resolve) => {
+        const t = setTimeout(() => resolve(undefined), 3000);
+        detached = (ip) => {
+          clearTimeout(t);
+          resolve(ip);
+        };
+        worker.postMessage({ type: 'detach' } satisfies ToTailscale);
+      }),
+    setExitNode: (id) =>
+      new Promise<void>((resolve, reject) => {
+        const t = setTimeout(() => reject(new MsgError('network:tailscale.noAnswer')), 10_000);
+        exitDone = (error) => {
+          clearTimeout(t);
+          error ? reject(fromWire(error)) : resolve();
+        };
+        worker.postMessage({ type: 'exitnode', id } satisfies ToTailscale);
+      }),
     setAcceptRoutes: (on) => worker.postMessage({ type: 'routes', on } satisfies ToTailscale),
-    logout: () => new Promise<void>((resolve) => {
-      const t = setTimeout(resolve, 8000);
-      loggedOut = () => { clearTimeout(t); resolve(); };
-      worker.postMessage({ type: 'logout' } satisfies ToTailscale);
-    }),
+    logout: () =>
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 8000);
+        loggedOut = () => {
+          clearTimeout(t);
+          resolve();
+        };
+        worker.postMessage({ type: 'logout' } satisfies ToTailscale);
+      }),
     close: () => worker.terminate(),
   };
 }

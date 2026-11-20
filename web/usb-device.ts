@@ -112,7 +112,14 @@ export type UsbToWorker =
   | { type: 'usb-pad'; connector: number; pad: PadState };
 
 export type UsbFromWorker =
-  | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; problems?: UsbProblem[] }
+  | {
+      type: 'usb-state';
+      connector: number;
+      state: 'attached';
+      device: UsbIdentity | UsbVirtual;
+      speed: UsbSpeed;
+      problems?: UsbProblem[];
+    }
   | { type: 'usb-state'; connector: number; state: 'detached'; reason?: 'unplugged' | 'guest' | 'page' }
   /** `message`: the error's text, a developer's; `error`: the error itself, for the page's words (web/msg.ts `toWire`). */
   | { type: 'usb-state'; connector: number; state: 'error'; message: string; error?: WireError; detail?: UsbProblem[] }

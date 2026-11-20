@@ -22,33 +22,134 @@ export const KEYBOARD_PRODUCT = 0x0001;
 // KeyboardEvent.code → HID usage (HID Usage Tables, page 7), a US-layout PC keyboard as web/input.ts maps for virtio-input.
 const RUN = (codes: string, first: number) => codes.split(' ').map((c, k) => [c, first + k] as const);
 export const USAGES = new Map<string, number>([
-  ...RUN('KeyA KeyB KeyC KeyD KeyE KeyF KeyG KeyH KeyI KeyJ KeyK KeyL KeyM KeyN KeyO KeyP KeyQ KeyR KeyS KeyT KeyU KeyV KeyW KeyX KeyY KeyZ', 0x04),
-  ...RUN('Digit1 Digit2 Digit3 Digit4 Digit5 Digit6 Digit7 Digit8 Digit9 Digit0 Enter Escape Backspace Tab Space Minus Equal BracketLeft BracketRight Backslash IntlHash Semicolon Quote Backquote Comma Period Slash CapsLock', 0x1e),
-  ...RUN('F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 PrintScreen ScrollLock Pause Insert Home PageUp Delete End PageDown ArrowRight ArrowLeft ArrowDown ArrowUp', 0x3a),
-  ...RUN('NumLock NumpadDivide NumpadMultiply NumpadSubtract NumpadAdd NumpadEnter Numpad1 Numpad2 Numpad3 Numpad4 Numpad5 Numpad6 Numpad7 Numpad8 Numpad9 Numpad0 NumpadDecimal IntlBackslash ContextMenu', 0x53),
+  ...RUN(
+    'KeyA KeyB KeyC KeyD KeyE KeyF KeyG KeyH KeyI KeyJ KeyK KeyL KeyM KeyN KeyO KeyP KeyQ KeyR KeyS KeyT KeyU KeyV KeyW KeyX KeyY KeyZ',
+    0x04,
+  ),
+  ...RUN(
+    'Digit1 Digit2 Digit3 Digit4 Digit5 Digit6 Digit7 Digit8 Digit9 Digit0 Enter Escape Backspace Tab Space Minus Equal BracketLeft BracketRight Backslash IntlHash Semicolon Quote Backquote Comma Period Slash CapsLock',
+    0x1e,
+  ),
+  ...RUN(
+    'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 PrintScreen ScrollLock Pause Insert Home PageUp Delete End PageDown ArrowRight ArrowLeft ArrowDown ArrowUp',
+    0x3a,
+  ),
+  ...RUN(
+    'NumLock NumpadDivide NumpadMultiply NumpadSubtract NumpadAdd NumpadEnter Numpad1 Numpad2 Numpad3 Numpad4 Numpad5 Numpad6 Numpad7 Numpad8 Numpad9 Numpad0 NumpadDecimal IntlBackslash ContextMenu',
+    0x53,
+  ),
 ]);
 /** The modifiers' bits in the report's first byte (usages 0xE0–0xE7). */
-export const MODIFIERS = new Map<string, number>(RUN('ControlLeft ShiftLeft AltLeft MetaLeft ControlRight ShiftRight AltRight MetaRight', 0).map(([c, b]) => [c, 1 << b]));
+export const MODIFIERS = new Map<string, number>(
+  RUN('ControlLeft ShiftLeft AltLeft MetaLeft ControlRight ShiftRight AltRight MetaRight', 0).map(([c, b]) => [
+    c,
+    1 << b,
+  ]),
+);
 
 /** HID 1.11's boot keyboard report descriptor (Appendix B.1's layout): 8 modifier bits, a reserved byte, 5 LEDs and their padding, 6 key usages 0–101. */
 export const BOOT_REPORT = new Uint8Array([
-  0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, // Generic Desktop, Keyboard, Collection (Application)
-  0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, // modifiers: 8 × 1 bit, Data Var Abs
-  0x95, 0x01, 0x75, 0x08, 0x81, 0x01, // reserved byte: Constant
-  0x95, 0x05, 0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02, // LEDs: 5 × 1 bit, Output Data Var Abs
-  0x95, 0x01, 0x75, 0x03, 0x91, 0x01, // LED padding: 3 bits, Output Constant
-  0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65, 0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00, // 6 keys: usages 0–101, Data Array
+  0x05,
+  0x01,
+  0x09,
+  0x06,
+  0xa1,
+  0x01, // Generic Desktop, Keyboard, Collection (Application)
+  0x05,
+  0x07,
+  0x19,
+  0xe0,
+  0x29,
+  0xe7,
+  0x15,
+  0x00,
+  0x25,
+  0x01,
+  0x75,
+  0x01,
+  0x95,
+  0x08,
+  0x81,
+  0x02, // modifiers: 8 × 1 bit, Data Var Abs
+  0x95,
+  0x01,
+  0x75,
+  0x08,
+  0x81,
+  0x01, // reserved byte: Constant
+  0x95,
+  0x05,
+  0x75,
+  0x01,
+  0x05,
+  0x08,
+  0x19,
+  0x01,
+  0x29,
+  0x05,
+  0x91,
+  0x02, // LEDs: 5 × 1 bit, Output Data Var Abs
+  0x95,
+  0x01,
+  0x75,
+  0x03,
+  0x91,
+  0x01, // LED padding: 3 bits, Output Constant
+  0x95,
+  0x06,
+  0x75,
+  0x08,
+  0x15,
+  0x00,
+  0x25,
+  0x65,
+  0x05,
+  0x07,
+  0x19,
+  0x00,
+  0x29,
+  0x65,
+  0x81,
+  0x00, // 6 keys: usages 0–101, Data Array
   0xc0,
 ]);
 
 const u16 = (v: number) => [v & 0xff, v >> 8];
 const HID = [9, 0x21, ...u16(0x0111), 0, 1, 0x22, ...u16(BOOT_REPORT.length)];
 const CONFIG = [
-  9, 4, 0, 0, 1, 3, 1, 1, 0, // interface 0: HID, boot, keyboard
+  9,
+  4,
+  0,
+  0,
+  1,
+  3,
+  1,
+  1,
+  0, // interface 0: HID, boot, keyboard
   ...HID,
-  7, 5, 0x81, 3, ...u16(8), 10, // interrupt IN 0x81, 8 bytes, 10 ms
+  7,
+  5,
+  0x81,
+  3,
+  ...u16(8),
+  10, // interrupt IN 0x81, 8 bytes, 10 ms
 ];
-const DEVICE = new Uint8Array([18, 1, ...u16(0x0200), 0, 0, 0, 8, ...u16(KEYBOARD_VENDOR), ...u16(KEYBOARD_PRODUCT), ...u16(0x0100), 1, 2, 0, 1]);
+const DEVICE = new Uint8Array([
+  18,
+  1,
+  ...u16(0x0200),
+  0,
+  0,
+  0,
+  8,
+  ...u16(KEYBOARD_VENDOR),
+  ...u16(KEYBOARD_PRODUCT),
+  ...u16(0x0100),
+  1,
+  2,
+  0,
+  1,
+]);
 const CONFIGURATION = new Uint8Array([9, 2, ...u16(9 + CONFIG.length), 1, 1, 0, 0xa0, 50, ...CONFIG]);
 /** Reports kept for a host that isn't reading: past this, the oldest go (the newest says what is held). */
 const QUEUE = 32;
@@ -70,7 +171,12 @@ export class UsbKeyboard extends VirtualDevice {
   idle = 0;
 
   constructor() {
-    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['waarm64', 'waarm64 keyboard'], extra: (type, index, s) => this.classDescriptor(type, index, s) });
+    super('full', {
+      device: DEVICE,
+      configs: [CONFIGURATION],
+      strings: ['waarm64', 'waarm64 keyboard'],
+      extra: (type, index, s) => this.classDescriptor(type, index, s),
+    });
   }
 
   /** The report now: modifiers, 0, six keys (or six ErrorRollOver with more held). */
@@ -135,9 +241,13 @@ export class UsbKeyboard extends VirtualDevice {
           this.onLeds?.(this.leds);
         }
         return true;
-      case 0x02: return new Uint8Array([this.idle]); // GET_IDLE
-      case 0x0a: this.idle = s.value >> 8; return true; // SET_IDLE (kept: no report is repeated)
-      case 0x03: return new Uint8Array([this.protocol]); // GET_PROTOCOL
+      case 0x02:
+        return new Uint8Array([this.idle]); // GET_IDLE
+      case 0x0a:
+        this.idle = s.value >> 8;
+        return true; // SET_IDLE (kept: no report is repeated)
+      case 0x03:
+        return new Uint8Array([this.protocol]); // GET_PROTOCOL
       case 0x0b: // SET_PROTOCOL
         if (s.value > 1) return undefined;
         this.protocol = s.value;

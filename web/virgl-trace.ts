@@ -11,7 +11,9 @@
 //   kind 3 (note): UTF-8, for the reader (the guest's frame marks)
 export const TRACE_VERSION = 1;
 const MAGIC = 0x544c4756; // "VGLT"
-export const REC_COMMAND = 1, REC_DATA = 2, REC_NOTE = 3;
+export const REC_COMMAND = 1,
+  REC_DATA = 2,
+  REC_NOTE = 3;
 
 export type TraceRecord =
   | { kind: 'command'; bytes: Uint8Array }
@@ -56,13 +58,21 @@ export function encodeTrace(records: (TraceRecord | Uint8Array)[]) {
 export function* readTrace(bytes: Uint8Array): Generator<TraceRecord> {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
   if (bytes.length < 8 || v.getUint32(0, true) !== MAGIC) throw new Error('not a virgl trace');
-  if (v.getUint32(4, true) !== TRACE_VERSION) throw new Error(`virgl trace version ${v.getUint32(4, true)}, expected ${TRACE_VERSION}`);
+  if (v.getUint32(4, true) !== TRACE_VERSION)
+    throw new Error(`virgl trace version ${v.getUint32(4, true)}, expected ${TRACE_VERSION}`);
   for (let at = 8; at + 8 <= bytes.length;) {
-    const kind = v.getUint32(at, true), len = v.getUint32(at + 4, true);
+    const kind = v.getUint32(at, true),
+      len = v.getUint32(at + 4, true);
     const body = bytes.subarray(at + 8, at + 8 + len);
     if (body.length < len) throw new Error('virgl trace: a record runs past the end');
     if (kind === REC_COMMAND) yield { kind: 'command', bytes: body };
-    else if (kind === REC_DATA) yield { kind: 'data', res: new DataView(body.buffer, body.byteOffset).getUint32(0, true), offset: new DataView(body.buffer, body.byteOffset).getUint32(4, true), bytes: body.subarray(8) };
+    else if (kind === REC_DATA)
+      yield {
+        kind: 'data',
+        res: new DataView(body.buffer, body.byteOffset).getUint32(0, true),
+        offset: new DataView(body.buffer, body.byteOffset).getUint32(4, true),
+        bytes: body.subarray(8),
+      };
     else if (kind === REC_NOTE) yield { kind: 'note', text: new TextDecoder().decode(body) };
     at += 8 + ((len + 3) & ~3);
   }

@@ -61,7 +61,16 @@ function takeNetmap(nm: NetMap) {
 function probeVia(id: string) {
   if (id !== reachVia) {
     reach?.stop();
-    reach = id ? reach6((p) => client?.guest(p), () => { postLease(); postNetmap(); }, probe6) : undefined;
+    reach = id
+      ? reach6(
+          (p) => client?.guest(p),
+          () => {
+            postLease();
+            postNetmap();
+          },
+          probe6,
+        )
+      : undefined;
     reachVia = id;
   }
   if (lease?.address6) reach?.start(lease.address6);
@@ -69,7 +78,10 @@ function probeVia(id: string) {
 let state: Awaited<ReturnType<typeof openState>> | undefined;
 
 function attach(port: MessagePort) {
-  if (ip) { ip.onmessage = null; ip.close(); }
+  if (ip) {
+    ip.onmessage = null;
+    ip.close();
+  }
   ip = port;
   send = batchSender(port);
   port.onmessage = (ev: MessageEvent) => {
@@ -119,28 +131,43 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     if (m.persist) state = await openState(m.persist);
     if (!ip) return; // detached meanwhile
     probe6 = m.probe6;
-    client = new TsClient(mod, {
-      control: { url: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'waarm64', ephemeral: !m.persist },
-      state: state?.entries() ?? {},
-      exitNode: m.exitNode ?? '',
-      acceptRoutes: m.acceptRoutes ?? true,
-    }, {
-      packet: (p) => { if (!reach?.take(p)) send?.(p); },
-      event(ev) {
-        switch (ev.type) {
-          case 'log': return console.log('tailnet:', ev.msg);
-          case 'store': return state?.setState(ev.key, ev.value);
-          case 'login': return post({ type: 'login', url: ev.url });
-          case 'exitnode': return post(ev.code ? { type: 'exitnode', error: toWire(exitNodeError(ev)) } : { type: 'exitnode' });
-          case 'loggedout': return void (state?.clear() ?? Promise.resolve()).then(() => post({ type: 'loggedout' }));
-          case 'netmap':
-            return takeNetmap(ev.netmap);
-          case 'state':
-            if (ev.state === 'Failed') return post({ type: 'error', error: toWire(ev.code ? failureOf(ev) : new MsgError('network:tailnet-worker.failed')) });
-            return post({ type: 'state', state: ev.state });
-        }
+    client = new TsClient(
+      mod,
+      {
+        control: { url: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'waarm64', ephemeral: !m.persist },
+        state: state?.entries() ?? {},
+        exitNode: m.exitNode ?? '',
+        acceptRoutes: m.acceptRoutes ?? true,
       },
-    });
+      {
+        packet: (p) => {
+          if (!reach?.take(p)) send?.(p);
+        },
+        event(ev) {
+          switch (ev.type) {
+            case 'log':
+              return console.log('tailnet:', ev.msg);
+            case 'store':
+              return state?.setState(ev.key, ev.value);
+            case 'login':
+              return post({ type: 'login', url: ev.url });
+            case 'exitnode':
+              return post(ev.code ? { type: 'exitnode', error: toWire(exitNodeError(ev)) } : { type: 'exitnode' });
+            case 'loggedout':
+              return void (state?.clear() ?? Promise.resolve()).then(() => post({ type: 'loggedout' }));
+            case 'netmap':
+              return takeNetmap(ev.netmap);
+            case 'state':
+              if (ev.state === 'Failed')
+                return post({
+                  type: 'error',
+                  error: toWire(ev.code ? failureOf(ev) : new MsgError('network:tailnet-worker.failed')),
+                });
+              return post({ type: 'state', state: ev.state });
+          }
+        },
+      },
+    );
   } catch (err) {
     post({ type: 'error', error: toWire(err) });
   }

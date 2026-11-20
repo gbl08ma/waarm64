@@ -5,7 +5,22 @@
 // comes back (so a stream's end isn't one). It plays only while the stream runs (`RUN`) and its context runs at the
 // stream's rate (`RATE`: the page makes a context per rate); only then does its heartbeat (`QUANTA`) move, which
 // is what tells the device worker that the read index is the worklet's. Nothing is allocated in `process`.
-import { CAPACITY, DROPPED, DROPS, EPOCH, GAP_FRAMES, QUANTA, RATE, READ, RUN, UNDERRUNS, WAKE, WAKE_QUANTA, WRITE, ringViews } from './audio-ring.ts';
+import {
+  CAPACITY,
+  DROPPED,
+  DROPS,
+  EPOCH,
+  GAP_FRAMES,
+  QUANTA,
+  RATE,
+  READ,
+  RUN,
+  UNDERRUNS,
+  WAKE,
+  WAKE_QUANTA,
+  WRITE,
+  ringViews,
+} from './audio-ring.ts';
 
 // The AudioWorkletGlobalScope's names (not in the DOM's lib).
 declare const sampleRate: number;

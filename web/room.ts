@@ -11,7 +11,9 @@ import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 import type { RoomConfig, TsEvent } from './ts-client.ts';
 
 /** STUN only (no TURN: DERP is the relay). */
-export const STUN_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+export const STUN_SERVERS: RTCIceServer[] = [
+  { urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] },
+];
 
 export type StartRoom = RoomConfig & {
   /** The node's kept identity: in `waarm64-room` under `identityKey` (made the first time), or `identity` (an ephemeral
@@ -94,7 +96,11 @@ type Conn = { pc: RTCPeerConnection; pending: RTCIceCandidateInit[] | null };
 export type RoomEvent = TsEvent | { type: 'direct'; blocked: boolean };
 
 /** `onError`: the worker failed (after `Running` too, which `running` can't say). */
-export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = () => {}, onError: (e: WireError) => void = () => {}): Room {
+export function startRoom(
+  config: StartRoom,
+  onEvent: (e: RoomEvent) => void = () => {},
+  onError: (e: WireError) => void = () => {},
+): Room {
   const worker = new Worker(new URL('./room-worker.ts', import.meta.url), { type: 'module' });
   const own = config.ip ? undefined : new MessageChannel();
   const port1 = config.ip ?? own!.port1;
@@ -130,7 +136,10 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
         const t = setTimeout(resolve, PROBE_TIMEOUT);
         pc.onicecandidate = (e) => {
           if (e.candidate?.candidate) n++;
-          if (n || !e.candidate) { clearTimeout(t); resolve(); } // one is enough; null: gathering completed
+          if (n || !e.candidate) {
+            clearTimeout(t);
+            resolve();
+          } // one is enough; null: gathering completed
         };
       });
       await pc.setLocalDescription();
@@ -171,8 +180,12 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
       if (e.candidate?.candidate) candidates++;
       if (e.candidate && conns.get(rtc) === c) signal(rtc, e.candidate.toJSON());
     };
-    pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete' && conns.get(rtc) === c) gathered(candidates); };
-    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') fail(rtc); };
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === 'complete' && conns.get(rtc) === c) gathered(candidates);
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') fail(rtc);
+    };
     if (!offer) return;
     try {
       await pc.setLocalDescription();
@@ -203,7 +216,7 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
         await c.pc.addIceCandidate(v);
       }
     } catch (err) {
-      console.log('room: a peer\'s description or candidate was refused:', err);
+      console.log("room: a peer's description or candidate was refused:", err);
       fail(rtc);
     }
   }
@@ -217,14 +230,22 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
         return;
       }
       switch (m.type) {
-        case 'loaded': timings.loadMs = m.ms; break;
-        case 'rtc-open': void open(m.rtc, m.offer); break;
-        case 'rtc-signal': void remote(m.rtc, m.json); break;
+        case 'loaded':
+          timings.loadMs = m.ms;
+          break;
+        case 'rtc-open':
+          void open(m.rtc, m.offer);
+          break;
+        case 'rtc-signal':
+          void remote(m.rtc, m.json);
+          break;
         case 'rtc-close':
           conns.get(m.rtc)?.pc.close();
           conns.delete(m.rtc);
           break;
-        case 'detached': detached?.(m.ip); break;
+        case 'detached':
+          detached?.(m.ip);
+          break;
         case 'error':
           reject(fromWire(m.error));
           onError(m.error);
@@ -239,7 +260,8 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
             }
           } else if (ev.type === 'self') me = ev;
           else if (ev.type === 'lease') lease = ev.lease;
-          else if (ev.type === 'peer') peers.set(ev.key, { key: ev.key, address6: ev.address6, path: peers.get(ev.key)?.path ?? 'relay' });
+          else if (ev.type === 'peer')
+            peers.set(ev.key, { key: ev.key, address6: ev.address6, path: peers.get(ev.key)?.path ?? 'relay' });
           else if (ev.type === 'path') peers.set(ev.key, { key: ev.key, address6: ev.address6, path: ev.path });
           else if (ev.type === 'peer-gone') peers.delete(ev.key);
           onEvent(ev);
@@ -252,16 +274,27 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
   const { room, derpMapURL, key, identityKey, identity } = config;
   post({ type: 'start', wasm, config: { room, derpMapURL, key }, identityKey, identity, ip: port1 }, [port1]);
   return {
-    ip: own?.port2, state: () => state, self: () => me, lease: () => lease, peers: () => [...peers.values()],
-    running, timings: () => timings,
+    ip: own?.port2,
+    state: () => state,
+    self: () => me,
+    lease: () => lease,
+    peers: () => [...peers.values()],
+    running,
+    timings: () => timings,
     attach: (ip) => post({ type: 'attach', ip }, [ip]),
     setPrimary: (primary, rank, primary6) => post({ type: 'primary', primary, rank, primary6 }),
-    detach: () => new Promise((resolve) => {
-      const t = setTimeout(() => resolve(undefined), 3000);
-      detached = (ip) => { clearTimeout(t); resolve(ip); };
-      post({ type: 'detach' });
-    }),
-    dropDirect: () => { for (const rtc of [...conns.keys()]) fail(rtc); },
+    detach: () =>
+      new Promise((resolve) => {
+        const t = setTimeout(() => resolve(undefined), 3000);
+        detached = (ip) => {
+          clearTimeout(t);
+          resolve(ip);
+        };
+        post({ type: 'detach' });
+      }),
+    dropDirect: () => {
+      for (const rtc of [...conns.keys()]) fail(rtc);
+    },
     close: () => {
       closed = true;
       clearTimeout(probeTimer);
@@ -288,7 +321,8 @@ export function openIdb(): Promise<IDBDatabase> {
     const open = indexedDB.open(IDB, IDB_VERSION);
     open.onupgradeneeded = () => {
       const db = open.result;
-      for (const s of ['identity', 'names', 'owner', 'titles']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
+      for (const s of ['identity', 'names', 'owner', 'titles'])
+        if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
     };
     open.onerror = () => reject(open.error);
     open.onsuccess = () => resolve(open.result);
@@ -296,11 +330,21 @@ export function openIdb(): Promise<IDBDatabase> {
 }
 
 function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>, store = 'identity'): Promise<T> {
-  return openIdb().then((db) => new Promise((resolve, reject) => {
-    const r = f(db.transaction(store, mode).objectStore(store));
-    r.onsuccess = () => { db.close(); resolve(r.result); };
-    r.onerror = (e) => { e.preventDefault(); db.close(); reject(r.error); }; // handled here (`add`'s refusal)
-  }));
+  return openIdb().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const r = f(db.transaction(store, mode).objectStore(store));
+        r.onsuccess = () => {
+          db.close();
+          resolve(r.result);
+        };
+        r.onerror = (e) => {
+          e.preventDefault();
+          db.close();
+          reject(r.error);
+        }; // handled here (`add`'s refusal)
+      }),
+  );
 }
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -312,15 +356,22 @@ export const newRoomIdentity = (): RoomIdentity => ({ key: hex(crypto.getRandomV
 export async function roomIdentity(key: string): Promise<RoomIdentity> {
   const made = newRoomIdentity();
   // `add` refuses a key that's there (two workers sharing it, starting at once): then the kept one is read.
-  const added = await idb('readwrite', (s) => s.add(made, key)).then(() => true, () => false);
-  return added ? made : (await idb<RoomIdentity | undefined>('readonly', (s) => s.get(key))) ?? Promise.reject(new Error(`no room identity under ${key}`));
+  const added = await idb('readwrite', (s) => s.add(made, key)).then(
+    () => true,
+    () => false,
+  );
+  return added
+    ? made
+    : ((await idb<RoomIdentity | undefined>('readonly', (s) => s.get(key))) ??
+        Promise.reject(new Error(`no room identity under ${key}`)));
 }
 
 /** The identity kept under `key`, if there is one (none is made). */
 export const readRoomIdentity = (key: string) => idb<RoomIdentity | undefined>('readonly', (s) => s.get(key));
 
 /** Keeps `identity` under `key` (a pasted key), in place of what's there. */
-export const keepRoomIdentity = (key: string, identity: RoomIdentity) => idb('readwrite', (s) => s.put(identity, key)).then(() => {});
+export const keepRoomIdentity = (key: string, identity: RoomIdentity) =>
+  idb('readwrite', (s) => s.put(identity, key)).then(() => {});
 
 /**
  * A node key as the user pastes it (one copied from a room connection, or mined by net/ts/examples/room-key-mine.rs): 64 hex
@@ -342,7 +393,11 @@ export function parseRoomExport(s: string): { key: string; names?: string } | un
 }
 
 /** Whether there's an identity kept under `key`. */
-export const hasRoomIdentity = (key: string) => idb<number>('readonly', (s) => s.count(key)).then((n) => n > 0, () => false);
+export const hasRoomIdentity = (key: string) =>
+  idb<number>('readonly', (s) => s.count(key)).then(
+    (n) => n > 0,
+    () => false,
+  );
 
 /** Forgets the identity under `key`: the next start makes a new key, so a new address and name in every room that used it. */
 export const forgetRoomIdentity = (key: string) => idb('readwrite', (s) => s.delete(key)).then(() => {});
@@ -369,7 +424,10 @@ export type RoomNamesStore = {
  * member, keep theirs apart).
  */
 export async function roomNamesKey(id: string, identityKey: string): Promise<string> {
-  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`waarm64 room names\n${id}\n${identityKey}`));
+  const h = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`waarm64 room names\n${id}\n${identityKey}`),
+  );
   return hex(new Uint8Array(h).subarray(0, 16));
 }
 
@@ -390,20 +448,38 @@ export async function roomNamesStore(id: string, identityKey: string): Promise<R
     if (!waiting.size) return last;
     const batch = [...waiting];
     waiting.clear();
-    last = last.then(() => openIdb()).then((db) => new Promise<void>((resolve) => {
-      const tx = db.transaction('names', 'readwrite');
-      const s = tx.objectStore('names');
-      for (const [k, record] of batch) {
-        if (record) s.put({ id: k, record }, [room, k]);
-        else s.delete([room, k]);
-      }
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = tx.onabort = () => { console.log('room: names not kept:', tx.error); db.close(); resolve(); };
-    }), (err) => console.log('room: names not kept:', err));
+    last = last
+      .then(() => openIdb())
+      .then(
+        (db) =>
+          new Promise<void>((resolve) => {
+            const tx = db.transaction('names', 'readwrite');
+            const s = tx.objectStore('names');
+            for (const [k, record] of batch) {
+              if (record) s.put({ id: k, record }, [room, k]);
+              else s.delete([room, k]);
+            }
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = tx.onabort = () => {
+              console.log('room: names not kept:', tx.error);
+              db.close();
+              resolve();
+            };
+          }),
+        (err) => console.log('room: names not kept:', err),
+      );
     return last;
   };
   return {
-    load: () => idb<{ id: string; record: Uint8Array }[]>('readonly', (s) => s.getAll(IDBKeyRange.bound([room], [room, []])), 'names'),
+    load: () =>
+      idb<{ id: string; record: Uint8Array }[]>(
+        'readonly',
+        (s) => s.getAll(IDBKeyRange.bound([room], [room, []])),
+        'names',
+      ),
     write(k, record) {
       waiting.set(typeof k === 'string' ? k : hex(k), record);
       timer ??= setTimeout(() => void flush(), NAMES_WRITE_MS);
@@ -434,7 +510,9 @@ const PRIVATE = /-[a-z2-7]{26}$/;
 /** RFC 4648's base32, lower case, no padding (as room.rs `base32`). */
 export function base32(b: Uint8Array): string {
   const A = 'abcdefghijklmnopqrstuvwxyz234567';
-  let out = '', acc = 0, bits = 0;
+  let out = '',
+    acc = 0,
+    bits = 0;
   for (const x of b) {
     acc = ((acc << 8) | x) & 0xffff;
     bits += 8;
@@ -462,7 +540,12 @@ export const GLOBAL_ROOM = 'global';
 /** A room's parts, as the link carries them; empty lists: the defaults. */
 export type RoomLink = { id: string; nostr: string[]; derp: string[] };
 
-const enc = (s: string) => Array.from(new TextEncoder().encode(s), (c) => /[A-Za-z0-9\-._~]/.test(String.fromCharCode(c)) ? String.fromCharCode(c) : `%${c.toString(16).toUpperCase().padStart(2, '0')}`).join('');
+const enc = (s: string) =>
+  Array.from(new TextEncoder().encode(s), (c) =>
+    /[A-Za-z0-9\-._~]/.test(String.fromCharCode(c))
+      ? String.fromCharCode(c)
+      : `%${c.toString(16).toUpperCase().padStart(2, '0')}`,
+  ).join('');
 
 function dec(s: string): string | undefined {
   const out: number[] = [];
@@ -494,14 +577,16 @@ const roomId = (id: string) => id.trim().normalize('NFC');
 export function roomLink(l: RoomLink): { link: string } | { error: Msg } {
   const id = roomId(l.id);
   if (!id) return { error: msg('network:room.noName') };
-  if (new TextEncoder().encode(id).length > ROOM_MAX_ID) return { error: msg('network:room.longName', { max: ROOM_MAX_ID }) };
+  if (new TextEncoder().encode(id).length > ROOM_MAX_ID)
+    return { error: msg('network:room.longName', { max: ROOM_MAX_ID }) };
   const nostr = l.nostr.map((n) => n.trim()).filter((n) => n);
   const derp = l.derp.map((d) => d.trim()).filter((d) => d);
   const badRelay = nostr.find((n) => !/^wss?:\/\/[^\s/?#]+/.test(n));
   if (badRelay) return { error: msg('network:room.badRelay', { relay: badRelay }) };
   const badDerp = derp.find((d) => !DERP.test(d) || Number(/:(\d+)$/.exec(d)?.[1] ?? 0) > 65535);
   if (badDerp) return { error: msg('network:room.badDerp', { relay: badDerp }) };
-  if (nostr.length > ROOM_MAX_RELAYS || derp.length > ROOM_MAX_RELAYS) return { error: msg('network:room.tooMany', { max: ROOM_MAX_RELAYS }) };
+  if (nostr.length > ROOM_MAX_RELAYS || derp.length > ROOM_MAX_RELAYS)
+    return { error: msg('network:room.tooMany', { max: ROOM_MAX_RELAYS }) };
   const parts = [...nostr.map((n) => `nostr=${enc(n)}`), ...derp.map((d) => `derp=${enc(d)}`)];
   return { link: `${ROOM_SCHEME}${enc(id)}${parts.length ? `?${parts.join('&')}` : ''}` };
 }
@@ -578,14 +663,30 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
   const map = (): NetMap | undefined => {
     if (!lease || !me) return undefined;
     return {
-      name: me.name ?? '', via: 'room', mtu: lease.mtu, exitNode: '', domains: lease.domains ?? [],
+      name: me.name ?? '',
+      via: 'room',
+      mtu: lease.mtu,
+      exitNode: '',
+      domains: lease.domains ?? [],
       addresses: lease.address6 ? [`${v6text(lease.address6)}/128`] : [],
       dns: (lease.dns6 ?? []).map(v6text),
-      peers: [...peers.entries()].map(([key, p]) => ({ id: key, name: p.name, addresses: [`${v6text(p.address6)}/128`], exitNodeOption: false, direct: direct.has(key) })),
+      peers: [...peers.entries()].map(([key, p]) => ({
+        id: key,
+        name: p.name,
+        addresses: [`${v6text(p.address6)}/128`],
+        exitNodeOption: false,
+        direct: direct.has(key),
+      })),
       room: {
-        name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly, directBlocked,
-        directFailed: relayedFor('failed'), peersBlocked: relayedFor('blocked'),
-        ...(me.key ? { key: me.key.replace(/^nodekey:/, '') } : {}), ...(names ? { names } : {}),
+        name: me.name ?? '',
+        link: me.link ?? c.link,
+        incoming: c.incoming !== false,
+        relayOnly: !!c.relayOnly,
+        directBlocked,
+        directFailed: relayedFor('failed'),
+        peersBlocked: relayedFor('blocked'),
+        ...(me.key ? { key: me.key.replace(/^nodekey:/, '') } : {}),
+        ...(names ? { names } : {}),
       },
     };
   };
@@ -596,7 +697,15 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
     if (state === 'Running') resolveRunning(netmap);
   };
   const r = startRoom(
-    { room: { link: c.link, incoming: c.incoming, relayOnly: c.relayOnly }, derpMapURL: c.derpMapURL, identityKey: c.identityKey, identity: c.identity, iceServers: c.iceServers, wasm: c.wasm, ip: c.ip },
+    {
+      room: { link: c.link, incoming: c.incoming, relayOnly: c.relayOnly },
+      derpMapURL: c.derpMapURL,
+      identityKey: c.identityKey,
+      identity: c.identity,
+      iceServers: c.iceServers,
+      wasm: c.wasm,
+      ip: c.ip,
+    },
     (ev) => {
       if (ev.type === 'log') return;
       if (ev.type === 'state') {
@@ -634,8 +743,15 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
   });
   running.catch(() => {});
   return {
-    ip: r.ip, state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: r.timings,
-    attach: r.attach, setPrimary: r.setPrimary, detach: r.detach,
+    ip: r.ip,
+    state: () => state,
+    netmap: () => netmap,
+    loginURL: () => undefined,
+    running,
+    timings: r.timings,
+    attach: r.attach,
+    setPrimary: r.setPrimary,
+    detach: r.detach,
     setExitNode: () => Promise.reject(new Error('a room has no exit nodes')),
     setAcceptRoutes: () => {},
     logout: () => Promise.resolve(),

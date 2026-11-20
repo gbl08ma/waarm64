@@ -47,7 +47,7 @@ const TYPES = ['control', 'isoch', 'bulk', 'interrupt'] as const;
 export function parseConfig(d: Uint8Array): Config {
   const c: Config = { value: d[5], attributes: d[7], interfaces: new Map() };
   let alt: Alt | undefined;
-  const total = Math.min(d.length, d[2] | d[3] << 8);
+  const total = Math.min(d.length, d[2] | (d[3] << 8));
   for (let at = 0; at + 2 <= total && d[at] >= 2;) {
     const [len, type] = [d[at], d[at + 1]];
     if (type === 4 && len >= 9) {
@@ -56,7 +56,12 @@ export function parseConfig(d: Uint8Array): Config {
       list.push(alt);
       c.interfaces.set(d[at + 2], list);
     } else if (type === 5 && len >= 7 && alt) {
-      alt.endpoints.push({ ep: d[at + 2], type: TYPES[d[at + 3] & 3], maxPacket: (d[at + 4] | d[at + 5] << 8) & 0x7ff, interval: d[at + 6] });
+      alt.endpoints.push({
+        ep: d[at + 2],
+        type: TYPES[d[at + 3] & 3],
+        maxPacket: (d[at + 4] | (d[at + 5] << 8)) & 0x7ff,
+        interval: d[at + 6],
+      });
     }
     at += len;
   }
@@ -69,7 +74,10 @@ export function stringDescriptor(s: string): Uint8Array {
   const d = new Uint8Array(2 + 2 * units.length);
   d[0] = d.length;
   d[1] = 3;
-  units.forEach((u, i) => { d[2 + 2 * i] = u & 0xff; d[3 + 2 * i] = u >> 8; });
+  units.forEach((u, i) => {
+    d[2 + 2 * i] = u & 0xff;
+    d[3 + 2 * i] = u >> 8;
+  });
   return d;
 }
 
@@ -163,7 +171,10 @@ export abstract class VirtualDevice implements UsbDevice {
       const head = this.ep0[0];
       const r = this.setup(head.t);
       if (r instanceof Promise) {
-        r.then((x) => this.finishEp0(head, x), () => this.finishEp0(head, STALL));
+        r.then(
+          (x) => this.finishEp0(head, x),
+          () => this.finishEp0(head, STALL),
+        );
         return;
       }
       this.ep0.shift();
@@ -185,7 +196,7 @@ export abstract class VirtualDevice implements UsbDevice {
     const into = s.requestType & 0x80 ? s.length : 0;
     const answer = (a: ControlAnswer): UsbResult => {
       if (a === undefined || a === false) return STALL;
-      if (a === true) return { code: 'success', actual: into ? 0 : t.data?.length ?? 0 };
+      if (a === true) return { code: 'success', actual: into ? 0 : (t.data?.length ?? 0) };
       const data = a.subarray(0, into);
       return { code: data.length < into ? 'short' : 'success', actual: data.length, data };
     };
@@ -200,20 +211,27 @@ export abstract class VirtualDevice implements UsbDevice {
     const recipient = s.requestType & 0x1f;
     const c = this.active();
     switch (s.request) {
-      case 0: { // GET_STATUS
+      case 0: {
+        // GET_STATUS
         if (recipient === 0) return new Uint8Array([(this.selfPowered() ? 1 : 0) | (this.remoteWakeup ? 2 : 0), 0]);
         if (recipient === 1) return c?.interfaces.has(s.index & 0xff) ? new Uint8Array(2) : undefined;
-        if (recipient === 2) return (s.index & 0x7f) === 0 || this.endpoint(s.index & 0xff) ? new Uint8Array([this.halted.has(s.index & 0xff) ? 1 : 0, 0]) : undefined;
+        if (recipient === 2)
+          return (s.index & 0x7f) === 0 || this.endpoint(s.index & 0xff)
+            ? new Uint8Array([this.halted.has(s.index & 0xff) ? 1 : 0, 0])
+            : undefined;
         return undefined;
       }
-      case 1: case 3: { // CLEAR_FEATURE, SET_FEATURE
+      case 1:
+      case 3: {
+        // CLEAR_FEATURE, SET_FEATURE
         const set = s.request === 3;
         if (recipient === 0) {
           if (s.value === 1) this.remoteWakeup = set; // DEVICE_REMOTE_WAKEUP; TEST_MODE, U1/U2_ENABLE, LTM: accepted
           return true;
         }
         if (recipient === 1) return c?.interfaces.has(s.index & 0xff) ? true : undefined; // FUNCTION_SUSPEND
-        if (recipient === 2 && s.value === 0) { // ENDPOINT_HALT
+        if (recipient === 2 && s.value === 0) {
+          // ENDPOINT_HALT
           const ep = s.index & 0xff;
           if ((ep & 0x7f) === 0) return true; // the default pipe never halts
           if (!this.endpoint(ep)) return undefined;
@@ -226,10 +244,14 @@ export abstract class VirtualDevice implements UsbDevice {
         }
         return undefined;
       }
-      case 5: return true; // SET_ADDRESS: the controller's (Address Device); accepted if it ever comes
-      case 6: return this.descriptor(s); // GET_DESCRIPTOR
-      case 8: return new Uint8Array([this.configuration]); // GET_CONFIGURATION
-      case 9: { // SET_CONFIGURATION
+      case 5:
+        return true; // SET_ADDRESS: the controller's (Address Device); accepted if it ever comes
+      case 6:
+        return this.descriptor(s); // GET_DESCRIPTOR
+      case 8:
+        return new Uint8Array([this.configuration]); // GET_CONFIGURATION
+      case 9: {
+        // SET_CONFIGURATION
         const v = s.value & 0xff;
         if (v !== 0 && !this.configs.some((x) => x.value === v)) return undefined;
         this.configuration = v;
@@ -238,11 +260,13 @@ export abstract class VirtualDevice implements UsbDevice {
         this.changed();
         return true;
       }
-      case 10: { // GET_INTERFACE
+      case 10: {
+        // GET_INTERFACE
         if (!c?.interfaces.has(s.index & 0xff)) return undefined;
         return new Uint8Array([this.alts.get(s.index & 0xff) ?? 0]);
       }
-      case 11: { // SET_INTERFACE
+      case 11: {
+        // SET_INTERFACE
         const alts = c?.interfaces.get(s.index & 0xff);
         if (!alts?.some((a) => a.alt === s.value)) return undefined;
         this.alts.set(s.index & 0xff, s.value);
@@ -250,8 +274,11 @@ export abstract class VirtualDevice implements UsbDevice {
         this.changed();
         return true;
       }
-      case 48: case 49: return true; // SET_SEL, SET_ISOCH_DELAY
-      default: return UNKNOWN;
+      case 48:
+      case 49:
+        return true; // SET_SEL, SET_ISOCH_DELAY
+      default:
+        return UNKNOWN;
     }
   }
 
@@ -265,14 +292,17 @@ export abstract class VirtualDevice implements UsbDevice {
     const d = this.descriptors;
     if ((s.requestType & 0x1f) === 0) {
       switch (type) {
-        case 1: return d.device;
-        case 2: return d.configs[index];
+        case 1:
+          return d.device;
+        case 2:
+          return d.configs[index];
         case 3: {
           if (index === 0) return new Uint8Array([4, 3, 0x09, 0x04]);
           const str = d.strings?.[index - 1];
           return str === undefined ? undefined : stringDescriptor(str);
         }
-        case 6: return d.qualifier;
+        case 6:
+          return d.qualifier;
         case 7: {
           const o = d.otherSpeed?.[index];
           if (!o) return undefined;
@@ -280,8 +310,11 @@ export abstract class VirtualDevice implements UsbDevice {
           copy[1] = 7;
           return copy;
         }
-        case 15: return d.bos;
-        case 4: case 5: return undefined; // never by themselves (chapter 9)
+        case 15:
+          return d.bos;
+        case 4:
+        case 5:
+          return undefined; // never by themselves (chapter 9)
       }
     }
     return d.extra?.(type, index, s);

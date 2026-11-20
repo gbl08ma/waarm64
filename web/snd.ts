@@ -12,7 +12,22 @@
 // them once the AudioWorklet played them. A receive message is filled by a source (`SndSource`): the
 // deterministic one with a known waveform at the end of its exit, the realtime one at the stream's rate.
 import { bytes, gather, scatter, type Ctx, type Ram, type Request, type Segment } from './devices.ts';
-import { CAPACITY, EPOCH, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, UNTAKEN, WAKE, WRITE, newRing, ringViews } from './audio-ring.ts';
+import {
+  CAPACITY,
+  EPOCH,
+  GAP_FRAMES,
+  LATENCY,
+  QUANTA,
+  RATE,
+  READ,
+  RUN,
+  UNDERRUNS,
+  UNTAKEN,
+  WAKE,
+  WRITE,
+  newRing,
+  ringViews,
+} from './audio-ring.ts';
 
 /** The queues, in order. */
 export const CONTROLQ = 0;
@@ -52,7 +67,9 @@ const SAMPLE_BYTES: Record<number, number> = { [FMT_S16]: 2, [FMT_S32]: 4, [FMT_
 const FORMAT_NAMES: Record<number, string> = { [FMT_S16]: 'S16', [FMT_S32]: 'S32', [FMT_FLOAT]: 'FLOAT' };
 
 /** `VIRTIO_SND_PCM_RATE_*`: the rate of each bit. */
-export const RATES = [5512, 8000, 11025, 16000, 22050, 32000, 44100, 48000, 64000, 88200, 96000, 176400, 192000, 384000];
+export const RATES = [
+  5512, 8000, 11025, 16000, 22050, 32000, 44100, 48000, 64000, 88200, 96000, 176400, 192000, 384000,
+];
 /** Offered: 8 kHz to 192 kHz (bits 1-12), what every browser's AudioContext takes (Chromium takes 3-768 kHz, Firefox 8-192). */
 export const RATE_BITS = 0x1ffe;
 const CHANNELS_MAX = 2;
@@ -74,8 +91,8 @@ export const SWITCH = 1;
 export const VOLUME_MAX = 400;
 const CONTROLS = [
   // role, type, access, name: VOLUME (role 1), INTEGER (1), read, write and TLV read; MUTE (role 2), BOOLEAN (0), read and write.
-  { role: 1, type: 1, access: 1 << 0 | 1 << 1 | 1 << 4, name: 'Master Playback Volume' }, // i18n-ignore: ALSA's control name (the guest's mixer matches it)
-  { role: 2, type: 0, access: 1 << 0 | 1 << 1, name: 'Master Playback Switch' }, // i18n-ignore: ALSA's control name
+  { role: 1, type: 1, access: (1 << 0) | (1 << 1) | (1 << 4), name: 'Master Playback Volume' }, // i18n-ignore: ALSA's control name (the guest's mixer matches it)
+  { role: 2, type: 0, access: (1 << 0) | (1 << 1), name: 'Master Playback Switch' }, // i18n-ignore: ALSA's control name
 ];
 /** The sizes of a `virtio_snd_ctl_info` and a `virtio_snd_ctl_value`. */
 const CTL_INFO_SIZE = 96;
@@ -87,7 +104,8 @@ const VOLUME_TLV = [1, 8, -10000 >>> 0, 25 | 0x10000];
  * The page's volume level (its slider, 0 to 1; the gain is its cube, as PipeWire's and PulseAudio's sliders are) as the
  * Master volume's value, and back: the guest's mixer then shows the page's percentage.
  */
-export const levelToValue = (level: number) => (level > 0 ? Math.max(0, Math.min(VOLUME_MAX, Math.round((60 * Math.log10(Math.min(1, level)) + 100) * 4))) : 0);
+export const levelToValue = (level: number) =>
+  level > 0 ? Math.max(0, Math.min(VOLUME_MAX, Math.round((60 * Math.log10(Math.min(1, level)) + 100) * 4))) : 0;
 export const valueToLevel = (value: number) => (value > 0 ? 10 ** ((Math.min(value, VOLUME_MAX) / 4 - 100) / 60) : 0);
 
 /** The page's Sound menu as the device's controls: the volume level (0 to 1) and mute. */
@@ -147,14 +165,18 @@ export function checksumSink(keep = 0) {
     kept: () => {
       const out = new Uint8Array(held);
       let at = 0;
-      for (const c of chunks) out.set(c, at), at += c.length;
+      for (const c of chunks) (out.set(c, at), (at += c.length));
       return out;
     },
     play(p: SndParams, frames: Uint8Array, done: (latencyBytes: number) => void) {
       queue.push({ p, frames: frames.slice(), done });
     },
-    start() { running = true; },
-    stop() { running = false; },
+    start() {
+      running = true;
+    },
+    stop() {
+      running = false;
+    },
     release() {
       running = false;
       queue = [];
@@ -183,14 +205,25 @@ export function checksumSink(keep = 0) {
     save: (): Played => ({ ...played }),
     restore(state: unknown) {
       const s = state as Played;
-      if (!(s && Number.isSafeInteger(s.frames) && Number.isSafeInteger(s.bytes) && Number.isSafeInteger(s.messages) && /^[0-9a-f]{8}$/.test(s.fnv))) throw new Error('the snapshot has no state for the sound device');
+      if (!(
+        s &&
+        Number.isSafeInteger(s.frames) &&
+        Number.isSafeInteger(s.bytes) &&
+        Number.isSafeInteger(s.messages) &&
+        /^[0-9a-f]{8}$/.test(s.fnv)
+      ))
+        throw new Error('the snapshot has no state for the sound device');
       played = { frames: s.frames, bytes: s.bytes, messages: s.messages, fnv: s.fnv };
     },
   } satisfies SndSink & Record<string, unknown>;
 }
 
 /** Samples of `frames` (raw, in `format`) as f32 in [-1, 1], interleaved as they come. */
-export function toF32(frames: Uint8Array, format: number, out = new Float32Array(frames.length / SAMPLE_BYTES[format])) {
+export function toF32(
+  frames: Uint8Array,
+  format: number,
+  out = new Float32Array(frames.length / SAMPLE_BYTES[format]),
+) {
   const v = new DataView(frames.buffer, frames.byteOffset, frames.byteLength);
   const n = out.length;
   if (format === FMT_S16) for (let k = 0; k < n; k++) out[k] = v.getInt16(2 * k, true) / 32768;
@@ -219,7 +252,16 @@ export type SndFromPage = { type: 'mixer' } & SndMixer;
  * period's length (ms: percentiles of |interval − period|), the pumps run, the ms they took, and how many of those
  * seconds' completions were on its own clock (no worklet playing).
  */
-export type SndStats = { completions: number; jitterP50: number; jitterP99: number; jitterMax: number; pumps: number; busyMs: number; ownClock: number; capped: number };
+export type SndStats = {
+  completions: number;
+  jitterP50: number;
+  jitterP99: number;
+  jitterMax: number;
+  pumps: number;
+  busyMs: number;
+  ownClock: number;
+  capped: number;
+};
 
 /** How a realtime sink is woken to complete what was played: a timer, or the worklet's `WAKE` notify (with a timer's period as the wait's timeout). */
 export type SndWake = 'timer' | 'worklet';
@@ -270,7 +312,10 @@ function completionBound(untaken?: () => number) {
     /** Whether a message of `bytes` may complete at `t`; true the first time it waits (for the stats). */
     allows(t: number, p: SndParams, bytes: number): [boolean, boolean] {
       if (since === 0 || since + bytes <= p.bufferBytes - p.periodBytes) return [true, false];
-      const wait = Math.max(CAP_WAIT_MS, (500 * p.bufferBytes) / (p.channels * SAMPLE_BYTES[p.format] * p.rate) + JIFFY_MARGIN_MS);
+      const wait = Math.max(
+        CAP_WAIT_MS,
+        (500 * p.bufferBytes) / (p.channels * SAMPLE_BYTES[p.format] * p.rate) + JIFFY_MARGIN_MS,
+      );
       if (takenAt !== undefined && t - takenAt >= wait) {
         [since, takenAt, held] = [0, undefined, false]; // a new batch
         return [true, false];
@@ -297,13 +342,30 @@ function completionBound(untaken?: () => number) {
  * message (`completionBound`, counted across pumps, with `untaken` the core's completions not taken yet). `now` and
  * `schedule: false` are for tests (which call `pump` themselves).
  */
-export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake?: SndWake; stats?: boolean; now?: () => number; schedule?: boolean; untaken?: () => number } = {}) {
+export function ringSink(
+  o: {
+    ring?: SharedArrayBuffer;
+    port?: MessagePort;
+    wake?: SndWake;
+    stats?: boolean;
+    now?: () => number;
+    schedule?: boolean;
+    untaken?: () => number;
+  } = {},
+) {
   const ring = o.ring ?? newRing();
   const { h, data } = ringViews(ring);
   const now = o.now ?? (() => performance.now());
   const post = (m: SndToPage) => o.port?.postMessage(m);
   /** A message: its frames as f32 stereo, how many are in the ring, and the ring position after its last (once all are). */
-  type Item = { f32: Float32Array; frames: number; at: number; end?: number; bytes: number; done: (latencyBytes: number) => void };
+  type Item = {
+    f32: Float32Array;
+    frames: number;
+    at: number;
+    end?: number;
+    bytes: number;
+    done: (latencyBytes: number) => void;
+  };
   let items: Item[] = [];
   let p: SndParams | undefined;
   let running = false;
@@ -358,10 +420,11 @@ export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake
         if (!ownClock) base = { read: r >>> 0, t: Math.max(quantaAt, startedAt) };
         else if (avail === 0) {
           // Dry: the clock waits for the guest from where the ring ran out; counted as the worklet counts a gap.
-          if (r !== startRead && dryFrom === undefined) dryFrom = Math.min(t, base.t + (((r - base.read) | 0) * 1000) / p.rate);
+          if (r !== startRead && dryFrom === undefined)
+            dryFrom = Math.min(t, base.t + (((r - base.read) | 0) * 1000) / p.rate);
           base = { read: r >>> 0, t };
         }
-        const adv = Math.min(avail, Math.max(0, ((base.read + Math.floor(((t - base.t) * p.rate) / 1000)) - r) | 0));
+        const adv = Math.min(avail, Math.max(0, (base.read + Math.floor(((t - base.t) * p.rate) / 1000) - r) | 0));
         if (adv > 0 && Atomics.compareExchange(h, READ, r, (r + adv) | 0) === r && dryFrom !== undefined) {
           Atomics.add(h, UNDERRUNS, 1);
           Atomics.add(h, GAP_FRAMES, Math.round(((base.t - dryFrom) * p.rate) / 1000));
@@ -397,7 +460,19 @@ export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake
       if (t - statsAt >= 1000) {
         const d = st.dev.sort((a, b) => a - b);
         const pc = (f: number) => (d.length ? +d[Math.min(d.length - 1, Math.floor(f * d.length))].toFixed(2) : 0);
-        post({ type: 'stats', stats: { completions: st.completions, jitterP50: pc(0.5), jitterP99: pc(0.99), jitterMax: d.length ? +d[d.length - 1].toFixed(2) : 0, pumps: st.pumps, busyMs: +st.busyMs.toFixed(2), ownClock: st.ownClock, capped: st.capped } });
+        post({
+          type: 'stats',
+          stats: {
+            completions: st.completions,
+            jitterP50: pc(0.5),
+            jitterP99: pc(0.99),
+            jitterMax: d.length ? +d[d.length - 1].toFixed(2) : 0,
+            pumps: st.pumps,
+            busyMs: +st.busyMs.toFixed(2),
+            ownClock: st.ownClock,
+            capped: st.capped,
+          },
+        });
         Object.assign(st, { completions: 0, pumps: 0, busyMs: 0, ownClock: 0, capped: 0, dev: [] });
         statsAt = t;
       }
@@ -537,8 +612,12 @@ export function patternSource() {
     record(p: SndParams, bytes: number, done: (data: Uint8Array, latencyBytes: number) => void) {
       queue.push({ p, bytes, done });
     },
-    start() { running = true; },
-    stop() { running = false; },
+    start() {
+      running = true;
+    },
+    stop() {
+      running = false;
+    },
     release() {
       running = false;
       queue = [];
@@ -563,7 +642,14 @@ export function patternSource() {
     save: (): Recorded => ({ ...rec }),
     restore(state: unknown) {
       const s = state as Recorded;
-      if (!(s && Number.isSafeInteger(s.frames) && Number.isSafeInteger(s.bytes) && Number.isSafeInteger(s.messages) && /^[0-9a-f]{8}$/.test(s.fnv))) throw new Error('the snapshot has no state for the sound device');
+      if (!(
+        s &&
+        Number.isSafeInteger(s.frames) &&
+        Number.isSafeInteger(s.bytes) &&
+        Number.isSafeInteger(s.messages) &&
+        /^[0-9a-f]{8}$/.test(s.fnv)
+      ))
+        throw new Error('the snapshot has no state for the sound device');
       rec = { frames: s.frames, bytes: s.bytes, messages: s.messages, fnv: s.fnv };
     },
   } satisfies SndSource & Record<string, unknown>;
@@ -596,7 +682,15 @@ export function fromF32(f32: Float32Array, p: SndParams) {
  * START and its stop are said on `port` (the page opens and closes the microphone). `now` and `schedule: false` are
  * for tests.
  */
-export function micSource(o: { ring?: SharedArrayBuffer; port?: MessagePort; now?: () => number; schedule?: boolean; untaken?: () => number } = {}) {
+export function micSource(
+  o: {
+    ring?: SharedArrayBuffer;
+    port?: MessagePort;
+    now?: () => number;
+    schedule?: boolean;
+    untaken?: () => number;
+  } = {},
+) {
   const ring = o.ring ?? newRing();
   const { h, data } = ringViews(ring);
   const now = o.now ?? (() => performance.now());
@@ -631,7 +725,7 @@ export function micSource(o: { ring?: SharedArrayBuffer; port?: MessagePort; now
       let r = Atomics.load(h, READ);
       const behind = (w - r) >>> 0;
       if (behind > bufferFrames) r = (w - bufferFrames) | 0; // at most a buffer behind
-      while (items.length && ((w - r) >>> 0) >= items[0].frames) {
+      while (items.length && (w - r) >>> 0 >= items[0].frames) {
         const it = items[0];
         if (!bound.allows(t, p, it.bytes)[0]) break;
         items.shift();
@@ -700,10 +794,22 @@ const status = (s: number, more = 0) => {
   return b;
 };
 const NAMES: Record<number, string> = {
-  [R_JACK_INFO]: 'JACK_INFO', [R_JACK_REMAP]: 'JACK_REMAP', [R_PCM_INFO]: 'PCM_INFO', [R_PCM_SET_PARAMS]: 'PCM_SET_PARAMS', [R_PCM_PREPARE]: 'PCM_PREPARE',
-  [R_PCM_RELEASE]: 'PCM_RELEASE', [R_PCM_START]: 'PCM_START', [R_PCM_STOP]: 'PCM_STOP', [R_CHMAP_INFO]: 'CHMAP_INFO',
-  [R_CTL_INFO]: 'CTL_INFO', [R_CTL_ENUM_ITEMS]: 'CTL_ENUM_ITEMS', [R_CTL_READ]: 'CTL_READ', [R_CTL_WRITE]: 'CTL_WRITE', [R_CTL_TLV_READ]: 'CTL_TLV_READ',
-  [R_CTL_TLV_WRITE]: 'CTL_TLV_WRITE', [R_CTL_TLV_COMMAND]: 'CTL_TLV_COMMAND',
+  [R_JACK_INFO]: 'JACK_INFO',
+  [R_JACK_REMAP]: 'JACK_REMAP',
+  [R_PCM_INFO]: 'PCM_INFO',
+  [R_PCM_SET_PARAMS]: 'PCM_SET_PARAMS',
+  [R_PCM_PREPARE]: 'PCM_PREPARE',
+  [R_PCM_RELEASE]: 'PCM_RELEASE',
+  [R_PCM_START]: 'PCM_START',
+  [R_PCM_STOP]: 'PCM_STOP',
+  [R_CHMAP_INFO]: 'CHMAP_INFO',
+  [R_CTL_INFO]: 'CTL_INFO',
+  [R_CTL_ENUM_ITEMS]: 'CTL_ENUM_ITEMS',
+  [R_CTL_READ]: 'CTL_READ',
+  [R_CTL_WRITE]: 'CTL_WRITE',
+  [R_CTL_TLV_READ]: 'CTL_TLV_READ',
+  [R_CTL_TLV_WRITE]: 'CTL_TLV_WRITE',
+  [R_CTL_TLV_COMMAND]: 'CTL_TLV_COMMAND',
 };
 const STATUS_NAMES: Record<number, string> = { [S_OK]: 'OK', [S_BAD_MSG]: 'BAD_MSG', [S_NOT_SUPP]: 'NOT_SUPP' };
 /** The control requests logged (`Snd.log`), the first this many. */
@@ -736,8 +842,12 @@ export class Snd {
   log: string[] = [];
 
   /** The output stream's state and parameters. */
-  get state() { return this.streams[OUT].state; }
-  get params() { return this.streams[OUT].params; }
+  get state() {
+    return this.streams[OUT].state;
+  }
+  get params() {
+    return this.streams[OUT].params;
+  }
 
   reset() {
     for (const st of this.streams) [st.state, st.params] = ['none', undefined];
@@ -748,7 +858,9 @@ export class Snd {
     const [reply, effect, detail, stream] = this.answer(cmd, room);
     if (this.log.length < LOG_MAX && cmd.length >= 4) {
       const code = u32(cmd, 0);
-      this.log.push(`${NAMES[code] ?? `0x${code.toString(16)}`}${stream > 0 ? `#${stream}` : ''}${detail} ${STATUS_NAMES[u32(reply, 0)]}`);
+      this.log.push(
+        `${NAMES[code] ?? `0x${code.toString(16)}`}${stream > 0 ? `#${stream}` : ''}${detail} ${STATUS_NAMES[u32(reply, 0)]}`,
+      );
     }
     return { reply, effect, stream };
   }
@@ -757,19 +869,22 @@ export class Snd {
     if (cmd.length < 4) return [status(S_BAD_MSG), 'none', '', 0];
     const code = u32(cmd, 0);
     switch (code) {
-      case R_JACK_INFO: case R_CHMAP_INFO: case R_PCM_INFO: {
+      case R_JACK_INFO:
+      case R_CHMAP_INFO:
+      case R_PCM_INFO: {
         // virtio_snd_query_info: start_id, count, size. No jacks or channel maps.
         if (cmd.length < 16) return [status(S_BAD_MSG), 'none', '', 0];
         const [start, count, size] = [u32(cmd, 4), u32(cmd, 8), u32(cmd, 12)];
         const n = code === R_PCM_INFO ? STREAMS : 0;
         const detail = ` ${start}+${count}`;
-        if (start > n || count > n - start || (count > 0 && (size < PCM_INFO_SIZE || 4 + count * size > room))) return [status(S_BAD_MSG), 'none', detail, 0];
+        if (start > n || count > n - start || (count > 0 && (size < PCM_INFO_SIZE || 4 + count * size > room)))
+          return [status(S_BAD_MSG), 'none', detail, 0];
         const r = status(S_OK, count * size);
         const v = new DataView(r.buffer);
         for (let k = 0; k < count; k++) {
           // virtio_snd_pcm_info: hda_fn_nid 0, features 0, formats (u64), rates (u64), direction, channels_min, channels_max.
           const at = 4 + k * size;
-          v.setUint32(at + 8, 1 << FMT_S16 | 1 << FMT_S32 | 1 << FMT_FLOAT, true); // the u64s' high words stay 0
+          v.setUint32(at + 8, (1 << FMT_S16) | (1 << FMT_S32) | (1 << FMT_FLOAT), true); // the u64s' high words stay 0
           v.setUint32(at + 16, RATE_BITS, true);
           r[at + 24] = start + k === IN ? 1 : 0; // VIRTIO_SND_D_INPUT, VIRTIO_SND_D_OUTPUT
           r[at + 25] = 1;
@@ -777,11 +892,23 @@ export class Snd {
         }
         return [r, 'none', detail, 0];
       }
-      case R_JACK_REMAP: return [status(S_BAD_MSG), 'none', '', 0]; // no jack to remap
-      case R_CTL_INFO: case R_CTL_ENUM_ITEMS: case R_CTL_READ: case R_CTL_WRITE: case R_CTL_TLV_READ: case R_CTL_TLV_WRITE: case R_CTL_TLV_COMMAND:
+      case R_JACK_REMAP:
+        return [status(S_BAD_MSG), 'none', '', 0]; // no jack to remap
+      case R_CTL_INFO:
+      case R_CTL_ENUM_ITEMS:
+      case R_CTL_READ:
+      case R_CTL_WRITE:
+      case R_CTL_TLV_READ:
+      case R_CTL_TLV_WRITE:
+      case R_CTL_TLV_COMMAND:
         return this.values.length ? [...this.ctl(code, cmd, room), 0] : [status(S_NOT_SUPP), 'none', '', 0];
-      case R_PCM_SET_PARAMS: case R_PCM_PREPARE: case R_PCM_RELEASE: case R_PCM_START: case R_PCM_STOP: {
-        if (cmd.length < (code === R_PCM_SET_PARAMS ? 24 : 8) || u32(cmd, 4) >= STREAMS) return [status(S_BAD_MSG), 'none', '', 0];
+      case R_PCM_SET_PARAMS:
+      case R_PCM_PREPARE:
+      case R_PCM_RELEASE:
+      case R_PCM_START:
+      case R_PCM_STOP: {
+        if (cmd.length < (code === R_PCM_SET_PARAMS ? 24 : 8) || u32(cmd, 4) >= STREAMS)
+          return [status(S_BAD_MSG), 'none', '', 0];
         const sid = u32(cmd, 4);
         const st = this.streams[sid];
         const s = st.state;
@@ -792,12 +919,33 @@ export class Snd {
         };
         if (code === R_PCM_SET_PARAMS) {
           // virtio_snd_pcm_set_params: buffer_bytes, period_bytes, features, channels, format, rate.
-          const p: SndParams = { bufferBytes: u32(cmd, 8), periodBytes: u32(cmd, 12), channels: cmd[20], format: cmd[21], rate: RATES[cmd[22]] ?? 0 };
+          const p: SndParams = {
+            bufferBytes: u32(cmd, 8),
+            periodBytes: u32(cmd, 12),
+            channels: cmd[20],
+            format: cmd[21],
+            rate: RATES[cmd[22]] ?? 0,
+          };
           const detail = ` ${p.channels}ch ${FORMAT_NAMES[p.format] ?? `fmt${cmd[21]}`} ${p.rate || `rate${cmd[22]}`} ${p.bufferBytes}/${p.periodBytes}`;
-          if (!(s === 'none' || s === 'params' || s === 'prepared' || s === 'released')) return [status(S_BAD_MSG), 'none', detail, sid];
-          if (u32(cmd, 16) !== 0 || !SAMPLE_BYTES[p.format] || cmd[22] > 31 || !(RATE_BITS >> cmd[22] & 1) || p.channels < 1 || p.channels > CHANNELS_MAX) return [status(S_NOT_SUPP), 'none', detail, sid];
+          if (!(s === 'none' || s === 'params' || s === 'prepared' || s === 'released'))
+            return [status(S_BAD_MSG), 'none', detail, sid];
+          if (
+            u32(cmd, 16) !== 0 ||
+            !SAMPLE_BYTES[p.format] ||
+            cmd[22] > 31 ||
+            !((RATE_BITS >> cmd[22]) & 1) ||
+            p.channels < 1 ||
+            p.channels > CHANNELS_MAX
+          )
+            return [status(S_NOT_SUPP), 'none', detail, sid];
           const frame = p.channels * SAMPLE_BYTES[p.format];
-          if (p.periodBytes === 0 || p.periodBytes % frame !== 0 || p.bufferBytes === 0 || p.bufferBytes % p.periodBytes !== 0) return [status(S_BAD_MSG), 'none', detail, sid];
+          if (
+            p.periodBytes === 0 ||
+            p.periodBytes % frame !== 0 ||
+            p.bufferBytes === 0 ||
+            p.bufferBytes % p.periodBytes !== 0
+          )
+            return [status(S_BAD_MSG), 'none', detail, sid];
           [st.params, st.state] = [p, 'params'];
           return [status(S_OK), 'none', detail, sid];
         }
@@ -806,7 +954,8 @@ export class Snd {
         if (code === R_PCM_STOP) return to(s === 'started', 'stopped', 'stop');
         return to(s === 'prepared' || s === 'stopped', 'released', 'release');
       }
-      default: return [status(S_NOT_SUPP), 'none', '', 0];
+      default:
+        return [status(S_NOT_SUPP), 'none', '', 0];
     }
   }
 
@@ -818,7 +967,8 @@ export class Snd {
       if (cmd.length < 16) return [status(S_BAD_MSG), 'none', ''];
       const [start, count, size] = [u32(cmd, 4), u32(cmd, 8), u32(cmd, 12)];
       const detail = ` ${start}+${count}`;
-      if (start > n || count > n - start || (count > 0 && (size < CTL_INFO_SIZE || 4 + count * size > room))) return [status(S_BAD_MSG), 'none', detail];
+      if (start > n || count > n - start || (count > 0 && (size < CTL_INFO_SIZE || 4 + count * size > room)))
+        return [status(S_BAD_MSG), 'none', detail];
       const r = status(S_OK, count * size);
       const v = new DataView(r.buffer);
       for (let k = 0; k < count; k++) {
@@ -868,19 +1018,35 @@ export class Snd {
   io(sid: number, head: Uint8Array, frameBytes: number): 'run' | 'hold' | number {
     if (head.length < 4 || u32(head, 0) !== sid) return S_BAD_MSG;
     const { state, params } = this.streams[sid];
-    if (!params || frameBytes < 0 || (sid === IN && frameBytes === 0) || frameBytes % (params.channels * SAMPLE_BYTES[params.format]) !== 0) return S_BAD_MSG;
+    if (
+      !params ||
+      frameBytes < 0 ||
+      (sid === IN && frameBytes === 0) ||
+      frameBytes % (params.channels * SAMPLE_BYTES[params.format]) !== 0
+    )
+      return S_BAD_MSG;
     return state === 'started' ? 'run' : state === 'prepared' || state === 'stopped' ? 'hold' : S_BAD_MSG;
   }
 
   save() {
-    return { streams: this.streams.map((st) => ({ state: st.state, params: st.params ?? null })), log: [...this.log], ...(this.values.length ? { controls: [...this.values] } : {}) };
+    return {
+      streams: this.streams.map((st) => ({ state: st.state, params: st.params ?? null })),
+      log: [...this.log],
+      ...(this.values.length ? { controls: [...this.values] } : {}),
+    };
   }
 
   /** A saved state (`save`'s). */
   restore(state: unknown) {
     const saved = state as { streams?: { state: State; params: SndParams | null }[]; log: unknown[] };
     const streams = saved?.streams;
-    if (!Array.isArray(streams) || streams.length !== STREAMS || !Array.isArray(saved.log) || streams.some((st) => !STATES.includes(st?.state) || (st.state !== 'none' && !st.params))) throw new Error('the snapshot has no state for the sound device');
+    if (
+      !Array.isArray(streams) ||
+      streams.length !== STREAMS ||
+      !Array.isArray(saved.log) ||
+      streams.some((st) => !STATES.includes(st?.state) || (st.state !== 'none' && !st.params))
+    )
+      throw new Error('the snapshot has no state for the sound device');
     this.streams = streams.map((st) => ({ state: st.state, params: st.params ?? undefined }));
     this.log = saved.log.map(String);
     // The controls' values, if it has them (a device without `mixer` has none: the page's stay).
@@ -916,7 +1082,12 @@ function writeTail(ram: Ram, segs: Segment[], data: Uint8Array) {
  * `source`, which fills them; both are returned at RELEASE (STOP pauses: Linux sends it for a pause too, and
  * resumes with START without posting the held messages again).
  */
-export function sndBackend(ctx: Ctx, sink: SndSink = checksumSink(), source: SndSource = patternSource(), mixer?: SndMixer & { port?: MessagePort }) {
+export function sndBackend(
+  ctx: Ctx,
+  sink: SndSink = checksumSink(),
+  source: SndSource = patternSource(),
+  mixer?: SndMixer & { port?: MessagePort },
+) {
   const snd = new Snd(!!mixer);
   if (mixer) [snd.values[VOLUME], snd.values[SWITCH]] = [levelToValue(mixer.level), mixer.muted ? 0 : 1];
   /** I/O messages not completed, per stream: waiting for START, or given to the sink or source and not done yet. */
@@ -947,9 +1118,13 @@ export function sndBackend(ctx: Ctx, sink: SndSink = checksumSink(), source: Snd
     if (reposted) reposted[sid] += sid === OUT ? m.r.read.reduce((n, s) => n + s.len, 0) - 4 : room(m.r) - 8;
     if (sid === OUT) {
       const len = m.r.read.reduce((n, s) => n + s.len, 0);
-      sink.play(p, gather(ctx.ram(), m.r.read, len).subarray(4), (latency) => { if (done(sid, m)) finish(m.r, S_OK, latency); });
+      sink.play(p, gather(ctx.ram(), m.r.read, len).subarray(4), (latency) => {
+        if (done(sid, m)) finish(m.r, S_OK, latency);
+      });
     } else {
-      source.record(p, room(m.r) - 8, (data, latency) => { if (done(sid, m)) finish(m.r, S_OK, latency, data); });
+      source.record(p, room(m.r) - 8, (data, latency) => {
+        if (done(sid, m)) finish(m.r, S_OK, latency, data);
+      });
     }
   };
   const drop = (sid: number) => {
@@ -980,15 +1155,26 @@ export function sndBackend(ctx: Ctx, sink: SndSink = checksumSink(), source: Snd
       ctx.complete(r.w0, 8);
     }
   };
-  const tellPage = () => mixer?.port?.postMessage({ type: 'mixer', level: valueToLevel(snd.values[VOLUME]), muted: !snd.values[SWITCH] } satisfies SndToPage);
+  const tellPage = () =>
+    mixer?.port?.postMessage({
+      type: 'mixer',
+      level: valueToLevel(snd.values[VOLUME]),
+      muted: !snd.values[SWITCH],
+    } satisfies SndToPage);
   /** The page's volume and mute: the controls take them, and a driver that has them is notified. */
   const fromPage = (m: SndMixer) => {
-    for (const [id, value] of [[VOLUME, levelToValue(m.level)], [SWITCH, m.muted ? 0 : 1]]) {
+    for (const [id, value] of [
+      [VOLUME, levelToValue(m.level)],
+      [SWITCH, m.muted ? 0 : 1],
+    ]) {
       if (snd.set(id, value) && ctx.features() & F_CTLS && !notify.includes(id)) notify.push(id);
     }
     flush();
   };
-  if (mixer?.port) mixer.port.onmessage = (e: MessageEvent<SndFromPage>) => { if (e.data?.type === 'mixer') fromPage(e.data); };
+  if (mixer?.port)
+    mixer.port.onmessage = (e: MessageEvent<SndFromPage>) => {
+      if (e.data?.type === 'mixer') fromPage(e.data);
+    };
   return {
     snd,
     sink,
@@ -1037,7 +1223,8 @@ export function sndBackend(ctx: Ctx, sink: SndSink = checksumSink(), source: Snd
     polled() {
       if (reposted) {
         // The restore's chains were posted again in this poll (web/vm.ts serves the doorbell once after a restore).
-        for (const sid of [OUT, IN]) if (snd.streams[sid].state === 'started') side(sid).restored?.(snd.streams[sid].params!, reposted[sid]);
+        for (const sid of [OUT, IN])
+          if (snd.streams[sid].state === 'started') side(sid).restored?.(snd.streams[sid].params!, reposted[sid]);
         reposted = undefined;
       }
       sink.tick?.();

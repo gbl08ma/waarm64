@@ -7,7 +7,11 @@
 const DB = 'waarm64-tailscale';
 const STORE = 'state';
 
-const idb = <T>(req: IDBRequest<T>) => new Promise<T>((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+const idb = <T>(req: IDBRequest<T>) =>
+  new Promise<T>((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 
 /** The node's state store: `profile`'s entries from IndexedDB, in memory, and written back as they change. */
 export async function openState(profile: string) {
@@ -33,7 +37,10 @@ export async function openState(profile: string) {
       store('readwrite').put(v, key(k));
     },
     /** Forget the node (after a logout). */
-    clear: async () => { await idb(store('readwrite').delete(range)); mem.clear(); },
+    clear: async () => {
+      await idb(store('readwrite').delete(range));
+      mem.clear();
+    },
   };
 }
 

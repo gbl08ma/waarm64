@@ -80,7 +80,15 @@ function hasData(t: DataView, k: number, version: number) {
  * An allocation over L2 tables `l2s` (by their index; one not there is unallocated), of an image whose L1 entries name
  * a table where `hasTable` says, `fileSize` bytes long (a compressed cluster's bytes run at most to its end).
  */
-function allocationOver(l2s: Map<number, DataView>, cs: number, size: number, version: number, l1Size: number, hasTable: (t: number) => boolean, fileSize: number): Allocation {
+function allocationOver(
+  l2s: Map<number, DataView>,
+  cs: number,
+  size: number,
+  version: number,
+  l1Size: number,
+  hasTable: (t: number) => boolean,
+  fileSize: number,
+): Allocation {
   const per = cs / 8;
   const x = BigInt(62 - (Math.log2(cs) - 8));
   return {
@@ -122,7 +130,14 @@ export async function readAllocation(read: ReadAtAsync, fileSize: number): Promi
   const h = new DataView(head.buffer, head.byteOffset, HEADER);
   const version = h.getUint32(4);
   const clusterBits = h.getUint32(20);
-  if ((version !== 2 && version !== 3) || h.getBigUint64(8) !== 0n || clusterBits < 9 || clusterBits > 21 || h.getUint32(32) !== 0) return undefined;
+  if (
+    (version !== 2 && version !== 3) ||
+    h.getBigUint64(8) !== 0n ||
+    clusterBits < 9 ||
+    clusterBits > 21 ||
+    h.getUint32(32) !== 0
+  )
+    return undefined;
   if (version === 3 && h.getBigUint64(72) & ~KNOWN_INCOMPATIBLE) return undefined;
   const cs = 2 ** clusterBits;
   const size = Number(h.getBigUint64(24));
@@ -153,10 +168,11 @@ const ZERO = 1n; // v3: the cluster reads as zeros
 /** Host ranges of one request this close together are one read, of at most MERGE_MAX bytes (`merged`). */
 const MERGE_GAP = 64 * 1024;
 const MERGE_MAX = 8 << 20;
-const KNOWN_INCOMPATIBLE = 1n << 0n | 1n << 1n | 1n << 3n; // dirty, corrupt (both only matter to writers), compression type
+const KNOWN_INCOMPATIBLE = (1n << 0n) | (1n << 1n) | (1n << 3n); // dirty, corrupt (both only matter to writers), compression type
 
 /** Whether the first bytes of a file are a qcow2 header. */
-export const isQcow2 = (head: Uint8Array) => head.length >= 4 && new DataView(head.buffer, head.byteOffset).getUint32(0) === MAGIC;
+export const isQcow2 = (head: Uint8Array) =>
+  head.length >= 4 && new DataView(head.buffer, head.byteOffset).getUint32(0) === MAGIC;
 
 /** The virtual size from a qcow2 header (its first 32 bytes). */
 export const qcow2Size = (head: Uint8Array) => Number(new DataView(head.buffer, head.byteOffset).getBigUint64(24));
@@ -166,14 +182,25 @@ export const qcow2Size = (head: Uint8Array) => Number(new DataView(head.buffer, 
  * `inflater` unpacks a request's compressed clusters. With `readAsync`, requests read the file through it (the
  * header and L1 table at the opening still through `readAt`): a request's L2 tables and its merged reads at once.
  */
-export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = inflateEach, readAsync?: ReadAtAsync): Disk {
+export function openDisk(
+  readAt: ReadAt,
+  fileSize: number,
+  inflater: Inflater = inflateEach,
+  readAsync?: ReadAtAsync,
+): Disk {
   const head = fileSize >= HEADER ? readAt(0, HEADER) : undefined;
   if (!head || !isQcow2(head)) {
-    return { size: fileSize, format: 'raw', read: async (off, len) => (off + len > fileSize ? undefined : readAsync ? readAsync(off, len) : readAt(off, len)) };
+    return {
+      size: fileSize,
+      format: 'raw',
+      read: async (off, len) => (off + len > fileSize ? undefined : readAsync ? readAsync(off, len) : readAt(off, len)),
+    };
   }
   const h = new DataView(head.buffer, head.byteOffset, HEADER);
   // What the user's image has that this reader refuses is a `MsgError` (the page says it); a malformed structure, a developer's error.
-  const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
+  const fail = (why: string): never => {
+    throw new Error(`qcow2: ${why}`);
+  };
   const version = h.getUint32(4);
   if (version !== 2 && version !== 3) throw new MsgError('disks:qcow2.version', { version });
   if (h.getBigUint64(8) !== 0n) throw new MsgError('disks:qcow2.backing');
@@ -185,10 +212,12 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
   const l1Offset = Number(h.getBigUint64(40));
   if (version === 3) {
     const incompatible = h.getBigUint64(72);
-    if (incompatible & 1n << 2n) throw new MsgError('disks:qcow2.externalData');
-    if (incompatible & 1n << 4n) throw new MsgError('disks:qcow2.extendedL2');
-    if (incompatible & ~KNOWN_INCOMPATIBLE) throw new MsgError('disks:qcow2.unknownFeatures', { features: incompatible.toString(16) });
-    if (incompatible & 1n << 3n && h.getUint32(100) > 104 && h.getUint8(104) !== 0) throw new MsgError('disks:qcow2.zstd');
+    if (incompatible & (1n << 2n)) throw new MsgError('disks:qcow2.externalData');
+    if (incompatible & (1n << 4n)) throw new MsgError('disks:qcow2.extendedL2');
+    if (incompatible & ~KNOWN_INCOMPATIBLE)
+      throw new MsgError('disks:qcow2.unknownFeatures', { features: incompatible.toString(16) });
+    if (incompatible & (1n << 3n) && h.getUint32(100) > 104 && h.getUint8(104) !== 0)
+      throw new MsgError('disks:qcow2.zstd');
   }
   const cs = 2 ** clusterBits;
   const l2Entries = cs / 8;
@@ -252,7 +281,12 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
     for (let i = 0; i < ranges.length;) {
       let [start, end] = ranges[i];
       let j = i + 1;
-      for (; j < ranges.length && ranges[j][0] - end <= MERGE_GAP && Math.max(end, ranges[j][1]) - start <= MERGE_MAX; j++) end = Math.max(end, ranges[j][1]);
+      for (
+        ;
+        j < ranges.length && ranges[j][0] - end <= MERGE_GAP && Math.max(end, ranges[j][1]) - start <= MERGE_MAX;
+        j++
+      )
+        end = Math.max(end, ranges[j][1]);
       if (j - i > 1) {
         const bytes = readAt(start, end - start);
         if (bytes) windows.push({ at: start, bytes });
@@ -260,7 +294,8 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
       i = j;
     }
     return (off, len) => {
-      for (const w of windows) if (off >= w.at && off + len <= w.at + w.bytes.length) return w.bytes.subarray(off - w.at, off - w.at + len);
+      for (const w of windows)
+        if (off >= w.at && off + len <= w.at + w.bytes.length) return w.bytes.subarray(off - w.at, off - w.at + len);
       return readAt(off, len);
     };
   };
@@ -272,18 +307,32 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
     ranges.sort((p, q) => p[0] - q[0]);
     const windows: { at: number; bytes: Uint8Array }[] = [];
     const reads: Promise<void>[] = [];
-    const window = (start: number, end: number) => readAsync!(start, end - start).then((bytes) => { if (bytes) windows.push({ at: start, bytes }); return !!bytes; });
+    const window = (start: number, end: number) =>
+      readAsync!(start, end - start).then((bytes) => {
+        if (bytes) windows.push({ at: start, bytes });
+        return !!bytes;
+      });
     for (let i = 0; i < ranges.length;) {
       let [start, end] = ranges[i];
       let j = i + 1;
-      for (; j < ranges.length && ranges[j][0] - end <= MERGE_GAP && Math.max(end, ranges[j][1]) - start <= MERGE_MAX; j++) end = Math.max(end, ranges[j][1]);
+      for (
+        ;
+        j < ranges.length && ranges[j][0] - end <= MERGE_GAP && Math.max(end, ranges[j][1]) - start <= MERGE_MAX;
+        j++
+      )
+        end = Math.max(end, ranges[j][1]);
       const group = ranges.slice(i, j);
-      reads.push(window(start, end).then(async (ok) => { if (!ok && group.length > 1) await Promise.all(group.map(([a, b]) => window(a, b))); }));
+      reads.push(
+        window(start, end).then(async (ok) => {
+          if (!ok && group.length > 1) await Promise.all(group.map(([a, b]) => window(a, b)));
+        }),
+      );
       i = j;
     }
     await Promise.all(reads);
     return (off, len) => {
-      for (const w of windows) if (off >= w.at && off + len <= w.at + w.bytes.length) return w.bytes.subarray(off - w.at, off - w.at + len);
+      for (const w of windows)
+        if (off >= w.at && off + len <= w.at + w.bytes.length) return w.bytes.subarray(off - w.at, off - w.at + len);
       return undefined;
     };
   };
@@ -293,7 +342,8 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
     if (readAsync && len > 0) {
       // The request's L2 tables first, all at once.
       const tables: (Promise<boolean> | boolean)[] = [];
-      for (let t = Math.floor(off / cs / l2Entries); t <= Math.floor((off + len - 1) / cs / l2Entries); t++) tables.push(loadL2(t));
+      for (let t = Math.floor(off / cs / l2Entries); t <= Math.floor((off + len - 1) / cs / l2Entries); t++)
+        tables.push(loadL2(t));
       if ((await Promise.all(tables)).includes(false)) return undefined;
     }
     const out = new Uint8Array(len);
@@ -314,7 +364,10 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
         const [at, bytes] = extent(e);
         const kept = recent.get(e);
         if (kept) clusters.set(e, kept);
-        else if (!wanted.has(e) && bytes > 0) { wanted.add(e); ranges.push([at, at + bytes]); }
+        else if (!wanted.has(e) && bytes > 0) {
+          wanted.add(e);
+          ranges.push([at, at + bytes]);
+        }
         pieces.push({ k, o, n, e });
       } else if (!(version === 3 && e & ZERO) && (e & OFFSET_MASK) !== 0n) {
         ranges.push([Number(e & OFFSET_MASK) + o, Number(e & OFFSET_MASK) + o + n]);
@@ -424,12 +477,17 @@ export type ChangedBlock = { block: number; data: Uint8Array };
  * Compressed clusters are raw deflate, as in `openDisk`. Undefined when the file has no backing
  * file; throws on what we can't read (zstd, clusters under 4 KiB, the features `openDisk` refuses).
  */
-export function readChanges(readAt: ReadAt, fileSize: number): (ChangesHeader & { size: number; blocks(): AsyncGenerator<ChangedBlock> }) | undefined {
+export function readChanges(
+  readAt: ReadAt,
+  fileSize: number,
+): (ChangesHeader & { size: number; blocks(): AsyncGenerator<ChangedBlock> }) | undefined {
   const head = readAt(0, Math.min(fileSize, 1 << 16)) ?? readAt(0, Math.min(fileSize, HEADER));
   const info = head && changesHeader(head);
   if (!head || !info) return undefined;
   const h = new DataView(head.buffer, head.byteOffset, head.length);
-  const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
+  const fail = (why: string): never => {
+    throw new Error(`qcow2: ${why}`);
+  };
   const version = h.getUint32(4);
   if (version !== 2 && version !== 3) throw new MsgError('disks:qcow2.version', { version });
   const clusterBits = h.getUint32(20);
@@ -437,8 +495,9 @@ export function readChanges(readAt: ReadAt, fileSize: number): (ChangesHeader & 
   if (h.getUint32(32) !== 0) throw new MsgError('disks:qcow2.encrypted');
   if (version === 3) {
     const incompatible = h.getBigUint64(72);
-    if (incompatible & ~KNOWN_INCOMPATIBLE) throw new MsgError('disks:qcow2.unsupportedFeatures', { features: incompatible.toString(16) });
-    if (incompatible & 1n << 3n) throw new MsgError('disks:qcow2.zstdClusters');
+    if (incompatible & ~KNOWN_INCOMPATIBLE)
+      throw new MsgError('disks:qcow2.unsupportedFeatures', { features: incompatible.toString(16) });
+    if (incompatible & (1n << 3n)) throw new MsgError('disks:qcow2.zstdClusters');
   }
   const size = Number(h.getBigUint64(24));
   const l1Size = h.getUint32(36);
@@ -462,8 +521,12 @@ export function readChanges(readAt: ReadAt, fileSize: number): (ChangesHeader & 
         if (!packed && off === 0 && !zero) continue; // unallocated: the base shows through
         const first = (i * l2Entries + k) * cs;
         if (first >= size) continue;
-        const data = packed ? await compressedCluster(readAt, fileSize, e, clusterBits) ?? fail('a compressed cluster does not unpack')
-          : zero ? new Uint8Array(cs) : readAt(off, cs) ?? fail('a data cluster is past the end of the file');
+        const data = packed
+          ? ((await compressedCluster(readAt, fileSize, e, clusterBits)) ??
+            fail('a compressed cluster does not unpack'))
+          : zero
+            ? new Uint8Array(cs)
+            : (readAt(off, cs) ?? fail('a data cluster is past the end of the file'));
         for (let b = 0; b < perCluster && first + b * 4096 < size; b++) {
           const n = Math.min(4096, size - (first + b * 4096));
           yield { block: first / 4096 + b, data: data.subarray(b * 4096, b * 4096 + n) };

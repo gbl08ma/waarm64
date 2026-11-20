@@ -24,12 +24,18 @@ export async function hashSource(src: Source, progress: (done: number) => void, 
   for (let off = 0, i = 0; off < src.size; off += slice, i++) {
     const bytes = src.read(off, Math.min(slice, src.size - off));
     if (!bytes) throw new MsgError('disks:changes.baseUnreadable', { offset: off });
-    running.push(crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>).then((d) => leaves.set(new Uint8Array(d), i * 32)));
+    running.push(
+      crypto.subtle
+        .digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)
+        .then((d) => leaves.set(new Uint8Array(d), i * 32)),
+    );
     if (running.length === HASH_AT_ONCE) await running.shift();
     progress(off + bytes.length);
   }
   await Promise.all(running);
-  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', leaves))].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', leaves))]
+    .map((x) => x.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /**
@@ -78,21 +84,34 @@ export async function loadChanges(o: {
   // A changes file may be larger than its base (a grown overlay's export, docs/machines.md §4.5): the overlay takes its
   // size. A stored base grown since is the size its hash covers (`hashedSize`); the overlay over it is as large as it.
   const hashed = hashedSize(o.base, o.made);
-  if (c.size < hashed) throw new MsgError('disks:changes.otherSize', { size: c.size, backing: c.backingName, label: o.label, baseSize: hashed });
+  if (c.size < hashed)
+    throw new MsgError('disks:changes.otherSize', {
+      size: c.size,
+      backing: c.backingName,
+      label: o.label,
+      baseSize: hashed,
+    });
   const hash = await baseHash(o.base, o.made, (done) => progress(msg('disks:changes.checkingBase'), done, hashed));
   if (hash !== c.hash) {
-    throw new MsgError('disks:changes.otherBase', { backing: c.backingName, hash: c.hash.slice(0, 12), label: o.label, baseHash: hash.slice(0, 12) });
+    throw new MsgError('disks:changes.otherBase', {
+      backing: c.backingName,
+      hash: c.hash.slice(0, 12),
+      label: o.label,
+      baseHash: hash.slice(0, 12),
+    });
   }
   await removeOverlay(o.overlay);
   const files = await openOverlay(o.overlay, o.identity);
   try {
-    if (c.size > base.size && !writeMeta(files.meta, { ...readMeta(files.meta), size: c.size })) throw await storageFullError();
+    if (c.size > base.size && !writeMeta(files.meta, { ...readMeta(files.meta), size: c.size }))
+      throw await storageFullError();
     const disk = overlay(base, files.data, files.map, files.meta);
     const lands = withRoom(o.makeRoom);
     const total = Math.ceil(c.size / 4096);
     let blocks = 0;
     for await (const { block, data } of c.blocks()) {
-      if (!(await lands(() => (isZero(data) ? disk.zero(block * 4096, data.length) : disk.write(block * 4096, data))))) throw new MsgError('disks:changes.blockWriteFailed', { block }, { cause: await storageFullError() });
+      if (!(await lands(() => (isZero(data) ? disk.zero(block * 4096, data.length) : disk.write(block * 4096, data)))))
+        throw new MsgError('disks:changes.blockWriteFailed', { block }, { cause: await storageFullError() });
       if (++blocks % 256 === 0) progress(msg('disks:changes.loadingChanges'), block, total);
     }
     disk.flush();

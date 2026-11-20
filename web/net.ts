@@ -93,7 +93,8 @@ export function ipPort(port: MessagePort, receive: (packet: Uint8Array) => void)
 /** The packets in an IP-port message (one ArrayBuffer, or an array of them); undefined for other messages. */
 export function packetsOf(data: unknown): Uint8Array[] | undefined {
   if (data instanceof ArrayBuffer) return [new Uint8Array(data)];
-  if (Array.isArray(data) && data.length && data.every((d) => d instanceof ArrayBuffer)) return data.map((d) => new Uint8Array(d));
+  if (Array.isArray(data) && data.length && data.every((d) => d instanceof ArrayBuffer))
+    return data.map((d) => new Uint8Array(d));
   return undefined;
 }
 

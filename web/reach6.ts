@@ -68,7 +68,11 @@ const eq = (a: Uint8Array, at: number, b: number[]) => b.every((v, k) => a[at + 
  * "does IPv6 reach the internet" changes. A probe is a DNS query for the root's NS records to each resolver, from a
  * port above Linux's ephemeral range (61000–65535, picked once), matched by its ID: lost when none answers.
  */
-export function reach6(send: (packet: Uint8Array) => void, onChange: (reached: boolean) => void, o: Reach6Options = {}): Reach6 {
+export function reach6(
+  send: (packet: Uint8Array) => void,
+  onChange: (reached: boolean) => void,
+  o: Reach6Options = {},
+): Reach6 {
   const to = (o.to ?? PROBE_TARGETS).map((t) => {
     const a = parse6(t);
     if (!a) throw new Error(`not an IPv6 address: ${t}`);
@@ -114,7 +118,11 @@ export function reach6(send: (packet: Uint8Array) => void, onChange: (reached: b
     lost = 0;
     if (!pending) schedule(0);
   };
-  const g = globalThis as { addEventListener?: EventTarget['addEventListener']; removeEventListener?: EventTarget['removeEventListener']; navigator?: { connection?: EventTarget } };
+  const g = globalThis as {
+    addEventListener?: EventTarget['addEventListener'];
+    removeEventListener?: EventTarget['removeEventListener'];
+    navigator?: { connection?: EventTarget };
+  };
 
   return {
     start(s) {
@@ -141,7 +149,13 @@ export function reach6(send: (packet: Uint8Array) => void, onChange: (reached: b
     take(p) {
       // IPv6, UDP (no extension headers: an answer has none), from a resolver's port to ours, to our source.
       if (p.length < 48 + 12 || p[0] >> 4 !== 6 || p[6] !== 17 || !source) return false;
-      if (((p[42] << 8) | p[43]) !== sport || ((p[40] << 8) | p[41]) !== port || !to.some((t) => eq(p, 8, t)) || !eq(p, 24, source)) return false;
+      if (
+        ((p[42] << 8) | p[43]) !== sport ||
+        ((p[40] << 8) | p[41]) !== port ||
+        !to.some((t) => eq(p, 8, t)) ||
+        !eq(p, 24, source)
+      )
+        return false;
       const id = (p[48] << 8) | p[49];
       if (pending && pending.id === id && p[50] & 0x80) {
         clearTimeout(pending.timer);

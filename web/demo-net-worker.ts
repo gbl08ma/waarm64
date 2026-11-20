@@ -22,7 +22,11 @@ function attach(port: MessagePort) {
   port.postMessage({ type: 'frames', port: ch.port2 }, [ch.port2]);
   // A restarted machine keeps the socket, so its network and the server's budgets aren't spent on a new one.
   if (client && client.state() !== 'closed') client.setFrames(ch.port1);
-  else client = startDemoNet(url, ch.port1, { change: () => queueMicrotask(report), notice: (notice) => post({ type: 'notice', notice }) });
+  else
+    client = startDemoNet(url, ch.port1, {
+      change: () => queueMicrotask(report),
+      notice: (notice) => post({ type: 'notice', notice }),
+    });
 }
 
 let last = '';
@@ -30,7 +34,8 @@ function report() {
   const c = client;
   if (!c) return;
   const s = c.state();
-  if (s === 'closed') return post({ type: 'error', error: toWire(c.error() ?? new MsgError('network:demo-net-worker.closed')) });
+  if (s === 'closed')
+    return post({ type: 'error', error: toWire(c.error() ?? new MsgError('network:demo-net-worker.closed')) });
   post({ type: 'netmap', netmap: demoNetmap(c.lease(), c.status()) });
   const state = s === 'connected' || s === 'idle' ? 'Running' : 'Connecting';
   if (state !== last) post({ type: 'state', state });

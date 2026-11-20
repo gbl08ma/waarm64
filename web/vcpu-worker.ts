@@ -8,7 +8,16 @@
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './devices.ts';
 import { livenessWriter } from './liveness.ts';
-import { clockOffset, Exit, instantiateThread, stallHook, unsigned, withPanic, type Stall, type ThreadBlock } from './vm.ts';
+import {
+  clockOffset,
+  Exit,
+  instantiateThread,
+  stallHook,
+  unsigned,
+  withPanic,
+  type Stall,
+  type ThreadBlock,
+} from './vm.ts';
 
 export type VcpuJob = {
   module: WebAssembly.Module;
@@ -41,7 +50,9 @@ export type VcpuJob = {
    */
   yieldMs?: number;
 };
-export type VcpuEnd = { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] } | { type: 'error'; cpu: number; message: string };
+export type VcpuEnd =
+  | { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] }
+  | { type: 'error'; cpu: number; message: string };
 /** A clock query to the coordinator (web/vm.ts `clockOffset`) and its answer, `t` its clock. */
 export type VcpuClock = { type: 'clock'; t?: number };
 
@@ -159,13 +170,21 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
  * The job, then the coordinator's clock (the answers to `clockOffset`'s
  * queries), then the run: it blocks this thread until the VM stops.
  */
-function serve(post: (m: VcpuEnd | VcpuClock) => void, listen: (on: (m: VcpuJob | VcpuClock) => void) => void, done = () => {}) {
+function serve(
+  post: (m: VcpuEnd | VcpuClock) => void,
+  listen: (on: (m: VcpuJob | VcpuClock) => void) => void,
+  done = () => {},
+) {
   let job: VcpuJob | undefined;
   let answer: ((t: number) => void) | undefined;
   listen((m) => {
     if ('type' in m) return answer?.(m.t!);
     job = m;
-    const ask = () => new Promise<number>((resolve) => { answer = resolve; post({ type: 'clock' }); });
+    const ask = () =>
+      new Promise<number>((resolve) => {
+        answer = resolve;
+        post({ type: 'clock' });
+      });
     void clockOffset(ask).then(async (clock) => {
       try {
         post(await run(job!, clock));
@@ -178,12 +197,24 @@ function serve(post: (m: VcpuEnd | VcpuClock) => void, listen: (on: (m: VcpuJob 
 }
 
 if ('WorkerGlobalScope' in globalThis) {
-  const self = globalThis as unknown as { onmessage: (e: MessageEvent<VcpuJob | VcpuClock>) => void; postMessage(m: unknown): void };
-  serve((m) => self.postMessage(m), (on) => { self.onmessage = (e) => on(e.data); });
+  const self = globalThis as unknown as {
+    onmessage: (e: MessageEvent<VcpuJob | VcpuClock>) => void;
+    postMessage(m: unknown): void;
+  };
+  serve(
+    (m) => self.postMessage(m),
+    (on) => {
+      self.onmessage = (e) => on(e.data);
+    },
+  );
 } else {
   const { parentPort } = await import('node:worker_threads');
   // Unref'd once the run ends, so the thread can exit.
-  serve((m) => parentPort!.postMessage(m), (on) => parentPort!.on('message', on), () => parentPort!.unref());
+  serve(
+    (m) => parentPort!.postMessage(m),
+    (on) => parentPort!.on('message', on),
+    () => parentPort!.unref(),
+  );
 }
 
 /** An error's message and stack: V8's stack starts with the message, Firefox's is only the frames. */

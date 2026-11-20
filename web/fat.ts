@@ -13,7 +13,11 @@ const DATE = ((2026 - 1980) << 9) | (9 << 5) | 1;
 const TIME = 0;
 
 /** A FAT12 image of `size` bytes (a multiple of 512, 256 KiB to 8 MiB) labelled `label`, holding `files` in its root. */
-export function fatImage(label: string, files: { name: string; data: string | Uint8Array }[], size = 1 << 20): Uint8Array {
+export function fatImage(
+  label: string,
+  files: { name: string; data: string | Uint8Array }[],
+  size = 1 << 20,
+): Uint8Array {
   const sectors = size / SECTOR;
   if (!Number.isInteger(sectors) || size < 256 << 10 || size > 8 << 20) throw new Error(`fatImage: ${size} bytes`);
   if (files.length * 3 + 1 > ROOT_ENTRIES) throw new Error('fatImage: too many files');
@@ -83,7 +87,7 @@ export function fatImage(label: string, files: { name: string; data: string | Ui
   files.forEach(({ name, data }, i) => {
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
     const n = Math.ceil(bytes.length / clusterBytes);
-    if (next + n > count + 2) throw new Error('fatImage: the files don\'t fit');
+    if (next + n > count + 2) throw new Error("fatImage: the files don't fit");
     const first = n ? next : 0;
     for (let k = 0; k < n; k++) setFat(next + k, k === n - 1 ? 0xfff : next + k + 1);
     img.set(bytes, dataAt + (next - 2) * clusterBytes);
@@ -106,9 +110,15 @@ function ascii(s: string, n: number) {
 function shortName(name: string, i: number): { bytes: Uint8Array; long: boolean } {
   const m = /^([A-Z0-9_]{1,8})(?:\.([A-Z0-9_]{1,3}))?$/.exec(name);
   if (m) return { bytes: ascii(m[1].padEnd(8) + (m[2] ?? '').padEnd(3), 11), long: false };
-  const [base, ext = ''] = name.toUpperCase().replace(/[^A-Z0-9._]/g, '').split(/\.(?=[^.]*$)/);
+  const [base, ext = ''] = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9._]/g, '')
+    .split(/\.(?=[^.]*$)/);
   const tail = `~${i + 1}`;
-  return { bytes: ascii((base.slice(0, 8 - tail.length) + tail).padEnd(8) + ext.slice(0, 3).padEnd(3), 11), long: true };
+  return {
+    bytes: ascii((base.slice(0, 8 - tail.length) + tail).padEnd(8) + ext.slice(0, 3).padEnd(3), 11),
+    long: true,
+  };
 }
 
 /** VFAT long-name entries for `name`, last part first, as they precede the short entry. */

@@ -59,7 +59,13 @@ export class PageAudio {
     this.port?.close();
     const channel = new MessageChannel();
     this.queue(() => this.closeMic());
-    [this.ring, this.mic, this.port, this.playing, this.capture] = [newRing(), newRing(), channel.port1, false, undefined];
+    [this.ring, this.mic, this.port, this.playing, this.capture] = [
+      newRing(),
+      newRing(),
+      channel.port1,
+      false,
+      undefined,
+    ];
     this.node?.disconnect();
     this.node = undefined;
     const port = channel.port1;
@@ -93,14 +99,25 @@ export class PageAudio {
   detach() {
     this.port?.close();
     this.node?.disconnect();
-    [this.port, this.node, this.ring, this.mic, this.playing, this.capture] = [undefined, undefined, undefined, undefined, false, undefined];
+    [this.port, this.node, this.ring, this.mic, this.playing, this.capture] = [
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+    ];
     this.queue(() => this.closeMic());
     this.onChange();
   }
 
   /** A click or key on the machine (a user gesture): the context may run now. */
   gesture() {
-    if (this.ctx?.state === 'suspended') void this.ctx.resume().then(() => this.onChange(), () => {});
+    if (this.ctx?.state === 'suspended')
+      void this.ctx.resume().then(
+        () => this.onChange(),
+        () => {},
+      );
     if (this.micCtx?.state === 'suspended') void this.micCtx.resume().catch(() => {});
   }
 
@@ -187,7 +204,9 @@ export class PageAudio {
     const processing = !this.micRaw;
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: processing, noiseSuppression: processing, autoGainControl: processing } });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: processing, noiseSuppression: processing, autoGainControl: processing },
+      });
     } catch (e) {
       console.warn(`waarm64: no microphone: ${e}`);
       this.micState = 'denied';
@@ -206,7 +225,11 @@ export class PageAudio {
     this.micCtx = ctx;
     await ctx.audioWorklet.addModule(WORKLET);
     if (this.micCtx !== ctx) return; // closed meanwhile
-    const node = new AudioWorkletNode(ctx, 'waarm64-mic', { numberOfInputs: 1, numberOfOutputs: 0, processorOptions: { ring: mic } });
+    const node = new AudioWorkletNode(ctx, 'waarm64-mic', {
+      numberOfInputs: 1,
+      numberOfOutputs: 0,
+      processorOptions: { ring: mic },
+    });
     new MediaStreamAudioSourceNode(ctx, { mediaStream: stream }).connect(node);
     void ctx.resume().catch(() => {});
     this.micState = 'on';
@@ -242,7 +265,12 @@ export class PageAudio {
     }
     if (ring !== this.ring) return; // another machine started meanwhile
     if (!this.node) {
-      this.node = new AudioWorkletNode(this.ctx!, 'waarm64-snd', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { ring } });
+      this.node = new AudioWorkletNode(this.ctx!, 'waarm64-snd', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: { ring },
+      });
       this.node.connect(this.gain!);
     }
     // Resumes at once if the page already had a gesture (the browser's sticky activation); else at the next one.
@@ -250,7 +278,12 @@ export class PageAudio {
     // What's played reaches the ears this much later: the guest's ALSA counts it in its delay.
     const latency = () => {
       const c = this.ctx;
-      if (c && this.ring) Atomics.store(ringViews(this.ring).h, LATENCY, Math.round((c.baseLatency + (c.outputLatency || 0)) * c.sampleRate));
+      if (c && this.ring)
+        Atomics.store(
+          ringViews(this.ring).h,
+          LATENCY,
+          Math.round((c.baseLatency + (c.outputLatency || 0)) * c.sampleRate),
+        );
     };
     latency();
     this.latencyTimer ??= setInterval(latency, 1000);

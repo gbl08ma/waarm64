@@ -25,7 +25,16 @@ export const F_HOST_USO = 1n << 56n;
 export const F_GUEST_TSO4 = 1n << 7n;
 export const F_GUEST_TSO6 = 1n << 8n;
 export const F_MRG_RXBUF = 1n << 15n;
-export const OFFLOADS = F_CSUM | F_GUEST_CSUM | F_HOST_TSO4 | F_HOST_TSO6 | F_HOST_ECN | F_HOST_USO | F_GUEST_TSO4 | F_GUEST_TSO6 | F_MRG_RXBUF;
+export const OFFLOADS =
+  F_CSUM |
+  F_GUEST_CSUM |
+  F_HOST_TSO4 |
+  F_HOST_TSO6 |
+  F_HOST_ECN |
+  F_HOST_USO |
+  F_GUEST_TSO4 |
+  F_GUEST_TSO6 |
+  F_MRG_RXBUF;
 
 const NEEDS_CSUM = 1; // header flags
 export const DATA_VALID = 2;
@@ -36,7 +45,10 @@ const GSO_UDP_L4 = 5;
 
 const be16 = (b: Uint8Array, at: number) => (b[at] << 8) | b[at + 1];
 const le16 = (b: Uint8Array, at: number) => b[at] | (b[at + 1] << 8);
-const put16 = (b: Uint8Array, at: number, v: number) => { b[at] = v >> 8; b[at + 1] = v & 255; };
+const put16 = (b: Uint8Array, at: number, v: number) => {
+  b[at] = v >> 8;
+  b[at + 1] = v & 255;
+};
 
 /** The ones'-complement sum of `b[start, end)` added to `s`, not folded. */
 function sum(b: Uint8Array, start: number, end: number, s = 0) {
@@ -135,7 +147,10 @@ function segments(f: Uint8Array, gso: number, mss: number, l4?: number): Uint8Ar
     let c: number;
     if (tcp) {
       const q = (seq + i * mss) >>> 0;
-      s[l4 + 4] = q >>> 24; s[l4 + 5] = (q >> 16) & 255; s[l4 + 6] = (q >> 8) & 255; s[l4 + 7] = q & 255;
+      s[l4 + 4] = q >>> 24;
+      s[l4 + 5] = (q >> 16) & 255;
+      s[l4 + 6] = (q >> 8) & 255;
+      s[l4 + 7] = q & 255;
       if (i < n - 1) s[l4 + 13] &= ~0x09; // FIN, PSH
       if (i > 0) s[l4 + 13] &= ~0x80; // CWR
       c = l4 + 16;
@@ -178,7 +193,16 @@ export function checksumValid(f: Uint8Array): boolean {
 export type RxFrame = { hdr: Uint8Array; frame: Uint8Array };
 
 /** What a TCP segment is for merging: where its parts are, its sequence number and payload. */
-type Segment = { f: Uint8Array; l3: number; v6: boolean; l4: number; hl: number; end: number; seq: number; len: number };
+type Segment = {
+  f: Uint8Array;
+  l3: number;
+  v6: boolean;
+  l4: number;
+  hl: number;
+  end: number;
+  seq: number;
+  len: number;
+};
 
 /**
  * A segment that may be merged: a valid TCP checksum (`checksumValid`), IPv4 without options or IPv6 without
@@ -202,8 +226,9 @@ function mergeable(f: Uint8Array): Segment | undefined {
  * without PSH and as long as the run's first payload (`mss`), `b` no longer.
  */
 function follows(a: Segment, b: Segment, mss: number) {
-  if (b.v6 !== a.v6 || b.hl !== a.hl || b.l4 !== a.l4 || a.len !== mss || b.len > mss || a.f[a.l4 + 13] & 0x08) return false;
-  if (b.seq !== ((a.seq + a.len) >>> 0)) return false;
+  if (b.v6 !== a.v6 || b.hl !== a.hl || b.l4 !== a.l4 || a.len !== mss || b.len > mss || a.f[a.l4 + 13] & 0x08)
+    return false;
+  if (b.seq !== (a.seq + a.len) >>> 0) return false;
   const skip = a.v6 ? [a.l3 + 4, a.l3 + 5] : [a.l3 + 2, a.l3 + 3, a.l3 + 4, a.l3 + 5, a.l3 + 10, a.l3 + 11];
   skip.push(a.l4 + 4, a.l4 + 5, a.l4 + 6, a.l4 + 7, a.l4 + 13, a.l4 + 16, a.l4 + 17);
   for (let k = 0; k < a.hl; k++) if (a.f[k] !== b.f[k] && !skip.includes(k)) return false;
@@ -271,7 +296,10 @@ function merge(run: Segment[]): RxFrame {
   const hdr = new Uint8Array(NET_HDR);
   hdr[0] = NEEDS_CSUM;
   hdr[1] = v6 ? GSO_TCPV6 : GSO_TCPV4;
-  const le = (at: number, v: number) => { hdr[at] = v & 255; hdr[at + 1] = v >> 8; };
+  const le = (at: number, v: number) => {
+    hdr[at] = v & 255;
+    hdr[at + 1] = v >> 8;
+  };
   le(2, hl);
   le(4, a.len);
   le(6, l4);

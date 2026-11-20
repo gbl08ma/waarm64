@@ -22,15 +22,19 @@ export const LOCAL_MAX_MESSAGE = 1 << 20;
 /** Why the helper closed the socket (waarm64-net's close codes), as the page says it; undefined for another code. */
 export function closeError(code: number): MsgError | undefined {
   switch (code) {
-    case 4001: return new MsgError('network:local-net.versions');
-    case 4003: return new MsgError('network:local-net.origin');
-    case 4004: return new MsgError('network:local-net.token');
+    case 4001:
+      return new MsgError('network:local-net.versions');
+    case 4003:
+      return new MsgError('network:local-net.origin');
+    case 4004:
+      return new MsgError('network:local-net.token');
   }
   return undefined;
 }
 
 /** The helper closed the connection (`reason`: what its close frame said, a developer's words). */
-export const helperClosed = (reason = '') => new MsgError('network:local-net.closed', undefined, reason ? { cause: new Error(reason) } : undefined);
+export const helperClosed = (reason = '') =>
+  new MsgError('network:local-net.closed', undefined, reason ? { cause: new Error(reason) } : undefined);
 
 /**
  * Whether the browser refuses this origin loopback (Chromium's Local Network Access: the `loopback-network` permission,
@@ -94,7 +98,8 @@ export function parseLocalURL(input: string): { url: string } | { error: Msg } {
   } catch {
     return { error: msg('network:local-net.notLink', { link: s }) };
   }
-  if (u.protocol !== 'ws:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) || u.pathname.length < 2) return { error: msg('network:local-net.notLink', { link: s }) };
+  if (u.protocol !== 'ws:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) || u.pathname.length < 2)
+    return { error: msg('network:local-net.notLink', { link: s }) };
   return { url: u.href };
 }
 
@@ -107,13 +112,22 @@ export function dhcpAck(f: Uint8Array, mac: Uint8Array): { address: string; mtu?
   if (f.length < 14 + 20 + 8 + 240 || f[12] !== 8 || f[13] !== 0 || f[14] >> 4 !== 4 || f[23] !== 17) return undefined;
   const udp = 14 + (f[14] & 15) * 4;
   const d = udp + 8;
-  if (((f[udp] << 8) | f[udp + 1]) !== 67 || ((f[udp + 2] << 8) | f[udp + 3]) !== 68 || d + 240 > f.length || f[d] !== 2) return undefined;
+  if (
+    ((f[udp] << 8) | f[udp + 1]) !== 67 ||
+    ((f[udp + 2] << 8) | f[udp + 3]) !== 68 ||
+    d + 240 > f.length ||
+    f[d] !== 2
+  )
+    return undefined;
   if (f[d + 236] !== 0x63 || f[d + 237] !== 0x82 || f[d + 238] !== 0x53 || f[d + 239] !== 0x63) return undefined;
   if (f[d + 2] !== 6 || mac.length !== 6 || mac.some((b, k) => f[d + 28 + k] !== b)) return undefined;
   let ack = false;
   let mtu: number | undefined;
   for (let k = d + 240; k < f.length && f[k] !== 255;) {
-    if (f[k] === 0) { k++; continue; }
+    if (f[k] === 0) {
+      k++;
+      continue;
+    }
     if (k + 1 >= f.length) break;
     const [code, len] = [f[k], f[k + 1]];
     if (code === 53 && len >= 1) ack = f[k + 2] === 5;
@@ -130,7 +144,14 @@ export type LocalNet = {
   /** Why it closed, as the page says it (undefined while open). */
   error(): Error | undefined;
   /** Frames and bytes each way (the tests' and benchmarks'). */
-  stats(): { rxFrames: number; txFrames: number; rxBytes: number; txBytes: number; rxMessages: number; txMessages: number };
+  stats(): {
+    rxFrames: number;
+    txFrames: number;
+    rxBytes: number;
+    txBytes: number;
+    rxMessages: number;
+    txMessages: number;
+  };
   /** The guest's address and MTU, from the helper's last DHCP acknowledgment. */
   lease(): { address: string; mtu?: number } | undefined;
   close(): void;
@@ -147,10 +168,17 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   let ws: WebSocket;
   try {
     ws = new WebSocket(url, LOCAL_SUBPROTOCOL);
-  } catch (e) { // a URL the browser refuses outright (a port it blocks, such as 6000)
+  } catch (e) {
+    // a URL the browser refuses outright (a port it blocks, such as 6000)
     const failed = new MsgError('network:local-net.unreached', undefined, { cause: e });
     queueMicrotask(onChange);
-    return { state: () => 'closed', error: () => failed, stats: () => ({ ...stats }), lease: () => undefined, close() {} };
+    return {
+      state: () => 'closed',
+      error: () => failed,
+      stats: () => ({ ...stats }),
+      lease: () => undefined,
+      close() {},
+    };
   }
   ws.binaryType = 'arraybuffer';
   /** The guest's MAC, from the first unicast source of its frames (its DHCP acknowledgments are the ones for it). */
@@ -210,7 +238,11 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
     const unreached = never && !error && !closeError(e.code);
     error ??= closeError(e.code) ?? (never ? new MsgError('network:local-net.unreached') : helperClosed(e.reason));
     state = 'closed';
-    if (unreached) void loopbackRefused().then((refused) => { if (refused) error = new MsgError('network:local-net.refused'); onChange(); });
+    if (unreached)
+      void loopbackRefused().then((refused) => {
+        if (refused) error = new MsgError('network:local-net.refused');
+        onChange();
+      });
     else onChange();
   };
   return {
@@ -226,10 +258,20 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
 }
 
 /** Messages to web/local-net-worker.ts. */
-export type ToLocal = { type: 'start'; url: string; ip: MessagePort } | { type: 'attach'; ip: MessagePort } | { type: 'detach' };
+export type ToLocal =
+  { type: 'start'; url: string; ip: MessagePort } | { type: 'attach'; ip: MessagePort } | { type: 'detach' };
 
 /** A local connection's network map: the guest's address, once the helper leased it. */
-export const localNetmap = (lease: { address: string; mtu?: number } | undefined): NetMap => ({ name: '', addresses: lease ? [`${lease.address}/32`] : [], peers: [], mtu: lease?.mtu ?? 1500, dns: null, domains: null, exitNode: '', via: 'local' });
+export const localNetmap = (lease: { address: string; mtu?: number } | undefined): NetMap => ({
+  name: '',
+  addresses: lease ? [`${lease.address}/32`] : [],
+  peers: [],
+  mtu: lease?.mtu ?? 1500,
+  dns: null,
+  domains: null,
+  exitNode: '',
+  via: 'local',
+});
 
 /**
  * The client of a `local` connection (web/app/network.ts drives it as it drives a tailnet's): its worker takes the
@@ -237,7 +279,10 @@ export const localNetmap = (lease: { address: string; mtu?: number } | undefined
  * still on frames (`{type: 'frames', port: null}`), so a reconnect to the same helper doesn't flap the link.
  * State `Running` once the socket is open; an error when it closes (the reason as the page says it).
  */
-export function startLocal(config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
+export function startLocal(
+  config: { url: string; ip: MessagePort },
+  onEvent: (m: FromTailscale) => void = () => {},
+): Tailscale {
   const worker = new Worker(new URL('./local-net-worker.ts', import.meta.url), { type: 'module' });
   return framedClient(worker, config, onEvent, () => new MsgError('network:local-net.noExitNodes'));
 }
@@ -247,7 +292,12 @@ export function startLocal(config: { url: string; ip: MessagePort }, onEvent: (m
  * network's web/demo-net-worker.ts), as web/app/network.ts drives a tailnet's client: it speaks `ToLocal`, and posts
  * the tailnet clients' state, network map, `detached` and errors. `noExits`: the error for an exit node asked of it.
  */
-export function framedClient(worker: Worker, config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void, noExits: () => Error): Tailscale {
+export function framedClient(
+  worker: Worker,
+  config: { url: string; ip: MessagePort },
+  onEvent: (m: FromTailscale) => void,
+  noExits: () => Error,
+): Tailscale {
   let detached: ((ip?: MessagePort) => void) | undefined;
   let state = '';
   let netmap: NetMap | undefined;
@@ -259,7 +309,10 @@ export function framedClient(worker: Worker, config: { url: string; ip: MessageP
       const m = e.data;
       if (m.type === 'state') {
         state = m.state;
-        if (state === 'Running') { timings.runningMs ??= performance.now() - t0; resolve(netmap ?? localNetmap(undefined)); }
+        if (state === 'Running') {
+          timings.runningMs ??= performance.now() - t0;
+          resolve(netmap ?? localNetmap(undefined));
+        }
       } else if (m.type === 'netmap') netmap = m.netmap;
       else if (m.type === 'detached') detached?.(m.ip);
       else if (m.type === 'error') reject(fromWire(m.error));
@@ -270,14 +323,22 @@ export function framedClient(worker: Worker, config: { url: string; ip: MessageP
   worker.postMessage({ type: 'start', url: config.url, ip: config.ip } satisfies ToLocal, [config.ip]);
   const refuse = () => Promise.reject(noExits());
   return {
-    state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
+    state: () => state,
+    netmap: () => netmap,
+    loginURL: () => undefined,
+    running,
+    timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToLocal, [ip]),
     setPrimary: () => {}, // the far end's DHCP always routes everything through it (network.ts `primaryOf` ranks it first)
-    detach: () => new Promise((resolve) => {
-      const t = setTimeout(() => resolve(undefined), 3000);
-      detached = (ip) => { clearTimeout(t); resolve(ip); };
-      worker.postMessage({ type: 'detach' } satisfies ToLocal);
-    }),
+    detach: () =>
+      new Promise((resolve) => {
+        const t = setTimeout(() => resolve(undefined), 3000);
+        detached = (ip) => {
+          clearTimeout(t);
+          resolve(ip);
+        };
+        worker.postMessage({ type: 'detach' } satisfies ToLocal);
+      }),
     setExitNode: refuse,
     setAcceptRoutes: () => {},
     logout: () => Promise.resolve(),

@@ -41,17 +41,61 @@ export function gadgetZeroDescriptors(speed: UsbSpeed, serial: string) {
   if (speed === 'low') throw new Error('Gadget Zero has bulk endpoints: not at low speed');
   const ss = speed === 'super';
   const maxp = ss ? 1024 : speed === 'high' ? 512 : 64;
-  const device = new Uint8Array([18, 1, ...u16(ss ? 0x0320 : 0x0200), 0xff, 0, 0, ss ? 9 : 64, ...u16(GZ_VENDOR), ...u16(GZ_PRODUCT), ...u16(0x0100), 1, 2, 3, 2]);
+  const device = new Uint8Array([
+    18,
+    1,
+    ...u16(ss ? 0x0320 : 0x0200),
+    0xff,
+    0,
+    0,
+    ss ? 9 : 64,
+    ...u16(GZ_VENDOR),
+    ...u16(GZ_PRODUCT),
+    ...u16(0x0100),
+    1,
+    2,
+    3,
+    2,
+  ]);
   const configs = [config(SOURCE_SINK, maxp, ss), config(LOOPBACK, maxp, ss)];
   const strings = ['waarm64', 'Gadget Zero', serial, 'source and sink data', 'loop input to output'];
   if (speed === 'high') {
     // High speed: the qualifier, and the full-speed configurations as the other speed's.
     const qualifier = new Uint8Array([10, 6, ...u16(0x0200), 0xff, 0, 0, 64, 2, 0]);
-    return { maxp, d: { device, configs, qualifier, otherSpeed: [config(SOURCE_SINK, 64, false), config(LOOPBACK, 64, false)], strings } };
+    return {
+      maxp,
+      d: {
+        device,
+        configs,
+        qualifier,
+        otherSpeed: [config(SOURCE_SINK, 64, false), config(LOOPBACK, 64, false)],
+        strings,
+      },
+    };
   }
   if (ss) {
     // USB 2.0 extension (no LPM) and the SuperSpeed capability (full, high and super speed; U1/U2 exit latencies).
-    const bos = new Uint8Array([5, 15, ...u16(22), 2, 7, 16, 2, 0, 0, 0, 0, 10, 16, 3, 0, ...u16(0x000e), 1, 10, ...u16(0x07ff)]);
+    const bos = new Uint8Array([
+      5,
+      15,
+      ...u16(22),
+      2,
+      7,
+      16,
+      2,
+      0,
+      0,
+      0,
+      0,
+      10,
+      16,
+      3,
+      0,
+      ...u16(0x000e),
+      1,
+      10,
+      ...u16(0x07ff),
+    ]);
     return { maxp, d: { device, configs, bos, strings } };
   }
   return { maxp, d: { device, configs, strings } };
@@ -82,7 +126,14 @@ export class GadgetZero extends VirtualDevice {
   }
 
   protected control(s: Setup, data?: Uint8Array): ControlAnswer {
-    if (this.configuration !== SOURCE_SINK || (s.requestType & 0x60) !== 0x40 || s.value !== 0 || s.index !== 0 || s.length > BUFLEN) return undefined;
+    if (
+      this.configuration !== SOURCE_SINK ||
+      (s.requestType & 0x60) !== 0x40 ||
+      s.value !== 0 ||
+      s.index !== 0 ||
+      s.length > BUFLEN
+    )
+      return undefined;
     if (s.request === 0x5b && (s.requestType & 0x80) === 0) {
       this.ep0buf.set(data ?? new Uint8Array(0));
       return true;

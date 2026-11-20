@@ -51,7 +51,17 @@ export const contentId = (hashes: string[]) => sha256Hex(hashes.join('\n'));
 export function checkManifest(m: unknown): Manifest {
   const x = m as Manifest;
   if (!x || x.format !== CHUNKED_FORMAT) throw new MsgError('disks:chunked.notManifest', { format: String(x?.format) });
-  if (!(x.size > 0) || !(x.piece >= 1 << 20) || x.piece % (1 << 20) || !Array.isArray(x.hashes) || x.hashes.length !== Math.ceil(x.size / x.piece) || typeof x.pieces !== 'string' || !x.hashes.every(isHash) || !isHash(x.id) || contentId(x.hashes) !== x.id)
+  if (
+    !(x.size > 0) ||
+    !(x.piece >= 1 << 20) ||
+    x.piece % (1 << 20) ||
+    !Array.isArray(x.hashes) ||
+    x.hashes.length !== Math.ceil(x.size / x.piece) ||
+    typeof x.pieces !== 'string' ||
+    !x.hashes.every(isHash) ||
+    !isHash(x.id) ||
+    contentId(x.hashes) !== x.id
+  )
     throw new MsgError('disks:chunked.malformed');
   return x;
 }
@@ -102,7 +112,8 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet, chunked?: stri
   const readPiece = (i: number, off: number, len: number): Uint8Array | undefined => {
     if (last?.[0] !== i) {
       const x = get(pieceUrl(i));
-      if (x.status !== 200 || !x.body || x.body.byteLength !== pieceLen(i) || sha256Hex(x.body) !== m.hashes[i]) return undefined;
+      if (x.status !== 200 || !x.body || x.body.byteLength !== pieceLen(i) || sha256Hex(x.body) !== m.hashes[i])
+        return undefined;
       checked(i, x.body);
     }
     return last![1].subarray(off, off + len);
@@ -136,11 +147,14 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet, chunked?: stri
       if (got.length === 1) return got[0];
       const out = new Uint8Array(len);
       let at = 0;
-      for (const b of got) (out.set(b!, at), at += b!.length);
+      for (const b of got) (out.set(b!, at), (at += b!.length));
       return out;
     },
     // A read fetches its pieces whole: a cache above takes them all.
-    span: (off, len) => [Math.floor(off / m.piece) * m.piece, Math.min(m.size, Math.ceil((off + len) / m.piece) * m.piece)],
+    span: (off, len) => [
+      Math.floor(off / m.piece) * m.piece,
+      Math.min(m.size, Math.ceil((off + len) / m.piece) * m.piece),
+    ],
     read(off, len) {
       if (off < 0 || len < 0 || off + len > m.size) return undefined;
       const out = new Uint8Array(len);
@@ -167,7 +181,10 @@ export async function fetchManifest(url: string): Promise<Manifest> {
 /** A chunked image's manifest and the image file's first `n` bytes (its first piece's: by range, or whole), with `fetch`. */
 export async function chunkedHead(url: string, n = 32): Promise<{ manifest: Manifest; head: Uint8Array }> {
   const manifest = await fetchManifest(url);
-  const p = await fetch(new URL(manifest.pieces.replace('{hash}', manifest.hashes[0]), new URL(url, globalThis.location?.href)), { headers: { Range: `bytes=0-${n - 1}` } });
+  const p = await fetch(
+    new URL(manifest.pieces.replace('{hash}', manifest.hashes[0]), new URL(url, globalThis.location?.href)),
+    { headers: { Range: `bytes=0-${n - 1}` } },
+  );
   if (p.status !== 206 && p.status !== 200) throw new Error(`${url}: its first piece: ${p.status}`);
   return { manifest, head: new Uint8Array(await p.arrayBuffer()).slice(0, n) };
 }
@@ -183,7 +200,12 @@ export async function chunkedHead(url: string, n = 32): Promise<{ manifest: Mani
  */
 export async function fetchChunked(
   url: string,
-  o: { atOnce?: number; progress?: (done: number, total: number) => void; manifest?: Manifest; signal?: AbortSignal } = {},
+  o: {
+    atOnce?: number;
+    progress?: (done: number, total: number) => void;
+    manifest?: Manifest;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<{ manifest: Manifest; blob: Blob }> {
   const abs = new URL(url, globalThis.location?.href).href;
   const m = o.manifest ? checkManifest(o.manifest) : await fetchManifest(abs);
