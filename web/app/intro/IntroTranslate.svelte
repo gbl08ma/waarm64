@@ -15,6 +15,7 @@
   import type { Capture, FoldKind, HostArch } from './captures.ts';
   import { Autoplay } from './autoplay.svelte.ts';
   import { t } from '../../i18n.ts';
+  import { thisTarget } from '../../local-release.ts';
 
   type Props = { captures: Capture[] };
   let { captures }: Props = $props();
@@ -35,7 +36,12 @@
   const ARCH_NAME: Record<HostArch, string> = { x64: 'x86-64', arm64: 'AArch64' }; // i18n-ignore
   const arches = $derived(ARCHES.filter((a) => capture?.host[a]));
   let archPicked = $state<HostArch>();
-  const arch = $derived(archPicked && arches.includes(archPicked) ? archPicked : arches.at(0));
+  /** The visitor's own (Chromium's client hints, else the user agent's guess; local-release.ts). */
+  let archOwn = $state<HostArch>();
+  void thisTarget().then((target) => {
+    if (target) archOwn = target.arch === 'arm64' ? 'arm64' : 'x64';
+  });
+  const arch = $derived([archPicked, archOwn].find((a) => a && arches.includes(a)) ?? arches.at(0));
 
   /** The active instruction; the steps run by themselves while the viewer is on screen. */
   let at = $state(0);
@@ -147,7 +153,9 @@
     {#if arches.length > 1}
       <div class="blocks" role="group" aria-label={t('intro:IntroTranslate.arches')}>
         {#each arches as a (a)}
-          <button class="chip" aria-pressed={a === arch} onclick={() => (archPicked = a)}>{ARCH_NAME[a]}</button>
+          <button class="chip" data-arch={a} aria-pressed={a === arch} onclick={() => (archPicked = a)}
+            >{ARCH_NAME[a]}</button
+          >
         {/each}
       </div>
     {/if}

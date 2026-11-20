@@ -815,7 +815,9 @@ and the floating windows don't show, and the machine, Home or the store's page s
       instructions, by itself while on screen, and the pointer over a row picks its instruction. What surrounds an
       instruction's own WebAssembly is folded under a label that unfolds it (what runs before a block's first
       instruction, a slow path, what leaves a block). Chips choose among five captures; the C source, what to look
-      for, and the compiler's line are beside them. **Nothing is drawn by hand** ("The captures", below). The host's
+      for, and the compiler's line are beside them; under the panes, a chip per host (x86-64, AArch64) whose machine code
+      shows, the visitor's own first (`local-release.ts` `thisTarget`: Chromium's client hints, else the user agent's
+      guess). **Nothing is drawn by hand** ("The captures", below). The host's
       pane lights only the lines V8's own source positions tie to a WebAssembly instruction (loads, stores, calls):
       the fine print says so.
     - **Memory's** ([Try the split](ui:intro:IntroHow.memory.deeper); `intro/IntroRam.svelte`): a slider of guest RAM
@@ -834,8 +836,9 @@ and the floating windows don't show, and the machine, Home or the store's page s
   (`jit::wasm::Code::note`, nothing in a normal build) into a custom section; the tool checks every run that each
   module, less that section, is byte for byte the normal core's. No export changes. `node tools/intro-capture.ts`
   writes this host's architecture into the file and keeps the other's (x86-64 from a cloud session, AArch64 from the
-  dev VM), as long as both captured the same WebAssembly; `--build-guest` compiles the C again. It needs
-  `wasm-tools` (`cargo install --locked wasm-tools`). Run it again when the JIT's emission changes what these blocks
+  dev VM), as long as both captured the same WebAssembly: the comparison is of `wasm-tools`' text, so both hosts use
+  the same `wasm-tools` (the file's `meta.wasmTools`; `cargo +stable install --locked wasm-tools --version <it>`);
+  `--build-guest` compiles the C again. Run it again when the JIT's emission changes what these blocks
   compile to, and read `IntroTranslate`'s "what to look for" words against the new capture.
 - **The movement** (`web/app/view-transition.ts`, the View Transitions API): leaving the introduction is one
   transition (`intro`): its bar becomes the toolbar where it is, the status bar rises from the window's bottom edge,

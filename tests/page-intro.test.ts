@@ -134,7 +134,7 @@ test('the sections: the bar\'s links scroll to them; the comparison names each p
   await ctx.close();
 });
 
-test('how it works: five paths that step and stop on a click; the processor\'s captured code lights one instruction in every pane; memory\'s split follows its slider', async () => {
+test('how it works: five paths that step and stop on a click; the processor\'s captured code lights one instruction in every pane, the visitor\'s own host first; memory\'s split follows its slider', async () => {
   const { ctx, page, errors } = await visitor();
   await page.goto(`${base}/web/app/#intro`);
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
@@ -171,6 +171,15 @@ test('how it works: five paths that step and stop on a click; the processor\'s c
   await cpu.locator('[data-step="next"]').click();
   assert.match(await cpu.locator('[data-pane="guest"] .row.lit').innerText(), /ldrb/);
   assert.ok((await cpu.locator('[data-pane="host"] .row.lit').count()) > 0, 'V8 ties the load to its machine code');
+  // Both hosts' machine code: the visitor's own kind of processor first (Chromium runs here), the other a chip away.
+  const own = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const other = own === 'arm64' ? 'x64' : 'arm64';
+  await page.waitForFunction((a) => document.querySelector(`[data-arch="${a}"]`)?.getAttribute('aria-pressed') === 'true', own, { timeout: 5000, polling: 100 });
+  const ownCode = await cpu.locator('[data-pane="host"]').innerText();
+  await cpu.locator(`[data-arch="${other}"]`).click();
+  assert.equal(await cpu.locator(`[data-arch="${other}"]`).getAttribute('aria-pressed'), 'true');
+  assert.notEqual(await cpu.locator('[data-pane="host"]').innerText(), ownCode, "the other host's code");
+  await cpu.locator(`[data-arch="${own}"]`).click();
   // A fold unfolds in place; another block is a click on its chip.
   const rows = await cpu.locator('[data-pane="wasm"] .row').count();
   await cpu.locator('[data-pane="wasm"] .fold').first().click();

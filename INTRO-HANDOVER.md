@@ -1,48 +1,38 @@
 # INTRO: handover
 
 The introduction page (the brief: [INTRO-KICKOFF.md](INTRO-KICKOFF.md); what exists: docs/frontend.md "The
-introduction"). Branch `claude/gallant-fermi-d53q4y`. Written 2026-11-20 at the end of a cloud session (x86_64, no
-Podman), for a session in the dev VM.
+introduction"). Built in a cloud session on branch `claude/gallant-fermi-d53q4y`, merged into `main` on 2026-11-20 by a
+dev VM session that ran the push tier and added the arm64 captures. The next session (Fable's) starts at loop 1, in the
+dev VM.
 
 ## Where it stands
 
-Built in the cloud session, in the order built:
-
 | Loop | What | Tier it passed |
 |---|---|---|
-| 0 | The page's state and address (`#intro`, a first visit), its bar and Skip, the first screen with the machine's plate, the end that leads to the store, About's button; the `intro` and `launch` view transitions | fast lane |
-| 3 | "What runs on it" (four readouts, six topics) and "Compared with the others" (the table, where they lead, sources; the place kept for one speed figure) | fast lane |
-| 4 | `tools/intro-capture.ts` and the core's `capture` feature; `web/intro-captures/blocks.json` with five blocks and the **x86-64** host column; `ui/CodePane.svelte`, `ui/Stepper.svelte`, the motion and code tokens | fast lane |
-| 5 | "How it works": five paths (the processor, memory, OpenGL, video, Vulkan) | fast lane |
-| 6 | The processor's deep dive: the captured code in four panes | fast lane |
-| 7 | Memory's deep dive: the RAM slider over `splitRam` | fast lane |
+| 0 | The page's state and address (`#intro`, a first visit), its bar and Skip, the first screen with the machine's plate, the end that leads to the store, About's button; the `intro` and `launch` view transitions | push tier |
+| 3 | "What runs on it" (four readouts, six topics) and "Compared with the others" (the table, where they lead, sources; the place kept for one speed figure) | push tier |
+| 4 | `tools/intro-capture.ts` and the core's `capture` feature; `web/intro-captures/blocks.json` with five blocks; `ui/CodePane.svelte`, `ui/Stepper.svelte`, the motion and code tokens | push tier |
+| 5 | "How it works": five paths (the processor, memory, OpenGL, video, Vulkan) | push tier |
+| 6 | The processor's deep dive: the captured code in four panes | push tier |
+| 7 | Memory's deep dive: the RAM slider over `splitRam` | push tier |
+| — | The captures' AArch64 host column (the dev VM: V8 14.6.202.34-node.28) beside x86-64's; the viewer shows the visitor's own architecture first (`IntroTranslate.svelte`, `local-release.ts` `thisTarget`) | push tier |
 
-**CI:** `scripts/ci-fast.sh --since 121c419` (every commit of the track) passed on the tree of this file's commit
-(2026-11-20, the cloud container: the static checks, the core's crate with its 387 tests, 1,339 JS tests: the smoke
-set and the areas' heavy files). The introduction's own tests are `tests/intro-route.test.ts` and
-`tests/page-intro.test.ts`. Two things about running it in the cloud: a plain `scripts/ci-fast.sh` after a push
-compares with the pushed branch and runs nothing ("docs only"), so name the range (`--since`); and started straight
-from the agent's shell it stalled twice at the same point, 67 tests in, with every process idle, while the same
-command started detached (`nohup … &`, no input attached) ran through in ~7 min both times. Which test waits on the
-input wasn't traced (docs/backlog.md "Tests and tools").
+**CI** (the dev VM, 2026-11-20): on the merge with the divider test's fix (4b24f2d4), `scripts/ci.sh` (but for that
+test: its fix came mid-run), `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh` and
+`scripts/ci-jit.sh` passed. The arm64 captures' commit passed `scripts/ci-fast.sh` and `scripts/ci.sh`. Found on the
+way: `tests/page-console.test.ts` "Both's divider" read a mid-drag width under load (fixed: 1 of 4 runs failed under
+ten busy loops before, 10 of 10 passed after); the lint once saw `any` in `web/snapshot-file.ts` (filed in
+docs/backlog.md, didn't recur).
 
-**Not built: loops 1 and 2 (the tiny guest and the live hero) and loop 8 (the end).** Nothing here has passed
-`scripts/ci.sh` or a topic script: the cloud can't run the push tier as the dev VM does (docs/cloud.md: six of the
-agent's tests fail as root and stop `scripts/ci.sh`; no Debian guest for `ci-debian.sh`). **Run the push tier in the dev
-VM before anything else**: `scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh` (the first-visit rule and
-Home's About changed), and `scripts/ci-jit.sh` (the core's JIT emitters gained `Code::note` calls: nothing in a normal
-build, and the capture tool checks the modules are byte for byte the same, but the JIT's tiers are the rule).
+The arm64 column: `wasm-tools` must be the same version on both hosts (the tool compares its text to keep the other
+host's column), so the dev VM's is now 1.263.0, the cloud's. The arm64 text read clean: branches as offsets, no
+` (addr 0x…)` left, calls to V8's stubs as `bl #-0x…`.
 
-## What the dev VM session does next
+**Not built: loops 1 and 2 (the tiny guest and the live hero) and loop 8 (the end).**
 
-1. **The push tier**, above. Fix what it finds first.
-2. **The arm64 host column.** At this branch's head: `scripts/build-wasm.sh`, then `node tools/intro-capture.ts` (no
-   `--build-guest`: the committed `tools/intro-capture/guest.bin` is what both hosts capture). It adds `host.arm64` to
-   `web/intro-captures/blocks.json` and keeps `x64`, provided the WebAssembly is the same (same core commit). The
-   tool's clean-up of V8's arm64 text (stripping ` (addr 0x…)`) was written without an arm64 V8 to try it on: read a
-   few lines of the result. The viewer then shows a chip per architecture by itself (`IntroTranslate.svelte`
-   `arches`); consider choosing the visitor's own architecture first (`navigator.userAgentData`).
-3. **Loop 1, the tiny guest** (the kickoff's "On the hero's machine" is the brief; the user's words there bind):
+## What the next session does
+
+1. **Loop 1, the tiny guest** (the kickoff's "On the hero's machine" is the brief; the user's words there bind):
    - A new image in `images/` (Podman): a trimmed kernel (start from `images/linux.fragment`'s `allnoconfig` base and
      cut: one vCPU is enough, PL011, a simple framebuffer or virtio-gpu 2D, no network, no block device, no modules)
      with its initramfs inside, one file, served with the page. Budget: ~10 MB on top of the page's ~2.5 MiB, a
@@ -56,7 +46,7 @@ build, and the capture tool checks the modules are byte for byte the same, but t
      Home, not reachable outside the introduction).
    - Measure: bytes on the wire and time to first pixels and to the shell, in Chromium (`bench/demo/`), recorded in
      `bench/demo/REPORT.md` with JSON. Check headless Firefox in the dev VM: it runs, or the page falls back.
-4. **Loop 2, the hero**: the guest running in the first screen's frame.
+2. **Loop 2, the hero**: the guest running in the first screen's frame.
    - Where: `web/app/intro/IntroHero.svelte`. Today the plate (`IntroPlate.svelte`) sits where the frame goes. The
      plate **is the fallback design** for a browser that can't run the guest (the user: "either a static image or a
      fallback design that avoids the demo"; Safari is the likely case): keep it, shown when the guest can't start, and
@@ -75,7 +65,7 @@ build, and the capture tool checks the modules are byte for byte the same, but t
    - The `launch` transition names the demo's picture in the store's pane and the machine's place. With a live frame in
      the hero, consider naming the frame too, so leaving the introduction for a demo's pane carries it across (today
      the introduction's bar becomes the toolbar and the rest crosses over).
-5. **Loop 8, the end**, as the kickoff says: an out-of-context review, the docs, the backlog's entries, every tier,
+3. **Loop 8, the end**, as the kickoff says: an out-of-context review, the docs, the backlog's entries, every tier,
    the screenshots tool (`tools/screens.ts`: the introduction's states aren't in it yet), PLAN.md's row, this file and
    the kickoff deleted.
 
