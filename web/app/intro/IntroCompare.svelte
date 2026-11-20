@@ -118,7 +118,7 @@
         'intro:IntroCompare.license.unkernel',
         'intro:IntroCompare.license.webvm',
         'intro:IntroCompare.license.v86',
-        'intro:IntroCompare.unconfirmed',
+        'intro:IntroCompare.license.jslinux',
       ],
     ],
   ];

@@ -55,8 +55,8 @@ still to measure. No number goes in without a run behind it
 | Shared folders | folders on your computer (File System Access) or in the browser, over 9p | 9p over vsock (CLI) | — | 9p | 9p |
 | Clipboard | two-way with the guest (our agent) | — | — | — | — |
 | Debugging | the guest's own debug (ptrace, perf breakpoints, watchpoints) | no ptrace (no strace, gdb) | — | — | — |
-| Browsers | **Chromium only** (Chrome, Edge…) | Chrome/Edge 137+, Firefox 153+, Safari 27+, iOS 27 (needs JSPI) | modern browsers | all | all |
-| License | MIT | GPL-2.0+ (SDK MIT) | UI Apache-2.0, engine proprietary | BSD-2 | MIT (TinyEMU); current build *unverified* |
+| Browsers | **Chromium first** (Chrome, Edge…: what it is built and tested for); Firefox runs smaller guests, more slowly and without WebUSB (the introduction's guest boots there in 0.59 s against 0.48: bench/demo/REPORT.md "INTRO loop 1") | Chrome/Edge 137+, Firefox 153+, Safari 27+, iOS 27 (needs JSPI) | modern browsers | all | all |
+| License | MIT | GPL-2.0+ (SDK MIT) | UI Apache-2.0, engine proprietary | BSD-2 | MIT (TinyEMU: its page says "released under the MIT license", and JSLinux's technical notes that "the current version is based on TinyEMU"; JSLinux's own page states no license; read 2026-11-20) |
 
 ## 3. Performance (to measure)
 
@@ -100,7 +100,8 @@ AES-128-GCM 232 MB/s with the crypto extensions.
   work in a similar way. Ours did open on an empty machine that asks for a disk; the demo store (frontend.md "The demo
   store") now starts the Alpine demo from a template snapshot, with the same install-as-you-type and the demo network
   (its numbers in §3).
-- **Browsers:** unkernel runs on Firefox, Safari and iOS; we are Chromium only (decisions.md).
+- **Browsers:** unkernel runs on Firefox, Safari and iOS; we are Chromium first (decisions.md): Firefox runs smaller
+  guests, more slowly and without some features (WebUSB), and making it steadier is in the backlog ("Firefox").
 - **Memory:** a 48 MiB guest on a native-wasm kernel is smaller than any whole machine. Not a goal for us.
 - **Syscall-heavy work:** unkernel's kernel is native wasm, so a syscall is a call, not an exception. They claim fork
   and exit faster than native. Our process churn is the weak spot to measure (§3, fork + exec).
@@ -144,7 +145,7 @@ out". Always with a date and a link to this page's sources.
   https://cheerpx.io/docs/guides/Networking, https://labs.leaningtech.com/blog/cx-10 (32-bit, licensing, "5–10×
   slower than native"); BrowserPod: https://labs.leaningtech.com/blog/browserpod-40
 - v86: https://github.com/copy/v86, its `docs/networking.md` and `src/browser/fake_network.js`
-- JSLinux: https://bellard.org/jslinux/, https://bellard.org/jslinux/tech.html
+- JSLinux: https://bellard.org/jslinux/, https://bellard.org/jslinux/tech.html; TinyEMU (its base, and its license): https://bellard.org/tinyemu/
 - container2wasm: https://github.com/container2wasm/container2wasm; qemu-wasm: https://github.com/ktock/qemu-wasm
 - Wisp: https://github.com/MercuryWorkshop/wisp-protocol (CC-BY-4.0)
 - Ours: [graphics.md](graphics.md) "Testing" (dEQP), [benchmarking.md](benchmarking.md), [networking/](networking/adapters.md),

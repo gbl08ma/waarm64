@@ -404,8 +404,8 @@
     "note": "Row heading of the comparison table on the introduction. No period."
   },
   "IntroCompare.browsers.ours": {
-    "message": "Chromium-based only",
-    "note": "Cell of the comparison table on the introduction: “Browsers” for waarm64. Not a sentence: no period."
+    "message": "Chromium-based first, Firefox for smaller guests",
+    "note": "Cell of the comparison table on the introduction: “Browsers” for waarm64. The web app is built and tested for Chromium-based browsers; Firefox runs it too, for smaller guests, more slowly and without some features. Not “only”. Not a sentence: no period."
   },
   "IntroCompare.browsers.unkernel": {
     "message": "Chrome, Edge, Firefox, Safari",
@@ -443,6 +443,10 @@
     "message": "BSD-2-Clause",
     "note": "Cell of the comparison table on the introduction: “License” for v86. Not a sentence: no period."
   },
+  "IntroCompare.license.jslinux": {
+    "message": "MIT (TinyEMU)",
+    "note": "Cell of the comparison table on the introduction: “License” for JSLinux, whose current version is based on TinyEMU, released under the MIT license. TinyEMU is a project's name. Not a sentence: no period."
+  },
   "IntroCompare.leads": {
     "message": "Where they lead",
     "note": "Subtitle in the introduction's comparison section, over what other projects do better. No period."
@@ -460,7 +464,7 @@
     "note": "Title of an entry under “Where they lead” on the introduction. No period."
   },
   "IntroCompare.leads.browsers.words": {
-    "message": "unkernel runs in Firefox, in Safari, and on iPhones. v86 and JSLinux run nearly anywhere. $t(common:product.name) supports Chromium-based browsers only.",
+    "message": "unkernel runs in Firefox, in Safari, and on iPhones. v86 and JSLinux run nearly anywhere. $t(common:product.name) is built for Chromium-based browsers. Firefox runs smaller guests, more slowly and without USB devices.",
     "note": "Paragraph of the entry “Browsers” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.leads.memory": {
