@@ -35,9 +35,8 @@ read as newer and less polished than the rest. Done on the branch that carries t
   match a bare `[data-demo=…]` beside each other: tests say `.cards [data-demo=…]`); `[data-field="no-demo"]`,
   `[data-field="start-error"]` and `aria-current` on a row are new; the pane takes the focus as an `article`, not its `h3`.
 - **Screenshots:** `tools/screens.ts` has the store's states now (`tools/screens-demos.ts`, 11 states wide and narrow).
-- **Tier:** in the cloud session, at this commit: the static checks (tsc, svelte-check, the linters, i18n, the areas map)
-  and tests/page-demos.test.ts with tests/demos-route.test.ts (15 tests) pass; `scripts/ci-fast.sh`'s builds and tests
-  were still running when it was pushed (the next commit says how it ended).
+- **Tier:** `scripts/ci-fast.sh` passed in the cloud session at 21116769 (CI-FAST OK, 386 s: the static checks, the
+  builds, 139 test files, tests/page-demos.test.ts's 15 among them).
   **`scripts/ci.sh` and `scripts/ci-debian.sh` remain to be run in the dev VM** (and `scripts/ci-machines.sh` for
   tests/page-demos-guest.test.ts, which chooses a row and starts it: not runnable in the cloud, no demo site there).
 - **Asked of the user, not built** (taste): the checks folded into one line when all are met; the first demo by
