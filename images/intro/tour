@@ -1,0 +1,35 @@
+#!/bin/sh
+# The tour: what the introduction's guest does by itself before it hands over its shell
+# (images/intro/init). The first picture runs alone, with nothing on the terminal; then the
+# commands that show what drew it and start the other two, typed out (typed.c). A key ends it.
+# The page follows by the marks (an OSC 777 "waarm64;<what>"), and says its own words beside them:
+# nothing here is written for the visitor to read but commands and their output.
+mark() { printf '\033]777;waarm64;%s\007' "$1"; }
+# Waits $1 seconds; a key ends the tour.
+rest() {
+  if read -r -s -n 1 -t "$1" _; then
+    echo
+    mark shell
+    exit 0
+  fi
+}
+# A command as somebody would type it at the shell's prompt, then run.
+cmd() {
+  printf '~ # '
+  typed "$1"
+  eval "$1"
+}
+mark scope
+rest 8
+mark reveal
+cmd 'uname -srm'
+rest 2
+cmd 'ls /toys'
+rest 3
+cmd 'ridges &'
+mark ridges
+rest 12
+cmd 'life &'
+mark life
+rest 12
+mark shell

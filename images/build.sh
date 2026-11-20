@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi, alpine-demo, agent, venus (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, intro, edk2, alpine-uefi, alpine-demo, agent, venus (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Buildroot's
@@ -140,13 +140,14 @@ VENUS_TOOLS="git curl ca-certificates build-essential pkg-config meson ninja-bui
 # the cloud image's packages it removes, down to alpine-base, e2fsprogs, linux-virt and Limine.
 DEMO_TOOLS="qemu-img=11.0.3-r0 sfdisk=2.42.3-r1 mtools=4.0.49-r0"
 DEMO_DEL="tiny-cloud chrony dhcpcd doas dosfstools mount nvme-cli openssh sgdisk tzdata"
+INTRO_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.3-r0 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 busybox-static=1.37.0-r31 zopfli=1.0.3_git20260213-r0" # KERNEL_TOOLS less openssl-dev (nothing in this kernel signs or hashes at build time), BusyBox, and the gzip the page ships
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi alpine-demo agent venus)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest intro edk2 alpine-uefi alpine-demo agent venus)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -587,6 +588,45 @@ build_fptest() {
   ' - "$FPTEST_TOOLS" "$root/$b" "$root/$dst" "$root/$out" "$LINUX"
 }
 
+# The introduction's guest (images/intro/; docs/images.md "intro"): a kernel of its own
+# (allnoconfig + images/intro/linux.fragment) with its initramfs built in: BusyBox (Alpine's
+# static one, its applets linked at build time), the init, the tour and the three toys with their
+# sources, all static, natively in Alpine's arm64 container. One file, intro.img, and what the page
+# fetches, its gzip (zopfli's: intro.img.gz). Its kernel tree
+# stays in target/images/build/intro between builds (KBUILD_BUILD_VERSION: the banner's build count
+# would otherwise differ from one build to the next).
+build_intro() {
+  local dst=$out/intro
+  rm -rf "$dst"
+  mkdir -p "$dst"
+  linux_src
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH -e root="$root" "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $1
+    src=$root/$2/build/linux-$3 obj=$root/$2/build/intro dst=$root/$4 i=images/intro
+    mkdir -p "$obj/toys"
+    for t in scope ridges life; do gcc -static -s -O2 -std=gnu11 -Wall -Werror -o "$obj/toys/$t" $i/$t.c -lm; done
+    gcc -static -s -Os -std=gnu11 -Wall -Werror -o "$obj/toys/typed" $i/typed.c
+    { printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\n"
+      for d in proc sys tmp root etc bin sbin usr usr/bin usr/sbin toys; do printf "dir /%s 0755 0 0\n" $d; done
+      printf "file /bin/busybox /bin/busybox.static 0755 0 0\n"
+      /bin/busybox.static --list-full | sed "s|.*|slink /& /bin/busybox 0777 0 0|"
+      printf "file /init %s 0755 0 0\nfile /etc/profile %s 0644 0 0\n" "$root/$i/init" "$root/$i/profile"
+      for f in tour cycle; do printf "file /usr/bin/%s %s 0755 0 0\n" $f "$root/$i/$f"; done
+      printf "file /usr/bin/typed %s 0755 0 0\n" "$obj/toys/typed"
+      for t in scope ridges life; do printf "file /toys/%s %s 0755 0 0\nfile /toys/%s.c %s 0644 0 0\n" $t "$obj/toys/$t" $t "$root/$i/$t.c"; done
+      printf "file /toys/screen.h %s 0644 0 0\n" "$root/$i/screen.h"; } > "$obj/cpio.list"
+    { cat $i/linux.fragment; printf "CONFIG_INITRAMFS_SOURCE=\"%s\"\n" "$obj/cpio.list"; } > "$obj/allconfig"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=waarm64 KBUILD_BUILD_HOST=waarm64 KBUILD_BUILD_VERSION=1"
+    $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
+    missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
+    [ -z "$missing" ] || { echo "intro: not applied:" >&2; echo "$missing" >&2; exit 1; }
+    $k -j"$(nproc)" Image
+    cp "$obj/arch/arm64/boot/Image" "$dst/intro.img"
+    zopfli -c "$dst/intro.img" > "$dst/intro.img.gz"
+    cp "$obj/.config" "$dst/config"
+  ' - "$INTRO_TOOLS" "$out" "$LINUX" "$dst"
+}
+
 build_debian() {
   rm -rf "$out/debian"
   WAARM64_DL=$root/$out/dl node --disable-warning=ExperimentalWarning tools/debian.ts
@@ -816,13 +856,14 @@ inputs() {
   [ "$1" = linux-usbhost ] && files+=(images/linux.fragment $(find images/usb images/usbhost -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
+  [ "$1" = intro ] && files+=($(find images/intro -type f | sort)) && pins='^(INTRO_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/Waarm64XhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = alpine-demo ] && files+=($(find images/alpine-demo -type f | sort)) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER|DEMO_)'
   [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml agent/no-unwind.ld $(find agent/src -type f | sort)) && pins='^AGENT_'
   [ "$1" = venus ] && files=(vk/build.sh) && pins='^VENUS_'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; if [ "$1" = venus ]; then vk/build.sh --inputs; fi; if [ "$1" = alpine-demo ]; then agent_openrc; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest || $1 == intro ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; if [ "$1" = venus ]; then vk/build.sh --inputs; fi; if [ "$1" = alpine-demo ]; then agent_openrc; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -844,6 +885,7 @@ outputs() {
     ltp) echo ltp/rootfs.ext4 ;;
     litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;
     fptest) echo fptest/initramfs.cpio fptest/fptest.tar ;;
+    intro) echo intro/intro.img intro/intro.img.gz ;;
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
     alpine-demo) echo alpine-demo/alpine-demo.qcow2 ;;
@@ -900,10 +942,10 @@ build() {
 }
 
 if [ -z "${WAARM64_IN_CONTAINER:-}" ]; then
-  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi= alpine_demo= agent= venus=
+  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= intro= kernel= debian= edk2= alpine_uefi= alpine_demo= agent= venus=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = alpine-demo ]; then alpine_demo=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = venus ]; then venus=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = intro ]; then intro=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = alpine-demo ]; then alpine_demo=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = venus ]; then venus=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
   done
   # The Buildroot images, natively in the host's architecture.
   if [ ${#br[@]} -gt 0 ]; then
@@ -937,6 +979,7 @@ if [ -z "${WAARM64_IN_CONTAINER:-}" ]; then
   if [ -n "$usbhost" ]; then build linux-usbhost; fi
   if [ -n "$litmus" ]; then build litmus; fi
   if [ -n "$fptest" ]; then build fptest; fi
+  if [ -n "$intro" ]; then build intro; fi
   if [ -n "$edk2" ]; then build edk2; fi
   if [ -n "$agent" ]; then build agent; fi # Podman, or the host's cargo without it
   if [ -n "$venus" ]; then # and where the page and the tests take it (vk/build.sh's place), with its stamp

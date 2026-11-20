@@ -1,0 +1,118 @@
+{
+ "schema": 1,
+ "kind": "intro-firefox",
+ "date": "2026-11-20T18:46:52.903Z",
+ "browser": {
+  "name": "Firefox",
+  "version": "157.0.1",
+  "headless": true
+ },
+ "runs": [
+  {
+   "screen": 874,
+   "shell": 931,
+   "command": 966,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  },
+  {
+   "screen": 591,
+   "shell": 622,
+   "command": 669,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  },
+  {
+   "screen": 613,
+   "shell": 647,
+   "command": 692,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  },
+  {
+   "screen": 558,
+   "shell": 612,
+   "command": 660,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  },
+  {
+   "screen": 565,
+   "shell": 619,
+   "command": 653,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  },
+  {
+   "screen": 600,
+   "shell": 648,
+   "command": 691,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  },
+  {
+   "screen": 571,
+   "shell": 606,
+   "command": 652,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  },
+  {
+   "screen": 589,
+   "shell": 637,
+   "command": 685,
+   "formats": {
+    "gzip": true,
+    "deflate-raw": true,
+    "brotli": true,
+    "zstd": false
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "screen_ms": {
+   "median": 590,
+   "iqr": 33.75,
+   "n": 8
+  },
+  "shell_ms": {
+   "median": 629.5,
+   "iqr": 30,
+   "n": 8
+  },
+  "command_ms": {
+   "median": 677,
+   "iqr": 33,
+   "n": 8
+  }
+ }
+}

@@ -1,0 +1,441 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "waarm64-intro-guest",
+ "system": "waarm64",
+ "what": "the introduction's guest (images/build.sh intro) by web/app/intro/guest.ts on bench/demo/intro.html, the dev server on 127.0.0.1; a cold boot under the JIT, one vCPU, 64 MiB, a 512×320 framebuffer",
+ "promptIs": "the shell's prompt, after a key pressed at the first picture ended the tour; `ready` is the first picture on the canvas",
+ "url": "<local>/bench/demo/intro.html",
+ "date": "2026-11-20T18:46:14.042Z",
+ "commit": "5aeb52613f7b",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "ready": 597,
+    "prompt": 620,
+    "command": 681
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1092,
+     "pssMiB": 532,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "prompt": {
+     "rssMiB": 1091,
+     "pssMiB": 531,
+     "processes": 11,
+     "rendererPssMiB": 166
+    },
+    "uasmMiB": 3289
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "ready": 471,
+    "prompt": 493,
+    "command": 560
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1092,
+     "pssMiB": 531,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "prompt": {
+     "rssMiB": 1091,
+     "pssMiB": 531,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "uasmMiB": 3289
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "ready": 481,
+    "prompt": 503,
+    "command": 564
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1097,
+     "pssMiB": 533,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "prompt": {
+     "rssMiB": 1096,
+     "pssMiB": 533,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "uasmMiB": 3289
+   }
+  },
+  {
+   "run": 4,
+   "marks": {
+    "ready": 476,
+    "prompt": 503,
+    "command": 562
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1092,
+     "pssMiB": 531,
+     "processes": 11,
+     "rendererPssMiB": 166
+    },
+    "prompt": {
+     "rssMiB": 1091,
+     "pssMiB": 531,
+     "processes": 11,
+     "rendererPssMiB": 166
+    },
+    "uasmMiB": 3289
+   }
+  },
+  {
+   "run": 5,
+   "marks": {
+    "ready": 492,
+    "prompt": 515,
+    "command": 580
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1095,
+     "pssMiB": 533,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "prompt": {
+     "rssMiB": 1094,
+     "pssMiB": 533,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "uasmMiB": 3289
+   }
+  },
+  {
+   "run": 6,
+   "marks": {
+    "ready": 480,
+    "prompt": 503,
+    "command": 565
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1094,
+     "pssMiB": 533,
+     "processes": 11,
+     "rendererPssMiB": 169
+    },
+    "prompt": {
+     "rssMiB": 1092,
+     "pssMiB": 531,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "uasmMiB": 3289
+   }
+  },
+  {
+   "run": 7,
+   "marks": {
+    "ready": 467,
+    "prompt": 491,
+    "command": 558
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1093,
+     "pssMiB": 532,
+     "processes": 11,
+     "rendererPssMiB": 166
+    },
+    "prompt": {
+     "rssMiB": 1092,
+     "pssMiB": 531,
+     "processes": 11,
+     "rendererPssMiB": 166
+    },
+    "uasmMiB": 3289
+   }
+  },
+  {
+   "run": 8,
+   "marks": {
+    "ready": 472,
+    "prompt": 500,
+    "command": 563
+   },
+   "bytes": {
+    "total": 17681929,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 17681744,
+     "127.0.0.1:34385": 185
+    },
+    "prompt": 17681929,
+    "command": 17681929
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1096,
+     "pssMiB": 534,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "prompt": {
+     "rssMiB": 1094,
+     "pssMiB": 533,
+     "processes": 11,
+     "rendererPssMiB": 167
+    },
+    "uasmMiB": 3289
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "ready_ms": {
+   "median": 478,
+   "iqr": 12,
+   "n": 8,
+   "samples": [
+    597,
+    471,
+    481,
+    476,
+    492,
+    480,
+    467,
+    472
+   ]
+  },
+  "prompt_ms": {
+   "median": 503,
+   "iqr": 7.75,
+   "n": 8,
+   "samples": [
+    620,
+    493,
+    503,
+    503,
+    515,
+    503,
+    491,
+    500
+   ]
+  },
+  "command_ms": {
+   "median": 563.5,
+   "iqr": 7.25,
+   "n": 8,
+   "samples": [
+    681,
+    560,
+    564,
+    562,
+    580,
+    565,
+    558,
+    563
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 16.862801551818848,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 16.862801551818848,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 16.862801551818848,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848,
+    16.862801551818848
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 531,
+   "iqr": 2,
+   "n": 8,
+   "samples": [
+    531,
+    531,
+    533,
+    531,
+    533,
+    531,
+    531,
+    533
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 532.5,
+   "iqr": 1.25,
+   "n": 8,
+   "samples": [
+    532,
+    531,
+    533,
+    531,
+    533,
+    533,
+    532,
+    534
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1093.5,
+   "iqr": 3.25,
+   "n": 8,
+   "samples": [
+    1092,
+    1092,
+    1097,
+    1092,
+    1095,
+    1094,
+    1093,
+    1096
+   ]
+  },
+  "uasm_MiB": {
+   "median": 3289,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    3289,
+    3289,
+    3289,
+    3289,
+    3289,
+    3289,
+    3289,
+    3289
+   ]
+  }
+ }
+}

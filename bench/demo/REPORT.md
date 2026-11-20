@@ -285,3 +285,69 @@ At 4e81858b also on the Mac (Chrome for Testing, Apple M4 through ANGLE's Metal)
 arch-3d's shader demo at 30.3 s, 3D on, no virtio-gpu error. The user ran all three by hand on their desktop's Nvidia
 GPU (2026-11-19). Compared with the local numbers above ("DEMO loop 3", "DEMO loop 12": a modelled 100 Mbit/s and
 20 ms link), the deployed Alpine answers ~1.3 s later: the real CDN and the demo network's connection.
+
+## INTRO loop 1: the introduction's guest alone (2026-11-20)
+
+**What.** The small guest the introduction's first screen will run (images/build.sh intro; docs/images.md "intro"): a
+cold boot, no snapshot, one file. Target `waarm64-intro-guest`: bench/demo/intro.html, a page with nothing but the
+runner the first screen will use (web/app/intro/guest.ts) and its canvas, on the **dev server** (Vite compiling each
+module on request, nothing compressed: the page's own bytes and its load are not a deployment's; loop 2 measures the
+real first screen as `npm run dist` builds it). One vCPU, the JIT, 64 MiB, a 512×320 framebuffer.
+
+**Setup.** The dev VM (as "DEMO loop 0"), Chromium 155.0.8059.84 headless, a fresh profile each run, 8 runs; the tree
+at 5aeb5261 plus this loop's files. Firefox 157.0.1 headless (the dev VM's), a fresh context each run, 8 runs
+(`bench/demo/intro-firefox.ts`). JSON: `results/intro-1/chromium.json`, `results/intro-1/firefox.json`.
+
+**The numbers** (ms from the navigation; medians, IQR in brackets):
+
+| | First picture | Shell prompt (a key pressed at the first picture ends the tour) | A command answered |
+|---|---|---|---|
+| Chromium | **478** (12) | **503** (8) | **564** (7) |
+| Firefox | 590 (34) | 630 (30) | 677 (33) |
+
+Each browser's first run is ~120–280 ms slower than its others (597 and 874: the server's first compile of the
+modules). Left alone the tour hands the shell over at ~41 s, by design (8 s of the first picture, then the commands
+and the other two toys, 12 s each). In Node the guest's own boot is 26.7M instructions and ~0.33 s to the first
+picture, the core's compile included.
+
+**Bytes.** What the first screen adds to the page's own files:
+
+| File | Bytes | As sent |
+|---|---|---|
+| `intro.img.gz` (the kernel with its initramfs, zopfli) | 4,372,488 raw | **1,676,234** (already compressed; a host's brotli can't add to it) |
+| `waarm64_core.wasm` (any machine needs it; cached for the demo that follows) | 9,654,555 raw | ~1.96–2.29 MB as a host's brotli 5 or 4 (2.56 MB as gzip 6; 1.63 MB at brotli 11) |
+
+**~3.7–4.0 MB on top of the page**, against the brief's guideline of ~10 MB. The net log's 16.9 MiB a run is the dev
+server's (the core uncompressed, fetched once by each worker that compiles it, and the page's modules one by one).
+
+**Memory.** 531 MiB PSS for the browser at the prompt (IQR 2), 121 MiB over "DEMO loop 0"'s floor for about:blank
+(410 MiB, measured 2026-11-19, another session).
+
+**What running costs** (one run, the whole headless browser's CPU time from /proc, SwiftShader presenting the canvas;
+ad hoc, no JSON): `scope` 37% of a core at 72M guest instructions a second, `ridges` 43% at 166M, `life` 36% at 56M
+(each paced to 30 frames a second, the guest idle in between); at an idle shell with no toy, 11% and no guest
+instructions (the framebuffer's scan each frame and the harness). So the first screen must pause it when it's out of
+view (loop 2).
+
+**Choices measured.**
+- **The kernel built for size** (`CC_OPTIMIZE_FOR_SIZE`): 4,372,488 bytes against 4,962,312, gzip 9 1.74 MB against
+  2.02 (−14%); 26.7M instructions to the first picture against 23.7M (+12%, ~10 ms), no difference in the time (Node,
+  three runs each: 0.32–0.34 s against 0.32–0.37 s). Taken.
+- **The toys without stdio**: 67 KB each against 133 KB (static, musl); the image 197 KB smaller raw.
+- **gzip, decoded by the page**: `DecompressionStream('brotli')` exists in Firefox 157 and not in Chromium 155 (nor
+  zstd in either), so brotli 11's 1.40 MB (−16%) isn't available without a decoder of ours. Served raw for a host to
+  compress, the file would depend on the host knowing its type (brotli 5: 1.67 MB, the same as zopfli's gzip).
+- **The core's copy with exact memory limits** (`BootOptions.exactCore`, a second compile of the core at each start):
+  no difference to the first picture (474 and 475 ms with it, 472 and 467 without: 6 runs a batch, alternated twice,
+  the batches overlap); without it the browser's PSS was ~10 MiB lower (521–522 against 532). Kept on, as every
+  machine of the page has it; turning it off for this guest is ~10 MiB for whoever wants them.
+
+**Not tried, most promising first.**
+1. **A BusyBox of our own configuration**: Alpine's static one is 1,116,408 bytes (~0.6 MB of the gzip) with ~300
+   applets, the network's among them, which this guest can't use. A build from source with the shell, the file tools,
+   `vi`, `top` and `ps` would be about half. It needs BusyBox's source pinned in images/build.sh.
+2. **`CONFIG_PRINTK` off**: the kernel's messages are ~0.1 MB of the gzip, but `dmesg` in the shell shows the visitor
+   a real boot.
+3. **32 MiB of RAM** instead of 64: nothing on the wire, a little off the tab's memory (the guest uses ~6 MiB).
+4. **A decoder for brotli or xz in the page** (xz -9e: 1.55 MB): 0.1–0.3 MB less on the wire for a dependency or
+   code of ours, and its own bytes.

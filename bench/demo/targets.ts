@@ -286,6 +286,40 @@ const template = templateTarget('waarm64-template', process.env.DEMO_TEMPLATE ??
 const desktopTemplate = templateTarget('waarm64-desktop-template', process.env.DEMO_TEMPLATE ?? 'arch-desktop', 'screen');
 const glTemplate = templateTarget('waarm64-3d-template', process.env.DEMO_TEMPLATE ?? 'arch-3d', 'screen');
 
+type IntroPage = { __intro: { can: boolean; guest?: { send(s: string): void }; marks: Record<string, number>; text(): string; ended(): string | undefined } };
+/**
+ * INTRO loop 1: the introduction's guest alone (bench/demo/intro.html: the runner the first screen uses, on the dev
+ * server, so the page's own bytes aren't a deployment's). Ready is its first picture; the prompt is its shell's, after a
+ * key pressed at the first picture ends the tour (by itself the tour hands over at ~41 s, by design).
+ */
+const introGuest: Target = {
+  name: 'waarm64-intro-guest',
+  system: 'waarm64',
+  what: "the introduction's guest (images/build.sh intro) by web/app/intro/guest.ts on bench/demo/intro.html, the dev server on 127.0.0.1; a cold boot under the JIT, one vCPU, 64 MiB, a 512×320 framebuffer",
+  offline: true,
+  serve: async () => {
+    const server: Server = await startServer(0, '127.0.0.1');
+    return { base: `http://127.0.0.1:${(server.address() as { port: number }).port}`, close: () => new Promise((r) => server.close(() => r())) };
+  },
+  url: (base) => `${base}/bench/demo/intro.html`,
+  ready: async (page, ms) => {
+    await page.waitForFunction(() => {
+      const i = (window as unknown as Partial<IntroPage>).__intro;
+      if (i && (!i.can || i.ended())) throw new Error(`the guest didn't run: ${i.can ? i.ended() : 'this browser can\'t'}`);
+      return i?.marks.screen;
+    }, null, { timeout: ms, polling: 10 });
+  },
+  text: (page) => page.evaluate(() => (window as unknown as IntroPage).__intro.text()),
+  type: (page, s) => page.evaluate((s) => (window as unknown as IntroPage).__intro.guest!.send(s), s),
+  prompt: async (page, ms) => {
+    await introGuest.type(page, ' ');
+    await page.waitForFunction(() => /waarm64;shell\x07[^]*~ # /.test((window as unknown as IntroPage).__intro.text()), null, { timeout: ms, polling: 10 });
+  },
+  promptIs: "the shell's prompt, after a key pressed at the first picture ended the tour; `ready` is the first picture on the canvas",
+  echo: ECHO,
+  timeoutMs: 60_000,
+};
+
 /** The browser alone: an empty page, for the memory every target's numbers include. */
 const blank: Target = {
   name: 'blank',
@@ -299,4 +333,4 @@ const blank: Target = {
   timeoutMs: 10_000,
 };
 
-export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, template, desktopTemplate, glTemplate, blank].map((t) => [t.name, t]));
+export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, template, desktopTemplate, glTemplate, introGuest, blank].map((t) => [t.name, t]));

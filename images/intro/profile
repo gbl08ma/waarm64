@@ -1,0 +1,2 @@
+# /etc/profile of the introduction's guest (images/intro/).
+export PS1='\w \$ '
