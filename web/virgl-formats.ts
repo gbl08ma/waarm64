@@ -838,8 +838,20 @@ export function packedStride(f: Format | undefined, w: number, h: number) {
   return { row, layer: row * Math.ceil(h / b) };
 }
 
-/** A vertex element's format as WebGL2 reads it: components, the GL type, normalized, and a pure integer's kind. */
-export type VertexFormat = { size: number; type: number; normalized: boolean; int?: 'i' | 'u'; bytes: number };
+/**
+ * A vertex element's format as WebGL2 reads it: components, the GL type, normalized, and a pure integer's kind. `bgra`:
+ * stored blue first (GL's `GL_BGRA` arrays: EXT_vertex_array_bgra's colors, the 2_10_10_10 ones), which WebGL2 can't
+ * fetch: read as its RGBA twin and swizzled back in the vertex shader (the program key's `bgra`). Mesa's virgl takes
+ * every plain vertex format as supported (it checks the caps' bitmask only for R11G11B10), so the table needs them.
+ */
+export type VertexFormat = {
+  size: number;
+  type: number;
+  normalized: boolean;
+  int?: 'i' | 'u';
+  bytes: number;
+  bgra?: true;
+};
 
 const VTX = new Map<number, VertexFormat>();
 {
@@ -871,5 +883,11 @@ const VTX = new Map<number, VertexFormat>();
   VTX.set(123, { size: 4, type: 0x8368, normalized: false, bytes: 4 }); // R10G10B10A2_USCALED
   VTX.set(173, { size: 4, type: 0x8d9f, normalized: true, bytes: 4 }); // R10G10B10A2_SNORM
   VTX.set(172, { size: 4, type: 0x8d9f, normalized: false, bytes: 4 }); // R10G10B10A2_SSCALED
+  // Stored blue first: B8G8R8A8_UNORM, B10G10R10A2_UNORM, _USCALED, _SNORM, _SSCALED.
+  VTX.set(1, { size: 4, type: T.u8, normalized: true, bytes: 4, bgra: true });
+  VTX.set(131, { size: 4, type: 0x8368, normalized: true, bytes: 4, bgra: true });
+  VTX.set(174, { size: 4, type: 0x8368, normalized: false, bytes: 4, bgra: true });
+  VTX.set(176, { size: 4, type: 0x8d9f, normalized: true, bytes: 4, bgra: true });
+  VTX.set(175, { size: 4, type: 0x8d9f, normalized: false, bytes: 4, bgra: true });
 }
 export const VERTEX_FORMATS: ReadonlyMap<number, VertexFormat> = VTX;

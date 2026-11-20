@@ -408,6 +408,8 @@ export type ColorKey = {
 export type ProgramKey = {
   /** Per vertex attribute: float, signed or unsigned integer (the vertex element's format). */
   attribs: ('f' | 'i' | 'u')[];
+  /** The vertex attributes stored blue first, by bit (web/virgl-formats.ts `VertexFormat.bgra`): read as `.zyxw`. */
+  bgra?: number;
   samplers: { vs: (SamplerKey | undefined)[]; fs: (SamplerKey | undefined)[] };
   cbufs: (ColorKey | undefined)[];
   /** Gallium's PIPE_FUNC (0 never … 7 always) for the alpha test, if on. */
@@ -1496,7 +1498,10 @@ class Gen {
     if (this.stage === 'vs') {
       for (const [k] of [...this.inputs].sort((a, b) => a[0] - b[0])) {
         const ty = this.key.attribs[k] ?? 'f';
-        h.push(`layout(location = ${k}) in ${VEC[ty]} a_${k};`);
+        if (((this.key.bgra ?? 0) >>> k) & 1) {
+          h.push(`layout(location = ${k}) in vec4 a_${k}_bgra;`, `vec4 a_${k};`);
+          prologue.push(`a_${k} = a_${k}_bgra.zyxw;`);
+        } else h.push(`layout(location = ${k}) in ${VEC[ty]} a_${k};`);
         this.attribs.push(k);
       }
       const written = new Set<string>();

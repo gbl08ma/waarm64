@@ -164,6 +164,12 @@ const PRIM = [E.POINTS, E.LINES, E.LINE_LOOP, E.LINE_STRIP, E.TRIANGLES, E.TRIAN
 /** The primitives `n` vertices make, per Gallium primitive (PRIM's order). */
 const primitives = (mode: number, n: number) =>
   [n, n >> 1, n >= 2 ? n : 0, Math.max(0, n - 1), Math.floor(n / 3), Math.max(0, n - 2), Math.max(0, n - 2)][mode] ?? 0;
+/** The program key's `bgra`: the vertex elements stored blue first, by bit (absent when none, so other keys stay as they were). */
+const bgraKey = (ve: readonly ({ format: number } | undefined)[]) => {
+  let bits = 0;
+  for (let k = 0; k < ve.length; k++) if (VERTEX_FORMATS.get(ve[k]?.format ?? -1)?.bgra) bits |= 1 << k;
+  return bits ? { bgra: bits } : {};
+};
 
 export class VirglRenderer {
   readonly gl: WebGL2RenderingContext;
@@ -2832,6 +2838,7 @@ void main() {
     // The program for this state.
     const key: ProgramKey = {
       attribs: s.ve.map((e) => VERTEX_FORMATS.get(e.format)?.int ?? 'f'),
+      ...bgraKey(s.ve),
       samplers: { vs: s.views.vs.map((v) => this.samplerKey(c, v)), fs: s.views.fs.map((v) => this.samplerKey(c, v)) },
       cbufs: s.fb.cbufs.map((sf, k) => {
         if (!sf) return undefined;

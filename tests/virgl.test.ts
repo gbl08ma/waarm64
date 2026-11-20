@@ -552,6 +552,40 @@ test('virgl renderer: an index buffer written after a draw sends its element-arr
   assert.deepEqual(replay(from), { drawn: [[8, 42, 42, 11], [8, 42, 42, 11]], sent: ['9+35'] });
 });
 
+test('virgl renderer: a vertex color stored blue first (GL_BGRA arrays: Luanti\'s GL 2.1 driver) is fetched as RGBA8 and swizzled back in the vertex shader', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 1, target: 0, format: 64, bind: 0x10, width: 256, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 1);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const shader = (h: number, type: number, src: string) => { const [len, ...t] = text(src); cmd(1, 4, h, type, len, 0, 0, ...t); };
+  shader(10, 0, 'VERT\nDCL IN[0]\nDCL IN[1]\nDCL OUT[0], POSITION\nDCL OUT[1], COLOR\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[1]\n  2: END\n');
+  shader(11, 1, 'FRAG\nDCL IN[0], COLOR, COLOR\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0]\n  1: END\n');
+  cmd(31, 0, 10, 0); cmd(31, 0, 11, 1);
+  // Vertex elements: the position (R32G32B32A32_FLOAT) at 0, the color (B8G8R8A8_UNORM) at 16.
+  cmd(1, 5, 20, 0, 0, 0, 31, 16, 0, 0, 1); cmd(2, 5, 20);
+  cmd(1, 2, 21, 1 << 1, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0); cmd(2, 2, 21);
+  r.createResource({ id: 3, target: 2, format: 2, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 3);
+  cmd(1, 8, 22, 3, 2, 0, 0);
+  cmd(5, 0, 1, 0, 22);
+  cmd(6, 0, 20, 0, 1);
+  cmd(8, 0, 0, 3, 4, 0, 0, 0, 0, 0, 0, 0, 2, 0);
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  const color = gl.log.find(([n, a]) => n === 'vertexAttribPointer' && (a as number[])[0] === 1);
+  assert.deepEqual(color?.[1].slice(0, 6), [1, 4, E.UNSIGNED_BYTE, true, 20, 16]);
+  const vs = gl.log.filter(([n]) => n === 'shaderSource').map(([, a]) => a[1] as string).find((src) => src.includes('gl_Position'));
+  assert.ok(vs, 'a vertex shader');
+  assert.ok(vs.includes('layout(location = 1) in vec4 a_1_bgra;') && vs.includes('a_1 = a_1_bgra.zyxw;'), vs);
+  assert.ok(vs.includes('layout(location = 0) in vec4 a_0;'), 'the position read as it is');
+});
+
 test('virgl renderer: a shader with stream outputs draws through one program, captured or not (dEQP-GLES3 transform_feedback lines on Metal)', () => {
   const gl = mockGl();
   gl.keepLog = true;

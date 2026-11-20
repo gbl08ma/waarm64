@@ -470,7 +470,12 @@ Most of the bugs dEQP found were WebGL2 silently refusing a draw that GLES allow
   blended with ONE (`ProgramKey.blendSrc`);
 - an inverted depth range (near above far): the range goes the right way round and the vertex shader negates z
   (`u_adjz`);
-- WebGL2 has one color mask: components the first target doesn't store stay on (another target may store them).
+- WebGL2 has one color mask: components the first target doesn't store stay on (another target may store them);
+- WebGL2 has no BGRA vertex attribute: desktop GL's `GL_BGRA` arrays (`EXT_vertex_array_bgra`'s colors, the
+  2_10_10_10 ones; `B8G8R8A8_UNORM` and `B10G10R10A2_*`) are fetched as their RGBA twin and read as `.zyxw` in the
+  vertex shader (`ProgramKey.bgra`), as vrend does on GLES. Mesa's virgl takes every plain vertex format as supported
+  (its caps' bitmask is checked only for R11G11B10), so the caps can't keep a format away: an unknown one is drawn
+  black. Luanti's GL 2.1 driver colors everything this way (its menu and world were black but the sky).
 
 ### Multisampling
 
