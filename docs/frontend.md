@@ -794,7 +794,7 @@ and the floating windows don't show, and the machine, Home or the store's page s
   the picture is).
   - **The guest** is images.md's `intro`: one file served with the page. It boots when the frame first comes on
     screen (~0.5 s), shows its first picture before its terminal says anything, then runs its **tour**: commands
-    typed out on the terminal that say what drew the picture and start two more, and at ~41 s a shell that is the
+    typed out on the terminal that say what drew the picture and start two more, and at ~59 s a shell that is the
     visitor's. A key typed in the terminal ends the tour at once. The terminal takes keys only once clicked: it is out
     of the Tab order (a terminal keeps every key it is given, Tab among them), so the keyboard's way down the page
     passes it by (backlog: a way in for a keyboard alone). The

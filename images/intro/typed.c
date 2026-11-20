@@ -8,7 +8,7 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; i++) {
     for (const char *p = argv[i]; *p; p++) {
       r = r * 1103515245 + 12345;
-      struct timespec t = {0, (35 + (r >> 16) % 60) * 1000000};
+      struct timespec t = {0, (60 + (r >> 16) % 70) * 1000000};
       nanosleep(&t, 0);
       if (write(1, p, 1) < 0) return 1;
     }

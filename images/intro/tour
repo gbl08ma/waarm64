@@ -19,17 +19,19 @@ cmd() {
   typed "$1"
   eval "$1"
 }
+# The rests are a reader's: the page's line at each mark is a sentence or two, and a command's output wants a look.
 mark scope
 rest 8
 mark reveal
+rest 4
 cmd 'uname -srm'
-rest 2
+rest 5
 cmd 'ls /toys'
-rest 3
+rest 7
 cmd 'ridges &'
 mark ridges
-rest 12
+rest 15
 cmd 'life &'
 mark life
-rest 12
+rest 15
 mark shell

@@ -290,7 +290,7 @@ type IntroPage = { __intro: { can: boolean; guest?: { send(s: string): void }; m
 /**
  * INTRO loop 1: the introduction's guest alone (bench/demo/intro.html: the runner the first screen uses, on the dev
  * server, so the page's own bytes aren't a deployment's). Ready is its first picture; the prompt is its shell's, after a
- * key pressed at the first picture ends the tour (by itself the tour hands over at ~41 s, by design).
+ * key pressed at the first picture ends the tour (by itself the tour hands over at ~59 s, by design).
  */
 const introGuest: Target = {
   name: 'waarm64-intro-guest',
