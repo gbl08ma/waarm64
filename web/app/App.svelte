@@ -54,6 +54,7 @@
       width: `${screen.fitted.width}px`,
       height: `${screen.fitted.height}px`,
       rendering: screen.fitted.pixelated ? 'pixelated' : 'auto',
+      shift: `translate(${screen.fitted.shift.x}px, ${screen.fitted.shift.y}px)`,
     },
   );
   let terminal = $state<HTMLElement>();
@@ -101,7 +102,7 @@
   style:--split-stacked={screen.split.stacked}
 >
   <div id="screen-view" bind:this={box}>
-    <div id="screen-frame">
+    <div id="screen-frame" style:transform={fitted?.shift}>
       {#key screen.generation}
         <canvas
           id="screen"

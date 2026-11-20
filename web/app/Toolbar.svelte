@@ -262,6 +262,7 @@
     background: var(--toolbar-bg);
     border-bottom: 1px solid var(--border);
     box-shadow: var(--toolbar-edge);
+    font-size: var(--bar-text-base);
     user-select: none;
   }
   /* Full screen with the status bar (Preferences): the page without its toolbar. */
@@ -277,7 +278,7 @@
   #machine {
     margin: 0 var(--space-3);
     font-weight: var(--weight-bold);
-    font-size: var(--text-md);
+    font-size: var(--bar-text-md);
     max-width: 28ch;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -287,7 +288,7 @@
   #soft-power {
     margin: 0 var(--space-2);
     color: var(--text-dim);
-    font-size: var(--text-sm);
+    font-size: var(--bar-text-sm);
   }
   .toolbar :global(#power-off.now) {
     color: var(--danger-fg);

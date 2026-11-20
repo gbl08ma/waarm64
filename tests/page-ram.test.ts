@@ -91,6 +91,19 @@ test("the RAM map, live on Debian: data and changes counted, a guest's 64 MiB wr
   await type(page, 'root\n');
   await shows(page, /root@\S+:~# /);
 
+  // The RAM link's words on the status bar's line, as its other pieces' are (a link's frame once pushed them down).
+  const lines = await page.evaluate(() => {
+    const walk = document.createTreeWalker(document.getElementById('status')!, NodeFilter.SHOW_TEXT);
+    const out: [boolean, number][] = [];
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.textContent!.trim() || !n.parentElement!.closest('.group')) continue;
+      const r = document.createRange();
+      r.selectNodeContents(n);
+      out.push([!!n.parentElement!.closest('[data-action=ram-open]'), Math.round(r.getBoundingClientRect().bottom)]);
+    }
+    return out;
+  });
+  assert.ok(lines.some(([ram]) => ram) && new Set(lines.map(([, bottom]) => bottom)).size === 1, `the pieces' lines: ${JSON.stringify(lines)}`);
   // Opened from the status bar's RAM: all of RAM at its guest address, data in it; from the second look, changes.
   await page.locator('#status [data-action=ram-open]').click();
   await page.locator('#ram-window').waitFor();

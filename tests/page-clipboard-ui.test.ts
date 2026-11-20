@@ -85,7 +85,7 @@ const offerSize = (text: string) => encodeFrame(FRAME.OFFER, encodeOffer({ seria
 const inline = (f: Frame) => new TextDecoder().decode(decodeOffer(f.payload)!.inline);
 const button = (page: Page) => page.evaluate(() => {
   const m = document.getElementById('clipboard-menu');
-  return m && { state: m.dataset.state, permission: m.dataset.permission, on: m.dataset.on !== undefined, dot: m.querySelector<HTMLElement>('summary .dot')?.dataset.tone, title: m.querySelector('summary')!.getAttribute('title') };
+  return m && { state: m.dataset.state, permission: m.dataset.permission, on: m.dataset.on !== undefined, dot: m.querySelector<HTMLElement>('summary .dot')?.dataset.tone, title: m.querySelector('summary')!.getAttribute('title')?.split('\n')[0] };
 });
 const waitButton = (page: Page, f: (b: NonNullable<Awaited<ReturnType<typeof button>>>) => boolean, what: string) =>
   (async () => {

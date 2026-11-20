@@ -1,5 +1,6 @@
 <!--
-  The Home page (docs/machines.md §7; the toolbar's Home, a toggle: it and the wordmark lead back to the machine): it takes the machine's place on the page (which runs on behind it). It
+  The Home page (docs/machines.md §7; the toolbar's Home, a toggle: it, the wordmark, Esc and the list's Back to the
+  machine lead back to the machine): it takes the machine's place on the page (which runs on behind it). It
   composes: the list (MachinesNav.svelte: the machines kept in this browser, the commands that make one, the browser's
   panes) and the chosen pane, a machine's (MachinePane.svelte and its tabs), the page's own transient machine's
   (PagePane.svelte), the browser's Disks (DisksPane.svelte), Shared folders (FoldersPane.svelte) and Connections
@@ -108,6 +109,18 @@
     connections: net.connections.length,
   });
 
+  /**
+   * Esc leaves the page for the machine, as it closes a dialog: not from a dialog (Esc closes that), an open menu or a
+   * field being typed in (the draft stays where the user is).
+   */
+  function escape(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || !current.loaded) return;
+    const at = e.target instanceof Element ? e.target : null;
+    const typing = 'input:not([type=checkbox], [type=radio], [type=range]), textarea, [contenteditable]';
+    if (at?.closest(`dialog, details[open], ${typing}`)) return;
+    e.preventDefault();
+    page.closeMachines();
+  }
   /** Powers machine `m` off, after asking, before an edit that needs it off; false if it can't be (or the user says no). */
   async function offFirst(m: MachineRecord) {
     if (!running.has(m.id)) return true;
@@ -130,6 +143,7 @@
   }
 </script>
 
+<svelte:window onkeydown={escape} />
 <div class="machines" data-busy={runner.busy} out:leaveInPlace={!!messageBar.text || !!runner.error}>
   <!-- The page's heading, for a screen reader (the toolbar's Home says it): its list and panes are
        under it, and its left column, the way to them, is named after it. -->

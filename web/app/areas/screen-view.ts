@@ -130,8 +130,19 @@ export class ScreenView {
       width: (fb.width * scale) / dpr,
       height: (fb.height * scale) / dpr,
       pixelated: Number.isInteger(scale),
+      shift: { x: 0, y: 0 },
     };
     flushSync(); // drawn at its size now: the cursor below is placed by the canvas's measured width
+    // Centered in its box, the canvas can start between device pixels (a box of a fractional size, as the bars' text
+    // makes it, or an odd room around it; a fractional density): each guest pixel would then be smeared over two.
+    // Its frame is moved by what's left to the next device pixel.
+    const at = this.canvas.getBoundingClientRect();
+    const rest = (v: number) => (Math.round(v * dpr) - v * dpr) / dpr;
+    const shift = { x: rest(at.left), y: rest(at.top) };
+    if (shift.x || shift.y) {
+      screen.fitted = { ...screen.fitted, shift };
+      flushSync();
+    }
     screen.scale = Math.round(scale * 1000) / 1000; // `data-scale`, the tests' hook
     this.#scale = screen.scale || 1;
     this.showCursor();

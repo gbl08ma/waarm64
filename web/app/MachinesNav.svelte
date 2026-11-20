@@ -43,29 +43,28 @@
     name?: string;
     open?: () => void;
   };
+  /** A pane's count, in a pill and in its button's name, only when there is some. */
+  const counted = (n: number, name: (n: number) => string) => (n > 0 ? { count: n, name: name(n) } : {});
   const panes = $derived<PaneButton[]>([
     {
       id: DISKS,
       icon: 'database',
       label: t('machines:MachinesNav.disks.label'),
-      count: counts.disks,
-      name: t('machines:MachinesNav.disks', { n: counts.disks }),
+      ...counted(counts.disks, (n) => t('machines:MachinesNav.disks', { n })),
       title: t('machines:MachinesNav.disks.title'),
     },
     {
       id: FOLDERS,
       icon: 'folder',
       label: t('machines:MachinesNav.folders.label'),
-      count: counts.folders,
-      name: t('machines:MachinesNav.folders', { n: counts.folders }),
+      ...counted(counts.folders, (n) => t('machines:MachinesNav.folders', { n })),
       title: t('machines:MachinesNav.folders.title'),
     },
     {
       id: CONNECTIONS,
       icon: 'network',
       label: t('machines:MachinesNav.connections.label'),
-      count: counts.connections,
-      name: t('machines:MachinesNav.connections', { n: counts.connections }),
+      ...counted(counts.connections, (n) => t('machines:MachinesNav.connections', { n })),
       title: t('machines:MachinesNav.connections.title'),
     },
     {
@@ -175,6 +174,14 @@
       </button>
     {/each}
   </div>
+  {#if current.loaded}
+    <!-- Back to the machine (the toolbar's Home and the wordmark do it too, and Esc), at the column's foot. -->
+    <div class="new ruled back">
+      <button onclick={() => page.closeMachines()} data-action="back-to-machine">
+        <Icon name="arrow-left" size={16} />{t('machines:MachinesNav.back')}
+      </button>
+    </div>
+  {/if}
 </nav>
 {#if making}<NewMachine {store} act={actions.run} onmade={made} close={() => (making = false)} />{/if}
 
@@ -244,6 +251,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  /* At the column's foot, below whatever the list leaves free. */
+  .back {
+    margin-top: auto;
   }
   .ruled {
     padding-top: var(--space-3);

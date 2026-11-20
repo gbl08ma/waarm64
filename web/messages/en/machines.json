@@ -867,6 +867,10 @@
     "message": "Machines",
     "note": "Home page: the heading over the list of machines kept in this browser, at the top of the page's left column."
   },
+  "MachinesNav.back": {
+    "message": "Back to the machine",
+    "note": "Home page: the button at the foot of the page's left column, shown while a machine is on the page; it closes the Home page and shows the machine again (as the toolbar's Home, the product's name and Esc do)."
+  },
   "MachinesNav.list.empty": {
     "message": "No machines yet. The machines you create, or open from a disk image, are kept here, in this browser.",
     "note": "Home page: in place of the list of machines (under its Machines heading) while this browser keeps none; the buttons that make one (New machine, From a disk image…, Import a definition…) follow it."
@@ -1253,7 +1257,11 @@
   },
   "MachinePane.tab.snapshots": {
     "message": "Snapshots",
-    "note": "Home page: the Snapshots tab of a machine."
+    "note": "Home page: the Snapshots tab of a machine. Their count follows in a pill when some are kept."
+  },
+  "MachinePane.tab.snapshotsCount": {
+    "message": "Snapshots ({{n}})",
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its snapshots kept in this browser, when there are some; {{n}}: how many."
   },
   "PagePane.transient.overlay": {
     "message": "its changes are kept in this browser",
@@ -1345,7 +1353,7 @@
   },
   "MachinePane.tab.disks": {
     "message": "Disks",
-    "note": "Home page: a tab of a stored machine's pane. Its disks; their count follows in a pill."
+    "note": "Home page: a tab of a stored machine's pane. Its disks; their count follows in a pill when some are attached."
   },
   "MachinePane.tab.disksCount": {
     "message": "Disks ({{n}})",
@@ -1353,7 +1361,11 @@
   },
   "MachinePane.tab.network": {
     "message": "Network",
-    "note": "Home page: a tab of a stored machine's pane. Its network adapters."
+    "note": "Home page: a tab of a stored machine's pane. Its network adapters; their count follows in a pill when it has some."
+  },
+  "MachinePane.tab.networkCount": {
+    "message": "Network ({{n}})",
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its network adapters, when it has some; {{n}}: how many."
   },
   "MachinePane.tab.usbCount": {
     "message": "USB ({{n}})",

@@ -75,16 +75,20 @@
 </footer>
 
 <style>
-  /* The status bar: the power state first, then the machine's numbers. */
+  /* The status bar: the power state first, then the machine's numbers. Its height is fixed, a whole number of pixels
+     whatever its pieces' lines come to: the machine's screen above it fills what's left, and a fraction there would
+     blur it. */
   footer {
+    --link-size: var(--bar-text-sm);
+    --link-align: center;
     display: flex;
     align-items: center;
-    min-height: var(--control-h);
+    height: var(--control-h);
     padding: var(--space-2) var(--space-5);
     border-top: 1px solid var(--border);
     background: var(--surface-bar);
     color: var(--text-dim);
-    font-size: var(--text-sm);
+    font-size: var(--bar-text-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     overflow: hidden;

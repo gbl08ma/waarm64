@@ -2252,7 +2252,9 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - **`tests/page-clipboard-ui.test.ts`'s toolbar test times out under `scripts/ci.sh`'s load** (2026-11-08, VK4
   T49's run; again 2026-11-10, PERF loop 4's; no page change either time): `page.waitForFunction` past 30 s in
   `guestReads` (line 51: the terminal never showed the guest's read). It passed alone each time (27.6 s the second: at
-  the edge of its 30 s) and in the next full run. A wait that assumes the guest's pace, likely.
+  the edge of its 30 s) and in the next full run. A wait that assumes the guest's pace, likely. Again 2026-11-20 in the
+  demo's paused-start test (the host's copy after the grant never reached the agent within `guestReads`' 10 s; the
+  file passed alone, 5 of 5).
 
 - **THIRD_PARTY.md from THIRD_PARTY.json** ([third-party.md](third-party.md)): a CI job or GitHub workflow that writes
   the Markdown (`node tools/third-party.ts --markdown`) whenever the JSON changes, if a readable page is wanted again.

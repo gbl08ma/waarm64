@@ -16,7 +16,7 @@ export const screen = $state<{
   generation: number;
   size: { width: number; height: number };
   scale: number | undefined;
-  fitted: { width: number; height: number; pixelated: boolean } | undefined;
+  fitted: { width: number; height: number; pixelated: boolean; shift: { x: number; y: number } } | undefined;
   split: Split;
 }>({
   view: 'screen',
@@ -26,7 +26,10 @@ export const screen = $state<{
   size: { width: 300, height: 150 },
   /** Device pixels per guest pixel, as the screen was last fitted. */
   scale: undefined,
-  /** The canvas's size on the page (CSS pixels), and whether it is drawn crisp (a whole scale); none until fitted. */
+  /**
+   * The canvas's size on the page (CSS pixels), whether it is drawn crisp (a whole scale), and how far its frame is
+   * moved from the center (CSS pixels, under one device pixel) so it starts on a device pixel; none until fitted.
+   */
   fitted: undefined,
   /** Both's divider (`Split`): set only by the user's drag or keys, remembered per browser. */
   split: {},

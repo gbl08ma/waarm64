@@ -65,6 +65,16 @@ select {
   box-shadow: var(--key-edge);
   cursor: pointer;
 }
+/* A select's list: the browser draws it from the options' own colors, else the select's (its face is a gradient, its
+   background color none: the browser's white, under the page's light words). */
+option,
+optgroup {
+  background-color: var(--surface-raised);
+  color: var(--text);
+}
+option:disabled {
+  color: var(--text-dim);
+}
 /* A checkbox and a radio button are wells, lit when on (20 px with their margins, as the browser's own were: Check's
    note is indented by it). */
 input:is([type='checkbox'], [type='radio']) {

@@ -150,7 +150,7 @@ test('the compact letters\' page per layout: German\'s Ü, Ö and Ä beside the 
   const sym = de2.find((p) => p.id === 'symbols')!.keys.map((k) => k.code);
   assert.ok(!sym.includes('Quote') && !sym.includes('BracketLeft') && sym.includes('Minus') && sym.includes('IntlBackslash'));
   // JIS: Muhenkan left of Space, Henkan and Katakana/Hiragana right; on the symbols' page compact. None elsewhere.
-  const jp = fullKeys(keymapOf('jp')).filter((k) => k.y === 5.5).map((k) => k.code);
+  const jp = fullKeys(keymapOf('jp')).filter((k) => k.y === HEIGHT - 1).map((k) => k.code);
   assert.deepEqual(jp.slice(0, 11), ['ControlLeft', 'MetaLeft', 'AltLeft', 'NonConvert', 'Space', 'Convert', 'KanaMode', 'AltRight', 'MetaRight', 'ContextMenu', 'ControlRight']);
   assert.equal(fullKeys(keymapOf('jp')).find((k) => k.code === 'ArrowLeft')!.x, KEYS.find((k) => k.code === 'ArrowLeft')!.x);
   for (const c of IME_KEYS) assert.ok(pages(keymapOf('jp')).find((p) => p.id === 'symbols')!.keys.some((k) => k.code === c), c);

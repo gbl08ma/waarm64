@@ -1,6 +1,7 @@
 <!--
   The toolbar's Keys menu (docs/frontend.md "Input"): the on-screen keyboard, the combinations a browser or a desktop
-  takes (Esc, Ctrl+W…), Hold Esc, Ctrl+Alt+Del and Ctrl+Alt+F1–F12, sent to the guest.
+  takes (Esc, Ctrl+W…), Hold Esc, Ctrl+Alt+Del and Ctrl+Alt+F1–F12, sent to the guest. A Ctrl+click on its button
+  shows or hides the on-screen keyboard.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -8,6 +9,7 @@
   import { t } from '../i18n.ts';
   import { keys } from './areas/keys.svelte.ts';
   import { page } from './page.ts';
+  import { quickKey } from './quick-key.ts';
 
   let open = $state(false);
   const chord = (keys: string) => {
@@ -38,7 +40,17 @@
   }
 </script>
 
-<Menu id="keys" icon="keyboard" title={t('toolbar:KeysMenu.keys.title')} bind:open>
+<Menu
+  id="keys"
+  icon="keyboard"
+  title={t('toolbar:KeysMenu.keys.title')}
+  bind:open
+  quickHint={t(keys.osk ? 'toolbar:KeysMenu.quick.hide' : 'toolbar:KeysMenu.quick.show', { key: quickKey() })}
+  quick={() => {
+    page.showOsk(!keys.osk);
+    return true;
+  }}
+>
   <Button
     variant="item"
     id="osk-toggle"

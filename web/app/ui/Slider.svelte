@@ -1,6 +1,6 @@
 <!--
   A number on a slider, with notches under it at the suggested values and the value in words beside it (`label`): a
-  machine's vCPUs, RAM and JIT cache. It moves in `step`s from `min` to `max` (widened to take a `value` outside
+  machine's vCPUs, RAM and JIT cache, the Sound menu's volume. It moves in `step`s from `min` to `max` (widened to take a `value` outside
   them); dragged or clicked within `snap` of a notch, it lands on the notch (the keyboard's arrows step past them, so
   they never stick). A position can stand for another value (`stands`: RAM's 3 GiB is memory 0's 3071 MiB). `value` binds; `onchange` gets each new value. `id` and `field` (`data-field`) go on the input,
   the tests' handles (Playwright's `fill` sets it); `title` and `disabled` too. A parent sets the value's width with

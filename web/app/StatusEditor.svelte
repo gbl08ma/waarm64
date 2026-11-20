@@ -170,7 +170,7 @@
     border-radius: var(--radius);
     background: var(--surface-bar);
     color: var(--text-dim);
-    font-size: var(--text-sm);
+    font-size: var(--bar-text-sm);
     font-variant-numeric: tabular-nums;
   }
   .mark {

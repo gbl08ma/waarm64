@@ -34,7 +34,7 @@
 <style>
   h1 {
     margin: 0 var(--space-3) 0 var(--space-2);
-    font-size: var(--text-lg);
+    font-size: var(--bar-text-lg);
     font-weight: var(--weight-bold);
     color: var(--text);
   }

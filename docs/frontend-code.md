@@ -47,9 +47,11 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - fonts `--font`, `--font-mono`, `--line-height`, `--label-tracking` (a small capital label's spacing); weights
      `--weight-normal`, `--weight-medium` (the wordmark's dim half), `--weight-bold`;
    - heights `--control-h` (a button, a field: 28 px), `--tool-h` (a toolbar button: 32 px).
-4. **A small scale.** Spacing: `--space-1` to `--space-6` (2, 4, 8, 12, 16, 24 px). Text (a pixel over a system font's scale: Barlow's letters run small): `--text-xs` (12),
-   `--text-sm` (13: notes, small lines), `--text-md` (14: a dialog's explanation, a compact row), `--text-base` (15: the
-   page's words), `--text-lg` (18: titles). Radii: `--radius-sm` (2), `--radius` (3), `--radius-lg` (4). Reach for the
+4. **A small scale.** Spacing: `--space-1` to `--space-6` (2, 4, 8, 12, 16, 24 px). Text (two pixels over a system font's scale: Barlow's letters run small): `--text-xs` (13),
+   `--text-sm` (14: notes, small lines), `--text-md` (15: a dialog's explanation, a compact row), `--text-base` (16: the
+   page's words), `--text-lg` (19: titles). The toolbar and the status bar take their own steps half a pixel under
+   these (`--bar-text-xs` to `--bar-text-lg`, 12.5 to 18.5): the bars keep their heights (a menu's panel takes the
+   page's steps again). Radii: `--radius-sm` (2), `--radius` (3), `--radius-lg` (4). Reach for the
    nearest step rather than a new size; a new step needs a reason.
 5. **index.html holds no component styles.** The global layer is `theme/tokens.css` (the tokens) and `theme/base.css`
    (the reset, element defaults, `.sr`); `index.html` links both and keeps only the few rules of its own fallback (the
@@ -87,7 +89,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `Field` in `Fields`: a label, its control, a button beside it (`after`), a note; in a `Fields` grid the rows line
      up, elsewhere the label sits over the control.
    - `Slider`: a number on a slider, notches under it at the suggested values (a pointer snaps to one nearby), the
-     value in words beside it (a machine's vCPUs, RAM, JIT cache).
+     value in words beside it (a machine's vCPUs, RAM, JIT cache; the Sound menu's volume).
    - `Check`, `Radio`: a checkbox or a radio button and its words (`ref` binds Check's box).
    - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line; `after`: controls of its own inside
      its frame at the end, a connection's Edit…).

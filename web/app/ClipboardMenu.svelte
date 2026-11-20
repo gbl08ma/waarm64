@@ -6,7 +6,8 @@
   menu: the permission's item (Allow… while `prompt`, how to allow it while `denied`), the switch (paused for the run),
   Send the clipboard to the guest, Type the clipboard (and what became of it: the agent's TYPED), Copy the screen (a PNG
   of the display to the host's clipboard, with no agent: areas/clipboard-actions.ts `screenPng`), Copy the console's text (the
-  agent's COPY: the text console's screen as text, paused too; a console that shows graphics says so). Logic is web/app/clipboard.ts's, through
+  agent's COPY: the text console's screen as text, paused too; a console that shows graphics says so). A Ctrl+click
+  on its button flips the switch. Logic is web/app/clipboard.ts's, through
   `page`.
 -->
 <script lang="ts">
@@ -21,6 +22,7 @@
   import { clipboard } from './areas/clipboard.svelte.ts';
   import type { ShareState } from './clipboard.ts';
   import { page } from './page.ts';
+  import { quickKey } from './quick-key.ts';
 
   let open = $state(false);
   const c = $derived(clipboard);
@@ -75,6 +77,13 @@
   {title}
   bind:open
   panel
+  quickHint={t(c.state === 'paused' ? 'clipboard:ClipboardMenu.quick.share' : 'clipboard:ClipboardMenu.quick.pause', {
+    key: quickKey(),
+  })}
+  quick={() => {
+    page.clipboardPause(c.state !== 'paused');
+    return true;
+  }}
   data-state={c.state}
   data-permission={c.permission}
   data-stopped={c.stopped || undefined}

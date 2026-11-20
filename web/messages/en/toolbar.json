@@ -115,6 +115,10 @@
     "message": "Load a snapshot, returning the machine to the state it was in when the snapshot was taken.",
     "note": "Tooltip of the toolbar's Load snapshot menu button (history icon, after Snapshot)."
   },
+  "LoadSnapshotMenu.quick": {
+    "message": "{{key}}+click to restore the latest snapshot: <name>{{name}}</name>.",
+    "note": "Second line of the tooltip of the toolbar's Load snapshot button while the machine has a kept snapshot: a Ctrl+click on the button restores the latest (asking first) instead of opening the menu. {{name}} is the snapshot's name. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
+  },
   "LoadSnapshotMenu.load.latest": {
     "message": "Latest snapshots",
     "note": "Heading over the list of the machine's latest snapshots in the toolbar's Load snapshot menu."
@@ -174,6 +178,14 @@
   "KeysMenu.keys.title": {
     "message": "Send key combinations that the browser keeps for itself to the guest.",
     "note": "Tooltip of the toolbar's Keys menu button (keyboard icon): it sends key combinations the browser would take."
+  },
+  "KeysMenu.quick.show": {
+    "message": "{{key}}+click to show the on-screen keyboard.",
+    "note": "Second line of the tooltip of the toolbar's Keys button while the on-screen keyboard is hidden: a Ctrl+click on the button shows it instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
+  },
+  "KeysMenu.quick.hide": {
+    "message": "{{key}}+click to hide the on-screen keyboard.",
+    "note": "Second line of the tooltip of the toolbar's Keys button while the on-screen keyboard shows: a Ctrl+click on the button hides it instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
   },
   "KeysMenu.keys.osk": {
     "message": "Show the on-screen keyboard",
@@ -286,6 +298,14 @@
   "MouseMenu.mouse.title": {
     "message": "Mouse lock. Turn it on to give the machine the mouse, every button included, when you click the screen.",
     "note": "Tooltip of the toolbar's Mouse lock menu button while the lock is off."
+  },
+  "MouseMenu.quick.on": {
+    "message": "{{key}}+click to turn mouse lock on.",
+    "note": "Second line of the tooltip of the toolbar's Mouse lock button while the lock is off: a Ctrl+click on the button turns it on instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
+  },
+  "MouseMenu.quick.off": {
+    "message": "{{key}}+click to turn mouse lock off.",
+    "note": "Second line of the tooltip of the toolbar's Mouse lock button while the lock is on: a Ctrl+click on the button turns it off instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
   },
   "MouseMenu.mouse.lock.title": {
     "message": "When you click the screen, the machine gets the mouse. Every button reaches it, the back and forward ones included, and the browser hides its pointer. Press Esc to release the mouse.",

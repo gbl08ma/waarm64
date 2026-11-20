@@ -46,6 +46,8 @@ class Current {
   title = $derived(this.#source?.title() ?? '');
   /** A transient machine with a disk of its own: shown on the Home page as "this page's machine". */
   transient = $derived(this.#source?.transient());
+  /** A machine is on the page (a stored one, or a transient one with its disk), not a page waiting for a disk. */
+  loaded = $derived(this.id !== undefined || this.transient !== undefined);
   /** Its boot disk keeps its changes in this browser: Suspend, the disk's actions. */
   hasOverlay = $derived(this.#source?.hasOverlay() ?? false);
   /** A transient machine's size, chosen in the Machine menu (a stored machine's is in its Settings). */

@@ -2,13 +2,15 @@
   Sound (docs/frontend.md "Sound"): on by default; muted, the volume and the microphone's choices are kept in this
   browser. Any click or key on the page lets the browser play it (its autoplay rule): until one, the menu says sound is
   waiting. A guest that has the sound device's Master volume and switch (web/audio.ts) moves the volume and Sound on
-  here, and they move its.
+  here, and they move its. A Ctrl+click on the menu's button turns the sound on or off.
 -->
 <script lang="ts">
   import Menu from './ui/Menu.svelte';
   import Check from './ui/Check.svelte';
   import Field from './ui/Field.svelte';
   import Note from './ui/Note.svelte';
+  import Slider from './ui/Slider.svelte';
+  import { quickKey } from './quick-key.ts';
   import T from './T.svelte';
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
@@ -61,6 +63,12 @@
   title={summary}
   panel
   attention={waiting}
+  quickHint={t(on ? 'sound:Sound.quick.off' : 'sound:Sound.quick.on', { key: quickKey() })}
+  quick={() => {
+    on = !on;
+    keepSound();
+    return true;
+  }}
   data-waiting={waiting || undefined}
 >
   {#snippet badge()}<span id="sound-summary" class="sr">{summary}</span>{#if micState === 'on'}<span class="tag"
@@ -68,7 +76,17 @@
       >{/if}{/snippet}
   <Check id="sound-on" bind:checked={on} onchange={keepSound}>{t('sound:Sound.on')}</Check>
   <Field label={t('sound:Sound.volume')}
-    ><input id="sound-volume" type="range" min="0" max="100" step="1" bind:value={volume} oninput={keepSound} /></Field
+    ><Slider
+      id="sound-volume"
+      bind:value={volume}
+      min={0}
+      max={100}
+      step={1}
+      notches={[0, 25, 50, 75, 100]}
+      label={(n: number) => t('sound:Sound.volume.value', { n })}
+      onchange={keepSound}
+      --slider-value-w="4ch"
+    /></Field
   >
   <Check id="mic-on" bind:checked={mic} onchange={keepMic} title={t('sound:Sound.mic.title')}
     >{t('sound:Sound.mic')}</Check
@@ -85,7 +103,7 @@
 <style>
   /* The microphone's tag on the menu's button, while it listens. */
   .tag {
-    font-size: var(--text-xs);
+    font-size: var(--bar-text-xs);
     color: var(--accent);
   }
 </style>

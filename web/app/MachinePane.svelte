@@ -23,10 +23,11 @@
   import { pageConnectionState } from './net-state.ts';
   import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';
-  import type { DiskRecord, MachineRecord } from './shape.ts';
+  import { adaptersOf, type DiskRecord, type MachineRecord } from './shape.ts';
   import type { OverlayRecord, Store } from './store.ts';
   import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
   import { current } from './areas/current.svelte.ts';
+  import { records } from './areas/records.svelte.ts';
   import { isLive, power } from './areas/power.svelte.ts';
   import { inBar, page } from './page.ts';
 
@@ -50,34 +51,41 @@
   /** The record as stored, else the draft (a tab's lists show what's saved). */
   const saved = $derived(edit.record ?? m);
   const meta = $derived(m.id === current.id ? t('machines:MachinePane.head.stateHere', { state }) : text(state));
-  // A tab counts what it holds only when there is some (the Disks tab always).
-  const usbCount = $derived(m.usbDevices?.length ?? 0);
-  const folderCount = $derived(m.folders?.length ?? 0);
+  /** A tab that counts what it holds: the count in a pill and in its name, only when it holds some. */
+  const counted = (n: number, name: (n: number) => string) => (n > 0 ? { count: n, name: name(n) } : {});
+  const snapshotCount = $derived(records.snapshots.filter((s) => s.machine === m.id).length);
   const tabs = $derived<{ id: MachinesTab; icon: IconName; label: string; count?: number; name?: string }[]>([
     { id: 'settings', icon: 'settings', label: t('machines:MachinePane.tab.settings') },
     {
       id: 'disks',
       icon: 'database',
       label: t('machines:MachinePane.tab.disks'),
-      count: m.attachments.length,
-      name: t('machines:MachinePane.tab.disksCount', { n: m.attachments.length }),
+      ...counted(m.attachments.length, (n) => t('machines:MachinePane.tab.disksCount', { n })),
     },
-    { id: 'network', icon: 'network', label: t('machines:MachinePane.tab.network') },
+    {
+      id: 'network',
+      icon: 'network',
+      label: t('machines:MachinePane.tab.network'),
+      ...counted(adaptersOf(m).length, (n) => t('machines:MachinePane.tab.networkCount', { n })),
+    },
     {
       id: 'usb',
       icon: 'usb',
       label: t('machines:MachinePane.tab.usb'),
-      count: usbCount > 0 ? usbCount : undefined,
-      name: usbCount > 0 ? t('machines:MachinePane.tab.usbCount', { n: usbCount }) : undefined,
+      ...counted(m.usbDevices?.length ?? 0, (n) => t('machines:MachinePane.tab.usbCount', { n })),
     },
     {
       id: 'folders',
       icon: 'folder',
       label: t('machines:MachinePane.tab.folders'),
-      count: folderCount > 0 ? folderCount : undefined,
-      name: folderCount > 0 ? t('machines:MachinePane.tab.foldersCount', { n: folderCount }) : undefined,
+      ...counted(m.folders?.length ?? 0, (n) => t('machines:MachinePane.tab.foldersCount', { n })),
     },
-    { id: 'snapshots', icon: 'history', label: t('machines:MachinePane.tab.snapshots') },
+    {
+      id: 'snapshots',
+      icon: 'history',
+      label: t('machines:MachinePane.tab.snapshots'),
+      ...counted(snapshotCount, (n) => t('machines:MachinePane.tab.snapshotsCount', { n })),
+    },
   ]);
   /** The machine runs on this page, or is starting. */
   const busyHere = $derived(isLive(power.state) || power.state === 'loading');

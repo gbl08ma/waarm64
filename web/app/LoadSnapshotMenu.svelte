@@ -1,7 +1,7 @@
 <!--
   The toolbar's Load snapshot menu (docs/frontend.md "Snapshots"): the machine's latest kept snapshots (orphaned ones,
   of another shape or unrestorable for good, can't restore: shown, disabled, the reason in the tooltip), all of them
-  (its Snapshots tab), or a file.
+  (its Snapshots tab), or a file. A Ctrl+click on its button restores the latest (asked first, as from the menu).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -14,6 +14,7 @@
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
   import { inBar, page } from './page.ts';
+  import { quickKey } from './quick-key.ts';
   import { unrestorable } from './snapshots.ts';
   import { dependsOn, watchGenerations } from './snapshot-lost.ts';
 
@@ -58,6 +59,13 @@
       lost: unrestorable(s, (id) => records.disks.get(id), generations),
     })),
   );
+  /** A Ctrl+click: the latest kept snapshot restored, asked first as from the menu; none, the menu opens. */
+  function quick() {
+    const s = kept.at(0);
+    if (!s) return false;
+    inBar(() => page.restoreKept(s.id));
+    return true;
+  }
   /** Closes the menu, then does `f`. */
   const then = (f: () => void) => () => {
     open = false;
@@ -71,6 +79,10 @@
   title={t('toolbar:LoadSnapshotMenu.load.title')}
   bind:open
   disabled={power.busy}
+  {quick}
+  quickHint={latest.length
+    ? t('toolbar:LoadSnapshotMenu.quick', { key: quickKey(), name: kept.at(0)?.name })
+    : undefined}
 >
   {#if current.id}
     {@const id = current.id}

@@ -1,6 +1,6 @@
 <!--
   The toolbar's mouse lock menu (docs/frontend.md "Mouse lock"): the lock on or off, and its mode, the pointer (the
-  tablet) or Raw (the machine's mouse, when it has one).
+  tablet) or Raw (the machine's mouse, when it has one). A Ctrl+click on its button turns the lock on or off.
 -->
 <script lang="ts">
   import Check from './ui/Check.svelte';
@@ -11,6 +11,7 @@
   import { current } from './areas/current.svelte.ts';
   import { mouse } from './areas/mouse.svelte.ts';
   import { page } from './page.ts';
+  import { quickKey } from './quick-key.ts';
 
   function titleOf() {
     if (mouse.locked) return t('toolbar:MouseMenu.mouse.title.locked');
@@ -19,7 +20,18 @@
   const title = $derived(titleOf());
 </script>
 
-<Menu id="mouse-lock" icon="mouse" {title} on={mouse.lock} panel>
+<Menu
+  id="mouse-lock"
+  icon="mouse"
+  {title}
+  on={mouse.lock}
+  panel
+  quickHint={t(mouse.lock ? 'toolbar:MouseMenu.quick.off' : 'toolbar:MouseMenu.quick.on', { key: quickKey() })}
+  quick={() => {
+    page.setMouseLock(!mouse.lock);
+    return true;
+  }}
+>
   <Check
     id="mouse-lock-on"
     checked={mouse.lock}

@@ -131,7 +131,7 @@
   }
   /* The adapter's number on its button, after its light. */
   .digit {
-    font-size: var(--text-xs);
+    font-size: var(--bar-text-xs);
     font-weight: var(--weight-bold);
     color: var(--text-dim);
   }

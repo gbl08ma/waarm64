@@ -153,15 +153,22 @@
 
   /* Text. */
   /* Barlow (bundled: the imports above), a face of equipment labels; its letters run small, so the scale
-     sits a pixel over a system font's. `--label-tracking`: a small capital label's spacing (a list's heading). */
+     sits two pixels over a system font's. `--label-tracking`: a small capital label's spacing (a list's heading). */
   --font: 'Barlow', system-ui, sans-serif;
   --label-tracking: 0.12em;
   --font-mono: ui-monospace, monospace;
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-md: 14px;
-  --text-base: 15px;
-  --text-lg: 18px;
+  --text-xs: 13px;
+  --text-sm: 14px;
+  --text-md: 15px;
+  --text-base: 16px;
+  --text-lg: 19px;
+  /* The bars' (the toolbar's and the status bar's) own steps, half a pixel under the page's: the bars keep their
+     heights, and the status bar its room for pieces. A menu's panel takes the page's again. */
+  --bar-text-xs: 12.5px;
+  --bar-text-sm: 13.5px;
+  --bar-text-md: 14.5px;
+  --bar-text-base: 15.5px;
+  --bar-text-lg: 18.5px;
   --line-height: 1.4;
   --weight-normal: 400;
   --weight-medium: 500;

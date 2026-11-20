@@ -295,7 +295,12 @@ offers of a device that just appeared or has no permission here yet, Add a devic
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item
 by default (below, "The status bar"). Menus (`ui/Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
 elsewhere and open under their right edge (a page's Export menus under their left); a panel ends a step above the
-window's bottom and its contents scroll (many adapters, many USB devices), never the page.
+window's bottom and its contents scroll (many adapters, many USB devices), never the page. **A Ctrl+click** (Cmd+click)
+on a menu's button does what its switch inside does instead of opening it (`Menu`'s `quick`): Load snapshot restores
+the latest kept snapshot (asked first, as from the menu; with none kept the menu opens), Keys shows or hides the
+on-screen keyboard, Mouse lock turns the lock on or off, Sound turns the sound on or off, Clipboard pauses or resumes
+the sharing. The button's tooltip says on a second line what a Ctrl+click would do now (`quickHint`: "Ctrl+click to
+turn the sound off.", Cmd on a Mac: `quick-key.ts`).
 
 **Clipboard** (`ClipboardMenu.svelte`, [plans/clipboard.md](plans/clipboard.md) §4–§5; the logic is
 `web/app/clipboard.ts`'s `ClipboardShare`, with the guest-to-host way in `clipboard-guest.ts`, the transfers and ACKs in
@@ -490,7 +495,10 @@ edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab
 `PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
 called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav`, `openMachines`, `#machines-open`, kept
 theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
-address opens it, so a reload keeps it, and the older `#machines` still does): the toolbar leads back (below; or a view button). It has no bar of its own: what it's doing while an action runs is said at the end of its bottom bar (`StorageBar`'s `busy`). Its heading,
+address opens it, so a reload keeps it, and the older `#machines` still does): the toolbar leads back (below; or a view button), and,
+while a machine is on the page (a stored one, or a transient one with its disk: `current.loaded`), so do
+**[Back to the machine](ui:machines:MachinesNav.back)** at the foot of the left column and Esc (as it closes a dialog;
+not from a dialog, an open menu or a field being typed in). It has no bar of its own: what it's doing while an action runs is said at the end of its bottom bar (`StorageBar`'s `busy`). Its heading,
 **[Home](ui:machines:MachinesPage.heading)**, is for a screen reader alone (an `h2`, the toolbar's `h1` above it): it
 names the left column (a `nav`), and the list's heading and each pane's title (`h3`) are under it. The left
 column's **[Machines](ui:machines:MachinesNav.heading)** heads the list of machines, each said running (its Web Lock
@@ -504,7 +512,9 @@ machine from the definition that boots cold, the user's own; the store's loading
 [Try again](ui:machines:NewMachine.retry)) or none offered are said there, and Empty machine works throughout. The
 machine made is chosen. The chosen one:
 Open in this tab (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off, "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
-Duplicate, Export the definition, Delete; then tabs:
+Duplicate, Export the definition, Delete; then tabs, each of those that hold something (disks, network adapters, USB
+devices, shared folders, snapshots) with how many in a pill (`ui/Count.svelte`) when there are some, none at zero (the
+left column's Disks, Shared folders and Connections the same):
 - **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs and RAM on sliders (`ui/Slider.svelte`: notches at the suggested values, the value beside; `machine.ts` `CPU_SLIDER`, `RAM_SLIDER`: 1 to 8 vCPUs; 256 MiB to 16 GiB in 64 MiB steps, a notch every 512 MiB that a pointer snaps to within 128 MiB, the arrow keys stepping past it; its 3 GiB is 3071 MiB, memory 0 whole, rather than 3072 and a 1 MiB NUMA node; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
   the first holds at most 1,536 MiB: Venus's arena and window come first in memory 1) that the guest sees
   as NUMA nodes, slower to reach, and a note under the choice says so (`numaNote`, with the machine's Vulkan setting): [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
@@ -1384,7 +1394,11 @@ with 3D in use".
 The simple-framebuffer's canvas keeps the framebuffer's size; CSS scales it to an integer multiple **in device pixels**
 when one fits the view (`image-rendering: pixelated`: crisp at any `devicePixelRatio`), and
 scales it down smoothly when it doesn't fit at 1:1. A `ResizeObserver` and a `resolution` media
-query refit it.
+query refit it. Centered in its box, the canvas could start between device pixels (an odd room around it, a box of
+a fractional size, a fractional density) and smear each guest pixel over two: `fit` measures where it landed and moves
+its frame by what's left to the next device pixel (`screen.fitted.shift`). The status bar's height is fixed
+(`--control-h`) for the same reason: the bar's lines of text made it 29.19 px while a machine ran, and the screen's box
+the fraction under it (`tests/browser.test.ts` checks both at three window heights).
 
 **The guest's size follows the page** on a virtio-gpu machine (Debian's page). The page measures the
 screen's box (`wantedSize` in `areas/screen-view.ts`): CSS pixels by default, device pixels with the Screen menu's
@@ -1446,7 +1460,7 @@ page writes the context's output latency into the ring's header, and the guest g
   the sink's own clock plays the ring, so the guest's sound keeps time and nothing stalls, and the menu's summary
   reads [Sound: click to hear](ui:sound:Sound.summary.waiting) (with an accent border).
 - **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time), Volume
-  (0-100%: the gain is its cube, as PipeWire's and PulseAudio's sliders), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `waarm64.settings`); the summary reads
+  (0-100%, `ui/Slider.svelte` with a notch every 25%: the gain is its cube, as PipeWire's and PulseAudio's sliders), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `waarm64.settings`); the summary reads
   [Sound (muted)](ui:sound:Sound.summary.muted) when off. Not in the Machine menu, whose choices apply by a restart.
 - **The guest's mixer:** Volume and Sound on are the guest's `Master Playback Volume` and `Switch` (the sound
   device's controls, [devices.md](devices.md) "snd"), where its kernel has them (Linux 6.7 and later): a machine
@@ -1570,7 +1584,9 @@ the ↔ grip in the bar resizing it by its width, its height following in its la
 the keys scale with its width; a grip in a corner sat on the keypad's Enter); where it is and how wide is remembered
 (`settings().windows.osk`, a width per layout in its `sizes`; an older page's `settings().osk` is moved there once),
 kept in the window, no wider than the window's width or height allow; grown past the window's edge it is pushed back
-in. The toolbar's menus open over it.
+in. The toolbar's menus open over it. Its blocks (the main keys, the navigation keys, the keypad, and the function
+keys' row above the rest) are a quarter of a key apart (`osk-layout.ts` `GAP`), not a real keyboard's half: the keys
+are bigger in a window of the same size.
 
 - **The compact layout** (`osk-layout.ts` `pages`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
   600 px (`COMPACT_BELOW`: the full keyboard's keys are ~25 px there) gets it on its own. Its keys are on four pages,

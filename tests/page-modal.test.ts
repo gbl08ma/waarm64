@@ -259,6 +259,73 @@ test('a machine edited on the Home page while it is off on this page starts as i
   await context.close();
 });
 
+test('Home: a tab counts only what it holds; Back to the machine and Esc lead back once a machine is on the page; Ctrl+click flips a menu\'s switch', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  // Ctrl+click on a menu's button flips its switch and leaves the menu closed: the sound, the mouse lock, the
+  // on-screen keyboard.
+  const quick = async (menu: string) => {
+    await page.locator(`#${menu} > summary`).click({ modifiers: ['Control'] });
+    assert.equal(await page.locator(`#${menu}`).getAttribute('open'), null, `${menu} stays closed`);
+  };
+  const soundOn = () => page.locator('#sound-on').isChecked();
+  // The tooltip's second line says what a Ctrl+click would do now.
+  const hint = async (menu: string) => (await page.locator(`#${menu} > summary`).getAttribute('title'))?.split('\n')[1];
+  const was = await soundOn();
+  assert.equal(await hint('sound-menu'), t(was ? 'sound:Sound.quick.off' : 'sound:Sound.quick.on', { key: 'Ctrl' }));
+  await quick('sound-menu');
+  assert.equal(await soundOn(), !was);
+  assert.equal(await hint('sound-menu'), t(was ? 'sound:Sound.quick.on' : 'sound:Sound.quick.off', { key: 'Ctrl' }));
+  await quick('sound-menu');
+  assert.equal(await soundOn(), was);
+  const lock = () => page.locator('#mouse-lock').getAttribute('data-on');
+  await quick('mouse-lock');
+  assert.equal(await lock(), 'true');
+  await quick('mouse-lock');
+  assert.equal(await lock(), null);
+  assert.equal(await hint('keys'), t('toolbar:KeysMenu.quick.show', { key: 'Ctrl' }));
+  await quick('keys');
+  assert.equal(await page.locator('#osk-toggle').getAttribute('aria-pressed'), 'true');
+  assert.equal(await hint('keys'), t('toolbar:KeysMenu.quick.hide', { key: 'Ctrl' }));
+  await quick('keys');
+  assert.equal(await page.locator('#osk-toggle').getAttribute('aria-pressed'), 'false');
+
+  const home = page.locator('#machines-open');
+  const back = page.locator('[data-action=back-to-machine]');
+  await openHome(page);
+  await newEmptyMachine(page);
+  const m = modal(page).locator('section.machine[data-selected]');
+  // An empty machine: one network adapter, nothing else; a tab holding none shows no count.
+  await m.locator('[data-tab=settings]').waitFor();
+  const counts = await m.locator('[data-tab]').evaluateAll((tabs) =>
+    Object.fromEntries(tabs.map((b) => [(b as HTMLElement).dataset.tab, b.querySelector('.count')?.textContent ?? null])),
+  );
+  assert.deepEqual(counts, { settings: null, disks: null, network: '1', usb: null, folders: null, snapshots: null });
+  // No machine on the page yet: no way back, and Esc keeps Home.
+  assert.equal(await back.count(), 0);
+  await page.keyboard.press('Escape');
+  assert.equal(await home.getAttribute('aria-pressed'), 'true');
+  await m.locator('[data-action=open]').click();
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 10_000 });
+  // On the page: the list's foot leads back, and so does Esc, but not from a field being typed in.
+  await openHome(page);
+  await back.click();
+  assert.equal(await home.getAttribute('aria-pressed'), 'false');
+  await openHome(page);
+  await m.locator('[data-tab=settings]').click();
+  await m.locator('[data-field=name]').press('Escape');
+  assert.equal(await home.getAttribute('aria-pressed'), 'true', 'Esc in a field keeps Home');
+  await m.locator('[data-tab=settings]').click();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5_000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test("Add a disk's size (ui/SizeField.svelte): a number and its unit, the same size across a unit's change, refused empty or past the most, the disk made that size", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();

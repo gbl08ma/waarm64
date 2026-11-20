@@ -3,6 +3,14 @@
     "message": "Clipboard sharing is on. Text and images you copy on your computer reach the guest, and text and images copied in the guest reach your computer.",
     "note": "Tooltip of the toolbar's clipboard button (shown while the running machine shares the clipboard), while it shares and nothing limits it."
   },
+  "ClipboardMenu.quick.pause": {
+    "message": "{{key}}+click to stop sharing the clipboard.",
+    "note": "Second line of the tooltip of the toolbar's Clipboard button while the clipboard is shared (or waiting for the guest): a Ctrl+click on the button pauses the sharing instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
+  },
+  "ClipboardMenu.quick.share": {
+    "message": "{{key}}+click to share the clipboard.",
+    "note": "Second line of the tooltip of the toolbar's Clipboard button while the sharing is paused: a Ctrl+click on the button turns it on instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
+  },
   "ClipboardMenu.title.limited": {
     "message": "Clipboard sharing is on. Until this web app may see the clipboard, the guest gets what you copy on your computer only when you paste with the keyboard while the guest's screen has the focus, not from the guest's own menus.",
     "note": "Tooltip of the toolbar's clipboard button while it shares but the browser hasn't allowed reading the clipboard (asked or blocked), or the reads stopped (ClipboardMenu.stopped). The button has a mark then."

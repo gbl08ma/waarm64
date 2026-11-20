@@ -176,7 +176,7 @@
     border-radius: 999px;
     background: var(--primary-border);
     color: var(--primary-fg);
-    font-size: var(--text-xs);
+    font-size: var(--bar-text-xs);
     line-height: 14px;
     text-align: center;
   }

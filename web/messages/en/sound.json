@@ -31,6 +31,18 @@
     "message": "Volume",
     "note": "Label of the volume slider in the toolbar's Sound menu."
   },
+  "Sound.volume.value": {
+    "message": "{{n}}%",
+    "note": "The toolbar's Sound menu: the volume in words, beside its slider (and its value for a screen reader). {{n}}: the volume, 0–100."
+  },
+  "Sound.quick.off": {
+    "message": "{{key}}+click to turn the sound off.",
+    "note": "Second line of the tooltip of the toolbar's Sound button while the sound is on: a Ctrl+click on the button turns it off instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
+  },
+  "Sound.quick.on": {
+    "message": "{{key}}+click to turn the sound on.",
+    "note": "Second line of the tooltip of the toolbar's Sound button while the sound is off: a Ctrl+click on the button turns it on instead of opening the menu. {{key}} is the key held for it: Ctrl, or Cmd on a Mac."
+  },
   "Sound.mic": {
     "message": "Microphone",
     "note": "Checkbox in the toolbar's Sound menu: when the machine records, it gets the page's microphone (unticked: silence)."

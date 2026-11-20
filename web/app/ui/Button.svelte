@@ -127,7 +127,7 @@
   .tool.labelled {
     gap: var(--space-3);
     padding: 0 var(--space-4) 0 var(--space-3);
-    font-size: var(--text-md);
+    font-size: var(--bar-text-md);
   }
   /* A tool that's on: sunk, its legend lit. */
   .tool[aria-pressed='true'] {
@@ -148,12 +148,14 @@
   .item[aria-pressed='true'] {
     color: var(--accent);
   }
-  /* Words in the accent, framed by nothing: they read as a link, and act at once (a dialog opens). */
+  /* Words in the accent, framed by nothing: they read as a link, and act at once (a dialog opens). A bar's link takes
+     the bar's size and is centered on its line as the bar's other words are (`--link-size`, `--link-align`: the status
+     bar's RAM). */
   .link {
-    align-self: flex-start;
+    align-self: var(--link-align, flex-start);
     padding: 0;
     color: var(--accent);
-    font-size: var(--text-sm);
+    font-size: var(--link-size, var(--text-sm));
   }
   .link:hover {
     background: transparent;

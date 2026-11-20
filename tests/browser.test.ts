@@ -421,6 +421,23 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
     .catch(async (e) => { throw new Error(`${e}; the terminal shows: ${await terminal()}`); });
   await state('running');
   assert.deepEqual(await page.evaluate(() => { const c = document.querySelector('canvas')!; return [c.width, c.height, Number.isInteger(Number(c.dataset.scale))]; }), [640, 480, true]);
+  // At a whole scale the screen starts on a device pixel at any window height (the status bar's height is fixed,
+  // whatever its pieces' lines come to; the frame is moved to the next device pixel): a fraction smeared each pixel
+  // over two.
+  const placed = () => page.evaluate(() => {
+    const r = document.getElementById('screen')!.getBoundingClientRect();
+    return { left: r.left, top: r.top, main: document.querySelector('main')!.getBoundingClientRect().height, footer: document.querySelector('footer')!.getBoundingClientRect().height };
+  });
+  for (const height of [900, 901, 963]) {
+    await page.setViewportSize({ width: 1400, height });
+    await page.waitForFunction(() => {
+      const r = document.getElementById('screen')!.getBoundingClientRect();
+      return Number.isInteger(r.left) && Number.isInteger(r.top);
+    }, null, { timeout: 5_000 }).catch(async () => assert.fail(`at ${height} px: ${JSON.stringify(await placed())}`));
+    const at = await placed();
+    assert.ok(Number.isInteger(at.main) && at.footer === 28, `at ${height} px: ${JSON.stringify(at)}`);
+  }
+  await page.setViewportSize({ width: 1400, height: 900 });
   // The machine worker draws the screen (a transferred canvas): two pixels written to /dev/fb0 show.
   await page.locator('.xterm').click();
   await page.keyboard.type("printf '\\377\\377\\377\\377' >/dev/fb0; printf '\\0\\0\\377\\0' | dd of=/dev/fb0 bs=4 seek=64010 2>/dev/null; echo dr\"\"awn\n");

@@ -7,9 +7,17 @@ import { KEYMAPS, type Keymap } from './keymaps.ts';
 /** A key: its code, where it is and how big, in key widths (`u`). */
 export type Key = { code: string; x: number; y: number; w: number; h: number };
 
+/**
+ * The gap between the full keyboard's blocks (the main keys, the navigation keys, the keypad; the function keys' row
+ * and the rest), in key widths: a quarter, narrower than a real keyboard's half, so the keys are bigger in a window
+ * of the same size.
+ */
+const GAP = 0.25;
 /** The layout's size in key widths. */
-export const WIDTH = 23,
-  HEIGHT = 6.5;
+export const WIDTH = 22 + 2 * GAP,
+  HEIGHT = 6 + GAP;
+/** Where the keypad's last column starts (its tall Add and Enter). */
+const NUMPAD_END = 21 + 2 * GAP;
 
 /** Row `y` from `x`: a code is a key 1u wide, `[code, w]` a wider one, a number a gap. */
 function row(y: number, x: number, items: (string | [string, number] | number)[], h = 1): Key[] {
@@ -75,70 +83,70 @@ export function fullKeys(map: Keymap = US): Key[] {
       ...F(5, 8),
       0.5,
       ...F(9, 12),
-      0.5,
+      GAP,
       'PrintScreen',
       'ScrollLock',
       'Pause',
     ]),
-    ...row(1.5, 0, [
+    ...row(1 + GAP, 0, [
       'Backquote',
       ...'1234567890'.split('').map((d) => `Digit${d}`),
       'Minus',
       'Equal',
       ...(yen ? ['IntlYen', ['Backspace', 1] as [string, number]] : [['Backspace', 2] as [string, number]]),
-      0.5,
+      GAP,
       'Insert',
       'Home',
       'PageUp',
-      0.5,
+      GAP,
       'NumLock',
       'NumpadDivide',
       'NumpadMultiply',
       'NumpadSubtract',
     ]),
-    ...row(2.5, 0, [
+    ...row(2 + GAP, 0, [
       ['Tab', 1.5],
       ...letters('QWERTYUIOP'),
       'BracketLeft',
       'BracketRight',
       ['Backslash', 1.5],
-      0.5,
+      GAP,
       'Delete',
       'End',
       'PageDown',
-      0.5,
+      GAP,
       'Numpad7',
       'Numpad8',
       'Numpad9',
     ]),
-    ...row(2.5, 22, ['NumpadAdd'], 2),
-    ...row(3.5, 0, [
+    ...row(2 + GAP, NUMPAD_END, ['NumpadAdd'], 2),
+    ...row(3 + GAP, 0, [
       ['CapsLock', 1.75],
       ...letters('ASDFGHJKL'),
       'Semicolon',
       'Quote',
       ['Enter', 2.25],
-      4,
+      3 + 2 * GAP,
       'Numpad4',
       'Numpad5',
       'Numpad6',
     ]),
-    ...row(4.5, 0, [
+    ...row(4 + GAP, 0, [
       ...(iso ? [['ShiftLeft', 1.25] as [string, number], 'IntlBackslash'] : [['ShiftLeft', 2.25] as [string, number]]),
       ...letters('ZXCVBNM'),
       'Comma',
       'Period',
       'Slash',
       ...(ro ? ['IntlRo', ['ShiftRight', 1.75] as [string, number]] : [['ShiftRight', 2.75] as [string, number]]),
-      1.5,
+      1 + GAP,
       'ArrowUp',
-      1.5,
+      1 + GAP,
       'Numpad1',
       'Numpad2',
       'Numpad3',
     ]),
-    ...row(4.5, 22, ['NumpadEnter'], 2),
-    ...row(5.5, 0, [
+    ...row(4 + GAP, NUMPAD_END, ['NumpadEnter'], 2),
+    ...row(5 + GAP, 0, [
       ...(jis
         ? JIS_BOTTOM
         : ([
@@ -151,11 +159,11 @@ export function fullKeys(map: Keymap = US): Key[] {
             ['ContextMenu', 1.25],
             ['ControlRight', 1.25],
           ] as [string, number][])),
-      0.5,
+      GAP,
       'ArrowLeft',
       'ArrowDown',
       'ArrowRight',
-      0.5,
+      GAP,
       ['Numpad0', 2],
       'NumpadDecimal',
     ]),

@@ -63,8 +63,8 @@ test('the message: one line of text centered on its buttons', async () => {
   await page.locator('#message .banner').evaluate((e) => Promise.all(e.getAnimations().map((a) => a.finished)));
   const mid = (sel: string) => page.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; });
   const [text, button, close] = [await mid('#message-body'), await mid('#message-actions button'), await mid('#message-close')];
-  const height = await page.locator('#message-text').evaluate((e) => e.getBoundingClientRect().height);
-  assert.ok(height < 20, `one line: ${height}px`);
+  const [height, line] = await page.locator('#message-text').evaluate((e) => [e.getBoundingClientRect().height, parseFloat(getComputedStyle(e).lineHeight)]);
+  assert.ok(height < 1.5 * line, `one line: ${height}px, a line ${line}px`);
   assert.ok(Math.abs(text - button) <= 0.5 && Math.abs(close - button) <= 0.5, `centers: text ${text}, button ${button}, close ${close}`);
   await page.close();
 });

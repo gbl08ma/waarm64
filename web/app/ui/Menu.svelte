@@ -7,7 +7,10 @@
   column of what it's given, a step apart: its content is the primitives (`Button variant="item"` for a command,
   Field, Check, Radio, Note) and the caller's own markup. The summary is styled here as Button's `tool` is (a summary
   can't be a Button); `variant` `bordered` frames it as a bordered Button (a menu among a pane's or a card's buttons:
-  a disk's Export).
+  a disk's Export). `quick`: what a Ctrl+click (Cmd+click) on the button does instead of opening the menu, the switch
+  inside flipped (the sound, the mouse lock…); it returns false when it can't, and the menu opens as on a click.
+  `quickHint` says what it would do now, on the tooltip's second line (the button's name for a screen reader is the
+  `title` alone).
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -33,6 +36,10 @@
     variant?: 'tool' | 'bordered';
     on?: boolean;
     attention?: boolean;
+    /** A Ctrl+click's shortcut instead of opening: true if it did it. */
+    quick?: () => boolean;
+    /** What the Ctrl+click would do now, on its own line under the tooltip. */
+    quickHint?: string;
     children: Snippet;
     badge?: Snippet;
     [attr: string]: unknown;
@@ -51,6 +58,8 @@
     variant = 'tool',
     on = false,
     attention = false,
+    quick,
+    quickHint,
     children,
     badge,
     ...rest
@@ -105,11 +114,12 @@
     bind:this={button}
     class={[variant, { attention }]}
     id={summaryId}
-    {title}
+    title={quickHint ? `${title}\n${quickHint}` : title}
     aria-label={label ? undefined : title}
     aria-disabled={disabled || undefined}
     onclick={(e) => {
       if (disabled) e.preventDefault();
+      else if ((e.ctrlKey || e.metaKey) && !open && quick?.()) e.preventDefault();
     }}
   >
     <Icon name={icon} />{#if label}<span class="label">{label}</span>{/if}{@render badge?.()}<Icon
@@ -195,7 +205,7 @@
     background: transparent;
   }
   .label {
-    font-size: var(--text-md);
+    font-size: var(--bar-text-md);
   }
   .items {
     position: absolute;
@@ -206,6 +216,7 @@
     flex-direction: column;
     min-width: 180px;
     padding: var(--space-2);
+    font-size: var(--text-base);
     background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius);
