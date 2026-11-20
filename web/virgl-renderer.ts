@@ -23,7 +23,6 @@ import {
   type ProgramKey,
   type ProgramLayout,
   type SamplerKey,
-  type Tgsi,
 } from './virgl-tgsi.ts';
 import {
   padPlane,
@@ -34,29 +33,38 @@ import {
   type VideoStats,
   type VideoStream,
 } from './virgl-video.ts';
-import { bytes, type Ram, type Segment } from './ram.ts';
+import { bytes, type Ram } from './ram.ts';
 import { walk } from './virgl.ts';
 import { msg, type Msg } from './msg.ts';
-
-/** A resource's guest pages: offsets into guest RAM and lengths. */
-/** A resource's guest pages: segments of guest RAM (memory, offset, length; web/devices.ts `Segment`). */
-export type Backing = Segment[];
-
-export type ResourceDesc = {
-  id: number;
-  target: number;
-  format: number;
-  bind: number;
-  width: number;
-  height: number;
-  depth: number;
-  arraySize: number;
-  lastLevel: number;
-  samples: number;
-  flags: number;
-};
-
-export type Box = { x: number; y: number; z: number; w: number; h: number; d: number };
+import {
+  type Backing,
+  type Blend,
+  type Box,
+  type Ctx,
+  type Dsa,
+  type ExternalResource,
+  type ExternalSource,
+  type Obj,
+  type Program,
+  type Query,
+  type RendererSnapshot,
+  type Res,
+  type ResourceDesc,
+  type SamplerState,
+  type SamplerView,
+  type SavedLevel,
+  type SavedObject,
+  type SavedResource,
+  type SavedSub,
+  type Shader,
+  type SoOutput,
+  type SoPlan,
+  type SoTarget,
+  type Span,
+  type Stage,
+  type Sub,
+} from './virgl-objects.ts';
+import { readbackOf, snapshotReader, uif, viewFor } from './virgl-pixels.ts';
 
 /** What a renderer does with the device's commands (the device worker calls these through `VirglHost`). */
 export type RendererStats = {
@@ -81,264 +89,6 @@ function indexWritten(r: { ibuf?: WebGLBuffer; ilo?: number; ihi?: number }, lo:
     r.ihi = Math.max(r.ihi, hi);
   } else [r.ilo, r.ihi] = [lo, hi];
 }
-
-type Res = ResourceDesc & {
-  fmt?: Format;
-  backing: Backing | null;
-  /** A buffer: its GL buffer (ARRAY_BUFFER and the like), its CPU copy, and an element-array twin made on demand. */
-  buf?: WebGLBuffer;
-  shadow?: Uint8Array;
-  ibuf?: WebGLBuffer;
-  /** The bytes `[ilo, ihi)` of `shadow` written since `ibuf` last had them (none: `ihi` 0); `ibuf` holds the rest. */
-  ilo?: number;
-  ihi?: number;
-  /** Whether ranges of an index buffer hold the type's largest index (`holdsMax`), by offset, count and size. */
-  imax?: Map<string, boolean>;
-  /** A texture (or a renderbuffer, multisampled or stencil-only). */
-  tex?: WebGLTexture;
-  glTarget?: number;
-  rb?: WebGLRenderbuffer;
-  /** A multisampled resource sampled: its resolved texture, made again at each draw that samples it. */
-  msResolved?: Res;
-  /** A texture sampled by a draw into it: the copy it is sampled from, made again at each such draw (`feedbackCopies`). */
-  feedback?: Res;
-  /**
-   * A video plane whose decoded picture is smaller than it (the plane is whole blocks: 864 wide for an 854-wide video):
-   * the picture alone, what draws sample. A player imports the plane at the picture's size, and virgl's import doesn't
-   * reach the host, so sampling the whole plane showed its padding at the edge. Dropped when anything else writes the
-   * plane (`writePicture`).
-   */
-  picture?: Res;
-  /** A format WebGL can't render to (so no framebuffer reads it): its uploaded texels by level, for copies from it. */
-  texels?: Map<number, Uint8Array>;
-  /** A compressed format (nothing reads it back): its uploaded blocks by level, every layer, for a snapshot. */
-  blocks?: Map<number, Uint8Array>;
-  /** Contexts holding it (unref'd by the guest while attached somewhere: the GL objects live until the last goes). */
-  refs: Set<number>;
-  dead?: boolean;
-  /** Another renderer's blob, typed by the guest (`ExternalResource`): its texture holds that renderer's bytes. */
-  external?: true;
-  /** An external resource's first plane's stride, as the guest typed it. */
-  stride?: number;
-};
-
-/**
- * A blob resource of another renderer (Venus's: a Vulkan program's WSI image, docs/devices.md "Venus") that the guest's
- * compositor imported (a dma-buf) and typed (PIPE_RESOURCE_SET_TYPE): a texture of the format and size the guest said,
- * whose bytes the other renderer writes (`ExternalSource`, `VirglRenderer.writeExternal`).
- */
-/** `stride`: the bytes between rows of the guest's import (its first plane's; 0 if it didn't say): a prime blit's buffer is read with it. */
-export type ExternalResource = {
-  readonly id: number;
-  readonly width: number;
-  readonly height: number;
-  readonly format: number;
-  readonly stride?: number;
-  readonly dead?: boolean;
-};
-/** Where external resources' bytes come from (web/venus-share.ts). */
-export type ExternalSource = {
-  /** Whether `id` is one of its blobs (the guest may type it). */
-  has(id: number): boolean;
-  /** At the start of a submit of a context it is attached to: its bytes written again if they changed. */
-  refresh(r: ExternalResource): void;
-};
-
-type Blend = {
-  independent: boolean;
-  logicop: boolean;
-  alphaToCoverage: boolean;
-  rt: {
-    enable: boolean;
-    rgbFunc: number;
-    rgbSrc: number;
-    rgbDst: number;
-    aFunc: number;
-    aSrc: number;
-    aDst: number;
-    mask: number;
-  }[];
-};
-type Dsa = {
-  depth: { enabled: boolean; write: boolean; func: number };
-  alpha: { enabled: boolean; func: number; ref: number };
-  stencil: {
-    enabled: boolean;
-    func: number;
-    fail: number;
-    zpass: number;
-    zfail: number;
-    valueMask: number;
-    writeMask: number;
-  }[];
-};
-type Rasterizer = {
-  flatshade: boolean;
-  depthClip: boolean;
-  clipHalfz: boolean;
-  discard: boolean;
-  lightTwoSide: boolean;
-  spriteUpperLeft: boolean;
-  pointQuad: boolean;
-  cullFace: number;
-  scissor: boolean;
-  frontCcw: boolean;
-  clampFragmentColor: boolean;
-  offsetTri: boolean;
-  stipple: boolean;
-  pointSizePerVertex: boolean;
-  multisample: boolean;
-  pointSize: number;
-  spriteCoordEnable: number;
-  lineWidth: number;
-  offsetUnits: number;
-  offsetScale: number;
-};
-type Shader = {
-  serial: number;
-  type: number;
-  tgsi?: Tgsi;
-  error?: string;
-  text: string;
-  expected: number;
-  so?: { strides: number[]; outputs: { reg: number; start: number; comps: number; buffer: number; offset: number }[] };
-};
-type VertexElements = { offset: number; divisor: number; vb: number; format: number }[];
-type SamplerView = {
-  res: number;
-  format: number;
-  target: number;
-  first: number;
-  last: number;
-  firstLevel: number;
-  lastLevel: number;
-  swizzle: number[];
-};
-type SamplerState = {
-  wrap: number[];
-  minImg: number;
-  minMip: number;
-  magImg: number;
-  compare: boolean;
-  compareFunc: number;
-  maxAniso: number;
-  lodBias: number;
-  minLod: number;
-  maxLod: number;
-  sampler?: WebGLSampler;
-};
-type Surface = { res: number; format: number; level: number; firstLayer: number; lastLayer: number };
-type Query = {
-  type: number;
-  index: number;
-  res: number;
-  offset: number;
-  pending?: boolean;
-  result: number;
-  /** Begun and not ended. */ active?: boolean;
-  /** An occlusion query's spans: the WebGL queries that counted its sub-context's draws while it was active (`countQueries`). */
-  spans?: Span[];
-  /** Whether a span already read passed (`foldSpans`: a query left active keeps few spans). */
-  passed?: boolean;
-};
-/**
- * A WebGL query counting one sub-context's draws for the occlusion queries active in it then (`users` of them share
- * it); `lost`: WebGL will never answer it.
- */
-type Span = { q: WebGLQuery; done: boolean; passed: boolean; users: number; lost?: boolean };
-/** A stream output target: a buffer's range, and the bytes written into it since it was last bound without append. */
-type SoTarget = { res: number; offset: number; size: number; filled: number };
-type SoOutput = NonNullable<Shader['so']>['outputs'][number];
-/**
- * How a draw's stream output goes to WebGL2: every output captured interleaved, as bits, into one scratch buffer
- * (`total` words a vertex, in `outputs`' order), then scattered into its target at its offset (`targets`: each buffer
- * index used, its stride in words). GLES 3.0's own layouts (one buffer packed, or one output a buffer, a few words
- * each) can't express Gallium's (several outputs a buffer, several buffers, gaps).
- */
-type SoPlan = {
-  outputs: SoOutput[];
-  total: number;
-  targets: { buffer: number; t: SoTarget; r: Res; stride: number }[];
-};
-type Obj =
-  | { kind: 'blend'; v: Blend }
-  | { kind: 'dsa'; v: Dsa }
-  | { kind: 'rs'; v: Rasterizer }
-  | { kind: 'shader'; v: Shader }
-  | { kind: 've'; v: VertexElements }
-  | { kind: 'view'; v: SamplerView }
-  | { kind: 'sampler'; v: SamplerState }
-  | { kind: 'surface'; v: Surface }
-  | { kind: 'query'; v: Query }
-  | { kind: 'so'; v: SoTarget };
-
-type Stage = 'vs' | 'fs';
-type Sub = {
-  id: number;
-  objects: Map<number, Obj>;
-  shaders: { vs?: Shader; fs?: Shader };
-  blend?: Blend;
-  dsa?: Dsa;
-  rs?: Rasterizer;
-  ve?: VertexElements;
-  vbs: { stride: number; offset: number; res: number }[];
-  ib: { res: number; size: number; offset: number } | null;
-  consts: Record<Stage, Uint32Array>;
-  ubos: Record<Stage, Map<number, { res: number; offset: number; length: number }>>;
-  views: Record<Stage, (SamplerView | undefined)[]>;
-  samplers: Record<Stage, (SamplerState | undefined)[]>;
-  fb: { cbufs: (Surface | undefined)[]; zs?: Surface };
-  viewport: { scale: number[]; translate: number[] };
-  scissor: { minx: number; miny: number; maxx: number; maxy: number };
-  stencilRef: [number, number];
-  blendColor: number[];
-  stipple: Uint32Array;
-  sampleMask: number;
-  so: { targets: (SoTarget | undefined)[]; tf?: WebGLTransformFeedback; seen: Set<string> };
-  vao?: WebGLVertexArrayObject;
-  /** A long shader arriving in pieces (VIRGL_OBJ_SHADER_OFFSET_CONT), by stage. */
-  longShader: Map<number, { handle: number; shader: Shader }>;
-  /** The occlusion queries begun and not ended. */
-  occlusion: Set<Query>;
-};
-type Ctx = { id: number; subs: Map<number, Sub>; sub: Sub; attached: Set<number>; video?: VideoContext };
-
-/** A resource's level in a snapshot: bytes as an upload takes them (every layer), or every depth (floats) then every stencil byte (`zs`). */
-export type SavedLevel = { level: number; how: 'bytes' | 'zs'; data: Uint8Array };
-/** A resource in a snapshot; `lost`: what of its contents couldn't be read back (they load as zeros). */
-export type SavedResource = { desc: ResourceDesc; backing: Backing | null; levels: SavedLevel[]; lost?: string };
-type SavedObject = { handle: number; kind: Obj['kind']; v: unknown };
-/** A sub-context in a snapshot: its objects, and its bound state naming them by their place in `objects` (null: none). */
-type SavedSub = {
-  id: number;
-  objects: SavedObject[];
-  shaders: { vs: number | null; fs: number | null };
-  blend: number | null;
-  dsa: number | null;
-  rs: number | null;
-  ve: number | null;
-  vbs: Sub['vbs'];
-  ib: Sub['ib'];
-  consts: Record<Stage, number[]>;
-  ubos: Record<Stage, [number, { res: number; offset: number; length: number }][]>;
-  views: Record<Stage, (number | null)[]>;
-  samplers: Record<Stage, (number | null)[]>;
-  fb: { cbufs: (number | null)[]; zs: number | null };
-  viewport: Sub['viewport'];
-  scissor: Sub['scissor'];
-  stencilRef: [number, number];
-  blendColor: number[];
-  stipple: number[];
-  sampleMask: number;
-  so: { targets: (number | null)[]; seen: string[] };
-  longShader: [number, { handle: number; shader: number }][];
-};
-/** A context in a snapshot: its sub-contexts, the current one, the resources attached. */
-export type SavedContext = { id: number; sub: number; attached: number[]; subs: SavedSub[] };
-/** What `VirglRenderer.save` gives and `load` takes: JSON, but for the contents (`SavedLevel.data`). */
-export type RendererSnapshot = { version: 1; resources: SavedResource[]; contexts: SavedContext[] };
-
-type Program = { prog: WebGLProgram; layout: ProgramLayout; loc: Map<string, WebGLUniformLocation | null> };
 
 const PIPE_BUFFER = 0,
   PIPE_TEXTURE_1D = 1,
@@ -414,43 +164,6 @@ const PRIM = [E.POINTS, E.LINES, E.LINE_LOOP, E.LINE_STRIP, E.TRIANGLES, E.TRIAN
 /** The primitives `n` vertices make, per Gallium primitive (PRIM's order). */
 const primitives = (mode: number, n: number) =>
   [n, n >> 1, n >= 2 ? n : 0, Math.max(0, n - 1), Math.floor(n / 3), Math.max(0, n - 2), Math.max(0, n - 2)][mode] ?? 0;
-
-const f32 = new Float32Array(1),
-  u32 = new Uint32Array(f32.buffer);
-const uif = (b: number) => {
-  u32[0] = b;
-  return f32[0];
-};
-
-/** The typed-array view WebGL wants for pixel data of a GL type. */
-function viewFor(type: number, bytes: Uint8Array): ArrayBufferView | null {
-  const size =
-    type === E.UNSIGNED_BYTE || type === E.BYTE
-      ? 1
-      : [E.UNSIGNED_SHORT, E.SHORT, E.HALF_FLOAT, 0x8363, 0x8033, 0x8034].includes(type)
-        ? 2
-        : 4;
-  if (bytes.byteOffset % size) bytes = bytes.slice();
-  const buf = bytes.buffer,
-    off = bytes.byteOffset,
-    n = Math.floor(bytes.byteLength / size);
-  switch (type) {
-    case E.UNSIGNED_BYTE:
-      return bytes;
-    case E.BYTE:
-      return new Int8Array(buf, off, n);
-    case E.SHORT:
-      return new Int16Array(buf, off, n);
-    case E.INT:
-      return new Int32Array(buf, off, n);
-    case E.FLOAT:
-      return new Float32Array(buf, off, n);
-    case 0x8dad:
-      return null; // FLOAT_32_UNSIGNED_INT_24_8_REV: WebGL takes no data for it
-    default:
-      return size === 2 ? new Uint16Array(buf, off, n) : new Uint32Array(buf, off, n);
-  }
-}
 
 export class VirglRenderer {
   readonly gl: WebGL2RenderingContext;
@@ -4545,178 +4258,4 @@ void main() {
     if (!r) return null;
     return this.readback(r, 0, { x: 0, y: 0, z: 0, w: r.width, h: r.height, d: 1 }, 0, 0);
   }
-}
-
-/** How a format's texels are read back: the readPixels format and type, bytes a pixel read, and the packer. */
-export function readbackOf(
-  f: Format,
-  floats: boolean,
-): { format: number; type: number; bytes: number; pack: (src: Uint8Array, dst: Uint8Array, w: number) => void } | null {
-  if (f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil' || f.block > 1) return null;
-  const take = (comps: number[], size: number) => (src: Uint8Array, dst: Uint8Array, w: number) => {
-    for (let x = 0; x < w; x++)
-      for (let k = 0; k < comps.length; k++)
-        for (let b = 0; b < size; b++)
-          dst[x * comps.length * size + k * size + b] = src[x * 4 * size + comps[k] * size + b];
-  };
-  if (f.internal === E.RGBA8 || f.internal === 0x8c43)
-    return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: (s, d, w) => d.set(s.subarray(0, w * 4)) };
-  if (f.type === E.UNSIGNED_BYTE && f.kind === 'unorm' && f.bpp <= 2)
-    return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: take(f.bpp === 1 ? [0] : [0, 1], 1) };
-  if (f.type === E.UNSIGNED_INT_2_10_10_10_REV && f.kind === 'unorm')
-    return {
-      format: E.RGBA,
-      type: E.UNSIGNED_INT_2_10_10_10_REV,
-      bytes: 4,
-      pack: (s, d, w) => d.set(s.subarray(0, w * 4)),
-    };
-  if (f.type === 0x8363) {
-    // RGB565: read as RGBA8 and packed again (8 → 5/6 bits round-trips).
-    return {
-      format: E.RGBA,
-      type: E.UNSIGNED_BYTE,
-      bytes: 4,
-      pack: (s, d, w) => {
-        for (let x = 0; x < w; x++) {
-          const v =
-            (Math.round((s[4 * x] * 31) / 255) << 11) |
-            (Math.round((s[4 * x + 1] * 63) / 255) << 5) |
-            Math.round((s[4 * x + 2] * 31) / 255);
-          d[2 * x] = v & 0xff;
-          d[2 * x + 1] = v >> 8;
-        }
-      },
-    };
-  }
-  if (f.kind === 'uint' && f.type === E.UNSIGNED_INT_2_10_10_10_REV) {
-    // RGB10_A2UI: read as four integers, packed again into 10, 10, 10 and 2 bits.
-    return {
-      format: E.RGBA_INTEGER,
-      type: E.UNSIGNED_INT,
-      bytes: 16,
-      pack: (s, d, w) => {
-        const sv = new DataView(s.buffer, s.byteOffset, w * 16),
-          dv = new DataView(d.buffer, d.byteOffset, w * 4);
-        for (let x = 0; x < w; x++) {
-          const c = (k: number) => sv.getUint32(x * 16 + k * 4, true);
-          dv.setUint32(
-            x * 4,
-            ((c(0) & 0x3ff) | ((c(1) & 0x3ff) << 10) | ((c(2) & 0x3ff) << 20) | ((c(3) & 3) << 30)) >>> 0,
-            true,
-          );
-        }
-      },
-    };
-  }
-  if (f.kind === 'uint' || f.kind === 'sint') {
-    const comps =
-      f.bpp /
-      (([E.UNSIGNED_BYTE, E.BYTE] as number[]).includes(f.type)
-        ? 1
-        : ([E.UNSIGNED_SHORT, E.SHORT] as number[]).includes(f.type)
-          ? 2
-          : 4);
-    const size = f.bpp / comps;
-    return {
-      format: E.RGBA_INTEGER,
-      type: f.kind === 'uint' ? E.UNSIGNED_INT : E.INT,
-      bytes: 16,
-      pack: (s, d, w) => {
-        for (let x = 0; x < w; x++)
-          for (let k = 0; k < comps; k++)
-            for (let b = 0; b < size; b++) d[x * f.bpp + k * size + b] = s[x * 16 + k * 4 + b];
-      },
-    };
-  }
-  if (f.kind === 'float' && floats && (f.type === E.FLOAT || f.type === E.HALF_FLOAT)) {
-    const comps = f.bpp / (f.type === E.FLOAT ? 4 : 2);
-    return {
-      format: E.RGBA,
-      type: E.FLOAT,
-      bytes: 16,
-      pack: (s, d, w) => {
-        const fv = new Float32Array(s.buffer, s.byteOffset, w * 4);
-        const dv = new DataView(d.buffer, d.byteOffset, d.length);
-        for (let x = 0; x < w; x++)
-          for (let k = 0; k < comps; k++) {
-            if (f.type === E.FLOAT) dv.setFloat32((x * comps + k) * 4, fv[x * 4 + k], true);
-            else dv.setUint16((x * comps + k) * 2, toHalf(fv[x * 4 + k]), true);
-          }
-      },
-    };
-  }
-  return null;
-}
-
-/**
- * How a snapshot reads the formats `readbackOf` doesn't (the guest isn't told it can read them back; a snapshot must
- * keep them all the same): A4B4G4R4 as RGBA8 packed again into 4 bits a channel, R11G11B10_FLOAT as floats packed
- * into 11, 11 and 10-bit floats (both exact for the values the formats hold).
- */
-function snapshotReader(f: Format, floats: boolean): ReturnType<typeof readbackOf> {
-  if (f.type === GL.UNSIGNED_SHORT_4_4_4_4 && f.kind === 'unorm') {
-    return {
-      format: E.RGBA,
-      type: E.UNSIGNED_BYTE,
-      bytes: 4,
-      pack: (s, d, w) => {
-        const four = (x: number) => Math.round((x * 15) / 255);
-        for (let x = 0; x < w; x++) {
-          const v = (four(s[4 * x]) << 12) | (four(s[4 * x + 1]) << 8) | (four(s[4 * x + 2]) << 4) | four(s[4 * x + 3]);
-          d[2 * x] = v & 0xff;
-          d[2 * x + 1] = v >> 8;
-        }
-      },
-    };
-  }
-  if (f.type === GL.UNSIGNED_INT_10F_11F_11F_REV && floats) {
-    return {
-      format: E.RGBA,
-      type: E.FLOAT,
-      bytes: 16,
-      pack: (s, d, w) => {
-        const fv = new Float32Array(s.buffer, s.byteOffset, w * 4),
-          dv = new DataView(d.buffer, d.byteOffset, d.length);
-        // A half's sign dropped and its mantissa cut to 6 (or 5) bits: the unsigned small floats.
-        const small = (v: number, shift: number) => (toHalf(v) & 0x7fff) >> shift;
-        for (let x = 0; x < w; x++)
-          dv.setUint32(
-            4 * x,
-            (small(fv[4 * x], 4) | (small(fv[4 * x + 1], 4) << 11) | (small(fv[4 * x + 2], 5) << 22)) >>> 0,
-            true,
-          );
-      },
-    };
-  }
-  return null;
-}
-
-/** Float32 to IEEE half (round to nearest even). */
-export function toHalf(v: number) {
-  f32[0] = v;
-  const x = u32[0];
-  const sign = (x >>> 16) & 0x8000;
-  const exp = ((x >>> 23) & 0xff) - 127 + 15;
-  let mant = x & 0x7fffff;
-  if (((x >>> 23) & 0xff) === 0xff) return sign | 0x7c00 | (mant ? 0x200 : 0);
-  if (exp >= 0x1f) return sign | 0x7c00;
-  if (exp <= 0) {
-    if (exp < -10) return sign;
-    mant |= 0x800000;
-    const shift = 14 - exp;
-    let h = mant >>> shift;
-    const rem = mant & ((1 << shift) - 1),
-      half = 1 << (shift - 1);
-    if (rem > half || (rem === half && h & 1)) h++;
-    return sign | h;
-  }
-  let h = (exp << 10) | (mant >>> 13);
-  const rem = mant & 0x1fff;
-  if (rem > 0x1000 || (rem === 0x1000 && h & 1)) h++;
-  return sign | h;
-}
-
-/** The formats `readbackOf` can read (what the caps advertise as `supported_readback_formats`). */
-export function readbackFormats(floats: boolean) {
-  return [...FORMATS.values()].filter((f) => readbackOf(f, floats)).map((f) => f.id);
 }

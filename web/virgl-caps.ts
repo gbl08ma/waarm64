@@ -6,7 +6,7 @@
 import { E } from './gl-enums.ts';
 import { CAPS_FIELDS, decodeCaps, encodeCaps, virglCaps } from './virgl.ts';
 import { FORMATS, VERTEX_FORMATS } from './virgl-formats.ts';
-import { readbackFormats } from './virgl-renderer.ts';
+import { readbackFormats } from './virgl-pixels.ts';
 import { decodeVideoCaps, encodeVideoCaps, type VideoCap } from './virgl-video.ts';
 
 /**

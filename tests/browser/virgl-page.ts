@@ -28,7 +28,8 @@ export function compileCorpus(corpus: string) {
   return { programs, failures, ms: performance.now() - t0, renderer: gl.getParameter(gl.RENDERER) as string };
 }
 
-import { VirglRenderer, type RendererSnapshot, type ResourceDesc, type SavedLevel } from '../../web/virgl-renderer.ts';
+import { VirglRenderer } from '../../web/virgl-renderer.ts';
+import type { RendererSnapshot, ResourceDesc, SavedLevel } from '../../web/virgl-objects.ts';
 import { FORMATS } from '../../web/virgl-formats.ts';
 import { CallQueue, FenceGate, localHost, portHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';

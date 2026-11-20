@@ -6,15 +6,8 @@
 // driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `retired` says when a fence has.
 import type { ShaderCache } from './venus-cache.ts';
-import {
-  gpuFeatures,
-  gpuLimits,
-  HELD_FEATURES,
-  VenusGpu,
-  type GpuCaps,
-  type L9Suspect,
-  type VenusEmulStats,
-} from './venus-gpu.ts';
+import { gpuFeatures, gpuLimits, HELD_FEATURES, type GpuCaps, type L9Suspect } from './venus-caps.ts';
+import { VenusGpu, type VenusEmulStats } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { VENUS_ARENA } from './ram.ts';
 import { WindowWatch } from './window.ts';
@@ -127,7 +120,7 @@ export type VenusOptions = {
   tickMs?: number;
   /** The ticker's module instead of web/venus-ticker.ts (tests: one that fails to load). */
   tickerUrl?: URL;
-  /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
+  /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-caps.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
   hold?: readonly string[];
   heldFormats?: boolean;
@@ -139,7 +132,7 @@ export type VenusOptions = {
    * without them every GTK4 program died on a machine with Vulkan; with them GTK still takes GL (LINEAR alone isn't a
    * dma-buf format to GTK's Vulkan renderer). Chromium's own Vulkan device wants them too (L7.1b). */
   ycbcr?: boolean;
-  /** `?gpu=vkl9=<suspect>`: VK3 L9a's suspects back at 4fdc69fb's behaviour (web/venus-gpu.ts `L9_SUSPECTS`); the
+  /** `?gpu=vkl9=<suspect>`: VK3 L9a's suspects back at 4fdc69fb's behaviour (web/venus-caps.ts `L9_SUSPECTS`); the
    * driver's take flags (`L9_FLAGS`), the device request the rest. */
   l9?: readonly L9Suspect[];
   /** `?gpu=vkpremake=on` (true; A/B): render pipelines made at vkCreateGraphicsPipelines too, not only at their first

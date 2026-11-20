@@ -786,7 +786,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     shader's filter's cost on a program is unmeasured (none replayed has such an image). `texture-compression-unaligned`, if Chromium ships it, replaces all of
     it (`padded` false).
   - [B] **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats of a block's size goes
-    through a shader that carries the bits (VK4 R4, T39: `bitsBetween` in web/venus-gpu.ts), for 8-, 16- and 32-bit
+    through a shader that carries the bits (VK4 R4, T39: `bitsBetween` in web/venus-formats.ts), for 8-, 16- and 32-bit
     channels of unorm, uint, sint and float, `rgb10a2` and packed layouts; SNORM layouts (`texelFields` leaves them out:
     VK4 T38's 10-bit orders mark their most negative code) and a multisampled copy between a depth or stencil aspect
     and a colour format are skipped with a warning. A float16's signalling NaN

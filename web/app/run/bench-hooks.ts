@@ -2,7 +2,7 @@
 // PC sampler, the vCPU timeline, the core's heap, the serial log, the GPU worker's stall and Venus's skips, the 3D
 // screen's read-back, the disks' timers, a machine from a template (bench/demo).
 import type { PageAudio } from '../../audio.ts';
-import type { ToGpuWorker } from '../../gpu-worker.ts';
+import type { ToGpuWorker } from '../../gpu-messages.ts';
 import type { SerialTerminal } from '../areas/serial-terminal.ts';
 import type { Grab } from '../hooks.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';

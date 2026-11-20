@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { VenusShare, type SharedTexture } from '../web/venus-share.ts';
-import type { ExternalResource, VirglRenderer } from '../web/virgl-renderer.ts';
+import type { ExternalResource } from '../web/virgl-objects.ts';
+import type { VirglRenderer } from '../web/virgl-renderer.ts';
 
 const B8G8R8A8 = 1;
 

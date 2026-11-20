@@ -507,7 +507,7 @@ test('anchored, a ballot, an election and a read of the first invocation take an
     };
     const plain = stage(WGSL.SUBGROUPS), anchored = stage(WGSL.SUBGROUPS | WGSL.SUBGROUP_ANCHOR);
     assert.doesNotMatch(plain, /subgroupAdd/);
-    // Chromium on the M4's Metal hoists the three out of their `if` without the add (web/venus-gpu.ts `subgroupsRight`).
+    // Chromium on the M4's Metal hoists the three out of their `if` without the add (web/venus-caps.ts `subgroupsRight`).
     assert.match(anchored, /subgroupBallot\([^;]* & \(subgroupAdd\(1u\) != 0u\)\)/);
     assert.match(anchored, /\(subgroupAdd\(1u\) != 0u\) & subgroupElect\(\)/);
     assert.match(anchored, /subgroupShuffle\([^;]*subgroupBroadcastFirst\(select\(0u, sg_inv, \(subgroupAdd\(1u\) != 0u\)\)\)\)/);

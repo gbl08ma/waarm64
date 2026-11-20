@@ -12,6 +12,7 @@ import {
   fenceLane,
   fenceSettled,
   queryScheduler,
+  type QueryPoll,
   rendererRefusal,
   runCall,
   saveRenderer,
@@ -20,153 +21,22 @@ import {
   type VenusCall,
   type WorkerCall,
 } from './virgl-host.ts';
-import { deviceRequest, l9Suspects, subgroupsRight, type VenusGpuStats } from './venus-gpu.ts';
-import { VenusRenderer, type VenusTimes, type VenusEmul } from './venus-host.ts';
+import { deviceRequest, l9Suspects, subgroupsRight } from './venus-caps.ts';
+import { VenusRenderer } from './venus-host.ts';
 import { idbBackend, ShaderCache } from './venus-cache.ts';
 import { VenusImport } from './venus-import.ts';
-import { shareMode, VenusShare, type ShareCheck } from './venus-share.ts';
+import { shareMode, VenusShare } from './venus-share.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import type { GpuWorkerKnobs } from './gpu-knobs.ts';
 import { MsgError, toWire } from './msg.ts';
 import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
-import { probeVideo, profileName, webCodecsDecoder, type VideoStats, type VideoStream } from './virgl-video.ts';
-
-/** Page → GPU worker. */
-export type ToGpuWorker =
-  | { type: 'snapshotBytes'; id: number }
-  | /** Test hook (`window.__waarm64StallGpu`): the worker's thread blocked `ms`, as in a long GPU-process call. */ {
-      type: 'stall';
-      ms: number;
-    }
-  | /** Bench hook (`window.__waarm64Grab`): the screen drawn now and read back, top row first, RGBA. */ {
-      type: 'grab';
-      id: number;
-    }
-  | /** Bench hook (`window.__waarm64VkSkip`, VK4 T23): the Venus renderer's emulated work left out from now (web/venus-host.ts `skip`). */ {
-      type: 'vkskip';
-      skip: string[];
-    }
-  | ({ type: 'init'; canvas: OffscreenCanvas; port: MessagePort } & GpuWorkerKnobs);
-/** GPU worker → page. */
-export type FromGpuWorker =
-  | { type: 'ready'; caps: Uint8Array; renderer: string }
-  /** The bytes a snapshot would hold for the 3D resources, before compression (`VirglRenderer.snapshotBytes`): Save snapshot warns past a size. */
-  | { type: 'snapshotBytes'; id: number; bytes: number }
-  | { type: 'grab'; id: number; width: number; height: number; pixels: Uint8Array }
-  | { type: 'failed'; reason: string }
-  | { type: 'lost' }
-  /** With `probe`: a present turned the screen's centre bright, at `t` (ms since the epoch). */
-  | { type: 'flash'; t: number }
-  /**
-   * Always, once a second from `ready` on (the first with it): totals since the worker started (rates are the page's)
-   * and what is in use now (the page's status bar). The worker exists only on a 3D machine, so this is WebGL2 with
-   * virgl. `renderer` and `vendor` are WebGL's (unmasked where the browser gives them), `software` whether the renderer
-   * is a CPU rasterizer (SwiftShader, llvmpipe). `presents` are the screen's draws (at most one a display frame: a
-   * guest's flip, whatever it took); `submits` the guest's command buffers, `commands` the virgl commands in them,
-   * `draws` the GL draws they made, `errors` the renderer's (video's among them). `video` is off (`enabled: false`) with
-   * `?gpu=novideo` or where WebCodecs decodes none of the codecs; `offered` the codecs the guest was told of and which
-   * are decoded in hardware; `streams` the guest's decoding contexts now (web/virgl-video.ts `VideoStream`); `frames`
-   * the pictures the guest sent, `decoded` those written back, `dropped` those given up, `errors` the video errors and
-   * `decoderErrors` the decoders' own (of `errors`).
-   */
-  | {
-      type: 'stats';
-      renderer: string;
-      vendor: string;
-      software: boolean;
-      presents: number;
-      submits: number;
-      commands: number;
-      draws: number;
-      errors: number;
-      video: GpuVideoStats;
-      vulkan?: VulkanReport;
-    }
-  /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
-  | {
-      type: 'render-stats';
-      submits: number;
-      draws: number;
-      commands: number;
-      busyMs: number;
-      submitMs: number;
-      presents: number;
-      presentAt: number[];
-      drawMs: number;
-      programs: number;
-      errors: number;
-      uploadBytes: number;
-      readbacks: number;
-      readbackBytes: number;
-      fences: number;
-      fenceMs: number;
-      fenceMaxMs: number;
-      compileMs: number;
-      /** Vulkan's frames copied into virgl's textures (web/venus-share.ts) and the thread's ms for them, in the second. */ shareRefreshes: number;
-      shareMs: number;
-      /** Virgl's resources written into Vulkan's textures imported from them (web/venus-import.ts): binds, of them those that made a texture, pictures, bytes and the thread's ms, in the second. */ importBinds: number;
-      importMade: number;
-      importPictures: number;
-      importBytes: number;
-      importMs: number;
-      /** Textures Venus's driver made in the second (web/venus-gpu.ts `stats.textures`: an image bound to imported memory makes none, VK4 T48). */ venusTextures: number;
-      /** How Vulkan's frames reach virgl now, and where the check of a GPU way stands (web/venus-share.ts). */ share?: ShareCheck & {
-        checks: number;
-        checksWrong: number;
-        unshared: number;
-        /** Prime blits' frames copied from their buffers (GD G7), in all. */ fromBuffers: number;
-      };
-      /** Venus's fences' way back in the second (web/venus-host.ts `VenusTimes`). */ venus?: VenusTimes;
-      /** The Venus calls that asked for a reply in the second, and every command of the virtqueue's, by name (web/venus-host.ts `calls`). */ venusCalls?: Record<
-        string,
-        number
-      >;
-      /** What the emulated paths did in the second (web/venus-host.ts `emul`, VK4 T23). */ venusEmul?: VenusEmul;
-      /** Venus's pipeline totals since it started (`venusPipelines`, VK3 L3). */ venusPipelines?: ReturnType<
-        typeof venusPipelines
-      > & {
-        /** The store's bytes stored (deflated) and held in memory, and the ms its lookups took inflating (web/venus-cache.ts). */ cacheBytes: number;
-        cacheHeld: number;
-        cacheEntries: number;
-        cacheInflateMs: number;
-      };
-      /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & {
-        ahead: number;
-        maxWaitMs: number;
-      };
-      /** The occlusion queries' polls in the second, and the ms some were pending (`QueryPoll`). */ queryPolls: number;
-      queryPendingMs: number;
-    };
-
-/** The video part of `stats`. */
-export type GpuVideoStats = {
-  enabled: boolean;
-  offered: { profile: string; hardware: boolean }[];
-  streams: VideoStream[];
-  frames: number;
-  decoded: number;
-  dropped: number;
-  errors: number;
-  decoderErrors: number;
-};
+import { probeVideo, profileName, webCodecsDecoder } from './virgl-video.ts';
+import { venusPipelines, type FromGpuWorker, type ToGpuWorker, type VulkanReport } from './gpu-messages.ts';
 
 let ram: Uint8Array[] = [];
 let snapshotBytes = () => 0;
 /** The Venus renderer's `skip`, once it runs (the `vkskip` bench hook). */
 let venusSkip: ((paths: string[]) => void) | undefined;
-/**
- * A Vulkan machine's Venus, for the status bar: the guest's Venus contexts now (one a Vulkan instance: a program holding
- * a device, roughly), the WebGPU submits and draws since it started, the adapter it draws on (`software` for a fallback
- * or SwiftShader), `device` false where the browser gave it none (Vulkan then draws nothing).
- */
-export type VulkanReport = {
-  contexts: number;
-  submits: number;
-  draws: number;
-  device: boolean;
-  adapter?: string;
-  software?: boolean;
-};
 let grab = (id: number) =>
   (self as unknown as Worker).postMessage({
     type: 'grab',
@@ -192,39 +62,8 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     return;
   }
   if (e.data?.type !== 'init') return;
-  const {
-    canvas,
-    port,
-    stats,
-    debug,
-    probe,
-    video,
-    softwareVideo,
-    waitAttached,
-    vkShare,
-    vkBreak,
-    vkVendor,
-    vkPoll,
-    vkSyncPipelines,
-    vkPipeDelayMs,
-    vkNoCache,
-    vkImportRewrite,
-    vkPremake,
-    vkQueues,
-    vkShaderBudget,
-    vkNudgeMs,
-    vkGpuTime,
-    vkIdleMs,
-    vkTickMs,
-    vkHold,
-    vkHeldFormats,
-    vkYcbcr,
-    vkL9,
-    vkSkip,
-    capsNo,
-    capsYes,
-    queryPoll,
-  } = e.data;
+  const knobs: GpuWorkerKnobs = e.data;
+  const { canvas, port, stats, debug, probe, video, softwareVideo, waitAttached, capsNo, capsYes, queryPoll } = e.data;
   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
   const gl = canvas.getContext('webgl2', {
     alpha: false,
@@ -266,28 +105,20 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     (self as unknown as Worker).postMessage({ type: 'grab', id, ...g } satisfies FromGpuWorker, [g.pixels.buffer]);
   };
   if (probe) screen.probe = flashProbe((t) => post({ type: 'flash', t }));
-  let busyMs = 0,
-    submitMs = 0,
-    queries = 0;
-  // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
-  let fences = 0,
-    fenceMs = 0,
-    fenceMaxMs = 0;
-  let pollTimer: true | undefined;
+  const counts: Counts = { busyMs: 0, submitMs: 0, fences: 0, fenceMs: 0, fenceMaxMs: 0 };
   // A fence waits for the query results before it, or a Venus fence for its ring's work (FenceGate).
   const fenced = new FenceGate<{ id: number; at: number }>((c) => {
     const now = clock();
-    fences++;
-    fenceMs += now - c.at;
-    fenceMaxMs = Math.max(fenceMaxMs, now - c.at);
+    counts.fences++;
+    counts.fenceMs += now - c.at;
+    counts.fenceMaxMs = Math.max(counts.fenceMaxMs, now - c.at);
     port.postMessage({ t: 'fenced', id: c.id, at: now });
   });
-  // WebGL's query results come after the task that ended the query: polled while some are pending.
   // Venus (docs/devices.md "Venus"): its renderer is fetched and made on the device's `venus-init` (only a machine with
   // Vulkan has one); its calls wait in order until then, and so do the fences behind them.
   let venus: VenusRenderer | undefined;
   let venusBacklog: VenusCall[] | undefined;
-  let vkAdapter: Pick<VulkanReport, 'device' | 'adapter' | 'software'> | undefined;
+  let vkAdapter: VulkanAdapter | undefined;
   // Vulkan's frames into virgl's textures (web/venus-share.ts), once the renderer and its device are made.
   let share: VenusShare | undefined;
   // Virgl's resources into Vulkan's textures (web/venus-import.ts: VA-API's surfaces into mpv on Vulkan).
@@ -300,138 +131,19 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       console.warn('venus: a call failed', c.t, err);
     }
   };
-  let held = 0;
-  // While queries are pending, the next look (`QueryPoll`: by default every task for 2 ms since the set last changed, then
-  // every 4 ms; PERF loop 16): counted, with the ms some were pending, for the stats.
-  let queryPolls = 0,
-    queryPendingMs = 0,
-    pendingSince = 0;
-  const schedule = queryScheduler(
-    queryPoll ?? 'spin',
-    () => poll(),
-    () => new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' }),
-  );
-  const poll = () => {
-    pollTimer = undefined;
-    queryPolls++;
-    const was = queries;
-    queries = renderer.pollQueries();
-    const now = clock();
-    if (!was && queries) pendingSince = now;
-    else if (was && !queries) queryPendingMs += now - pendingSince;
-    fenced.release();
-    const f = fenced.oldest;
-    if (f && f.id !== held && clock() - f.at > STUCK_MS) {
-      held = f.id;
-      console.warn(
-        `virgl: fence ${f.id} held ${((clock() - f.at) / 1000).toFixed(0)} s for ${queries} occlusion queries' results`,
-      );
-    }
-    if (queries) pollTimer = schedule.next(queries, renderer.queryChanges);
-    else schedule.idle();
-  };
+  const poller = new QueryPoller(renderer, fenced, queryPoll ?? 'spin');
   const run = (c: WorkerCall) => {
     if (c.t === 'venus-init') {
       venusBacklog = [];
-      const init = c;
-      (async () => {
-        // Not bundled (`@vite-ignore`): the static copy doesn't carry the renderer yet (vk/README.md "Not yet").
-        const module = await WebAssembly.compileStreaming(
-          fetch(new URL('../target/vk/venus.wasm', import.meta.url).href),
-        );
-        // The driver's WebGPU device (none: it keeps Venus's objects and draws nothing).
-        const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
-        const device = adapter
-          ? await adapter
-              .requestDevice(deviceRequest(adapter, { gpuTime: vkGpuTime, l9: l9Suspects(vkL9 ?? []) }))
-              .catch((err) => {
-                console.warn('venus: no WebGPU device', err);
-                return undefined;
-              })
-          : undefined;
-        if (!device) console.warn('venus: this browser has no WebGPU adapter here: Vulkan draws nothing');
-        const ai = adapter?.info;
-        vkAdapter = {
-          device: !!device,
-          adapter: ai ? [ai.vendor, ai.architecture, ai.description].filter(Boolean).join(' ') || undefined : undefined,
-          software: ai
-            ? (ai as GPUAdapterInfo & { isFallbackAdapter?: boolean }).isFallbackAdapter ||
-              ai.architecture === 'swiftshader'
-            : undefined,
-        };
-        device?.lost.then((info) => console.warn(`venus: the WebGPU device was lost: ${info.message}`));
-        // What the device advertises follows the device's features and limits and the adapter's maker.
-        // Its shaders of earlier runs (web/venus-cache.ts): IndexedDB, the origin's, for this build of the renderer.
-        const cache =
-          vkNoCache || typeof indexedDB === 'undefined'
-            ? undefined
-            : (id: string) => ShaderCache.open(id, { backend: idbBackend(), budget: vkShaderBudget });
-        // Subgroups only where they're right in divergent control flow (web/venus-gpu.ts `subgroupsRight`).
-        // Anchored where only the translator's anchored ballots are right (Chromium on Metal).
-        const subgroups = device ? await subgroupsRight(device) : 'right';
-        if (subgroups === 'wrong')
-          console.warn(
-            "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation",
-          );
-        if (subgroups === 'anchor')
-          console.log(
-            "venus: the WebGPU device's ballots are wrong in divergent control flow unless anchored: anchored",
-          );
-        const hold = subgroups !== 'wrong' ? vkHold : [...(vkHold ?? []), 'subgroups'];
-        venus = await VenusRenderer.create(
-          module,
-          init.memory,
-          { ...init.window, core: init.core },
-          device,
-          device && adapter
-            ? {
-                features: device.features,
-                limits: device.limits,
-                adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info,
-              }
-            : undefined,
-          vkPoll,
-          {
-            syncPipelines: vkSyncPipelines,
-            pipelineDelayMs: vkPipeDelayMs,
-            cache,
-            nudgeMs: vkNudgeMs,
-            gpuTime: vkGpuTime,
-            ringIdleMs: vkIdleMs,
-            tickMs: vkTickMs,
-            hold,
-            subgroupAnchor: subgroups === 'anchor',
-            heldFormats: vkHeldFormats,
-            ycbcr: vkYcbcr,
-            l9: l9Suspects(vkL9 ?? []),
-            premake: vkPremake,
-            queueFamilies: vkQueues,
-            skip: vkSkip,
-          },
-        );
-        venusSkip = (paths) => venus?.skip(paths);
-        venus.onRetire = () => fenced.release();
-        const v = venus;
-        if (device && adapter) {
-          const mode = vkShare ?? (vkBreak?.length ? 'bitmap' : shareMode(adapter, glInfo(gl).renderer));
-          share = new VenusShare(device, mode, renderer, (id) => v.shared(id), {
-            forced: !!vkShare,
-            broken: new Set(vkBreak),
-            idle: () => v.gpu.idle(),
-          });
-          console.log(
-            `venus: Vulkan on ${adapter.info.vendor || 'an unnamed'} ${adapter.info.architecture} adapter; its frames reach virgl by ${mode}${vkShare ? ' (forced)' : mode === 'readback' ? '' : ', checked at the first copies'}`,
-          );
-          // Its textures' writes in the queue's order: after the submits held for their pipelines (web/venus-gpu.ts `later`).
-          const im = (imports = new VenusImport(device, renderer, (f) => v.gpu.later(f), { rewrite: vkImportRewrite }));
-          v.gpu.onImport = (t, res, desc) => im.bind(t, res, desc);
-          renderer.onPlane = (res, data, w, h, bpp) => im.plane(res, data, w, h, bpp);
-        }
-        renderer.external = { has: (id) => v.has(id), refresh: (r) => share?.refresh(r) };
-        for (const v of venusBacklog) venusCall(v);
-        venusBacklog = undefined;
-        fenced.release();
-      })().catch((err) => {
+      startVenus(c, knobs, gl, renderer, {
+        release: () => fenced.release(),
+        ready: (v) => {
+          ({ venus, adapter: vkAdapter, share, imports } = v);
+          for (const v of venusBacklog!) venusCall(v);
+          venusBacklog = undefined;
+          fenced.release();
+        },
+      }).catch((err: unknown) => {
         console.warn('venus: the renderer could not start', err);
         venusBacklog = undefined;
         fenced.release();
@@ -458,7 +170,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         }),
         fenceLane(c.scope),
       );
-      if (fenced.waiting && !pollTimer) poll();
+      if (fenced.waiting && !poller.timer) poller.poll();
       return;
     }
     if (c.t === 'read') {
@@ -506,9 +218,9 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       console.warn('virgl: a call failed', c.t, err);
     }
     const dt = performance.now() - t0;
-    busyMs += dt;
-    if (c.t === 'submit') submitMs += dt;
-    if (!pollTimer && c.t === 'submit') poll();
+    counts.busyMs += dt;
+    if (c.t === 'submit') counts.submitMs += dt;
+    if (!poller.timer && c.t === 'submit') poller.poll();
   };
   // While calls wait for pictures, a timer drains and then gives up decoders that hold them (CallQueue.tick).
   let stallTimer: ReturnType<typeof setInterval> | undefined;
@@ -549,77 +261,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     queue.push(m.data);
     watch();
   };
-  if (stats) {
-    let last = { ...renderer.stats };
-    let lastShare = { refreshes: 0, ms: 0 };
-    let lastImport = { binds: 0, made: 0, pictures: 0, bytes: 0, ms: 0 };
-    let lastTextures = 0;
-    screen.presentAt = [];
-    setInterval(() => {
-      const s = renderer.stats;
-      post({
-        type: 'render-stats',
-        submits: s.submits - last.submits,
-        draws: s.draws - last.draws,
-        commands: s.commands - last.commands,
-        busyMs,
-        submitMs,
-        presents: screen.presents,
-        presentAt: screen.presentAt!.splice(0),
-        drawMs: screen.drawMs,
-        programs: s.programs,
-        errors: s.errors,
-        uploadBytes: s.uploadBytes - last.uploadBytes,
-        readbacks: s.readbacks - last.readbacks,
-        readbackBytes: s.readbackBytes - last.readbackBytes,
-        fences,
-        fenceMs,
-        fenceMaxMs,
-        compileMs: s.compileMs - last.compileMs,
-        shareRefreshes: (share?.stats.refreshes ?? 0) - lastShare.refreshes,
-        shareMs: (share?.stats.ms ?? 0) - lastShare.ms,
-        importBinds: (imports?.stats.binds ?? 0) - lastImport.binds,
-        importMade: (imports?.stats.made ?? 0) - lastImport.made,
-        importPictures: (imports?.stats.pictures ?? 0) - lastImport.pictures,
-        importBytes: (imports?.stats.bytes ?? 0) - lastImport.bytes,
-        importMs: (imports?.stats.ms ?? 0) - lastImport.ms,
-        venusTextures: (venus?.gpu.stats.textures ?? 0) - lastTextures,
-        share: share && {
-          ...share.check,
-          dropped: [...share.check.dropped],
-          checks: share.stats.checks,
-          checksWrong: share.stats.checksWrong,
-          unshared: share.stats.unshared,
-          fromBuffers: share.stats.fromBuffers,
-        },
-        venus: venus?.times(),
-        venusCalls: venus?.calls(),
-        venusEmul: venus?.emul(),
-        venusPipelines: venus && {
-          ...venusPipelines(venus.gpu.stats),
-          cacheBytes: venus.gpu.cache?.stats.bytes ?? 0,
-          cacheHeld: venus.gpu.cache?.stats.held ?? 0,
-          cacheEntries: venus.gpu.cache?.stats.entries ?? 0,
-          cacheInflateMs: venus.gpu.cache?.stats.inflateMs ?? 0,
-        },
-        video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs },
-        queryPolls,
-        queryPendingMs: queryPendingMs + (queries ? clock() - pendingSince : 0),
-      });
-      fences = fenceMs = fenceMaxMs = 0;
-      queryPolls = queryPendingMs = 0;
-      if (queries) pendingSince = clock();
-      queue.maxWaitMs = 0;
-      renderer.videoStats.latencyMaxMs = 0;
-      last = { ...s };
-      lastShare = { refreshes: share?.stats.refreshes ?? 0, ms: share?.stats.ms ?? 0 };
-      lastImport = { ...(imports?.stats ?? lastImport) };
-      lastTextures = venus?.gpu.stats.textures ?? 0;
-      busyMs = submitMs = 0;
-      screen.presents = 0;
-      screen.drawMs = 0;
-    }, 1000);
-  }
+  if (stats) postRenderStats(post, { renderer, screen, queue, poller, counts }, () => ({ share, imports, venus }));
   let caps: Uint8Array;
   try {
     caps = capsFromGl(gl);
@@ -644,7 +286,297 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   }
   const info = glInfo(gl);
   post({ type: 'ready', caps, renderer: info.renderer });
-  // The status bar's numbers: what the renderer, the screen and the decoders count anyway, read once a second.
+  postStatus(post, renderer, screen, info, decoders, () => ({ venus, adapter: vkAdapter }));
+};
+
+/** How fences took to reach this worker (its event loop's backlog: count, total and longest ms), and the ms its calls and
+ * of them its submits ran: `render-stats`' per second. */
+type Counts = { busyMs: number; submitMs: number; fences: number; fenceMs: number; fenceMaxMs: number };
+
+/** The adapter Venus draws on, for the status bar (`VulkanReport`). */
+type VulkanAdapter = Pick<VulkanReport, 'device' | 'adapter' | 'software'>;
+
+/** Venus's renderer once made, and what it draws with (`startVenus`). */
+type StartedVenus = { venus: VenusRenderer; adapter: VulkanAdapter; share?: VenusShare; imports?: VenusImport };
+
+/**
+ * WebGL's query results come after the task that ended the query: polled while some are pending (`QueryPoll`: by
+ * default every task for 2 ms since the set last changed, then every 4 ms; PERF loop 16), each poll releasing the
+ * fences that wait for them; counted, with the ms some were pending, for the stats.
+ */
+class QueryPoller {
+  /** A poll is scheduled. */
+  timer: true | undefined;
+  /** The queries pending at the last poll. */
+  queries = 0;
+  polls = 0;
+  pendingMs = 0;
+  pendingSince = 0;
+  /** The fence last warned of as stuck. */
+  private held = 0;
+  private readonly renderer: VirglRenderer;
+  private readonly fenced: FenceGate<{ id: number; at: number }>;
+  private readonly schedule: ReturnType<typeof queryScheduler>;
+  constructor(renderer: VirglRenderer, fenced: FenceGate<{ id: number; at: number }>, way: QueryPoll) {
+    this.renderer = renderer;
+    this.fenced = fenced;
+    this.schedule = queryScheduler(
+      way,
+      () => this.poll(),
+      () => new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' }),
+    );
+  }
+  poll() {
+    const renderer = this.renderer,
+      fenced = this.fenced;
+    this.timer = undefined;
+    this.polls++;
+    const was = this.queries;
+    const queries = (this.queries = renderer.pollQueries());
+    const now = clock();
+    if (!was && queries) this.pendingSince = now;
+    else if (was && !queries) this.pendingMs += now - this.pendingSince;
+    fenced.release();
+    const f = fenced.oldest;
+    if (f && f.id !== this.held && clock() - f.at > STUCK_MS) {
+      this.held = f.id;
+      console.warn(
+        `virgl: fence ${f.id} held ${((clock() - f.at) / 1000).toFixed(0)} s for ${queries} occlusion queries' results`,
+      );
+    }
+    if (queries) this.timer = this.schedule.next(queries, renderer.queryChanges);
+    else this.schedule.idle();
+  }
+}
+
+/**
+ * Venus's renderer, made on the device's `venus-init`: the module fetched, the driver's WebGPU device asked for (none:
+ * it keeps Venus's objects and draws nothing), its subgroups checked, and with a device the ways between Vulkan's
+ * textures and virgl's (web/venus-share.ts, web/venus-import.ts). `release`: a Venus fence's work retired; `ready`: the
+ * renderer is made, called in the same task as the last of it.
+ */
+async function startVenus(
+  init: Extract<WorkerCall, { t: 'venus-init' }>,
+  knobs: GpuWorkerKnobs,
+  gl: WebGL2RenderingContext,
+  renderer: VirglRenderer,
+  { release, ready }: { release: () => void; ready: (v: StartedVenus) => void },
+): Promise<void> {
+  const {
+    vkShare,
+    vkBreak,
+    vkVendor,
+    vkPoll,
+    vkSyncPipelines,
+    vkPipeDelayMs,
+    vkNoCache,
+    vkImportRewrite,
+    vkPremake,
+    vkQueues,
+    vkShaderBudget,
+    vkNudgeMs,
+    vkGpuTime,
+    vkIdleMs,
+    vkTickMs,
+    vkHold,
+    vkHeldFormats,
+    vkYcbcr,
+    vkL9,
+    vkSkip,
+  } = knobs;
+  let share: VenusShare | undefined;
+  let imports: VenusImport | undefined;
+  // Not bundled (`@vite-ignore`): the static copy doesn't carry the renderer yet (vk/README.md "Not yet").
+  const module = await WebAssembly.compileStreaming(fetch(new URL('../target/vk/venus.wasm', import.meta.url).href));
+  // The driver's WebGPU device (none: it keeps Venus's objects and draws nothing).
+  const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
+  const device = adapter
+    ? await adapter
+        .requestDevice(deviceRequest(adapter, { gpuTime: vkGpuTime, l9: l9Suspects(vkL9 ?? []) }))
+        .catch((err) => {
+          console.warn('venus: no WebGPU device', err);
+          return undefined;
+        })
+    : undefined;
+  if (!device) console.warn('venus: this browser has no WebGPU adapter here: Vulkan draws nothing');
+  const ai = adapter?.info;
+  const vkAdapter: VulkanAdapter = {
+    device: !!device,
+    adapter: ai ? [ai.vendor, ai.architecture, ai.description].filter(Boolean).join(' ') || undefined : undefined,
+    software: ai
+      ? (ai as GPUAdapterInfo & { isFallbackAdapter?: boolean }).isFallbackAdapter || ai.architecture === 'swiftshader'
+      : undefined,
+  };
+  device?.lost.then((info) => console.warn(`venus: the WebGPU device was lost: ${info.message}`));
+  // What the device advertises follows the device's features and limits and the adapter's maker.
+  // Its shaders of earlier runs (web/venus-cache.ts): IndexedDB, the origin's, for this build of the renderer.
+  const cache =
+    vkNoCache || typeof indexedDB === 'undefined'
+      ? undefined
+      : (id: string) => ShaderCache.open(id, { backend: idbBackend(), budget: vkShaderBudget });
+  // Subgroups only where they're right in divergent control flow (web/venus-caps.ts `subgroupsRight`).
+  // Anchored where only the translator's anchored ballots are right (Chromium on Metal).
+  const subgroups = device ? await subgroupsRight(device) : 'right';
+  if (subgroups === 'wrong')
+    console.warn(
+      "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation",
+    );
+  if (subgroups === 'anchor')
+    console.log("venus: the WebGPU device's ballots are wrong in divergent control flow unless anchored: anchored");
+  const hold = subgroups !== 'wrong' ? vkHold : [...(vkHold ?? []), 'subgroups'];
+  const venus = await VenusRenderer.create(
+    module,
+    init.memory,
+    { ...init.window, core: init.core },
+    device,
+    device && adapter
+      ? {
+          features: device.features,
+          limits: device.limits,
+          adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info,
+        }
+      : undefined,
+    vkPoll,
+    {
+      syncPipelines: vkSyncPipelines,
+      pipelineDelayMs: vkPipeDelayMs,
+      cache,
+      nudgeMs: vkNudgeMs,
+      gpuTime: vkGpuTime,
+      ringIdleMs: vkIdleMs,
+      tickMs: vkTickMs,
+      hold,
+      subgroupAnchor: subgroups === 'anchor',
+      heldFormats: vkHeldFormats,
+      ycbcr: vkYcbcr,
+      l9: l9Suspects(vkL9 ?? []),
+      premake: vkPremake,
+      queueFamilies: vkQueues,
+      skip: vkSkip,
+    },
+  );
+  venusSkip = (paths) => venus.skip(paths);
+  venus.onRetire = release;
+  const v = venus;
+  if (device && adapter) {
+    const mode = vkShare ?? (vkBreak?.length ? 'bitmap' : shareMode(adapter, glInfo(gl).renderer));
+    share = new VenusShare(device, mode, renderer, (id) => v.shared(id), {
+      forced: !!vkShare,
+      broken: new Set(vkBreak),
+      idle: () => v.gpu.idle(),
+    });
+    console.log(
+      `venus: Vulkan on ${adapter.info.vendor || 'an unnamed'} ${adapter.info.architecture} adapter; its frames reach virgl by ${mode}${vkShare ? ' (forced)' : mode === 'readback' ? '' : ', checked at the first copies'}`,
+    );
+    // Its textures' writes in the queue's order: after the submits held for their pipelines (web/venus-gpu.ts `later`).
+    const im = (imports = new VenusImport(device, renderer, (f) => v.gpu.later(f), { rewrite: vkImportRewrite }));
+    v.gpu.onImport = (t, res, desc) => im.bind(t, res, desc);
+    renderer.onPlane = (res, data, w, h, bpp) => im.plane(res, data, w, h, bpp);
+  }
+  renderer.external = { has: (id) => v.has(id), refresh: (r) => share?.refresh(r) };
+  ready({ venus, adapter: vkAdapter, share, imports });
+}
+
+/** `render-stats` once a second (`?displaystats`, bench/gpu): what the renderer did in the second and the time it took. */
+function postRenderStats(
+  post: (m: FromGpuWorker) => void,
+  {
+    renderer,
+    screen,
+    queue,
+    poller,
+    counts,
+  }: {
+    renderer: VirglRenderer;
+    screen: Screen;
+    queue: CallQueue<WorkerCall>;
+    poller: QueryPoller;
+    counts: Counts;
+  },
+  vulkan: () => { share?: VenusShare; imports?: VenusImport; venus?: VenusRenderer },
+) {
+  let last = { ...renderer.stats };
+  let lastShare = { refreshes: 0, ms: 0 };
+  let lastImport = { binds: 0, made: 0, pictures: 0, bytes: 0, ms: 0 };
+  let lastTextures = 0;
+  screen.presentAt = [];
+  setInterval(() => {
+    const { share, imports, venus } = vulkan();
+    const s = renderer.stats;
+    post({
+      type: 'render-stats',
+      submits: s.submits - last.submits,
+      draws: s.draws - last.draws,
+      commands: s.commands - last.commands,
+      busyMs: counts.busyMs,
+      submitMs: counts.submitMs,
+      presents: screen.presents,
+      presentAt: screen.presentAt!.splice(0),
+      drawMs: screen.drawMs,
+      programs: s.programs,
+      errors: s.errors,
+      uploadBytes: s.uploadBytes - last.uploadBytes,
+      readbacks: s.readbacks - last.readbacks,
+      readbackBytes: s.readbackBytes - last.readbackBytes,
+      fences: counts.fences,
+      fenceMs: counts.fenceMs,
+      fenceMaxMs: counts.fenceMaxMs,
+      compileMs: s.compileMs - last.compileMs,
+      shareRefreshes: (share?.stats.refreshes ?? 0) - lastShare.refreshes,
+      shareMs: (share?.stats.ms ?? 0) - lastShare.ms,
+      importBinds: (imports?.stats.binds ?? 0) - lastImport.binds,
+      importMade: (imports?.stats.made ?? 0) - lastImport.made,
+      importPictures: (imports?.stats.pictures ?? 0) - lastImport.pictures,
+      importBytes: (imports?.stats.bytes ?? 0) - lastImport.bytes,
+      importMs: (imports?.stats.ms ?? 0) - lastImport.ms,
+      venusTextures: (venus?.gpu.stats.textures ?? 0) - lastTextures,
+      share: share && {
+        ...share.check,
+        dropped: [...share.check.dropped],
+        checks: share.stats.checks,
+        checksWrong: share.stats.checksWrong,
+        unshared: share.stats.unshared,
+        fromBuffers: share.stats.fromBuffers,
+      },
+      venus: venus?.times(),
+      venusCalls: venus?.calls(),
+      venusEmul: venus?.emul(),
+      venusPipelines: venus && {
+        ...venusPipelines(venus.gpu.stats),
+        cacheBytes: venus.gpu.cache?.stats.bytes ?? 0,
+        cacheHeld: venus.gpu.cache?.stats.held ?? 0,
+        cacheEntries: venus.gpu.cache?.stats.entries ?? 0,
+        cacheInflateMs: venus.gpu.cache?.stats.inflateMs ?? 0,
+      },
+      video: { ...renderer.videoStats, ahead: queue.ahead, maxWaitMs: queue.maxWaitMs },
+      queryPolls: poller.polls,
+      queryPendingMs: poller.pendingMs + (poller.queries ? clock() - poller.pendingSince : 0),
+    });
+    counts.fences = counts.fenceMs = counts.fenceMaxMs = 0;
+    poller.polls = poller.pendingMs = 0;
+    if (poller.queries) poller.pendingSince = clock();
+    queue.maxWaitMs = 0;
+    renderer.videoStats.latencyMaxMs = 0;
+    last = { ...s };
+    lastShare = { refreshes: share?.stats.refreshes ?? 0, ms: share?.stats.ms ?? 0 };
+    lastImport = { ...(imports?.stats ?? lastImport) };
+    lastTextures = venus?.gpu.stats.textures ?? 0;
+    counts.busyMs = counts.submitMs = 0;
+    screen.presents = 0;
+    screen.drawMs = 0;
+  }, 1000);
+}
+
+/** The status bar's numbers (`stats`), now and once a second: what the renderer, the screen and the decoders count
+ * anyway. */
+function postStatus(
+  post: (m: FromGpuWorker) => void,
+  renderer: VirglRenderer,
+  screen: Screen,
+  info: ReturnType<typeof glInfo>,
+  decoders: Awaited<ReturnType<typeof probeVideo>> | undefined,
+  vulkan: () => { venus?: VenusRenderer; adapter?: VulkanAdapter },
+) {
   const offered = (decoders?.caps ?? []).map((c) => ({
     profile: profileName(c.profile),
     hardware: decoders!.hardware.includes(c.profile),
@@ -652,7 +584,8 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   const report = () => {
     const s = renderer.stats,
       v = renderer.videoStats;
-    const vulkan: VulkanReport | undefined =
+    const { venus, adapter: vkAdapter } = vulkan();
+    const vulkanReport: VulkanReport | undefined =
       venus && vkAdapter
         ? {
             ...vkAdapter,
@@ -679,30 +612,9 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         errors: v.errors,
         decoderErrors: v.decoderErrors,
       },
-      vulkan,
+      vulkan: vulkanReport,
     });
   };
   report();
   setInterval(report, 1000);
-};
-
-/** Venus's pipelines so far (totals; VK3 L3): made, made asynchronously and ready (and their ms), submits held for them
- * (and their ms), made at once by a submit, vkCreate*Pipelines calls in the module and their ms, the shader store's
- * lookups found and missed and its stores. bench/vulkan/venus-run.ts takes a replay's difference. */
-function venusPipelines(g: VenusGpuStats) {
-  return {
-    pipelines: g.pipelines,
-    ready: g.pipelinesReady,
-    readyMs: g.pipelineReadyMs,
-    deferred: g.deferred,
-    deferredMs: g.deferredMs,
-    syncPipelines: g.syncPipelines,
-    premade: g.premade,
-    premadeUsed: g.premadeUsed,
-    translations: g.translations,
-    translateMs: g.translateMs,
-    cacheHits: g.cacheHits,
-    cacheMisses: g.cacheMisses,
-    cacheStores: g.cacheStores,
-  };
 }

@@ -1,7 +1,7 @@
 // Presentation of Vulkan through Venus (vk/README.md "Presentation"; docs/devices.md "Venus"): a Vulkan program's WSI
 // image is a blob of Venus's renderer, which the guest's compositor (sway on GLES) imports as a dma-buf into virgl and
 // samples. The virgl renderer (WebGL2) makes it a texture of its own at the import (PIPE_RESOURCE_SET_TYPE:
-// web/virgl-renderer.ts `ExternalResource`), and this copies the image's WebGPU texture into it whenever the driver
+// web/virgl-objects.ts `ExternalResource`), and this copies the image's WebGPU texture into it whenever the driver
 // has written it since, before the compositor's submit that may sample it. Both renderers are in the GPU worker; the
 // two APIs share nothing directly, so the bytes go one of three ways (bench/vulkan/REPORT.md "VK2 L4", "VK3 L1"):
 //   bitmap    a draw of the image into a WebGPU canvas context's texture (bgra8unorm, an OffscreenCanvas of the image's
@@ -22,7 +22,8 @@
 // first (`fromBuffer`), which then goes any of the three ways.
 import { FORMATS } from './virgl-formats.ts';
 import { softwareRenderer } from './virgl-screen.ts';
-import type { ExternalResource, VirglRenderer } from './virgl-renderer.ts';
+import type { ExternalResource } from './virgl-objects.ts';
+import type { VirglRenderer } from './virgl-renderer.ts';
 
 export type ShareMode = 'bitmap' | 'canvas' | 'readback';
 /** The ways in the order they are tried. */

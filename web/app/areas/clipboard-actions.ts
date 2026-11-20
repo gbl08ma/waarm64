@@ -2,7 +2,7 @@
 // clipboard as it uses it, the events it follows (focus, the paste chord, a key or click on the screen), and the
 // clipboard menu's actions (web/app/page.ts's `clipboard*`), "Copy the screen" among them.
 import type { DisplayFromPage } from '../../gpu-present.ts';
-import type { ToGpuWorker } from '../../gpu-worker.ts';
+import type { ToGpuWorker } from '../../gpu-messages.ts';
 import type { AgentLink } from '../agent-link.ts';
 import { ClipboardShare } from '../clipboard.ts';
 import { startsPaused } from '../demo-store.ts';

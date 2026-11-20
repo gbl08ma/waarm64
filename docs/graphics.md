@@ -75,8 +75,9 @@ gfxstream driver is Vulkan only.
   browser's video decoders, builds the caps from that context (below) and says `ready`; the machine then starts with
   those caps and a port to it. The device worker keeps the virtqueues and forwards its 3D work (contexts, resources,
   backings, attachments, transfers, submits) and **every scanout, 2D ones too** (the firmware, the console) as ordered
-  calls (`web/virgl-host.ts`). The GPU worker runs them through the renderer (`web/virgl-renderer.ts`, with the
-  translator `web/virgl-tgsi.ts` and the format table `web/virgl-formats.ts`) and draws the screen. Guest RAM is
+  calls (`web/virgl-host.ts`). The GPU worker runs them through the renderer (`web/virgl-renderer.ts`, its state model
+  `web/virgl-objects.ts` and pixel paths `web/virgl-pixels.ts`, with the translator `web/virgl-tgsi.ts` and the format
+  table `web/virgl-formats.ts`) and draws the screen. Guest RAM is
   shared memory, so the renderer reads and writes the guest's pages in place.
 - Without WebGL2, or if the context or the caps can't be made (`failed`), the machine starts again as 2D. A lost
   context on a 3D machine stops it with a message (every renderer object is gone with it); a 2D machine's WebGL2
@@ -298,7 +299,7 @@ screen than on the simple framebuffer (backlog).
   39 frames a second instead of 55. The drawing buffer isn't preserved, so every present draws the whole scanout.
 - **Stats** (`?displaystats`, `render-stats` once a second): submits, draws, commands, busy and submit time, presents,
   uploads and read-backs, fences and their latency, compile time, video's counters.
-- **The status bar's numbers** (`stats`, always, once a second from `ready` on; `FromGpuWorker` in web/gpu-worker.ts):
+- **The status bar's numbers** (`stats`, always, once a second from `ready` on; `FromGpuWorker` in web/gpu-messages.ts):
   the WebGL renderer and vendor (read once) and whether it is a CPU rasterizer, totals since the worker started of
   presents (`Screen.presented`), submits, commands, draws and errors, and video's: the codecs offered and which in
   hardware, the guest's codecs now (`VideoContext.streams`: profile, size, hardware or not, open, pictures written)

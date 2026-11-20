@@ -37,7 +37,7 @@
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 4
+      "count": 1
     }
   },
   "web/audio.ts": {
@@ -170,7 +170,7 @@
       "count": 1
     },
     "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 2
+      "count": 1
     }
   },
   "web/gpu.ts": {
@@ -321,12 +321,6 @@
     }
   },
   "web/reach6.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
     "@typescript-eslint/prefer-optional-chain": {
       "count": 1
     }
@@ -550,6 +544,11 @@
       "count": 1
     }
   },
+  "web/venus-formats.ts": {
+    "@typescript-eslint/prefer-optional-chain": {
+      "count": 1
+    }
+  },
   "web/venus-gpu.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 2
@@ -561,37 +560,34 @@
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 6
+      "count": 5
     },
     "@typescript-eslint/no-unnecessary-type-parameters": {
       "count": 1
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 62
+      "count": 60
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 33
+      "count": 32
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 41
+      "count": 39
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 3
+      "count": 2
     },
     "@typescript-eslint/prefer-optional-chain": {
-      "count": 3
+      "count": 1
     },
     "@typescript-eslint/restrict-template-expressions": {
       "count": 1
     },
     "@typescript-eslint/use-unknown-in-catch-callback-variable": {
       "count": 2
-    },
-    "no-useless-assignment": {
-      "count": 1
     }
   },
   "web/venus-host.ts": {
@@ -630,6 +626,14 @@
       "count": 2
     },
     "@typescript-eslint/use-unknown-in-catch-callback-variable": {
+      "count": 2
+    }
+  },
+  "web/venus-wgsl.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unsafe-member-access": {
       "count": 2
     }
   },
@@ -757,7 +761,7 @@
       "count": 11
     },
     "@typescript-eslint/no-floating-promises": {
-      "count": 3
+      "count": 2
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 6

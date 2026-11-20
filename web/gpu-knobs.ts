@@ -23,7 +23,7 @@ export type GpuWorkerKnobs = {
   vkShare?: ShareMode;
   /** `?gpu=vkbreak=<way>` (tests): that way's copies come out black, and the GPU ways are tried even where the page renders in software. */
   vkBreak?: ShareMode[];
-  /** `?gpu=vkvendor=<maker>` (e.g. `nvidia`): the adapter's maker as the Vulkan device takes it (web/venus-gpu.ts `VENDORS`; tests). */
+  /** `?gpu=vkvendor=<maker>` (e.g. `nvidia`): the adapter's maker as the Vulkan device takes it (web/venus-caps.ts `VENDORS`; tests). */
   vkVendor?: string;
   /** `?gpu=vkpoll=timeout` or `vkpoll=pump`: Venus polls its rings an older way, the default being the pump on a ticker worker (web/venus-host.ts `VenusPoll`; A/B). */
   vkPoll?: VenusPoll;
@@ -49,13 +49,13 @@ export type GpuWorkerKnobs = {
   vkIdleMs?: number;
   /** `?gpu=vktick=<ms>`: the Venus pump's ticker sleeps that long between turns (web/venus-host.ts `VenusOptions.tickMs`; A/B). */
   vkTickMs?: number;
-  /** `?gpu=vkhold=<feature>` (repeatable): an adapter feature the Vulkan device doesn't take (web/venus-gpu.ts `gpuFeatures`; A/B). */
+  /** `?gpu=vkhold=<feature>` (repeatable): an adapter feature the Vulkan device doesn't take (web/venus-caps.ts `gpuFeatures`; A/B). */
   vkHold?: string[];
   /** `?gpu=vkformats=held`: the device doesn't take `HELD_FEATURES` (libplacebo's advanced path off, the default until VK3 L4e; A/B). */
   vkHeldFormats?: boolean;
   /** `?gpu=vkycbcr=off` (false): the Vulkan device without YCbCr conversions and the multi-planar formats (on by default since VK3 L7.3; web/venus-host.ts `VenusOptions.ycbcr`). */
   vkYcbcr?: boolean;
-  /** `?gpu=vkl9=<suspect>` (repeatable, `all`): VK3 L9a's suspects back at 4fdc69fb's behaviour (web/venus-gpu.ts `L9_SUSPECTS`; the NVIDIA run's A/B). */
+  /** `?gpu=vkl9=<suspect>` (repeatable, `all`): VK3 L9a's suspects back at 4fdc69fb's behaviour (web/venus-caps.ts `L9_SUSPECTS`; the NVIDIA run's A/B). */
   vkL9?: string[];
   /** `?gpu=vkskip=<path>` (repeatable): an emulated path's work left out, wrong pixels and no refused command (web/venus-host.ts `SKIPS`; VK4 T23's A/B). */
   vkSkip?: string[];

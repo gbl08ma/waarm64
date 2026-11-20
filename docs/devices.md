@@ -1485,7 +1485,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   at Chromium's slow look otherwise). vkr's ring monitor, which tells Venus's watchdog in the guest the renderer lives,
   is the ticker too: it sets the monitored rings' alive bits every second from its own thread, whatever the GPU worker's
   thread is doing (GD G3: a 5 s createShaderModule in the GPU process blocked it and the guest aborted Godot; vk/README.md
-  "Calls and rings"). A ring fence's reply is out of line (the only one that is: `rings` in `gpuBackend`): it stands for a queue's work, which
+  "Calls and rings"). A ring fence's reply is out of line (the only one that is: `rings` in web/gpu-backend.ts `gpuBackend`): it stands for a queue's work, which
   may wait for the guest's own signal (a held submit, vk/README.md "Waits before their signal"), and held in order it
   held what follows, including the unfenced `SUBMIT_3D` every queue submit also sends, so 8 such submits filled the page's
   16 entries and the guest stopped in the kernel before it signalled. The kernel takes fences of different rings in any

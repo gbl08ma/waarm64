@@ -1,10 +1,10 @@
 // What the run's workers and display port say (web/app/protocol.ts `FromWorker`, web/gpu-present.ts `DisplayToPage`,
-// web/gpu-worker.ts `FromGpuWorker`), by message type: each table is a run's (web/app/run/runner.ts sets them,
+// web/gpu-messages.ts `FromGpuWorker`), by message type: each table is a run's (web/app/run/runner.ts sets them,
 // dropped once the run is replaced: `Run.guard`).
 import { msg, MsgError, t, text } from '../../i18n.ts';
 import { fromWire } from '../../msg.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
-import type { FromGpuWorker } from '../../gpu-worker.ts';
+import type { FromGpuWorker } from '../../gpu-messages.ts';
 import type { EvdevEvent } from '../../input.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { keys } from '../areas/keys.svelte.ts';

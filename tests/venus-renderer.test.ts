@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { GpuCaps, L9Suspect } from '../web/venus-gpu.ts';
+import type { GpuCaps, L9Suspect } from '../web/venus-caps.ts';
 import { VenusRenderer } from '../web/venus-host.ts';
 import { VENUS_CAPSET_WORDS } from '../web/venus.ts';
 import { VENUS_ARENA } from '../web/ram.ts';
@@ -347,7 +347,7 @@ test("what the driver advertises follows the WebGPU device's features and limits
     };
   };
   const SAMPLED = 0x1, STORAGE = 0x2, COLOR = 0x80, BLEND = 0x100, FILTER = 0x1000;
-  // With `?gpu=vkformats=held` (web/venus-gpu.ts `HELD_FEATURES`; the default takes them since VK3 L4e: `all` below).
+  // With `?gpu=vkformats=held` (web/venus-caps.ts `HELD_FEATURES`; the default takes them since VK3 L4e: `all` below).
   const mac = await caps(adapter('2026-10-01-mac-m4-metal.json', 'apple'), { heldFormats: true });
   const swiftshader = await caps(adapter('2026-10-01-vm-swiftshader.json', 'google'), { heldFormats: true });
   const none = await caps();
@@ -359,7 +359,7 @@ test("what the driver advertises follows the WebGPU device's features and limits
   assert.deepEqual([none.dim2D, none.invocations, none.storageImages, none.storageRange], [8192, 256, 4, 134217728]);
   // The adapter's maker as the device's vendor (Apple's, Google's; none known: 0), but never NVIDIA's: Venus's guest
   // driver then copies every WSI frame into a buffer, which isn't shared, and Vulkan's windows are black
-  // (web/venus-gpu.ts `VENDORS`).
+  // (web/venus-caps.ts `VENDORS`).
   assert.deepEqual([mac.vendor, swiftshader.vendor, none.vendor, nvidia.vendor], [0x106b, 0x1ae0, 0, 0]);
   // A guest's saved pipeline cache holds WGSL made for the caps: one made with others isn't taken (the out-of-context
   // review of the translator, finding 9).

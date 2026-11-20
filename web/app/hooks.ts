@@ -7,7 +7,7 @@ import type { ClipboardShare } from './clipboard.ts';
 import type { PageFolders } from './folders-live.ts';
 import type { FromWorker, Status } from './protocol.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
-import type { FromGpuWorker } from '../gpu-worker.ts';
+import type { FromGpuWorker } from '../gpu-messages.ts';
 import type { RamPlace, Surface } from '../surface.ts';
 import type { SurfaceLook } from './surface-look.ts';
 

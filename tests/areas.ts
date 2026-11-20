@@ -123,12 +123,12 @@ export const AREAS: Record<string, Area> = {
   },
   // ---- graphics
   display: {
-    src: ['web/gpu.ts', 'web/gpu-present.ts', 'web/display.ts', 'web/edid.ts', 'web/surface.ts', 'web/input.ts', 'web/app/Screen*.svelte', 'web/app/areas/screen*.ts', 'web/app/areas/mouse.svelte.ts', 'web/app/areas/cursor-fit.ts', 'web/app/Mouse*.svelte', 'web/app/Size*.svelte', 'web/app/areas/page-window.ts', 'web/app/ViewDivider.svelte', 'tests/gpu/**'],
+    src: ['web/gpu.ts', 'web/gpu-backend.ts', 'web/gpu-present.ts', 'web/display.ts', 'web/edid.ts', 'web/surface.ts', 'web/input.ts', 'web/app/Screen*.svelte', 'web/app/areas/screen*.ts', 'web/app/areas/mouse.svelte.ts', 'web/app/areas/cursor-fit.ts', 'web/app/Mouse*.svelte', 'web/app/Size*.svelte', 'web/app/areas/page-window.ts', 'web/app/ViewDivider.svelte', 'tests/gpu/**'],
     heavy: ['tests/page-pointers.test.ts', 'tests/page-surface.test.ts', 'tests/page-layout.test.ts'],
     push: ['ci-debian.sh', 'ci-graphics.sh'],
   },
   virgl: {
-    src: ['web/virgl*.ts', 'web/gpu-worker.ts', 'web/gpu-knobs.ts', 'web/gl-enums.ts', 'web/video-*.ts', 'tests/virgl/**', 'tests/virgl-*.ts', 'tools/virgl-*', 'tools/virgl-oracle/**', 'tools/nosme*', 'tools/nosme/**', 'images/gpu/**', 'images/deqp/**', 'tests/deqp/**', 'tests/deqp-lists.ts'],
+    src: ['web/virgl*.ts', 'web/gpu-worker.ts', 'web/gpu-messages.ts', 'web/gpu-knobs.ts', 'web/gl-enums.ts', 'web/video-*.ts', 'tests/virgl/**', 'tests/virgl-*.ts', 'tools/virgl-*', 'tools/virgl-oracle/**', 'tools/nosme*', 'tools/nosme/**', 'images/gpu/**', 'images/deqp/**', 'tests/deqp/**', 'tests/deqp-lists.ts'],
     heavy: ['tests/virgl-browser.test.ts'],
     push: ['ci-graphics.sh', 'ci-deqp.sh'],
     end: ['ci-deqp.sh --full'],

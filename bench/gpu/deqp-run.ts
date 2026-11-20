@@ -149,7 +149,7 @@ if (process.env.LATE) {
   results.late = late.length;
   results.cases = (results.cases as number) + late.length;
 }
-// Venus's pipelines over the run (web/gpu-worker.ts `venusPipelines`: made, their ms until ready, the translator's
+// Venus's pipelines over the run (web/gpu-messages.ts `venusPipelines`: made, their ms until ready, the translator's
 // calls and ms): where a slow case's time goes (VK4 T21).
 if (vk) {
   results.pipelines = await s.page.evaluate(() => ((window as unknown as { __renderStats?: { venusPipelines?: unknown }[] }).__renderStats ?? []).findLast((x) => x.venusPipelines)?.venusPipelines ?? null);

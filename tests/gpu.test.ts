@@ -307,7 +307,7 @@ test('gpu: the cursor', () => {
 
 test('gpu: a display change raises the event, the guest clears it', async () => {
   // The backend's side: events_read bit 0 set through the config change; events_clear is write-one-to-clear.
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const cfg = new Uint8Array(256);
   const calls: string[] = [];
   const ctx = {
@@ -494,7 +494,7 @@ test('gpu: alpha is the X byte until a resource is shown, then opaque (a canvas 
 });
 
 test('gpu: a cropped console keeps the display from shrinking below its buffer', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const cfg = new Uint8Array(256);
   let events = 0;
   const ctx = { ram: () => [new Uint8Array(1 << 16)], layout: ramLayout(1 << 16), complete() {}, config: () => cfg, untaken: () => 0, features: () => 0n, changeConfig: (w: (c: Uint8Array) => void) => { events++; w(cfg); } };
@@ -532,7 +532,7 @@ test('gpu: a cropped console keeps the display from shrinking below its buffer',
 });
 
 test('gpu: one flush is answered per frame, the first at once; what is queued behind a held one keeps its order', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const frame = 1000 / 60, slack = 2;
   // The pacing is against the clock: a stall of this process past a frame between the synchronous sends below (CI's
   // load) ends the frame early and rightly changes what is held. Such a run proves nothing and is taken again.
@@ -589,7 +589,7 @@ test('gpu: one flush is answered per frame, the first at once; what is queued be
 test('gpu: a transfer copies when it arrives, also while its reply is held (the guest reuses the buffer without waiting)', async () => {
   // Linux waits for no reply on a primary plane: a compositor draws its next frames into a buffer whose transfer's
   // reply is still held, so a copy that waited for the reply (or for the page's draw) showed half-drawn frames.
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
   const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
@@ -609,7 +609,7 @@ test('gpu: a transfer copies when it arrives, also while its reply is held (the 
 });
 
 test('gpu: a ring fence\'s reply is out of line: what follows it is answered while it waits, and its own at its retirement', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const done: number[] = [];
   const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete(w0: number) { done.push(w0); }, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
@@ -644,7 +644,7 @@ test('gpu: a ring fence\'s reply is out of line: what follows it is answered whi
 });
 
 test('gpu: a Venus fence names its context and ring to the host; virgl\'s and a blob\'s hold name none', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
   const b = gpuBackend(ctx, { width: 800, height: 600, virgl: true, venus: true });
@@ -672,7 +672,7 @@ test('gpu: a Venus fence names its context and ring to the host; virgl\'s and a 
 // A queue's work may wait for a signal the guest sends after it, from the thread that queued it; each ring fence held
 // takes an entry of the page's 16, so 16 stopped that thread in the kernel (backlog "Synchronization", VK4 R1).
 test('gpu: ring fences that fill the queue and stall give entries back, the next fence of their ring standing for them', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const done: number[] = [];
   const replies = new Map<number, { flags: number; id: bigint }>();
@@ -725,7 +725,7 @@ test('gpu: ring fences that fill the queue and stall give entries back, the next
 // own: the guest's next command's, or, when the guest sends nothing, the display event's GET_DISPLAY_INFO (the kernel's
 // own command, from its config-change work), never by the ring's next alone.
 async function givenBack() {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const config = new Uint8Array(256);
   let signalled = 0n, events = 0, w0 = 1000;
@@ -811,7 +811,7 @@ test('gpu: a fence that gave its entry back is signalled once its work is done, 
 // early): the stall check then re-arms, and must re-arm for what is left of `RING_STALL_MS`, not all of it again, or the
 // guest's queue waits twice the stall (backlog "CPU and ISA" until 2026-11-02; it flaked the test above's fixed wait).
 test('gpu: a stall timer that fires early re-arms for what is left of the stall', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const done: number[] = [];
   const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete(w0: number) { done.push(w0); }, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
@@ -850,7 +850,7 @@ test('gpu: a stall timer that fires early re-arms for what is left of the stall'
 });
 
 test('gpu: a full queue whose fences go on retiring, or whose guest goes on sending, keeps its entries', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   const ram = new Uint8Array(RAM_SIZE);
   const done: number[] = [];
   const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete(w0: number) { done.push(w0); }, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
@@ -1159,7 +1159,7 @@ test('venus: a virgl resource attached to a Venus context is imported there with
 });
 
 test('gpu: a cropped console wider than an EDID can say: the floor and the fallback modes stay within EDID_MAX', async () => {
-  const { gpuBackend } = await import('../web/gpu.ts');
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
   // Through the device's queue: GET_EDID read and answered as the guest's kernel does after the display event.
   const ram = new Uint8Array(1 << 16);
   const ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };

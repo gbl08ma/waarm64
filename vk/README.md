@@ -278,7 +278,7 @@ WGSL, not what it computes: that is the driver's tests' and dEQP-VK's, and L5's 
 is an `if`'s only other subgroup operation, its value used past the `if`, is computed with every invocation (hoisted
 out of the `if`), and shuffles up and down (and dEQP's xors) are wrong where their delta varies across the subgroup
 (WGSL wants it uniform; Vulkan doesn't): 89 of the Mac's 503 sampled subgroup cases failed (VK3 L5). The GPU worker
-runs a kernel of each at Venus's start (web/venus-gpu.ts `subgroupsRight`): where the plain one is wrong and the
+runs a kernel of each at Venus's start (web/venus-caps.ts `subgroupsRight`): where the plain one is wrong and the
 anchored one right (the M4), the translator anchors (`WGSL_SUBGROUP_ANCHOR`, wgsl_print.c `SG_ANCHOR`: an add of the
 subgroup in the three's operands, `(subgroupAdd(1u) != 0u)`, which keeps Metal from hoisting them, and the shuffles as
 `subgroupShuffle` by the invocation's own index); where both are wrong, subgroups of one invocation (bench/vulkan/REPORT.md
@@ -309,12 +309,14 @@ cases SwiftShader passes; the 94 left are float arithmetic (docs/backlog.md "Wha
 ## The driver
 
 `vk/driver/` on Mesa's full runtime, KosmicKrisp's structure (MIT; our code): its hardware is the GPU worker's WebGPU
-device, reached through the module's `wg` imports (`wg_gpu.h`, implemented by web/venus-gpu.ts). WebGPU objects are
+device, reached through the module's `wg` imports (`wg_gpu.h`, implemented by web/venus-gpu.ts; what the device
+advertises and asks for in web/venus-caps.ts, the WGSL it generates in web/venus-wgsl.ts, formats' layouts in
+web/venus-formats.ts). WebGPU objects are
 named by ids the driver assigns; the rarely made ones are described as JSON, a submit's commands are calls with
 plain numbers. Without a device (Node) the imports keep nothing and every submit completes at once.
 
 - **What it advertises follows the browser's WebGPU device** (`wg_caps.c`, VK2 L7): the GPU worker asks the adapter
-  for every limit and optional feature the driver uses (web/venus-gpu.ts `deviceRequest`), and `venus_init` gets the
+  for every limit and optional feature the driver uses (web/venus-caps.ts `deviceRequest`), and `venus_init` gets the
   device's (`gpuFeatures`: a bit a feature; `gpuLimits`: 34 limits as `struct wg_limits`, WebGPU's defaults where the
   browser has none). The mapping is VK0 A's (`bench/vulkan/profiles/make.ts` `direct`) for the direct rows (docs/graphics.md "What maps, what's emulated, what isn't offered"):
   image sizes, descriptor counts, buffer ranges, vertex input, workgroups and inter-stage components from the limits;
@@ -357,7 +359,7 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   queue may signal what it waits for; a wait on a binary semaphore whose signalling submit is held is held with it
   (`held_signals`: Vulkan only has the signal submitted first, and one queue's order no longer keeps it). `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
-- **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
+- **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-caps.ts `HELD_FEATURES`): `float32-blendable` and
   tier1's storage formats (bit 14 of `venus_init`'s flags, `WG_FEATURE_TIER1_STORAGE`, which also says
   `shaderStorageImageExtendedFormats`; set on every adapter unless held). Either gives mpv's libplacebo a family of FBO formats (32-bit floats, or
   16-bit floats with tier1's storage), and with them its advanced rendering (scalers, debanding, its frame cache). The
@@ -1191,7 +1193,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   the GPU with timestamp queries (the device then asks for `timestamp-query`); both for A/B and diagnosis (VK3 L2b).
   The render stats' `venus` carries a submit's parts too: the worker's encoding, `queue.submit`'s call, its writes,
   passes and draws, and the done of the submits with a pass. `?gpu=vkl9=<suspect>` (repeatable; `all`) puts one of
-  VK3 L9a's suspects back as it was at 4fdc69fb, for the NVIDIA run's A/B only (web/venus-gpu.ts `L9_SUSPECTS`):
+  VK3 L9a's suspects back as it was at 4fdc69fb, for the NVIDIA run's A/B only (web/venus-caps.ts `L9_SUSPECTS`):
   `features` (no `subgroups`, `shader-f16`), `limits` (not the vertex stage's storage limits nor
   `maxBindingsPerBindGroup`), `bindgroups` (each pipeline's layouts their own uids), `pad` (no WG_MEMORY_PAD).
   On NVIDIA a frame's `Queue::Submit` in the GPU process took 2.5 ms of its CPU at c8087cb0 against 1.6 at 4fdc69fb,
@@ -1349,7 +1351,7 @@ A Vulkan program's frames reach the page's screen through the guest's compositor
 images with dma-buf memory (the LINEAR modifier), Venus's guest driver exports each image's memory as a blob, and sway
 (on GLES, virgl) imports it into its virgl context and types it (`PIPE_RESOURCE_SET_TYPE`). Both renderers run in the
 GPU worker, the driver on WebGPU and virgl on WebGL2, which share nothing directly; web/venus-share.ts copies the
-image into the virgl texture made at the import (web/virgl-renderer.ts `ExternalResource`):
+image into the virgl texture made at the import (web/virgl-objects.ts `ExternalResource`):
 
 - **Which texture:** the driver keeps the shared image bound to each memory (`wg_device_memory.image`, for images with
   dma-buf memory or a modifier), vkr the memory a resource was exported from, so `venus_resource_texture(ctx, res)`
@@ -1366,7 +1368,7 @@ image into the virgl texture made at the import (web/virgl-renderer.ts `External
   in red) and R5G6B5's (`rgba8unorm`) hold colours, not virgl's bytes. Where the texture's bytes aren't virgl's, the
   readback way and the check first draw the image into a texture of virgl's bytes (`storedOf`: `rgb10a2unorm` swizzled,
   5-6-5 packed into `r16uint`); the GPU ways draw it swizzled into their canvas as before, and WebGL converts.
-- **Not NVIDIA's vendor ID:** the device reports the adapter's maker as its vendor (web/venus-gpu.ts `VENDORS`), but
+- **Not NVIDIA's vendor ID:** the device reports the adapter's maker as its vendor (web/venus-caps.ts `VENDORS`), but
   never NVIDIA's 0x10de: Venus's guest driver (Mesa 26's `vn_wsi_init`) then takes the device for Venus on NVIDIA's own
   driver, which can't render to linear images, and its WSI renders into an optimal image and copies each frame into a
   buffer it exports instead (the prime blit), which every Vulkan window on the user's NVIDIA desktop took before the

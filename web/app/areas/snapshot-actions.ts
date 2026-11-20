@@ -4,7 +4,7 @@
 import { msg, t, type Msg } from '../../i18n.ts';
 import type { SnapshotDisk } from '../../snapshot.ts';
 import { SNAPSHOT_VERSION } from '../../snapshot-file.ts';
-import type { ToGpuWorker } from '../../gpu-worker.ts';
+import type { ToGpuWorker } from '../../gpu-messages.ts';
 import { ask } from '../ask.svelte.ts';
 import { askPersist } from '../storage-report.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';

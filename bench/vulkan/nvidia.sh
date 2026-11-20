@@ -204,7 +204,7 @@ if [ "${1:-}" = page ]; then
   if [[ " ${VK2_STEPS:-} " == *" l9 "* ]]; then
     # VK3 L9a (only when asked: VK2_STEPS=l9, ~15 min): Venus's submits done ~2 ms later at c8087cb0 than at 4fdc69fb,
     # Dawn's Queue::Submit of a frame 1.56 -> 2.53 ms of the GPU process's CPU; the suspects back at 4fdc69fb's
-    # behaviour one by one (`?gpu=vkl9=…`, web/venus-gpu.ts L9_SUSPECTS) and all at once, against the default; two
+    # behaviour one by one (`?gpu=vkl9=…`, web/venus-caps.ts L9_SUSPECTS) and all at once, against the default; two
     # alternated rounds at 1 fish and the toolkit, each with a trace of 2 s at 1 fish (its summary only: Queue::Submit).
     for round in ${VK2_L9_ROUNDS:-1 2}; do
       for arm in ${VK2_L9_ARMS:-default all features limits bindgroups pad}; do

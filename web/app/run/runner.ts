@@ -5,7 +5,7 @@ import { msg, MsgError } from '../../i18n.ts';
 import type { PageAudio } from '../../audio.ts';
 import { attachInput, type EvdevEvent } from '../../input.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
-import type { FromGpuWorker, ToGpuWorker } from '../../gpu-worker.ts';
+import type { FromGpuWorker, ToGpuWorker } from '../../gpu-messages.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { current } from '../areas/current.svelte.ts';
 import { keys } from '../areas/keys.svelte.ts';

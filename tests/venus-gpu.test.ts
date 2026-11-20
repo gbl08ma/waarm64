@@ -4,7 +4,9 @@
 // The real device's side is tests/venus-driver.test.ts's (Chromium).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bitsBetween, deviceRequest, fanMost, L9_LIMITS, l9Suspects, packedSwizzle, VenusGpu, xfbOpen } from '../web/venus-gpu.ts';
+import { deviceRequest, L9_LIMITS, l9Suspects } from '../web/venus-caps.ts';
+import { bitsBetween, packedSwizzle } from '../web/venus-formats.ts';
+import { fanMost, VenusGpu, xfbOpen } from '../web/venus-gpu.ts';
 
 // The classes venus-gpu.ts tells objects apart by.
 class FakeBuffer { destroyed = false; destroy() { this.destroyed = true; } mapAsync() { return Promise.resolve(); } getMappedRange() { return new ArrayBuffer(16); } unmap() {} }

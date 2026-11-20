@@ -4,7 +4,7 @@
 // that owns the screen's canvas — or, in tests, a renderer in the same thread. Calls are ordered and answer nothing;
 // `fence` resolves once everything before it has run (the device holds a fenced command's reply until then, so the
 // guest sees its uploads read and its read-backs written).
-import type { Backing, Box, RendererSnapshot, ResourceDesc } from './virgl-renderer.ts';
+import type { Backing, Box, RendererSnapshot, ResourceDesc } from './virgl-objects.ts';
 import type { VirglRenderer } from './virgl-renderer.ts';
 import type { Screen } from './virgl-screen.ts';
 import { toWire, type WireError } from './msg.ts';

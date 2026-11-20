@@ -2,7 +2,7 @@
 // (tests/venus-driver.test.ts): its scene's pixels, its compute pass's output and a filled buffer, read back once the
 // submit's fence signalled.
 import { memoryBackend, ShaderCache, type CacheBackend } from '../../web/venus-cache.ts';
-import { deviceRequest } from '../../web/venus-gpu.ts';
+import { deviceRequest } from '../../web/venus-caps.ts';
 import { VenusRenderer, type VenusPoll } from '../../web/venus-host.ts';
 import { VenusImport } from '../../web/venus-import.ts';
 import { VENUS_ARENA } from '../../web/ram.ts';

@@ -47,7 +47,7 @@ async function readFile(path: string) {
     p += stored;
   }
   const json = JSON.parse(Buffer.concat(devs).toString('utf8'));
-  // The renderer's state: the object with `version`, `resources` and `contexts` (web/virgl-renderer.ts `RendererSnapshot`).
+  // The renderer's state: the object with `version`, `resources` and `contexts` (web/virgl-objects.ts `RendererSnapshot`).
   type State = { resources: Saved[]; contexts: { subs: { objects: { kind: string }[] }[] }[] };
   let r: State | undefined;
   const find = (x: unknown) => {

@@ -4,7 +4,7 @@
 // cost: translated to WGSL, the shader module and render pipeline made, and the GPU's compile before its draw runs).
 // For each: the ms in the call (the module records, translates, and replays the submit into WebGPU) and the ms until
 // its fence signalled (the GPU's work, and for a new pipeline its compile, done and read back).
-import { deviceRequest } from '../../../web/venus-gpu.ts';
+import { deviceRequest } from '../../../web/venus-caps.ts';
 import { VenusRenderer, type VenusPoll } from '../../../web/venus-host.ts';
 
 type Test = {
