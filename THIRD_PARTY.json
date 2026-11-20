@@ -2504,6 +2504,85 @@
       ]
     },
     {
+      "id": "intro-guest",
+      "title": "The introduction's guest, which we build and distribute (not in the repository)",
+      "intro": [],
+      "columns": [
+        {
+          "key": "binary",
+          "title": "Binary"
+        },
+        {
+          "key": "source",
+          "title": "Source, commit"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "How we use it"
+        }
+      ],
+      "entries": [
+        {
+          "id": "intro-guest",
+          "name": "The introduction's guest",
+          "about": "intro",
+          "bundled": "INTRO-LICENSES.txt",
+          "parts": [
+            {
+              "name": "Linux",
+              "url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.54.tar.xz",
+              "version": "6.18.54",
+              "license": "GPL-2.0-only WITH Linux-syscall-note",
+              "licenseTexts": [
+                {
+                  "name": "COPYING",
+                  "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/COPYING?h=v6.18.54"
+                },
+                {
+                  "name": "GPL-2.0",
+                  "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/LICENSES/preferred/GPL-2.0?h=v6.18.54"
+                }
+              ]
+            },
+            {
+              "name": "BusyBox",
+              "url": "https://gitlab.alpinelinux.org/alpine/aports/-/tree/c3ef5d10e6ef6528852c51f0564963e2f8c1be19/main/busybox",
+              "version": "1.37.0 (Alpine busybox-static 1.37.0-r31)",
+              "license": "GPL-2.0-only",
+              "licenseTexts": [
+                {
+                  "name": "LICENSE",
+                  "url": "https://git.busybox.net/busybox/tree/LICENSE?h=1_37_0"
+                }
+              ]
+            },
+            {
+              "name": "musl",
+              "url": "https://gitlab.alpinelinux.org/alpine/aports/-/tree/8f79d39391b46d6dbf1800fb68b8212a21d5ee2e/main/musl",
+              "version": "1.2.6 (Alpine musl-dev 1.2.6-r3)",
+              "license": "MIT",
+              "licenseTexts": [
+                {
+                  "name": "COPYRIGHT",
+                  "url": "https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT?h=v1.2.6"
+                }
+              ]
+            }
+          ],
+          "md": {
+            "binary": "`target/images/intro/intro.img` and its gzip `intro.img.gz`, which the page serves (`images/build.sh intro`, INTRO loop 1)",
+            "source": "Linux 6.18.54: kernel.org's tarball (`LINUX_SHA256` in `images/build.sh`), unmodified, `allnoconfig` + `images/intro/linux.fragment`; BusyBox 1.37.0: Alpine 3.24's binary package `busybox-static` 1.37.0-r31, built by Alpine from aports `c3ef5d10e6ef` (`main/busybox`); musl 1.2.6: Alpine's `musl-dev` 1.2.6-r3, aports `8f79d39391b4` (`main/musl`). The build checks the packages' recorded commits against the pins (`INTRO_BUSYBOX_COMMIT`, `INTRO_MUSL_COMMIT`)",
+            "license": "Linux: GPL-2.0-only WITH Linux-syscall-note; BusyBox: GPL-2.0-only; musl: MIT (linked statically into BusyBox and into our toys)",
+            "use": "the small machine on the introduction's first screen: the kernel with an initramfs of BusyBox, our scripts and our three framebuffer programs (`images/intro/`, MIT). The page distributes the binary, so its licences and the exact sources (the user, 2026-11-20: links pinned to what we build from, no tarballs of our own) are served beside it (`INTRO-LICENSES.txt`, from `images/intro/LICENSES.head` and the kernel tree's GPL text)"
+          }
+        }
+      ]
+    },
+    {
       "id": "references-permissive",
       "title": "Reference projects: verified licenses",
       "intro": [

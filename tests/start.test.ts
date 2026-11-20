@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { download, downloads } from '../tools/debian.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
-import { FIRMWARE, VENUS, VENUS_LICENSES, WASM, firmwareStale, npmStale, podmanProblem, venusInputs, venusStale, wasmInputs } from '../tools/start.ts';
+import { FIRMWARE, VENUS, VENUS_LICENSES, WASM, firmwareStale, introStale, npmStale, podmanProblem, venusInputs, venusStale, wasmInputs } from '../tools/start.ts';
 import { tsInputs } from '../tools/tailscale.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { t } from '../web/i18n.ts';
@@ -183,6 +183,10 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
   if (!cold) { // the firmware comes from this checkout too (its inputs are the same files); cold builds it with Podman
     mkdirSync(join(d, 'target/images/edk2'), { recursive: true });
     for (const f of ['QEMU_EFI.fd', 'LICENSES.txt', '.inputs']) copyFileSync(join(ROOT, 'target/images/edk2', f), join(d, 'target/images/edk2', f));
+  }
+  if (!cold && !introStale()) { // the introduction's machine too (its inputs are the same files); cold, or stale here, the copy builds it in Podman
+    mkdirSync(join(d, 'target/images/intro'), { recursive: true });
+    for (const f of ['intro.img', 'intro.img.gz', 'LICENSES.txt', '.inputs']) copyFileSync(join(ROOT, 'target/images/intro', f), join(d, 'target/images/intro', f));
   }
   if (!cold && !venusStale()) { // Vulkan's renderer too, with its stamp (the copy's vk/ is this checkout's); cold builds it in Podman
     mkdirSync(join(d, 'target/vk'), { recursive: true });

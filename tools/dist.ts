@@ -6,11 +6,13 @@
 //                                     maps), its CSS, and the binaries it fetches: the core (waarm64_core.wasm), the
 //                                     tailnet client (ts.wasm), EDK2 (QEMU_EFI.fd), clipboard sharing's guest agent
 //                                     (waarm64-agent, fetched only by a machine with the setting), Vulkan's renderer
-//                                     (venus.wasm, fetched only by a machine with Vulkan on); every name hashed
+//                                     (venus.wasm, fetched only by a machine with Vulkan on), the introduction's small
+//                                     machine (intro.img.gz, fetched by the introduction's first screen); every name hashed
 //   web/app/index.html                a redirect to the root (the page was there until 2026-10-23)
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below; web/app/public/)
-//   THIRD-PARTY-LICENSES.md, EDK2-LICENSES.txt, VENUS-LICENSES.txt, LICENSE   the bundled packages' licenses, the
-//                                     firmware's, the Vulkan renderer's (vk/build.sh), ours
+//   THIRD-PARTY-LICENSES.md, EDK2-LICENSES.txt, VENUS-LICENSES.txt, INTRO-LICENSES.txt, LICENSE   the bundled
+//                                     packages' licenses, the firmware's, the Vulkan renderer's (vk/build.sh), the
+//                                     introduction's machine's (Linux and BusyBox: GPL, with where the sources are), ours
 // No guest images: the page's machine waits for the user's disk (`?disk=<url>` takes one from any server
 // that allows the page's origin and answers range requests, or a chunked image's manifest from any static host; the
 // deployed copy's images are on their own host, deploy/disks/).
@@ -25,7 +27,7 @@ import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { build } from 'vite';
 import { APP, ROOT, startServer } from './serve.ts';
-import { AGENT, AGENT_HOST_BUILD, FIRMWARE, main as prepare, Stop, VENUS, WASM } from './start.ts';
+import { AGENT, AGENT_HOST_BUILD, FIRMWARE, INTRO, main as prepare, Stop, VENUS, WASM } from './start.ts';
 import { BUNDLED } from './third-party.ts';
 
 export const OUT = join(ROOT, 'target/dist');
@@ -37,6 +39,8 @@ const MARK = '.waarm64-dist';
 export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, BUNDLED['EDK2-LICENSES.txt'], AGENT];
 /** Vulkan's renderer and its licences (vk/build.sh; images/build.sh venus). */
 export const VULKAN = [VENUS, BUNDLED['VENUS-LICENSES.txt']];
+/** The introduction's small machine and its licences (images/build.sh intro). */
+export const INTRO_FILES = [INTRO, BUNDLED['INTRO-LICENSES.txt']];
 
 /** Why the guest agent in `root`'s target/ can't go in a copy to distribute (a build by the host's cargo), or undefined. */
 export const hostAgentProblem = (root = ROOT) => existsSync(join(root, AGENT_HOST_BUILD))
@@ -46,9 +50,10 @@ export const hostAgentProblem = (root = ROOT) => existsSync(join(root, AGENT_HOS
 /**
  * Writes the static copy of the page to `out` (its binaries must be built; Vulkan's renderer too unless `vulkan` is
  * false, for the tests, when it goes in only if built; the guest agent built in Podman unless `hostAgent`: `npm start`'s copy, for this
- * machine only, takes the host's build too); returns the files written, relative to `out`.
+ * machine only, takes the host's build too; the introduction's machine unless `intro` is false, when it goes in only if
+ * built: a copy without it shows the introduction with the machine's plate); returns the files written, relative to `out`.
  */
-export async function writeDist(out = OUT, { vulkan = true, hostAgent = false }: { vulkan?: boolean; hostAgent?: boolean } = {}) {
+export async function writeDist(out = OUT, { vulkan = true, hostAgent = false, intro = true }: { vulkan?: boolean; hostAgent?: boolean; intro?: boolean } = {}) {
   if (existsSync(out) && readdirSync(out).length && !existsSync(join(out, MARK))) {
     throw new Stop(`${out} exists and isn't a copy this script wrote: pick another --out, or empty it.`);
   }
@@ -58,10 +63,13 @@ export async function writeDist(out = OUT, { vulkan = true, hostAgent = false }:
   if (host) throw new Stop(host);
   const vk = VULKAN.every((f) => existsSync(join(ROOT, f)));
   if (vulkan && !vk) throw new Stop(`Not built: ${VULKAN.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (\`npm run dist\` without --no-prepare builds them).`);
+  const guest = INTRO_FILES.every((f) => existsSync(join(ROOT, f)));
+  if (intro && !guest) throw new Stop(`Not built: ${INTRO_FILES.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (images/build.sh intro, where Podman is installed).`);
   await build({ configFile: join(ROOT, 'vite.config.ts'), build: { outDir: out }, logLevel: 'warn' });
   // The license files the About pane links (tools/third-party.ts `BUNDLED`).
   cpSync(join(ROOT, BUNDLED['EDK2-LICENSES.txt']), join(out, 'EDK2-LICENSES.txt'));
   if (vk) cpSync(join(ROOT, BUNDLED['VENUS-LICENSES.txt']), join(out, 'VENUS-LICENSES.txt'));
+  if (guest) cpSync(join(ROOT, BUNDLED['INTRO-LICENSES.txt']), join(out, 'INTRO-LICENSES.txt'));
   cpSync(join(ROOT, 'LICENSE'), join(out, 'LICENSE'));
   return readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile());
 }

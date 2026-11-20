@@ -1,0 +1,58 @@
+The introduction's small machine (intro.img.gz, served with this web app)
+==========================================================================
+
+The file is a Linux kernel with a small root file system inside it. waarm64 builds it
+(images/build.sh intro in waarm64's repository) from:
+
+- Linux @LINUX@, GPL-2.0-only WITH Linux-syscall-note, built by waarm64 from the unmodified
+  release tarball:
+    https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-@LINUX@.tar.xz
+    SHA-256 @LINUX_SHA256@
+  with the configuration allnoconfig plus images/intro/linux.fragment (in waarm64's repository,
+  at the commit this web app's About pane names).
+
+- BusyBox 1.37.0, GPL-2.0-only: Alpine Linux's binary package busybox-static 1.37.0-r31, as it
+  is. Alpine built it from its aports tree at commit @BUSYBOX_COMMIT@:
+    https://gitlab.alpinelinux.org/alpine/aports/-/tree/@BUSYBOX_COMMIT@/main/busybox
+  That directory's APKBUILD names the upstream tarball (busybox-1.37.0.tar.bz2, with its
+  checksum) and holds Alpine's patches and configuration.
+
+- musl 1.2.6, MIT, linked statically into BusyBox and into the programs below: Alpine Linux's
+  package musl-dev 1.2.6-r3, built from its aports tree at commit @MUSL_COMMIT@:
+    https://gitlab.alpinelinux.org/alpine/aports/-/tree/@MUSL_COMMIT@/main/musl
+  Its full copyright file: https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT?h=v1.2.6
+
+- The programs in /toys and the scripts init, tour and cycle: waarm64's own, MIT
+  (images/intro/ in waarm64's repository; their C sources are also in the file, in /toys).
+
+waarm64's repository: https://github.com/gbl08ma/waarm64
+
+
+musl
+----
+
+Copyright © 2005-2020 Rich Felker, et al.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+Linux and BusyBox: the GNU General Public License, version 2
+------------------------------------------------------------
+

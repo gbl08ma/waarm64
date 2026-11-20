@@ -1066,5 +1066,53 @@
   "IntroRam.cost": {
     "message": "The other choices were measured and lost. A 64-bit WebAssembly memory cost 6% to 20% of the speed on an x86 PC, and about as much on an Apple M4. Keeping all of RAM in a second memory cost 12% to 40%. With this split, compiled code that works on node 1 takes 1.0 to 1.6 times as long as on node 0, and most machines never get there.",
     "note": "Second paragraph under the bars of the introduction's memory deep dive: why RAM is split this way. The figures are docs/architecture.md's and docs/spill-memories.md's."
+  },
+  "IntroGuest.label": {
+    "message": "A small machine running in this tab",
+    "note": "Screen reader's name for the frame beside the introduction's first paragraphs: a small Linux machine that boots by itself when the page opens, with its screen and its serial terminal."
+  },
+  "IntroGuest.terminal": {
+    "message": "The small machine's serial terminal",
+    "note": "Screen reader's name for the terminal under the small machine's screen on the introduction."
+  },
+  "IntroGuest.start": {
+    "message": "Start the machine",
+    "note": "Button over the small machine's empty screen on the introduction, for a visitor whose system asks for less motion: nothing moves until they press it."
+  },
+  "IntroGuest.again": {
+    "message": "Start it again",
+    "note": "Button over the small machine's screen on the introduction after the machine powered itself off (the visitor typed poweroff): boots it again."
+  },
+  "IntroGuest.caption.waiting": {
+    "message": "A small ARM machine can run here. It boots in about half a second.",
+    "note": "Line under the small machine's empty screen on the introduction before it is started (a visitor who asked for less motion). The time is the measured one: keep it approximate."
+  },
+  "IntroGuest.caption.scope": {
+    "message": "This picture is being drawn now, by a machine that started when this page opened.",
+    "note": "Line under the small machine's screen on the introduction while its first picture runs alone (an oscilloscope-like figure), before anything shows that it is Linux."
+  },
+  "IntroGuest.caption.reveal": {
+    "message": "The machine is an emulated ARM computer running Linux. The picture is a small C program on it, and these are its commands.",
+    "note": "Line under the small machine's screen on the introduction when its terminal starts typing commands (uname, ls): the reveal that the picture comes from a Linux machine."
+  },
+  "IntroGuest.caption.ridges": {
+    "message": "A second program. Every instruction it runs is ARM code that $t(common:product.name) compiled to WebAssembly a moment ago.",
+    "note": "Line under the small machine's screen on the introduction while its second picture runs (a flight over a landscape of lines)."
+  },
+  "IntroGuest.caption.life": {
+    "message": "A third. The whole machine, kernel and programs, came with this page in one file of under 2 MB.",
+    "note": "Line under the small machine's screen on the introduction while its third picture runs (Conway's Game of Life). The size is the guest image's as downloaded (1.7 MB): keep “under 2 MB”."
+  },
+  "IntroGuest.caption.shell": {
+    "message": "The shell is yours. Click the terminal and type <code>top</code>, <code>scope</code>, or <code>cat /toys/life.c</code>.",
+    "note": "Line under the small machine's screen on the introduction once its tour is over and its shell waits for the visitor. The three commands are real ones in the guest: don't translate them."
+  },
+  "IntroGuest.caption.off": {
+    "message": "The machine powered itself off.",
+    "note": "Line under the small machine's screen on the introduction after the visitor typed poweroff in its shell."
+  },
+  "IntroGuest.counters": {
+    "message": "{{steps}} instructions run, in {{blocks}} blocks compiled to WebAssembly",
+    "note": "Small line under the small machine's terminal on the introduction, updated every second: {{steps}} is the count of ARM instructions the machine has executed so far and {{blocks}} the count of code blocks the JIT compiled, both formatted numbers like 1,234,567."
   }
 }

@@ -1095,6 +1095,10 @@
     "message": "UEFI firmware",
     "note": "Home page, About, Third-party software: heading of the table of the projects in the UEFI firmware the machines boot."
   },
+  "About.group.intro": {
+    "message": "The introduction's small machine",
+    "note": "Home page, About, Third-party software: heading of the table of the projects inside the small Linux machine that runs on the introduction's first screen (a kernel and its programs, served with the web app)."
+  },
   "About.group.agent": {
     "message": "Clipboard sharing in the guest",
     "note": "Home page, About, Third-party software: heading of the table of the projects in the small program the web app runs inside a guest that shares its clipboard (the guest agent)."

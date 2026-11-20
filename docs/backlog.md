@@ -2221,6 +2221,14 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 
 ## Tests and tools
 
+- **A names-server test that fails about one run in eight**: `room::names::server_tests::a_release_beats_a_renewal_waiting_at_its_parent`
+  (net/ts) failed in `scripts/ci.sh` on 2026-11-20 (a run that touched no Rust) and then 1 time in 8 run alone
+  (`cargo test --lib a_release_beats_a_renewal_waiting_at_its_parent` in `net/ts`), in either order of its loop
+  ("renewal first true" in CI, "false" alone): at `server_tests.rs:4044` server 0 still resolves `letgo` to its node
+  where the test wants `Nx` after the release. The bus's time is simulated, so the difference between runs is what is
+  drawn at random (keys, and with them ids and their order): either the release can lose to the waiting renewal for
+  some orders of ids, which is a defect in the server, or the test assumes an order. Start by fixing the keys' seed
+  to a failing draw.
 - **The fast lane stalls when started from an agent's shell in the cloud** (INTRO, 2026-11-20): `scripts/ci-fast.sh`
   run by the Bash tool directly stopped twice 67 tests into the JS step with every process idle (once for 31 min);
   started detached (`nohup … &`) it ran through both times. Most likely a test or a tool it starts reads the

@@ -26,6 +26,7 @@
     network: 'machines:About.group.network',
     firmware: 'machines:About.group.firmware',
     agent: 'machines:About.group.agent',
+    intro: 'machines:About.group.intro',
   };
 
   const b = about.build;

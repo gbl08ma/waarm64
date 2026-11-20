@@ -1,12 +1,11 @@
 <!--
   The introduction's first screen (web/app/IntroPage.svelte): what waarm64 is in a headline and two paragraphs, the way
-  to the demos, and beside them the machine's plate (IntroPlate.svelte). The plate's place is where the live preview
-  goes (a small guest booting by itself: INTRO-KICKOFF.md, loops 1 and 2); the plate is what shows where that can't
-  run.
+  to the demos, and beside them a small machine running (IntroGuest.svelte: a guest that boots by itself when the page
+  opens), or where that can't run, the machine's plate (IntroPlate.svelte).
 -->
 <script lang="ts">
   import Button from '../ui/Button.svelte';
-  import IntroPlate from './IntroPlate.svelte';
+  import IntroGuest from './IntroGuest.svelte';
   import T from '../T.svelte';
   import { t } from '../../i18n.ts';
 
@@ -24,13 +23,14 @@
       <Button onclick={onhow} data-action="intro-how">{t('intro:IntroHero.how')}</Button>
     </div>
   </div>
-  <IntroPlate />
+  <IntroGuest />
 </section>
 
 <style>
   .hero {
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    /* The frame's own width (its screen's 512 pixels and its edges) where the window has it. */
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 538px);
     align-items: center;
     gap: var(--space-8);
     max-width: 1240px;
@@ -69,7 +69,7 @@
   }
   @media (max-width: 900px) {
     .hero {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       gap: var(--space-7);
       padding: var(--space-7) var(--space-5);
     }

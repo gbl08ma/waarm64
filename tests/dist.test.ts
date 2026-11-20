@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
-import { BINARIES, hostAgentProblem, VULKAN, writeDist } from '../tools/dist.ts';
+import { BINARIES, hostAgentProblem, INTRO_FILES, VULKAN, writeDist } from '../tools/dist.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
@@ -18,6 +18,8 @@ import { newEmptyMachine, openHome } from './page-home.ts';
 const skipCopy = BINARIES.some((f) => !existsSync(join(ROOT, f))) && 'SKIPPED: npm start --prepare-only builds the binaries';
 const buildroot = existsSync(join(ROOT, 'target/images/buildroot/rootfs.ext4')) && existsSync(join(ROOT, 'target/images/linux/Image'));
 const skip = skipCopy || (!buildroot && 'SKIPPED: run images/build.sh');
+/** The introduction's machine is built (images/build.sh intro): the copy has it and its licences. */
+const introGuest = INTRO_FILES.every((f) => existsSync(join(ROOT, f)));
 /** Vulkan's renderer is built (vk/build.sh): the copy has it and its licences. */
 const vulkan = VULKAN.every((f) => existsSync(join(ROOT, f)));
 
@@ -28,7 +30,7 @@ let close: () => void;
 before(async () => {
   if (skipCopy) return;
   out = mkdtempSync(join(tmpdir(), 'waarm64-dist-'));
-  await writeDist(out, { vulkan: false, hostAgent: true });
+  await writeDist(out, { vulkan: false, hostAgent: true, intro: false });
   // The page's direct-boot machines find their images at target/images/ under the root (web/app/machine.ts).
   mkdirSync(join(out, 'target/images'), { recursive: true });
   if (buildroot) for (const d of ['linux', 'buildroot']) symlinkSync(join(ROOT, 'target/images', d), join(out, 'target/images', d));
@@ -55,8 +57,18 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
   assert.deepEqual([served.headers.get('content-encoding'), served.headers.get('content-type')], [null, 'application/gzip']);
   assert.equal(Buffer.compare(Buffer.from(await served.arrayBuffer()), readFileSync(join(out, agent))), 0, "the agent's gzip as it is");
   assert.ok(files.some((f) => /^assets\/worker-[\w-]{8}\.js$/.test(f) && readFileSync(join(out, f), 'utf8').includes(agent.slice('assets/'.length))), "the worker doesn't name the agent's asset");
+  // The introduction's machine, where it is built: its gzip as it is (the page gunzips it), its licences beside the page.
+  const guest = files.find((f) => /^assets\/intro\.img-[\w-]{8}\.gz$/.test(f));
+  assert.equal(!!guest, introGuest, introGuest ? 'no assets/intro.img-<hash>.gz' : "the introduction's machine in a copy without its build");
+  assert.equal(files.includes('INTRO-LICENSES.txt'), introGuest);
+  if (guest) {
+    const sent = await fetch(`${base}/${guest}`, { headers: { 'accept-encoding': 'gzip' } });
+    assert.equal(sent.headers.get('content-encoding'), null, "the machine's gzip was sent as an encoding: the browser would decode it");
+    assert.equal(Buffer.compare(gunzipSync(Buffer.from(await sent.arrayBuffer())).subarray(0x38, 0x3c), Buffer.from('ARMd', 'latin1')), 0, "the introduction's machine is a gzipped arm64 Image");
+    assert.match(readFileSync(join(out, 'INTRO-LICENSES.txt'), 'utf8'), /GNU GENERAL PUBLIC LICENSE[^]*Version 2, June 1991/);
+  }
   const scripts = files.filter((f) => f.endsWith('.js'));
-  assert.ok(scripts.length < 40, `${scripts.length} scripts: the page isn't bundled`);
+  assert.ok(scripts.length < 45, `${scripts.length} scripts: the page isn't bundled`);
   assert.match(readFileSync(join(out, 'THIRD-PARTY-LICENSES.md'), 'utf8'), /@xterm\/xterm[\s\S]*svelte/);
   // Vulkan's renderer where it is built (`npm run dist` and `npm start` build it; this copy takes it if there), its
   // licences beside it; the GPU worker fetches it by its hashed name.

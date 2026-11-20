@@ -751,10 +751,11 @@ over the machine and the Home page.
 repository (`package.json`'s `repository`), the version it was built from (the tag on the commit when one was cut, with
 the commit; otherwise the commit; "with local changes" when tracked files differed), that commit's date (the console's
 line has the same: below, "A static copy"), waarm64's license, and **[Third-party software](ui:machines:About.thirdParty)**: a table per part
-of the web app (the interface, the emulator, OpenGL's and Vulkan's renderers, networking, the UEFI firmware) of the
+of the web app (the interface, the emulator, OpenGL's and Vulkan's renderers, networking, the UEFI firmware, the
+introduction's small machine) of the
 projects built into it or whose code ours is derived from, each with its version, its license (SPDX) and links to its
 license texts at that version, and under a table the license file served beside the page that holds them all
-(`EDK2-LICENSES.txt`, `VENUS-LICENSES.txt`, `THIRD-PARTY-LICENSES.md`). The rows are `THIRD_PARTY.json`'s marked
+(`EDK2-LICENSES.txt`, `VENUS-LICENSES.txt`, `INTRO-LICENSES.txt`, `THIRD-PARTY-LICENSES.md`). The rows are `THIRD_PARTY.json`'s marked
 `about`, which Vite gives the page as `virtual:waarm64-about` at build time, nothing else of that file
 ([third-party.md](third-party.md)). A link to another site opens in a new tab with `rel="external nofollow noopener
 noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
@@ -781,23 +782,37 @@ and the floating windows don't show, and the machine, Home or the store's page s
   of the browser's history, so Back returns to the introduction; Home replaces the introduction's entry, as Home's
   address always does.
 - **The first screen** (`intro/IntroHero.svelte`): the headline, two paragraphs, the button to the demos, and beside
-  them the **machine's plate** (`intro/IntroPlate.svelte`): the emulated machine's parts and limits as a rating plate
-  says them (the figures are comparison.md §2's). The plate's place is where the live preview goes (a small guest
-  booting by itself: the kickoff's loop 2, not built yet); the plate is the design for a browser where that
-  can't run.
-- **The guest's runner** (`intro/guest.ts`, `intro/guest-worker.ts`, `intro/guest-protocol.ts`; built and measured,
-  not yet in the first screen): `startGuest` makes a worker of its own that fetches the core and the guest's one file
-  (`target/images/intro/intro.img.gz`, images.md "intro"; gunzipped by `DecompressionStream`, unless a server already
-  did: the gzip's magic bytes say), boots it with `bootVm` (the JIT, one vCPU on its own worker, 64 MiB, realtime, no
-  devices), draws the simple framebuffer on a canvas handed over once (`web/display.ts`), and posts the serial port's
-  output, the first frame with something on it, the guest's counters once a second (instructions, compiled blocks)
-  and its end (`off`, or `failed` with a detail for the console: the page shows the plate, not an error). `pause`
-  stops the vCPU and the drawing; `stop` closes the VM and ends the worker (after 2 s whatever it answers).
-  `canRunGuest` says whether the browser can at all (shared memory in an isolated page, a canvas a worker draws on,
-  `DecompressionStream`). It is not the page's machine: nothing of `run/` or the Machines model knows of it, and it
-  keeps nothing. The tour's marks are `guest-protocol.ts` `MARKS`. gzip and not brotli: Chromium 155 has no brotli
-  `DecompressionStream` (Firefox 157 has), and brotli 11 would be 1.40 MB against 1.68 (bench/demo/REPORT.md "INTRO
-  loop 1").
+  them **a small machine running** (`intro/IntroGuest.svelte`, its state in `intro/guest-run.svelte.ts`): a frame, a
+  module of the panel as the plate is, with the guest's screen (512×320, its pixels one to one where the window has
+  the room), a line of ours under it, its serial terminal (xterm.js, 64×8) and its counters (instructions run, blocks
+  compiled, each second).
+  - **The guest** is images.md's `intro`: one file served with the page. It boots when the frame first comes on
+    screen (~0.5 s), shows its first picture before its terminal says anything, then runs its **tour**: commands
+    typed out on the terminal that say what drew the picture and start two more, and at ~41 s a shell that is the
+    visitor's. A key typed in the terminal ends the tour at once (the terminal takes keys only once clicked). The
+    guest prints only commands and their output: **the words are the page's**, the line under the screen, chosen by
+    the tour's marks (`guest-protocol.ts` `MARKS`; an OSC 777 `waarm64;<mark>`, which xterm.js hands to a handler in
+    the order of the text around it): the first picture's, the reveal, the two other pictures', and the shell's.
+  - **It runs only while it can be seen**: an IntersectionObserver on the frame and the tab's visibility pause it (no
+    guest code runs, nothing is drawn) and let it go on. With `prefers-reduced-motion` it doesn't start by itself:
+    the empty screen has a button, [Start the machine](ui:intro:IntroGuest.start). `poweroff` in its shell leaves
+    [Start it again](ui:intro:IntroGuest.again) (a new canvas: one is handed to a worker once). Leaving the
+    introduction ends it (the component's teardown stops the worker first).
+  - **Where it can't run** (`canRunGuest`: no shared memory, no canvas a worker draws on, no `DecompressionStream`; or
+    the run failed: its file missing in a build without Podman, a core that doesn't start), the **machine's plate**
+    shows in its place (`intro/IntroPlate.svelte`: the emulated machine's parts and limits as a rating plate says
+    them, the figures comparison.md §2's), and the reason goes to the console, not to the visitor.
+  - **Its runner** (`intro/guest.ts`, `intro/guest-worker.ts`): `startGuest` makes a worker of its own that fetches
+    the core and the guest's file (`target/images/intro/intro.img.gz`; gunzipped by `DecompressionStream`, unless a
+    server already did: the gzip's magic bytes say), boots it with `bootVm` (the JIT, one vCPU on its own worker,
+    64 MiB, realtime, no devices), draws the simple framebuffer on the canvas (`web/display.ts`), and posts the serial
+    port's output, the first frame with something on it, the counters and its end. `stop` closes the VM and ends the
+    worker (after 2 s whatever it answers). **It is not the page's machine**: nothing of `run/` or the Machines model
+    knows of it, it keeps nothing in the browser, asks for no permission, and a stored machine running under the
+    introduction (opened from About) runs on beside it. gzip and not brotli: Chromium 155 has no brotli
+    `DecompressionStream` (bench/demo/REPORT.md "INTRO loop 1").
+  - **What it costs a first visit** (bench/demo/REPORT.md "INTRO loop 2"): 1.68 MB for the guest and the core
+    (~2 MB compressed, which the first demo needs anyway) over the page's ~0.75 MB; ~170 MiB of memory while it runs.
 - **Its sections** (`intro/IntroSection.svelte`: a title, a paragraph, its parts, in the page's column; the bar's
   links scroll to them) after the first screen:
   - **[What runs on it](ui:intro:IntroFacts.title)** (`intro/IntroFacts.svelte`): four figures as a panel's
@@ -868,7 +883,10 @@ and the floating windows don't show, and the machine, Home or the store's page s
   ([frontend-code.md](frontend-code.md) §2).
 
 Tests: `tests/intro-guest.test.ts` (the guest in Node: a picture before any console text, a key for the shell, one toy
-at a time, power off), `tests/intro-route.test.ts` (the address, where leaving leads; Node), `tests/page-intro.test.ts` (Chromium: a
+at a time, power off), `tests/page-intro-guest.test.ts` (Chromium, the real guest in the first screen: it boots by
+itself, the caption follows the marks, a key gives the shell and a command runs, it rests out of view, powers off
+and starts again, its worker ends with the introduction; the button under reduced motion; the plate where it can't
+run), `tests/intro-route.test.ts` (the address, where leaving leads; Node), `tests/page-intro.test.ts` (Chromium: a
 first visit, no bars under it, a reload, Skip and both buttons to the store, Back; with a machine: not opened by a bare
 address, `#intro`, Skip to Home, About's button and Back to About; the bar's links, the readouts, the comparison's
 table and its sources' links, no speed figure; its wording).
@@ -2613,7 +2631,8 @@ stops if a binary is missing, Vulkan's renderer among them), then builds the pag
   the query and fragment (the page was there until 2026-10-23).
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
   firmware's), `VENUS-LICENSES.txt` (Vulkan's renderer's: virglrenderer, Mesa, wasi-sdk's libraries; vk/build.sh
-  writes it), `LICENSE`: the About pane links them (above, "About"; `BUNDLED` in `tools/third-party.ts` names the
+  writes it), `INTRO-LICENSES.txt` (the introduction's machine's: what is inside `intro.img.gz`, where each source
+  is, the GPL's text and musl's notice; images/build.sh intro writes it), `LICENSE`: the About pane links them (above, "About"; `BUNDLED` in `tools/third-party.ts` names the
   first two's sources), and a marker file (`.waarm64-dist`, from `web/app/public/`, so a plain `vite build` has it
   too): the script only empties a directory that has it.
 

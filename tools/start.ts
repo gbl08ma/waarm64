@@ -84,6 +84,17 @@ export function agentStale(root = ROOT): string | undefined {
   return r.status === 0 ? undefined : "clipboard sharing's guest agent is out of date";
 }
 
+/** The introduction's small machine (images/build.sh intro), which the page serves: its gzip, and its licences beside it. */
+export const INTRO = 'target/images/intro/intro.img.gz';
+export const INTRO_LICENSES = 'target/images/intro/LICENSES.txt';
+
+/** Why the introduction's machine has to be built (missing, or its inputs changed), or undefined if it is current. */
+export function introStale(root = ROOT): string | undefined {
+  if (!existsSync(join(root, INTRO)) || !existsSync(join(root, INTRO_LICENSES))) return "the introduction's small machine isn't built";
+  const r = spawnSync('bash', ['images/build.sh', '--check', 'intro'], { cwd: root, encoding: 'utf8' });
+  return r.status === 0 ? undefined : "the introduction's small machine is out of date";
+}
+
 /** Vulkan's renderer (vk/build.sh, vk/README.md) and its licences, which the page hands a machine with Vulkan. */
 export const VENUS = 'target/vk/venus.wasm';
 export const VENUS_LICENSES = 'target/vk/LICENSES.txt';
@@ -169,6 +180,12 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`Building clipboard sharing's guest agent (${agent}; Rust in a Podman container: ~1 min the first time, which also pulls the build image)…`);
     if (!run('bash', ['images/build.sh', 'agent'], env) || agentStale()) stop("Clipboard sharing's guest agent didn't build (the errors are above).");
   }
+  // The introduction's machine, where Podman is (a cloud session has none: its introduction shows the plate instead).
+  const intro = introStale();
+  if (intro && has('podman', ['--version'], env)) {
+    console.log(`Building the introduction's small machine (${intro}; a Linux kernel in a Podman container: ~2 min the first time, which also pulls the build image)…`);
+    if (!run('bash', ['images/build.sh', 'intro'], env) || introStale()) stop("The introduction's small machine didn't build (the errors are above).");
+  } else if (intro) console.log(`${intro[0].toUpperCase()}${intro.slice(1)}, and there's no Podman to build it: the introduction will show without it.`);
   const venus = venusStale();
   if (venus) {
     // In Podman where it is (as the firmware); without it (a cloud session, whose firmware was fetched), vk/build.sh on
@@ -185,7 +202,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   // The page, built (Vite, ~1 s; tools/dist.ts) and served as the static copy is: what a user should get.
   const { OUT, writeDist } = await import('./dist.ts');
-  await writeDist(OUT, { hostAgent: true }); // the agent the host's cargo built too (no Podman): this copy is for this machine
+  await writeDist(OUT, { hostAgent: true, intro: !introStale() }); // the agent the host's cargo built too, and no introduction's machine (no Podman): this copy is for this machine
   const { APP, startServer } = await import('./serve.ts');
   const port = Number(values.port);
   const server = await startServer(port, values.host, OUT).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'

@@ -320,6 +320,46 @@ const introGuest: Target = {
   timeoutMs: 60_000,
 };
 
+/**
+ * INTRO loop 2: the introduction's first screen as a first visit meets it: the page as `npm run dist` builds it, opened
+ * at `#intro` in a fresh profile, the small machine booting by itself in its frame. Ready is the frame's first picture;
+ * the prompt is the shell's, after a key typed in the terminal at the first picture ended the tour. What the server sent
+ * is counted by kind: the guest's file, the core, the rest of the page.
+ */
+const intro: Target = {
+  name: 'waarm64-intro',
+  system: 'waarm64',
+  what: "the introduction (`#intro`) of the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it, Vite's preview server on 127.0.0.1 (nothing compressed in transit: `pageBrotli` is the page's files less the core and the guest at brotli 5); its small machine (images/build.sh intro) boots by itself",
+  offline: true,
+  serve: async () => {
+    if (!existsSync(`${DIST}index.html`)) throw new Error('build the page first: npm run dist -- --out bench/results/local/demo/dist');
+    const log: Log[] = [];
+    const server: Server = await startServer(0, '127.0.0.1', DIST);
+    count(server, log, (path) => (/\/intro\.img-/.test(path) ? 'guest' : /\/waarm64_core-/.test(path) ? 'core' : 'page'));
+    return {
+      base: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+      close: () => new Promise((r) => server.close(() => r())),
+      kinds: (until) => bytesByKind(log, until),
+      pageBrotli: (until) => brotliBytes(log, DIST, until),
+    };
+  },
+  url: (base) => `${base}/#intro`,
+  ready: (page, ms) => page.locator('[data-intro] figure[data-guest="running"]').waitFor({ timeout: ms }),
+  text: (page) => page.evaluate(() => document.querySelector('[data-intro] figure .xterm-rows')?.textContent ?? ''),
+  type: async (page, s) => {
+    await page.locator('[data-intro] figure .serial').click();
+    await page.keyboard.type(s, { delay: 5 });
+  },
+  prompt: async (page, ms) => {
+    await intro.type(page, ' ');
+    await page.locator('[data-intro] figure[data-mark="shell"]').waitFor({ timeout: ms });
+    await page.waitForFunction(() => /~ # /.test(document.querySelector('[data-intro] figure .xterm-rows')?.textContent ?? ''), null, { timeout: ms, polling: 10 });
+  },
+  promptIs: "the shell's prompt in the frame's terminal, after a key typed at the first picture ended the tour; `ready` is the frame's first picture",
+  echo: ECHO,
+  timeoutMs: 60_000,
+};
+
 /** The browser alone: an empty page, for the memory every target's numbers include. */
 const blank: Target = {
   name: 'blank',
@@ -333,4 +373,4 @@ const blank: Target = {
   timeoutMs: 10_000,
 };
 
-export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, template, desktopTemplate, glTemplate, introGuest, blank].map((t) => [t.name, t]));
+export const TARGETS: Record<string, Target> = Object.fromEntries([unkernel, v86Buildroot, v86Arch, desktop, alpine, template, desktopTemplate, glTemplate, introGuest, intro, blank].map((t) => [t.name, t]));

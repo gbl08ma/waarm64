@@ -2,8 +2,8 @@
 
 The introduction page (the brief: [INTRO-KICKOFF.md](INTRO-KICKOFF.md); what exists: docs/frontend.md "The
 introduction"). Built in a cloud session on branch `claude/gallant-fermi-d53q4y`, merged into `main` on 2026-11-20 by a
-dev VM session that ran the push tier and added the arm64 captures. Loop 1 (the tiny guest) was built in the dev VM
-the same day. The next session starts at loop 2.
+dev VM session that ran the push tier and added the arm64 captures. Loops 1 and 2 (the tiny guest, and the guest in the first screen) were
+built in the dev VM the same day. What is left is loop 8, the end.
 
 ## Where it stands
 
@@ -15,7 +15,8 @@ the same day. The next session starts at loop 2.
 | 5 | "How it works": five paths (the processor, memory, OpenGL, video, Vulkan) | push tier |
 | 6 | The processor's deep dive: the captured code in four panes | push tier |
 | 7 | Memory's deep dive: the RAM slider over `splitRam` | push tier |
-| 1 | The guest: `images/intro/` (its kernel fragment, `init`, `tour`, `cycle`, the toys `scope`, `ridges`, `life` over `screen.h`), `images/build.sh intro`; its runner `web/app/intro/guest.ts`, `guest-worker.ts`, `guest-protocol.ts` (not yet in the first screen); `tests/intro-guest.test.ts`; the bench's target `waarm64-intro-guest` and `bench/demo/intro-firefox.ts`; numbers in bench/demo/REPORT.md "INTRO loop 1" | push tier (`scripts/ci.sh`, the dev VM, 2026-11-20) |
+| 1 | The guest: `images/intro/` (its kernel fragment, `init`, `tour`, `cycle`, the toys `scope`, `ridges`, `life` over `screen.h`), `images/build.sh intro`; its runner `web/app/intro/guest.ts`, `guest-worker.ts`, `guest-protocol.ts`; `tests/intro-guest.test.ts`; the bench's target `waarm64-intro-guest` and `bench/demo/intro-firefox.ts`; numbers in bench/demo/REPORT.md "INTRO loop 1" | push tier (`scripts/ci.sh`, the dev VM, 2026-11-20) |
+| 2 | The hero: `intro/IntroGuest.svelte` and `guest-run.svelte.ts` (the frame: screen, our line by the tour's marks, terminal, counters; paused out of view and in a hidden tab; a button under reduced motion and after a power-off; the plate where it can't run); the guest's file and `INTRO-LICENSES.txt` in `npm start` and `npm run dist`, About's group and `THIRD_PARTY.json`'s row; `tests/page-intro-guest.test.ts`; the bench's target `waarm64-intro`; numbers in REPORT.md "INTRO loop 2" | push tier: `scripts/ci-debian.sh` passed; `scripts/ci.sh` passed but for one assertion of `tests/page-intro-guest.test.ts` (Playwright listing a worker the page had ended), corrected in the test and passed 8 runs alone after (the dev VM, 2026-11-20) |
 | — | The captures' AArch64 host column (the dev VM: V8 14.6.202.34-node.28) beside x86-64's; the viewer shows the visitor's own architecture first (`IntroTranslate.svelte`, `local-release.ts` `thisTarget`) | push tier |
 
 **CI** (the dev VM, 2026-11-20): `scripts/ci.sh` passed on 1791b60a (the arm64 captures and three flake fixes);
@@ -30,48 +31,16 @@ The arm64 column: `wasm-tools` must be the same version on both hosts (the tool 
 host's column), so the dev VM's is now 1.263.0, the cloud's. The arm64 text read clean: branches as offsets, no
 ` (addr 0x…)` left, calls to V8's stubs as `bl #-0x…`.
 
-**Loop 1's numbers** (bench/demo/REPORT.md "INTRO loop 1"): one file of 1.68 MB (gzip) beside the core's ~2 MB, the
-first picture 0.48 s after the navigation in Chromium and 0.59 s in Firefox (the dev server, the guest alone on a
-page), a shell 25 ms after a key; ~120 MiB of tab; a toy costs ~40% of a core while it draws.
+**The numbers** (bench/demo/REPORT.md "INTRO loop 1", "INTRO loop 2"): the guest is one file of 1.68 MB (gzip); a
+first visit downloads ~4.4–4.7 MB in all (the page ~0.75, the guest 1.68, the core ~2). The first picture is on the
+frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox too (the bare guest: 0.59 s); a shell
+80 ms after a key. ~170 MiB of tab; a toy costs ~40% of a core while it draws, nothing while out of view.
 
-**Not built: loop 2 (the live hero) and loop 8 (the end).**
+**Not built: loop 8 (the end).**
 
 ## What the next session does
 
-1. **Loop 2, the hero**: the guest running in the first screen's frame.
-   - Where: `web/app/intro/IntroHero.svelte`. Today the plate (`IntroPlate.svelte`) sits where the frame goes. The
-     plate **is the fallback design** for a browser that can't run the guest (the user: "either a static image or a
-     fallback design that avoids the demo"; Safari is the likely case): keep it, shown when the guest can't start, and
-     probably under or beside the frame when it can.
-   - The runner exists (`intro/guest.ts` `startGuest`, `canRunGuest`; frontend.md "The introduction"): the hero gives
-     it a canvas (512×320 was measured; the toys take any size) and an xterm.js terminal's size, writes its output to
-     the terminal and sends what is typed. `bench/demo/intro-page.ts` is the smallest use of it. A canvas is handed
-     over once: a restart needs a new element.
-   - **The tour's marks** (`guest-protocol.ts` `MARKS`: `scope`, `reveal`, `ridges`, `life`, `shell`; OSC 777
-     `waarm64;<mark>`, which xterm.js hands to `parser.registerOscHandler(777, …)`): the page says its own words by
-     them, from the catalog (a caption a toy, the reveal's sentence, the hint that the shell is the visitor's). The
-     guest prints only commands and their output, by design: no words for the visitor come from it. A key during the
-     tour ends it (the key is swallowed); the terminal should take input only when the visitor means it (a click in
-     it), or a stray key ends the tour.
-   - **The distribution**: the page must ship `target/images/intro/intro.img.gz` (`tools/start.ts` and `tools/dist.ts`
-     as they do the agent's `.gz`: prepared by `npm start`, required by `npm run dist`, counted by
-     `tests/dist.test.ts`; `vite.config.ts` `plainGzip` already serves a `.gz` as it is). A cloud session can't build
-     it: there the hero falls back to the plate (the worker's fetch fails, `onEnd('failed')`). **It is a GPL binary the
-     page distributes** (Linux, BusyBox; musl is MIT): its licences and where the sources are (kernel.org's 6.18.54 with
-     `images/intro/linux.fragment`; Alpine's `busybox-static` 1.37.0-r31) go in a licences file of the build, as EDK2's
-     and Venus's do, and in `THIRD_PARTY.json` with `about` rows (docs/third-party.md).
-   - Measure the real first screen as `npm run dist` builds it (a target beside `waarm64-intro-guest`): the bytes over
-     the page's own, the first picture, the memory.
-   - It pauses when scrolled out of view or the tab is hidden (`intro/autoplay.svelte.ts` has the observer), and is
-     torn down when a demo starts or the introduction is left (host-code.md: teardown frees what start took).
-   - `prefers-reduced-motion`: it doesn't start by itself; a click starts it (the user's OK).
-   - No permission prompt on the way (no clipboard, no storage, no audio until a gesture).
-   - Idea from the cloud session, not built: under the frame, readouts fed by the running guest (instructions run,
-     blocks compiled to WebAssembly, MIPS), using `IntroReadout.svelte`: real numbers moving on a first visit.
-   - The `launch` transition names the demo's picture in the store's pane and the machine's place. With a live frame in
-     the hero, consider naming the frame too, so leaving the introduction for a demo's pane carries it across (today
-     the introduction's bar becomes the toolbar and the rest crosses over).
-2. **Loop 8, the end**, as the kickoff says: an out-of-context review, the docs, the backlog's entries, every tier,
+1. **Loop 8, the end**, as the kickoff says: an out-of-context review, the docs, the backlog's entries, every tier,
    the screenshots tool (`tools/screens.ts`: the introduction's states aren't in it yet), PLAN.md's row, this file and
    the kickoff deleted.
 
@@ -88,18 +57,38 @@ page), a shell 25 ms after a key; ~120 MiB of tab; a toy costs ~40% of a core wh
 - **The comparison's date** (`web/app/intro/compare.ts` `CHECKED`, 2026-11-18, comparison.md's own): the cloud
   session didn't read the peers' sites again. Check them before a deploy and move the date.
 - **A still or clip** for the hero's fallback, if the plate alone isn't wanted.
+- **The first screen's layout** (loop 2): the live frame takes the plate's place, and the plate shows only where the
+  machine can't run (the two together were too tall for a first screen). Screenshots: `node
+  bench/results/local/intro-shot.ts <dir>` (ad hoc, git-ignored) or the page itself on `npm start`.
+- **The frame's words** (`intro:IntroGuest.*`, 12 entries: a line a mark, the buttons): unreviewed, like the rest.
+- **Serving the guest's image from the page's own host** (the user asked about bundling, 2026-11-20): it is its own
+  file (`assets/intro.img-<hash>.gz`), fetched by the guest's worker and never part of a script, as a disk image is.
+  It could instead live on vmdisks.tny.im with the demos' disks (a `Cross-Origin-Resource-Policy` header there, a
+  second deploy step); not done, and not asked for.
 - **The guest's pictures and its tour** (loop 1): three toys in the page's orange on black (an X-Y oscilloscope, a
   flight over ridge lines, Life with fading cells) and the commands the tour types (`uname -srm`, `ls /toys`,
   `ridges &`, `life &`). Stills: run `node bench/demo/run.ts waarm64-intro-guest --runs 1` and open
   `bench/results/local/demo/waarm64-intro-guest-1.png`, or `bench/demo/intro.html` on `npm run serve`.
-- **The guest ships GPL software with the page** (Linux and BusyBox inside `intro.img.gz`): the first time the
-  page's own files do (EDK2 is BSD). Loop 2 adds the licences and the sources' addresses; say if that isn't wanted.
 - **BusyBox is Alpine's static package**, not Buildroot's (the brief said "buildroot boots fast enough"): the same
   BusyBox, without a ten-minute toolchain build; a smaller one of our own configuration is REPORT.md's first
   "not tried".
 - **Deploying**: only on the user's word.
 
 ## Notes for whoever continues
+
+- **GPL sources: pinned links, no tarballs of ours** (the user, 2026-11-20): a GPL binary the page distributes needs
+  links to exactly what it was built from, pinned by a commit or as durable an identifier as there is.
+  `INTRO-LICENSES.txt` has kernel.org's tarball with its SHA-256 and Alpine's aports commits for `busybox-static` and
+  `musl-dev`; `images/build.sh intro` checks the packages' recorded commits against `INTRO_BUSYBOX_COMMIT` and
+  `INTRO_MUSL_COMMIT`, so a bumped package can't ship under the old links.
+
+- **Not done in loop 2, for loop 8 or the backlog:** the `launch` transition doesn't name the frame (leaving for a
+  demo crosses over as before); in a window under ~500 px the frame's terminal is cut at its right end (64 columns
+  at 12 px); the first picture could come ~190 ms sooner with a preload (REPORT.md "INTRO loop 2"); a BusyBox of our
+  own configuration would take ~0.3 MB off the guest (REPORT.md "INTRO loop 1").
+- `tests/page-intro-guest.test.ts` counts a worker as alive only if it answers: Playwright's `page.workers()` keeps a
+  terminated one about one run in five.
+- Every page test that opens the introduction now boots the guest where the image is built (~0.5 s, 64 MiB).
 
 - The introduction never opens by itself under automation; tests use `?firstvisit=1` or `#intro`
   (`tests/page-intro.test.ts`).

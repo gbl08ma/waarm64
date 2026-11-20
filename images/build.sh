@@ -141,6 +141,10 @@ VENUS_TOOLS="git curl ca-certificates build-essential pkg-config meson ninja-bui
 DEMO_TOOLS="qemu-img=11.0.3-r0 sfdisk=2.42.3-r1 mtools=4.0.49-r0"
 DEMO_DEL="tiny-cloud chrony dhcpcd doas dosfstools mount nvme-cli openssh sgdisk tzdata"
 INTRO_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.3-r0 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 busybox-static=1.37.0-r31 zopfli=1.0.3_git20260213-r0" # KERNEL_TOOLS less openssl-dev (nothing in this kernel signs or hashes at build time), BusyBox, and the gzip the page ships
+# The aports commits Alpine built busybox-static and musl-dev from (the packages' own record: the build checks it), for
+# the licences file the page serves: the sources of the binaries inside the image, pinned.
+INTRO_BUSYBOX_COMMIT=c3ef5d10e6ef6528852c51f0564963e2f8c1be19
+INTRO_MUSL_COMMIT=8f79d39391b46d6dbf1800fb68b8212a21d5ee2e
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
@@ -592,17 +596,21 @@ build_fptest() {
 # (allnoconfig + images/intro/linux.fragment) with its initramfs built in: BusyBox (Alpine's
 # static one, its applets linked at build time), the init, the tour and the three toys with their
 # sources, all static, natively in Alpine's arm64 container. One file, intro.img, and what the page
-# fetches, its gzip (zopfli's: intro.img.gz). Its kernel tree
+# fetches, its gzip (zopfli's: intro.img.gz), with LICENSES.txt (what is inside: the page ships GPL
+# binaries here). Its kernel tree
 # stays in target/images/build/intro between builds (KBUILD_BUILD_VERSION: the banner's build count
 # would otherwise differ from one build to the next).
 build_intro() {
   local dst=$out/intro
   rm -rf "$dst"
-  mkdir -p "$dst"
+  mkdir -p "$dst" "$out/dl" "$out/build"
   linux_src
   podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH -e root="$root" "$USERLAND_CONTAINER" sh -euc '
     apk add -q --no-cache $1
     src=$root/$2/build/linux-$3 obj=$root/$2/build/intro dst=$root/$4 i=images/intro
+    # The packages are the ones the licences file names the sources of.
+    built() { awk -v p="P:$1" "BEGIN { RS=\"\" } index(\$0, p \"\n\") { print }" /lib/apk/db/installed | sed -n "s/^c://p"; }
+    [ "$(built busybox-static)" = "$6" ] && [ "$(built musl-dev)" = "$7" ] || { echo "intro: busybox-static or musl-dev was built from another aports commit: update INTRO_BUSYBOX_COMMIT, INTRO_MUSL_COMMIT" >&2; exit 1; }
     mkdir -p "$obj/toys"
     for t in scope ridges life; do gcc -static -s -O2 -std=gnu11 -Wall -Werror -o "$obj/toys/$t" $i/$t.c -lm; done
     gcc -static -s -Os -std=gnu11 -Wall -Werror -o "$obj/toys/typed" $i/typed.c
@@ -623,8 +631,13 @@ build_intro() {
     $k -j"$(nproc)" Image
     cp "$obj/arch/arm64/boot/Image" "$dst/intro.img"
     zopfli -c "$dst/intro.img" > "$dst/intro.img.gz"
+    # What is inside and under which licences, for the page to serve beside it: ours, then the GPL
+    # and the note on system calls, both from the kernel tree.
+    { sed "s/@LINUX@/$3/g; s/@LINUX_SHA256@/$5/; s/@BUSYBOX_COMMIT@/$6/g; s/@MUSL_COMMIT@/$7/g" $i/LICENSES.head; sed -n "/GNU GENERAL PUBLIC LICENSE/,\$p" "$src/LICENSES/preferred/GPL-2.0"
+      printf "\n\nLinux: the note on system calls\n-------------------------------\n\n"
+      sed -n "/NOTE!/,\$p" "$src/LICENSES/exceptions/Linux-syscall-note"; } > "$dst/LICENSES.txt"
     cp "$obj/.config" "$dst/config"
-  ' - "$INTRO_TOOLS" "$out" "$LINUX" "$dst"
+  ' - "$INTRO_TOOLS" "$out" "$LINUX" "$dst" "$LINUX_SHA256" "$INTRO_BUSYBOX_COMMIT" "$INTRO_MUSL_COMMIT"
 }
 
 build_debian() {
@@ -856,7 +869,7 @@ inputs() {
   [ "$1" = linux-usbhost ] && files+=(images/linux.fragment $(find images/usb images/usbhost -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
-  [ "$1" = intro ] && files+=($(find images/intro -type f | sort)) && pins='^(INTRO_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = intro ] && files+=($(find images/intro -type f | sort)) && pins='^(INTRO_|USERLAND_CONTAINER)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/Waarm64XhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = alpine-demo ] && files+=($(find images/alpine-demo -type f | sort)) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER|DEMO_)'
@@ -885,7 +898,7 @@ outputs() {
     ltp) echo ltp/rootfs.ext4 ;;
     litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;
     fptest) echo fptest/initramfs.cpio fptest/fptest.tar ;;
-    intro) echo intro/intro.img intro/intro.img.gz ;;
+    intro) echo intro/intro.img intro/intro.img.gz intro/LICENSES.txt ;;
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
     alpine-demo) echo alpine-demo/alpine-demo.qcow2 ;;

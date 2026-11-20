@@ -1,0 +1,618 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "waarm64-intro",
+ "system": "waarm64",
+ "what": "the introduction (`#intro`) of the page as 'npm run dist -- --out bench/results/local/demo/dist' builds it, Vite's preview server on 127.0.0.1 (nothing compressed in transit: `pageBrotli` is the page's files less the core and the guest at brotli 5); its small machine (images/build.sh intro) boots by itself",
+ "promptIs": "the shell's prompt in the frame's terminal, after a key typed at the first picture ended the tour; `ready` is the frame's first picture",
+ "url": "<local>/#intro",
+ "date": "2026-11-20T19:21:58.859Z",
+ "commit": "977e1fd1a9eb",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "ready": 945,
+    "prompt": 1035,
+    "command": 1224
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    },
+    "pageBrotli": {
+     "prompt": 739426,
+     "total": 739426
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1170,
+     "pssMiB": 583,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "prompt": {
+     "rssMiB": 1170,
+     "pssMiB": 583,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "uasmMiB": 3294
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "ready": 931,
+    "prompt": 1017,
+    "command": 1216
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1167,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "prompt": {
+     "rssMiB": 1167,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "uasmMiB": 3294
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "ready": 925,
+    "prompt": 1014,
+    "command": 1207
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1171,
+     "pssMiB": 584,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "prompt": {
+     "rssMiB": 1171,
+     "pssMiB": 584,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "uasmMiB": 3294
+   }
+  },
+  {
+   "run": 4,
+   "marks": {
+    "ready": 931,
+    "prompt": 1024,
+    "command": 1218
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1172,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 208
+    },
+    "prompt": {
+     "rssMiB": 1172,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 208
+    },
+    "uasmMiB": 3294
+   }
+  },
+  {
+   "run": 5,
+   "marks": {
+    "ready": 940,
+    "prompt": 1011,
+    "command": 1206
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1170,
+     "pssMiB": 583,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "prompt": {
+     "rssMiB": 1168,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 207
+    },
+    "uasmMiB": 3294
+   }
+  },
+  {
+   "run": 6,
+   "marks": {
+    "ready": 936,
+    "prompt": 1003,
+    "command": 1191
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1170,
+     "pssMiB": 583,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "prompt": {
+     "rssMiB": 1168,
+     "pssMiB": 581,
+     "processes": 11,
+     "rendererPssMiB": 207
+    },
+    "uasmMiB": 3294
+   }
+  },
+  {
+   "run": 7,
+   "marks": {
+    "ready": 927,
+    "prompt": 1005,
+    "command": 1208
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1168,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "prompt": {
+     "rssMiB": 1167,
+     "pssMiB": 581,
+     "processes": 11,
+     "rendererPssMiB": 208
+    },
+    "uasmMiB": 3294
+   }
+  },
+  {
+   "run": 8,
+   "marks": {
+    "ready": 935,
+    "prompt": 1018,
+    "command": 1210
+   },
+   "bytes": {
+    "total": 12132182,
+    "background": 0,
+    "byHost": {
+     "127.0.0.1": 12132182
+    },
+    "prompt": 12132182,
+    "command": 12132182,
+    "kinds": {
+     "prompt": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "command": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     },
+     "total": {
+      "page": 791183,
+      "guest": 1676234,
+      "core": 9654555
+     }
+    }
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1168,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "prompt": {
+     "rssMiB": 1168,
+     "pssMiB": 582,
+     "processes": 11,
+     "rendererPssMiB": 209
+    },
+    "uasmMiB": 3294
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "ready_ms": {
+   "median": 933,
+   "iqr": 7,
+   "n": 8,
+   "samples": [
+    945,
+    931,
+    925,
+    931,
+    940,
+    936,
+    927,
+    935
+   ]
+  },
+  "prompt_ms": {
+   "median": 1015.5,
+   "iqr": 10,
+   "n": 8,
+   "samples": [
+    1035,
+    1017,
+    1014,
+    1024,
+    1011,
+    1003,
+    1005,
+    1018
+   ]
+  },
+  "command_ms": {
+   "median": 1209,
+   "iqr": 9.75,
+   "n": 8,
+   "samples": [
+    1224,
+    1216,
+    1207,
+    1218,
+    1206,
+    1191,
+    1208,
+    1210
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 11.570150375366211,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 11.570150375366211,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 11.570150375366211,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211,
+    11.570150375366211
+   ]
+  },
+  "sent_page_command_MiB": {
+   "median": 0.7545309066772461,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    0.7545309066772461,
+    0.7545309066772461,
+    0.7545309066772461,
+    0.7545309066772461,
+    0.7545309066772461,
+    0.7545309066772461,
+    0.7545309066772461,
+    0.7545309066772461
+   ]
+  },
+  "sent_guest_command_MiB": {
+   "median": 1.598581314086914,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    1.598581314086914,
+    1.598581314086914,
+    1.598581314086914,
+    1.598581314086914,
+    1.598581314086914,
+    1.598581314086914,
+    1.598581314086914,
+    1.598581314086914
+   ]
+  },
+  "sent_core_command_MiB": {
+   "median": 9.207301139831543,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    9.207301139831543,
+    9.207301139831543,
+    9.207301139831543,
+    9.207301139831543,
+    9.207301139831543,
+    9.207301139831543,
+    9.207301139831543,
+    9.207301139831543
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 582,
+   "iqr": 0.5,
+   "n": 8,
+   "samples": [
+    583,
+    582,
+    584,
+    582,
+    582,
+    581,
+    581,
+    582
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 582.5,
+   "iqr": 1,
+   "n": 8,
+   "samples": [
+    583,
+    582,
+    584,
+    582,
+    583,
+    583,
+    582,
+    582
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1170,
+   "iqr": 2.25,
+   "n": 8,
+   "samples": [
+    1170,
+    1167,
+    1171,
+    1172,
+    1170,
+    1170,
+    1168,
+    1168
+   ]
+  },
+  "uasm_MiB": {
+   "median": 3294,
+   "iqr": 0,
+   "n": 8,
+   "samples": [
+    3294,
+    3294,
+    3294,
+    3294,
+    3294,
+    3294,
+    3294,
+    3294
+   ]
+  }
+ }
+}

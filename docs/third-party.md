@@ -33,18 +33,30 @@ on the Home page's **[About](ui:machines:MachinesPage.about)** pane ([frontend.m
   The sections: `derived` (code ported, copied or patched), `techniques` (ideas and papers, no code), `npm`,
   `rust-net-ts` (the tailnet client's crates), `rust-core` (the core's crates: lz4_flex, crc32fast), `go-net-tailscale` (the Go backend, a test fixture), `toolchain` (the
   toolchains' libraries built into our binaries), `dev` (development dependencies, not distributed), `workloads`
-  (fetched at build time), `media` (fixtures), `firmware`, `references-permissive`, `references-copyleft`.
+  (fetched at build time), `media` (fixtures), `firmware`, `intro-guest` (the introduction's small machine), `references-permissive`, `references-copyleft`.
 - An **entry** has an `id` (unique, lower case), a `name` (the project's), and `md`: its cells, Markdown, by column
   key. That's all a row needs that the page doesn't show.
 - A row the page shows has **`about`**: the pane's group, where in waarm64 the code ends up: `page` (the interface's
   npm packages), `core` (the emulator's wasm), `graphics` (virgl's renderer), `vulkan` (Venus's renderer module),
-  `network` (the tailnet client), `firmware` (EDK2). Then it needs `url` (the project, pinned where the host allows),
+  `network` (the tailnet client), `firmware` (EDK2), `agent` (the guest agent), `intro` (the introduction's small
+  machine: Linux, BusyBox, musl). Then it needs `url` (the project, pinned where the host allows),
   `version` (a release or a commit), `license` (an SPDX expression) and `licenseTexts` (each file's name and a link
   **pinned to that commit or tag**, never a branch: `blob/<commit>/LICENSE`; a crate's own files on docs.rs at its
   version; SPDX's page for a project without a license file) — or `parts`, a list of those, for a row that is several
   projects in one binary (Venus's module, EDK2 with OpenSSL and libfdt). `bundled` names a license file that `npm run
-  dist` puts beside the page (`EDK2-LICENSES.txt`, `VENUS-LICENSES.txt`; `BUNDLED` in `tools/third-party.ts`), linked
+  dist` puts beside the page (`EDK2-LICENSES.txt`, `VENUS-LICENSES.txt`, `INTRO-LICENSES.txt`; `BUNDLED` in `tools/third-party.ts`), linked
   under the group.
+
+## GPL binaries the page distributes
+
+The introduction's small machine (`intro.img.gz`: Linux, BusyBox) is the one GPL binary among the page's files. It is
+a file of its own that a worker fetches and boots as a guest, never part of a script (aggregation, as a disk image
+is). Its sources are offered as **links to exactly what it was built from, pinned** (the user, 2026-11-20: no tarballs
+hosted by us, as long as each link is to the very source, by commit hash or as durable an identifier as exists):
+kernel.org's release tarball with the SHA-256 the build checks, and for Alpine's binary packages the aports commit
+each was built from (the package's own record, which `images/build.sh intro` compares with its pins). They are in
+`INTRO-LICENSES.txt`, served beside the page with the GPL's text, and in the row's `parts`. Another GPL binary added
+to the page's files follows the same rule.
 
 ## What the About pane shows
 

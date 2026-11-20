@@ -351,3 +351,38 @@ view (loop 2).
 3. **32 MiB of RAM** instead of 64: nothing on the wire, a little off the tab's memory (the guest uses ~6 MiB).
 4. **A decoder for brotli or xz in the page** (xz -9e: 1.55 MB): 0.1–0.3 MB less on the wire for a dependency or
    code of ours, and its own bytes.
+
+## INTRO loop 2: the introduction's first screen with its machine (2026-11-20)
+
+**What.** The first screen as a first visit meets it: the page as `npm run dist` builds it, opened at `#intro` in a
+fresh profile, the small machine booting by itself in its frame (web/app/intro/IntroGuest.svelte). Target
+`waarm64-intro` (Vite's preview server on 127.0.0.1, the server counting what it sends by kind). Setup as "INTRO loop
+1": Chromium 155.0.8059.84 headless, 8 runs; the tree at 977e1fd1 plus this loop's files. JSON:
+`results/intro-2/chromium.json`.
+
+| | First picture | Shell prompt (a key typed in the terminal at the first picture) | A command answered |
+|---|---|---|---|
+| The harness (ms from the navigation; median, IQR) | **933** (7) | **1,016** (10) | 1,209 (10; the command typed at 5 ms a key) |
+
+The harness's own load is in that (its net log, its memory sampler, a persistent profile's first run): the same page
+in a plain fresh context, timed from inside it (three runs, ad hoc), had its headline at 170–190 ms, the frame
+starting at 187–212 ms and its **first picture at 561–609 ms**. Of that the guest's own boot is ~250 ms; the rest is
+the page's start, the worker's script, and the core's fetch and compile.
+
+**Bytes a first visit downloads** (what the server sent; a fresh profile):
+
+| Kind | Sent | On a host that compresses |
+|---|---|---|
+| The page (HTML, CSS, scripts, fonts; the guest's worker's script among them) | 791,183 | 739,426 at brotli 5 |
+| The guest (`intro.img-<hash>.gz`) | 1,676,234 | the same |
+| The core (`waarm64_core-<hash>.wasm`, once: the workers are handed the module) | 9,654,555 | ~1.96–2.29 MB (brotli 5 or 4) |
+
+**~4.4–4.7 MB in all**, of which the introduction's machine adds the guest's 1.68 MB and brings the core's ~2 MB
+forward from the first demo's start. The brief's guideline was ~10 MB over the page.
+
+**Memory.** 582 MiB PSS at the prompt (IQR 0.5), 172 MiB over about:blank's floor ("DEMO loop 0"); the bare guest's
+page was 121 ("INTRO loop 1"): the page itself is the difference.
+
+**Not tried.** Fetching the core and the guest's file ahead of the page's start (a `preload` in `index.html` for an
+address that will open the introduction): up to ~190 ms sooner for the first picture, at the cost of ~3.7 MB fetched
+by visitors whose browser can't run it or who asked for less motion.
