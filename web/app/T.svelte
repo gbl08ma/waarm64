@@ -26,6 +26,9 @@
   /** The icon of a `<ui-…>` marker, if it names one. */
   const iconOf = (tag: string) =>
     tag.startsWith('ui-') && tag.slice(3) in ICONS ? (tag.slice(3) as IconName) : undefined;
+  /** A pill's first word, which its icon stays beside when the line breaks, and the words after it. */
+  const firstWord = (text: string) => text.split(' ', 1)[0];
+  const restWords = (text: string) => text.slice(firstWord(text).length);
 </script>
 
 {#each pieces as p, i (i)}{#if p.tag && typeof markers[p.tag] === 'function'}{@render (
@@ -33,7 +36,9 @@
     )(p.text)}{:else if p.tag === 'name'}<span class="name">{p.text}</span>{:else if p.tag === 'ui'}<span class="ui"
       >{p.text}</span
     >{:else if p.tag?.startsWith('ui-')}{@const icon = iconOf(p.tag)}<span class="ui"
-      >{#if icon}<span class="icon" aria-hidden="true"><Icon name={icon} size="0.9em" /></span>{/if}{p.text}</span
+      >{#if icon}<span class="first"
+          ><span class="icon" aria-hidden="true"><Icon name={icon} size="0.9em" /></span>{firstWord(p.text)}</span
+        >{restWords(p.text)}{:else}{p.text}{/if}</span
     >{:else if p.tag === 'code'}<code>{p.text}</code>{:else}{p.text}{/if}{/each}
 
 <style>
@@ -61,6 +66,10 @@
   /* The icon, sized by the words (0.9 em) and hung from a box of no height raised 0.78 em above the baseline: it spans
      0.78 em above to 0.12 em below it, inside any line of the page's line height, and adds nothing to the line's
      height (an icon of its own height did, in small text). */
+  /* The icon and the first word after it: a line never breaks between them. */
+  .first {
+    white-space: nowrap;
+  }
   .icon {
     display: inline-block;
     height: 0;

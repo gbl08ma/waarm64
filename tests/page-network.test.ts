@@ -26,6 +26,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { answerAsks } from './page-ask.ts';
+import { openHome } from './page-home.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
@@ -279,7 +280,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       assert.equal(await page.locator('#net-served-addr').inputValue(), served, 'the same address after a reload');
       // New address, from the connection's Edit (the Home page's Connections): the kept one is forgotten, and
       // Save serves at another.
-      await page.click('#machines-open');
+      await openHome(page);
       await page.click('[data-machine="connections"]');
       await page.click(`li[data-connection="${cat!.id}"] [data-action="edit-connection"]`);
       assert.equal(await page.locator('#net-tc-relay').inputValue(), '127.0.0.1:8444');

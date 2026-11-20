@@ -17,6 +17,7 @@ body {
   font-family: var(--font);
   font-size: var(--text-base);
   line-height: var(--line-height);
+  scrollbar-color: var(--hover-bg) transparent;
 }
 /* The page is a column: the toolbar, the message bar, the machine or the Home page, the status bar. */
 body {
@@ -49,11 +50,87 @@ textarea,
 input:not([type='checkbox'], [type='radio'], [type='range']) {
   font: inherit;
   color: var(--text);
-  background: var(--surface);
+  background: var(--well-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  box-shadow: var(--well-edge);
   min-height: var(--control-h);
   padding: 0 var(--space-3);
+}
+/* A select is a key, with the page's chevron. */
+select {
+  appearance: none;
+  padding-inline-end: var(--space-6);
+  background: var(--select-bg);
+  box-shadow: var(--key-edge);
+  cursor: pointer;
+}
+/* A checkbox and a radio button are wells, lit when on (20 px with their margins, as the browser's own were: Check's
+   note is indented by it). */
+input:is([type='checkbox'], [type='radio']) {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: var(--space-1);
+  background: var(--well-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--well-edge);
+  cursor: pointer;
+}
+input[type='radio'] {
+  border-radius: 50%;
+}
+input:is([type='checkbox'], [type='radio'])::before {
+  content: '';
+  background: var(--accent);
+  transform: scale(0);
+}
+input[type='checkbox']::before {
+  width: 10px;
+  height: 10px;
+  clip-path: polygon(12% 52%, 0 66%, 38% 100%, 100% 18%, 86% 6%, 37% 70%);
+}
+input[type='radio']::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: var(--lit-lamp);
+}
+input:is([type='checkbox'], [type='radio']):checked::before {
+  transform: scale(1);
+}
+input:is([type='checkbox'], [type='radio']):disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* A disclosure's marker: the page's chevron, turned down when open. */
+summary {
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+summary::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-inline-end: var(--space-2);
+  vertical-align: -1px;
+  background: currentColor;
+  mask: var(--chevron) center / contain no-repeat;
+  transform: rotate(-90deg);
+}
+details[open] > summary::before {
+  transform: none;
 }
 textarea {
   padding: var(--space-2) var(--space-3);

@@ -88,15 +88,29 @@
     min-height: var(--control-h);
     border-color: var(--border);
   }
+  /* A framed button is a key: raised, its top edge lit. */
+  .bordered {
+    background: var(--key-bg);
+    box-shadow: var(--key-edge);
+  }
+  .bordered:hover:not(:disabled) {
+    background: var(--key-hover-bg);
+  }
+  .bordered:disabled {
+    background: var(--key-bg);
+  }
   .primary:not(:disabled) {
     color: var(--primary-fg);
     background: var(--primary-bg);
     border-color: var(--primary-border);
+    box-shadow: var(--primary-edge);
+    font-weight: var(--weight-bold);
   }
   .danger:not(:disabled) {
     color: var(--danger-fg);
     background: var(--danger-bg);
     border-color: var(--danger-border);
+    box-shadow: var(--danger-edge);
   }
   .primary:not(:disabled):hover,
   .danger:not(:disabled):hover {
@@ -115,9 +129,13 @@
     padding: 0 var(--space-4) 0 var(--space-3);
     font-size: var(--text-md);
   }
+  /* A tool that's on: sunk, its legend lit. */
   .tool[aria-pressed='true'] {
+    color: var(--accent);
     background: var(--pressed-bg);
     border-color: var(--pressed-border);
+    box-shadow: var(--pressed-edge);
+    text-shadow: var(--lit-text);
   }
   .item {
     justify-content: space-between;

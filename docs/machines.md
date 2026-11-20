@@ -607,7 +607,7 @@ another version) is a `MsgError` (`machines:demo-store.*`). `OUR_STORE` is `http
 card's is refused: the site was republished meanwhile; one larger than the card's `download`, or than `MAX_TEMPLATE`,
 1 GiB, is refused before a piece is fetched, since a store that isn't ours could name one hosted piece ten thousand
 times) and its pieces by that manifest (each kept as a Blob as it comes, which Chromium may keep on disk; the first
-failure aborts the others; `signal` aborts them all: the store's page's interstitial gone); then §6.1's machine, marked
+failure aborts the others; `signal` aborts them all: the demo's pane on the store's page gone); then §6.1's machine, marked
 **`fromDemo: {store, id}`** (the store's URL as fetched, absolute: another host's store with the same id is another demo), and its first adapter on the demo network when the
 card asks (`withDemoNetwork`, web/app/net-demo.ts), its second on a room of its own when it asks (`withDemoRoom`). The snapshot is kept under the machine's id before its record is
 stored, and the record is stored once with all its marks (`importDefinition`'s `finish`, which runs before any record

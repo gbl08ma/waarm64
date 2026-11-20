@@ -2,7 +2,8 @@
 // change and comparing it with a baseline: headless Chromium (a temporary profile, as the tests launch it) on the dev
 // server, the browser's records seeded through the page's own modules (a machine with disks, an overlay, snapshots, an
 // adapter on a connection, a USB device, a folder), then the toolbar and each of its menus, the message bar, the
-// Home page's panes and a machine's tabs (also 720 px wide), and every dialog and wizard step, one PNG per state.
+// Home page's panes and a machine's tabs (also 720 px wide), every dialog and wizard step, and the demo store's page
+// (tools/screens-demos.ts; also 720 px wide), one PNG per state.
 //   node tools/screens.ts [--label before] [--only <substring>[,<substring>…]] [--css <file>]
 // writes bench/results/local/screens/<label>/<state>.png (label `now` by default) and lists the states it couldn't
 // reach (they need a guest or hardware) in `missed.txt` there. `--css` adds a stylesheet to every page (a look to try:
@@ -13,6 +14,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from 'playwright-core';
 import { ROOT, startServer } from './serve.ts';
+import { demoScreens } from './screens-demos.ts';
 
 const { values: args } = parseArgs({
   options: { label: { type: 'string', default: 'now' }, only: { type: 'string' }, compare: { type: 'string' }, css: { type: 'string' } },
@@ -497,6 +499,9 @@ await state('machines-transient', async () => {
   await shot(page, 'machines-transient-snapshots');
   await page.close();
 });
+
+// The demo store's page (tools/screens-demos.ts: the stores answered there), in profiles of its own.
+await demoScreens(browser, { base, state, shot, css: args.css }, WIDE, NARROW);
 
 await browser.close();
 server.close();

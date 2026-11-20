@@ -22,6 +22,7 @@ import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { checkSave } from './snapshot-phases.ts';
+import { openHome } from './page-home.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -114,7 +115,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
       await page.waitForFunction(([b, src]) => document.getElementById('message')?.dataset.snapshot !== (b ?? undefined) && new RegExp(src!).test(document.getElementById('message-text')?.textContent ?? ''), [before, words('snapshots:snapshot-actions.kept', {}, { start: true }).source] as const, { timeout: 120_000 });
       checkSave(JSON.parse((await page.locator('#message').getAttribute('data-snapshot'))!), 'kept');
       keepAs = name;
-      await page.locator('#machines-open').click();
+      await openHome(page);
       await page.locator('.machines [data-tab=snapshots]').click();
       await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.rename') }).click();
       await page.locator('.machines [data-snapshot]', { hasText: name }).waitFor({ timeout: 10_000 });
@@ -135,7 +136,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
 
     /** Restores kept snapshot `name` from the modal; waits for the machine to run from it. */
     const restore = async (name: string) => {
-      await page.click('#machines-open');
+      await openHome(page);
       await page.locator('.machines [data-tab=snapshots]').click();
       await page.locator('.machines [data-snapshot]', { hasText: name }).getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
       await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 })
@@ -183,7 +184,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
     assert.match(await page.evaluate(() => document.getElementById('message-details')?.textContent ?? '') ?? '', words('machine:worker-start.diskChanged')); // why: the note's detail
 
     // A RAM change orphans every snapshot (it asks first; the machine restarts with it); the Home page deletes them in one action.
-    await page.locator('#machines-open').click();
+    await openHome(page);
     const m = page.locator('.machines section.machine[data-selected]');
     await m.locator('[data-tab=settings]').click();
     await m.locator('[data-field=ram]').fill('2048');

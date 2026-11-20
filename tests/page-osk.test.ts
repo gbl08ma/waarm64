@@ -11,6 +11,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
+import { openHome } from './page-home.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -179,7 +180,7 @@ test('the on-screen keyboard moved and resized, remembered; Preferences keeps mo
   assert.equal(await keys(page).then((k) => k.length), 0, 'moving and resizing press no key');
 
   // The toggle mode, from Preferences: Ctrl stays down through C and V until clicked again.
-  await page.locator('#machines-open').click();
+  await openHome(page);
   await page.locator('[data-machine=preferences]').click();
   await page.locator('[data-field=osk-toggle]').check();
   await page.locator('[data-action=back]').click();

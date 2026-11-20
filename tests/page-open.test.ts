@@ -16,6 +16,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 let browser: Browser;
 let base: string;
@@ -119,7 +120,7 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
 
     // The Home page's From a disk image…: the same.
     await page.evaluate(() => { (window as unknown as { pick: string[] }).pick.push('second.raw'); });
-    await page.locator('#machines-open').click();
+    await openHome(page);
     await page.locator('.machines button', { hasText: t('machines:MachinesNav.fromImage') }).click();
     await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '') === 'second', null, { timeout: 10_000 });
 

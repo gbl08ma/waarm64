@@ -7,14 +7,16 @@ import type { DemosRoute } from '../demos-route.ts';
 class Demos {
   /** The store's page shows instead of the machine (and of Home). */
   open = $state(false);
-  /** The store shown, and the demo chosen in it (its interstitial). */
+  /** The store shown, and the demo chosen in it (its pane). */
   route = $state<DemosRoute>({ store: OUR_STORE, ours: true });
   /** Where Back returns: Home, when it was opened from there; else the machine. */
   from = $state<'home' | 'machine'>('machine');
   /**
-   * The demo start in flight on this page (web/app/DemoStart.svelte), one at a time: while it runs, every interstitial's
-   * Start waits. Aborted when its interstitial goes (another demo chosen, All demos, the store's page closed).
+   * The demo start in flight on this page (web/app/DemoStart.svelte), one at a time: while it runs, every pane's
+   * Start waits. Aborted when its pane goes (another demo chosen, All demos, the store's page closed).
    */
   starting = $state.raw<AbortController>();
+  /** The name of the demo that start is of (the question asked before it's stopped: web/app/demo-leave.ts). */
+  startingName = $state<string>();
 }
 export const demos = new Demos();

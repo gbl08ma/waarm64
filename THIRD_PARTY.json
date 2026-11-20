@@ -645,6 +645,26 @@
             "license": "MIT",
             "use": "the page's icons (`web/app/icons.ts`, docs/frontend.md \"Icons\"): Tabler's outline icons, by name; only those imported reach the build"
           }
+        },
+        {
+          "id": "npm-fontsource-barlow",
+          "name": "@fontsource/barlow",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/@fontsource/barlow/v/5.3.0",
+          "version": "5.3.0",
+          "license": "OFL-1.1",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://cdn.jsdelivr.net/npm/@fontsource/barlow@5.3.0/LICENSE"
+            }
+          ],
+          "md": {
+            "package": "@fontsource/barlow",
+            "version": "5.3.0",
+            "license": "OFL-1.1",
+            "use": "the page's typeface (`web/app/theme/tokens.css` `--font`): Barlow (The Barlow Project Authors, https://github.com/jpt/barlow) as web fonts, the weights 400, 500 and 600; the font files ship with the page"
+          }
         }
       ]
     },

@@ -15,8 +15,13 @@
   import { page } from './page.ts';
   import { current } from './areas/current.svelte.ts';
 
-  type Props = { storage: Awaited<ReturnType<typeof storageReport>>; act: Act };
-  let { storage, act }: Props = $props();
+  type Props = {
+    storage: Awaited<ReturnType<typeof storageReport>>;
+    act: Act;
+    /** What the Home page is doing, said at the bar's end while an action runs. */
+    busy?: string;
+  };
+  let { storage, act, busy }: Props = $props();
 
   const used = $derived(
     storage.behind
@@ -84,10 +89,15 @@
       {t('machines:StorageBar.storage.trim')}
     </Button>
   {/if}
+  {#if busy}<span class="busy" role="status">{busy}</span>{/if}
 </footer>
 {#if details}<StorageDetails {storage} close={() => (details = false)} />{/if}
 
 <style>
+  .busy {
+    margin-left: auto;
+    color: var(--status-busy);
+  }
   .storage {
     display: flex;
     flex-wrap: wrap;

@@ -25,6 +25,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -97,7 +98,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   };
   /** Export › `mode` of the machine's disk (its Disks tab on the Home page), then back to the machine. */
   const exportDisk = async (mode: string) => {
-    await page.locator('#machines-open').click();
+    await openHome(page);
     await page.locator('.machines [data-tab=disks]').click();
     await exportAs(mode);
   };

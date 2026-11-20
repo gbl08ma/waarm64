@@ -39,17 +39,29 @@
     "message": "Both",
     "note": "Tooltip and screen-reader name of the toolbar's view button that shows the screen and the serial terminal side by side."
   },
-  "Toolbar.name": {
+  "Wordmark.name": {
     "message": "$t(common:product.name)",
     "note": "The product's name, at the toolbar's left end (the page's heading)."
+  },
+  "Wordmark.home": {
+    "message": "Open the Home page.",
+    "note": "Tooltip (and accessible name) of the product's name at the toolbar's left end, which is a button: shown while the machine's screen or terminal shows; a click opens the Home page."
+  },
+  "Wordmark.back": {
+    "message": "Go back to the machine.",
+    "note": "Tooltip (and accessible name) of the product's name at the toolbar's left end, which is a button: shown while the Home page or the demo store's page shows in the machine's place; a click closes it and shows the machine again."
   },
   "Toolbar.machines.title": {
     "message": "Show the machines stored in this browser, with their settings, disks, overlays, and snapshots, and this browser's disks, shared folders, connections, and preferences.",
     "note": "Tooltip of the toolbar's Home button, which opens the Home page."
   },
+  "Toolbar.machines.back.title": {
+    "message": "Go back to the machine.",
+    "note": "Tooltip of the toolbar's Home button while the Home page shows (the button is pressed): a click closes the Home page and shows the machine again."
+  },
   "Toolbar.machines": {
     "message": "Home",
-    "note": "Label of the toolbar's first button (a house icon): it opens the Home page (the machines kept in this browser, the browser's disks, shared folders and connections, the preferences, About)."
+    "note": "Label of the toolbar's first button (a house icon), a toggle: it opens the Home page (the machines kept in this browser, the browser's disks, shared folders and connections, the preferences, About), and pressed again goes back to the machine."
   },
   "Toolbar.powerOff": {
     "message": "Power off",

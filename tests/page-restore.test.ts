@@ -11,6 +11,7 @@ import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { answerAsks, barSays, type Question } from './page-ask.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 let browser: Browser;
 let base: string;
@@ -112,7 +113,7 @@ test("finding 1: the Snapshots tab's Restore (machine off) commits on the record
     await store.put('machines', { ...(await store.get('machines', m)), name: 'Renamed elsewhere' });
     store.close();
   }, ids.m);
-  await page.click('#machines-open');
+  await openHome(page);
   await page.locator('.machines [data-tab=snapshots]').click();
   await page.locator(`.machines [data-snapshot="${sid}"] [data-action=restore]`).click();
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 2, null, { timeout: 30_000, polling: 50 });

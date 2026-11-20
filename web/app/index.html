@@ -6,14 +6,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>waarm64</title>
-<link rel="icon" href="data:,">
+<!-- The icon: a lit w on a key of the panel, its edges on whole pixels at 16 px, steam over it (waarm64, warm); the
+     panel's colors (theme/tokens.css: the bar, the accent), written out since a data URI reads no token. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%23262624'/%3E%3Cpath shape-rendering='crispEdges' fill='%23fa6432' d='M3 7h2v5h2V7h2v5h2V7h2v7H3z'/%3E%3Cpath fill='none' stroke='%236e6e67' stroke-width='1.1' stroke-linecap='round' d='M6 5.6C7.6 4 4.4 2.5 6 .9M10 5.6C8.4 4 11.6 2.5 10 .9'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="./theme/tokens.css">
 <link rel="stylesheet" href="./theme/base.css">
 <!-- The page's look is the theme's (tokens, element defaults) and its components'. These rules are the fallback's
      below, the one thing on the page that isn't a component: the page as it would be, saying it couldn't start. -->
 <style>
   .fallback-bar { display: flex; align-items: center; min-height: calc(var(--tool-h) + 2 * var(--space-2)); padding: var(--space-2) var(--space-3); background: var(--surface-bar); border-bottom: 1px solid var(--border); }
-  .fallback-bar h1 { margin: 0 var(--space-3) 0 var(--space-2); font-size: var(--text-base); font-weight: var(--weight-bold); color: var(--text-dim); }
+  .fallback-bar h1 { margin: 0 var(--space-3) 0 var(--space-2); font-size: var(--text-lg); font-weight: var(--weight-bold); color: var(--text); }
   .fallback-message { margin: 0; padding: var(--space-3) var(--space-5); white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--error-bar-fg); background: var(--error-bg); border-bottom: 1px solid var(--error-border); }
   .fallback-main { flex: 1; }
   .fallback-status { padding: var(--space-2) var(--space-5); border-top: 1px solid var(--border); background: var(--surface-bar); color: var(--text-dim); font-size: var(--text-sm); }

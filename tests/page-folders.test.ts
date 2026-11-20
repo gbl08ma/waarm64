@@ -21,6 +21,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { SHARES_BY_HAND } from '../web/app/shares-mount.ts';
+import { openHome } from './page-home.ts';
 
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -153,7 +154,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   assert.deepEqual(await withStore(b, `(async ({ store }, id) => (await store.get('machines', id)).folders)`, bravo), [{ id: data, readOnly: false }, { id: made.id, readOnly: false }], 'saved at once');
 
   // The Home page: the machine's tab, then the browser's folders.
-  await b.click('#machines-open');
+  await openHome(b);
   await b.locator('.machines .pick', { hasText: 'Bravo' }).click();
   await b.click('[data-tab="folders"]');
   await b.waitForSelector(`.folders-list [data-folder="${made.id}"]`);
@@ -398,7 +399,7 @@ test('snapshots: restored with a file open for writing, and into a folder detach
     await page.locator(`#folders [data-folder="${gone}"] [data-action="detach-folder"]`).click();
     await page.waitForFunction((id) => !document.querySelector(`#folders [data-folder="${id}"]`), gone, { timeout: 10_000 });
     await page.locator('#folders summary').click();
-    await page.click('#machines-open');
+    await openHome(page);
     await page.locator('.machines [data-tab=snapshots]').click();
     await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
     await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 });

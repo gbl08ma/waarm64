@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import Wordmark from './Wordmark.svelte';
   import ClipboardMenu from './ClipboardMenu.svelte';
   import FoldersMenu from './FoldersMenu.svelte';
   import KeysMenu from './KeysMenu.svelte';
@@ -21,6 +22,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { usb } from './areas/usb.svelte.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
+  import { leaveDemo } from './demo-leave.ts';
   import { clipboard } from './areas/clipboard.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { records } from './areas/records.svelte.ts';
@@ -29,6 +31,11 @@
   import { inBar, page } from './page.ts';
   import type { View } from './areas/screen.svelte.ts';
   import { t } from '../i18n.ts';
+
+  // The wordmark: the name's two halves told apart by weight (wa: WebAssembly, dim and lighter; arm64). A drawing of
+  // the name, not words from the catalog (which names the heading: the copy editor's marks can't be cut in two).
+  /** The Home button, a toggle: Home opened (from the store's page too), or closed, back to the machine. */
+  const home = () => (machinesNav.open ? page.closeMachines() : void leaveDemo(() => page.openMachines()));
 
   let { audio, net, folders }: { audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
@@ -147,15 +154,15 @@
 </script>
 
 <header class="toolbar" bind:this={bar}>
-  <h1>{t('toolbar:Toolbar.name')}</h1>
+  <Wordmark />
   <Button
     variant="tool"
     labelled
     icon="home"
     id="machines-open"
     aria-pressed={machinesNav.open}
-    title={t('toolbar:Toolbar.machines.title')}
-    onclick={() => page.openMachines()}
+    title={machinesNav.open ? t('toolbar:Toolbar.machines.back.title') : t('toolbar:Toolbar.machines.title')}
+    onclick={home}
   >
     {t('toolbar:Toolbar.machines')}
   </Button>
@@ -252,20 +259,14 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-3);
-    background: var(--surface-bar);
+    background: var(--toolbar-bg);
     border-bottom: 1px solid var(--border);
+    box-shadow: var(--toolbar-edge);
     user-select: none;
   }
   /* Full screen with the status bar (Preferences): the page without its toolbar. */
   :global(body:fullscreen) .toolbar {
     display: none;
-  }
-  h1 {
-    margin: 0 var(--space-3) 0 var(--space-2);
-    font-size: var(--text-base);
-    font-weight: var(--weight-bold);
-    color: var(--text-dim);
-    letter-spacing: 0.02em;
   }
   .sep {
     width: 1px;

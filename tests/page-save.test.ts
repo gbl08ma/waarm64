@@ -14,6 +14,7 @@ import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, barSays } from './page-ask.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const IMAGE = new URL('../target/images/buildroot/rootfs.ext4', import.meta.url);
 const KERNEL = new URL('../target/images/linux/Image', import.meta.url);
@@ -44,7 +45,7 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000 });
   // The disk's actions are on the Home page: this page's machine, its Disks tab.
-  await page.locator('#machines-open').click();
+  await openHome(page);
 
   /** Export… through its wizard: the changes or the whole disk, then `format` (compressed, qcow2 or raw). */
   const save = async (mode: string, name: string, format = mode === 'raw' ? 'raw' : 'compressed') => {

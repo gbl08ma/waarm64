@@ -31,6 +31,29 @@ and the choices they made then; it grows as the user reviews more of the copy.
   who are given X can join,' not 'those you give X to can join.'
 - **American spelling.** American English spellings: center, color, gray, analyze, realize, organize, program (never centre, colour, grey, analyse, realise, organise, programme).
 
+## A first-time visitor's screens
+
+The demo store's page is where most people meet this web app (the user's review of it, 2026-11-20). Its words, and
+those of any screen a newcomer lands on, are written for someone who has done nothing here yet:
+
+- **Nothing assumes a past.** "It starts in this tab where it was left" makes no sense to someone who has left
+  nothing here: say what they get ("it starts in this tab already booted and set up").
+- **Say what a thing is before using our name for it.** A newcomer doesn't know a room, an overlay, a tailnet: "a
+  public peer-to-peer network made for waarm64", not just "a room". Our own terms ("Words", below) are for the
+  screens of someone who has met them.
+- **Spell out what an abbreviation hides:** "a whole 64-bit ARM computer", not "an arm64 computer".
+- **Say where to find what you mention,** by the element's own words, marked (below, "The page's elements named in a
+  sentence"): "you will find its name in this network in the toolbar's <ui-network>Network</ui-network> menu", "the
+  machine is added to the <ui-home>Home</ui-home> page".
+- **Mark the number that can cost the user** (a download's size on a metered connection): its own marker in the
+  message, drawn a little stronger than the words around it (`<size>{{size, bytes}}</size>` in
+  `machines:DemoStart.download`, a demo's download note). One such number in a note, not several.
+- **Don't list what the user can neither see fail nor act on.** A requirement that only someone hosting this web app
+  can break (cross-origin isolation) is said only when it fails; requirements that are all met are one line
+  ([All browser requirements met](ui:machines:DemoChecks.met)) with the details folded under it.
+- **Then cut what is said twice** and read the note aloud: each sentence one topic, in the order the visitor needs
+  them (what it is, what to do, what it costs, what to know).
+
 ## Detail
 
 - Name the components and standards a user may need to know or look up: systemd, Linux, Mesa, OpenGL ES, Vulkan,
@@ -110,6 +133,8 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 - **Lists in a sentence**: commas, with a serial comma ("qcow2, raw, or an installer or live ISO").
 - **Numbers and units**: digits, a space before the unit (4 GiB, 160 MiB); sizes as the page formats them
   (`{{size, bytes}}`).
+- **Dates and times**: as the browser's locale writes them, without seconds where the minute is enough ("last used":
+  `{{when, minutes}}`).
 
 ## Examples (the user's edits)
 
@@ -129,6 +154,11 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 | This browser gave this web app no text from the clipboard. | Nothing was typed, because this web app couldn't get text from the clipboard. |
 | A switch in the toolbar pauses the sharing while the machine runs. | The clipboard menu [icon] in the toolbar can pause the sharing while the machine runs. |
 | The clipboard menu [icon] in the toolbar can pause the sharing, and type what you copied into a text console. | You can pause the sharing, or type the clipboard into a text console, from the clipboard menu [icon] in the toolbar. |
+| Machines ready to use: choose one, and it starts in this tab where it was left, already set up, with nothing to install. What you change in it is kept in this browser, and the machine stays on the Home page. | Ready-made machines to try. Choose one, and it starts in this tab already booted and set up, with nothing to install. The changes you make are kept in this browser, and the machine is added to the [Home] page. |
+| waarm64 runs a whole arm64 computer in this browser tab… | waarm64 runs a whole 64-bit ARM computer in this browser tab… |
+| The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers… | The machine also joins a public peer-to-peer network made for waarm64, where other visitors' machines can connect to it if they know its name. Once it's running, you will find its name in this network in the toolbar's [Network] menu. To join, this browser contacts public relay servers… |
+| Shared memory for the machine (the page is cross-origin isolated). | (not shown unless it fails) |
+| You started this demo before: {{machine}}, last used {{when}}. Open it as you left it, or start a fresh copy beside it. | You already have a machine from this demo, {{machine}}, last used {{when}}. Open it to continue where you left off, or start a fresh copy alongside it. |
 
 ## Open
 

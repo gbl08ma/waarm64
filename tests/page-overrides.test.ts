@@ -13,6 +13,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 let base: string;
 let close: () => void;
@@ -78,7 +79,7 @@ test('the address over a stored machine: its snapshot has the shape it ran with,
   assert.deepEqual([rec.ncpus, !!rec.mouse], [1, false], 'the record is as it was: the address doesn\'t write it');
 
   // Restored on the same address: the shapes match, the worker makes the same devices.
-  await page.click('#machines-open');
+  await openHome(page);
   await page.locator('.machines [data-tab=snapshots]').click();
   await page.locator(`.machines [data-snapshot="${snaps[0].id}"]`).getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
   await page.waitForFunction(() => document.body.dataset.state !== 'booting', null, { timeout: 30_000, polling: 50 })

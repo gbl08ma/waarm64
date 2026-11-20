@@ -16,6 +16,7 @@ import { startServer } from '../tools/serve.ts';
 import { answerAsks } from './page-ask.ts';
 import { t, t as tWords } from '../web/i18n.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const NO_CONNECTION = t('network:NetAdapter.noConnection');
 const CHANGE = t('network:NetAdapter.change');
@@ -164,7 +165,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   assert.equal((await adapterOf(pageB, b)).connection, t.id, 'attached to Bravo too');
 
   // Alpha's Network tab: Detach takes it off Alpha.
-  await pageA.click('#machines-open');
+  await openHome(pageA);
   await pageA.click('[data-tab="network"]');
   await pageA.waitForSelector('[data-adapter="0"] [data-action="detach-connection"]');
   await pageA.click('[data-adapter="0"] [data-action="detach-connection"]');
@@ -186,7 +187,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   assert.equal((await adapterOf(pageB, b)).connection, undefined, 'detached in the record');
 
   // Connections: rename, then delete (it is on no machine now; the question says what goes).
-  await pageB.click('#machines-open');
+  await openHome(pageB);
   await pageB.click('[data-machine="connections"]');
   const row = pageB.locator(`li[data-connection="${t.id}"]`);
   await row.locator('[data-field="connection-name"]').fill('Home tailnet');
@@ -234,14 +235,14 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
   assert.deepEqual(await locksBecome([]), [], 'its lock is let go');
   // Connections says no one has it (not another tab: the lock let go here is still held a moment after).
-  await pageA.click('#machines-open');
+  await openHome(pageA);
   await pageA.click('[data-machine="connections"]');
   const meta = pageA.locator(`li[data-connection="${t.id}"] .meta`);
   await meta.waitFor({ timeout: 10_000 });
   await pageA.waitForTimeout(500);
   const state = await meta.textContent() ?? '';
   assert.ok(state.includes(tWords('machines:ConnectionsPane.connection.unused')), `not in use: ${state}`);
-  await pageA.click('.machines [data-action=back]');
+  await pageA.click('#wordmark[data-action=back]');
   assert.equal((await records(pageA, 'connections'))[0].connectAtStart, true, "it isn't a Disconnect");
   await menu(pageA);
   assert.equal(await pageA.locator('#net-connect-now').isVisible(), false);
@@ -253,7 +254,7 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageB.goto(`${base}/web/app/?m=${b}`);
   await started(pageB);
   assert.equal(await phase(pageB), 'off');
-  await pageA.click('#machines-open');
+  await openHome(pageA);
   await pageA.click(`[data-machine="${b}"]`);
   await pageA.click('[data-tab="network"]');
   await pageA.click('[data-adapter="0"] [data-action="attach-connection"]');
@@ -317,7 +318,7 @@ test('a room connection to the global public room: the room\'s first choice, str
   page.on('pageerror', (e) => errors.push(`${e}`));
   await answerAsks(page, () => {});
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await page.click('[data-machine="connections"]');
   await page.click('[data-action="new-connection"]');
   await page.click('#net-pick-room');

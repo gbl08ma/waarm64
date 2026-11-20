@@ -146,8 +146,10 @@
   }
   .menu[open] > .tool,
   .menu[data-on] > .tool {
+    color: var(--accent);
     background: var(--pressed-bg);
     border-color: var(--pressed-border);
+    box-shadow: var(--pressed-edge);
   }
   .bordered {
     display: inline-flex;
@@ -162,16 +164,23 @@
     list-style: none;
     user-select: none;
     white-space: nowrap;
+    background: var(--key-bg);
+    box-shadow: var(--key-edge);
+  }
+  /* The menu's button draws its own chevron (an icon), not a disclosure's marker (theme/base.css). */
+  summary::before {
+    content: none;
   }
   .bordered::-webkit-details-marker {
     display: none;
   }
   .bordered:hover {
-    background: var(--hover-bg);
+    background: var(--key-hover-bg);
   }
   .menu[open] > .bordered {
     background: var(--pressed-bg);
     border-color: var(--pressed-border);
+    box-shadow: var(--pressed-edge);
   }
   .bordered .label {
     font-size: inherit;

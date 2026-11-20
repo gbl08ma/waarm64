@@ -17,6 +17,7 @@ import { CONSOLE_INPUT_WANT } from '../web/vm.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 let browser: Browser;
 let context: BrowserContext; // one origin storage (OPFS) for the boot pages; browser.newPage() gets a fresh one each time
@@ -717,7 +718,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await shows(page, /\[waarm64-mark\]/);
   // Reset (the Home page, this page's machine's Disks tab): a confirmation (with what the overlay holds), a stop, the
   // overlay deleted, a boot from the image.
-  await page.locator('#machines-open').click();
+  await openHome(page);
   await page.locator('#reset-disk').click();
   await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 10_000, polling: 50 });
   assert.equal((await settled(page)).state, 'running');

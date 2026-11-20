@@ -34,6 +34,7 @@ import { keyPair, nameOf } from './net/room-keys.ts';
 import { words } from './words.ts';
 import { CALENDARS, EXPLORERS } from '../web/names.ts';
 import { CALENDARS as PRETEND, startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
+import { openHome } from './page-home.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
@@ -320,7 +321,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
       assert.equal(await a.evaluate(() => getSelection()?.toString() || (document.activeElement as HTMLInputElement).value.slice((document.activeElement as HTMLInputElement).selectionStart!, (document.activeElement as HTMLInputElement).selectionEnd!)), ra.room.link);
 
       // New name, then Save in the same Edit: the new key stays (Save once wrote back the record the wizard opened with).
-      await b.click('#machines-open');
+      await openHome(b);
       await b.click('[data-machine="connections"]');
       await b.click('li[data-connection] [data-action="edit-connection"]');
       await b.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
@@ -604,7 +605,7 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
 /** After the name: the wizard's key carries the names; Delete says so; B's connection, not kept, can't hold one. */
 async function namesKeptWithTheConnection(a: Page, b: Page) {
   // The Home page: the wizard's key carries the names; Delete says so.
-  await a.click('#machines-open');
+  await openHome(a);
   await a.click('[data-machine="connections"]');
   await a.click('li[data-connection] [data-action="edit-connection"] >> nth=0');
   await a.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));

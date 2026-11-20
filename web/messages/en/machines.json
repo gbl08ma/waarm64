@@ -633,7 +633,7 @@
   },
   "machine-edit.saving": {
     "message": "Saving",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Save on the Settings tab, or a Connect at start box."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Save on the Settings tab, or a Connect at start box."
   },
   "machine-edit.orphans.confirm": {
     "message": "Save these settings? They change the hardware the guest sees, so the machine's snapshots will no longer be restorable. They will remain, marked as orphaned, until you delete them.",
@@ -653,11 +653,11 @@
   },
   "MachinePane.busy.exporting": {
     "message": "Exporting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Export the definition."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Export the definition."
   },
   "MachinesNav.busy.importing": {
     "message": "Importing",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Import a definition…."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Import a definition…."
   },
   "MachinesNav.imported.toPick": {
     "message": "<name>{{name}}</name> was created. You will be asked to select its disk files when it first starts: <name>{{files}}</name>.",
@@ -673,7 +673,7 @@
   },
   "MachinePane.busy.deleting": {
     "message": "Deleting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: deleting a machine or a connection."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: deleting a machine or a connection."
   },
   "AdapterCard.adapter.move": {
     "message": "Move the adapter. The guest numbers its adapters (eth0, eth1…) in this order, and its default route goes through the first one that reaches the internet. A machine running in this tab restarts when you save.",
@@ -725,7 +725,7 @@
   },
   "ConnectionsPane.busy.loggingOut": {
     "message": "Logging out",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: a connection's Log out."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's Log out."
   },
   "UsbSwitch.usb.title": {
     "message": "Give the machine an xHCI USB controller with four connectors, each USB 2 and USB 3, for its USB devices.",
@@ -851,13 +851,9 @@
     "message": "Revert",
     "note": "Home page: button beside Save, while a machine's settings have unsaved changes: drops them."
   },
-  "MachinesPage.back": {
-    "message": "Back to the machine",
-    "note": "Home page: the button (and its tooltip) at the left of the top bar that closes the page and shows the machine again."
-  },
   "MachinesPage.busy": {
     "message": "{{what}}…",
-    "note": "Home page: top bar, while an action runs. {{what}}: what it is doing (a `.busy.*` message of the pane or tab that runs it)."
+    "note": "Home page: at the end of its bottom bar (the storage's), while an action runs. {{what}}: what it is doing (a `.busy.*` message of the pane or tab that runs it)."
   },
   "MachinesPage.dismiss": {
     "message": "Close",
@@ -893,7 +889,7 @@
   },
   "NewMachine.busy": {
     "message": "Creating a machine",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: the New machine dialog makes the machine chosen (empty, or from a template)."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: the New machine dialog makes the machine chosen (empty, or from a template)."
   },
   "MachinesNav.newMachine": {
     "message": "New machine",
@@ -955,25 +951,37 @@
     "message": "Show every disk and ramdisk stored in this browser, whether attached to a machine or not.",
     "note": "Home page: tooltip of the Disks button under the list of machines."
   },
+  "MachinesNav.disks.label": {
+    "message": "Disks",
+    "note": "Home page: button under the list of machines that shows the browser's disks; their count follows in a pill."
+  },
   "MachinesNav.disks": {
     "message": "Disks ({{n}})",
-    "note": "Home page: button under the list of machines that shows the browser's disks. {{n}}: how many."
+    "note": "Home page: the accessible name of the button under the list of machines that shows the browser's disks (the page shows the count in a pill). {{n}}: how many."
   },
   "MachinesNav.folders.title": {
     "message": "Show the shared folders stored in this browser, for any machine.",
     "note": "Home page: tooltip of the Shared folders button under the list of machines."
   },
+  "MachinesNav.folders.label": {
+    "message": "Shared folders",
+    "note": "Home page: button under the list of machines that shows the browser's shared folders; their count follows in a pill."
+  },
   "MachinesNav.folders": {
     "message": "Shared folders ({{n}})",
-    "note": "Home page: button under the list of machines that shows the browser's shared folders. {{n}}: how many."
+    "note": "Home page: the accessible name of the button under the list of machines that shows the browser's shared folders (the page shows the count in a pill). {{n}}: how many."
   },
   "MachinesNav.connections.title": {
     "message": "Show the network connections stored in this browser, such as tailnets and tailcat, for any machine's adapters.",
     "note": "Home page: tooltip of the Connections button under the list of machines."
   },
+  "MachinesNav.connections.label": {
+    "message": "Connections",
+    "note": "Home page: button under the list of machines that shows the browser's connections; their count follows in a pill."
+  },
   "MachinesNav.connections": {
     "message": "Connections ({{n}})",
-    "note": "Home page: button under the list of machines that shows the browser's network connections. {{n}}: how many."
+    "note": "Home page: the accessible name of the button under the list of machines that shows the browser's network connections (the page shows the count in a pill). {{n}}: how many."
   },
   "MachinesNav.preferences.title": {
     "message": "Set how this web app behaves in this browser, for every machine.",
@@ -1189,7 +1197,7 @@
   },
   "ConnectionsPane.busy.renaming": {
     "message": "Renaming",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: renaming a connection."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: renaming a connection."
   },
   "ConnectionsPane.connection.meta": {
     "message": "{{kind}} · {{state}} · {{used}}",
@@ -1205,7 +1213,7 @@
   },
   "ConnectionsPane.busy.forgettingAddress": {
     "message": "Replacing the address",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: a connection's New address."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's New address."
   },
   "ConnectionsPane.connection.newAddress.title": {
     "message": "Give the connection a new tailcat address. Anyone with the old address can no longer connect.",
@@ -1305,7 +1313,7 @@
   },
   "MachinePane.busy.copying": {
     "message": "Copying",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Duplicate."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Duplicate."
   },
   "MachinePane.duplicate.title": {
     "message": "Create a new machine with the same settings and disks. Its disks use the same overlays, which only one running machine can use at a time.",
@@ -1335,9 +1343,13 @@
     "message": "Settings",
     "note": "Home page: a tab of a stored machine's pane. Its settings: processors, memory, display, devices."
   },
+  "MachinePane.tab.disks": {
+    "message": "Disks",
+    "note": "Home page: a tab of a stored machine's pane. Its disks; their count follows in a pill."
+  },
   "MachinePane.tab.disksCount": {
     "message": "Disks ({{n}})",
-    "note": "Home page: a tab of a stored machine's pane. Its disks; {{n}}: how many are attached."
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its disks; {{n}}: how many are attached."
   },
   "MachinePane.tab.network": {
     "message": "Network",
@@ -1345,7 +1357,7 @@
   },
   "MachinePane.tab.usbCount": {
     "message": "USB ({{n}})",
-    "note": "Home page: a tab of a stored machine's pane. Its USB controller and devices, when it remembers some; {{n}}: how many."
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its USB controller and devices, when it remembers some; {{n}}: how many."
   },
   "MachinePane.tab.usb": {
     "message": "USB",
@@ -1353,7 +1365,7 @@
   },
   "MachinePane.tab.foldersCount": {
     "message": "Shared folders ({{n}})",
-    "note": "Home page: a tab of a stored machine's pane. Its shared folders, when some are attached; {{n}}: how many."
+    "note": "Home page: the accessible name of a tab (the page shows the count in a pill) of a stored machine's pane. Its shared folders, when some are attached; {{n}}: how many."
   },
   "MachinePane.tab.folders": {
     "message": "Shared folders",
@@ -1525,7 +1537,7 @@
   },
   "AdapterCard.busy.detaching": {
     "message": "Detaching",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Detach."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: an adapter's Detach."
   },
   "AdapterCard.adapter.detach.title": {
     "message": "Take the connection off the adapter, disconnecting it. The connection remains stored in this browser.",
@@ -1537,7 +1549,7 @@
   },
   "AdapterCard.busy.disconnecting": {
     "message": "Disconnecting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Disconnect."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: an adapter's Disconnect."
   },
   "AdapterCard.adapter.disconnect": {
     "message": "Disconnect",
@@ -1545,7 +1557,7 @@
   },
   "AdapterCard.busy.connecting": {
     "message": "Connecting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Connect."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: an adapter's Connect."
   },
   "AdapterCard.adapter.connect": {
     "message": "Connect",
@@ -1641,7 +1653,7 @@
   },
   "StorageBar.busy.asking": {
     "message": "Asking",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Protect from automatic deletion (the browser is asked)."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Protect from automatic deletion (the browser is asked)."
   },
   "StorageBar.storage.persist": {
     "message": "Protect from automatic deletion",
@@ -1657,11 +1669,11 @@
   },
   "StorageBar.busy.clearing": {
     "message": "Clearing",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Clear the URL disks' cache."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Clear the URL disks' cache."
   },
   "StorageBar.busy.trimming": {
     "message": "Freeing unused disk space",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Free unused disk space (the guest trims its filesystems, then its disks' changes shrink)."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Free unused disk space (the guest trims its filesystems, then its disks' changes shrink)."
   },
   "StorageBar.storage.clear": {
     "message": "Clear the URL disks' cache ({{size, bytes}})",
@@ -1783,17 +1795,13 @@
     "message": "Machines ready to use, set up and started in a click.",
     "note": "Home page: tooltip of the Demos button under the list of machines (between Preferences and About), which opens the demo store's page."
   },
-  "DemosPage.back": {
-    "message": "Back",
-    "note": "Demo store's page: the button (and its tooltip) at the left of its top bar that closes the page, back to where the visitor came from (Home, or the machine)."
-  },
   "DemosPage.heading": {
     "message": "Demos",
-    "note": "Demo store's page: its heading, over the demos' cards (or a demo's details)."
+    "note": "Demo store's page: its heading, over the list of the store's demos."
   },
   "DemosPage.intro": {
-    "message": "Machines ready to use: choose one, and it starts in this tab where it was left, already set up, with nothing to install. What you change in it is kept in this browser, and the machine stays on the Home page.",
-    "note": "Demo store's page: the paragraph under its heading, over the demos' cards: what a demo is."
+    "message": "Ready-made machines to try. Choose one, and it starts in this tab already booted and set up, with nothing to install. The changes you make are kept in this browser, and the machine is added to the <ui-home>Home</ui-home> page.",
+    "note": "Demo store's page: the paragraph under its heading, over the list of the store's demos: what a demo is, for a visitor who may have just arrived. The <ui-home> marker shows the Home icon before the word (the toolbar's Home)."
   },
   "DemosPage.loading": {
     "message": "Loading the demos…",
@@ -1804,15 +1812,19 @@
     "note": "Demo store's page: button under the error when the store's list of demos couldn't be loaded (the server down, the connection lost): loads it again."
   },
   "DemosPage.unknown": {
-    "message": "This store has no demo {{id}}: it may have been replaced by a newer one. Its demos are below.",
-    "note": "Demo store's page: warning over the cards when the link named a demo (?id=) the store doesn't have. {{id}}: the id in the link (short, lowercase)."
+    "message": "This store has no demo {{id}}. It may have been replaced by a newer one.",
+    "note": "Demo store's page: warning when the link named a demo (?id=) the store doesn't have, shown where that demo's pane would be, beside the list of the store's demos (in a narrow window, over the list). {{id}}: the id in the link (short, lowercase)."
+  },
+  "DemosPage.choose": {
+    "message": "Choose a demo from the list.",
+    "note": "Demo store's page: said where a demo's pane would be, beside the list of the store's demos, when none is chosen (the link named a demo the store doesn't have; under that warning)."
   },
   "DemosPage.skipped_one": {
-    "message": "{{count}} demo in this store needs a newer version of this web app, or is damaged, and is left out.",
+    "message": "{{count}} demo in this store isn't shown. It needs a newer version of this web app, or its entry is damaged.",
     "note": "Demo store's page: a small line over the cards when the store lists demos this page can't read (a later version of the format, a damaged entry). {{count}}: how many."
   },
   "DemosPage.skipped_other": {
-    "message": "{{count}} demos in this store need a newer version of this web app, or are damaged, and are left out.",
+    "message": "{{count}} demos in this store aren't shown. They need a newer version of this web app, or their entries are damaged.",
     "note": "Demo store's page: a small line over the cards when the store lists demos this page can't read (a later version of the format, a damaged entry). {{count}}: how many."
   },
   "DemosPage.empty": {
@@ -1824,11 +1836,11 @@
     "note": "Demo store's page: the heading of the warning shown when a link opens another store than the project's (?store=), before any of its demos is shown or downloaded."
   },
   "DemosPage.notOurs": {
-    "message": "This link opens demos published at {{host}}, not by the $t(common:product.name) project. A demo is a whole machine, set up by whoever published it: open its demos only if you trust them.",
+    "message": "This link opens demos published at {{host}}, not by the $t(common:product.name) project. A demo is a whole machine, set up by its publisher. Only continue if you trust them.",
     "note": "Demo store's page: the warning's text when a link opens another store than the project's (?store=), before anything of it past its list is downloaded. {{host}}: the other store's server (its host name)."
   },
   "DemosPage.notOurs.name": {
-    "message": "It calls itself <name>{{name}}</name>.",
+    "message": "Its publisher named it <name>{{name}}</name>.",
     "note": "Demo store's page: a line of the warning about another store than the project's, when the store gives itself a name. {{name}}: that name, the store's own words."
   },
   "DemosPage.notOurs.show": {
@@ -1857,23 +1869,23 @@
   },
   "DemoStart.back": {
     "message": "All demos",
-    "note": "Demo store's page, a demo's details: the link-like button at the top that goes back to every demo's card."
+    "note": "Demo store's page, a demo's details: the link-like button at the top, in a narrow window only (where the chosen demo's details replace the list), that goes back to the list of demos."
   },
   "DemoStart.about": {
-    "message": "$t(common:product.name) runs a whole arm64 computer in this browser tab, with nothing to install. The demo downloads the machine as it was left running, and it carries on from there. It needs a recent computer, and works best in Chrome or Edge.",
+    "message": "$t(common:product.name) runs a whole 64-bit ARM computer in this browser tab, with nothing to install. A demo is a machine that was saved while running, so it resumes from there instead of booting. Demos need a recent computer, and work best in Chrome or Edge.",
     "note": "Demo store's page, a demo's details: what the project is and what it needs, before anything is downloaded."
   },
   "DemoStart.download": {
-    "message": "Starting it downloads about {{size, bytes}}. The machine's disk stays on its server and is read as the machine uses it, so the machine needs that server to run; what you change is kept in this browser.",
-    "note": "Demo store's page, a demo's details: what starting it downloads, and where its files are. {{size}}: the bytes."
+    "message": "Starting this demo downloads about <size>{{size, bytes}}</size>. The rest of the machine's disk stays on the demo's server and is downloaded as the machine reads it, so the machine only runs while that server is reachable. The changes you make are kept in this browser.",
+    "note": "Demo store's page, a demo's details: what starting it downloads, and where its files are. {{size}}: the bytes, between <size> markers, which the page draws a little stronger than the words around it (the number that matters on a metered connection)."
   },
   "DemoStart.room": {
-    "message": "The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers, which can see your IP address. Another visitor learns your IP address only if their machine connects to yours, which requires knowing your machine's name.",
-    "note": "Demo store's page, a demo's details, under what starting it downloads: shown only for a demo whose machine joins the global public room (its second network adapter on a peer-to-peer room of its own). What that means for the visitor's privacy: the Nostr relays and DERP servers see the browser's IP address; another visitor's machine learns it only by connecting directly (WebRTC), which needs this machine's name in the room."
+    "message": "The machine also joins a public peer-to-peer network made for $t(common:product.name), where other visitors' machines can connect to it if they know its name. Once it's running, you will find its name in this network in the toolbar's <ui-network>Network</ui-network> menu. To join, this browser contacts public relay servers, which can see your IP address. Another visitor sees your IP address only when their machine connects to yours.",
+    "note": "Demo store's page, a demo's details, in the fine print: shown only for a demo whose machine joins the global public room (its second network adapter on a peer-to-peer room of its own). Written for a first-time visitor, who doesn't know what a room is: what it is, where to find the machine's name in it once it runs (the toolbar's Network menu: the <ui-network> marker shows its icon), and what it means for their privacy: the Nostr relays and DERP servers see the browser's IP address; another visitor's machine learns it only by connecting directly (WebRTC), which needs this machine's name."
   },
   "DemoStart.needs": {
-    "message": "What it needs",
-    "note": "Demo store's page, a demo's details: the heading over what the demo needs of the browser, each checked (machines:DemoChecks.*)."
+    "message": "Browser requirements",
+    "note": "Demo store's page, a demo's details: the heading over what the demo needs of the browser, each checked (machines:DemoChecks.*), shown when one of them isn't met (when all are, one line says so instead: machines:DemoChecks.met)."
   },
   "DemoStart.checking": {
     "message": "Checking this browser…",
@@ -1892,11 +1904,11 @@
     "note": "Demo store's page, a demo's details: the second button when this browser has a machine made from the demo: downloads it again into another machine, named with a number after it; the visitor's own stays as it is."
   },
   "DemoStart.mine": {
-    "message": "You started this demo before: <name>{{machine}}</name>, last used {{when}}. Open it as you left it, or start a fresh copy beside it.",
-    "note": "Demo store's page, a demo's details: said over the buttons when this browser has a machine made from the demo. {{machine}}: its name; {{when}}: when it last ran (its disk last written), a date and time."
+    "message": "You already have a machine from this demo, <name>{{machine}}</name>, last used {{when, minutes}}. Open it to continue where you left off, or start a fresh copy alongside it.",
+    "note": "Demo store's page, a demo's details: said at the top when this browser has a machine made from the demo. {{machine}}: its name; {{when}}: when it last ran (its disk last written), a date and a time to the minute."
   },
   "DemoStart.mine.undated": {
-    "message": "You started this demo before: <name>{{machine}}</name>. Open it as you left it, or start a fresh copy beside it.",
+    "message": "You already have a machine from this demo, <name>{{machine}}</name>. Open it to continue where you left off, or start a fresh copy alongside it.",
     "note": "Demo store's page, a demo's details: said over the buttons when this browser has a machine made from the demo, before its last use is known. {{machine}}: its name."
   },
   "DemoStart.elsewhere": {
@@ -1904,11 +1916,11 @@
     "note": "Demo store's page, a demo's details: a warning when the visitor's machine from the demo runs in another tab of this browser (it must be stopped there to open here). {{machine}}: its name."
   },
   "DemoStart.older": {
-    "message": "You have <name>{{machine}}</name> from an older version of this demo. This version starts as a new machine; that one stays as it is.",
+    "message": "You have <name>{{machine}}</name> from an older version of this demo. Starting this version creates a new machine and leaves that one unchanged.",
     "note": "Demo store's page, a demo's details: said when this browser has a machine made from a version this demo replaces. {{machine}}: its name."
   },
   "DemoStart.runningHere": {
-    "message": "<name>{{machine}}</name> is running in this tab: opening the demo powers it off (you will be asked first).",
+    "message": "<name>{{machine}}</name> is running in this tab. Starting the demo will power it off, after asking you to confirm.",
     "note": "Demo store's page, a demo's details: a warning when another machine runs on this page. {{machine}}: its name."
   },
   "DemoStart.busy.download": {
@@ -1923,65 +1935,85 @@
     "message": "{{done, bytes}} of {{total, bytes}}",
     "note": "Demo store's page, a demo's details: the download's progress, under its bar. {{done}}: the bytes downloaded; {{total}}: all of them."
   },
+  "demo-leave.stop.title": {
+    "message": "Stop the download?",
+    "note": "Demo store's page: the title of the question asked when the visitor leaves a demo whose download is still running (another demo's row, All demos, the toolbar's Home or wordmark)."
+  },
+  "demo-leave.stop": {
+    "message": "<name>{{demo}}</name> is still downloading. Leaving it now will stop the download and discard what was downloaded so far.",
+    "note": "Demo store's page: the question's text when the visitor leaves a demo whose download is still running. {{demo}}: the demo's name (the store's words)."
+  },
+  "demo-leave.stop.ok": {
+    "message": "Stop the download",
+    "note": "Demo store's page: the button of the question about leaving a running download that stops it and goes where the visitor clicked."
+  },
+  "demo-leave.stop.cancel": {
+    "message": "Keep downloading",
+    "note": "Demo store's page: the button of the question about leaving a running download that stays on the demo and lets the download go on."
+  },
+  "DemoChecks.met": {
+    "message": "All browser requirements met",
+    "note": "Demo store's page, a demo's details: one line with a green light when everything the demo needs of the browser is there; a click unfolds the checks (machines:DemoChecks.*)."
+  },
   "DemoChecks.browser.ok": {
-    "message": "A Chromium browser (Chrome, Edge…), the browser $t(common:product.name) is made for.",
-    "note": "Demo store's page, a demo's details, under What it needs: the browser is Chromium's (met)."
+    "message": "This is a Chromium-based browser, such as Chrome or Edge.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: the browser is Chromium's (met)."
   },
   "DemoChecks.browser.warn": {
-    "message": "$t(common:product.name) is made for Chromium's browsers (Chrome, Edge…). In this one the demo may not work, or only in part.",
-    "note": "Demo store's page, a demo's details, under What it needs: another browser than Chromium's (a warning: the demo may still run)."
+    "message": "$t(common:product.name) is made for Chromium-based browsers, such as Chrome or Edge. In this browser the demo may not work, or only partly.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: another browser than Chromium's (a warning: the demo may still run)."
   },
   "DemoChecks.isolation.ok": {
-    "message": "Shared memory for the machine (the page is cross-origin isolated).",
-    "note": "Demo store's page, a demo's details, under What it needs: SharedArrayBuffer is there (met)."
+    "message": "This web app has the shared memory the machine needs.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: SharedArrayBuffer is there (met). Never shown: only the failure is (the visitor can do nothing about it, and only someone hosting this web app meets it)."
   },
   "DemoChecks.isolation.fail": {
-    "message": "The browser gives this page no shared memory, which the machine needs: its server doesn't send the cross-origin isolation headers.",
-    "note": "Demo store's page, a demo's details, under What it needs: no SharedArrayBuffer (the demo can't start)."
+    "message": "This web app can't use shared memory, which the machine needs. Its server isn't sending the cross-origin isolation headers.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: no SharedArrayBuffer (the demo can't start)."
   },
   "DemoChecks.opfs.ok": {
-    "message": "Storage for the machine's disk in this browser.",
-    "note": "Demo store's page, a demo's details, under What it needs: the origin private file system is there (met)."
+    "message": "This browser can store the machine's disk.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: the origin private file system is there (met)."
   },
   "DemoChecks.opfs.fail": {
-    "message": "The browser gives this page no storage for the machine's disk (a private window refuses it). Open the page in a normal window.",
-    "note": "Demo store's page, a demo's details, under What it needs: no origin private file system (the demo can't start)."
+    "message": "This browser gives this web app no storage for the machine's disk, which happens in private windows. Open this web app in a normal window.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: no origin private file system (the demo can't start)."
   },
   "DemoChecks.webgl2.ok": {
-    "message": "WebGL2, for the demo's 3D graphics.",
-    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with 3D; WebGL2 is there (met)."
+    "message": "WebGL2 is available for the demo's 3D graphics.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: shown for a demo with 3D; WebGL2 is there (met)."
   },
   "DemoChecks.webgl2.fail": {
-    "message": "No WebGL2, which the demo's 3D graphics need. Check that hardware acceleration is on in the browser's settings.",
-    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with 3D; no WebGL2 (the demo can't start)."
+    "message": "WebGL2, which the demo's 3D graphics need, isn't available. Check that hardware acceleration is turned on in the browser's settings.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: shown for a demo with 3D; no WebGL2 (the demo can't start)."
   },
   "DemoChecks.webgpu.ok": {
-    "message": "WebGPU, for the demo's Vulkan graphics.",
-    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with Vulkan; WebGPU is there (met)."
+    "message": "WebGPU is available for the demo's Vulkan graphics.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: shown for a demo with Vulkan; WebGPU is there (met)."
   },
   "DemoChecks.webgpu.fail": {
-    "message": "No WebGPU, which the demo's Vulkan graphics need.",
-    "note": "Demo store's page, a demo's details, under What it needs: shown for a demo with Vulkan; no WebGPU adapter (the demo can't start)."
+    "message": "WebGPU, which the demo's Vulkan graphics need, isn't available.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: shown for a demo with Vulkan; no WebGPU adapter (the demo can't start)."
   },
   "DemoChecks.memory.ok": {
-    "message": "Memory: this computer has at least {{have}} GiB, and the demo wants {{need}} GiB.",
-    "note": "Demo store's page, a demo's details, under What it needs: the device's memory as the browser says it (met). {{have}}: GiB the browser reports (it says at most 8); {{need}}: GiB the demo's machine wants with the page's own."
+    "message": "Your computer has at least {{have}} GiB of memory. The demo needs {{need}} GiB.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: the device's memory as the browser says it (met). {{have}}: GiB the browser reports (it says at most 8); {{need}}: GiB the demo's machine wants with the page's own."
   },
   "DemoChecks.memory.warn": {
-    "message": "This computer says it has {{have}} GiB of memory, and the demo wants {{need}} GiB: it may run slowly, or the browser may stop it.",
-    "note": "Demo store's page, a demo's details, under What it needs: less memory than the demo wants (a warning: it may still run). {{have}}: GiB the browser reports; {{need}}: GiB the demo's machine wants with the page's own."
+    "message": "Your computer reports {{have}} GiB of memory, and the demo needs {{need}} GiB. It may run slowly, or the browser may stop it.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: less memory than the demo wants (a warning: it may still run). {{have}}: GiB the browser reports; {{need}}: GiB the demo's machine wants with the page's own."
   },
   "DemoChecks.storage.ok": {
-    "message": "Room in this browser's storage: {{free, bytes}} free, and the demo needs {{need, bytes}}.",
-    "note": "Demo store's page, a demo's details, under What it needs: the browser's storage has room for the download and the machine's first changes (met). {{free}}, {{need}}: bytes."
+    "message": "This browser has {{free, bytes}} of free storage. The demo needs {{need, bytes}}.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: the browser's storage has room for the download and the machine's first changes (met). {{free}}, {{need}}: bytes."
   },
   "DemoChecks.storage.fail": {
-    "message": "This browser's storage has {{free, bytes}} free, and the demo needs {{need, bytes}}. Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes it.",
-    "note": "Demo store's page, a demo's details, under What it needs: no room for the download (the demo can't start). {{free}}, {{need}}: bytes. The <ui-home> marker shows the Home button's icon before its words."
+    "message": "This browser has {{free, bytes}} of free storage, and the demo needs {{need, bytes}}. Free up space on the <ui-home>Home</ui-home> page, where the bar at the bottom shows what is using it.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: no room for the download (the demo can't start). {{free}}, {{need}}: bytes. The <ui-home> marker shows the Home button's icon before its words."
   },
   "DemoChecks.mobile.warn": {
-    "message": "This looks like a phone or a tablet: the demo needs a computer's memory and speed, and may not run.",
-    "note": "Demo store's page, a demo's details, under What it needs: a mobile device (a warning: it may still run)."
+    "message": "This looks like a phone or a tablet. The demo needs the memory and speed of a computer, and may not run.",
+    "note": "Demo store's page, a demo's details, among the browser requirements: a mobile device (a warning: it may still run)."
   },
   "template.cutOff": {
     "message": "The demo's download was cut off",

@@ -262,7 +262,10 @@ overlays, kept snapshots, three connections, a folder), then captures each state
 `bench/results/local/screens/<name>/<state>.png` at 1280×800: the toolbar and each of its menus (with every menu a
 machine can have shown through its areas' state), the message bar (warn, error, info), the Home page's panes and a machine's tabs
 (also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
-page's questions. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
+page's questions. Then, in profiles of its own with the stores answered by the tool (`tools/screens-demos.ts`: three demos
+shaped like the published ones, their thumbnails drawn stand-ins), the demo store's page, wide and 720 px (`demos-…`):
+the list with the first demo, a chosen demo, an id the store doesn't have, another store's warning and its demos once
+accepted, a download partway and one that failed, a check that warns, a demo started before, the store's server down. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
 page's look is compared with a baseline set taken before it (`--label before`): `node tools/screens.ts --compare before
 --label <name>` lists each state whose pixels differ, and where. The seed's times, addresses and orders are fixed, so
 what differs besides the change is the dev server's port (in Add a disk's URL) and a new adapter's MAC.
@@ -270,7 +273,14 @@ what differs besides the change is the dev server's port (in Add a disk's URL) a
 ## The toolbar
 
 A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by
-separators; the main gates also have their names. Left to right: **[Home](ui:toolbar:Toolbar.machines)** (a house: the Home page), the machine's name,
+separators; the main gates also have their names. Left to right: the wordmark and **[Home](ui:toolbar:Toolbar.machines)** (a house: the Home page), which are the ways between the machine and the
+pages that take its place (Home, the demo store's; neither page has a Back row of its own, since 2026-11-20): **Home is a
+toggle**, pressed while Home shows and going back to the machine when pressed again ([Go back to the machine.](ui:toolbar:Toolbar.machines.back.title)), and from the
+store's page it opens Home; **the wordmark is a button** (`Wordmark.svelte`, `#wordmark`; it looks as the wordmark does until the pointer or
+the focus is on it) that goes back to the machine from either page (`data-action="back"`: [Go back to the machine.](ui:toolbar:Wordmark.back)) and
+opens Home from the machine (`data-action="home"`: [Open the Home page.](ui:toolbar:Wordmark.home)). The wordmark is a shortcut: all it does, Home
+does in a click or two. (Tests open Home with `tests/page-home.ts` `openHome`, which clicks the toggle only while Home isn't
+open.) Then the machine's name,
 **Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs;
 where the guest's agent can, both ask the guest first and show [Shutting down…](ui:toolbar:Toolbar.soft.off) meanwhile:
 devices.md "Power off and restart from the guest"), **[Suspend](ui:toolbar:Toolbar.suspend)**,
@@ -480,7 +490,7 @@ edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab
 `PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
 called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav`, `openMachines`, `#machines-open`, kept
 theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
-address opens it, so a reload keeps it, and the older `#machines` still does): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. Its heading,
+address opens it, so a reload keeps it, and the older `#machines` still does): the toolbar leads back (below; or a view button). It has no bar of its own: what it's doing while an action runs is said at the end of its bottom bar (`StorageBar`'s `busy`). Its heading,
 **[Home](ui:machines:MachinesPage.heading)**, is for a screen reader alone (an `h2`, the toolbar's `h1` above it): it
 names the left column (a `nav`), and the list's heading and each pane's title (`h3`) are under it. The left
 column's **[Machines](ui:machines:MachinesNav.heading)** heads the list of machines, each said running (its Web Lock
@@ -737,8 +747,8 @@ noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 ## The demo store
 
 The demo store's page (`DemosPage.svelte`; decisions.md "Demos"; the data: [machines.md](machines.md)
-§6.2) takes the machine's place as Home does (`body[data-page=demos]`; the machine runs on behind it), with
-**[Back](ui:machines:DemosPage.back)** to where the visitor came from (Home, when opened from there; else the machine).
+§6.2) takes the machine's place as Home does (`body[data-page=demos]`; the machine runs on behind it). The toolbar leads
+out of it: Home to the Home page, the wordmark back to the machine ("The toolbar"); the browser's Back retraces it.
 It's reached three ways: **[Demos](ui:machines:MachinesNav.demos)** in Home's left column (between Preferences and
 About: it opens the page, not a pane); its address; and a **first visit**, a load with no machines kept and nothing
 asked (no query, no fragment: `demos-route.ts` `firstVisit`), which opens it. Not under automation (the tests open the
@@ -749,8 +759,8 @@ the query's form serves (decisions.md "Demos").
 
 - **Its address** (`web/app/demos-route.ts`, parsed once; `areas/demos.svelte.ts` holds what shows): `/demos` (the
   copy's `demos.html`, below, "A static copy"; `/demos.html` too) or `#demos` on any copy. Parameters go in the query,
-  never the path, percent-encoded: `?id=<id>` opens our store's demo at its interstitial, `?store=<url>` another store's
-  cards (or a single definition's demo: the store of one), `&id=` one of its demos; in the fragment's form after
+  never the path, percent-encoded: `?id=<id>` opens our store's demo (its pane), `?store=<url>` another store's
+  list (or a single definition's demo: the store of one), `&id=` one of its demos; in the fragment's form after
   `#demos?` (it wins over the query). The page's own knobs never take `id` or `store`, so the rest of the query is the
   page's (`pageQuery`: a load with only those still opens the last machine). While the page shows, the address follows
   the demo chosen (on `/demos` its query, else `#demos?id=…`), so a reload keeps it; closed, the address is the page's
@@ -759,25 +769,44 @@ the query's form serves (decisions.md "Demos").
   and `popstate` follows the address back (`page-window.ts` `followAddress`: the store on its route, or closed to Home
   for `#home`, else to the machine), so Back retraces the store; what the address itself opened only tidies it
   (`replaceState`). A store's read that is no longer the one shown (another store opened meanwhile) is dropped, its
-  failure and busy state with it. Choosing a card gives the focus to the demo's name (or to Open my machine), All demos
-  gives it back to the card. The store's URL is ours,
+  failure and busy state with it. The store's URL is ours,
   `https://vmdisks.tny.im/store.json` (`OUR_STORE`), unless `?store=` names another (not http(s): ours).
-- **The cards** (`DemoCard.svelte`): a button each (Tab and Enter reach and open it), its thumbnail (`crossorigin`:
-  vmdisks.tny.im sends CORS, the page is cross-origin isolated; decorative, `alt=""`: the button's name is the demo's), name, summary and
+- **The layout** (`DemosPage.svelte`), Home's: the store's demos in a list on the left (a column of 280 to 360 px on
+  the raised surface, under the page's heading and what a demo is), the chosen demo's pane on the right (`ui/Pane.svelte`,
+  as a machine's), so another demo is a click on its row and nothing leads back. **With no demo named, the store's
+  first is shown** (the address stays without an id, and the pane takes no focus), so the page opens on something to
+  start; an `?id=` the store doesn't have says so where the pane would be ([This store has no demo {{id}}. It may have been replaced by a newer one.](ui:machines:DemosPage.unknown),
+  [Choose a demo from the list.](ui:machines:DemosPage.choose)) and shows none. **At 720 px and under** (`MediaQuery`, the page's
+  narrow breakpoint) it's one column: the list alone, then the chosen demo's pane alone with
+  **[All demos](ui:machines:DemoStart.back)** over it, back to the list (the unknown id's warning is over the list there). Before
+  the list may show (the store loading, its failure, another store's warning) the page is one column at any width.
+  Focus: beside the list, a chosen row keeps it (as Home's list does); in one column the pane takes it as it replaces
+  the list (Open my machine, else the pane itself, an `article` named after the demo), and All demos gives it back to
+  the demo's row. Tried and left: cards in a grid with the demo's details on a screen of their own (the first build:
+  every other demo was a trip back through All demos, and the details filled half a wide window).
+- **A row** (`DemoCard.svelte`): a button (Tab and Enter reach and choose it), its thumbnail (`crossorigin`:
+  vmdisks.tny.im sends CORS, the page is cross-origin isolated; decorative, `alt=""`: the button's name is the demo's), name,
+  summary (its first two lines beside the pane, whole in one column) and
   download size, and a mark when the visitor has a machine from it ([You have this demo](ui:machines:DemoCard.mine)) or
-  from a version it replaces ([You have an older version of this demo](ui:machines:DemoCard.older); `demo-store.ts` `machinesOf`). The store's words
+  from a version it replaces ([You have an older version of this demo](ui:machines:DemoCard.older); `demo-store.ts` `machinesOf`). The chosen row is sunk with the
+  lit rail (`aria-current`), as Home's chosen machine. The store's words
   (names, summaries, its `name`) are data, drawn as plain text, never as catalog keys. A store's demos this page can't
-  read are counted over the cards; an `?id=` the store doesn't have opens the cards and says so.
+  read are counted over the list.
 - **Another store** (`?store=` not ours): its JSON is fetched, then a warning ([These demos aren't waarm64's](ui:machines:DemosPage.notOurs.title), its host,
   the name it gives itself) before anything past it (no thumbnail, no snapshot) until **[Show their demos](ui:machines:DemosPage.notOurs.show)**;
   or [Show waarm64's demos](ui:machines:DemosPage.notOurs.ours). Its definitions are otherwise as trusted as an imported one (decisions.md "Demos"):
   no extra limits, so another store's demo may turn on clipboard sharing, folder shares and the demo network
   together (a reviewed risk the user accepted, 2026-11-19: with the demo server's slow lane on, a guest given the
   host's clipboard could send it out; a demo's machine at least starts each run with sharing paused: clipboard.md).
-- **The interstitial** (`DemoStart.svelte`), before any download: what the project is and needs, the demo's card, its
-  download and that its disk stays on its server, for a demo that joins the global room what that means for the
-  visitor's IP address ([The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers, which can see your IP address. Another visitor learns your IP address only if their machine connects to yours, which requires knowing your machine's name.](ui:machines:DemoStart.room)), and **[What it needs](ui:machines:DemoStart.needs)**: the browser checked (`demo-check.ts`,
-  `DemoChecks.svelte`): a stop (no Start) for no cross-origin isolation or SharedArrayBuffer, no OPFS, no WebGL2 for a 3D
+- **The demo's pane** (`DemoStart.svelte`), before any download: at its head the demo's name and how to start it (the
+  main button stays in sight however long the pane), then a start's progress or failure, whether it was started
+  before, its screenshot beside its summary, its download and that its disk stays on its server, **[Browser requirements](ui:machines:DemoStart.needs)**,
+  and under a rule the fine print: what the project is and needs, and
+  for a demo that joins the global room what that means for the
+  visitor's IP address ([The machine also joins a public peer-to-peer network made for waarm64, where other visitors' machines can connect to it if they know its name. Once it's running, you will find its name in this network in the toolbar's Network menu. To join, this browser contacts public relay servers, which can see your IP address. Another visitor sees your IP address only when their machine connects to yours.](ui:machines:DemoStart.room)). The browser is checked (`demo-check.ts`,
+  `DemoChecks.svelte`). **With every check met, one line says so** ([All browser requirements met](ui:machines:DemoChecks.met), a green light)
+  and the checks unfold under it (`ui/Disclosure.svelte`); otherwise they're listed under the heading. The shared
+  memory's check is listed only when it fails (`listedChecks`: only someone hosting the page meets it). The checks: a stop (no Start) for no cross-origin isolation or SharedArrayBuffer, no OPFS, no WebGL2 for a 3D
   machine (`display: "3d"`), no WebGPU adapter for Vulkan, or storage with less room than the download and its first
   writes (`room`: ×1.25, at least +64 MiB); a warning for another browser than Chromium, a phone or tablet, or less
   memory than the machine's RAM plus 1.5 GiB (`navigator.deviceMemory`, which Chromium caps at 8). No privacy notice
@@ -788,17 +817,25 @@ the query's form serves (decisions.md "Demos").
   demo's (`serial` → the terminal, `screen` → the screen; not saved as the visitor's view, but kept for this tab's
   reloads in sessionStorage until the visitor chooses a view), and `switchMachine` opens
   it, whose first start restores the template (`restoreFirst`). A reload is the machine's (`?m=`), not the store's. **A
-  start belongs to its interstitial:** one at a time on the page (`demos.starting`: every Start waits while one runs);
-  when the interstitial goes (another demo, All demos, the store's page left) it's aborted, its download with it, and
-  nothing opens (a machine already made by then stays, found as started before); and the switch is asked again just
+  start belongs to its pane:** one at a time on the page (`demos.starting`: every Start waits while one runs);
+  when the pane goes (another demo's row, All demos, the store's page left, a window narrowed to one column while the
+  demo shown is the default one) it's aborted, its download with it, and
+  nothing opens (a machine already made by then stays, found as started before). **The visitor is asked first**
+  ([Stop the download?](ui:machines:demo-leave.stop.title), the page's question dialog: [Stop the download](ui:machines:demo-leave.stop.ok) or
+  [Keep downloading](ui:machines:demo-leave.stop.cancel)) when a click would take the pane away while its download runs (another demo's
+  row, All demos, the toolbar's Home or wordmark; `demo-leave.ts` `leaveDemo`; the question goes if the download ends meanwhile); the
+  browser's own Back and a narrowed window aren't asked; and the switch is asked again just
   before it when the machine running then isn't the one the visitor agreed to stop.
-- **Started before** (a machine whose `fromDemo` is the card's): the interstitial says so, with its name and when it was
+- **Started before** (a machine whose `fromDemo` is the demo's): the pane says so, with its name and when it was
   last used (when its disks' overlays were last written, `demo-open.ts` `lastUsed`, else its record's change), with
-  **[Open my machine](ui:machines:DemoStart.openMine)** (the default: it has the focus) and **[Start a fresh copy](ui:machines:DemoStart.fresh)** (another
+  **[Open my machine](ui:machines:DemoStart.openMine)** (the default: the main button, with the focus in one column) and **[Start a fresh copy](ui:machines:DemoStart.fresh)** (another
   machine; `importDefinition` names it with a suffix, `Alpine (2)`); a note when that machine runs in another tab.
   Open my machine checks its chunked disks' manifests first (`checkDisks`); for the machine running here already, it
   closes the store's page to that machine.
-- **Failures**, each in the catalog's words, under the interstitial (or, for the store's own file, with
+- **Its words** are written for a first-time visitor (copy.md "A first-time visitor's screens"): the download's size
+  is drawn stronger in its note (the `<size>` marker), "last used" is to the minute (`{{when, minutes}}`), and errors
+  and the other store's warning are `ui/Callout.svelte` boxes.
+- **Failures**, each in the catalog's words, at the top of the demo's pane (or, for the store's own file, with
   **[Try again](ui:machines:DemosPage.retry)**): the store or a demo's server unreachable (`demo-store.unreachable`), a
   status, the demo's files gone (a manifest's 404: `template.gone`), the snapshot republished meanwhile
   (`template.otherSnapshot`), a snapshot larger than its card says (`template.tooBig`, nothing fetched), a manifest
@@ -810,11 +847,12 @@ the query's form serves (decisions.md "Demos").
 
 Tests: `tests/demos-route.test.ts` (the address, the first visit, the checks; Node), `tests/demo-store.test.ts` (the
 cut-off download), `tests/page-demos.test.ts` (Chromium, a stand-in worker and the stores answered by the test: the
-first visit, a card by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
-started before, a fresh copy, `?id=`, an unknown id, Home's Demos and Back, `?store=`'s warning and what it fetches,
+first visit, a row by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
+started before, a fresh copy, `?id=`, an unknown id, Home's Demos and Back, the list beside the pane and one column
+when narrow (the first demo by default, another row with no trip back, All demos, the focus), `?store=`'s warning and what it fetches,
 the server down, the files gone, the download cut off), `tests/page-demos-guest.test.ts` (scripts/ci-machines.sh: a
 demo's template made from the build under test by `tools/build-demos.ts` into `target/ci-demos` (`WAARM64_DEMO_SITE`;
-default `target/demos`), from the card to a `#` prompt, a file kept across a reload; skipped without it).
+default `target/demos`), from its row to a `#` prompt, a file kept across a reload; skipped without it).
 
 ## The worker protocol
 

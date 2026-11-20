@@ -5,7 +5,7 @@
 // can't run without, a warning for what it may run without, 3D and Vulkan asked only of demos that have them.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canStart, checkDemo, room, type BrowserEnv, type Needs } from '../web/app/demo-check.ts';
+import { allMet, canStart, checkDemo, listedChecks, room, type BrowserEnv, type Needs } from '../web/app/demo-check.ts';
 import { OUR_STORE } from '../web/app/demo-store.ts';
 import { demosAddress, demosRoute, firstVisit, leftDemos, pageQuery } from '../web/app/demos-route.ts';
 
@@ -69,4 +69,9 @@ test("a demo's checks: stops, warnings, and what's asked only of 3D and Vulkan",
   assert.equal(level({ webgl2: false }, { gl: true }).webgl2, 'fail');
   assert.deepEqual([level({ webgl2: true, webgpu: false }, { vulkan: true }).webgl2, level({ webgl2: true, webgpu: false }, { vulkan: true }).webgpu], ['ok', 'fail']);
   assert.equal(level({}).webgl2, undefined, 'no 3D: not asked');
+  // What the page lists: the shared memory's check only when it fails; all met is one line.
+  assert.equal(allMet(checkDemo(ENV, NEEDS)), true);
+  assert.equal(allMet(checkDemo({ ...ENV, memoryGiB: 1 }, NEEDS)), false, 'a warning: not all met');
+  assert.deepEqual(listedChecks(checkDemo(ENV, NEEDS)).map((c) => c.what), ['browser', 'opfs', 'memory', 'storage']);
+  assert.equal(listedChecks(bad).some((c) => c.what === 'isolation' && c.level === 'fail'), true, 'its failure is said');
 });

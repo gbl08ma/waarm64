@@ -18,6 +18,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { FLASH } from '../web/app/ui/block-grid.ts';
 import { bytesText } from '../web/app/bytes.ts';
+import { openHome } from './page-home.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -110,11 +111,11 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
 
   // Opened from the machine's Disks tab (its overlay, made at the start) as the boot begins: live. What the disk's
   // answers say, sampled as they come: its blocks not examined yet, with data, kept.
-  await page.click('#machines-open');
+  await openHome(page);
   await page.locator(`.machines nav [data-machine="${ids.id}"]`).click();
   await page.locator(`.machines section.machine[data-selected="${ids.id}"] [data-tab=disks]`).click();
   await page.locator(`[data-attachment="${ids.attachment}"] [data-action=surface-open]`).click();
-  await page.locator('.machines [data-action=back]').click();
+  await page.locator('#wordmark[data-action=back]').click();
   await page.evaluate(() => {
     const w = window as unknown as { __samples: { unknown: number; held: number; kept: number; ticks: number }[] };
     w.__samples = [];

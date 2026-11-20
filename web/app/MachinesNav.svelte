@@ -7,6 +7,7 @@
   page (DemosPage.svelte) in Home's place.
 -->
 <script lang="ts">
+  import Count from './ui/Count.svelte';
   import Icon from './ui/Icon.svelte';
   import { ABOUT, CONNECTIONS, DISKS, FOLDERS, PAGE, PREFERENCES } from './machines-panes.ts';
   import type { IconName } from './icons.ts';
@@ -33,23 +34,38 @@
   let { store, machines, counts, stateOf, actions, onchoose }: Props = $props();
 
   /** The browser's panes, and Demos, which opens the demo store's page instead of a pane (`open`). */
-  const panes = $derived<{ id: string; icon: IconName; label: string; title: string; open?: () => void }[]>([
+  type PaneButton = {
+    id: string;
+    icon: IconName;
+    label: string;
+    title: string;
+    count?: number;
+    name?: string;
+    open?: () => void;
+  };
+  const panes = $derived<PaneButton[]>([
     {
       id: DISKS,
       icon: 'database',
-      label: t('machines:MachinesNav.disks', { n: counts.disks }),
+      label: t('machines:MachinesNav.disks.label'),
+      count: counts.disks,
+      name: t('machines:MachinesNav.disks', { n: counts.disks }),
       title: t('machines:MachinesNav.disks.title'),
     },
     {
       id: FOLDERS,
       icon: 'folder',
-      label: t('machines:MachinesNav.folders', { n: counts.folders }),
+      label: t('machines:MachinesNav.folders.label'),
+      count: counts.folders,
+      name: t('machines:MachinesNav.folders', { n: counts.folders }),
       title: t('machines:MachinesNav.folders.title'),
     },
     {
       id: CONNECTIONS,
       icon: 'network',
-      label: t('machines:MachinesNav.connections', { n: counts.connections }),
+      label: t('machines:MachinesNav.connections.label'),
+      count: counts.connections,
+      name: t('machines:MachinesNav.connections', { n: counts.connections }),
       title: t('machines:MachinesNav.connections.title'),
     },
     {
@@ -153,8 +169,9 @@
         onclick={() => (p.open ? p.open() : onchoose(p.id))}
         data-machine={p.id}
         title={p.title}
+        aria-label={p.name}
       >
-        <Icon name={p.icon} size={16} />{p.label}
+        <Icon name={p.icon} size={16} />{p.label}{#if p.count !== undefined}<Count n={p.count} />{/if}
       </button>
     {/each}
   </div>
@@ -176,10 +193,11 @@
   h3 {
     margin: 0 0 calc(-1 * var(--space-2));
     padding: 0 var(--space-4);
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     font-weight: var(--weight-bold);
     color: var(--text-dim);
-    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    letter-spacing: var(--label-tracking);
   }
   .none {
     margin: 0;
@@ -211,6 +229,9 @@
   li.chosen .pick,
   .new .chosen {
     background: var(--pressed-bg);
+    box-shadow: var(--chosen-edge);
+    /* The row is sunk already: its count stands on it. */
+    --count-bg: var(--surface-raised);
   }
   .name {
     font-weight: var(--weight-bold);
