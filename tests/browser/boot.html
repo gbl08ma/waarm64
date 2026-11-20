@@ -8,7 +8,7 @@
   // and is the input test's agent: when the guest sets a keyboard LED, it
   // presses A on the keyboard and clicks the tablet, through their ports.
   import { showFramebuffer } from '../../web/display.ts';
-  import { KEY_EVENTS, TABLET_EVENTS } from '../../web/vm.ts';
+  import { KEY_EVENTS, TABLET_EVENTS } from '../../web/test-guests.ts';
   // The query goes along as the worker's name (in its URL, the dev server would resolve the worker's imports and pick its
   // language from the query too).
   const url = new URL('./boot-worker.ts', import.meta.url);

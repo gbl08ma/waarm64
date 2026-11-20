@@ -5,7 +5,9 @@
   // The names agent in the page (web/names.ts; tests/names-browser.test.ts): its worker (web/names-worker.ts) on the
   // module the test routes in ts.wasm's place, its titles in IndexedDB `waarm64-room`, one Web Lock a title, the
   // compiled calendars and explorers (routed by the test to the pretend ones), a connection's export and import.
-  import { exportNames, idbNamesStore, importNames, NamesAgent, workerBackend } from '../../web/names.ts';
+  import { NamesAgent, workerBackend } from '../../web/names.ts';
+  import { idbNamesStore } from '../../web/names-store.ts';
+  import { exportNames, importNames } from '../../web/names-export.ts';
   const params = new URLSearchParams(location.search);
   const conn = { identityKey: params.get('conn') ?? 'conn', link: params.get('link') ?? 'waarm64-room:x' };
   const agent = new NamesAgent({ store: idbNamesStore(), backend: workerBackend(), retryMs: 0 });
