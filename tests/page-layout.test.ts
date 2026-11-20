@@ -6,7 +6,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
-import { newEmptyMachine } from './page-home.ts';
+import { newEmptyMachine, openHome } from './page-home.ts';
 
 let browser: Browser;
 let base: string;
@@ -25,7 +25,7 @@ test("the Home page's panes: the title and the body at one place, with buttons i
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
   // Every pane (Demos isn't one: it opens the demo store's page in Home's place, tests/page-demos.test.ts).
@@ -131,7 +131,7 @@ test('the references in words: no pill overflows the message or makes its line t
 test("the primitives: a form's buttons are one height (ui/Button.svelte), and the page's styles are the tokens'", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
   const got = await page.evaluate(() => {
@@ -150,7 +150,7 @@ test("the primitives: a form's buttons are one height (ui/Button.svelte), and th
 test("the Home page's outline: its heading, then the machines' list and each pane under it; the nav named for the page", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await page.locator('.machines nav').waitFor();
   const r = await page.evaluate(() => {
     const nav = document.querySelector('.machines nav')!;
@@ -194,7 +194,7 @@ test('the message moving to the Home page with prefers-reduced-motion: a fade, n
 
 test('the Home page closed and opened again within the move: in the flow, not left fixed where it was', async () => {
   const page = await withMessage();
-  await page.click('#machines-open');
+  await openHome(page);
   await page.locator('#wordmark[data-action=back]').waitFor();
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
   const r = await page.evaluate(`(async () => { ${clickNow('#wordmark[data-action=back]')} ${clickNow('#machines-open')} ${settled} return [...document.querySelectorAll('.machines')].map((e) => e.style.position + '|' + getComputedStyle(e).position); })()`);

@@ -11,6 +11,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -57,7 +58,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
     pattern('statusbar:statusbar-render.cpu.jit', { value: '[\\d.]+%' }), pattern('statusbar:statusbar-render.irqs', { irqs: '\\d+' }),
   ].join(' · ')}$`));
 
-  await page.click('#machines-open');
+  await openHome(page);
   await page.click('[data-machine=preferences]');
   const chips = '.status-edit .bar .chip';
   assert.deepEqual(await kinds(page, chips), ['state', 'divider', 'os', 'vcpus', 'ram', 'uptime', 'mips', 'jit', 'irqs']);
@@ -115,7 +116,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await keysSay(t('statusbar:statusbar-render.keyboard.typing')); // the screen keeps the focus
   await page.evaluate(() => (document.activeElement as HTMLElement).blur());
   await keysSay(t('statusbar:statusbar-render.keyboard.click'));
-  await page.click('#machines-open');
+  await openHome(page);
   await page.click('[data-machine=preferences]');
 
   // All removed: no bar (the power state's `#state` stays for tools), remembered across a reload.
@@ -126,7 +127,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.waitForSelector('#state[data-state=running]', { state: 'attached', timeout: 60_000 });
   assert.equal(await page.locator('#status').isVisible(), false);
   // The defaults back.
-  await page.click('#machines-open');
+  await openHome(page);
   await page.click('[data-machine=preferences]');
   await page.click('[data-action=status-defaults]');
   assert.equal(await kept(page), undefined);
@@ -141,7 +142,7 @@ test('the status bar\'s editor on a touchscreen: a long press drags a chip or a 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await page.click('[data-machine=preferences]');
   const chips = '.status-edit .bar .chip';
   const order = () => kinds(page, chips);

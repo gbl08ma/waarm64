@@ -7,6 +7,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
+import { openHome } from './page-home.ts';
 
 const IMAGES = new URL('../target/images/linux/Image', import.meta.url);
 const skip = !existsSync(IMAGES) && 'SKIPPED: run images/build.sh';
@@ -88,7 +89,7 @@ test("finding 4: a machine opened from the Home page whose last tab was killed d
     const { markAlive } = await import('/web/app/memory.ts' as string);
     markAlive(id, { name: 'Killed', ramMiB: 512, ncpus: 1, jitMiB: 256, gib: 1.5, peakGiB: 1.6, t: Date.now() - 3_600_000 });
   }, id);
-  await page.click('#machines-open');
+  await openHome(page);
   await page.locator('.machines .pick', { hasText: 'Killed' }).click();
   await page.locator('.machines section.machine[data-selected] [data-action=open]').click();
   await page.waitForFunction((asIs) => document.body.dataset.state === 'idle' && [...document.querySelectorAll('#message-actions button')].some((b) => b.textContent === asIs), t('machine:memory-signal.crashed.asIs'), { timeout: 10_000, polling: 100 })

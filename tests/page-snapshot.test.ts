@@ -21,6 +21,7 @@ import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { MACHINES } from '../web/app/machine.ts';
 import { checkLoad, checkSave } from './snapshot-phases.ts';
+import { openHome } from './page-home.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
@@ -360,7 +361,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   assert.equal(await suspendFile(), undefined);
   assert.equal(await susvar(), '');
   await suspend();
-  await page.locator('#machines-open').click(); // Reset disk: this page's machine's Disks tab
+  await openHome(page); // Reset disk: this page's machine's Disks tab
   await page.locator('#reset-disk').click();
   await page.waitForFunction(() => document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 20 });
   await page.locator('[data-action=back]').click();

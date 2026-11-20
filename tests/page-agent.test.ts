@@ -24,6 +24,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { CAP, COPIED, FRAME, TRIMMED, TYPED } from '../web/agent-frame.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -319,7 +320,7 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
   assert.ok(h.caps & CAP.TRIM, `the agent trims (caps ${h.caps})`);
   // 96 MiB kept beside it: the 48 MiB trimmed stay under half the overlay, which only the compaction asked for gives back.
   await run(page, 'for f in keep big; do dd if=/dev/urandom of=/root/$f bs=1M count=$([ $f = keep ] && echo 96 || echo 48) 2>/dev/null; done; sync; rm /root/big; sync; echo done', 300_000);
-  await page.click('#machines-open');
+  await openHome(page);
   await page.click('[data-action="trim-disks"]');
   const got = await page.waitForFunction(() => window.__trimmed, null, { timeout: 240_000, polling: 250 }).then((r) => r.jsonValue()) as { status?: number; before?: number; after?: number };
   t.diagnostic(`trim: ${JSON.stringify(got)}`);

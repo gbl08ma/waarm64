@@ -61,6 +61,10 @@ read as newer and less polished than the rest. Done on the branch that carries t
   [data-action="back"]` became `#wordmark[data-action=back]` and `#machines-open`. Many page tests click it (browser,
   page-disk, page-agent, page-osk, page-snapshot(s), page-network, page-room, page-surface-debian, page-connections):
   **the dev VM's `scripts/ci.sh`, `ci-debian.sh`, `ci-net.sh` and `ci-machines.sh` are this change's tier.**
+  **The tests open Home through `openHome` (tests/page-home.ts)** rather than a click on `#machines-open`: a toggle
+  closes a Home that's already open (after a reload at `#home`), which failed two page-modal tests in the fast lane
+  at 9bfec21 and hung a third. 28 test files changed that way, most of which only the dev VM's lanes run. Not changed:
+  bench/snapz/probe.ts, which clicks Home while Home shows (it now closes it: check what it meant).
 
 ### Where things stand
 

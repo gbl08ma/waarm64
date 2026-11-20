@@ -13,7 +13,7 @@ import { BINARIES, hostAgentProblem, VULKAN, writeDist } from '../tools/dist.ts'
 import { ROOT, startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
-import { newEmptyMachine } from './page-home.ts';
+import { newEmptyMachine, openHome } from './page-home.ts';
 
 const skipCopy = BINARIES.some((f) => !existsSync(join(ROOT, f))) && 'SKIPPED: npm start --prepare-only builds the binaries';
 const buildroot = existsSync(join(ROOT, 'target/images/buildroot/rootfs.ext4')) && existsSync(join(ROOT, 'target/images/linux/Image'));
@@ -93,7 +93,7 @@ test("the static copy's page logs its commit and opens the Machines modal", { sk
   // The commit the copy was built from, on the console (tools/stamp.ts `buildStamp`).
   const head = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.ok(logs.some((l) => l.startsWith(`waarm64: built from ${head} (`)), `no "waarm64: built from ${head}" on the console`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   await page.locator('.machines section.machine[data-selected]').waitFor();
   assert.deepEqual(errors, []);

@@ -12,6 +12,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { openHome } from './page-home.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
@@ -331,7 +332,7 @@ test('leaving a running machine asks first, unless Preferences says not to', { s
   await page.waitForTimeout(300);
   assert.deepEqual(asked, ['beforeunload'], 'asked, and stayed');
   // Preferences, on the Home page: turned off, it doesn't ask.
-  await page.click('#machines-open');
+  await openHome(page);
   await page.click(`[data-machine=preferences]`);
   const box = page.locator('[data-field=leave-warning]');
   assert.equal(await box.isChecked(), true, 'on by default');

@@ -11,6 +11,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { answerAsks, type Question } from './page-ask.ts';
+import { openHome } from './page-home.ts';
 
 const MiB = 2 ** 20;
 const SHOTS = new URL('../bench/results/local/qa-storage/', import.meta.url).pathname;
@@ -71,7 +72,7 @@ test("Merge into the disk on a blank disk's overlays: one nothing was written to
     return { kind: d.kind as string, size: d.size as number, identity: d.identity.kind as string, overlays };
   }, ids.d);
 
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('nav [data-machine=disks]').click();
   const card = modal(page).locator(`section[data-selected=disks] [data-disk="${ids.d}"]`);
   await card.locator('[data-action=disk-overlays]').click();
@@ -143,7 +144,7 @@ test('a kept snapshot of a disk written in place that moved on shows as orphaned
     store.close();
   }, ids.s);
 
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('.pick', { hasText: 'In place' }).click();
   await modal(page).locator('[data-tab=snapshots]').click();
   const card = modal(page).locator('[data-snapshot=eeeeeeeeeee2]');
@@ -252,7 +253,7 @@ test('a kept snapshot of a disk written in place shows as unrestorable while a m
   assert.equal(await item.getAttribute('title'), t('toolbar:LoadSnapshotMenu.load.unrestorable.title', { why }));
   await page.locator('#load-snapshot summary').click(); // closed
 
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('[data-tab=snapshots]').click();
   const card = modal(page).locator(`[data-snapshot=${sid}]`);
   await card.locator('.orphan').waitFor({ timeout: 10_000 });

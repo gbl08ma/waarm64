@@ -18,6 +18,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -106,7 +107,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
 
       // Restored (the overlay moved on since: a fork takes the snapshot's blocks).
       await ok(page, 'echo later > /root/f && sync');
-      await page.click('#machines-open');
+      await openHome(page);
       await page.locator('.machines [data-tab=snapshots]').click();
       await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
       await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 });

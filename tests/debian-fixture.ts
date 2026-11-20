@@ -17,6 +17,7 @@ import { withDebianLock } from './debian-lock.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { shows } from './serial-console.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const DIR = join(ROOT, 'target/ci');
@@ -198,7 +199,7 @@ export async function storedFixture(browser: Browser, base: string, r: StoredRec
       await page.waitForFunction(() => /\S+ login: /.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 300_000, polling: 250 });
       await page.locator('#save-snapshot').click();
       await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.kept', {}, { start: true }).source, { timeout: 120_000, polling: 250 });
-      await page.locator('#machines-open').click();
+      await openHome(page);
       await page.locator('.machines [data-tab=snapshots]').click();
       const download = page.waitForEvent('download', { timeout: 120_000 });
       await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.download') }).click();

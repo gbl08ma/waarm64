@@ -16,6 +16,7 @@ import { plain, t } from '../web/i18n.ts';
 import { CORE, RIM } from '../web/app/ui/block-grid.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const MiB = 2 ** 20;
 const BLOCK = 4096;
@@ -110,7 +111,7 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   await page.goto(`${base}/web/app/?view=terminal`);
   const ids = await setUp(page);
   await page.reload();
-  await page.click('#machines-open');
+  await openHome(page);
 
   // The Disks pane: the link ends the disk's line; the window opens on the disk alone, from its files.
   await modal(page).locator('nav [data-machine=disks]').click();
@@ -234,7 +235,7 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   assert.equal(await win(page).count(), 0);
 
   // A ramdisk, its machine off: nothing to show, said in words.
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('nav [data-machine=disks]').click();
   await modal(page).locator(`section[data-selected=disks] [data-disk="${ids.r}"] [data-action=surface-open]`).click();
   await win(page).locator('[data-field=surface-why]').waitFor();
@@ -267,7 +268,7 @@ test('the disk surface window over a file disk without a handle to read: not exa
     return d.id as string;
   }, size);
   await page.reload();
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('nav [data-machine=disks]').click();
   await modal(page).locator(`section[data-selected=disks] [data-disk="${id}"] [data-action=surface-open]`).click();
   const o = await view(page, (x) => x.source === 'offline');
@@ -320,7 +321,7 @@ test("the window's reading of the files isn't a machine's: delete, resize and me
   await page.goto(`${base}/web/app/?view=terminal`);
   const ids = await setUpOverlays(page);
   await page.reload();
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('nav [data-machine=disks]').click();
   await modal(page).locator(`section[data-selected=disks] [data-disk="${ids.s}"] [data-action=surface-open]`).click();
   await win(page).locator('[data-field=surface-overlay]').selectOption(ids.x2);
@@ -416,7 +417,7 @@ test("the pointed square's words: spoken when the square changes, not when its n
   await page.goto(`${base}/web/app/?view=terminal`);
   const ids = await setUpOverlays(page);
   await page.reload();
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('nav [data-machine=disks]').click();
   await modal(page).locator(`section[data-selected=disks] [data-disk="${ids.s}"] [data-action=surface-open]`).click();
   await win(page).locator('[data-field=surface-overlay]').selectOption(ids.x2);

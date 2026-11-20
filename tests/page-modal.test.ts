@@ -11,7 +11,7 @@ import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 import { MAX_RESIZE } from '../web/app/resize.ts';
-import { newEmptyMachine } from './page-home.ts';
+import { newEmptyMachine, openHome } from './page-home.ts';
 
 const DEMO = { format: 'waarm64-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: createHash('sha256').update('0'.repeat(64)).digest('hex') };
 let browser: Browser;
@@ -108,7 +108,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.waitFor();
@@ -238,13 +238,13 @@ test('a machine edited on the Home page while it is off on this page starts as i
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-action=open]').click();
   // On the page with no disks: it waits, and the Home page offers Start (not a disabled "on this page").
   await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:power-actions.noDisks').source, { timeout: 10_000 });
-  await page.click('#machines-open');
+  await openHome(page);
   await m.locator('[data-tab=disks]').click();
   await addDisk(page, 'blank', { 'size-unit': 'MiB', size: '64' });
   await disk(page, 0);
@@ -266,7 +266,7 @@ test("Add a disk's size (ui/SizeField.svelte): a number and its unit, the same s
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-tab=disks]').click();
@@ -312,7 +312,7 @@ test("a 3D machine's Vulkan box: beside 3D only, its shape note, saved and kept 
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.waitFor();
@@ -367,7 +367,7 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   // Two machines: each click's machine is made and listed (chosen) before the next click; the list is read once both are.
   const picks = modal(page).locator('li > button.pick[data-machine]');
   for (const n of [1, 2]) {
@@ -385,7 +385,7 @@ test('the machine list says which machines are suspended (a suspended copy in OP
     await w.close();
   }, ids[0]);
   await page.reload();
-  await page.click('#machines-open');
+  await openHome(page);
   const meta = (id: string) => modal(page).locator(`button.pick[data-machine="${id}"] .meta`);
   const listMeta = (state: string) => words('machines:MachinesNav.list.meta', { count: 0, state: t(`machines:MachinesPage.state.${state}`) }, { whole: true });
   await page.waitForFunction(([id, src]) => new RegExp(src).test(document.querySelector(`.machines button.pick[data-machine="${id}"] .meta`)?.textContent ?? ''), [ids[0], listMeta('suspended').source], { timeout: 10_000 });
@@ -405,7 +405,7 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-field=ram]').fill('2048');
@@ -437,7 +437,7 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   await m.locator('[data-action=save]').and(page.locator(':disabled')).waitFor();
   // Kept: after a reload the section is open with the split, and turning it off is the automatic split again.
   await page.reload();
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('.pick').first().click();
   await m.locator('[data-ram-split][open]').waitFor();
   assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue(), await m.locator('[data-field=ram]').inputValue()], ['2048', '1024, 512', '3584']);
@@ -456,7 +456,7 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, (q) => { asked.push(q.text); });
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-tab=disks]').click();
@@ -527,7 +527,7 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
     store.close();
     return { a: a.id as string, b: b.id as string, x: x.id as string, first: first.id as string, second: second.id as string };
   });
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('nav [data-machine=disks]').click();
   const pane = modal(page).locator('section[data-selected=disks]');
   const x = pane.locator(`[data-disk="${ids.x}"]`);
@@ -594,7 +594,7 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, (q) => { asked.push(q.text); });
   await page.goto(`${base}/web/app/`);
-  await page.click('#machines-open');
+  await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
   const id = await m.getAttribute('data-selected');
@@ -605,7 +605,7 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await m.locator('[data-action=open]').click();
   // Running (its Web Lock held): the box asks to power it off, then takes its value from the click.
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  await page.click('#machines-open');
+  await openHome(page);
   // Its Settings tab: Visualize beside RAM opens the RAM's map over the page, once it has RAM (booting or running).
   await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
   // No message: no floating bar over the Home page (its messages show in the page's own banner), and no banner.
@@ -681,7 +681,7 @@ test("the storage bar's details: the browser's numbers when they agree, the thre
       });
       store.close();
     });
-    await page.click("#machines-open");
+    await openHome(page);
     const icon = page.locator("[data-action=storage-details]");
     await icon.waitFor();
     const est = await page.evaluate(() => navigator.storage.estimate());
@@ -764,7 +764,7 @@ test("the storage footer shows remote disks' kept blocks and clears them", async
       await w.close();
     }
   });
-  await page.click('#machines-open');
+  await openHome(page);
   const clear = page.locator('[data-action=clear-remote-cache]');
   await clear.waitFor();
   assert.equal(await clear.textContent(), t('machines:StorageBar.storage.clear', { size: 3 << 20 }));
@@ -798,7 +798,7 @@ test("the storage footer shows Vulkan's shader store and clears it; Preferences 
     return c.stats.bytes;
   });
   assert.ok(stored > 40_000 && stored < 45_000, `stored ${stored}`);
-  await page.click('#machines-open');
+  await openHome(page);
   const clear = page.locator('[data-action=clear-shaders]');
   await clear.waitFor();
   assert.equal(await clear.textContent(), t('machines:StorageBar.storage.clearShaders', { size: stored }));

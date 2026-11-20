@@ -12,6 +12,7 @@ import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 let base: string;
 let close: () => void;
@@ -79,7 +80,7 @@ test('a definition exported from one profile and imported into another: the same
   await answerAsks(pb, (q) => { dialogs.push(q.text); });
   pb.on('pageerror', (e) => errors.push(String(e)));
   await pb.goto(`${base}/web/app/`);
-  await pb.click('#machines-open');
+  await openHome(pb);
   await pb.setInputFiles('.machines [data-field=import-definition]', defFile);
   await pb.locator('.machines .pick', { hasText: 'Portable' }).waitFor();
   const imported = await pb.evaluate(async () => {

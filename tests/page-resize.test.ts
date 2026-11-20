@@ -13,6 +13,7 @@ import { bytesText } from '../web/app/bytes.ts';
 import { MAX_RESIZE } from '../web/app/resize.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
+import { openHome } from './page-home.ts';
 
 const MiB = 2 ** 20;
 const GiB = 2 ** 30;
@@ -95,7 +96,7 @@ test("Resize… in the browser's Disks pane: a stored disk, an overlay's row, a 
     store.close();
   }, ids.s);
   await page.reload();
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator('nav [data-machine=disks]').click();
   const pane = modal(page).locator('section[data-selected=disks]');
   const card = (id: string) => pane.locator(`[data-disk="${id}"]`);
@@ -217,7 +218,7 @@ test("Resize… on a machine's Disks tab: its overlay, its stored disk written i
     store.close();
     return { m: m.id as string, w: w.id as string, r: r.id as string, ua: ua.id as string, roa: roa.id as string, ra: ra.id as string, size: u.size as number, n: n.id as string, s: s.id as string, sa: sa.id as string, sSize: s.size as number, sBytes: s.bytes as number, fa: fa.id as string };
   });
-  await page.click('#machines-open');
+  await openHome(page);
   await modal(page).locator(`nav [data-machine="${ids.m}"]`).click();
   const m = modal(page).locator(`section.machine[data-selected="${ids.m}"]`);
   await m.locator('[data-tab=disks]').click();
@@ -294,7 +295,7 @@ test("Resize… on a machine's Disks tab: its overlay, its stored disk written i
   // M runs on this page: the ramdisk's Resize says so and offers to power it off (asking first), then resizes.
   await m.locator('[data-action=open]').click();
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  await page.click('#machines-open');
+  await openHome(page);
   await m.locator('[data-tab=disks]').click();
   await page.waitForFunction((s) => (document.querySelector('.machines .head .meta')?.textContent ?? '').includes(s), t('machines:MachinesPage.state.running'), { timeout: 10_000 });
   await att(ids.ra).locator('[data-action=resize-attachment]').click();

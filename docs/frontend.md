@@ -279,7 +279,8 @@ toggle**, pressed while Home shows and going back to the machine when pressed ag
 store's page it opens Home; **the wordmark is a button** (`Wordmark.svelte`, `#wordmark`; it looks as the wordmark does until the pointer or
 the focus is on it) that goes back to the machine from either page (`data-action="back"`: [Go back to the machine.](ui:toolbar:Wordmark.back)) and
 opens Home from the machine (`data-action="home"`: [Open the Home page.](ui:toolbar:Wordmark.home)). The wordmark is a shortcut: all it does, Home
-does in a click or two. Then the machine's name,
+does in a click or two. (Tests open Home with `tests/page-home.ts` `openHome`, which clicks the toggle only while Home isn't
+open.) Then the machine's name,
 **Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs;
 where the guest's agent can, both ask the guest first and show [Shutting down…](ui:toolbar:Toolbar.soft.off) meanwhile:
 devices.md "Power off and restart from the guest"), **[Suspend](ui:toolbar:Toolbar.suspend)**,
