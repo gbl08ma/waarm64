@@ -7,7 +7,7 @@
 // ignored; rows go top first, as the guest's are.
 import { E } from './gl-enums.ts';
 import { SW_0, SW_1 } from './virgl-formats.ts';
-import type { HostCall, Rect } from './virgl-host.ts';
+import type { Rect, ScanoutOn, ScanoutShown } from './virgl-host.ts';
 import type { VirglRenderer } from './virgl-renderer.ts';
 
 const VS = `#version 300 es
@@ -64,14 +64,8 @@ export class Screen {
   private loc: { src: WebGLUniformLocation | null; swz: WebGLUniformLocation | null; s: WebGLUniformLocation | null };
   private tex2d: WebGLTexture;
   private size2d = { width: 0, height: 0 };
-  private src: {
-    pixels?: Uint8Array;
-    swizzle?: number[];
-    res?: number;
-    width: number;
-    height: number;
-    rect: Rect;
-  } | null = null;
+  /** What it shows: a 2D resource's pixels or a 3D resource (null: nothing). */
+  private src: ScanoutOn | null = null;
   /** Presents since the last read (`?displaystats`), and the time spent drawing them. */
   presents = 0;
   drawMs = 0;
@@ -106,7 +100,7 @@ export class Screen {
     this.tex2d = gl.createTexture()!;
   }
 
-  scanout(c: Omit<Extract<HostCall, { t: 'scanout' }>, 't'>) {
+  scanout(c: ScanoutShown) {
     const { rect } = c;
     if (!rect.w || !rect.h || (!c.pixels && !c.res)) {
       this.src = null;
@@ -119,8 +113,10 @@ export class Screen {
   }
 
   /** What the screen shows from now on, nothing uploaded or drawn (the 2D presenter's, which draws on its own frames: `upload`, `draw`). */
-  set(c: Omit<Extract<HostCall, { t: 'scanout' }>, 't'>) {
-    this.src = { pixels: c.pixels, swizzle: c.swizzle, res: c.res, width: c.width, height: c.height, rect: c.rect };
+  set(c: ScanoutOn) {
+    this.src = c.pixels
+      ? { pixels: c.pixels, swizzle: c.swizzle, width: c.width, height: c.height, rect: c.rect }
+      : { res: c.res, width: c.width, height: c.height, rect: c.rect };
   }
 
   damage(rect: Rect) {
@@ -202,7 +198,7 @@ export class Screen {
       tex = this.tex2d;
       swz = s.swizzle ?? swz;
     } else {
-      const src = this.r?.scanoutSource(s.res!);
+      const src = this.r?.scanoutSource(s.res);
       if (!src) return this.clear();
       tex = src.tex;
       swz = src.fmt.sample.slice(0, 3);

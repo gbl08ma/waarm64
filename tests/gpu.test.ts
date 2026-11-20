@@ -1157,3 +1157,44 @@ test('venus: a virgl resource attached to a Venus context is imported there with
     { t: 'blob-ctx', ctx: 3, res: 20, attach: false, size: 864 * 480 * 4 },
   ]);
 });
+
+test('gpu: a cropped console wider than an EDID can say: the floor and the fallback modes stay within EDID_MAX', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  // Through the device's queue: GET_EDID read and answered as the guest's kernel does after the display event.
+  const ram = new Uint8Array(1 << 16);
+  const ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+  const b = gpuBackend(ctx, { width: 1024, height: 768, keepConsole: true });
+  // An X screen bigger than its mode (xrandr --fb 5000x1000): the root pixmap is the scanout, its top-left shown.
+  b.gpu.control(cmd(T.CREATE, 1, B8G8R8X8, 5000, 1000), 4096);
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1), 4096);
+  assert.ok(b.gpu.size.width <= EDID_MAX && b.gpu.size.height <= EDID_MAX, `reported ${b.gpu.size.width}x${b.gpu.size.height}`);
+  const c = cmd(T.EDID, 0, 0);
+  ram.set(c, 0x100);
+  b.request({ w0: 1, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 24 + 8 + 1024, mem: 0 }] });
+  const v = new DataView(ram.buffer);
+  assert.equal(v.getUint32(0x800, true), OK_EDID);
+  const e = ram.subarray(0x800 + 32, 0x800 + 32 + 128);
+  const mode = (at: number) => [e[at + 2] | (e[at + 4] >> 4) << 8, e[at + 5] | (e[at + 7] >> 4) << 8];
+  for (const at of [54, 72]) {
+    if (!(e[at] | e[at + 1] << 8)) continue; // not a timing
+    const [w, h] = mode(at);
+    assert.ok(w <= EDID_MAX && h <= EDID_MAX && w >= EDID_MIN.width && h >= EDID_MIN.height, `a mode of ${w}x${h}`);
+  }
+  // The mode as wide as the EDID allows is the preferred one (a buffer that wide holds it), and the buffer's own size,
+  // which no timing can carry, isn't listed after it.
+  assert.deepEqual(mode(54), [EDID_MAX, 1000]);
+  assert.equal(e[72] | e[73] << 8, 0, 'no second timing');
+});
+
+test('gpu: a reset drops the console floor: the next boot is told the page\'s size', () => {
+  const r = rig({ width: 1024, height: 768, keepConsole: true });
+  r.ok(cmd(T.CREATE, 1, B8G8R8X8, 1024, 768));
+  r.ok(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1));
+  r.gpu.setSize(800, 600);
+  r.ok(cmd(T.SCANOUT, 0, 0, 800, 600, 0, 1)); // fbcon crops: the floor rises
+  assert.deepEqual([r.gpu.size.width, r.gpu.size.height], [1024, 768]);
+  r.gpu.reset();
+  assert.deepEqual([r.gpu.size.width, r.gpu.size.height], [800, 600]);
+  r.gpu.setSize(640, 480);
+  assert.deepEqual([r.gpu.size.width, r.gpu.size.height], [640, 480]);
+});

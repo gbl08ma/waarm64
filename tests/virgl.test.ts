@@ -488,6 +488,67 @@ test('virgl renderer: indices start at the index buffer\'s offset, and the large
   ]);
 });
 
+test('virgl renderer: an index buffer written after a draw sends its element-array twin only the bytes written', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const buffer = (id: number, width: number, bind: number) => { r.createResource({ id, target: 0, format: 64, bind, width, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 }); r.attach(1, id); };
+  buffer(1, 256 * 16, 0x10);
+  buffer(2, 64, 0x20);
+  let words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const shader = (h: number, type: number, src: string) => { const [len, ...t] = text(src); cmd(1, 4, h, type, len, 0, 0, ...t); };
+  shader(10, 0, 'VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END\n');
+  shader(11, 1, 'FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END\n');
+  cmd(31, 0, 10, 0); cmd(31, 0, 11, 1);
+  cmd(1, 5, 20, 0, 0, 0, 31); cmd(2, 5, 20);
+  cmd(1, 2, 21, 1 << 1, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0); cmd(2, 2, 21);
+  r.createResource({ id: 3, target: 2, format: 2, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 3);
+  cmd(1, 8, 22, 3, 2, 0, 0);
+  cmd(5, 0, 1, 0, 22);
+  cmd(6, 0, 16, 0, 1);
+  // Bytes 0..15: byte indices 0..15; the draws read 4 of them at byte 8.
+  cmd(9, 0, 2, 0, 0, 0, 0, 0, 0, 0, 16, 1, 1, 0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c);
+  cmd(11, 0, 2, 1, 8);
+  const draw = () => cmd(8, 0, 8, 4, 4, 1, 0, 0, 0, 0, 0, 4, 255, 0);
+  draw();
+  r.submit(1, new Uint32Array(words));
+  // The element-array twin as GL has it: what bufferData gave it, then what each bufferSubData wrote.
+  let twin = new Uint8Array(0);
+  let bound: unknown;
+  const replay = (from: number) => {
+    const drawn: number[][] = [];
+    const sent: string[] = [];
+    for (const [n, a] of gl.log.slice(from)) {
+      if (n === 'bindBuffer' && a[0] === E.ELEMENT_ARRAY_BUFFER) bound = a[1];
+      if (a[0] !== E.ELEMENT_ARRAY_BUFFER || bound === undefined) continue;
+      if (n === 'bufferData') (twin = (a[1] as Uint8Array).slice(), sent.push('whole'));
+      if (n === 'bufferSubData') {
+        const [, dst, src, at, len] = a as [number, number, Uint8Array, number, number];
+        twin.set(src.subarray(at, at + len), dst);
+        sent.push(`${dst}+${len}`);
+      }
+    }
+    for (const [n, a] of gl.log.slice(from)) if (n === 'drawElements') drawn.push([...twin.subarray((a as number[])[3], (a as number[])[3] + (a as number[])[1])]);
+    return { drawn, sent };
+  };
+  assert.deepEqual(replay(0), { drawn: [[8, 9, 10, 11]], sent: ['whole'] });
+  // Bytes 9 and 10 written (and bytes 40..43, past the draw): one upload of bytes 9 to 43, and the draw sees them.
+  const from = gl.log.length;
+  words = [];
+  cmd(9, 0, 2, 0, 0, 0, 0, 9, 0, 0, 2, 1, 1, 0x2a2a);
+  cmd(9, 0, 2, 0, 0, 0, 0, 40, 0, 0, 4, 1, 1, 0x01010101);
+  draw();
+  draw(); // nothing written since: nothing sent
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  assert.deepEqual(replay(from), { drawn: [[8, 42, 42, 11], [8, 42, 42, 11]], sent: ['9+35'] });
+});
+
 test('virgl renderer: a shader with stream outputs draws through one program, captured or not (dEQP-GLES3 transform_feedback lines on Metal)', () => {
   const gl = mockGl();
   gl.keepLog = true;

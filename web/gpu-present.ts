@@ -7,7 +7,7 @@
 // (SwiftShader) gets the 2D context: it rasterizes every present on the CPU, 7 to 18 ms against ~1 for canvas 2D
 // (bench/gpu/REPORT.md, "A 2D machine on WebGL2"). The canvas has the scanout's size; when it changes the page is
 // told (`mode`) to refit its box.
-import { busy } from './gpu.ts';
+import { busy, resetBusy } from './gpu.ts';
 import { fenceLag } from './virgl-host.ts';
 import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
 import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
@@ -23,7 +23,6 @@ export type DisplayToPage =
   | { type: 'cursor'; image: ArrayBuffer | null | undefined; hotX: number; hotY: number; x: number; y: number }
   /** The guest moved its cursor (the image as it was). */
   | { type: 'cursor-at'; x: number; y: number }
-  /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
   /** A virgl trace's record (the spec's `capture`, web/virgl-trace.ts). */
   | { type: 'capture'; record: Uint8Array }
   /** With `probe` (`?avprobe`): a draw turned the screen's centre bright, at `t` (ms since the epoch: `performance.timeOrigin + now`). */
@@ -45,6 +44,7 @@ export type DisplayToPage =
       software?: boolean;
     }
   | ScreenPng
+  /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
   | {
       type: 'draw-stats';
       n: number;
@@ -104,18 +104,35 @@ export function scanoutPng(src: ScanoutSource | null, width: number, height: num
 }
 
 /** The guest's cursor to the page: its image when it changes (`cursor`), else its position when that changes and there is an image (`cursor-at`). */
+/** The longest a 4 ms timer was late since the last `take` (its thread's event loop: the stats' `lag`). */
+function lagMeter() {
+  let lag = 0,
+    tick = performance.now();
+  setInterval(() => {
+    const n = performance.now();
+    lag = Math.max(lag, n - tick - 4);
+    tick = n;
+  }, 4);
+  return {
+    take() {
+      const l = lag;
+      lag = 0;
+      return l;
+    },
+  };
+}
+
 function cursorSender(port?: MessagePort) {
   let cursorImage: Uint8Array | null | undefined;
-  let cursorHot = '';
-  let cursorAt = '';
+  // What was sent last (NaN: nothing yet, equal to no position).
+  let [hx, hy, ax, ay] = [NaN, NaN, NaN, NaN];
   return (image: Uint8Array | null | undefined, hotX: number, hotY: number, x: number, y: number) => {
-    const [hot, where] = [`${hotX},${hotY}`, `${x},${y}`];
-    if (image === cursorImage && hot === cursorHot) {
-      if (where !== cursorAt && image) port?.postMessage({ type: 'cursor-at', x, y } satisfies DisplayToPage); // a hidden cursor's moves aren't drawn
-      cursorAt = where;
+    if (image === cursorImage && hotX === hx && hotY === hy) {
+      if ((x !== ax || y !== ay) && image) port?.postMessage({ type: 'cursor-at', x, y } satisfies DisplayToPage); // a hidden cursor's moves aren't drawn
+      [ax, ay] = [x, y];
       return;
     }
-    [cursorImage, cursorHot, cursorAt] = [image, hot, where];
+    [cursorImage, hx, hy, ax, ay] = [image, hotX, hotY, x, y];
     port?.postMessage({
       type: 'cursor',
       image: image ? image.slice().buffer : image,
@@ -186,14 +203,8 @@ export function canvasPresenter(
   const lat: number[] = [];
   let drawMs = 0;
   if (stats && port) {
-    // The device worker's own event loop: the longest a 4 ms timer was late in the second (what a key's release, a doorbell or a flush waits behind).
-    let lag = 0,
-      tick = performance.now();
-    setInterval(() => {
-      const n = performance.now();
-      lag = Math.max(lag, n - tick - 4);
-      tick = n;
-    }, 4);
+    // The device worker's own event loop (what a key's release, a doorbell or a flush waits behind).
+    const lag = lagMeter();
     setInterval(() => {
       const s = lat.splice(0).sort((a, b) => a - b);
       port.postMessage({
@@ -201,28 +212,10 @@ export function canvasPresenter(
         n: s.length,
         median: s[s.length >> 1] ?? 0,
         max: s[s.length - 1] ?? 0,
-        lag,
+        lag: lag.take(),
         busy: { ...busy, commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: drawMs },
       } satisfies DisplayToPage);
-      lag = 0;
-      Object.assign(busy, {
-        request: 0,
-        transfer: 0,
-        requests: 0,
-        transfers: 0,
-        pixels: 0,
-        flushes: 0,
-        submits: 0,
-        submitBytes: 0,
-        commands: {},
-        fences: 0,
-        fenceMs: 0,
-        fenceMaxMs: 0,
-        heldMs: 0,
-        behindMs: 0,
-        fullMs: 0,
-        heldMax: 0,
-      });
+      resetBusy();
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });
       drawMs = 0;
     }, 1000);
@@ -359,21 +352,15 @@ export function pagePresenter(port?: MessagePort, stats = false): GpuHooks {
     height = 0;
   if (stats && port) {
     busy.events = [];
-    // The device worker's event loop, as canvasPresenter's: the longest a 4 ms timer was late in the second.
-    let lag = 0,
-      tick = performance.now();
-    setInterval(() => {
-      const n = performance.now();
-      lag = Math.max(lag, n - tick - 4);
-      tick = n;
-    }, 4);
+    // The device worker's event loop, as canvasPresenter's.
+    const lag = lagMeter();
     setInterval(() => {
       port.postMessage({
         type: 'draw-stats',
         n: busy.flushes,
         median: 0,
         max: 0,
-        lag,
+        lag: lag.take(),
         busy: {
           ...busy,
           events: busy.events!.splice(0),
@@ -382,26 +369,8 @@ export function pagePresenter(port?: MessagePort, stats = false): GpuHooks {
           draw: 0,
         },
       } satisfies DisplayToPage);
-      Object.assign(busy, {
-        request: 0,
-        transfer: 0,
-        requests: 0,
-        transfers: 0,
-        pixels: 0,
-        flushes: 0,
-        submits: 0,
-        submitBytes: 0,
-        commands: {},
-        fences: 0,
-        fenceMs: 0,
-        fenceMaxMs: 0,
-        heldMs: 0,
-        behindMs: 0,
-        fullMs: 0,
-        heldMax: 0,
-      });
+      resetBusy();
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });
-      lag = 0;
     }, 1000);
   }
   const sendCursor = cursorSender(port);

@@ -73,6 +73,15 @@ export type RendererStats = {
   /** Textures copied because a draw sampled what it drew into (`feedbackCopies`). */ feedbackCopies: number;
 };
 
+/** Bytes `[lo, hi)` of a buffer's CPU copy were written: its element-array twin (if made) lacks them. */
+function indexWritten(r: { ibuf?: WebGLBuffer; ilo?: number; ihi?: number }, lo: number, hi: number) {
+  if (!r.ibuf || hi <= lo) return;
+  if (r.ihi) {
+    r.ilo = Math.min(r.ilo!, lo);
+    r.ihi = Math.max(r.ihi, hi);
+  } else [r.ilo, r.ihi] = [lo, hi];
+}
+
 type Res = ResourceDesc & {
   fmt?: Format;
   backing: Backing | null;
@@ -80,7 +89,9 @@ type Res = ResourceDesc & {
   buf?: WebGLBuffer;
   shadow?: Uint8Array;
   ibuf?: WebGLBuffer;
-  idirty?: boolean;
+  /** The bytes `[ilo, ihi)` of `shadow` written since `ibuf` last had them (none: `ihi` 0); `ibuf` holds the rest. */
+  ilo?: number;
+  ihi?: number;
   /** Whether ranges of an index buffer hold the type's largest index (`holdsMax`), by offset, count and size. */
   imax?: Map<string, boolean>;
   /** A texture (or a renderbuffer, multisampled or stencil-only). */
@@ -665,7 +676,8 @@ export class VirglRenderer {
       // The other shader's list too (a long-lived vertex shader meets many fragment shaders).
       const [a, b] = id.split('/', 2).map(Number);
       const other = this.programsOf.get(a === serial ? b : a);
-      if (other && a !== b) other.splice(other.indexOf(id), 1);
+      const at = other && a !== b ? other.indexOf(id) : -1;
+      if (at >= 0) other!.splice(at, 1);
     }
     this.programsOf.delete(serial);
   }
@@ -695,7 +707,6 @@ export class VirglRenderer {
       res.buf = gl.createBuffer()!;
       gl.bindBuffer(E.COPY_WRITE_BUFFER, res.buf);
       gl.bufferData(E.COPY_WRITE_BUFFER, d.width, E.DYNAMIC_DRAW);
-      res.idirty = true;
       return true;
     }
     const f = res.fmt;
@@ -1043,7 +1054,7 @@ export class VirglRenderer {
       r.shadow.set(src, box.x);
       gl.bindBuffer(E.COPY_WRITE_BUFFER, r.buf!);
       gl.bufferSubData(E.COPY_WRITE_BUFFER, box.x, r.shadow, box.x, box.w);
-      r.idirty = true;
+      indexWritten(r, box.x, box.x + box.w);
       return;
     }
     const f = r.fmt;
@@ -2233,7 +2244,7 @@ export class VirglRenderer {
       dst.shadow.set(src.shadow.subarray(box.x, box.x + box.w), dx);
       gl.bindBuffer(E.COPY_WRITE_BUFFER, dst.buf!);
       gl.bufferSubData(E.COPY_WRITE_BUFFER, dx, dst.shadow, dx, box.w);
-      dst.idirty = true;
+      indexWritten(dst, dx, dx + box.w);
       return;
     }
     // A source no framebuffer can read (a format WebGL can't render to): from its texels' CPU copy, uploaded again.
@@ -3346,7 +3357,6 @@ void main() {
     // Vertex attributes.
     s.vao ??= gl.createVertexArray();
     gl.bindVertexArray(s.vao);
-    let maxVertex = 0;
     for (let k = 0; k < 16; k++) {
       const e = s.ve[k];
       if (!e || !prog.layout.attribs.includes(k)) {
@@ -3394,7 +3404,6 @@ void main() {
       if (vf.int) gl.vertexAttribIPointer(k, vf.size, vf.type, stride, at);
       else gl.vertexAttribPointer(k, vf.size, vf.type, vf.normalized, stride, at);
       gl.vertexAttribDivisor(k, e.divisor);
-      maxVertex = Math.max(maxVertex, 0);
     }
     const prim = PRIM[mode];
     this.stats.draws++;
@@ -3467,11 +3476,19 @@ void main() {
       // them on the CPU, so a guest's count can't size its work past the buffer (tests/virgl-fuzz.ts).
       if ((size !== 1 && size !== 2 && size !== 4) || offset % size || offset + count * size > r.shadow.length)
         return this.error(`an indexed draw past index buffer ${r.id} (${count} of size ${size} at ${offset})`);
-      if (r.idirty || !r.ibuf) {
-        r.ibuf ??= gl.createBuffer();
+      // The element-array twin: made whole once, then only what was written since (Mesa streams small index
+      // arrays into one large upload buffer between draws).
+      if (!r.ibuf) {
+        r.ibuf = gl.createBuffer();
         gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, r.ibuf);
         gl.bufferData(E.ELEMENT_ARRAY_BUFFER, r.shadow, E.DYNAMIC_DRAW);
-        r.idirty = false;
+        r.ilo = r.ihi = 0;
+        r.imax = undefined;
+      } else if (r.ihi) {
+        const lo = r.ilo!;
+        gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, r.ibuf);
+        gl.bufferSubData(E.ELEMENT_ARRAY_BUFFER, lo, r.shadow, lo, r.ihi - lo);
+        r.ilo = r.ihi = 0;
         r.imax = undefined;
       }
       const max = size === 1 ? 0xff : size === 2 ? 0xffff : 0xffffffff;
@@ -3634,7 +3651,7 @@ void main() {
       const n = vertices * tg.stride * 4;
       gl.bindBuffer(E.COPY_WRITE_BUFFER, tg.r.buf!);
       gl.bufferSubData(E.COPY_WRITE_BUFFER, base, tg.r.shadow!, base, n);
-      tg.r.idirty = true;
+      indexWritten(tg.r, base, base + n);
       tg.t.filled += n;
     }
     gl.bindBuffer(E.COPY_WRITE_BUFFER, null);

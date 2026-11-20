@@ -1281,7 +1281,9 @@ misread.
 
 The worker's store (web/venus-cache.ts) holds them in memory, loaded from IndexedDB `waarm64-shaders` when Vulkan starts.
 It is the origin's, shared by every machine (an entry depends on the shader and the device, not the machine), and kept
-under a byte budget (least recently used out first), written back a second after a change. Entries are stored deflated
+under a byte budget (least recently used out first), written back a second after a change. A hit is a change only
+until the entry's first write-back of the run (the record carries its bytes): the next load orders the entries by
+their uses up to then. Entries are stored deflated
 (CompressionStream's deflate-raw at the write-back; one that doesn't shrink as it is, VK4 T17) and held so, inflated at
 each lookup by fflate's synchronous `inflateSync` (the lookups are synchronous; an entry is held as the renderer gave it
 only until its write-back): Godot's editor's 499 entries take 3.8 MB held where they took 19 MB inflated, and its warm
@@ -1386,7 +1388,8 @@ image into the virgl texture made at the import (web/virgl-renderer.ts `External
   `VN_DEBUG=wsi` on Mesa 26).
 - **Three ways** (bench/vulkan/REPORT.md "VK2 L4"):
   - **bitmap** (where the page doesn't render in software): at the start of the compositor's submit, the image is
-    drawn into a WebGPU canvas context's texture (an OffscreenCanvas of its size, `bgra8unorm`), its colours the virgl
+    drawn into a WebGPU canvas context's texture (an OffscreenCanvas of its size, `bgra8unorm`; the last 8 sizes kept,
+    the oldest unconfigured as a new one comes), its colours the virgl
     texture's stored channels (virgl keeps B8G8R8A8 as its bytes in an RGBA8 texture, so a `bgra8unorm` image is drawn
     `.bgra`; an X format's alpha written as 1), then `transferToImageBitmap` and `texSubImage2D` from the bitmap
     (premultiplied alpha passed as it is). A float image (`rgba16float`: vkcube's choice, Mesa's WSI offers every

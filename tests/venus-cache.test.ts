@@ -138,3 +138,23 @@ test('a stored entry that fails to inflate is dropped at its lookup, not an erro
   await c.flush();
   assert.equal(backend.entries.size, 0, 'from storage too');
 });
+
+test("a hit on an entry already written back in this run isn't written again (its bytes would go with its use time)", async () => {
+  const backend = memoryBackend();
+  let puts = 0;
+  const counting = { load: backend.load, save: (put: Parameters<typeof backend.save>[0], remove: string[]) => ((puts += put.length), backend.save(put, remove)) };
+  const a = await ShaderCache.open('b', { backend: counting });
+  a.put('k1', bytes(100));
+  await a.flush();
+  assert.equal(puts, 1);
+  for (let k = 0; k < 5; k++) assert.ok(a.get('k1'));
+  await a.flush();
+  assert.equal(puts, 1, 'no write for the hits');
+  // A later run's first hit is written back (its use time), once.
+  const b = await ShaderCache.open('b', { backend: counting });
+  assert.ok(b.get('k1') && b.get('k1'));
+  await b.flush();
+  b.get('k1');
+  await b.flush();
+  assert.equal(puts, 2);
+});

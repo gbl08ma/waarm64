@@ -7,10 +7,17 @@
 import type { Backing, Box, RendererSnapshot, ResourceDesc } from './virgl-renderer.ts';
 import type { VirglRenderer } from './virgl-renderer.ts';
 import type { Screen } from './virgl-screen.ts';
-import { walk } from './virgl.ts';
 import { toWire, type WireError } from './msg.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
+
+/** A scanout that shows something: a 2D resource's pixels or a 3D resource (`res`), `width`×`height`, `rect` of it. */
+export type ScanoutOn = { width: number; height: number; rect: Rect } & (
+  { pixels: Uint8Array; swizzle?: number[]; res?: undefined } | { res: number; pixels?: undefined; swizzle?: undefined }
+);
+/** What the screen shows (`scanout`): that, or nothing (the screen is off). */
+export type ScanoutShown =
+  ScanoutOn | { width: number; height: number; rect: Rect; pixels?: undefined; res?: undefined; swizzle?: undefined };
 
 export type HostCall =
   /** Guest RAM by memory (memory 0, then the spill memories: web/ram.ts). */
@@ -36,7 +43,7 @@ export type HostCall =
    * The screen shows a 2D resource's pixels (rows `width` pixels apart, in shared memory: the guest's bytes, with the
    * byte positions of R, G and B in `swizzle`; RGBA without it) or a 3D resource; `rect` is the part shown. Neither: the screen is off.
    */
-  | { t: 'scanout'; pixels?: Uint8Array; swizzle?: number[]; res?: number; width: number; height: number; rect: Rect }
+  | ({ t: 'scanout' } & ScanoutShown)
   /** The scanout's rectangle changed (scanout coordinates): show it. */
   | { t: 'damage'; rect: Rect }
   | { t: 'reset' }
@@ -135,10 +142,8 @@ export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
     }
     case 'load':
       return r.load(c.state);
-    case 'ram':
-      return;
     default:
-      return; // Venus's calls: its own renderer's
+      return; // `ram` (the GPU worker's own) and Venus's calls: its own renderer's
   }
 }
 
@@ -160,17 +165,26 @@ export class FenceGate<F> {
     if (!this.held.some((h) => h.lane === lane) && settled()) return this.answer(f);
     this.held.push({ f, settled, lane });
   }
+  /** The lanes `release` found a fence still waiting in (kept: it runs at every poll). */
+  private readonly stopped = new Set<string | undefined>();
   /** Answers the held fences that have settled, in order in each lane. */
   release() {
-    const stopped = new Set<string | undefined>();
-    this.held = this.held.filter((h) => {
+    const held = this.held,
+      n = held.length;
+    if (!n) return;
+    const stopped = this.stopped;
+    stopped.clear();
+    let kept = 0;
+    for (let i = 0; i < n; i++) {
+      const h = held[i];
       if (stopped.has(h.lane) || !h.settled()) {
         stopped.add(h.lane);
-        return true;
-      }
-      this.answer(h.f);
-      return false;
-    });
+        held[kept++] = h;
+      } else this.answer(h.f);
+    }
+    // Fences an answer led to (none so far) stay after the ones before them.
+    for (let i = n; i < held.length; i++) held[kept++] = held[i];
+    held.length = kept;
   }
   get waiting() {
     return this.held.length;
@@ -308,22 +322,29 @@ export type WorkerCall =
  * and what Mesa's VA driver sends with them (its sub-context, its objects, TRANSFER3D into its staging buffers).
  */
 export function decodeOnly(words: Uint32Array) {
-  let only = true;
-  const n = walk(words, (cmd) => {
-    if (!DECODE_SUBMIT.has(cmd)) only = false;
-  });
-  return n > 0 && only;
+  if (!words.length) return false;
+  // As `walk`, stopping at the first command that isn't a decode's (most submits: one of their first).
+  for (let at = 0; at < words.length;) {
+    const h = words[at];
+    const len = h >>> 16;
+    if (at + 1 + len > words.length || !DECODE_SUBMIT.has(h & 0xff)) return false;
+    at += 1 + len;
+  }
+  return true;
 }
 // CREATE_OBJECT, SET_SUB_CTX, CREATE_SUB_CTX, DESTROY_SUB_CTX, TRANSFER3D, END_TRANSFERS, SET_TWEAKS, 53–61.
 const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58, 59, 60, 61]);
 
 /** Whether a submit destroys a sub-context (DESTROY_SUB_CTX): it doesn't pass its context's waiting calls, which may use it. */
 function destroysSub(words: Uint32Array) {
-  let yes = false;
-  walk(words, (cmd) => {
-    if (cmd === 30) yes = true;
-  });
-  return yes;
+  for (let at = 0; at < words.length;) {
+    const h = words[at];
+    const len = h >>> 16;
+    if (at + 1 + len > words.length) return false;
+    if ((h & 0xff) === 30) return true;
+    at += 1 + len;
+  }
+  return false;
 }
 
 /**
@@ -345,7 +366,8 @@ function destroysSub(words: Uint32Array) {
  */
 export class CallQueue<M extends WorkerCall> {
   /** The waiting calls, each with its place in the guest's order. */
-  private q: { m: M; n: number }[] = [];
+  /** `decode`: a submit's `decodeOnly`, once asked (a stalled queue asks again at every pass). */
+  private q: { m: M; n: number; decode?: boolean }[] = [];
   private next = 0;
   private readonly o: {
     /** Runs a call; `n` is its place in the guest's order (the pictures it decodes take it: `VideoContext`). */
@@ -464,28 +486,38 @@ export class CallQueue<M extends WorkerCall> {
     this.pump(now);
   }
 
+  // A pass's state (`pass`, which doesn't run inside itself: the calls it runs settle pictures in a microtask), kept
+  // between passes. What the waiting calls so far hold back: their contexts and the resources they name.
+  private readonly busy = new Set<number>();
+  private readonly named = new Set<number>();
+  // The contexts with a waiting call other than a draw (a transfer, an attach or detach, the context's end): a
+  // decode, which may read what it brings, doesn't pass it.
+  private readonly strict = new Set<number>();
+
+  /** Whether a call of `ctx` could see what a waiting context draws (through a resource they share). */
+  private seesBusy(ctx: number) {
+    for (const b of this.busy) if (this.o.pending.shared(ctx, b)) return true;
+    return false;
+  }
+
+  /** Whether a waiting context has `res` attached. */
+  private held(res: number) {
+    for (const b of this.busy) if (this.o.pending.holds(b, res)) return true;
+    return false;
+  }
+
   /** One pass over the queue in order, running what may run (each call sees what the ones before it did); whether it ran any. */
   private pass() {
     const p = this.o.pending;
-    // What the waiting calls so far hold back: their contexts and the resources they name.
-    const busy = new Set<number>(),
-      named = new Set<number>();
-    // The contexts with a waiting call other than a draw (a transfer, an attach or detach, the context's end): a
-    // decode, which may read what it brings, doesn't pass it.
-    const strict = new Set<number>();
-    // Whether a call of `ctx` could see what a waiting context draws (through a resource they share).
-    const sees = (ctx: number) => {
-      for (const b of busy) if (p.shared(ctx, b)) return true;
-      return false;
-    };
-    const held = (res: number) => {
-      for (const b of busy) if (p.holds(b, res)) return true;
-      return false;
-    };
+    const { busy, named, strict } = this;
+    busy.clear();
+    named.clear();
+    strict.clear();
     let waits = false,
       ran = false;
     for (let k = 0; k < this.q.length;) {
-      const { m, n } = this.q[k];
+      const e = this.q[k];
+      const { m, n } = e;
       let go: boolean;
       switch (m.t) {
         case 'submit':
@@ -493,9 +525,10 @@ export class CallQueue<M extends WorkerCall> {
           // draws on one context), a draw waiting for a picture a software decoder holds would otherwise hold back the
           // later pictures the decoder waits for. What it writes waits for them instead (`sees`). Every submit of Mesa's
           // virgl selects its sub-context first (past its queued transfers), so one run ahead leaves none behind.
-          if (decodeOnly(m.words) && !(busy.has(m.ctx) && destroysSub(m.words))) go = !strict.has(m.ctx);
+          if ((e.decode ??= decodeOnly(m.words)) && !(busy.has(m.ctx) && destroysSub(m.words))) go = !strict.has(m.ctx);
           else {
-            go = !busy.has(m.ctx) && !(p.submit ? p.submit(m.ctx, m.words, n) : p.ctx(m.ctx, n)) && !sees(m.ctx);
+            go =
+              !busy.has(m.ctx) && !(p.submit ? p.submit(m.ctx, m.words, n) : p.ctx(m.ctx, n)) && !this.seesBusy(m.ctx);
             if (!go) busy.add(m.ctx);
           }
           break;
@@ -521,7 +554,7 @@ export class CallQueue<M extends WorkerCall> {
           }
           break;
         case 'transfer':
-          go = !busy.has(m.ctx) && !named.has(m.res) && !p.res(m.res, n) && !held(m.res);
+          go = !busy.has(m.ctx) && !named.has(m.res) && !p.res(m.res, n) && !this.held(m.res);
           if (!go) {
             busy.add(m.ctx);
             strict.add(m.ctx);
@@ -676,7 +709,9 @@ export function portHost(port: MessagePort): VirglHost {
   };
   return {
     call(c) {
+      // A submit's bytes are the device's own copy (web/gpu.ts slices them): transferred, not cloned.
       if (c.t === 'submit') port.postMessage(c, [c.words.buffer]);
+      else if (c.t === 'vsubmit') port.postMessage(c, [c.bytes.buffer]);
       else if (c.t === 'load') port.postMessage(c, snapshotBuffers(c.state));
       else port.postMessage(c);
     },

@@ -118,15 +118,17 @@ export const cellCount = (size: number, cellBytes: number) => Math.ceil(size / c
 /** Per range of a map: its blocks held with a slot, and held as zeros without one (each at most 1,024). */
 export type RangeCounts = { held: Uint16Array; zero: Uint16Array };
 
-/** Counts range `r`'s leaf of map `m` into `out` (blocks past `blocks` not counted). */
-export function countRange(m: Leaves, r: number, blocks: number, out: RangeCounts) {
+/** An Int32 view of map `m`'s records: ZERO (0xffffffff) is -1 there, and V8 keeps `countRange`'s loop in small integers (twice as fast). */
+const int32Recs = (m: Leaves) => new Int32Array(m.recs.buffer, m.recs.byteOffset, m.recs.length);
+
+/** Counts range `r`'s leaf of map `m` into `out` (blocks past `blocks` not counted); `s`, `m`'s records' Int32 view (a walk makes it once). */
+export function countRange(m: Leaves, r: number, blocks: number, out: RangeCounts, s?: Int32Array) {
   const t = r < m.top.length ? m.top[r] : 0;
   if (!t) {
     out.held[r] = out.zero[r] = 0;
     return;
   }
-  // An Int32 view: ZERO (0xffffffff) is -1 there, and V8 keeps the loop in small integers (twice as fast).
-  const s = new Int32Array(m.recs.buffer, m.recs.byteOffset, m.recs.length);
+  s ??= int32Recs(m);
   const q = (t - 1) * REC;
   const end = q + Math.min(LEAF, blocks - r * LEAF);
   let held = 0;
@@ -145,7 +147,8 @@ export function rangeCounts(m: Leaves, size: number): RangeCounts {
   const ranges = rangesOf(size);
   const blocks = Math.ceil(size / UNIT);
   const out = { held: new Uint16Array(ranges), zero: new Uint16Array(ranges) };
-  for (let r = 0; r < ranges; r++) if (r < m.top.length && m.top[r]) countRange(m, r, blocks, out);
+  const s = int32Recs(m);
+  for (let r = 0; r < ranges; r++) if (r < m.top.length && m.top[r]) countRange(m, r, blocks, out, s);
   return out;
 }
 

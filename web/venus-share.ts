@@ -301,6 +301,11 @@ export class VenusShare {
     this.renderer.externalWait(id, false);
   }
 
+  /** A hold on `r` ends: none if `r` is gone (`forget` dropped its holds; its id may be another resource's now). */
+  private release(r: ExternalResource) {
+    if (!r.dead) this.unhold(r.id);
+  }
+
   /** The image behind an external resource, or undefined (warned once: a blob that isn't an image's stays black). */
   private sourceOf(r: ExternalResource): SharedTexture | undefined {
     const got = this.source(r.id);
@@ -387,24 +392,23 @@ export class VenusShare {
    * checked copies now and holds the submit for the check.
    */
   prepare(ctx: number) {
+    const externals = this.renderer.externalsOf(ctx);
+    if (!externals.length) return; // most submits (a compositor's are the ones with any)
     // Submits held for their pipelines may draw what this one samples: it waits for them first.
     const idle = this.options.idle?.();
     if (idle) {
-      const ids = this.renderer
-        .externalsOf(ctx)
-        .filter((r) => this.sourceOf(r))
-        .map((r) => r.id);
-      if (ids.length) {
-        for (const id of ids) this.hold(id);
+      const held = externals.filter((r) => this.sourceOf(r));
+      if (held.length) {
+        for (const r of held) this.hold(r.id);
         void idle.then(() => {
           this.prepare(ctx);
-          for (const id of ids) this.unhold(id);
+          for (const r of held) this.release(r);
         });
         return;
       }
     }
     if (this.mode !== 'readback' && this.check.state !== 'checking') return;
-    for (const r of this.renderer.externalsOf(ctx)) {
+    for (const r of externals) {
       if (this.inFlight.has(r.id)) continue;
       const src = this.sourceOf(r);
       if (!src || src.written === (this.copied.get(r.id) ?? -1)) continue;
@@ -413,8 +417,11 @@ export class VenusShare {
     }
   }
 
+  /** Resource `id` is gone (unref'd: `dead`); the guest may reuse its id for another, which starts afresh. */
   forget(id: number) {
     this.copied.delete(id);
+    this.holds.delete(id);
+    this.unshared.delete(id);
     this.blits.get(id)?.texture.destroy();
     this.blits.delete(id);
     this.converted.get(id)?.destroy();
@@ -501,7 +508,7 @@ export class VenusShare {
       .finally(() => {
         buffer.destroy();
         if (!handed) this.inFlight.delete(r.id);
-        this.unhold(r.id);
+        this.release(r);
       });
   }
 
@@ -543,7 +550,12 @@ export class VenusShare {
         usage: RENDER_ATTACHMENT,
       });
       c = { canvas, ctx };
-      if (this.canvases.size > 8) this.canvases.clear();
+      // A window resized by dragging has a new size every frame: the oldest canvas goes, its swap chain with it.
+      if (this.canvases.size >= 8) {
+        const [oldest, old] = this.canvases.entries().next().value!;
+        old.ctx.unconfigure();
+        this.canvases.delete(oldest);
+      }
       this.canvases.set(key, c);
     }
     const linear = src.texture.format.replace('-srgb', '') as GPUTextureFormat;
@@ -650,7 +662,7 @@ export class VenusShare {
         if (buffer.mapState === 'mapped') buffer.unmap();
         if (r.dead) this.dropStaging(r.id);
         this.inFlight.delete(r.id);
-        this.unhold(r.id);
+        this.release(r);
       });
   }
 

@@ -409,7 +409,7 @@ the draw's start into it), and Mesa never sets stream output's append mask (a se
 
 - **Buffers** keep a CPU copy (`shadow`) beside the GL buffer: WebGL2 forbids a buffer that is both an element array
   and anything else, and Mesa's upload buffer is both, so the element buffer is made from the copy when an indexed draw
-  needs it. A zero-stride vertex buffer (a constant attribute) is read from the copy, and base-vertex draws rebase
+  needs it (whole the first time, then the range written since). A zero-stride vertex buffer (a constant attribute) is read from the copy, and base-vertex draws rebase
   their indices there (no base vertex in WebGL2). Staging buffers are only the guest's pages.
 - **Textures** by target (1D and rectangles as 2D, 1D arrays as 2D arrays, cubes, 3D, 2D arrays); multisampled and
   stencil-only resources are renderbuffers. A texture of a format WebGL can't render to (RGB9_E5, the SNORMs) keeps

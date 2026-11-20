@@ -1368,7 +1368,8 @@ What the guests do with it, and why it is built as it is: [graphics.md](graphics
   snapshot) and the *floor*, or the guest finds no mode and blanks the console. And when a guest answers a smaller mode with a rectangle smaller than the
   resource it keeps (a crop, at the origin), the display never reports less than that resource again
   (`floor`) and raises the event once more: the console gets its whole buffer back and the page
-  letterboxes it. A compositor that makes a resource per mode never trips either, so a desktop
+  letterboxes it. The floor and the listed sizes stop at 4095 (what an EDID can say: a buffer past it, an X screen
+  bigger than its mode, stays cropped), and a reset drops the floor, so the next boot is told the page's size. A compositor that makes a resource per mode never trips either, so a desktop
   that changes its mode isn't held back. Both are the page machine's (`GpuOptions.keepConsole`): the test guests leave them off so their bytes and step counts stay. The page's size and the reported one are separate (`wanted`, `width`/`height`).
 - **A transfer copies when it arrives; a flush shows.** `TRANSFER_TO_HOST_2D` is the guest's only promise about
   its buffer: Linux waits for no reply on a primary plane (no fence; a 60 Hz vblank timer only since 6.19), so a

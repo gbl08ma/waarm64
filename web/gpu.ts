@@ -264,9 +264,12 @@ export function hashRgba(words: Uint32Array[], opaque: boolean) {
   return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the transfers inside them; the control commands by type (hex). */
-/** `events` (bench/imgdecode/desktop.ts, `?displaystats` only): [epoch ms, what] pairs, flat: a control command's
- * arrival (its type), a held reply's release (0x10000 + its type), a key injected into virtio-input (1). */
+/**
+ * Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the
+ * transfers inside them; the control commands by type (hex). `events` (bench/imgdecode/desktop.ts, `?displaystats`
+ * only): [epoch ms, what] pairs, flat: a control command's arrival (its type), a held reply's release (0x10000 + its
+ * type), a key injected into virtio-input (1).
+ */
 export const busy = {
   events: undefined as number[] | undefined,
   request: 0,
@@ -286,6 +289,39 @@ export const busy = {
   fullMs: 0,
   heldMax: 0,
 };
+
+/** A control command's type as `busy.commands` keys it (hex), made once for the types a driver sends. */
+const hexKeys = new Map<number, string>();
+function hexKey(type: number) {
+  let k = hexKeys.get(type);
+  if (k === undefined) {
+    k = type.toString(16);
+    if (hexKeys.size < 64) hexKeys.set(type, k);
+  }
+  return k;
+}
+
+/** `busy`'s counts back to zero (the stats' second is over); `events` stay. */
+export function resetBusy() {
+  Object.assign(busy, {
+    request: 0,
+    transfer: 0,
+    requests: 0,
+    transfers: 0,
+    pixels: 0,
+    flushes: 0,
+    submits: 0,
+    submitBytes: 0,
+    commands: {},
+    fences: 0,
+    fenceMs: 0,
+    fenceMaxMs: 0,
+    heldMs: 0,
+    behindMs: 0,
+    fullMs: 0,
+    heldMax: 0,
+  });
+}
 
 export class Gpu {
   readonly resources = new Map<number, Resource>();
@@ -384,7 +420,7 @@ export class Gpu {
     if (cmd.length < HDR) return this.reply(ERR_UNSPEC, cmd, room);
     const v = new DataView(cmd.buffer, cmd.byteOffset, cmd.length);
     const type = v.getUint32(0, true);
-    const k = type.toString(16);
+    const k = hexKey(type);
     busy.commands[k] = (busy.commands[k] ?? 0) + 1;
     if (this.onCapture && this.o.virgl) this.capture(type, cmd, v);
     const need = (n: number) => cmd.length >= n;
@@ -932,8 +968,10 @@ export class Gpu {
    */
   private fallbackModes() {
     const modes: { width: number; height: number }[] = [];
-    for (const m of [this.shown, this.floor]) {
-      if (m.width < EDID_MIN.width || m.height < EDID_MIN.height) continue;
+    for (const s of [this.shown, this.floor]) {
+      if (s.width < EDID_MIN.width || s.height < EDID_MIN.height) continue;
+      // A buffer past EDID_MAX holds the largest mode an EDID can say.
+      const m = { width: Math.min(EDID_MAX, s.width), height: Math.min(EDID_MAX, s.height) };
       if (
         (m.width === this.width && m.height === this.height) ||
         modes.some((x) => x.width === m.width && x.height === m.height)
@@ -982,7 +1020,11 @@ export class Gpu {
       res.changed = false;
       if (this.o.keepConsole && s.rect.x === 0 && s.rect.y === 0 && (s.rect.w < res.width || s.rect.h < res.height)) {
         // The console is cropped: ask for its whole buffer again.
-        this.floor = { width: Math.max(this.floor.width, res.width), height: Math.max(this.floor.height, res.height) };
+        // Within what an EDID can say: a buffer past EDID_MAX (an X screen bigger than its mode) stays cropped.
+        this.floor = {
+          width: Math.min(EDID_MAX, Math.max(this.floor.width, res.width)),
+          height: Math.min(EDID_MAX, Math.max(this.floor.height, res.height)),
+        };
         if (this.report()) {
           this.bounce = true;
           this.raise?.();
@@ -1057,7 +1099,19 @@ export class Gpu {
   /** Whether the rows of `r` from `offset` lie inside the backing. */
   private fits(res: Resource, r: Rect, offset: number) {
     const last = offset + res.width * 4 * (r.h - 1) + r.w * 4;
-    return Number.isSafeInteger(last) && last <= res.backing!.reduce((n, b) => n + b.len, 0);
+    return Number.isSafeInteger(last) && last <= backingOf(res.backing!).len;
+  }
+
+  /** RAM's memories as words, kept while they are the same memories (`ram()` makes new views each call). */
+  private words: Uint32Array[] = [];
+  private wordsOf(ram: Ram) {
+    const w = this.words;
+    let same = w.length === ram.length;
+    for (let i = 0; same && i < ram.length; i++)
+      same =
+        w[i].buffer === ram[i].buffer && w[i].byteOffset === ram[i].byteOffset && w[i].length === ram[i].length >>> 2;
+    if (!same) this.words = ram.map((m) => new Uint32Array(m.buffer, m.byteOffset, m.length >>> 2));
+    return this.words;
   }
 
   /** TRANSFER_TO_HOST_2D: the rectangle's rows from the backing (the first at `offset`, rows `width`×4 bytes apart) into the host pixels. False if the backing is too short. */
@@ -1083,7 +1137,7 @@ export class Gpu {
           const b = backing[seg];
           const s0 = at - segStart;
           const n = Math.min(left, b.len - s0);
-          px.set(bytes(ram, b).subarray(s0, s0 + n), d);
+          px.set(ram[b.mem].subarray(b.off + s0, b.off + s0 + n), d);
           d += n;
           left -= n;
           at += n;
@@ -1097,11 +1151,11 @@ export class Gpu {
     const swap = res.format === 1 || res.format === 2;
     if (
       (swap || res.format === 67 || res.format === 134) &&
-      ram.every((m) => m.byteOffset % 4 === 0) &&
       offset % 4 === 0 &&
-      backing.every((b) => b.off % 4 === 0 && b.len % 4 === 0)
+      backingOf(backing).aligned &&
+      ram.every((m) => m.byteOffset % 4 === 0)
     ) {
-      const srcs = ram.map((m) => new Uint32Array(m.buffer, m.byteOffset, m.length >>> 2));
+      const srcs = this.wordsOf(ram);
       const dst = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >>> 2);
       const opaque = res.opaque ? 0xff000000 : 0;
       const words = r.w;
@@ -1210,6 +1264,10 @@ export class Gpu {
   /** A virtio reset: the guest's resources, scanout and cursor are gone. */
   reset() {
     this.shown = { width: 0, height: 0 };
+    // The last boot's console is gone with its floor: the next boot is told the page's size.
+    this.floor = { width: 0, height: 0 };
+    this.bounce = false;
+    this.report();
     this.resources.clear();
     this.contexts.clear();
     this.used.clear();
@@ -1424,6 +1482,21 @@ function rgba(res: Resource, at: number, n: number) {
 }
 
 /** Reads `out.length` bytes at `offset` of the concatenated backing pages. */
+/** A backing's length and whether its segments are word-aligned, worked out once per backing (a transfer asks each time). */
+const backings = new WeakMap<Segment[], { len: number; aligned: boolean }>();
+function backingOf(backing: Segment[]) {
+  let b = backings.get(backing);
+  if (!b) {
+    b = { len: 0, aligned: true };
+    for (const s of backing) {
+      b.len += s.len;
+      if (s.off % 4 || s.len % 4) b.aligned = false;
+    }
+    backings.set(backing, b);
+  }
+  return b;
+}
+
 function readBacking(ram: Ram, backing: Segment[], offset: number, out: Uint8Array) {
   let skip = offset,
     k = 0;

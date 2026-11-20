@@ -116,20 +116,39 @@ export class VirglStats {
   submits = 0;
   bytes = 0;
   bad = 0;
-  readonly commands = new Map<string, { n: number; dwords: number }>();
+  /** By `cmd`, or `cmd | obj << 8` for the object commands (named in `json`: a submit's walk builds no strings). */
+  private readonly counts = new Map<number, { n: number; dwords: number }>();
 
+  /** Counts a submit's commands; returns `walk`'s. */
   count(words: Uint32Array) {
     this.submits++;
     this.bytes += words.length * 4;
-    const r = walk(words, (cmd, obj, _at, len) => {
-      const name = commandName(cmd, obj);
-      const c = this.commands.get(name) ?? { n: 0, dwords: 0 };
-      c.n++;
-      c.dwords += len;
-      this.commands.set(name, c);
-    });
-    if (r < 0) this.bad++;
-    return r;
+    let n = 0;
+    for (let at = 0; at < words.length;) {
+      const h = words[at];
+      const len = h >>> 16;
+      if (at + 1 + len > words.length) {
+        this.bad++;
+        return -1;
+      }
+      const cmd = h & 0xff;
+      const key = cmd >= 1 && cmd <= 3 ? h & 0xffff : cmd;
+      const c = this.counts.get(key);
+      if (c) {
+        c.n++;
+        c.dwords += len;
+      } else this.counts.set(key, { n: 1, dwords: len });
+      at += 1 + len;
+      n++;
+    }
+    return n;
+  }
+
+  /** The counts by command name. */
+  get commands() {
+    const out = new Map<string, { n: number; dwords: number }>();
+    for (const [key, c] of this.counts) out.set(commandName(key & 0xff, key >>> 8), { ...c });
+    return out;
   }
 
   json() {

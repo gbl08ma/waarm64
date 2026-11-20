@@ -88,6 +88,9 @@ export class ShaderCache {
   private readonly entries = new Map<string, Held>();
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
+  /** Entries written back in this run: a hit on one isn't written again (its bytes would go with its use time), so
+   * the next load orders it by its uses until then. */
+  private readonly written = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private writing: Promise<void> = Promise.resolve();
   private clock = 0;
@@ -153,12 +156,14 @@ export class ShaderCache {
       return undefined;
     }
     this.stats.hits++;
-    // Its use, written back too: what the budget keeps at the next load follows it.
+    // Its use, written back once a run: what the budget keeps at the next load follows it.
     e.used = this.now();
     this.entries.delete(key);
     this.entries.set(key, e);
-    this.dirty.add(key);
-    this.schedule();
+    if (!this.written.has(key)) {
+      this.dirty.add(key);
+      this.schedule();
+    }
     return bytes;
   }
 
@@ -187,6 +192,7 @@ export class ShaderCache {
     this.stats.held += size(e);
     this.stats.stores++;
     this.dirty.add(key);
+    this.written.delete(key);
     this.removed.delete(key);
     this.fit();
     this.schedule();
@@ -230,6 +236,7 @@ export class ShaderCache {
     }
     const put = [...this.dirty].map((k) => this.entries.get(k)!).filter(Boolean);
     const remove = [...this.removed];
+    for (const e of put) this.written.add(e.key);
     this.dirty.clear();
     this.removed.clear();
     if (!this.backend || (!put.length && !remove.length)) return this.writing;
