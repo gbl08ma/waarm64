@@ -215,6 +215,8 @@ test("a notice's countdown goes on where it was when the bar moves to the Home p
     // The move ended (under load it outlasts the 400 ms, the outgoing bar's ring still there): every animation but the rings'.
     const moving = document.getAnimations().filter((a) => !((a.effect as KeyframeEffect | null)?.target instanceof SVGCircleElement));
     await Promise.all(moving.map((a) => a.finished.catch(() => undefined)));
+    // And the outgoing bar removed, a task or two after its outro ends (later under load).
+    for (const end = performance.now() + 3000; ring().length > 1 && performance.now() < end; ) await new Promise((res) => setTimeout(res, 20));
     return { before, after: ring() };
   });
   assert.equal(r.after.length, 1, JSON.stringify(r));
