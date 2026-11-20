@@ -12,7 +12,8 @@
 // `restore`: a booted-Debian fixture's URL (tests/debian-fixture.ts) to start from instead of a boot, the shape the
 // same as the one it was made on; the guest, at its login prompt, gets a newline to show the prompt again. A later
 // `{ save: true }` message pauses the machine, posts its snapshot (`{ snapshot: Blob }`) and ends it.
-import { bootVm, compileCore, Exit } from '../../web/vm.ts';
+import { bootVm } from '../../web/vm.ts';
+import { compileCore, Exit } from '../../web/core.ts';
 import { lzCodec } from '../../web/lz.ts';
 import { readSnapshot, writeSnapshot } from '../../web/snapshot.ts';
 import { SEVERAL_ADAPTERS } from '../../web/devices.ts';

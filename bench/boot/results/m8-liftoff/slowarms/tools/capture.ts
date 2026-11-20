@@ -1,7 +1,7 @@
 // capture.ts <core.wasm> <outdir>: boots Alpine under the JIT in Node, deterministic, and writes every JIT
 // module's bytes to <outdir>/m<n>.wasm; prints the count and total bytes.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { DISTROS, runToPowerOff, testDevices } from '../../../../../../web/vm.ts';
+import { DISTROS, runToPowerOff, testDevices } from '../../../../../../web/test-guests.ts';
 const [core, out] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
 let n = 0, total = 0;

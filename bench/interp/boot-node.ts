@@ -3,7 +3,7 @@
 // steps, the time and the MIPS. For `perf` with V8's `--perf-prof` (docs/benchmarking.md "Profiling"):
 //   [WASM=core.wasm] node [--perf-prof] bench/interp/boot-node.ts [buildroot|alpine] [jit]
 import { readFileSync } from 'node:fs';
-import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
+import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/test-guests.ts';
 
 const [guest = 'buildroot', mode = '4'] = process.argv.slice(2);
 const IMAGES = new URL('../../target/images/', import.meta.url);

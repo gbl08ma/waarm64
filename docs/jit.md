@@ -34,7 +34,7 @@ the interpreter's own code.
   transfer cache (at 0x80000 plus a small offset) is reached by ORing 0x80000 into its index.
   Core-internal: its shape can change without an ABI bump.
 - **Where it runs:** in the vCPU worker (Chromium) and in Node, the same code (`jitHost` in
-  `web/vm.ts`). Natively there's no wasm engine: `cargo test` covers the translator's structure
+  `web/jit-host.ts`). Natively there's no wasm engine: `cargo test` covers the translator's structure
   (block formation, liveness, the encoder's bytes), and the JIT's behavior is tested on the wasm
   core in Node and Chromium.
 
@@ -630,7 +630,7 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   (2026-10-03) took twice as long as with room for its ~200 MiB working set: after each flush hot
   code runs in the interpreter and in Liftoff again, which costs far more than the compiling.
 - **A flush must free something on the host:** the host's table keeps the functions (so their
-  instances and code) alive until the slots are overwritten, so `web/vm.ts` nulls the slots a flush
+  instances and code) alive until the slots are overwritten, so `web/jit-host.ts` nulls the slots a flush
   leaves unused. V8 frees the dead code only when its JS GC collects the instances, and a worker's JS
   heap stays small, so that GC can lag by minutes: with the flush alone a Go build's tab peaked at
   9.6 GB (median 4.8 GB). After each flush the host allocates (and drops) a 256 MiB ArrayBuffer, whose
@@ -812,7 +812,7 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   `Io`'s dispatch; not built: at ~0.1 µs a read, nothing we run reads devices often enough (Debian's fw_cfg read,
   ~100K reads at boot, is the most) for it to show.
 - **Counter reads compiled inline** (parallel SMP in realtime mode, `emit::counter`): a block with an `MRS` of
-  CNTVCT_EL0 or CNTPCT_EL0 imports the host clock (`env.now_ms`, web/vm.ts's `jitHost` passes the core's own) and
+  CNTVCT_EL0 or CNTPCT_EL0 imports the host clock (`env.now_ms`, web/jit-host.ts's `jitHost` passes the core's own) and
   computes `Vm::now`'s reading from the vCPU's `jit::State::counter` (the clock's start, ticks a ms, the ticks it
   had then and the address of the VM's last reading, which a CAS loop raises, so no vCPU sees it go back), without
   the helper's call into the core; `Vm::now` computes it the same way, so both agree to the tick. The helper reads

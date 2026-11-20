@@ -16,7 +16,8 @@ is built this way, and what lost, is "Why it is this way" at the end.
 floor), `zone.rs`, `chain.rs` (who owns a name; `Name`, `Kept`), `wire.rs` (messages, items, transfers), `store.rs`
 (what a server holds), `server.rs`, `member.rs`, `outside.rs` (what servers ask of calendars and explorers),
 `agent.rs` (the page's `ts_names_*` operations), `testkit.rs`; `room.rs` hosts them (`NamesHost`, `MemberHost`, the
-publisher, the resolver's cases). The page: `web/names.ts` (the names agent), `web/names-worker.ts`, `web/names-ops.ts`,
+publisher, the resolver's cases). The page: `web/names.ts` (the names agent), `web/names-store.ts` (its stores, and the titles a room's worker
+reads), `web/names-fetch.ts` (the compiled services), `web/names-export.ts` (a connection's export), `web/names-worker.ts`, `web/names-ops.ts`,
 `web/room.ts` and `web/room-worker.ts` (the records' store, the titles to a running room), and in `web/app/`
 `NameDialog.svelte`, `NetNames.svelte`, `NameEntry.svelte`, `areas/names.svelte.ts`, `names-view.ts`,
 `room-export.ts`. The module's side of the interface is [tailnet.md](tailnet.md) "The module"; the page's is
@@ -460,7 +461,7 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   own names aren't stored there: their titles are the agent's.
 - **Outside the room** (`outside.rs`; servers ask, members never). The module builds a GET only from the compiled
   calendars (`Calendar::url`) and explorers (`EXPLORERS`), never from a record; the room's worker fetches it through
-  web/names.ts `serviceFetch`, which refuses any other URL (action 12, `ts_room_names_fetched`; status 0: no answer).
+  web/names-fetch.ts `serviceFetch`, which refuses any other URL (action 12, `ts_room_names_fetched`; status 0: no answer).
   Four out at once, 30 s each.
   - **Renewals finished**: a held renewal's signed pending anchor is asked of its calendar from 30 minutes after it came,
     then once a 15-minute slot when 8 bytes of BLAKE2s over the entry's id, the server's names key and the slot fall

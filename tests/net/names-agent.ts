@@ -4,7 +4,9 @@
 // (target/net/ts-test.wasm, net/ts/build.sh --test-params) in this thread; titles made at a time of the test's choosing.
 import { readFileSync } from 'node:fs';
 import { localBackend, type NamesBackend, type PutAnswer } from '../../web/names-ops.ts';
-import { CALENDARS, EXPLORERS, memoryNamesStore, NamesAgent, SERVICES, type NamesConn, type NamesStore, type TitleRecord, type TitleStatus, type ZonePoint } from '../../web/names.ts';
+import { CALENDARS, EXPLORERS, SERVICES } from '../../web/names-fetch.ts';
+import { memoryNamesStore, type NamesStore, type TitleRecord, type ZonePoint } from '../../web/names-store.ts';
+import { NamesAgent, type NamesConn, type TitleStatus } from '../../web/names.ts';
 import { TsModule } from '../../web/ts-client.ts';
 import { CALENDARS as PRETEND, type OtsCalendar } from './ots-calendar.ts';
 

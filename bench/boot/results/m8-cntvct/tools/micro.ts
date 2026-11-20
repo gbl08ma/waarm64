@@ -2,7 +2,7 @@
 // (CNTVCT_EL0: an exit; TPIDR_EL1: inline), bare metal at EL1, realtime, under the JIT.
 //   tools/build-micro.sh && node bench/boot/results/m8-cntvct/tools/micro.ts (an unpatched core)
 import { readFileSync } from 'node:fs';
-import { runToPowerOff } from '../../../../../web/vm.ts';
+import { runToPowerOff } from '../../../../../web/test-guests.ts';
 const wasm = readFileSync(new URL('../../../../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const DIR = new URL('../../../../../target/cntvct/', import.meta.url);
 for (const parallel of [false, true]) for (let rep = 0; rep < 5; rep++) for (const reg of ['tpidr_el1', 'cntvct_el0']) {

@@ -2,7 +2,7 @@
 // the page's GPU worker (virgl-boot.html), and runs glcomp: `?gl=frames,quads,width,height` (default 3,3,128,96),
 // `&dump` for glcomp's last frame read back through the renderer (its `px` lines, in the console); `?glq=frames,queries,width,height`
 // runs glquery instead (occlusion queries waited on: bench/gpu/query-wait.ts), in realtime (its waits are the host's ms).
-import { DISTROS, guestDevices, runToPowerOff } from '../../web/vm.ts';
+import { DISTROS, guestDevices, runToPowerOff } from '../../web/test-guests.ts';
 
 const get = async (path: string) => {
   const r = await fetch(path);

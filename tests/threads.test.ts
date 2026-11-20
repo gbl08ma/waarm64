@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { Worker } from 'node:worker_threads';
-import { clockOffset } from '../web/vm.ts';
+import { clockOffset } from '../web/core.ts';
 import { threadsRun, type Spawn } from './threads-run.ts';
 import type { Result } from './threads-worker.ts';
 

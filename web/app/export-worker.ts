@@ -4,7 +4,8 @@
 // Web Lock, so the machine must have stopped (the page stops it first). The output goes to a file
 // handle the page got from `showSaveFilePicker`, or, without one, back to the page in chunks.
 import { baseHash, hashedSize } from '../changes.ts';
-import { diskIdentity, type Source } from '../devices.ts';
+import { diskIdentity } from '../devices.ts';
+import type { Source } from '../disk-sources.ts';
 import { msg, MsgError, toWire, type Msg } from '../msg.ts';
 import { countOf, openOverlay, overlay, type WritableDisk } from '../overlay.ts';
 import { openDisk, type Disk } from '../qcow2.ts';

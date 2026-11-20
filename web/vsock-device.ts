@@ -19,7 +19,7 @@
 // page drops the device's (the agent connects again at once, so the two cross).
 
 import { bytes, type Ram, type Segment } from './ram.ts';
-import type { Backend, Ctx, Request } from './devices.ts';
+import type { Backend, Ctx, Request } from './virtio.ts';
 
 /** The device's ID (virtio 1.2 §5.10). */
 export const VSOCK_ID = 19;

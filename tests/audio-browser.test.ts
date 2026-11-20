@@ -24,7 +24,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { GAP_FRAMES, LATENCY, QUANTA, READ, UNDERRUNS, WRITE } from '../web/audio-ring.ts';
 import { peaks } from './audio-tap.ts';
-import { fnv1a } from '../web/snd.ts';
+import { fnv1a } from '../web/snd-test.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';

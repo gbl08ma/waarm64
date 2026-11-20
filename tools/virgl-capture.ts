@@ -6,7 +6,7 @@
 //   node tools/virgl-capture.ts [--llvmpipe] <out> [frames] [quads] [width] [height]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { MessageChannel } from 'node:worker_threads';
-import { DISTROS, guestDevices, runToPowerOff } from '../web/vm.ts';
+import { DISTROS, guestDevices, runToPowerOff } from '../web/test-guests.ts';
 import { encodeTrace, encodeRecord } from '../web/virgl-trace.ts';
 
 const args = process.argv.slice(2);

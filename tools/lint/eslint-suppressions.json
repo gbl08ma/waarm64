@@ -51,6 +51,20 @@
       "count": 1
     }
   },
+  "web/blk-device.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 4
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "@typescript-eslint/unbound-method": {
+      "count": 10
+    },
+    "no-useless-assignment": {
+      "count": 1
+    }
+  },
   "web/blockcache.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
@@ -75,9 +89,33 @@
       "count": 2
     }
   },
+  "web/coordinator.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 3
+    },
+    "@typescript-eslint/only-throw-error": {
+      "count": 1
+    }
+  },
+  "web/core.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 2
+    },
+    "no-empty": {
+      "count": 1
+    }
+  },
   "web/demo-net.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 2
+    }
+  },
+  "web/device-host.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 4
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
     }
   },
   "web/device-worker.ts": {
@@ -96,16 +134,10 @@
       "count": 3
     },
     "@typescript-eslint/no-empty-function": {
-      "count": 8
-    },
-    "@typescript-eslint/no-redundant-type-constituents": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
       "count": 4
     },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 3
     },
     "@typescript-eslint/only-throw-error": {
       "count": 1
@@ -113,13 +145,7 @@
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     },
-    "@typescript-eslint/unbound-method": {
-      "count": 10
-    },
     "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 1
-    },
-    "no-useless-assignment": {
       "count": 1
     }
   },
@@ -210,6 +236,11 @@
       "count": 1
     }
   },
+  "web/input-device.ts": {
+    "@typescript-eslint/no-unsafe-argument": {
+      "count": 1
+    }
+  },
   "web/input.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 1
@@ -227,9 +258,14 @@
       "count": 1
     }
   },
+  "web/jit-host.ts": {
+    "@typescript-eslint/no-unsafe-assignment": {
+      "count": 1
+    }
+  },
   "web/local-net.ts": {
     "@typescript-eslint/no-empty-function": {
-      "count": 6
+      "count": 5
     }
   },
   "web/local-release.ts": {
@@ -263,10 +299,7 @@
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 8
-    },
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 2
+      "count": 7
     }
   },
   "web/net.ts": {
@@ -321,12 +354,12 @@
   },
   "web/room-worker.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
+      "count": 1
     }
   },
   "web/room.ts": {
     "@typescript-eslint/no-empty-function": {
-      "count": 9
+      "count": 8
     },
     "@typescript-eslint/no-misused-promises": {
       "count": 2
@@ -410,7 +443,7 @@
   },
   "web/snd.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 8
+      "count": 2
     }
   },
   "web/stored.ts": {
@@ -428,12 +461,12 @@
   },
   "web/tailcat-worker.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
+      "count": 1
     }
   },
   "web/tailcat.ts": {
     "@typescript-eslint/no-empty-function": {
-      "count": 4
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
@@ -461,6 +494,14 @@
   "web/tailscale.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 2
+    }
+  },
+  "web/test-guests.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 2
+    },
+    "@typescript-eslint/no-floating-promises": {
+      "count": 1
     }
   },
   "web/ts-client.ts": {
@@ -696,29 +737,19 @@
       "count": 1
     }
   },
+  "web/virtio.ts": {
+    "@typescript-eslint/no-redundant-type-constituents": {
+      "count": 1
+    }
+  },
   "web/vm.ts": {
     "@typescript-eslint/no-empty-function": {
-      "count": 7
-    },
-    "@typescript-eslint/no-floating-promises": {
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/only-throw-error": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
       "count": 2
     },
-    "no-empty": {
+    "@typescript-eslint/no-unsafe-argument": {
       "count": 1
     }
   },

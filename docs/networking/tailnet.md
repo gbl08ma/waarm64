@@ -24,7 +24,9 @@ actions the clients share), `tailcat.rs` (the address), `room.rs` (a room's memb
 session), `noise.rs`, `h2pipe.rs`, `netmap.rs`, `store.rs` (the kept node), `dns.rs`, `dns_tcp.rs` (MagicDNS over TCP). The page's
 side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/ts-wasi.ts`,
 `web/tailcat.ts` and `web/tailcat-worker.ts`, `web/tailscale.ts` and `web/tailnet-worker.ts`,
-`web/tailscale-state.ts` (the kept node in IndexedDB), `web/room.ts` and `web/room-worker.ts`. Built by `net/ts/build.sh` to
+`web/tailscale-state.ts` (the kept node in IndexedDB), `web/room.ts` and `web/room-worker.ts`; the three workers hold
+the gateway's IP port through `web/ts-port.ts` (the lease told only when it changed, since each one the gateway hears
+makes a router advertisement), and their page-side handles share `web/tailscale.ts` `workerHandle`. Built by `net/ts/build.sh` to
 `target/net/ts.wasm`; `npm start` and `npm run serve` build it when it's missing or stale
 (`tools/tailscale.ts`, frontend.md "Network").
 
@@ -61,7 +63,7 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   names (names.md "The resolver") and logs each query for one (`resolver: …`). A server asks outside the room
   (names.md "Servers", `room/names/outside.rs`): action 12 is a GET (the id, then the URL, always a compiled
   calendar's or explorer's), whose answer goes back with `ts_room_names_fetched(h, id, status, ptr, len)` (the HTTP
-  status, 0 when the fetch failed, and the body); web/room-worker.ts makes it through web/names.ts `serviceFetch`, which
+  status, 0 when the fetch failed, and the body); web/room-worker.ts makes it through web/names-fetch.ts `serviceFetch`, which
   fetches nothing but the compiled services. A server stores each block's check as a record too (version 3, under the
   block's hash). A member's node never emits action 12.
   With `room.publish` the client is a **publisher** (the page's names agent, web/names.ts): a names client alone, no

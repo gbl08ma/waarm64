@@ -13,7 +13,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { EPOCH, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, WAKE, WRITE } from '../../web/audio-ring.ts';
-import type { SndStats } from '../../web/snd.ts';
+import type { SndStats } from '../../web/snd-realtime.ts';
 
 const { values: a } = parseArgs({ options: { seconds: { type: 'string', default: '60' }, wake: { type: 'string', default: 'worklet' }, runs: { type: 'string', default: '1' }, out: { type: 'string', default: 'bench/results/local/snd.json' } } });
 const seconds = Number(a.seconds);

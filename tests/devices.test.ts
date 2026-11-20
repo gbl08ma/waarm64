@@ -7,7 +7,11 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { MemoryTree, P9Server, type P9Tree } from '../web/9p.ts';
-import { blk, deviceEntry, Devices, inputConfig, net, trimInput, type Ctx } from '../web/devices.ts';
+import { deviceEntry, Devices } from '../web/devices.ts';
+import { blk } from '../web/blk-device.ts';
+import { inputConfig, trimInput } from '../web/input-device.ts';
+import { net } from '../web/net-device.ts';
+import type { Ctx } from '../web/virtio.ts';
 import { memFile } from '../web/overlay.ts';
 import { loopback, PEER_IP, PEER_MAC } from '../web/net.ts';
 

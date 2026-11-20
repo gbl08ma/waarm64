@@ -49,7 +49,8 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 
 ## How it fits together
 
-- **Device** (`web/snd.ts`, native twin `core/tests/common/snd.rs`): an output stream (0) and an input stream (1), no
+- **Device** (`web/snd.ts` the backend over the queues, `web/snd-proto.ts` the protocol, `web/snd-test.ts` the
+  deterministic sink and source, `web/snd-realtime.ts` the realtime ones; native twin `core/tests/common/snd.rs`): an output stream (0) and an input stream (1), no
   jacks, no channel maps, no stream events; on the page's machines the Master volume and switch (`VIRTIO_SND_F_CTLS`,
   the spec's `mixer`; the twin has none), their changes said on the port both ways and the guest notified on the
   event queue; four queues of 64. Control

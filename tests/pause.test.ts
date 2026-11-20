@@ -10,7 +10,9 @@ import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { STEPS } from './steps.ts';
 import { Devices } from '../web/devices.ts';
-import { Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, type BootOptions, type Vm } from '../web/vm.ts';
+import { bootVm, type BootOptions, type Vm } from '../web/vm.ts';
+import { Exit, PSCI_SYSTEM_OFF } from '../web/core.ts';
+import { GUEST_CMDLINE, guestDevices } from '../web/test-guests.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);

@@ -31,7 +31,9 @@ import { checkSndGuest } from './snd/guest.ts';
 import { USB_CMDLINE, USB_HUBS_CMDLINE, USB_INITRD, USB_KERNEL, checkUsbGuest, checkUsbHubs, usbGuest } from './usb/guest.ts';
 import { jitVariantSkip } from './jit-variants.ts';
 import { STEPS } from './steps.ts';
-import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, testDevices, type BootOptions, type ConsoleInput } from '../web/vm.ts';
+import { bootVm, type BootOptions } from '../web/vm.ts';
+import { Exit, PSCI_SYSTEM_OFF } from '../web/core.ts';
+import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices, type ConsoleInput } from '../web/test-guests.ts';
 
 const part = (globalThis as { bootNodePart?: (name: string) => boolean }).bootNodePart ?? (() => true);
 const test = ((name: string, ...rest: unknown[]) => {
@@ -167,7 +169,7 @@ test('parallel: a closed VM is garbage-collected', async () => {
 
 // Over 2 GiB of memory (M8 loop 0): with 2.5 GiB of RAM the core's later
 // allocations (the VM, the vCPUs, JIT code) sit above 2^31, where the i32 an
-// export returns is negative in JS (web/vm.ts `unsigned`), as is the address
+// export returns is negative in JS (web/core.ts `unsigned`), as is the address
 // `jit_install` gets. smp.bin on 4 vCPUs, round-robin under JIT-check (which
 // compiles on sight) and parallel under the JIT.
 test('bare-metal smp.bin with 2.5 GiB of RAM, round-robin (JIT-check) and parallel (JIT)', async () => {

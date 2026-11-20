@@ -1,6 +1,6 @@
 // Boots twice to warm up, then once with the PC sampler running.
 import { startSampler } from '../../web/profiler.ts';
-import { compileCore } from '../../web/vm.ts';
+import { compileCore } from '../../web/core.ts';
 import { boot, images } from './suite.ts';
 
 try {

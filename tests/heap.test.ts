@@ -7,7 +7,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { bootVm, Exit, PSCI_SYSTEM_OFF, runToPowerOff, type Vm } from '../web/vm.ts';
+import { bootVm, type Vm } from '../web/vm.ts';
+import { Exit, PSCI_SYSTEM_OFF } from '../web/core.ts';
+import { runToPowerOff } from '../web/test-guests.ts';
 
 const WASM = readFileSync(process.env.WAARM64_WASM ?? new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const MiB = 1 << 20;

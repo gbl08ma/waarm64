@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { threadId } from 'node:worker_threads';
 import { parseArgs } from 'node:util';
-import { DISTROS, GUEST_CMDLINE, runToPowerOff, testDevices, guestDevices } from '../../web/vm.ts';
+import { DISTROS, GUEST_CMDLINE, runToPowerOff, testDevices, guestDevices } from '../../web/test-guests.ts';
 
 const { values: a, positionals } = parseArgs({
   allowPositionals: true,

@@ -13,7 +13,8 @@
   import { Actions } from './actions.svelte.ts';
   import { ask } from './ask.svelte.ts';
   import { msg, t, text } from '../i18n.ts';
-  import type { NamesConn, TitleView, ZonePoint } from '../names.ts';
+  import type { NamesConn, TitleView } from '../names.ts';
+  import type { ZonePoint } from '../names-store.ts';
   import { pageNames } from './areas/names.svelte.ts';
   import { MAX_POINTS, targetName, titleState, zonePoints } from './names-view.ts';
 

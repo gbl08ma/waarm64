@@ -99,7 +99,7 @@ NOPs, and every step count is what it was before M7.
 
 **Parallel SMP** (`VmConfig.smp` = 1, realtime only; `core/src/vm/parallel.rs`, ABI 25): a
 thread per vCPU, each calling `vm_run_cpu` for its own vCPU in its own core instance (in the
-browser a worker each, `web/vcpu-worker.ts`, coordinated by `web/vm.ts`; natively a `std::thread`
+browser a worker each, `web/vcpu-worker.ts`, coordinated by `web/coordinator.ts`; natively a `std::thread`
 each, `core/tests/common` `run_parallel`). Each vCPU has its own code cache (blocks hold table
 indexes of their instance).
 - **Shared state** (the GIC, the PL011, the virtio transports, completion draining, PSCI power
@@ -291,7 +291,7 @@ Two modes, chosen by `VmConfig.deterministic`:
     drifted ~1% from the monotonic clock in the dev VM, so a worker started a minute into a page
     ran ~0.6 s behind the VM's creator, and the guest counter read 0 for that long ("Missing cycle
     counter", the RNG's jitter loop spinning). Each worker measures the creator's clock
-    instead (`web/vm.ts` `clockOffset`: 16 round trips, the shortest one's midpoint). The counter counts in Node's
+    instead (`web/core.ts` `clockOffset`: 16 round trips, the shortest one's midpoint). The counter counts in Node's
     `runToPowerOff` too. Loop 15's exit loop seemed to show it standing still, but its own arithmetic overflowed:
     ticks × 10^12 passes 2^64 at 62.5 MHz past ~0.3 s. A phase's start plus its elapsed counter matches the host's
     time within 2 ms (bench/boot/REPORT.md "PERF loop 18").
@@ -346,7 +346,7 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   together: each waits on the start word (scratch page, `S_START`) until all are instantiated; the PL031 is rebased on the new VM's `rtc`, so it shows the host's time.
 - **The host's half** (`web/vm.ts` `snapshot()` and `BootOptions.restore`, `web/snapshot.ts`): the
   file ([frontend.md](frontend.md) has the page's side when it lands) holds the core's state, the
-  backends' (`Backend.save`/`restore` in `web/devices.ts`: the deterministic rng's position; a
+  backends' (`Backend.save`/`restore` in `web/virtio.ts`: the deterministic rng's position; a
   virtio-gpu's resource table, scanout and cursor, whose pixels come back from the restored RAM,
   [devices.md](devices.md) "virtio-gpu"; 9p's in-memory tree refuses to be saved: [shares.md](shares.md) §6) with the serial input the guest hadn't been given, and
   RAM in 1 MiB chunks without their zero pages (the guest's free memory zero by then: the balloon's hint, devices.md

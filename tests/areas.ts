@@ -66,7 +66,7 @@ const FP = ['core/src/fp.rs', 'core/src/fp/**', 'core/src/interp/float.rs', 'cor
 export const AREAS: Record<string, Area> = {
   // ---- the core (Rust, natively and as the wasm core)
   jit: {
-    src: ['core/src/jit/**', 'web/jit-compile-worker.ts', 'tests/jit-diff-suite.ts', 'tests/jit-variants.ts'],
+    src: ['core/src/jit/**', 'web/jit-compile-worker.ts', 'web/jit-host.ts', 'tests/jit-diff-suite.ts', 'tests/jit-variants.ts'],
     heavy: ['tests/jit-diff-[1-4].test.ts', 'tests/corpus-wasm.test.ts', 'tests/boot-node.test.ts', 'tests/boot-node-linux.test.ts'],
     cargo: ['core'],
     push: ['ci-jit.sh'],
@@ -80,14 +80,14 @@ export const AREAS: Record<string, Area> = {
   },
   core: {
     // The interpreter, the MMU, the GIC, the platform and the rest of the core.
-    src: ['core/**', 'tests/corpus/**', 'tests/baremetal/**', 'tests/dtb/**', 'tests/steps.txt', 'tests/steps.ts', 'tools/corpus/**', 'web/cpu-features.ts', 'web/vm.ts', 'web/vcpu-worker.ts', 'web/ram.ts', 'web/clock.ts', 'web/liveness.ts', 'web/profiler.ts', 'web/sampler-worker.ts', 'web/timeline-worker.ts', 'web/iostats.ts'],
+    src: ['core/**', 'tests/corpus/**', 'tests/baremetal/**', 'tests/dtb/**', 'tests/steps.txt', 'tests/steps.ts', 'tools/corpus/**', 'web/cpu-features.ts', 'web/vm.ts', 'web/core.ts', 'web/jit-host.ts', 'web/counters.ts', 'web/coordinator.ts', 'web/device-host.ts', 'web/warm-workers.ts', 'web/test-guests.ts', 'web/vcpu-worker.ts', 'web/ram.ts', 'web/clock.ts', 'web/liveness.ts', 'web/profiler.ts', 'web/sampler-worker.ts', 'web/timeline-worker.ts', 'web/iostats.ts'],
     heavy: ['tests/corpus-wasm.test.ts', 'tests/boot-node.test.ts'],
     cargo: ['core'],
     end: ['ci-jit.sh', 'ci-debian.sh'],
   },
   smp: {
     // Parallel SMP: the runner, its workers, the stop word, the guests that stress it.
-    src: ['core/src/vm/parallel.rs', 'web/vcpu-worker.ts', 'tests/litmus/**', 'images/litmus/**', 'images/stress/**', 'tests/threads-*.ts', 'tests/hoststall/**'],
+    src: ['core/src/vm/parallel.rs', 'web/vcpu-worker.ts', 'web/coordinator.ts', 'tests/litmus/**', 'images/litmus/**', 'images/stress/**', 'tests/threads-*.ts', 'tests/hoststall/**'],
     heavy: ['tests/boot-node-parallel.test.ts', 'tests/boot-node-litmus.test.ts', 'tests/browser.test.ts', 'tests/hoststall.test.ts', 'tests/pause.test.ts'],
     cargo: ['core'],
     push: ['ci-jit.sh'],
@@ -100,12 +100,12 @@ export const AREAS: Record<string, Area> = {
     end: ['ci-debian.sh --platform'],
   },
   devices: {
-    src: ['core/src/virtio.rs', 'core/src/virtio/**', 'core/src/pl011.rs', 'core/src/pl031.rs', 'core/src/rng.rs', 'web/devices.ts', 'web/device-worker.ts', 'web/balloon.ts', 'web/vsock-device.ts', 'web/9p*.ts', 'web/fat.ts', 'tests/p9/**'],
+    src: ['core/src/virtio.rs', 'core/src/virtio/**', 'core/src/pl011.rs', 'core/src/pl031.rs', 'core/src/rng.rs', 'web/devices.ts', 'web/device-worker.ts', 'web/device-host.ts', 'web/virtio.ts', 'web/blk-device.ts', 'web/net-device.ts', 'web/input-device.ts', 'web/disk-sources.ts', 'web/balloon.ts', 'web/vsock-device.ts', 'web/9p*.ts', 'web/fat.ts', 'tests/p9/**'],
     push: ['ci-debian.sh'],
   },
   // ---- disks, snapshots, machines
   disks: {
-    src: ['web/qcow2*.ts', 'web/overlay.ts', 'web/stored.ts', 'web/blockcache.ts', 'web/diskcache.ts', 'web/ramdisk.ts', 'web/chunked.ts', 'web/sha256.ts', 'web/spill.ts', 'web/deflate.ts', 'web/inflate-*.ts', 'web/lz.ts', 'web/app/disk*', 'web/app/Disk*', 'web/app/AddDisk*', 'web/app/add-disk.ts', 'web/app/AttachDisk.svelte', 'web/app/ResizeDisk.svelte', 'web/app/resize.ts', 'web/app/merge.ts', 'web/app/import*', 'web/app/export*', 'web/app/Export*', 'web/app/deflate-*.ts', 'web/app/areas/disk-*.ts', 'web/app/areas/trim-actions.ts', 'web/app/areas/grow-actions.ts', 'web/app/run/page-disks.ts', 'tests/qcow2/**', 'tests/qcow2-make.ts', 'tools/chunk-image.ts', 'tools/disk-trace.ts', 'deploy/**'],
+    src: ['web/qcow2*.ts', 'web/overlay.ts', 'web/blk-device.ts', 'web/disk-sources.ts', 'web/stored.ts', 'web/blockcache.ts', 'web/diskcache.ts', 'web/ramdisk.ts', 'web/chunked.ts', 'web/sha256.ts', 'web/spill.ts', 'web/deflate.ts', 'web/inflate-*.ts', 'web/lz.ts', 'web/app/disk*', 'web/app/Disk*', 'web/app/AddDisk*', 'web/app/add-disk.ts', 'web/app/AttachDisk.svelte', 'web/app/ResizeDisk.svelte', 'web/app/resize.ts', 'web/app/merge.ts', 'web/app/import*', 'web/app/export*', 'web/app/Export*', 'web/app/deflate-*.ts', 'web/app/areas/disk-*.ts', 'web/app/areas/trim-actions.ts', 'web/app/areas/grow-actions.ts', 'web/app/run/page-disks.ts', 'tests/qcow2/**', 'tests/qcow2-make.ts', 'tools/chunk-image.ts', 'tools/disk-trace.ts', 'deploy/**'],
     heavy: ['tests/blockcache.test.ts', 'tests/qcow2-write.test.ts', 'tests/overlay.test.ts', 'tests/page-save.test.ts'],
     push: ['ci-machines.sh'],
     end: ['ci-debian.sh'],
@@ -141,7 +141,7 @@ export const AREAS: Record<string, Area> = {
   },
   // ---- the network
   network: {
-    src: ['web/gateway.ts', 'web/net.ts', 'web/bytes.ts', 'web/local-net*.ts', 'web/demo-net*.ts', 'web/app/demo-view.ts', 'web/local-release.ts', 'web/ip6.ts', 'web/reach6.ts', 'web/tailscale*.ts', 'web/tailnet-worker.ts', 'web/tailcat*.ts', 'web/ts-*.ts', 'web/offload.ts', 'net/**', 'web/app/Net*.svelte', 'web/app/net-*.ts', 'web/app/network*.ts', 'web/app/Network*.svelte', 'web/app/guest-net.ts', 'web/app/Connection*.svelte', 'web/app/connection*.ts', 'web/app/areas/network*.ts', 'web/app/areas/lease-actions.ts', 'tests/net/**', 'tests/waarm64-net.ts', 'tests/waarm64-demonet.ts', 'tests/go-pinned.ts', 'tools/tailscale.ts'],
+    src: ['web/gateway.ts', 'web/net.ts', 'web/net-device.ts', 'web/bytes.ts', 'web/local-net*.ts', 'web/demo-net*.ts', 'web/app/demo-view.ts', 'web/local-release.ts', 'web/ip6.ts', 'web/reach6.ts', 'web/tailscale*.ts', 'web/tailnet-worker.ts', 'web/tailcat*.ts', 'web/ts-*.ts', 'web/offload.ts', 'net/**', 'web/app/Net*.svelte', 'web/app/net-*.ts', 'web/app/network*.ts', 'web/app/Network*.svelte', 'web/app/guest-net.ts', 'web/app/Connection*.svelte', 'web/app/connection*.ts', 'web/app/areas/network*.ts', 'web/app/areas/lease-actions.ts', 'tests/net/**', 'tests/waarm64-net.ts', 'tests/waarm64-demonet.ts', 'tests/go-pinned.ts', 'tools/tailscale.ts'],
     heavy: ['tests/page-local.test.ts', 'tests/page-connections.test.ts', 'tests/net-path.test.ts'],
     cargo: ['ts'],
     push: ['ci-net.sh'],
@@ -154,7 +154,7 @@ export const AREAS: Record<string, Area> = {
   },
   // ---- the rest of the devices the page drives
   sound: {
-    src: ['web/snd.ts', 'web/audio*.ts', 'web/app/Sound.svelte', 'web/app/areas/sound.svelte.ts', 'images/snd/**', 'tests/snd/**', 'tests/snd-disk.ts', 'tests/audio-tap.ts'],
+    src: ['web/snd*.ts', 'web/audio*.ts', 'web/app/Sound.svelte', 'web/app/areas/sound.svelte.ts', 'images/snd/**', 'tests/snd/**', 'tests/snd-disk.ts', 'tests/audio-tap.ts'],
     push: ['ci-audio.sh'],
   },
   usb: {

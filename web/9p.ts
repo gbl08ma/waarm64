@@ -7,7 +7,7 @@
 // Each request chain holds one T-message in its readable buffers and room for
 // the R-message in its writable ones (Linux's zero-copy reads and writes split
 // the payload into separate buffers, which concatenation undoes).
-import { gather, scatter, type Ctx, type Request } from './devices.ts';
+import { gather, scatter, type Ctx, type Request } from './virtio.ts';
 
 /** Initial contents: path (relative, `/`-separated) → file contents. */
 export type P9Files = Record<string, string>;

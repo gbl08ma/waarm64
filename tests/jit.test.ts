@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports } from '../web/vm.ts';
+import { coreImports } from '../web/core.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
 

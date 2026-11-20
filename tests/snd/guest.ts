@@ -6,7 +6,9 @@
 // before its reader has it, so a source faster than real time overwrites the first buffer: docs/audio.md "Linux driver behavior").
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FMT_S16, fnv1a, pattern, type Played, type SndState } from '../../web/snd.ts';
+import { FMT_S16 } from '../../web/snd-proto.ts';
+import { fnv1a, pattern, type Played } from '../../web/snd-test.ts';
+import { type SndState } from '../../web/snd.ts';
 
 /** FNV-1a of what the snd guest reads from the deterministic source (core/tests/snd_guest.rs pins the same). */
 export const SND_RECORDED = '2b1e136b';

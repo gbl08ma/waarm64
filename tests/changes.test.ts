@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { hashSource, loadChanges } from '../web/changes.ts';
-import type { Source } from '../web/devices.ts';
+import type { Source } from '../web/disk-sources.ts';
 import { msgOf } from '../web/msg.ts';
 import { memFile, openOverlay, overlay } from '../web/overlay.ts';
 import { openDisk, readChanges } from '../web/qcow2.ts';

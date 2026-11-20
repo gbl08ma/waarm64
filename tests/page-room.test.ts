@@ -32,7 +32,7 @@ import { t } from '../web/i18n.ts';
 import { parseRoomLink } from '../web/room.ts';
 import { keyPair, nameOf } from './net/room-keys.ts';
 import { words } from './words.ts';
-import { CALENDARS, EXPLORERS } from '../web/names.ts';
+import { CALENDARS, EXPLORERS } from '../web/names-fetch.ts';
 import { CALENDARS as PRETEND, startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 import { openHome } from './page-home.ts';
 

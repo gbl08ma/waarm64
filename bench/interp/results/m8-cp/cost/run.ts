@@ -1,6 +1,6 @@
 // DIAG: Alpine (boot, or userspace with USER=1) under the JIT in Node, dumping each module (WEBPC_DUMP).
 import { readFileSync } from 'node:fs';
-import { DISTROS, guestDevices, testDevices, runToPowerOff } from '../../../../../web/vm.ts';
+import { DISTROS, guestDevices, testDevices, runToPowerOff } from '../../../../../web/test-guests.ts';
 const IMAGES = new URL('../../../../../target/images/', import.meta.url);
 const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
 const WASM = readFileSync(process.env.CORE ?? new URL('../../../../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));

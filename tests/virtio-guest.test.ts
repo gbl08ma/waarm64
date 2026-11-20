@@ -1,6 +1,6 @@
 // Requests no Linux driver sends, through the whole path (docs/testing.md "Bare-metal device tests"): bare-metal
 // guests with a virtio driver of their own (tests/baremetal/virtio/: blk.c, 9p.c, net.c) post hand-built chains to the
-// TS backends (web/devices.ts `blk`, `net`; web/9p.ts) and print what came back; this file has what each should get.
+// TS backends (web/blk-device.ts `blk`, web/net-device.ts `net`; web/9p.ts) and print what came back; this file has what each should get.
 // Linux's drivers stay the tests of the well-formed path (the Buildroot device test, the Debian page tests): a driver
 // of ours shares the backends' assumptions there. What's checked here is the rest: a buggy or hostile driver's request
 // ends in an error, a dropped request or frame, never a host exception, a failed device or a changed disk.
@@ -13,7 +13,9 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import type { DeviceSpec } from '../web/devices.ts';
-import { Exit, PSCI_SYSTEM_OFF, runToPowerOff, type BootOptions } from '../web/vm.ts';
+import type { BootOptions } from '../web/vm.ts';
+import { Exit, PSCI_SYSTEM_OFF } from '../web/core.ts';
+import { runToPowerOff } from '../web/test-guests.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 

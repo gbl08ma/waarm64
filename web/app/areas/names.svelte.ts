@@ -4,7 +4,8 @@
 // adapter shows Preparing until the title is stored), a name's zone and its release; and, at load, the notice of names
 // in their last week. The agent and its worker are loaded only when titles exist or the dialog is used.
 import { msg, MsgError, type Msg } from '../../i18n.ts';
-import type { NameCheck, NamesConn, TitleView, ZonePoint } from '../../names.ts';
+import type { NameCheck, NamesConn, TitleView } from '../../names.ts';
+import type { ZonePoint } from '../../names-store.ts';
 import { titlesOf } from '../names-view.ts';
 
 const names = () => import('../../names.ts');
@@ -39,7 +40,7 @@ class PageNames {
   async refresh() {
     try {
       const n = await names();
-      const have = await n.idbNamesStore().titles();
+      const have = await (await import('../../names-store.ts')).idbNamesStore().titles();
       this.titles = have.length ? await n.namesAgent().titles() : [];
     } catch (e) {
       console.warn('names: the titles could not be read:', e);

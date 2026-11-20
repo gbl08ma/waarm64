@@ -16,7 +16,9 @@ import { Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { profilesOf } from '../web/tailscale-state.ts';
 import { t } from '../web/i18n.ts';
-import { exportNames, importNames, memoryNamesStore, parseRoomExport, type TitleRecord } from '../web/names.ts';
+import { exportNames, importNames } from '../web/names-export.ts';
+import { memoryNamesStore, type TitleRecord } from '../web/names-store.ts';
+import { parseRoomExport } from '../web/names.ts';
 
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {

@@ -4,7 +4,7 @@
 // classes.bin first: clang --target=aarch64-linux-gnu -march=armv8-a -c classes.S -o classes.o && llvm-objcopy -O binary -j .text classes.o classes.bin
 import { readFileSync } from 'node:fs';
 import { setFlagsFromString } from 'node:v8';
-import { coreImports } from '../../../../../web/vm.ts';
+import { coreImports } from '../../../../../web/core.ts';
 const WASM = new URL('../../../../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 const code = readFileSync(new URL('classes.bin', import.meta.url));
 const SYMS: Record<string, number> = { alu: 0x0, movs: 0x80, flags: 0x100, ldst: 0x180, pairs: 0x200, muls: 0x280, bits: 0x300, fp: 0x380, neon: 0x400, sys: 0x480, short: 0x500, calls: 0x580 };

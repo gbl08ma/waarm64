@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports, MAX_MEMORY0_RAM, memoryLimits, panicMessage, POINTERS, splitError, splitRam, withPanic } from '../web/vm.ts';
+import { MAX_MEMORY0_RAM, splitError, splitRam } from '../web/vm.ts';
+import { coreImports, memoryLimits, panicMessage, POINTERS, withPanic } from '../web/core.ts';
 import { VENUS_RESERVE } from '../web/ram.ts';
 import { callsIn, HOT } from '../tools/wasm-calls.ts';
 
@@ -42,7 +43,7 @@ test('every export that returns an address is read unsigned', () => {
   const pointers = [...src.matchAll(/extern "C" fn (\w+)\([^)]*\)\s*->\s*\*/g)].map((m) => m[1]);
   assert.ok(pointers.length > 10, 'the exports were found');
   const missing = pointers.filter((p) => !POINTERS.includes(p));
-  assert.equal(missing.join(' '), '', 'not in web/vm.ts POINTERS');
+  assert.equal(missing.join(' '), '', 'not in web/core.ts POINTERS');
 });
 
 test('heap_reserve makes the core\'s heap the rest of a fixed-size memory', () => {
@@ -63,7 +64,7 @@ test('heap_reserve makes the core\'s heap the rest of a fixed-size memory', () =
   assert.equal(ex.thread_alloc(64 << 20, 16), 0, 'past the reserve');
 });
 
-// The core that runs a fixed memory (web/vm.ts `memoryLimits`): only its memory import's limits change. A module of an
+// The core that runs a fixed memory (web/core.ts `memoryLimits`): only its memory import's limits change. A module of an
 // import before and after the memory's (a function, a table, a global) and a long name, made to declare 200 pages
 // (two LEB bytes, where it had one): it instantiates on a memory of exactly 200, not on one of 199 or with room to grow.
 test('memoryLimits gives the memory import exact limits and keeps the rest', () => {

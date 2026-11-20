@@ -14,7 +14,7 @@ import { applyRam, openSnapshot, repackFrames, SnapshotError, SnapshotWriter, ty
 import { poolWorker, startPool, type Spawn } from '../web/snapshot-pool.ts';
 import type { PoolInit, PoolJob, PoolReply } from '../web/snapshot-pool-worker.ts';
 import { deflateCodec } from './snapshot-codecs.ts';
-import { compileCore } from '../web/vm.ts';
+import { compileCore } from '../web/core.ts';
 
 const WASM = await compileCore(readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)));
 const HEADER: SnapshotHeader = { format: 1, coreVersion: 6, abi: 69, created: '2026-11-15T00:00:00Z', machine: 'pool' };

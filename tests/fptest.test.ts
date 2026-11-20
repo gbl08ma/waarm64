@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fusedFma } from '../web/fma.ts';
-import { runToPowerOff } from '../web/vm.ts';
+import { runToPowerOff } from '../web/test-guests.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const has = (rel: string) => existsSync(new URL(rel, IMAGES));

@@ -481,7 +481,7 @@ aborts.
 
 **Host stalls (`tests/hoststall/`, `tests/hoststall.test.ts`):** `stall.c` builds four 2-vCPU
 guests (`build.sh`: `stall-run|install|idle|waiter.bin`, committed) that cooperate with a test-only
-hook in a vCPU worker (`BootOptions.stall`, web/vm.ts `Stall`) through a word in RAM: vCPU 1 arms it,
+hook in a vCPU worker (`BootOptions.stall`, web/core.ts `Stall`) through a word in RAM: vCPU 1 arms it,
 the hook blocks that worker (`Atomics.wait`), vCPU 0 then runs TLBI IS + DSB. Real workers in Node,
 parallel, JIT, the real 10 s DSB limit (no ABI for lowering it). Stalled in the core's clock import
 (between chunks) or in `jit_install` (mid-chunk), the vCPU is RUN: the wait ends at 10 s with the

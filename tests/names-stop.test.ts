@@ -2,7 +2,8 @@
 // timer; a pass that fails tries again later; the worker backend refuses what waits when it closes or its worker fails.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { memoryNamesStore, NamesAgent, workerBackend } from '../web/names.ts';
+import { memoryNamesStore } from '../web/names-store.ts';
+import { NamesAgent, workerBackend } from '../web/names.ts';
 import type { NamesBackend } from '../web/names-ops.ts';
 
 const idle: NamesBackend = {

@@ -1,7 +1,7 @@
 // The virtio-gpu device's queues around a `Gpu` (web/gpu.ts; docs/devices.md "virtio-gpu"): commands taken from the
 // controlq and the cursorq, and their replies sent in order: a fenced command's once the host has run it, a paced
 // flush's at the frame's end, Venus's ring fences' out of line as their fences retire.
-import { gather, scatter, type Ctx, type Request } from './devices.ts';
+import { gather, scatter, type Ctx, type Request } from './virtio.ts';
 import {
   busy,
   EVENT_DISPLAY,

@@ -1,4 +1,4 @@
-// The device worker's owner (web/vm.ts `deviceHost`): what a failed start leaves, requests paired with their answers by
+// The device worker's owner (web/device-host.ts `deviceHost`): what a failed start leaves, requests paired with their answers by
 // id, and a backend's error after the start reaching what waits on the backends. The device worker is faked here
 // (`WarmWorkers.take` hands it out; `WorkerGlobalScope` and `self` make this thread a worker).
 import assert from 'node:assert/strict';
@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
-import { deviceHost, type WarmWorkers } from '../web/vm.ts';
+import { deviceHost } from '../web/device-host.ts';
+import type { WarmWorkers } from '../web/warm-workers.ts';
 import { Devices, type DevicesInit } from '../web/devices.ts';
 import type { FromDeviceWorker, ToDeviceWorker } from '../web/device-worker.ts';
 import { openOverlay } from '../web/overlay.ts';

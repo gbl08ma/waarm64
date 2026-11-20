@@ -3,7 +3,8 @@
 // the Home page, and where a name points in words (a member's name in the room) and back. Pure: the area
 // (web/app/areas/names.svelte.ts) and the components call these.
 import { msg, MsgError, type Msg } from '../i18n.ts';
-import type { NameCheck, TitleView, ZonePoint } from '../names.ts';
+import type { NameCheck, TitleView } from '../names.ts';
+import type { ZonePoint } from '../names-store.ts';
 import { base32, roomOf } from '../room.ts';
 
 const HOUR_MS = 60 * 60 * 1000;

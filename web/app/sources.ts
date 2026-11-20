@@ -1,6 +1,6 @@
 // A disk's bytes in a worker (the export, the changes-in and the disk jobs: web/app/*-worker.ts), from where the
 // page says they are (protocol.ts `DiskSource`): synchronous reads, as the device worker's (web/devices.ts).
-import { blobSource, httpSource, zeroSource, type Source } from '../devices.ts';
+import { blobSource, httpSource, zeroSource, type Source } from '../disk-sources.ts';
 import { openStored } from '../stored.ts';
 import { chunkedSource, isManifestUrl } from '../chunked.ts';
 import type { DiskSource } from './protocol.ts';

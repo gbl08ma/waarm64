@@ -3,7 +3,9 @@
 // RT=1: realtime (the page's mode); without it deterministic time (one tick an instruction).
 //   [RT=1] node bench/boot/results/m8-cntvct/tools/count.ts
 import { readFileSync } from 'node:fs';
-import { bootVm, DISTROS, Exit, guestDevices } from '../../../../../web/vm.ts';
+import { bootVm } from '../../../../../web/vm.ts';
+import { Exit } from '../../../../../web/core.ts';
+import { DISTROS, guestDevices } from '../../../../../web/test-guests.ts';
 const IMAGES = new URL('../../../../../target/images/', import.meta.url);
 const wasm = readFileSync(new URL('../../../../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const a = DISTROS.alpine;

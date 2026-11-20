@@ -9,9 +9,9 @@
 import type { Lease } from './gateway.ts';
 import { hex } from './bytes.ts';
 import { v6text } from './ip6.ts';
-import { fromWire, msg, MsgError, type Msg } from './msg.ts';
+import { msg, MsgError, type Msg } from './msg.ts';
 import type { Reach6Options } from './reach6.ts';
-import { workerFailures, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
+import { workerHandle, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
 
 export type TailcatConfig = {
   /** The `tc…` address the server printed: a secret (it lets anyone who has it in). Empty: serve only. */
@@ -190,28 +190,14 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
   const worker = new Worker(new URL('./tailcat-worker.ts', import.meta.url), { type: 'module' });
   const own = config.ip ? undefined : new MessageChannel();
   const port1 = config.ip ?? own!.port1;
-  let detached: ((ip?: MessagePort) => void) | undefined;
   let state = '';
   let netmap: NetMap | undefined;
-  const t0 = performance.now();
-  const timings: { loadMs?: number; runningMs?: number } = {};
-  const running = new Promise<NetMap>((resolve, reject) => {
-    const heard = (m: FromTailscale) => {
-      if (m.type === 'state') state = m.state;
-      else if (m.type === 'netmap') netmap = m.netmap;
-      else if (m.type === 'loaded') timings.loadMs = m.ms;
-      else if (m.type === 'detached') detached?.(m.ip);
-      else if (m.type === 'error') reject(fromWire(m.error));
-      if (state === 'Running' && netmap && timings.runningMs === undefined) {
-        timings.runningMs = performance.now() - t0;
-        resolve(netmap);
-      }
-      onEvent(m);
-    };
-    worker.onmessage = (e: MessageEvent<FromTailscale>) => heard(e.data);
-    workerFailures(worker, (error) => heard({ type: 'error', error }));
+  const h = workerHandle<FromTailscale, NetMap>(worker, (m) => {
+    if (m.type === 'state') state = m.state;
+    else if (m.type === 'netmap') netmap = m.netmap;
+    if (state === 'Running' && netmap) h.ran(netmap);
+    onEvent(m);
   });
-  running.catch(() => {});
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;
   worker.postMessage(
     {
@@ -232,20 +218,12 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
     state: () => state,
     netmap: () => netmap,
     loginURL: () => undefined,
-    running,
-    timings: () => timings,
+    running: h.running,
+    timings: h.timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailcat, [ip]),
     setPrimary: (primary, rank, primary6) =>
       worker.postMessage({ type: 'primary', primary, rank, primary6 } satisfies ToTailcat),
-    detach: () =>
-      new Promise((resolve) => {
-        const t = setTimeout(() => resolve(undefined), 3000);
-        detached = (ip) => {
-          clearTimeout(t);
-          resolve(ip);
-        };
-        worker.postMessage({ type: 'detach' } satisfies ToTailcat);
-      }),
+    detach: h.detach,
     setExitNode: () => Promise.reject(new MsgError('network:tailcat.noExitNodes')),
     setAcceptRoutes: () => {},
     logout: () => Promise.resolve(),

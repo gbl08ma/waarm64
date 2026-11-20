@@ -7,7 +7,10 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
-import { CALENDARS, EXPLORERS, exportNames, importNames, inLastWeek, LAST_WEEK_S, memoryNamesStore, NamesAgent, roomOf, serviceFetch, SERVICES, type TitleView } from '../web/names.ts';
+import { CALENDARS, EXPLORERS, serviceFetch, SERVICES } from '../web/names-fetch.ts';
+import { exportNames, importNames } from '../web/names-export.ts';
+import { inLastWeek, LAST_WEEK_S, NamesAgent, roomOf, type TitleView } from '../web/names.ts';
+import { memoryNamesStore } from '../web/names-store.ts';
 import { localBackend, mergeIds, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
 import type { NamesIds } from '../web/ts-client.ts';
 import { subdomainOk } from '../web/app/names-view.ts';

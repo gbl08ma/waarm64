@@ -9,7 +9,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cachedSource } from '../web/blockcache.ts';
-import { blk, type Ctx, type Source } from '../web/devices.ts';
+import { blk } from '../web/blk-device.ts';
+import type { Source } from '../web/disk-sources.ts';
+import type { Ctx } from '../web/virtio.ts';
 import { blockStore } from '../web/diskcache.ts';
 import { memFile } from '../web/overlay.ts';
 import { ALLOCATION_MAX, openDisk, readAllocation, type Allocation } from '../web/qcow2.ts';

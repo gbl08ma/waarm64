@@ -5,7 +5,7 @@
 // zeros). `importImage` converts a qcow2 or raw image on the way in (zero blocks left out); `mergeOverlay` writes an
 // overlay into the store and deletes it, marking the store first so an interrupted merge is finished at its next
 // opening (`resumeMerge`), before anything reads it. Workers only in a browser (sync access handles).
-import type { Source } from './devices.ts';
+import type { Source } from './disk-sources.ts';
 import { MsgError } from './msg.ts';
 import {
   mapBlocks,

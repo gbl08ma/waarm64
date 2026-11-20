@@ -25,7 +25,7 @@ if (mode === 'capture') {
     const g = await suite.setup('guest-fp.bin', suite.JIT_DEFAULT);
     for (let done = 0; done < 300e6;) done += g.run(10_000_000);
   } else {
-    const { DISTROS, guestDevices, runToPowerOff, testDevices } = await import('../../../../../web/vm.ts');
+    const { DISTROS, guestDevices, runToPowerOff, testDevices } = await import('../../../../../web/test-guests.ts');
     const IMAGES = new URL('../../../../../target/images/', import.meta.url);
     const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
     const a = DISTROS.alpine;

@@ -5,7 +5,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { bootVm, Counter, Exit } from '../web/vm.ts';
+import { bootVm } from '../web/vm.ts';
+import { Exit } from '../web/core.ts';
+import { Counter } from '../web/counters.ts';
 
 const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const kernel = readFileSync(new URL('baremetal/watch.bin', import.meta.url));

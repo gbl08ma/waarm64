@@ -1,10 +1,11 @@
-// A machine's workers started ahead of its `bootVm` (web/vm.ts `warmWorkers`, `BootOptions.warm`; bench/boot/REPORT.md
+// A machine's workers started ahead of its `bootVm` (web/warm-workers.ts `warmWorkers`, `BootOptions.warm`; bench/boot/REPORT.md
 // "SNAPZ loop 7"): what `take` hands out, a worker that failed to load replaced, the rest ended (by `end`, once the vCPU
 // workers are started, when `bootVm` fails). The browser's workers are faked here (`Worker`, `WorkerGlobalScope`).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { bootVm, warmWorkers, type WarmWorkers } from '../web/vm.ts';
+import { bootVm } from '../web/vm.ts';
+import { warmWorkers, type WarmWorkers } from '../web/warm-workers.ts';
 
 class FakeWorker {
   static made: FakeWorker[] = [];

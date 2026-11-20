@@ -41,7 +41,7 @@ import {
   type P9Time,
 } from './9p.ts';
 import { uniqueName } from './app/shape.ts';
-import type { Ctx } from './devices.ts';
+import type { Ctx } from './virtio.ts';
 
 /** A folder as a machine gets it (web/app/folders.ts): its name at the root is the page's, unique. */
 export type FolderSpec = {

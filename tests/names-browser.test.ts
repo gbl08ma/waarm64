@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { CALENDARS, EXPLORERS } from '../web/names.ts';
+import { CALENDARS, EXPLORERS } from '../web/names-fetch.ts';
 import { CALENDARS as PRETEND, startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 import { TEST_WASM } from './net/names-agent.ts';
 

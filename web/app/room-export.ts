@@ -1,16 +1,24 @@
 // A room connection's export (docs/networking/adapters.md §2.1): its node key and, after a dot, its names: the names
-// agent's owners' secret and titles kept under the connection's `identityKey` (web/names.ts `exportNames`), so a name
+// agent's owners' secret and titles kept under the connection's `identityKey` (web/names-export.ts `exportNames`), so a name
 // travels with the key. A connection made from a pasted export takes the names as its own (`importNames`).
 import type { Connection, ConnectionState, NewConnection } from './connections.ts';
 
-/** The page's names (web/names.ts, `waarm64-room`'s `owner` and `titles`), loaded when an export needs them. */
+/** The page's names (web/names-store.ts, `waarm64-room`'s `owner` and `titles`), loaded when an export needs them. */
 const pageNames = {
-  export: (k: string) => import('../names.ts').then((n) => n.exportNames(n.idbNamesStore(), k)),
-  keep: (k: string, b: string) => import('../names.ts').then((n) => n.importNames(n.idbNamesStore(), k, b)),
+  export: (k: string) =>
+    Promise.all([import('../names-export.ts'), import('../names-store.ts')]).then(([e, s]) =>
+      e.exportNames(s.idbNamesStore(), k),
+    ),
+  keep: (k: string, b: string) =>
+    Promise.all([import('../names-export.ts'), import('../names-store.ts')]).then(([e, s]) =>
+      e.importNames(s.idbNamesStore(), k, b),
+    ),
   // Without titles no worker is started: the agent (and its module) only when there is something to judge.
   held: (k: string) =>
-    import('../names.ts').then(async (n) => ((await n.idbNamesStore().titles(k)).length ? n.namesAgent().held(k) : [])),
-  forget: (k: string) => import('../names.ts').then((n) => n.idbNamesStore().forget(k)),
+    import('../names-store.ts').then(async (s) =>
+      (await s.idbNamesStore().titles(k)).length ? (await import('../names.ts')).namesAgent().held(k) : [],
+    ),
+  forget: (k: string) => import('../names-store.ts').then((s) => s.idbNamesStore().forget(k)),
 };
 
 /** Room connection `c`'s export: its key, then its names after a dot; '' before its first start made a key. */

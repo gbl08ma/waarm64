@@ -1,5 +1,5 @@
 // The host-stall test (docs/testing.md "Host stalls"): while vCPU 0 waits in a DSB for its
-// TLBI IS, vCPU 1's host worker stalls (a test-only hook, web/vm.ts `Stall`; the
+// TLBI IS, vCPU 1's host worker stalls (a test-only hook, web/core.ts `Stall`; the
 // guests are tests/hoststall/stall.c). Parallel SMP, the JIT, real workers in
 // Node. Needs the wasm build.
 // - Stalled while RUN (inside `vm_run_cpu`: at the core's clock import between
@@ -10,7 +10,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { Exit, PSCI_SYSTEM_OFF, runToPowerOff, type Stall } from '../web/vm.ts';
+import { Exit, PSCI_SYSTEM_OFF, type Stall } from '../web/core.ts';
+import { runToPowerOff } from '../web/test-guests.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const FLAG = 0x40800000; // stall.c's FLAG (a guest PA)

@@ -126,7 +126,9 @@ if (cmd === 'synth') {
   W.Module = class extends M { constructor(b: Uint8Array) { super(b); index.set(this, mods.length); mods.push(new Uint8Array(b)); slots.push([]); } };
   W.Instance = class extends I { constructor(m: object, i: object) { super(m, i); const n = index.get(m); if (n !== undefined) for (const f of Object.values(this.exports)) owner.set(f, n); } };
   W.Table.prototype.set = function (i: number, f: unknown) { if (f && owner.has(f as object)) slots[owner.get(f as object)!].push(i); return set.call(this, i, f); };
-  const { bootVm, DISTROS, Exit, guestDevices } = await import('../../web/vm.ts');
+  const { bootVm } = await import('../../web/vm.ts');
+  const { Exit } = await import('../../web/core.ts');
+  const { DISTROS, guestDevices } = await import('../../web/test-guests.ts');
   const IMAGES = new URL('../../target/images/', import.meta.url);
   const a = DISTROS.alpine;
   const vm = await bootVm(readFileSync(process.env.WASM ?? new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)),

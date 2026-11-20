@@ -2,7 +2,7 @@
 // web/qcow2-write.ts writes (the blocks a machine wrote over a base image, naming the image's
 // hash: `hashSource`), becomes the overlay of the disk on the page, once the base image is checked
 // to be the one it was made over. Workers only in a browser (sync access handles, synchronous reads).
-import type { Source } from './devices.ts';
+import type { Source } from './disk-sources.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
 import { openOverlay, overlay, readMeta, removeOverlay, storageFullError, withRoom, writeMeta } from './overlay.ts';
 import { openDisk, readChanges } from './qcow2.ts';

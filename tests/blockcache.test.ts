@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cachedSource } from '../web/blockcache.ts';
-import type { Source } from '../web/devices.ts';
+import type { Source } from '../web/disk-sources.ts';
 
 const SIZE = 10 * 4096 + 1234; // a partial last block
 const bytes = Uint8Array.from({ length: SIZE }, (_, i) => (i * 2654435761) >>> 24);

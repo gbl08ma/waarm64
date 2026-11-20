@@ -4,7 +4,8 @@
 // through its table from one call site (a block is one i64 add on a register).
 // `node bench/run.ts --page bench/jit/index.html`.
 import type { Options, Sample } from '../spike/benchmarks.ts';
-import { ABI, coreImports } from '../../web/vm.ts';
+import { ABI } from '../../web/vm.ts';
+import { coreImports } from '../../web/core.ts';
 
 type Exports = {
   abi_version(): number;

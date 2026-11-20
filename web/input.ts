@@ -80,7 +80,7 @@ const ABS_MT_SLOT = 0x2f,
   ABS_MT_POSITION_X = 0x35,
   ABS_MT_POSITION_Y = 0x36,
   ABS_MT_TRACKING_ID = 0x39;
-/** The touchscreen's slots (web/devices.ts `TOUCH_SLOTS`). */
+/** The touchscreen's slots (web/input-device.ts `TOUCH_SLOTS`). */
 const TOUCH_SLOTS = 10;
 /** A wheel's notch (REL_WHEEL 1, REL_WHEEL_HI_RES 120) in CSS pixels: a mouse's notch comes as one event of at least this, a touchpad's motion as many small ones, summed. */
 const NOTCH_PX = 50;
@@ -197,40 +197,23 @@ export function terminalBytes(e: KeyLike): string | null {
   return e.altKey ? `\x1b${c}` : c;
 }
 
+/** `v` of `len` (a CSS length across the element) as the tablet's 0–32767. */
+const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
+
 /**
- * Forwards `el`'s keyboard events to `keyboard` and its pointer and wheel
- * events to `tablet` (0–32767 across the element's box as laid out, so CSS
- * scaling doesn't matter), or to `pointers`' devices. `el` needs a tabindex to
- * take the focus. Keys, buttons and touches held when `el` loses the focus, the
- * window loses it or the page is hidden are released then (their keyup goes
- * elsewhere: no stuck modifiers). A mouse's back and forward buttons are the
- * guest's over `el`: the browser doesn't navigate.
- *
- * `text`: what takes the keys while the guest has no driver on its keyboard (`live` false): `usb`, the built-in USB
- * keyboard (web/usb-keyboard.ts: every key, down and up, by `KeyboardEvent.code`; '' releases them all), when it says
- * it took the key; else `send`, the serial console, as a terminal sends them (`terminalBytes`).
- *
- * `hold`: asked at each key down on the element (not a repeat); a promise holds the key: no `preventDefault`, so
- * the browser's own action happens (a paste chord's `paste` event: web/app/clipboard.ts), and the key goes to the guest
- * when the promise settles, and the element's key events that came meanwhile after it, in order (the chord's
- * modifiers' releases among them; its own repeats dropped). A release (a blur) drops the held key and those.
+ * The keys (`attachInput`'s `keyboard` and `text`, `hold`): who holds each, what the guest has down, and the key
+ * `hold` holds with the key events that came after it. `key(down)` is the element's listener.
  */
-export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
-  const { keyboard, tablet, text } = o;
-  const pointers: Pointers = { mouse: o.mouse, touch: o.touch, locked: o.locked };
-  const hooks = { hold: o.hold };
+function keyMachine(o: Pick<InputOptions, 'keyboard' | 'text'>, hooks: { hold: InputOptions['hold'] }) {
+  const { keyboard, text } = o;
   const keys = new Set<number>(); // held, as the guest sees it
-  const on = <T extends EventTarget, E extends Event>(target: T, type: string, f: (e: E) => void) => {
-    target.addEventListener(type, f as EventListener);
-    return () => target.removeEventListener(type, f as EventListener);
-  };
   const sendKey = (code: number, value: number) => {
     if (value === 0) keys.delete(code);
     else keys.add(code);
     keyboard?.postMessage([
       [EV_KEY, code, value],
       [EV_SYN, 0, 0],
-    ]);
+    ] satisfies EvdevEvent[]);
   };
   /** Key `name` down or up to the guest, whoever holds it: whether it took it. */
   const deliver = (name: string, down: boolean, e: KeyLike): boolean => {
@@ -309,19 +292,29 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     }
     if (screenKey(e, !!down)) e.preventDefault();
   };
-  const released: (() => void)[] = [];
-  let held = false;
-  /** A listener that does nothing while the input is held (a key's browser action prevented). */
-  const unlessHeld =
-    <E extends Event>(f: (e: E) => unknown) =>
-    (e: E) => {
-      if (!held) return void f(e);
-      if (e.type.startsWith('key')) e.preventDefault();
-    };
-  const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
+  return {
+    key,
+    press,
+    typed,
+    /** Drops the held key and lets go of every key the guest has down. */
+    release() {
+      holding = undefined;
+      holders.clear();
+      text?.usb?.('', false);
+      for (const code of [...keys].reverse()) sendKey(code, 0);
+    },
+  };
+}
+
+/**
+ * The pointer (`attachInput`'s `tablet`, and the `Pointers`' `mouse` and `locked`) and the mouse lock: the tablet to
+ * the pointer, or while the element holds the mouse, the tablet by the motion (`pointer`) or the mouse (`raw`); the
+ * buttons as the guest sees them, on the port they were pressed on.
+ */
+function pointerMachine(el: HTMLElement, tablet: MessagePort | undefined, pointers: Pointers) {
   /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked in the `pointer` mode, the page's cursor. */
   const spot = { x: 16384, y: 16384 };
-  const abs = (e: MouseEvent) => {
+  const abs = (e: MouseEvent): EvdevEvent[] => {
     const r = el.getBoundingClientRect();
     [spot.x, spot.y] = [at(e.clientX - r.left, r.width), at(e.clientY - r.top, r.height)];
     return [
@@ -329,7 +322,7 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       [EV_ABS, 1, spot.y],
     ];
   };
-  const { mouse, touch } = pointers;
+  const { mouse } = pointers;
   const locked = () => document.pointerLockElement === el;
   let lockOn = false;
   let lockMode: LockMode = 'pointer';
@@ -341,14 +334,14 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
   /** Buttons held from before the lock (the click that took it): not the guest's until released. */
   let ignored = 0;
   /** What a pointer event moves: the tablet to the pointer; while locked, the tablet by the motion (`pointer`) or the mouse (`raw`). */
-  const motion = (e: PointerEvent): { port?: MessagePort; events: number[][] } => {
+  const motion = (e: PointerEvent): { port?: MessagePort; events: EvdevEvent[] } => {
     if (!locked()) return { port: tablet, events: abs(e) };
     if (raw())
       return {
         port: mouse,
         events: [
-          ...(e.movementX ? [[EV_REL, 0, e.movementX]] : []),
-          ...(e.movementY ? [[EV_REL, 1, e.movementY]] : []),
+          ...(e.movementX ? [[EV_REL, 0, e.movementX] as const] : []),
+          ...(e.movementY ? [[EV_REL, 1, e.movementY] as const] : []),
         ],
       };
     const r = el.getBoundingClientRect();
@@ -363,7 +356,11 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     };
   };
   const releaseButtons = () => {
-    if (buttons.size) buttonsOn?.postMessage([...[...buttons].map((b) => [EV_KEY, b, 0]), [EV_SYN, 0, 0]]);
+    if (buttons.size)
+      buttonsOn?.postMessage([
+        ...[...buttons].map((b): EvdevEvent => [EV_KEY, b, 0]),
+        [EV_SYN, 0, 0],
+      ] satisfies EvdevEvent[]);
     buttons.clear();
   };
   /** A mouse's (or a pen's) event: the motion and the buttons that changed, from `buttons` (a second button pressed while one is held comes as a move). */
@@ -380,10 +377,51 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       else buttons.delete(b);
       events.push([EV_KEY, b, down ? 1 : 0]);
     }
-    if (events.length) port.postMessage([...events, [EV_SYN, 0, 0]]);
+    if (events.length) port.postMessage([...events, [EV_SYN, 0, 0]] satisfies EvdevEvent[]);
   };
-  // The touchscreen: each finger a slot (by pointer id); the oldest finger down is also the single-touch position (as
-  // Linux's pointer emulation, input_mt_report_pointer_emulation, picks it), and BTN_TOUCH is from the first down to the last up.
+  const takeMouse = () => {
+    // The pointer mode moves as the host's pointer does (the browser's motion is accelerated as it is).
+    // A refusal (the browser's: too soon after Esc, no gesture) leaves the mouse the page's: the next click asks again.
+    const ask = () => Promise.resolve(el.requestPointerLock()).catch(() => {});
+    if (lockMode !== 'raw' || !mouse) return void ask();
+    // Raw, unadjusted: the mouse's own counts, without the host's acceleration (the guest has its own); not every platform has it.
+    const req = el.requestPointerLock as (o?: { unadjustedMovement?: boolean }) => Promise<void> | undefined;
+    try {
+      req.call(el, { unadjustedMovement: true })?.catch(ask);
+    } catch {
+      void ask();
+    }
+  };
+  return {
+    locked,
+    raw,
+    pointer,
+    releaseButtons,
+    /** A mouse's (or a pen's) pointerdown: the click that takes the mouse, or the guest's. */
+    down(e: PointerEvent) {
+      if (lockOn && !locked() && e.pointerType === 'mouse') {
+        // The click that takes the mouse isn't the guest's.
+        ignored = e.buttons;
+        el.focus();
+        takeMouse();
+        return;
+      }
+      if (!locked()) el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here (a locked pointer can't be captured)
+      pointer(e);
+    },
+    mouseLock: (on: boolean, mode = lockMode) => {
+      if (locked() && (!on || mode !== lockMode)) document.exitPointerLock();
+      [lockOn, lockMode] = [on, mode];
+    },
+  };
+}
+
+/**
+ * The touches (the `Pointers`' `touch`): with a touchscreen, each finger a slot (by pointer id); the oldest finger
+ * down is also the single-touch position (as Linux's pointer emulation, input_mt_report_pointer_emulation, picks it),
+ * and BTN_TOUCH is from the first down to the last up. Without one, the fingers that aren't the tablet's (`stray`).
+ */
+function touchMachine(el: HTMLElement, touch: MessagePort | undefined) {
   /** The fingers down, oldest first (a Map keeps its insertion order): their slots and last positions. */
   const fingers = new Map<number, { slot: number; x: number; y: number }>();
   let tracking = 0;
@@ -392,7 +430,7 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     const [x, y] = [at(e.clientX - r.left, r.width), at(e.clientY - r.top, r.height)];
     const lead = fingers.keys().next().value;
     let f = fingers.get(e.pointerId);
-    const ev: number[][] = [];
+    const ev: EvdevEvent[] = [];
     if (phase === 'down') {
       if (f) return;
       const used = new Set([...fingers.values()].map((g) => g.slot));
@@ -421,21 +459,20 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     const now = fingers.keys().next().value;
     const p = now === undefined ? undefined : fingers.get(now);
     if (p && (now !== lead || now === e.pointerId)) ev.push([EV_ABS, 0, p.x], [EV_ABS, 1, p.y]);
-    touch!.postMessage([...ev, [EV_SYN, 0, 0]]);
+    touch!.postMessage([...ev, [EV_SYN, 0, 0]] satisfies EvdevEvent[]);
   };
   const liftFingers = () => {
     if (!fingers.size) return;
     touch!.postMessage([
-      ...[...fingers.values()].flatMap(({ slot }) => [
+      ...[...fingers.values()].flatMap(({ slot }): EvdevEvent[] => [
         [EV_ABS, ABS_MT_SLOT, slot],
         [EV_ABS, ABS_MT_TRACKING_ID, -1],
       ]),
       [EV_KEY, BTN_TOUCH, 0],
       [EV_SYN, 0, 0],
-    ]);
+    ] satisfies EvdevEvent[]);
     fingers.clear();
   };
-  const touched = (e: PointerEvent) => !!touch && e.pointerType === 'touch';
   /**
    * Without a touchscreen, only a finger that lands on the element with no other finger on it is the tablet's (another
    * would move it there and lift its button): `tabletTouch`, its pointer, among `onEl`, the fingers on the element. The
@@ -456,81 +493,33 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     }
     return !mine;
   };
+  return {
+    finger,
+    stray,
+    /** The touchscreen's (`finger` takes it). */
+    touched: (e: PointerEvent) => !!touch && e.pointerType === 'touch',
+    /** Forgets the fingers on the element, and lifts the touchscreen's. */
+    release() {
+      tabletTouch = undefined;
+      onEl.clear();
+      if (touch) liftFingers();
+    },
+  };
+}
+
+/**
+ * The wheel: vertical, REL_WHEEL and REL_WHEEL_HI_RES, up positive (deltaY's opposite); horizontal, REL_HWHEEL and
+ * REL_HWHEEL_HI_RES, right positive. `turn` gives a wheel event's events (none: no notch's worth yet).
+ */
+function wheelMachine() {
   /** Each wheel's motion (vertical, horizontal) since it last turned: high-resolution units (120 a notch) not yet sent, and sent but not yet a notch. */
   const wheels = [
     { rest: 0, units: 0 },
     { rest: 0, units: 0 },
   ];
-  const takeMouse = () => {
-    // The pointer mode moves as the host's pointer does (the browser's motion is accelerated as it is).
-    // A refusal (the browser's: too soon after Esc, no gesture) leaves the mouse the page's: the next click asks again.
-    const ask = () => Promise.resolve(el.requestPointerLock()).catch(() => {});
-    if (lockMode !== 'raw' || !mouse) return void ask();
-    // Raw, unadjusted: the mouse's own counts, without the host's acceleration (the guest has its own); not every platform has it.
-    const req = el.requestPointerLock as (o?: { unadjustedMovement?: boolean }) => Promise<void> | undefined;
-    try {
-      req.call(el, { unadjustedMovement: true })?.catch(ask);
-    } catch {
-      void ask();
-    }
-  };
-  const releaseAll = () => {
-    holding = undefined;
-    holders.clear();
-    tabletTouch = undefined;
-    onEl.clear();
-    text?.usb?.('', false);
-    for (const code of [...keys].reverse()) sendKey(code, 0);
-    releaseButtons();
-    if (touch) liftFingers();
-    for (const f of released) f();
-  };
-  // A mouse's back and forward buttons: the guest's, not the browser's history (Chromium navigates on an uncancelled mouseup).
-  const sideButton = (e: MouseEvent) => {
-    if (e.button === 3 || e.button === 4) e.preventDefault();
-  };
-  const off = [
-    on(el, 'keydown', unlessHeld(key(1))),
-    on(el, 'keyup', unlessHeld(key(0))),
-    on(
-      el,
-      'pointerdown',
-      unlessHeld((e: PointerEvent) => {
-        if (touched(e)) return finger(e, 'down');
-        if (stray(e, 'down')) return;
-        if (lockOn && !locked() && e.pointerType === 'mouse') {
-          // The click that takes the mouse isn't the guest's.
-          ignored = e.buttons;
-          el.focus();
-          takeMouse();
-          return;
-        }
-        if (!locked()) el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here (a locked pointer can't be captured)
-        pointer(e);
-      }),
-    ),
-    on(
-      el,
-      'pointerup',
-      unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || pointer(e))),
-    ),
-    // A cancelled pointer (the browser took a touch, a pen left) sends no up: what it held is released.
-    on(el, 'pointercancel', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || releaseButtons())),
-    on(
-      el,
-      'pointermove',
-      unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e, 'move') || pointer(e))),
-    ),
-    on(el, 'mousedown', sideButton),
-    on(el, 'mouseup', sideButton),
-    on(el, 'auxclick', sideButton),
-    on(el, 'wheel', (e: WheelEvent) => {
-      if (held) return e.preventDefault();
-      const port = raw() ? mouse : tablet;
-      if (!port || (!e.deltaY && !e.deltaX)) return;
-      e.preventDefault();
-      const ev: number[][] = [];
-      // Vertical: REL_WHEEL and REL_WHEEL_HI_RES, up positive (deltaY's opposite); horizontal: REL_HWHEEL and REL_HWHEEL_HI_RES, right positive.
+  return {
+    turn(e: WheelEvent): EvdevEvent[] {
+      const ev: EvdevEvent[] = [];
       for (const [k, delta, dir, notch, hiRes] of [
         [0, e.deltaY, -1, 8, 11],
         [1, e.deltaX, 1, 6, 12],
@@ -556,7 +545,99 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
           w.units -= Math.sign(w.units) * 120;
         }
       }
-      if (ev.length) port.postMessage([...ev, [EV_SYN, 0, 0]]);
+      return ev;
+    },
+  };
+}
+
+/**
+ * Forwards `el`'s keyboard events to `keyboard` and its pointer and wheel
+ * events to `tablet` (0–32767 across the element's box as laid out, so CSS
+ * scaling doesn't matter), or to `pointers`' devices. `el` needs a tabindex to
+ * take the focus. Keys, buttons and touches held when `el` loses the focus, the
+ * window loses it or the page is hidden are released then (their keyup goes
+ * elsewhere: no stuck modifiers). A mouse's back and forward buttons are the
+ * guest's over `el`: the browser doesn't navigate.
+ *
+ * `text`: what takes the keys while the guest has no driver on its keyboard (`live` false): `usb`, the built-in USB
+ * keyboard (web/usb-keyboard.ts: every key, down and up, by `KeyboardEvent.code`; '' releases them all), when it says
+ * it took the key; else `send`, the serial console, as a terminal sends them (`terminalBytes`).
+ *
+ * `hold`: asked at each key down on the element (not a repeat); a promise holds the key: no `preventDefault`, so
+ * the browser's own action happens (a paste chord's `paste` event: web/app/clipboard.ts), and the key goes to the guest
+ * when the promise settles, and the element's key events that came meanwhile after it, in order (the chord's
+ * modifiers' releases among them; its own repeats dropped). A release (a blur) drops the held key and those.
+ */
+export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
+  const { tablet } = o;
+  const pointers: Pointers = { mouse: o.mouse, touch: o.touch, locked: o.locked };
+  const hooks = { hold: o.hold };
+  const on = <T extends EventTarget, E extends Event>(target: T, type: string, f: (e: E) => void) => {
+    target.addEventListener(type, f as EventListener);
+    return () => target.removeEventListener(type, f as EventListener);
+  };
+  const keys = keyMachine(o, hooks);
+  const ptr = pointerMachine(el, tablet, pointers);
+  const touches = touchMachine(el, pointers.touch);
+  const wheel = wheelMachine();
+  const { mouse } = pointers;
+  const released: (() => void)[] = [];
+  let held = false;
+  /** A listener that does nothing while the input is held (a key's browser action prevented). */
+  const unlessHeld =
+    <E extends Event>(f: (e: E) => unknown) =>
+    (e: E) => {
+      if (!held) return void f(e);
+      if (e.type.startsWith('key')) e.preventDefault();
+    };
+  const releaseAll = () => {
+    keys.release();
+    ptr.releaseButtons();
+    touches.release();
+    for (const f of released) f();
+  };
+  // A mouse's back and forward buttons: the guest's, not the browser's history (Chromium navigates on an uncancelled mouseup).
+  const sideButton = (e: MouseEvent) => {
+    if (e.button === 3 || e.button === 4) e.preventDefault();
+  };
+  const { finger, stray, touched } = touches;
+  const { pointer } = ptr;
+  const off = [
+    on(el, 'keydown', unlessHeld(keys.key(1))),
+    on(el, 'keyup', unlessHeld(keys.key(0))),
+    on(
+      el,
+      'pointerdown',
+      unlessHeld((e: PointerEvent) => {
+        if (touched(e)) return finger(e, 'down');
+        if (stray(e, 'down')) return;
+        ptr.down(e);
+      }),
+    ),
+    on(
+      el,
+      'pointerup',
+      unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || pointer(e))),
+    ),
+    // A cancelled pointer (the browser took a touch, a pen left) sends no up: what it held is released.
+    on(el, 'pointercancel', (e: PointerEvent) =>
+      touched(e) ? finger(e, 'up') : stray(e, 'up') || ptr.releaseButtons(),
+    ),
+    on(
+      el,
+      'pointermove',
+      unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e, 'move') || pointer(e))),
+    ),
+    on(el, 'mousedown', sideButton),
+    on(el, 'mouseup', sideButton),
+    on(el, 'auxclick', sideButton),
+    on(el, 'wheel', (e: WheelEvent) => {
+      if (held) return e.preventDefault();
+      const port = ptr.raw() ? mouse : tablet;
+      if (!port || (!e.deltaY && !e.deltaX)) return;
+      e.preventDefault();
+      const ev = wheel.turn(e);
+      if (ev.length) port.postMessage([...ev, [EV_SYN, 0, 0]] satisfies EvdevEvent[]);
     }),
     on(el, 'contextmenu', (e: Event) => e.preventDefault()),
     on(el, 'blur', releaseAll),
@@ -564,29 +645,26 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     on(document, 'visibilitychange', () => document.hidden && releaseAll()),
     // Taking the mouse or letting it go moves the buttons to the other device: what was held is released first.
     on(document, 'pointerlockchange', () => {
-      releaseButtons();
-      pointers.locked?.(locked());
+      ptr.releaseButtons();
+      pointers.locked?.(ptr.locked());
     }),
   ];
   return {
     detach() {
       releaseAll();
-      if (locked()) document.exitPointerLock();
+      if (ptr.locked()) document.exitPointerLock();
       off.forEach((f) => f());
       pointers.locked?.(false); // its pointerlockchange comes after the listener is gone
     },
-    mouseLock(on: boolean, mode = lockMode) {
-      if (locked() && (!on || mode !== lockMode)) document.exitPointerLock();
-      [lockOn, lockMode] = [on, mode];
-    },
+    mouseLock: ptr.mouseLock,
     key(code: string, down: boolean, event: KeyLike, from: KeySource = 'osk') {
-      if (!held || !down) press(code, down, event, from);
+      if (!held || !down) keys.press(code, down, event, from);
     },
     onRelease(f: () => void) {
       released.push(f);
     },
     onTyped(f: (code: string) => void) {
-      typed.push(f);
+      keys.typed.push(f);
     },
     release: releaseAll,
     hold(on: boolean) {
@@ -597,8 +675,8 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     chord(...codes: string[]) {
       const has = (side: string) => codes.some((c) => c.startsWith(side));
       const e: KeyLike = { key: '', ctrlKey: has('Control'), altKey: has('Alt'), metaKey: has('Meta') };
-      for (const c of codes) press(c, true, { ...e, key: keyName(c, has('Shift')) }, 'menu');
-      for (const c of [...codes].reverse()) press(c, false, { ...e, key: keyName(c, has('Shift')) }, 'menu');
+      for (const c of codes) keys.press(c, true, { ...e, key: keyName(c, has('Shift')) }, 'menu');
+      for (const c of [...codes].reverse()) keys.press(c, false, { ...e, key: keyName(c, has('Shift')) }, 'menu');
     },
   };
 }

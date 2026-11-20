@@ -10,7 +10,8 @@
 // no words, it posts messages (web/msg.ts) and errors (`toWire`) for the page to say. This module holds the run's state,
 // the start and the run loop; what a start fetches and makes is web/app/worker-start.ts's, snapshots and suspension
 // web/app/worker-snapshot.ts's.
-import { bootVm, compileCore, Exit, PSCI_SYSTEM_OFF, type Restore, type Vm } from '../vm.ts';
+import { bootVm, type Restore, type Vm } from '../vm.ts';
+import { compileCore, Exit, PSCI_SYSTEM_OFF } from '../core.ts';
 import { msg, MsgError } from '../msg.ts';
 import { dropSuspend, saveFlash } from '../overlay.ts';
 import { lzCodec } from '../lz.ts';

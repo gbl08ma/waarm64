@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { balloon, balloonEntry, CMD_DONE, CMD_STOP, F_FREE_PAGE_HINT, F_REPORTING, zeroPages } from '../web/balloon.ts';
-import type { Ctx, Request } from '../web/devices.ts';
+import type { Ctx, Request } from '../web/virtio.ts';
 
 const PAGE = 4096;
 

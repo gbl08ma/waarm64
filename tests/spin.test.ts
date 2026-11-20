@@ -11,7 +11,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { jitVariantSkip } from './jit-variants.ts';
-import { runToPowerOff, type BootOptions } from '../web/vm.ts';
+import type { BootOptions } from '../web/vm.ts';
+import { runToPowerOff } from '../web/test-guests.ts';
 
 // `WAARM64_CORE` (a path from the repo's root): another core (an A/B's base, say).
 const WASM = readFileSync(new URL(`../${process.env.WAARM64_CORE ?? 'target/wasm32-unknown-unknown/release/waarm64_core.wasm'}`, import.meta.url));

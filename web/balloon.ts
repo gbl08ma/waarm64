@@ -15,7 +15,7 @@
 //   uncommitted). A guest without it hands over blocks with their old bytes, and gains nothing.
 // The queues are compacted (virtio-mmio's Linux numbers only the queues it uses): inflateq 0, deflateq 1, then
 // free_page_vq and reporting_vq where their features were taken.
-import type { Backend, Ctx, Request } from './devices.ts';
+import type { Backend, Ctx, Request } from './virtio.ts';
 import { bytes } from './ram.ts';
 
 /** The device ID (`VIRTIO_ID_BALLOON`). */

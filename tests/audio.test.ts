@@ -6,7 +6,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CAPACITY, DROPPED, DROPS, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, WRITE, newRing, ringViews } from '../web/audio-ring.ts';
-import { FMT_FLOAT, FMT_S16, ringSink, type SndParams } from '../web/snd.ts';
+import { FMT_FLOAT, FMT_S16, type SndParams } from '../web/snd-proto.ts';
+import { ringSink } from '../web/snd-realtime.ts';
 import { flashProbe } from '../web/virgl-screen.ts';
 
 const P: SndParams = { bufferBytes: 4 * 4096, periodBytes: 4096, channels: 2, format: FMT_S16, rate: 48000 };

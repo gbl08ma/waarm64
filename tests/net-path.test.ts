@@ -1,8 +1,9 @@
-// The card's other path (web/devices.ts `net`, web/gateway.ts `FramePath`): an IP port's card put on a frame port of its
+// The card's other path (web/net-device.ts `net`, web/gateway.ts `FramePath`): an IP port's card put on a frame port of its
 // own (the local helper's client, web/local-net-worker.ts) and back, the link flapping under a driver.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FLAP_MS, HOLD_MS, net, type Ctx } from '../web/devices.ts';
+import { FLAP_MS, HOLD_MS, net } from '../web/net-device.ts';
+import type { Ctx } from '../web/virtio.ts';
 
 test("net: a card on an IP port goes to a frame port and back (the local helper's path), flapping the link under a driver", { timeout: 3 * FLAP_MS + 5000 }, async () => {
   const ram = new Uint8Array(1 << 16);

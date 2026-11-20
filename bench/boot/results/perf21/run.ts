@@ -2,7 +2,7 @@
 // (-DADDR=<register's PA, or RAM's 0x40000000> -DN=<iterations of 8 reads>, start.S and link.ld as tests/baremetal/build.sh's);
 // env NCPUS (1), PAR (1: parallel SMP, realtime), JIT (1), RUNS (5), WASM, FW (the firmware configuration), OUT (JSON).
 import { readFileSync, writeFileSync } from 'node:fs';
-import { runToPowerOff } from '../../../../web/vm.ts';
+import { runToPowerOff } from '../../../../web/test-guests.ts';
 const WASM = readFileSync(process.env.WASM ?? new URL('../../../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const mod = await WebAssembly.compile(WASM);
 const base = { ncpus: Number(process.env.NCPUS ?? 1), jit: Number(process.env.JIT ?? 1) as 0 | 1 | 2 | 3, parallel: process.env.PAR !== '0', realtime: true, idleLimitMs: 20_000 };

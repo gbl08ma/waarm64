@@ -7,8 +7,8 @@
 // (`setTimeout(0)`, measured: twice the upload of a microtask's batches at the same round trip, bench/net/REPORT.md
 // "The local helper"). It runs in a worker of its own (web/local-net-worker.ts: off the page's main thread), behind the tailnet clients' handle
 // (`startLocal`), so the page's network drives it as it drives them.
-import { fromWire, msg, MsgError, type Msg } from './msg.ts';
-import { workerFailures, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
+import { msg, MsgError, type Msg } from './msg.ts';
+import { workerHandle, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
 
 /** The framing's name and version, checked by both ends (waarm64-net `Subprotocol`). */
 export const LOCAL_SUBPROTOCOL = 'waarm64-net.v1';
@@ -137,6 +137,80 @@ export function dhcpAck(f: Uint8Array, mac: Uint8Array): { address: string; mtu?
   return ack ? { address: Array.from(f.subarray(d + 16, d + 20)).join('.'), mtu } : undefined;
 }
 
+/** A card's frame port as the frame path posts to it (a `MessagePort`; the demo network's tests' fake). */
+type FrameSink = { postMessage(data: ArrayBuffer, transfer: Transferable[]): void };
+
+/**
+ * The frame path this client and the demo network's (web/demo-net.ts) share between the card and a socket: the guest's
+ * frames batched into one message per timer's turn, at most `maxMessage` (`LOCAL_MAX_MESSAGE`); the guest's MAC, from
+ * the first unicast source of its frames (its DHCP acknowledgments are the ones for it); and a message's frames to the
+ * card, an acknowledgment for the guest kept as its lease (`leased` hears it). The client owns the socket: a batch is
+ * sent while `ready()`, else dropped.
+ */
+export function framePath(o: {
+  maxMessage: number;
+  ready: () => boolean;
+  send: (message: Uint8Array<ArrayBuffer>) => void;
+  leased: () => void;
+  setTimeout?: (f: () => void, ms: number) => unknown;
+}) {
+  const later = o.setTimeout ?? ((f: () => void, ms: number) => setTimeout(f, ms));
+  const stats = { rxFrames: 0, txFrames: 0, rxBytes: 0, txBytes: 0, rxMessages: 0, txMessages: 0 };
+  let mac: Uint8Array | undefined;
+  let lease: { address: string; mtu?: number } | undefined;
+  let batch: Uint8Array[] = [];
+  let batchBytes = 0;
+  const flush = () => {
+    const b = batch;
+    batch = [];
+    batchBytes = 0;
+    if (!o.ready() || !b.length) return;
+    stats.txMessages++;
+    o.send(frameMessage(b));
+  };
+  return {
+    stats,
+    lease: () => lease,
+    /** A frame from the card's port: counted, its source taken for the guest's MAC. */
+    frame(e: MessageEvent): Uint8Array {
+      const f = new Uint8Array(e.data as ArrayBuffer);
+      if (!mac && f.length >= 14 && !(f[6] & 1)) mac = f.slice(6, 12);
+      stats.txFrames++;
+      stats.txBytes += f.length;
+      return f;
+    },
+    /** Into the batch, which goes out at the timer's turn (or now, before it would pass `maxMessage`). */
+    queue(f: Uint8Array) {
+      if (batchBytes + 4 + f.length > o.maxMessage) flush();
+      if (!batch.length) later(flush, 0);
+      batch.push(f);
+      batchBytes += 4 + f.length;
+    },
+    /** The batch dropped (the socket closed). */
+    drop() {
+      batch = [];
+      batchBytes = 0;
+    },
+    /** A socket's binary message to the card: false when it isn't whole frames. */
+    receive(data: ArrayBuffer, to: FrameSink): boolean {
+      const got = framesOf(new Uint8Array(data));
+      if (!got) return false;
+      stats.rxMessages++;
+      for (const f of got) {
+        stats.rxFrames++;
+        stats.rxBytes += f.length;
+        const ack = mac && dhcpAck(f, mac); // its first checks (the length, IPv4, UDP) turn other frames away at once
+        if (ack) {
+          lease = ack;
+          o.leased();
+        }
+        to.postMessage(f.buffer as ArrayBuffer, [f.buffer]);
+      }
+      return true;
+    },
+  };
+}
+
 export type LocalState = 'connecting' | 'connected' | 'closed';
 
 export type LocalNet = {
@@ -164,7 +238,6 @@ export type LocalNet = {
 export function startLocalNet(url: string, frames: MessagePort, onChange: () => void = () => {}): LocalNet {
   let state: LocalState = 'connecting';
   let error: Error | undefined;
-  const stats = { rxFrames: 0, txFrames: 0, rxBytes: 0, txBytes: 0, rxMessages: 0, txMessages: 0 };
   let ws: WebSocket;
   try {
     ws = new WebSocket(url, LOCAL_SUBPROTOCOL);
@@ -172,6 +245,7 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
     // a URL the browser refuses outright (a port it blocks, such as 6000)
     const failed = new MsgError('network:local-net.unreached', undefined, { cause: e });
     queueMicrotask(onChange);
+    const stats = { rxFrames: 0, txFrames: 0, rxBytes: 0, txBytes: 0, rxMessages: 0, txMessages: 0 };
     return {
       state: () => 'closed',
       error: () => failed,
@@ -181,29 +255,13 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
     };
   }
   ws.binaryType = 'arraybuffer';
-  /** The guest's MAC, from the first unicast source of its frames (its DHCP acknowledgments are the ones for it). */
-  let mac: Uint8Array | undefined;
-  let pending: Uint8Array[] = [];
-  let pendingBytes = 0;
-  let lease: { address: string; mtu?: number } | undefined;
-  const flush = () => {
-    const b = pending;
-    pending = [];
-    pendingBytes = 0;
-    if (ws.readyState !== WebSocket.OPEN || !b.length) return;
-    stats.txMessages++;
-    ws.send(frameMessage(b));
-  };
-  frames.onmessage = (e: MessageEvent) => {
-    const f = new Uint8Array(e.data as ArrayBuffer);
-    if (!mac && f.length >= 14 && !(f[6] & 1)) mac = f.slice(6, 12);
-    stats.txFrames++;
-    stats.txBytes += f.length;
-    if (pendingBytes + 4 + f.length > LOCAL_MAX_MESSAGE) flush();
-    if (!pending.length) setTimeout(flush, 0);
-    pending.push(f);
-    pendingBytes += 4 + f.length;
-  };
+  const path = framePath({
+    maxMessage: LOCAL_MAX_MESSAGE,
+    ready: () => ws.readyState === WebSocket.OPEN,
+    send: (m) => ws.send(m),
+    leased: onChange,
+  });
+  frames.onmessage = (e: MessageEvent) => path.queue(path.frame(e));
   ws.onopen = () => {
     if (ws.protocol !== LOCAL_SUBPROTOCOL) {
       error = closeError(4001);
@@ -214,22 +272,9 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
     onChange();
   };
   ws.onmessage = (e: MessageEvent) => {
-    const got = framesOf(new Uint8Array(e.data as ArrayBuffer));
-    if (!got) {
+    if (!path.receive(e.data as ArrayBuffer, frames)) {
       error = new MsgError('network:local-net.notFrames');
       ws.close();
-      return;
-    }
-    stats.rxMessages++;
-    for (const f of got) {
-      stats.rxFrames++;
-      stats.rxBytes += f.length;
-      const ack = mac && dhcpAck(f, mac); // its first checks (the length, IPv4, UDP) turn other frames away at once
-      if (ack) {
-        lease = ack;
-        onChange();
-      }
-      frames.postMessage(f.buffer, [f.buffer]);
     }
   };
   ws.onclose = (e: CloseEvent) => {
@@ -248,8 +293,8 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   return {
     state: () => state,
     error: () => (state === 'closed' ? error : undefined),
-    stats: () => ({ ...stats }),
-    lease: () => lease,
+    stats: () => ({ ...path.stats }),
+    lease: path.lease,
     close() {
       frames.onmessage = null;
       frames.close(); // the socket's late messages post into nothing
@@ -299,47 +344,26 @@ export function framedClient(
   onEvent: (m: FromTailscale) => void,
   noExits: () => Error,
 ): Tailscale {
-  let detached: ((ip?: MessagePort) => void) | undefined;
   let state = '';
   let netmap: NetMap | undefined;
-  const t0 = performance.now();
-  const timings: { loadMs?: number; runningMs?: number } = {};
-  const running = new Promise<NetMap>((resolve, reject) => {
-    const heard = (m: FromTailscale) => {
-      if (m.type === 'state') {
-        state = m.state;
-        if (state === 'Running') {
-          timings.runningMs ??= performance.now() - t0;
-          resolve(netmap ?? localNetmap(undefined));
-        }
-      } else if (m.type === 'netmap') netmap = m.netmap;
-      else if (m.type === 'detached') detached?.(m.ip);
-      else if (m.type === 'error') reject(fromWire(m.error));
-      onEvent(m);
-    };
-    worker.onmessage = (e: MessageEvent<FromTailscale>) => heard(e.data);
-    workerFailures(worker, (error) => heard({ type: 'error', error }));
+  const h = workerHandle<FromTailscale, NetMap>(worker, (m) => {
+    if (m.type === 'state') {
+      state = m.state;
+      if (state === 'Running') h.ran(netmap ?? localNetmap(undefined));
+    } else if (m.type === 'netmap') netmap = m.netmap;
+    onEvent(m);
   });
-  running.catch(() => {});
   worker.postMessage({ type: 'start', url: config.url, ip: config.ip } satisfies ToLocal, [config.ip]);
   const refuse = () => Promise.reject(noExits());
   return {
     state: () => state,
     netmap: () => netmap,
     loginURL: () => undefined,
-    running,
-    timings: () => timings,
+    running: h.running,
+    timings: h.timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToLocal, [ip]),
     setPrimary: () => {}, // the far end's DHCP always routes everything through it (network.ts `primaryOf` ranks it first)
-    detach: () =>
-      new Promise((resolve) => {
-        const t = setTimeout(() => resolve(undefined), 3000);
-        detached = (ip) => {
-          clearTimeout(t);
-          resolve(ip);
-        };
-        worker.postMessage({ type: 'detach' } satisfies ToLocal);
-      }),
+    detach: h.detach,
     setExitNode: refuse,
     setAcceptRoutes: () => {},
     logout: () => Promise.resolve(),

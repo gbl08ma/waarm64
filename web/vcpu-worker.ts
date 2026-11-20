@@ -6,7 +6,7 @@
 // coordinator drain the console on TX_FULL, and reports the exit that ends
 // its run (PSCI, UNIMPLEMENTED, STOP) or its error to the coordinator
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
-import { EV_CONFIG, ring } from './devices.ts';
+import { EV_CONFIG, ring } from './virtio.ts';
 import { livenessWriter } from './liveness.ts';
 import {
   clockOffset,
@@ -17,7 +17,7 @@ import {
   withPanic,
   type Stall,
   type ThreadBlock,
-} from './vm.ts';
+} from './core.ts';
 
 export type VcpuJob = {
   module: WebAssembly.Module;
@@ -36,7 +36,7 @@ export type VcpuJob = {
   /** The start word (web/vm.ts `S_START`): each worker bumps it once instantiated and waits until all `ncpus` have. */
   start: number;
   ncpus: number;
-  /** Test only: stalls this worker (web/vm.ts `Stall`). */
+  /** Test only: stalls this worker (web/core.ts `Stall`). */
   stall?: Stall[];
   /** The vCPUs' liveness block (web/liveness.ts): this worker writes its slot. */
   live?: Float64Array;
@@ -53,7 +53,7 @@ export type VcpuJob = {
 export type VcpuEnd =
   | { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] }
   | { type: 'error'; cpu: number; message: string };
-/** A clock query to the coordinator (web/vm.ts `clockOffset`) and its answer, `t` its clock. */
+/** A clock query to the coordinator (web/core.ts `clockOffset`) and its answer, `t` its clock. */
 export type VcpuClock = { type: 'clock'; t?: number };
 
 type Ex = {

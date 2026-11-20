@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { baseHash, hashSource, loadChanges } from '../web/changes.ts';
-import type { Source } from '../web/devices.ts';
+import type { Source } from '../web/disk-sources.ts';
 import { msgOf } from '../web/msg.ts';
 import { t } from '../web/i18n.ts';
 import { lockOverlay, openOverlay, overlay, overlayMeta, writeMeta, writeOwnSize } from '../web/overlay.ts';

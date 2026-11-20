@@ -1,6 +1,7 @@
 // Ad hoc: the heap after N `b .+4` blocks (old or new core). Args: blocks, heap reserve MiB.
 import { readFileSync } from 'node:fs';
-import { runToPowerOff, type Vm } from '../../../../../../web/vm.ts';
+import type { Vm } from '../../../../../../web/vm.ts';
+import { runToPowerOff } from '../../../../../../web/test-guests.ts';
 const WASM = readFileSync(process.env.WEBPC_WASM ?? new URL('../../../../../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const MiB = 1 << 20;
 const n = Number(process.argv[2]);

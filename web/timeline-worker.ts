@@ -2,7 +2,7 @@
 // memory, every `periodMs` it reads each vCPU's counters block (published at every chunk's end, 32768 steps) and its
 // liveness slot, until ctl[0] is set; then replies with the rows. Sleeps between reads (no spinning).
 import { CHUNKS, ENTERED, SLOTS } from './liveness.ts';
-import { Counter } from './vm.ts';
+import { Counter } from './counters.ts';
 import { TIMELINE_FIELDS, type Timeline } from './profiler.ts';
 
 type Start = {

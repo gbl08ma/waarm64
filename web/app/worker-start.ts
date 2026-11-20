@@ -1,15 +1,7 @@
 // A machine's start in the machine worker (web/app/worker.ts `start`): what it fetches, the machine it makes (the
 // page's, or a snapshot's), the options `bootVm` takes, and the framebuffer's screen.
-import {
-  FLASH_SIZE,
-  splitError,
-  splitRam,
-  warmWorkers,
-  type BootOptions,
-  type Restore,
-  type Vm,
-  type WarmWorkers,
-} from '../vm.ts';
+import { FLASH_SIZE, splitError, splitRam, type BootOptions, type Restore, type Vm } from '../vm.ts';
+import { warmWorkers, type WarmWorkers } from '../warm-workers.ts';
 import { msg, MsgError } from '../msg.ts';
 import { VENUS_RESERVE } from '../ram.ts';
 import { dropSuspend, loadFlash, overlayMeta, suspended } from '../overlay.ts';
@@ -247,7 +239,7 @@ const spiderMonkey = 'InternalError' in globalThis;
 /** The start's workers started ahead (`warming`). */
 let warm: WarmWorkers | undefined;
 /**
- * A start's workers started ahead of its `bootVm` (web/vm.ts `warmWorkers`), which takes them: the device worker
+ * A start's workers started ahead of its `bootVm` (web/warm-workers.ts `warmWorkers`), which takes them: the device worker
  * only, at once for a boot (`begin`), beside a snapshot's check pass (`pooled`: once the load's pool is up). The vCPU
  * workers and the compile worker too took ~80-100 ms more of a desktop snapshot's check pass than they saved after it
  * (bench/boot/REPORT.md "SNAPZ loop 7"): they start at the machine's first run, as they did. A start ends the last

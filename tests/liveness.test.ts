@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { livenessWriter, newLiveness, readLiveness } from '../web/liveness.ts';
-import { runToPowerOff, type Vm } from '../web/vm.ts';
+import type { Vm } from '../web/vm.ts';
+import { runToPowerOff } from '../web/test-guests.ts';
 
 test('a chunk, its host work and a stall in progress', () => {
   let t = 1000;

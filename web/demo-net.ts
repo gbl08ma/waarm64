@@ -9,7 +9,7 @@
 // unreachable). No pairing, no token, no Local Network Access (a public `wss://` URL). DOM-free, its socket and
 // timers given (`DemoEnv`), so tests/demo-net.test.ts runs it against a fake server in Node; web/demo-net-worker.ts
 // runs it in a worker of its own.
-import { dhcpAck, frameMessage, framedClient, framesOf } from './local-net.ts';
+import { framedClient, framePath } from './local-net.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
@@ -266,15 +266,12 @@ export function startDemoNet(
     said = n.kind;
     hooks.notice?.(n);
   };
-  const stats = { rxFrames: 0, txFrames: 0, rxBytes: 0, txBytes: 0, sockets: 0 };
+  let sockets = 0;
   const status: DemoStatus = { phase: 'connecting', again: false };
   let port = frames;
   let ws: SocketLike | undefined;
   let error: Error | undefined;
   let stopped = false;
-  let lease: { address: string; mtu?: number } | undefined;
-  /** The guest's MAC, from the first unicast source of its frames (its DHCP acknowledgments are the ones for it). */
-  let mac: Uint8Array | undefined;
   /** This socket's: it opened, its `hello` came, its `closing` message (the last before the server's close). */
   let opened = false;
   let hello = false;
@@ -288,9 +285,7 @@ export function startDemoNet(
   let timer: unknown;
   let asker: unknown;
   let asked = -1;
-  /** The guest's frames: a batch for the timer's turn, and those held while a socket opens. */
-  let batch: Uint8Array[] = [];
-  let batchBytes = 0;
+  /** The guest's frames held while a socket opens. */
   let held: Uint8Array[] = [];
   let heldBytes = 0;
 
@@ -303,25 +298,18 @@ export function startDemoNet(
     timer = undefined;
   };
 
-  const flush = () => {
-    const b = batch;
-    batch = [];
-    batchBytes = 0;
-    if (!ws || !hello || ws.readyState !== 1 || !b.length) return;
-    ws.send(frameMessage(b));
-  };
-  const send = (f: Uint8Array) => {
-    if (batchBytes + 4 + f.length > DEMO_MAX_MESSAGE) flush();
-    if (!batch.length) env.setTimeout(flush, 0);
-    batch.push(f);
-    batchBytes += 4 + f.length;
-  };
+  /** The guest's frames batched for the timer's turn, the socket's to the card (web/local-net.ts). */
+  const path = framePath({
+    maxMessage: DEMO_MAX_MESSAGE,
+    ready: () => !!ws && hello && ws.readyState === 1,
+    send: (m) => ws!.send(m),
+    leased: change,
+    setTimeout: (f, ms) => env.setTimeout(f, ms),
+  });
+  const { stats } = path;
   const onFrame = (e: MessageEvent) => {
-    const f = new Uint8Array(e.data as ArrayBuffer);
-    if (!mac && f.length >= 14 && !(f[6] & 1)) mac = f.slice(6, 12);
-    stats.txFrames++;
-    stats.txBytes += f.length;
-    if (status.phase === 'connected') return send(f);
+    const f = path.frame(e);
+    if (status.phase === 'connected') return path.queue(f);
     if (status.phase === 'idle') open(); // 4012: the guest woke; this frame and those after it wait for the `hello`
     if (status.phase === 'connecting' && heldBytes + f.length <= DEMO_HOLD) {
       held.push(f);
@@ -356,7 +344,7 @@ export function startDemoNet(
       return end(new MsgError('network:demo-net.unreached', undefined, { cause: e }));
     }
     ws = s;
-    stats.sockets++;
+    sockets++;
     s.binaryType = 'arraybuffer';
     s.onopen = () => {
       if (s !== ws) return;
@@ -370,21 +358,9 @@ export function startDemoNet(
     s.onmessage = (e) => {
       if (s !== ws) return;
       if (typeof e.data === 'string') return control(e.data);
-      const got = framesOf(new Uint8Array(e.data as ArrayBuffer));
-      if (!got) {
+      if (!path.receive(e.data as ArrayBuffer, port)) {
         error = new MsgError('network:demo-net.notFrames');
         s.close();
-        return;
-      }
-      for (const f of got) {
-        stats.rxFrames++;
-        stats.rxBytes += f.length;
-        const ack = mac && dhcpAck(f, mac);
-        if (ack) {
-          lease = ack;
-          change();
-        }
-        port.postMessage(f.buffer as ArrayBuffer, [f.buffer]);
       }
     };
     s.onclose = (e) => {
@@ -418,7 +394,7 @@ export function startDemoNet(
         if (st) status.status = st;
         const h = held;
         [held, heldBytes] = [[], 0];
-        for (const f of h) send(f);
+        for (const f of h) path.queue(f);
         if (asker === undefined) ask();
         break;
       }
@@ -513,7 +489,8 @@ export function startDemoNet(
 
   function closed(code: number, reason: string) {
     ws = undefined;
-    [batch, batchBytes, held, heldBytes] = [[], 0, [], 0];
+    path.drop();
+    [held, heldBytes] = [[], 0];
     if (stopped) return;
     const was = hello;
     if (was) status.again = true;
@@ -567,8 +544,14 @@ export function startDemoNet(
     state: () => (error ? 'closed' : status.phase),
     status: () => structuredClone(status),
     error: () => error,
-    lease: () => lease,
-    stats: () => ({ ...stats }),
+    lease: path.lease,
+    stats: () => ({
+      rxFrames: stats.rxFrames,
+      txFrames: stats.txFrames,
+      rxBytes: stats.rxBytes,
+      txBytes: stats.txBytes,
+      sockets,
+    }),
     setFrames(f) {
       port.onmessage = null;
       port = f;

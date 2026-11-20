@@ -9,7 +9,8 @@
 // Core paths are relative to the repo's root. `node bench/interp/paired.ts --summary <json>...` sums
 // up runs (Node's OUT=<json>, or bench/run.ts's --out), pooled.
 import type { Options, Sample } from '../spike/benchmarks.ts';
-import { ABI, bootVm, coreImports } from '../../web/vm.ts';
+import { ABI, bootVm } from '../../web/vm.ts';
+import { coreImports } from '../../web/core.ts';
 import { JIT_INTERP } from './suite.ts';
 
 const RAM = 16 << 20;

@@ -1,5 +1,5 @@
 // Loads the wasm core in a worker on shared memory, as a vCPU worker will.
-import { coreImports } from '../../web/vm.ts';
+import { coreImports } from '../../web/core.ts';
 
 try {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });

@@ -25,7 +25,13 @@ WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the
 - The page must be **cross-origin isolated** (COOP/COEP) for `SharedArrayBuffer`; everything that
   runs in the browser works with it on (Vite's servers, `tools/serve.ts`, and the static copy's `_headers` set them).
 - `web/vm.ts` is the host side of the ABI: it instantiates the core, boots a VM (`bootVm`), runs it
-  (`run`, `runAsync`, `runToPowerOff`), handles exits, and hosts the JIT's installs.
+  (`run`, `runAsync`) and handles exits. Beside it: `web/core.ts` (the core instance's plumbing: its imports, the
+  exact-memory copy, more instances on one memory, the VmConfig's words), `web/jit-host.ts` (the JIT's installs),
+  `web/counters.ts`, `web/coordinator.ts` (parallel SMP), `web/device-host.ts` (the device backends' owner),
+  `web/warm-workers.ts`, and `web/test-guests.ts` (the tests' guests and `runToPowerOff`). The devices: `web/devices.ts`
+  (the specs and `Devices`), `web/virtio.ts` (the shared layout, `Backend`, the doorbell), and a module per larger
+  backend (`web/blk-device.ts`, `web/net-device.ts`, `web/input-device.ts`, the disks' sources in
+  `web/disk-sources.ts`).
   `tests/browser/boot.html` and the bench pages run it in a worker; Node runs it directly (devices
   inline). **Parallel SMP** (M7): that thread becomes a coordinator; each vCPU runs in its own
   worker (`web/vcpu-worker.ts`: its own core instance, table and JIT code on the one memory),

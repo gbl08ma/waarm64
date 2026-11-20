@@ -13,7 +13,7 @@ import { checkSndGuest } from './snd/guest.ts';
 import { checkUsbGuest, checkUsbHubs } from './usb/guest.ts';
 import { STEPS } from './steps.ts';
 import type { SndState } from '../web/snd.ts';
-import { CONSOLE_INPUT_WANT } from '../web/vm.ts';
+import { CONSOLE_INPUT_WANT } from '../web/test-guests.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
@@ -108,7 +108,7 @@ for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], [
   });
 }
 
-// Console input (M8 loop 1, web/vm.ts `CONSOLE_INPUT`): a shell on the console
+// Console input (M8 loop 1, web/test-guests.ts `CONSOLE_INPUT`): a shell on the console
 // reads what the host sends through the PL011's RX ring, more than the ring
 // holds; deterministic under the JIT at its step count, and in parallel on 2 vCPUs.
 for (const [mode, query] of [['deterministic JIT', 'jit=1'], ['parallel JIT, 2 vCPUs', 'jit=1&parallel&ncpus=2']]) {

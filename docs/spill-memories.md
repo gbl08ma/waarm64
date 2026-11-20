@@ -169,7 +169,7 @@ access's guards again. On a match, the access's body runs again with the host of
 guest RAM accesses naming memory 1. Everything else (a miss, another spill memory, a failed guard) goes to the helper
 as before.
 - **Multi-memory.** JIT modules of a machine with spill memory import memory 1 as `env.ram1`, with exact limits
-  (`jit::Config::spill`, from `VmConfig.spill`; web/vm.ts's `jitHost` passes it, ABI 52). The bodies write their RAM
+  (`jit::Config::spill`, from `VmConfig.spill`; web/jit-host.ts's `jitHost` passes it, ABI 52). The bodies write their RAM
   accesses through `Code::ram`, `ram_atomic` and `ram_simd`, which add the memory index to the memarg while
   `Code::ram_mem` is set; `Vcpu` fields, the pair locks and the clock stay on memory 0. V8 reaches memory 1 through
   its guard region, as memory 0 (no bounds check), with its base loaded from the instance.

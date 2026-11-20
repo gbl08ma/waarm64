@@ -15,7 +15,9 @@ import { crc32 as zlibCrc32 } from 'node:zlib';
 import { applyRam, crc32, frameHeader, openSnapshot, SnapshotError, SnapshotWriter, type LoadPool, type RamPool, type SnapshotHeader } from '../web/snapshot-file.ts';
 import { poolSize, startPool } from '../web/snapshot-pool.ts';
 import { STEPS } from './steps.ts';
-import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, compileCore, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
+import { ABI, bootVm, type BootOptions } from '../web/vm.ts';
+import { Exit, PSCI_SYSTEM_OFF, compileCore } from '../web/core.ts';
+import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff } from '../web/test-guests.ts';
 
 const WASM = await compileCore(readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)));
 const IMAGES = new URL('../target/images/', import.meta.url);

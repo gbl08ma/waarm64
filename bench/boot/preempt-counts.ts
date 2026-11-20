@@ -13,7 +13,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { boot } from './suite.ts';
-import { compileCore, Counter, DISTROS } from '../../web/vm.ts';
+import { compileCore } from '../../web/core.ts';
+import { Counter } from '../../web/counters.ts';
+import { DISTROS } from '../../web/test-guests.ts';
 
 /** core/src/tally.rs's slots. */
 const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];

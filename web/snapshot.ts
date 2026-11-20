@@ -42,17 +42,9 @@ import {
 } from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
 import { zeroDisk } from './stored.ts';
-import {
-  ABI,
-  bootVm,
-  compileCore,
-  Exit,
-  type BootOptions,
-  type ConsoleInput,
-  type Restore,
-  type Vm,
-  type VmState,
-} from './vm.ts';
+import { ABI, bootVm, type BootOptions, type Restore, type Vm, type VmState } from './vm.ts';
+import { compileCore, Exit } from './core.ts';
+import type { ConsoleInput } from './test-guests.ts';
 
 /**
  * Each memory's first RAM chunk in the file, for memories of `sizes` bytes (memory 0's RAM, then the spill memories,

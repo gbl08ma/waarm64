@@ -14,7 +14,8 @@ import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
 import { swapHeader } from '../web/ramdisk.ts';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
 import { SNAPSHOT_VERSION, SnapshotError } from '../web/snapshot-file.ts';
-import { bootVm, compileCore, type BootOptions } from '../web/vm.ts';
+import { bootVm, type BootOptions } from '../web/vm.ts';
+import { compileCore } from '../web/core.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const KERNEL = readFileSync(new URL('baremetal/uart.bin', import.meta.url));

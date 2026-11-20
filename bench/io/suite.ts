@@ -1,5 +1,5 @@
 // Disk I/O on a chosen disk: a `File` the user picked, read with FileReaderSync, under an OPFS overlay
-// (web/devices.ts `blobSource`, web/overlay.ts), as the page's "Open disk…" makes it (M8 track IOSPEED, loop 0).
+// (web/disk-sources.ts `blobSource`, web/overlay.ts), as the page's "Open disk…" makes it (M8 track IOSPEED, loop 0).
 // The Buildroot kernel boots its read-only root on /dev/vda; the disk under test is /dev/vdb, 256 MiB. The
 // guest side is bench/io/guest.sh, mounted over 9p. Realtime mode, one fresh boot and overlay per sample.
 //   node bench/run.ts --page bench/io/index.html --input target/bench/io-raw.img [--only io]

@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { runToPowerOff } from '../web/vm.ts';
+import { runToPowerOff } from '../web/test-guests.ts';
 
 const T = new URL('../target/', import.meta.url);
 const IMAGE = new URL('images/linux-gpu/Image', T);

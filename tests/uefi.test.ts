@@ -13,7 +13,8 @@ import { describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { fatImage } from '../web/fat.ts';
 import type { DeviceSpec } from '../web/devices.ts';
-import { Exit, bootVm, type BootOptions } from '../web/vm.ts';
+import { bootVm, type BootOptions } from '../web/vm.ts';
+import { Exit } from '../web/core.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);

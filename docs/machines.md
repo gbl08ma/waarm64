@@ -665,7 +665,7 @@ budget, the status bar. A disk's map (its "visualize" link in the Disks pane and
   `surface-worker.ts` (from the files), `surface-source.ts` (live or the files), `surface-poll.svelte.ts`,
   `surface-look.ts`, `SurfaceWindow.svelte`, `SurfaceLegend.svelte`, `SurfaceDetails.svelte`, `VisualizeLine.svelte`,
   `areas/surface.svelte.ts`; the device's side is `blk`'s `inspect` (devices.md "blk").
-- `web/devices.ts`: the `zero` and `ram` sources, a stored disk under an overlay or written in place, the generation
+- `web/devices.ts` and `web/blk-device.ts`: the `zero` (web/disk-sources.ts) and `ram` sources, a stored disk under an overlay or written in place, the generation
   bump, the serial in `GET_ID`. `web/ramdisk.ts`, `web/stored.ts`, `web/overlay.ts` (overlays by path, `meta`, the
   generation, `overlayMeta`, `removeOverlay`, `overlayBytes`, the suspend writer).
 - `web/snapshot.ts`: the pins and the restore's actions (keep, fork, replace, the ramdisk's blocks).

@@ -2,7 +2,7 @@
 // used kept in memory, so a guest's many small reads (and qcow2's L2 tables and nearby clusters) are a few large
 // requests. A read's missing blocks are fetched together where they are adjacent: one request each run. Over a source
 // that reads without blocking (`readAsync`), several reads fetch at once and a block being fetched is fetched once.
-import type { Source } from './devices.ts';
+import type { Source } from './disk-sources.ts';
 import type { BlockStore } from './diskcache.ts';
 
 export type BlockCacheOptions = {

@@ -6,7 +6,9 @@
 // With a core built with one of bench/boot/results/m8-userprof/*.patch (diagnostics, not for
 // commit) it also prints why blocks returned to the dispatcher and the transfers between blocks.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { bootVm, DISTROS, Exit, guestDevices } from '../../web/vm.ts';
+import { bootVm } from '../../web/vm.ts';
+import { Exit } from '../../web/core.ts';
+import { DISTROS, guestDevices } from '../../web/test-guests.ts';
 
 type Stats = { tlbMisses: number; tlbFlushes: number; jit: { steps: number; dispatches: number; blocks: number; tierUps: number; modules: number; bytes: number; compileNs: number; regionBlocks: number } };
 type Mark = { name: string; ms: number; mono: number; steps: number; stats: Stats; report: { op: string; calls: number }[] };

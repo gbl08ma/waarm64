@@ -1134,7 +1134,7 @@ it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhase
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
 touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
 `disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the core instantiated, the
-devices' state put back in the device worker, which is started beside the check pass: web/vm.ts `warmWorkers`; the
+devices' state put back in the device worker, which is started beside the check pass: web/warm-workers.ts `warmWorkers`; the
 vCPU workers start after, at the first run) and `total` (from the worker's start); over the restore's pass, `read`, `crc`, `unpack` and
 `apply` (RAM's placing); `pool` (the load's workers, 0: the machine worker did it all: platform.md "A load's pool"),
 with which `checkCrc` and RAM's share of `crc`, `unpack` and `apply` are the workers' sums (CPU time, up to `pool` times
@@ -1877,7 +1877,7 @@ qcow2 is told by the file's magic (an ISO is raw: EDK2 boots its El Torito or hy
 booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file is a changes file: it is loaded, below, not booted).
 - The `File` goes to the machine worker in `start.disk`, then, structured-cloned inside the
   device spec (`{type: 'blk', file}`), to the device worker, which reads slices with
-  `FileReaderSync` (web/devices.ts `blobSource`); its capacity is the qcow2 header's virtual size or
+  `FileReaderSync` (web/disk-sources.ts `blobSource`); its capacity is the qcow2 header's virtual size or
   the file's size (web/vm.ts).
 - **Its changes are its own:** the overlay is `waarm64-disk-<hash>` (`diskOverlay`, machine.ts: a hash
   of the file's name, size and modification time, or of the URL's path), with the variable store

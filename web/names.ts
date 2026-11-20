@@ -11,24 +11,26 @@
 //
 // N5's API: `NamesAgent.register`, `setZone`, `release`, `titles` (each title's state and dates), `pass`; the
 // connection's export (`exportNames`, `importNames`, carried by web/app/connections.ts with the node key).
+//
+// The titles' stores are web/names-store.ts, the compiled services' fetches web/names-fetch.ts, the connection's export
+// web/names-export.ts.
 import { hex } from './bytes.ts';
 import { NamesError, type IdsAnswer, type NamesBackend, type PutAnswer } from './names-ops.ts';
 import type { FromNames, ToNames } from './names-worker.ts';
-import { openIdb, roomOf } from './room.ts';
+import { roomOf } from './room.ts';
 
 export { roomOf };
-import type { NamesTitle, NamesOp } from './ts-client.ts';
-
-/** The calendars, in the module's order (net/ts/src/room/names/anchor.rs `Calendar`: a pending anchor's index). */
-export const CALENDARS = [
-  'https://alice.btc.calendar.opentimestamps.org',
-  'https://bob.btc.calendar.opentimestamps.org',
-  'https://finney.calendar.eternitywall.com',
-] as const;
-/** The explorers (Esplora's API): an anchor's block's header, from one (the other when it fails). */
-export const EXPLORERS = ['https://blockstream.info/api', 'https://mempool.space/api'] as const;
-/** Every service the agent talks to: nothing else is ever fetched (`get`). */
-export const SERVICES: readonly string[] = [...CALENDARS, ...EXPLORERS];
+import type { NamesOp } from './ts-client.ts';
+import { CALENDARS, EXPLORERS, get, text } from './names-fetch.ts';
+import { exportNames, importNames, newBranch } from './names-export.ts';
+import {
+  idbNamesStore,
+  NAMES_CHANNEL,
+  roomHash,
+  type NamesStore,
+  type TitleRecord,
+  type ZonePoint,
+} from './names-store.ts';
 
 /** How often titles are looked after while the page is open (and at every load). */
 export const PASS_MS = 60 * 60 * 1000;
@@ -39,8 +41,6 @@ export const RETRY_MS = 5 * 60 * 1000;
 const ZONE_NARROW = 4;
 /** An entry unanchored past its window is kept and asked for this long more (seconds). */
 const STALE_KEEP_S = 7 * 24 * 60 * 60;
-/** A fetch's longest wait. */
-const FETCH_MS = 15_000;
 /** Proof of work tries a call (production: ~0.5 ms each in a tab), so the worker answers between slices. */
 const MINE_SLICE = 256;
 /** A server takes a new zone for a name at most this often (net/ts room/names/store.rs `ZONE_EVERY`), and a minute. */
@@ -48,54 +48,8 @@ const ZONE_AGAIN_MS = 11 * 60 * 1000;
 /** What the dialog says of a claim's wait for its anchor (names.md "How long an anchor takes"). */
 export const PUBLIC_IN_MS = 2 * 60 * 60 * 1000;
 
-/** Where a name points: the name itself (`label` null) or a label under it, at a node key (64 hex digits). */
-export type ZonePoint = { label: string | null; key: string };
-
 /** A room connection, as the agent knows it: its key's entry and the room's link. */
 export type NamesConn = { identityKey: string; link: string };
-
-/** A title as kept (IndexedDB `waarm64-room`, store `titles`, under [identityKey, room hash, name]). */
-export type TitleRecord = {
-  identityKey: string;
-  /** The room's ID (a private room's is a secret, as its link in the connection is) and link (the publisher's). */
-  room: string;
-  link: string;
-  name: string;
-  /** Every entry of the title with its anchor or pending one, and the zone (net/ts room/names/wire.rs `Item`, hex);
-   * empty before the first entry is made. */
-  item: string;
-  /** Each unanchored entry's pending anchors (hex, signed), one per calendar that gave a receipt. */
-  stamps: Record<string, string[]>;
-  /** When an entry's proof is asked for again. */
-  collect: Record<string, { next: number; tries: number }>;
-  /** When an entry may be made again (one that no calendar stamped). */
-  remake?: { next: number; tries: number };
-  /** The next renewal made ahead (names.md "Decisions"): its proof of work and signature done, after entry `prev`
-   * (the owning chain's last, or the renewal waiting on it), not stamped. A visit that finds a renewal due stamps this
-   * one, which takes seconds, and hands it to the servers, who finish it at its calendar: so a short visit keeps a name. */
-  ahead?: { prev: string; entry: string };
-  points: ZonePoint[];
-  /** A zone's `seq` (64 bits) is `n << 32 | branch`: `n` counts up past every `seq` the title has seen, `branch` is
-   * this copy's, 32 random bits drawn when the title was registered or taken in from an export (each paste draws its
-   * own), so two copies of a title, however made, share one with a chance of 2^-32 a pair. */
-  zone: { n: number; branch: number };
-  /** The owners' secret of this title, when it isn't its connection's: one taken in from an export pasted into a
-   * connection that had a secret of its own already (review 2: renewals signed with the connection's would break the
-   * chain). */
-  secret?: string;
-  /** A better chain of another key's owns the name (its owner key): renewal stops. */
-  lost?: { at: number; by: string };
-  /** Let go: a release was made. */
-  released?: boolean;
-  /** A server didn't take the zone put (within its 10 minutes of the last, or behind the room's): put again then (ms). */
-  putAgain?: number;
-  /** The item last published and taken (or shown as the title's own), and when. */
-  published?: string;
-  publishedAt?: number;
-  /** When the first entry was stamped (ms). */
-  stampedAt?: number;
-  made: number;
-};
 
 /** The dialog's check of a name: as typed, by this page alone (`NamesAgent.checkHere`: `invalid`, `yours`, or `valid`,
  * the servers not asked); at Register, with the room's servers too (`NamesAgent.check`): `until` in Unix seconds. */
@@ -166,139 +120,8 @@ type Judged = {
   header?: string | null;
 };
 
-// ---- Storage ----
-
-/** Where the agent keeps the owners' secret and the titles. */
-export type NamesStore = {
-  /** The owners' secret of connection `identityKey` (64 hex digits), if made. */
-  secret(identityKey: string): Promise<string | undefined>;
-  /** Keeps `secret` unless one is there; the one kept. */
-  addSecret(identityKey: string, secret: string): Promise<string>;
-  titles(identityKey?: string): Promise<TitleRecord[]>;
-  get(identityKey: string, room: string, name: string): Promise<TitleRecord | undefined>;
-  put(t: TitleRecord): Promise<void>;
-  delete(identityKey: string, room: string, name: string): Promise<void>;
-  /** Connection `identityKey`'s secret and every title of it gone (its connection deleted, after saying so). */
-  forget(identityKey: string): Promise<void>;
-};
-
 const unhex = (s: string) =>
   Uint8Array.from({ length: s.length >> 1 }, (_, i) => parseInt(s.slice(2 * i, 2 * i + 2), 16));
-
-/** A room's ID as a key: a hash (the ID itself is a private room's secret, and Web Locks' names are listed). */
-async function roomHash(room: string): Promise<string> {
-  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`waarm64 room titles\n${room}`));
-  return hex(new Uint8Array(h).subarray(0, 16));
-}
-
-/** In memory: the tests'. */
-export function memoryNamesStore(): NamesStore {
-  const secrets = new Map<string, string>();
-  const titles = new Map<string, TitleRecord>();
-  const k = (i: string, r: string, n: string) => JSON.stringify([i, r, n]);
-  return {
-    secret: (i) => Promise.resolve(secrets.get(i)),
-    addSecret: (i, s) => {
-      if (!secrets.has(i)) secrets.set(i, s);
-      return Promise.resolve(secrets.get(i)!);
-    },
-    titles: (i) =>
-      Promise.resolve(
-        [...titles.values()].filter((t) => i === undefined || t.identityKey === i).map((t) => structuredClone(t)),
-      ),
-    get: (i, r, n) => Promise.resolve(structuredClone(titles.get(k(i, r, n)))),
-    put: (t) => {
-      titles.set(k(t.identityKey, t.room, t.name), structuredClone(t));
-      return Promise.resolve();
-    },
-    delete: (i, r, n) => {
-      titles.delete(k(i, r, n));
-      return Promise.resolve();
-    },
-    forget: (i) => {
-      secrets.delete(i);
-      for (const [key, t] of titles) if (t.identityKey === i) titles.delete(key);
-      return Promise.resolve();
-    },
-  };
-}
-
-function req<T>(r: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = (e) => {
-      e.preventDefault();
-      reject(r.error);
-    };
-  });
-}
-
-async function tx<T>(stores: string[], mode: IDBTransactionMode, f: (t: IDBTransaction) => Promise<T>): Promise<T> {
-  const db = await openIdb();
-  try {
-    const t = db.transaction(stores, mode);
-    const done = new Promise<void>((resolve, reject) => {
-      t.oncomplete = () => resolve();
-      t.onerror = t.onabort = () => reject(t.error);
-    });
-    const out = await f(t);
-    await done;
-    return out;
-  } finally {
-    db.close();
-  }
-}
-
-/** The page's: IndexedDB `waarm64-room`, stores `owner` (the secret under the connection's `identityKey`, as `identity`
- * keeps its node key) and `titles` (under [identityKey, room hash, name]). */
-export function idbNamesStore(): NamesStore {
-  const key = async (t: { identityKey: string; room: string; name: string }) => [
-    t.identityKey,
-    await roomHash(t.room),
-    t.name,
-  ];
-  return {
-    secret: (i) =>
-      tx(['owner'], 'readonly', (t) =>
-        req(t.objectStore('owner').get(i) as IDBRequest<{ secret: string } | undefined>),
-      ).then((v) => v?.secret),
-    addSecret: (i, s) =>
-      tx(['owner'], 'readwrite', async (t) => {
-        const o = t.objectStore('owner');
-        const have = await req(o.get(i) as IDBRequest<{ secret: string } | undefined>);
-        if (have) return have.secret;
-        await req(o.add({ secret: s }, i));
-        return s;
-      }),
-    titles: (i) =>
-      tx(['titles'], 'readonly', (t) =>
-        req(
-          t.objectStore('titles').getAll(i === undefined ? undefined : IDBKeyRange.bound([i], [i, []])) as IDBRequest<
-            TitleRecord[]
-          >,
-        ),
-      ),
-    get: async (i, r, n) => {
-      const k = await key({ identityKey: i, room: r, name: n });
-      return tx(['titles'], 'readonly', (t) =>
-        req(t.objectStore('titles').get(k) as IDBRequest<TitleRecord | undefined>),
-      );
-    },
-    put: async (v) => {
-      const k = await key(v);
-      await tx(['titles'], 'readwrite', (t) => req(t.objectStore('titles').put(v, k)));
-    },
-    delete: async (i, r, n) => {
-      const k = await key({ identityKey: i, room: r, name: n });
-      await tx(['titles'], 'readwrite', (t) => req(t.objectStore('titles').delete(k)));
-    },
-    forget: (i) =>
-      tx(['owner', 'titles'], 'readwrite', async (t) => {
-        await req(t.objectStore('owner').delete(i));
-        await req(t.objectStore('titles').delete(IDBKeyRange.bound([i], [i, []])));
-      }),
-  };
-}
 
 // ---- The worker ----
 
@@ -348,38 +171,6 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
   };
 }
 
-// ---- Fetching: the compiled services only ----
-
-/** Whether `url` is one of SERVICES': the only URLs the agent or a room's server fetches. */
-export const isService = (url: string) => SERVICES.some((s) => url.startsWith(`${s}/`));
-
-/** A GET or POST to one of SERVICES; anything else throws (no stored value or link can name another service). */
-async function get(url: string, init?: RequestInit): Promise<Response> {
-  if (!isService(url)) throw new Error(`names: not a compiled service: ${url}`);
-  return fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_MS) });
-}
-
-/**
- * A room's server's fetch (the module's action 12: net/ts/src/room/names/outside.rs, a renewal finished at a calendar,
- * a block checked at an explorer), as the room's worker makes it: a GET of one of SERVICES, its status and body; status 0
- * when it failed or `url` isn't a compiled service's (nothing is fetched then). The module builds its URLs from the same
- * compiled lists (anchor.rs `Calendar`, `EXPLORERS`), never from a record; this holds the page to them too.
- */
-export async function serviceFetch(url: string): Promise<{ status: number; body: Uint8Array }> {
-  try {
-    const r = await get(url);
-    return { status: r.status, body: new Uint8Array(await r.arrayBuffer()) };
-  } catch {
-    return { status: 0, body: new Uint8Array() };
-  }
-}
-
-async function text(url: string): Promise<string> {
-  const r = await get(url);
-  if (!r.ok) throw new Error(`names: ${url}: ${r.status}`);
-  return (await r.text()).trim();
-}
-
 // ---- The agent ----
 
 export type AgentOptions = {
@@ -391,9 +182,6 @@ export type AgentOptions = {
 };
 
 const nowS = () => Math.floor(Date.now() / 1000);
-
-/** Changes to a connection's titles, for its room's worker (web/room-worker.ts) in any tab. */
-export const NAMES_CHANNEL = 'waarm64-names';
 
 export class NamesAgent {
   private readonly store: NamesStore;
@@ -1161,87 +949,8 @@ export class NamesAgent {
 const titleKey = (t: { identityKey: string; room: string; name: string }) =>
   JSON.stringify([t.identityKey, t.room, t.name]);
 
-// ---- Export and import (with a room connection's key) ----
-
-/** An export's names. Version 2: zones' 64-bit `seq` (rooms are pre-release: a version 1 bundle is refused). */
-type Bundle = { v: 2; secret: string; titles: Omit<TitleRecord, 'identityKey'>[] };
-
-/** A copy's branch of a title's zone `seq`: 32 random bits. */
-export const newBranch = () => crypto.getRandomValues(new Uint32Array(1))[0];
-
-function b64url(b: Uint8Array): string {
-  let s = '';
-  for (const x of b) s += String.fromCharCode(x);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function unb64url(s: string): Uint8Array {
-  const t = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from(t, (c) => c.charCodeAt(0));
-}
-
-/** Connection `identityKey`'s owners' secret and titles as text (base64url of JSON), or undefined without a secret.
- * Nothing is written: each copy made from the text draws a branch of its own when it is taken in (`importNames`). */
-export async function exportNames(store: NamesStore, identityKey: string): Promise<string | undefined> {
-  const secret = await store.secret(identityKey);
-  if (!secret) return undefined;
-  const titles: Bundle['titles'] = [];
-  for (const t of await store.titles(identityKey)) {
-    const copy: Partial<TitleRecord> = { ...t };
-    delete copy.identityKey;
-    titles.push(copy as Bundle['titles'][number]);
-  }
-  return b64url(new TextEncoder().encode(JSON.stringify({ v: 2, secret, titles } satisfies Bundle)));
-}
-
-/** Takes an export's secret and titles as connection `identityKey`'s (a title it holds already: the two merge as a
- * server would, by the module, at the next pass's publish; here the one kept stays). Every title taken in is a copy of
- * its own, so it draws a fresh branch: the same text pasted twice gives two branches, never the exporter's. */
-export async function importNames(store: NamesStore, identityKey: string, bundle: string): Promise<void> {
-  const b = JSON.parse(new TextDecoder().decode(unb64url(bundle))) as Bundle;
-  if (b.v !== 2 || !/^[0-9a-f]{64}$/.test(b.secret)) throw new NamesError('Bundle');
-  const kept = await store.addSecret(identityKey, b.secret);
-  for (const t of b.titles) {
-    if (await store.get(identityKey, t.room, t.name)) continue;
-    let branch = newBranch();
-    while (branch === t.zone.branch) branch = newBranch();
-    // The bundle's secret signs its titles: kept with each where the connection has another (review 2).
-    const secret = t.secret ?? (b.secret !== kept ? b.secret : undefined);
-    const copy: TitleRecord = { ...t, identityKey, zone: { n: t.zone.n, branch } };
-    if (secret) copy.secret = secret;
-    else delete copy.secret;
-    await store.put(copy);
-  }
-}
-
 // A room connection's key as it is exported, and an export pasted: web/room.ts (the wizard's, without the agent).
 export { parseRoomExport, roomExport } from './room.ts';
-
-// ---- The room's worker: the titles a running room serves ----
-
-/**
- * The titles connection `identityKey` holds in room `room`, as the module's config takes them (`room.names.titles`): the
- * owner key from the secret (by the room's own module `m`) and the item. Lost and empty titles aren't served.
- */
-export async function roomTitles(
-  store: NamesStore,
-  ops: (op: NamesOp, input: object) => Record<string, unknown>,
-  identityKey: string,
-  room: string,
-): Promise<NamesTitle[]> {
-  const kept = await store.secret(identityKey);
-  const out: NamesTitle[] = [];
-  for (const t of await store.titles(identityKey)) {
-    const secret = t.secret ?? kept;
-    if (t.room !== room || t.lost || !t.item || !secret) continue;
-    try {
-      out.push({ key: ops('key', { room, secret, name: t.name }).key as string, item: t.item });
-    } catch {
-      /* a name the rules refuse: not served */
-    }
-  }
-  return out;
-}
 
 // ---- The page ----
 

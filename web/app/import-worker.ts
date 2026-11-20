@@ -3,7 +3,8 @@
 // export's (web/app/export-worker.ts): the overlay's sync access handles and the base's synchronous
 // reads; the machine must have stopped (the overlay's Web Lock).
 import { loadChanges } from '../changes.ts';
-import { blobSource, diskIdentity, type Source } from '../devices.ts';
+import { diskIdentity } from '../devices.ts';
+import { blobSource, type Source } from '../disk-sources.ts';
 import { makeRoom } from '../diskcache.ts';
 import { toWire } from '../msg.ts';
 import { openDisk } from '../qcow2.ts';

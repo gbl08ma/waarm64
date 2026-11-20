@@ -5,46 +5,32 @@
 // node is in use, it checks whether the exit node's machine reaches the internet over IPv6 (web/reach6.ts), and leases
 // the guest no IPv6 default route while it doesn't.
 import { MsgError, toWire } from './msg.ts';
-import { batchSender, packetsOf } from './net.ts';
 import { exitNodeError, failureOf, TsClient, TsModule } from './ts-client.ts';
 import { leaseFrom, subnetsOf, type FromTailscale, type NetMap, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';
 import { ranked, routedLease, TAILNET_ROUTES, type Lease } from './gateway.ts';
+import { ipPortHost } from './ts-port.ts';
 import { reach6, unreached6, type Reach6, type Reach6Options } from './reach6.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 
-let ip: MessagePort | undefined;
-let send: ((packet: Uint8Array) => void) | undefined;
+/** The client's lease (from its netmap); the gateway's port hears it routed for the adapter's place (`offered`). */
 let lease: Lease | null = null;
 /** The netmap's installed subnet routes: a lease that isn't the default way out routes them too. */
 let subnets = subnetsOf(undefined);
-/** The lease last posted (JSON): a netmap that changes nothing of it (a peer coming online) posts none, so no router advertisement either. */
-let posted = '';
-/** This adapter is the guest's default way out (docs/networking/adapters.md §4): otherwise its lease carries only the network's routes. */
-let primary = true;
-/** And IPv6's (docs/networking/adapters.md §4 "A primary per family"; default `primary`). */
-let primary6 = true;
-/** Its place among the machine's connected adapters: its IPv6 routes' preference (`ranked`). */
-let rank = 0;
 let client: TsClient | undefined;
 /** While an exit node is in use (`reachVia`, its stable ID): whether its machine's IPv6 reaches the internet. */
 let reach: Reach6 | undefined;
 let reachVia = '';
 let probe6: Reach6Options | undefined;
-const offered = () => {
-  const routes = { v4: [...TAILNET_ROUTES.v4, ...subnets.v4], v6: [...TAILNET_ROUTES.v6, ...subnets.v6] };
-  const l = routedLease(lease, primary, routes, primary6);
-  return ranked(reach && !reach.reached() ? unreached6(l, routes.v6) : l, rank);
-};
-/** Tells the gateway the lease, if it changed (`force`: a new port, which hasn't heard it). */
-function postLease(force = false) {
-  const l = offered();
-  const json = JSON.stringify(l);
-  if (!force && json === posted) return;
-  posted = json;
-  ip?.postMessage({ type: 'lease', lease: l });
-}
+const port = ipPortHost(
+  ({ primary, primary6, rank }) => {
+    const routes = { v4: [...TAILNET_ROUTES.v4, ...subnets.v4], v6: [...TAILNET_ROUTES.v6, ...subnets.v6] };
+    const l = routedLease(lease, primary, routes, primary6);
+    return ranked(reach && !reach.reached() ? unreached6(l, routes.v6) : l, rank);
+  },
+  (packets) => client?.guest(...packets),
+);
 /** The last netmap, posted again with `reached6` when the probe's answer changes. */
 let netmap: NetMap | undefined;
 const postNetmap = () => netmap && post({ type: 'netmap', netmap: { ...netmap, reached6: !!reach?.reached() } });
@@ -53,7 +39,7 @@ function takeNetmap(nm: NetMap) {
   lease = leaseFrom(nm);
   subnets = subnetsOf(nm);
   probeVia(nm.exitNode ?? '');
-  postLease();
+  port.postLease();
   postNetmap();
 }
 
@@ -65,7 +51,7 @@ function probeVia(id: string) {
       ? reach6(
           (p) => client?.guest(p),
           () => {
-            postLease();
+            port.postLease();
             postNetmap();
           },
           probe6,
@@ -77,40 +63,17 @@ function probeVia(id: string) {
 }
 let state: Awaited<ReturnType<typeof openState>> | undefined;
 
-function attach(port: MessagePort) {
-  if (ip) {
-    ip.onmessage = null;
-    ip.close();
-  }
-  ip = port;
-  send = batchSender(port);
-  port.onmessage = (ev: MessageEvent) => {
-    const packets = packetsOf(ev.data);
-    if (packets) client?.guest(...packets);
-  };
-  postLease(true);
-}
-
 self.onmessage = async (e: MessageEvent<ToTailscale>) => {
   const m = e.data;
-  if (m.type === 'attach') return attach(m.ip);
-  if (m.type === 'primary') {
-    primary = m.primary;
-    primary6 = m.primary6 ?? m.primary;
-    rank = m.rank ?? 0;
-    return postLease();
-  }
+  if (m.type === 'attach') return port.attach(m.ip);
+  if (m.type === 'primary') return port.place(m);
   if (m.type === 'detach') {
+    // The client stays (logged in, its netmap coming): the next attach is the same node.
     lease = null;
     netmap = undefined;
     probeVia('');
-    ip?.postMessage({ type: 'lease', lease: null });
-    posted = 'null';
-    if (ip) ip.onmessage = null;
-    post({ type: 'detached', ip }, ip ? [ip] : []);
-    ip = undefined;
-    send = undefined;
-    return;
+    const ip = port.detach();
+    return post({ type: 'detached', ip }, ip ? [ip] : []);
   }
   if (m.type === 'exitnode') {
     if (!client) return post({ type: 'exitnode', error: toWire(new MsgError('network:tailnet-worker.notRunning')) });
@@ -124,12 +87,12 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
   }
   try {
     // The port is this worker's from now: a detach while the module loads hands it back.
-    attach(m.ip);
+    port.attach(m.ip);
     const t0 = performance.now();
     const mod = await TsModule.load(m.wasm);
     post({ type: 'loaded', ms: performance.now() - t0 });
     if (m.persist) state = await openState(m.persist);
-    if (!ip) return; // detached meanwhile
+    if (!port.attached()) return; // detached meanwhile
     probe6 = m.probe6;
     client = new TsClient(
       mod,
@@ -141,7 +104,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
       },
       {
         packet: (p) => {
-          if (!reach?.take(p)) send?.(p);
+          if (!reach?.take(p)) port.send(p);
         },
         event(ev) {
           switch (ev.type) {

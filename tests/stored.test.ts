@@ -9,7 +9,7 @@ import { startServer } from '../tools/serve.ts';
 import { openOverlay, overlay, overlayMeta, readMeta, writeMeta } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { importImage, mergeOverlay, openStored, openStoredForWriting, storedEstimate, zeroDisk } from '../web/stored.ts';
-import type { Source } from '../web/devices.ts';
+import type { Source } from '../web/disk-sources.ts';
 
 const bufferSource = (b: Uint8Array): Source => ({ size: b.length, read: (off, len) => (off >= 0 && off + len <= b.length ? b.slice(off, off + len) : undefined) });
 const same = (a: Uint8Array | undefined, b: Uint8Array) => !!a && a.length === b.length && Buffer.compare(a, b) === 0;

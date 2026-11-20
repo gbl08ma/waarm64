@@ -1,6 +1,6 @@
 // The JIT's compile worker (docs/jit.md "Sharing"; parallel SMP): compiles each module a vCPU emits, off the vCPU
 // threads, so that V8's process-wide module cache (keyed by the bytes) holds it when the vCPUs install it. A vCPU
-// worker posts {seq, epoch, ready, bytes} through its own port (web/vm.ts `jitHost`, the core's `env.jit_compile`);
+// worker posts {seq, epoch, ready, bytes} through its own port (web/jit-host.ts `jitHost`, the core's `env.jit_compile`);
 // once every module up to `seq` is compiled, this stores `seq` into the u32 at byte `ready` of the core's memory,
 // and each vCPU's table installs the modules up to there (a cache hit), interpreting their blocks meanwhile. A
 // module is kept until its epoch ends (the code cache flushed) or for KEEP_MS: V8's cache keeps one only while

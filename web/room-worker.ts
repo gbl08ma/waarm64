@@ -3,7 +3,6 @@
 // RTCPeerConnection in workers) and transfers each one's data channel here as it makes it, so the peers'
 // packets never touch the page's thread; descriptions and candidates pass through.
 import { toWire } from './msg.ts';
-import { batchSender, packetsOf } from './net.ts';
 import { failureOf, TsClient, TsModule } from './ts-client.ts';
 import { ranked, routedLease, type Lease, type Prefix } from './gateway.ts';
 import {
@@ -14,50 +13,33 @@ import {
   type RoomNamesStore,
   type ToRoom,
 } from './room.ts';
-import { idbNamesStore, NAMES_CHANNEL, roomTitles, serviceFetch } from './names.ts';
+import { idbNamesStore, NAMES_CHANNEL, roomTitles } from './names-store.ts';
+import { serviceFetch } from './names-fetch.ts';
 import { namesOp } from './names-ops.ts';
+import { ipPortHost } from './ts-port.ts';
 
 const post = (m: FromRoom) => self.postMessage(m);
 
-let ip: MessagePort | undefined;
-let send: ((packet: Uint8Array) => void) | undefined;
 let lease: (Lease & { prefix6?: Prefix }) | null = null;
-let primary = true;
-let primary6 = true;
-let rank = 0;
 let client: TsClient | undefined;
 /** A stored connection's registry records (web/room.ts `roomNamesStore`); an ephemeral one keeps none. */
 let names: RoomNamesStore | undefined;
 /** The names agent's word that a connection's titles changed (web/names.ts): the running room's are given again. */
 let titlesChannel: BroadcastChannel | undefined;
 /** On another adapter, the room offers its /48 only (docs/networking/adapters.md §4). */
-const offered = () =>
-  ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }, primary6), rank);
-
-function attach(port: MessagePort) {
-  if (ip) {
-    ip.onmessage = null;
-    ip.close();
-  }
-  ip = port;
-  send = batchSender(port);
-  port.onmessage = (ev: MessageEvent) => {
-    const packets = packetsOf(ev.data);
-    if (packets) client?.guest(...packets);
-  };
-  port.postMessage({ type: 'lease', lease: offered() });
-}
+const port = ipPortHost(
+  ({ primary, primary6, rank }) =>
+    ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }, primary6), rank),
+  (packets) => client?.guest(...packets),
+);
 
 self.onmessage = async (e: MessageEvent<ToRoom>) => {
   const m = e.data;
   switch (m.type) {
     case 'attach':
-      return attach(m.ip);
+      return port.attach(m.ip);
     case 'primary':
-      primary = m.primary;
-      primary6 = m.primary6 ?? m.primary;
-      rank = m.rank ?? 0;
-      return ip?.postMessage({ type: 'lease', lease: offered() });
+      return port.place(m);
     case 'rtc-channel':
       return client?.rtcChannel(m.rtc, m.channel);
     case 'rtc-signal':
@@ -68,19 +50,16 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
       return client?.rtcBlocked(m.blocked);
     case 'detach': {
       titlesChannel?.close();
+      // The client closes: the next start joins again.
       lease = null;
-      ip?.postMessage({ type: 'lease', lease: null });
-      if (ip) ip.onmessage = null;
+      const ip = port.detach();
       client?.close();
       client = undefined;
       // What waits for the names store is written before the page goes on (it may close the worker next).
       const store = names;
       names = undefined;
-      const port = ip;
-      ip = undefined;
-      send = undefined;
       await store?.flush();
-      self.postMessage({ type: 'detached', ip: port } satisfies FromRoom, port ? [port] : []);
+      self.postMessage({ type: 'detached', ip } satisfies FromRoom, ip ? [ip] : []);
       return;
     }
     case 'close': {
@@ -96,11 +75,11 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
       break;
   }
   try {
-    attach(m.ip);
+    port.attach(m.ip);
     const t0 = performance.now();
     const mod = await TsModule.load(m.wasm);
     post({ type: 'loaded', ms: performance.now() - t0 });
-    if (!ip) return; // detached meanwhile
+    if (!port.attached()) return; // detached meanwhile
     // The kept identity (docs/networking/adapters.md §2.1): the same address and name each time it joins.
     const id = m.identity ?? (m.identityKey !== undefined ? await roomIdentity(m.identityKey) : undefined);
     // The room's registry records, streamed in before the first tick (docs/networking/tailnet.md "The module").
@@ -121,7 +100,7 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
         ? await roomNamesStore(parsed.room.id, m.identityKey).catch(() => undefined)
         : undefined;
     const records = (await store?.load().catch(() => undefined)) ?? [];
-    if (!ip) return; // detached meanwhile
+    if (!port.attached()) return; // detached meanwhile
     names = store;
     client = new TsClient(mod, config, {
       namesStore: (k, record) => names?.write(k, record),
@@ -132,7 +111,7 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
           if (asker && client === asker) asker.namesFetched(fid, r.status, r.body);
         });
       },
-      packet: (p) => send?.(p),
+      packet: (p) => port.send(p),
       rtc: {
         open: (rtc, offer) => post({ type: 'rtc-open', rtc, offer }),
         signal: (rtc, json) => post({ type: 'rtc-signal', rtc, json }),
@@ -142,7 +121,7 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
         if (ev.type === 'log') return console.log('room:', ev.msg);
         if (ev.type === 'lease') {
           lease = ev.lease;
-          ip?.postMessage({ type: 'lease', lease: offered() });
+          port.postLease();
         }
         if (ev.type === 'state' && ev.state === 'Failed') return post({ type: 'error', error: toWire(failureOf(ev)) });
         post({ type: 'event', event: ev });

@@ -183,7 +183,9 @@ if (what === 'child') {
   const closeAll = () => { for (const s of [...open]) { ours.add(s.ws); try { s.ws.close(); } catch { /* closed */ } } };
 
   if (start.role === 'a') {
-    const { memoryNamesStore, NamesAgent, NAMES_CHANNEL, roomTitles, serviceFetch } = await import('../../web/names.ts');
+    const { NamesAgent } = await import('../../web/names.ts');
+    const { memoryNamesStore, NAMES_CHANNEL, roomTitles } = await import('../../web/names-store.ts');
+    const { serviceFetch } = await import('../../web/names-fetch.ts');
     const { localBackend, namesOp } = await import('../../web/names-ops.ts');
     const { TsModule } = await import('../../web/ts-client.ts');
     // The agent's store: in memory, every change sent to the parent (state.json), so a run launched again goes on.

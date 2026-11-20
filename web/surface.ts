@@ -1,6 +1,6 @@
 // A disk's surface (docs/plans/surface.md): what a disk and one of its overlays hold, counted per cell of a grid, and
 // one 4 MiB range of them block by block. The numbers come from the block maps' leaves (web/overlay.ts `MapLeaves`)
-// the device worker has in memory anyway (a running disk: `diskInspector`, built by web/devices.ts `blk`), or that a
+// the device worker has in memory anyway (a running disk: `diskInspector`, built by web/blk-device.ts `blk`), or that a
 // job worker reads from the files (web/app/surface-job.ts), and from a qcow2 image's L2 tables (web/qcow2.ts
 // `Allocation`) where they can be had without asking or fetching. No DOM, no OPFS: workers, the page and Node's tests
 // import it. A cell is 4 MiB (one leaf's range) times a power of two; cells are counted in 4 KiB blocks.
@@ -203,7 +203,7 @@ export function opaqueLayer(id: string, size: number, cellBytes: number, why?: O
   };
 }
 
-/** Which of an image file's blocks this browser keeps (web/devices.ts `Source.kept`). */
+/** Which of an image file's blocks this browser keeps (web/disk-sources.ts `Source.kept`). */
 export type Kept = { block: number; has(k: number): boolean };
 
 /** Per cell, the units of a raw image of `size` bytes whose bytes are kept (`kept`: its file's blocks; the file is the disk). */
@@ -562,7 +562,7 @@ export function answerBuffers(a: InspectAnswer): ArrayBuffer[] {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// A running disk's answers (the device worker's: web/devices.ts `blk`).
+// A running disk's answers (the device worker's: web/blk-device.ts `blk`).
 
 /** A live disk's layers as `diskInspector` reads them. */
 export type LiveDisk = {

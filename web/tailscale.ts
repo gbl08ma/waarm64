@@ -200,54 +200,90 @@ export const tailscaleBuilt = (wasm = new URL('../target/net/ts.wasm', import.me
     () => false,
   );
 
+/** The messages every network client's worker posts as the tailnet clients' do (`FromTailscale`'s, `FromRoom`'s). */
+type WorkerCommon =
+  { type: 'loaded'; ms: number } | { type: 'detached'; ip?: MessagePort } | { type: 'error'; error: WireError };
+
+/** What a network client's handle has of its worker (`workerHandle`). */
+export type WorkerHandle<R> = {
+  /** Resolves with `ran`'s value; rejects with the worker's first error. */
+  running: Promise<R>;
+  /** The client is `Running`: `running` resolves (the first time) and its time is taken. */
+  ran: (r: R) => void;
+  /** Milliseconds from the start to `Running`, and the time to load the module (`loaded`). */
+  timings: () => { loadMs?: number; runningMs?: number };
+  /** Asks the worker for the gateway's port back (`detach`); undefined if it doesn't answer in 3 s. */
+  detach: () => Promise<MessagePort | undefined>;
+};
+
 /**
- * Routes a network client's worker failing by itself (an uncaught exception, a message that can't be read) to `failed`,
- * as a posted `error` (docs/host-code.md §2.2): after `Running` too, when the start's promise has settled.
+ * A network client's handle on its worker: `heard` gets each of its messages (the timings, the detach's answer and the
+ * start's failure taken first), and the worker failing by itself (an uncaught exception, a message that can't be read)
+ * as a posted `error` (docs/host-code.md §2.2): after `Running` too, when `running` has settled. `ignore`: messages
+ * left unheard (a closed handle's).
  */
-export function workerFailures(worker: Worker, failed: (error: WireError) => void) {
-  const fail = (cause: Error) => failed(toWire(new MsgError('network:tailscale.workerFailed', undefined, { cause })));
+export function workerHandle<M extends { type: string }, R>(
+  worker: Worker,
+  heard: (m: M | WorkerCommon) => void,
+  ignore?: (m: M | WorkerCommon) => boolean,
+): WorkerHandle<R> {
+  const t0 = performance.now();
+  const timings: { loadMs?: number; runningMs?: number } = {};
+  let detached: ((ip?: MessagePort) => void) | undefined;
+  let resolve!: (r: R) => void;
+  let reject!: (e: Error) => void;
+  const running = new Promise<R>((y, n) => ([resolve, reject] = [y, n]));
+  running.catch(() => {}); // the caller decides whether to look
+  const take = (m: M | WorkerCommon) => {
+    if (ignore?.(m)) return;
+    const c = m as WorkerCommon | { type: 'another' }; // the client's own messages besides
+    if (c.type === 'loaded') timings.loadMs = c.ms;
+    else if (c.type === 'detached') detached?.(c.ip);
+    else if (c.type === 'error') reject(fromWire(c.error));
+    heard(m);
+  };
+  worker.onmessage = (e: MessageEvent<M>) => take(e.data);
+  const fail = (cause: Error) =>
+    take({ type: 'error', error: toWire(new MsgError('network:tailscale.workerFailed', undefined, { cause })) });
   worker.onerror = (e) => fail(new Error(e.message));
   worker.onmessageerror = () => fail(new Error('a message from the worker could not be read'));
+  return {
+    running,
+    ran: (r) => {
+      timings.runningMs ??= performance.now() - t0;
+      resolve(r);
+    },
+    timings: () => timings,
+    detach: () =>
+      new Promise((done) => {
+        const t = setTimeout(() => done(undefined), 3000);
+        detached = (ip) => {
+          clearTimeout(t);
+          done(ip);
+        };
+        worker.postMessage({ type: 'detach' });
+      }),
+  };
 }
 
 export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
   const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
   const own = config.ip ? undefined : new MessageChannel();
   const port1 = config.ip ?? own!.port1;
-  let detached: ((ip?: MessagePort) => void) | undefined;
   let loggedOut: (() => void) | undefined;
   let exitDone: ((error?: WireError) => void) | undefined;
   let state = '';
   let netmap: NetMap | undefined;
   let loginURL: string | undefined;
-  const t0 = performance.now();
-  const timings: { loadMs?: number; runningMs?: number } = {};
-  const running = new Promise<NetMap>((resolve, reject) => {
-    const heard = (m: FromTailscale) => {
-      if (m.type === 'state') {
-        state = m.state;
-        if (state === 'Running' && netmap) {
-          timings.runningMs = performance.now() - t0;
-          resolve(netmap);
-        }
-      } else if (m.type === 'netmap') {
-        netmap = m.netmap;
-        if (state === 'Running' && timings.runningMs === undefined) {
-          timings.runningMs = performance.now() - t0;
-          resolve(netmap);
-        }
-      } else if (m.type === 'login') loginURL = m.url;
-      else if (m.type === 'loaded') timings.loadMs = m.ms;
-      else if (m.type === 'detached') detached?.(m.ip);
-      else if (m.type === 'exitnode') exitDone?.(m.error);
-      else if (m.type === 'loggedout') loggedOut?.();
-      else if (m.type === 'error') reject(fromWire(m.error));
-      onEvent(m);
-    };
-    worker.onmessage = (e: MessageEvent<FromTailscale>) => heard(e.data);
-    workerFailures(worker, (error) => heard({ type: 'error', error }));
+  const h = workerHandle<FromTailscale, NetMap>(worker, (m) => {
+    if (m.type === 'state') state = m.state;
+    else if (m.type === 'netmap') netmap = m.netmap;
+    else if (m.type === 'login') loginURL = m.url;
+    else if (m.type === 'exitnode') exitDone?.(m.error);
+    else if (m.type === 'loggedout') loggedOut?.();
+    if ((m.type === 'state' || m.type === 'netmap') && state === 'Running' && netmap) h.ran(netmap);
+    onEvent(m);
   });
-  running.catch(() => {}); // the caller decides whether to look
   worker.postMessage(
     {
       type: 'start',
@@ -268,20 +304,12 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
     state: () => state,
     netmap: () => netmap,
     loginURL: () => loginURL,
-    running,
-    timings: () => timings,
+    running: h.running,
+    timings: h.timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailscale, [ip]),
     setPrimary: (primary, rank, primary6) =>
       worker.postMessage({ type: 'primary', primary, rank, primary6 } satisfies ToTailscale),
-    detach: () =>
-      new Promise((resolve) => {
-        const t = setTimeout(() => resolve(undefined), 3000);
-        detached = (ip) => {
-          clearTimeout(t);
-          resolve(ip);
-        };
-        worker.postMessage({ type: 'detach' } satisfies ToTailscale);
-      }),
+    detach: h.detach,
     setExitNode: (id) =>
       new Promise<void>((resolve, reject) => {
         const t = setTimeout(() => reject(new MsgError('network:tailscale.noAnswer')), 10_000);

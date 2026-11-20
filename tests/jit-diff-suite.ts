@@ -19,7 +19,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test as nodeTest } from 'node:test';
 import { fusedFma } from '../web/fma.ts';
-import { coreImports, helperReport } from '../web/vm.ts';
+import { coreImports } from '../web/core.ts';
+import { helperReport } from '../web/counters.ts';
 
 const [PART, PARTS] = (globalThis as { jitDiffPart?: [number, number] }).jitDiffPart ?? [0, 1];
 let defined = 0;

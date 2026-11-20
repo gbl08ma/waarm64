@@ -1,4 +1,4 @@
-// DISCARD from a real driver (web/devices.ts `blk`, web/overlay.ts): Linux on a disk that offers it
+// DISCARD from a real driver (web/blk-device.ts `blk`, web/overlay.ts): Linux on a disk that offers it
 // takes the limits from the config space, and what `fstrim` trims leaves the overlay: the blocks
 // of a deleted file read as zeros without slots, and the data file shrinks. Without the offer
 // (the tests' other guests, whose step counts are without it) the filesystem can't trim.
@@ -10,7 +10,9 @@ import { test } from 'node:test';
 import { diskIdentity } from '../web/devices.ts';
 import { openOverlay, overlay } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
-import { Exit, GUEST_CMDLINE, bootVm, type BootOptions } from '../web/vm.ts';
+import { bootVm, type BootOptions } from '../web/vm.ts';
+import { Exit } from '../web/core.ts';
+import { GUEST_CMDLINE } from '../web/test-guests.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
 const IMAGES = new URL('../target/images/', import.meta.url);

@@ -2,7 +2,7 @@
 // tests/threads.test.ts and tests/browser/threads.html): runs a user-mode guest
 // already in RAM for `n` steps on its own vCPU, the interpreter's or the JIT's,
 // starting when the main thread releases `go`, and reports the vCPU's address.
-import { instantiateThread, type ThreadBlock } from '../web/vm.ts';
+import { instantiateThread, type ThreadBlock } from '../web/core.ts';
 
 export type Job = {
   module: WebAssembly.Module; memory: WebAssembly.Memory; block: ThreadBlock;

@@ -1,10 +1,10 @@
-// The VmConfig the host writes for `vm_new` (web/vm.ts `vmConfig`, `VM_CONFIG`): each field at the word the core's
+// The VmConfig the host writes for `vm_new` (web/core.ts `vmConfig`, `VM_CONFIG`): each field at the word the core's
 // struct has it (core/src/vm.rs `VmConfig`, read here), and the words those fields made before they had names.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { MAX_SPILL } from '../web/ram.ts';
-import { VM_CONFIG, VM_CONFIG_WORDS, vmConfig } from '../web/vm.ts';
+import { VM_CONFIG, VM_CONFIG_WORDS, vmConfig } from '../web/core.ts';
 
 test("VM_CONFIG's words are the core's VmConfig fields, in its order and sizes", () => {
   const src = readFileSync(new URL('../core/src/vm.rs', import.meta.url), 'utf8');

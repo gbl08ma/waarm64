@@ -6,7 +6,7 @@
 // a manifest's id must be its hashes' (`checkManifest`) and the one the disk was added as (`chunkedSource`'s
 // `chunked`), and each piece is checked against its hash before a byte of it is used, so what a disk reads is its id's
 // content whoever serves it.
-import type { Source } from './devices.ts';
+import type { Source } from './disk-sources.ts';
 import { MsgError } from './msg.ts';
 import { sha256Hex } from './sha256.ts';
 

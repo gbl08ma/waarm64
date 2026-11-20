@@ -4,14 +4,14 @@
 // the realtime clock source, the format conversion, save and restore.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { deviceEntry, type Ctx, type Request } from '../web/devices.ts';
+import { deviceEntry } from '../web/devices.ts';
+import type { Ctx, Request } from '../web/virtio.ts';
 import { CAPACITY, QUANTA, RATE, RUN, WRITE, ringViews } from '../web/audio-ring.ts';
 import { ramLayout } from '../web/ram.ts';
-import {
-  CONTROLQ, EVENTQ, FMT_FLOAT, FMT_S16, FMT_S32, RATE_BITS, RXQ, R_CHMAP_INFO, R_JACK_INFO, R_JACK_REMAP, R_PCM_INFO, R_PCM_PREPARE, R_PCM_RELEASE,
-  R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, checksumSink, fnv1a, fromF32, micSource, pattern as wave, patternSource, sndBackend, toF32, type SndParams, type SndState,
-  EVT_CTL_NOTIFY, F_CTLS, R_CTL_ENUM_ITEMS, R_CTL_INFO, R_CTL_READ, R_CTL_TLV_READ, R_CTL_TLV_WRITE, R_CTL_WRITE, VOLUME_MAX, levelToValue, valueToLevel, type SndMixer, type SndToPage,
-} from '../web/snd.ts';
+import { CONTROLQ, EVENTQ, FMT_FLOAT, FMT_S16, FMT_S32, RATE_BITS, RXQ, R_CHMAP_INFO, R_JACK_INFO, R_JACK_REMAP, R_PCM_INFO, R_PCM_PREPARE, R_PCM_RELEASE, R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, type SndParams, EVT_CTL_NOTIFY, F_CTLS, R_CTL_ENUM_ITEMS, R_CTL_INFO, R_CTL_READ, R_CTL_TLV_READ, R_CTL_TLV_WRITE, R_CTL_WRITE, VOLUME_MAX, levelToValue, valueToLevel, type SndMixer } from '../web/snd-proto.ts';
+import { checksumSink, fnv1a, pattern as wave, patternSource } from '../web/snd-test.ts';
+import { fromF32, micSource, toF32, type SndToPage } from '../web/snd-realtime.ts';
+import { sndBackend, type SndState } from '../web/snd.ts';
 
 const RATE_48000 = 7;
 

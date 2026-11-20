@@ -18,7 +18,7 @@
 // switch: the device says on the port when the guest changes them (`onMixer`: the menu follows), and the menu's
 // changes are said to the device (`setVolume(…, true)`), which tells the guest.
 import { LATENCY, newRing, ringViews } from './audio-ring.ts';
-import type { SndFromPage, SndStats, SndToPage } from './snd.ts';
+import type { SndFromPage, SndStats, SndToPage } from './snd-realtime.ts';
 // The worklet, bundled as a worker is (Vite's `?worker&url`: the bundler doesn't follow a URL given to `addModule`).
 import WORKLET from './audio-worklet.ts?worker&url';
 

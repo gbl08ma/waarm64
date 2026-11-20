@@ -38,7 +38,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { peaks } from './audio-tap.ts';
 import { sndDisk, toneWav } from './snd-disk.ts';
 import { GAP_FRAMES } from '../web/audio-ring.ts';
-import { levelToValue } from '../web/snd.ts';
+import { levelToValue } from '../web/snd-proto.ts';
 import { answerAsks, barSays } from './page-ask.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts, machine.ts `readiness`).

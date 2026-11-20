@@ -9,7 +9,7 @@
 // 1 GiB, the test devices and a framebuffer; to its local.d script and to power-off.
 // `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1);
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
-// `--query=growcore`: the core imports the memory growable (web/vm.ts `exactCore`), for an A/B.
+// `--query=growcore`: the core imports the memory growable (web/core.ts `exactCore`), for an A/B.
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
 // `--only alpine_user_spill_jit` the same with 192 MiB in memory 0 and the rest in a spill memory;
 // `--only alpine_crypto_jit`: `openssl speed` in the same image (waarm64.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
@@ -28,7 +28,9 @@
 // `--only net`: /bench-net.sh, ping-pong with the loopback adapter.
 import type { Options, Sample } from '../spike/benchmarks.ts';
 import type { DeviceSpec } from '../../web/devices.ts';
-import { bootVm, compileCore, DISTROS, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF, testDevices } from '../../web/vm.ts';
+import { bootVm } from '../../web/vm.ts';
+import { compileCore, Exit, PSCI_SYSTEM_OFF } from '../../web/core.ts';
+import { DISTROS, GUEST_CMDLINE as CMDLINE, guestDevices, testDevices } from '../../web/test-guests.ts';
 
 const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a chunk
 /** The bench page's query: the spike worker's name (bench/spike/page.ts); none in Node. */
@@ -58,7 +60,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 /**
  * One boot to power-off: ms to each "waarm64: …" console line (`marks`, keyed
  * by the text after "waarm64: ") and to the end, and the counters. `test`: the
- * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
+ * device tests' devices and a 640×480 framebuffer (web/test-guests.ts `testDevices`).
  */
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
@@ -86,7 +88,7 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) continue;
     const total = performance.now() - t0;
     const closed = vm.close();
-    // The guest's counter read 0 at boot (a vCPU worker's clock behind the VM's; web/vm.ts `clockOffset`).
+    // The guest's counter read 0 at boot (a vCPU worker's clock behind the VM's; web/core.ts `clockOffset`).
     if (/Missing cycle counter/.test(console)) throw new Error(`the counter didn't run at boot:\n${console}`);
     if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/waarm64: test (exit 0|ok)/.test(console)) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);

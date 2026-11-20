@@ -1,10 +1,10 @@
 // Boots a guest on the wasm core in a worker, its root filesystem on virtio-blk
 // over HTTP ranges: target/images/linux (images/build.sh), or with `?distro=`
-// alpine that image (web/vm.ts `DISTROS`) on 1 GiB. `?realtime` in the
+// alpine that image (web/test-guests.ts `DISTROS`) on 1 GiB. `?realtime` in the
 // page URL selects realtime mode, `?overlay=<name>` makes the root disk
 // writable through that OPFS overlay, and `?script=<path>` runs that script
 // instead of the Buildroot guest's /test.sh; with `?devices` the guest gets the
-// device tests' devices (web/vm.ts `testDevices`, the input ones on the ports
+// device tests' devices (web/test-guests.ts `testDevices`, the input ones on the ports
 // the page sends first) and a 640×480 framebuffer, which goes to the page.
 // `?jit=1|2|3` runs it under the JIT, JIT-stress or JIT-check (`VmConfig.jit`), `?ncpus=N` on N vCPUs,
 // `?parallel` with a worker per vCPU (realtime; M7). `?litmus=<options>&stress=<options>`
@@ -18,13 +18,13 @@
 // `?usbhost=<json>` boots the USB test kernel for real devices (images/build.sh linux-usbhost) with `cmdline`
 // added to its command line and `device` (a WebUSB or WebHID identity) attached to connector 0 once it has
 // booted; its `usb-state` is `usb` in the result (tests/usb-guest.test.ts; realtime: add `&realtime`).
-// `?input` runs the console input test (web/vm.ts `CONSOLE_INPUT`): a shell
+// `?input` runs the console input test (web/test-guests.ts `CONSOLE_INPUT`): a shell
 // instead of /test.sh, given the input at its step.
 // `?disk=<path under target/images/>`: the root disk from there instead (a chunked image's manifest: tests/chunked.test.ts).
 // `?snapshots=<steps>,…`: the VM is saved to a snapshot file, closed, and a new one started from the
 // file at each of those steps (web/snapshot.ts `runThroughSnapshots`); `files` in the result has them.
 import { runThroughSnapshots } from '../../web/snapshot.ts';
-import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
+import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/test-guests.ts';
 import type { UsbIdentity } from '../../web/usb-device.ts';
 import { USB_CMDLINE, USB_HUBS_CMDLINE, USB_INITRD, USB_KERNEL, usbGuest } from '../usb/options.ts';
 

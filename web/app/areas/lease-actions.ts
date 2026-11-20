@@ -37,7 +37,7 @@ export type LeaseDeps = {
   waits?: { grace: number; agent: number; leased: number };
 };
 
-/** What the actions tell the cards, through their links (web/devices.ts `net`): `links` the run's, by adapter. */
+/** What the actions tell the cards, through their links (web/net-device.ts `net`): `links` the run's, by adapter. */
 export const cardLinks = (links: () => MessagePort[]): Pick<LeaseDeps, 'flap' | 'connected' | 'settled'> => ({
   flap: (i) => links()[i]?.postMessage({ type: 'flap' }),
   connected: () => links().forEach((l) => l.postMessage({ type: 'connected' })),

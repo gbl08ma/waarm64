@@ -344,7 +344,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   and their time, broadcasts, drains, idles, platform-lock contention, WFEs, time out of the core),
   per vCPU (`cpuStats()`). The benchmarks record them in
   each result's params.
-- **The helper histogram** (`jit_helper_report`, `web/vm.ts` `helperReport`): helper calls by
+- **The helper histogram** (`jit_helper_report`, `web/counters.ts` `helperReport`): helper calls by
   instruction class, most frequent first; it says what to inline next.
 - **PC sampling** (`web/sampler-worker.ts`, `node bench/boot/profile.ts`): reads `Counters.pc` every
   20 µs beside the vCPU worker; symbolized with `System.map` (user space as one bucket). The PC is
@@ -409,7 +409,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
     concurrent guests slow each other down on this host (4 P-cores, 6 E-cores: Lua 3–6%, compress 22%), so compare
     N-vCPU runs with N-vCPU runs; the Mac host shares its cores with the VM (run nothing there meanwhile; a failed
     page leaves `bench/run.ts` and Chrome for Testing idle there).
-  - Every install as a `waarm64-slow` line: `SLOW_INSTALL_MS = 0` in `web/vm.ts` (57,000 a session, 8.8 MB of
+  - Every install as a `waarm64-slow` line: `SLOW_INSTALL_MS = 0` in `web/jit-host.ts` (57,000 a session, 8.8 MB of
     `results.json`, busy MIPS unchanged).
   - Diagnostic counters without new ABI: `<letter>:<n> <count>` lines appended to `Table::helper_report`
     (`bench/boot/userprof.ts` prints them per phase; patches in `bench/boot/results/m8-userprof/`, `m8-entries/`,
@@ -456,7 +456,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   a scratch directory (jitdump files land in the cwd). `perf_event_paranoid` is 2: profile your
   own processes.
 - **Machine code:** `tools/v8code.ts` (Node `--print-wasm-code`, by JIT function name). **Emitted
-  modules:** dump them from `web/vm.ts`'s install temporarily (`if (process.env.X)
+  modules:** dump them from `web/jit-host.ts`'s install temporarily (`if (process.env.X)
   fs.writeFileSync(…)`, and remove it before any Chromium run: `process` doesn't exist there),
   then `wasm-tools print` (shows branch hints) or `wasm-tools validate`.
 - **The JIT's machine code, x64 and arm64** (for a change to what the JIT emits; x64 has 16 GPRs where arm64 has 31,
@@ -487,7 +487,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   the end of each vCPU's counters block, where the run loops publish them; a diagnostic core runs the same steps as
   the normal one (Alpine's boot: tests/steps.txt's count).
 - Node runners for iteration: `bench/interp/suite.ts` `setup(bin, JIT_DEFAULT, pad)` / `setupVm`
-  for the small guests; `runToPowerOff` (`web/vm.ts`) for boots. `bench/run.ts --out` resolves
+  for the small guests; `runToPowerOff` (`web/test-guests.ts`) for boots. `bench/run.ts --out` resolves
   against the repo root.
 - **A core panic's stack trace** (`waarm64_core.wasm.<fn> (wasm-function[N]:0x4031a)`): the
   release wasm carries DWARF, so `llvm-symbolizer --obj=target/wasm32-unknown-unknown/release/waarm64_core.wasm

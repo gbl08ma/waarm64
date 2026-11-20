@@ -5,7 +5,9 @@
 // M5: each of them again through the JIT (`jit_*`, `VmConfig.jit`), with the JIT's counters in the params.
 import type { Options, Sample } from '../spike/benchmarks.ts';
 import { fusedFma } from '../../web/fma.ts';
-import { ABI, bootVm, coreImports, helperReport } from '../../web/vm.ts';
+import { ABI, bootVm } from '../../web/vm.ts';
+import { coreImports } from '../../web/core.ts';
+import { helperReport } from '../../web/counters.ts';
 
 const RAM = 16 << 20;
 const LOAD = 0x10000; // guest.ld

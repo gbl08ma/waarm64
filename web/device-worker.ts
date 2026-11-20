@@ -17,7 +17,7 @@ import { webUsbOpener, type WebUsbLike } from './webusb.ts';
 type Init = DevicesInit & { bell: number };
 
 /**
- * Owner (web/vm.ts `deviceHost`) → device worker. Every request but `init`, `release` and `close` has an id, which its
+ * Owner (web/device-host.ts `deviceHost`) → device worker. Every request but `init`, `release` and `close` has an id, which its
  * answer carries: `flushed`, `drained`, `saved`, `refusal`, or `disk` (`written` and `blocks`: a disk's changes for a
  * snapshot; `compact`, `hint` and `inspect`: a disk's surface, web/surface.ts).
  */

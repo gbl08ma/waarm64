@@ -7,7 +7,10 @@
 // activity wrapper.
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { blk, Devices, zeroSource, type Ctx, type DeviceSpec } from '../web/devices.ts';
+import { Devices, type DeviceSpec } from '../web/devices.ts';
+import { blk } from '../web/blk-device.ts';
+import { zeroSource } from '../web/disk-sources.ts';
+import type { Ctx } from '../web/virtio.ts';
 import { blkSpec } from '../web/app/worker-devices.ts';
 import { lockOverlay, memFile, openOverlay, overlay, readMeta, writeMeta, writeOwnSize } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';

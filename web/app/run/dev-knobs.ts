@@ -28,7 +28,7 @@ export type DevKnobs = {
   compileWorker: boolean;
   /** The JIT's FMA forms on the host's fused `madd` (`?fma=emul` forces their emulation; web/vm.ts `BootOptions.fma`). */
   fma: boolean;
-  /** The core's memory imported at its size (`?growcore`: growable, web/vm.ts `exactCore`; an A/B). */
+  /** The core's memory imported at its size (`?growcore`: growable, web/core.ts `exactCore`; an A/B). */
   exactCore: boolean;
   /** `?vyield=<ms>`: the vCPU workers' yield (web/vm.ts `vcpuYieldMs`); none: the default. */
   vcpuYieldMs?: number;

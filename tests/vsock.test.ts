@@ -34,7 +34,7 @@ import {
   type VsockFromDevice,
 } from '../web/vsock-device.ts';
 import { firmwareFiles } from '../web/app/firmware-files.ts';
-import type { Ctx } from '../web/devices.ts';
+import type { Ctx } from '../web/virtio.ts';
 
 /** A guest's RAM, the device's completions, and the guest's packets and buffers. */
 function guest() {

@@ -1,7 +1,7 @@
 // PERF loop 15: exitloop.bin in parallel SMP (realtime, JIT) in Node: ns per always-exiting `mrs cntfrq_el0`,
 // fast-completed `isb`, `wfe` yield, empty iteration.   node run.ts [ncpus] [wasm]
 import { readFileSync } from 'node:fs';
-import { runToPowerOff } from '../../../../../web/vm.ts';
+import { runToPowerOff } from '../../../../../web/test-guests.ts';
 const ncpus = Number(process.argv[2] ?? 2);
 const wasm = readFileSync(process.argv[3] ?? new URL('../../../../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const kernel = readFileSync(new URL(process.env.BIN ?? 'exitloop.bin', import.meta.url));

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { openDisk } from '../web/qcow2.ts';
 import { qcow2 } from './qcow2-make.ts';
 import { storedEstimate } from '../web/stored.ts';
-import type { Source } from '../web/devices.ts';
+import type { Source } from '../web/disk-sources.ts';
 
 test('reading across a 1 TiB qcow2 with one cluster allocated keeps no table per unallocated L1 entry', async () => {
   setFlagsFromString('--expose-gc');

@@ -16,12 +16,12 @@ Design notes for an ABI change go in this file before the code.
   slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
   size, expected, new) -> i64` (ABI 39): aligned single-copy-atomic accesses to spill memory `m` (1 and up), from a
   module `web/spill.ts` makes over the spill memories (traps with none; [spill-memories.md](spill-memories.md)).
-  `web/vm.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
+  `web/core.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
   `jit.bind(instance)`.
 - **More instances on the same memory** (one per worker, ABI 20): the core exports
   `__stack_pointer`, `__tls_size`, `__tls_align`, `__wasm_init_tls` and `thread_alloc(size,
   align) -> ptr`. Another instance needs its own stack and TLS block, allocated through an instance
-  that's already set up (`web/vm.ts` `threadAlloc`), and set **before any other call**
+  that's already set up (`web/core.ts` `threadAlloc`), and set **before any other call**
   (`instantiateThread`: `__stack_pointer` = the stack's top, then `__wasm_init_tls(tls)`); its
   start function finds the memory initialized. Instance 0 keeps the linker's static stack (1 MiB)
   and TLS. Each instance has its own function table, so each has its own JIT host; the modules it
@@ -44,7 +44,7 @@ Design notes for an ABI change go in this file before the code.
   always). **The core runs with exact limits too:** the core module declares 18–65536 pages, so the instance that
   lays the memory out (instance 0, the only one that can grow it) stays on it, and once the memory is at its size
   everything else runs on a copy of the module whose memory import declares `pages` both (`memoryLimits` in
-  `web/vm.ts` rewrites the import section; `exactCore`, compiled once a size, while instance 0 works): a second
+  `web/core.ts` rewrites the import section; `exactCore`, compiled once a size, while instance 0 works): a second
   instance on `bootVm`'s thread (a stack and TLS of its own, as a worker's) and every vCPU worker's. Instance 0 isn't
   called again. It needs the core's bytes, so a host compiles the core with `compileCore` (a module compiled
   otherwise boots on the growable import); `exactCore: false` keeps that too. Measured neutral on this host
@@ -98,7 +98,7 @@ Design notes for an ABI change go in this file before the code.
   below). They take no VM and no allocation: any instance on the memory may call them, on any bytes in it (guest RAM
   too). The decompressor is for files a user chose: it never reads or writes out of bounds, whatever the bytes.
 - **Addresses are u32, but JS sees a wasm `i32` as signed:** past 2 GiB of memory (a guest with
-  2 GiB of RAM puts the core's later allocations there) they'd come back negative. `web/vm.ts`
+  2 GiB of RAM puts the core's later allocations there) they'd come back negative. `web/core.ts`
   `unsigned` wraps the exports that return one, and `jit_install` unsigns its `ptr`.
 
 ### `VmConfig` (u64 fields, in order)
@@ -164,7 +164,7 @@ told `i8mm: true`, `fcma: true`, `fp16: true`, `fhm: true`, `bf16: true` (`cpu::
   exports didn't change, and a host that relies on it with an older core only waits longer, so
   the ABI version stayed.
 
-### Counters (`vm_counters(vm, i)`, u64 words, relaxed atomic stores; `web/vm.ts` `Counter`)
+### Counters (`vm_counters(vm, i)`, u64 words, relaxed atomic stores; `web/counters.ts` `Counter`)
 
 One block per vCPU (ABI 25): round-robin publishes everything in block 0, parallel mode each
 vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per block.
@@ -190,7 +190,7 @@ TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one
 
 ## Device backends
 
-Layouts in `core/src/virtio.rs` and `web/devices.ts`; the behavior is in [devices.md](devices.md).
+Layouts in `core/src/virtio.rs` and `web/virtio.ts`; the behavior is in [devices.md](devices.md).
 - `DeviceEntry` = 6 u64s: device ID, offered features (the transport masks the reserved bits
   24–40 and adds `VERSION_1`, `INDIRECT_DESC` and `EVENT_IDX`), queue count (≤ 8), QueueNumMax (power of 2,
   ≤ 1024), config length (≤ 256), `shm` (ABI 53: 1, the VM's window is the transport's shared memory region 1,
@@ -263,7 +263,7 @@ puts its functions into the core's table.
   already-compiled blocks).
 - Natively there's no wasm engine: `jit::install` returns `None` and the run loop interprets.
 - `jit_helper_report(vcpu) -> *const u8`: NUL-terminated `<Op> <calls>` lines, most frequent
-  first (`web/vm.ts` `helperReport`; the benchmarks record it).
+  first (`web/counters.ts` `helperReport`; the benchmarks record it).
 
 ## System suspend (ABI 54)
 
@@ -351,7 +351,7 @@ single-CPU machine.
   under the lock), so the fast path between chunks takes no lock.
 - **Time:** the host clock through `env.now_ms`, which must be one clock for every instance:
   the VM creator's `performance.timeOrigin + performance.now()`; a vCPU worker measures that
-  clock's offset from its own `performance.now()` (`web/vm.ts` `clockOffset`) rather than
+  clock's offset from its own `performance.now()` (`web/core.ts` `clockOffset`) rather than
   trusting its own `timeOrigin`, which Chromium derives from a drifting wall clock
   ([platform.md](platform.md) "Time"). The core keeps the counter
   monotonic across vCPUs (an atomic maximum), so CNTVCT never goes back between CPUs.
@@ -360,7 +360,7 @@ single-CPU machine.
 trap (`RuntimeError: unreachable`) with nothing else. `vm_new` installs a panic hook that keeps
 the first panic's message (thread, location, text; at most 4096 bytes) in a static in the shared
 memory, and `panic_message()` (core/src/diag.rs) returns its address: a u32 length (0 = none)
-then that many UTF-8 bytes. The hosts read it after catching a trap (`web/vm.ts` `panicMessage`,
+then that many UTF-8 bytes. The hosts read it after catching a trap (`web/core.ts` `panicMessage`,
 `withPanic`; the vCPU worker and the round-robin `run`) and put it in the error. A DSB wait that
 times out (10 s of waiting: passes over 100 ms are the waiter's own thread stalling and don't
 count) panics with each waited vCPU's state, queue and progress, and the waiter's own timing

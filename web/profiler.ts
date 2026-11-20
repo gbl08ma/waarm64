@@ -1,5 +1,5 @@
 // Starts the guest PC sampler (sampler-worker.ts) or the vCPU timeline (timeline-worker.ts) on a VM's shared memory.
-import { Counter } from './vm.ts';
+import { Counter } from './counters.ts';
 
 /** `counters`: a vCPU's counters block, or several (each sample reads every one). Returns stop(), which resolves to [pc hex, samples] pairs. */
 export async function startSampler(memory: WebAssembly.Memory, counters: number | number[], periodUs = 20) {
@@ -18,7 +18,7 @@ export async function startSampler(memory: WebAssembly.Memory, counters: number 
     });
 }
 
-/** Per vCPU in each timeline row, after the row's time (epoch ms): counters (web/vm.ts `Counter`) and liveness. */
+/** Per vCPU in each timeline row, after the row's time (epoch ms): counters (web/counters.ts `Counter`) and liveness. */
 export const TIMELINE_FIELDS = [
   'steps',
   'compileNs',

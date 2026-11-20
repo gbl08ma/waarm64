@@ -75,7 +75,7 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   and completions also bump and notify every vCPU's wake word (`DevicesInit.wakes`). The completions of one microtask
   (a poll's, a frame's merged buffers) set the signal bit and wake the vCPUs once, at its end: before `serve` answers
   the doorbell and before any wait inside a poll.
-- **The owner and the device worker** (`deviceHost` in web/vm.ts): every request but `init`, `release` and `close`
+- **The owner and the device worker** (`deviceHost` in web/device-host.ts): every request but `init`, `release` and `close`
   carries an id its answer has (two saves or flushes may be in flight); a closed worker's unanswered requests settle
   (a drain or refusal as nothing, a save as an error). A worker that fails to start is terminated, and `Devices.open`
   closes what it opened when a disk or a backend's `restore` fails, so another start can open the overlays at once. A
@@ -106,7 +106,7 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   queue count ≤ 8, QueueNumMax ≤ 1024, config length ≤ 256); index = transport slot, one DT node
   each, in slot order (QEMU fills from the top of its window; we fill from slot 0).
 - Host side: `{devices: [{type: 'blk', url, overlay?, file?}, {type: 'net', adapter}, …]}`
-  (`web/vm.ts` `DeviceSpec`; `guestDevices` and `testDevices` build the tests' sets). A `MessagePort` (or canvas) a
+  (`web/devices.ts` `DeviceSpec`; web/test-guests.ts's `guestDevices` and `testDevices` build the tests' sets). A `MessagePort` (or canvas) a
   spec carries must be in `web/devices.ts`'s transfer list (the `specs.flatMap` beside `DeviceSpec`'s transfer), or
   every machine with that device fails to start with a DataCloneError.
 
@@ -409,7 +409,7 @@ what came of it. A renewal keeps an address
 that is still right (open connections live on), and the gateway's NAK of one it doesn't hold has the client ask afresh.
 Where the agent can't (none within 20 s, no `CAP.LEASE`, LEASED not 0, no answer in 60 s), each connected card's link
 flaps instead: the run's link port to its device (`Run.netLinks`, `{type: 'flap'}`) → `FLAP_MS`, 7 s down (net
-below). **Meanwhile a card's own flaps are held** (web/devices.ts `Backend.restored`; once the page's network is
+below). **Meanwhile a card's own flaps are held** (web/virtio.ts `Backend.restored`; once the page's network is
 connected, `HOLD_MS` 120 s at most: the page says so on each card's link, `{type: 'connected'}`, when `NetSettled.when`
 resolves, so a demo server that keeps the card waiting for minutes, full or crowded, doesn't use the bound up before the
 LEASE it's for; until then the hold has no bound, and the card nothing to renew a lease from): a

@@ -269,7 +269,7 @@ function fixTcp(f: Uint8Array) {
 }
 
 test('virtio-net on a port backend: a batch\'s segments reach the guest as one packet across mergeable buffers; one at a time without MRG_RXBUF', async () => {
-  const { net } = await import('../web/devices.ts');
+  const { net } = await import('../web/net-device.ts');
   const { F_GUEST_CSUM, F_GUEST_TSO4, F_MRG_RXBUF } = await import('../web/offload.ts');
   for (const features of [F_GUEST_CSUM | F_GUEST_TSO4 | F_MRG_RXBUF, F_GUEST_CSUM]) {
     const ram = new Uint8Array(1 << 20);

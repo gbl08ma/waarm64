@@ -8,8 +8,8 @@
 import type { Lease } from './gateway.ts';
 import { hex } from './bytes.ts';
 import { v6text } from './ip6.ts';
-import { fromWire, msg, type Msg, type WireError } from './msg.ts';
-import { workerFailures, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
+import { msg, type Msg, type WireError } from './msg.ts';
+import { workerHandle, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
 import type { RoomConfig, TsEvent } from './ts-client.ts';
 
 /** STUN only (no TURN: DERP is the relay). */
@@ -111,7 +111,6 @@ export function startRoom(
   let state = '';
   let me: ReturnType<Room['self']>;
   let lease: Lease | null = null;
-  let detached: ((ip?: MessagePort) => void) | undefined;
   let blocked = false;
   let closed = false;
   let probeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -160,8 +159,6 @@ export function startRoom(
   const netInfo = (navigator as Navigator & { connection?: EventTarget }).connection;
   globalThis.addEventListener?.('online', reprobe);
   netInfo?.addEventListener('change', reprobe);
-  const t0 = performance.now();
-  const timings: { loadMs?: number; runningMs?: number } = {};
   const post = (m: ToRoom, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
   const signal = (rtc: number, v: unknown) => post({ type: 'rtc-signal', rtc, json: JSON.stringify(v) });
   const fail = (rtc: number) => {
@@ -223,16 +220,10 @@ export function startRoom(
     }
   }
 
-  const running = new Promise<void>((resolve, reject) => {
-    const heard = (m: FromRoom) => {
-      if (closed) {
-        if (m.type === 'closed') worker.terminate();
-        return;
-      }
+  const h = workerHandle<FromRoom, undefined>(
+    worker,
+    (m) => {
       switch (m.type) {
-        case 'loaded':
-          timings.loadMs = m.ms;
-          break;
         case 'rtc-open':
           void open(m.rtc, m.offer);
           break;
@@ -243,21 +234,14 @@ export function startRoom(
           conns.get(m.rtc)?.pc.close();
           conns.delete(m.rtc);
           break;
-        case 'detached':
-          detached?.(m.ip);
-          break;
         case 'error':
-          reject(fromWire(m.error));
           onError(m.error);
           break;
         case 'event': {
           const ev = m.event;
           if (ev.type === 'state') {
             state = ev.state;
-            if (state === 'Running' && timings.runningMs === undefined) {
-              timings.runningMs = performance.now() - t0;
-              resolve();
-            }
+            if (state === 'Running') h.ran(undefined);
           } else if (ev.type === 'self') me = ev;
           else if (ev.type === 'lease') lease = ev.lease;
           else if (ev.type === 'peer')
@@ -267,11 +251,12 @@ export function startRoom(
           onEvent(ev);
         }
       }
-    };
-    worker.onmessage = (e: MessageEvent<FromRoom>) => heard(e.data);
-    workerFailures(worker, (error) => heard({ type: 'error', error }));
-  });
-  running.catch(() => {});
+    },
+    (m) => {
+      if (closed && m.type === 'closed') worker.terminate();
+      return closed;
+    },
+  );
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;
   const { room, derpMapURL, key, identityKey, identity } = config;
   post({ type: 'start', wasm, config: { room, derpMapURL, key }, identityKey, identity, ip: port1 }, [port1]);
@@ -281,19 +266,11 @@ export function startRoom(
     self: () => me,
     lease: () => lease,
     peers: () => [...peers.values()],
-    running,
-    timings: () => timings,
+    running: h.running,
+    timings: h.timings,
     attach: (ip) => post({ type: 'attach', ip }, [ip]),
     setPrimary: (primary, rank, primary6) => post({ type: 'primary', primary, rank, primary6 }),
-    detach: () =>
-      new Promise((resolve) => {
-        const t = setTimeout(() => resolve(undefined), 3000);
-        detached = (ip) => {
-          clearTimeout(t);
-          resolve(ip);
-        };
-        post({ type: 'detach' });
-      }),
+    detach: h.detach,
     dropDirect: () => {
       for (const rtc of [...conns.keys()]) fail(rtc);
     },

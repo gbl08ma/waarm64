@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fusedFma } from '../web/fma.ts';
-import { coreImports } from '../web/vm.ts';
+import { coreImports } from '../web/core.ts';
 import { jitVariantSkip } from './jit-variants.ts';
 import { CODE, DATA, DATA_SIZE, REGS, initialState, parseFile } from '../tools/corpus/corpus.ts';
 

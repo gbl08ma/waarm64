@@ -5,7 +5,7 @@
 // guest concurrently (the interpreter, and the JIT in two instances with their
 // own tables). Each must end exactly where instance 0's interpreter ends alone:
 // registers and RAM. Also checks each worker's TLS block is its own.
-import { coreImports, threadAlloc } from '../web/vm.ts';
+import { coreImports, threadAlloc } from '../web/core.ts';
 import type { Job, Result } from './threads-worker.ts';
 
 const RAM = 16 << 20, LOAD = 0x10000, CPU_BYTES = 1168;
