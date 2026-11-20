@@ -49,7 +49,8 @@ Not needed: `ci-jit.sh`, `ci-fp.sh`, `ci-deqp.sh`, `ci-deqp-vk.sh` (no core, JIT
 
 ## What passed in the cloud session
 
-`scripts/ci-fast.sh` over each change. At the head: the last commit that touches this file says. Known there: tests/page-open.test.ts's
+`scripts/ci-fast.sh` over each change; at d4af4740, over the toolbar's change and the tests' fixes (`--since 9c1c20d`):
+CI-FAST OK, 273 s, 167 test files. Known there: tests/page-open.test.ts's
 "says so at once" failed once under the lane's load (8.0 s) and passes alone (4.4 s); `tools/screens.ts`'s
 `machines-error` state isn't reached, with or without these changes (not a CI step).
 
