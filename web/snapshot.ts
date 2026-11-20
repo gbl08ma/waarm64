@@ -20,6 +20,7 @@ import {
   truncated,
   type Codec,
   type LoadPool,
+  type OverlayBlock,
   type RamPool,
   type ReadTimes,
   type Sink,
@@ -216,7 +217,9 @@ export async function writeSnapshot(
   const ramMs = since();
   for (const d of disks) {
     await w.disk(
-      (async function* () {
+      // Typed, not inferred from `disk`'s union: inferred, it left that union's element `any` in TypeScript 6's cache
+      // whenever this file was checked before snapshot-file.ts (the lint failed in about one run in four).
+      (async function* (): AsyncGenerator<OverlayBlock> {
         for (let k = 0; k < d.blocks.length; k += 256) {
           const part = d.blocks.slice(k, k + 256);
           const bytes = await vm.diskBlocks(d.slot, part);

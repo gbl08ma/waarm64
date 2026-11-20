@@ -110,6 +110,8 @@ export async function repackFrames(file: Blob, from: Codec, to: Codec): Promise<
  * sink copies what it keeps (a pool's frame buffer goes back to its worker then: web/snapshot-pool.ts).
  */
 export type Sink = (bytes: Uint8Array) => void | Promise<void>;
+/** One block of a disk's overlay (`SnapshotWriter.disk`): its number and its 4 KiB. */
+export type OverlayBlock = { block: number; data: Uint8Array };
 /**
  * A frame codec: id as in the frame header (web/lz.ts is id 2), and the IEEE CRC-32 as {@link crc32}'s (the core's:
  * web/lz.ts), which takes the frames' checksums in the writer and the reader.
@@ -626,9 +628,7 @@ export class SnapshotWriter {
    * bytes are taken as they are (the caller doesn't change them after): a run of views that follow each other in one
    * buffer (a batch of `vm.diskBlocks`) is a frame's bytes without a copy, any other run is copied once.
    */
-  async disk(
-    blocks: AsyncIterable<{ block: number; data: Uint8Array }> | Iterable<{ block: number; data: Uint8Array }>,
-  ): Promise<{ blocks: number }> {
+  async disk(blocks: AsyncIterable<OverlayBlock> | Iterable<OverlayBlock>): Promise<{ blocks: number }> {
     let n = 0;
     let first = 0;
     let run: Uint8Array[] = [];
