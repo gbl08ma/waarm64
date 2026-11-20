@@ -98,6 +98,10 @@ test('two members talk through the relay at once, then over their data channel, 
   await a.waitForFunction(`window.harness.room().peers.some((p) => p.path === 'relay')`, null, { timeout: 5_000, polling: 20 });
   const after = await a.evaluate(`window.harness.echoes(${JSON.stringify(to)}, 50, 32, 4)`) as Echoes;
   assert.equal(after.back, 50, 'through the relay after the channel dropped');
+  // The other side learns of the drop from its own channel's close, a moment later.
+  await b
+    .waitForFunction(`window.harness.room().peers.some((p) => p.key === ${JSON.stringify(aKey)} && p.path === 'relay')`, null, { timeout: 5_000, polling: 20 })
+    .catch(() => undefined);
   assert.equal(await pathTo(b, aKey), 'relay', 'the other side fell back too');
   await close(a, b);
 });
