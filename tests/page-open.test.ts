@@ -53,8 +53,9 @@ test('a machine running in another tab: a second tab says so at once, and starts
     }, id);
 
     const page = await context.newPage();
-    const t0 = Date.now();
+    // Timed from the page's load: what's measured is the start's answer, not Vite compiling the page (seconds under load).
     await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}`);
+    const t0 = Date.now();
     await page.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => document.body.dataset.state)}: ${await message(page)}`); });
     const waited = Date.now() - t0;
