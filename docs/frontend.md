@@ -759,15 +759,111 @@ license texts at that version, and under a table the license file served beside 
 ([third-party.md](third-party.md)). A link to another site opens in a new tab with `rel="external nofollow noopener
 noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 
+## The introduction
+
+What a new visitor sees first (`IntroPage.svelte`, its sections in `web/app/intro/`; decisions.md "Demos"; the track's
+brief while it's open: `INTRO-KICKOFF.md`): one page scrolled from top to bottom that says what waarm64 is and ends in
+the demo store. It takes the **whole window** (`body[data-page=intro]`): the toolbar, the message bar, the status bar
+and the floating windows don't show, and the machine, Home or the store's page stay as they were under it.
+
+- **When it opens** (`areas/page-window.ts` `openFromAddress`, `openIntro`): on a **first visit**, a load with no
+  machines kept and nothing asked (no query, no fragment: `demos-route.ts` `firstVisit`; not under automation, where
+  the tests open the page bare in fresh profiles, unless `?firstvisit=1`); at its address, **`#intro`** on any copy of
+  the page (`intro-route.ts`; written to the address when it opens, so a reload keeps it and a link shares it); and
+  from **[Show the introduction](ui:machines:About.intro)** at the top of Home's About pane. `areas/intro.svelte.ts`
+  holds whether it shows.
+- **Its bar** is the toolbar's ground and height with the wordmark (`WordmarkLetters.svelte`, the toolbar's letters)
+  and one button, **Skip**: [Skip to the demos](ui:intro:IntroPage.skip), or for a visitor who has machines in this
+  browser [Skip to my machines](ui:intro:IntroPage.skip.home) (`intro-route.ts` `afterIntro`).
+- **Leaving it** (`closeIntro`): Skip leads to the store's page, or Home with machines; the first screen's
+  [Try a demo](ui:intro:IntroHero.demos) and the end's [Open the demos](ui:intro:IntroEnd.demos) always to the store
+  (the end also offers [Open my machines](ui:intro:IntroEnd.home) to a visitor who has some). The store is a new entry
+  of the browser's history, so Back returns to the introduction; Home replaces the introduction's entry, as Home's
+  address always does.
+- **The first screen** (`intro/IntroHero.svelte`): the headline, two paragraphs, the button to the demos, and beside
+  them the **machine's plate** (`intro/IntroPlate.svelte`): the emulated machine's parts and limits as a rating plate
+  says them (the figures are comparison.md §2's). The plate's place is where the live preview goes (a small guest
+  booting by itself: the kickoff's loops 1 and 2, not built yet); the plate is the design for a browser where that
+  can't run.
+- **Its sections** (`intro/IntroSection.svelte`: a title, a paragraph, its parts, in the page's column; the bar's
+  links scroll to them) after the first screen:
+  - **[What runs on it](ui:intro:IntroFacts.title)** (`intro/IntroFacts.svelte`): four figures as a panel's
+    **readouts** (`intro/IntroReadout.svelte`: lit digits in a sunk window, what they count, the sentence behind
+    them: 8 cores, 16 GiB, dEQP's 61,425 OpenGL ES tests, 0 drivers), then six topics, a short paragraph each.
+  - **[Compared with the others](ui:intro:IntroCompare.title)** (`intro/IntroCompare.svelte`; the projects, their
+    sources and the day they were checked: `intro/compare.ts`): a table, a row a property, of waarm64 (the lit
+    column), unkernel, WebVM, v86 and JSLinux, from [comparison.md](comparison.md) §2; a cell that page marks
+    unverified says [Not confirmed](ui:intro:IntroCompare.unconfirmed). Under it
+    **[Where they lead](ui:intro:IntroCompare.leads)** (comparison.md §3 and §4: the first second, browsers,
+    memory, system calls) and links to the sources. **No speed is claimed**; the place for one is kept
+    (`intro/IntroSpeed.svelte`, over the table): `intro/speed.ts` `SPEED_LEAD` is undefined until comparison.md §3's
+    rows are measured, then holds one figure ("N% faster than" the next fastest, named, with its workload and date),
+    and is emptied again if a peer measures faster.
+  - **[How it works](ui:intro:IntroHow.title)** (`intro/IntroHow.svelte`): five topics (`intro/IntroTopic.svelte`),
+    the processor, memory, OpenGL, video and Vulkan, each a paragraph and a **path** (`intro/IntroPath.svelte`): five
+    stages as modules of a panel joined by a rail, one active (its lamp lit, the rail lit up to it, its paragraph
+    under the path). The active stage moves on by itself every 3.2 s while the path is on screen
+    (`intro/autoplay.svelte.ts`: an IntersectionObserver; paused for good by a click on a stage, and never started
+    with `prefers-reduced-motion`). The facts are the docs' (cpu.md, jit.md, architecture.md, spill-memories.md,
+    graphics.md), and a figure names what it was measured on. Two topics have a **deep dive** under a button, mounted
+    only once opened:
+    - **The processor's** ([Look at real code](ui:intro:IntroHow.cpu.deeper); `intro/IntroCpuDive.svelte`,
+      `intro/IntroTranslate.svelte`): captured guest code in its four forms side by side, in **code panes**
+      (`ui/CodePane.svelte`): the AArch64 instructions, the block interpreter's micro-ops, the WebAssembly our JIT
+      emitted, and the machine code V8 made of it. One guest instruction is active and lit in every pane (the rows
+      emitted for it; the pane scrolls its first lit row into view); a **stepper** (`ui/Stepper.svelte`) walks the
+      instructions, by itself while on screen, and the pointer over a row picks its instruction. What surrounds an
+      instruction's own WebAssembly is folded under a label that unfolds it (what runs before a block's first
+      instruction, a slow path, what leaves a block). Chips choose among five captures; the C source, what to look
+      for, and the compiler's line are beside them. **Nothing is drawn by hand** ("The captures", below). The host's
+      pane lights only the lines V8's own source positions tie to a WebAssembly instruction (loads, stores, calls):
+      the fine print says so.
+    - **Memory's** ([Try the split](ui:intro:IntroHow.memory.deeper); `intro/IntroRam.svelte`): a slider of guest RAM
+      (256 MiB to 16 GiB) and under it a bar per WebAssembly memory, 4 GiB long, filled as the machine really splits
+      that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
+- **The captures** (`web/intro-captures/blocks.json`, written by `tools/intro-capture.ts`; the page fetches it when
+  the processor's deep dive opens: `intro/captures.ts`; an asset of the build, data and not one more script, which
+  `tests/dist.test.ts` counts). The tool compiles small C
+  functions for AArch64 with clang (`tools/intro-capture/*.c`; the built `guest.bin` and its listing are committed, so
+  every host captures the same guest code), runs them in the emulator under Node with the JIT on, and records: the
+  guest's instructions (llvm-objdump's text), the block interpreter's micro-ops for each block (the core's own
+  decoder, `core/examples/uops.rs`), each JIT function's WebAssembly as `wasm-tools print` prints it, which guest
+  instruction each line was emitted for, and V8's machine code for that function (`node --print-wasm-code
+  --no-liftoff`). The line-to-instruction map comes from a **`capture` build of the core** (a Cargo feature, off by
+  default, built into `target/capture/`): the emitter notes its code offset at each instruction, slow arm and tail
+  (`jit::wasm::Code::note`, nothing in a normal build) into a custom section; the tool checks every run that each
+  module, less that section, is byte for byte the normal core's. No export changes. `node tools/intro-capture.ts`
+  writes this host's architecture into the file and keeps the other's (x86-64 from a cloud session, AArch64 from the
+  dev VM), as long as both captured the same WebAssembly; `--build-guest` compiles the C again. It needs
+  `wasm-tools` (`cargo install --locked wasm-tools`). Run it again when the JIT's emission changes what these blocks
+  compile to, and read `IntroTranslate`'s "what to look for" words against the new capture.
+- **The movement** (`web/app/view-transition.ts`, the View Transitions API): leaving the introduction is one
+  transition (`intro`): its bar becomes the toolbar where it is, the status bar rises from the window's bottom edge,
+  the rest crosses over. A demo's Start is another (`launch`, `openDemo`): the demo's picture in its pane grows into
+  the machine's place, then the machine starts. The elements that move are named (`view-transition-name`) in their own
+  components under `html[data-vt='<kind>']`, set only while a transition runs: a name makes its element a stacking
+  context, and a toolbar that is one all the time would keep its menus under the screen. The pseudo-elements' timing
+  is `theme/base.css`'s, from the motion tokens (`--motion`, `--motion-slow`, `--ease`). Without the API, or with
+  `prefers-reduced-motion`, the change is immediate.
+- **Its words** are the catalog's `intro` area, in a voice of their own ([copy.md](copy.md) "The introduction").
+- **Its scale** is the tokens' introduction steps (`--text-lede`, `--text-title`, `--text-display`, `--space-7`,
+  `--space-8`): a page read, not a panel operated. Its pictures added to the design system: the motion tokens, a code
+  pane's lit lines (`--code-lit-bg`, `--code-lit-fg`, `--code-lit-rail`), and the primitives `ui/CodePane.svelte` and `ui/Stepper.svelte`
+  ([frontend-code.md](frontend-code.md) §2).
+
+Tests: `tests/intro-route.test.ts` (the address, where leaving leads; Node), `tests/page-intro.test.ts` (Chromium: a
+first visit, no bars under it, a reload, Skip and both buttons to the store, Back; with a machine: not opened by a bare
+address, `#intro`, Skip to Home, About's button and Back to About; the bar's links, the readouts, the comparison's
+table and its sources' links, no speed figure; its wording).
+
 ## The demo store
 
 The demo store's page (`DemosPage.svelte`; decisions.md "Demos"; the data: [machines.md](machines.md)
 §6.2) takes the machine's place as Home does (`body[data-page=demos]`; the machine runs on behind it). The toolbar leads
 out of it: Home to the Home page, the wordmark back to the machine ("The toolbar"); the browser's Back retraces it.
 It's reached three ways: **[Demos](ui:machines:MachinesNav.demos)** in Home's left column (between Preferences and
-About: it opens the page, not a pane); its address; and a **first visit**, a load with no machines kept and nothing
-asked (no query, no fragment: `demos-route.ts` `firstVisit`), which opens it. Not under automation (the tests open the
-page bare in fresh profiles) unless `?firstvisit=1`. Its icon is Tabler's `apps`. **Path-style links**
+About: it opens the page, not a pane); its address; and the introduction's end and its Skip ("The introduction",
+below: what a first visit opens). Its icon is Tabler's `apps`. **Path-style links**
 (`/demos/<id>`) would need a Worker script on `/demos/*` (`assets.run_worker_first`), counted against the free plan's
 100,000 requests a day (error 1027 past it) and answering the page with `<base href="/">` (HTMLRewriter): not built,
 the query's form serves (decisions.md "Demos").
@@ -862,7 +958,7 @@ the query's form serves (decisions.md "Demos").
 
 Tests: `tests/demos-route.test.ts` (the address, the first visit, the checks; Node), `tests/demo-store.test.ts` (the
 cut-off download), `tests/page-demos.test.ts` (Chromium, a stand-in worker and the stores answered by the test: the
-first visit, a row by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
+first visit's introduction skipped, a row by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
 started before, a fresh copy, `?id=`, an unknown id, Home's Demos and Back, the list beside the pane and one column
 when narrow (the first demo by default, another row with no trip back, All demos, the focus), `?store=`'s warning and what it fetches,
 the server down, the files gone, the download cut off), `tests/page-demos-guest.test.ts` (scripts/ci-machines.sh: a

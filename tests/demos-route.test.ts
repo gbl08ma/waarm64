@@ -1,7 +1,7 @@
 // The demo store's page's address (web/app/demos-route.ts; docs/frontend.md "The demo store") and what a demo needs of
 // the browser (web/app/demo-check.ts), in Node: `/demos` and `#demos` with `?id=` and `?store=` (percent-encoded, the
 // fragment's own query winning), the page's own query kept apart, the address after the page closes; the first visit
-// (no machines, nothing asked, not under automation unless `?firstvisit=1`); and the checks: a stop for what a demo
+// (no machines, nothing asked, not under automation unless `?firstvisit=1`: it opens the introduction); and the checks: a stop for what a demo
 // can't run without, a warning for what it may run without, 3D and Vulkan asked only of demos that have them.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

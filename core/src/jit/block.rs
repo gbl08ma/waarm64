@@ -1043,6 +1043,11 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             c.end(); // member i's label
         }
         c.base = b.va.wrapping_sub(head) as i64;
+        c.note(
+            super::wasm::NOTE_BLOCK,
+            b.va.wrapping_sub(head),
+            b.words.len() as u64,
+        );
         c.regs = entry[i];
         c.fp_ok = false;
         c.fpa_ok = false;
@@ -1078,9 +1083,11 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         for (k, &w) in b.words.iter().enumerate() {
             // The second word of a fused pair was emitted with the first.
             if core::mem::take(&mut skip) {
+                c.note(super::wasm::NOTE_FUSED, i as u64, k as u64);
                 inl += 1;
                 continue;
             }
+            c.note(super::wasm::NOTE_INSN, i as u64, k as u64);
             let op = decode(w);
             // NZCV is stored before the block's branch (see `commit_flags`),
             // unless a successor is a member and none that is needs it: the
@@ -1122,6 +1129,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             c.end();
             c.forget(!0);
         }
+        c.note(super::wasm::NOTE_TAIL, i as u64, 0);
         c.chain_close();
         if last && !c.defer_pc {
             emit::set_pc(&mut c, 4 * len as i64);

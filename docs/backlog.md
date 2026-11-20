@@ -1262,6 +1262,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **The introduction's deep dives for graphics** (INTRO, 2026-11-20; frontend.md "The introduction"): the processor
+  and memory have one each; Vulkan (a draw call followed through Venus's rings, vkr, our driver, the NIR → WGSL
+  compiler and WebGPU, from a captured frame), and OpenGL and video (virgl's stream onto WebGL2, a VA-API picture
+  through `VideoDecoder`) have only their paths. The rule holds for them too: made from captures, not drawn by hand.
+- **The introduction fed by the running machine** (INTRO): readouts and panels that show the hero's guest's own
+  numbers (blocks compiled, instructions run, the TLB's hits) as it runs; panels of blocks compiling live would need
+  new core exports, so a host ABI change for the user's OK.
+- **The introduction's speed figure** (INTRO): `web/app/intro/speed.ts` is empty until comparison.md §3's rows are
+  measured; and its comparison's facts are dated 2026-11-18 (`web/app/intro/compare.ts`): read the peers' sources
+  again before a deploy.
+- **The processor's deep dive on Liftoff** (INTRO): the host pane shows TurboFan's code for the function compiled
+  alone (`--no-liftoff`); a browser runs Liftoff's first and tiers up, and whether the tiered-up code is the same
+  wasn't checked. `tools/intro-capture.ts --baseline` captures Liftoff's (about twice the size), not shown.
 - **A bench target for the deployed demos** (the DEMO track's end, 2026-11-19): bench/demo measures a local build
   through a modelled link; the deployed store's numbers (bench/demo/REPORT.md "DEMO's end", comparison.md §3) are single
   runs of an ad-hoc check. A target for `https://vm.tny.im/demos` (each demo's click → command, bytes, `apk add`,
@@ -2208,6 +2221,16 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 
 ## Tests and tools
 
+- **The fast lane stalls when started from an agent's shell in the cloud** (INTRO, 2026-11-20): `scripts/ci-fast.sh`
+  run by the Bash tool directly stopped twice 67 tests into the JS step with every process idle (once for 31 min);
+  started detached (`nohup … &`) it ran through both times. Most likely a test or a tool it starts reads the
+  inherited input; give the JS step `</dev/null` once the file is found (the last output before the stall was
+  the two "needs busybox and script" skips).
+- **Three stale figures in the docs** (found reading for the introduction's copy, 2026-11-20; not fixed): jit.md
+  "Loads and stores (the TLB fast path)" gives the entry mask as `0x7ff80`, and the emitted code masks with
+  `0x1fff80` (16,384 entries since 2026-11-03); architecture.md "Guest memory: layout A" says memory 0 holds
+  "≤ ~3.5 GiB" of RAM where its own Risks, abi.md and `web/ram.ts` say 3 GiB less 1 MiB; testing.md's dEQP-VK counts
+  ("~5,600 of 40,166", "58,906 cases") don't match `tests/deqp/vk.txt` (81,734 cases).
 - [B] **`debug` fails on the hvf oracle** (`tests/baremetal/oracle.sh --hvf`, exit 2; PERF loop 34): QEMU's hvf
   backend traps the debug registers and models them itself, and its `OSLSR_EL1` reads 0 after `OSLAR_EL1` = 0 (OSLM
   0b00, "no OS lock", though OSLAR's lock then reads back as OSLK); an ARMv8 PE reads 0x8 there, as we and TCG do. With

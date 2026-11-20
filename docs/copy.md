@@ -54,12 +54,31 @@ those of any screen a newcomer lands on, are written for someone who has done no
 - **Then cut what is said twice** and read the note aloud: each sentence one topic, in the order the visitor needs
   them (what it is, what to do, what it costs, what to know).
 
+## The introduction
+
+The introduction (the catalog's `intro` area; frontend.md "The introduction") is the one screen written to be read
+rather than operated, by someone deciding whether to care. Its voice differs from the rest (the user's brief,
+2026-11-20):
+
+- **More direct, a little less formal.** Short declarative sentences that make a claim: "waarm64 emulates the
+  hardware, not the operating system." Still plain, with no wordplay, no exclamation marks, and no question asked of
+  the reader.
+- **It names distributions, programs and other projects** (Debian, Arch, Alpine, Firefox, a Raspberry Pi; the peers by
+  name in the comparison), which "Detail" below rules out everywhere else: here the names are the claim.
+- **Every claim is one we can show**: a figure comes from a measurement or a limit the page enforces
+  ([comparison.md](comparison.md)), a comparison names its date and source, and a picture of how something works is
+  made from what the code really does. No superlative without a number behind it.
+- **It may use the terms of the trade** (JIT, WebAssembly, TLB, UEFI) where the section is about them, said once in
+  plain words first.
+- The rest holds: full sentences, one topic each, American spelling, the serial comma, "you" for the visitor, a
+  first-time visitor's rules above (nothing assumes a past; say what a thing is before using our name for it).
+
 ## Detail
 
 - Name the components and standards a user may need to know or look up: systemd, Linux, Mesa, OpenGL ES, Vulkan,
   VA-API, qcow2, a version when it is a real requirement ("systemd version 254 or above").
 - **No distributions as examples** (Debian, Arch, …): what they ship changes, and naming them suggests only they work.
-  State the requirement instead.
+  State the requirement instead. (The introduction is the exception: above.)
 - **No internals** the user can't act on: workers, OPFS, buffers, chunks, budgets, generations, pins. A limit or a
   number appears when it changes what the user does or expects ("for the first 4 GiB of the disk").
 - **Accuracy over brevity**, though: a simplification must still be true. If the exact rule is too long, say the part

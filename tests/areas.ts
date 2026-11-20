@@ -118,7 +118,7 @@ export const AREAS: Record<string, Area> = {
   machines: {
     // Stored machines, the store, the Machines and Home pages.
     heavy: ['tests/storage-full.test.ts'],
-    src: ['web/app/store*.ts', 'web/app/machine*.ts', 'web/app/machines*.ts', 'web/app/Machine*.svelte', 'web/app/MachinesPage.svelte', 'web/app/storage-report.ts', 'web/app/Storage*.svelte', 'web/app/locks.ts', 'web/app/areas/machines-nav.svelte.ts', 'web/app/areas/records.svelte.ts', 'web/app/definitions.ts', 'web/app/template.ts', 'web/app/demo-store.ts', 'web/app/demo-check.ts', 'web/app/demo-open.ts', 'web/app/demos-route.ts', 'web/app/demo-leave.ts', 'web/app/Demo*.svelte', 'web/app/NewMachine.svelte', 'tests/page-home.ts', 'web/app/areas/demos.svelte.ts', 'tests/demos-route.test.ts', 'tests/demo-fixture.ts', 'tests/page-demos*.test.ts', 'tools/demo-site.ts', 'tools/publish-demos.ts', 'tools/build-demos.ts', 'bench/demo/make-template.ts', 'bench/demo/screen-like.ts', 'tests/demo-store.test.ts', 'tests/demo-site.test.ts', 'tests/build-demos.test.ts', 'tests/template.test.ts'],
+    src: ['web/app/store*.ts', 'web/app/machine*.ts', 'web/app/machines*.ts', 'web/app/Machine*.svelte', 'web/app/MachinesPage.svelte', 'web/app/storage-report.ts', 'web/app/Storage*.svelte', 'web/app/locks.ts', 'web/app/areas/machines-nav.svelte.ts', 'web/app/areas/records.svelte.ts', 'web/app/definitions.ts', 'web/app/template.ts', 'web/app/demo-store.ts', 'web/app/demo-check.ts', 'web/app/demo-open.ts', 'web/app/demos-route.ts', 'web/app/intro-route.ts', 'tests/intro-route.test.ts', 'web/app/demo-leave.ts', 'web/app/Demo*.svelte', 'web/app/NewMachine.svelte', 'tests/page-home.ts', 'web/app/areas/demos.svelte.ts', 'tests/demos-route.test.ts', 'tests/demo-fixture.ts', 'tests/page-demos*.test.ts', 'tools/demo-site.ts', 'tools/publish-demos.ts', 'tools/build-demos.ts', 'bench/demo/make-template.ts', 'bench/demo/screen-like.ts', 'tests/demo-store.test.ts', 'tests/demo-site.test.ts', 'tests/build-demos.test.ts', 'tests/template.test.ts'],
     push: ['ci-machines.sh'],
   },
   // ---- graphics
@@ -182,7 +182,7 @@ export const AREAS: Record<string, Area> = {
   },
   page: {
     // The page's UI: components, the catalog, the theme, the workers' plumbing. Its quick tests are in the smoke set.
-    src: ['web/app/**', 'web/messages/**', 'web/i18n.ts', 'web/msg.ts', 'web/window.ts', 'web/changes.ts', 'web/ram-scan.ts', 'tests/browser/**', 'tests/harness/**', 'tests/page-*.ts', 'tests/serial-console.ts', 'tests/words.ts', 'tests/until.ts', 'tests/debian-lock.ts', 'tests/debian-fixture.ts', 'tools/i18n-check.ts', 'tools/screens.ts', 'tools/screens-demos.ts', 'tools/copy-apply.ts', 'tools/start.*', 'tools/dist.ts'],
+    src: ['web/app/**', 'web/intro-captures/**', 'web/messages/**', 'web/i18n.ts', 'web/msg.ts', 'web/window.ts', 'web/changes.ts', 'web/ram-scan.ts', 'tests/browser/**', 'tests/harness/**', 'tests/page-*.ts', 'tests/serial-console.ts', 'tests/words.ts', 'tests/until.ts', 'tests/debian-lock.ts', 'tests/debian-fixture.ts', 'tools/i18n-check.ts', 'tools/screens.ts', 'tools/screens-demos.ts', 'tools/copy-apply.ts', 'tools/start.*', 'tools/dist.ts'],
     heavy: ['tests/page-run.test.ts', 'tests/page-modal.test.ts', 'tests/page-statusbar.test.ts'],
     end: ['ci-debian.sh'],
   },

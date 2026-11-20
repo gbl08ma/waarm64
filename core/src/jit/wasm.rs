@@ -72,9 +72,36 @@ pub struct Code {
     /// Where the last `i32.const 0` or `i64.const 0` ends (0: none), so an
     /// `add`, `sub`, `or` or `xor` of it drops both ([`Code::op`]).
     zero: usize,
+    /// The capture build only (Cargo feature `capture`, tools/intro-capture.ts): what the code from each
+    /// offset on was emitted for, as (offset in `b`, a `NOTE_*` part, two operands). [`Module::func`] keeps
+    /// them and [`Module::finish`] writes them as a custom section after the module, whose other bytes are
+    /// the normal build's.
+    #[cfg(feature = "capture")]
+    pub notes: Vec<(usize, u8, u64, u64)>,
 }
 
+/// [`Code::note`]'s parts: guest instruction `b` of the region's member `a` starts; member `a`'s instructions
+/// are done (its edges, exits and chaining follow); a slow arm for the member's instructions `a` to `b`
+/// starts (a load's or store's helper call, a group's span); that arm ends; the region's next member starts,
+/// `a` bytes after the head's VA (wrapping) and `b` instructions long; instruction `b` of member `a` was
+/// emitted with the one before it (a fused pair).
+pub const NOTE_INSN: u8 = 0;
+pub const NOTE_TAIL: u8 = 1;
+pub const NOTE_SLOW: u8 = 2;
+pub const NOTE_SLOW_END: u8 = 3;
+pub const NOTE_BLOCK: u8 = 4;
+pub const NOTE_FUSED: u8 = 5;
+
 impl Code {
+    /// The capture build only: the code emitted from here on is for `part` (a `NOTE_*`). Nothing in a
+    /// normal build.
+    #[inline(always)]
+    pub fn note(&mut self, part: u8, a: u64, b: u64) {
+        #[cfg(feature = "capture")]
+        self.notes.push((self.b.len(), part, a, b));
+        #[cfg(not(feature = "capture"))]
+        let _ = (part, a, b);
+    }
     /// Where the code is now, for [`Code::rewind`].
     pub fn mark(&self) -> (usize, usize, usize) {
         self.fence.set(self.b.len());
@@ -83,6 +110,8 @@ impl Code {
     /// Drops what was emitted since `m`.
     pub fn rewind(&mut self, m: (usize, usize, usize)) {
         self.b.truncate(m.0);
+        #[cfg(feature = "capture")]
+        self.notes.retain(|n| n.0 <= m.0);
         self.fence.set(m.0);
         self.zero = 0;
         self.locals.truncate(m.1);
@@ -108,6 +137,10 @@ impl Code {
             && matches!(op, 0x6a | 0x6b | 0x72 | 0x73 | 0x7c | 0x7d | 0x84 | 0x85)
         {
             self.b.truncate(n - 2);
+            #[cfg(feature = "capture")]
+            for x in &mut self.notes {
+                x.0 = x.0.min(n - 2);
+            }
             self.zero = 0;
             return self;
         }
@@ -287,9 +320,15 @@ impl Code {
         let mut b = Vec::with_capacity(self.b.len() + self.locals.len());
         let (mut from, mut shift) = (0, 0);
         let mut hints = self.hints.iter_mut().peekable();
+        #[cfg(feature = "capture")]
+        let mut notes = self.notes.iter_mut().peekable();
         for &p in &self.locals {
             while let Some(h) = hints.next_if(|h| h.0 <= p) {
                 h.0 += shift;
+            }
+            #[cfg(feature = "capture")]
+            while let Some(x) = notes.next_if(|x| x.0 <= p) {
+                x.0 += shift;
             }
             b.extend_from_slice(&self.b[from..p]);
             let v = map[self.b[p] as usize] as u32;
@@ -299,6 +338,10 @@ impl Code {
         }
         for h in hints {
             h.0 += shift;
+        }
+        #[cfg(feature = "capture")]
+        for x in notes {
+            x.0 += shift;
         }
         b.extend_from_slice(&self.b[from..]);
         self.b = b;
@@ -439,6 +482,11 @@ pub struct Module {
     /// The branch-hint section's entries, and how many functions have some.
     hints: Vec<u8>,
     nhinted: usize,
+    /// The capture build only: the functions' [`Code::notes`], as the `waarm64.notes` section's entries.
+    #[cfg(feature = "capture")]
+    notes: Vec<u8>,
+    #[cfg(feature = "capture")]
+    nnoted: usize,
 }
 
 impl Module {
@@ -534,6 +582,19 @@ impl Module {
             }
             self.nhinted += 1;
         }
+        // Note offsets count as the hints' do.
+        #[cfg(feature = "capture")]
+        if !body.notes.is_empty() {
+            uleb(&mut self.notes, idx as u64);
+            uleb(&mut self.notes, body.notes.len() as u64);
+            for &(at, part, a, b) in &body.notes {
+                uleb(&mut self.notes, (f.len() + at) as u64);
+                self.notes.push(part);
+                uleb(&mut self.notes, a);
+                uleb(&mut self.notes, b);
+            }
+            self.nnoted += 1;
+        }
         f.extend_from_slice(&body.b);
         uleb(&mut self.code, f.len() as u64);
         self.code.extend(f);
@@ -589,6 +650,17 @@ impl Module {
             body.push(1);
             uleb(&mut body, sub.len() as u64);
             body.extend(sub);
+            out.push(0);
+            uleb(&mut out, body.len() as u64);
+            out.extend(body);
+        }
+        // The capture build's notes, last: without this section the module is the normal build's.
+        #[cfg(feature = "capture")]
+        if self.nnoted > 0 {
+            let mut body = Vec::new();
+            name(&mut body, "waarm64.notes");
+            uleb(&mut body, self.nnoted as u64);
+            body.extend(&self.notes);
             out.push(0);
             uleb(&mut out, body.len() as u64);
             out.extend(body);

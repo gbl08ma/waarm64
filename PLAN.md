@@ -70,3 +70,4 @@ here changes, and that row stays one line: a name, a state with a date, and link
 ## Proposed, not started
 
 The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([backlog.md](docs/backlog.md)).
+| The introduction (INTRO) | In progress since 2026-11-20 | [INTRO-KICKOFF.md](INTRO-KICKOFF.md), [frontend.md](docs/frontend.md) "The introduction" |

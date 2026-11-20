@@ -290,6 +290,13 @@
     color: var(--text-dim);
     font-size: var(--bar-text-sm);
   }
+  /* The introduction has a bar of its own, which this one takes the place of when it's left (view-transition.ts). */
+  :global(body[data-page='intro']) .toolbar {
+    display: none;
+  }
+  :global(html[data-vt='intro']) .toolbar {
+    view-transition-name: page-bar;
+  }
   .toolbar :global(#power-off.now) {
     color: var(--danger-fg);
   }

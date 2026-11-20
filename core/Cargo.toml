@@ -14,6 +14,15 @@ diag = []
 # code, and `jit_run` stores the steps left in the stop word and returns the steps it ran (docs/testing.md "Polled code
 # against the interpreter"). A test build in its own target directory, never the normal build: no export changes.
 polled = []
+# The introduction page's capture tool (tools/intro-capture.ts): the JIT's modules carry a custom section saying which
+# guest instruction each stretch of a function was emitted for (`jit::wasm::Code::note`; the module's other bytes are
+# the normal build's, which the tool checks), and `interp::block::describe` lists a block's micro-ops. A tool build in
+# its own target directory (target/capture/), never the normal build: no export changes.
+capture = []
+
+[[example]]
+name = "uops"
+required-features = ["capture"]
 
 [dependencies]
 # The snapshot file's codec 2 (the LZ4 block format) and its frames' CRC-32 (docs/platform.md "The snapshot file").

@@ -633,6 +633,73 @@ pub fn pack_into(b: &[Wide], out: &mut Vec<Uop>) {
     out.extend(consts[..nk].iter().map(|&v| Uop::of(v)));
 }
 
+/// The capture build only (Cargo feature `capture`, tools/intro-capture.ts): one micro-op of [`describe`].
+#[cfg(feature = "capture")]
+pub struct Described {
+    /// The instruction's word.
+    pub word: u32,
+    /// The decoded form [`run`] takes (a [`Wide`]): its kind's name and fields.
+    pub kind: String,
+    pub d: u8,
+    pub n: u8,
+    pub m: u8,
+    pub x: u32,
+    pub imm: u64,
+    /// The 8 bytes a block holds for it (a [`Uop`]: `w` little-endian, then `d`, `n`, `m` and the kind).
+    pub packed: [u8; 8],
+}
+
+/// The capture build only: the block at `key` as [`Cache`] decodes it (the same calls as its `miss`, and
+/// checked against a cache's own copy), each micro-op in both forms, the 8-byte constants that follow the
+/// block's micro-ops in the arena, and whether [`hot`]'s rich copy runs it.
+#[cfg(feature = "capture")]
+pub fn describe(mem: &Mem, key: u64) -> (Vec<Described>, Vec<u64>, bool) {
+    let mut words = Vec::new();
+    let mut wide = crate::jit::block::form_with(mem, key & !3, |w, op| {
+        words.push(w);
+        uop_el(w, op, key & 1 != 0)
+    });
+    mov_runs(&mut wide);
+    let mut uops = Vec::new();
+    pack_into(&wide, &mut uops);
+    let bytes = |u: &Uop| {
+        let mut b = [0; 8];
+        b[..4].copy_from_slice(&u.w.to_le_bytes());
+        b[4..].copy_from_slice(&[u.d, u.n, u.m, u.k]);
+        b
+    };
+    let out = wide
+        .iter()
+        .zip(&uops)
+        .zip(&words)
+        .map(|((w, u), &word)| Described {
+            word,
+            kind: format!("{:?}", w.k),
+            d: w.d,
+            n: w.n,
+            m: w.m,
+            x: w.x,
+            imm: w.imm,
+            packed: bytes(u),
+        })
+        .collect();
+    let consts = uops[wide.len()..]
+        .iter()
+        .map(|u| u64::from_le_bytes(bytes(u)))
+        .collect();
+    let mut cache = Cache::new(1 << 16);
+    let held: Vec<[u8; 8]> = cache
+        .get(key, mem)
+        .unwrap_or(&[])
+        .iter()
+        .map(bytes)
+        .collect();
+    let mine: Vec<[u8; 8]> = uops[..wide.len()].iter().map(bytes).collect();
+    assert_eq!(held, mine, "the cache's block at {key:#x}");
+    let rich = !wide.is_empty() && cache.rich(key);
+    (out, consts, rich)
+}
+
 /// [`uop_op`] at the block's EL (`el1`): an MRS of a register `sys::plain`
 /// knows at that EL is a [`K::Mrs`] (the rest are as `uop_op` makes them).
 pub(crate) fn uop_el(w: u32, op: Op, el1: bool) -> Wide {

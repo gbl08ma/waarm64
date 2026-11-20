@@ -6,6 +6,7 @@ import disks from './disks.json' with { type: 'json' };
 import display from './display.json' with { type: 'json' };
 import folders from './folders.json' with { type: 'json' };
 import guest from './guest.json' with { type: 'json' };
+import intro from './intro.json' with { type: 'json' };
 import machine from './machine.json' with { type: 'json' };
 import machines from './machines.json' with { type: 'json' };
 import network from './network.json' with { type: 'json' };
@@ -20,7 +21,7 @@ import usb from './usb.json' with { type: 'json' };
 export type Entry = { message: string; note: string };
 export type Catalog = Record<string, Entry>;
 
-export const CATALOGS: Record<string, Catalog> = { clipboard, common, disks, display, folders, guest, machine, machines, network, osk, snapshots, sound, statusbar, toolbar, usb };
+export const CATALOGS: Record<string, Catalog> = { clipboard, common, disks, display, folders, guest, intro, machine, machines, network, osk, snapshots, sound, statusbar, toolbar, usb };
 
 /**
  * A message's reference to another, i18next's nesting: `$t(common:product.name)` says that entry's words in its place
