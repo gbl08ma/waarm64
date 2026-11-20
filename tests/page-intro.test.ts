@@ -2,7 +2,7 @@
 // first visit opens it over the whole window (no toolbar, no status bar) at `#intro`; Skip leaves it for the demo
 // store's page, where the toolbar and the status bar are, and the browser's Back returns to it; a reload keeps it. A
 // visitor with a machine isn't shown it by a bare address, reaches it at `#intro` and from About's button, and Skip
-// leads them Home. Our store is answered empty by the test (no request leaves the machine).
+// leads them Home. Its sections: the bar's links, the readouts, the comparison's table. Our store is answered empty by the test (no request leaves the machine).
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -103,6 +103,32 @@ test("with a machine kept: a bare address isn't the introduction; `#intro` and A
   await page.goBack();
   await becomes(page, 'machines');
   assert.equal(await page.locator('section[data-selected=about]').count(), 1, 'Home as it was left: About');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the sections: the bar\'s links scroll to them; the comparison names each project, ours lit, and no speed figure without a measurement', async () => {
+  const { ctx, page, errors } = await visitor();
+  await page.goto(`${base}/web/app/#intro`);
+  await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
+  const top = (id: string) => page.locator(`[data-section="${id}"]`).evaluate((e) => Math.round(e.getBoundingClientRect().top));
+  const bar = await page.locator('[data-intro] > header').evaluate((e) => e.getBoundingClientRect().height);
+  for (const id of ['intro-facts', 'intro-compare']) {
+    assert.ok((await top(id)) > bar + 100, `${id} starts further down`);
+    await page.locator(`[data-to-section="${id}"]`).click();
+    await page.waitForFunction(([i, b]) => Math.abs(document.querySelector(`[data-section="${i}"]`)!.getBoundingClientRect().top - (b as number)) < 40, [id, bar] as const, { timeout: 10_000, polling: 50 });
+  }
+  assert.equal(await page.locator('[data-section="intro-facts"] .readout').count(), 4);
+  const table = page.locator('[data-section="intro-compare"] table');
+  assert.deepEqual(await table.locator('thead th').allInnerTexts(), ['waarm64', 'unkernel', 'WebVM', 'v86', 'JSLinux']);
+  assert.equal(await table.locator('tbody tr').count(), 10);
+  assert.equal(await table.locator('tbody td[data-peer="ours"]').count(), 10, 'a cell of ours in every row');
+  assert.equal(await table.locator('tbody td').evaluateAll((tds) => tds.filter((td) => !td.textContent?.trim()).length), 0, 'no empty cell');
+  assert.equal(await page.locator('[data-field="speed-lead"]').count(), 0, 'no speed figure until one is measured (web/app/intro/speed.ts)');
+  // Every source is a link to another site, opened apart and told nothing of the page.
+  const links = await page.locator('[data-section="intro-compare"] .sources a').evaluateAll((as) => as.map((a) => ({ rel: a.getAttribute('rel'), target: a.getAttribute('target') })));
+  assert.equal(links.length, 4);
+  for (const l of links) assert.deepEqual(l, { rel: 'external nofollow noopener noreferrer', target: '_blank' });
   assert.deepEqual(errors, []);
   await ctx.close();
 });

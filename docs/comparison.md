@@ -107,6 +107,13 @@ AES-128-GCM 232 MB/s with the crypto extensions.
 
 ## 5. Draft copy
 
+The introduction (frontend.md "The introduction") is where this copy went, 2026-11-20: its comparison's table and
+[Where they lead](ui:intro:IntroCompare.leads) are §2's and §4's facts in the catalog's `intro` area, dated by `web/app/intro/compare.ts`
+`CHECKED`. A change to §2 to §4 changes those words and that date in the same commit; the one speed figure the page
+keeps a place for (`web/app/intro/speed.ts`) is filled from §3 once its rows are measured. What follows is the draft
+they were written from.
+
+
 > **A real arm64 computer in a browser tab.** waarm64 runs the same Linux you'd run on a Raspberry Pi, a Mac's VM or
 > an arm64 cloud server: stock distributions, stock kernels, unmodified binaries, proprietary ones included. It isn't
 > a wasm port of Linux or a syscall emulator. It's a whole machine, with up to 8 cores, up to 16 GiB of RAM and UEFI,

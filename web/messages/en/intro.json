@@ -114,5 +114,373 @@
   "IntroEnd.home": {
     "message": "Open my machines",
     "note": "Second button of the introduction's last section, shown only to a visitor who has machines in this browser: leaves the introduction for the Home page."
+  },
+  "IntroPage.nav": {
+    "message": "Sections of the introduction",
+    "note": "Screen reader's name for the links in the introduction's bar that scroll to its sections."
+  },
+  "IntroPage.nav.facts": {
+    "message": "What runs on it",
+    "note": "Link in the introduction's bar: scrolls to the section of that title."
+  },
+  "IntroPage.nav.compare": {
+    "message": "Compared",
+    "note": "Link in the introduction's bar: scrolls to the comparison with other projects."
+  },
+  "IntroFacts.title": {
+    "message": "What runs on it",
+    "note": "Title of the introduction's second section. No period."
+  },
+  "IntroFacts.lede": {
+    "message": "The machine is whole, so the software doesn't have to be adapted to it. Whatever ships for 64-bit ARM Linux is a candidate, closed-source programs included.",
+    "note": "Paragraph under the title of the introduction's “What runs on it” section."
+  },
+  "IntroFacts.cores": {
+    "message": "8",
+    "note": "A figure in a readout of the introduction's “What runs on it” section, in large digits. What it counts is IntroFacts.cores.counts."
+  },
+  "IntroFacts.cores.counts": {
+    "message": "cores",
+    "note": "What the figure “8” counts, under its readout on the introduction. Not a sentence: no period."
+  },
+  "IntroFacts.cores.words": {
+    "message": "Each core runs on a thread of its own, and the guest's atomic instructions are real atomic operations.",
+    "note": "The sentence under the readout “8 cores” on the introduction: what stands behind the figure."
+  },
+  "IntroFacts.ram": {
+    "message": "16 GiB",
+    "note": "A figure in a readout of the introduction's “What runs on it” section, in large digits. What it counts is IntroFacts.ram.counts."
+  },
+  "IntroFacts.ram.counts": {
+    "message": "of memory",
+    "note": "What the figure “16 GiB” counts, under its readout on the introduction. Not a sentence: no period."
+  },
+  "IntroFacts.ram.words": {
+    "message": "WebAssembly gives a program 4 GiB at most. Past the first 3 GiB, the guest's memory is spread over more memories and shown to Linux as NUMA nodes.",
+    "note": "The sentence under the readout “16 GiB of memory” on the introduction: what stands behind the figure."
+  },
+  "IntroFacts.tests": {
+    "message": "61,425",
+    "note": "A figure in a readout of the introduction's “What runs on it” section, in large digits. What it counts is IntroFacts.tests.counts."
+  },
+  "IntroFacts.tests.counts": {
+    "message": "graphics tests passed, none failed",
+    "note": "What the figure “61,425” counts, under its readout on the introduction. Not a sentence: no period."
+  },
+  "IntroFacts.tests.words": {
+    "message": "These are dEQP's lists for OpenGL ES 2 and 3, the tests Android requires a GPU driver to pass.",
+    "note": "The sentence under the readout “61,425 graphics tests passed, none failed” on the introduction: what stands behind the figure."
+  },
+  "IntroFacts.drivers": {
+    "message": "0",
+    "note": "A figure in a readout of the introduction's “What runs on it” section, in large digits. What it counts is IntroFacts.drivers.counts."
+  },
+  "IntroFacts.drivers.counts": {
+    "message": "drivers to install in the guest",
+    "note": "What the figure “0” counts, under its readout on the introduction. Not a sentence: no period."
+  },
+  "IntroFacts.drivers.words": {
+    "message": "There is no patched kernel either. The devices are virtio, xHCI, PL011, and GICv3, which Linux has supported for years.",
+    "note": "The sentence under the readout “0 drivers to install in the guest” on the introduction: what stands behind the figure."
+  },
+  "IntroFacts.desktop": {
+    "message": "A desktop with a browser in it",
+    "note": "Title of a topic in the introduction's “What runs on it” section. No period."
+  },
+  "IntroFacts.desktop.words": {
+    "message": "Firefox and Chromium run inside the tab, WebGL included. Video is decoded by your GPU through VA-API, so YouTube plays in the guest's browser.",
+    "note": "Paragraph of the topic “A desktop with a browser in it” in the introduction's “What runs on it” section."
+  },
+  "IntroFacts.vulkan": {
+    "message": "Vulkan on WebGPU",
+    "note": "Title of a topic in the introduction's “What runs on it” section. No period."
+  },
+  "IntroFacts.vulkan.words": {
+    "message": "Vulkan programs run through Mesa's Venus driver onto WebGPU. vkcube, vkmark, and vkQuake work today. It is the newest part and still growing.",
+    "note": "Paragraph of the topic “Vulkan” in the introduction's “What runs on it” section."
+  },
+  "IntroFacts.devices": {
+    "message": "Your devices",
+    "note": "Title of a topic in the introduction's “What runs on it” section. No period."
+  },
+  "IntroFacts.devices.words": {
+    "message": "Plug in a USB device and hand it to the guest. Game controllers, the microphone, and the clipboard reach it too.",
+    "note": "Paragraph of the topic “Your devices” in the introduction's “What runs on it” section."
+  },
+  "IntroFacts.disks": {
+    "message": "Your disks and files",
+    "note": "Title of a topic in the introduction's “What runs on it” section. No period."
+  },
+  "IntroFacts.disks.words": {
+    "message": "Open a qcow2 or raw image as its publisher made it, keep it in this browser, and share a folder from your computer. Export the whole disk later, or only what changed.",
+    "note": "Paragraph of the topic “Your disks and files” in the introduction's “What runs on it” section."
+  },
+  "IntroFacts.snapshots": {
+    "message": "Snapshots",
+    "note": "Title of a topic in the introduction's “What runs on it” section. No period."
+  },
+  "IntroFacts.snapshots.words": {
+    "message": "Freeze a running machine, 3D programs and all, and continue later. A snapshot can be saved to a file and opened in another browser.",
+    "note": "Paragraph of the topic “Snapshots” in the introduction's “What runs on it” section."
+  },
+  "IntroFacts.networks": {
+    "message": "Networks",
+    "note": "Title of a topic in the introduction's “What runs on it” section. No period."
+  },
+  "IntroFacts.networks.words": {
+    "message": "Join your Tailscale network, go online through your own computer, or connect two browsers directly, peer to peer. A machine can have four adapters.",
+    "note": "Paragraph of the topic “Networks” in the introduction's “What runs on it” section."
+  },
+  "IntroSpeed.figure": {
+    "message": "{{percent}}%",
+    "note": "The introduction's speed figure in large digits, over the comparison's table. {{percent}} is a number."
+  },
+  "IntroSpeed.claim": {
+    "message": "faster than <peer>{{peer}}</peer>, the next fastest",
+    "note": "Beside the speed figure on the introduction: reads on from “up to N%”. {{peer}} is another project's name."
+  },
+  "IntroSpeed.basis": {
+    "message": "Measured on {{when, date}}: {{workload}}.",
+    "note": "Under the speed claim on the introduction. {{when}} is the measurement's date, {{workload}} what was run, in words."
+  },
+  "IntroCompare.title": {
+    "message": "Compared with the others",
+    "note": "Title of the introduction's comparison section. No period."
+  },
+  "IntroCompare.lede": {
+    "message": "Other projects run Linux in a browser, and each made a different trade. These are the facts as their own documentation and source state them on {{when, date}}.",
+    "note": "Paragraph under the title of the introduction's comparison section. {{when}} is the date the other projects were last checked."
+  },
+  "IntroCompare.caption": {
+    "message": "What each project emulates and offers",
+    "note": "Screen reader's caption of the comparison table on the introduction."
+  },
+  "IntroCompare.unconfirmed": {
+    "message": "Not confirmed",
+    "note": "A cell of the comparison table on the introduction, where the other project's documentation doesn't say and we couldn't check."
+  },
+  "IntroCompare.no": {
+    "message": "No",
+    "note": "A cell of the comparison table on the introduction: the project doesn't have the feature of its row."
+  },
+  "IntroCompare.guest": {
+    "message": "What is emulated",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.guest.ours": {
+    "message": "A whole 64-bit ARM machine",
+    "note": "Cell of the comparison table on the introduction: “What is emulated” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.guest.unkernel": {
+    "message": "64-bit RISC-V programs, on a Linux kernel compiled to WebAssembly",
+    "note": "Cell of the comparison table on the introduction: “What is emulated” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.guest.webvm": {
+    "message": "32-bit x86 programs, with Linux's system calls reimplemented",
+    "note": "Cell of the comparison table on the introduction: “What is emulated” for WebVM. Not a sentence: no period."
+  },
+  "IntroCompare.guest.v86": {
+    "message": "A whole 32-bit x86 PC",
+    "note": "Cell of the comparison table on the introduction: “What is emulated” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.guest.jslinux": {
+    "message": "Whole x86 and RISC-V machines",
+    "note": "Cell of the comparison table on the introduction: “What is emulated” for JSLinux. Not a sentence: no period."
+  },
+  "IntroCompare.kernel": {
+    "message": "Kernel",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.kernel.ours": {
+    "message": "The distribution's own, unchanged",
+    "note": "Cell of the comparison table on the introduction: “Kernel” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.kernel.unkernel": {
+    "message": "Its own WebAssembly build",
+    "note": "Cell of the comparison table on the introduction: “Kernel” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.kernel.webvm": {
+    "message": "None",
+    "note": "Cell of the comparison table on the introduction: “Kernel” for WebVM. Not a sentence: no period."
+  },
+  "IntroCompare.kernel.v86": {
+    "message": "The guest's own",
+    "note": "Cell of the comparison table on the introduction: “Kernel” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.kernel.jslinux": {
+    "message": "The guest's own",
+    "note": "Cell of the comparison table on the introduction: “Kernel” for JSLinux. Not a sentence: no period."
+  },
+  "IntroCompare.cores": {
+    "message": "Processor cores",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.cores.ours": {
+    "message": "Up to 8",
+    "note": "Cell of the comparison table on the introduction: “Processor cores” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.cores.unkernel": {
+    "message": "1, more as an experiment",
+    "note": "Cell of the comparison table on the introduction: “Processor cores” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.cores.v86": {
+    "message": "1",
+    "note": "Cell of the comparison table on the introduction: “Processor cores” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.gpu": {
+    "message": "3D graphics",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.gpu.ours": {
+    "message": "OpenGL ES 3.0, OpenGL 2.1, Vulkan",
+    "note": "Cell of the comparison table on the introduction: “3D graphics” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.video": {
+    "message": "Video decoding",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.video.ours": {
+    "message": "H.264, VP9, AV1",
+    "note": "Cell of the comparison table on the introduction: “Video decoding” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.usb": {
+    "message": "USB devices",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.usb.ours": {
+    "message": "Your own, through WebUSB and WebHID",
+    "note": "Cell of the comparison table on the introduction: “USB devices” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.network": {
+    "message": "Network",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.network.ours": {
+    "message": "Tailscale, your own computer, or peer to peer between browsers",
+    "note": "Cell of the comparison table on the introduction: “Network” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.network.unkernel": {
+    "message": "A Wisp proxy, TCP only",
+    "note": "Cell of the comparison table on the introduction: “Network” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.network.webvm": {
+    "message": "Tailscale only",
+    "note": "Cell of the comparison table on the introduction: “Network” for WebVM. Not a sentence: no period."
+  },
+  "IntroCompare.network.v86": {
+    "message": "A relay, Wisp, or fetch",
+    "note": "Cell of the comparison table on the introduction: “Network” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.network.jslinux": {
+    "message": "A WebSocket VPN at 40 kB/s",
+    "note": "Cell of the comparison table on the introduction: “Network” for JSLinux. Not a sentence: no period."
+  },
+  "IntroCompare.images": {
+    "message": "Disk image formats",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.images.ours": {
+    "message": "qcow2 and raw, as published",
+    "note": "Cell of the comparison table on the introduction: “Disk images” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.images.unkernel": {
+    "message": "ext4",
+    "note": "Cell of the comparison table on the introduction: “Disk images” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.images.webvm": {
+    "message": "ext2",
+    "note": "Cell of the comparison table on the introduction: “Disk images” for WebVM. Not a sentence: no period."
+  },
+  "IntroCompare.images.v86": {
+    "message": "Raw and ISO",
+    "note": "Cell of the comparison table on the introduction: “Disk images” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.images.jslinux": {
+    "message": "Its own format",
+    "note": "Cell of the comparison table on the introduction: “Disk images” for JSLinux. Not a sentence: no period."
+  },
+  "IntroCompare.browsers": {
+    "message": "Browsers",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.browsers.ours": {
+    "message": "Chromium-based only",
+    "note": "Cell of the comparison table on the introduction: “Browsers” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.browsers.unkernel": {
+    "message": "Chrome, Edge, Firefox, Safari",
+    "note": "Cell of the comparison table on the introduction: “Browsers” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.browsers.webvm": {
+    "message": "Modern browsers",
+    "note": "Cell of the comparison table on the introduction: “Browsers” for WebVM. Not a sentence: no period."
+  },
+  "IntroCompare.browsers.v86": {
+    "message": "All",
+    "note": "Cell of the comparison table on the introduction: “Browsers” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.browsers.jslinux": {
+    "message": "All",
+    "note": "Cell of the comparison table on the introduction: “Browsers” for JSLinux. Not a sentence: no period."
+  },
+  "IntroCompare.license": {
+    "message": "License",
+    "note": "Row heading of the comparison table on the introduction. No period."
+  },
+  "IntroCompare.license.ours": {
+    "message": "MIT",
+    "note": "Cell of the comparison table on the introduction: “License” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.license.unkernel": {
+    "message": "GPL-2.0 or later",
+    "note": "Cell of the comparison table on the introduction: “License” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.license.webvm": {
+    "message": "Proprietary engine",
+    "note": "Cell of the comparison table on the introduction: “License” for WebVM. Not a sentence: no period."
+  },
+  "IntroCompare.license.v86": {
+    "message": "BSD-2-Clause",
+    "note": "Cell of the comparison table on the introduction: “License” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.leads": {
+    "message": "Where they lead",
+    "note": "Subtitle in the introduction's comparison section, over what other projects do better. No period."
+  },
+  "IntroCompare.leads.first": {
+    "message": "The first second",
+    "note": "Title of an entry under “Where they lead” on the introduction. No period."
+  },
+  "IntroCompare.leads.first.words": {
+    "message": "unkernel's demo answers a command 1.3 seconds after you open it, having downloaded 6.7 MiB. Our smallest demo needs about 4 seconds and 25 MB, and our desktop about half a minute.",
+    "note": "Paragraph of the entry “The first second” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
+  },
+  "IntroCompare.leads.browsers": {
+    "message": "Browsers",
+    "note": "Title of an entry under “Where they lead” on the introduction. No period."
+  },
+  "IntroCompare.leads.browsers.words": {
+    "message": "unkernel runs in Firefox, in Safari, and on iPhones. v86 and JSLinux run nearly anywhere. $t(common:product.name) supports Chromium-based browsers only.",
+    "note": "Paragraph of the entry “Browsers” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
+  },
+  "IntroCompare.leads.memory": {
+    "message": "Memory",
+    "note": "Title of an entry under “Where they lead” on the introduction. No period."
+  },
+  "IntroCompare.leads.memory.words": {
+    "message": "unkernel's whole guest fits in 48 MiB, because its kernel isn't emulated. An emulated machine with a stock kernel can't be that small.",
+    "note": "Paragraph of the entry “Memory” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
+  },
+  "IntroCompare.leads.syscalls": {
+    "message": "System calls",
+    "note": "Title of an entry under “Where they lead” on the introduction. No period."
+  },
+  "IntroCompare.leads.syscalls.words": {
+    "message": "unkernel's kernel is WebAssembly itself, so a system call is a function call. Here it is an exception the emulated processor takes, as on real hardware, and that costs more.",
+    "note": "Paragraph of the entry “System calls” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
+  },
+  "IntroCompare.sources": {
+    "message": "Sources:",
+    "note": "Label before the links to the other projects' sites, under the comparison on the introduction. A colon: it introduces the list."
   }
 }

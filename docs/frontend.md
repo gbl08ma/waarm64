@@ -780,6 +780,20 @@ and the floating windows don't show, and the machine, Home or the store's page s
   says them (the figures are comparison.md §2's). The plate's place is where the live preview goes (a small guest
   booting by itself: the kickoff's loops 1 and 2, not built yet); the plate is the design for a browser where that
   can't run.
+- **Its sections** (`intro/IntroSection.svelte`: a title, a paragraph, its parts, in the page's column; the bar's
+  links scroll to them) after the first screen:
+  - **[What runs on it](ui:intro:IntroFacts.title)** (`intro/IntroFacts.svelte`): four figures as a panel's
+    **readouts** (`intro/IntroReadout.svelte`: lit digits in a sunk window, what they count, the sentence behind
+    them: 8 cores, 16 GiB, dEQP's 61,425 OpenGL ES tests, 0 drivers), then six topics, a short paragraph each.
+  - **[Compared with the others](ui:intro:IntroCompare.title)** (`intro/IntroCompare.svelte`; the projects, their
+    sources and the day they were checked: `intro/compare.ts`): a table, a row a property, of waarm64 (the lit
+    column), unkernel, WebVM, v86 and JSLinux, from [comparison.md](comparison.md) §2; a cell that page marks
+    unverified says [Not confirmed](ui:intro:IntroCompare.unconfirmed). Under it
+    **[Where they lead](ui:intro:IntroCompare.leads)** (comparison.md §3 and §4: the first second, browsers,
+    memory, system calls) and links to the sources. **No speed is claimed**; the place for one is kept
+    (`intro/IntroSpeed.svelte`, over the table): `intro/speed.ts` `SPEED_LEAD` is undefined until comparison.md §3's
+    rows are measured, then holds one figure ("N% faster than" the next fastest, named, with its workload and date),
+    and is emptied again if a peer measures faster.
 - **The movement** (`web/app/view-transition.ts`, the View Transitions API): leaving the introduction is one
   transition (`intro`): its bar becomes the toolbar where it is, the status bar rises from the window's bottom edge,
   the rest crosses over. A demo's Start is another (`launch`, `openDemo`): the demo's picture in its pane grows into
@@ -794,7 +808,8 @@ and the floating windows don't show, and the machine, Home or the store's page s
 
 Tests: `tests/intro-route.test.ts` (the address, where leaving leads; Node), `tests/page-intro.test.ts` (Chromium: a
 first visit, no bars under it, a reload, Skip and both buttons to the store, Back; with a machine: not opened by a bare
-address, `#intro`, Skip to Home, About's button and Back to About; its wording).
+address, `#intro`, Skip to Home, About's button and Back to About; the bar's links, the readouts, the comparison's
+table and its sources' links, no speed figure; its wording).
 
 ## The demo store
 

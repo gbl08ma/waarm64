@@ -8,7 +8,9 @@
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import IntroCompare from './intro/IntroCompare.svelte';
   import IntroEnd from './intro/IntroEnd.svelte';
+  import IntroFacts from './intro/IntroFacts.svelte';
   import IntroHero from './intro/IntroHero.svelte';
   import WordmarkLetters from './WordmarkLetters.svelte';
   import { afterIntro } from './intro-route.ts';
@@ -19,16 +21,31 @@
   /** Where Skip leads, said on the button: the demos, or the machines of a visitor who has some. */
   const skipTo = $derived(afterIntro(records.machines.length));
   const toDemos = () => void page.closeIntro('demos');
+
+  /** The sections the bar's links scroll to. */
+  let facts = $state<HTMLElement>();
+  let compare = $state<HTMLElement>();
+  const show = (section: HTMLElement | undefined) => section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 </script>
 
 <div class="intro" data-intro>
   <header>
     <div class="wordmark" aria-label={t('toolbar:Wordmark.name')}><WordmarkLetters /></div>
+    <nav aria-label={t('intro:IntroPage.nav')}>
+      <Button variant="plain" onclick={() => show(facts)} data-to-section="intro-facts">
+        {t('intro:IntroPage.nav.facts')}
+      </Button>
+      <Button variant="plain" onclick={() => show(compare)} data-to-section="intro-compare">
+        {t('intro:IntroPage.nav.compare')}
+      </Button>
+    </nav>
     <Button variant="plain" onclick={() => void page.closeIntro()} data-action="skip-intro" data-to={skipTo}>
       {skipTo === 'home' ? t('intro:IntroPage.skip.home') : t('intro:IntroPage.skip')}
     </Button>
   </header>
   <IntroHero ondemos={toDemos} />
+  <IntroFacts bind:ref={facts} />
+  <IntroCompare bind:ref={compare} />
   <IntroEnd ondemos={toDemos} machines={records.machines.length} onhome={() => void page.closeIntro()} />
 </div>
 
@@ -57,6 +74,19 @@
   }
   :global(html[data-vt='intro']) header {
     view-transition-name: page-bar;
+  }
+  /* The ways to the sections, after the wordmark; Skip at the bar's end. In a narrow window, Skip alone. */
+  nav {
+    display: flex;
+    gap: var(--space-1);
+    margin-right: auto;
+    color: var(--text-dim);
+    font-size: var(--bar-text-md);
+  }
+  @media (max-width: 720px) {
+    nav {
+      display: none;
+    }
   }
   .wordmark {
     margin: 0 var(--space-3) 0 var(--space-2);
