@@ -200,7 +200,7 @@ export const AREAS: Record<string, Area> = {
   },
   'build-js': {
     // The npm dependencies, the build's and the dev server's configuration: every heavy file; scripts/ci.sh is the tier.
-    src: ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig*.json', 'tools/serve.ts', 'tools/stamp.ts', 'tools/lint/**'],
+    src: ['package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig*.json', 'prettier.config.ts', 'tools/serve.ts', 'tools/stamp.ts', 'tools/lint/**'],
     all: true,
   },
   ci: {

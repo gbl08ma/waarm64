@@ -223,7 +223,9 @@ TypeScript 6 package `tools/lint` ([frontend.md](frontend.md) "Types"); `npm run
   config: colors, `font-size`, `font-weight`, `border-radius`, `gap`, `padding`, `margin` and `box-shadow` take a
   `var(--…)`, a `calc()` over tokens or an allowed literal, §1).
 - **Prettier** (`tools/lint/prettier.config.ts` with `prettier-plugin-svelte`: 120 columns, single quotes; `npm run
-  lint:format` checks, `npm run format` writes) formats `web/app/**/*.{svelte,ts}`. The commit that formatted it
+  lint:format` checks and names the fix, `npm run format` writes; the root's `prettier.config.ts` re-exports the options,
+  so a bare `prettier` or `npx prettier` formats the same: one without them wrapped files at 80 columns, and Prettier
+  keeps an object expanded once wrapped) formats `web/app/**/*.{svelte,ts}`. The commit that formatted it
   first is in `.git-blame-ignore-revs` (`git config blame.ignoreRevsFile .git-blame-ignore-revs`). A comment that must
   stay on its line (`// i18n-ignore`) goes at the end of the line Prettier keeps, or as `// i18n-ignore-next` on the
   line before; in markup, as a comment inside the tag before the attribute (Svelte allows `//` there).
