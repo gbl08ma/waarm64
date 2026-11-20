@@ -167,11 +167,7 @@ export class DiskActions {
       runner.d.net.machineOff();
       const next = await loadStored(m.store, id);
       [m.stored, m.storedError, m.chosen] = [next, undefined, undefined];
-      // The address's size and switches were for the machine it opened: this one runs as its record says.
-      const q = new URLSearchParams(location.search);
-      for (const k of ['m', 'disk', ...MACHINE_PARAMS]) q.delete(k);
-      q.set('m', id);
-      history.replaceState(null, '', `?${q}`);
+      history.replaceState(null, '', this.#addressOf(id));
       m.takeSize();
       m.choose3d();
       rememberMachine(id);
@@ -179,6 +175,23 @@ export class DiskActions {
       this.#d.terminal.term.reset();
       pw.startOpened();
     });
+  }
+
+  /** Opens stored machine `id` in a new tab, where it starts; the machine on this page runs on. */
+  openInNewTab(id: string) {
+    window.open(this.#addressOf(id), '_blank', 'noopener');
+  }
+
+  /**
+   * The address that opens stored machine `id`: this page's knobs without the size's and the switches' keys, which
+   * were for the machine it opened (that one runs as its record says); from a transient machine's page, `?m=` alone.
+   */
+  #addressOf(id: string) {
+    if (this.#d.machine.name !== 'uefi' || params.has('machine')) return `?m=${id}`;
+    const q = new URLSearchParams(location.search);
+    for (const k of ['m', 'disk', ...MACHINE_PARAMS]) q.delete(k);
+    q.set('m', id);
+    return `?${q}`;
   }
 
   /** A disk image, snapshot or changes file chosen or dropped on the page, or a disk's URL. */

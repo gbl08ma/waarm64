@@ -1,10 +1,11 @@
 <!--
-  A machine's pane on the Home page (docs/machines.md §7): its head (open it here or start it, duplicate, export its
+  A machine's pane on the Home page (docs/machines.md §7): its head (start it here or in a new tab, unless it runs in another, duplicate, export its
   definition, delete) and its tabs, Settings, Disks, Network, USB, Shared folders and Snapshots, each a component of
   its own. The tabs that edit the record share one draft and its Save (machine-edit.svelte.ts).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import Menu from './ui/Menu.svelte';
   import Pane from './ui/Pane.svelte';
   import Disks from './Disks.svelte';
   import FoldersTab from './FoldersTab.svelte';
@@ -45,12 +46,26 @@
     offFirst: (m: MachineRecord) => Promise<boolean>;
     onchoose: (id: string) => void;
   };
-  let { edit, store, net, folders, machines, disks, overlays, state, act, offFirst, onchoose }: Props = $props();
+  let {
+    edit,
+    store,
+    net,
+    folders,
+    machines,
+    disks,
+    overlays,
+    state: stateWords,
+    act,
+    offFirst,
+    onchoose,
+  }: Props = $props();
 
   const m = $derived(edit.draft);
   /** The record as stored, else the draft (a tab's lists show what's saved). */
   const saved = $derived(edit.record ?? m);
-  const meta = $derived(m.id === current.id ? t('machines:MachinePane.head.stateHere', { state }) : text(state));
+  const meta = $derived(
+    m.id === current.id ? t('machines:MachinePane.head.stateHere', { state: stateWords }) : text(stateWords),
+  );
   /** A tab that counts what it holds: the count in a pill and in its name, only when it holds some. */
   const counted = (n: number, name: (n: number) => string) => (n > 0 ? { count: n, name: name(n) } : {});
   const snapshotCount = $derived(records.snapshots.filter((s) => s.machine === m.id).length);
@@ -117,6 +132,17 @@
       await deleteOwnConnections(store, m.id, pageConnectionState);
     });
   }
+  // Another machine runs in this tab: Start is a menu, this tab (in its place) or a new one.
+  const othersHere = $derived(current.loaded && busyHere);
+  let startOpen = $state(false);
+  const startHere = () => {
+    startOpen = false;
+    inBar(() => page.openMachine(m.id));
+  };
+  const startNewTab = () => {
+    startOpen = false;
+    page.openMachineInNewTab(m.id);
+  };
   function start() {
     page.closeMachines();
     inBar(() => page.restart());
@@ -133,8 +159,30 @@
   ontab={(x) => (machinesNav.tab = x as MachinesTab)}
 >
   {#snippet actions()}
-    {#if m.id !== current.id}
-      <Button icon="player-play" onclick={() => inBar(() => page.openMachine(m.id))} data-action="open">
+    {#if m.id !== current.id && edit.running}
+      <Button data-action="open" disabled title={t('machines:MachinePane.runningElsewhere.title')}>
+        {t('machines:MachinePane.runningElsewhere')}
+      </Button>
+    {:else if m.id !== current.id && othersHere}
+      <Menu
+        id="start-menu"
+        icon="player-play"
+        variant="bordered"
+        align="left"
+        label={t('machines:MachinePane.startMenu')}
+        title={t('machines:MachinePane.startMenu.title')}
+        bind:open={startOpen}
+        data-action="start-menu"
+      >
+        <Button variant="item" onclick={startHere} data-action="open">
+          {t('machines:MachinePane.startMenu.here')}
+        </Button>
+        <Button variant="item" onclick={startNewTab} data-action="open-new-tab">
+          {t('machines:MachinePane.startMenu.newTab')}
+        </Button>
+      </Menu>
+    {:else if m.id !== current.id}
+      <Button icon="player-play" onclick={startHere} data-action="open">
         {t('machines:MachinePane.open')}
       </Button>
     {:else if busyHere}

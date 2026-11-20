@@ -511,7 +511,12 @@ its name and summary (the store's words, plain text; a terminal or a screen icon
 machine from the definition that boots cold, the user's own; the store's loading, its failure (with
 [Try again](ui:machines:NewMachine.retry)) or none offered are said there, and Empty machine works throughout. The
 machine made is chosen. The chosen one:
-Open in this tab (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off, "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
+**[Start](ui:machines:MachinePane.open)**, which opens it in this tab, where it starts (while another machine runs in this
+tab, a menu, **[Start](ui:machines:MachinePane.startMenu)**: **[In this tab](ui:machines:MachinePane.startMenu.here)**,
+in that one's place, asked first, or **[In a new tab](ui:machines:MachinePane.startMenu.newTab)**, the address with
+`?m=<id>` in place of `m`, `disk` and the size's and the switches' keys, `disk-actions.ts` `openInNewTab`; while it
+runs in another tab, a disabled "[Running in another tab](ui:machines:MachinePane.runningElsewhere)", the machines'
+locks being read again as the tab comes back into view or focus) (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off, "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
 Duplicate, Export the definition, Delete; then tabs, each of those that hold something (disks, network adapters, USB
 devices, shared folders, snapshots) with how many in a pill (`ui/Count.svelte`) when there are some, none at zero (the
 left column's Disks, Shared folders and Connections the same):
@@ -601,7 +606,7 @@ A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this 
 disk's Export, Import changes…, **[Reset disk…](ui:machines:PagePane.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
 storage's estimate is at the bottom, with what takes it and, while remote disks' blocks are kept (docs/devices.md "Over
 HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its store up too, and reads from memory and the
-network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan's shaders (…)](ui:machines:StorageBar.storage.clearShaders)**
+network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan shader cache (…)](ui:machines:StorageBar.storage.clearShaders)**
 (vk/README.md "The shader cache"; the store's size counts what IndexedDB holds, deflated).
 
 ### A disk's surface

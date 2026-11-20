@@ -707,6 +707,51 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await context.close();
 });
 
+test("another machine's Start while one runs in this tab: a menu, In this tab or In a new tab (the address's knobs kept); there, Running in another tab", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?view=terminal`);
+  await openHome(page);
+  await newEmptyMachine(page);
+  const m = modal(page).locator('section.machine[data-selected]');
+  await m.locator('[data-tab=disks]').click();
+  await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` });
+  await disk(page, 0);
+  // Nothing runs here: Start alone.
+  assert.equal(await m.locator('[data-action=open]').textContent(), t('machines:MachinePane.open'));
+  assert.equal(await m.locator('[data-action=start-menu]').count(), 0, 'no menu');
+  await m.locator('[data-action=open]').click();
+  await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
+  await openHome(page);
+  const first = await m.getAttribute('data-selected');
+  await newEmptyMachine(page);
+  await modal(page).locator(`section.machine[data-selected]:not([data-selected="${first}"])`).waitFor();
+  const other = await m.getAttribute('data-selected');
+  const menu = m.locator('[data-action=start-menu]');
+  assert.equal((await menu.locator('summary').textContent())?.trim(), t('machines:MachinePane.startMenu'));
+  await menu.locator('summary').click();
+  assert.equal(await menu.locator('[data-action=open]').textContent(), t('machines:MachinePane.startMenu.here'));
+  const [tab] = await Promise.all([context.waitForEvent('page'), menu.locator('[data-action=open-new-tab]').click()]);
+  await tab.waitForLoadState('domcontentloaded');
+  const q = new URL(tab.url()).searchParams;
+  assert.deepEqual([q.get('m'), q.get('view')], [other, 'terminal']);
+  assert.equal(await menu.getAttribute('open'), null, 'the menu closed');
+  assert.ok(['booting', 'running'].includes((await page.evaluate(() => document.body.dataset.state))!), 'this tab runs on');
+  // In the new tab, the first machine runs in another: no Start, a disabled button that says so.
+  await openHome(tab);
+  await modal(tab).locator(`nav [data-machine="${first}"]`).click();
+  const elsewhere = modal(tab).locator(`section.machine[data-selected="${first}"] [data-action=open]`, { hasText: t('machines:MachinePane.runningElsewhere') });
+  await elsewhere.waitFor({ timeout: 10_000 });
+  assert.ok(await elsewhere.isDisabled(), 'disabled');
+  assert.equal(await modal(tab).locator(`section.machine[data-selected="${first}"] [data-action=start-menu]`).count(), 0, 'no menu');
+  await tab.close();
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test("the storage bar's details: the browser's numbers when they agree, the three apart when its count is short", async () => {
   for (const behind of [false, true]) {
     const context = await browser.newContext();

@@ -82,6 +82,18 @@
     void power.state;
     void readLive(machines);
   });
+  // And when the tab comes back: another tab may have started or stopped a machine meanwhile (a lock has no event).
+  $effect(() => {
+    const again = () => {
+      if (document.visibilityState === 'visible') void readLive(machines);
+    };
+    window.addEventListener('focus', again);
+    document.addEventListener('visibilitychange', again);
+    return () => {
+      window.removeEventListener('focus', again);
+      document.removeEventListener('visibilitychange', again);
+    };
+  });
   // The chosen machine's record, as read now, goes to its editor (which keeps a draft being edited).
   $effect(() => {
     const m = machines.find((x) => x.id === machinesNav.selected);

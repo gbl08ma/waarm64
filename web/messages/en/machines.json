@@ -1300,8 +1300,32 @@
     "note": "Home page: beside a machine's name at the top of its pane, when it is the machine open in this tab. {{state}}: its state (a MachinesPage.state.* message)."
   },
   "MachinePane.open": {
-    "message": "Open in this tab",
-    "note": "Home page: button at the top of a machine's pane (one that isn't open in this tab) that opens it here."
+    "message": "Start",
+    "note": "Home page: button at the top of a machine's pane (one that isn't open in this tab), while no machine runs in this tab: opens the machine here, where it starts."
+  },
+  "MachinePane.runningElsewhere.title": {
+    "message": "It's running in another tab. Power it off there or close that tab to start it here.",
+    "note": "Home page: tooltip of the disabled Running in another tab button."
+  },
+  "MachinePane.runningElsewhere": {
+    "message": "Running in another tab",
+    "note": "Home page: a disabled button at the top of the pane of a machine running in another tab of the web app, in place of Start."
+  },
+  "MachinePane.startMenu.title": {
+    "message": "Start this machine here, in place of the one running in this tab, or in a new tab.",
+    "note": "Home page: tooltip of the Start menu (MachinePane.startMenu)."
+  },
+  "MachinePane.startMenu": {
+    "message": "Start",
+    "note": "Home page: a menu button at the top of a machine's pane (one that isn't open in this tab), while another machine runs in this tab. Its choices: In this tab, In a new tab."
+  },
+  "MachinePane.startMenu.here": {
+    "message": "In this tab",
+    "note": "Home page: a choice of the Start menu (MachinePane.startMenu): the machine running in this tab stops (asked first) and this one starts here."
+  },
+  "MachinePane.startMenu.newTab": {
+    "message": "In a new tab",
+    "note": "Home page: a choice of the Start menu (MachinePane.startMenu): opens a new browser tab where this machine starts; the one running here runs on."
   },
   "MachinePane.runningHere.title": {
     "message": "It's running in this tab. Changes take effect at its next start.",
@@ -1692,16 +1716,16 @@
     "note": "Home page: the browser's storage, in the bar at the page's bottom. A button that drops the kept blocks of URL disks. {{size}}: their bytes."
   },
   "storage-report.storage.shaders": {
-    "message": "Vulkan's translated shaders",
+    "message": "Cached Vulkan shaders",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Home page, at the bottom), before its size (StorageDetails.item). The shaders machines with Vulkan translated, kept so that a program's next start translates nothing again; shared by every machine."
   },
   "StorageBar.storage.clearShaders": {
-    "message": "Clear Vulkan's shaders ({{size, bytes}})",
+    "message": "Clear Vulkan shader cache ({{size, bytes}})",
     "note": "Home page: the browser's storage, in the bar at the page's bottom. A button that deletes the kept translated shaders of machines with Vulkan. {{size}}: their bytes."
   },
   "StorageBar.storage.clearShaders.title": {
     "message": "Delete the shaders that machines with Vulkan translated. A program's next start translates them again, which takes longer. A machine running now keeps those it holds and stores them again as they change.",
-    "note": "Home page: the browser's storage, in the bar at the page's bottom. Tooltip of Clear Vulkan's shaders."
+    "note": "Home page: the browser's storage, in the bar at the page's bottom. Tooltip of Clear Vulkan shader cache."
   },
   "StorageBar.storage.trim": {
     "message": "Free unused disk space",

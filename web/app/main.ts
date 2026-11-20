@@ -267,6 +267,7 @@ const page: Page = {
     pageWindow.closeMachines();
     return disks.switchMachine(id);
   },
+  openMachineInNewTab: (id) => disks.openInNewTab(id),
   ...pageWindow.demoActions({
     switchTo: (id) => disks.switchMachine(id, true),
     askSwitch: (id) => disks.askSwitch(id),
