@@ -17,12 +17,13 @@ dev VM.
 | 7 | Memory's deep dive: the RAM slider over `splitRam` | push tier |
 | — | The captures' AArch64 host column (the dev VM: V8 14.6.202.34-node.28) beside x86-64's; the viewer shows the visitor's own architecture first (`IntroTranslate.svelte`, `local-release.ts` `thisTarget`) | push tier |
 
-**CI** (the dev VM, 2026-11-20): on the merge with the divider test's fix (4b24f2d4), `scripts/ci.sh` (but for that
-test: its fix came mid-run), `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh` and
-`scripts/ci-jit.sh` passed. The arm64 captures' commit passed `scripts/ci-fast.sh` and `scripts/ci.sh`. Found on the
-way: `tests/page-console.test.ts` "Both's divider" read a mid-drag width under load (fixed: 1 of 4 runs failed under
-ten busy loops before, 10 of 10 passed after); the lint once saw `any` in `web/snapshot-file.ts` (filed in
-docs/backlog.md, didn't recur).
+**CI** (the dev VM, 2026-11-20): `scripts/ci.sh` passed on 1791b60a (the arm64 captures and three flake fixes);
+`scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh` and `scripts/ci-jit.sh` passed on
+4b24f2d4 (the merge; what came after touches no area of theirs: the captures' data and the introduction's viewer,
+three tests, one type). The flakes `scripts/ci.sh` hit on the way, each fixed with its cause shown: the "Both's
+divider" test read a mid-drag width under load; `tests/audio-page.test.ts` hung for good after a failed check (an
+open port), the 17-minute idle stall; the lint's types depended on file order (`web/snapshot.ts` before
+`web/snapshot-file.ts` made the overlay's loop `any`).
 
 The arm64 column: `wasm-tools` must be the same version on both hosts (the tool compares its text to keep the other
 host's column), so the dev VM's is now 1.263.0, the cloud's. The arm64 text read clean: branches as offsets, no
