@@ -49,9 +49,6 @@
     },
     "@typescript-eslint/restrict-template-expressions": {
       "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 1
     }
   },
   "web/blockcache.ts": {
@@ -464,15 +461,6 @@
   "web/tailscale.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 2
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
     }
   },
   "web/ts-client.ts": {
