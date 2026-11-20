@@ -106,7 +106,7 @@ it); frontend.md "Deployed at vm.tny.im".
 ## Dev-only tools
 
 Not repo dependencies, not in tests or CI: `perf` (with V8's `--perf-prof`; `perf_event_paranoid` is 2, so profile
-your own processes) and `wasm-tools` (`cargo +stable install --locked wasm-tools`, in `~/.cargo/bin`). Node's
+your own processes) and `wasm-tools` (`cargo +stable install --locked wasm-tools`, in `~/.cargo/bin`); `tools/intro-capture.ts` prints the JIT's modules with it: frontend.md "The introduction"). Node's
 `--print-wasm-code` prints V8's machine code without either. gdb can't run in the dev VM (the M4's SME/SVE registers
 under Lima): use ASan builds and valgrind.
 

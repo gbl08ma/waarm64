@@ -5,6 +5,9 @@
 //! takes them into EL1 the way hardware does.
 
 pub(crate) mod block;
+/// The capture build only (Cargo feature `capture`): the block interpreter's micro-ops, for `examples/uops.rs`.
+#[cfg(feature = "capture")]
+pub use block::{Described, describe};
 pub mod debug;
 mod float;
 mod ldst;

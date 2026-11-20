@@ -182,7 +182,7 @@ export const AREAS: Record<string, Area> = {
   },
   page: {
     // The page's UI: components, the catalog, the theme, the workers' plumbing. Its quick tests are in the smoke set.
-    src: ['web/app/**', 'web/messages/**', 'web/i18n.ts', 'web/msg.ts', 'web/window.ts', 'web/changes.ts', 'web/ram-scan.ts', 'tests/browser/**', 'tests/harness/**', 'tests/page-*.ts', 'tests/serial-console.ts', 'tests/words.ts', 'tests/until.ts', 'tests/debian-lock.ts', 'tests/debian-fixture.ts', 'tools/i18n-check.ts', 'tools/screens.ts', 'tools/screens-demos.ts', 'tools/copy-apply.ts', 'tools/start.*', 'tools/dist.ts'],
+    src: ['web/app/**', 'web/intro-captures/**', 'web/messages/**', 'web/i18n.ts', 'web/msg.ts', 'web/window.ts', 'web/changes.ts', 'web/ram-scan.ts', 'tests/browser/**', 'tests/harness/**', 'tests/page-*.ts', 'tests/serial-console.ts', 'tests/words.ts', 'tests/until.ts', 'tests/debian-lock.ts', 'tests/debian-fixture.ts', 'tools/i18n-check.ts', 'tools/screens.ts', 'tools/screens-demos.ts', 'tools/copy-apply.ts', 'tools/start.*', 'tools/dist.ts'],
     heavy: ['tests/page-run.test.ts', 'tests/page-modal.test.ts', 'tests/page-statusbar.test.ts'],
     end: ['ci-debian.sh'],
   },

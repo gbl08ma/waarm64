@@ -3667,6 +3667,7 @@ fn access(
     let arr = read + if write { 16 } else { 0 };
     let fast = c.regs;
     c.else_();
+    c.note(super::wasm::NOTE_SLOW, k as u64, k as u64);
     c.regs = before;
     // The arms run the body again: the masks of what it reads count the
     // fast path's reads alone (a register read once stays `plain`).
@@ -3703,6 +3704,7 @@ fn access(
         c.end();
     }
     c.regs = fast;
+    c.note(super::wasm::NOTE_SLOW_END, 0, 0);
     c.end();
 }
 
@@ -3787,6 +3789,7 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
     c.group = None;
     let fast = c.regs;
     c.else_();
+    c.note(super::wasm::NOTE_SLOW, g.first as u64, g.last as u64);
     c.regs = g.before;
     // The span again for each spill memory, its accesses naming it (as
     // `access`'s arms): in the `else`, ADDR, BASE and TLBE are still the
@@ -3872,6 +3875,7 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
         c.end();
     }
     c.regs = fast;
+    c.note(super::wasm::NOTE_SLOW_END, 0, 0);
     c.end();
 }
 
@@ -4329,6 +4333,7 @@ fn fallback_with(
 ) {
     let fast = c.regs;
     c.else_();
+    c.note(super::wasm::NOTE_SLOW, (here / 4) as u64, (here / 4) as u64);
     c.regs = before;
     c.flush();
     pre(c);
@@ -4343,6 +4348,7 @@ fn fallback_with(
     c.reload(fast);
     // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).
     c.regs = fast;
+    c.note(super::wasm::NOTE_SLOW_END, 0, 0);
     c.end();
 }
 
@@ -4360,9 +4366,11 @@ fn fallback_with(
 fn fallback_chain(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u64) {
     let fast = c.regs;
     c.else_();
+    c.note(super::wasm::NOTE_SLOW, (here / 4) as u64, (here / 4) as u64);
     c.regs = before;
     fallback_arm(c, cx, i, here, written, fast, 2);
     c.regs = fast;
+    c.note(super::wasm::NOTE_SLOW_END, 0, 0);
     c.end();
 }
 
