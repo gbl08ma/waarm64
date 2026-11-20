@@ -85,6 +85,7 @@ const startedBefore = (page: Page) => page.evaluate(async (store) => {
 /** The store's page's states at one width (`suffix`: `-narrow` at 720 px). */
 async function at(browser: Browser, o: Shots, viewport: { width: number; height: number }, suffix: string) {
   const ours: Site = {};
+  const narrowed = suffix !== '';
   const ctx = await visitor(browser, viewport, ours);
   const open = async (query = '') => {
     const page = await ctx.newPage();
@@ -116,6 +117,16 @@ async function at(browser: Browser, o: Shots, viewport: { width: number; height:
   await take('downloading', '?id=alpine-term', start, async (page) => {
     await page.click(start);
     await page.locator('[data-field="progress"] progress:not([value="0"])').waitFor({ timeout: 30_000 });
+  });
+  await take('stop', '?id=alpine-term', start, async (page) => {
+    // Another demo's row while the download runs: the question first.
+    await page.click(start);
+    await page.locator('[data-field="progress"] progress:not([value="0"])').waitFor({ timeout: 30_000 });
+    await page.click(narrowed ? '[data-action="all-demos"]' : '.cards [data-demo="arch-3d"]');
+    await page.locator('#ask[open]').waitFor();
+  });
+  await take('checks', '?id=arch-desktop', start, async (page) => {
+    await page.click('[data-field="checks-met"] summary'); // the requirements unfolded
   });
   ours.gone = true;
   await take('failed', '?id=alpine-term', start, async (page) => {

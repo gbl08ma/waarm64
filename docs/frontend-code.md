@@ -92,8 +92,12 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line; `after`: controls of its own inside
      its frame at the end, a connection's Edit…).
    - `Step`: a wizard's step (a column, hidden unless `active`); `Steps`: numbered steps to follow; `Disclosure`: more
-     of a form folded under a small line (Advanced).
+     of a form folded under a small line (Advanced; `plain` with a `lead`: a line in the words' own size with a light
+     before it, a demo's requirements all met).
    - `ErrorBanner`: the dismissible error, warning or notice bar, across the page or floating, with a notice's countdown (the message bar, the Home page's error).
+   - `Callout`: a framed box in its column that says something went wrong, warns or asks, where it happened (`tone`
+     `error`/`warn`/`info`, a `title`, its buttons under its words): a pane's failed action, another store's warning, the
+     USB menu's offer. ErrorBanner's tones, without its close button or movement.
    - `StatusDot`: a state's light.
    - `Count`: how many a tab or a list's button leads to, a number in a small sunk pill after its words (a machine's
      Disks tab, the Home page's Connections); the button's `aria-label` says the count in words.

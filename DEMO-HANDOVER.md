@@ -39,9 +39,17 @@ read as newer and less polished than the rest. Done on the branch that carries t
   builds, 139 test files, tests/page-demos.test.ts's 15 among them).
   **`scripts/ci.sh` and `scripts/ci-debian.sh` remain to be run in the dev VM** (and `scripts/ci-machines.sh` for
   tests/page-demos-guest.test.ts, which chooses a row and starts it: not runnable in the cloud, no demo site there).
-- **Asked of the user, not built** (taste): the checks folded into one line when all are met; the first demo by
-  default against an empty pane; the public room's note above Start again rather than in the fine print; a Cancel for
-  a download (today another row, All demos or Back stops it, with no question); seconds in "last used".
+- **The user's answers (2026-11-20), built in the next commit:** the checks fold into one line when all are met
+  (`ui/Disclosure` `plain` with a light), the shared memory's check shown only when it fails; the first demo by default
+  and the room's note in the fine print stay; a question (the page's dialog) before a click stops a running download;
+  "last used" to the minute (`{{when, minutes}}`, `Intl` date and time styles: the browser's locale, no seconds);
+  `ui/Callout.svelte` for the boxes (the store's error, another store's warning, a start's failure, the USB menu's
+  offer; ErrorBanner's tones, not its layout or movement, which are a bar's). **The copy reviewed** for a first-time
+  visitor (docs/copy.md "A first-time visitor's screens", the user's examples in its table): every DemosPage, DemoStart
+  and DemoChecks message. A `<ui-…>` pill's icon now stays beside its first word at a line break (T.svelte).
+  **Not touched:** the demos' own summaries (the store's data, deploy/disks/demos.json: a republish) and the
+  `demo-store.*`/`template.*` errors' words. Tier: the same as above (ci-fast in the cloud; ci.sh, ci-debian.sh and
+  ci-machines.sh in the dev VM; the USB menu's offer changed its markup, so `scripts/ci-usb.sh` too).
 
 ### Where things stand
 

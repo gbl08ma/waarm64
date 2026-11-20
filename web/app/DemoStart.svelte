@@ -13,13 +13,14 @@
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import Callout from './ui/Callout.svelte';
   import ErrorWords from './ErrorWords.svelte';
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
   import T from './T.svelte';
   import DemoChecks from './DemoChecks.svelte';
   import { Actions } from './actions.svelte.ts';
-  import { canStart, checkDemo, needsOf, readEnv, type Check } from './demo-check.ts';
+  import { allMet, canStart, checkDemo, needsOf, readEnv, type Check } from './demo-check.ts';
   import { checkDisks, lastUsed } from './demo-open.ts';
   import { machinesOf, type StoreDemo } from './demo-store.ts';
   import { isRunning } from './machines.ts';
@@ -35,12 +36,13 @@
   type Props = {
     store: Store;
     demo: StoreDemo;
-    /** One column: the list isn't beside it, so All demos leads back there. */
+    /** One column: the list isn't beside it, so All demos leads back there (`onback`). */
     back?: boolean;
+    onback?: () => void;
     /** Takes the focus as it shows (it replaced the list, whose row had it): Open my machine, else the pane. */
     takesFocus?: boolean;
   };
-  let { store, demo, back = false, takesFocus = false }: Props = $props();
+  let { store, demo, back = false, onback, takesFocus = false }: Props = $props();
 
   const def = $derived(demo.def);
   const view = $derived(def.demo.view);
@@ -128,7 +130,7 @@
 <article class="start" data-demo={def.demo.id} aria-label={def.machine.name} tabindex="-1" bind:this={pane}>
   {#if back}
     <div class="back">
-      <Button variant="link" icon="arrow-left" onclick={() => page.chooseDemo()} data-action="all-demos">
+      <Button variant="link" icon="arrow-left" onclick={() => onback?.()} data-action="all-demos">
         {t('machines:DemoStart.back')}
       </Button>
     </div>
@@ -172,7 +174,9 @@
         </div>
       {/if}
       {#if runner.error}
-        <div class="error" role="alert" data-field="start-error"><ErrorWords error={runner.error} /></div>
+        <div class="wide">
+          <Callout role="alert" data-field="start-error"><ErrorWords error={runner.error} /></Callout>
+        </div>
       {/if}
       {#if mine}
         <Note size="md" data-field="started-before">
@@ -199,13 +203,21 @@
         {/if}
         <div class="words">
           <p class="summary">{def.demo.summary}</p>
-          <Note size="md" data-field="download">{t('machines:DemoStart.download', { size: def.demo.download })}</Note>
+          <Note size="md" data-field="download">
+            <T k="machines:DemoStart.download" params={{ size: def.demo.download }}>
+              {#snippet size(text: string)}<strong>{text}</strong>{/snippet}
+            </T>
+          </Note>
         </div>
       </div>
-      <h4>{t('machines:DemoStart.needs')}</h4>
-      {#if checks}<DemoChecks {checks} />{:else}<Note>{t('machines:DemoStart.checking')}</Note>{/if}
+      {#if checks}
+        {#if !allMet(checks)}<h4>{t('machines:DemoStart.needs')}</h4>{/if}
+        <DemoChecks {checks} />
+      {:else}
+        <Note>{t('machines:DemoStart.checking')}</Note>
+      {/if}
       <div class="fine">
-        {#if def.demo.room}<Note size="md" data-field="room">{t('machines:DemoStart.room')}</Note>{/if}
+        {#if def.demo.room}<Note size="md" data-field="room"><T k="machines:DemoStart.room" /></Note>{/if}
         <Note size="md">{t('machines:DemoStart.about')}</Note>
       </div>
     </div>
@@ -286,12 +298,12 @@
     height: 6px;
     accent-color: var(--accent);
   }
-  .error {
+  .wide {
     width: 100%;
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--error-border);
-    border-radius: var(--radius);
-    background: var(--error-bg);
-    color: var(--error-bar-fg);
+  }
+  /* The download's size, the number that matters on a metered connection: the page's own color among the dim words. */
+  strong {
+    color: var(--text);
+    font-weight: var(--weight-bold);
   }
 </style>

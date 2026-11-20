@@ -64,6 +64,14 @@ export function checkDemo(env: BrowserEnv, n: Needs): Check[] {
   return list;
 }
 
+/**
+ * The checks the page lists: all but the shared memory's when it's there (only someone hosting the page meets its
+ * failure, and a visitor can do nothing about it: said only when it fails).
+ */
+export const listedChecks = (c: readonly Check[]) => c.filter((x) => !(x.what === 'isolation' && x.level === 'ok'));
+/** Whether every check is met (one line says so, the checks folded under it). */
+export const allMet = (c: readonly Check[]) => c.every((x) => x.level === 'ok');
+
 /** Whether checks `c` let the demo start (no stop among them). */
 export const canStart = (c: readonly Check[]) => !c.some((x) => x.level === 'fail');
 

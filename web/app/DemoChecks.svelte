@@ -1,15 +1,18 @@
 <!--
   What a demo needs of the browser, checked before its download (DemoStart.svelte; web/app/demo-check.ts): a line
-  per check with its light, met, a warning (it may still run) or a stop (it can't).
+  per check with its light, met, a warning (it may still run) or a stop (it can't). With every check met, one line
+  says so and the checks are folded under it. The shared memory's check is listed only when it fails (`listedChecks`).
 -->
 <script lang="ts">
+  import Disclosure from './ui/Disclosure.svelte';
   import StatusDot from './ui/StatusDot.svelte';
   import T from './T.svelte';
-  import type { Check, CheckLevel } from './demo-check.ts';
-  import { msg } from '../i18n.ts';
+  import { allMet, listedChecks, type Check, type CheckLevel } from './demo-check.ts';
+  import { msg, t } from '../i18n.ts';
 
   type Props = { checks: readonly Check[] };
   let { checks }: Props = $props();
+  const listed = $derived(listedChecks(checks));
   const TONE: Record<CheckLevel, 'ok' | 'busy' | 'bad'> = { ok: 'ok', warn: 'busy', fail: 'bad' };
   /** Each check's words by what it checks and how it went. */
   const WORDS: Record<string, string> = {
@@ -32,14 +35,24 @@
   const words = (c: Check) => msg(WORDS[`${c.what}.${c.level}`] ?? '', c.params);
 </script>
 
-<ul>
-  {#each checks as c (c.what)}
-    <li data-check={c.what} data-level={c.level}>
-      <StatusDot tone={TONE[c.level]} />
-      <span><T m={words(c)} /></span>
-    </li>
-  {/each}
-</ul>
+{#snippet list()}
+  <ul>
+    {#each listed as c (c.what)}
+      <li data-check={c.what} data-level={c.level}>
+        <StatusDot tone={TONE[c.level]} />
+        <span><T m={words(c)} /></span>
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+{#if allMet(checks)}
+  <Disclosure summary={t('machines:DemoChecks.met')} plain data-field="checks-met">
+    {#snippet lead()}<StatusDot tone="ok" />{/snippet}
+    {@render list()}
+  </Disclosure>
+{:else}
+  {@render list()}
+{/if}
 
 <style>
   ul {

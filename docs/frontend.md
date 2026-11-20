@@ -793,11 +793,13 @@ the query's form serves (decisions.md "Demos").
   host's clipboard could send it out; a demo's machine at least starts each run with sharing paused: clipboard.md).
 - **The demo's pane** (`DemoStart.svelte`), before any download: at its head the demo's name and how to start it (the
   main button stays in sight however long the pane), then a start's progress or failure, whether it was started
-  before, its screenshot beside its summary, its download and that its disk stays on its server, **[What it needs](ui:machines:DemoStart.needs)**,
+  before, its screenshot beside its summary, its download and that its disk stays on its server, **[Browser requirements](ui:machines:DemoStart.needs)**,
   and under a rule the fine print: what the project is and needs, and
   for a demo that joins the global room what that means for the
-  visitor's IP address ([The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers, which can see your IP address. Another visitor learns your IP address only if their machine connects to yours, which requires knowing your machine's name.](ui:machines:DemoStart.room)). What it needs is the browser checked (`demo-check.ts`,
-  `DemoChecks.svelte`): a stop (no Start) for no cross-origin isolation or SharedArrayBuffer, no OPFS, no WebGL2 for a 3D
+  visitor's IP address ([The machine also joins a public peer-to-peer network made for waarm64, where other visitors' machines can connect to it if they know its name. Once it's running, you will find its name in this network in the toolbar's Network menu. To join, this browser contacts public relay servers, which can see your IP address. Another visitor sees your IP address only when their machine connects to yours.](ui:machines:DemoStart.room)). The browser is checked (`demo-check.ts`,
+  `DemoChecks.svelte`). **With every check met, one line says so** ([All browser requirements met](ui:machines:DemoChecks.met), a green light)
+  and the checks unfold under it (`ui/Disclosure.svelte`); otherwise they're listed under the heading. The shared
+  memory's check is listed only when it fails (`listedChecks`: only someone hosting the page meets it). The checks: a stop (no Start) for no cross-origin isolation or SharedArrayBuffer, no OPFS, no WebGL2 for a 3D
   machine (`display: "3d"`), no WebGPU adapter for Vulkan, or storage with less room than the download and its first
   writes (`room`: ×1.25, at least +64 MiB); a warning for another browser than Chromium, a phone or tablet, or less
   memory than the machine's RAM plus 1.5 GiB (`navigator.deviceMemory`, which Chromium caps at 8). No privacy notice
@@ -811,7 +813,11 @@ the query's form serves (decisions.md "Demos").
   start belongs to its pane:** one at a time on the page (`demos.starting`: every Start waits while one runs);
   when the pane goes (another demo's row, All demos, the store's page left, a window narrowed to one column while the
   demo shown is the default one) it's aborted, its download with it, and
-  nothing opens (a machine already made by then stays, found as started before); and the switch is asked again just
+  nothing opens (a machine already made by then stays, found as started before). **The visitor is asked first**
+  ([Stop the download?](ui:machines:DemosPage.stop.title), the page's question dialog: [Stop the download](ui:machines:DemosPage.stop.ok) or
+  [Keep downloading](ui:machines:DemosPage.stop.cancel)) when a click would take the pane away while its download runs (another demo's
+  row, All demos, the page's Back; `DemosPage.svelte` `leave`; the question goes if the download ends meanwhile); the
+  browser's own Back and a narrowed window aren't asked; and the switch is asked again just
   before it when the machine running then isn't the one the visitor agreed to stop.
 - **Started before** (a machine whose `fromDemo` is the demo's): the pane says so, with its name and when it was
   last used (when its disks' overlays were last written, `demo-open.ts` `lastUsed`, else its record's change), with
@@ -819,6 +825,9 @@ the query's form serves (decisions.md "Demos").
   machine; `importDefinition` names it with a suffix, `Alpine (2)`); a note when that machine runs in another tab.
   Open my machine checks its chunked disks' manifests first (`checkDisks`); for the machine running here already, it
   closes the store's page to that machine.
+- **Its words** are written for a first-time visitor (copy.md "A first-time visitor's screens"): the download's size
+  is drawn stronger in its note (the `<size>` marker), "last used" is to the minute (`{{when, minutes}}`), and errors
+  and the other store's warning are `ui/Callout.svelte` boxes.
 - **Failures**, each in the catalog's words, at the top of the demo's pane (or, for the store's own file, with
   **[Try again](ui:machines:DemosPage.retry)**): the store or a demo's server unreachable (`demo-store.unreachable`), a
   status, the demo's files gone (a manifest's 404: `template.gone`), the snapshot republished meanwhile

@@ -103,7 +103,11 @@ test("a first visit opens the store; a card's Start makes the machine, opened in
   await page.keyboard.press('Enter'); // the card is reached and opened by the keyboard
   await page.locator('[data-action="start-demo"]:not([disabled])').waitFor({ timeout: 10_000 });
   assert.match(page.url(), /#demos\?id=alpine-term$/, 'the address names the demo');
-  assert.equal(await page.locator('[data-check="isolation"]').getAttribute('data-level'), 'ok');
+  assert.match(await text(page, '[data-field="checks-met"] summary'), new RegExp(t('machines:DemoChecks.met')), 'every check met: one line');
+  assert.equal(await page.locator('[data-check="opfs"]').isVisible(), false, 'the checks folded under it');
+  await page.locator('[data-field="checks-met"] summary').click();
+  assert.equal(await page.locator('[data-check="opfs"]').getAttribute('data-level'), 'ok');
+  assert.equal(await page.locator('[data-check="isolation"]').count(), 0, "the shared memory's check is said only when it fails");
   await page.locator('[data-action="start-demo"]').click();
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
   const [start] = await starts(page);
@@ -239,7 +243,7 @@ test("failures in words: the store's server down (Try again), the demo's files g
 // REVIEW.md (review/demo-page-2) #1, #2, #7, #8, #9, #15.
 const focused = (page: Page) => page.evaluate(() => { const a = document.activeElement; return a?.getAttribute('data-demo') ?? a?.tagName; });
 
-test("#1: a demo's start belongs to its pane: left mid-download (another demo's row, All demos in one column, Back), its download stops and nothing opens", async () => {
+test("#1: a demo's start belongs to its pane: left mid-download (another demo's row, All demos in one column, Back), the visitor is asked; kept, it goes on; stopped, its download stops and nothing opens", async () => {
   for (const [leave, viewport] of [['.cards [data-demo="alpine-two"]', undefined], ['[data-action="all-demos"]', NARROW], ['.demos [data-action="back"]', undefined]] as const) {
     let release!: () => void;
     const s: Site = { requests: [], held: new Promise((r) => (release = r)) };
@@ -253,7 +257,14 @@ test("#1: a demo's start belongs to its pane: left mid-download (another demo's 
     await page.locator('[data-action="start-demo"]:not([disabled])').click({ timeout: 10_000 });
     await page.waitForFunction(() => document.querySelector('progress') || document.querySelector('[data-field="progress"]'), null, { timeout: 30_000, polling: 50 });
     for (let i = 0; i < 300 && !s.requests.some((u) => u.includes('/pieces/')); i++) await page.waitForTimeout(50);
+    await page.locator(leave).click(); // asked first: Keep downloading stays on the demo, its download going on
+    await page.locator('#ask[open]').waitFor();
+    assert.equal(await text(page, '#ask [data-answer="ok"]'), t('machines:DemosPage.stop.ok'));
+    await page.locator('#ask [data-answer="cancel"]').click();
+    assert.equal(await page.locator('article[data-demo="alpine-term"] [data-field="progress"]').count(), 1, `${leave}: kept, the demo's pane stays`);
+    assert.ok(!failed.some((u) => u.includes('/pieces/')), `${leave}: kept, the download goes on`);
     await page.locator(leave).click();
+    await page.locator('#ask [data-answer="ok"]').click();
     for (let i = 0; i < 100 && !failed.some((u) => u.includes('/pieces/')); i++) await page.waitForTimeout(50);
     assert.ok(failed.some((u) => u.includes('/pieces/')), `${leave}: the download kept going`);
     release();

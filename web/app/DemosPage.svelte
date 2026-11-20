@@ -13,6 +13,7 @@
   import { untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import Button from './ui/Button.svelte';
+  import Callout from './ui/Callout.svelte';
   import ErrorWords from './ErrorWords.svelte';
   import Note from './ui/Note.svelte';
   import T from './T.svelte';
@@ -24,7 +25,8 @@
   import { demos } from './areas/demos.svelte.ts';
   import { records } from './areas/records.svelte.ts';
   import { page } from './page.ts';
-  import { t } from '../i18n.ts';
+  import { ask } from './ask.svelte.ts';
+  import { msg, t } from '../i18n.ts';
 
   type Props = { store: Store };
   let { store }: Props = $props();
@@ -83,6 +85,31 @@
     return m.mine.length ? 'mine' : m.older.length ? 'older' : undefined;
   }
   const host = $derived(new URL(route.store).host);
+
+  /** The question asked while a download runs, if it shows: taken down when the download ends meanwhile. */
+  let question: { close: () => void } | undefined;
+  $effect(() => {
+    if (!demos.starting) question?.close();
+  });
+  /**
+   * Goes where the visitor clicked (`go`: another demo, the list, Back), which takes the shown demo's pane away and with
+   * it a download that runs: asked first then. Nothing goes if the download ended meanwhile (its machine opens instead).
+   */
+  async function leave(go: () => void) {
+    if (!demos.starting || !open) return go();
+    const q = ask.closableConfirm(msg('machines:DemosPage.stop', { demo: open.def.machine.name }), {
+      title: t('machines:DemosPage.stop.title'),
+      ok: t('machines:DemosPage.stop.ok'),
+      cancel: t('machines:DemosPage.stop.cancel'),
+    });
+    question = q;
+    const yes = await q.answer;
+    question = undefined;
+    if (yes && demos.open) go();
+  }
+  /** Demo `id` chosen from the list (the one shown already: nothing leaves). */
+  const choose = (id: string) =>
+    id === open?.def.demo.id ? page.chooseDemo(id) : void leave(() => page.chooseDemo(id));
 </script>
 
 <div class="demos" data-busy={loading ? t('machines:DemosPage.loading') : undefined}>
@@ -91,7 +118,7 @@
       variant="tool"
       labelled
       icon="arrow-left"
-      onclick={() => page.closeDemos()}
+      onclick={() => leave(() => page.closeDemos())}
       data-action="back"
       title={t('machines:DemosPage.back')}
     >
@@ -104,7 +131,7 @@
         <nav aria-labelledby="demos-heading">
           <div class="intro">
             <h2 id="demos-heading">{t('machines:DemosPage.heading')}</h2>
-            <Note size="md">{t('machines:DemosPage.intro')}</Note>
+            <Note size="md"><T k="machines:DemosPage.intro" /></Note>
             {#if !route.ours}
               <Note size="md" data-field="from"><T k="machines:DemosPage.from" params={{ host }} /></Note>
             {/if}
@@ -126,7 +153,7 @@
                     demo={d}
                     mark={markOf(d)}
                     chosen={d === open}
-                    onopen={() => page.chooseDemo(d.def.demo.id)}
+                    onopen={() => choose(d.def.demo.id)}
                     focused={narrow.current && route.id === undefined && left === d.def.demo.id}
                   />
                 </li>
@@ -137,7 +164,13 @@
       {/if}
       {#if open}
         {#key open.def.demo.id}
-          <DemoStart {store} demo={open} back={narrow.current} takesFocus={narrow.current} />
+          <DemoStart
+            {store}
+            demo={open}
+            back={narrow.current}
+            onback={() => leave(() => page.chooseDemo())}
+            takesFocus={narrow.current}
+          />
         {/key}
       {:else if !narrow.current}
         <section class="none" data-field="no-demo">
@@ -155,25 +188,32 @@
       <h2>{t('machines:DemosPage.heading')}</h2>
       {#if loading}<Note size="md" role="status">{t('machines:DemosPage.loading')}</Note>{/if}
       {#if error}
-        <div class="error" role="alert" data-field="store-error"><ErrorWords {error} /></div>
-        <Button onclick={() => load(route.store)} data-action="retry">{t('machines:DemosPage.retry')}</Button>
+        <div class="box">
+          <Callout role="alert" data-field="store-error">
+            <ErrorWords {error} />
+            {#snippet actions()}
+              <Button onclick={() => load(route.store)} data-action="retry">{t('machines:DemosPage.retry')}</Button>
+            {/snippet}
+          </Callout>
+        </div>
       {/if}
       {#if shelf}
-        <section class="warning" data-field="not-ours">
-          <h3>{t('machines:DemosPage.notOurs.title')}</h3>
-          <Note size="md"><T k="machines:DemosPage.notOurs" params={{ host }} /></Note>
-          {#if shelf.name}
-            <Note size="md"><T k="machines:DemosPage.notOurs.name" params={{ name: shelf.name }} /></Note>
-          {/if}
-          <div class="actions">
-            <Button variant="primary" onclick={() => (accepted = true)} data-action="accept-store">
-              {t('machines:DemosPage.notOurs.show')}
-            </Button>
-            <Button onclick={() => page.openDemos({ store: OUR_STORE, ours: true })} data-action="our-store">
-              {t('machines:DemosPage.notOurs.ours')}
-            </Button>
-          </div>
-        </section>
+        <div class="box">
+          <Callout tone="warn" title={t('machines:DemosPage.notOurs.title')} data-field="not-ours">
+            <Note size="md"><T k="machines:DemosPage.notOurs" params={{ host }} /></Note>
+            {#if shelf.name}
+              <Note size="md"><T k="machines:DemosPage.notOurs.name" params={{ name: shelf.name }} /></Note>
+            {/if}
+            {#snippet actions()}
+              <Button variant="primary" onclick={() => (accepted = true)} data-action="accept-store">
+                {t('machines:DemosPage.notOurs.show')}
+              </Button>
+              <Button onclick={() => page.openDemos({ store: OUR_STORE, ours: true })} data-action="our-store">
+                {t('machines:DemosPage.notOurs.ours')}
+              </Button>
+            {/snippet}
+          </Callout>
+        </div>
       {/if}
     </div>
   {/if}
@@ -234,10 +274,6 @@
     margin: 0;
     font-size: var(--text-lg);
   }
-  h3 {
-    margin: 0;
-    font-size: var(--text-base);
-  }
   .cards {
     list-style: none;
     margin: 0;
@@ -261,28 +297,10 @@
   .none p {
     margin: 0;
   }
-  .warning {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
+  /* A warning's or an error's box, a column's measure wide. */
+  .box {
+    width: 100%;
     max-width: 720px;
-    padding: var(--space-4);
-    border: 1px solid var(--warn-border);
-    border-radius: var(--radius);
-    background: var(--warn-bg);
-  }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-  }
-  .error {
-    max-width: 720px;
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--error-border);
-    border-radius: var(--radius);
-    background: var(--error-bg);
-    color: var(--error-bar-fg);
   }
   @media (max-width: 720px) {
     .panes {

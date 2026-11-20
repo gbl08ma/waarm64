@@ -9,6 +9,7 @@
   import AddUsb from './AddUsb.svelte';
   import Menu from './ui/Menu.svelte';
   import Button from './ui/Button.svelte';
+  import Callout from './ui/Callout.svelte';
   import Note from './ui/Note.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import T from './T.svelte';
@@ -62,14 +63,13 @@
         >{attached}</span
       >{/if}{/snippet}
   {#each usb.offers as o (o.id)}
-    <div class="offer" data-usb-offer={o.id}>
+    <Callout tone="warn" class="offer" data-usb-offer={o.id}>
       <p><T m={o.text} /></p>
-      <div class="row">
-        <Button variant="primary" onclick={() => page.usbOffer(o.id, true)}>{o.label}</Button><Button
-          onclick={() => page.usbOffer(o.id, false)}>{t('usb:UsbMenu.notNow')}</Button
-        >
-      </div>
-    </div>
+      {#snippet actions()}
+        <Button variant="primary" onclick={() => page.usbOffer(o.id, true)}>{o.label}</Button>
+        <Button onclick={() => page.usbOffer(o.id, false)}>{t('usb:UsbMenu.notNow')}</Button>
+      {/snippet}
+    </Callout>
   {/each}
   {#each usb.entries as v (v.entry.id)}
     {@const on = v.state === 'attached'}
@@ -151,19 +151,6 @@
 {#if adding}<AddUsb machine={current.id} name={current.title} close={() => (adding = false)} />{/if}
 
 <style>
-  /* An offer (a device that appeared, a permission to give): framed in the warning's colors, it asks. */
-  .offer {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border: 1px solid var(--warn-border);
-    border-radius: var(--radius);
-    background: var(--warn-bg);
-  }
-  .offer p {
-    margin: 0;
-  }
   .device {
     display: grid;
     grid-template-columns: auto 1fr auto;

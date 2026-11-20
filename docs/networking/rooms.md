@@ -277,7 +277,7 @@ global public room on its machine's second adapter, so visitors' demo machines c
 - **Incoming connections on, WebRTC where it can** (the rooms' defaults; the user chose them over relay only): the
   Nostr relays and DERP servers see the visitor's IP address, and another visitor's machine learns it only by
   connecting directly, which takes this machine's name. The store's start panel says so
-  ([The machine also joins a public room, where other visitors' machines can reach it if they know its name. For that, this browser talks to public relay servers, which can see your IP address. Another visitor learns your IP address only if their machine connects to yours, which requires knowing your machine's name.](ui:machines:DemoStart.room)).
+  ([The machine also joins a public peer-to-peer network made for waarm64, where other visitors' machines can connect to it if they know its name. Once it's running, you will find its name in this network in the toolbar's Network menu. To join, this browser contacts public relay servers, which can see your IP address. Another visitor sees your IP address only when their machine connects to yours.](ui:machines:DemoStart.room)).
 - **The template carries no room address:** it is built with the second adapter present and unconnected (the shape
   has it); after the restore the page connects it, and the guest asks for its address then: networkd (Arch) takes any
   card; on Alpine the agent brings the card up and runs udhcpc6 there ([devices.md](../devices.md) "A card nothing

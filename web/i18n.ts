@@ -109,6 +109,10 @@ i18n.services.formatter?.add('bytes', (v: unknown) => bytesText(Number(v)));
 i18n.services.formatter?.add('lines', (v: unknown) => (Array.isArray(v) ? v.join('\n') : String(v)));
 i18n.services.formatter?.add('time', (v: unknown) => (v instanceof Date ? v.toLocaleTimeString() : String(v)));
 i18n.services.formatter?.add('date', (v: unknown) => (v instanceof Date ? v.toLocaleDateString() : String(v)));
+// A date and its time to the minute, as the browser's locale writes them (`{{when, minutes}}`): no seconds.
+i18n.services.formatter?.add('minutes', (v: unknown) =>
+  v instanceof Date ? v.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : String(v),
+);
 
 /** A list's words: its items rendered and, where the message doesn't format it, joined with commas. */
 class Items extends Array<string> {
