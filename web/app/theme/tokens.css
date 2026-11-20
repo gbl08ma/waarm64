@@ -135,6 +135,10 @@
   --map-end: #e8ecf2;
   --map-pin: #fff;
 
+  /* A code pane's lit lines (web/app/ui/CodePane.svelte): the active instruction's, in each form of it. */
+  --code-lit-bg: color-mix(in srgb, var(--accent) 16%, transparent);
+  --code-lit-fg: #fff3ea;
+
   --shadow-menu: 0 10px 28px #000c, inset 0 1px 0 #ffffff14;
   --shadow-dialog: 0 16px 48px #000d, inset 0 1px 0 #ffffff14;
   /* A hairline under a strip of tabs. */

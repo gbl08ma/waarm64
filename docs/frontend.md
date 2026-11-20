@@ -794,6 +794,43 @@ and the floating windows don't show, and the machine, Home or the store's page s
     (`intro/IntroSpeed.svelte`, over the table): `intro/speed.ts` `SPEED_LEAD` is undefined until comparison.md §3's
     rows are measured, then holds one figure ("N% faster than" the next fastest, named, with its workload and date),
     and is emptied again if a peer measures faster.
+  - **[How it works](ui:intro:IntroHow.title)** (`intro/IntroHow.svelte`): five topics (`intro/IntroTopic.svelte`),
+    the processor, memory, OpenGL, video and Vulkan, each a paragraph and a **path** (`intro/IntroPath.svelte`): five
+    stages as modules of a panel joined by a rail, one active (its lamp lit, the rail lit up to it, its paragraph
+    under the path). The active stage moves on by itself every 3.2 s while the path is on screen
+    (`intro/autoplay.svelte.ts`: an IntersectionObserver; paused for good by a click on a stage, and never started
+    with `prefers-reduced-motion`). The facts are the docs' (cpu.md, jit.md, architecture.md, spill-memories.md,
+    graphics.md), and a figure names what it was measured on. Two topics have a **deep dive** under a button, mounted
+    only once opened:
+    - **The processor's** ([Look at real code](ui:intro:IntroHow.cpu.deeper); `intro/IntroCpuDive.svelte`,
+      `intro/IntroTranslate.svelte`): captured guest code in its four forms side by side, in **code panes**
+      (`ui/CodePane.svelte`): the AArch64 instructions, the block interpreter's micro-ops, the WebAssembly our JIT
+      emitted, and the machine code V8 made of it. One guest instruction is active and lit in every pane (the rows
+      emitted for it; the pane scrolls its first lit row into view); a **stepper** (`ui/Stepper.svelte`) walks the
+      instructions, by itself while on screen, and the pointer over a row picks its instruction. What surrounds an
+      instruction's own WebAssembly is folded under a label that unfolds it (what runs before a block's first
+      instruction, a slow path, what leaves a block). Chips choose among five captures; the C source, what to look
+      for, and the compiler's line are beside them. **Nothing is drawn by hand** ("The captures", below). The host's
+      pane lights only the lines V8's own source positions tie to a WebAssembly instruction (loads, stores, calls):
+      the fine print says so.
+    - **Memory's** ([Try the split](ui:intro:IntroHow.memory.deeper); `intro/IntroRam.svelte`): a slider of guest RAM
+      (256 MiB to 16 GiB) and under it a bar per WebAssembly memory, 4 GiB long, filled as the machine really splits
+      that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
+- **The captures** (`web/intro-captures/blocks.json`, written by `tools/intro-capture.ts`; the page fetches it when
+  the processor's deep dive opens: `intro/captures.ts`, its own piece of the build). The tool compiles small C
+  functions for AArch64 with clang (`tools/intro-capture/*.c`; the built `guest.bin` and its listing are committed, so
+  every host captures the same guest code), runs them in the emulator under Node with the JIT on, and records: the
+  guest's instructions (llvm-objdump's text), the block interpreter's micro-ops for each block (the core's own
+  decoder, `core/examples/uops.rs`), each JIT function's WebAssembly as `wasm-tools print` prints it, which guest
+  instruction each line was emitted for, and V8's machine code for that function (`node --print-wasm-code
+  --no-liftoff`). The line-to-instruction map comes from a **`capture` build of the core** (a Cargo feature, off by
+  default, built into `target/capture/`): the emitter notes its code offset at each instruction, slow arm and tail
+  (`jit::wasm::Code::note`, nothing in a normal build) into a custom section; the tool checks every run that each
+  module, less that section, is byte for byte the normal core's. No export changes. `node tools/intro-capture.ts`
+  writes this host's architecture into the file and keeps the other's (x86-64 from a cloud session, AArch64 from the
+  dev VM), as long as both captured the same WebAssembly; `--build-guest` compiles the C again. It needs
+  `wasm-tools` (`cargo install --locked wasm-tools`). Run it again when the JIT's emission changes what these blocks
+  compile to, and read `IntroTranslate`'s "what to look for" words against the new capture.
 - **The movement** (`web/app/view-transition.ts`, the View Transitions API): leaving the introduction is one
   transition (`intro`): its bar becomes the toolbar where it is, the status bar rises from the window's bottom edge,
   the rest crosses over. A demo's Start is another (`launch`, `openDemo`): the demo's picture in its pane grows into
@@ -804,7 +841,9 @@ and the floating windows don't show, and the machine, Home or the store's page s
   `prefers-reduced-motion`, the change is immediate.
 - **Its words** are the catalog's `intro` area, in a voice of their own ([copy.md](copy.md) "The introduction").
 - **Its scale** is the tokens' introduction steps (`--text-lede`, `--text-title`, `--text-display`, `--space-7`,
-  `--space-8`): a page read, not a panel operated.
+  `--space-8`): a page read, not a panel operated. Its pictures added to the design system: the motion tokens, a code
+  pane's lit lines (`--code-lit-bg`, `--code-lit-fg`), and the primitives `ui/CodePane.svelte` and `ui/Stepper.svelte`
+  ([frontend-code.md](frontend-code.md) §2).
 
 Tests: `tests/intro-route.test.ts` (the address, where leaving leads; Node), `tests/page-intro.test.ts` (Chromium: a
 first visit, no bars under it, a reload, Skip and both buttons to the store, Back; with a machine: not opened by a bare

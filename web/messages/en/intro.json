@@ -168,7 +168,7 @@
     "note": "What the figure “61,425” counts, under its readout on the introduction. Not a sentence: no period."
   },
   "IntroFacts.tests.words": {
-    "message": "These are dEQP's lists for OpenGL ES 2 and 3, the tests Android requires a GPU driver to pass.",
+    "message": "These are dEQP's lists for OpenGL ES 2 and 3, the tests Android requires a GPU driver to pass, run on Chromium's software renderer. On a real GPU, a few fail where that GPU's own driver does.",
     "note": "The sentence under the readout “61,425 graphics tests passed, none failed” on the introduction: what stands behind the figure."
   },
   "IntroFacts.drivers": {
@@ -482,5 +482,589 @@
   "IntroCompare.sources": {
     "message": "Sources:",
     "note": "Label before the links to the other projects' sites, under the comparison on the introduction. A colon: it introduces the list."
+  },
+  "IntroTranslate.blocks": {
+    "message": "Code to look at",
+    "note": "Screen reader's name for the buttons that choose which captured code the introduction's code viewer (the CPU's deep dive) shows."
+  },
+  "IntroTranslate.sum": {
+    "message": "Summing bytes",
+    "note": "Button in the introduction's code viewer (the CPU's deep dive): shows the captured code of this small C function. A name: no period."
+  },
+  "IntroTranslate.sum.look": {
+    "message": "A load in a loop. The WebAssembly looks the address up in the TLB inline and reads the byte itself. The folded slow path is taken only when the page isn't in the TLB. The branch at the end compares the numbers directly, and the flags are only stored for whoever reads them later.",
+    "note": "Paragraph beside the C source in the introduction's code viewer (the CPU's deep dive), for “Summing bytes”: what to notice in this code's translation."
+  },
+  "IntroTranslate.move": {
+    "message": "Moving a point",
+    "note": "Button in the introduction's code viewer (the CPU's deep dive): shows the captured code of this small C function. A name: no period."
+  },
+  "IntroTranslate.move.look": {
+    "message": "Two pair loads and a pair store through one pointer. The JIT checks the TLB once for the whole group, so the accesses after the first are plain WebAssembly loads and stores, and the group shares one slow path.",
+    "note": "Paragraph beside the C source in the introduction's code viewer (the CPU's deep dive), for “Moving a point”: what to notice in this code's translation."
+  },
+  "IntroTranslate.collatz": {
+    "message": "Collatz steps",
+    "note": "Button in the introduction's code viewer (the CPU's deep dive): shows the captured code of this small C function. A name: no period."
+  },
+  "IntroTranslate.collatz.look": {
+    "message": "No memory at all: arithmetic, a conditional select, and a branch. The guest's registers live in WebAssembly locals, which V8 keeps in your processor's registers. The compare writes no flags. The branch after it compares the numbers itself.",
+    "note": "Paragraph beside the C source in the introduction's code viewer (the CPU's deep dive), for “Collatz steps”: what to notice in this code's translation."
+  },
+  "IntroTranslate.total": {
+    "message": "Adding floats",
+    "note": "Button in the introduction's code viewer (the CPU's deep dive): shows the captured code of this small C function. A name: no period."
+  },
+  "IntroTranslate.total.look": {
+    "message": "Floating-point code. The addition is one WebAssembly f64.add. The lines around it check that your processor's answer is the one an ARM processor would give: the rounding mode is the default, and no operand or result is a NaN, an infinity, or a denormal. Otherwise the slow path computes it in software.",
+    "note": "Paragraph beside the C source in the introduction's code viewer (the CPU's deep dive), for “Adding floats”: what to notice in this code's translation."
+  },
+  "IntroTranslate.cap": {
+    "message": "A loop with a branch inside",
+    "note": "Button in the introduction's code viewer (the CPU's deep dive): shows the captured code of this small C function. A name: no period."
+  },
+  "IntroTranslate.cap.look": {
+    "message": "Three blocks of the guest compiled as one WebAssembly function with a loop in it. Each block ran in the interpreter first, was then compiled alone, and joined this function once the loop had run a thousand times.",
+    "note": "Paragraph beside the C source in the introduction's code viewer (the CPU's deep dive), for “A loop with a branch inside”: what to notice in this code's translation."
+  },
+  "IntroTranslate.compiler": {
+    "message": "Compiled with {{compiler}}.",
+    "note": "Fine print under that paragraph in the introduction's code viewer (the CPU's deep dive). {{compiler}} is the compiler's name, version and options, as a command line."
+  },
+  "IntroTranslate.back": {
+    "message": "Previous instruction",
+    "note": "Tooltip and name of the stepper's back button in the introduction's code viewer (the CPU's deep dive)."
+  },
+  "IntroTranslate.next": {
+    "message": "Next instruction",
+    "note": "Tooltip and name of the stepper's next button in the introduction's code viewer (the CPU's deep dive)."
+  },
+  "IntroTranslate.play": {
+    "message": "Step through by itself",
+    "note": "Tooltip and name of the stepper's play button in the introduction's code viewer (the CPU's deep dive)."
+  },
+  "IntroTranslate.pause": {
+    "message": "Pause",
+    "note": "Tooltip and name of the stepper's pause button in the introduction's code viewer (the CPU's deep dive)."
+  },
+  "IntroTranslate.place": {
+    "message": "Instruction {{at}} of {{count}}: {{lines}} lines of WebAssembly",
+    "note": "Beside the stepper in the introduction's code viewer (the CPU's deep dive): which guest instruction is lit, of how many, and how many lines of WebAssembly it became. The colon introduces that count."
+  },
+  "IntroTranslate.guest": {
+    "message": "The guest's code",
+    "note": "Title of the first pane of the introduction's code viewer (the CPU's deep dive): the AArch64 instructions (drawn in small capitals)."
+  },
+  "IntroTranslate.guest.sub_one": {
+    "message": "{{count}} AArch64 instruction",
+    "note": "Beside the first pane's title in the introduction's code viewer (the CPU's deep dive), for one instruction."
+  },
+  "IntroTranslate.guest.sub_other": {
+    "message": "{{count}} AArch64 instructions",
+    "note": "Beside the first pane's title in the introduction's code viewer (the CPU's deep dive): how many instructions the block has."
+  },
+  "IntroTranslate.uops": {
+    "message": "Interpreted",
+    "note": "Title of the second pane of the introduction's code viewer (the CPU's deep dive): the block as the block interpreter holds it (drawn in small capitals)."
+  },
+  "IntroTranslate.uops.sub_one": {
+    "message": "{{count}} micro-op of 8 bytes",
+    "note": "Beside the second pane's title in the introduction's code viewer (the CPU's deep dive), for one micro-op."
+  },
+  "IntroTranslate.uops.sub_other": {
+    "message": "{{count}} micro-ops of 8 bytes",
+    "note": "Beside the second pane's title in the introduction's code viewer (the CPU's deep dive): how many micro-ops the interpreter decoded the block into."
+  },
+  "IntroTranslate.wasm": {
+    "message": "Compiled",
+    "note": "Title of the third pane of the introduction's code viewer (the CPU's deep dive): the WebAssembly the JIT emitted (drawn in small capitals)."
+  },
+  "IntroTranslate.wasm.sub_one": {
+    "message": "{{count}} line of WebAssembly",
+    "note": "Beside the third pane's title in the introduction's code viewer (the CPU's deep dive), for one line."
+  },
+  "IntroTranslate.wasm.sub_other": {
+    "message": "{{count}} lines of WebAssembly",
+    "note": "Beside the third pane's title in the introduction's code viewer (the CPU's deep dive): how many lines the emitted function has, folded ones included."
+  },
+  "IntroTranslate.host": {
+    "message": "What your processor runs",
+    "note": "Title of the fourth pane of the introduction's code viewer (the CPU's deep dive): the machine code V8 made (drawn in small capitals). The line beside it names the architecture."
+  },
+  "IntroTranslate.host.sub_one": {
+    "message": "{{count}} {{arch}} instruction, {{size, bytes}}",
+    "note": "Beside the fourth pane's title in the introduction's code viewer (the CPU's deep dive), for one instruction."
+  },
+  "IntroTranslate.host.sub_other": {
+    "message": "{{count}} {{arch}} instructions, {{size, bytes}}",
+    "note": "Beside the fourth pane's title in the introduction's code viewer (the CPU's deep dive): how many machine instructions and bytes V8 produced. {{arch}} is the architecture's name (x86-64, AArch64)."
+  },
+  "IntroTranslate.arches": {
+    "message": "Host processor",
+    "note": "Screen reader's name for the buttons that choose which host processor's machine code the introduction's code viewer (the CPU's deep dive) shows."
+  },
+  "IntroTranslate.fold.prologue_one": {
+    "message": "Before the first instruction: {{count}} line",
+    "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive), for one line."
+  },
+  "IntroTranslate.fold.prologue_other": {
+    "message": "Before the first instruction: {{count}} lines",
+    "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive): the code that runs before the block's first instruction (it loads the guest's registers). A click unfolds them."
+  },
+  "IntroTranslate.fold.slow_one": {
+    "message": "Slow path: {{count}} line",
+    "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive), for one line."
+  },
+  "IntroTranslate.fold.slow_other": {
+    "message": "Slow path: {{count}} lines",
+    "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive): the code taken when a memory access misses the TLB. A click unfolds them."
+  },
+  "IntroTranslate.fold.exit_one": {
+    "message": "Leaving the block: {{count}} line",
+    "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive), for one line."
+  },
+  "IntroTranslate.fold.exit_other": {
+    "message": "Leaving the block: {{count}} lines",
+    "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive): the code that stores the registers and jumps to the next block. A click unfolds them."
+  },
+  "IntroTranslate.honest": {
+    "message": "Nothing here is drawn by hand. The guest's code ran in $t(common:product.name), and these are its micro-ops and the WebAssembly it emitted, printed by wasm-tools. The machine code is {{compiler}}'s for that function. V8 says which line a load, a store, or a call came from, so only those light up in the last pane.",
+    "note": "Fine print under the panes of the introduction's code viewer (the CPU's deep dive): where the code shown comes from. {{compiler}} names the V8 version and compiler tier."
+  },
+  "IntroPage.nav.how": {
+    "message": "How it works",
+    "note": "Link in the introduction's bar: scrolls to the section of that title."
+  },
+  "IntroHero.how": {
+    "message": "See how it works",
+    "note": "Second button under the introduction's first paragraphs: scrolls down to the “How it works” section."
+  },
+  "IntroTopic.deeper": {
+    "message": "Go deeper",
+    "note": "Button under a topic's picture in the introduction's “How it works” section: unfolds a detailed, interactive view under it."
+  },
+  "IntroTopic.less": {
+    "message": "Fold it away",
+    "note": "The same button once the detailed view is open: folds it away again."
+  },
+  "IntroCpuDive.loading": {
+    "message": "Loading the captured code…",
+    "note": "Shown while the code viewer of the introduction's processor topic fetches its data."
+  },
+  "IntroCpuDive.failed": {
+    "message": "The captured code couldn't be loaded. Check your connection and reload this web app.",
+    "note": "Shown in place of the code viewer of the introduction's processor topic when its data can't be fetched."
+  },
+  "IntroHow.title": {
+    "message": "How it works",
+    "note": "Title of the introduction's fourth section. No period."
+  },
+  "IntroHow.lede": {
+    "message": "Five parts do most of the work. Each picture steps through its part by itself, and you can click a stage to stop on it.",
+    "note": "Paragraph under the title of the introduction's “How it works” section."
+  },
+  "IntroHow.cpu.deeper": {
+    "message": "Look at real code",
+    "note": "Button under the processor topic's picture in the introduction's “How it works” section: unfolds the code viewer."
+  },
+  "IntroHow.memory.deeper": {
+    "message": "Try the split",
+    "note": "Button under the memory topic's picture in the introduction's “How it works” section: unfolds a slider that shows how RAM is split over WebAssembly memories."
+  },
+  "IntroHow.cpu": {
+    "message": "The processor",
+    "note": "Title of a topic in the introduction's “How it works” section. No period."
+  },
+  "IntroHow.cpu.words": {
+    "message": "An emulator is as fast as the way it runs the guest's code. $t(common:product.name) interprets code that runs a few times and compiles the rest to WebAssembly. On an Apple M4, that reaches about 80% of QEMU's speed at CoreMark, from inside a browser.",
+    "note": "Paragraph under the topic title “The processor” in the introduction's “How it works” section."
+  },
+  "IntroHow.cpu.path": {
+    "message": "The processor: the stages",
+    "note": "Screen reader's name for the row of stages under that topic."
+  },
+  "IntroHow.cpu.1": {
+    "message": "Guest",
+    "note": "Label of stage 1 of the “The processor” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.cpu.1.line": {
+    "message": "A block of AArch64",
+    "note": "The line under the label of stage 1 of the “The processor” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.cpu.1.words": {
+    "message": "The guest's code is handled a block at a time: the instructions up to the next branch, 32 at most.",
+    "note": "Paragraph shown under the “The processor” picture on the introduction while stage 1 (“Guest”) is the active one."
+  },
+  "IntroHow.cpu.2": {
+    "message": "Interpreter",
+    "note": "Label of stage 2 of the “The processor” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.cpu.2.line": {
+    "message": "Decoded once into micro-ops",
+    "note": "The line under the label of stage 2 of the “The processor” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.cpu.2.words": {
+    "message": "The first time a block runs, it is decoded into micro-ops of 8 bytes, one for each instruction. An interpreter loop runs those. Code that runs only a few times never costs a compilation.",
+    "note": "Paragraph shown under the “The processor” picture on the introduction while stage 2 (“Interpreter”) is the active one."
+  },
+  "IntroHow.cpu.3": {
+    "message": "Counter",
+    "note": "Label of stage 3 of the “The processor” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.cpu.3.line": {
+    "message": "1,000 runs",
+    "note": "The line under the label of stage 3 of the “The processor” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.cpu.3.words": {
+    "message": "Every run is counted. A block that has run 1,000 times is worth compiling, and joins the next batch.",
+    "note": "Paragraph shown under the “The processor” picture on the introduction while stage 3 (“Counter”) is the active one."
+  },
+  "IntroHow.cpu.4": {
+    "message": "JIT",
+    "note": "Label of stage 4 of the “The processor” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.cpu.4.line": {
+    "message": "One WebAssembly function",
+    "note": "The line under the label of stage 4 of the “The processor” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.cpu.4.words": {
+    "message": "The JIT emits WebAssembly for the block and its neighbors, up to 16 blocks in one function, so a loop stays inside it. The guest's registers become local variables.",
+    "note": "Paragraph shown under the “The processor” picture on the introduction while stage 4 (“JIT”) is the active one."
+  },
+  "IntroHow.cpu.5": {
+    "message": "V8",
+    "note": "Label of stage 5 of the “The processor” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.cpu.5.line": {
+    "message": "Your processor's machine code",
+    "note": "The line under the label of stage 5 of the “The processor” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.cpu.5.words": {
+    "message": "The browser compiles that WebAssembly to machine code, as it does for any web page. With several cores, all of them share the same compiled code.",
+    "note": "Paragraph shown under the “The processor” picture on the introduction while stage 5 (“V8”) is the active one."
+  },
+  "IntroHow.memory": {
+    "message": "Memory",
+    "note": "Title of a topic in the introduction's “How it works” section. No period."
+  },
+  "IntroHow.memory.words": {
+    "message": "WebAssembly gives a program 4 GiB of address space, and the emulator needs part of that for itself. The guest can still have 16 GiB, and nearly every access to it is a single load or store.",
+    "note": "Paragraph under the topic title “Memory” in the introduction's “How it works” section."
+  },
+  "IntroHow.memory.path": {
+    "message": "Memory: the stages",
+    "note": "Screen reader's name for the row of stages under that topic."
+  },
+  "IntroHow.memory.1": {
+    "message": "Address",
+    "note": "Label of stage 1 of the “Memory” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.memory.1.line": {
+    "message": "A virtual address",
+    "note": "The line under the label of stage 1 of the “Memory” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.memory.1.words": {
+    "message": "A load or a store in the guest names a virtual address, as on real hardware. The guest's page tables decide what it means.",
+    "note": "Paragraph shown under the “Memory” picture on the introduction while stage 1 (“Address”) is the active one."
+  },
+  "IntroHow.memory.2": {
+    "message": "TLB",
+    "note": "Label of stage 2 of the “Memory” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.memory.2.line": {
+    "message": "16,384 recent pages per core",
+    "note": "The line under the label of stage 2 of the “Memory” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.memory.2.words": {
+    "message": "Compiled code looks the page up in a table of recent translations: a shift, a mask, and one compare. On a hit, it adds an offset and has the real address.",
+    "note": "Paragraph shown under the “Memory” picture on the introduction while stage 2 (“TLB”) is the active one."
+  },
+  "IntroHow.memory.3": {
+    "message": "Memory 0",
+    "note": "Label of stage 3 of the “Memory” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.memory.3.line": {
+    "message": "The first 3 GiB",
+    "note": "The line under the label of stage 3 of the “Memory” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.memory.3.words": {
+    "message": "Most accesses end here, as a plain WebAssembly load or store. Memory 0 is shared by all cores, and it also holds the emulator's own state.",
+    "note": "Paragraph shown under the “Memory” picture on the introduction while stage 3 (“Memory 0”) is the active one."
+  },
+  "IntroHow.memory.4": {
+    "message": "More memories",
+    "note": "Label of stage 4 of the “Memory” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.memory.4.line": {
+    "message": "Up to 8 of 4 GiB",
+    "note": "The line under the label of stage 4 of the “Memory” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.memory.4.words": {
+    "message": "RAM past 3 GiB lives in more WebAssembly memories. Linux is told that each is a NUMA node without processors, so it fills them last.",
+    "note": "Paragraph shown under the “Memory” picture on the introduction while stage 4 (“More memories”) is the active one."
+  },
+  "IntroHow.memory.5": {
+    "message": "Miss",
+    "note": "Label of stage 5 of the “Memory” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.memory.5.line": {
+    "message": "The page tables, walked",
+    "note": "The line under the label of stage 5 of the “Memory” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.memory.5.words": {
+    "message": "When the table has no answer, the instruction runs again in the interpreter. It walks the guest's page tables as a processor would, raises the fault if there is one, and fills the table for next time.",
+    "note": "Paragraph shown under the “Memory” picture on the introduction while stage 5 (“Miss”) is the active one."
+  },
+  "IntroHow.gl": {
+    "message": "OpenGL",
+    "note": "Title of a topic in the introduction's “How it works” section. No period."
+  },
+  "IntroHow.gl.words": {
+    "message": "Nothing in the guest is special. Mesa's driver for virtual machines sends its commands out, and a renderer we wrote plays them on WebGL2.",
+    "note": "Paragraph under the topic title “OpenGL” in the introduction's “How it works” section."
+  },
+  "IntroHow.gl.path": {
+    "message": "OpenGL: the stages",
+    "note": "Screen reader's name for the row of stages under that topic."
+  },
+  "IntroHow.gl.1": {
+    "message": "Program",
+    "note": "Label of stage 1 of the “OpenGL” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.gl.1.line": {
+    "message": "OpenGL calls",
+    "note": "The line under the label of stage 1 of the “OpenGL” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.gl.1.words": {
+    "message": "A program in the guest calls OpenGL or OpenGL ES, as on any Linux desktop.",
+    "note": "Paragraph shown under the “OpenGL” picture on the introduction while stage 1 (“Program”) is the active one."
+  },
+  "IntroHow.gl.2": {
+    "message": "Mesa",
+    "note": "Label of stage 2 of the “OpenGL” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.gl.2.line": {
+    "message": "The virgl driver, unmodified",
+    "note": "The line under the label of stage 2 of the “OpenGL” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.gl.2.words": {
+    "message": "Mesa's virgl driver turns the calls into a stream of commands. It compiles shaders to an intermediate form called TGSI.",
+    "note": "Paragraph shown under the “OpenGL” picture on the introduction while stage 2 (“Mesa”) is the active one."
+  },
+  "IntroHow.gl.3": {
+    "message": "virtio-gpu",
+    "note": "Label of stage 3 of the “OpenGL” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.gl.3.line": {
+    "message": "Out of the guest",
+    "note": "The line under the label of stage 3 of the “OpenGL” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.gl.3.words": {
+    "message": "The stream leaves through a virtio-gpu device. Textures and buffers aren't copied out: the renderer's thread reads them in the guest's memory, which is shared.",
+    "note": "Paragraph shown under the “OpenGL” picture on the introduction while stage 3 (“virtio-gpu”) is the active one."
+  },
+  "IntroHow.gl.4": {
+    "message": "Renderer",
+    "note": "Label of stage 4 of the “OpenGL” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.gl.4.line": {
+    "message": "Ours, in TypeScript",
+    "note": "The line under the label of stage 4 of the “OpenGL” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.gl.4.words": {
+    "message": "Our renderer decodes the stream in a worker and translates each shader from TGSI to GLSL ES. It also does what WebGL2 can't do by itself, such as BGRA formats, base-vertex draws, and stencil per face.",
+    "note": "Paragraph shown under the “OpenGL” picture on the introduction while stage 4 (“Renderer”) is the active one."
+  },
+  "IntroHow.gl.5": {
+    "message": "WebGL2",
+    "note": "Label of stage 5 of the “OpenGL” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.gl.5.line": {
+    "message": "Your GPU",
+    "note": "The line under the label of stage 5 of the “OpenGL” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.gl.5.words": {
+    "message": "Everything is drawn on one WebGL2 context, once per frame of your display. A frame of the sway desktop costs the guest 6.6 ms this way, against 81 ms when it renders in software.",
+    "note": "Paragraph shown under the “OpenGL” picture on the introduction while stage 5 (“WebGL2”) is the active one."
+  },
+  "IntroHow.video": {
+    "message": "Video",
+    "note": "Title of a topic in the introduction's “How it works” section. No period."
+  },
+  "IntroHow.video.words": {
+    "message": "A guest that decodes video in software would spend most of its time on it. Here the guest hands the compressed stream over, and your browser's decoder does the work.",
+    "note": "Paragraph under the topic title “Video” in the introduction's “How it works” section."
+  },
+  "IntroHow.video.path": {
+    "message": "Video: the stages",
+    "note": "Screen reader's name for the row of stages under that topic."
+  },
+  "IntroHow.video.1": {
+    "message": "Player",
+    "note": "Label of stage 1 of the “Video” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.video.1.line": {
+    "message": "VA-API",
+    "note": "The line under the label of stage 1 of the “Video” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.video.1.words": {
+    "message": "Firefox, mpv, or GStreamer in the guest asks VA-API to decode a video, as on a PC with a hardware decoder.",
+    "note": "Paragraph shown under the “Video” picture on the introduction while stage 1 (“Player”) is the active one."
+  },
+  "IntroHow.video.2": {
+    "message": "Mesa",
+    "note": "Label of stage 2 of the “Video” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.video.2.line": {
+    "message": "Its virtio video driver",
+    "note": "The line under the label of stage 2 of the “Video” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.video.2.words": {
+    "message": "Mesa's driver sends each picture's compressed data and its parameters through the same virtio-gpu device as 3D.",
+    "note": "Paragraph shown under the “Video” picture on the introduction while stage 2 (“Mesa”) is the active one."
+  },
+  "IntroHow.video.3": {
+    "message": "Bitstream",
+    "note": "Label of stage 3 of the “Video” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.video.3.line": {
+    "message": "Rebuilt for the browser",
+    "note": "The line under the label of stage 3 of the “Video” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.video.3.words": {
+    "message": "VA-API hands over slices and parameters, and a browser wants a stream. So the stream is put together again: H.264 with its parameter sets, AV1 with its headers, VP9 as sent.",
+    "note": "Paragraph shown under the “Video” picture on the introduction while stage 3 (“Bitstream”) is the active one."
+  },
+  "IntroHow.video.4": {
+    "message": "WebCodecs",
+    "note": "Label of stage 4 of the “Video” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.video.4.line": {
+    "message": "Your decoder",
+    "note": "The line under the label of stage 4 of the “Video” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.video.4.words": {
+    "message": "The browser's VideoDecoder decodes it, on your GPU where it can. H.264, VP9, and AV1 are offered to the guest when your browser has them.",
+    "note": "Paragraph shown under the “Video” picture on the introduction while stage 4 (“WebCodecs”) is the active one."
+  },
+  "IntroHow.video.5": {
+    "message": "Texture",
+    "note": "Label of stage 5 of the “Video” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.video.5.line": {
+    "message": "Onto the guest's screen",
+    "note": "The line under the label of stage 5 of the “Video” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.video.5.words": {
+    "message": "The decoded picture is written into textures the guest already holds. It never passes through the guest's memory, and the guest's compositor draws it like any other surface.",
+    "note": "Paragraph shown under the “Video” picture on the introduction while stage 5 (“Texture”) is the active one."
+  },
+  "IntroHow.vulkan": {
+    "message": "Vulkan",
+    "note": "Title of a topic in the introduction's “How it works” section. No period."
+  },
+  "IntroHow.vulkan.words": {
+    "message": "This is the deepest stack of the five. Vulkan is close to the hardware, WebGPU is not, and a real Mesa driver sits between them, compiled to WebAssembly.",
+    "note": "Paragraph under the topic title “Vulkan” in the introduction's “How it works” section."
+  },
+  "IntroHow.vulkan.path": {
+    "message": "Vulkan: the stages",
+    "note": "Screen reader's name for the row of stages under that topic."
+  },
+  "IntroHow.vulkan.1": {
+    "message": "Program",
+    "note": "Label of stage 1 of the “Vulkan” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.vulkan.1.line": {
+    "message": "Vulkan calls",
+    "note": "The line under the label of stage 1 of the “Vulkan” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.vulkan.1.words": {
+    "message": "A program in the guest calls Vulkan: vkcube, vkQuake, the Godot editor, or a browser's own renderer.",
+    "note": "Paragraph shown under the “Vulkan” picture on the introduction while stage 1 (“Program”) is the active one."
+  },
+  "IntroHow.vulkan.2": {
+    "message": "Mesa",
+    "note": "Label of stage 2 of the “Vulkan” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.vulkan.2.line": {
+    "message": "The Venus driver, unmodified",
+    "note": "The line under the label of stage 2 of the “Vulkan” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.vulkan.2.words": {
+    "message": "Mesa's Venus driver writes the Vulkan commands, nearly as they are, into rings in shared memory. No call has to stop the guest.",
+    "note": "Paragraph shown under the “Vulkan” picture on the introduction while stage 2 (“Mesa”) is the active one."
+  },
+  "IntroHow.vulkan.3": {
+    "message": "Decoder",
+    "note": "Label of stage 3 of the “Vulkan” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.vulkan.3.line": {
+    "message": "virglrenderer, as WebAssembly",
+    "note": "The line under the label of stage 3 of the “Vulkan” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.vulkan.3.words": {
+    "message": "On our side, virglrenderer's own Venus decoder reads the rings. It is the same C code that runs under QEMU, compiled to WebAssembly.",
+    "note": "Paragraph shown under the “Vulkan” picture on the introduction while stage 3 (“Decoder”) is the active one."
+  },
+  "IntroHow.vulkan.4": {
+    "message": "Driver",
+    "note": "Label of stage 4 of the “Vulkan” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.vulkan.4.line": {
+    "message": "A Vulkan driver for WebGPU",
+    "note": "The line under the label of stage 4 of the “Vulkan” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.vulkan.4.words": {
+    "message": "The decoder calls a Vulkan driver we wrote on Mesa's runtime, whose hardware is WebGPU. Shaders go from SPIR-V through Mesa's NIR to WGSL, with a compiler of ours. What WebGPU lacks is emulated, such as transform feedback, multiview, and logic operations.",
+    "note": "Paragraph shown under the “Vulkan” picture on the introduction while stage 4 (“Driver”) is the active one."
+  },
+  "IntroHow.vulkan.5": {
+    "message": "WebGPU",
+    "note": "Label of stage 5 of the “Vulkan” picture on the introduction (drawn in small capitals). A name: no period."
+  },
+  "IntroHow.vulkan.5.line": {
+    "message": "Your GPU",
+    "note": "The line under the label of stage 5 of the “Vulkan” picture on the introduction. Not a sentence: no period."
+  },
+  "IntroHow.vulkan.5.words": {
+    "message": "WebGPU draws the frame. It costs 1.0 to 1.8 times what native Vulkan does on an Apple M4, and 1.9 to 3.6 times on an RTX 3070.",
+    "note": "Paragraph shown under the “Vulkan” picture on the introduction while stage 5 (“WebGPU”) is the active one."
+  },
+  "IntroRam.slider": {
+    "message": "The guest's RAM",
+    "note": "Tooltip of the slider in the introduction's memory deep dive: how much RAM the guest gets."
+  },
+  "IntroRam.value": {
+    "message": "{{size, bytes}}",
+    "note": "The slider's value in the introduction's memory deep dive: the RAM chosen."
+  },
+  "IntroRam.memory0": {
+    "message": "Memory 0 holds {{size, bytes}} of RAM (NUMA node 0) and the emulator's own 1 GiB",
+    "note": "Over the first bar of the introduction's memory deep dive. {{size}} is the guest RAM in WebAssembly memory 0. Not a sentence: no period."
+  },
+  "IntroRam.spill": {
+    "message": "Memory {{n}} holds {{size, bytes}} of RAM (NUMA node {{n}})",
+    "note": "Over a later bar of the introduction's memory deep dive. {{n}} is the WebAssembly memory's number, which is also the NUMA node's; {{size}} its guest RAM. Not a sentence: no period."
+  },
+  "IntroRam.legend.node0": {
+    "message": "RAM that compiled code reaches directly",
+    "note": "Legend of the bars in the introduction's memory deep dive: the guest RAM in memory 0. Not a sentence: no period."
+  },
+  "IntroRam.legend.spill": {
+    "message": "RAM in another memory",
+    "note": "Legend of the bars in the introduction's memory deep dive: guest RAM in a later WebAssembly memory. Not a sentence: no period."
+  },
+  "IntroRam.legend.own": {
+    "message": "The emulator's own state and heap",
+    "note": "Legend of the bars in the introduction's memory deep dive: the part of memory 0 the emulator keeps for itself. Not a sentence: no period."
+  },
+  "IntroRam.words": {
+    "message": "Each bar is one WebAssembly memory, 4 GiB long. Memory 0 can hold 3 GiB less 1 MiB of RAM, because the emulator keeps a gigabyte of it for decoded code and its own data. Whatever is left over goes to more memories, which Linux sees as NUMA nodes and fills last.",
+    "note": "First paragraph under the bars of the introduction's memory deep dive."
+  },
+  "IntroRam.cost": {
+    "message": "The other choices were measured and lost. A 64-bit WebAssembly memory cost 6% to 20% of the speed on an x86 PC, and about as much on an Apple M4. Keeping all of RAM in a second memory cost 12% to 40%. With this split, compiled code that works on node 1 takes 1.0 to 1.6 times as long as on node 0, and most machines never get there.",
+    "note": "Second paragraph under the bars of the introduction's memory deep dive: why RAM is split this way. The figures are docs/architecture.md's and docs/spill-memories.md's."
   }
 }

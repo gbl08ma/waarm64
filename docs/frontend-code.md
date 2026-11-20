@@ -46,7 +46,11 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      `--shadow-frame`;
    - fonts `--font`, `--font-mono`, `--line-height`, `--label-tracking` (a small capital label's spacing); weights
      `--weight-normal`, `--weight-medium` (the wordmark's dim half), `--weight-bold`;
-   - heights `--control-h` (a button, a field: 28 px), `--tool-h` (a toolbar button: 32 px).
+   - heights `--control-h` (a button, a field: 28 px), `--tool-h` (a toolbar button: 32 px);
+   - movement `--motion-fast`, `--motion`, `--motion-slow` (140, 300, 560 ms: a control answering, a part of the page
+     moving, a picture's step) and `--ease`; a code pane's lit lines `--code-lit-bg`, `--code-lit-fg`;
+   - the introduction's scale `--text-lede` (20), `--text-title` (30), `--text-display` (34 to 58 with the window),
+     `--line-height-tight`, `--space-7` (40), `--space-8` (72): for that page alone.
 4. **A small scale.** Spacing: `--space-1` to `--space-6` (2, 4, 8, 12, 16, 24 px). Text (two pixels over a system font's scale: Barlow's letters run small): `--text-xs` (13),
    `--text-sm` (14: notes, small lines), `--text-md` (15: a dialog's explanation, a compact row), `--text-base` (16: the
    page's words), `--text-lg` (19: titles). The toolbar and the status bar take their own steps half a pixel under
@@ -117,6 +121,10 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      the window and remembered under a settings key, a size per shape (`sizeKey`: the keyboard's layouts;
      `floating-frame.svelte.ts`); a click on it leaves the focus where it was. `tool`: a tool's slim bar, see-through,
      nothing in it taking the focus.
+   - `CodePane`: a pane of code in a sunk well, a row a line (`code-pane.ts`: a gutter, the text, a `group`); the
+     rows of the `active` group are lit and scrolled into the pane's view, the pointer picks a row's group, and items
+     that are folds unfold in place (the introduction's deep dives).
+   - `Stepper`: Back, Play or Pause, Next and the place, for a picture that steps (`at` and `playing` bound).
    - `Modal` (a dialog's shell), `Pane` (a pane of the Home page, and the chosen demo's on the demo store's page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export; an item that opens a dialog calls its `focusButton()` first, so the dialog gives the focus back to the menu's button rather than to the page), `Icon`.
 
    Use a primitive instead of restyling an element; extend it (a prop, a variant) instead of copying it.
