@@ -185,7 +185,9 @@ export async function main(argv = process.argv.slice(2)) {
   if (intro && has('podman', ['--version'], env)) {
     console.log(`Building the introduction's small machine (${intro}; a Linux kernel in a Podman container: ~2 min the first time, which also pulls the build image)…`);
     if (!run('bash', ['images/build.sh', 'intro'], env) || introStale()) stop("The introduction's small machine didn't build (the errors are above).");
-  } else if (intro) console.log(`${intro[0].toUpperCase()}${intro.slice(1)}, and there's no Podman to build it: the introduction will show without it.`);
+  } else if (intro) {
+    console.log(`${intro[0].toUpperCase()}${intro.slice(1)}, and there's no Podman to build it: the introduction will show ${existsSync(join(ROOT, INTRO)) ? 'with the build that is there' : 'without it'}.`);
+  }
   const venus = venusStale();
   if (venus) {
     // In Podman where it is (as the firmware); without it (a cloud session, whose firmware was fetched), vk/build.sh on

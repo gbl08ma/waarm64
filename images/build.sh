@@ -633,7 +633,8 @@ build_intro() {
     zopfli -c "$dst/intro.img" > "$dst/intro.img.gz"
     # What is inside and under which licences, for the page to serve beside it: ours, then the GPL
     # and the note on system calls, both from the kernel tree.
-    { sed "s/@LINUX@/$3/g; s/@LINUX_SHA256@/$5/; s/@BUSYBOX_COMMIT@/$6/g; s/@MUSL_COMMIT@/$7/g" $i/LICENSES.head; sed -n "/GNU GENERAL PUBLIC LICENSE/,\$p" "$src/LICENSES/preferred/GPL-2.0"
+    pkg() { echo " $1 " | sed -n "s/.* $2=\([^ ]*\) .*/\1/p"; }
+    { sed "s/@LINUX@/$3/g; s/@LINUX_SHA256@/$5/; s/@BUSYBOX_COMMIT@/$6/g; s/@MUSL_COMMIT@/$7/g; s/@BUSYBOX_PKG@/$(pkg "$1" busybox-static)/; s/@MUSL_PKG@/$(pkg "$1" musl-dev)/" $i/LICENSES.head; sed -n "/GNU GENERAL PUBLIC LICENSE/,\$p" "$src/LICENSES/preferred/GPL-2.0"
       printf "\n\nLinux: the note on system calls\n-------------------------------\n\n"
       sed -n "/NOTE!/,\$p" "$src/LICENSES/exceptions/Linux-syscall-note"; } > "$dst/LICENSES.txt"
     cp "$obj/.config" "$dst/config"

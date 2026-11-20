@@ -7,6 +7,12 @@
 /** The day the other projects' documentation and source were last read. */
 export const CHECKED = '2026-11-18';
 
+/**
+ * A day written `yyyy-mm-dd`, as a date the visitor's locale writes as that day: its noon where the visitor is
+ * (`new Date('2026-11-18')` is midnight in UTC, the day before in the Americas).
+ */
+export const day = (ymd: string) => new Date(`${ymd}T12:00`);
+
 /** A project of the comparison: its name (a proper name, as its authors write it) and where its facts come from. */
 export type Peer = { id: string; name: string; source?: string };
 export const PEERS: Peer[] = [

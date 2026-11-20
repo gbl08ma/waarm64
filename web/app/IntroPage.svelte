@@ -17,6 +17,7 @@
   import { afterIntro } from './intro-route.ts';
   import { records } from './areas/records.svelte.ts';
   import { page } from './page.ts';
+  import { reducedMotion } from './view-transition.ts';
   import { t } from '../i18n.ts';
 
   /** Where Skip leads, said on the button: the demos, or the machines of a visitor who has some. */
@@ -27,7 +28,8 @@
   let facts = $state<HTMLElement>();
   let compare = $state<HTMLElement>();
   let how = $state<HTMLElement>();
-  const show = (section: HTMLElement | undefined) => section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const show = (section: HTMLElement | undefined) =>
+    section?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
 </script>
 
 <div class="intro" data-intro>

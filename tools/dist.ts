@@ -27,7 +27,7 @@ import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { build } from 'vite';
 import { APP, ROOT, startServer } from './serve.ts';
-import { AGENT, AGENT_HOST_BUILD, FIRMWARE, INTRO, main as prepare, Stop, VENUS, WASM } from './start.ts';
+import { AGENT, AGENT_HOST_BUILD, FIRMWARE, INTRO, introStale, main as prepare, Stop, VENUS, WASM } from './start.ts';
 import { BUNDLED } from './third-party.ts';
 
 export const OUT = join(ROOT, 'target/dist');
@@ -50,8 +50,8 @@ export const hostAgentProblem = (root = ROOT) => existsSync(join(root, AGENT_HOS
 /**
  * Writes the static copy of the page to `out` (its binaries must be built; Vulkan's renderer too unless `vulkan` is
  * false, for the tests, when it goes in only if built; the guest agent built in Podman unless `hostAgent`: `npm start`'s copy, for this
- * machine only, takes the host's build too; the introduction's machine unless `intro` is false, when it goes in only if
- * built: a copy without it shows the introduction with the machine's plate); returns the files written, relative to `out`.
+ * machine only, takes the host's build too; the introduction's machine current unless `intro` is false, when whatever
+ * build of it is there goes in, and none shows the introduction with the machine's plate); returns the files written, relative to `out`.
  */
 export async function writeDist(out = OUT, { vulkan = true, hostAgent = false, intro = true }: { vulkan?: boolean; hostAgent?: boolean; intro?: boolean } = {}) {
   if (existsSync(out) && readdirSync(out).length && !existsSync(join(out, MARK))) {
@@ -64,7 +64,10 @@ export async function writeDist(out = OUT, { vulkan = true, hostAgent = false, i
   const vk = VULKAN.every((f) => existsSync(join(ROOT, f)));
   if (vulkan && !vk) throw new Stop(`Not built: ${VULKAN.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (\`npm run dist\` without --no-prepare builds them).`);
   const guest = INTRO_FILES.every((f) => existsSync(join(ROOT, f)));
-  if (intro && !guest) throw new Stop(`Not built: ${INTRO_FILES.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (images/build.sh intro, where Podman is installed).`);
+  // A copy to distribute has the image its sources say (its licences name what it was built from); a stale one that is
+  // there goes into this machine's copy only (`npm start` without Podman, the tests).
+  const stale = intro ? introStale() : undefined;
+  if (stale) throw new Stop(`${stale[0].toUpperCase()}${stale.slice(1)}: ${INTRO_FILES.join(', ')} (images/build.sh intro, where Podman is installed).`);
   await build({ configFile: join(ROOT, 'vite.config.ts'), build: { outDir: out }, logLevel: 'warn' });
   // The license files the About pane links (tools/third-party.ts `BUNDLED`).
   cpSync(join(ROOT, BUNDLED['EDK2-LICENSES.txt']), join(out, 'EDK2-LICENSES.txt'));

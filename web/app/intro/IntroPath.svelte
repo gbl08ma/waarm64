@@ -142,8 +142,9 @@
       height: var(--space-4);
       margin-top: 0;
     }
+    /* Six lines' room: the longest stage's words in one narrow column, so what is under a path doesn't move as it steps. */
     p {
-      min-height: 0;
+      min-height: calc(6 * var(--line-height) * var(--text-lg));
     }
   }
 </style>

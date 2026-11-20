@@ -1,4 +1,4 @@
-// The introduction's guest, from the page's side (IntroHero.svelte; docs/frontend.md "The introduction"): a worker of
+// The introduction's guest, from the page's side (IntroGuest.svelte's run, intro/guest-run.svelte.ts; docs/frontend.md "The introduction"): a worker of
 // its own (intro/guest-worker.ts) that runs the small machine in the first screen's frame. Not the page's machine:
 // it has no record, no toolbar, nothing kept, and a stored machine running under the introduction doesn't know of it.
 import type { FromGuest, GuestStats, ToGuest } from './guest-protocol.ts';
@@ -51,6 +51,7 @@ export function startGuest(o: GuestOptions): Guest {
   const post = (m: ToGuest, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
   let ended = false;
   let stopped: (() => void) | undefined;
+  let stopping: Promise<void> | undefined;
   const end = (state: 'off' | 'failed', detail?: string) => {
     if (ended) return;
     ended = true;
@@ -58,11 +59,13 @@ export function startGuest(o: GuestOptions): Guest {
   };
   worker.onmessage = (e: MessageEvent<FromGuest>) => {
     const m = e.data;
-    if (m.type === 'output') o.onOutput(m.text);
+    if (m.type === 'stopped') stopped?.();
+    else if (stopping)
+      return; // nothing more is said of a run that was told to stop
+    else if (m.type === 'output') o.onOutput(m.text);
     else if (m.type === 'screen') o.onScreen?.();
     else if (m.type === 'stats') o.onStats?.(m.stats);
-    else if (m.type === 'end') end(m.state, m.detail);
-    else stopped?.();
+    else end(m.state, m.detail);
   };
   // A worker that didn't load, or threw outside its own handling.
   worker.onerror = (e) => {
@@ -74,7 +77,6 @@ export function startGuest(o: GuestOptions): Guest {
     screen,
     serial.port2,
   ]);
-  let stopping: Promise<void> | undefined;
   return {
     send: (data) => serial.port1.postMessage(data),
     pause: () => post({ type: 'pause' }),

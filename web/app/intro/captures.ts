@@ -59,9 +59,6 @@ export const uopRows = (c: Capture): CodeRow[] =>
 export type FoldKind = 'prologue' | 'slow' | 'exit';
 export type WasmItem = CodeRow | { fold: FoldKind; rows: CodeRow[]; group?: number };
 
-/** Whether an instruction's index is in a line's span. */
-const serves = (l: WasmLine, g: number) => l.guest !== undefined && g >= l.guest && g <= (l.guestTo ?? l.guest);
-
 /**
  * The emitted function's lines: an instruction's own code as rows, and what surrounds it folded (what runs before a
  * block's first instruction, a slow arm, what leaves a block). The indentation the function's nesting gives every
@@ -87,8 +84,11 @@ export function wasmItems(c: Capture): WasmItem[] {
   return items;
 }
 
-/** The lines of `c`'s function that instruction `g` was emitted as, folds included (for a count). */
-export const wasmLinesOf = (c: Capture, g: number) => c.wasm.filter((l) => l.part === 'body' && serves(l, g)).length;
+/**
+ * The lines of `c`'s function that light for instruction `g`: its own rows and its slow arm's fold (`wasmItems` gives a
+ * line to the instruction it starts at, so a count by spans would say more lines than are lit).
+ */
+export const wasmLinesOf = (c: Capture, g: number) => c.wasm.filter((l) => l.part === 'body' && l.guest === g).length;
 
 /**
  * The host's machine code: the offset, then the instruction. V8 says which wasm instruction a load, a store or a call

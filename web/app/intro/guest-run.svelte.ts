@@ -36,11 +36,14 @@ export class GuestRun {
     const term = (this.#term = new Terminal({
       ...TERMINAL,
       scrollback: 500,
-      fontFamily: 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace',
-      fontSize: 12,
+      fontFamily: token('--font-mono'),
+      fontSize: 12, // xterm.js takes a number: a cell 7 px wide, 64 columns in the frame's 512
       theme: { background: token('--well-bg'), foreground: token('--text'), cursor: token('--accent') },
     }));
     term.open(box);
+    // Not a stop of the Tab key: a terminal keeps every key it is given (Tab among them, and the first key ends the
+    // tour), so the keyboard's way down the page passes it by. A click gives it the keyboard.
+    if (term.textarea) term.textarea.tabIndex = -1;
     // The tour's marks (images/intro/tour): an OSC 777 `waarm64;<mark>`, in the order of the text around them.
     term.parser.registerOscHandler(777, (data) => {
       const mark = MARKS.find((m) => data === `waarm64;${m}`);

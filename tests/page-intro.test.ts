@@ -212,3 +212,15 @@ test('wording: the introduction', async () => {
   assert.equal((await page.locator('[data-action="intro-demos"]').innerText()).trim(), 'Try a demo');
   await ctx.close();
 });
+
+test("the comparison's day is the one written, west of UTC too", async () => {
+  const { CHECKED } = await import('../web/app/intro/compare.ts');
+  const ctx = await browser.newContext({ timezoneId: 'America/Los_Angeles', locale: 'en-US' });
+  const page = await ctx.newPage();
+  await ctx.route(OUR_STORE, (r) => r.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: { type: 'waarm64-store', version: 1, demos: [] } }));
+  await page.goto(`${base}/web/app/#intro`);
+  const lede = await page.locator('[data-section="intro-compare"] p').first().innerText();
+  const [y, m, d] = CHECKED.split('-').map(Number);
+  assert.ok(lede.includes(`${m}/${d}/${y}`), `the day shown isn't ${CHECKED}: ${lede}`);
+  await ctx.close();
+});

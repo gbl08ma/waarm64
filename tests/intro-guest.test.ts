@@ -1,6 +1,7 @@
 // The introduction's guest (images/build.sh intro; docs/images.md "intro"), booted in Node under the JIT: its first
 // picture is on the framebuffer before anything is on the console but the tour's first mark; a key ends the tour and
-// hands over the shell, which runs a command; one toy has the screen at a time; `poweroff -f` ends the machine.
+// hands over the shell, which runs a command; one toy has the screen at a time; `cycle` leaves a toy started by hand
+// alone; `poweroff` ends the machine.
 // Skips without the image (a cloud session can't build it).
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -50,7 +51,12 @@ test("the introduction's guest: a picture first, a key for the shell, one toy at
     vm.send('life & sleep 1; echo toys=$(pidof scope ridges life | wc -w)\n');
     await until('one toy', () => /toys=\d/.test(text.replace(/echo toys=/g, '')));
     assert.match(text, /\ntoys=1\r/, 'more than one toy has the screen');
-    vm.send('poweroff -f\n');
+    // A toy started by hand while `cycle` waits its turn is the visitor's: cycle leaves it alone and stops.
+    vm.send('killall cycle; cycle 2 & sleep 0.5; scope & sleep 4; echo kept=$(pidof scope | wc -w) cycling=$(pidof cycle | wc -w)\n');
+    await until("cycle's turn", () => /\nkept=\d cycling=\d/.test(text));
+    assert.match(text, /\nkept=1 cycling=0\r/, "cycle took the screen from a toy started by hand, or went on");
+    // `poweroff` as anybody types it (BusyBox's asks PID 1, which is our init).
+    vm.send('poweroff\n');
     await until('the power-off', () => off);
     assert.ok(off, "the guest didn't power off");
   } finally {

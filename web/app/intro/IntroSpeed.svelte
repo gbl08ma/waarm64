@@ -6,6 +6,7 @@
 <script lang="ts">
   import T from '../T.svelte';
   import { t } from '../../i18n.ts';
+  import { day } from './compare.ts';
   import type { SpeedLead } from './speed.ts';
 
   type Props = { lead: SpeedLead | undefined };
@@ -17,7 +18,7 @@
     <div class="window"><span class="figure">{t('intro:IntroSpeed.figure', { percent: lead.percent })}</span></div>
     <div class="words">
       <div class="claim"><T k="intro:IntroSpeed.claim" params={{ peer: lead.peer }} /></div>
-      <p>{t('intro:IntroSpeed.basis', { workload: lead.workload, when: new Date(lead.date) })}</p>
+      <p>{t('intro:IntroSpeed.basis', { workload: lead.workload, when: day(lead.date) })}</p>
     </div>
   </div>
 {/if}

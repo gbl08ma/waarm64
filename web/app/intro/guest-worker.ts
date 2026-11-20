@@ -79,8 +79,8 @@ async function run(m: GuestStart) {
     },
   };
   if (!paused) screen.start();
+  // Paused too: the counters then stand still because the vCPU does, not because nobody reads them.
   const timer = setInterval(() => {
-    if (paused) return;
     const s = v.stats();
     post({ type: 'stats', stats: { steps: s.steps, blocks: s.jit.blocks } });
   }, 1000);
@@ -125,7 +125,8 @@ self.onmessage = (e: MessageEvent<ToGuest>) => {
   } else if (m.type === 'pause' && !paused && !stopping) {
     paused = new Promise((resolve) => (unpause = resolve));
     screen?.stop();
-    void vm?.pause();
+    // A machine that ended meanwhile has nothing to pause: its end is said where the run loop sees it.
+    vm?.pause().catch(() => undefined);
   } else if (m.type === 'resume' && paused) {
     paused = undefined;
     vm?.resume();

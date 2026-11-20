@@ -54,7 +54,7 @@ const site = (name: string, s: Site) => async (r: Route) => {
   return r.fulfill({ status: 404, headers: CORS });
 };
 
-type Shots = {
+export type Shots = {
   base: string;
   /** Runs a state (skipped unless `--only` matches; a failure is listed and the run goes on). */
   state: (name: string, f: () => Promise<void>) => Promise<void>;

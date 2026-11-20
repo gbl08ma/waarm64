@@ -1,12 +1,14 @@
 #!/bin/sh
-# cycle: one toy after another on the screen, 20 s each, starting from the one that runs now
-# (images/intro/init starts it after the tour). It stops once somebody starts a toy by hand:
-# /tmp/toy (the toys' own note of who has the screen) then names a process that isn't cycle's.
-mine=
+# cycle [seconds]: one toy after another on the screen, 20 s each, going on from the one that has it
+# when cycle starts (images/intro/init starts it after the tour). It stops once somebody starts a
+# toy by hand: /tmp/toy (the toys' own note of who has the screen) then names a process that isn't
+# the one cycle last saw or started.
+every=${1:-20}
+mine=$(cat /tmp/toy 2>/dev/null)
 while :; do
-  sleep 20
+  sleep "$every"
   now=$(cat /tmp/toy 2>/dev/null)
-  [ -z "$mine" ] || [ "$now" = "$mine" ] || exit 0
+  [ "$now" = "$mine" ] || exit 0
   case $(cat "/proc/$now/comm" 2>/dev/null) in
     scope) next=ridges ;;
     ridges) next=life ;;

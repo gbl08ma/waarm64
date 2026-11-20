@@ -32,7 +32,8 @@
     />
   {/if}
   <Button icon="arrow-right" title={labels.next} aria-label={labels.next} onclick={() => step(1)} data-step="next" />
-  <span class="place" aria-live="polite">{labels.place}</span>
+  <!-- Said as it changes only while the visitor steps: stepping by itself, it would be read out every step. -->
+  <span class="place" aria-live={playing ? 'off' : 'polite'}>{labels.place}</span>
 </div>
 
 <style>

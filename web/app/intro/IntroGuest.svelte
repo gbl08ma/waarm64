@@ -145,6 +145,12 @@
     box-shadow: var(--well-edge);
     overflow: hidden;
   }
+  /* One column (IntroHero.svelte's narrow window): the frame starts where the words do. */
+  @media (max-width: 900px) {
+    figure {
+      justify-self: start;
+    }
+  }
   .counters {
     margin: 0;
     color: var(--text-dim);

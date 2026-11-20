@@ -8,6 +8,7 @@
 <script lang="ts">
   import { SvelteSet } from 'svelte/reactivity';
   import { isFold, type CodeItem, type CodeRow } from './code-pane.ts';
+  import { reducedMotion } from '../view-transition.ts';
 
   type Props = {
     title: string;
@@ -32,7 +33,7 @@
     if (!first || !well) return;
     const top = first.offsetTop - well.offsetTop;
     if (top < well.scrollTop || top > well.scrollTop + well.clientHeight - first.offsetHeight * 3)
-      well.scrollTo({ top: Math.max(0, top - well.clientHeight / 3), behavior: 'smooth' });
+      well.scrollTo({ top: Math.max(0, top - well.clientHeight / 3), behavior: reducedMotion() ? 'auto' : 'smooth' });
   }
   /** A row that becomes lit asks for the well's view (the page itself doesn't scroll). */
   function reveal(row: HTMLElement, on: boolean) {

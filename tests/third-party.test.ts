@@ -4,6 +4,7 @@
 // copy serve them; the build's commit is the checkout's.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { aboutData, aboutGroups, BUNDLED, load, markdown, problems, type ThirdParty } from '../tools/third-party.ts';
 
@@ -77,4 +78,24 @@ test('the pane\'s data: the build\'s commit, the license files where the dev ser
   assert.ok(!files(dev).some((f) => f.name === 'THIRD-PARTY-LICENSES.md'));
   // Nothing but the pane's rows goes to the page: no row's Markdown, no row the pane doesn't show.
   assert.doesNotMatch(JSON.stringify(dev), /"md"|playwright|QEMU/);
+});
+
+test("the introduction's guest: its row and its licences file name the packages and commits images/build.sh pins", () => {
+  const build = readFileSync(new URL('../images/build.sh', import.meta.url), 'utf8');
+  const pin = (re: RegExp) => re.exec(build)?.[1] ?? assert.fail(`images/build.sh has no ${re}`);
+  const pins = {
+    linux: pin(/^LINUX=(\S+)$/m),
+    busybox: pin(/^INTRO_TOOLS=".*\bbusybox-static=(\S+?)[ "]/m),
+    musl: pin(/^INTRO_TOOLS=".*\bmusl-dev=(\S+?)[ "]/m),
+    busyboxCommit: pin(/^INTRO_BUSYBOX_COMMIT=(\S+)$/m),
+    muslCommit: pin(/^INTRO_MUSL_COMMIT=(\S+)$/m),
+  };
+  const row = JSON.stringify((JSON.parse(readFileSync(new URL('../THIRD_PARTY.json', import.meta.url), 'utf8')) as { sections: { id: string }[] }).sections.find((s) => s.id === 'intro-guest'));
+  for (const [what, value] of Object.entries(pins)) assert.ok(row.includes(value), `THIRD_PARTY.json's intro-guest row doesn't name ${what} ${value}`);
+  // The file the page serves, where it is built: the same, substituted by the build.
+  const licences = new URL('../target/images/intro/LICENSES.txt', import.meta.url);
+  if (!existsSync(licences)) return;
+  const text = readFileSync(licences, 'utf8');
+  assert.doesNotMatch(text, /@[A-Z_]+@/, 'a placeholder was left in the licences file');
+  for (const [what, value] of Object.entries(pins)) assert.ok(text.includes(value), `INTRO-LICENSES.txt doesn't name ${what} ${value}`);
 });

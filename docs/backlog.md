@@ -1266,9 +1266,41 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   and memory have one each; Vulkan (a draw call followed through Venus's rings, vkr, our driver, the NIR → WGSL
   compiler and WebGPU, from a captured frame), and OpenGL and video (virgl's stream onto WebGL2, a VA-API picture
   through `VideoDecoder`) have only their paths. The rule holds for them too: made from captures, not drawn by hand.
-- **The introduction fed by the running machine** (INTRO): readouts and panels that show the hero's guest's own
-  numbers (blocks compiled, instructions run, the TLB's hits) as it runs; panels of blocks compiling live would need
-  new core exports, so a host ABI change for the user's OK.
+- **The introduction fed by the running machine** (INTRO): the first screen's frame has two live counters (the
+  instructions its machine ran, the blocks it compiled); the rest of the idea isn't built: the readouts of [What runs on it](ui:intro:IntroFacts.title) and the paths of
+  [How it works](ui:intro:IntroHow.title) showing that machine's own numbers (MIPS, TLB hits, the blocks a toy
+  compiles to), and the processor's deep dive opening on code the visitor's own machine just ran instead of a capture. Panels of
+  blocks compiling live would need new core exports: a host ABI change, for the user's OK.
+- **The introduction's machine, smaller and sooner** (INTRO, bench/demo/REPORT.md "INTRO loop 1" and "INTRO loop 2",
+  most promising first): a BusyBox of our own configuration (Alpine's static one is ~0.6 MB of the 1.68 MB; about
+  half with the shell, the file tools, `vi`, `top` and `ps`; it needs BusyBox's source pinned and built, which would
+  also make its source link ours rather than Alpine's commit); a preload of the core and the guest's file for an
+  address that opens the introduction (~190 ms sooner, ~3.7 MB fetched by visitors who can't run it); 32 MiB of RAM;
+  the core without its exact-limits copy for this guest (~10 MiB of the tab).
+- **The introduction's frame in a narrow window and in the launch** (INTRO): under ~500 px the frame's terminal (64
+  columns at 12 px) is cut at its right end, where a smaller font or fewer columns told to the guest would fit; and the
+  `launch` transition doesn't name the frame, so leaving for a demo crosses the whole first screen over instead of
+  carrying the machine's picture into the store.
+- **The introduction's out-of-context review: what wasn't fixed** (INTRO loop 8, 2026-11-20; the findings are on the
+  branch `review/intro`, `REVIEW-intro.md`; the rest were fixed with their tests), most severe first:
+  - **Nothing pauses what moves by itself but the processor's stepper**: the five paths of [How it works](ui:intro:IntroHow.title) step every
+    3.2 s with no pause control (a click on a stage stops one for good, unnamed), and the first screen's machine
+    stops only by scrolling away or `poweroff`. A Pause for each, or one for the page.
+  - **The machine's shell can't be reached by keyboard alone**: its terminal is out of the Tab order (a terminal keeps
+    every key, and the first one ends the tour), so only a click gives it the keyboard. A button that moves the focus
+    into it, with a key that leaves (as the page's serial terminal would need too).
+  - **A pointer resting on a code pane** (plausible, not reproduced): rows pick on `pointerenter`, a pick turns the
+    stepping off, and each step scrolls rows under a still pointer, so the stepping may stop by itself, or a pick near
+    the well's end may chase its own scroll. Pick on `pointermove` instead.
+  - **Nothing fails when the JIT's emission moves away from the captures** (`web/intro-captures/blocks.json`,
+    captured at 4b24f2d4): `tools/intro-capture.ts` compares when it is run, and no test runs it. A Node test that
+    captures one block and compares its WebAssembly with the file's would say when to capture again.
+  - **Tests not written**: the pause in a hidden tab, a restart while paused, the captions at the marks `reveal`,
+    `ridges` and `life` (they take the tour's 41 s).
+  - Small: an arrow key that ends the tour leaves its last bytes for the shell (`images/intro/tour` reads one byte); a
+    second view transition of one kind started before the first ends loses its names (`view-transition.ts`); a path's
+    interval runs on in a hidden tab (`autoplay.svelte.ts`); `tools/intro-capture.ts` leaves its temporary directory
+    in the system's tmp when it throws.
 - **The introduction's speed figure** (INTRO): `web/app/intro/speed.ts` is empty until comparison.md §3's rows are
   measured; and its comparison's facts are dated 2026-11-18 (`web/app/intro/compare.ts`): read the peers' sources
   again before a deploy.
@@ -2221,6 +2253,11 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 
 ## Tests and tools
 
+- **A clipboard page test that failed once under CI's load** (2026-11-20, `scripts/ci.sh` on INTRO loop 8's fixes,
+  which touch nothing of it): `tests/page-clipboard-ui.test.ts` "a demo's machine starts each run paused…" at its last
+  step ("the agent's end got [], not 62 bytes": `guestReads` waits 10 s for the page's frames after the stub agent
+  opens). It passed 3 runs of 3 alone, and in the two `scripts/ci.sh` runs before. Either the wait is short under
+  load, or a frame is lost when the open races the machine's start: look at what the page sent, not only at the count.
 - **A names-server test that fails about one run in eight**: `room::names::server_tests::a_release_beats_a_renewal_waiting_at_its_parent`
   (net/ts) failed in `scripts/ci.sh` on 2026-11-20 (a run that touched no Rust) and then 1 time in 8 run alone
   (`cargo test --lib a_release_beats_a_renewal_waiting_at_its_parent` in `net/ts`), in either order of its loop

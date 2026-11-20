@@ -8,7 +8,7 @@
   import IntroSection from './IntroSection.svelte';
   import IntroSpeed from './IntroSpeed.svelte';
   import T from '../T.svelte';
-  import { CHECKED, PEERS } from './compare.ts';
+  import { CHECKED, day, PEERS } from './compare.ts';
   import { SPEED_LEAD } from './speed.ts';
   import { t } from '../../i18n.ts';
 
@@ -133,7 +133,7 @@
 </script>
 
 <IntroSection id="intro-compare" title={t('intro:IntroCompare.title')} bind:ref>
-  {#snippet lede()}<T k="intro:IntroCompare.lede" params={{ when: new Date(CHECKED) }} />{/snippet}
+  {#snippet lede()}<T k="intro:IntroCompare.lede" params={{ when: day(CHECKED) }} />{/snippet}
   <IntroSpeed lead={SPEED_LEAD} />
   <div class="scroll">
     <table>

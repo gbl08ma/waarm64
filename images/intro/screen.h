@@ -29,12 +29,26 @@ static void screen_open(void) {
   fb = mmap(0, fix.line_length * H, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   lum = calloc(W, H);
   if (fb == MAP_FAILED || !lum) exit(1);
-  // One toy has the screen at a time: the one before is told to stop (/tmp/toy holds its process).
+  // One toy has the screen at a time: the one before is told to stop (/tmp/toy holds its process;
+  // a number left by a toy long gone may be another program's by now, so its name is checked).
   // (No stdio in the toys: it would be most of their bytes.)
   char note[16] = "";
   int tf = open("/tmp/toy", O_RDWR | O_CREAT, 0644);
   if (tf >= 0) {
-    if (read(tf, note, sizeof note - 1) > 0 && atoi(note) > 1 && atoi(note) != getpid()) kill(atoi(note), SIGTERM);
+    int before = read(tf, note, sizeof note - 1) > 0 ? atoi(note) : 0;
+    if (before > 1 && before != getpid()) {
+      char path[32] = "/proc/", name[8] = "";
+      int at = 6, div = 1000000000;
+      for (; div; div /= 10)
+        if (before >= div) path[at++] = '0' + before / div % 10;
+      memcpy(path + at, "/comm", 6);
+      int cf = open(path, O_RDONLY);
+      if (cf >= 0) {
+        if (read(cf, name, sizeof name - 1) > 0 && (!strcmp(name, "scope\n") || !strcmp(name, "ridges\n") || !strcmp(name, "life\n")))
+          kill(before, SIGTERM);
+        close(cf);
+      }
+    }
     int me = getpid(), n = sizeof note;
     note[--n] = '\n';
     do note[--n] = '0' + me % 10; while (me /= 10);

@@ -268,7 +268,7 @@ the list with the first demo, a chosen demo, an id the store doesn't have, anoth
 accepted, a download partway and one that failed, a check that warns, a demo started before, the store's server down. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
 page's look is compared with a baseline set taken before it (`--label before`): `node tools/screens.ts --compare before
 --label <name>` lists each state whose pixels differ, and where. The seed's times, addresses and orders are fixed, so
-what differs besides the change is the dev server's port (in Add a disk's URL) and a new adapter's MAC.
+what differs besides the change is the dev server's port (in Add a disk's URL) and a new adapter's MAC. Last, the introduction (`tools/screens-intro.ts`, `intro-…`, wide and 720 px): its first screen with the small machine waiting for its button (the context asks for less motion, so nothing moves by itself and a state is the same from run to run), with the plate (the guest's file answered 404), each section, the two deep dives opened and its end; and `intro-hero-running`, the machine running at the tour's reveal, to look at and not to compare (its picture differs from run to run).
 
 ## The toolbar
 
@@ -774,7 +774,7 @@ and the floating windows don't show, and the machine, Home or the store's page s
   from **[Show the introduction](ui:machines:About.intro)** at the top of Home's About pane. `areas/intro.svelte.ts`
   holds whether it shows.
 - **Its bar** is the toolbar's ground and height with the wordmark (`WordmarkLetters.svelte`, the toolbar's letters)
-  and one button, **Skip**: [Skip to the demos](ui:intro:IntroPage.skip), or for a visitor who has machines in this
+  links that scroll to its three sections (not in a window under 720 px), and one button, **Skip**: [Skip to the demos](ui:intro:IntroPage.skip), or for a visitor who has machines in this
   browser [Skip to my machines](ui:intro:IntroPage.skip.home) (`intro-route.ts` `afterIntro`).
 - **Leaving it** (`closeIntro`): Skip leads to the store's page, or Home with machines; the first screen's
   [Try a demo](ui:intro:IntroHero.demos) and the end's [Open the demos](ui:intro:IntroEnd.demos) always to the store
@@ -789,12 +789,14 @@ and the floating windows don't show, and the machine, Home or the store's page s
   - **The guest** is images.md's `intro`: one file served with the page. It boots when the frame first comes on
     screen (~0.5 s), shows its first picture before its terminal says anything, then runs its **tour**: commands
     typed out on the terminal that say what drew the picture and start two more, and at ~41 s a shell that is the
-    visitor's. A key typed in the terminal ends the tour at once (the terminal takes keys only once clicked). The
+    visitor's. A key typed in the terminal ends the tour at once. The terminal takes keys only once clicked: it is out
+    of the Tab order (a terminal keeps every key it is given, Tab among them), so the keyboard's way down the page
+    passes it by (backlog: a way in for a keyboard alone). The
     guest prints only commands and their output: **the words are the page's**, the line under the screen, chosen by
     the tour's marks (`guest-protocol.ts` `MARKS`; an OSC 777 `waarm64;<mark>`, which xterm.js hands to a handler in
     the order of the text around it): the first picture's, the reveal, the two other pictures', and the shell's.
   - **It runs only while it can be seen**: an IntersectionObserver on the frame and the tab's visibility pause it (no
-    guest code runs, nothing is drawn) and let it go on. With `prefers-reduced-motion` it doesn't start by itself:
+    guest code runs, nothing is drawn; its counters go on being read, and stand still) and let it go on. With `prefers-reduced-motion` it doesn't start by itself:
     the empty screen has a button, [Start the machine](ui:intro:IntroGuest.start). `poweroff` in its shell leaves
     [Start it again](ui:intro:IntroGuest.again) (a new canvas: one is handed to a worker once). Leaving the
     introduction ends it (the component's teardown stops the worker first).

@@ -87,8 +87,9 @@ test('the machine boots by itself, a key gives its shell, it rests out of view, 
 
   // Powered off from its shell: a button boots it again.
   await frame(page).locator('.serial').click();
-  await page.keyboard.type('poweroff -f\n');
+  await page.keyboard.type('poweroff\n');
   await state(page, 'off');
+  for (const end = Date.now() + 5000; (await answering(page)) && Date.now() < end; ) await page.waitForTimeout(100); // its teardown answers, or 2 s pass
   assert.equal(await answering(page), 0, 'the worker of the run that ended is gone');
   await page.locator('[data-action="intro-guest-start"]').click();
   await state(page, 'running');
@@ -99,6 +100,27 @@ test('the machine boots by itself, a key gives its shell, it rests out of view, 
   await page.waitForFunction(() => document.body.dataset.page === 'demos', null, { timeout: 30_000 });
   for (const end = Date.now() + 5000; guestWorkers(page) && Date.now() < end; ) await page.waitForTimeout(100);
   assert.equal(await answering(page), 0, "the guest's worker outlived the introduction");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("the keyboard passes the machine by: Tab never lands in its terminal, and doesn't end the tour", { skip }, async () => {
+  const { ctx, page, errors } = await intro();
+  await state(page, 'running');
+  await mark(page, 'scope');
+  await page.locator('[data-action="intro-demos"]').focus();
+  let inFrame = 0;
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press('Tab');
+    if (await page.evaluate(() => !!document.activeElement?.closest('[data-intro] figure'))) inFrame++;
+  }
+  assert.equal(inFrame, 0, 'Tab stopped in the frame: its terminal keeps the keys, and the first one ends the tour');
+  assert.equal(await page.evaluate(() => !!document.activeElement?.closest('[data-section]')), true, 'Tab went on into the sections');
+  assert.equal(await frame(page).getAttribute('data-mark'), 'scope', 'the tour goes on');
+  // A click still gives the terminal the keyboard.
+  await frame(page).locator('.serial').click();
+  await page.keyboard.press('Space');
+  await mark(page, 'shell');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

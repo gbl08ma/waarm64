@@ -16,7 +16,7 @@ built in the dev VM the same day. What is left is loop 8, the end.
 | 6 | The processor's deep dive: the captured code in four panes | push tier |
 | 7 | Memory's deep dive: the RAM slider over `splitRam` | push tier |
 | 1 | The guest: `images/intro/` (its kernel fragment, `init`, `tour`, `cycle`, the toys `scope`, `ridges`, `life` over `screen.h`), `images/build.sh intro`; its runner `web/app/intro/guest.ts`, `guest-worker.ts`, `guest-protocol.ts`; `tests/intro-guest.test.ts`; the bench's target `waarm64-intro-guest` and `bench/demo/intro-firefox.ts`; numbers in bench/demo/REPORT.md "INTRO loop 1" | push tier (`scripts/ci.sh`, the dev VM, 2026-11-20) |
-| 2 | The hero: `intro/IntroGuest.svelte` and `guest-run.svelte.ts` (the frame: screen, our line by the tour's marks, terminal, counters; paused out of view and in a hidden tab; a button under reduced motion and after a power-off; the plate where it can't run); the guest's file and `INTRO-LICENSES.txt` in `npm start` and `npm run dist`, About's group and `THIRD_PARTY.json`'s row; `tests/page-intro-guest.test.ts`; the bench's target `waarm64-intro`; numbers in REPORT.md "INTRO loop 2" | push tier: `scripts/ci-debian.sh` passed; `scripts/ci.sh` passed but for one assertion of `tests/page-intro-guest.test.ts` (Playwright listing a worker the page had ended), corrected in the test and passed 8 runs alone after (the dev VM, 2026-11-20) |
+| 2 | The hero: `intro/IntroGuest.svelte` and `guest-run.svelte.ts` (the frame: screen, our line by the tour's marks, terminal, counters; paused out of view and in a hidden tab; a button under reduced motion and after a power-off; the plate where it can't run); the guest's file and `INTRO-LICENSES.txt` in `npm start` and `npm run dist` (which takes a current image only), About's group and `THIRD_PARTY.json`'s row; `tests/page-intro-guest.test.ts`; the bench's target `waarm64-intro`; numbers in REPORT.md "INTRO loop 2" | push tier: `scripts/ci-debian.sh` passed; `scripts/ci.sh` passed but for one assertion of `tests/page-intro-guest.test.ts` (Playwright listing a worker the page had ended), corrected in the test and passed 8 runs alone after (the dev VM, 2026-11-20) |
 | — | The captures' AArch64 host column (the dev VM: V8 14.6.202.34-node.28) beside x86-64's; the viewer shows the visitor's own architecture first (`IntroTranslate.svelte`, `local-release.ts` `thisTarget`) | push tier |
 
 **CI** (the dev VM, 2026-11-20): `scripts/ci.sh` passed on 1791b60a (the arm64 captures and three flake fixes);
@@ -40,9 +40,13 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
 
 ## What the next session does
 
-1. **Loop 8, the end**, as the kickoff says: an out-of-context review, the docs, the backlog's entries, every tier,
-   the screenshots tool (`tools/screens.ts`: the introduction's states aren't in it yet), PLAN.md's row, this file and
-   the kickoff deleted.
+1. **Loop 8, the end**, as the kickoff says. Done of it (2026-11-20): the out-of-context review (branch
+   `review/intro`, 14 findings: the visitor-facing ones and the weak tests fixed with their tests, the rest in
+   docs/backlog.md "The introduction's out-of-context review"), the screenshots tool's states
+   (`tools/screens-intro.ts`), the backlog's entries, the docs. The review's fixes passed `scripts/ci-debian.sh`, and `scripts/ci.sh` but for one clipboard page test that has
+   nothing of the introduction and passed 3 runs of 3 alone (filed: backlog "Tests and tools"). **Left: the user's
+   review of the copy** (below), then
+   every tier on the commit that ends the track, PLAN.md's row set to done, this file and the kickoff deleted.
 
 ## Things the user decides or reviews
 

@@ -1,5 +1,5 @@
 <!--
-  The introduction's code viewer (the CPU's deep dive: IntroCpu.svelte): one captured guest block in its four forms
+  The introduction's code viewer (the CPU's deep dive: IntroCpuDive.svelte): one captured guest block in its four forms
   side by side (captures.ts; ui/CodePane.svelte): the AArch64 instructions, the block interpreter's micro-ops, the
   WebAssembly our JIT emitted, and the machine code V8 made of that. One instruction is active at a time and lit in
   every pane: the stepper walks them (by itself while the viewer is in view, unless the visitor asked for less

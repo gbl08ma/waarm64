@@ -11,14 +11,14 @@ The file is a Linux kernel with a small root file system inside it. waarm64 buil
   with the configuration allnoconfig plus images/intro/linux.fragment (in waarm64's repository,
   at the commit this web app's About pane names).
 
-- BusyBox 1.37.0, GPL-2.0-only: Alpine Linux's binary package busybox-static 1.37.0-r31, as it
+- BusyBox 1.37.0, GPL-2.0-only: Alpine Linux's binary package busybox-static @BUSYBOX_PKG@, as it
   is. Alpine built it from its aports tree at commit @BUSYBOX_COMMIT@:
     https://gitlab.alpinelinux.org/alpine/aports/-/tree/@BUSYBOX_COMMIT@/main/busybox
   That directory's APKBUILD names the upstream tarball (busybox-1.37.0.tar.bz2, with its
   checksum) and holds Alpine's patches and configuration.
 
 - musl 1.2.6, MIT, linked statically into BusyBox and into the programs below: Alpine Linux's
-  package musl-dev 1.2.6-r3, built from its aports tree at commit @MUSL_COMMIT@:
+  package musl-dev @MUSL_PKG@, built from its aports tree at commit @MUSL_COMMIT@:
     https://gitlab.alpinelinux.org/alpine/aports/-/tree/@MUSL_COMMIT@/main/musl
   Its full copyright file: https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT?h=v1.2.6
 

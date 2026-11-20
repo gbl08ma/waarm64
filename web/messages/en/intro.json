@@ -1088,7 +1088,7 @@
     "note": "Line under the small machine's empty screen on the introduction before it is started (a visitor who asked for less motion). The time is the measured one: keep it approximate."
   },
   "IntroGuest.caption.scope": {
-    "message": "This picture is being drawn now, by a machine that started when this page opened.",
+    "message": "This picture is being drawn now, by a machine that started a moment ago in this tab.",
     "note": "Line under the small machine's screen on the introduction while its first picture runs alone (an oscilloscope-like figure), before anything shows that it is Linux."
   },
   "IntroGuest.caption.reveal": {
