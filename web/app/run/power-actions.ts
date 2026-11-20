@@ -229,8 +229,12 @@ export class PowerActions {
     runner.start();
   }
 
-  /** The first start: unless what the page can tell won't work (no isolation, the stored machine, and `startOpened`'s). */
-  boot() {
+  /**
+   * The first start: unless what the page can tell won't work (no isolation, the stored machine, and `startOpened`'s),
+   * or the visit opened another page first (`elsewhere`: the introduction, Home, the demo store): the machine opened
+   * last then waits stopped, for its Start, behind a page the visitor came for.
+   */
+  boot(elsewhere = false) {
     const { machine: m, messages } = this.#d;
     // SharedArrayBuffer (the guest's memory, shared by the vCPU workers) needs cross-origin isolation.
     if (!crossOriginIsolated) {
@@ -247,6 +251,8 @@ export class PowerActions {
     }
     if (m.storedError !== undefined)
       return messages.setState('failed', new MsgError('machine:power-actions.cantOpen', {}, { cause: m.storedError }));
-    this.startOpened();
+    if (!elsewhere) return this.startOpened();
+    if (needsDisk(m)) this.waitForDisk();
+    else messages.setState('off');
   }
 }

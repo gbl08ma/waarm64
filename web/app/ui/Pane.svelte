@@ -81,6 +81,11 @@
     align-items: flex-start;
     gap: var(--space-3) var(--space-4);
     padding: var(--space-4) var(--space-5) var(--space-3);
+    /* A pane whose content keeps a column's width (`--pane-width`: the demo's) keeps its head to it too, so the head's
+       buttons end where the content does and not at the window's far edge. */
+    box-sizing: border-box;
+    width: 100%;
+    max-width: calc(var(--pane-width, 100%) + 2 * var(--space-5));
   }
   /* The title takes the line's room, so a long small line wraps under it and the buttons stay beside it (they go
      under it only when the pane is too narrow for both). */

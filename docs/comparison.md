@@ -48,7 +48,7 @@ still to measure. No number goes in without a run behind it
 | Input | keyboard (layouts), tablet, raw mouse lock, touchscreen, on-screen keyboard, gamepads | keyboard, mouse, touch | — | PS/2 | — |
 | USB | **Real devices through WebUSB and WebHID** passed to the guest; virtual devices | no | no | no | no |
 | Network | **Up to 4 adapters**; Tailscale and tailcat (our own client, Rust/wasm); a local helper (full LAN and internet through your computer); **peer-to-peer rooms between browsers** (WireGuard in WebRTC) with **registered names**; IPv6. the **demo network**: a hosted server with an allowlist, no setup ([networking/demo-network.md](networking/demo-network.md); not Wisp) | **Wisp, on by default** (TCP only, IPv4, outbound only) | Tailscale only | relay, Wisp, fetch, between tabs | WS VPN, 40 kB/s |
-| Disk images | **qcow2 (compressed too) and raw**, stock cloud images as published; up to 16 disks; ramdisks; chunked images over HTTP with boot-trace prefetch | ext4 | ext2 | raw, ISO | own format |
+| Disk images | **qcow2 (compressed too), raw and ISO** (an installer's or a live system's, read-only), stock cloud images as published; up to 16 disks; ramdisks; chunked images over HTTP with boot-trace prefetch | ext4 | ext2 | raw, ISO | own format |
 | Storage | disks and overlays in the browser (OPFS), files read in place, URLs, blank disks; merge, resize | IndexedDB ext4 overlay | IndexedDB overlay | — | VFsync |
 | Import / export | export a disk or just its changes as qcow2 or raw; import changes; machine definitions in and out; snapshot files | export and reset of the data disk | — | state files | VFsync |
 | Snapshots | **Snapshots and Suspend with 3D in use**, compressed; template snapshots that renew the guest's identity | yes, uncompressed; not with SMP | — | yes (zstd) | — |
@@ -103,7 +103,8 @@ AES-128-GCM 232 MB/s with the crypto extensions.
 - **Browsers:** unkernel runs on Firefox, Safari and iOS; we are Chromium first (decisions.md): Firefox runs smaller
   guests, more slowly and without some features (WebUSB), and making it steadier is in the backlog ("Firefox").
 - **Memory:** a 48 MiB guest on a native-wasm kernel is smaller than any whole machine. Not a goal for us.
-- **Syscall-heavy work:** unkernel's kernel is native wasm, so a syscall is a call, not an exception. They claim fork
+- **Syscall-heavy work:** unkernel's kernel is native wasm, so a syscall is a call, not an exception; WebVM's
+  CheerpX has no guest kernel and answers Linux syscalls in its engine, likely cheaper than ours too (not measured). They claim fork
   and exit faster than native. Our process churn is the weak spot to measure (§3, fork + exec).
 
 ## 5. Draft copy

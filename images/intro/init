@@ -24,10 +24,10 @@ cycle &
 # BusyBox's poweroff, halt and reboot ask PID 1, which is this script, by a signal.
 trap 'poweroff -f' USR1 USR2
 trap 'reboot -f' TERM
-# A session of its own with the serial port as its terminal (job control, Ctrl-C); again if it
-# exits. In the background and waited for, so that a signal's trap runs at once.
+# The shell, in a session of its own with the serial port as its terminal (session.c); again if
+# it exits. In the background and waited for, so that a signal's trap runs at once.
 while :; do
-  setsid sh -c "exec sh -l <>/dev/ttyAMA0 >&0 2>&1" &
+  session &
   wait $!
   sleep 1
 done

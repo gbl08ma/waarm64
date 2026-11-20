@@ -251,6 +251,11 @@ export class PageWindow {
    * What the address opens at the page's load: the store's page (`/demos`, `#demos`), Home (`#home`, the older
    * `#machines`), the introduction (`#intro`), or, on a first visit (no machines: `machines`), the introduction.
    */
+  /** The page shows something else than the machine: the introduction, Home or the demo store's page. */
+  elsewhere() {
+    return intro.open || demos.open || machinesNav.open;
+  }
+
   openFromAddress(machines: number) {
     const r = demosRoute(location);
     if (r) this.openDemos(r, 'replace');

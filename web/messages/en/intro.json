@@ -96,7 +96,7 @@
     "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.disks.value."
   },
   "IntroPlate.disks.value": {
-    "message": "Up to 16, from qcow2 or raw images",
+    "message": "Up to 16, from qcow2, raw, or ISO images",
     "note": "What the emulated machine has for “Disks”, beside that label on the introduction. Not a sentence: no period."
   },
   "IntroEnd.title": {
@@ -212,7 +212,7 @@
     "note": "Title of a topic in the introduction's “What runs on it” section. No period."
   },
   "IntroFacts.disks.words": {
-    "message": "Open a qcow2 or raw image as its publisher made it, keep it in this browser, and share a folder from your computer. Export the whole disk later, or only what changed.",
+    "message": "Open a qcow2 or raw image as its publisher made it, or boot an installer or live ISO, keep it in this browser, and share a folder from your computer. Export the whole disk later, or only what changed.",
     "note": "Paragraph of the topic “Your disks and files” in the introduction's “What runs on it” section."
   },
   "IntroFacts.snapshots": {
@@ -380,7 +380,7 @@
     "note": "Row heading of the comparison table on the introduction. No period."
   },
   "IntroCompare.images.ours": {
-    "message": "qcow2 and raw, as published",
+    "message": "qcow2, raw, and ISO, as published",
     "note": "Cell of the comparison table on the introduction: “Disk images” for waarm64. Not a sentence: no period."
   },
   "IntroCompare.images.unkernel": {
@@ -456,7 +456,7 @@
     "note": "Title of an entry under “Where they lead” on the introduction. No period."
   },
   "IntroCompare.leads.first.words": {
-    "message": "unkernel's demo answers a command 1.3 seconds after you open it, having downloaded 6.7 MiB. Our smallest demo needs about 4 seconds and 25 MB, and our desktop about half a minute.",
+    "message": "unkernel's demo answers a command 1.3 seconds after you open it, having downloaded 6.7 MiB. Our equivalent Alpine-based demo needs about 4 seconds and 25 MB, and our desktop about half a minute.",
     "note": "Paragraph of the entry “The first second” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.leads.browsers": {
@@ -480,7 +480,7 @@
     "note": "Title of an entry under “Where they lead” on the introduction. No period."
   },
   "IntroCompare.leads.syscalls.words": {
-    "message": "unkernel's kernel is WebAssembly itself, so a system call is a function call. Here it is an exception the emulated processor takes, as on real hardware, and that costs more.",
+    "message": "unkernel's kernel is WebAssembly itself, so a system call is a function call. WebVM has no guest kernel: its engine answers Linux system calls itself. Here a system call is an exception the emulated processor takes, handled by a kernel that is emulated too, as on real hardware, and that costs more.",
     "note": "Paragraph of the entry “System calls” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.sources": {

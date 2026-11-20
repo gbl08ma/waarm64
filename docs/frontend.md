@@ -773,6 +773,11 @@ and the floating windows don't show, and the machine, Home or the store's page s
   the page (`intro-route.ts`; written to the address when it opens, so a reload keeps it and a link shares it); and
   from **[Show the introduction](ui:machines:About.intro)** at the top of Home's About pane. `areas/intro.svelte.ts`
   holds whether it shows.
+- **What a load starts under it:** a load opens the machine last opened in this browser, and starts it only when
+  the machine is what the address shows. A load that opens the introduction, Home or the demo store's page first
+  (`page-window.ts` `elsewhere`, `power-actions.ts` `boot`) leaves that machine stopped, for its Start: the visitor
+  came for another page, and a machine booting behind it would take the memory and the processor a demo or the
+  introduction's own machine is about to need.
 - **Its bar** is the toolbar's ground and height with the wordmark (`WordmarkLetters.svelte`, the toolbar's letters)
   links that scroll to its three sections (not in a window under 720 px), and one button, **Skip**: [Skip to the demos](ui:intro:IntroPage.skip), or for a visitor who has machines in this
   browser [Skip to my machines](ui:intro:IntroPage.skip.home) (`intro-route.ts` `afterIntro`).

@@ -1,6 +1,6 @@
 // The introduction's guest (images/build.sh intro; docs/images.md "intro"), booted in Node under the JIT: its first
 // picture is on the framebuffer before anything is on the console but the tour's first mark; a key ends the tour and
-// hands over the shell, which runs a command; one toy has the screen at a time; `cycle` leaves a toy started by hand
+// hands over the shell, which runs a command; one toy has the screen at a time; Ctrl-C stops one; `cycle` leaves a toy started by hand
 // alone; `poweroff` ends the machine.
 // Skips without the image (a cloud session can't build it).
 import assert from 'node:assert/strict';
@@ -50,7 +50,14 @@ test("the introduction's guest: a picture first, a key for the shell, one toy at
     // A toy started by hand takes the screen from the one that had it.
     vm.send('life & sleep 1; echo toys=$(pidof scope ridges life | wc -w)\n');
     await until('one toy', () => /toys=\d/.test(text.replace(/echo toys=/g, '')));
-    assert.match(text, /\ntoys=1\r/, 'more than one toy has the screen');
+    assert.match(text, /\ntoys=1\r/, `more than one toy has the screen: ${JSON.stringify(text.slice(-200))}`);
+    // Ctrl-C stops a toy run in the foreground, and the shell is back.
+    vm.send('killall cycle; scope\n');
+    await until('scope in the foreground', () => /killall cycle; scope\r\n/.test(text));
+    for (const end = performance.now() + 1500; performance.now() < end; ) vm.run(300_000);
+    vm.send('\x03');
+    vm.send('echo back-$((6*8))\n');
+    await until('the shell after Ctrl-C', () => /back-48\r\n/.test(text));
     // A toy started by hand while `cycle` waits its turn is the visitor's: cycle leaves it alone and stops.
     vm.send('killall cycle; cycle 2 & sleep 0.5; scope & sleep 4; echo kept=$(pidof scope | wc -w) cycling=$(pidof cycle | wc -w)\n');
     await until("cycle's turn", () => /\nkept=\d cycling=\d/.test(text));

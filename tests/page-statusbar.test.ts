@@ -124,8 +124,13 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   assert.equal(await page.locator('#status').isVisible(), false);
   assert.deepEqual(await kept(page), []);
   await page.reload();
-  await page.waitForSelector('#state[data-state=running]', { state: 'attached', timeout: 60_000 });
+  // The load opens Home (its address), so the machine waits stopped (docs/frontend.md "What a load starts under it").
+  await page.waitForSelector('#state[data-state=off]', { state: 'attached', timeout: 60_000 });
   assert.equal(await page.locator('#status').isVisible(), false);
+  // The machine's own address starts it again.
+  await page.goto(page.url().replace(/#.*$/, ''));
+  await page.reload();
+  await page.waitForSelector('#state[data-state=running]', { state: 'attached', timeout: 60_000 });
   // The defaults back.
   await openHome(page);
   await page.click('[data-machine=preferences]');

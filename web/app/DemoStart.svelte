@@ -230,7 +230,9 @@
 
 <style>
   /* The pane's place beside the list; the pane scrolls in it. */
+  /* The content's column: the pane's head keeps to it (ui/Pane.svelte), so Start is at the content's top right corner. */
   .start {
+    --pane-width: 800px;
     min-width: 0;
     min-height: 0;
     display: flex;
@@ -245,7 +247,7 @@
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-4);
-    max-width: 800px;
+    max-width: var(--pane-width);
   }
   /* The screenshot beside what the demo is; under it where the pane is too narrow for both. */
   .what {

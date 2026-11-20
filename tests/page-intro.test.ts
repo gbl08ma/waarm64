@@ -10,6 +10,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { OUR_STORE } from '../web/app/demo-store.ts';
 import { t } from '../web/i18n.ts';
+import { standIn } from './demo-fixture.ts';
 import { newEmptyMachine, openHome } from './page-home.ts';
 
 let browser: Browser;
@@ -222,5 +223,40 @@ test("the comparison's day is the one written, west of UTC too", async () => {
   const lede = await page.locator('[data-section="intro-compare"] p').first().innerText();
   const [y, m, d] = CHECKED.split('-').map(Number);
   assert.ok(lede.includes(`${m}/${d}/${y}`), `the day shown isn't ${CHECKED}: ${lede}`);
+  await ctx.close();
+});
+
+test("a visit that opens the introduction, Home or the store first doesn't start the machine opened last; the machine's own address does", async () => {
+  const { ctx, page, errors } = await visitor();
+  await standIn(page);
+  const started = () => page.evaluate(() => (window as unknown as { __starts: unknown[] }).__starts.length);
+  const settled = () => page.waitForFunction(() => ['off', 'idle', 'failed'].includes(document.body.dataset.state ?? ''), null, { timeout: 30_000, polling: 50 });
+  await page.goto(`${base}/web/app/`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
+  // A machine with a disk, opened on the page: it starts (the stand-in answers "off").
+  await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
+    const { page: p } = await import('/web/app/page.ts' as string);
+    const store = await Store.open();
+    const m = await createMachine(store, { name: 'Kept', ncpus: 1, ramMiB: 256, display: '2d', usb: false, mouse: false, touch: false, shares: false });
+    await attach(store, m, await createDisk(store, { kind: 'blank', size: 16 << 20, name: 'Scratch' }));
+    await p.openMachine(m.id);
+  });
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
+  for (const [address, shows] of [['#intro', 'intro'], ['#home', 'machines'], ['#demos', 'demos']] as const) {
+    await page.goto(`${base}/web/app/${address}`);
+    await page.reload();
+    await becomes(page, shows);
+    await settled();
+    await page.waitForTimeout(500);
+    assert.equal(await started(), 0, `${address}: the machine opened last started behind it`);
+    assert.equal(await page.evaluate(() => document.body.dataset.state), 'off', `${address}: the machine waits, stopped`);
+  }
+  // Its own address (no page asked for): it starts, as before.
+  await page.goto(`${base}/web/app/`);
+  await page.reload();
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
+  assert.deepEqual(errors, []);
   await ctx.close();
 });

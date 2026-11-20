@@ -613,14 +613,14 @@ build_intro() {
     [ "$(built busybox-static)" = "$6" ] && [ "$(built musl-dev)" = "$7" ] || { echo "intro: busybox-static or musl-dev was built from another aports commit: update INTRO_BUSYBOX_COMMIT, INTRO_MUSL_COMMIT" >&2; exit 1; }
     mkdir -p "$obj/toys"
     for t in scope ridges life; do gcc -static -s -O2 -std=gnu11 -Wall -Werror -o "$obj/toys/$t" $i/$t.c -lm; done
-    gcc -static -s -Os -std=gnu11 -Wall -Werror -o "$obj/toys/typed" $i/typed.c
+    for t in typed session; do gcc -static -s -Os -std=gnu11 -Wall -Werror -o "$obj/toys/$t" $i/$t.c; done
     { printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\n"
       for d in proc sys tmp root etc bin sbin usr usr/bin usr/sbin toys; do printf "dir /%s 0755 0 0\n" $d; done
       printf "file /bin/busybox /bin/busybox.static 0755 0 0\n"
       /bin/busybox.static --list-full | sed "s|.*|slink /& /bin/busybox 0777 0 0|"
       printf "file /init %s 0755 0 0\nfile /etc/profile %s 0644 0 0\n" "$root/$i/init" "$root/$i/profile"
       for f in tour cycle; do printf "file /usr/bin/%s %s 0755 0 0\n" $f "$root/$i/$f"; done
-      printf "file /usr/bin/typed %s 0755 0 0\n" "$obj/toys/typed"
+      for t in typed session; do printf "file /usr/bin/%s %s 0755 0 0\n" $t "$obj/toys/$t"; done
       for t in scope ridges life; do printf "file /toys/%s %s 0755 0 0\nfile /toys/%s.c %s 0644 0 0\n" $t "$obj/toys/$t" $t "$root/$i/$t.c"; done
       printf "file /toys/screen.h %s 0644 0 0\n" "$root/$i/screen.h"; } > "$obj/cpio.list"
     { cat $i/linux.fragment; printf "CONFIG_INITRAMFS_SOURCE=\"%s\"\n" "$obj/cpio.list"; } > "$obj/allconfig"
