@@ -6230,3 +6230,29 @@ tests/steps.txt didn't move.
 CI, each alone, on the final tree: `scripts/ci.sh` (960 s), `scripts/ci-jit.sh` (290 s; the spin tests in every mode,
 the polled differential, lockstep and corpus), `scripts/ci-debian.sh --platform` (614 s, 20 of 20), `scripts/ci-usb.sh`
 (9 s, 9 of 9 through the rigs), `scripts/ci-audio.sh` (47 s, 6 of 6). Not run: `oracle.sh` on the new `xpage` shapes.
+
+## HOST: the host code's A/B (2026-11-20)
+
+The HOST track (fixes, allocations and splits in `web/*.ts`: no core change, one core for both arms) against the tree
+before it. A = `3c6a5e38` (../waarm64-base), B = `19c9a66d` (main), each serving its own `web/`; `bench/run.ts --page
+bench/boot/index.html`, the arms alternated per round (AB, BA, …); dev VM (8 vCPUs, 18 GiB), Chromium 155.0.8059.84,
+headless. JSON: `results/HOST-ab/` (`<arm>-<bench>-r<round>.json`; A's `dirty` is an untracked directory). Per-round
+medians:
+
+| Metric | A (6 rounds) | B (6 rounds) | B against A |
+|---|---|---|---|
+| `smp_user_jit_n4_total` ms | 12594–12995 | 12551–15493 | −0.5% (median of rounds), overlapping |
+| `smp_user_jit_n4_sqlite` ms | 1916–2055 | 1888–2090 | +0.5%, overlapping |
+| `smp_user_jit_n4_lua` ms | 2433–2828 | 2460–2937 | +4.5%, overlapping (both arms bimodal: 2.4–2.5 s or 2.8–3.0 s) |
+| `smp_user_jit_n4_compress` ms | 1381–1517 | 1410–3730 | +2.9%, overlapping (B's 3730: one sample of 6068 in round 1, while a static review agent read files) |
+| `smp_user_jit_n4_churn` ms | 1048–1125 | 1042–1152 | +0.6%, overlapping |
+| `boot_alpine_jit_total` ms (3 rounds) | 4865–5012 | 4890–5092 | −1.0%, overlapping |
+| `boot_alpine_jit_mips` (3 rounds) | 529–545 | 521–542 | overlapping |
+| `gl_virgl_jit_frame` ms (3 rounds) | 0.8 | 0.8 | −1.1%, B's rounds all below A's |
+| `gl_virgl_jit_warm` ms (3 rounds) | 8.8–9.2 | 8.6–8.8 | −1.8%, overlapping |
+
+No regression past the noise, and no speedup either on these workloads, where the host's code is a small share: the
+guest's own time dominates. The one separation is the virgl frame (the device side's submit path: VirglStats by
+number, CallQueue.pass's reused sets), small. `fio` and `net` ran in B only (A's `target/` is a symlink out of its
+worktree, which Vite's strict serving refuses): they pass, unpaired. The allocation changes (per packet, per TD, per
+WebHID report, the agent's frames) were not measured: no benchmark here drives them hard enough to show.
