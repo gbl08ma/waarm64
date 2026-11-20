@@ -218,7 +218,7 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   await view(page, (x) => x.overlay === ids.w && x.size === 48 * MiB);
 
   // The Home page closed: the window stays, over the machine, and the screen's focus isn't taken by a click on it.
-  await modal(page).locator('[data-action=back]').click();
+  await page.locator('[data-action=back]').click();
   await page.waitForFunction(() => document.body.dataset.page === 'machine');
   assert.ok(await win(page).isVisible());
   await page.locator('#terminal .xterm-helper-textarea').focus().catch(() => undefined);

@@ -16,57 +16,6 @@ them and checked (page-demos-guest, all three, with its new TERM and Ctrl+C case
 set at 28cc70ba** (started 2026-11-19 ~21:50), then a redeploy (ask the user: decision 11), the deployed numbers and
 the track's end.
 
-### The store's page: a list beside the chosen demo (2026-11-20, a cloud session, branch `claude/laughing-maxwell-jercdj`)
-
-The user's brief: on a wide screen the chosen demo previewed beside the list, no trip back through All demos; the page
-read as newer and less polished than the rest. Done on the branch that carries the page's new look (not merged to
-`main` here):
-- **Layout** (docs/frontend.md "The demo store", "The layout"): Home's own. The demos are a list on the left
-  (`DemoCard.svelte`, now a row: thumbnail, name, two lines of summary, download, mark; the chosen one sunk with the
-  lit rail), the chosen demo's pane on the right (`DemoStart.svelte` in `ui/Pane.svelte`: its name and Start, or Open my
-  machine and Start a fresh copy, at the pane's head). With no demo named the store's first shows (the address without
-  an id, no focus taken); an unknown id says so where the pane would be. At 720 px and under, one column: the list,
-  then the pane alone with All demos. The address contract and the other store's consent step are unchanged.
-- **Defects fixed with it:** the download's bar was the browser's own blue one (now the boot card's: slim, the
-  accent); Start sat under everything (under the fold at 720 px, where the thumbnail took the window's width); the
-  intro ran the window's whole width; the unknown id's words pointed "below".
-- **Words:** `machines:DemosPage.unknown` reworded (no "below"), `machines:DemosPage.choose` new; notes updated.
-  **Hooks:** the list is still `ul.cards` with `[data-demo]` buttons, the pane `article.start[data-demo]` (both now
-  match a bare `[data-demo=…]` beside each other: tests say `.cards [data-demo=…]`); `[data-field="no-demo"]`,
-  `[data-field="start-error"]` and `aria-current` on a row are new; the pane takes the focus as an `article`, not its `h3`.
-- **Screenshots:** `tools/screens.ts` has the store's states now (`tools/screens-demos.ts`, 11 states wide and narrow).
-- **Tier:** `scripts/ci-fast.sh` passed in the cloud session at 21116769 (CI-FAST OK, 386 s: the static checks, the
-  builds, 139 test files, tests/page-demos.test.ts's 15 among them).
-  **`scripts/ci.sh` and `scripts/ci-debian.sh` remain to be run in the dev VM** (and `scripts/ci-machines.sh` for
-  tests/page-demos-guest.test.ts, which chooses a row and starts it: not runnable in the cloud, no demo site there).
-- **The user's answers (2026-11-20), built in the next commit:** the checks fold into one line when all are met
-  (`ui/Disclosure` `plain` with a light), the shared memory's check shown only when it fails; the first demo by default
-  and the room's note in the fine print stay; a question (the page's dialog) before a click stops a running download;
-  "last used" to the minute (`{{when, minutes}}`, `Intl` date and time styles: the browser's locale, no seconds);
-  `ui/Callout.svelte` for the boxes (the store's error, another store's warning, a start's failure, the USB menu's
-  offer; ErrorBanner's tones, not its layout or movement, which are a bar's). **The copy reviewed** for a first-time
-  visitor (docs/copy.md "A first-time visitor's screens", the user's examples in its table): every DemosPage, DemoStart
-  and DemoChecks message. A `<ui-…>` pill's icon now stays beside its first word at a line break (T.svelte).
-  **Not touched:** the demos' own summaries (the store's data, deploy/disks/demos.json: a republish) and the
-  `demo-store.*`/`template.*` errors' words. Tier: `scripts/ci-fast.sh` at 1a847102 in the cloud: everything passed but tests/page-open.test.ts's "says so at once"
-  (8.0 s under the lane's load; alone it passes in 4.4 s, the timing failure "How to work here" names) (the rest: ci.sh, ci-debian.sh and
-  ci-machines.sh in the dev VM; the USB menu's offer changed its markup, so `scripts/ci-usb.sh` too).
-
-- **No Back rows (the user's idea, 2026-11-20; the commit after):** Home's and the store's top rows are gone. The
-  toolbar's Home is a toggle (pressed again: back to the machine; from the store: Home) and the wordmark is a button
-  (`Wordmark.svelte`, `#wordmark`: back to the machine from either page, Home from the machine; its look unchanged
-  until hovered or focused). Home's busy words moved to the end of its bottom bar. The question before a download is
-  stopped is `web/app/demo-leave.ts` (the toolbar asks it too). Hooks: `[data-action=back]` is now the wordmark's while
-  a page shows, so unscoped uses in the tests still work; `.machines [data-action=back]` and `.demos
-  [data-action="back"]` became `#wordmark[data-action=back]` and `#machines-open`. Many page tests click it (browser,
-  page-disk, page-agent, page-osk, page-snapshot(s), page-network, page-room, page-surface-debian, page-connections):
-  **the dev VM's `scripts/ci.sh`, `ci-debian.sh`, `ci-net.sh` and `ci-machines.sh` are this change's tier.**
-  **The tests open Home through `openHome` (tests/page-home.ts)** rather than a click on `#machines-open`: a toggle
-  closes a Home that's already open (after a reload at `#home`), which failed two page-modal tests in the fast lane
-  at 9bfec21 and hung a third. 28 test files changed that way, most of which only the dev VM's lanes run. Not changed:
-  bench/snapz/probe.ts (the closed SNAPZ track's probe; left as it is, the user, 2026-11-20): it clicks Home to open it,
-  and again "if Home shows" after each operation, which did nothing before and now closes Home, as those lines read.
-
 ### Where things stand
 
 - **waarm64 `main`** (origin): pushed through this file's commit. Loops 0–6, 10, 10b, 12, 13, 15 and 15b are done;
