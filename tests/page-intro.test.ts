@@ -269,3 +269,24 @@ test("a visit that opens the introduction, Home or the store first doesn't start
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test("How it was made: the author's account, the reasons, and the way to the credits in About", async () => {
+  const { ctx, page, errors } = await visitor();
+  await page.goto(`${base}/web/app/#intro`);
+  const made = page.locator('[data-section="intro-made"]');
+  await made.waitFor({ timeout: 30_000 });
+  assert.equal((await made.locator('h2').innerText()).trim(), t('intro:IntroMade.title'));
+  assert.equal(await made.locator('dl dt').count(), 5);
+  assert.equal(await made.locator('ol li').count(), 4);
+  // It comes after how it works, before the end.
+  const order = await page.locator('[data-intro] [data-section]').evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.section));
+  assert.deepEqual(order.slice(order.indexOf('intro-how')), ['intro-how', 'intro-made', ...order.slice(order.indexOf('intro-made') + 1)]);
+  // Signed, with a link to the author's own site that opens apart from the page.
+  const signed = made.locator('[data-action="intro-author"]');
+  assert.deepEqual([await signed.getAttribute('href'), await signed.getAttribute('target'), (await signed.innerText()).trim()], ['https://gbl08ma.com', '_blank', 'gbl08ma']);
+  await made.locator('[data-action="intro-about"]').click();
+  await becomes(page, 'machines');
+  assert.equal(await page.locator('section[data-selected=about]').count(), 1, "Home's About pane, where the projects are credited");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

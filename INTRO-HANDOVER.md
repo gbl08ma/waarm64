@@ -56,10 +56,10 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
   change; frontend.md "The captures"). It is the only way found to say truthfully which WebAssembly lines a guest
   instruction became. If the user would rather not have it in the core, the fallback is a viewer without the
   per-instruction highlighting in the WebAssembly and host panes.
-- **The speed figures** (`web/app/intro/speed.ts` `SPEED`): 1.9× as fast as unkernel (the next fastest) and 4.0× as
-  fast as v86, at one Perl workload on the dev VM (bench/compare/REPORT.md, 2026-11-20; the user chose the peers, the
-  kind of workload and both figures). Not measured on a Mac or x86-64, where V8 spares our code its bounds checks:
-  REPORT.md's first "not measured". unkernel moves fast (its user space changed ISA the day before): measure again
+- **The speed figures** (`web/app/intro/speed.ts` `SPEED`): 1.8× as fast as unkernel (the next fastest) and 3.9× as
+  fast as v86, at one Perl workload on the Mac host (bench/compare/REPORT.md, 2026-11-20; the user chose the peers,
+  the kind of workload, both figures and the Mac's numbers; the dev VM's were 1.85× and 4.04×). Not measured on
+  x86-64. unkernel moves fast (its user space changed ISA the day before): measure again
   before a deploy.
 - **The comparison's date** (`web/app/intro/compare.ts` `CHECKED`, 2026-11-20): unkernel was read again in full that
   day (aarch64 user space, Debian, up to 4 CPUs; its demo re-measured) and every project for sound, files and
@@ -69,6 +69,10 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
   machine can't run (the two together were too tall for a first screen). Screenshots: `node
   bench/results/local/intro-shot.ts <dir>` (ad hoc, git-ignored) or the page itself on `npm start`.
 - **The frame's words** (`intro:IntroGuest.*`, 12 entries: a line a mark, the buttons): unreviewed, like the rest.
+- **The user's own copy edits** (2026-11-20, 19 entries through the copy editor, then four second looks) are in:
+  theirs, so reviewed, with the corrections they were told of (the product's name as its reference, grammar, rooms
+  "many" and not "unlimited": 1,024 peers a node). **How it was made** (`intro:IntroMade.*`, 19 entries) is the
+  user's account set down by us in their first person: for their eye, as every word of it is said in their name.
 - **Words added at the user's asking, 2026-11-20, unreviewed too:** the code viewer's notes
   (`intro:IntroTranslate.why.*`, 25: what each run of captured lines is for; what they claim of V8, the bounds checks
   by processor and the loop's check, is docs/v8.md's and the captures' own, held by `tests/intro-notes.test.ts`);

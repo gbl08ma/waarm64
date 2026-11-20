@@ -5,13 +5,17 @@
   and a click on a stage picks it. Its owner gives the words (`stages`: a label, a line, the paragraph).
 -->
 <script lang="ts">
+  import T from '../T.svelte';
+  import type { Msg } from '../../msg.ts';
   import { Autoplay } from './autoplay.svelte.ts';
 
-  type Stage = { label: string; line: string; words: string };
+  type Stage = { label: string; line: string; words: Msg };
   type Props = { name: string; stages: Stage[]; [attr: string]: unknown };
   let { name, stages, ...rest }: Props = $props();
 
   let at = $state(0);
+  /** The active stage. */
+  const stage = $derived(stages.at(at));
   const auto = new Autoplay();
   $effect(() => auto.run(stages.length, 3200, () => (at = (at + 1) % stages.length)));
   const pick = (i: number) => {
@@ -32,7 +36,9 @@
       </li>
     {/each}
   </ol>
-  <p data-field="stage-words">{stages[at]?.words}</p>
+  <p data-field="stage-words">
+    {#if stage}<T m={stage.words} />{/if}
+  </p>
 </div>
 
 <style>

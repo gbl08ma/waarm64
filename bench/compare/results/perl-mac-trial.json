@@ -1,0 +1,196 @@
+{
+ "schema": 1,
+ "kind": "compare",
+ "workload": "bench/compare/work.pl",
+ "size": 1,
+ "date": "2026-11-20T23:14:45.313Z",
+ "commit": "0a8298eae30d",
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": "158.0.8127.36",
+ "systems": {
+  "waarm64": "this checkout's page on the dev server: Debian 13 (arm64, the published nocloud image) booted through UEFI, the tests' machine (`?machine=debian`)",
+  "unkernel": "https://unkernel.dev/ as shipped",
+  "v86": "https://copy.sh/v86/?profile=archlinux as shipped: Arch Linux 32 (i686) resumed from its saved state"
+ },
+ "boots": [
+  {
+   "system": "waarm64",
+   "round": 1,
+   "runs": [
+    {
+     "ms": 1422,
+     "kernels": [
+      {
+       "cpu": 0.3,
+       "sum": "38964"
+      },
+      {
+       "cpu": 0.23,
+       "sum": "5000/47"
+      },
+      {
+       "cpu": 0.24,
+       "sum": "2923079/k1002976719"
+      },
+      {
+       "cpu": 0.21,
+       "sum": "610224"
+      },
+      {
+       "cpu": 0.13,
+       "sum": "57314"
+      },
+      {
+       "cpu": 0.27,
+       "sum": "143701"
+      }
+     ]
+    }
+   ],
+   "guest": "aarch64 perl 5.040001 4 CPUs, Debian GNU/Linux 13 (trixie)"
+  },
+  {
+   "system": "unkernel",
+   "round": 1,
+   "runs": [
+    {
+     "ms": 2838,
+     "kernels": [
+      {
+       "cpu": 0.55,
+       "sum": "38964"
+      },
+      {
+       "cpu": 0.46,
+       "sum": "5000/47"
+      },
+      {
+       "cpu": 0.56,
+       "sum": "2923079/k1002976719"
+      },
+      {
+       "cpu": 0.5,
+       "sum": "610224"
+      },
+      {
+       "cpu": 0.28,
+       "sum": "57314"
+      },
+      {
+       "cpu": 0.49,
+       "sum": "143701"
+      }
+     ]
+    }
+   ],
+   "guest": "aarch64 perl 5.040001 4 CPUs, Debian GNU/Linux 13 (trixie)"
+  },
+  {
+   "system": "v86",
+   "round": 1,
+   "runs": [
+    {
+     "ms": 5835,
+     "kernels": [
+      {
+       "cpu": 1.09,
+       "sum": "38964"
+      },
+      {
+       "cpu": 1.31,
+       "sum": "5000/47"
+      },
+      {
+       "cpu": 0.95,
+       "sum": "2923079/k1002976719"
+      },
+      {
+       "cpu": 0.8,
+       "sum": "610224"
+      },
+      {
+       "cpu": 0.4,
+       "sum": "57314"
+      },
+      {
+       "cpu": 1.17,
+       "sum": "143701"
+      }
+     ]
+    }
+   ],
+   "guest": "i686 perl 5.036000 1 CPUs, Arch Linux 32"
+  }
+ ],
+ "summary": {
+  "waarm64": {
+   "guest": "aarch64 perl 5.040001 4 CPUs, Debian GNU/Linux 13 (trixie)",
+   "first_s": {
+    "median": 1.422,
+    "iqr": 0,
+    "n": 1
+   },
+   "all_s": {
+    "median": 1.422,
+    "iqr": 0,
+    "n": 1
+   },
+   "rounds_s": [
+    [
+     1.42
+    ]
+   ],
+   "checksums": [
+    "38964 5000/47 2923079/k1002976719 610224 57314 143701"
+   ]
+  },
+  "unkernel": {
+   "guest": "aarch64 perl 5.040001 4 CPUs, Debian GNU/Linux 13 (trixie)",
+   "first_s": {
+    "median": 2.838,
+    "iqr": 0,
+    "n": 1
+   },
+   "all_s": {
+    "median": 2.838,
+    "iqr": 0,
+    "n": 1
+   },
+   "rounds_s": [
+    [
+     2.84
+    ]
+   ],
+   "checksums": [
+    "38964 5000/47 2923079/k1002976719 610224 57314 143701"
+   ]
+  },
+  "v86": {
+   "guest": "i686 perl 5.036000 1 CPUs, Arch Linux 32",
+   "first_s": {
+    "median": 5.835,
+    "iqr": 0,
+    "n": 1
+   },
+   "all_s": {
+    "median": 5.835,
+    "iqr": 0,
+    "n": 1
+   },
+   "rounds_s": [
+    [
+     5.83
+    ]
+   ],
+   "checksums": [
+    "38964 5000/47 2923079/k1002976719 610224 57314 143701"
+   ]
+  }
+ }
+}

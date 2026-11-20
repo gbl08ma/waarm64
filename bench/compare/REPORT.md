@@ -45,18 +45,47 @@ guest CPU seconds and checksum).
   4.22 / 5.44; recursion 1.19 / 2.14 / 3.38; floating point 1.61 / 3.04 / 7.55. We lead in each: 1.5× (the sieve) to
   2.7× (regular expressions) over unkernel, 2.8× to 6.1× over v86. A guest's clock is its emulator's: these are for
   the shape, the host's time above for the claim.
-- **This host is the unfavourable one for us.** V8 on Linux arm64 bounds-checks stores in compiled code (docs/v8.md
-  "Bounds checks": up to 27% of an integer guest), which our JIT's code pays and an interpreter's doesn't; Chrome on a
-  Mac and on x86-64 doesn't emit them. Not measured there: the first thing to do next.
+- **This host was expected to be the unfavourable one for us** (V8 on Linux arm64 bounds-checks stores in compiled
+  code, docs/v8.md "Bounds checks"). The Mac's run, below, says otherwise: the lead is a little smaller there.
 
-**What the page says** (`web/app/intro/speed.ts`): 1.9× as fast as unkernel, the next fastest, and 4.0× as fast as
-v86, from the medians (1.851 and 4.042), dated, with the workload and that v86's Perl is another build.
 
 **Not measured, most useful first.**
-1. **The same run on the Mac host** (Chrome for Testing, `bench/run-mac.sh`'s host) and on an x86-64 computer: what
-   most visitors have.
+1. **An x86-64 computer** (the user's desktop is one): the third kind of host visitors have.
 2. **Python** (the user's first thought): unkernel installs it as it's typed, v86's Arch has 3.10, our Debian image has
    none without a network. A second workload would say whether Perl's ratios hold.
 3. **Compiled code** (CoreMark, `xz`): a C compiler per guest, so a compiler's and an ISA's difference in the result.
 4. **Several cores**: unkernel boots 4 CPUs and we 4 to 8; v86 has one.
 5. **System calls and process churn** (fork + exec), where unkernel's native kernel should lead (comparison.md §4).
+
+## The same on the Mac host: the page's figures (2026-11-20)
+
+**Why.** The user took the first run for the Mac's, and asked for it there and for the page to use those numbers:
+macOS is what the dev VM runs on, and Chrome there has V8's trap handler (no explicit bounds checks in compiled code),
+as most visitors' browsers do.
+
+**Setup.** `bench/compare/run-mac.sh perl-1-mac --rounds 3 --runs 3 --size 8`: the Mac mini (Apple M4, 10 cores, 24 GiB,
+macOS 26.6.2), Chrome for Testing 158.0.8127.36 headless (bench/mac-chrome.sh: the current Stable), this checkout's
+page (0a8298ea) served from a copy there with the same Debian image, the peers on their own sites; the VM idle
+meanwhile. The same workload, size, rounds and runs; the same six checksums everywhere. JSON:
+`results/perl-1-mac.json`. No process left on the Mac (bench/gpu/mac-leftovers.sh).
+
+| | Seconds, median of 9 (IQR) | Each boot's three runs | waarm64 is |
+|---|---|---|---|
+| **waarm64** | **10.11** (0.30) | 10.07 10.01 10.11 · 10.87 10.31 10.61 · 10.11 9.88 9.92 | |
+| unkernel | 18.03 (0.74) | 18.31 19.72 18.71 · 17.51 17.57 18.03 · 17.69 18.18 17.24 | **1.78×** as fast |
+| v86 | 39.34 (0.35) | 39.47 39.08 39.38 · 39.34 38.88 39.15 · 39.56 39.12 39.54 | **3.89×** as fast |
+
+- No run of one system comes near another's: ours 9.88–10.87 s, unkernel's 17.24–19.72 s, v86's 38.88–39.56 s.
+- **By kernel** (guest CPU seconds, medians of the later runs; waarm64 / unkernel / v86): the sieve 2.31 / 3.29 / 7.73;
+  words in a hash 1.73 / 2.93 / 9.43; sorting 1.78 / 4.03 / 7.26; regular expressions 1.31 / 3.23 / 4.43; recursion 1.06
+  / 1.90 / 3.06; floating point 1.52 / 2.71 / 6.93. Over unkernel 1.4× (the sieve) to 2.5× (regular expressions).
+- **Against the dev VM's run** (Chromium 155 there, Chrome 158 here: two browsers as well as two hosts): we are 11%
+  faster on the Mac (11.34 → 10.11 s), unkernel 14% (20.99 → 18.03) and v86 14% (45.84 → 39.34). So the lead is a
+  little smaller on the Mac, 1.78× against 1.85× and 3.89× against 4.04×, where I had expected a larger one: whatever
+  the bounds checks cost our compiled code in the VM, this workload spends most of its time in Perl's interpreter
+  loop, compiled once and hot, and the peers gained as much or more from the faster host. The page's figure is not
+  the user's informal "a little over twice" of 2026-11-18 either (riscv64 unkernel then, another workload).
+
+**What the page says** (`web/app/intro/speed.ts`): **1.8× as fast as unkernel, the next fastest, and 3.9× as fast as
+v86**, from these medians (1.783 and 3.891), dated, on a Mac with an M4, with the workload and that v86's Perl is
+another build.

@@ -54,6 +54,7 @@ async function at(browser: Browser, o: Shots, viewport: { width: number; height:
       await to(page, `[data-topic$="${topic}"] [data-field="dive"]`);
     });
   }
+  await take('made', (page) => to(page, '[data-section="intro-made"]'));
   await take('end', (page) => page.locator('[data-action="intro-end-demos"]').scrollIntoViewIfNeeded());
   await ctx.close();
 

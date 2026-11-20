@@ -272,13 +272,15 @@ export class PageWindow {
   }
   /**
    * The introduction left: for the demo store's page (`demos`), or where its Skip leads (`auto`: the store, or Home
-   * for a visitor with machines here). Resolves once the page shows where it led.
+   * for a visitor with machines here), or Home's About pane (`about`: the introduction's credits lead there).
+   * Resolves once the page shows where it led.
    */
-  closeIntro(to: 'demos' | 'auto' = 'auto') {
+  closeIntro(to: 'demos' | 'auto' | 'about' = 'auto') {
     const dest = to === 'auto' ? afterIntro(records.machines.length) : to;
     return transition('intro', () => {
       intro.open = false;
       if (dest === 'home') this.openMachines();
+      else if (dest === 'about') this.openMachines(undefined, 'about');
       else this.openDemos();
     });
   }

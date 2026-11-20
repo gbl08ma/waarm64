@@ -61,8 +61,9 @@ rather than operated, by someone deciding whether to care. Its voice differs fro
 2026-11-20):
 
 - **More direct, a little less formal.** Short declarative sentences that make a claim: "waarm64 emulates the
-  hardware, not the operating system." Still plain, with no wordplay, no exclamation marks, and no question asked of
-  the reader.
+  hardware, not the operating system." Still plain, and no question asked of the reader. A dry aside or an exclamation is the user's to place
+  (their edits of 2026-11-20 have one of each: the uBlock Origin line, "Try it out!"): where they wrote one it
+  stays, and new copy doesn't add more.
 - **It names distributions, programs and other projects** (Debian, Arch, Alpine, Firefox, a Raspberry Pi; the peers by
   name in the comparison), which "Detail" below rules out everywhere else: here the names are the claim.
 - **Every claim is one we can show**: a figure comes from a measurement or a limit the page enforces

@@ -12,11 +12,11 @@
     "note": "The introduction's headline (the page's first words for a new visitor). A title: no period."
   },
   "IntroHero.lede": {
-    "message": "$t(common:product.name) emulates the hardware, not the operating system. Linux can't tell the difference, so the Debian, Arch, and Alpine images made for a Raspberry Pi or an ARM cloud server boot here as they are, with their own kernels.",
+    "message": "$t(common:product.name) emulates the hardware, not an operating system. Boot generic, UEFI-ready ARM Linux images, unmodified, with their own kernels, <em>in your browser</em>. Run complete systems, with graphics acceleration, network connectivity, shared folders, and even USB support.",
     "note": "The introduction's first paragraph, under the headline: what the emulator is and what follows from it. This page names distributions and products, unlike the rest of the web app's words."
   },
   "IntroHero.speed": {
-    "message": "The guest's code is compiled to WebAssembly while it runs. That is fast enough for a desktop with Firefox in it, video and 3D included. Nothing is installed, and the machine runs on your computer, not on a server.",
+    "message": "On a modern computer, $t(common:product.name) is fast enough to run a desktop with Chromium or Firefox in it, video and 3D included. Literally, a browser within your browser. Nothing is installed, and the machine runs on your computer, not on a server.",
     "note": "The introduction's second paragraph: how it is fast, what that allows, and that it runs locally."
   },
   "IntroHero.demos": {
@@ -99,6 +99,86 @@
     "message": "Up to 16, from qcow2, raw, or ISO images",
     "note": "What the emulated machine has for “Disks”, beside that label on the introduction. Not a sentence: no period."
   },
+  "IntroMade.title": {
+    "message": "How it was made",
+    "note": "Title of a section of the introduction, under “How it works”: who made the project and how. No period."
+  },
+  "IntroMade.lede": {
+    "message": "A single human is behind $t(common:product.name). This is how it went, in my own words.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): the section's first paragraph. The whole section is written in the author's voice (their website, gbl08ma.com: long sentences, first person, parentheses, a spaced hyphen for a dash, dry humor)."
+  },
+  "IntroMade.who": {
+    "message": "One human, two months",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): title of a part. No period."
+  },
+  "IntroMade.who.words": {
+    "message": "A single human is behind this project. It took two months of work with AI agents, which I steered only during my spare time (I have a full-time job).",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): who and how long."
+  },
+  "IntroMade.code": {
+    "message": "Who wrote the code",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): title of a part. No period."
+  },
+  "IntroMade.code.words": {
+    "message": "Effectively all of the code was written by Claude Opus 5.5, with a minority of it by Claude Fable 5.2. Some of the UI/UX design and some copy adjustments were made by human hand.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): which AI models wrote the code. Claude Opus 5.5 and Claude Fable 5.2 are models' names: don't translate."
+  },
+  "IntroMade.time": {
+    "message": "What it would have taken",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): title of a part. No period."
+  },
+  "IntroMade.time.words": {
+    "message": "I estimate that getting this project to this level without AI assistance would have taken me no less than three years of full-time work - and that's as someone with 10+ years of systems programming experience.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): the author's estimate of the work without AI."
+  },
+  "IntroMade.knew": {
+    "message": "What I knew before",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): title of a part. No period."
+  },
+  "IntroMade.knew.words": {
+    "message": "I was already conceptually aware of how a compiler works, what a JIT is, what Mesa is, what WebGPU is, and so on, but I had no hands-on experience building anything like this (not counting the compilers course in university).",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): what the author knew beforehand. JIT, Mesa and WebGPU are terms and names."
+  },
+  "IntroMade.learned": {
+    "message": "What I learned",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): title of a part. No period."
+  },
+  "IntroMade.learned.words": {
+    "message": "I learned a lot building the project this way, but it all feels relatively superficial. I'm sure I'd have learned much more if I had built it all by hand, but I'm also sure I wouldn't have scratched even 10% of the surface I scratched here: I would have gotten tired, and I would have had no time to explore as many options. So one can say the experience I gained is broader, even if it isn't as deep.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): what the author learned, and its limits."
+  },
+  "IntroMade.thanks": {
+    "message": "Whose work this stands on",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): heading of the acknowledgement of the open-source projects. No period."
+  },
+  "IntroMade.thanks.words": {
+    "message": "I am fully aware that this is only possible in the first place because so many of the related projects are open source, have been for years, and are part of the training sets of all the AI models used. That was, undeniably, a lot of human effort, given away for free.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): the acknowledgement that open-source projects, in the AI models' training data, made the project possible."
+  },
+  "IntroMade.thanks.about": {
+    "message": "See the projects credited",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): button under the acknowledgement: leaves the introduction for the About pane, which lists the third-party projects whose code is in the web app, with their licenses."
+  },
+  "IntroMade.why": {
+    "message": "Why I made it",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): heading over a numbered list of reasons. No period."
+  },
+  "IntroMade.why.llm": {
+    "message": "To find out if frontier LLMs can build something that exceeds prior art in this field.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): a reason. LLM: large language model, the term of the trade."
+  },
+  "IntroMade.why.browser": {
+    "message": "To showcase just how much is possible in a browser (effectively, a large portion of QEMU's feature set).",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): a reason. QEMU is a program's name (the machine emulator)."
+  },
+  "IntroMade.why.upstream": {
+    "message": "To incentivize further development and performance optimization of technology like WebAssembly, or Mesa's virgl and Venus.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): a reason. WebAssembly, Mesa, virgl and Venus are names."
+  },
+  "IntroMade.why.web": {
+    "message": "And to showcase just how well optimized modern websites are: an entire OS and a browser will boot in here, and the slowest part will still be waiting for everything that appears around the player on a YouTube video page!",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): the last reason, a joke said with sarcasm: “carefully optimized” means the opposite. Keep the dry tone; the exclamation mark is the author's, and ironic."
+  },
   "IntroEnd.title": {
     "message": "Pick a machine and start it",
     "note": "Title of the introduction's last section, which leads to the demo store's page. No period."
@@ -132,7 +212,7 @@
     "note": "Title of the introduction's second section. No period."
   },
   "IntroFacts.lede": {
-    "message": "The machine is whole, so the software doesn't have to be adapted to it. Whatever ships for 64-bit ARM Linux is a candidate, closed-source programs included.",
+    "message": "It's as real as any virtual machine, so the software doesn't have to be adapted to it. Whatever ships for 64-bit ARM Linux is a candidate, closed-source programs included.",
     "note": "Paragraph under the title of the introduction's “What runs on it” section."
   },
   "IntroFacts.cores": {
@@ -168,7 +248,7 @@
     "note": "What the figure “61,425” counts, under its readout on the introduction. Not a sentence: no period."
   },
   "IntroFacts.tests.words": {
-    "message": "These are dEQP's lists for OpenGL ES 2 and 3, the tests Android requires a GPU driver to pass, run on Chromium's software renderer. On a real GPU, a few fail where that GPU's own driver does.",
+    "message": "These are dEQP's lists for OpenGL ES 2 and 3, the same tests Android requires a GPU driver to pass, run on Chromium's software renderer. Your experience with a real GPU may vary. Try it out!",
     "note": "The sentence under the readout “61,425 graphics tests passed, none failed” on the introduction: what stands behind the figure."
   },
   "IntroFacts.drivers": {
@@ -184,11 +264,11 @@
     "note": "The sentence under the readout “0 drivers to install in the guest” on the introduction: what stands behind the figure."
   },
   "IntroFacts.desktop": {
-    "message": "A desktop with a browser in it",
+    "message": "A browser in a desktop, within a browser",
     "note": "Title of a topic in the introduction's “What runs on it” section. No period."
   },
   "IntroFacts.desktop.words": {
-    "message": "Firefox and Chromium run inside the tab, WebGL included. Video is decoded by your GPU through VA-API, so YouTube plays in the guest's browser.",
+    "message": "Firefox and Chromium run inside the tab, WebGL included. Video is decoded by your GPU through VA-API, so even YouTube can play. At last: the most convoluted way to use uBlock Origin in Chrome again.",
     "note": "Paragraph of the topic “A desktop with a browser in it” in the introduction's “What runs on it” section."
   },
   "IntroFacts.vulkan": {
@@ -196,7 +276,7 @@
     "note": "Title of a topic in the introduction's “What runs on it” section. No period."
   },
   "IntroFacts.vulkan.words": {
-    "message": "Vulkan programs run through Mesa's Venus driver onto WebGPU. vkcube, vkmark, and vkQuake work today. It is the newest part and still growing.",
+    "message": "Vulkan programs run through Mesa's Venus driver onto WebGPU. vkcube, vkmark, vkQuake, and Godot's Forward+ renderer work today. It is the newest part and still growing.",
     "note": "Paragraph of the topic “Vulkan” in the introduction's “What runs on it” section."
   },
   "IntroFacts.devices": {
@@ -204,7 +284,7 @@
     "note": "Title of a topic in the introduction's “What runs on it” section. No period."
   },
   "IntroFacts.devices.words": {
-    "message": "Plug in a USB device and hand it to the guest. Game controllers, the microphone, and the clipboard reach it too.",
+    "message": "Plug in a USB device and hand it to the guest; support varies between browsers and host operating systems. You can use your game controllers and microphone too, and share folders and your clipboard with the guest.",
     "note": "Paragraph of the topic “Your devices” in the introduction's “What runs on it” section."
   },
   "IntroFacts.disks": {
@@ -228,7 +308,7 @@
     "note": "Title of a topic in the introduction's “What runs on it” section. No period."
   },
   "IntroFacts.networks.words": {
-    "message": "Join your Tailscale network, go online through your own computer, or connect two browsers directly, peer to peer. A machine can have four adapters.",
+    "message": "Join your Tailscale network, go online through your own computer, or connect many browsers directly, peer to peer. A machine can have four adapters.",
     "note": "Paragraph of the topic “Networks” in the introduction's “What runs on it” section."
   },
   "IntroSpeed.figure": {
@@ -244,7 +324,7 @@
     "note": "Beside a speed figure on the introduction: reads on from “4.1×”. {{peer}} is another project's name."
   },
   "IntroSpeed.basis": {
-    "message": "Measured on {{when, date}}, in Chromium on one computer: the same Perl program, six small workloads, run in each project's own Linux guest as it ships. $t(common:product.name) and unkernel ran the very same Debian build of Perl. v86 emulates a 32-bit x86 PC, so its Perl is another build of an older version.",
+    "message": "Measured on {{when, date}}, in Chrome on a Mac with an Apple M4 processor: the same Perl program, six small workloads, run in each project's own Linux guest as it ships. $t(common:product.name) and unkernel ran the very same Debian build of Perl. v86 emulates a 32-bit x86 PC, so its Perl is another build of an older version.",
     "note": "Under the speed figures on the introduction: what was measured. {{when}} is the measurement's date. unkernel and v86 are other projects' names; Perl, Debian and Chromium are names too."
   },
   "IntroCompare.title": {
@@ -440,28 +520,28 @@
     "note": "Cell of the comparison table on the introduction: “Disk images” for JSLinux. Not a sentence: no period."
   },
   "IntroCompare.browsers": {
-    "message": "Browsers",
+    "message": "Host browser compatibility",
     "note": "Row heading of the comparison table on the introduction. No period."
   },
   "IntroCompare.browsers.ours": {
     "message": "Chromium-based first, Firefox for smaller guests",
-    "note": "Cell of the comparison table on the introduction: “Browsers” for waarm64. The web app is built and tested for Chromium-based browsers; Firefox runs it too, for smaller guests, more slowly and without some features. Not “only”. Not a sentence: no period."
+    "note": "Cell of the comparison table on the introduction: “Host browser compatibility” for waarm64. The web app is built and tested for Chromium-based browsers; Firefox runs it too, for smaller guests, more slowly and without some features. Not “only”. Not a sentence: no period."
   },
   "IntroCompare.browsers.unkernel": {
     "message": "Chrome, Edge, Firefox, Safari",
-    "note": "Cell of the comparison table on the introduction: “Browsers” for unkernel. Not a sentence: no period."
+    "note": "Cell of the comparison table on the introduction: “Host browser compatibility” for unkernel. Not a sentence: no period."
   },
   "IntroCompare.browsers.webvm": {
     "message": "Modern browsers",
-    "note": "Cell of the comparison table on the introduction: “Browsers” for WebVM. Not a sentence: no period."
+    "note": "Cell of the comparison table on the introduction: “Host browser compatibility” for WebVM. Not a sentence: no period."
   },
   "IntroCompare.browsers.v86": {
     "message": "All",
-    "note": "Cell of the comparison table on the introduction: “Browsers” for v86. Not a sentence: no period."
+    "note": "Cell of the comparison table on the introduction: “Host browser compatibility” for v86. Not a sentence: no period."
   },
   "IntroCompare.browsers.jslinux": {
     "message": "All",
-    "note": "Cell of the comparison table on the introduction: “Browsers” for JSLinux. Not a sentence: no period."
+    "note": "Cell of the comparison table on the introduction: “Host browser compatibility” for JSLinux. Not a sentence: no period."
   },
   "IntroCompare.license": {
     "message": "License",
@@ -488,7 +568,7 @@
     "note": "Cell of the comparison table on the introduction: “License” for JSLinux, whose current version is based on TinyEMU, released under the MIT license. TinyEMU is a project's name. Not a sentence: no period."
   },
   "IntroCompare.leads": {
-    "message": "Where they lead",
+    "message": "Where other projects beat $t(common:product.name)",
     "note": "Subtitle in the introduction's comparison section, over what other projects do better. No period."
   },
   "IntroCompare.leads.first": {
@@ -500,11 +580,11 @@
     "note": "Paragraph of the entry “The first second” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.leads.browsers": {
-    "message": "Browsers",
+    "message": "Browser compatibility",
     "note": "Title of an entry under “Where they lead” on the introduction. No period."
   },
   "IntroCompare.leads.browsers.words": {
-    "message": "unkernel runs in Firefox, in Safari, and on iPhones. v86 and JSLinux run nearly anywhere. $t(common:product.name) is built for Chromium-based browsers. Firefox runs smaller guests, more slowly and without USB devices.",
+    "message": "unkernel runs in Firefox, in Safari, and on iPhones. v86 and JSLinux run nearly anywhere. $t(common:product.name) is built primarily for Chromium-based browsers. In Firefox, it runs with worse performance and stability, and without USB devices or shared folders.",
     "note": "Paragraph of the entry “Browsers” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.leads.memory": {
@@ -512,7 +592,7 @@
     "note": "Title of an entry under “Where they lead” on the introduction. No period."
   },
   "IntroCompare.leads.memory.words": {
-    "message": "unkernel boots Alpine in 48 MiB of guest memory, because its kernel isn't emulated. An emulated machine with a stock kernel can't be that small.",
+    "message": "unkernel boots Alpine in 48 MiB of guest memory, because its kernel isn't emulated. An emulated machine with a stock kernel can't be that small. But $t(common:product.name) gives you the freedom to boot any kernel, even operating systems other than Linux.",
     "note": "Paragraph of the entry “Memory” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.leads.syscalls": {
@@ -788,7 +868,7 @@
     "note": "Button under a topic's picture in the introduction's “How it works” section: unfolds a detailed, interactive view under it."
   },
   "IntroTopic.less": {
-    "message": "Fold it away",
+    "message": "Hide the details",
     "note": "The same button once the detailed view is open: folds it away again."
   },
   "IntroCpuDive.loading": {
@@ -804,7 +884,7 @@
     "note": "Title of the introduction's fourth section. No period."
   },
   "IntroHow.lede": {
-    "message": "Five parts do most of the work. Each picture steps through its part by itself, and you can click a stage to stop on it.",
+    "message": "Five parts do most of the work. See the representations below. Click a stage to pause it.",
     "note": "Paragraph under the title of the introduction's “How it works” section."
   },
   "IntroHow.cpu.deeper": {
@@ -992,7 +1072,7 @@
     "note": "The line under the label of stage 2 of the “OpenGL” picture on the introduction. Not a sentence: no period."
   },
   "IntroHow.gl.2.words": {
-    "message": "Mesa's virgl driver turns the calls into a stream of commands. It compiles shaders to an intermediate form called TGSI.",
+    "message": "Mesa's virgl driver turns the calls into a stream of commands. It compiles shaders to an intermediate form called TGSI. $t(common:product.name)'s graphics performance and support may improve as virgl improves.",
     "note": "Paragraph shown under the “OpenGL” picture on the introduction while stage 2 (“Mesa”) is the active one."
   },
   "IntroHow.gl.3": {
@@ -1028,7 +1108,7 @@
     "note": "The line under the label of stage 5 of the “OpenGL” picture on the introduction. Not a sentence: no period."
   },
   "IntroHow.gl.5.words": {
-    "message": "Everything is drawn on one WebGL2 context, once per frame of your display. A frame of the sway desktop costs the guest 6.6 ms this way, against 81 ms when it renders in software.",
+    "message": "Everything is drawn on one WebGL2 context, once per frame of your display. A frame from <em>sway</em>, the tiling Wayland compositor, costs the guest 6.6 ms this way, against 81 ms when it renders in software within the guest.",
     "note": "Paragraph shown under the “OpenGL” picture on the introduction while stage 5 (“WebGL2”) is the active one."
   },
   "IntroHow.video": {
@@ -1088,7 +1168,7 @@
     "note": "The line under the label of stage 4 of the “Video” picture on the introduction. Not a sentence: no period."
   },
   "IntroHow.video.4.words": {
-    "message": "The browser's VideoDecoder decodes it, on your GPU where it can. H.264, VP9, and AV1 are offered to the guest when your browser has them.",
+    "message": "The browser's VideoDecoder decodes it, on your GPU where it can. H.264, VP9, and AV1 are offered to the guest when your browser has them. Even if your browser can only decode videos in software, that's still faster than doing it in the guest.",
     "note": "Paragraph shown under the “Video” picture on the introduction while stage 4 (“WebCodecs”) is the active one."
   },
   "IntroHow.video.5": {

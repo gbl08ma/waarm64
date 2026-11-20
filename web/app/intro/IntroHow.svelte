@@ -12,6 +12,7 @@
   import IntroSection from './IntroSection.svelte';
   import IntroTopic from './IntroTopic.svelte';
   import { t } from '../../i18n.ts';
+  import { msg } from '../../msg.ts';
 
   type Props = { ref?: HTMLElement };
   let { ref = $bindable() }: Props = $props();
@@ -54,7 +55,7 @@
     ['intro:IntroHow.vulkan.5', 'intro:IntroHow.vulkan.5.line', 'intro:IntroHow.vulkan.5.words'],
   ] as const;
   const stages = (keys: readonly (readonly [string, string, string])[]) =>
-    keys.map(([label, line, words]) => ({ label: t(label), line: t(line), words: t(words) }));
+    keys.map(([label, line, words]) => ({ label: t(label), line: t(line), words: msg(words) }));
 </script>
 
 <IntroSection id="intro-how" title={t('intro:IntroHow.title')} ground="raised" bind:ref>

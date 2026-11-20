@@ -1,7 +1,8 @@
 <!--
   A message whose words have markers (docs/i18n.md "Markers"): `<T k="ns:Source.name" params={…}>`, or `m={msg}`. It
   draws the references on its own (web/i18n.ts `REFERENCE`): a name someone gave (`<name>`), an element of the page's
-  words (`<ui>`, with its icon before them: `<ui-network>`), and code (`<code>`); a snippet per other marker, named as
+  words (`<ui>`, with its icon before them: `<ui-network>`), code (`<code>`), and words stressed or a name set apart
+  in a sentence (`<em>`); a snippet per other marker, named as
   the marker and given the words it wraps (`{#snippet b(text)}<b>{text}</b>{/snippet}`), which can stand in for these
   too. A message without markers needs none of this: `{t('ns:Source.name')}`.
 -->
@@ -39,9 +40,16 @@
       >{#if icon}<span class="first"
           ><span class="icon" aria-hidden="true"><Icon name={icon} size="0.9em" /></span>{firstWord(p.text)}</span
         >{restWords(p.text)}{:else}{p.text}{/if}</span
-    >{:else if p.tag === 'code'}<code>{p.text}</code>{:else}{p.text}{/if}{/each}
+    >{:else if p.tag === 'code'}<code>{p.text}</code>{:else if p.tag === 'em'}<em>{p.text}</em
+    >{:else}{p.text}{/if}{/each}
 
 <style>
+  /* Words stressed, or a name set apart in a sentence: the text's own color at its brightest, upright. */
+  em {
+    color: var(--text);
+    font-style: normal;
+    font-weight: var(--weight-bold);
+  }
   /* A name someone gave (a machine's, a disk's, an overlay's…), in running text: docs/frontend-code.md §1 "Names and
      the page's elements in words". */
   .name {

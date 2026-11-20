@@ -1,7 +1,7 @@
 // The introduction's speed figures (web/app/intro/IntroSpeed.svelte; INTRO-KICKOFF.md "The comparison"): how many
 // times as fast waarm64 ran one workload as the projects it's compared with: the next fastest, named so, and v86,
-// the oldest and best known of them (the user, 2026-11-20). The numbers are bench/compare/REPORT.md's, the ratio of
-// the medians (docs/benchmarking.md "Rules": no claim without a run behind it); a figure is taken out again if its
+// the oldest and best known of them (the user, 2026-11-20). The numbers are bench/compare/REPORT.md's on the Mac
+// host (the user: those, not the dev VM's), the ratio of the medians (docs/benchmarking.md "Rules": no claim without a run behind it); a figure is taken out again if its
 // peer measures faster, and all of them when the workload changes. What was run is the page's words
 // (`intro:IntroSpeed.basis`), not data.
 
@@ -14,7 +14,7 @@ export type Speed = { date: string; leads: SpeedLead[] };
 export const SPEED: Speed | undefined = {
   date: '2026-11-20',
   leads: [
-    { peer: 'unkernel', times: 1.9, next: true }, // i18n-ignore: 20.99 s against 11.34 (1.851)
-    { peer: 'v86', times: 4.0 }, // i18n-ignore: 45.84 s against 11.34 (4.042)
+    { peer: 'unkernel', times: 1.8, next: true }, // i18n-ignore: 18.03 s against 10.11 on the Mac host (1.783)
+    { peer: 'v86', times: 3.9 }, // i18n-ignore: 39.34 s against 10.11 (3.891)
   ],
 };

@@ -2,7 +2,7 @@
   The introduction (docs/frontend.md "The introduction"; docs/decisions.md "Demos"): what a visitor without machines
   sees first, and what About's button shows again. It takes the whole window, one page scrolled from top to bottom:
   a bar of its own (the wordmark, the ways to its sections, Skip), what waarm64 is, what runs on it, how it compares,
-  how it works, and at its end the way into the demo store. Leaving it (Skip, a button to the demos) brings the toolbar and the status bar in
+  how it works, how it was made, and at its end the way into the demo store. Leaving it (Skip, a button to the demos) brings the toolbar and the status bar in
   (web/app/view-transition.ts). Its words are the catalog's `intro` area, in a voice of their own (docs/copy.md "The
   introduction").
 -->
@@ -13,6 +13,7 @@
   import IntroFacts from './intro/IntroFacts.svelte';
   import IntroHero from './intro/IntroHero.svelte';
   import IntroHow from './intro/IntroHow.svelte';
+  import IntroMade from './intro/IntroMade.svelte';
   import WordmarkLetters from './WordmarkLetters.svelte';
   import { afterIntro } from './intro-route.ts';
   import { records } from './areas/records.svelte.ts';
@@ -54,6 +55,7 @@
   <IntroFacts bind:ref={facts} />
   <IntroCompare bind:ref={compare} />
   <IntroHow bind:ref={how} />
+  <IntroMade onabout={() => void page.closeIntro('about')} />
   <IntroEnd ondemos={toDemos} machines={records.machines.length} onhome={() => void page.closeIntro()} />
 </div>
 

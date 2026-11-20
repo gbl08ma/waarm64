@@ -39,8 +39,10 @@ trace through a block cache.
 workload (`work.pl`: six kernels in plain Perl, no module) into each system's guest as shipped (ours: this checkout's
 page with the tests' Debian), runs it with the guest's own perl, and times each run from outside, between the
 script's first and last lines on the console; a fresh boot a round, the systems alternated, every kernel's checksum
-compared. The page's speed figures (`web/app/intro/speed.ts`) are its medians' ratios. ~17 min at size 8; alone on
-the machine, under `timeout`.
+compared. The page's speed figures (`web/app/intro/speed.ts`) are its medians' ratios on the Mac host:
+`bench/compare/run-mac.sh <name> [args]` copies the page, the core, the firmware and the Debian image there and runs
+the same harness on its Chrome for Testing (the VM idle meanwhile; bench/gpu/mac-leftovers.sh after). ~17 min at size
+8 on either; alone on the machine, under `timeout`.
 
 **A demo as a visitor meets it** (`bench/demo/`, beside the harness; journal in `bench/demo/REPORT.md`):
 `node bench/demo/run.ts <target> [--runs 3] [--apk] [--out f]` opens a target's page in headless Chromium, a fresh

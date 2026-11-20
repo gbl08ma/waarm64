@@ -63,9 +63,9 @@ still to measure. No number goes in without a run behind it
 
 ## 3. Performance (to measure)
 
-The first measured row is Perl ([bench/compare/REPORT.md](../bench/compare/REPORT.md), 2026-11-20): 1.85× as fast as
-unkernel on the very same Debian binary, 4.04× as fast as v86, on the dev VM (Linux arm64, the host where V8's bounds
-checks cost our compiled code most). The user's informal test of 2026-11-18 had put our CPU at a little over twice
+The first measured row is Perl ([bench/compare/REPORT.md](../bench/compare/REPORT.md), 2026-11-20): 1.78× as fast as
+unkernel on the very same Debian binary and 3.89× as fast as v86 on the Mac host (the page's figures), 1.85× and
+4.04× on the dev VM. The user's informal test of 2026-11-18 had put our CPU at a little over twice
 unkernel's (riscv64 then). The rows still TBD aren't claimed. Each row is measured in headless
 Chromium on the same host, in one session, with medians and IQR ([benchmarking.md](benchmarking.md) "Rules"). The
 peers run as shipped: their own demo or a local build at its documented settings. Rows marked * are a cross-ISA
@@ -75,7 +75,7 @@ comparison (the same source compiled for each guest), and the table must say tha
 |---|---|---|---|---|---|
 | Click to a shell prompt (cold cache): a typed command answered | 31.7 s (the Desktop Demo's first boot, logged in; login prompt 27.8 s); 2.9–3.0 s (the Alpine demo, a resume: a local build at a modelled 100 Mbit/s and 20 ms); 4.1–4.3 s deployed (single runs) | 1.7 s (2026-11-20: Debian 13, aarch64 user space, 4 CPUs; 1.3 s on 2026-11-19, when the demo was Alpine on riscv64) | 1.8 s (Arch, a saved state); 3.9 s (Buildroot, a boot) | TBD | TBD |
 | Bytes downloaded to the prompt | 420 MiB (6.1 the page, 414 the disk); 24.7 MB (the Alpine demo: the page, a 15.7 MB template, the disk's first reads) | 6.9 MiB (2026-11-20; 6.7 the day before) | 15.3 MiB (Arch); 5.5 MiB (Buildroot) | TBD | TBD |
-| Perl, six kernels (`bench/compare/work.pl`, size 8; seconds, median of 9, 2026-11-20, the dev VM) | **11.3 s** (Debian 13 arm64, perl 5.40.1) | 21.0 s (the same Debian binary: **we are 1.85× as fast**) | 45.8 s (Arch Linux 32, i686 perl 5.36.0 *: **4.04×**) | not measured (closed, no fixed workload: the user) | not measured |
+| Perl, six kernels (`bench/compare/work.pl`, size 8; seconds, median of 9, 2026-11-20; the Mac host, Chrome 158, then the dev VM, Chromium 155) | **10.1 s**; 11.3 s (Debian 13 arm64, perl 5.40.1) | 18.0 s; 21.0 s (the same Debian binary: **we are 1.78× as fast** on the Mac, 1.85× in the VM) | 39.3 s; 45.8 s (Arch Linux 32, i686 perl 5.36.0 *: **3.89×**, 4.04×) | not measured (closed, no fixed workload: the user) | not measured |
 | CoreMark, 1 core * | TBD | TBD | TBD | TBD | TBD |
 | CoreMark, all cores * | TBD | TBD (`?smp`) | — | TBD | — |
 | `xz -9` / `gzip` of a fixed file * | TBD | TBD | TBD | TBD | TBD |
@@ -116,7 +116,7 @@ AES-128-GCM 232 MB/s with the crypto extensions.
 ## 5. Draft copy
 
 The introduction (frontend.md "The introduction") is where this copy went, 2026-11-20: its comparison's table and
-[Where they lead](ui:intro:IntroCompare.leads) are §2's and §4's facts in the catalog's `intro` area, dated by `web/app/intro/compare.ts`
+[Where other projects beat waarm64](ui:intro:IntroCompare.leads) are §2's and §4's facts in the catalog's `intro` area, dated by `web/app/intro/compare.ts`
 `CHECKED`. A change to §2 to §4 changes those words and that date in the same commit; the one speed figure the page
 keeps a place for (`web/app/intro/speed.ts`) is filled from §3 once its rows are measured. What follows is the draft
 they were written from.

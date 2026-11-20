@@ -83,7 +83,7 @@ export type Page = {
   /** The introduction (web/app/IntroPage.svelte) opened over the page. */
   openIntro(): void;
   /** The introduction left: for the demo store's page, or (`auto`) there or Home, for a visitor with machines here. */
-  closeIntro(to?: 'demos' | 'auto'): Promise<void>;
+  closeIntro(to?: 'demos' | 'auto' | 'about'): Promise<void>;
   /** Closes the message bar. */
   dismiss(): void;
   /**

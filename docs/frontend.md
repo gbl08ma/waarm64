@@ -830,7 +830,7 @@ and the floating windows don't show, and the machine, Home or the store's page s
     sources and the day they were checked: `intro/compare.ts`): a table, a row a property, of waarm64 (the lit
     column), unkernel, WebVM, v86 and JSLinux, from [comparison.md](comparison.md) §2; a cell that page marks
     unverified says [Not confirmed](ui:intro:IntroCompare.unconfirmed). Under it
-    **[Where they lead](ui:intro:IntroCompare.leads)** (comparison.md §3 and §4: the first second, browsers,
+    **[Where other projects beat waarm64](ui:intro:IntroCompare.leads)** (comparison.md §3 and §4: the first second, browsers,
     memory, system calls) and links to the sources. **Over the table, the speed figures** (`intro/IntroSpeed.svelte`;
     `intro/speed.ts` `SPEED`): a readout a project, how many times as fast waarm64 ran one workload as it: unkernel,
     marked the next fastest, and v86, the oldest and best known of them (the user); under them what was measured and
@@ -875,6 +875,14 @@ and the floating windows don't show, and the machine, Home or the store's page s
     - **Memory's** ([Try the split](ui:intro:IntroHow.memory.deeper); `intro/IntroRam.svelte`): a slider of guest RAM
       (256 MiB to 16 GiB) and under it a bar per WebAssembly memory, 4 GiB long, filled as the machine really splits
       that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
+  - **[How it was made](ui:intro:IntroMade.title)** (`intro/IntroMade.svelte`), last before the end: the author's
+    own account in the first person (the user's words of 2026-11-20): one person and two months of spare time
+    steering AI agents, which models wrote the code and what was done by hand, what it would have taken otherwise,
+    what they knew and what they learned; that it stands on open-source projects that are in those models' training
+    data, with a button to the credits ([See the projects credited](ui:intro:IntroMade.thanks.about): it leaves the
+    introduction for Home's About pane, `page.closeIntro('about')`); and why it was made, four reasons, the last a
+    dry one; signed "- gbl08ma", a link to the author's website. Its words keep to that website's voice. A
+    disclosure: none of it is a figure of ours.
 - **The captures** (`web/intro-captures/blocks.json`, written by `tools/intro-capture.ts`; the page fetches it when
   the processor's deep dive opens: `intro/captures.ts`; an asset of the build, data and not one more script, which
   `tests/dist.test.ts` counts). The tool compiles small C

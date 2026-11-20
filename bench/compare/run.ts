@@ -81,6 +81,7 @@ type Boot = { system: string; round: number; guest?: string; runs: Run[]; error?
 async function boot(sys: System, round: number, base: string): Promise<Boot> {
   const out: Boot = { system: sys.name, round, runs: [] };
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: true, env: chromiumEnv() });
+  browserVersion ||= browser.version();
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 1000 } })).newPage();
   try {
     await page.goto(sys.url(base), { timeout: 60_000 });
@@ -116,6 +117,7 @@ mkdirSync(new URL('../results/local/', import.meta.url), { recursive: true });
 const server: Server = await startServer(0, '127.0.0.1');
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const boots: Boot[] = [];
+let browserVersion = '';
 try {
   for (let round = 1; round <= Number(args.rounds); round++) for (const sys of SYSTEMS) boots.push(await boot(sys, round, base));
 } finally {
@@ -134,8 +136,10 @@ const result = {
   workload: 'bench/compare/work.pl',
   size: Number(args.size),
   date: new Date().toISOString(),
-  commit: execSync('git rev-parse --short=12 HEAD', { encoding: 'utf8' }).trim(),
+  // Where there is no checkout (the Mac host's copy: bench/compare/run-mac.sh), the commit it was copied from.
+  commit: process.env.WAARM64_COMMIT ?? execSync('git rev-parse --short=12 HEAD', { encoding: 'utf8' }).trim(),
   host: { platform: os.platform(), arch: os.arch(), cpu: os.cpus()[0]?.model, cores: os.cpus().length, memGiB: Math.round(os.totalmem() / 2 ** 30) },
+  browser: browserVersion,
   systems: Object.fromEntries(SYSTEMS.map((s) => [s.name, s.what])),
   boots,
   summary,
