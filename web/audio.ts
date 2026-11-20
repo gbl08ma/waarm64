@@ -92,7 +92,7 @@ export class PageAudio {
       }
       this.onChange();
     };
-    return { ring: this.ring, mic: this.mic!, port: channel.port2, level: this.level, muted: this.muted };
+    return { ring: this.ring, mic: this.mic, port: channel.port2, level: this.level, muted: this.muted };
   }
 
   /** The machine stopped: its ring is no longer played. */
@@ -265,7 +265,7 @@ export class PageAudio {
     }
     if (ring !== this.ring) return; // another machine started meanwhile
     if (!this.node) {
-      this.node = new AudioWorkletNode(this.ctx!, 'waarm64-snd', {
+      this.node = new AudioWorkletNode(this.ctx, 'waarm64-snd', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
         outputChannelCount: [2],
@@ -274,7 +274,7 @@ export class PageAudio {
       this.node.connect(this.gain!);
     }
     // Resumes at once if the page already had a gesture (the browser's sticky activation); else at the next one.
-    void this.ctx!.resume().catch(() => {});
+    void this.ctx.resume().catch(() => {});
     // What's played reaches the ears this much later: the guest's ALSA counts it in its delay.
     const latency = () => {
       const c = this.ctx;

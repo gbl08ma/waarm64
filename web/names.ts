@@ -324,7 +324,7 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
     new Promise<T>((resolve, reject) => {
       const k = ++n;
       waiting.set(k, { resolve: (v) => resolve(v as T), reject });
-      post({ ...m, n: k } as ToNames);
+      post({ ...m, n: k });
     });
   return {
     op: <T>(op: NamesOp, input: object) => ask<T>({ type: 'op', op, input }),

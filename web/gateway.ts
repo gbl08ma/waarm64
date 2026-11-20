@@ -309,8 +309,8 @@ export function gateway(
     if (!on && !advertised) return;
     advertised = on;
     const dns = lease?.dns6 ?? [];
-    const routes = on ? [...(lease!.routes?.v6 ?? []), ...(lease!.peers6 ?? [])] : [];
-    const lifetime = on && !lease!.routes?.v6 ? 1800 : 0;
+    const routes = on ? [...(lease.routes?.v6 ?? []), ...(lease.peers6 ?? [])] : [];
+    const lifetime = on && !lease.routes?.v6 ? 1800 : 0;
     for (let at = 0; at === 0 || at < routes.length; at += ROUTES_PER_ADVERT) {
       receive(
         eth(

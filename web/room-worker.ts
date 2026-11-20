@@ -4,7 +4,7 @@
 // packets never touch the page's thread; descriptions and candidates pass through.
 import { toWire } from './msg.ts';
 import { batchSender, packetsOf } from './net.ts';
-import { failureOf, TsClient, TsModule, type RoomConfig } from './ts-client.ts';
+import { failureOf, TsClient, TsModule } from './ts-client.ts';
 import { ranked, routedLease, type Lease, type Prefix } from './gateway.ts';
 import {
   parseRoomLink,

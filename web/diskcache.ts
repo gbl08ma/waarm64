@@ -139,7 +139,7 @@ function tryLock(key: string, waitMs = 0): Promise<(() => void) | undefined> {
         `waarm64-cache:${key}`,
         waitMs ? { signal: AbortSignal.timeout(waitMs) } : { ifAvailable: true },
         (lock) => {
-          if (!lock) return void resolve(undefined);
+          if (!lock) return resolve(undefined);
           resolve(release);
           return held;
         },
@@ -224,8 +224,14 @@ export async function clearCaches() {
       const timer = setTimeout(done, CLEAR_WAIT_MS);
       ch.onmessage = (e) => {
         for (const key of (e.data?.cleared ?? []) as string[])
-          if (open.has(key)) ((freed += open.get(key)!), open.delete(key));
-        if (!open.size) (clearTimeout(timer), done());
+          if (open.has(key)) {
+            freed += open.get(key)!;
+            open.delete(key);
+          }
+        if (!open.size) {
+          clearTimeout(timer);
+          done();
+        }
       };
       ch.postMessage({ clear: true });
     });
@@ -309,7 +315,10 @@ export function blockStore(
     if (s < 0) continue;
     if (s >= slots || owner[s] >= 0)
       map[b] = 0; // past a smaller budget, or a slot claimed twice: not held
-    else ((owner[s] = b), (used = Math.max(used, s + 1)));
+    else {
+      owner[s] = b;
+      used = Math.max(used, s + 1);
+    }
   }
   let next = used % slots; // once full, slots are reused from here on
   const lengthOf = (b: number) => Math.min(block, size - b * block);

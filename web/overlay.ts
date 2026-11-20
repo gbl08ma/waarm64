@@ -1107,7 +1107,7 @@ export async function openOverlay(
       // A new overlay records its image. Refused (the storage full), none is recorded, so the next opening records it
       // (a part of one would be another image's, and every opening after would be refused as a mismatch).
       const id = new TextEncoder().encode(want);
-      if (shortOnFull(base as unknown as SyncFile).write(id, { at: 0 }) !== id.length) {
+      if (shortOnFull(base).write(id, { at: 0 }) !== id.length) {
         base.truncate(0);
         throw await storageFullError();
       }
@@ -1198,7 +1198,7 @@ export async function fileWriter(
   const dir = await opfsDir(parts.join('/'), true);
   const h = await (await dir.getFileHandle(file, { create: true })).createSyncAccessHandle();
   h.truncate(0);
-  const f = shortOnFull(h as unknown as SyncFile);
+  const f = shortOnFull(h);
   let at = 0;
   const put = (b: Uint8Array) => f.write(b, { at }) === b.length;
   return {
@@ -1276,7 +1276,7 @@ export async function writeOwnSize(name: string, size: number) {
     const was = readMeta(bytesFile(new Uint8Array(await (await handle.getFile()).arrayBuffer())));
     const out = await handle.createWritable();
     try {
-      await out.write(encodeMeta({ ...was, size }) as Uint8Array<ArrayBuffer>);
+      await out.write(encodeMeta({ ...was, size }));
       await out.close();
     } catch (e) {
       await out.abort().catch(() => undefined); // the failure thrown is the one to report

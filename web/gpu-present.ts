@@ -151,14 +151,14 @@ export function canvasPresenter(
   const gl =
     which === 'canvas2d' || (which === 'auto' && softwareGl())
       ? null
-      : (canvas.getContext('webgl2', {
+      : canvas.getContext('webgl2', {
           alpha: false,
           antialias: false,
           depth: false,
           stencil: false,
           premultipliedAlpha: false,
           preserveDrawingBuffer: false,
-        }) as WebGL2RenderingContext | null);
+        });
   let screen = gl ? new Screen(gl) : undefined;
   const info = gl ? glInfo(gl) : undefined;
   let presents = 0,

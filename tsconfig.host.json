@@ -1,0 +1,10 @@
+{
+  // ESLint's for the host code (web/*.ts, docs/host-code.md), under tools/lint's TypeScript 6 like tsconfig.svelte.json:
+  // module "nodenext" made it fall back to node10.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler"
+  },
+  "include": ["web/*.ts"]
+}

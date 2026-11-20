@@ -331,7 +331,7 @@ function parseInstr(s: string): Instr {
     const p = parts[k];
     if (TEX_TARGETS.has(p)) ins.tex = p;
     else if (ins.tex) ins.offsets.push(parseOperand(p, false));
-    else if (/^[A-Z_0-9]+$/.test(p) && !/\[/.test(p))
+    else if (/^[A-Z_0-9]+$/.test(p) && !p.includes('['))
       continue; // memory qualifiers and formats (images, buffers): unsupported anyway
     else ins.src.push(parseOperand(p, false));
   }
@@ -490,7 +490,7 @@ function floatLiteral(bits: number) {
   s = String(Number(s)); // drop trailing zeros
   if (Math.fround(Number(s)) !== f) s = f.toPrecision(9);
   if (!/[.e]/.test(s)) s += '.0';
-  if (/e/.test(s) && !/\./.test(s.split('e')[0])) s = s.replace('e', '.0e');
+  if (s.includes('e') && !s.split('e')[0].includes('.')) s = s.replace('e', '.0e');
   return s;
 }
 
@@ -1280,13 +1280,11 @@ class Gen {
     const name = this.samplerName(n);
     this.declareSampler(n, samplerType);
     const c = this.src(operand(ins, 0), ins.op === 'TXF' || ins.op === 'TXF_LZ' ? 'i' : 'f');
-    const oneD =
-      k?.oneD || target === '1D' || target === 'SHADOW1D' || target === '1D_ARRAY' || target === 'SHADOW1D_ARRAY';
     const rect = k?.rect || target === 'RECT' || target === 'SHADOWRECT';
     // The coordinate (and the shadow reference) in the GL target's shape.
     let coord: string,
       ref = '';
-    const cv = `${c}`;
+    const cv = c;
     const rectScale = rect && ins.op !== 'TXF' ? ` / vec2(textureSize(${name}, 0))` : '';
     switch (target) {
       case '1D':
@@ -1326,7 +1324,6 @@ class Gen {
       default:
         coord = `${cv}.xy`;
     }
-    void oneD;
     const dims = gl === '2D' ? 2 : 3;
     let call: string;
     const offs = ins.offsets[0] ? this.offsetLiteral(ins.offsets[0], gl === '3D' ? 3 : 2) : '';

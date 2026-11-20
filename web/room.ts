@@ -174,7 +174,7 @@ export function startRoom(
     const c: Conn = { pc, pending: [] };
     conns.set(rtc, c);
     const channel = pc.createDataChannel('wg', { negotiated: true, id: 0, ordered: false, maxRetransmits: 0 });
-    post({ type: 'rtc-channel', rtc, channel }, [channel as unknown as Transferable]);
+    post({ type: 'rtc-channel', rtc, channel }, [channel]);
     let candidates = 0;
     pc.onicecandidate = (e) => {
       if (e.candidate?.candidate) candidates++;

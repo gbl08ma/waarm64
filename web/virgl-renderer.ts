@@ -337,8 +337,7 @@ const PIPE_BUFFER = 0,
   PIPE_TEXTURE_RECT = 5;
 const PIPE_TEXTURE_1D_ARRAY = 6,
   PIPE_TEXTURE_2D_ARRAY = 7;
-const BIND_STAGING = 1 << 19,
-  BIND_INDEX = 1 << 5;
+const BIND_STAGING = 1 << 19;
 const SHADER_VERTEX = 0,
   SHADER_FRAGMENT = 1;
 /** Texture units: the fragment shader's samplers from 0, the vertex shader's from here. */
@@ -1252,7 +1251,6 @@ export class VirglRenderer {
   ) {
     const r = this.resources.get(id);
     if (!r) return false;
-    void ctx;
     return this.transferIov(r, level, box, offset, stride, layerStride, toHost);
   }
 
@@ -1638,7 +1636,7 @@ export class VirglRenderer {
   /** A picture texture for the plane `r` (`Res.picture`), `w`×`h`. */
   private pictureTexture(r: Res, w: number, h: number): Res {
     const gl = this.gl,
-      tex = gl.createTexture()!;
+      tex = gl.createTexture();
     gl.bindTexture(E.TEXTURE_2D, tex);
     gl.texStorage2D(E.TEXTURE_2D, 1, r.fmt!.internal, w, h);
     gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAX_LEVEL, 0);
@@ -2446,7 +2444,7 @@ export class VirglRenderer {
     let t = own ? src.msResolved : this.resolved;
     if (!(t?.fmt?.internal === f.internal && t.width === src.width && t.height === src.height)) {
       if (t?.tex) gl.deleteTexture(t.tex);
-      const tex = gl.createTexture()!;
+      const tex = gl.createTexture();
       gl.bindTexture(E.TEXTURE_2D, tex);
       gl.texStorage2D(E.TEXTURE_2D, 1, f.internal, src.width, src.height);
       t = {
@@ -2598,7 +2596,7 @@ void main() {
       const loc = new Map<string, WebGLUniformLocation | null>();
       for (const n of ['u_d', 'u_s', 'u_org', 'u_bit']) loc.set(n, gl.getUniformLocation(prog, n));
       this.zsProg = { prog, loc };
-      this.zsTex = [gl.createTexture()!, gl.createTexture()!];
+      this.zsTex = [gl.createTexture(), gl.createTexture()];
     }
     const kind = r.fmt?.kind;
     const point =
@@ -2717,7 +2715,7 @@ void main() {
     };
     const v = compile(E.VERTEX_SHADER, vs),
       f = compile(E.FRAGMENT_SHADER, fs);
-    const prog = gl.createProgram()!;
+    const prog = gl.createProgram();
     gl.attachShader(prog, v);
     gl.attachShader(prog, f);
     if (tf) gl.transformFeedbackVaryings(prog, tf.varyings, tf.separate ? E.SEPARATE_ATTRIBS : E.INTERLEAVED_ATTRIBS);
@@ -2768,7 +2766,7 @@ void main() {
       const r = sf && this.lookup(c, sf.res);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, r, sf?.level ?? 0, sf?.firstLayer ?? 0);
       if (k < s.fb.cbufs.length) bufs.push(r ? E.COLOR_ATTACHMENT0 + k : E.NONE);
-      if (r) [width, height] = [Math.max(1, r.width >> sf!.level), Math.max(1, r.height >> sf!.level)];
+      if (r) [width, height] = [Math.max(1, r.width >> sf.level), Math.max(1, r.height >> sf.level)];
     }
     const zs = s.fb.zs && this.lookup(c, s.fb.zs.res);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
@@ -2879,7 +2877,6 @@ void main() {
           : r.glTarget === E.TEXTURE_2D_ARRAY
             ? '2D_ARRAY'
             : '2D';
-    void c;
     return {
       type,
       swizzle,
@@ -2975,11 +2972,11 @@ void main() {
         const r = v && this.resources.get(v.res);
         const levels = r && targets.get(r);
         if (!levels) return;
-        const first = v!.firstLevel;
-        const last = s.samplers[st][n]?.minMip === 2 ? first : Math.max(first, Math.min(v!.lastLevel, r!.lastLevel));
+        const first = v.firstLevel;
+        const last = s.samplers[st][n]?.minMip === 2 ? first : Math.max(first, Math.min(v.lastLevel, r.lastLevel));
         if (!levels.some((l) => l >= first && l <= last)) return;
-        const had = sampled.get(r!);
-        sampled.set(r!, had ? [Math.min(had[0], first), Math.max(had[1], last)] : [first, last]);
+        const had = sampled.get(r);
+        sampled.set(r, had ? [Math.min(had[0], first), Math.max(had[1], last)] : [first, last]);
       });
     if (!sampled.size) return undefined;
     const copies = new Map<Res, Res>();
@@ -2998,7 +2995,7 @@ void main() {
     this.pauseQueries(); // a copy counts no samples
     let t = src.feedback;
     if (!t) {
-      const tex = gl.createTexture()!;
+      const tex = gl.createTexture();
       gl.bindTexture(src.glTarget!, tex);
       const levels = src.lastLevel + 1;
       if (src.glTarget === E.TEXTURE_3D || src.glTarget === E.TEXTURE_2D_ARRAY) {
@@ -3217,8 +3214,6 @@ void main() {
       }
     }
     // Rasterizer, viewport, scissor.
-    const fbw = fb.width,
-      fbh = fb.height;
     const x = vp.translate[0] - vp.scale[0],
       w = vp.scale[0] * 2;
     const h = Math.abs(vp.scale[1]) * 2;
@@ -3234,8 +3229,6 @@ void main() {
       gl.enable(E.SCISSOR_TEST);
       gl.scissor(s.scissor.minx, s.scissor.miny, s.scissor.maxx - s.scissor.minx, s.scissor.maxy - s.scissor.miny);
     } else gl.disable(E.SCISSOR_TEST);
-    void fbw;
-    void fbh;
     if (rs && rs.cullFace) {
       gl.enable(E.CULL_FACE);
       gl.cullFace([0, E.FRONT, E.BACK, E.FRONT_AND_BACK][rs.cullFace]);
@@ -3351,7 +3344,7 @@ void main() {
       }
     } else gl.disable(E.STENCIL_TEST);
     // Vertex attributes.
-    s.vao ??= gl.createVertexArray()!;
+    s.vao ??= gl.createVertexArray();
     gl.bindVertexArray(s.vao);
     let maxVertex = 0;
     for (let k = 0; k < 16; k++) {
@@ -3393,7 +3386,7 @@ void main() {
         const st = Math.ceil(vf.bytes / 4) * 4;
         const packed = new Uint8Array(Math.max(4, n * st));
         for (let i = 0; i < n; i++) packed.set(r.shadow.subarray(at + i * stride, at + i * stride + vf.bytes), i * st);
-        const buf = (this.scratchVb[k] ??= gl.createBuffer()!);
+        const buf = (this.scratchVb[k] ??= gl.createBuffer());
         gl.bindBuffer(E.ARRAY_BUFFER, buf);
         gl.bufferData(E.ARRAY_BUFFER, packed, E.STREAM_DRAW);
         [stride, at] = [st, 0];
@@ -3475,7 +3468,7 @@ void main() {
       if ((size !== 1 && size !== 2 && size !== 4) || offset % size || offset + count * size > r.shadow.length)
         return this.error(`an indexed draw past index buffer ${r.id} (${count} of size ${size} at ${offset})`);
       if (r.idirty || !r.ibuf) {
-        r.ibuf ??= gl.createBuffer()!;
+        r.ibuf ??= gl.createBuffer();
         gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, r.ibuf);
         gl.bufferData(E.ELEMENT_ARRAY_BUFFER, r.shadow, E.DYNAMIC_DRAW);
         r.idirty = false;
@@ -3605,8 +3598,8 @@ void main() {
 
   private beginCapture(s: Sub, plan: SoPlan, vertices: number, prim: number) {
     const gl = this.gl;
-    s.so.tf ??= gl.createTransformFeedback()!;
-    this.soScratch ??= gl.createBuffer()!;
+    s.so.tf ??= gl.createTransformFeedback();
+    this.soScratch ??= gl.createBuffer();
     // The scratch buffer is only ever a transform feedback buffer (WebGL keeps those apart from every other binding).
     gl.bindTransformFeedback(E.TRANSFORM_FEEDBACK, s.so.tf);
     gl.bindBuffer(E.TRANSFORM_FEEDBACK_BUFFER, this.soScratch);
@@ -3651,7 +3644,7 @@ void main() {
     const gl = this.gl;
     if (!this.nullFbo) {
       this.nullFbo = gl.createFramebuffer()!;
-      const rb = gl.createRenderbuffer()!;
+      const rb = gl.createRenderbuffer();
       gl.bindRenderbuffer(E.RENDERBUFFER, rb);
       gl.renderbufferStorage(E.RENDERBUFFER, E.RGBA8, 1, 1);
       gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.nullFbo);
@@ -3685,7 +3678,7 @@ void main() {
 
   private scratchIndex(data: ArrayBufferView) {
     const gl = this.gl;
-    this.scratch ??= gl.createBuffer()!;
+    this.scratch ??= gl.createBuffer();
     gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, this.scratch);
     gl.bufferData(E.ELEMENT_ARRAY_BUFFER, data, E.STREAM_DRAW);
     return this.scratch;
@@ -3734,11 +3727,11 @@ void main() {
     else gl.vertexAttrib4f(k, ...v);
   }
 
-  private glSampler(st: SamplerState | undefined, r: Res): WebGLSampler | null {
+  private glSampler(st: SamplerState | undefined, _r: Res): WebGLSampler | null {
     if (!st) return null;
     const gl = this.gl;
     if (st.sampler) return st.sampler;
-    const sm = gl.createSampler()!;
+    const sm = gl.createSampler();
     gl.samplerParameteri(sm, E.TEXTURE_WRAP_S, WRAP[st.wrap[0]]);
     gl.samplerParameteri(sm, E.TEXTURE_WRAP_T, WRAP[st.wrap[1]]);
     gl.samplerParameteri(sm, E.TEXTURE_WRAP_R, WRAP[st.wrap[2]]);
@@ -3764,7 +3757,6 @@ void main() {
       gl.samplerParameteri(sm, E.TEXTURE_COMPARE_FUNC, COMPARE[st.compareFunc]);
     }
     if (st.maxAniso > 1 && this.anisotropy) gl.samplerParameterf(sm, E.TEXTURE_MAX_ANISOTROPY, st.maxAniso);
-    void r;
     st.sampler = sm;
     return sm;
   }
@@ -3837,7 +3829,7 @@ void main() {
     const counted = [...s.occlusion].filter((q) => (this.foldSpans(q), !q.passed));
     if (!counted.length) return;
     const span: Span = {
-      q: this.spareQueries.pop() ?? this.gl.createQuery()!,
+      q: this.spareQueries.pop() ?? this.gl.createQuery(),
       done: false,
       passed: false,
       users: counted.length,
@@ -3916,7 +3908,6 @@ void main() {
     // And the buffer's CPU copy, which a transfer from the host reads back (Mesa's `get_query_result` maps the buffer
     // that way in a loop until it reads DONE: from a copy without the state, it never did).
     if (r.shadow && q.offset + 16 <= r.shadow.length) r.shadow.set(b, q.offset);
-    void c;
   }
 
   /** Whether the occlusion queries ended so far have their results, as they become available (`FenceGate`). */
@@ -4138,7 +4129,7 @@ void main() {
   /** A 2D texture of `f`, `w`×`h`, one level. */
   private tempTexture(f: Format, w: number, h: number) {
     const gl = this.gl,
-      t = gl.createTexture()!;
+      t = gl.createTexture();
     gl.bindTexture(E.TEXTURE_2D, t);
     gl.texStorage2D(E.TEXTURE_2D, 1, f.internal, w, h);
     return t;
@@ -4169,7 +4160,7 @@ void main() {
   /** Binds the snapshot's framebuffers with nothing attached. */
   private snapFramebuffers() {
     const gl = this.gl;
-    this.snapFbos ??= [gl.createFramebuffer()!, gl.createFramebuffer()!];
+    this.snapFbos ??= [gl.createFramebuffer(), gl.createFramebuffer()];
     const [read, draw] = this.snapFbos;
     gl.bindFramebuffer(E.READ_FRAMEBUFFER, read);
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, draw);
@@ -4306,14 +4297,14 @@ void main() {
       // The layer, alone and single-sampled.
       let copy: Res;
       if (f.kind === 'stencil') {
-        const rb = gl.createRenderbuffer()!;
+        const rb = gl.createRenderbuffer();
         gl.bindRenderbuffer(E.RENDERBUFFER, rb);
         gl.renderbufferStorage(E.RENDERBUFFER, f.internal, w, h);
         copy = this.asTexture(r, undefined, rb);
       } else copy = this.asTexture(r, this.tempTexture(f, w, h));
       this.blitLayer(r, level, z, copy, point, mask, w, h);
       if (hasD) {
-        const target = gl.createTexture()!;
+        const target = gl.createTexture();
         gl.bindTexture(E.TEXTURE_2D, target);
         gl.texStorage2D(E.TEXTURE_2D, 1, GL.R32UI, w, h);
         this.snapFramebuffers();
@@ -4334,7 +4325,7 @@ void main() {
         gl.deleteTexture(target);
       }
       if (hasS) {
-        const target = gl.createTexture()!;
+        const target = gl.createTexture();
         gl.bindTexture(E.TEXTURE_2D, target);
         gl.texStorage2D(E.TEXTURE_2D, 1, E.RGBA8, w, h);
         this.snapFramebuffers();
@@ -4441,7 +4432,6 @@ void main() {
         };
       case 'sampler': {
         const { sampler, ...v } = o.v;
-        void sampler;
         return structuredClone(v);
       }
       case 'query':
@@ -4689,7 +4679,7 @@ export function toHalf(v: number) {
   f32[0] = v;
   const x = u32[0];
   const sign = (x >>> 16) & 0x8000;
-  let exp = ((x >>> 23) & 0xff) - 127 + 15;
+  const exp = ((x >>> 23) & 0xff) - 127 + 15;
   let mant = x & 0x7fffff;
   if (((x >>> 23) & 0xff) === 0xff) return sign | 0x7c00 | (mant ? 0x200 : 0);
   if (exp >= 0x1f) return sign | 0x7c00;
@@ -4706,7 +4696,6 @@ export function toHalf(v: number) {
   let h = (exp << 10) | (mant >>> 13);
   const rem = mant & 0x1fff;
   if (rem > 0x1000 || (rem === 0x1000 && h & 1)) h++;
-  void exp;
   return sign | h;
 }
 

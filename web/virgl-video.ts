@@ -448,7 +448,7 @@ export class VideoContext {
       if (!history) continue;
       this.open(c);
       for (const h of history) {
-        const { data, key } = c.h264!.chunk(h.desc, h.bits);
+        const { data, key } = c.h264.chunk(h.desc, h.bits);
         c.needKey = false;
         c.dec!.decode(data, key, h.ts);
       }

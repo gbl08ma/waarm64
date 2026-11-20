@@ -32,7 +32,7 @@ self.onmessage = (e: MessageEvent<Start>) => {
   const n = counters.length,
     width = 1 + n * TIMELINE_FIELDS.length;
   const rows = new Float64Array(width * maxRows);
-  let views = () => counters.map((c) => new BigUint64Array(memory.buffer, c, Counter.LEN));
+  const views = () => counters.map((c) => new BigUint64Array(memory.buffer, c, Counter.LEN));
   let vs = views();
   let k = 0;
   Atomics.store(flag, 1, 1); // started

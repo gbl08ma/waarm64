@@ -854,7 +854,7 @@ export class FolderTree implements P9Tree<FNode> {
 
   rename(odf: P9Fid<FNode>, oname: string, ndf: P9Fid<FNode>, nname: string) {
     const [od, nd] = [odf.node, ndf.node];
-    if (od.dir !== true || nd.dir !== true) throw new Err(ENOTDIR);
+    if (!od.dir || !nd.dir) throw new Err(ENOTDIR);
     if (!od.mount || !nd.mount || od.mount !== nd.mount) throw new Err(EXDEV);
     this.writable(od);
     nameFits(oname);
@@ -979,7 +979,7 @@ export class FolderTree implements P9Tree<FNode> {
           let [to, from] = [source, await target.getDirectoryHandle(name)];
           for (const p of path.slice(0, -1))
             [to, from] = [await to.getDirectoryHandle(p, { create: true }), await from.getDirectoryHandle(p)];
-          await this.moveHandle((await from.getFileHandle(path.at(-1)!)) as Moving, from, to, path.at(-1)!);
+          await this.moveHandle(await from.getFileHandle(path.at(-1)!), from, to, path.at(-1)!);
         })().catch(() => {});
       }
       for (const [d, k] of made.reverse()) await d.removeEntry(k).catch(() => {});

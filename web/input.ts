@@ -525,7 +525,7 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     on(el, 'mouseup', sideButton),
     on(el, 'auxclick', sideButton),
     on(el, 'wheel', (e: WheelEvent) => {
-      if (held) return void e.preventDefault();
+      if (held) return e.preventDefault();
       const port = raw() ? mouse : tablet;
       if (!port || (!e.deltaY && !e.deltaX)) return;
       e.preventDefault();

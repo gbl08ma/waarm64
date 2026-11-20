@@ -655,7 +655,6 @@ export function portHost(port: MessagePort): VirglHost {
     }
     if (e.data?.t === 'saved') {
       const { id, t, ...answer } = e.data;
-      void t;
       saves.get(id)?.(answer);
       saves.delete(id);
       return;

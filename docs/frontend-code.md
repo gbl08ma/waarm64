@@ -1,8 +1,8 @@
 # The page's code: rules of thumb
 
 Rules for `web/app/` (the page: Svelte components, `.svelte.ts` state, the
-controller and its helpers). Not for `web/*.ts` (the devices, workers and renderers) or the core, where performance
-rules. Follow a rule unless there is a good reason not to; when you break one, say why in a comment where it's broken.
+controller and its helpers). Not for `web/*.ts` (the devices, workers and renderers: [host-code.md](host-code.md)) or
+the core, where performance rules. Follow a rule unless there is a good reason not to; when you break one, say why in a comment where it's broken.
 The linters (§7) enforce what can be checked mechanically; the rest is for review.
 
 ## 1. Look: one design system
@@ -201,8 +201,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 TypeScript 6 package `tools/lint` ([frontend.md](frontend.md) "Types"); `npm run format` rewrites what Prettier would.
 
 - **ESLint** (`tools/lint/eslint.config.ts`, flat config; `npm run lint:eslint`) with `typescript-eslint`'s
-  `strictTypeChecked` and `stylisticTypeChecked` and `eslint-plugin-svelte`'s recommended set, over `web/app/` (not
-  `web/*.ts` or the core), typed through `tsconfig.svelte.json`. Besides the sets: `max-lines` 300 (blank lines and
+  `strictTypeChecked` and `stylisticTypeChecked` and `eslint-plugin-svelte`'s recommended set, over `web/app/` (the
+  page's block; `web/*.ts` has a block of its own: [host-code.md](host-code.md) §3), typed through `tsconfig.svelte.json`. Besides the sets: `max-lines` 300 (blank lines and
   comments not counted), `max-lines-per-function` 80, `complexity` 15, `no-empty` (a catch too: a comment inside says
   why), `no-non-null-assertion`, `consistent-type-assertions`, `no-floating-promises`, `no-misused-promises`,
   `prefer-nullish-coalescing`, `svelte/require-each-key`, `svelte/no-dom-manipulating`, `svelte/no-at-html-tags`,

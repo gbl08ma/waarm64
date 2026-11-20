@@ -665,10 +665,8 @@ export class VenusGpu {
     this.syncPipelines = !!options.syncPipelines;
     this.pipelineDelayMs = options.pipelineDelayMs ?? 0;
     this.gpuTime = !!options.gpuTime && !!device?.features.has('timestamp-query');
-    this.mem = () => memory.buffer as ArrayBuffer;
-    device?.addEventListener('uncapturederror', (e) =>
-      this.warn(`WebGPU: ${(e as GPUUncapturedErrorEvent).error.message}`),
-    );
+    this.mem = () => memory.buffer;
+    device?.addEventListener('uncapturederror', (e) => this.warn(`WebGPU: ${e.error.message}`));
   }
 
   private warn(m: string) {
@@ -2274,8 +2272,8 @@ override bit: u32 = 8u;
       return;
     }
     const depthy = /depth|stencil/.test(f),
-      hasDepth = /depth/.test(f),
-      hasStencil = /stencil/.test(f);
+      hasDepth = f.includes('depth'),
+      hasStencil = f.includes('stencil');
     const P = `struct P { at: vec2<i32> }
 @group(0) @binding(0) var<uniform> p: P;
 @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
@@ -2472,7 +2470,7 @@ override bit: u32 = 8u;
         const tex = this.get<GPUTexture>(j.texture);
         const { texture: _, ...desc } = j;
         this.objs[id] = {
-          view: tex.createView(desc as GPUTextureViewDescriptor),
+          view: tex.createView(desc),
           format: j.format ?? tex.format,
           samples: tex.sampleCount,
           tex,
@@ -2482,7 +2480,7 @@ override bit: u32 = 8u;
         return;
       }
       case 3:
-        this.objs[id] = d.createSampler(j as GPUSamplerDescriptor);
+        this.objs[id] = d.createSampler(j);
         return;
       case 4: {
         // `with`: another layout's entries first (a program's group 3 with its pulled bindings: VK4 T44).
@@ -2624,7 +2622,7 @@ override bit: u32 = 8u;
         this.stats.pipelineMs += performance.now() - t0;
         if (premade) {
           this.stats.premade++;
-          this.unusedPremade.add(this.objs[id]!);
+          this.unusedPremade.add(this.objs[id]);
         }
         return;
       }
@@ -2725,14 +2723,14 @@ override bit: u32 = 8u;
       const view = this.viewOf(j.dst, j.dstMip, j.dstLayer);
       if (depthy) {
         const ds: GPURenderPassDepthStencilAttachment = { view };
-        if (/depth/.test(fmt))
+        if (fmt.includes('depth'))
           Object.assign(
             ds,
             j.depth !== undefined
               ? { depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: j.depth }
               : { depthLoadOp: 'load', depthStoreOp: 'store' },
           );
-        if (/stencil/.test(fmt))
+        if (fmt.includes('stencil'))
           Object.assign(
             ds,
             j.stencil !== undefined
@@ -3082,8 +3080,8 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       let pipeline = this.metaPipelines.get(key);
       if (!pipeline) {
         const m = this.device!.createShaderModule({ code });
-        const hasStencil = /stencil/.test(fmt),
-          hasDepth = /depth/.test(fmt);
+        const hasStencil = fmt.includes('stencil'),
+          hasDepth = fmt.includes('depth');
         const face: GPUStencilFaceState = { compare: 'always', passOp: stencil ? 'replace' : 'keep' };
         pipeline = this.device!.createRenderPipeline({
           layout: 'auto',
@@ -3113,8 +3111,8 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       arrayLayerCount: 1,
     });
     const ds: GPURenderPassDepthStencilAttachment = { view: this.viewOf(dst, j.dstMip, j.dstLayer) };
-    if (/depth/.test(fmt)) Object.assign(ds, { depthLoadOp: 'load', depthStoreOp: 'store' });
-    if (/stencil/.test(fmt)) Object.assign(ds, { stencilLoadOp: 'load', stencilStoreOp: 'store' });
+    if (fmt.includes('depth')) Object.assign(ds, { depthLoadOp: 'load', depthStoreOp: 'store' });
+    if (fmt.includes('stencil')) Object.assign(ds, { stencilLoadOp: 'load', stencilStoreOp: 'store' });
     // The render area within the destination's level.
     const w = Math.max(1, dst.width >> (j.dstMip as number)),
       h = Math.max(1, dst.height >> (j.dstMip as number));
@@ -5041,8 +5039,8 @@ ${
     : '@fragment fn fs() {}'
 }`;
       const m = this.device!.createShaderModule({ code });
-      const hasStencil = !!atts.depth && /stencil/.test(atts.depth),
-        hasDepth = !!atts.depth && /depth/.test(atts.depth);
+      const hasStencil = !!atts.depth && atts.depth.includes('stencil'),
+        hasDepth = !!atts.depth && atts.depth.includes('depth');
       const desc: GPURenderPipelineDescriptor = {
         layout: 'auto',
         vertex: { module: m, entryPoint: 'vs' },
@@ -5072,7 +5070,7 @@ ${
       f32 = new Float32Array(data),
       i32 = new Int32Array(data);
     for (const [i, c] of colors) {
-      const k = atts.colors[i] ? sampleKind(atts.colors[i]!) : 'f32';
+      const k = atts.colors[i] ? sampleKind(atts.colors[i]) : 'f32';
       for (let n = 0; n < 4; n++) {
         if (k === 'f32') f32[i * 4 + n] = c[n];
         else if (k === 'i32') i32[i * 4 + n] = c[n];
@@ -5441,7 +5439,7 @@ function vertexFetch(
 ): { code: string; slots: number[]; inputs: boolean } {
   const base: Record<number, string> = {};
   for (const m of code.matchAll(/@location\((\d+)\) a\d+: vec4<(f32|i32|u32)>/g)) base[Number(m[1])] = m[2];
-  const inputs = /fn wg_vs\(vid: u32, iid: u32, i: In\)/.test(code);
+  const inputs = code.includes('fn wg_vs(vid: u32, iid: u32, i: In)');
   const slots: number[] = [];
   let fetch = 'fn wgx_fetch(vid: u32, iid: u32) -> In {\n  var i: In;\n';
   buffers.forEach((b, slot) => {
@@ -5632,7 +5630,7 @@ function isDepthStencil(f: string) {
 }
 
 function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
-  return /uint$/.test(f) ? 'u32' : /sint$/.test(f) ? 'i32' : 'f32';
+  return f.endsWith('uint') ? 'u32' : f.endsWith('sint') ? 'i32' : 'f32';
 }
 
 /** Every import, for the deviceless stubs. */

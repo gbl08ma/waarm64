@@ -545,7 +545,7 @@ export class SnapshotWriter {
    * the wall's).
    */
   async #poolRam(
-    ram: Uint8Array<ArrayBufferLike>,
+    ram: Uint8Array,
     pool: RamPool,
     progress: ((done: number, total: number) => void) | undefined,
     first: number,
@@ -1138,7 +1138,7 @@ export async function openSnapshot(
       };
       /** The next piece in hand, the one before given away with its jobs (dropped without); false at the file's end. */
       const advance = async () => {
-        const [piece, mine] = [cur.buffer as ArrayBuffer, batch];
+        const [piece, mine] = [cur.buffer, batch];
         [batch, curAt, cur] = [[], end(), new Uint8Array(0)];
         await give(piece, mine);
         readAhead();
@@ -1182,7 +1182,7 @@ export async function openSnapshot(
           if (h.index !== count)
             throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: h.index, came: count }));
           if (pos + FRAME_HEADER < b.size) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
-          await give(cur.buffer as ArrayBuffer, batch);
+          await give(cur.buffer, batch);
           batch = [];
           await placed(); // the check pass is over once every frame's CRC is in
           return;

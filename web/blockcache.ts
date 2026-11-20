@@ -131,9 +131,13 @@ export function cachedSource(
     fetching--;
     if (background) prefetching--;
     for (;;) {
-      if (queued.length && free(false)) (take(false), queued.shift()!());
-      else if (queuedAhead.length && free(true)) (take(true), queuedAhead.shift()!());
-      else return;
+      if (queued.length && free(false)) {
+        take(false);
+        queued.shift()!();
+      } else if (queuedAhead.length && free(true)) {
+        take(true);
+        queuedAhead.shift()!();
+      } else return;
     }
   };
   /** `fetch` with `src.readAsync`, at most MAX_FETCHES at once (`background`: the prefetch's, at most PREFETCH_FETCHES). */
@@ -171,19 +175,28 @@ export function cachedSource(
     for (let k = first; k <= end; k++) {
       const at = order.get(k);
       if (at !== undefined && !blocks.has(k) && !store?.has(k)) late(k);
-      if (at !== undefined && at > reached) ((reached = at), moved());
+      if (at !== undefined && at > reached) {
+        reached = at;
+        moved();
+      }
       if (ahead.delete(k)) prefetched.used++;
     }
     for (let k = first; k <= end + 1; k++) {
       if (k <= end && store && !blocks.has(k) && (sync || !pending.has(k))) {
         const kept = store.get(k);
-        if (kept) (keep(k, kept), storeHits++);
+        if (kept) {
+          keep(k, kept);
+          storeHits++;
+        }
       }
       const wait = k <= end && !blocks.has(k) && !sync ? pending.get(k) : undefined;
       if (wait) waits.push(wait);
       const missing = k <= end && !blocks.has(k) && !wait;
       if (k <= end && (missing || wait)) stats.misses++;
-      else if (k <= end) (stats.hits++, keep(k, blocks.get(k)!)); // most recent now, so this read's fetches don't evict it
+      else if (k <= end) {
+        stats.hits++;
+        keep(k, blocks.get(k)!); // most recent now, so this read's fetches don't evict it
+      }
       if (missing && run < 0) run = k;
       if (!missing && run >= 0) {
         const got = get(run, Math.min(k - 1, last));

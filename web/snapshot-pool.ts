@@ -153,7 +153,7 @@ export async function startPool(
       } catch (e) {
         waiting.delete(m.id);
         watch();
-        reject(e as Error);
+        reject(e);
       }
     });
   }

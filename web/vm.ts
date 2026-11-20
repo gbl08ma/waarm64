@@ -555,7 +555,7 @@ function jitHost(
       lastEnd = slot + n;
       hi = Math.max(hi, lastEnd);
       if (table.length < at + n) table.grow(at + n - table.length);
-      for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
+      for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`]);
       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
       // timelines (bench/gpu/guest-session.ts collects `waarm64-slow` lines).
       const ms = performance.now() - t0;

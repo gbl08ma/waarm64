@@ -165,7 +165,10 @@ export function checksumSink(keep = 0) {
     kept: () => {
       const out = new Uint8Array(held);
       let at = 0;
-      for (const c of chunks) (out.set(c, at), (at += c.length));
+      for (const c of chunks) {
+        out.set(c, at);
+        at += c.length;
+      }
       return out;
     },
     play(p: SndParams, frames: Uint8Array, done: (latencyBytes: number) => void) {

@@ -681,7 +681,7 @@ export class P9Server<N = unknown> {
   }
 
   /** One request: `yield` is `await` for what the tree answers. */
-  private *op(type: number, r: Reader, w: Writer, room: number): Generator<unknown, void, any> {
+  private *op(type: number, r: Reader, w: Writer, room: number): Generator<unknown, void> {
     const t = this.tree;
     const qid = (n: N) => w.qid(t.type(n), t.id(n), t.version?.(n) ?? 0);
     switch (type) {

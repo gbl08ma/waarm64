@@ -759,7 +759,7 @@ export class WebUsbPassthrough implements UsbDevice {
   }
 
   /** The standard requests the backend answers or interprets itself (docs/usb.md "The WebUSB passthrough"'s table); null passes it through. */
-  private standard(s: Setup, t: UsbTransfer): Promise<UsbResult> | null {
+  private standard(s: Setup, _t: UsbTransfer): Promise<UsbResult> | null {
     if (((s.requestType >> 5) & 3) !== 0) return null;
     const recipient = s.requestType & 0x1f;
     const ok = (): Promise<UsbResult> => Promise.resolve({ code: 'success', actual: 0 });
@@ -815,7 +815,6 @@ export class WebUsbPassthrough implements UsbDevice {
           return reply(Uint8Array.of(this.halted.has(s.index & 0xff) ? 1 : 0, 0));
         return null;
       default:
-        void t;
         return null;
     }
   }

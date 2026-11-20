@@ -147,7 +147,10 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet, chunked?: stri
       if (got.length === 1) return got[0];
       const out = new Uint8Array(len);
       let at = 0;
-      for (const b of got) (out.set(b!, at), (at += b!.length));
+      for (const b of got) {
+        out.set(b!, at);
+        at += b!.length;
+      }
       return out;
     },
     // A read fetches its pieces whole: a cache above takes them all.

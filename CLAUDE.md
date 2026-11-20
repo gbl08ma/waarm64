@@ -113,6 +113,9 @@ CI run (`tools/i18n-check.ts` if it changes a `(ui:` quote).
 - Anything that runs in the browser must work with cross-origin isolation (COOP/COEP) on.
 - **The page's code** (`web/app/`) follows [docs/frontend-code.md](docs/frontend-code.md): design tokens, shared
   components, small components, reactive state by area.
+- **The host's code** (`web/*.ts`: devices, workers, renderers) follows [docs/host-code.md](docs/host-code.md): no
+  allocation per event on hot paths, teardown frees what start took, worker failures reach their owner; linted and
+  formatted like the page, without its size rules.
 - **Words the user reads come from the catalog** (`web/messages/en/`, i18next; [docs/i18n.md](docs/i18n.md)): a new
   message gets an entry with a note, keyed by its source file; workers, libraries, the core and C send keys, codes and
   data, only the page renders; errors for the user are `MsgError`s (headline, cause as details). `tools/i18n-check.ts`

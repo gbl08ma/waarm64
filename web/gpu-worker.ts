@@ -17,15 +17,14 @@ import {
   saveRenderer,
   snapshotBuffers,
   STUCK_MS,
-  type QueryPoll,
   type VenusCall,
   type WorkerCall,
 } from './virgl-host.ts';
 import { deviceRequest, l9Suspects, subgroupsRight, type VenusGpuStats } from './venus-gpu.ts';
-import { VenusRenderer, type VenusPoll, type VenusTimes, type VenusEmul } from './venus-host.ts';
+import { VenusRenderer, type VenusTimes, type VenusEmul } from './venus-host.ts';
 import { idbBackend, ShaderCache } from './venus-cache.ts';
 import { VenusImport } from './venus-import.ts';
-import { shareMode, VenusShare, type ShareCheck, type ShareMode } from './venus-share.ts';
+import { shareMode, VenusShare, type ShareCheck } from './venus-share.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import type { GpuWorkerKnobs } from './gpu-knobs.ts';
 import { MsgError, toWire } from './msg.ts';
@@ -169,7 +168,7 @@ export type VulkanReport = {
   software?: boolean;
 };
 let grab = (id: number) =>
-  void (self as unknown as Worker).postMessage({
+  (self as unknown as Worker).postMessage({
     type: 'grab',
     id,
     width: 0,
@@ -235,7 +234,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     premultipliedAlpha: false,
     preserveDrawingBuffer: false,
     powerPreference: 'high-performance',
-  }) as WebGL2RenderingContext | null;
+  });
   if (!gl) {
     post({ type: 'failed', reason: 'this browser has no WebGL2 here' });
     return;
@@ -356,7 +355,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
           device: !!device,
           adapter: ai ? [ai.vendor, ai.architecture, ai.description].filter(Boolean).join(' ') || undefined : undefined,
           software: ai
-            ? (ai as GPUAdapterInfo & { isFallbackAdapter?: boolean }).isFallbackAdapter === true ||
+            ? (ai as GPUAdapterInfo & { isFallbackAdapter?: boolean }).isFallbackAdapter ||
               ai.architecture === 'swiftshader'
             : undefined,
         };
@@ -429,7 +428,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
           renderer.onPlane = (res, data, w, h, bpp) => im.plane(res, data, w, h, bpp);
         }
         renderer.external = { has: (id) => v.has(id), refresh: (r) => share?.refresh(r) };
-        for (const v of venusBacklog!) venusCall(v);
+        for (const v of venusBacklog) venusCall(v);
         venusBacklog = undefined;
         fenced.release();
       })().catch((err) => {

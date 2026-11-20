@@ -93,6 +93,5 @@ export function spillModule(n: number): Uint8Array<ArrayBuffer> {
 /** The core's `ram` imports over `spill` (memory 1 first); with none, every call traps. */
 export function spillImports(spill: WebAssembly.Memory[]): WebAssembly.ModuleImports {
   const ram = Object.fromEntries(spill.map((m, k) => [`m${k + 1}`, m]));
-  return new WebAssembly.Instance(new WebAssembly.Module(spillModule(spill.length)), { ram })
-    .exports as WebAssembly.ModuleImports;
+  return new WebAssembly.Instance(new WebAssembly.Module(spillModule(spill.length)), { ram }).exports;
 }

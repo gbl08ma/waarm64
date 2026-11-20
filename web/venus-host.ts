@@ -479,7 +479,8 @@ export class VenusRenderer {
   get buildId() {
     const p = this.ex.venus_build_id() >>> 0;
     const bytes = new Uint8Array(this.memory.buffer, p, 64);
-    return new TextDecoder().decode(bytes.slice(0, bytes.indexOf(0) < 0 ? 64 : bytes.indexOf(0)));
+    const end = bytes.indexOf(0);
+    return new TextDecoder().decode(bytes.slice(0, end < 0 ? 64 : end));
   }
 
   /** The window's pages written since the last look (undefined without a watch: all of them count). */

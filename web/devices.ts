@@ -1172,7 +1172,7 @@ export function blk(
         const len = r.read.reduce((k, s) => k + s.len, 0);
         const payload = st ? st.time('gather', len, () => gather(ram, r.read, len)) : gather(ram, r.read, len);
         const ok = rw
-          ? await change(() => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16)))
+          ? await change(() => rw.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16)))
           : false;
         status = ok ? S_OK : S_IOERR;
         if (ok) io[1] += len - 16;

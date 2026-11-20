@@ -68,7 +68,7 @@ if ('WorkerGlobalScope' in globalThis) {
   const { parentPort } = await import('node:worker_threads');
   // (No parent port: imported by a test on Node's main thread.)
   parentPort?.once('message', (init: CompileInit) => {
-    const c = compiler(init.memory, init.ports as never);
+    const c = compiler(init.memory, init.ports);
     for (const p of init.ports)
       (p as unknown as import('node:worker_threads').MessagePort).on('message', (m: CompileJob) => c.job(m));
   });

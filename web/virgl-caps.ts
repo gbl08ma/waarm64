@@ -4,7 +4,7 @@
 // from the format table (web/virgl-formats.ts) with the extensions this browser has, and the capability bits an
 // extension backs (`EXTENSION_BITS`) where the browser has it.
 import { E } from './gl-enums.ts';
-import { CAPS_FIELDS, decodeCaps, encodeCaps, virglCaps, type CapsValue } from './virgl.ts';
+import { CAPS_FIELDS, decodeCaps, encodeCaps, virglCaps } from './virgl.ts';
 import { FORMATS, VERTEX_FORMATS } from './virgl-formats.ts';
 import { readbackFormats } from './virgl-renderer.ts';
 import { decodeVideoCaps, encodeVideoCaps, type VideoCap } from './virgl-video.ts';
@@ -27,9 +27,8 @@ export function withoutFormats(caps: Uint8Array, names: readonly string[]): { ca
   // Each mask's bits cleared in a copy: everything else as it was.
   const out = caps.slice(),
     v = new DataView(out.buffer);
-  for (const [name, at, n, kind] of CAPS_FIELDS) {
+  for (const [, at, n, kind] of CAPS_FIELDS) {
     if (kind !== 'm' || (at + n) * 4 > out.length) continue;
-    void name;
     for (const id of drop)
       if (id < n * 32)
         v.setUint32((at + (id >>> 5)) * 4, v.getUint32((at + (id >>> 5)) * 4, true) & ~(1 << (id & 31)), true);
@@ -91,7 +90,7 @@ export function capsFromGl(gl: WebGL2RenderingContext): Uint8Array {
   const p = (e: number) => gl.getParameter(e) as number;
   const ext = new Set(gl.getSupportedExtensions() ?? []);
   const has = (names?: string[]) => !names || names.some((n) => ext.has(n));
-  const caps = decodeCaps(virglCaps(2)) as Record<string, CapsValue>;
+  const caps = decodeCaps(virglCaps(2));
   const formats = [...FORMATS.values()];
   // Sampled: anything whose extension (if any) is here; filtered 32-bit floats need OES_texture_float_linear, but a
   // format is sampleable without filtering, as GLES 3.0 has it.
