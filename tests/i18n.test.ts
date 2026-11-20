@@ -183,7 +183,7 @@ test('checks: the docs quote the page in its words', () => {
 
 test('references: a message says another\'s words ($t(ns:key)), rendered, checked and quoted as the page says them', () => {
   // The catalog's own: the product's name, said once.
-  assert.equal(t('toolbar:Toolbar.name'), t('common:product.name'));
+  assert.equal(t('toolbar:Wordmark.name'), t('common:product.name'));
   assert.match(t('common:ask.title'), /^[^$]+$/);
   const cat: Catalogs = { x: {
     'brand.name': { message: 'Acme', note: 'The product\'s name, which other messages say.' },

@@ -195,9 +195,9 @@ test('the message moving to the Home page with prefers-reduced-motion: a fade, n
 test('the Home page closed and opened again within the move: in the flow, not left fixed where it was', async () => {
   const page = await withMessage();
   await page.click('#machines-open');
-  await page.locator('.machines [data-action=back]').waitFor();
+  await page.locator('#wordmark[data-action=back]').waitFor();
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
-  const r = await page.evaluate(`(async () => { ${clickNow('.machines [data-action=back]')} ${clickNow('#machines-open')} ${settled} return [...document.querySelectorAll('.machines')].map((e) => e.style.position + '|' + getComputedStyle(e).position); })()`);
+  const r = await page.evaluate(`(async () => { ${clickNow('#wordmark[data-action=back]')} ${clickNow('#machines-open')} ${settled} return [...document.querySelectorAll('.machines')].map((e) => e.style.position + '|' + getComputedStyle(e).position); })()`);
   assert.deepEqual(r, ['|static']);
   await page.close();
 });

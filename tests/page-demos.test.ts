@@ -147,7 +147,7 @@ test("a first visit opens the store; a card's Start makes the machine, opened in
   await ctx.close();
 });
 
-test('?id= opens a demo, an unknown one says so where its pane would be; Home\'s Demos opens the store and Back returns to Home', async () => {
+test('?id= opens a demo, an unknown one says so where its pane would be; Home\'s Demos opens the store; the toolbar\'s Home leads out to Home and its wordmark to the machine, and both toggle Home', async () => {
   const { ctx, page, errors } = await visitor();
   await page.goto(`${base}/demos?id=alpine-term`);
   await page.locator('article[data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
@@ -161,8 +161,19 @@ test('?id= opens a demo, an unknown one says so where its pane would be; Home\'s
   await ready(page);
   await page.locator('[data-machine="demos"]').click();
   await page.locator('.cards [data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
-  await page.locator('.demos [data-action="back"]').click();
-  assert.equal(await onPage(page), 'machines', 'Back to Home');
+  await page.locator('#machines-open').click(); // the toolbar's Home leads out of the store to Home
+  assert.equal(await onPage(page), 'machines', 'Home from the store');
+  await page.locator('[data-machine="demos"]').click();
+  await page.locator('.cards [data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
+  assert.equal(await page.locator('#wordmark').getAttribute('data-action'), 'back');
+  await page.locator('#wordmark').click(); // the wordmark, back to the machine
+  assert.equal(await onPage(page), 'machine', 'the machine from the store');
+  assert.equal(await page.locator('#wordmark').getAttribute('title'), t('toolbar:Wordmark.home'));
+  await page.locator('#wordmark').click();
+  assert.equal(await onPage(page), 'machines', 'the wordmark opens Home from the machine');
+  assert.equal(await page.locator('#machines-open').getAttribute('aria-pressed'), 'true');
+  await page.locator('#machines-open').click(); // the Home button, pressed: a toggle
+  assert.equal(await onPage(page), 'machine', 'Home pressed again goes back to the machine');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -243,8 +254,8 @@ test("failures in words: the store's server down (Try again), the demo's files g
 // REVIEW.md (review/demo-page-2) #1, #2, #7, #8, #9, #15.
 const focused = (page: Page) => page.evaluate(() => { const a = document.activeElement; return a?.getAttribute('data-demo') ?? a?.tagName; });
 
-test("#1: a demo's start belongs to its pane: left mid-download (another demo's row, All demos in one column, Back), the visitor is asked; kept, it goes on; stopped, its download stops and nothing opens", async () => {
-  for (const [leave, viewport] of [['.cards [data-demo="alpine-two"]', undefined], ['[data-action="all-demos"]', NARROW], ['.demos [data-action="back"]', undefined]] as const) {
+test("#1: a demo's start belongs to its pane: left mid-download (another demo's row, All demos in one column, the toolbar's Home and wordmark), the visitor is asked; kept, it goes on; stopped, its download stops and nothing opens", async () => {
+  for (const [leave, viewport] of [['.cards [data-demo="alpine-two"]', undefined], ['[data-action="all-demos"]', NARROW], ['#machines-open', undefined], ['#wordmark', undefined]] as const) {
     let release!: () => void;
     const s: Site = { requests: [], held: new Promise((r) => (release = r)) };
     const { ctx, page, errors } = await visitor(s, undefined, false, viewport);
@@ -259,7 +270,7 @@ test("#1: a demo's start belongs to its pane: left mid-download (another demo's 
     for (let i = 0; i < 300 && !s.requests.some((u) => u.includes('/pieces/')); i++) await page.waitForTimeout(50);
     await page.locator(leave).click(); // asked first: Keep downloading stays on the demo, its download going on
     await page.locator('#ask[open]').waitFor();
-    assert.equal(await text(page, '#ask [data-answer="ok"]'), t('machines:DemosPage.stop.ok'));
+    assert.equal(await text(page, '#ask [data-answer="ok"]'), t('machines:demo-leave.stop.ok'));
     await page.locator('#ask [data-answer="cancel"]').click();
     assert.equal(await page.locator('article[data-demo="alpine-term"] [data-field="progress"]').count(), 1, `${leave}: kept, the demo's pane stays`);
     assert.ok(!failed.some((u) => u.includes('/pieces/')), `${leave}: kept, the download goes on`);
@@ -271,7 +282,8 @@ test("#1: a demo's start belongs to its pane: left mid-download (another demo's 
     await page.waitForTimeout(1500);
     assert.equal((await machines(page)).length, 0, `${leave}: a machine made`);
     assert.equal((await starts(page)).length, 0, `${leave}: a machine opened`);
-    assert.notEqual(await onPage(page), 'machine', `${leave}: the page jumped to the machine`);
+    // The wordmark leads to the machine by itself (the page's own, with nothing started); the others don't.
+    if (leave !== '#wordmark') assert.notEqual(await onPage(page), 'machine', `${leave}: the page jumped to the machine`);
     assert.deepEqual(errors, []);
     await ctx.close();
   }

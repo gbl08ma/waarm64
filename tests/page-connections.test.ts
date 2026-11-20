@@ -241,7 +241,7 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.waitForTimeout(500);
   const state = await meta.textContent() ?? '';
   assert.ok(state.includes(tWords('machines:ConnectionsPane.connection.unused')), `not in use: ${state}`);
-  await pageA.click('.machines [data-action=back]');
+  await pageA.click('#wordmark[data-action=back]');
   assert.equal((await records(pageA, 'connections'))[0].connectAtStart, true, "it isn't a Disconnect");
   await menu(pageA);
   assert.equal(await pageA.locator('#net-connect-now').isVisible(), false);

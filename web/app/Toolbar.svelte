@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import Wordmark from './Wordmark.svelte';
   import ClipboardMenu from './ClipboardMenu.svelte';
   import FoldersMenu from './FoldersMenu.svelte';
   import KeysMenu from './KeysMenu.svelte';
@@ -21,6 +22,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { usb } from './areas/usb.svelte.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
+  import { leaveDemo } from './demo-leave.ts';
   import { clipboard } from './areas/clipboard.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { records } from './areas/records.svelte.ts';
@@ -32,7 +34,8 @@
 
   // The wordmark: the name's two halves told apart by weight (wa: WebAssembly, dim and lighter; arm64). A drawing of
   // the name, not words from the catalog (which names the heading: the copy editor's marks can't be cut in two).
-  const WORDMARK = ['wa', 'arm64']; // i18n-ignore
+  /** The Home button, a toggle: Home opened (from the store's page too), or closed, back to the machine. */
+  const home = () => (machinesNav.open ? page.closeMachines() : void leaveDemo(() => page.openMachines()));
 
   let { audio, net, folders }: { audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
@@ -151,15 +154,15 @@
 </script>
 
 <header class="toolbar" bind:this={bar}>
-  <h1 aria-label={t('toolbar:Toolbar.name')}><span>{WORDMARK[0]}</span>{WORDMARK[1]}</h1>
+  <Wordmark />
   <Button
     variant="tool"
     labelled
     icon="home"
     id="machines-open"
     aria-pressed={machinesNav.open}
-    title={t('toolbar:Toolbar.machines.title')}
-    onclick={() => page.openMachines()}
+    title={machinesNav.open ? t('toolbar:Toolbar.machines.back.title') : t('toolbar:Toolbar.machines.title')}
+    onclick={home}
   >
     {t('toolbar:Toolbar.machines')}
   </Button>
@@ -264,16 +267,6 @@
   /* Full screen with the status bar (Preferences): the page without its toolbar. */
   :global(body:fullscreen) .toolbar {
     display: none;
-  }
-  h1 {
-    margin: 0 var(--space-3) 0 var(--space-2);
-    font-size: var(--text-lg);
-    font-weight: var(--weight-bold);
-    color: var(--text);
-  }
-  h1 span {
-    font-weight: var(--weight-medium);
-    color: var(--text-dim);
   }
   .sep {
     width: 1px;

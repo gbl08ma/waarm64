@@ -1,5 +1,5 @@
 <!--
-  The Home page (docs/machines.md §7; the toolbar's Home): it takes the machine's place on the page (which runs on behind it). It
+  The Home page (docs/machines.md §7; the toolbar's Home, a toggle: it and the wordmark lead back to the machine): it takes the machine's place on the page (which runs on behind it). It
   composes: the list (MachinesNav.svelte: the machines kept in this browser, the commands that make one, the browser's
   panes) and the chosen pane, a machine's (MachinePane.svelte and its tabs), the page's own transient machine's
   (PagePane.svelte), the browser's Disks (DisksPane.svelte), Shared folders (FoldersPane.svelte) and Connections
@@ -131,22 +131,9 @@
 </script>
 
 <div class="machines" data-busy={runner.busy} out:leaveInPlace={!!messageBar.text || !!runner.error}>
-  <!-- The page's heading, for a screen reader (its top bar says it with the toolbar's Home): its list and panes are
+  <!-- The page's heading, for a screen reader (the toolbar's Home says it): its list and panes are
        under it, and its left column, the way to them, is named after it. -->
   <h2 id="home-heading" class="sr">{t('machines:MachinesPage.heading')}</h2>
-  <div class="bar">
-    <Button
-      variant="tool"
-      labelled
-      icon="arrow-left"
-      onclick={() => page.closeMachines()}
-      data-action="back"
-      title={t('machines:MachinesPage.back')}
-    >
-      {t('machines:MachinesPage.back')}
-    </Button>
-    {#if runner.busy}<span class="busy">{t('machines:MachinesPage.busy', { what: runner.busy })}</span>{/if}
-  </div>
   {#if messageBar.text || runner.error}
     <ErrorBanner
       class="machines-page"
@@ -215,7 +202,13 @@
       <section class="empty"><p>{t('machines:MachinesPage.empty')}</p></section>
     {/if}
   </div>
-  {#if storage}<StorageBar {storage} {act} />{/if}
+  {#if storage}
+    <StorageBar
+      {storage}
+      {act}
+      busy={runner.busy ? t('machines:MachinesPage.busy', { what: runner.busy }) : undefined}
+    />
+  {/if}
 </div>
 
 <style>
@@ -225,18 +218,6 @@
     display: flex;
     flex-direction: column;
     background: var(--surface);
-  }
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    padding: var(--space-2) var(--space-4);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-raised);
-  }
-  .busy {
-    color: var(--status-busy);
-    font-size: var(--text-md);
   }
   .panes {
     flex: 1;

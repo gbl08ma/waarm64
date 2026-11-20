@@ -273,7 +273,13 @@ what differs besides the change is the dev server's port (in Add a disk's URL) a
 ## The toolbar
 
 A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by
-separators; the main gates also have their names. Left to right: **[Home](ui:toolbar:Toolbar.machines)** (a house: the Home page), the machine's name,
+separators; the main gates also have their names. Left to right: the wordmark and **[Home](ui:toolbar:Toolbar.machines)** (a house: the Home page), which are the ways between the machine and the
+pages that take its place (Home, the demo store's; neither page has a Back row of its own, since 2026-11-20): **Home is a
+toggle**, pressed while Home shows and going back to the machine when pressed again ([Go back to the machine.](ui:toolbar:Toolbar.machines.back.title)), and from the
+store's page it opens Home; **the wordmark is a button** (`Wordmark.svelte`, `#wordmark`; it looks as the wordmark does until the pointer or
+the focus is on it) that goes back to the machine from either page (`data-action="back"`: [Go back to the machine.](ui:toolbar:Wordmark.back)) and
+opens Home from the machine (`data-action="home"`: [Open the Home page.](ui:toolbar:Wordmark.home)). The wordmark is a shortcut: all it does, Home
+does in a click or two. Then the machine's name,
 **Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs;
 where the guest's agent can, both ask the guest first and show [Shutting down…](ui:toolbar:Toolbar.soft.off) meanwhile:
 devices.md "Power off and restart from the guest"), **[Suspend](ui:toolbar:Toolbar.suspend)**,
@@ -483,7 +489,7 @@ edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab
 `PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
 called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav`, `openMachines`, `#machines-open`, kept
 theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
-address opens it, so a reload keeps it, and the older `#machines` still does): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. Its heading,
+address opens it, so a reload keeps it, and the older `#machines` still does): the toolbar leads back (below; or a view button). It has no bar of its own: what it's doing while an action runs is said at the end of its bottom bar (`StorageBar`'s `busy`). Its heading,
 **[Home](ui:machines:MachinesPage.heading)**, is for a screen reader alone (an `h2`, the toolbar's `h1` above it): it
 names the left column (a `nav`), and the list's heading and each pane's title (`h3`) are under it. The left
 column's **[Machines](ui:machines:MachinesNav.heading)** heads the list of machines, each said running (its Web Lock
@@ -740,8 +746,8 @@ noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 ## The demo store
 
 The demo store's page (`DemosPage.svelte`; decisions.md "Demos"; the data: [machines.md](machines.md)
-§6.2) takes the machine's place as Home does (`body[data-page=demos]`; the machine runs on behind it), with
-**[Back](ui:machines:DemosPage.back)** to where the visitor came from (Home, when opened from there; else the machine).
+§6.2) takes the machine's place as Home does (`body[data-page=demos]`; the machine runs on behind it). The toolbar leads
+out of it: Home to the Home page, the wordmark back to the machine ("The toolbar"); the browser's Back retraces it.
 It's reached three ways: **[Demos](ui:machines:MachinesNav.demos)** in Home's left column (between Preferences and
 About: it opens the page, not a pane); its address; and a **first visit**, a load with no machines kept and nothing
 asked (no query, no fragment: `demos-route.ts` `firstVisit`), which opens it. Not under automation (the tests open the
@@ -814,9 +820,9 @@ the query's form serves (decisions.md "Demos").
   when the pane goes (another demo's row, All demos, the store's page left, a window narrowed to one column while the
   demo shown is the default one) it's aborted, its download with it, and
   nothing opens (a machine already made by then stays, found as started before). **The visitor is asked first**
-  ([Stop the download?](ui:machines:DemosPage.stop.title), the page's question dialog: [Stop the download](ui:machines:DemosPage.stop.ok) or
-  [Keep downloading](ui:machines:DemosPage.stop.cancel)) when a click would take the pane away while its download runs (another demo's
-  row, All demos, the page's Back; `DemosPage.svelte` `leave`; the question goes if the download ends meanwhile); the
+  ([Stop the download?](ui:machines:demo-leave.stop.title), the page's question dialog: [Stop the download](ui:machines:demo-leave.stop.ok) or
+  [Keep downloading](ui:machines:demo-leave.stop.cancel)) when a click would take the pane away while its download runs (another demo's
+  row, All demos, the toolbar's Home or wordmark; `demo-leave.ts` `leaveDemo`; the question goes if the download ends meanwhile); the
   browser's own Back and a narrowed window aren't asked; and the switch is asked again just
   before it when the machine running then isn't the one the visitor agreed to stop.
 - **Started before** (a machine whose `fromDemo` is the demo's): the pane says so, with its name and when it was

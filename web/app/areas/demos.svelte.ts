@@ -16,5 +16,7 @@ class Demos {
    * Start waits. Aborted when its pane goes (another demo chosen, All demos, the store's page closed).
    */
   starting = $state.raw<AbortController>();
+  /** The name of the demo that start is of (the question asked before it's stopped: web/app/demo-leave.ts). */
+  startingName = $state<string>();
 }
 export const demos = new Demos();

@@ -52,6 +52,16 @@ read as newer and less polished than the rest. Done on the branch that carries t
   (8.0 s under the lane's load; alone it passes in 4.4 s, the timing failure "How to work here" names) (the rest: ci.sh, ci-debian.sh and
   ci-machines.sh in the dev VM; the USB menu's offer changed its markup, so `scripts/ci-usb.sh` too).
 
+- **No Back rows (the user's idea, 2026-11-20; the commit after):** Home's and the store's top rows are gone. The
+  toolbar's Home is a toggle (pressed again: back to the machine; from the store: Home) and the wordmark is a button
+  (`Wordmark.svelte`, `#wordmark`: back to the machine from either page, Home from the machine; its look unchanged
+  until hovered or focused). Home's busy words moved to the end of its bottom bar. The question before a download is
+  stopped is `web/app/demo-leave.ts` (the toolbar asks it too). Hooks: `[data-action=back]` is now the wordmark's while
+  a page shows, so unscoped uses in the tests still work; `.machines [data-action=back]` and `.demos
+  [data-action="back"]` became `#wordmark[data-action=back]` and `#machines-open`. Many page tests click it (browser,
+  page-disk, page-agent, page-osk, page-snapshot(s), page-network, page-room, page-surface-debian, page-connections):
+  **the dev VM's `scripts/ci.sh`, `ci-debian.sh`, `ci-net.sh` and `ci-machines.sh` are this change's tier.**
+
 ### Where things stand
 
 - **waarm64 `main`** (origin): pushed through this file's commit. Loops 0–6, 10, 10b, 12, 13, 15 and 15b are done;

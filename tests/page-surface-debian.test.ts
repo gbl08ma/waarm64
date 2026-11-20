@@ -114,7 +114,7 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
   await page.locator(`.machines nav [data-machine="${ids.id}"]`).click();
   await page.locator(`.machines section.machine[data-selected="${ids.id}"] [data-tab=disks]`).click();
   await page.locator(`[data-attachment="${ids.attachment}"] [data-action=surface-open]`).click();
-  await page.locator('.machines [data-action=back]').click();
+  await page.locator('#wordmark[data-action=back]').click();
   await page.evaluate(() => {
     const w = window as unknown as { __samples: { unknown: number; held: number; kept: number; ticks: number }[] };
     w.__samples = [];

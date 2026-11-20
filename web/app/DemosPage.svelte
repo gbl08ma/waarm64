@@ -1,6 +1,6 @@
 <!--
   The demo store's page (docs/frontend.md "The demo store"; docs/decisions.md "Demos"): full screen in the
-  machine's place, as Home is, with Back to where the visitor came from. It reads the store the address names
+  machine's place, as Home is; the toolbar's Home leads out to Home, its wordmark back to the machine. It reads the store the address names
   (web/app/demos-route.ts: ours, `?store=` another's, a single definition's URL a store of one) and shows it as Home
   shows its machines: the store's demos in a list on the left (DemoCard.svelte, a row each), the chosen one's pane on
   the right (DemoStart.svelte: `?id=`), so another demo is a click on its row. With no demo named, the store's first
@@ -25,8 +25,8 @@
   import { demos } from './areas/demos.svelte.ts';
   import { records } from './areas/records.svelte.ts';
   import { page } from './page.ts';
-  import { ask } from './ask.svelte.ts';
-  import { msg, t } from '../i18n.ts';
+  import { leaveDemo } from './demo-leave.ts';
+  import { t } from '../i18n.ts';
 
   type Props = { store: Store };
   let { store }: Props = $props();
@@ -86,45 +86,12 @@
   }
   const host = $derived(new URL(route.store).host);
 
-  /** The question asked while a download runs, if it shows: taken down when the download ends meanwhile. */
-  let question: { close: () => void } | undefined;
-  $effect(() => {
-    if (!demos.starting) question?.close();
-  });
-  /**
-   * Goes where the visitor clicked (`go`: another demo, the list, Back), which takes the shown demo's pane away and with
-   * it a download that runs: asked first then. Nothing goes if the download ended meanwhile (its machine opens instead).
-   */
-  async function leave(go: () => void) {
-    if (!demos.starting || !open) return go();
-    const q = ask.closableConfirm(msg('machines:DemosPage.stop', { demo: open.def.machine.name }), {
-      title: t('machines:DemosPage.stop.title'),
-      ok: t('machines:DemosPage.stop.ok'),
-      cancel: t('machines:DemosPage.stop.cancel'),
-    });
-    question = q;
-    const yes = await q.answer;
-    question = undefined;
-    if (yes && demos.open) go();
-  }
   /** Demo `id` chosen from the list (the one shown already: nothing leaves). */
   const choose = (id: string) =>
-    id === open?.def.demo.id ? page.chooseDemo(id) : void leave(() => page.chooseDemo(id));
+    id === open?.def.demo.id ? page.chooseDemo(id) : void leaveDemo(() => page.chooseDemo(id));
 </script>
 
 <div class="demos" data-busy={loading ? t('machines:DemosPage.loading') : undefined}>
-  <div class="bar">
-    <Button
-      variant="tool"
-      labelled
-      icon="arrow-left"
-      onclick={() => leave(() => page.closeDemos())}
-      data-action="back"
-      title={t('machines:DemosPage.back')}
-    >
-      {t('machines:DemosPage.back')}
-    </Button>
-  </div>
   {#if listed}
     <div class="panes">
       {#if showList}
@@ -168,7 +135,7 @@
             {store}
             demo={open}
             back={narrow.current}
-            onback={() => leave(() => page.chooseDemo())}
+            onback={() => leaveDemo(() => page.chooseDemo())}
             takesFocus={narrow.current}
           />
         {/key}
@@ -226,14 +193,6 @@
     display: flex;
     flex-direction: column;
     background: var(--surface);
-  }
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    padding: var(--space-2) var(--space-4);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-raised);
   }
   /* The list beside the chosen demo's pane, as Home's machines beside a machine's (MachinesPage.svelte). */
   .panes {

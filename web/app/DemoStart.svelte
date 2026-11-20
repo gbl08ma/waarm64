@@ -22,6 +22,7 @@
   import { Actions } from './actions.svelte.ts';
   import { allMet, canStart, checkDemo, needsOf, readEnv, type Check } from './demo-check.ts';
   import { checkDisks, lastUsed } from './demo-open.ts';
+  import { downloadEnded } from './demo-leave.ts';
   import { machinesOf, type StoreDemo } from './demo-store.ts';
   import { isRunning } from './machines.ts';
   import { machineFromDemo } from './template.ts';
@@ -93,7 +94,7 @@
     if (demos.starting) return;
     const stop = new AbortController();
     const gone = () => stop.signal.aborted;
-    [mineStart, demos.starting] = [stop, stop];
+    [mineStart, demos.starting, demos.startingName] = [stop, stop, def.machine.name];
     return runner.run(t('machines:DemoStart.busy.download'), async () => {
       try {
         const agreed = live();
@@ -111,7 +112,10 @@
         if (gone()) return;
         await page.openDemo(machine.id, view);
       } finally {
-        if (demos.starting === stop) demos.starting = undefined;
+        if (demos.starting === stop) {
+          demos.starting = undefined;
+          downloadEnded();
+        }
         if (mineStart === stop) mineStart = undefined;
       }
     });

@@ -633,7 +633,7 @@
   },
   "machine-edit.saving": {
     "message": "Saving",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Save on the Settings tab, or a Connect at start box."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Save on the Settings tab, or a Connect at start box."
   },
   "machine-edit.orphans.confirm": {
     "message": "Save these settings? They change the hardware the guest sees, so the machine's snapshots will no longer be restorable. They will remain, marked as orphaned, until you delete them.",
@@ -653,11 +653,11 @@
   },
   "MachinePane.busy.exporting": {
     "message": "Exporting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Export the definition."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Export the definition."
   },
   "MachinesNav.busy.importing": {
     "message": "Importing",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Import a definition…."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Import a definition…."
   },
   "MachinesNav.imported.toPick": {
     "message": "<name>{{name}}</name> was created. You will be asked to select its disk files when it first starts: <name>{{files}}</name>.",
@@ -673,7 +673,7 @@
   },
   "MachinePane.busy.deleting": {
     "message": "Deleting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: deleting a machine or a connection."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: deleting a machine or a connection."
   },
   "AdapterCard.adapter.move": {
     "message": "Move the adapter. The guest numbers its adapters (eth0, eth1…) in this order, and its default route goes through the first one that reaches the internet. A machine running in this tab restarts when you save.",
@@ -725,7 +725,7 @@
   },
   "ConnectionsPane.busy.loggingOut": {
     "message": "Logging out",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: a connection's Log out."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's Log out."
   },
   "UsbSwitch.usb.title": {
     "message": "Give the machine an xHCI USB controller with four connectors, each USB 2 and USB 3, for its USB devices.",
@@ -851,13 +851,9 @@
     "message": "Revert",
     "note": "Home page: button beside Save, while a machine's settings have unsaved changes: drops them."
   },
-  "MachinesPage.back": {
-    "message": "Back to the machine",
-    "note": "Home page: the button (and its tooltip) at the left of the top bar that closes the page and shows the machine again."
-  },
   "MachinesPage.busy": {
     "message": "{{what}}…",
-    "note": "Home page: top bar, while an action runs. {{what}}: what it is doing (a `.busy.*` message of the pane or tab that runs it)."
+    "note": "Home page: at the end of its bottom bar (the storage's), while an action runs. {{what}}: what it is doing (a `.busy.*` message of the pane or tab that runs it)."
   },
   "MachinesPage.dismiss": {
     "message": "Close",
@@ -893,7 +889,7 @@
   },
   "NewMachine.busy": {
     "message": "Creating a machine",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: the New machine dialog makes the machine chosen (empty, or from a template)."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: the New machine dialog makes the machine chosen (empty, or from a template)."
   },
   "MachinesNav.newMachine": {
     "message": "New machine",
@@ -1201,7 +1197,7 @@
   },
   "ConnectionsPane.busy.renaming": {
     "message": "Renaming",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: renaming a connection."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: renaming a connection."
   },
   "ConnectionsPane.connection.meta": {
     "message": "{{kind}} · {{state}} · {{used}}",
@@ -1217,7 +1213,7 @@
   },
   "ConnectionsPane.busy.forgettingAddress": {
     "message": "Replacing the address",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: a connection's New address."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's New address."
   },
   "ConnectionsPane.connection.newAddress.title": {
     "message": "Give the connection a new tailcat address. Anyone with the old address can no longer connect.",
@@ -1317,7 +1313,7 @@
   },
   "MachinePane.busy.copying": {
     "message": "Copying",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Duplicate."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Duplicate."
   },
   "MachinePane.duplicate.title": {
     "message": "Create a new machine with the same settings and disks. Its disks use the same overlays, which only one running machine can use at a time.",
@@ -1541,7 +1537,7 @@
   },
   "AdapterCard.busy.detaching": {
     "message": "Detaching",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Detach."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: an adapter's Detach."
   },
   "AdapterCard.adapter.detach.title": {
     "message": "Take the connection off the adapter, disconnecting it. The connection remains stored in this browser.",
@@ -1553,7 +1549,7 @@
   },
   "AdapterCard.busy.disconnecting": {
     "message": "Disconnecting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Disconnect."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: an adapter's Disconnect."
   },
   "AdapterCard.adapter.disconnect": {
     "message": "Disconnect",
@@ -1561,7 +1557,7 @@
   },
   "AdapterCard.busy.connecting": {
     "message": "Connecting",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Connect."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: an adapter's Connect."
   },
   "AdapterCard.adapter.connect": {
     "message": "Connect",
@@ -1657,7 +1653,7 @@
   },
   "StorageBar.busy.asking": {
     "message": "Asking",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Protect from automatic deletion (the browser is asked)."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Protect from automatic deletion (the browser is asked)."
   },
   "StorageBar.storage.persist": {
     "message": "Protect from automatic deletion",
@@ -1673,11 +1669,11 @@
   },
   "StorageBar.busy.clearing": {
     "message": "Clearing",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Clear the URL disks' cache."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Clear the URL disks' cache."
   },
   "StorageBar.busy.trimming": {
     "message": "Freeing unused disk space",
-    "note": "Home page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Free unused disk space (the guest trims its filesystems, then its disks' changes shrink)."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: Free unused disk space (the guest trims its filesystems, then its disks' changes shrink)."
   },
   "StorageBar.storage.clear": {
     "message": "Clear the URL disks' cache ({{size, bytes}})",
@@ -1798,10 +1794,6 @@
   "MachinesNav.demos.title": {
     "message": "Machines ready to use, set up and started in a click.",
     "note": "Home page: tooltip of the Demos button under the list of machines (between Preferences and About), which opens the demo store's page."
-  },
-  "DemosPage.back": {
-    "message": "Back",
-    "note": "Demo store's page: the button (and its tooltip) at the left of its top bar that closes the page, back to where the visitor came from (Home, or the machine)."
   },
   "DemosPage.heading": {
     "message": "Demos",
@@ -1943,19 +1935,19 @@
     "message": "{{done, bytes}} of {{total, bytes}}",
     "note": "Demo store's page, a demo's details: the download's progress, under its bar. {{done}}: the bytes downloaded; {{total}}: all of them."
   },
-  "DemosPage.stop.title": {
+  "demo-leave.stop.title": {
     "message": "Stop the download?",
-    "note": "Demo store's page: the title of the question asked when the visitor leaves a demo whose download is still running (another demo's row, All demos, Back)."
+    "note": "Demo store's page: the title of the question asked when the visitor leaves a demo whose download is still running (another demo's row, All demos, the toolbar's Home or wordmark)."
   },
-  "DemosPage.stop": {
+  "demo-leave.stop": {
     "message": "<name>{{demo}}</name> is still downloading. Leaving it now will stop the download and discard what was downloaded so far.",
     "note": "Demo store's page: the question's text when the visitor leaves a demo whose download is still running. {{demo}}: the demo's name (the store's words)."
   },
-  "DemosPage.stop.ok": {
+  "demo-leave.stop.ok": {
     "message": "Stop the download",
     "note": "Demo store's page: the button of the question about leaving a running download that stops it and goes where the visitor clicked."
   },
-  "DemosPage.stop.cancel": {
+  "demo-leave.stop.cancel": {
     "message": "Keep downloading",
     "note": "Demo store's page: the button of the question about leaving a running download that stays on the demo and lets the download go on."
   },
