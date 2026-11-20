@@ -1805,11 +1805,11 @@
   },
   "DemosPage.heading": {
     "message": "Demos",
-    "note": "Demo store's page: its heading, over the demos' cards (or a demo's details)."
+    "note": "Demo store's page: its heading, over the list of the store's demos."
   },
   "DemosPage.intro": {
     "message": "Machines ready to use: choose one, and it starts in this tab where it was left, already set up, with nothing to install. What you change in it is kept in this browser, and the machine stays on the Home page.",
-    "note": "Demo store's page: the paragraph under its heading, over the demos' cards: what a demo is."
+    "note": "Demo store's page: the paragraph under its heading, over the list of the store's demos: what a demo is."
   },
   "DemosPage.loading": {
     "message": "Loading the demos…",
@@ -1820,8 +1820,12 @@
     "note": "Demo store's page: button under the error when the store's list of demos couldn't be loaded (the server down, the connection lost): loads it again."
   },
   "DemosPage.unknown": {
-    "message": "This store has no demo {{id}}: it may have been replaced by a newer one. Its demos are below.",
-    "note": "Demo store's page: warning over the cards when the link named a demo (?id=) the store doesn't have. {{id}}: the id in the link (short, lowercase)."
+    "message": "This store has no demo {{id}}. It may have been replaced by a newer one.",
+    "note": "Demo store's page: warning when the link named a demo (?id=) the store doesn't have, shown where that demo's pane would be, beside the list of the store's demos (in a narrow window, over the list). {{id}}: the id in the link (short, lowercase)."
+  },
+  "DemosPage.choose": {
+    "message": "Choose a demo from the list.",
+    "note": "Demo store's page: said where a demo's pane would be, beside the list of the store's demos, when none is chosen (the link named a demo the store doesn't have; under that warning)."
   },
   "DemosPage.skipped_one": {
     "message": "{{count}} demo in this store needs a newer version of this web app, or is damaged, and is left out.",
@@ -1873,7 +1877,7 @@
   },
   "DemoStart.back": {
     "message": "All demos",
-    "note": "Demo store's page, a demo's details: the link-like button at the top that goes back to every demo's card."
+    "note": "Demo store's page, a demo's details: the link-like button at the top, in a narrow window only (where the chosen demo's details replace the list), that goes back to the list of demos."
   },
   "DemoStart.about": {
     "message": "$t(common:product.name) runs a whole arm64 computer in this browser tab, with nothing to install. The demo downloads the machine as it was left running, and it carries on from there. It needs a recent computer, and works best in Chrome or Edge.",

@@ -16,6 +16,34 @@ them and checked (page-demos-guest, all three, with its new TERM and Ctrl+C case
 set at 28cc70ba** (started 2026-11-19 ~21:50), then a redeploy (ask the user: decision 11), the deployed numbers and
 the track's end.
 
+### The store's page: a list beside the chosen demo (2026-11-20, a cloud session, branch `claude/laughing-maxwell-jercdj`)
+
+The user's brief: on a wide screen the chosen demo previewed beside the list, no trip back through All demos; the page
+read as newer and less polished than the rest. Done on the branch that carries the page's new look (not merged to
+`main` here):
+- **Layout** (docs/frontend.md "The demo store", "The layout"): Home's own. The demos are a list on the left
+  (`DemoCard.svelte`, now a row: thumbnail, name, two lines of summary, download, mark; the chosen one sunk with the
+  lit rail), the chosen demo's pane on the right (`DemoStart.svelte` in `ui/Pane.svelte`: its name and Start, or Open my
+  machine and Start a fresh copy, at the pane's head). With no demo named the store's first shows (the address without
+  an id, no focus taken); an unknown id says so where the pane would be. At 720 px and under, one column: the list,
+  then the pane alone with All demos. The address contract and the other store's consent step are unchanged.
+- **Defects fixed with it:** the download's bar was the browser's own blue one (now the boot card's: slim, the
+  accent); Start sat under everything (under the fold at 720 px, where the thumbnail took the window's width); the
+  intro ran the window's whole width; the unknown id's words pointed "below".
+- **Words:** `machines:DemosPage.unknown` reworded (no "below"), `machines:DemosPage.choose` new; notes updated.
+  **Hooks:** the list is still `ul.cards` with `[data-demo]` buttons, the pane `article.start[data-demo]` (both now
+  match a bare `[data-demo=…]` beside each other: tests say `.cards [data-demo=…]`); `[data-field="no-demo"]`,
+  `[data-field="start-error"]` and `aria-current` on a row are new; the pane takes the focus as an `article`, not its `h3`.
+- **Screenshots:** `tools/screens.ts` has the store's states now (`tools/screens-demos.ts`, 11 states wide and narrow).
+- **Tier:** in the cloud session, at this commit: the static checks (tsc, svelte-check, the linters, i18n, the areas map)
+  and tests/page-demos.test.ts with tests/demos-route.test.ts (15 tests) pass; `scripts/ci-fast.sh`'s builds and tests
+  were still running when it was pushed (the next commit says how it ended).
+  **`scripts/ci.sh` and `scripts/ci-debian.sh` remain to be run in the dev VM** (and `scripts/ci-machines.sh` for
+  tests/page-demos-guest.test.ts, which chooses a row and starts it: not runnable in the cloud, no demo site there).
+- **Asked of the user, not built** (taste): the checks folded into one line when all are met; the first demo by
+  default against an empty pane; the public room's note above Start again rather than in the fine print; a Cancel for
+  a download (today another row, All demos or Back stops it, with no question); seconds in "last used".
+
 ### Where things stand
 
 - **waarm64 `main`** (origin): pushed through this file's commit. Loops 0–6, 10, 10b, 12, 13, 15 and 15b are done;

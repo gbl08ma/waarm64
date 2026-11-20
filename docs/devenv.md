@@ -153,7 +153,7 @@ npm start                      # what a user runs: checks, npm ci, wasm core, th
 npm run dist                   # the page built (Vite) as static files for any web server -> target/dist/ (no guest images; frontend.md "A static copy")
 node tools/build-demos.ts [--core target/dist] [--apply]   # the demos' templates made again from a core build into target/demos/<id>/, then published to target/disks/ (a dry run without --apply; remote-disks.md "Building the demos")
 npm run serve                  # Vite's dev server with COOP/COEP and hot reloading on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
-node tools/screens.ts --label <name>   # screenshots of every page state without a guest (toolbar menus, Home page wide and 720 px, dialogs, wizard steps) -> bench/results/local/screens/<name>/; --compare <other> --label <name>: what differs (frontend.md "Screenshots")
+node tools/screens.ts --label <name>   # screenshots of every page state without a guest (toolbar menus, Home page wide and 720 px, dialogs, wizard steps, the demo store's page) -> bench/results/local/screens/<name>/; --compare <other> --label <name>: what differs (frontend.md "Screenshots")
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
 (cd ../waarm64-net && go test -race ./...)    # the local network helper, its own repository (its CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
 WAARM64_NET_SRC=../waarm64-net node --test tests/page-local.test.ts   # waarm64's tests against that checkout instead of the commit tests/waarm64-net.ts pins
