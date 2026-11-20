@@ -138,6 +138,7 @@
   /* A code pane's lit lines (web/app/ui/CodePane.svelte): the active instruction's, in each form of it. */
   --code-lit-bg: color-mix(in srgb, var(--accent) 16%, transparent);
   --code-lit-fg: #fff3ea;
+  --code-lit-rail: inset 3px 0 0 var(--accent);
 
   --shadow-menu: 0 10px 28px #000c, inset 0 1px 0 #ffffff14;
   --shadow-dialog: 0 16px 48px #000d, inset 0 1px 0 #ffffff14;

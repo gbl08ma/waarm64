@@ -11,7 +11,9 @@ export class Autoplay {
 
   /** An action for the picture's element: follows whether it's on screen. */
   readonly watch = (el: HTMLElement) => {
-    const seen = new IntersectionObserver(([e]) => (this.inView = !!e?.isIntersecting), { threshold: 0.25 });
+    const seen = new IntersectionObserver((entries) => (this.inView = entries.some((e) => e.isIntersecting)), {
+      threshold: 0.25,
+    });
     seen.observe(el);
     return { destroy: () => seen.disconnect() };
   };

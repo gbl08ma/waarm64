@@ -1,8 +1,8 @@
 <!--
   The introduction (docs/frontend.md "The introduction"; docs/decisions.md "Demos"): what a visitor without machines
   sees first, and what About's button shows again. It takes the whole window, one page scrolled from top to bottom:
-  a bar of its own (the wordmark, the ways to its sections, Skip), what waarm64 is, and at its end the way into the
-  demo store. Leaving it (Skip, a button to the demos) brings the toolbar and the status bar in
+  a bar of its own (the wordmark, the ways to its sections, Skip), what waarm64 is, what runs on it, how it compares,
+  how it works, and at its end the way into the demo store. Leaving it (Skip, a button to the demos) brings the toolbar and the status bar in
   (web/app/view-transition.ts). Its words are the catalog's `intro` area, in a voice of their own (docs/copy.md "The
   introduction").
 -->
@@ -12,6 +12,7 @@
   import IntroEnd from './intro/IntroEnd.svelte';
   import IntroFacts from './intro/IntroFacts.svelte';
   import IntroHero from './intro/IntroHero.svelte';
+  import IntroHow from './intro/IntroHow.svelte';
   import WordmarkLetters from './WordmarkLetters.svelte';
   import { afterIntro } from './intro-route.ts';
   import { records } from './areas/records.svelte.ts';
@@ -25,6 +26,7 @@
   /** The sections the bar's links scroll to. */
   let facts = $state<HTMLElement>();
   let compare = $state<HTMLElement>();
+  let how = $state<HTMLElement>();
   const show = (section: HTMLElement | undefined) => section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 </script>
 
@@ -38,14 +40,18 @@
       <Button variant="plain" onclick={() => show(compare)} data-to-section="intro-compare">
         {t('intro:IntroPage.nav.compare')}
       </Button>
+      <Button variant="plain" onclick={() => show(how)} data-to-section="intro-how">
+        {t('intro:IntroPage.nav.how')}
+      </Button>
     </nav>
     <Button variant="plain" onclick={() => void page.closeIntro()} data-action="skip-intro" data-to={skipTo}>
       {skipTo === 'home' ? t('intro:IntroPage.skip.home') : t('intro:IntroPage.skip')}
     </Button>
   </header>
-  <IntroHero ondemos={toDemos} />
+  <IntroHero ondemos={toDemos} onhow={() => show(how)} />
   <IntroFacts bind:ref={facts} />
   <IntroCompare bind:ref={compare} />
+  <IntroHow bind:ref={how} />
   <IntroEnd ondemos={toDemos} machines={records.machines.length} onhome={() => void page.closeIntro()} />
 </div>
 

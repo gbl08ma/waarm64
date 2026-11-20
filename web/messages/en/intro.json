@@ -528,7 +528,7 @@
     "note": "Paragraph beside the C source in the introduction's code viewer (the CPU's deep dive), for “A loop with a branch inside”: what to notice in this code's translation."
   },
   "IntroTranslate.compiler": {
-    "message": "Compiled with {{compiler}}.",
+    "message": "Compiled with <code>{{compiler}}</code>.",
     "note": "Fine print under that paragraph in the introduction's code viewer (the CPU's deep dive). {{compiler}} is the compiler's name, version and options, as a command line."
   },
   "IntroTranslate.back": {
@@ -628,7 +628,7 @@
     "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive): the code that stores the registers and jumps to the next block. A click unfolds them."
   },
   "IntroTranslate.honest": {
-    "message": "Nothing here is drawn by hand. The guest's code ran in $t(common:product.name), and these are its micro-ops and the WebAssembly it emitted, printed by wasm-tools. The machine code is {{compiler}}'s for that function. V8 says which line a load, a store, or a call came from, so only those light up in the last pane.",
+    "message": "Nothing here is drawn by hand. The guest's code ran in $t(common:product.name), and these are its micro-ops and the WebAssembly it emitted, printed by wasm-tools. The machine code is what <code>{{compiler}}</code> made of that function. V8 says which line a load, a store, or a call came from, so only those light up in the last pane.",
     "note": "Fine print under the panes of the introduction's code viewer (the CPU's deep dive): where the code shown comes from. {{compiler}} names the V8 version and compiler tier."
   },
   "IntroPage.nav.how": {
@@ -960,7 +960,7 @@
     "note": "Paragraph shown under the “Video” picture on the introduction while stage 5 (“Texture”) is the active one."
   },
   "IntroHow.vulkan": {
-    "message": "Vulkan",
+    "message": "Vulkan programs",
     "note": "Title of a topic in the introduction's “How it works” section. No period."
   },
   "IntroHow.vulkan.words": {
@@ -968,7 +968,7 @@
     "note": "Paragraph under the topic title “Vulkan” in the introduction's “How it works” section."
   },
   "IntroHow.vulkan.path": {
-    "message": "Vulkan: the stages",
+    "message": "Vulkan programs: the stages",
     "note": "Screen reader's name for the row of stages under that topic."
   },
   "IntroHow.vulkan.1": {

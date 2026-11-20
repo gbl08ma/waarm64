@@ -6,6 +6,7 @@
   scrolls inside it, both ways; a narrow window scrolls the long lines, it doesn't wrap them (code is read by column).
 -->
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   import { isFold, type CodeItem, type CodeRow } from './code-pane.ts';
 
   type Props = {
@@ -18,12 +19,9 @@
   };
   let { title, sub, items, active, onpick, ...rest }: Props = $props();
 
-  /** The folds opened, by their place in `items`. A new list starts folded. */
-  let open = $state<Record<number, boolean>>({});
-  $effect(() => {
-    void items;
-    open = {};
-  });
+  /** The folds opened. A new list's folds are other objects, so it starts folded. */
+  const open = new SvelteSet<CodeItem>();
+  const toggle = (item: CodeItem) => (open.has(item) ? open.delete(item) : open.add(item));
 
   let well = $state<HTMLElement>();
   /** The rows lit by one change of the active group; the topmost is brought into view once they're all known. */
@@ -71,10 +69,10 @@
       {#if isFold(item)}
         <button
           class={['fold', { lit: item.group !== undefined && item.group === active }]}
-          aria-expanded={!!open[i]}
-          onclick={() => (open[i] = !open[i])}>{item.label}</button
+          aria-expanded={open.has(item)}
+          onclick={() => toggle(item)}>{item.label}</button
         >
-        {#if open[i]}
+        {#if open.has(item)}
           {#each item.rows as r, j (j)}{@render line(r)}{/each}
         {/if}
       {:else}
@@ -153,7 +151,7 @@
   /* The active instruction's lines: lit, a rail at their start. */
   .lit {
     background: var(--code-lit-bg);
-    box-shadow: inset 3px 0 0 var(--accent);
+    box-shadow: var(--code-lit-rail);
     color: var(--code-lit-fg);
   }
   .lit .gutter {

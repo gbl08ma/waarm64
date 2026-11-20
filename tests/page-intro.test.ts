@@ -2,7 +2,8 @@
 // first visit opens it over the whole window (no toolbar, no status bar) at `#intro`; Skip leaves it for the demo
 // store's page, where the toolbar and the status bar are, and the browser's Back returns to it; a reload keeps it. A
 // visitor with a machine isn't shown it by a bare address, reaches it at `#intro` and from About's button, and Skip
-// leads them Home. Its sections: the bar's links, the readouts, the comparison's table. Our store is answered empty by the test (no request leaves the machine).
+// leads them Home. Its sections: the bar's links, the readouts, the comparison's table, the paths of how it
+// works and its two deep dives (the captured code's panes, the RAM split). Our store is answered empty by the test (no request leaves the machine).
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -113,7 +114,7 @@ test('the sections: the bar\'s links scroll to them; the comparison names each p
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   const top = (id: string) => page.locator(`[data-section="${id}"]`).evaluate((e) => Math.round(e.getBoundingClientRect().top));
   const bar = await page.locator('[data-intro] > header').evaluate((e) => e.getBoundingClientRect().height);
-  for (const id of ['intro-facts', 'intro-compare']) {
+  for (const id of ['intro-facts', 'intro-compare', 'intro-how']) {
     assert.ok((await top(id)) > bar + 100, `${id} starts further down`);
     await page.locator(`[data-to-section="${id}"]`).click();
     await page.waitForFunction(([i, b]) => Math.abs(document.querySelector(`[data-section="${i}"]`)!.getBoundingClientRect().top - (b as number)) < 40, [id, bar] as const, { timeout: 10_000, polling: 50 });
@@ -129,6 +130,66 @@ test('the sections: the bar\'s links scroll to them; the comparison names each p
   const links = await page.locator('[data-section="intro-compare"] .sources a').evaluateAll((as) => as.map((a) => ({ rel: a.getAttribute('rel'), target: a.getAttribute('target') })));
   assert.equal(links.length, 4);
   for (const l of links) assert.deepEqual(l, { rel: 'external nofollow noopener noreferrer', target: '_blank' });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('how it works: five paths that step and stop on a click; the processor\'s captured code lights one instruction in every pane; memory\'s split follows its slider', async () => {
+  const { ctx, page, errors } = await visitor();
+  await page.goto(`${base}/web/app/#intro`);
+  await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
+  await page.locator('[data-action="intro-how"]').click();
+  const how = page.locator('[data-section="intro-how"]');
+  assert.equal(await how.locator('[data-topic]').count(), 5);
+  assert.equal(await how.locator('[data-topic] ol > li').count(), 25, 'five stages a path');
+
+  // A path: it steps by itself on screen, and a click on a stage stops it there, with that stage's words.
+  const cpu = how.locator('[data-topic="intro-how-cpu"]');
+  await cpu.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => document.querySelector('[data-topic="intro-how-cpu"] [data-stage="1"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 15_000, polling: 100 });
+  await cpu.locator('[data-stage="3"]').click();
+  assert.equal(await cpu.locator('[data-field="stage-words"]').innerText(), t('intro:IntroHow.cpu.4.words'));
+  await page.waitForTimeout(4000);
+  assert.equal(await cpu.locator('[data-stage="3"]').getAttribute('aria-pressed'), 'true', 'a picked stage stays');
+
+  // The processor's deep dive: mounted when opened, its data fetched then.
+  assert.equal(await cpu.locator('[data-translate]').count(), 0);
+  await cpu.locator('[data-action="go-deeper"]').click();
+  await cpu.locator('[data-translate="sum-loop"]').waitFor({ timeout: 15_000 });
+  for (const pane of ['guest', 'uops', 'wasm', 'host']) assert.ok((await cpu.locator(`[data-pane="${pane}"] .row`).count()) > 3, `${pane} has code`);
+  assert.equal(await cpu.locator('[data-pane="guest"] .row').count(), 4, "the block's four instructions");
+  // A row under the pointer picks its instruction: its lines in the other panes light up, and the place says so.
+  await cpu.locator('[data-pane="guest"] .row').nth(2).hover();
+  assert.equal(await cpu.locator('[data-pane="guest"] .row.lit').count(), 1);
+  assert.match(await cpu.locator('[data-pane="guest"] .row.lit').innerText(), /add\s+w8, w8, w9/);
+  assert.equal(await cpu.locator('[data-pane="uops"] .row.lit').count(), 1);
+  assert.match(await cpu.locator('[data-pane="wasm"] .row.lit').first().innerText(), /local\.get/);
+  assert.ok((await cpu.locator('[data-pane="wasm"] .row.lit').count()) > 3);
+  assert.match(await cpu.locator('.place').innerText(), /^Instruction 3 of 4/);
+  // Next from the last instruction comes round to the first, whose load lights lines of the host's code too.
+  await cpu.locator('[data-step="next"]').click();
+  await cpu.locator('[data-step="next"]').click();
+  assert.match(await cpu.locator('[data-pane="guest"] .row.lit').innerText(), /ldrb/);
+  assert.ok((await cpu.locator('[data-pane="host"] .row.lit').count()) > 0, 'V8 ties the load to its machine code');
+  // A fold unfolds in place; another block is a click on its chip.
+  const rows = await cpu.locator('[data-pane="wasm"] .row').count();
+  await cpu.locator('[data-pane="wasm"] .fold').first().click();
+  assert.ok((await cpu.locator('[data-pane="wasm"] .row').count()) > rows);
+  await cpu.locator('[data-block="cap-loop"]').click();
+  await cpu.locator('[data-translate="cap-loop"]').waitFor();
+  assert.equal(await cpu.locator('[data-pane="guest"] .row').count(), 9);
+  await cpu.locator('[data-action="go-deeper"]').click();
+  assert.equal(await cpu.locator('[data-translate]').count(), 0, 'folded away again');
+
+  // Memory's: 8 GiB is memory 0 and two more memories; 2 GiB is memory 0 alone.
+  const memory = how.locator('[data-topic="intro-how-memory"]');
+  await memory.locator('[data-action="go-deeper"]').click();
+  await memory.locator('[data-field="ram-split"]').waitFor();
+  assert.equal(await memory.locator('[data-memory]').count(), 3);
+  await memory.locator('[data-field="intro-ram"]').fill('2048');
+  await page.waitForFunction(() => document.querySelectorAll('[data-field="ram-split"] [data-memory]').length === 1, null, { timeout: 5000 });
+  await memory.locator('[data-field="intro-ram"]').fill('16384');
+  await page.waitForFunction(() => document.querySelectorAll('[data-field="ram-split"] [data-memory]').length === 5, null, { timeout: 5000 });
   assert.deepEqual(errors, []);
   await ctx.close();
 });

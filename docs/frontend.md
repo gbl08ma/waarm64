@@ -842,7 +842,7 @@ and the floating windows don't show, and the machine, Home or the store's page s
 - **Its words** are the catalog's `intro` area, in a voice of their own ([copy.md](copy.md) "The introduction").
 - **Its scale** is the tokens' introduction steps (`--text-lede`, `--text-title`, `--text-display`, `--space-7`,
   `--space-8`): a page read, not a panel operated. Its pictures added to the design system: the motion tokens, a code
-  pane's lit lines (`--code-lit-bg`, `--code-lit-fg`), and the primitives `ui/CodePane.svelte` and `ui/Stepper.svelte`
+  pane's lit lines (`--code-lit-bg`, `--code-lit-fg`, `--code-lit-rail`), and the primitives `ui/CodePane.svelte` and `ui/Stepper.svelte`
   ([frontend-code.md](frontend-code.md) §2).
 
 Tests: `tests/intro-route.test.ts` (the address, where leaving leads; Node), `tests/page-intro.test.ts` (Chromium: a

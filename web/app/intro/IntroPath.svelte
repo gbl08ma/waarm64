@@ -63,7 +63,7 @@
     right: 100%;
     width: var(--space-6);
     height: 4px;
-    margin-top: -2px;
+    margin-top: calc(-1 * var(--space-1));
     background: var(--well-bg);
     box-shadow: var(--groove-edge);
     transition: background var(--motion) var(--ease);

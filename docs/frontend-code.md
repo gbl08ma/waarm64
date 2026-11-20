@@ -48,7 +48,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      `--weight-normal`, `--weight-medium` (the wordmark's dim half), `--weight-bold`;
    - heights `--control-h` (a button, a field: 28 px), `--tool-h` (a toolbar button: 32 px);
    - movement `--motion-fast`, `--motion`, `--motion-slow` (140, 300, 560 ms: a control answering, a part of the page
-     moving, a picture's step) and `--ease`; a code pane's lit lines `--code-lit-bg`, `--code-lit-fg`;
+     moving, a picture's step) and `--ease`; a code pane's lit lines `--code-lit-bg`, `--code-lit-fg`, `--code-lit-rail`;
    - the introduction's scale `--text-lede` (20), `--text-title` (30), `--text-display` (34 to 58 with the window),
      `--line-height-tight`, `--space-7` (40), `--space-8` (72): for that page alone.
 4. **A small scale.** Spacing: `--space-1` to `--space-6` (2, 4, 8, 12, 16, 24 px). Text (two pixels over a system font's scale: Barlow's letters run small): `--text-xs` (13),

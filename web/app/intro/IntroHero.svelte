@@ -10,8 +10,8 @@
   import T from '../T.svelte';
   import { t } from '../../i18n.ts';
 
-  type Props = { ondemos: () => void };
-  let { ondemos }: Props = $props();
+  type Props = { ondemos: () => void; onhow: () => void };
+  let { ondemos, onhow }: Props = $props();
 </script>
 
 <section class="hero" aria-labelledby="intro-headline">
@@ -21,6 +21,7 @@
     <p><T k="intro:IntroHero.speed" /></p>
     <div class="actions">
       <Button variant="primary" onclick={ondemos} data-action="intro-demos">{t('intro:IntroHero.demos')}</Button>
+      <Button onclick={onhow} data-action="intro-how">{t('intro:IntroHero.how')}</Button>
     </div>
   </div>
   <IntroPlate />

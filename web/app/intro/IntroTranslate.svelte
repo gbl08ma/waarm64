@@ -9,6 +9,7 @@
 <script lang="ts">
   import CodePane from '../ui/CodePane.svelte';
   import Stepper from '../ui/Stepper.svelte';
+  import T from '../T.svelte';
   import type { CodeItem } from '../ui/code-pane.ts';
   import { guestRows, hostBytes, hostRows, uopRows, wasmItems, wasmLinesOf } from './captures.ts';
   import type { Capture, FoldKind, HostArch } from './captures.ts';
@@ -19,34 +20,35 @@
   let { captures }: Props = $props();
 
   /** A block's name on its chip and what to look for in it (the catalog's keys, written out for i18n-check). */
-  const WORDS: Record<string, [name: string, look: string]> = {
-    'sum-loop': ['intro:IntroTranslate.sum', 'intro:IntroTranslate.sum.look'],
-    'move-point': ['intro:IntroTranslate.move', 'intro:IntroTranslate.move.look'],
-    'collatz-loop': ['intro:IntroTranslate.collatz', 'intro:IntroTranslate.collatz.look'],
-    'total-loop': ['intro:IntroTranslate.total', 'intro:IntroTranslate.total.look'],
-    'cap-loop': ['intro:IntroTranslate.cap', 'intro:IntroTranslate.cap.look'],
-  };
-  const shown = $derived(captures.filter((c) => c.id in WORDS));
+  const WORDS = new Map<string, [name: string, look: string]>([
+    ['sum-loop', ['intro:IntroTranslate.sum', 'intro:IntroTranslate.sum.look']],
+    ['move-point', ['intro:IntroTranslate.move', 'intro:IntroTranslate.move.look']],
+    ['collatz-loop', ['intro:IntroTranslate.collatz', 'intro:IntroTranslate.collatz.look']],
+    ['total-loop', ['intro:IntroTranslate.total', 'intro:IntroTranslate.total.look']],
+    ['cap-loop', ['intro:IntroTranslate.cap', 'intro:IntroTranslate.cap.look']],
+  ]);
+  const shown = $derived(captures.filter((c) => WORDS.has(c.id)));
   let id = $state<string>();
-  const capture = $derived(shown.find((c) => c.id === id) ?? shown[0]);
+  const capture = $derived(shown.find((c) => c.id === id) ?? shown.at(0));
   /** The host whose code shows: the visitor's own kind of processor when it was captured, else the first there is. */
   const ARCHES: HostArch[] = ['x64', 'arm64'];
   const ARCH_NAME: Record<HostArch, string> = { x64: 'x86-64', arm64: 'AArch64' }; // i18n-ignore
   const arches = $derived(ARCHES.filter((a) => capture?.host[a]));
   let archPicked = $state<HostArch>();
-  const arch = $derived(archPicked && arches.includes(archPicked) ? archPicked : arches[0]);
+  const arch = $derived(archPicked && arches.includes(archPicked) ? archPicked : arches.at(0));
 
   /** The active instruction; the steps run by themselves while the viewer is on screen. */
   let at = $state(0);
   const auto = new Autoplay();
   $effect(() => {
-    void capture;
-    at = 0;
-  });
-  $effect(() => {
     const n = capture?.guest.length ?? 0;
     return auto.run(n, 2200, () => (at = (at + 1) % n));
   });
+  /** Another block chosen: from its first instruction. */
+  const choose = (block: string) => {
+    id = block;
+    at = 0;
+  };
   /** The pointer on a line: its instruction, and the steps stop running by themselves. */
   const pick = (g: number) => {
     auto.playing = false;
@@ -74,16 +76,16 @@
   <div class="translate" use:auto.watch data-translate={capture.id}>
     <div class="blocks" role="group" aria-label={t('intro:IntroTranslate.blocks')}>
       {#each shown as c (c.id)}
-        <button class="chip" aria-pressed={c.id === capture.id} onclick={() => (id = c.id)} data-block={c.id}>
-          {t(WORDS[c.id]?.[0] ?? '')}
+        <button class="chip" aria-pressed={c.id === capture.id} onclick={() => choose(c.id)} data-block={c.id}>
+          {t(WORDS.get(c.id)?.[0] ?? '')}
         </button>
       {/each}
     </div>
     <div class="about">
       <pre class="source">{capture.source.trim()}</pre>
       <div class="look">
-        <p>{t(WORDS[capture.id]?.[1] ?? '')}</p>
-        <p class="fine">{t('intro:IntroTranslate.compiler', { compiler: capture.compiler })}</p>
+        <p>{t(WORDS.get(capture.id)?.[1] ?? '')}</p>
+        <p class="fine"><T k="intro:IntroTranslate.compiler" params={{ compiler: capture.compiler }} /></p>
         <Stepper
           bind:at
           bind:playing={auto.playing}
@@ -149,7 +151,9 @@
         {/each}
       </div>
     {/if}
-    <p class="fine">{t('intro:IntroTranslate.honest', { compiler: (arch && capture.host[arch]?.compiler) ?? '' })}</p>
+    <p class="fine">
+      <T k="intro:IntroTranslate.honest" params={{ compiler: (arch && capture.host[arch]?.compiler) ?? '' }} />
+    </p>
   </div>
 {/if}
 
