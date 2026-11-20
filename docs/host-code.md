@@ -3,7 +3,7 @@
 Rules for `web/*.ts`: the devices' backends, the workers, the renderers and the network clients, the TypeScript that
 runs beside the core and never draws the page (that is `web/app/`, whose rules are [frontend-code.md](frontend-code.md)).
 Here performance rules: a rule gives way to a measured cost on a hot path, and a comment there says so. The linters
-(§3) enforce what can be checked mechanically; the rest is for review.
+(§4) enforce what can be checked mechanically; the rest is for review.
 
 ## 1. Hot paths
 
@@ -36,7 +36,23 @@ per audio period; cold when it runs per attach, start, lease or snapshot. On a h
    state no input can reach doesn't go into a hot path.
 7. **Errors for the user are keys and data** ([i18n.md](i18n.md)): only the page renders words.
 
-## 3. The linters
+## 3. Modules
+
+1. **A module has one job**; the seams the HOST track cut are the map: `core.ts` (the core instance's plumbing,
+   `VM_CONFIG`), `device-host.ts`, `coordinator.ts`, `jit-host.ts`, `counters.ts`, `warm-workers.ts`,
+   `test-guests.ts` (fixtures: only tests, bench and tools import it) out of `vm.ts`; `virtio.ts` (the queue's
+   layout, `Ctx`, `Backend`, `gather`/`scatter`) and one file per backend or source out of `devices.ts`; the
+   renderers' state types and pixel helpers apart from their classes. A worker's entry imports only what it runs
+   (`vcpu-worker.ts` doesn't load the devices).
+2. **Shared shapes are written once**: an IP-port worker's port (`ts-port.ts` `ipPortHost`), a page-side worker
+   handle (`tailscale.ts` `workerHandle`), a frame socket (`local-net.ts` `framePath`), bytes and addresses
+   (`bytes.ts`, `ip6.ts`). A third copy of a pattern is a helper's cue.
+3. **A class whose methods share private state stays whole** (`VirglRenderer`, `VenusGpu`, `Gpu`): its seams are
+   methods, and moving them is a rewrite, not a move.
+4. **A move is checked past tsc**: the harness pages' inline imports (`tools/harness-imports.ts`, in the static
+   checks) and the paths in evaluated strings (`page.evaluate`'s `import('/web/…')`) aren't in tsc's program.
+
+## 4. The linters
 
 `npm run lint` (in `scripts/ci.sh` and `scripts/ci-fast.sh`) covers `web/*.ts` beside `web/app/`
 (`tools/lint/eslint.config.ts`, the host's block; typed through `tsconfig.host.json`, under tools/lint's TypeScript 6).

@@ -2164,6 +2164,38 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   are the parts to see on a guest with Xorg. GNOME on Wayland unmeasured (expected to follow the display event itself, as a user's KDE session does). Under X11 a
   desktop's own daemon (KDE's kscreen) may set the mode too: the agent asks for the same size, so they agree.
 
+## The host's code (`web/*.ts`; [host-code.md](host-code.md))
+
+What the HOST track's reviews found and left (the reports: the branch `review/host`, `review/host-*.md`), by promise.
+
+- **The lint's grandfathered findings** (`tools/lint/eslint-suppressions.json`, ~600): most are
+  `no-unnecessary-condition` (a check the types call dead: often data from a message or JSON typed as sure, so each
+  needs a look, not a fix by rule), `no-empty-function` (a `.catch(() => {})` that wants its comment) and `no-unsafe-*`
+  at the wasm and JSON edges (a typed parse would state them). Shrink them file by file when a change touches one.
+- **Graphics, per draw:** the program cache's key is a JSON string of an object built per draw (P2); caching the
+  program on the sub-context by a state version needs every input of the key listed, so its own loop with dEQP.
+- **Video, per picture:** 2–3 frame-sized allocations per decoded picture and the padding copies (P4): a pool needs
+  the picture's lifetime (`VenusImport.last` and the renderer keep the planes); NV12's `copyTo` with a layout runs
+  only with hardware decoders, which the dev VM's headless Chromium hasn't.
+- **The network, per packet:** an IP-port packet with 14 bytes of headroom would let the gateway write the Ethernet
+  header in place (P1(b): an IP-port protocol change); frame ports could take batches as IP ports do (P7: one post per
+  WebSocket message from the local helper and the demo network, not per frame).
+- **Pointer events:** a cached box rectangle (a ResizeObserver) instead of `getBoundingClientRect()` per move, the SYN
+  pushed in place, a flat `Int32Array` posted (P10: forced layouts are the point, not the allocations).
+- **Sound:** a period's `toF32` and mono copies, `done`'s filter per completion (P8): small; with other sound work.
+- **One inflate pool per device worker** instead of per blk device (up to 4 workers each).
+- **Devices' worker `onerror` after ready** isn't routed into `failed` (an uncaught error in a backend's own timer);
+  routing it could fail a machine that is healthy, so it needs a look at which errors reach it.
+- **Deterministic remote reads** (synchronous XHR) have no stall bound, unlike `fetchBytes`.
+- **The display's floor never comes down in a session** (a desktop that starts after the console raised it can't
+  shrink below it); the reset drops it.
+- **Small:** a Venus import not detached at an unref while attached (Linux detaches first; D5); Venus's fence keys,
+  `pollQueries`' filter and `Screen.damage` coalescing; the `Resource` union in gpu.ts (2D / 3D / blob); VenusShare's
+  and VenusImport's `warned` Sets grow without bound; 9p's Rread scatter; input.ts's double blur releasing twice;
+  usb-keyboard's `actual` against a short TD; room-worker's `namesFetch` capturing `client` before it is assigned;
+  tailscale-state's one-transaction read and tailcat's identity `add` have no browser test; C comments in vk/ name
+  web/venus-gpu.ts for what moved to venus-caps.ts, venus-formats.ts and venus-wgsl.ts.
+
 ## Tests and tools
 
 - [B] **`debug` fails on the hvf oracle** (`tests/baremetal/oracle.sh --hvf`, exit 2; PERF loop 34): QEMU's hvf
