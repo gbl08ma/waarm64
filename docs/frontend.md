@@ -817,7 +817,8 @@ and the floating windows don't show, and the machine, Home or the store's page s
       (256 MiB to 16 GiB) and under it a bar per WebAssembly memory, 4 GiB long, filled as the machine really splits
       that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
 - **The captures** (`web/intro-captures/blocks.json`, written by `tools/intro-capture.ts`; the page fetches it when
-  the processor's deep dive opens: `intro/captures.ts`, its own piece of the build). The tool compiles small C
+  the processor's deep dive opens: `intro/captures.ts`; an asset of the build, data and not one more script, which
+  `tests/dist.test.ts` counts). The tool compiles small C
   functions for AArch64 with clang (`tools/intro-capture/*.c`; the built `guest.bin` and its listing are committed, so
   every host captures the same guest code), runs them in the emulator under Node with the JIT on, and records: the
   guest's instructions (llvm-objdump's text), the block interpreter's micro-ops for each block (the core's own

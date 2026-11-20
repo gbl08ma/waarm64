@@ -2221,6 +2221,11 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 
 ## Tests and tools
 
+- **The fast lane stalls when started from an agent's shell in the cloud** (INTRO, 2026-11-20): `scripts/ci-fast.sh`
+  run by the Bash tool directly stopped twice 67 tests into the JS step with every process idle (once for 31 min);
+  started detached (`nohup … &`) it ran through both times. Most likely a test or a tool it starts reads the
+  inherited input; give the JS step `</dev/null` once the file is found (the last output before the stall was
+  the two "needs busybox and script" skips).
 - **Three stale figures in the docs** (found reading for the introduction's copy, 2026-11-20; not fixed): jit.md
   "Loads and stores (the TLB fast path)" gives the entry mask as `0x7ff80`, and the emitted code masks with
   `0x1fff80` (16,384 entries since 2026-11-03); architecture.md "Guest memory: layout A" says memory 0 holds

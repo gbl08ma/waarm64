@@ -1,6 +1,6 @@
 // The introduction's captured code (web/intro-captures/blocks.json, written by tools/intro-capture.ts: real guest
 // blocks, the block interpreter's micro-ops for them, the WebAssembly our JIT emitted and the machine code V8 made of
-// it): its shape, its load (when the deep dive opens: the file is its own piece of the page's build), and the rows
+// it): its shape, its load (when the deep dive opens: the file is an asset of the page's build, fetched then), and the rows
 // the code panes draw (web/app/ui/CodePane.svelte). Nothing here is drawn by hand: a row is a line of the capture.
 import type { CodeRow } from '../ui/code-pane.ts';
 
@@ -29,10 +29,23 @@ export type Capture = {
 };
 export type Captures = { meta: { commit: string; date: string }; blocks: Capture[] };
 
-/** The captures, fetched once. */
+/** The captures' file: an asset of the build under its hashed name, data and not a script. */
+const CAPTURES = new URL('../../intro-captures/blocks.json', import.meta.url).href;
+
+/** The captures, fetched once (a failed fetch is tried again by the next call). */
 let loaded: Promise<Captures> | undefined;
-export const loadCaptures = (): Promise<Captures> =>
-  (loaded ??= import('../../intro-captures/blocks.json').then((m) => m.default as Captures));
+export function loadCaptures(): Promise<Captures> {
+  loaded ??= fetch(CAPTURES)
+    .then((r) => {
+      if (!r.ok) throw new Error(`${CAPTURES}: ${r.status}`);
+      return r.json() as Promise<Captures>;
+    })
+    .catch((e: unknown) => {
+      loaded = undefined;
+      throw e;
+    });
+  return loaded;
+}
 
 /** The guest's instructions: the address, then the instruction. A region's later blocks start after a gap. */
 export const guestRows = (c: Capture): CodeRow[] =>

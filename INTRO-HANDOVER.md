@@ -10,21 +10,26 @@ Built in the cloud session, in the order built:
 
 | Loop | What | Tier it passed |
 |---|---|---|
-| 0 | The page's state and address (`#intro`, a first visit), its bar and Skip, the first screen with the machine's plate, the end that leads to the store, About's button; the `intro` and `launch` view transitions | fast lane (see "CI" below) |
+| 0 | The page's state and address (`#intro`, a first visit), its bar and Skip, the first screen with the machine's plate, the end that leads to the store, About's button; the `intro` and `launch` view transitions | fast lane |
 | 3 | "What runs on it" (four readouts, six topics) and "Compared with the others" (the table, where they lead, sources; the place kept for one speed figure) | fast lane |
 | 4 | `tools/intro-capture.ts` and the core's `capture` feature; `web/intro-captures/blocks.json` with five blocks and the **x86-64** host column; `ui/CodePane.svelte`, `ui/Stepper.svelte`, the motion and code tokens | fast lane |
 | 5 | "How it works": five paths (the processor, memory, OpenGL, video, Vulkan) | fast lane |
 | 6 | The processor's deep dive: the captured code in four panes | fast lane |
 | 7 | Memory's deep dive: the RAM slider over `splitRam` | fast lane |
 
-**CI:** `scripts/ci-fast.sh` passed on the branch's head as of commit `0554224` (2026-11-20, the cloud container:
-the static checks, the core's crate, the smoke set and the areas' heavy files). The introduction's own tests are
-`tests/intro-route.test.ts` and `tests/page-intro.test.ts`.
+**CI:** `scripts/ci-fast.sh --since 121c419` (every commit of the track) passed on the tree of this file's commit
+(2026-11-20, the cloud container: the static checks, the core's crate with its 387 tests, 1,339 JS tests: the smoke
+set and the areas' heavy files). The introduction's own tests are `tests/intro-route.test.ts` and
+`tests/page-intro.test.ts`. Two things about running it in the cloud: a plain `scripts/ci-fast.sh` after a push
+compares with the pushed branch and runs nothing ("docs only"), so name the range (`--since`); and started straight
+from the agent's shell it stalled twice at the same point, 67 tests in, with every process idle, while the same
+command started detached (`nohup … &`, no input attached) ran through in ~7 min both times. Which test waits on the
+input wasn't traced (docs/backlog.md "Tests and tools").
 
 **Not built: loops 1 and 2 (the tiny guest and the live hero) and loop 8 (the end).** Nothing here has passed
 `scripts/ci.sh` or a topic script: the cloud can't run the push tier as the dev VM does (docs/cloud.md: six of the
 agent's tests fail as root and stop `scripts/ci.sh`; no Debian guest for `ci-debian.sh`). **Run the push tier in the dev
-VM before anything else**: `scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-machines.sh` (the first-visit rule and
+VM before anything else**: `scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh` (the first-visit rule and
 Home's About changed), and `scripts/ci-jit.sh` (the core's JIT emitters gained `Code::note` calls: nothing in a normal
 build, and the capture tool checks the modules are byte for byte the same, but the JIT's tiers are the rule).
 
