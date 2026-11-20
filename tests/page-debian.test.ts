@@ -528,7 +528,10 @@ for (let run = 1; run <= RUNS; run++) {
     await p2.waitForTimeout(2500); // the debounce, the display event
     await onSerial(p2, 'echo detect >/sys/class/drm/card0-Virtual-1/status; sleep 1; echo ==pre""f $(head -qn1 /sys/class/drm/card*-Virtual-1/modes)\n');
     await shows(p2, /==pref\s+\d+x\d+/);
-    assert.match(await terminal(p2), new RegExp(`==pref\\s+${want[0]}x${want[1]}`), "the guest's preferred mode is the new window's");
+    // The box as it is now: it can move a pixel or two after the restore (the toolbar's font swapped in), and the page
+    // follows it (screen-view.ts's ResizeObserver).
+    const now = await p2.evaluate(() => { const b = document.getElementById('screen-view')!; const r = b.getBoundingClientRect(); return [Math.floor(r.width / 8) * 8, Math.floor(r.height)]; });
+    assert.match(await terminal(p2), new RegExp(`==pref\\s+${now[0]}x${now[1]}`), "the guest's preferred mode is the new window's");
     // And the console is still on the screen, whole: the window's mode is wider than fbcon's buffer, so it took the EDID's second mode
     // (its buffer's size). With no mode it can take, fbcon blanks the screen.
     const later = await screenOf(p2);
