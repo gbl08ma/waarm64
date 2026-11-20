@@ -35,7 +35,7 @@ import type { OverlayRecord, Store } from './store.ts';
 export { checkDefinition, DEFINITION_TYPE, DEFINITION_VERSION, isDemoId, isFileUrl } from './definition-check.ts';
 
 /**
- * A demo (DEMO-KICKOFF.md decisions 11–15; docs/machines.md §6.2): what its card in a store shows and what its first
+ * A demo (docs/decisions.md "Demos"; docs/machines.md §6.2): what its card in a store shows and what its first
  * start does. Its URLs, as its disks', are relative to the file it's in (a store's or a definition's).
  */
 export type Demo = {

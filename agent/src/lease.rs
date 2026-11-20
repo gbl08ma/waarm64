@@ -8,8 +8,7 @@
 //!   keeps the address where the gateway's lease is the same (open connections live on), and the gateway's NAK of an
 //!   address it doesn't hold sends the client to ask afresh at once.
 //! - **NetworkManager** (running: `/run/NetworkManager`; `nmcli`): `nmcli device connect <link>` for each.
-//! - Else, card by card, the DHCP clients that run without a manager (Alpine's, through ifupdown: decision 14 of
-//!   DEMO-KICKOFF.md), found among the processes (`/proc/<pid>/cmdline`):
+//! - Else, card by card, the DHCP clients that run without a manager (Alpine's, through ifupdown), found among the processes (`/proc/<pid>/cmdline`):
 //!   - **udhcpc** (busybox's) for the card (its `-i`, else `eth0`, its default): SIGUSR1, busybox's "renew": a request
 //!     for its lease to the server it had, a NAK (or no answer, after three) and it asks afresh. The same for a
 //!     **udhcpc6** of the card (IPv6's: the one the agent starts on a card nothing else manages, src/card.rs).

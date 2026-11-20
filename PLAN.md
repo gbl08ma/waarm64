@@ -64,7 +64,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | Registered names in rooms (NAMES) | Done 2026-11-18 | [networking/names.md](docs/networking/names.md), [bench/net/REPORT.md](bench/net/REPORT.md) "NAMES loop …" |
 | The user's QA findings (QA) | Done 2026-11-18 | [frontend.md](docs/frontend.md) (Home, the message bar, a machine that stops by itself), [machines.md](docs/machines.md) §4.4, §5.1 "Unrestorable", [i18n.md](docs/i18n.md) "Markers" |
 | CI in tiers and faster lanes (CI) | In progress since 2026-11-18 | [CI-KICKOFF.md](CI-KICKOFF.md), [CI-HANDOVER.md](CI-HANDOVER.md), [plans/ci-tiers.md](docs/plans/ci-tiers.md) |
-| The first demo (DEMO) | Open since 2026-11-18 | [DEMO-KICKOFF.md](DEMO-KICKOFF.md), [plans/first-demo.md](docs/plans/first-demo.md), [comparison.md](docs/comparison.md) |
+| The first demo (DEMO) | Done 2026-11-20 | [machines.md](docs/machines.md) §6, [remote-disks.md](docs/remote-disks.md) "Publishing the demos", [demo-network.md](docs/networking/demo-network.md), [comparison.md](docs/comparison.md), `bench/demo/REPORT.md` |
 
 ## Proposed, not started
 

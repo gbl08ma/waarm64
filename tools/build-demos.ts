@@ -1,4 +1,4 @@
-// The demos' build (DEMO-KICKOFF.md decision 13; docs/remote-disks.md "Building the demos"): every demo of the source
+// The demos' build (docs/decisions.md "Demos"; docs/remote-disks.md "Building the demos"): every demo of the source
 // file (deploy/disks/demos.json) that has a `recipe` made again from a core build, under its existing id, then published
 // (tools/publish-demos.ts's plan, a dry run unless --apply). Per demo, into its `build` directory (target/demos/<id>/):
 //   1. its image, `images/build.sh <image>` when `--check` says it's missing or stale (Podman; --no-images refuses instead);

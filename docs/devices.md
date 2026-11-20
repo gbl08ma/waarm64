@@ -423,7 +423,8 @@ became of a restore's leases as `body[data-lease]` (`agent`, `flap`, `none`, `go
 `macs`, at each agent's HELLO and when they change: web/app/areas/agent-actions.ts `cards`), and the agent brings up
 one that nothing in the guest manages, for a guest whose network is configured card by card: Alpine's ifupdown-ng
 configures only what `/etc/network/interfaces` lists (`eth0`), so a second adapter the page connected (a demo's room:
-[networking/rooms.md](networking/rooms.md) "A demo's room") would stay down. A card is the agent's only when the guest
+[networking/rooms.md](networking/rooms.md) "A demo's room") would stay down. CARDS is a frame of its own rather than
+LEASE at every connection, which would have NetworkManager's `nmcli` reconnect a card the user disconnected. A card is the agent's only when the guest
 has no systemd (`/run/systemd/system`: there networkd, NetworkManager or the user owns the cards, and the unit is
 sandboxed), neither networkd nor NetworkManager runs, the card is down (IFF_UP clear in its sysfs `flags`; or up but marked as
 one the agent brought up before, `/run/waarm64-cards/<card>`, so a card whose udhcpc6 didn't start or died is brought

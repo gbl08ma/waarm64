@@ -194,7 +194,7 @@ the size it started with; the page letterboxes it). Its card's `view` is `screen
 the deployed Desktop Demo's (`desktop/`, its content id the same); the demos' copy of its pieces is in the shared
 `pieces/` (944 files more until `desktop/` is published again from there: backlog).
 
-**What's reproducible:** the shape hash. The recipe fixes everything it covers (the MAC, the disk's serial, CPUs, RAM,
+**What's reproducible:** the shape hash. The recipe fixes everything it covers (the MACs, the disk's serial, CPUs, RAM,
 display, the devices) and the image is bit for bit, so its content id is too: a rebuild from the same checkout gives the
 same hash (tests/build-demos.test.ts), and the publish's checks pass. **What isn't:** the snapshot's bytes (the guest's
 RAM: timers, entropy, what the boot's timing left), so each build is a new snapshot id with new snapshot pieces (~16 MB;
@@ -236,10 +236,15 @@ that changes either needs its demos made again (any build of that commit's core 
    a new id with `replaces`.
 6. **Deploy both**, the disks first, each with the credentials sourced (`set -a; . ~/.config/cloudflare/waarm64.env;
    set +a`; never print them): `deploy/disks/deploy.sh "<message>"` (vmdisks.tny.im: refuses past 20,000 files), then
-   `wrangler deploy` from the checkout's root (vm.tny.im: frontend.md "Deployed at vm.tny.im").
+   `wrangler deploy` from the checkout's root (vm.tny.im: frontend.md "Deployed at vm.tny.im"). The site's files can
+   answer 404 for some seconds after `deploy.sh` (seen once for `alpine-term/snapshot.json`): check again before calling
+   one missing.
 7. **Check from headless Chromium:** `https://vm.tny.im/demos` lists every demo; each starts (Alpine to a command
    answered, `apk add python3` through the demo network; a desktop to its screen and the countdown's app); then the
-   numbers with bench/demo (bench/demo/REPORT.md).
+   numbers with bench/demo (bench/demo/REPORT.md). A demo whose image changed keeps its id only where nobody depends on
+   the old one (the user's call: no visitors yet, 2026-11-19): its directory and ledger entry are dropped from the deploy
+   checkout's copy of the site (never main's: hard links, the ledger replaced, not written through), and it publishes as
+   new.
 
 **The demo network's server** (`wss://demonet.tny.im/`, the page's default: web/demo-net.ts `DEMO_URL`) is
 [waarm64-demonet](https://github.com/gbl08ma/waarm64-demonet), hosted by the user outside these deploys: its README

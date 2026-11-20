@@ -39,7 +39,7 @@ import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { readHeader, SNAPSHOT_VERSION } from '../web/snapshot-file.ts';
 
 export const SOURCE_TYPE = 'waarm64-demos-source';
-/** The site's distinct files the plan keeps under (docs/plans/first-demo.md §4), and the host's own limit. */
+/** The site's distinct files the plan keeps under (docs/remote-disks.md "Publishing"), and the host's own limit. */
 export const BUDGET = 15_000;
 export const HARD_LIMIT = 20_000;
 /** The host's largest file. */

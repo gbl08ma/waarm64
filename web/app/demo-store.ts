@@ -1,4 +1,4 @@
-// A store of demos (DEMO-KICKOFF.md decision 15; docs/machines.md §6.2): one JSON file (`waarm64-store`) holding its
+// A store of demos (docs/decisions.md "Demos"; docs/machines.md §6.2): one JSON file (`waarm64-store`) holding its
 // demos' definitions inline (each a whole `waarm64-machine` definition with a `demo`), whose relative URLs (the disks',
 // the snapshot's, the thumbnail's) resolve against the store's own URL, so a site moves whole. A single definition's
 // URL is taken where a store's is: a store of that one demo. Each demo is checked as a definition file is

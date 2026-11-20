@@ -1255,6 +1255,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **A bench target for the deployed demos** (the DEMO track's end, 2026-11-19): bench/demo measures a local build
+  through a modelled link; the deployed store's numbers (bench/demo/REPORT.md "DEMO's end", comparison.md §3) are single
+  runs of an ad-hoc check. A target for `https://vm.tny.im/demos` (each demo's click → command, bytes, `apk add`,
+  a desktop's app) with the bench's medians makes comparison.md's rows like for like with the peers'.
+- **arch-desktop's Firefox didn't come once, on the deployed site** (2026-11-19): one run of four, the first visit after
+  the deploy (the CDN cold: a command took 12.6 s, 3.5 s after): after 189 s only sway's bar was on the screen, foot's
+  window gone too, no virtio-gpu errors; the three runs after it, and every local one, had Firefox at 41–60 s. Perhaps
+  only slow (foot not open yet); not reproduced, and no guest diagnostics from it (the check gathers them now).
 - **A serial login during the boot's last seconds can have its lines written over** (2026-11-19): with the serial
   console's `TERM=xterm-256color` (web/app/firmware-files.ts `SERIAL_TERM`), ci-debian.sh --platform failed twice in
   tests/page-debian.test.ts's serial logins: systemd's status lines, still coming, and the new login's shell wrote over a

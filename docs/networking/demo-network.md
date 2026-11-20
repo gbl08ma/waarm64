@@ -2,7 +2,10 @@
 
 The fourth kind of connection beside a tailnet, tailcat and the local helper ([adapters.md](adapters.md) §1): **`demo`**,
 a public server that gives each page's machine a network of its own whose way out reaches only the hosts its owner's
-allowlist names (for the Alpine demo, `dl-cdn.alpinelinux.org` on port 443, so `apk add` works out of the box). What
+allowlist names (for the Alpine demo, `dl-cdn.alpinelinux.org` on port 443, so `apk add` works out of the box: apk
+uses HTTPS and checks signatures, so no port 80; no NTP or OCSP host, as the agent sets the clock and the certificates
+are in `ca-certificates`; the hosted server's allowlist also has the Arch image's package repository, so `pacman`
+works in the desktop demos: the user, 2026-11-19). What
 binds it is [decisions.md](../decisions.md) "Network" (the user, 2026-11-18); why it has this shape is "Not taken, and
 why" below.
 

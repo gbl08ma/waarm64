@@ -1,4 +1,4 @@
-# A demo as a visitor meets it (docs/benchmarking.md; plans/first-demo.md)
+# A demo as a visitor meets it (docs/benchmarking.md; docs/decisions.md "Demos")
 
 How long a visitor waits for a shell, how much the page downloads first, and how much memory the tab takes, for the
 others' demos and ours, measured the same way. The harness is `bench/demo/run.ts` (its header says what each number
@@ -74,7 +74,7 @@ fork churn), and other hosts or connections: a visitor elsewhere gets other time
 
 ## DEMO loop 1: the spike, an Alpine template restored in a fresh profile (2026-11-19)
 
-**What.** The plan's path to the goal (DEMO-KICKOFF.md loop 1): Alpine at a root prompt as a template snapshot, its
+**What.** The plan's path to the goal (the DEMO track's loop 1): Alpine at a root prompt as a template snapshot, its
 disk a chunked image, both hosted under the demos' layout (decision 17: one shared `pieces/`, a manifest per image and
 one for the snapshot, the definition beside them), restored in a fresh Chromium profile with no network past this
 computer. Target `waarm64-template` (bench/demo/targets.ts): the page as `npm run dist` builds it (Vite's preview on
@@ -261,3 +261,27 @@ visitor's machine would pay for as long as it runs. Dropped.
   (the old Firefox thumbnail, a white page). The threshold, 12, sits in that gap. The two demos' resumed screens
   differ by 0.2 from each other (both foot and a countdown), which is why the cards' thumbnails are taken later, the
   app open.
+
+## DEMO's end: the deployed demos, single runs (2026-11-19)
+
+**What.** The demos as deployed (vm.tny.im and vmdisks.tny.im), checked from headless Chromium in the dev VM
+(SwiftShader), a fresh profile per demo: the store's card → Start → running → a command on the serial console;
+Alpine then `apk add python3` through the demo network; a desktop then its countdown's app's window in sway's tree.
+**Single runs, not the bench's medians:** bench/demo has no target for the deployed store (backlog "A bench target for
+the deployed demos"). The check: `bench/results/local/deployed-check.ts` (git-ignored, ad hoc). Times from the click.
+
+| | 4e81858b (the second deploy) | 4eb078eb (the track's last deploy: fresh images, Alpine 3.24.4) |
+|---|---|---|
+| alpine-term: a command answered | 4.1 s | 4.3 s (running at 3.7 s) |
+| alpine-term: `apk add python3` done | 13.7 s | 14.0 s |
+| alpine-term: the terminal fitted, the guest's tty the same | 159×55 | 164×58 |
+| arch-desktop: a command on the serial console | — | 12.6 s (the first visit after the deploy, the CDN cold); 3.5 s after |
+| arch-desktop: Firefox's window | 56.3 s | 60.5, 43.2, 41.6 s; one run of four never showed it (the first, the CDN cold: only sway's bar on the screen after 189 s, foot's window not there either; not reproduced) |
+| arch-3d: a command on the serial console | — | 6.3 s |
+| arch-3d: the shader demo's window | 39.4 s | 39.6 s |
+| virtio-gpu errors in the guest (both desktops) | 0 | 0 |
+
+At 4e81858b also on the Mac (Chrome for Testing, Apple M4 through ANGLE's Metal): arch-desktop's Firefox at 42.4 s,
+arch-3d's shader demo at 30.3 s, 3D on, no virtio-gpu error. The user ran all three by hand on their desktop's Nvidia
+GPU (2026-11-19). Compared with the local numbers above ("DEMO loop 3", "DEMO loop 12": a modelled 100 Mbit/s and
+20 ms link), the deployed Alpine answers ~1.3 s later: the real CDN and the demo network's connection.
