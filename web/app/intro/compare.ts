@@ -4,8 +4,12 @@
 // (`intro:IntroCompare.unconfirmed`). The other projects move fast: check that page's sources again before a deploy,
 // and move the date with them.
 
-/** The day the other projects' documentation and source were last read. */
-export const CHECKED = '2026-11-18';
+/**
+ * The day the other projects' documentation and source were last read: unkernel's whole README (its user space
+ * became aarch64 the day before), and for every project what the rows on sound, files and the license say; the other
+ * rows of WebVM, v86 and JSLinux are docs/comparison.md's of 2026-11-18, not read again that day.
+ */
+export const CHECKED = '2026-11-20';
 
 /**
  * A day written `yyyy-mm-dd`, as a date the visitor's locale writes as that day: its noon where the visitor is

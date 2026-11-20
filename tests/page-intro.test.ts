@@ -109,7 +109,7 @@ test("with a machine kept: a bare address isn't the introduction; `#intro` and A
   await ctx.close();
 });
 
-test('the sections: the bar\'s links scroll to them; the comparison names each project, ours lit, and no speed figure without a measurement', async () => {
+test('the sections: the bar\'s links scroll to them; the comparison names each project, ours lit, and the speed figures of the measurement', async () => {
   const { ctx, page, errors } = await visitor();
   await page.goto(`${base}/web/app/#intro`);
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
@@ -128,7 +128,14 @@ test('the sections: the bar\'s links scroll to them; the comparison names each p
   assert.equal(await table.locator('tbody tr').count(), 12);
   assert.equal(await table.locator('tbody td[data-peer="ours"]').count(), 12, 'a cell of ours in every row');
   assert.equal(await table.locator('tbody td').evaluateAll((tds) => tds.filter((td) => !td.textContent?.trim()).length), 0, 'no empty cell');
-  assert.equal(await page.locator('[data-field="speed-lead"]').count(), 0, 'no speed figure until one is measured (web/app/intro/speed.ts)');
+  // The speed figures are the measurement's (web/app/intro/speed.ts; bench/compare/REPORT.md): a project each, the next fastest said so.
+  const { SPEED } = await import('../web/app/intro/speed.ts');
+  assert.deepEqual(await page.locator('[data-field="speed-lead"] .lead').evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.peer)), (SPEED?.leads ?? []).map((l) => l.peer));
+  for (const lead of SPEED?.leads ?? []) {
+    const words = (await page.locator(`[data-field="speed-lead"] .lead[data-peer="${lead.peer}"]`).innerText()).replace(/\s+/g, ' ');
+    assert.ok(words.includes(lead.times.toFixed(1)) && words.includes(lead.peer), `${lead.peer}'s figure: ${words}`);
+    assert.equal(await page.locator(`[data-field="speed-lead"] .lead[data-peer="${lead.peer}"][data-next]`).count(), lead.next ? 1 : 0, `${lead.peer}: the next fastest is said so`);
+  }
   // Every source is a link to another site, opened apart and told nothing of the page.
   const links = await page.locator('[data-section="intro-compare"] .sources a').evaluateAll((as) => as.map((a) => ({ rel: a.getAttribute('rel'), target: a.getAttribute('target') })));
   assert.equal(links.length, 4);

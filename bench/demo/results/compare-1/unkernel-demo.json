@@ -1,0 +1,224 @@
+{
+ "schema": 1,
+ "kind": "demo",
+ "target": "unkernel",
+ "system": "unkernel",
+ "what": "https://unkernel.dev/ as shipped: its distribution (Debian 13, aarch64 user space, since 2026-11-19; Alpine 3.24 riscv64 before) to its root shell, Wisp networking on",
+ "promptIs": "the shell prompt (`~ ⇒`), logged in",
+ "url": "https://unkernel.dev/",
+ "date": "2026-11-20T22:22:07.579Z",
+ "commit": "af419c2aeb3e",
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "headless": true
+ },
+ "runs": [
+  {
+   "run": 1,
+   "marks": {
+    "prompt": 1450,
+    "command": 1690
+   },
+   "bytes": {
+    "total": 7305230,
+    "background": 60288,
+    "byHost": {
+     "(dns)": 1644,
+     "update.googleapis.com": 13982,
+     "accounts.google.com": 6522,
+     "www.google.com": 4051,
+     "unkernel.dev": 7283516,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13852,
+     "pmwocc": 8901,
+     "android.clients.google.com": 6928,
+     "64.233.166.188:5228": 11169
+    },
+    "prompt": 7284712,
+    "command": 7284712
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1270,
+     "pssMiB": 676,
+     "processes": 11,
+     "rendererPssMiB": 293
+    },
+    "prompt": {
+     "rssMiB": 1259,
+     "pssMiB": 666,
+     "processes": 11,
+     "rendererPssMiB": 285
+    }
+   }
+  },
+  {
+   "run": 2,
+   "marks": {
+    "prompt": 1556,
+    "command": 1766
+   },
+   "bytes": {
+    "total": 7299972,
+    "background": 60233,
+    "byHost": {
+     "(dns)": 1644,
+     "update.googleapis.com": 13903,
+     "www.google.com": 4052,
+     "accounts.google.com": 6522,
+     "unkernel.dev": 7283772,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13878,
+     "pmwocc": 8967,
+     "android.clients.google.com": 6925,
+     "64.233.166.188:5228": 5589
+    },
+    "prompt": 7284968,
+    "command": 7284968
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1264,
+     "pssMiB": 671,
+     "processes": 11,
+     "rendererPssMiB": 290
+    },
+    "prompt": {
+     "rssMiB": 1264,
+     "pssMiB": 671,
+     "processes": 11,
+     "rendererPssMiB": 290
+    }
+   }
+  },
+  {
+   "run": 3,
+   "marks": {
+    "prompt": 1470,
+    "command": 1687
+   },
+   "bytes": {
+    "total": 7299990,
+    "background": 60069,
+    "byHost": {
+     "(dns)": 1708,
+     "update.googleapis.com": 14015,
+     "www.google.com": 4051,
+     "accounts.google.com": 6521,
+     "unkernel.dev": 7283636,
+     "edgedl.me.gvt1.com": 14953,
+     "content-autofill.googleapis.com": 13727,
+     "pmwocc": 9058,
+     "android.clients.google.com": 6802,
+     "64.233.167.188:5228": 5588
+    },
+    "prompt": 7284832,
+    "command": 7284832
+   },
+   "mem": {
+    "peak": {
+     "rssMiB": 1265,
+     "pssMiB": 672,
+     "processes": 11,
+     "rendererPssMiB": 287
+    },
+    "prompt": {
+     "rssMiB": 1260,
+     "pssMiB": 666,
+     "processes": 11,
+     "rendererPssMiB": 284
+    }
+   }
+  }
+ ],
+ "failed": 0,
+ "summary": {
+  "prompt_ms": {
+   "median": 1470,
+   "iqr": 53,
+   "n": 3,
+   "samples": [
+    1450,
+    1556,
+    1470
+   ]
+  },
+  "command_ms": {
+   "median": 1690,
+   "iqr": 39.5,
+   "n": 3,
+   "samples": [
+    1690,
+    1766,
+    1687
+   ]
+  },
+  "bytes_prompt_MiB": {
+   "median": 6.947357177734375,
+   "iqr": 0.0001220703125,
+   "n": 3,
+   "samples": [
+    6.947242736816406,
+    6.947486877441406,
+    6.947357177734375
+   ]
+  },
+  "bytes_command_MiB": {
+   "median": 6.947357177734375,
+   "iqr": 0.0001220703125,
+   "n": 3,
+   "samples": [
+    6.947242736816406,
+    6.947486877441406,
+    6.947357177734375
+   ]
+  },
+  "bytes_total_MiB": {
+   "median": 6.961812973022461,
+   "iqr": 0.0025072097778320312,
+   "n": 3,
+   "samples": [
+    6.96681022644043,
+    6.961795806884766,
+    6.961812973022461
+   ]
+  },
+  "pss_prompt_MiB": {
+   "median": 666,
+   "iqr": 2.5,
+   "n": 3,
+   "samples": [
+    666,
+    671,
+    666
+   ]
+  },
+  "pss_peak_MiB": {
+   "median": 672,
+   "iqr": 2.5,
+   "n": 3,
+   "samples": [
+    676,
+    671,
+    672
+   ]
+  },
+  "rss_peak_MiB": {
+   "median": 1265,
+   "iqr": 3,
+   "n": 3,
+   "samples": [
+    1270,
+    1264,
+    1265
+   ]
+  }
+ }
+}

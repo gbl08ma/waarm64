@@ -1,10 +1,20 @@
-// The introduction's one speed figure (web/app/intro/IntroSpeed.svelte; INTRO-KICKOFF.md "The comparison"): how much
-// faster waarm64 is than the next best of the projects it's compared with, on one named workload. None until
-// docs/comparison.md §3's rows are measured (docs/benchmarking.md "Rules": no claim without a run behind it); it is
-// taken out again if a peer measures faster.
+// The introduction's speed figures (web/app/intro/IntroSpeed.svelte; INTRO-KICKOFF.md "The comparison"): how many
+// times as fast waarm64 ran one workload as the projects it's compared with: the next fastest, named so, and v86,
+// the oldest and best known of them (the user, 2026-11-20). The numbers are bench/compare/REPORT.md's, the ratio of
+// the medians (docs/benchmarking.md "Rules": no claim without a run behind it); a figure is taken out again if its
+// peer measures faster, and all of them when the workload changes. What was run is the page's words
+// (`intro:IntroSpeed.basis`), not data.
 
-/** A measured lead: `percent` faster than `peer` at `workload` (words as the page says them), measured on `date`. */
-export type SpeedLead = { percent: number; peer: string; workload: string; date: string };
+/** A measured lead over `peer` (a project's name): waarm64 ran the workload `times` times as fast. */
+export type SpeedLead = { peer: string; times: number; next?: true };
+/** The figures of one measurement, made on `date`; the next fastest peer first. */
+export type Speed = { date: string; leads: SpeedLead[] };
 
-/** The figure shown, or none. */
-export const SPEED_LEAD: SpeedLead | undefined = undefined;
+/** The figures shown, or none. */
+export const SPEED: Speed | undefined = {
+  date: '2026-11-20',
+  leads: [
+    { peer: 'unkernel', times: 1.9, next: true }, // i18n-ignore: 20.99 s against 11.34 (1.851)
+    { peer: 'v86', times: 4.0 }, // i18n-ignore: 45.84 s against 11.34 (4.042)
+  ],
+};

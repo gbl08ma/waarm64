@@ -87,11 +87,14 @@ const ECHO = 'echo ok-$((6*7))';
 /** apk's install, then the program it installed, then a marker with apk's status (the line typed shows none of `420`, `apk-0-42`). */
 const APK = "apk add python3; python3 -c 'print(6*7*10)'; echo apk-$?-$((6*7))";
 
-/** unkernel's demo: navigating to it boots Alpine (riscv64 user space on Linux built for wasm) to a root shell. */
+/**
+ * unkernel's demo: navigating to it boots its distribution to a root shell: Debian 13 with an aarch64 user space since
+ * 2026-11-19 (Alpine 3.24 on riscv64 when DEMO loop 0 measured it, whose `apk` step no longer applies: it has apt).
+ */
 const unkernel: Target = {
   name: 'unkernel',
   system: 'unkernel',
-  what: 'https://unkernel.dev/ as shipped: Alpine 3.24 (riscv64) to its root shell, Wisp networking on',
+  what: 'https://unkernel.dev/ as shipped: its distribution (Debian 13, aarch64 user space, since 2026-11-19; Alpine 3.24 riscv64 before) to its root shell, Wisp networking on',
   url: () => 'https://unkernel.dev/',
   // Its terminal is DOM rows (`#term .term-row`).
   text: (page) => page.evaluate(() => [...document.querySelectorAll('#term .term-row')].map((r) => r.textContent?.trimEnd()).join('\n')),

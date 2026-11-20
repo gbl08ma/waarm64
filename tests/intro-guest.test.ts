@@ -49,7 +49,7 @@ test("the introduction's guest: a picture first, a key for the shell, one toy at
     await until("the command's answer", () => /ok-42\r\naarch64\r\n12 64\r\n/.test(text));
     // A toy started by hand takes the screen from the one that had it.
     vm.send('life & sleep 1; echo toys=$(pidof scope ridges life | wc -w)\n');
-    await until('one toy', () => /toys=\d/.test(text.replace(/echo toys=/g, '')));
+    await until('one toy', () => /\ntoys=\d\r/.test(text));
     assert.match(text, /\ntoys=1\r/, `more than one toy has the screen: ${JSON.stringify(text.slice(-200))}`);
     // Ctrl-C stops a toy run in the foreground, and the shell is back.
     vm.send('killall cycle; scope\n');
@@ -60,7 +60,7 @@ test("the introduction's guest: a picture first, a key for the shell, one toy at
     await until('the shell after Ctrl-C', () => /back-48\r\n/.test(text));
     // A toy started by hand while `cycle` waits its turn is the visitor's: cycle leaves it alone and stops.
     vm.send('killall cycle; cycle 2 & sleep 0.5; scope & sleep 4; echo kept=$(pidof scope | wc -w) cycling=$(pidof cycle | wc -w)\n');
-    await until("cycle's turn", () => /\nkept=\d cycling=\d/.test(text));
+    await until("cycle's turn", () => /\nkept=\d cycling=\d\r/.test(text));
     assert.match(text, /\nkept=1 cycling=0\r/, "cycle took the screen from a toy started by hand, or went on");
     // `poweroff` as anybody types it (BusyBox's asks PID 1, which is our init).
     vm.send('poweroff\n');

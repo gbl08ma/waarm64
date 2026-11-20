@@ -1,34 +1,57 @@
 <!--
-  The introduction's speed figure (speed.ts `SPEED_LEAD`), over the comparison's table: one readout, "up to N% faster
-  than" the next best project, named, with the workload and the date under it. Nothing while there is no measured
+  The introduction's speed figures (speed.ts `SPEED`), over the comparison's table: a readout a project, "N× as fast
+  as" it, the next fastest named so, with what was measured and when under them. Nothing while there is no measured
   figure.
 -->
 <script lang="ts">
   import T from '../T.svelte';
   import { t } from '../../i18n.ts';
   import { day } from './compare.ts';
-  import type { SpeedLead } from './speed.ts';
+  import type { Speed } from './speed.ts';
 
-  type Props = { lead: SpeedLead | undefined };
-  let { lead }: Props = $props();
+  type Props = { speed: Speed | undefined };
+  let { speed }: Props = $props();
+  /** A ratio to one decimal, as the visitor's locale writes it. */
+  const times = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 </script>
 
-{#if lead}
+{#if speed}
   <div class="speed" data-field="speed-lead">
-    <div class="window"><span class="figure">{t('intro:IntroSpeed.figure', { percent: lead.percent })}</span></div>
-    <div class="words">
-      <div class="claim"><T k="intro:IntroSpeed.claim" params={{ peer: lead.peer }} /></div>
-      <p>{t('intro:IntroSpeed.basis', { workload: lead.workload, when: day(lead.date) })}</p>
+    <div class="leads">
+      {#each speed.leads as lead (lead.peer)}
+        <div class="lead" data-peer={lead.peer} data-next={lead.next}>
+          <div class="window">
+            <span class="figure">{t('intro:IntroSpeed.figure', { times: times(lead.times) })}</span>
+          </div>
+          <div class="claim">
+            {#if lead.next}
+              <T k="intro:IntroSpeed.claim.next" params={{ peer: lead.peer }} />
+            {:else}
+              <T k="intro:IntroSpeed.claim" params={{ peer: lead.peer }} />
+            {/if}
+          </div>
+        </div>
+      {/each}
     </div>
+    <p>{t('intro:IntroSpeed.basis', { when: day(speed.date) })}</p>
   </div>
 {/if}
 
 <style>
   .speed {
     display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .leads {
+    display: flex;
     flex-wrap: wrap;
+    gap: var(--space-5) var(--space-7);
+  }
+  .lead {
+    display: flex;
     align-items: center;
-    gap: var(--space-5) var(--space-6);
+    gap: var(--space-5);
   }
   .window {
     padding: var(--space-4) var(--space-5);
@@ -46,11 +69,13 @@
     text-shadow: var(--lit-text);
   }
   .claim {
+    max-width: 14em;
     font-size: var(--text-lede);
     font-weight: var(--weight-bold);
   }
   p {
     margin: 0;
+    max-width: 760px;
     color: var(--text-dim);
   }
 </style>

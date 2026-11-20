@@ -12,9 +12,12 @@ still to measure. No number goes in without a run behind it
 - **waarm64:** a whole AArch64 machine (GICv3, PL011, virtio, xHCI, UEFI) with a JIT to wasm. It boots unmodified
   arm64 distributions (Debian, Arch, Alpine) with their stock kernels and the drivers that ship upstream.
 - **unkernel** (pithings, announced 2026-11): Linux 7.x compiled to wasm (it grew from linux-wasm) runs natively in
-  the tab. Only **riscv64** user programs are emulated, by an interpreter and a block JIT. One CPU in the release;
-  `?smp=N` is experimental and can't be snapshotted. The demo is Alpine in 48 MiB, about 10 MB to download, with Wisp
-  networking on by default.
+  the tab. Only user programs are emulated: **unmodified aarch64 binaries since 2026-11-19** (riscv64 before: its
+  README at `83c65c3`, "the riscv64 user space the project started with"), by an interpreter and a JIT for hot user
+  code (FP and AdvSIMD floating point interpreted even inside compiled code). The page boots several CPUs where it
+  can ("half the device's threads, up to 4 on desktops"; `?cpus=`), which can't be suspended. Its demo, read
+  2026-11-20, is Debian 13 (a 69 MiB image, streamed) on 4 CPUs in 512 MiB, booted in under a second, with Wisp
+  networking; Alpine in 48 MiB is the other distribution it ships.
 - **WebVM / CheerpX** (Leaning Technologies): a proprietary **32-bit x86** user-mode JIT that implements Linux syscalls
   itself, with no guest kernel. 64-bit is "not an immediate priority". Its network is Tailscale only. It's free only
   for exploration and individual use.
@@ -33,12 +36,12 @@ still to measure. No number goes in without a run behind it
 
 | | **waarm64** | unkernel | WebVM / CheerpX | v86 | JSLinux |
 |---|---|---|---|---|---|
-| Guest | **AArch64 (arm64), whole machine** | riscv64 user space on a wasm kernel | i386 user space, syscalls emulated | i686 PC | x86_64 / i686 / riscv64 |
+| Guest | **AArch64 (arm64), whole machine** | aarch64 user space on a wasm kernel (riscv64 until 2026-11-19) | i386 user space, syscalls emulated | i686 PC | x86_64 / i686 / riscv64 |
 | Kernel | **The distribution's own, unmodified**, through UEFI (EDK2) or direct | unkernel's own wasm build | none (CheerpX is the "kernel") | the guest's own | the guest's own |
 | Drivers | Upstream: virtio, xHCI, PL011, GICv3 (no custom guest drivers) | custom paravirtual (kwblk, kwnet, kwfb…) | n/a | legacy PC + virtio | virtio |
-| Unmodified binaries of the ecosystem | **arm64**: the platform of phones, Macs, Raspberry Pis and cloud servers; proprietary arm64 builds (Steam's official aarch64 client starts; its CEF UI has glitches: backlog) | riscv64, still a smaller binary ecosystem | i386 only | i386 only | yes, per ISA |
+| Unmodified binaries of the ecosystem | **arm64**: the platform of phones, Macs, Raspberry Pis and cloud servers; proprietary arm64 builds (Steam's official aarch64 client starts; its CEF UI has glitches: backlog) | arm64 user programs, as packaged by Alpine and Debian (no kernel modules, no other kernel) | i386 only | i386 only | yes, per ISA |
 | CPU | JIT to wasm (blocks, regions), interpreter and block interpreter tiers; crypto extensions | interpreter + block JIT, user code only; atomics and system instructions interpreted | interpreter + JIT | JIT | interpreter (*unverified*) |
-| SMP | **up to 8 vCPUs, a worker each, real atomics** | 1 (experimental SMP, not released) | *unverified* | no | not stated |
+| SMP | **up to 8 vCPUs, a worker each, real atomics** | up to 4 CPUs on the page by default (`?cpus=`), a worker each; one in the SDK and CLI | *unverified* | no | not stated |
 | RAM | up to 16 GiB (past 3 GiB as NUMA nodes) | 48 MiB default | — | — | — |
 | Display | virtio-gpu, live resize, HiDPI | framebuffer | KMS to a canvas (Xorg) | VGA / SVGA | framebuffer X |
 | **3D** | **OpenGL ES 3.0 + GL 2.1 through virgl on WebGL2: 0 failures on dEQP's GLES2 and GLES3 mustpass lists** (17,027 and 44,398 pass); **Vulkan through Venus on WebGPU** (vkcube, vkmark, vkQuake) | no | no | no | no |
@@ -60,23 +63,26 @@ still to measure. No number goes in without a run behind it
 
 ## 3. Performance (to measure)
 
-The user's informal test of 2026-11-18 put our CPU at a little over twice unkernel's, and further ahead with
-unkernel's experimental SMP on. That's not a published number until it's measured. Each row is measured in headless
+The first measured row is Perl ([bench/compare/REPORT.md](../bench/compare/REPORT.md), 2026-11-20): 1.85× as fast as
+unkernel on the very same Debian binary, 4.04× as fast as v86, on the dev VM (Linux arm64, the host where V8's bounds
+checks cost our compiled code most). The user's informal test of 2026-11-18 had put our CPU at a little over twice
+unkernel's (riscv64 then). The rows still TBD aren't claimed. Each row is measured in headless
 Chromium on the same host, in one session, with medians and IQR ([benchmarking.md](benchmarking.md) "Rules"). The
 peers run as shipped: their own demo or a local build at its documented settings. Rows marked * are a cross-ISA
 comparison (the same source compiled for each guest), and the table must say that.
 
 | Workload | waarm64 | unkernel | v86 | WebVM | JSLinux |
 |---|---|---|---|---|---|
-| Click to a shell prompt (cold cache): a typed command answered | 31.7 s (the Desktop Demo's first boot, logged in; login prompt 27.8 s); 2.9–3.0 s (the Alpine demo, a resume: a local build at a modelled 100 Mbit/s and 20 ms); 4.1–4.3 s deployed (single runs) | 1.3 s | 1.8 s (Arch, a saved state); 3.9 s (Buildroot, a boot) | TBD | TBD |
-| Bytes downloaded to the prompt | 420 MiB (6.1 the page, 414 the disk); 24.7 MB (the Alpine demo: the page, a 15.7 MB template, the disk's first reads) | 6.7 MiB | 15.3 MiB (Arch); 5.5 MiB (Buildroot) | TBD | TBD |
+| Click to a shell prompt (cold cache): a typed command answered | 31.7 s (the Desktop Demo's first boot, logged in; login prompt 27.8 s); 2.9–3.0 s (the Alpine demo, a resume: a local build at a modelled 100 Mbit/s and 20 ms); 4.1–4.3 s deployed (single runs) | 1.7 s (2026-11-20: Debian 13, aarch64 user space, 4 CPUs; 1.3 s on 2026-11-19, when the demo was Alpine on riscv64) | 1.8 s (Arch, a saved state); 3.9 s (Buildroot, a boot) | TBD | TBD |
+| Bytes downloaded to the prompt | 420 MiB (6.1 the page, 414 the disk); 24.7 MB (the Alpine demo: the page, a 15.7 MB template, the disk's first reads) | 6.9 MiB (2026-11-20; 6.7 the day before) | 15.3 MiB (Arch); 5.5 MiB (Buildroot) | TBD | TBD |
+| Perl, six kernels (`bench/compare/work.pl`, size 8; seconds, median of 9, 2026-11-20, the dev VM) | **11.3 s** (Debian 13 arm64, perl 5.40.1) | 21.0 s (the same Debian binary: **we are 1.85× as fast**) | 45.8 s (Arch Linux 32, i686 perl 5.36.0 *: **4.04×**) | not measured (closed, no fixed workload: the user) | not measured |
 | CoreMark, 1 core * | TBD | TBD | TBD | TBD | TBD |
 | CoreMark, all cores * | TBD | TBD (`?smp`) | — | TBD | — |
 | `xz -9` / `gzip` of a fixed file * | TBD | TBD | TBD | TBD | TBD |
 | Python: `python3 -c` a fixed loop / pyperformance subset * | TBD | TBD | TBD | TBD | TBD |
 | `apk add python3` (network + disk) | 13.7–14.0 s (the Alpine demo deployed, through the demo network: single runs) | 7.7 s, 17.8 MiB | — | — | — |
 | fork + exec churn * | TBD | TBD | TBD | TBD | TBD |
-| Tab memory at the prompt (PSS over the browser's own 410 MiB) | 2.2 GiB (the Desktop Demo) | 181 MiB | 28 MiB (Arch; 845 peak in the restore); 355 MiB (Buildroot) | TBD | TBD |
+| Tab memory at the prompt (PSS over the browser's own 410 MiB) | 2.2 GiB (the Desktop Demo) | 256 MiB (2026-11-20: 512 MiB of guest memory, 4 CPUs; 181 the day before) | 28 MiB (Arch; 845 peak in the restore); 355 MiB (Buildroot) | TBD | TBD |
 
 The measured rows (the prompt, the bytes, `apk`, the memory): [bench/demo/REPORT.md](../bench/demo/REPORT.md) "DEMO loop 0" (2026-11-19, the dev VM, Chromium
 155 headless, a fresh profile per run, medians of 3; `node bench/demo/run.ts`). They are the demos as shipped: ours
@@ -95,7 +101,7 @@ AES-128-GCM 232 MB/s with the crypto extensions.
 
 ## 4. Where they lead
 
-- **The first minute.** unkernel's demo answers a command at its Alpine prompt 1.3 s after the link, after 6.7 MiB (§3); our Desktop Demo, 31.7 s and 420 MiB. It installs the package for a missing
+- **The first minute.** unkernel's demo answers a command at its prompt 1.7 s after the link, after 6.9 MiB (§3; Debian since 2026-11-20, Alpine at 1.3 s and 6.7 MiB the day before); our Desktop Demo, 31.7 s and 420 MiB. It installs the package for a missing
   command as you type it, keeps your changes across reloads, and has a network with nothing configured. v86's demos
   work in a similar way. Ours did open on an empty machine that asks for a disk; the demo store (frontend.md "The demo
   store") now starts the Alpine demo from a template snapshot, with the same install-as-you-type and the demo network
@@ -134,7 +140,7 @@ they were written from.
 >
 > **Open source, MIT.**
 
-Comparison lines for a table on the site: "arm64, not i386 or riscv64"; "a real kernel, not a wasm port";
+Comparison lines for a table on the site: "a whole arm64 machine, not i386 or user programs alone"; "a real kernel, not a wasm port";
 "8 cores, not 1"; "OpenGL ES 3 and Vulkan, not a framebuffer"; "USB, mic, clipboard, shared folders"; "qcow2 in and
 out". Always with a date and a link to this page's sources.
 

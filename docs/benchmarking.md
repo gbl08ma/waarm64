@@ -34,6 +34,14 @@ block cache's counters) to Firefox's first paint, with a mark per phase; `local:
 or no ranges (`/pages`) added, and logs each request. `summary.ts` sums a run per phase, `simulate.ts` replays its
 trace through a block cache.
 
+**Against the other in-browser systems** (`bench/compare/`; journal in `bench/compare/REPORT.md`; docs/comparison.md
+§3): `node bench/compare/run.ts [--rounds 3] [--runs 3] [--size 8] [--only waarm64,unkernel,v86] [--out f]` types one
+workload (`work.pl`: six kernels in plain Perl, no module) into each system's guest as shipped (ours: this checkout's
+page with the tests' Debian), runs it with the guest's own perl, and times each run from outside, between the
+script's first and last lines on the console; a fresh boot a round, the systems alternated, every kernel's checksum
+compared. The page's speed figures (`web/app/intro/speed.ts`) are its medians' ratios. ~17 min at size 8; alone on
+the machine, under `timeout`.
+
 **A demo as a visitor meets it** (`bench/demo/`, beside the harness; journal in `bench/demo/REPORT.md`):
 `node bench/demo/run.ts <target> [--runs 3] [--apk] [--out f]` opens a target's page in headless Chromium, a fresh
 profile and cache each run, and times from the navigation to its prompt, to a typed command's answer and (`--apk`)

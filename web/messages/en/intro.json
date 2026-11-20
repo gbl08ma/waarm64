@@ -232,16 +232,20 @@
     "note": "Paragraph of the topic “Networks” in the introduction's “What runs on it” section."
   },
   "IntroSpeed.figure": {
-    "message": "{{percent}}%",
-    "note": "The introduction's speed figure in large digits, over the comparison's table. {{percent}} is a number."
+    "message": "{{times}}×",
+    "note": "A speed figure of the introduction in large digits, over the comparison's table: how many times as fast $t(common:product.name) ran a workload as another project. {{times}} is a number like 2.3."
+  },
+  "IntroSpeed.claim.next": {
+    "message": "as fast as <peer>{{peer}}</peer>, the next fastest",
+    "note": "Beside a speed figure on the introduction: reads on from “2.3×”. {{peer}} is another project's name; this one is the fastest of the others."
   },
   "IntroSpeed.claim": {
-    "message": "faster than <peer>{{peer}}</peer>, the next fastest",
-    "note": "Beside the speed figure on the introduction: reads on from “up to N%”. {{peer}} is another project's name."
+    "message": "as fast as <peer>{{peer}}</peer>",
+    "note": "Beside a speed figure on the introduction: reads on from “4.1×”. {{peer}} is another project's name."
   },
   "IntroSpeed.basis": {
-    "message": "Measured on {{when, date}}: {{workload}}.",
-    "note": "Under the speed claim on the introduction. {{when}} is the measurement's date, {{workload}} what was run, in words."
+    "message": "Measured on {{when, date}}, in Chromium on one computer: the same Perl program, six small workloads, run in each project's own Linux guest as it ships. $t(common:product.name) and unkernel ran the very same Debian build of Perl. v86 emulates a 32-bit x86 PC, so its Perl is another build of an older version.",
+    "note": "Under the speed figures on the introduction: what was measured. {{when}} is the measurement's date. unkernel and v86 are other projects' names; Perl, Debian and Chromium are names too."
   },
   "IntroCompare.title": {
     "message": "Compared with the others",
@@ -272,7 +276,7 @@
     "note": "Cell of the comparison table on the introduction: “What is emulated” for waarm64. Not a sentence: no period."
   },
   "IntroCompare.guest.unkernel": {
-    "message": "64-bit RISC-V programs, on a Linux kernel compiled to WebAssembly",
+    "message": "64-bit ARM programs, on a Linux kernel compiled to WebAssembly",
     "note": "Cell of the comparison table on the introduction: “What is emulated” for unkernel. Not a sentence: no period."
   },
   "IntroCompare.guest.webvm": {
@@ -320,7 +324,7 @@
     "note": "Cell of the comparison table on the introduction: “Processor cores” for waarm64. Not a sentence: no period."
   },
   "IntroCompare.cores.unkernel": {
-    "message": "1, more as an experiment",
+    "message": "Up to 4",
     "note": "Cell of the comparison table on the introduction: “Processor cores” for unkernel. Not a sentence: no period."
   },
   "IntroCompare.cores.v86": {
@@ -492,7 +496,7 @@
     "note": "Title of an entry under “Where they lead” on the introduction. No period."
   },
   "IntroCompare.leads.first.words": {
-    "message": "unkernel's demo answers a command 1.3 seconds after you open it, having downloaded 6.7 MiB. Our equivalent Alpine-based demo needs about 4 seconds and 25 MB, and our desktop about half a minute.",
+    "message": "unkernel's demo answers a command 1.7 seconds after you open it, having downloaded 6.9 MiB. Our equivalent terminal demo, on Alpine, needs about 4 seconds and 25 MB, and our desktop about half a minute.",
     "note": "Paragraph of the entry “The first second” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.leads.browsers": {
@@ -508,7 +512,7 @@
     "note": "Title of an entry under “Where they lead” on the introduction. No period."
   },
   "IntroCompare.leads.memory.words": {
-    "message": "unkernel's whole guest fits in 48 MiB, because its kernel isn't emulated. An emulated machine with a stock kernel can't be that small.",
+    "message": "unkernel boots Alpine in 48 MiB of guest memory, because its kernel isn't emulated. An emulated machine with a stock kernel can't be that small.",
     "note": "Paragraph of the entry “Memory” under “Where they lead” on the introduction. The figures are docs/comparison.md §3's."
   },
   "IntroCompare.leads.syscalls": {

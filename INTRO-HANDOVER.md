@@ -56,10 +56,14 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
   change; frontend.md "The captures"). It is the only way found to say truthfully which WebAssembly lines a guest
   instruction became. If the user would rather not have it in the core, the fallback is a viewer without the
   per-instruction highlighting in the WebAssembly and host panes.
-- **The speed figure**: `web/app/intro/speed.ts` `SPEED_LEAD` is undefined. Filling it needs docs/comparison.md §3's
-  rows measured (a benchmarking loop of its own).
-- **The comparison's date** (`web/app/intro/compare.ts` `CHECKED`, 2026-11-18, comparison.md's own): the cloud
-  session didn't read the peers' sites again. Check them before a deploy and move the date.
+- **The speed figures** (`web/app/intro/speed.ts` `SPEED`): 1.9× as fast as unkernel (the next fastest) and 4.0× as
+  fast as v86, at one Perl workload on the dev VM (bench/compare/REPORT.md, 2026-11-20; the user chose the peers, the
+  kind of workload and both figures). Not measured on a Mac or x86-64, where V8 spares our code its bounds checks:
+  REPORT.md's first "not measured". unkernel moves fast (its user space changed ISA the day before): measure again
+  before a deploy.
+- **The comparison's date** (`web/app/intro/compare.ts` `CHECKED`, 2026-11-20): unkernel was read again in full that
+  day (aarch64 user space, Debian, up to 4 CPUs; its demo re-measured) and every project for sound, files and
+  license; WebVM's, v86's and JSLinux's other rows are still 2026-11-18's. Check them before a deploy.
 - **A still or clip** for the hero's fallback, if the plate alone isn't wanted.
 - **The first screen's layout** (loop 2): the live frame takes the plate's place, and the plate shows only where the
   machine can't run (the two together were too tall for a first screen). Screenshots: `node
@@ -90,8 +94,6 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
   introduction, Home or the store leaves the machine opened last stopped (`power-actions.ts` `boot(elsewhere)`;
   frontend.md "What a load starts under it"); the demo's pane keeps its head to its content's width
   (`ui/Pane.svelte` `--pane-width`); the store's list ends with Things to try (`DemoIdeas.svelte`).
-- `tests/intro-guest.test.ts`'s "one toy at a time" check failed once in fourteen runs (2026-11-20) and not again; its
-  message now carries the console's end.
 
 - **GPL sources: pinned links, no tarballs of ours** (the user, 2026-11-20): a GPL binary the page distributes needs
   links to exactly what it was built from, pinned by a commit or as durable an identifier as there is.

@@ -9,7 +9,7 @@
   import IntroSpeed from './IntroSpeed.svelte';
   import T from '../T.svelte';
   import { CHECKED, day, PEERS } from './compare.ts';
-  import { SPEED_LEAD } from './speed.ts';
+  import { SPEED } from './speed.ts';
   import { t } from '../../i18n.ts';
 
   type Props = { ref?: HTMLElement };
@@ -154,7 +154,7 @@
 
 <IntroSection id="intro-compare" title={t('intro:IntroCompare.title')} bind:ref>
   {#snippet lede()}<T k="intro:IntroCompare.lede" params={{ when: day(CHECKED) }} />{/snippet}
-  <IntroSpeed lead={SPEED_LEAD} />
+  <IntroSpeed speed={SPEED} />
   <div class="scroll">
     <table>
       <caption class="sr">{t('intro:IntroCompare.caption')}</caption>

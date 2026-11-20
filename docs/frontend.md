@@ -831,10 +831,13 @@ and the floating windows don't show, and the machine, Home or the store's page s
     column), unkernel, WebVM, v86 and JSLinux, from [comparison.md](comparison.md) §2; a cell that page marks
     unverified says [Not confirmed](ui:intro:IntroCompare.unconfirmed). Under it
     **[Where they lead](ui:intro:IntroCompare.leads)** (comparison.md §3 and §4: the first second, browsers,
-    memory, system calls) and links to the sources. **No speed is claimed**; the place for one is kept
-    (`intro/IntroSpeed.svelte`, over the table): `intro/speed.ts` `SPEED_LEAD` is undefined until comparison.md §3's
-    rows are measured, then holds one figure ("N% faster than" the next fastest, named, with its workload and date),
-    and is emptied again if a peer measures faster.
+    memory, system calls) and links to the sources. **Over the table, the speed figures** (`intro/IntroSpeed.svelte`;
+    `intro/speed.ts` `SPEED`): a readout a project, how many times as fast waarm64 ran one workload as it: unkernel,
+    marked the next fastest, and v86, the oldest and best known of them (the user); under them what was measured and
+    when (the same Perl program in each project's guest; that waarm64 and unkernel ran the same Debian binary and
+    v86's Perl is another build). The numbers are [bench/compare/REPORT.md](../bench/compare/REPORT.md)'s, the ratio
+    of the medians to one decimal; a figure goes when its peer measures faster, and nothing shows without a
+    measurement (`SPEED` undefined).
   - **[How it works](ui:intro:IntroHow.title)** (`intro/IntroHow.svelte`): five topics (`intro/IntroTopic.svelte`),
     the processor, memory, OpenGL, video and Vulkan, each a paragraph and a **path** (`intro/IntroPath.svelte`): five
     stages as modules of a panel joined by a rail, one active (its lamp lit, the rail lit up to it, its paragraph
@@ -910,7 +913,7 @@ and starts again, its worker ends with the introduction; the button under reduce
 run), `tests/intro-route.test.ts` (the address, where leaving leads; Node), `tests/page-intro.test.ts` (Chromium: a
 first visit, no bars under it, a reload, Skip and both buttons to the store, Back; with a machine: not opened by a bare
 address, `#intro`, Skip to Home, About's button and Back to About; the bar's links, the readouts, the comparison's
-table and its sources' links, no speed figure; its wording).
+table and its sources' links, the speed figures as `speed.ts` has them; its wording).
 
 ## The demo store
 

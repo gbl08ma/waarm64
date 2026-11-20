@@ -386,3 +386,18 @@ page was 121 ("INTRO loop 1"): the page itself is the difference.
 **Not tried.** Fetching the core and the guest's file ahead of the page's start (a `preload` in `index.html` for an
 address that will open the introduction): up to ~190 ms sooner for the first picture, at the cost of ~3.7 MB fetched
 by visitors whose browser can't run it or who asked for less motion.
+
+## unkernel's demo again, the day it changed (2026-11-20)
+
+**Why.** unkernel's README and page changed on 2026-11-19 (`83c65c3`): its user space is aarch64 now (riscv64 until
+then), and its demo boots **Debian 13** on up to 4 CPUs in 512 MiB (a 69 MiB image, streamed; an 8.7 MiB kernel wasm)
+instead of Alpine in 48 MiB. "DEMO loop 0"'s row for it was the Alpine demo's. The same harness and host, Chromium
+155.0.8059.84 headless, 3 runs, a fresh profile each; JSON: `results/compare-1/unkernel-demo.json`.
+
+| | Prompt (s) | Command (s) | MiB to the command | PSS MiB at the prompt (tab, over 410) |
+|---|---|---|---|---|
+| unkernel, 2026-11-20 (Debian 13, aarch64 user space, 4 CPUs) | 1.47 (0.05) | **1.69** (0.04) | **6.9** | 666 (256) |
+| unkernel, 2026-11-19 (Alpine 3.24, riscv64; "DEMO loop 0") | 1.04 (0.18) | 1.30 (0.22) | 6.7 | 591 (181) |
+
+Its page says "Booted in 851 ms on 4 CPUs" of itself. The `apk add python3` figure of loop 0 has no equal now: the
+demo has apt, and installs what a missing command needs as it is typed.
