@@ -543,6 +543,13 @@ transfer pending until detach. Configure Endpoint (`configured`), SET_CONFIGURAT
 that interface's endpoints), reset and detach discard an endpoint's state, so their late results are
 ignored.
 
+This is what real hardware mostly does too: a device whose IN tokens stop keeps its data for the next read.
+It differs when the device would have dropped the data after the cancel. A protocol that cancels a read,
+then flushes the device (a vendor request) and expects only fresh data with sequence numbers, gets the
+stale packet that Chromium's pending transfer already took. No device has shown this. If one does, the fix
+is a quirk keyed by its vendor and product that drops carry-over on a cancel; dropping it for every device
+would lose a serial port's late bytes (the `acm` rig test relies on carry-over).
+
 **Reset** (after the attach's first) drops every endpoint's state, releases the interfaces, calls
 `device.reset()`, and claims them again (see "The usbhost guest" for why the release comes first). The
 host keeps the device's configuration across the reset. A reset that fails, which on some hosts means WebUSB lost the device

@@ -2091,8 +2091,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **A WebHID device across Suspend:** Snapshot and Suspend unplug every device first. The emulated HID device's
   state is small (idle rate, last reports), so it could be saved and its `HIDDevice` opened again at resume, keeping
   a game pad plugged in as far as the guest knows.
-- **Carry-over and sequence numbers:** a cancelled IN's data goes to the next read on that endpoint, which a
-  protocol that cancels, then expects only fresh data with sequence numbers, would notice. None seen yet.
 
 ## Clipboard sharing ([clipboard.md](clipboard.md))
 
