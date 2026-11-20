@@ -293,14 +293,17 @@ const decoder = new TextDecoder();
  */
 export const DERP_BUFFER = 256 * 1024;
 
-/** The module's message on an open socket (`SocketSend`): text (a room's Nostr relays) always goes, binary unless full. */
+/**
+ * The module's message on an open socket (`SocketSend`): a relay's (DERP's, whole frames) unless full; any other
+ * always goes: text (a room's Nostr relays), and the control connection's Noise stream, which a lost message breaks.
+ */
 export function socketSend(
   ws: { readonly bufferedAmount: number; send(b: string | Uint8Array<ArrayBuffer>): void },
-  text: boolean,
+  s: { readonly text: boolean; readonly derp: boolean },
   b: Uint8Array<ArrayBuffer>,
 ): boolean {
-  if (text) ws.send(decoder.decode(b));
-  else if (ws.bufferedAmount > DERP_BUFFER) return false;
+  if (s.text) ws.send(decoder.decode(b));
+  else if (s.derp && ws.bufferedAmount > DERP_BUFFER) return false;
   else ws.send(b);
   return true;
 }
@@ -351,7 +354,7 @@ export class TsClient {
   private readonly on: TsHandlers;
   private readonly sockets = new Map<
     number,
-    { ws: WebSocket; text: boolean; queue: Uint8Array<ArrayBuffer>[] | null }
+    { ws: WebSocket; text: boolean; derp: boolean; queue: Uint8Array<ArrayBuffer>[] | null }
   >();
   /** A room's data channels, by connection. */
   private readonly channels = new Map<number, RTCDataChannel>();
@@ -526,7 +529,7 @@ export class TsClient {
           // Until it opens; a socket that never does holds at most SOCKET_QUEUE messages.
           if (s?.queue) {
             if (s.queue.length < SOCKET_QUEUE) s.queue.push(rest);
-          } else if (s?.ws.readyState === WebSocket.OPEN) socketSend(s.ws, s.text, rest);
+          } else if (s?.ws.readyState === WebSocket.OPEN) socketSend(s.ws, s, rest);
           break;
         }
         case 3:
@@ -574,8 +577,8 @@ export class TsClient {
       }, Math.ceil(ms));
   }
 
-  /** A WebSocket for the module: binary with a subprotocol (DERP), text without one (a room's Nostr relays: the
-   * module's bytes are UTF-8 both ways). */
+  /** A WebSocket for the module: binary with a subprotocol (DERP's `derp`, the control connection's), text without
+   * one (a room's Nostr relays: the module's bytes are UTF-8 both ways). */
   private open(conn: number, url: string, protocol: string) {
     let ws: WebSocket;
     const text = protocol === '';
@@ -592,7 +595,7 @@ export class TsClient {
       return;
     }
     ws.binaryType = 'arraybuffer';
-    const s = { ws, text, queue: [] as Uint8Array<ArrayBuffer>[] | null };
+    const s = { ws, text, derp: protocol === 'derp', queue: [] as Uint8Array<ArrayBuffer>[] | null };
     this.sockets.set(conn, s);
     ws.onopen = () => {
       for (const b of s.queue ?? []) ws.send(text ? decoder.decode(b) : b);

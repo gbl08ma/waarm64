@@ -537,7 +537,11 @@ export class VenusShare {
       h = Math.min(r.height, src.texture.height);
     const key = `${w}x${h}`;
     let c = this.canvases.get(key);
-    if (!c) {
+    if (c) {
+      // Least recently used goes first: the busiest surface's canvas moves to the end.
+      this.canvases.delete(key);
+      this.canvases.set(key, c);
+    } else {
       const canvas = new OffscreenCanvas(w, h);
       const ctx = canvas.getContext('webgpu') as GPUCanvasContext | null;
       if (!ctx) {
@@ -551,7 +555,8 @@ export class VenusShare {
         usage: RENDER_ATTACHMENT,
       });
       c = { canvas, ctx };
-      // A window resized by dragging has a new size every frame: the oldest canvas goes, its swap chain with it.
+      // A window resized by dragging has a new size every frame: the least recently used canvas goes, its swap chain
+      // with it.
       if (this.canvases.size >= 8) {
         const [oldest, old] = this.canvases.entries().next().value!;
         old.ctx.unconfigure();

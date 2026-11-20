@@ -94,7 +94,7 @@ desktops would pick it. That is also why fw_cfg has no DMA interface.
   runtime services Linux uses: `GetVariable`/`SetVariable` (efivarfs: 28–33 variables on Alpine;
   `grub-install` on a Debian kernel update writes boot entries) and `ResetSystem`.
 - **The variable store is the flash bank,** kept per disk beside its overlay (frontend.md), rewritten in place (a
-  full storage leaves the last one whole: `writeWhole`); GRUB's
+  write that fails or falls short puts the old bytes back, so a full storage leaves the last one whole: `writeWhole`); GRUB's
   "UEFI Firmware Settings" sets OsIndications there and resets into EDK2's setup. After "Continue"
   EDK2 shows its boot device menu (ArmVirt's BDS) rather than booting on.
 - **The firmware's own boot cost** on the page's Debian (bench/boot/REPORT.md "M8 phase B loop 3"):

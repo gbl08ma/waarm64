@@ -608,6 +608,7 @@ test("the variable store is rewritten in place: a full storage leaves the old on
     assert.ok(file.bytes().every((x) => x === 2) && file.getSize() === 8192, `${how}: rewritten`);
     assert.throws(() => writeWhole(f, new Uint8Array(12288).fill(3)), /storage is full/, `${how}: a bigger one refused`);
     assert.equal(file.getSize(), 8192, `${how}: the old length kept`);
+    assert.ok(file.bytes().every((x) => x === 2), `${how}: the old store whole, not half new`);
     const empty = memFile();
     const g = Object.assign(memFile(), {
       read: empty.read.bind(empty), getSize: empty.getSize.bind(empty), truncate: empty.truncate.bind(empty), flush: empty.flush.bind(empty),

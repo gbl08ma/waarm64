@@ -472,6 +472,19 @@ test("the opener: a detach removes its disconnect listener, and an attach right 
   await settle();
 });
 
+test('the opener: an attach after a detach whose close never settles (a wedged device) goes ahead after a bound', async () => {
+  const dev = new FakeUsb(fx('FTDI'));
+  const usb = { getDevices: async () => [dev], addEventListener() {}, removeEventListener() {} };
+  const open = webUsbOpener(usb, 20);
+  const id = { api: 'usb' as const, vendorId: 0x0403, productId: 0x6001 };
+  const p = await open(id);
+  dev.close = () => new Promise<void>(() => {}); // a close behind a transfer that never settles
+  p.detach();
+  const q = await Promise.race([open(id), new Promise<null>((r) => setTimeout(() => r(null), 2000))]);
+  assert.ok(q, 'the open went ahead');
+  q.detach();
+});
+
 test('strings outside the cache pass through (a Microsoft OS string, an index only a class descriptor names)', async () => {
   const { dev, p } = await open(fx('FTDI'));
   const r = await control(p, getDesc(3, 0xee, 18, 0));

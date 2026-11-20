@@ -80,7 +80,7 @@ test("venus-share: a reused resource id's submits are held again while the old o
   }
 });
 
-test('venus-share: the GPU ways keep at most 8 canvases, the oldest unconfigured as a new size comes', () => {
+test('venus-share: the GPU ways keep at most 8 canvases, the least recently used unconfigured as a new size comes', () => {
   const unconfigured: string[] = [];
   const g = globalThis as { OffscreenCanvas?: unknown };
   const had = g.OffscreenCanvas;
@@ -110,6 +110,15 @@ test('venus-share: the GPU ways keep at most 8 canvases, the oldest unconfigured
     }
     assert.equal(renderer.writes, 12);
     assert.deepEqual(unconfigured, ['100x50', '101x50', '102x50', '103x50']);
+    // The main surface's size, used every frame, stays while the others come and go: the least recently used goes.
+    unconfigured.length = 0;
+    const frame = (w: number) =>
+      assert.ok(copy({ id: 1, width: w, height: 50, format: B8G8R8A8 }, { texture: texture(w, 50), written: w }));
+    frame(104); // the oldest of the 8 kept, used again
+    frame(200);
+    frame(104);
+    frame(201);
+    assert.deepEqual(unconfigured, ['105x50', '106x50'], 'the one in use is kept');
   } finally {
     g.OffscreenCanvas = had;
   }

@@ -219,6 +219,32 @@ test('a detach while the device is still opening lets it go when it opens: the c
   usb.close();
 });
 
+test('an attach cancelled while opening posts nothing; a new attach on its connector waits for it and is answered', async (t) => {
+  const opens: (() => void)[] = [];
+  registerUsbOpener('usb', () => new Promise<UsbDevice>((resolve) => {
+    opens.push(() => resolve({ speed: 'high', submit() {}, cancel() {}, reset() {}, detach() {} }));
+  }));
+  const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
+  const channel = new MessageChannel();
+  const states: UsbState[] = [];
+  channel.port2.onmessage = (e) => states.push(e.data);
+  const usb = new Usb({ memory, shared: 0, ram: 65536, ramSize: 65536, deterministic: false, kick: () => {}, port: channel.port1 });
+  t.after(() => { usb.close(); channel.port2.close(); });
+  const a = usb.attach(0, { api: 'usb', vendorId: 1, productId: 2 });
+  usb.detach(0, 'page');
+  const b = usb.attach(0, { api: 'usb', vendorId: 1, productId: 2 });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(opens.length, 1, 'the second attach waits for the cancelled open');
+  opens[0]();
+  assert.equal((await a).state, 'error');
+  for (const t0 = Date.now(); opens.length < 2 && Date.now() - t0 < 5000;) await new Promise((r) => setTimeout(r, 5));
+  opens[1]();
+  assert.equal((await b).state, 'attached');
+  for (const t0 = Date.now(); states.length < 2 && Date.now() - t0 < 5000;) await new Promise((r) => setTimeout(r, 5));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(states.map((s) => s.state), ['detached', 'attached'], 'no answer for the cancelled attach');
+});
+
 test('a device that completes its TD and then throws completes it once', async () => {
   registerUsbOpener('usb', async () => ({
     speed: 'high',

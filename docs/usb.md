@@ -339,8 +339,9 @@ that don't fit the request ring wait in order, and are posted after the next com
   - An opener gets `{connector, gone}`. `gone()` detaches the connector (`usb-state` detached,
     `unplugged`).
   - A `usb-detach` while the device is still opening answers detached at once; the device is let go of when it
-    opens (its `usb-attach` then answers error), so the guest never sees it. The page settles the attach waiting on
-    that connector when it sends the detach.
+    opens (its `usb-attach` then answers nothing), so the guest never sees it. The page settles the attach waiting on
+    that connector when it sends the detach. A new `usb-attach` on that connector waits for the cancelled open to
+    end before it starts.
   - Real devices are refused in deterministic mode.
 - **The page's messages** come on the port in `BootOptions.usb.port`, whenever they come, before the
   guest's driver runs too:
@@ -558,7 +559,9 @@ would lose a serial port's late bytes (the `acm` rig test relies on carry-over).
 host keeps the device's configuration across the reset. A reset that fails, which on some hosts means WebUSB lost the device
 when it re-enumerated, calls `gone`. **Detach** completes nothing more, then releases the interfaces and
 closes the device; the opener drops its `disconnect` listener and waits for that close before it opens the same
-device again (an attach right after, on this connector or another, would find it still open and be closed under it).
+device again (an attach right after, on this connector or another, would find it still open and be closed under it),
+for at most 3 s (`CLOSE_WAIT`): a close queued behind a transfer a wedged device never answers would otherwise hold
+every later attach of it.
 
 **Tests:** `tests/usb-webusb.test.ts` runs the backend against a scripted fake (`tests/usb/fake-webusb.ts`).
 The fake answers GET_DESCRIPTOR from raw descriptors, refuses protected classes as Chromium does, refuses

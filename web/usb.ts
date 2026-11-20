@@ -170,6 +170,9 @@ export class Usb {
       return m;
     };
     if (!(connector >= 0 && connector < CONNECTORS)) return fail(new Error(`no connector ${connector}`));
+    // An open a detach cancelled still holds the connector until it ends: the page has heard `detached`, so this
+    // attach waits for it rather than being turned down.
+    for (let o = this.opening.get(connector); o?.cancelled; o = this.opening.get(connector)) await o.done;
     if (this.plugged[connector] || this.opening.has(connector))
       return fail(new Error(`connector ${connector} has a device`));
     let dev: UsbDevice;
@@ -201,6 +204,8 @@ export class Usb {
       try {
         dev = await open(device, { connector, gone: () => this.gone(connector, gen) });
       } catch (e) {
+        // A cancelled attach was answered by the detach: a reply now would be taken for a later request's.
+        if (opening.cancelled) reply = false;
         return fail(
           new MsgError('usb:usb.openFailed', undefined, { cause: e }),
           (e as { problems?: UsbProblem[] }).problems,
@@ -211,6 +216,7 @@ export class Usb {
       }
       if (this.closed || this.plugged[connector] || opening.cancelled) {
         dev.detach();
+        if (opening.cancelled) reply = false;
         return fail(new MsgError('usb:usb.wentAway'));
       }
     }

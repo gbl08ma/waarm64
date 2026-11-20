@@ -2187,6 +2187,9 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - **Devices' worker `onerror` after ready** isn't routed into `failed` (an uncaught error in a backend's own timer);
   routing it could fail a machine that is healthy, so it needs a look at which errors reach it.
 - **Deterministic remote reads** (synchronous XHR) have no stall bound, unlike `fetchBytes`.
+- **A ramdisk's reservation outside a worker:** `ramDisk` has no release, so the realm's `sabBytes` counter only
+  drops when the realm ends (the page's device worker always does); Node and the in-thread path keep it after
+  `Devices.close`. A `release()` called from `close` and `closeSource` would give it back.
 - **The display's floor never comes down in a session** (a desktop that starts after the console raised it can't
   shrink below it); the reset drops it.
 - **Small:** a Venus import not detached at an unref while attached (Linux detaches first; D5); Venus's fence keys,

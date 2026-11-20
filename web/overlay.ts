@@ -1350,14 +1350,29 @@ export async function saveFlash(name: string, bytes: Uint8Array) {
 
 /**
  * `bytes` as file `f`'s whole content: written over the old in place (the variable store keeps its size: no room to
- * find, nothing released first), then cut to its length. A write the storage refuses or cuts short throws, the file
- * left at its old length (an empty one stays empty: no store, rather than half of one).
+ * find, nothing released first), then cut to its length. A write the storage refuses, cuts short or fails throws, the
+ * file put back as it was: the old bytes the write covers are read first (the store is 1 MiB, saved when it changes)
+ * and written back in place, so a full storage keeps the last store whole, not half new and half old (an empty one
+ * stays empty).
  */
 export function writeWhole(f: SyncFile, bytes: Uint8Array) {
   const was = f.getSize();
-  const n = shortOnFull(f).write(bytes, { at: 0 });
-  if (n !== bytes.length) {
+  const old = new Uint8Array(Math.min(was, bytes.length));
+  if (old.length) f.read(old, { at: 0 });
+  const g = shortOnFull(f);
+  const restore = () => {
+    if (old.length) g.write(old, { at: 0 }); // within the old length: no room needed
     f.truncate(was);
+  };
+  let n: number;
+  try {
+    n = g.write(bytes, { at: 0 });
+  } catch (e) {
+    restore();
+    throw e;
+  }
+  if (n !== bytes.length) {
+    restore();
     throw new Error(`the file took ${n} of ${bytes.length} bytes (the storage is full)`);
   }
   f.truncate(bytes.length);

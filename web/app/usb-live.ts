@@ -234,7 +234,7 @@ export class UsbPorts {
 
   private request(connector: number, m: UsbToWorker, ms: number) {
     // A detach while the attach is still opening: the attach is settled now, as the worker forgets it (it lets the
-    // device go when it opens; its late answer finds the connector freed and is dropped).
+    // device go when it opens and posts nothing for it; a later attach on the connector waits for that).
     const was = this.pending.get(connector);
     if (was) {
       clearTimeout(was.timer);

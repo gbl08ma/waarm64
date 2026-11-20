@@ -879,17 +879,28 @@ export function pickDevice<D extends { vendorId: number; productId: number; seri
   return same[id.serialNumber ? 0 : (id.index ?? 0)];
 }
 
+/** How long a re-open waits for the device's last close before it goes ahead (ms). */
+const CLOSE_WAIT = 3000;
+
 /**
  * The device worker's opener for `api: 'usb'` identities: finds the granted device, opens it, and
  * calls `gone` when WebUSB reports it disconnected (or a transfer finds it gone).
+ * `closeWait`: the longest an open waits for the device's last close (ms).
  */
-export function webUsbOpener(usb: WebUsbLike) {
+export function webUsbOpener(usb: WebUsbLike, closeWait = CLOSE_WAIT) {
   /** A detached device's release and close, still running: an open of it waits (an `opened` device would be closed under it). */
   const closing = new WeakMap<WebUsbDeviceLike, Promise<void>>();
   return async (id: UsbIdentity, ctx: { gone?: () => void } = {}): Promise<WebUsbPassthrough> => {
     const dev = pickDevice(await usb.getDevices(), id);
     if (!dev) throw notFound();
-    await closing.get(dev);
+    const closed = closing.get(dev);
+    if (closed) {
+      // A close queued behind a transfer that never settles (a wedged device: WebUSB's have no deadline) would hold
+      // every later open of the device: past the bound the open goes ahead.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([closed, new Promise<void>((r) => (timer = setTimeout(r, closeWait)))]);
+      clearTimeout(timer);
+    }
     let p: WebUsbPassthrough | null = null;
     const onDisconnect = (e: { device: WebUsbDeviceLike }) => {
       if (e.device !== dev) return;
