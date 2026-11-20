@@ -64,7 +64,8 @@ read as newer and less polished than the rest. Done on the branch that carries t
   **The tests open Home through `openHome` (tests/page-home.ts)** rather than a click on `#machines-open`: a toggle
   closes a Home that's already open (after a reload at `#home`), which failed two page-modal tests in the fast lane
   at 9bfec21 and hung a third. 28 test files changed that way, most of which only the dev VM's lanes run. Not changed:
-  bench/snapz/probe.ts, which clicks Home while Home shows (it now closes it: check what it meant).
+  bench/snapz/probe.ts (the closed SNAPZ track's probe; left as it is, the user, 2026-11-20): it clicks Home to open it,
+  and again "if Home shows" after each operation, which did nothing before and now closes Home, as those lines read.
 
 ### Where things stand
 
