@@ -2266,6 +2266,11 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   drawn at random (keys, and with them ids and their order): either the release can lose to the waiting renewal for
   some orders of ids, which is a defect in the server, or the test assumes an order. Start by fixing the keys' seed
   to a failing draw.
+  A second of that file's tests failed the same day, once, in `scripts/ci.sh` on a commit that touched no Rust:
+  `calendar_asks_stay_bounded_across_twenty_servers` (`server_tests.rs:3067`, "24 after 19": it wants no more calendar
+  asks in a run's second 12 hours than in its first, and the counts by hour are drawn by chance, 19 then 24 that
+  time). A bound that chance can pass is the test's to loosen, or the draws' seed to fix. Each stops `scripts/ci.sh`
+  before its JS tests (the Rust step fails fast), so a run lost to one is a whole run again.
 - **The fast lane stalls when started from an agent's shell in the cloud** (INTRO, 2026-11-20): `scripts/ci-fast.sh`
   run by the Bash tool directly stopped twice 67 tests into the JS step with every process idle (once for 31 min);
   started detached (`nohup … &`) it ran through both times. Most likely a test or a tool it starts reads the
