@@ -17,6 +17,10 @@ Built in the cloud session, in the order built:
 | 6 | The processor's deep dive: the captured code in four panes | fast lane |
 | 7 | Memory's deep dive: the RAM slider over `splitRam` | fast lane |
 
+**CI:** `scripts/ci-fast.sh` passed on the branch's head as of commit `0554224` (2026-11-20, the cloud container:
+the static checks, the core's crate, the smoke set and the areas' heavy files). The introduction's own tests are
+`tests/intro-route.test.ts` and `tests/page-intro.test.ts`.
+
 **Not built: loops 1 and 2 (the tiny guest and the live hero) and loop 8 (the end).** Nothing here has passed
 `scripts/ci.sh` or a topic script: the cloud can't run the push tier as the dev VM does (docs/cloud.md: six of the
 agent's tests fail as root and stop `scripts/ci.sh`; no Debian guest for `ci-debian.sh`). **Run the push tier in the dev
