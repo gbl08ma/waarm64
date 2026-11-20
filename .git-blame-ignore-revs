@@ -3,3 +3,6 @@
 
 # web/app: format with Prettier
 6269693f75cf7ec1bdbfacbd068a7d279f73f401
+
+# web/*.ts: format with Prettier
+869d55e2a2ad4146713c2aa652105e689737eb09
