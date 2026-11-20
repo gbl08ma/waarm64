@@ -48,7 +48,8 @@ read as newer and less polished than the rest. Done on the branch that carries t
   visitor (docs/copy.md "A first-time visitor's screens", the user's examples in its table): every DemosPage, DemoStart
   and DemoChecks message. A `<ui-…>` pill's icon now stays beside its first word at a line break (T.svelte).
   **Not touched:** the demos' own summaries (the store's data, deploy/disks/demos.json: a republish) and the
-  `demo-store.*`/`template.*` errors' words. Tier: the same as above (ci-fast in the cloud; ci.sh, ci-debian.sh and
+  `demo-store.*`/`template.*` errors' words. Tier: `scripts/ci-fast.sh` at 1a847102 in the cloud: everything passed but tests/page-open.test.ts's "says so at once"
+  (8.0 s under the lane's load; alone it passes in 4.4 s, the timing failure "How to work here" names) (the rest: ci.sh, ci-debian.sh and
   ci-machines.sh in the dev VM; the USB menu's offer changed its markup, so `scripts/ci-usb.sh` too).
 
 ### Where things stand
