@@ -1623,10 +1623,13 @@ guest share without copies (Venus's ring, its command streams, its reply buffers
   (none enumerated) too; TLV writes and commands `NOT_SUPP`; without `mixer` every control request is `NOT_SUPP`. The
   page's level is the slider's fraction and the gain its cube (PipeWire's and PulseAudio's law), the value
   `round(4 × (60 log10 level + 100))`: the guest's mixer shows the page's percentage. A guest's write that changes a
-  value is said on `port` (`mixer`: the page's menu follows); the page's changes there (`SndFromPage`) set the values
-  and, if the driver took the feature, notify it with `VIRTIO_SND_EVT_CTL_NOTIFY` (mask VALUE) on an event buffer,
-  held until one comes. The values survive a virtio reset and are in the snapshot (`controls`; a device without
-  `mixer` has none, and keeps the page's), and a restore says them on `port`.
+  value is said on `port` (`mixer`: the page's menu follows and keeps it); the page's changes there (`SndFromPage`) set
+  the values and, if the driver took the feature, notify it with `VIRTIO_SND_EVT_CTL_NOTIFY` (mask VALUE) on an event
+  buffer, held until one comes. **The guest's boot** (`booting`, [audio.md](audio.md) "Decisions"): from a virtio
+  reset (and the device's start) until the guest first starts the output stream, a write that changes a value is
+  answered with the page's values (set back, the guest notified) and not said on `port`. The values survive a virtio
+  reset and are in the snapshot (`controls`, `booting`; a device without `mixer` has none); a restore sets the page's
+  values over the snapshot's, notifying the guest, and says nothing on `port`.
 - **An output stream (0) and an input stream (1)** (the input since audio S4; a saved state has both): `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
   8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels, and the direction. Each stream has its own
   state machine and parameters; the control log names stream 1 (`PCM_START#1`). Linux derives its limits from that: periods

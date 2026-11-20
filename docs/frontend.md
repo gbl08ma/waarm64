@@ -1469,8 +1469,10 @@ page writes the context's output latency into the ring's header, and the guest g
   [Sound (muted)](ui:sound:Sound.summary.muted) when off. Not in the Machine menu, whose choices apply by a restart.
 - **The guest's mixer:** Volume and Sound on are the guest's `Master Playback Volume` and `Switch` (the sound
   device's controls, [devices.md](devices.md) "snd"), where its kernel has them (Linux 6.7 and later): a machine
-  starts at the menu's, the guest's changes move the menu (WirePlumber puts a new output at 40%; shown, not kept
-  in the browser), and the menu's changes reach the guest (`PageAudio.setVolume(…, true)`, the device notifies it).
+  starts at the menu's; what the guest sets during its boot (until it first plays: alsa-restore, WirePlumber's 40%
+  for a new output) is answered with the menu's ([audio.md](audio.md) "Decisions"); past it, the guest's changes move
+  the menu and are kept in the browser as the user's; the menu's changes reach the guest (`PageAudio.setVolume(…,
+  true)`, the device notifies it).
 - **The microphone** (audio S4: [audio.md](audio.md) "Decisions"): each start also makes a **microphone ring**. When the guest
   starts recording, the device says so on the port with the stream's rate; unless **[Microphone](ui:sound:Sound.mic)** is unchecked, the page
   asks for the microphone (`getUserMedia`: the browser's prompt the first time) with the browser's echo cancellation,

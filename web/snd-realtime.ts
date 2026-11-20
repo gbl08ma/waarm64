@@ -54,7 +54,7 @@ export type SndToPage =
   | { type: 'stop'; ms?: number }
   /** Once a second with `stats`: the completions' timing (docs/audio.md "Measurements"). */
   | { type: 'stats'; stats: SndStats }
-  /** The guest set its Master volume or switch (or a snapshot was loaded): the page's menu follows. */
+  /** The guest set its Master volume or switch (past its boot: web/snd.ts `booting`): the page's menu follows and keeps it. */
   | ({ type: 'mixer' } & SndMixer);
 /** What the device hears from the page on the same port: the Sound menu changed (the guest is told). */
 export type SndFromPage = { type: 'mixer' } & SndMixer;

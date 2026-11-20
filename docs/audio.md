@@ -27,11 +27,16 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 - **The page's volume is the guest's Master** (2026-10-17, the user): on the page's machines the device offers
   `VIRTIO_SND_F_CTLS` with a `Master Playback Volume` (with a dB scale) and `Master Playback Switch`, which the guest's
   ALSA (and PipeWire's ACP, the card's hardware volume) sees as the card's, and they are the Sound menu's volume and
-  Sound on, both ways. **The guest is followed** (the user's choice): WirePlumber gives every new output its
-  `device.routes.default-sink-volume`, 0.064 (shown as 40%), whatever the hardware is at, so a fresh disk starts at
-  40% and the slider shows it; raised once, WirePlumber keeps the level on that disk. Before it, a guest with
-  alsa-utils sets the card at boot (`alsa-restore`; with no saved state `alsactl init`'s -20 dB, 46% on the slider). The page doesn't override the
-  guest's setting, and doesn't keep the guest's changes (the next machine starts at what the user chose). The slider's
+  Sound on, both ways. **The user's last choice stands, made on the page or in the guest** (2026-11-20, the user;
+  before it the guest's boot-time level was followed and never kept, so every boot of the desktop guest put the
+  slider back at 40%): a guest sets the card at boot on its own, alsa-utils' `alsa-restore` (with no saved state
+  `alsactl init`'s -20 dB, 46% on the slider), then WirePlumber's `device.routes.default-sink-volume` for every output
+  it hasn't saved a level for, 0.064 (shown as 40%), whatever the hardware is at. So the guest's writes from the
+  driver's reset (its boot) until it first starts the output stream are its defaults: the device answers each with
+  the page's values (and notifies the guest), and the page hears nothing. Past that, a guest's change moves the slider
+  and is kept in the browser as if the user made it there. A restored snapshot takes the page's values too (the
+  user's choice is newer than the snapshot), and keeps whether its guest was still booting. What this costs: a change
+  the user makes in the guest before anything played since its boot is undone once. The slider's
   gain is its cube, as PipeWire's and PulseAudio's sliders, so the two show the same percentage. The test guests'
   machines have no controls (QEMU's device, the oracle, has none).
 - **The microphone opens on the guest's demand:** the device always has an input stream; the page asks for the

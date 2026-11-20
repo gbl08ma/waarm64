@@ -2,7 +2,7 @@
   Sound (docs/frontend.md "Sound"): on by default; muted, the volume and the microphone's choices are kept in this
   browser. Any click or key on the page lets the browser play it (its autoplay rule): until one, the menu says sound is
   waiting. A guest that has the sound device's Master volume and switch (web/audio.ts) moves the volume and Sound on
-  here, and they move its. A Ctrl+click on the menu's button turns the sound on or off.
+  here (kept as the user's own), and they move its; what it sets during its boot is answered with these. A Ctrl+click on the menu's button turns the sound on or off.
 -->
 <script lang="ts">
   import Menu from './ui/Menu.svelte';
@@ -23,10 +23,12 @@
   let volume = $state(Math.round(100 * Math.min(1, Math.max(0, settings().volume ?? 1))));
   let mic = $state(settings().mic ?? true);
   let micRaw = $state(settings().micRaw ?? false);
-  // The guest's own changes: shown, not kept (the next machine starts at what the user chose).
+  // The guest's own changes past its boot (its boot's defaults never reach the page: web/snd.ts `booting`): shown and
+  // kept, so the next machine starts at the user's last choice, made here or in the guest.
   $effect(() => {
     audio.onMixer = (level, muted) => {
       [volume, on] = [Math.round(100 * level), !muted];
+      remember({ muted, volume: level });
     };
   });
   // The audio's own state (waiting for a gesture, the microphone's), as web/app/areas/sound.svelte.ts follows it.

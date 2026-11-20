@@ -39,7 +39,7 @@ import {
 import type { SndFromPage, SndToPage } from './snd-realtime.ts';
 
 /** A sound device's state (`Backend.save`): the streams, the control requests taken, what the sink played (the deterministic sink's `Played`) and what the source recorded (`Recorded`). */
-export type SndState = ReturnType<Snd['save']> & { sink: unknown; source?: unknown };
+export type SndState = ReturnType<Snd['save']> & { booting?: boolean; sink: unknown; source?: unknown };
 
 /** Writes `bytes` over the last bytes of the segments (a status: the end of a request's writable bytes). */
 function writeTail(ram: Ram, segs: Segment[], data: Uint8Array) {
@@ -60,7 +60,8 @@ function writeTail(ram: Ram, segs: Segment[], data: Uint8Array) {
 /**
  * The backend over the queues: control requests answered at once; event buffers held for the controls' notifications.
  * With `mixer` the device has its controls, starting at the page's volume and mute: the guest's changes are said on
- * `mixer.port` and the page's (heard there) set them and notify the guest, if its driver took the controls. Output
+ * `mixer.port` (those of its boot, until it first plays, are answered with the page's values instead) and the page's
+ * (heard there) set them and notify the guest, if its driver took the controls. Output
  * messages (txq) are held until their stream's START, then given to `sink`; input messages (rxq) likewise to
  * `source`, which fills them; both are returned at RELEASE (STOP pauses: Linux sends it for a pause too, and
  * resumes with START without posting the held messages again).
@@ -72,7 +73,15 @@ export function sndBackend(
   mixer?: SndMixer & { port?: MessagePort },
 ) {
   const snd = new Snd(!!mixer);
-  if (mixer) [snd.values[VOLUME], snd.values[SWITCH]] = [levelToValue(mixer.level), mixer.muted ? 0 : 1];
+  /** The page's values of the controls: the start's, then each change it says. */
+  const pageValues = mixer ? [levelToValue(mixer.level), mixer.muted ? 0 : 1] : [];
+  for (const [id, v] of pageValues.entries()) snd.values[id] = v;
+  /**
+   * The guest's boot (docs/audio.md "Decisions"): from the driver's reset until it first starts the output stream, the
+   * guest's writes are its own defaults (alsa-restore's, WirePlumber's level for a new output), and the page's values
+   * answer them. Kept in a snapshot.
+   */
+  let booting = !!mixer;
   /** I/O messages not completed, per stream: waiting for START, or given to the sink or source and not done yet. */
   type Msg = { r: Request; live: boolean };
   const waiting: Msg[][] = [[], []];
@@ -144,15 +153,16 @@ export function sndBackend(
       level: valueToLevel(snd.values[VOLUME]),
       muted: !snd.values[SWITCH],
     } satisfies SndToPage);
-  /** The page's volume and mute: the controls take them, and a driver that has them is notified. */
-  const fromPage = (m: SndMixer) => {
-    for (const [id, value] of [
-      [VOLUME, levelToValue(m.level)],
-      [SWITCH, m.muted ? 0 : 1],
-    ]) {
+  /** The controls take the page's values, and a driver that has them is notified of those that changed. */
+  const pageWins = () => {
+    for (const [id, value] of pageValues.entries())
       if (snd.set(id, value) && ctx.features() & F_CTLS && !notify.includes(id)) notify.push(id);
-    }
     flush();
+  };
+  /** The page's volume and mute (the user changed them, or kept what the guest set). */
+  const fromPage = (m: SndMixer) => {
+    [pageValues[VOLUME], pageValues[SWITCH]] = [levelToValue(m.level), m.muted ? 0 : 1];
+    pageWins();
   };
   if (mixer?.port)
     mixer.port.onmessage = (e: MessageEvent<SndFromPage>) => {
@@ -178,6 +188,7 @@ export function sndBackend(
         // The reply first: the stream's messages complete after the request that started or released it.
         ctx.complete(r.w0, reply.length);
         if (effect === 'start') {
+          if (sid === OUT) booting = false;
           side(sid).start?.(snd.streams[sid].params!);
           const now = waiting[sid];
           waiting[sid] = [];
@@ -189,7 +200,8 @@ export function sndBackend(
           side(sid).release?.();
           for (const m of back) finish(m.r, S_OK);
         } else if (effect === 'mixer') {
-          tellPage();
+          if (booting) pageWins();
+          else tellPage();
         }
         return undefined;
       }
@@ -218,11 +230,17 @@ export function sndBackend(
       drop(IN);
       events.length = 0;
       notify.length = 0;
+      booting = !!mixer;
       snd.reset();
       sink.release?.();
       source.release?.();
     },
-    save: (): SndState => ({ ...snd.save(), sink: sink.save?.() ?? null, source: source.save?.() ?? null }),
+    save: (): SndState => ({
+      ...snd.save(),
+      ...(mixer ? { booting } : {}),
+      sink: sink.save?.() ?? null,
+      source: source.save?.() ?? null,
+    }),
     restore(state: unknown) {
       snd.restore(state);
       const s = state as { sink?: unknown; source?: unknown };
@@ -231,7 +249,9 @@ export function sndBackend(
       if (snd.streams[OUT].state === 'started') sink.start?.(snd.streams[OUT].params!);
       if (snd.streams[IN].state === 'started') source.start?.(snd.streams[IN].params!);
       reposted = [0, 0];
-      if (snd.values.length) tellPage();
+      // The page's values stand over the snapshot's (the user's last choice is newer), and the guest is told.
+      booting = !!mixer && (state as { booting?: unknown }).booting === true;
+      if (mixer) pageWins();
     },
     /** The page's volume and mute (what its port says), for tests. */
     mixer: fromPage,

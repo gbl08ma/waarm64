@@ -370,23 +370,10 @@ for (let run = 1; run <= RUNS; run++) {
     await onSerial(page, `clear; cat > /tmp/ctl.pl <<'E'\n${ctl}\nE\ncat > /tmp/ev.pl <<'E'\n${events}\nE\n`);
     const menu = () => page.evaluate(() => [(document.getElementById('sound-volume') as HTMLInputElement).value, (document.getElementById('sound-on') as HTMLInputElement).checked]);
     const [level] = await menu();
-    await onSerial(page, `clear; perl /tmp/ctl.pl 'Master Playback Volume'; perl /tmp/ctl.pl 'Master Playback Switch' 0; perl /tmp/ctl.pl 'Master Playback Volume' 200; echo mi""xer-set\n`);
-    await shows(page, new RegExp(`val=${levelToValue(Number(level) / 100)};\\s*val=0;\\s*val=200;\\s*mixer-set`));
-    await page.waitForFunction(() => (document.getElementById('sound-volume') as HTMLInputElement).value === '15', null, { timeout: 5000 });
-    assert.deepEqual(await menu(), ['15', false], "the guest's Master moves the menu");
-    await onSerial(page, 'clear; (perl /tmp/ev.pl > /tmp/ev.txt &); sleep 1; echo li""stening\n');
-    await shows(page, /listening/);
-    await page.evaluate(() => {
-      const [v, on] = [document.getElementById('sound-volume') as HTMLInputElement, document.getElementById('sound-on') as HTMLInputElement];
-      v.value = '80';
-      v.dispatchEvent(new Event('input', { bubbles: true }));
-      on.checked = true;
-      on.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await onSerial(page, `clear; sleep 1; perl /tmp/ctl.pl 'Master Playback Volume'; perl /tmp/ctl.pl 'Master Playback Switch'; cat /tmp/ev.txt; echo mi""xer-read\n`);
-    await shows(page, new RegExp(`val=${levelToValue(0.8)};\\s*val=1;\\s*ev mask=1 Master Playback Volume;\\s*ev mask=1 Master Playback Switch;\\s*mixer-read`));
-    // Back to the level the test started at, for what it plays next.
-    await page.evaluate((l) => { const v = document.getElementById('sound-volume') as HTMLInputElement; v.value = l; v.dispatchEvent(new Event('input', { bubbles: true })); }, String(level));
+    // Its writes before it first plays are its boot's defaults (alsa-restore's, WirePlumber's): answered with the menu's.
+    await onSerial(page, `clear; perl /tmp/ctl.pl 'Master Playback Switch' 0; perl /tmp/ctl.pl 'Master Playback Volume' 200; echo mi""xer-boot\n`);
+    await shows(page, new RegExp(`val=1;\\s*val=${levelToValue(Number(level) / 100)};\\s*mixer-boot`));
+    assert.deepEqual(await menu(), [level, true], "the guest's boot doesn't move the menu");
     // Debian's driver plays a file (audio S3): snd-play (aplay's buffer, 500 ms in 4 periods) from the second disk,
     // 3 s at 44.1 kHz (the page's context follows the stream's rate); its own clock says the sound's length within a
     // period, nothing underran, and the page hears 440 and 660 Hz.
@@ -402,6 +389,26 @@ for (let run = 1; run <= RUNS; run++) {
     console.log(`# Debian played ${played} frames (${sound} ms) in ${took} ms, ${xruns} underruns; the ring's gaps ${gaps} frames; heard ${heard.hz.map((h) => h.toFixed(0))} Hz; ${/snd-play: delay .*/.exec(playLog)?.[0]}`);
     assert.equal(Number(xruns), 0);
     assert.ok(Math.abs(Number(took) - Number(sound)) < 125, `${sound} ms of sound took ${took} ms`);
+    // Past its boot (it played), the guest's writes move the menu and are kept in the browser as the user's.
+    await onSerial(page, `clear; perl /tmp/ctl.pl 'Master Playback Switch' 0; perl /tmp/ctl.pl 'Master Playback Volume' 200; echo mi""xer-set\n`);
+    await shows(page, /val=0;\s*val=200;\s*mixer-set/);
+    await page.waitForFunction(() => (document.getElementById('sound-volume') as HTMLInputElement).value === '15', null, { timeout: 5000 });
+    assert.deepEqual(await menu(), ['15', false], "the guest's Master moves the menu");
+    const keptSound = await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}') as { volume?: number; muted?: boolean });
+    assert.deepEqual([Math.round(100 * (keptSound.volume ?? 0)), keptSound.muted], [15, true], 'and is kept');
+    // The menu's changes reach the guest, notified.
+    await onSerial(page, 'clear; (perl /tmp/ev.pl > /tmp/ev.txt &); sleep 1; echo li""stening\n');
+    await shows(page, /listening/);
+    await page.evaluate(() => {
+      const [v, on] = [document.getElementById('sound-volume') as HTMLInputElement, document.getElementById('sound-on') as HTMLInputElement];
+      v.value = '80';
+      v.dispatchEvent(new Event('input', { bubbles: true }));
+      on.checked = true;
+      on.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await onSerial(page, `clear; sleep 1; perl /tmp/ctl.pl 'Master Playback Volume'; perl /tmp/ctl.pl 'Master Playback Switch'; cat /tmp/ev.txt; echo mi""xer-read\n`);
+    await shows(page, new RegExp(`val=${levelToValue(0.8)};\\s*val=1;\\s*ev mask=1 Master Playback Volume;\\s*ev mask=1 Master Playback Switch;\\s*mixer-read`));
+    await page.evaluate((l) => { const v = document.getElementById('sound-volume') as HTMLInputElement; v.value = l; v.dispatchEvent(new Event('input', { bubbles: true })); }, String(level));
     // And records (audio S4): 3 s from the page's microphone (the browser's fake device, 500 Hz) through Debian's
     // driver, at its length in its own time, no overrun, the tone on both channels (the browser's processing is on).
     await onSerial(page, 'clear; /tmp/p/snd-rec 48000 2 3; echo re""c-done\n');

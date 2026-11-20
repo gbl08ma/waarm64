@@ -109,6 +109,10 @@ test('snd: with a mixer the device offers VIRTIO_SND_F_CTLS and two controls', (
 /** A control request on a control (`virtio_snd_ctl_hdr`), then u32s. */
 const ctl = (code: number, id: number, ...values: number[]) => bytes(code, id, ...values);
 const MIXER = { mixer: { level: 0.5, muted: false }, features: F_CTLS };
+/** The guest plays (the output stream started): its boot is over, its writes are its user's (web/snd.ts `booting`). */
+const booted = (r: ReturnType<typeof rig>) => {
+  for (const cmd of [setParams(), pcm(R_PCM_PREPARE), pcm(R_PCM_START)]) assert.equal(r.status(cmd), S_OK);
+};
 
 test('snd: the controls: the Master volume (0.25 dB steps from -100 dB, a TLV) and switch; their info, reads and writes', () => {
   const r = rig(undefined, undefined, MIXER);
@@ -139,7 +143,8 @@ test('snd: the controls: the Master volume (0.25 dB steps from -100 dB, a TLV) a
   assert.equal(r.status(ctl(R_CTL_TLV_READ, 1), 4 + 64), S_BAD_MSG, 'the switch has no TLV');
   assert.equal(r.status(ctl(R_CTL_TLV_WRITE, 0), 4), S_NOT_SUPP);
   assert.equal(r.status(ctl(R_CTL_ENUM_ITEMS, 0), 4 + 64), S_BAD_MSG);
-  // The guest's writes: the page is told (once per change), what's out of range is BAD_MSG.
+  // The guest's writes past its boot: the page is told (once per change), what's out of range is BAD_MSG.
+  booted(r);
   assert.equal(r.status(ctl(R_CTL_WRITE, 0, 304, ...new Array(127).fill(0))), S_OK);
   assert.equal(r.status(ctl(R_CTL_WRITE, 0, 304)), S_OK);
   assert.equal(r.status(ctl(R_CTL_WRITE, 1, 0)), S_OK);
@@ -182,18 +187,51 @@ test('snd: the page\'s changes notify the guest on the event queue, as buffers c
   assert.deepEqual(old.dev.snd.values, [levelToValue(0.1), 0]);
 });
 
-test('snd: save and restore keep the controls, and tell the page; a state from before them keeps the page\'s', () => {
+test('snd: the guest\'s boot: until it first plays, its writes are answered with the page\'s values (notified, unsaid); a reset starts another', () => {
   const r = rig(undefined, undefined, MIXER);
+  const evs = r.exit(...[0, 1, 2].map(() => () => r.post(EVENTQ, [], [8])));
+  const event = (e: Request) => { const w = new DataView(r.written(e).buffer); return [w.getUint32(0, true), w.getUint16(4, true), w.getUint16(6, true)]; };
+  // alsa-restore's -20 dB, then WirePlumber's 40% for a new output (docs/audio.md "Decisions"), then the switch off.
+  for (const [id, v] of [[0, 320], [0, 305], [1, 0]]) assert.equal(r.status(ctl(R_CTL_WRITE, id, v)), S_OK);
+  assert.deepEqual(r.dev.snd.values, [levelToValue(0.5), 1], "the page's values");
+  assert.deepEqual(r.said, [], 'the page hears nothing');
+  assert.deepEqual(evs.map(event), [[EVT_CTL_NOTIFY, 0, 1], [EVT_CTL_NOTIFY, 0, 1], [EVT_CTL_NOTIFY, 1, 1]], 'the guest is told, each time');
+  assert.ok(r.dev.snd.log.includes('CTL_WRITE 0=305 OK'), 'the write itself succeeds');
+  // The input stream doesn't end the boot; the output's start does.
+  for (const cmd of [setParams({ stream: 1 }), pcm(R_PCM_PREPARE, 1), pcm(R_PCM_START, 1)]) assert.equal(r.status(cmd), S_OK);
+  r.status(ctl(R_CTL_WRITE, 0, 305));
+  assert.deepEqual([r.dev.snd.values, r.said], [[levelToValue(0.5), 1], []]);
+  booted(r);
+  r.status(ctl(R_CTL_WRITE, 0, 305));
+  assert.deepEqual(r.said, [{ type: 'mixer', level: valueToLevel(305), muted: false }]);
+  // The page's change (the menu, or keeping the guest's) is what a boot answers with after a reboot (a virtio reset).
+  r.dev.mixer({ level: 0.9, muted: false });
+  r.dev.reset();
+  r.status(ctl(R_CTL_WRITE, 0, 305));
+  assert.deepEqual(r.dev.snd.values, [levelToValue(0.9), 1]);
+  assert.equal(r.said.length, 1);
+});
+
+test('snd: save and restore keep the controls and the boot; the page\'s values stand over the snapshot\'s, the guest told', () => {
+  const r = rig(undefined, undefined, MIXER);
+  booted(r);
   r.status(ctl(R_CTL_WRITE, 0, 200));
   const state = JSON.parse(JSON.stringify(r.dev.save())) as SndState;
+  assert.deepEqual([state.controls, state.booting], [[200, 1], false]);
   const s = rig(undefined, undefined, { ...MIXER, mixer: { level: 1, muted: true } });
+  const [ev] = s.exit(() => s.post(EVENTQ, [], [8]));
   s.dev.restore(state);
-  assert.deepEqual(s.dev.snd.values, [200, 1]);
-  assert.deepEqual(s.said, [{ type: 'mixer', level: valueToLevel(200), muted: false }]);
-  const { controls: _, ...before } = state as SndState & { controls?: number[] };
+  assert.deepEqual(s.dev.snd.values, [VOLUME_MAX, 0], "the page's");
+  assert.deepEqual(s.said, [], 'the page hears nothing');
+  assert.equal(new DataView(s.written(ev).buffer).getUint32(0, true), EVT_CTL_NOTIFY, 'the guest is told');
+  s.status(ctl(R_CTL_WRITE, 0, 250));
+  assert.deepEqual(s.said, [{ type: 'mixer', level: valueToLevel(250), muted: true }], 'past its boot, as saved');
+  // A snapshot taken during the boot keeps it.
+  const b = rig(undefined, undefined, MIXER);
   const t = rig(undefined, undefined, MIXER);
-  t.dev.restore(before);
-  assert.deepEqual(t.dev.snd.values, [levelToValue(0.5), 1]);
+  t.dev.restore(JSON.parse(JSON.stringify(b.dev.save())));
+  t.status(ctl(R_CTL_WRITE, 0, 305));
+  assert.deepEqual([t.dev.snd.values, t.said], [[levelToValue(0.5), 1], []]);
 });
 
 test('snd: PCM_INFO answers the output and the input stream; info queries out of range, too small or with no room are BAD_MSG', () => {

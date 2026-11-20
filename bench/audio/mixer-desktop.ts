@@ -1,9 +1,9 @@
 // The sound device's controls on the desktop guest (docs/audio.md "Decisions", the page's volume is the guest's
 // Master; dev-only, not in tests): images/arch/desktop.sh's image on the page, the card's mixer before PipeWire runs
 // (`amixer`: the page's level), sway started (so PipeWire and WirePlumber run in arch's session), then: the level
-// WirePlumber gives the new output and the page's slider that follows it, the guest's volume and mute
-// (`wpctl set-volume`, `set-mute`) moving the slider and Sound on, and the menu's changes reaching PipeWire
-// (`wpctl get-volume`) and ALSA.
+// WirePlumber gives the new output answered with the page's (the guest's boot), the guest's volume and mute once it
+// played (`wpctl set-volume`, `set-mute`) moving the slider and Sound on and kept in the browser, and the menu's
+// changes reaching PipeWire (`wpctl get-volume`) and ALSA.
 //   node bench/audio/mixer-desktop.ts <image.qcow2> [outdir]       (default bench/results/local/mixer-desktop/)
 // Results: <outdir>/results.json.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -39,12 +39,19 @@ try {
     // What set the level at boot: alsa-utils' alsa-restore (`alsactl restore`, `init` without a saved state).
     restore: await run("systemctl is-active alsa-restore; ls /var/lib/alsa/ 2>&1; journalctl -b -u alsa-restore -o cat | tail -3 | tr '\\n' ' '") });
   results.sway = await s.startSway('pixman');
-  // WirePlumber's default for a new output (0.4 on its cubic scale): the menu follows.
+  // WirePlumber's default for a new output (0.4 on its cubic scale) during the guest's boot: answered with the
+  // menu's level (docs/audio.md "Decisions"), which WirePlumber then shows.
+  const start = await menu();
   for (let i = 0; i < 15 && !/Volume/.test(await wpctl()); i++) await page.waitForTimeout(2000);
-  await step('wireplumber', { wpctl: await wpctl(), amixer: await amixer(), menu: await menuAt({ volume: '40', on: true }), sinks: await run(`${asUser('wpctl status 2>/dev/null')} | grep -A2 Sinks: | tr -s ' ' | tr '\\n' ' '`) });
-  // The guest's changes move the menu.
+  await page.waitForTimeout(3000);
+  await step('wireplumber', { wpctl: await wpctl(), amixer: await amixer(), menu: await menuAt(start), sinks: await run(`${asUser('wpctl status 2>/dev/null')} | grep -A2 Sinks: | tr -s ' ' | tr '\\n' ' '`) });
+  // The guest plays (a second of silence through PipeWire): its boot is over.
+  const play = await run(asUser('timeout 2 pw-cat -p --raw --format s16 --rate 48000 --channels 2 - < /dev/zero 2>&1 | tail -2; true'));
+  const spans = await page.evaluate(() => (window as unknown as { __audio: { spans: number[]; playing: boolean } }).__audio.spans.length);
+  await step('played', { play, spans, wpctl: await wpctl(), amixer: await amixer(), menu: await menu() });
+  // The guest's changes move the menu, and are kept in the browser.
   await run(asUser('wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.7'));
-  await step('guest-volume', { wpctl: await wpctl(), amixer: await amixer(), menu: await menuAt({ volume: '70', on: true }) });
+  await step('guest-volume', { wpctl: await wpctl(), amixer: await amixer(), menu: await menuAt({ volume: '70', on: true }), kept: await page.evaluate(() => localStorage.getItem('waarm64.settings')) });
   await run(asUser('wpctl set-mute @DEFAULT_AUDIO_SINK@ 1'));
   await step('guest-mute', { wpctl: await wpctl(), amixer: await amixer(), menu: await menuAt({ volume: '70', on: false }) });
   // The menu's changes reach the guest.

@@ -15,8 +15,9 @@
 //
 // The volume is a level (the menu's slider, 0 to 1) and the gain its cube, as PipeWire's and PulseAudio's sliders. A
 // guest whose driver takes the device's controls (`VIRTIO_SND_F_CTLS`) has them as its card's Master volume and
-// switch: the device says on the port when the guest changes them (`onMixer`: the menu follows), and the menu's
-// changes are said to the device (`setVolume(…, true)`), which tells the guest.
+// switch: the device says on the port when the guest changes them (`onMixer`: the menu follows and keeps them), and
+// the menu's changes are said to the device (`setVolume(…, true)`), which tells the guest. The guest's writes during
+// its boot (until it first plays) are its defaults: the device answers them with the page's level, unsaid.
 import { LATENCY, newRing, ringViews } from './audio-ring.ts';
 import type { SndFromPage, SndStats, SndToPage } from './snd-realtime.ts';
 // The worklet, bundled as a worker is (Vite's `?worker&url`: the bundler doesn't follow a URL given to `addModule`).
@@ -53,7 +54,7 @@ export class PageAudio {
   spans: number[] = [];
   /** Called when `waiting()` may have changed (a stream started or stopped, the context resumed). */
   onChange = () => {};
-  /** Called when the guest set its volume or mute (the device's controls), or a snapshot loaded them. */
+  /** Called when the guest set its volume or mute (the device's controls), past its boot (web/snd.ts `booting`). */
   onMixer = (_level: number, _muted: boolean) => {};
 
   /** A new ring and port for a machine that starts: they go in its start message (the device spec's `ring` and `port`). */
