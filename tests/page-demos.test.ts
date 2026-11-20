@@ -2,7 +2,7 @@
 // worker is a stand-in that records each start (tests/demo-fixture.ts), and our store (vmdisks.tny.im) is answered by
 // the test with a demo whose template is made on the page in a fresh profile (and a second demo of it, for the list).
 // The store's demos are a list beside the chosen one's pane (the first with none named; another is a click on its row),
-// and in a narrow window one column: the list, then the pane with All demos back. A first visit opens the store; a row
+// and in a narrow window one column: the list, then the pane with All demos back. A first visit opens the introduction, which leads to the store; a row
 // opens the demo's pane (its checks), Start makes the machine, opens it in the demo's view and its first start
 // is the template's restore; a reload keeps the machine and doesn't open the store; the store reached again by `/demos`
 // marks the card, and asks Open my machine or Start a fresh copy (named with a suffix). `?id=` opens a demo, an unknown
@@ -93,11 +93,12 @@ const machines = (page: Page) => page.evaluate(async () => {
 });
 const text = (page: Page, sel: string) => page.locator(sel).innerText();
 
-test("a first visit opens the store; a card's Start makes the machine, opened in its view, restored at its first start; a reload keeps it; started before asks", async () => {
+test("a first visit's introduction leads to the store; a card's Start makes the machine, opened in its view, restored at its first start; a reload keeps it; started before asks", async () => {
   const { ctx, page, errors } = await visitor();
   await page.goto(`${base}/web/app/?firstvisit=1`);
+  await page.locator('[data-action="skip-intro"]').click({ timeout: 30_000 }); // the introduction first (tests/page-intro.test.ts)
   await page.locator('.cards [data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
-  assert.equal(await onPage(page), 'demos', 'the first visit lands on the store');
+  assert.equal(await onPage(page), 'demos', "the first visit's introduction ends on the store");
   assert.equal(await page.locator('.cards [data-demo="alpine-term"] img').getAttribute('alt'), '', "decorative: the button's name is the demo's (#15)");
   await page.locator('.cards [data-demo="alpine-term"]').focus();
   await page.keyboard.press('Enter'); // the card is reached and opened by the keyboard

@@ -11,7 +11,11 @@ import type { PageMachine } from '../run/page-machine.svelte.ts';
 import type { MachinesTab } from './machines-nav.svelte.ts';
 import { machinesNav } from './machines-nav.svelte.ts';
 import { demos } from './demos.svelte.ts';
-import { demosAddress, demosRoute, firstVisit, leftDemos, type DemosRoute } from '../demos-route.ts';
+import { demosAddress, demosRoute, firstVisit, leftDemos, pageQuery, type DemosRoute } from '../demos-route.ts';
+import { intro } from './intro.svelte.ts';
+import { afterIntro, INTRO_HASH, isIntroAddress } from '../intro-route.ts';
+import { records } from './records.svelte.ts';
+import { transition } from '../view-transition.ts';
 import type { Page } from '../page.ts';
 import { keys } from './keys.svelte.ts';
 import { network } from './network.ts';
@@ -101,6 +105,7 @@ export class PageWindow {
           this.takePairing();
           const r = demosRoute(location);
           if (r) this.openDemos(r, 'replace');
+          else if (isIntroAddress(location)) this.openIntro('none');
         },
         popState: () => this.followAddress(),
         dragOver: (e) => this.dragOver(e),
@@ -231,6 +236,7 @@ export class PageWindow {
    * opened on its route, or closed (to Home for `#home`, else to the machine).
    */
   followAddress() {
+    intro.open = isIntroAddress(location);
     const r = demosRoute(location);
     if (r) return this.openDemos(r, 'none');
     if (!demos.open) return;
@@ -243,30 +249,55 @@ export class PageWindow {
   }
   /**
    * What the address opens at the page's load: the store's page (`/demos`, `#demos`), Home (`#home`, the older
-   * `#machines`), or, on a first visit (no machines: `machines`), the store.
+   * `#machines`), the introduction (`#intro`), or, on a first visit (no machines: `machines`), the introduction.
    */
   openFromAddress(machines: number) {
     const r = demosRoute(location);
     if (r) this.openDemos(r, 'replace');
     else if (location.hash === '#home' || location.hash === '#machines') this.openMachines();
-    else if (firstVisit(location, machines, navigator.webdriver)) this.openDemos(undefined, 'replace');
+    else if (isIntroAddress(location) || firstVisit(location, machines, navigator.webdriver)) this.openIntro('replace');
+  }
+
+  // The introduction (docs/frontend.md "The introduction"; web/app/IntroPage.svelte): the whole window, over the
+  // machine and the pages that take its place, which stay as they were under it. `#intro` in the address keeps it open
+  // across a reload. Leaving it is one movement (web/app/view-transition.ts): the toolbar and the status bar come in.
+  openIntro(nav: Nav = 'push') {
+    intro.open = true;
+    go(`${location.pathname}${pageQuery(location.search)}${INTRO_HASH}`, nav);
+  }
+  /**
+   * The introduction left: for the demo store's page (`demos`), or where its Skip leads (`auto`: the store, or Home
+   * for a visitor with machines here). Resolves once the page shows where it led.
+   */
+  closeIntro(to: 'demos' | 'auto' = 'auto') {
+    const dest = to === 'auto' ? afterIntro(records.machines.length) : to;
+    return transition('intro', () => {
+      intro.open = false;
+      if (dest === 'home') this.openMachines();
+      else this.openDemos();
+    });
   }
   /** The store's page's part of `page`: `switchTo` opens a stored machine (asked first by `askSwitch`). */
   demoActions(d: {
     switchTo: (id: string) => Promise<void>;
     askSwitch: (id?: string) => Promise<boolean>;
-  }): Pick<Page, 'openDemos' | 'closeDemos' | 'chooseDemo' | 'askSwitch' | 'openDemo'> {
+  }): Pick<Page, 'openDemos' | 'closeDemos' | 'chooseDemo' | 'askSwitch' | 'openDemo' | 'openIntro' | 'closeIntro'> {
     return {
+      openIntro: () => this.openIntro(),
+      closeIntro: (to) => this.closeIntro(to),
       openDemos: (route) => this.openDemos(route),
       closeDemos: (back) => this.closeDemos(back),
       chooseDemo: (id) => this.chooseDemo(id),
       askSwitch: d.askSwitch,
-      openDemo: (id, view) => {
-        this.closeDemos(false);
+      openDemo: async (id, view) => {
         // Not saved as the visitor's view: it's the demo's, kept for this tab's reloads (review demo-page-2 #9).
         const v = view === 'serial' ? 'terminal' : 'screen';
         tabView(v);
-        this.setView(v, false);
+        // The demo's pane becomes its machine: one movement, then the machine starts in it.
+        await transition('launch', () => {
+          this.closeDemos(false);
+          this.setView(v, false);
+        });
         return d.switchTo(id);
       },
     };

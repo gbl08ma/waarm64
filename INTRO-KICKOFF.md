@@ -1,4 +1,4 @@
-# INTRO: an introduction that becomes the machine — kickoff (draft, not yet confirmed)
+# INTRO: an introduction that becomes the machine — kickoff
 
 The user's brief (2026-11-20), in their words:
 
@@ -39,10 +39,28 @@ On the hero's machine:
 
 > Also: this intro should be accessible again via a button in the "About" section.
 
+On the draft of this brief:
+
+> Clarification on "no speed claims": leave space for those later. Probably just a hero number "Up to X.y% faster than
+> [the next best solution, named]" type of thing would do; obviously we'd have to drop it if, and this would be really
+> unexpected, any of the competition surpasses our speed. It's ok to add dependencies for animations if they'd make
+> our life easier. I believe Svelte's transition/animation packages are already in place, we can bring them in if
+> they're not, and we can also bring in any other popular dependency, as long as it doesn't weigh too much on the
+> page's download. Yes, avoid porting existing demos so we don't have one more thing to attribute (and so our first
+> visual isn't literally "stolen"). I think Firefox will be able to boot the hero demo, but maybe other browsers like
+> Safari won't, and so we need that safety net of either a static image or a fallback design that avoids the demo. OK
+> to not have the demo autoplay on browsers with reduced motion enabled. All other gaps you filled with defaults have
+> my OK. OK to change the "demos" decision to open the intro, naturally. The intro should still finish in the store,
+> and skipping or "fast-forwarding" through the intro should lead the user to the store, unless they already have
+> machines. OK to build the guest image in the dev VM, I can hand over this branch to a Fable session in the dev VM
+> once we get to that loop, so that the design work can continue there. [...] For now, focus on the loops you can
+> build here, then create a handover for the dev VM.
+
 ## Decisions taken (the user's choices, 2026-11-20)
 
-- **Shape:** the intro is a full-window page with only the wordmark and a way past it. Starting a demo grows the
-  hero's screen into the machine view while the toolbar and the status bar come in.
+- **Shape:** the intro is a full-window page with only the wordmark and a way past it. **It finishes in the demo
+  store**, and Skip leads there too, or Home for a visitor with machines; the toolbar and the status bar come in as it
+  is left, and a demo's Start grows its picture into the machine view.
 - **The hero:** a tiny Buildroot guest boots by itself in the hero's frame: a framebuffer and a serial terminal, one
   vCPU, no disk kept, no network, nothing stored, not a machine of the Machines model. A script in the guest cycles a
   few framebuffer toys (the first not looking like Linux, then the reveal), then hands over an interactive shell. A
@@ -50,7 +68,8 @@ On the hero's machine:
 - **Browsers:** no permission prompt on the way to the hero, and no spectacular failure in Firefox on a first visit.
   Chromium stays the only supported browser (decisions.md).
 - **The comparison:** unkernel, v86, WebVM and JSLinux named, features only, dated and sourced from
-  docs/comparison.md, with a short "where they lead". No speed claims until §3's rows are measured.
+  docs/comparison.md, with a short "where they lead". No speed claims until §3's rows are measured, **but with a
+  place kept for one**: a single figure, "up to X.y% faster than" the next best, named; dropped if a peer is faster.
 - **How it works:** one scroll. Each subsystem (the CPU's tiers, memory, GLES through virgl, video decode, Vulkan
   through Venus) gets a short animated overview; a deep dive unfolds in place, its code and data loaded when opened.
   **Deep dives in the first version: the CPU (interpreter, block interpreter, JIT; AArch64 beside our wasm beside
@@ -61,20 +80,21 @@ On the hero's machine:
 - **Returning visitors:** with stored machines, Home as today; without, the intro. The intro has its own address
   (`#intro`) and a button in About. The demo store keeps its address and its page.
 
-## Proposed defaults for what the brief leaves open (overrule any)
+## Defaults for what the brief leaves open (the user's OK, 2026-11-20, as amended above)
 
-1. **No new dependency.** Animations with CSS, SVG, the Web Animations API and the View Transitions API (plain
-   crossfade where a browser lacks it). Syntax coloring of the captured code is done by the capture tool, not at run
-   time.
+1. **Dependencies for animation are allowed** (Svelte's own transitions and motion; another popular one if it earns
+   its weight in the page's download). So far none is needed: CSS, SVG, the Web Animations API and the View
+   Transitions API (the change made immediately where a browser lacks it).
 2. **The toys are ours** (small C programs written for this, MIT, drawn to the framebuffer: no ported demo-scene
    code). Three, chosen in loop 1 by how they look at the hero's size and what they cost in bytes.
 3. **The hero's guest is served with the page** (same origin, cached by the browser as any asset; one file: a kernel
    with its initramfs inside). It pauses when scrolled out of view or the tab is hidden, and is thrown away when a demo
    starts or the intro is left.
-4. **When the hero can't run** (no shared memory, a core that fails to start): a still of it and the rest of the page,
-   which doesn't need the emulator. The demos' own checks say what a demo needs, as today.
-5. **Reduced motion** (`prefers-reduced-motion`): no autoplay; each visualization is a stepper the visitor drives. The
-   hero's guest still boots (it's content, not decoration) but the launch transition is a cut.
+4. **When the hero can't run** (no shared memory, a core that fails to start; Safari is the likely case): a design
+   that does without it (the machine's plate, built in loop 0) or a still of it, and the rest of the page, which
+   doesn't need the emulator. The demos' own checks say what a demo needs, as today.
+5. **Reduced motion** (`prefers-reduced-motion`): no autoplay, the hero's guest included (it starts on a click); each
+   visualization is a stepper the visitor drives; the transitions are cuts.
 6. **Narrow windows** (720 px and under): one column; code panes side by side become tabs.
 7. **The words** go in the catalog as a new namespace (`intro`), and docs/copy.md gets a section for this page's
    voice (more direct, distributions and software named). The user reviews the copy before it ships.

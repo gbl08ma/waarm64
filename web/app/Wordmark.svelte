@@ -6,13 +6,13 @@
   demo-leave.ts), from the machine it opens Home. A shortcut: the toolbar's Home button does all of it too.
 -->
 <script lang="ts">
+  import WordmarkLetters from './WordmarkLetters.svelte';
   import { demos } from './areas/demos.svelte.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { leaveDemo } from './demo-leave.ts';
   import { page } from './page.ts';
   import { t } from '../i18n.ts';
 
-  const WORDMARK = ['wa', 'arm64']; // i18n-ignore
   /** Home or the demo store's page shows in the machine's place. */
   const inPage = $derived(machinesNav.open || demos.open);
   /** Back to the machine from either page. */
@@ -27,7 +27,7 @@
     data-action={inPage ? 'back' : 'home'}
     {title}
     aria-label={title}
-    onclick={() => (inPage ? toMachine() : page.openMachines())}><span>{WORDMARK[0]}</span>{WORDMARK[1]}</button
+    onclick={() => (inPage ? toMachine() : page.openMachines())}><WordmarkLetters /></button
   >
 </h1>
 
@@ -48,9 +48,5 @@
   button:focus-visible {
     box-shadow: var(--shadow-focus);
     outline: none;
-  }
-  span {
-    font-weight: var(--weight-medium);
-    color: var(--text-dim);
   }
 </style>

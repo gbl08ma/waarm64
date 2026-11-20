@@ -93,6 +93,13 @@
     white-space: nowrap;
     overflow: hidden;
   }
+  /* Not under the introduction; it comes in from the window's bottom edge when that's left (view-transition.ts). */
+  :global(body[data-page='intro']) footer {
+    display: none;
+  }
+  :global(html[data-vt='intro']) footer {
+    view-transition-name: status-bar;
+  }
   .group {
     display: inline-flex;
     align-items: center;

@@ -150,6 +150,10 @@
   --space-4: 12px;
   --space-5: 16px;
   --space-6: 24px;
+  /* The introduction's own steps (a page read from top to bottom, not a panel operated): between a section's parts,
+     and between sections. */
+  --space-7: 40px;
+  --space-8: 72px;
 
   /* Text. */
   /* Barlow (bundled: the imports above), a face of equipment labels; its letters run small, so the scale
@@ -162,6 +166,12 @@
   --text-md: 15px;
   --text-base: 16px;
   --text-lg: 19px;
+  /* The introduction's (web/app/IntroPage.svelte): a paragraph read at arm's length, a section's title, and the
+     page's one headline, which follows the window's width. */
+  --text-lede: 20px;
+  --text-title: 30px;
+  --text-display: clamp(34px, 4.6vw, 58px);
+  --line-height-tight: 1.12;
   /* The bars' (the toolbar's and the status bar's) own steps, half a pixel under the page's: the bars keep their
      heights, and the status bar its room for pieces. A menu's panel takes the page's again. */
   --bar-text-xs: 12.5px;
@@ -177,6 +187,13 @@
   --radius-sm: 2px;
   --radius: 3px;
   --radius-lg: 4px;
+
+  /* Movement (web/app/view-transition.ts, the introduction's pictures): a control answering, a part of the page
+     moving, a picture's step; and how a thing that moves settles. */
+  --motion-fast: 140ms;
+  --motion: 300ms;
+  --motion-slow: 560ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 
   /* Heights: a button or a field (a form's row), a toolbar button. */
   --control-h: 28px;

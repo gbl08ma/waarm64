@@ -6,8 +6,10 @@
 -->
 <script lang="ts">
   import about from 'virtual:waarm64-about';
+  import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
   import T from './T.svelte';
+  import { page } from './page.ts';
   import { t } from '../i18n.ts';
   import type { Group } from '../../tools/third-party.ts';
 
@@ -32,6 +34,10 @@
 </script>
 
 <div class="about" data-about>
+  <div class="intro">
+    <Note size="md">{t('machines:About.intro.words')}</Note>
+    <Button onclick={() => page.openIntro()} data-action="open-intro">{t('machines:About.intro')}</Button>
+  </div>
   <dl>
     <dt>{t('machines:About.source')}</dt>
     <dd><a href={repo} {...EXTERNAL} data-about-link="repository">{repo.replace(/^https:\/\//, '')}</a></dd>
@@ -113,6 +119,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+  /* What the introduction is, and the way to it. */
+  .intro {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
   dl {
     display: grid;

@@ -1,6 +1,6 @@
 <!--
   The page (docs/frontend.md): the toolbar, the message bar, the machine (its screen and serial terminal) or the
-  Home page or the demo store's page in its place, a disk's surface window over either, the status line, and the page's questions. The machine's run draws on the canvas and the
+  Home page or the demo store's page in its place, or the introduction over all of it, a disk's surface window over either, the status line, and the page's questions. The machine's run draws on the canvas and the
   terminal here (given to its areas: `view`), and writes what the rest shows into the areas' state (web/app/areas/). The body's
   `data-*` (the tests' and the page's styles' hooks) follow that state here.
 -->
@@ -11,6 +11,7 @@
   import FolderWizard from './FolderWizard.svelte';
   import FoldersMount from './FoldersMount.svelte';
   import DemosPage from './DemosPage.svelte';
+  import IntroPage from './IntroPage.svelte';
   import ViewDivider from './ViewDivider.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import MessageBar from './MessageBar.svelte';
@@ -29,6 +30,7 @@
   import type { PageView } from './areas/page-window.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { demos } from './areas/demos.svelte.ts';
+  import { intro } from './areas/intro.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
   import { keys } from './areas/keys.svelte.ts';
@@ -71,7 +73,7 @@
 
   $effect(() => {
     const body = document.body.dataset;
-    body.page = demos.open ? 'demos' : machinesNav.open ? 'machines' : 'machine';
+    body.page = intro.open ? 'intro' : demos.open ? 'demos' : machinesNav.open ? 'machines' : 'machine';
     body.state = power.state;
     body.view = screen.view;
     if (current.graphics) body.graphics = current.graphics;
@@ -93,7 +95,7 @@
   onfullscreenchange={view.events.fullscreenChanged}
 />
 <Toolbar {audio} {net} {folders} />
-{#if !machinesNav.open && !demos.open}<MessageBar />{/if}
+{#if !machinesNav.open && !demos.open && !intro.open}<MessageBar />{/if}
 <main
   bind:this={main}
   data-split-across={screen.split.across === undefined ? undefined : ''}
@@ -136,11 +138,16 @@
       }}
     />{/if}
 </main>
-{#if demos.open}<DemosPage {store} />{:else if machinesNav.open}<MachinesPage {store} {net} {folders} />{/if}
+<!-- The introduction takes the whole window: the pages under it come back as they were when it's left. -->
+{#if intro.open}<IntroPage />{:else if demos.open}<DemosPage {store} />{:else if machinesNav.open}<MachinesPage
+    {store}
+    {net}
+    {folders}
+  />{/if}
 <!-- A disk's surface floats over the machine and the Home page alike, and stays as the user goes between them. -->
-{#if surfaceWindow.open}{#key surfaceWindow.open}<SurfaceWindow open={surfaceWindow.open} />{/key}{/if}
+{#if surfaceWindow.open && !intro.open}{#key surfaceWindow.open}<SurfaceWindow open={surfaceWindow.open} />{/key}{/if}
 <!-- The RAM map, the same way: over the machine and the Home page. -->
-{#if ramWindow.open}<RamWindow />{/if}
+{#if ramWindow.open && !intro.open}<RamWindow />{/if}
 <StatusBar {net} />
 <NetWizard {net} />
 <NetDetails {net} />
@@ -280,9 +287,9 @@
   :global(body[data-view='terminal']) #terminal:global([data-fit] > .xterm) {
     padding: 0;
   }
-  /* The Home page and the demo store's take the machine's place; the machine runs on behind them. */
-  :global(body[data-page='machines']) main,
-  :global(body[data-page='demos']) main {
+  /* The Home page and the demo store's take the machine's place, and the introduction the window; the machine runs on
+     behind them. (A demo's Start names this element for its movement: theme/base.css.) */
+  :global(body:not([data-page='machine'])) main {
     display: none;
   }
   @media (max-width: 1100px) {

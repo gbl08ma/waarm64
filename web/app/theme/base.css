@@ -169,3 +169,30 @@ dialog {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* The page's whole-layout movements (web/app/view-transition.ts; the elements are named in their components under
+   `html[data-vt]`). The introduction left: its bar becomes the toolbar where it is, the status bar rises from the
+   window's bottom edge, the rest crosses over. A demo started: its picture grows into the machine's place
+   (`main`, the body's own child, named here; App.svelte keeps to its size limit). */
+html[data-vt='launch'] main {
+  view-transition-name: machine-view;
+}
+::view-transition-group(*) {
+  animation-duration: var(--motion);
+  animation-timing-function: var(--ease);
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion);
+}
+::view-transition-new(status-bar) {
+  animation: var(--motion) var(--ease) both status-bar-in;
+}
+::view-transition-group(machine-view) {
+  animation-duration: var(--motion-slow);
+}
+@keyframes status-bar-in {
+  from {
+    transform: translateY(100%);
+  }
+}

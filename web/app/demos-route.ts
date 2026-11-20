@@ -102,7 +102,7 @@ export function demosAddress(w: Where, r: { store?: string; id?: string }): stri
 }
 
 /**
- * Whether the page's load is a first visit, which opens the store (docs/decisions.md "Demos"): no machines kept in this browser,
+ * Whether the page's load is a first visit, which opens the introduction (web/app/intro-route.ts; docs/decisions.md "Demos"): no machines kept in this browser,
  * and an address with nothing to open (no query, no fragment). Not under automation (the tests open the page bare in
  * fresh profiles), unless the query asks for it (`?firstvisit=1`).
  */

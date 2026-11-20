@@ -1011,6 +1011,14 @@
     "message": "A whole-system AArch64 emulator for the browser.",
     "note": "Home page, About: the line beside the pane's title, what this web app is."
   },
+  "About.intro": {
+    "message": "Show the introduction",
+    "note": "Button at the top of the About pane (Home page): opens the introduction, the page a first-time visitor sees."
+  },
+  "About.intro.words": {
+    "message": "$t(common:product.name) runs a whole 64-bit ARM computer in this browser tab. The introduction says what it can do and how it works.",
+    "note": "Line at the top of the About pane (Home page), beside the button that opens the introduction."
+  },
   "About.source": {
     "message": "Source code",
     "note": "Home page, About: label of the link to this web app's source code repository."

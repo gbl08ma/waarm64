@@ -255,6 +255,10 @@
     gap: var(--space-4) var(--space-5);
     width: 100%;
   }
+  /* The demo started: its picture grows into the machine's place (web/app/view-transition.ts). */
+  :global(html[data-vt='launch']) img {
+    view-transition-name: machine-view;
+  }
   img {
     flex: 0 1 360px;
     min-width: 0;

@@ -1,0 +1,118 @@
+{
+  "IntroPage.skip": {
+    "message": "Skip to the demos",
+    "note": "Button at the right end of the introduction's bar, for a visitor with no machines in this browser: leaves the introduction for the demo store's page."
+  },
+  "IntroPage.skip.home": {
+    "message": "Skip to my machines",
+    "note": "The same button for a visitor who has machines in this browser: leaves the introduction for the Home page."
+  },
+  "IntroHero.headline": {
+    "message": "A whole 64-bit ARM computer in a browser tab",
+    "note": "The introduction's headline (the page's first words for a new visitor). A title: no period."
+  },
+  "IntroHero.lede": {
+    "message": "$t(common:product.name) emulates the hardware, not the operating system. Linux can't tell the difference, so the Debian, Arch, and Alpine images made for a Raspberry Pi or an ARM cloud server boot here as they are, with their own kernels.",
+    "note": "The introduction's first paragraph, under the headline: what the emulator is and what follows from it. This page names distributions and products, unlike the rest of the web app's words."
+  },
+  "IntroHero.speed": {
+    "message": "The guest's code is compiled to WebAssembly while it runs. That is fast enough for a desktop with Firefox in it, video and 3D included. Nothing is installed, and the machine runs on your computer, not on a server.",
+    "note": "The introduction's second paragraph: how it is fast, what that allows, and that it runs locally."
+  },
+  "IntroHero.demos": {
+    "message": "Try a demo",
+    "note": "The introduction's main button, under its first paragraphs: leaves the introduction for the demo store's page."
+  },
+  "IntroPlate.label": {
+    "message": "The emulated machine",
+    "note": "Screen reader's name for the list of the emulated machine's parts beside the introduction's first paragraphs."
+  },
+  "IntroPlate.cpu": {
+    "message": "Processor",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.cpu.value."
+  },
+  "IntroPlate.cpu.value": {
+    "message": "AArch64, up to 8 cores",
+    "note": "What the emulated machine has for “Processor”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.ram": {
+    "message": "Memory",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.ram.value."
+  },
+  "IntroPlate.ram.value": {
+    "message": "Up to 16 GiB",
+    "note": "What the emulated machine has for “Memory”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.firmware": {
+    "message": "Firmware",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.firmware.value."
+  },
+  "IntroPlate.firmware.value": {
+    "message": "UEFI",
+    "note": "What the emulated machine has for “Firmware”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.graphics": {
+    "message": "Graphics",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.graphics.value."
+  },
+  "IntroPlate.graphics.value": {
+    "message": "OpenGL ES 3.0, OpenGL 2.1, Vulkan",
+    "note": "What the emulated machine has for “Graphics”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.video": {
+    "message": "Video",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.video.value."
+  },
+  "IntroPlate.video.value": {
+    "message": "H.264, VP9, and AV1 decoded by your GPU",
+    "note": "What the emulated machine has for “Video”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.sound": {
+    "message": "Sound",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.sound.value."
+  },
+  "IntroPlate.sound.value": {
+    "message": "Playback and microphone",
+    "note": "What the emulated machine has for “Sound”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.usb": {
+    "message": "USB",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.usb.value."
+  },
+  "IntroPlate.usb.value": {
+    "message": "Your own devices, plugged into the guest",
+    "note": "What the emulated machine has for “USB”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.network": {
+    "message": "Network",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.network.value."
+  },
+  "IntroPlate.network.value": {
+    "message": "Up to 4 adapters at once",
+    "note": "What the emulated machine has for “Network”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroPlate.disks": {
+    "message": "Disks",
+    "note": "Label of a row of the emulated machine's parts on the introduction (drawn in small capitals). Its value is IntroPlate.disks.value."
+  },
+  "IntroPlate.disks.value": {
+    "message": "Up to 16, from qcow2 or raw images",
+    "note": "What the emulated machine has for “Disks”, beside that label on the introduction. Not a sentence: no period."
+  },
+  "IntroEnd.title": {
+    "message": "Pick a machine and start it",
+    "note": "Title of the introduction's last section, which leads to the demo store's page. No period."
+  },
+  "IntroEnd.words": {
+    "message": "The demos are ready-made machines. The smallest is a 25 MB download and puts you at a shell prompt in a few seconds. The largest is a desktop with a browser in it.",
+    "note": "The introduction's last paragraph, over the button to the demos. The figures are the Alpine demo's (docs/comparison.md §3)."
+  },
+  "IntroEnd.demos": {
+    "message": "Open the demos",
+    "note": "Main button of the introduction's last section: leaves the introduction for the demo store's page."
+  },
+  "IntroEnd.home": {
+    "message": "Open my machines",
+    "note": "Second button of the introduction's last section, shown only to a visitor who has machines in this browser: leaves the introduction for the Home page."
+  }
+}

@@ -78,6 +78,10 @@ export type Page = {
   askSwitch(id?: string): Promise<boolean>;
   /** Opens a demo's machine `id` (the store's page closes) in the demo's view; the switch was asked (`askSwitch`). */
   openDemo(id: string, view: 'serial' | 'screen'): Promise<void>;
+  /** The introduction (web/app/IntroPage.svelte) opened over the page. */
+  openIntro(): void;
+  /** The introduction left: for the demo store's page, or (`auto`) there or Home, for a visitor with machines here. */
+  closeIntro(to?: 'demos' | 'auto'): Promise<void>;
   /** Closes the message bar. */
   dismiss(): void;
   /**
