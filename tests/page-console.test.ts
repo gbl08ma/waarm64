@@ -177,8 +177,19 @@ test("Both's divider: the terminal keeps 80 columns beside the screen until the 
   await page.mouse.move(d.x + d.width / 2 - 150, d.y + d.height / 2, { steps: 5 });
   await page.mouse.move(d.x + d.width / 2 - 300, d.y + d.height / 2, { steps: 5 });
   await page.mouse.up();
-  const wide = await until(cols, (c) => c > 100, 'the terminal wider after the drag');
-  await until(() => consoles(page), (c) => c.at(-1)![0] === wide, 'the new size said');
+  // The drag's last fit runs at a frame and is said once it has held 150 ms: under load, a width read as soon as it
+  // passes 100 can be one from mid-drag. Taken once the terminal shows what it last said, the same 500 ms later.
+  const settled = async () => {
+    const [c, said] = [await cols(), (await consoles(page)).at(-1)![0]];
+    return c === said ? c : -1;
+  };
+  let wide = await until(settled, (c) => c > 100, 'the terminal wider after the drag, and the new size said');
+  for (;;) {
+    await page.waitForTimeout(500);
+    const again = await until(settled, (c) => c > 100, 'the size after the drag settled');
+    if (again === wide) break;
+    wide = again;
+  }
   assert.ok((await screenW()) < before - 250, "the screen's room smaller by the drag");
   const saved = () => page.evaluate(() => (JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}') as { split?: { across?: number } }).split?.across);
   assert.ok((await saved()) !== undefined, 'the share remembered');

@@ -2247,9 +2247,11 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   0, `renewal_first` false: the name still resolves to its node, not Nx). `entry.rs` `sign` draws BIP-340's aux bytes
   from the OS, which changes the entries' signatures and so their ids. Before seeding it, find which draw loses: if an
   id's order decides whether a release beats a waiting renewal, that's the server's bug, not the test's.
-- [B] **`tests/page-console.test.ts` "Both's divider" failed once under `scripts/ci.sh`** (2026-11-20): the size said
-  to the guest was `[[80,49],[80,49],[114,49]]` where the test waited for another at `until` (line 181); 3 of 3 runs
-  alone passed. A timing race in what the test waits for under load; find which resize it expected and wait on that.
+- [B] **The lint saw `any` in `web/snapshot-file.ts` once under `scripts/ci.sh`** (2026-11-20): six
+  `no-unsafe-*` errors at the overlay's `for await` (lines 651-657: `data` typed `any`) and the header's `JSON.parse`,
+  where the suppressions allow one; the same tree's lint alone and the next `scripts/ci.sh` passed. The type of the
+  loop's union iterable resolved to `any` once, with tsc, svelte-check and clippy running beside it. Note the lint's
+  heap and the other checks' timing if it recurs.
 - [B] **`tests/browser.test.ts` "the page says what's wrong…" stalled once** (2026-11-18, `scripts/ci.sh`): 600 s at
   idle CPU, no step named; 24 runs alone and 20 with every CPU busy passed in 8-18 s. A page-side hang would fail its
   30 s waits, so a Playwright call with no timeout (an `evaluate`, `close`, `newPage`) didn't return. It now notes each
