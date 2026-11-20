@@ -186,11 +186,13 @@ const screenOf = (page: Page) => page.evaluate(() => {
   return { size: [src.width, src.height], lit };
 });
 
-/** The screen box as the page measures it (width down to 8), and the canvas's size (the guest's scanout). */
+/** The screen box as the page measures it (screen-view.ts `wantedSize`: its rectangle floored, the width down to 8; a
+ * box of a fractional height, as the toolbar's font can make it, is the pixel under it, where clientHeight rounds),
+ * and the canvas's size (the guest's scanout). */
 const geometry = (page: Page) => page.evaluate(() => {
-  const box = document.getElementById('screen-view')!;
+  const box = document.getElementById('screen-view')!.getBoundingClientRect();
   const c = document.querySelector<HTMLCanvasElement>('#screen')!;
-  return { want: [Math.floor(box.clientWidth / 8) * 8, box.clientHeight], canvas: [c.width, c.height] };
+  return { want: [Math.floor(box.width / 8) * 8, Math.floor(box.height)], canvas: [c.width, c.height] };
 });
 /** The first mode the guest's connector lists (the preferred one), read on the serial console. */
 async function preferred(page: Page, tag: string): Promise<[number, number]> {
