@@ -790,7 +790,8 @@ and the floating windows don't show, and the machine, Home or the store's page s
   them **a small machine running** (`intro/IntroGuest.svelte`, its state in `intro/guest-run.svelte.ts`): a frame, a
   module of the panel as the plate is, with the guest's screen (512×320, its pixels one to one where the window has
   the room), a line of ours under it, its serial terminal (xterm.js, 64×8) and its counters (instructions run, blocks
-  compiled, each second).
+  compiled, each second; shown only from the tour's reveal on, or once a key ended it: before, they would say what
+  the picture is).
   - **The guest** is images.md's `intro`: one file served with the page. It boots when the frame first comes on
     screen (~0.5 s), shows its first picture before its terminal says anything, then runs its **tour**: commands
     typed out on the terminal that say what drew the picture and start two more, and at ~41 s a shell that is the

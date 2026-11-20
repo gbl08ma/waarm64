@@ -66,12 +66,16 @@ test('the machine boots by itself, a key gives its shell, it rests out of view, 
   await mark(page, 'scope');
   assert.equal((await terminalText(page)).trim(), '', 'nothing on the terminal while the first picture runs alone');
   assert.equal((await frame(page).locator('.caption').innerText()).trim(), plain('intro:IntroGuest.caption.scope'));
+  // Nor its counters, which would give the picture away before the tour does.
+  await page.waitForFunction(() => Number(document.querySelector<HTMLElement>('[data-intro] figure .counters')?.dataset.steps) > 0, null, { timeout: 10_000 });
+  assert.equal((await frame(page).locator('.counters').innerText()).trim(), '', 'the counters show before the reveal');
 
   // A key typed in the terminal ends the tour; the shell answers.
   await frame(page).locator('.serial').click();
   await page.keyboard.press('Space');
   await mark(page, 'shell');
   assert.equal((await frame(page).locator('.caption').innerText()).trim().replace(/\s+/g, ' '), plain('intro:IntroGuest.caption.shell'));
+  await page.waitForFunction(() => /\d/.test(document.querySelector('[data-intro] figure .counters')?.textContent ?? ''), null, { timeout: 10_000 }); // the counters, now
   await page.keyboard.type('echo ok-$((6*7))\n');
   await page.waitForFunction(() => /ok-42/.test(document.querySelector('[data-intro] figure .xterm-rows')?.textContent ?? ''), null, { timeout: 30_000 });
   await page.waitForFunction(() => Number(document.querySelector<HTMLElement>('[data-intro] figure .counters')?.dataset.steps) > 0, null, { timeout: 10_000 });

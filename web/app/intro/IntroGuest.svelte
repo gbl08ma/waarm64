@@ -44,6 +44,8 @@
   });
   onDestroy(() => void guest.stop());
 
+  /** The tour has said what the picture is (its reveal, or a key ended it): only then do the counters show, which would give it away. */
+  const revealed = $derived(guest.mark !== undefined && guest.mark !== 'scope');
   /** Which line of ours is under the screen: the tour's mark, or what the frame waits for. */
   const line = $derived(
     guest.state === 'off' ? 'off' : guest.state === 'waiting' ? 'waiting' : (guest.mark ?? 'scope'),
@@ -82,7 +84,7 @@
       <div class="serial" bind:this={terminal} aria-label={t('intro:IntroGuest.terminal')}></div>
     {/key}
     <p class="counters" data-steps={guest.stats?.steps ?? 0}>
-      {#if guest.stats}
+      {#if guest.stats && revealed}
         {t('intro:IntroGuest.counters', { steps: count(guest.stats.steps), blocks: count(guest.stats.blocks) })}
       {:else}
         &nbsp;
