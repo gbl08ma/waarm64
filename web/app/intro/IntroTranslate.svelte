@@ -13,6 +13,8 @@
   import type { CodeItem } from '../ui/code-pane.ts';
   import { guestRows, hostBytes, hostRows, uopRows, wasmItems, wasmLinesOf } from './captures.ts';
   import type { Capture, FoldKind, HostArch } from './captures.ts';
+  import type { Why, WhyKind } from './notes.ts';
+  import { isNote } from '../ui/code-pane.ts';
   import { Autoplay } from './autoplay.svelte.ts';
   import { t } from '../../i18n.ts';
   import { thisTarget } from '../../local-release.ts';
@@ -66,16 +68,57 @@
     slow: (count) => t('intro:IntroTranslate.fold.slow', { count }),
     exit: (count) => t('intro:IntroTranslate.fold.exit', { count }),
   };
+  /**
+   * A note's words by its kind (notes.ts places them; the catalog's keys, written out for i18n-check). Two of the
+   * host's differ by processor: what V8 does about an access outside the memory isn't the same on both.
+   */
+  const WHY: Record<Exclude<WhyKind, 'hostEntry' | 'hostRegs' | 'regs' | 'back'>, string> = {
+    sig: 'intro:IntroTranslate.why.sig',
+    pc: 'intro:IntroTranslate.why.pc',
+    loop: 'intro:IntroTranslate.why.loop',
+    tlb: 'intro:IntroTranslate.why.tlb',
+    hit: 'intro:IntroTranslate.why.hit',
+    miss: 'intro:IntroTranslate.why.miss',
+    flags: 'intro:IntroTranslate.why.flags',
+    again: 'intro:IntroTranslate.why.again',
+    pcBack: 'intro:IntroTranslate.why.pcBack',
+    chain: 'intro:IntroTranslate.why.chain',
+    ret: 'intro:IntroTranslate.why.ret',
+    hostLoop: 'intro:IntroTranslate.why.hostLoop',
+    hostTlb: 'intro:IntroTranslate.why.hostTlb',
+    hostGray: 'intro:IntroTranslate.why.hostGray',
+    hostBounds: 'intro:IntroTranslate.why.hostBounds',
+    hostExit: 'intro:IntroTranslate.why.hostExit',
+    hostChain: 'intro:IntroTranslate.why.hostChain',
+    hostRare: 'intro:IntroTranslate.why.hostRare',
+    hostSlow: 'intro:IntroTranslate.why.hostSlow',
+  };
+  const say = (why: Why) => {
+    if (why.kind === 'hostEntry')
+      return arch === 'arm64'
+        ? t('intro:IntroTranslate.why.hostEntry.arm64')
+        : t('intro:IntroTranslate.why.hostEntry.x64');
+    if (why.kind === 'hostRegs')
+      return arch === 'arm64'
+        ? t('intro:IntroTranslate.why.hostRegs.arm64')
+        : t('intro:IntroTranslate.why.hostRegs.x64');
+    const regs = (why.regs ?? []).join(', ');
+    if (why.kind === 'regs') return t('intro:IntroTranslate.why.regs', { regs });
+    if (why.kind === 'back') return t('intro:IntroTranslate.why.back', { regs });
+    return t(WHY[why.kind]);
+  };
   const guest = $derived(capture ? guestRows(capture) : []);
   const uops = $derived(capture ? uopRows(capture) : []);
   const wasm = $derived<CodeItem[]>(
     capture
-      ? wasmItems(capture).map((i) =>
-          'fold' in i ? { label: FOLD[i.fold](i.rows.length), rows: i.rows, group: i.group } : i,
+      ? wasmItems(capture, say).map((i) =>
+          'fold' in i
+            ? { label: FOLD[i.fold](i.rows.filter((r) => !isNote(r)).length), rows: i.rows, group: i.group }
+            : i,
         )
       : [],
   );
-  const host = $derived(capture && arch ? hostRows(capture, arch) : []);
+  const host = $derived(capture && arch ? hostRows(capture, arch, say) : []);
 </script>
 
 {#if capture}
@@ -139,7 +182,7 @@
         <CodePane
           title={t('intro:IntroTranslate.host')}
           sub={t('intro:IntroTranslate.host.sub', {
-            count: host.length,
+            count: capture.host[arch]?.lines.length ?? 0,
             size: hostBytes(capture, arch),
             arch: ARCH_NAME[arch],
           })}

@@ -121,10 +121,12 @@ test('the sections: the bar\'s links scroll to them; the comparison names each p
     await page.waitForFunction(([i, b]) => Math.abs(document.querySelector(`[data-section="${i}"]`)!.getBoundingClientRect().top - (b as number)) < 40, [id, bar] as const, { timeout: 10_000, polling: 50 });
   }
   assert.equal(await page.locator('[data-section="intro-facts"] .readout').count(), 4);
+  // The introduction scrolls, the document under it doesn't: one scrollbar.
+  assert.deepEqual(await page.evaluate(() => [document.scrollingElement!.scrollHeight <= innerHeight, document.scrollingElement!.scrollWidth <= innerWidth]), [true, true], 'the document itself overflows the window');
   const table = page.locator('[data-section="intro-compare"] table');
   assert.deepEqual(await table.locator('thead th').allInnerTexts(), ['waarm64', 'unkernel', 'WebVM', 'v86', 'JSLinux']);
-  assert.equal(await table.locator('tbody tr').count(), 10);
-  assert.equal(await table.locator('tbody td[data-peer="ours"]').count(), 10, 'a cell of ours in every row');
+  assert.equal(await table.locator('tbody tr').count(), 12);
+  assert.equal(await table.locator('tbody td[data-peer="ours"]').count(), 12, 'a cell of ours in every row');
   assert.equal(await table.locator('tbody td').evaluateAll((tds) => tds.filter((td) => !td.textContent?.trim()).length), 0, 'no empty cell');
   assert.equal(await page.locator('[data-field="speed-lead"]').count(), 0, 'no speed figure until one is measured (web/app/intro/speed.ts)');
   // Every source is a link to another site, opened apart and told nothing of the page.

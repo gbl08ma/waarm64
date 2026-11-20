@@ -44,7 +44,7 @@ still to measure. No number goes in without a run behind it
 | **3D** | **OpenGL ES 3.0 + GL 2.1 through virgl on WebGL2: 0 failures on dEQP's GLES2 and GLES3 mustpass lists** (17,027 and 44,398 pass); **Vulkan through Venus on WebGPU** (vkcube, vkmark, vkQuake) | no | no | no | no |
 | Video | **Hardware video decode for the guest**: VA-API → the browser's `VideoDecoder` (H.264, VP9, AV1); YouTube in a guest Chromium | no | no | no | no |
 | A browser inside | Firefox and Chromium with WebGL (WebGL inside WebGL2), accelerated | — | — | — | — |
-| Sound | virtio-snd, playback **and microphone** | ALSA / OSS | *unverified* | SoundBlaster 16 | — |
+| Sound | virtio-snd, playback **and microphone** | playback (its own ALSA card and OSS `/dev/dsp`), no capture | not stated (nothing in its README, source or CheerpX's docs) | playback (SoundBlaster 16; its input is "fake silent input"), no microphone | none (no sound device in its list of emulated devices) |
 | Input | keyboard (layouts), tablet, raw mouse lock, touchscreen, on-screen keyboard, gamepads | keyboard, mouse, touch | — | PS/2 | — |
 | USB | **Real devices through WebUSB and WebHID** passed to the guest; virtual devices | no | no | no | no |
 | Network | **Up to 4 adapters**; Tailscale and tailcat (our own client, Rust/wasm); a local helper (full LAN and internet through your computer); **peer-to-peer rooms between browsers** (WireGuard in WebRTC) with **registered names**; IPv6. the **demo network**: a hosted server with an allowlist, no setup ([networking/demo-network.md](networking/demo-network.md); not Wisp) | **Wisp, on by default** (TCP only, IPv4, outbound only) | Tailscale only | relay, Wisp, fetch, between tabs | WS VPN, 40 kB/s |
@@ -52,7 +52,7 @@ still to measure. No number goes in without a run behind it
 | Storage | disks and overlays in the browser (OPFS), files read in place, URLs, blank disks; merge, resize | IndexedDB ext4 overlay | IndexedDB overlay | — | VFsync |
 | Import / export | export a disk or just its changes as qcow2 or raw; import changes; machine definitions in and out; snapshot files | export and reset of the data disk | — | state files | VFsync |
 | Snapshots | **Snapshots and Suspend with 3D in use**, compressed; template snapshots that renew the guest's identity | yes, uncompressed; not with SMP | — | yes (zstd) | — |
-| Shared folders | folders on your computer (File System Access) or in the browser, over 9p | 9p over vsock (CLI) | — | 9p | 9p |
+| Files from your computer | **a folder of yours shared live** (File System Access) or one in the browser, over 9p | the page: its disk kept in the browser, exported or imported whole; a live mount only from the Node CLI and SDK (`--mount`, "Node only") | none in the page ("Direct access to local files is restricted"); its disk kept in IndexedDB; an embedder can pass single files | files copied into an in-memory 9p filesystem (several at once), one fetched out by its absolute path; disk images from local files; no folder picker | files uploaded with a button, one exported with `export_file`; no folder picker |
 | Clipboard | two-way with the guest (our agent) | — | — | — | — |
 | Debugging | the guest's own debug (ptrace, perf breakpoints, watchpoints) | no ptrace (no strace, gdb) | — | — | — |
 | Browsers | **Chromium first** (Chrome, Edge…: what it is built and tested for); Firefox runs smaller guests, more slowly and without WebUSB (the introduction's guest boots there in 0.59 s against 0.48: bench/demo/REPORT.md "INTRO loop 1") | Chrome/Edge 137+, Firefox 153+, Safari 27+, iOS 27 (needs JSPI) | modern browsers | all | all |
@@ -145,8 +145,8 @@ out". Always with a date and a link to this page's sources.
 - WebVM / CheerpX: https://github.com/leaningtech/webvm, https://cheerpx.io/docs/overview,
   https://cheerpx.io/docs/guides/Networking, https://labs.leaningtech.com/blog/cx-10 (32-bit, licensing, "5–10×
   slower than native"); BrowserPod: https://labs.leaningtech.com/blog/browserpod-40
-- v86: https://github.com/copy/v86, its `docs/networking.md` and `src/browser/fake_network.js`
-- JSLinux: https://bellard.org/jslinux/, https://bellard.org/jslinux/tech.html; TinyEMU (its base, and its license): https://bellard.org/tinyemu/
+- v86: https://github.com/copy/v86, its `docs/networking.md` and `src/browser/fake_network.js`; `docs/filesystem.md`, `src/sb16.js`, `src/browser/main.js` and the demo's page for sound and files (read at `315b2b0`, 2026-11-20)
+- JSLinux: https://bellard.org/jslinux/, https://bellard.org/jslinux/tech.html, https://bellard.org/jslinux/faq.html (file upload, `export_file`); TinyEMU (its base, and its license): https://bellard.org/tinyemu/
 - container2wasm: https://github.com/container2wasm/container2wasm; qemu-wasm: https://github.com/ktock/qemu-wasm
 - Wisp: https://github.com/MercuryWorkshop/wisp-protocol (CC-BY-4.0)
 - Ours: [graphics.md](graphics.md) "Testing" (dEQP), [benchmarking.md](benchmarking.md), [networking/](networking/adapters.md),

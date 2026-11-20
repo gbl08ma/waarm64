@@ -1843,6 +1843,94 @@
     "message": "Machines ready to use, set up and started in a click.",
     "note": "Home page: tooltip of the Demos button under the list of machines (between Preferences and About), which opens the demo store's page."
   },
+  "DemoIdeas.title": {
+    "message": "Things to try",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). The row's name and the pane's title. No period."
+  },
+  "DemoIdeas.row": {
+    "message": "Not a demo: programs that run here, and ways to reach a machine from outside.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). The row's line under its name."
+  },
+  "DemoIdeas.lede": {
+    "message": "None of these is a demo to start. They are things that work on a machine of your own, a desktop demo or a disk image you bring, once you install the program from its distribution's packages.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). The pane's first paragraph."
+  },
+  "DemoIdeas.desktop": {
+    "message": "On a desktop",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). Heading of the group of programs to run on a graphical desktop in the guest. No period."
+  },
+  "DemoIdeas.plasma": {
+    "message": "KDE Plasma",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name (the KDE desktop): don't translate."
+  },
+  "DemoIdeas.plasma.words": {
+    "message": "The whole desktop runs through the OpenGL ES layer, animations included, and they are smooth. The processor is the slow part: programs take their time to open.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of KDE Plasma in the guest."
+  },
+  "DemoIdeas.luanti": {
+    "message": "Luanti",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name (the voxel game engine once called Minetest): don't translate."
+  },
+  "DemoIdeas.luanti.words": {
+    "message": "The voxel game, drawn by your GPU through the guest's OpenGL.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of Luanti in the guest."
+  },
+  "DemoIdeas.ppsspp": {
+    "message": "PPSSPP",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name (a PlayStation Portable emulator): don't translate."
+  },
+  "DemoIdeas.ppsspp.words": {
+    "message": "An emulator inside the emulator: a PlayStation Portable, on an ARM computer, in a browser tab.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of PPSSPP in the guest."
+  },
+  "DemoIdeas.godot": {
+    "message": "Godot's editor",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name (the Godot game engine's editor)."
+  },
+  "DemoIdeas.godot.words": {
+    "message": "The game engine's editor opens and works, on OpenGL or, on a machine with Vulkan on, on Vulkan.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of the Godot editor in the guest. Vulkan is a setting of the machine."
+  },
+  "DemoIdeas.webgl": {
+    "message": "WebGL in the guest's browser",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). An idea's title: running WebGL pages inside Firefox or Chromium in the guest."
+  },
+  "DemoIdeas.webgl.words": {
+    "message": "Firefox or Chromium in the guest can open WebGL pages. Their 3D goes through the guest's OpenGL and comes out on your browser's WebGL.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of WebGL pages in the guest's browser."
+  },
+  "DemoIdeas.steam": {
+    "message": "Steam",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name: don't translate."
+  },
+  "DemoIdeas.steam.words": {
+    "message": "Its unofficial build for 64-bit ARM installs and starts.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of Steam's unofficial ARM port in the guest."
+  },
+  "DemoIdeas.network": {
+    "message": "Over the network",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). Heading of the group of things to do with the machine's network connections. No period."
+  },
+  "DemoIdeas.ssh": {
+    "message": "SSH into the machine from outside the browser",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). An idea's title. SSH is the protocol's name."
+  },
+  "DemoIdeas.ssh.words": {
+    "message": "With a tailcat or Tailscale connection the machine has an address your other computers can reach. Start an SSH server in the guest and log in from a terminal on your computer.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). How to reach the guest by SSH. tailcat and Tailscale are kinds of connection in the Network menu: keep their names."
+  },
+  "DemoIdeas.room": {
+    "message": "Two machines in one room",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). An idea's title: two waarm64 machines, in two tabs or on two computers, joined to the same peer-to-peer room."
+  },
+  "DemoIdeas.room.words": {
+    "message": "Open a machine in two tabs, or on two computers, and join both to the same peer-to-peer room. Each reaches the other by its name: SSH from one into the other.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). How to connect two machines through a room (a kind of connection in the Network menu)."
+  },
+  "DemoIdeas.fine": {
+    "message": "These were tried by hand, not measured. A desktop needs a machine with several processors and a few GiB of memory, and OpenGL or Vulkan needs a GPU your browser can use.",
+    "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). The pane's fine print."
+  },
   "DemosPage.heading": {
     "message": "Demos",
     "note": "Demo store's page: its heading, over the list of the store's demos."

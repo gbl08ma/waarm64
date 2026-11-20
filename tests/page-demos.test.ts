@@ -404,3 +404,41 @@ test("the list beside the chosen demo's pane: the first shown with none named, a
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test("Things to try: our store's list ends with a row that is no demo; its pane lists ideas and starts nothing; its address; one column; not on another store", async () => {
+  const { ctx, page, errors } = await visitor();
+  await page.goto(`${base}/web/app/#demos`);
+  await page.locator('article[data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
+  const row = page.locator('nav [data-action="things-to-try"]');
+  assert.equal((await row.locator('.name').innerText()).trim(), t('machines:DemoIdeas.title'));
+  assert.equal(await row.getAttribute('aria-current'), 'false');
+  await row.click();
+  await page.locator('article[data-ideas]').waitFor();
+  assert.match(page.url(), /#demos\?id=things-to-try$/);
+  assert.equal(await row.getAttribute('aria-current'), 'true');
+  assert.equal(await page.locator('article[data-demo]').count(), 0, "no demo's pane beside it");
+  assert.equal(await page.locator('.cards [data-demo][aria-current="true"]').count(), 0, 'no demo is the chosen one');
+  assert.equal(await page.locator('article[data-ideas] [data-action="start-demo"]').count(), 0, 'nothing starts from it');
+  assert.equal(await page.locator('[data-field="unknown-id"]').count(), 0, "its id isn't an unknown demo's");
+  assert.ok((await page.locator('article[data-ideas] dt').count()) >= 6, 'its ideas');
+  // Its address opens it; a demo's row leaves it.
+  await page.reload();
+  await page.locator('article[data-ideas]').waitFor({ timeout: 30_000 });
+  await page.setViewportSize(NARROW); // one column: the pane alone, with its way back
+  await page.locator('article[data-ideas] [data-action="all-demos"]').click();
+  await row.waitFor();
+  assert.equal(await page.locator('article[data-ideas]').count(), 0);
+  assert.equal(await page.locator('[data-field="unknown-id"]').count(), 0);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.locator('.cards [data-demo="alpine-two"]').click();
+  await page.locator('article[data-demo="alpine-two"]').waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  // Another store's list is its demos alone.
+  const other = await visitor();
+  await other.page.goto(`${base}/web/app/#demos?store=${encodeURIComponent(`${OTHER}/store.json`)}`);
+  await other.page.locator('[data-action="accept-store"]').click();
+  await other.page.locator('.cards [data-demo]').first().waitFor({ timeout: 30_000 });
+  assert.equal(await other.page.locator('[data-action="things-to-try"]').count(), 0);
+  await other.ctx.close();
+});

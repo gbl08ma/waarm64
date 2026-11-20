@@ -2,7 +2,8 @@
 // blocks, the block interpreter's micro-ops for them, the WebAssembly our JIT emitted and the machine code V8 made of
 // it): its shape, its load (when the deep dive opens: the file is an asset of the page's build, fetched then), and the rows
 // the code panes draw (web/app/ui/CodePane.svelte). Nothing here is drawn by hand: a row is a line of the capture.
-import type { CodeRow } from '../ui/code-pane.ts';
+import type { CodeNote, CodeRow } from '../ui/code-pane.ts';
+import { hostNotes, wasmNotes, type Why } from './notes.ts';
 
 type WasmLine = {
   text: string;
@@ -57,30 +58,36 @@ export const uopRows = (c: Capture): CodeRow[] =>
 
 /** What a fold of the WebAssembly holds, for its label. */
 export type FoldKind = 'prologue' | 'slow' | 'exit';
-export type WasmItem = CodeRow | { fold: FoldKind; rows: CodeRow[]; group?: number };
+export type WasmItem = CodeRow | CodeNote | { fold: FoldKind; rows: (CodeRow | CodeNote)[]; group?: number };
+/** A note's words (the catalog's, by its kind: IntroTranslate.svelte). */
+export type Say = (why: Why) => string;
 
 /**
  * The emitted function's lines: an instruction's own code as rows, and what surrounds it folded (what runs before a
  * block's first instruction, a slow arm, what leaves a block). The indentation the function's nesting gives every
- * line is kept: it is the text as wasm-tools prints it.
+ * line is kept: it is the text as wasm-tools prints it. The notes (notes.ts) stand before the lines they are about,
+ * inside a fold when their line is.
  */
-export function wasmItems(c: Capture): WasmItem[] {
+export function wasmItems(c: Capture, say: Say): WasmItem[] {
   const items: WasmItem[] = [];
+  const { notes } = wasmNotes(c);
   const kind = (l: WasmLine): FoldKind | undefined =>
     l.part === 'prologue' ? 'prologue' : l.part === 'exit' ? 'exit' : l.cold ? 'slow' : undefined;
-  let run: { fold: FoldKind; rows: CodeRow[]; group?: number; line: WasmLine } | undefined;
-  for (const l of c.wasm) {
+  let run: { fold: FoldKind; rows: (CodeRow | CodeNote)[]; group?: number; line: WasmLine } | undefined;
+  c.wasm.forEach((l, i) => {
     const row: CodeRow = { text: l.text, group: l.part === 'body' ? l.guest : undefined };
+    const before: CodeNote[] = (notes.get(i) ?? []).map((why) => ({ note: say(why) }));
     const k = kind(l);
     if (!k) {
       run = undefined;
-      items.push(row);
-    } else if (run?.fold === k && run.line.block === l.block && run.line.guest === l.guest) run.rows.push(row);
+      items.push(...before, row);
+    } else if (run?.fold === k && run.line.block === l.block && run.line.guest === l.guest)
+      run.rows.push(...before, row);
     else {
-      run = { fold: k, rows: [row], group: k === 'slow' ? l.guest : undefined, line: l };
+      run = { fold: k, rows: [...before, row], group: k === 'slow' ? l.guest : undefined, line: l };
       items.push(run);
     }
-  }
+  });
   return items;
 }
 
@@ -92,12 +99,14 @@ export const wasmLinesOf = (c: Capture, g: number) => c.wasm.filter((l) => l.par
 
 /**
  * The host's machine code: the offset, then the instruction. V8 says which wasm instruction a load, a store or a call
- * came from, and no more: only those lines belong to a guest instruction.
+ * came from, and no more: only those lines belong to a guest instruction. The notes (notes.ts) say what the rest is.
  */
-export function hostRows(c: Capture, arch: HostArch): CodeRow[] {
-  return (c.host[arch]?.lines ?? []).map((h) => {
+export function hostRows(c: Capture, arch: HostArch, say: Say): (CodeRow | CodeNote)[] {
+  const notes = hostNotes(c, arch);
+  return (c.host[arch]?.lines ?? []).flatMap((h, i) => {
     const from = h.wasm === undefined ? undefined : c.wasm[h.wasm];
-    return { gutter: h.offset, text: h.text, group: from?.part === 'body' && !from.cold ? from.guest : undefined };
+    const row = { gutter: h.offset, text: h.text, group: from?.part === 'body' && !from.cold ? from.guest : undefined };
+    return [...(notes.get(i) ?? []).map((why) => ({ note: say(why) })), row];
   });
 }
 

@@ -7,7 +7,8 @@
   is shown (the address stays without an id); an id the store doesn't have says so in the pane's place. At 720 px
   and under (`NARROW`) it's one column: the list, then the chosen demo's pane alone with All demos back to the list.
   Another store's demos are shown only once the visitor accepts that they aren't ours: nothing past its JSON is
-  fetched before.
+  fetched before. Our store's list ends with a row that is no demo, **Things to try** (DemoIdeas.svelte; the id
+  `IDEAS` in the address, unless the store has a demo of that id).
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -18,6 +19,7 @@
   import Note from './ui/Note.svelte';
   import T from './T.svelte';
   import DemoCard from './DemoCard.svelte';
+  import DemoIdeas from './DemoIdeas.svelte';
   import DemoStart from './DemoStart.svelte';
   import { errorView, type ErrorView } from './usb-problems.ts';
   import { fetchStore, findDemo, machinesOf, OUR_STORE, type DemoStore, type StoreDemo } from './demo-store.ts';
@@ -75,10 +77,13 @@
   const listed = $derived(shelf && (route.ours || accepted) ? shelf : undefined);
   /** The demo the address names, if the store has it. */
   const chosen = $derived(listed && route.id !== undefined ? findDemo(listed, route.id) : undefined);
+  /** The id of the row that is no demo: what to try with a machine (our store's list only). */
+  const IDEAS = 'things-to-try';
+  const ideas = $derived(!!listed && route.ours && route.id === IDEAS && !chosen);
   /** The demo whose pane shows: the chosen one, or beside the list with none named, the store's first. */
   const open = $derived(chosen ?? (narrow.current || route.id !== undefined ? undefined : listed?.demos.at(0)));
-  /** The list shows: always beside the pane, and in one column until a demo is chosen. */
-  const showList = $derived(!narrow.current || !chosen);
+  /** The list shows: always beside the pane, and in one column until a demo (or the ideas' row) is chosen. */
+  const showList = $derived(!narrow.current || (!chosen && !ideas));
   /** A demo's mark on its card: the visitor has it, or an older version of it. */
   function markOf(d: StoreDemo) {
     const m = machinesOf(records.machines, d);
@@ -102,7 +107,7 @@
             {#if !route.ours}
               <Note size="md" data-field="from"><T k="machines:DemosPage.from" params={{ host }} /></Note>
             {/if}
-            {#if narrow.current && route.id !== undefined}
+            {#if narrow.current && route.id !== undefined && !ideas}
               <Note tone="warn" size="md" data-field="unknown-id">
                 {t('machines:DemosPage.unknown', { id: route.id })}
               </Note>
@@ -127,9 +132,14 @@
               {/each}
             </ul>
           {/if}
+          {#if route.ours}
+            <DemoIdeas row chosen={ideas} onopen={() => void leaveDemo(() => page.chooseDemo(IDEAS))} />
+          {/if}
         </nav>
       {/if}
-      {#if open}
+      {#if ideas}
+        <DemoIdeas back={narrow.current} onback={() => page.chooseDemo()} />
+      {:else if open}
         {#key open.def.demo.id}
           <DemoStart
             {store}

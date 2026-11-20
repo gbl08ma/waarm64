@@ -375,6 +375,42 @@
     "message": "A WebSocket VPN at 40 kB/s",
     "note": "Cell of the comparison table on the introduction: “Network” for JSLinux. Not a sentence: no period."
   },
+  "IntroCompare.sound": {
+    "message": "Sound",
+    "note": "Row heading of the comparison table on the introduction: whether the guest can play audio and record from the microphone. No period."
+  },
+  "IntroCompare.sound.ours": {
+    "message": "Playback and microphone",
+    "note": "Cell of the comparison table on the introduction: “Sound” for waarm64. Not a sentence: no period."
+  },
+  "IntroCompare.sound.unkernel": {
+    "message": "Playback",
+    "note": "Cell of the comparison table on the introduction: “Sound” for unkernel. Not a sentence: no period. It plays audio and has no microphone."
+  },
+  "IntroCompare.sound.v86": {
+    "message": "Playback",
+    "note": "Cell of the comparison table on the introduction: “Sound” for v86. Not a sentence: no period. It plays audio (a SoundBlaster 16) and has no microphone."
+  },
+  "IntroCompare.files": {
+    "message": "Files from your computer",
+    "note": "Row heading of the comparison table on the introduction: how a visitor gets files of their own into and out of the guest. No period."
+  },
+  "IntroCompare.files.ours": {
+    "message": "A folder of yours, shared live",
+    "note": "Cell of the comparison table on the introduction: “Files from your computer” for waarm64. Not a sentence: no period. The visitor picks a folder on their computer and the guest sees it as a mounted directory, changes included."
+  },
+  "IntroCompare.files.unkernel": {
+    "message": "The whole disk, exported or imported",
+    "note": "Cell of the comparison table on the introduction: “Files from your computer” for unkernel. Not a sentence: no period."
+  },
+  "IntroCompare.files.v86": {
+    "message": "Files sent in, one fetched out by its path",
+    "note": "Cell of the comparison table on the introduction: “Files from your computer” for v86. Not a sentence: no period."
+  },
+  "IntroCompare.files.jslinux": {
+    "message": "Files uploaded, one exported by a command",
+    "note": "Cell of the comparison table on the introduction: “Files from your computer” for JSLinux. Not a sentence: no period."
+  },
   "IntroCompare.images": {
     "message": "Disk image formats",
     "note": "Row heading of the comparison table on the introduction. No period."
@@ -631,8 +667,108 @@
     "message": "Leaving the block: {{count}} lines",
     "note": "Label of folded lines in the WebAssembly pane of the introduction's code viewer (the CPU's deep dive): the code that stores the registers and jumps to the next block. A click unfolds them."
   },
+  "IntroTranslate.why.sig": {
+    "message": "One WebAssembly function per block of guest code. It is given where the emulated processor's state is in memory and how many instructions it may run, and it returns how many it ran. This capture counts instructions, as our tests do. In the page, compiled code polls a flag instead.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: over the function's first line."
+  },
+  "IntroTranslate.why.pc": {
+    "message": "The guest's program counter, read from the processor's state.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the three lines that load the program counter."
+  },
+  "IntroTranslate.why.regs": {
+    "message": "The guest registers this block uses ({{regs}}) are copied from the processor's state in memory into locals. The block works on the copies, and V8 keeps locals in your processor's registers.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the lines that load guest registers. {{regs}} is a list of register names like “x0, x1, x8”."
+  },
+  "IntroTranslate.why.loop": {
+    "message": "The block branches back to its own start, so here it is a loop. A turn of the guest's loop never leaves this function.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the “loop” line."
+  },
+  "IntroTranslate.why.tlb": {
+    "message": "A memory access. The guest's address has to become a place in WebAssembly's memory, so first comes a question: is its page in the emulated TLB? The address picks an entry, and one comparison checks that the entry is this page's.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the lines of a load or store that check the software TLB. TLB is the term of the trade (translation lookaside buffer): keep it."
+  },
+  "IntroTranslate.why.hit": {
+    "message": "It is. The entry also holds where the page is, so one addition gives the place, and the access itself is a single load or store.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: after the TLB check, before the fast path. Follows the note that asks whether the page is in the TLB."
+  },
+  "IntroTranslate.why.miss": {
+    "message": "It isn't. The registers that changed go back to the processor's state, and a helper in the emulator's core does the access the long way: through the guest's page tables, to a device, or to a fault. Then the registers are read again.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: at the start of the slow path taken when the TLB check fails."
+  },
+  "IntroTranslate.why.flags": {
+    "message": "The condition flags N, Z, C, and V are packed into one word of the processor's state. The compiler stores them only where something later may still read them.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the lines that compute and store the guest's condition flags."
+  },
+  "IntroTranslate.why.again": {
+    "message": "The branch to the block's own start, taken inside this function while the count of instructions allows.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the lines that jump back to the loop's start."
+  },
+  "IntroTranslate.why.back": {
+    "message": "Leaving the block. The registers that changed ({{regs}}) are written back to the processor's state.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the lines that store guest registers. {{regs}} is a list of register names like “x0, x1, x8”."
+  },
+  "IntroTranslate.why.pcBack": {
+    "message": "The program counter is written back: where the guest goes next.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the lines that store the program counter."
+  },
+  "IntroTranslate.why.chain": {
+    "message": "The next block. Its entry in the cache of compiled blocks is checked (is it the code for that address, may it still run), and if so it is entered with a tail call. Compiled blocks follow one another without returning to the emulator.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the lines that look up and call the next compiled block."
+  },
+  "IntroTranslate.why.ret": {
+    "message": "Otherwise, back to the emulator's dispatcher with the count of instructions run.",
+    "note": "A note between the lines of the “Compiled” pane (WebAssembly) in the introduction's code viewer, in plain words for a reader who doesn't know WebAssembly: before the function's last return."
+  },
+  "IntroTranslate.why.hostEntry.x64": {
+    "message": "V8's own preamble, from no line of the WebAssembly: the function's stack frame, a check that the stack has room, and the address where WebAssembly's memory starts, kept in a register for every access below.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: over the first lines, on x86-64. V8 is the browser's JavaScript and WebAssembly engine."
+  },
+  "IntroTranslate.why.hostEntry.arm64": {
+    "message": "V8's own preamble, from no line of the WebAssembly: the function's stack frame, a check that the stack has room, and the address where WebAssembly's memory starts, with its size, kept in registers for every access below.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: over the first lines, on AArch64. V8 is the browser's JavaScript and WebAssembly engine."
+  },
+  "IntroTranslate.why.hostRegs.x64": {
+    "message": "The guest's registers, read from the processor's state: the memory's start, plus the state's place in it, plus the register's offset. No access here has a bounds check. On x86-64, V8 reserves address space past the end of the memory, so an access outside it faults in your processor instead of being compared first.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the loads of guest registers, on x86-64. Explains why there are no bounds checks."
+  },
+  "IntroTranslate.why.hostRegs.arm64": {
+    "message": "The guest's registers, read from the processor's state: the memory's start, plus the state's place in it, plus the register's offset. V8 leaves these loads unchecked in this build. It checks the stores further down.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the loads of guest registers, on AArch64."
+  },
+  "IntroTranslate.why.hostLoop": {
+    "message": "V8's own check at every turn of a loop: it reads a flag, so that the browser can interrupt code that runs for long.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the two instructions V8 adds at a loop's head."
+  },
+  "IntroTranslate.why.hostTlb": {
+    "message": "The TLB check, as in the WebAssembly beside it: shift and mask the address to pick the entry, compare, and branch away to the slow path if the entry isn't this page's.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the machine code of a TLB check."
+  },
+  "IntroTranslate.why.hostGray": {
+    "message": "Not lit, because V8 names a line of WebAssembly only for loads, stores, and calls. These are the sums, compares, and condition flags of the instructions around them, done in your processor's registers.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before a run of lines that no guest instruction lights up."
+  },
+  "IntroTranslate.why.hostBounds": {
+    "message": "A bounds check: three instructions that compare the address with the memory's size before a store. This code was captured on Linux, where V8 on AArch64 can't rely on a fault for an access outside the memory, so it checks every store. Chrome on a Mac leaves these out, as x86-64 does.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the first bounds check, on AArch64 only."
+  },
+  "IntroTranslate.why.hostExit": {
+    "message": "Leaving the block: the changed registers and the program counter are stored back into the processor's state.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the stores that end the block."
+  },
+  "IntroTranslate.why.hostChain": {
+    "message": "The jump into the next block: the lookup in the cache of compiled blocks, then V8's code for the tail call, with its own checks that the table's entry exists and has this function's type.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the machine code that looks up and jumps to the next block."
+  },
+  "IntroTranslate.why.hostRare": {
+    "message": "From here on, the rare paths, placed after the code that normally runs: the calls into V8 when one of its checks above fails, and the slow path's call into the emulator's core.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: where the out-of-line code starts."
+  },
+  "IntroTranslate.why.hostSlow": {
+    "message": "The slow path: registers saved, the core's helper called for the access that missed the TLB, registers restored, and back into the block.",
+    "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the machine code of the slow path's helper call."
+  },
   "IntroTranslate.honest": {
-    "message": "Nothing here is drawn by hand. The guest's code ran in $t(common:product.name), and these are its micro-ops and the WebAssembly it emitted, printed by wasm-tools. The machine code is what <code>{{compiler}}</code> made of that function. V8 says which line a load, a store, or a call came from, so only those light up in the last pane.",
+    "message": "Nothing here is drawn by hand. The guest's code ran in $t(common:product.name), and these are its micro-ops and the WebAssembly it emitted, printed by wasm-tools. The machine code is what <code>{{compiler}}</code> made of that function. V8 says which line a load, a store, or a call came from, so only those light up in the last pane. The notes between the lines are ours: rules place them by reading the captured code.",
     "note": "Fine print under the panes of the introduction's code viewer (the CPU's deep dive): where the code shown comes from. {{compiler}} names the V8 version and compiler tier."
   },
   "IntroPage.nav.how": {

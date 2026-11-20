@@ -855,6 +855,19 @@ and the floating windows don't show, and the machine, Home or the store's page s
       guess). **Nothing is drawn by hand** ("The captures", below). The host's
       pane lights only the lines V8's own source positions tie to a WebAssembly instruction (loads, stores, calls):
       the fine print says so.
+      **Notes say why** (`intro/notes.ts`, drawn by `ui/CodePane.svelte` as plain words between the lines, in the
+      page's typeface): in the WebAssembly, what the function is given, the registers copied from the processor's
+      state (named by their offsets), the loop, each memory access's TLB check with its hit and its slow path, the
+      flags' store, and on the way out the registers written back, the next block's lookup and tail call, the
+      return; in the host's code, V8's preamble, the registers' loads and why no access is bounds-checked on x86-64
+      (the guard region) while the AArch64 capture, made on Linux, compares before every store (a note at the
+      first), V8's check at a loop's turn, the TLB check, the runs that light for nothing (arithmetic V8 ties to no
+      line), the stores that leave the block, the jump into the next, and where the rare paths start. **The notes
+      are ours and the code is not**: each is placed by a rule that reads the capture, and a rule that doesn't find
+      its shape places nothing. `tests/intro-notes.test.ts` holds the rules to the committed captures (a note of
+      registers names the ones its lines move; the bounds checks exist where a note says so and nowhere else;
+      every kind has words, and every worded kind shows in some capture). A fold's first note shows under its
+      label while it is folded.
     - **Memory's** ([Try the split](ui:intro:IntroHow.memory.deeper); `intro/IntroRam.svelte`): a slider of guest RAM
       (256 MiB to 16 GiB) and under it a bar per WebAssembly memory, 4 GiB long, filled as the machine really splits
       that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
@@ -929,7 +942,12 @@ the query's form serves (decisions.md "Demos").
   as a machine's), so another demo is a click on its row and nothing leads back. **With no demo named, the store's
   first is shown** (the address stays without an id, and the pane takes no focus), so the page opens on something to
   start; an `?id=` the store doesn't have says so where the pane would be ([This store has no demo {{id}}. It may have been replaced by a newer one.](ui:machines:DemosPage.unknown),
-  [Choose a demo from the list.](ui:machines:DemosPage.choose)) and shows none. **At 720 px and under** (`MediaQuery`, the page's
+  [Choose a demo from the list.](ui:machines:DemosPage.choose)) and shows none. **Our store's list ends with a row
+  that is no demo, [Things to try](ui:machines:DemoIdeas.title)** (`DemoIdeas.svelte`; `?id=things-to-try`, unless the
+  store has a demo of that id): its pane lists what works on a machine of the visitor's own, by the user's own trials
+  (KDE Plasma, Luanti, PPSSPP, Godot's editor, WebGL in the guest's browser, Steam's unofficial ARM build; SSH from
+  outside through tailcat or Tailscale, two machines in one room), in the introduction's voice (copy.md). Nothing
+  starts from it. **At 720 px and under** (`MediaQuery`, the page's
   narrow breakpoint) it's one column: the list alone, then the chosen demo's pane alone with
   **[All demos](ui:machines:DemoStart.back)** over it, back to the list (the unknown id's warning is over the list there). Before
   the list may show (the store loading, its failure, another store's warning) the page is one column at any width.

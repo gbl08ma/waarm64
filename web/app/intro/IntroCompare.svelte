@@ -92,6 +92,26 @@
       ],
     ],
     [
+      'intro:IntroCompare.sound',
+      [
+        'intro:IntroCompare.sound.ours',
+        'intro:IntroCompare.sound.unkernel',
+        'intro:IntroCompare.unconfirmed',
+        'intro:IntroCompare.sound.v86',
+        'intro:IntroCompare.no',
+      ],
+    ],
+    [
+      'intro:IntroCompare.files',
+      [
+        'intro:IntroCompare.files.ours',
+        'intro:IntroCompare.files.unkernel',
+        'intro:IntroCompare.no',
+        'intro:IntroCompare.files.v86',
+        'intro:IntroCompare.files.jslinux',
+      ],
+    ],
+    [
       'intro:IntroCompare.images',
       [
         'intro:IntroCompare.images.ours',

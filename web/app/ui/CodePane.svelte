@@ -2,12 +2,14 @@
   A pane of code (the introduction's deep dives): a title and a line under it, then the code in a sunk well, monospace,
   a row a line. A row may belong to a `group` (a number): the rows of the `active` group are lit, the first of them
   scrolled into the pane's view, and the pointer over a row or a click on it picks its group (`onpick`). Items that
-  are folds (code-pane.ts) show their label as a button that unfolds their rows in place. The pane keeps a height and
+  are folds (code-pane.ts) show their label as a button that unfolds their rows in place; a note is plain words about
+  the rows after it, in the page's typeface, wrapped to the pane's width (a fold's first note shows under its label
+  while it is folded). The pane keeps a height and
   scrolls inside it, both ways; a narrow window scrolls the long lines, it doesn't wrap them (code is read by column).
 -->
 <script lang="ts">
   import { SvelteSet } from 'svelte/reactivity';
-  import { isFold, type CodeItem, type CodeRow } from './code-pane.ts';
+  import { isFold, isNote, type CodeItem, type CodeNote, type CodeRow } from './code-pane.ts';
   import { reducedMotion } from '../view-transition.ts';
 
   type Props = {
@@ -59,6 +61,10 @@
   </div>
 {/snippet}
 
+{#snippet words(n: CodeNote)}
+  <p class="note" data-note>{n.note}</p>
+{/snippet}
+
 <section class="pane" {...rest}>
   <header>
     <h4>{title}</h4>
@@ -74,8 +80,13 @@
           onclick={() => toggle(item)}>{item.label}</button
         >
         {#if open.has(item)}
-          {#each item.rows as r, j (j)}{@render line(r)}{/each}
+          {#each item.rows as r, j (j)}{#if isNote(r)}{@render words(r)}{:else}{@render line(r)}{/if}{/each}
+        {:else}
+          {@const first = item.rows.find(isNote)}
+          {#if first}{@render words(first)}{/if}
         {/if}
+      {:else if isNote(item)}
+        {@render words(item)}
       {:else}
         {@render line(item)}
       {/if}
@@ -124,6 +135,22 @@
     font-size: var(--text-xs);
     line-height: 1.55;
     outline: none;
+  }
+  /* A note: ours, not code. The page's typeface, wrapped, and kept in view while the code scrolls sideways. */
+  .note {
+    position: sticky;
+    left: 0;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 62ch;
+    margin: var(--space-3) 0 var(--space-2);
+    padding: 0 var(--space-4);
+    border-left: 2px solid var(--text-dim);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--text-sm);
+    line-height: var(--line-height);
+    white-space: normal;
   }
   .well:focus-visible {
     box-shadow: var(--shadow-focus);

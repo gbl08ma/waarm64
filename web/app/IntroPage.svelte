@@ -58,8 +58,10 @@
 </div>
 
 <style>
-  /* The window's whole height, scrolled: the bar stays at its top. */
+  /* The window's whole height, scrolled (the bar stays at its top); and what its sections place absolutely (a table's caption for screen readers)
+     is placed in it, not in the document, which would grow a second scrollbar past the window. */
   .intro {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow: auto;

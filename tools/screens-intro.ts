@@ -34,6 +34,17 @@ async function at(browser: Browser, o: Shots, viewport: { width: number; height:
 
   await take('hero', (page) => page.locator('[data-intro] figure[data-guest="waiting"], [data-intro] .hero dl').first().waitFor({ timeout: 30_000 }));
   for (const id of ['intro-facts', 'intro-compare', 'intro-how']) await take(id.slice('intro-'.length), (page) => to(page, `[data-section="${id}"]`));
+  // The processor's dive from its panes down: the notes between the captured lines, in both hosts' code.
+  for (const host of ['x64', 'arm64']) {
+    await take(`dive-cpu-${host}`, async (page) => {
+      const article = page.locator('[data-topic$="cpu"]').first();
+      await article.locator('[data-action="go-deeper"]').click();
+      await article.locator('[data-pane="host"]').waitFor({ timeout: 30_000 });
+      await article.locator(`[data-arch="${host}"]`).click();
+      await article.locator('[data-pane="wasm"] .fold').first().click(); // what runs before the first instruction, unfolded
+      await to(page, '[data-topic$="cpu"] .panes');
+    });
+  }
   for (const topic of ['cpu', 'memory']) {
     await take(`dive-${topic}`, async (page) => {
       const article = page.locator(`[data-topic$="${topic}"]`).first();

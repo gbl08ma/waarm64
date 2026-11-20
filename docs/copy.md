@@ -70,6 +70,10 @@ rather than operated, by someone deciding whether to care. Its voice differs fro
   made from what the code really does. No superlative without a number behind it.
 - **It may use the terms of the trade** (JIT, WebAssembly, TLB, UEFI) where the section is about them, said once in
   plain words first.
+- **Two more places take this voice**, for the same reader: the demo store's **[Things to try](ui:machines:DemoIdeas.title)**
+  (`machines:DemoIdeas.*`: programs known to run, named, with what to expect and nothing we haven't seen work), and
+  the **notes in the code viewer** (`intro:IntroTranslate.why.*`: what a run of captured lines is for, to a reader
+  who doesn't know WebAssembly or assembly; one fact a note, the mechanism named in plain words before its term).
 - The rest holds: full sentences, one topic each, American spelling, the serial comma, "you" for the visitor, a
   first-time visitor's rules above (nothing assumes a past; say what a thing is before using our name for it).
 

@@ -109,6 +109,7 @@ async function at(browser: Browser, o: Shots, viewport: { width: number; height:
   await take('list', '', '[data-demo="arch-3d"]');
   await take('chosen', '?id=arch-desktop', start);
   await take('unknown', '?id=alpine-2019', '[data-field="unknown-id"]');
+  await take('ideas', '?id=things-to-try', 'article[data-ideas]'); // the row that is no demo: Things to try
   await take('other-store', `${theirs}&id=arch-desktop`, '[data-field="not-ours"]');
   await take('other-store-accepted', theirs, '[data-field="not-ours"]', async (page) => {
     await page.click('[data-action="accept-store"]');

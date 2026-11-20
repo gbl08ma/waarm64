@@ -65,6 +65,12 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
   machine can't run (the two together were too tall for a first screen). Screenshots: `node
   bench/results/local/intro-shot.ts <dir>` (ad hoc, git-ignored) or the page itself on `npm start`.
 - **The frame's words** (`intro:IntroGuest.*`, 12 entries: a line a mark, the buttons): unreviewed, like the rest.
+- **Words added at the user's asking, 2026-11-20, unreviewed too:** the code viewer's notes
+  (`intro:IntroTranslate.why.*`, 25: what each run of captured lines is for; what they claim of V8, the bounds checks
+  by processor and the loop's check, is docs/v8.md's and the captures' own, held by `tests/intro-notes.test.ts`);
+  the demo store's Things to try (`machines:DemoIdeas.*`, 20: the user's own trials, worded by us); the comparison's
+  rows for sound and for files from the visitor's computer (docs/comparison.md has each cell's source, read that
+  day), "Chromium-based first", JSLinux's license, ISO among the images.
 - **Serving the guest's image from the page's own host** (the user asked about bundling, 2026-11-20): it is its own
   file (`assets/intro.img-<hash>.gz`), fetched by the guest's worker and never part of a script, as a disk image is.
   It could instead live on vmdisks.tny.im with the demos' disks (a `Cross-Origin-Resource-Policy` header there, a
@@ -79,6 +85,13 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
 - **Deploying**: only on the user's word.
 
 ## Notes for whoever continues
+
+- **Changed outside the introduction at the user's asking** (2026-11-20, a5e85e2d and after): a load that opens the
+  introduction, Home or the store leaves the machine opened last stopped (`power-actions.ts` `boot(elsewhere)`;
+  frontend.md "What a load starts under it"); the demo's pane keeps its head to its content's width
+  (`ui/Pane.svelte` `--pane-width`); the store's list ends with Things to try (`DemoIdeas.svelte`).
+- `tests/intro-guest.test.ts`'s "one toy at a time" check failed once in fourteen runs (2026-11-20) and not again; its
+  message now carries the console's end.
 
 - **GPL sources: pinned links, no tarballs of ours** (the user, 2026-11-20): a GPL binary the page distributes needs
   links to exactly what it was built from, pinned by a commit or as durable an identifier as there is.
