@@ -76,7 +76,10 @@ export function inflatePool(
   const pool = Object.assign(
     async (inputs: Uint8Array[], size: number) => {
       if (inputs.length < 2 || broken) return local(inputs, size);
-      const ws = await (workers ??= coreModule().then((m) => (started = start(m))));
+      // A pool closed while the core loaded starts none (they'd never be ended).
+      const ws = await (workers ??= coreModule().then((m) => (broken ? [] : (started = start(m)))));
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `close` sets it meanwhile
+      if (broken) return local(inputs, size);
       // Contiguous shares, as even as the count allows: this thread's first.
       const shares = Math.min(n + 1, inputs.length);
       const parts = await Promise.all(

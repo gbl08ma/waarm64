@@ -93,7 +93,10 @@ export function cachedSource(
     if (!bytes) return false;
     stats.fetched += len;
     for (let k = a; k <= b; k++) {
-      const one = bytes.subarray((k - a) * block, Math.min(len, (k - a + 1) * block));
+      // A block of a run is kept as a copy of its own: a view would keep the run's whole buffer alive for as long as
+      // any one of its blocks stays (a chunked image's piece, the prefetch's 8 blocks), past the cache's budget.
+      const view = bytes.subarray((k - a) * block, Math.min(len, (k - a + 1) * block));
+      const one = a === b ? view : view.slice();
       if (!background || !store?.active()) keep(k, one);
       store?.put(k, one);
       if (background) ahead.add(k);

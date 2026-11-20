@@ -17,15 +17,16 @@ import { webUsbOpener, type WebUsbLike } from './webusb.ts';
 type Init = DevicesInit & { bell: number };
 
 /**
- * Owner (web/vm.ts `deviceWorker`) → device worker. `written` and `blocks` (a disk's changes for a snapshot), `compact`,
- * `hint` and `inspect` (a disk's surface: web/surface.ts) are answered by `disk` with their id.
+ * Owner (web/vm.ts `deviceHost`) → device worker. Every request but `init`, `release` and `close` has an id, which its
+ * answer carries: `flushed`, `drained`, `saved`, `refusal`, or `disk` (`written` and `blocks`: a disk's changes for a
+ * snapshot; `compact`, `hint` and `inspect`: a disk's surface, web/surface.ts).
  */
 export type ToDeviceWorker =
   | ({ type: 'init' } & Init)
-  | { type: 'flush' }
-  | { type: 'drain' }
-  | { type: 'save' }
-  | { type: 'refusal' }
+  | { type: 'flush'; id: number }
+  | { type: 'drain'; id: number }
+  | { type: 'save'; id: number }
+  | { type: 'refusal'; id: number }
   | { type: 'written'; id: number; device: number }
   | { type: 'blocks'; id: number; device: number; blocks: Uint32Array }
   | { type: 'compact'; id: number; measure?: boolean }
@@ -33,16 +34,20 @@ export type ToDeviceWorker =
   | { type: 'inspect'; id: number; device: number; query: InspectQuery }
   | { type: 'release' }
   | { type: 'close' };
-/** Device worker → owner. */
+/** Device worker → owner: an `error` before `ready` is the start's, after it a backend's (`Devices.serve` threw). */
 export type FromDeviceWorker =
   | { type: 'ready' }
   | { type: 'error'; message: string; error: WireError }
   | { type: 'console'; device: number; text: string }
   | { type: 'notice'; message: Msg }
-  | { type: 'flushed' }
-  | { type: 'drained' }
-  | { type: 'saved'; state?: unknown[]; error?: string; wire?: WireError }
-  | { type: 'refusal'; refused?: WireError }
+  | DeviceAnswer
+  | { type: 'closed'; stats?: unknown };
+/** The answer to the request with the same id. */
+export type DeviceAnswer =
+  | { type: 'flushed'; id: number }
+  | { type: 'drained'; id: number }
+  | { type: 'saved'; id: number; state?: unknown[]; error?: string; wire?: WireError }
+  | { type: 'refusal'; id: number; refused?: WireError }
   | {
       type: 'disk';
       id: number;
@@ -52,8 +57,7 @@ export type FromDeviceWorker =
       hinted?: Hinted;
       inspected?: InspectAnswer;
       error?: string;
-    }
-  | { type: 'closed'; stats?: unknown };
+    };
 
 // The xHCI's real devices (docs/usb.md): WebUSB's and WebHID's, where this worker has them (the page grants them).
 const nav = self.navigator as Navigator & { usb?: WebUsbLike; hid?: WebHidLike };
@@ -68,25 +72,29 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
       self.postMessage({ type: 'error', message: String(err), error: toWire(err) } satisfies FromDeviceWorker),
     );
   else if (e.data.type === 'flush')
-    self.postMessage({ type: 'flushed' } satisfies FromDeviceWorker); // after every earlier message
-  else if (e.data.type === 'drain')
-    void devices!.drain().then(() => self.postMessage({ type: 'drained' } satisfies FromDeviceWorker));
-  else if (e.data.type === 'save') {
+    self.postMessage({ type: 'flushed', id: e.data.id } satisfies FromDeviceWorker); // after every earlier message
+  else if (e.data.type === 'drain') {
+    const id = e.data.id;
+    void devices!.drain().then(() => self.postMessage({ type: 'drained', id } satisfies FromDeviceWorker));
+  } else if (e.data.type === 'save') {
     // The backends' state for a snapshot (the owner has the devices quiet).
+    const id = e.data.id;
     devices!.save().then(
-      (state) => self.postMessage({ type: 'saved', state } satisfies FromDeviceWorker, stateBuffers(state)),
+      (state) => self.postMessage({ type: 'saved', id, state } satisfies FromDeviceWorker, stateBuffers(state)),
       (err) =>
         self.postMessage({
           type: 'saved',
+          id,
           error: String(err instanceof Error ? err.message : err),
           wire: toWire(err),
         } satisfies FromDeviceWorker),
     );
   } else if (e.data.type === 'refusal') {
     // Why a snapshot would be refused now, asked before it touches the machine (a failed ask refuses nothing: `save` decides).
+    const id = e.data.id;
     devices!.refusal().then(
-      (refused) => self.postMessage({ type: 'refusal', refused } satisfies FromDeviceWorker),
-      () => self.postMessage({ type: 'refusal' } satisfies FromDeviceWorker),
+      (refused) => self.postMessage({ type: 'refusal', id, refused } satisfies FromDeviceWorker),
+      () => self.postMessage({ type: 'refusal', id } satisfies FromDeviceWorker),
     );
   } else if (e.data.type === 'written' || e.data.type === 'blocks') {
     // A disk's changes for a snapshot: the blocks its overlay holds, then their bytes in batches.

@@ -90,7 +90,7 @@ function allocationOver(
   fileSize: number,
 ): Allocation {
   const per = cs / 8;
-  const x = BigInt(62 - (Math.log2(cs) - 8));
+  const bits = Math.log2(cs);
   return {
     clusterBytes: cs,
     size,
@@ -109,12 +109,7 @@ function allocationOver(
       const t = l2s.get(Math.floor(c / per));
       if (!t || !hasData(t, c % per, version)) return undefined;
       const e = t.getBigUint64((c % per) * 8);
-      if (e & COMPRESSED) {
-        const off = Number(e & ((1n << x) - 1n));
-        const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
-        return [off, Math.max(0, Math.min(sectors * 512 - (off & 511), fileSize - off))];
-      }
-      return [Number(e & OFFSET_MASK), cs];
+      return e & COMPRESSED ? compressedExtent(e, bits, fileSize) : [Number(e & OFFSET_MASK), cs];
     },
   };
 }
@@ -127,22 +122,18 @@ function allocationOver(
 export async function readAllocation(read: ReadAtAsync, fileSize: number): Promise<Allocation | undefined> {
   const head = fileSize >= HEADER ? await read(0, HEADER) : undefined;
   if (!head || !isQcow2(head)) return undefined;
-  const h = new DataView(head.buffer, head.byteOffset, HEADER);
-  const version = h.getUint32(4);
-  const clusterBits = h.getUint32(20);
+  const { version, backing, clusterBits, size, encrypted, l1Size, l1Offset, incompatible } = qcow2Header(head);
   if (
     (version !== 2 && version !== 3) ||
-    h.getBigUint64(8) !== 0n ||
+    backing !== 0 ||
     clusterBits < 9 ||
     clusterBits > 21 ||
-    h.getUint32(32) !== 0
+    encrypted ||
+    incompatible & ~KNOWN_INCOMPATIBLE
   )
     return undefined;
-  if (version === 3 && h.getBigUint64(72) & ~KNOWN_INCOMPATIBLE) return undefined;
   const cs = 2 ** clusterBits;
-  const size = Number(h.getBigUint64(24));
-  const l1Size = h.getUint32(36);
-  const l1b = await read(Number(h.getBigUint64(40)), l1Size * 8);
+  const l1b = await read(l1Offset, l1Size * 8);
   if (!l1b) return undefined;
   const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
   const offs: [number, number][] = [];
@@ -170,6 +161,48 @@ const MERGE_GAP = 64 * 1024;
 const MERGE_MAX = 8 << 20;
 const KNOWN_INCOMPATIBLE = (1n << 0n) | (1n << 1n) | (1n << 3n); // dirty, corrupt (both only matter to writers), compression type
 
+/** A qcow2 header's fields (its first `HEADER` bytes), as they are: each reader refuses what it doesn't support. */
+export type Qcow2Header = {
+  version: number;
+  /** The backing file name's offset (0: none). */
+  backing: number;
+  clusterBits: number;
+  size: number;
+  encrypted: boolean;
+  l1Size: number;
+  l1Offset: number;
+  /** v3's incompatible feature bits (0 in v2). */
+  incompatible: bigint;
+  /** v3's compression type (0: deflate), where the header is long enough to have one. */
+  compression: number;
+};
+
+/** The header of a file whose first bytes `head` (at least `HEADER` of them) are a qcow2's (`isQcow2`). */
+export function qcow2Header(head: Uint8Array): Qcow2Header {
+  const h = new DataView(head.buffer, head.byteOffset, HEADER);
+  const version = h.getUint32(4);
+  const v3 = version === 3;
+  return {
+    version,
+    backing: Number(h.getBigUint64(8)),
+    clusterBits: h.getUint32(20),
+    size: Number(h.getBigUint64(24)),
+    encrypted: h.getUint32(32) !== 0,
+    l1Size: h.getUint32(36),
+    l1Offset: Number(h.getBigUint64(40)),
+    incompatible: v3 ? h.getBigUint64(72) : 0n,
+    compression: v3 && h.getUint32(100) > 104 ? h.getUint8(104) : 0,
+  };
+}
+
+/** Where compressed L2 entry `e`'s bytes are in a file of `fileSize` bytes ([offset, bytes]): to a sector boundary. */
+function compressedExtent(e: bigint, clusterBits: number, fileSize: number): [number, number] {
+  const x = BigInt(62 - (clusterBits - 8));
+  const off = Number(e & ((1n << x) - 1n));
+  const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
+  return [off, Math.max(0, Math.min(sectors * 512 - (off & 511), fileSize - off))];
+}
+
 /** Whether the first bytes of a file are a qcow2 header. */
 export const isQcow2 = (head: Uint8Array) =>
   head.length >= 4 && new DataView(head.buffer, head.byteOffset).getUint32(0) === MAGIC;
@@ -196,29 +229,21 @@ export function openDisk(
       read: async (off, len) => (off + len > fileSize ? undefined : readAsync ? readAsync(off, len) : readAt(off, len)),
     };
   }
-  const h = new DataView(head.buffer, head.byteOffset, HEADER);
   // What the user's image has that this reader refuses is a `MsgError` (the page says it); a malformed structure, a developer's error.
   const fail = (why: string): never => {
     throw new Error(`qcow2: ${why}`);
   };
-  const version = h.getUint32(4);
+  const { version, backing, clusterBits, size, encrypted, l1Size, l1Offset, incompatible, compression } =
+    qcow2Header(head);
   if (version !== 2 && version !== 3) throw new MsgError('disks:qcow2.version', { version });
-  if (h.getBigUint64(8) !== 0n) throw new MsgError('disks:qcow2.backing');
-  const clusterBits = h.getUint32(20);
+  if (backing !== 0) throw new MsgError('disks:qcow2.backing');
   if (clusterBits < 9 || clusterBits > 21) fail(`cluster_bits ${clusterBits}`);
-  const size = Number(h.getBigUint64(24));
-  if (h.getUint32(32) !== 0) throw new MsgError('disks:qcow2.encrypted');
-  const l1Size = h.getUint32(36);
-  const l1Offset = Number(h.getBigUint64(40));
-  if (version === 3) {
-    const incompatible = h.getBigUint64(72);
-    if (incompatible & (1n << 2n)) throw new MsgError('disks:qcow2.externalData');
-    if (incompatible & (1n << 4n)) throw new MsgError('disks:qcow2.extendedL2');
-    if (incompatible & ~KNOWN_INCOMPATIBLE)
-      throw new MsgError('disks:qcow2.unknownFeatures', { features: incompatible.toString(16) });
-    if (incompatible & (1n << 3n) && h.getUint32(100) > 104 && h.getUint8(104) !== 0)
-      throw new MsgError('disks:qcow2.zstd');
-  }
+  if (encrypted) throw new MsgError('disks:qcow2.encrypted');
+  if (incompatible & (1n << 2n)) throw new MsgError('disks:qcow2.externalData');
+  if (incompatible & (1n << 4n)) throw new MsgError('disks:qcow2.extendedL2');
+  if (incompatible & ~KNOWN_INCOMPATIBLE)
+    throw new MsgError('disks:qcow2.unknownFeatures', { features: incompatible.toString(16) });
+  if (incompatible & (1n << 3n) && compression !== 0) throw new MsgError('disks:qcow2.zstd');
   const cs = 2 ** clusterBits;
   const l2Entries = cs / 8;
   if (l1Size * l2Entries * cs < size) fail('L1 table too small for the virtual size');
@@ -245,11 +270,14 @@ export function openDisk(
     }
     return p;
   };
+  /** An unallocated table's entries (all 0): one for every such table, never kept (a 1 TiB disk read across has 2048). */
+  let unallocated: DataView | undefined;
   const l2 = (i: number) => {
     let t = l2s.get(i);
     if (!t) {
       const off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
-      const b = off === 0 ? new Uint8Array(cs) : readAt(off, cs); // unallocated: every entry 0
+      if (off === 0) return (unallocated ??= new DataView(new ArrayBuffer(cs)));
+      const b = readAt(off, cs);
       if (!b) return undefined;
       l2s.set(i, (t = new DataView(b.buffer, b.byteOffset, cs)));
     }
@@ -259,13 +287,8 @@ export function openDisk(
   // Compressed clusters (bits 0..x-1 the host offset, x..61 the number of 512-byte
   // sectors after the first, x = 62 - (cluster_bits - 8)), kept decompressed for the
   // few most recent (a guest reads a 64 KiB cluster a page at a time).
-  const x = BigInt(62 - (clusterBits - 8));
   /** Where a compressed cluster's bytes are in the file: they run to a sector boundary (or the file's end). */
-  const extent = (e: bigint): [number, number] => {
-    const off = Number(e & ((1n << x) - 1n));
-    const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
-    return [off, Math.min(sectors * 512 - (off & 511), fileSize - off)];
-  };
+  const extent = (e: bigint) => compressedExtent(e, clusterBits, fileSize);
   const recent = new Map<bigint, Uint8Array>();
 
   /**
@@ -346,7 +369,6 @@ export function openDisk(
         tables.push(loadL2(t));
       if ((await Promise.all(tables)).includes(false)) return undefined;
     }
-    const out = new Uint8Array(len);
     // The request's clusters: what each needs from the file, then the reads, then the bytes.
     const pieces: { k: number; o: number; n: number; e: bigint }[] = [];
     const ranges: [number, number][] = [];
@@ -372,7 +394,7 @@ export function openDisk(
       } else if (!(version === 3 && e & ZERO) && (e & OFFSET_MASK) !== 0n) {
         ranges.push([Number(e & OFFSET_MASK) + o, Number(e & OFFSET_MASK) + o + n]);
         pieces.push({ k, o, n, e });
-      } // else unallocated or zero: out is already zeros
+      } // else unallocated or zero: `out` is zeros there
       k += n;
     }
     const from = readAsync ? await mergedAsync(ranges) : merged(ranges);
@@ -394,6 +416,11 @@ export function openDisk(
         if (recent.size > 16) recent.delete(recent.keys().next().value!);
       }
     }
+    // One data cluster's bytes, the whole request (a guest's read inside a cluster): the file's bytes as read.
+    const [only] = pieces;
+    if (pieces.length === 1 && only.n === len && !(only.e & COMPRESSED))
+      return from(Number(only.e & OFFSET_MASK) + only.o, len);
+    const out = new Uint8Array(len);
     for (const { k, o, n, e } of pieces) {
       const data = e & COMPRESSED ? clusters.get(e)?.subarray(o, o + n) : from(Number(e & OFFSET_MASK) + o, n);
       if (!data) return undefined;
@@ -421,12 +448,29 @@ export function openDisk(
   return { size, format: 'qcow2', read, allocation };
 }
 
+/**
+ * A qcow2's clusters that hold data (standard and compressed; zero-flagged ones not), in virtual bytes: what it takes
+ * as a stored disk at most (web/stored.ts `storedEstimate`). Its header was checked (`openDisk`).
+ */
+export function qcow2Allocated(readAt: ReadAt) {
+  const { version, clusterBits, l1Size, l1Offset } = qcow2Header(readAt(0, HEADER)!);
+  const cs = 2 ** clusterBits;
+  const l1b = readAt(l1Offset, l1Size * 8)!;
+  const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
+  let n = 0;
+  for (let i = 0; i < l1Size; i++) {
+    const off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+    const b = off ? readAt(off, cs) : undefined;
+    if (!b) continue;
+    const t = new DataView(b.buffer, b.byteOffset, cs);
+    for (let k = 0; k < cs / 8; k++) if (hasData(t, k, version)) n++;
+  }
+  return n * cs;
+}
+
 /** The cluster of the compressed L2 entry `e`, or undefined (a failed read, or bytes that don't unpack to a cluster). */
 async function compressedCluster(readAt: ReadAt, fileSize: number, e: bigint, clusterBits: number) {
-  const x = BigInt(62 - (clusterBits - 8));
-  const off = Number(e & ((1n << x) - 1n));
-  const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
-  const len = Math.min(sectors * 512 - (off & 511), fileSize - off);
+  const [off, len] = compressedExtent(e, clusterBits, fileSize);
   const input = len > 0 ? readAt(off, len) : undefined;
   return input && inflate(input, 2 ** clusterBits);
 }
@@ -484,24 +528,16 @@ export function readChanges(
   const head = readAt(0, Math.min(fileSize, 1 << 16)) ?? readAt(0, Math.min(fileSize, HEADER));
   const info = head && changesHeader(head);
   if (!head || !info) return undefined;
-  const h = new DataView(head.buffer, head.byteOffset, head.length);
   const fail = (why: string): never => {
     throw new Error(`qcow2: ${why}`);
   };
-  const version = h.getUint32(4);
+  const { version, clusterBits, size, encrypted, l1Size, l1Offset, incompatible } = qcow2Header(head);
   if (version !== 2 && version !== 3) throw new MsgError('disks:qcow2.version', { version });
-  const clusterBits = h.getUint32(20);
   if (clusterBits < 12 || clusterBits > 21) throw new MsgError('disks:qcow2.changesClusterBits', { bits: clusterBits });
-  if (h.getUint32(32) !== 0) throw new MsgError('disks:qcow2.encrypted');
-  if (version === 3) {
-    const incompatible = h.getBigUint64(72);
-    if (incompatible & ~KNOWN_INCOMPATIBLE)
-      throw new MsgError('disks:qcow2.unsupportedFeatures', { features: incompatible.toString(16) });
-    if (incompatible & (1n << 3n)) throw new MsgError('disks:qcow2.zstdClusters');
-  }
-  const size = Number(h.getBigUint64(24));
-  const l1Size = h.getUint32(36);
-  const l1Offset = Number(h.getBigUint64(40));
+  if (encrypted) throw new MsgError('disks:qcow2.encrypted');
+  if (incompatible & ~KNOWN_INCOMPATIBLE)
+    throw new MsgError('disks:qcow2.unsupportedFeatures', { features: incompatible.toString(16) });
+  if (incompatible & (1n << 3n)) throw new MsgError('disks:qcow2.zstdClusters');
   const cs = 2 ** clusterBits;
   const l2Entries = cs / 8;
   const perCluster = cs / 4096;

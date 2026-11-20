@@ -230,3 +230,30 @@ test('a synchronous read of a block the prefetch is fetching fetches it itself (
   assert.ok(got && Buffer.compare(got, bytes.subarray(4096 + 10, 4096 + 110)) === 0);
   c.close?.();
 });
+
+test("a block kept from a run doesn't keep the run's buffer: what the cache holds is its budget", async () => {
+  // A run of 8 blocks fetched in one read, then 7 of them pushed out while the first stays: the run's buffer must go.
+  const { setFlagsFromString } = await import('node:v8');
+  const { runInNewContext } = await import('node:vm');
+  setFlagsFromString('--expose-gc');
+  const gc = runInNewContext('gc') as () => void;
+  const image = new Uint8Array(32 * 4096).map((_, i) => i >> 12);
+  let run: WeakRef<ArrayBuffer> | undefined;
+  const src: Source = {
+    size: image.length,
+    read: (off, len) => {
+      const b = image.slice(off, off + len);
+      if (len === 8 * 4096) run = new WeakRef(b.buffer);
+      return b;
+    },
+  };
+  const c = cachedSource(src, { block: 4096, bytes: 8 * 4096 });
+  assert.equal(c.read(0, 8 * 4096)?.[5 * 4096], 5, 'the run');
+  assert.equal(c.read(0, 10)?.[0], 0, 'its first block, held');
+  for (let b = 8; b < 15; b++) assert.equal(c.read(b * 4096, 10)?.[0], b, `block ${b}, one at a time`);
+  await new Promise((r) => setImmediate(r));
+  gc();
+  assert.ok(run, 'one read of the run');
+  assert.equal(run.deref(), undefined, "the run's buffer is gone");
+  assert.equal(c.read(0, 10)?.[0], 0, 'block 0 still held');
+});

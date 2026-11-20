@@ -35,7 +35,7 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { corrupt, SnapshotError } from './snapshot-file.ts';
 import { fromWire, msg, MsgError, type Msg, type WireError } from './msg.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
-import type { FromDeviceWorker, ToDeviceWorker } from './device-worker.ts';
+import type { DeviceAnswer, FromDeviceWorker, ToDeviceWorker } from './device-worker.ts';
 import type { InspectAnswer, InspectQuery } from './surface.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
@@ -52,6 +52,50 @@ const RING = 4096;
 const QUIET_MS = 10_000;
 
 /** Exit kinds (core/src/vm.rs `exit`). */
+/**
+ * The core's `VmConfig` (core/src/vm.rs, `vm_new`'s): each field's first word, in the struct's order; `rngSeed` is 4
+ * words, `spill` MAX_SPILL. A field the core adds (an ABI change) is added here at its word (tests/config-words.test.ts
+ * checks these against the struct).
+ */
+export const VM_CONFIG = {
+  ramSize: 0,
+  deterministic: 1,
+  cntfrq: 2,
+  ticksPerInsn: 3,
+  devices: 4,
+  ndevices: 5,
+  fbWidth: 6,
+  fbHeight: 7,
+  jit: 8,
+  features: 9,
+  ncpus: 10,
+  gic: 11,
+  smp: 12,
+  rtc: 13,
+  firmware: 14,
+  flashSize: 15,
+  fwCfg: 16,
+  fwCfgLen: 17,
+  memPages: 18,
+  rngSeed: 19,
+  xhci: 23,
+  spill: 24,
+  jitBytes: 24 + MAX_SPILL,
+  window: 25 + MAX_SPILL,
+  windowAt: 26 + MAX_SPILL,
+  fma: 27 + MAX_SPILL,
+} as const;
+export const VM_CONFIG_WORDS = 28 + MAX_SPILL;
+
+/** A `VmConfig`'s words from its fields by name (a field not given is 0; an array field's words from its first). */
+export function vmConfig(fields: { [K in keyof typeof VM_CONFIG]?: bigint | readonly bigint[] }): BigUint64Array {
+  const out = new BigUint64Array(VM_CONFIG_WORDS);
+  for (const [k, v] of Object.entries(fields) as [keyof typeof VM_CONFIG, bigint | readonly bigint[]][])
+    if (typeof v === 'bigint') out[VM_CONFIG[k]] = v;
+    else out.set(v, VM_CONFIG[k]);
+  return out;
+}
+
 export const Exit = { BUDGET: 0, PSCI: 1, IDLE: 2, TX_FULL: 3, UNIMPLEMENTED: 4, STOP: 5, DEVICE: 6 } as const;
 export const PSCI_SYSTEM_OFF = 0x8400_0008n;
 
@@ -911,7 +955,6 @@ export const CONSOLE_INPUT =
   ).join('');
 export const CONSOLE_INPUT_STEP = 30_000_000;
 export const CONSOLE_INPUT_WANT = 'waarm64: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n';
-/** Their kernel command line. */
 /** `jit_helper_report` of the vCPU at `cpu` (a `jit_new` vCPU, or `vm_cpu`), parsed. */
 export function helperReport(
   ex: { jit_helper_report(v: number): number },
@@ -931,6 +974,7 @@ export function helperReport(
     });
 }
 
+/** The test guests' kernel command line. */
 export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
 /**
  * Distro images from images/build.sh (paths under target/images) with a command
@@ -1148,34 +1192,33 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = cpuMask(o);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 36).set([
-    BigInt(o.ramSize),
-    deterministic ? 1n : 0n,
-    0n,
-    0n,
-    BigInt(scratch + S_DEVICES),
-    BigInt(specs.length),
-    BigInt(fb.width),
-    BigInt(fb.height),
-    BigInt(o.jit ?? 0),
-    features,
-    BigInt(ncpus),
-    0n,
-    parallel ? 1n : 0n,
-    rtc,
-    fw ? 1n : 0n,
-    fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n,
-    BigInt(fwCfgAt),
-    BigInt(fwCfg?.length ?? 0),
-    fixed ? BigInt(pages) : 0n,
-    ...seed,
-    o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
-    ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
-    BigInt(o.jitBytes ?? 0), // the JIT's code cache budget (ABI 44)
-    BigInt(windowBytes), // the host-visible window (ABI 53)
-    BigInt(windowAt), // where it is in memory 1 (ABI 55)
-    o.fma !== false && fusedFma() ? 1n : 0n,
-  ]); // the JIT's FMA forms on the host's fused madd (ABI 58)
+  new BigUint64Array(memory.buffer, scratch + S_CFG, VM_CONFIG_WORDS).set(
+    vmConfig({
+      ramSize: BigInt(o.ramSize),
+      deterministic: deterministic ? 1n : 0n,
+      devices: BigInt(scratch + S_DEVICES),
+      ndevices: BigInt(specs.length),
+      fbWidth: BigInt(fb.width),
+      fbHeight: BigInt(fb.height),
+      jit: BigInt(o.jit ?? 0),
+      features,
+      ncpus: BigInt(ncpus),
+      smp: parallel ? 1n : 0n,
+      rtc,
+      firmware: fw ? 1n : 0n,
+      flashSize: fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n,
+      fwCfg: BigInt(fwCfgAt),
+      fwCfgLen: BigInt(fwCfg?.length ?? 0),
+      memPages: fixed ? BigInt(pages) : 0n,
+      rngSeed: [...seed],
+      xhci: o.usb ? 0x404n : 0n, // the xHCI's 4 + 4 ports (ABI 38)
+      spill: Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
+      jitBytes: BigInt(o.jitBytes ?? 0), // the JIT's code cache budget (ABI 44)
+      window: BigInt(windowBytes), // the host-visible window (ABI 53)
+      windowAt: BigInt(windowAt), // where it is in memory 1 (ABI 55)
+      fma: o.fma !== false && fusedFma() ? 1n : 0n, // the JIT's FMA forms on the host's fused madd (ABI 58)
+    }),
+  );
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, ENTRY_WORDS * specs.length).set(
     specs.flatMap((d) => [...deviceEntry(d).entry, deviceShm(d)]),
   );
@@ -1275,8 +1318,13 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     o.warm,
   );
   const usb = usbChannel && usbHost(usbChannel.port2);
-  // The restore posted the chains the old backends held to the request rings: the new ones take them.
-  if (o.restore) await devices.quiesce();
+  // The restore posted the chains the old backends held to the request rings: the new ones take them. A backend that
+  // throws on one fails the start: its files are released (a start after it opens them again: web/app/worker.ts).
+  if (o.restore)
+    await devices.quiesce().catch(async (e: unknown) => {
+      await devices.close();
+      throw e;
+    });
   /** Sets signal-word bits, then bumps and notifies every vCPU's wake word (docs/abi.md). */
   const raise = (bits: number) => {
     const i32 = new Int32Array(memory.buffer);
@@ -1297,12 +1345,17 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const drain = () => {
     const u32 = new Uint32Array(memory.buffer);
     const head = Atomics.load(u32, tx / 4);
-    let tail = Atomics.load(u32, tx / 4 + 1);
-    const out: number[] = [];
+    const tail = Atomics.load(u32, tx / 4 + 1);
+    // The ring's one or two spans (it wraps), copied out before the tail moves on.
+    const n = (head - tail) >>> 0;
+    const at = tail % RING;
+    const first = Math.min(n, RING - at);
     const buf = bytes();
-    for (; tail !== head; tail = (tail + 1) >>> 0) out.push(buf[tx + 8 + (tail % RING)]);
+    const out = new Uint8Array(n);
+    out.set(buf.subarray(tx + 8 + at, tx + 8 + at + first));
+    if (n > first) out.set(buf.subarray(tx + 8, tx + 8 + n - first), first);
     Atomics.store(u32, tx / 4 + 1, head);
-    return decoder.decode(new Uint8Array(out), { stream: true });
+    return decoder.decode(out, { stream: true });
   };
   // Console input: the host is the RX ring's one producer (it follows TX: core/src/pl011.rs `Rings`).
   const rx = tx + 8 + RING;
@@ -1348,6 +1401,13 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const counter = (i: number) =>
     blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
+  /** The round-robin exit's record (`run`), a view made again once the memory grew (its buffer is a new one). */
+  let exitAt: number | undefined;
+  let exitView: BigUint64Array | undefined;
+  const exitInfo = () => {
+    if (exitView?.buffer !== memory.buffer) exitView = new BigUint64Array(memory.buffer, exitAt, 7);
+    return exitView;
+  };
   const par = parallel
     ? coordinator({
         module,
@@ -1414,7 +1474,6 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
       raise(0); // round-robin's host may sleep on the signal word with no deadline
       return true;
     },
-    /** Moves a suspended guest's clock on by `ms` (the time it was away); false if it isn't suspended or time is deterministic. */
     /**
      * The VM's state for a snapshot, with every vCPU out of the core: between `run` calls after
      * `settle()`, or once `pause()` resolved true. Guest RAM (`memory` at `ram`, `ramSize` bytes) is
@@ -1519,9 +1578,9 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
       const why = await devices.refusal();
       return why ? new MsgError('snapshots:vm.cantSave', {}, { cause: fromWire(why) }) : undefined;
     },
-    /** The backends' state (`Devices.save`: for a snapshot; a test reads the display's hashes from it), with the devices quiet. */
     /** Device `i`'s virtio status register (bit 2 is DRIVER_OK: a guest driver is using it). */
     deviceStatus: (i: number) => Atomics.load(new Uint32Array(memory.buffer), (shared[i] + 4) / 4),
+    /** The backends' state (`Devices.save`: for a snapshot; a test reads the display's hashes from it), with the devices quiet. */
     deviceState: async () => {
       await devices.quiesce();
       return devices.save();
@@ -1534,12 +1593,6 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     ram,
     /** Where each memory's RAM is in the guest's physical address space, memory 0 first (web/ram.ts `RamLayout`). */
     layout,
-    /**
-     * What the core's heap has touched, for benchmarks (docs/spill-memories.md "The heap floor"): the non-zero 4 KiB
-     * pages below the scratch page (the core's data, stacks and first heap), and in the reserve past RAM and fw_cfg's
-     * files, and how far into the reserve the last one is (the allocator carves it from its start, and freed memory
-     * keeps its bytes, so that is the heap's high-water mark). Scans the memory: tenths of a second for a 1 GiB reserve.
-     */
     /**
      * What the machine holds that its host pays for, cheaply (docs/jit.md "The page's memory signal"): the guest's RAM
      * (memory 0's and the spill memories'), the core's heap (`heap_stats`: live bytes and their high-water mark), and
@@ -1570,6 +1623,12 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
       if (gauge)
         Atomics.store(new BigUint64Array(memory.buffer, gauge, GAUGE_WORDS), 4, BigInt(Math.max(0, Math.round(bytes))));
     },
+    /**
+     * What the core's heap has touched, for benchmarks (docs/spill-memories.md "The heap floor"): the non-zero 4 KiB
+     * pages below the scratch page (the core's data, stacks and first heap), and in the reserve past RAM and fw_cfg's
+     * files, and how far into the reserve the last one is (the allocator carves it from its start, and freed memory
+     * keeps its bytes, so that is the heap's high-water mark). Scans the memory: tenths of a second for a 1 GiB reserve.
+     */
     heapUse: () => {
       const w = new Uint32Array(memory.buffer);
       const nonzero = (page: number) => {
@@ -1656,6 +1715,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
      */
     run(budget: number) {
       if (par) throw new Error('a parallel VM runs through runAsync');
+      exitAt ??= ex.vm_exit(vm);
       let steps = 0;
       for (;;) {
         pump();
@@ -1665,7 +1725,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
         } catch (err) {
           throw withPanic(err, ex, memory);
         }
-        const info = new BigUint64Array(memory.buffer, ex.vm_exit(vm), 7); // kind, steps, value, x0-x3
+        const info = exitInfo(); // kind, steps, value, x0-x3
         steps += Number(info[1]);
         if (kind === Exit.DEVICE) {
           // A config-space write waits even in realtime mode: the driver reads
@@ -1703,25 +1763,29 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
      * `idleLimitMs`, it throws if no vCPU retired a step for that long.
      */
     async runAsync(budget: number): Promise<{ kind: number; steps: number; value: bigint; x: bigint[] }> {
-      if (!par) return this.run(budget);
-      const s0 = counter(Counter.STEPS);
-      const t0 = performance.now();
-      const done = (kind: number, steps: number, value = 0n, x: bigint[] = []) => {
-        seenHead = txHead();
-        return { kind, steps, value, x };
-      };
-      for (;;) {
-        pump();
-        const end = await par.wait(10, { at: tx, value: seenHead });
-        const steps = counter(Counter.STEPS) - s0;
-        if (end) return done(end.kind, steps, end.value, end.x);
-        if (steps >= budget || performance.now() - t0 > 50) return done(Exit.BUDGET, steps);
-        if (txUsed() >= RING_HALF) return done(Exit.TX_FULL, steps);
-        if (txUsed() > 0) return done(Exit.BUDGET, steps);
-        if (o.idleLimitMs !== undefined && performance.now() - par.progress(counter(Counter.STEPS)) > o.idleLimitMs) {
-          raise(STOP);
-          throw new Error(`no vCPU retired a step in ${o.idleLimitMs} ms (pcs ${par.pcs().join(' ')})`);
+      try {
+        if (!par) return this.run(budget);
+        const s0 = counter(Counter.STEPS);
+        const t0 = performance.now();
+        const done = (kind: number, steps: number, value = 0n, x: bigint[] = []) => {
+          seenHead = txHead();
+          return { kind, steps, value, x };
+        };
+        for (;;) {
+          pump();
+          const end = await par.wait(10, { at: tx, value: seenHead });
+          const steps = counter(Counter.STEPS) - s0;
+          if (end) return done(end.kind, steps, end.value, end.x);
+          if (steps >= budget || performance.now() - t0 > 50) return done(Exit.BUDGET, steps);
+          if (txUsed() >= RING_HALF) return done(Exit.TX_FULL, steps);
+          if (txUsed() > 0) return done(Exit.BUDGET, steps);
+          if (o.idleLimitMs !== undefined && performance.now() - par.progress(counter(Counter.STEPS)) > o.idleLimitMs) {
+            raise(STOP);
+            throw new Error(`no vCPU retired a step in ${o.idleLimitMs} ms (pcs ${par.pcs().join(' ')})`);
+          }
         }
+      } catch (e) {
+        throw await devices.failure(e); // a vCPU's "device backends failed": the backends' own error
       }
     },
     drain,
@@ -2216,12 +2280,31 @@ async function ringAsync(bell: Int32Array, stopped: () => boolean) {
   }
 }
 
+/** `e` as an Error (what a promise rejects with and a function throws here). */
+const asError = (e: unknown) => (e instanceof Error ? e : new Error(String(e)));
+
+/**
+ * `e`, or the backends' own error where the doorbell says they failed (word 1 is -1: `ring`'s "device backends
+ * failed"): `failure` brings it a moment later (the device worker's message, `serve`'s rejection); `e` if it doesn't
+ * come within a second.
+ */
+async function backendsFailure(bell: Int32Array, failure: Promise<Error>, e: unknown): Promise<Error> {
+  if (Atomics.load(bell, 1) !== -1) return asError(e);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<Error>((resolve) => (timer = setTimeout(resolve, 1000, asError(e))));
+  try {
+    return await Promise.race([failure, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * The backends: in a device worker when this thread can block on it (a
  * worker), inline otherwise. `kick` hands them what a DEVICE exit posted and
- * returns once they've taken all of it (deterministic mode).
+ * returns once they've taken all of it (deterministic mode). Exported for its tests (tests/device-host.test.ts).
  */
-async function deviceHost(
+export async function deviceHost(
   init: DevicesInit,
   bellAddr: number,
   parallel: boolean,
@@ -2236,11 +2319,14 @@ async function deviceHost(
   if (parallel && !inWorker) {
     // The vCPU workers ring the doorbell; this thread serves it between its awaits.
     const d = await Devices.open(init, out, notice);
-    let failed: unknown;
+    let failed: Error | undefined;
+    let failedNow: (e: Error) => void = () => {};
+    const failure = new Promise<Error>((resolve) => (failedNow = resolve));
     let closed = false;
     const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
-    void d.serve(bell).catch((e) => {
-      failed = e;
+    void d.serve(bell).catch((e: unknown) => {
+      failed = asError(e);
+      failedNow(failed);
     });
     return {
       kick: (_wait: boolean) => {
@@ -2250,7 +2336,11 @@ async function deviceHost(
       settle: async () => {
         if (failed) throw failed;
       },
-      quiesce: () => ringAsync(bell, () => closed),
+      failure: (e: unknown) => backendsFailure(bell, failure, e),
+      quiesce: () =>
+        ringAsync(bell, () => closed).catch(async (e: unknown) => {
+          throw await backendsFailure(bell, failure, e);
+        }),
       save: async () => d.save(),
       refusal: () => d.refusal(),
       written: async (i: number) => d.written(i),
@@ -2287,6 +2377,7 @@ async function deviceHost(
         await pending;
         pending = undefined;
       },
+      failure: async (e: unknown) => asError(e), // a poll's own error, which `settle` throws
       quiesce: async () => {
         await pending;
         pending = d.poll();
@@ -2307,51 +2398,74 @@ async function deviceHost(
     };
   }
   const worker = warm?.take('device') ?? newWorker('device');
-  let flushed = () => {};
-  const drained: (() => void)[] = []; // one a `drain` message, answered in order
-  let closed = (_stats?: unknown) => {};
-  let saved = (_m: Extract<FromDeviceWorker, { type: 'saved' }>) => {};
-  const refusals: ((why: WireError | undefined) => void)[] = []; // one a `refusal` message, answered in order
-  // Requests for a disk's changes (`written`, `blocks`), answered by id.
-  type DiskAnswer = Extract<FromDeviceWorker, { type: 'disk' }>;
-  const asked = new Map<number, (m: DiskAnswer) => void>();
+  // Requests and their answers pair by id (docs/host-code.md §2.4); `closed` answers what a closed worker never will.
+  type Asked<T> = T extends { id: number } ? Omit<T, 'id'> : never;
+  type Ask = Asked<ToDeviceWorker>;
+  type Waiter = { answer: (a: DeviceAnswer) => void; fail: (e: Error) => void; closed: () => void };
+  const waiting = new Map<number, Waiter>();
   let askId = 0;
-  const ask = (
-    m:
-      | { type: 'written'; device: number }
-      | { type: 'blocks'; device: number; blocks: Uint32Array }
-      | { type: 'compact'; measure?: boolean }
-      | { type: 'hint'; ms: number }
-      | { type: 'inspect'; device: number; query: InspectQuery },
-  ) =>
-    new Promise<DiskAnswer>((resolve, reject) => {
+  let ended = false; // `closed` came (or the close's wait ran out): nothing more is answered
+  /** The device worker's error after `ready` (a backend threw in `Devices.serve`): what every later ask fails with. */
+  let failed: Error | undefined;
+  let failedNow: (e: Error) => void = () => {};
+  const failure = new Promise<Error>((resolve) => (failedNow = resolve));
+  /** Asks `m`; `answer` reads the answer (it may throw); `closed` is the value when the worker closes unanswered. */
+  const ask = <T>(m: Ask, answer: (a: DeviceAnswer) => T, closed: () => T) =>
+    new Promise<T>((resolve, reject) => {
+      const settle = (f: () => T) => {
+        try {
+          resolve(f());
+        } catch (e) {
+          reject(asError(e));
+        }
+      };
+      if (failed !== undefined) return reject(failed);
+      if (ended) return settle(closed);
       const id = askId++;
-      asked.set(id, (a) => {
-        asked.delete(id);
-        if (a.error) reject(new Error(a.error));
-        else resolve(a);
-      });
-      worker.postMessage({ ...m, id } satisfies ToDeviceWorker);
+      waiting.set(id, { answer: (a) => settle(() => answer(a)), fail: reject, closed: () => settle(closed) });
+      worker.postMessage({ ...m, id });
     });
+  const settleAll = (how: (w: Waiter) => void) => {
+    const all = [...waiting.values()];
+    waiting.clear();
+    for (const w of all) how(w);
+  };
+  const gone = () => {
+    throw new Error('the device worker closed');
+  };
+  const disk = (a: DeviceAnswer) => {
+    if (a.type !== 'disk') throw new Error(`device worker: ${a.type} for a disk's request`);
+    if (a.error) throw new Error(a.error);
+    return a;
+  };
   let closing: Promise<unknown> | undefined;
+  let closedWith = (_stats?: unknown) => {};
   const ready = new Promise<void>((resolve, reject) => {
+    let started = false;
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent<FromDeviceWorker>) => {
-      if (e.data.type === 'ready') resolve();
-      // The error as the device worker had it (its fields, an overlay's `problem`, kept: web/app/worker-errors.ts `explain`).
-      else if (e.data.type === 'error')
-        reject(e.data.error ? fromWire(e.data.error) : new Error(`device worker: ${e.data.message}`));
-      else if (e.data.type === 'console') out(e.data.device, e.data.text);
-      else if (e.data.type === 'notice') notice?.(e.data.message);
-      else if (e.data.type === 'flushed') flushed();
-      else if (e.data.type === 'drained') drained.shift()?.();
-      else if (e.data.type === 'saved') saved(e.data);
-      else if (e.data.type === 'refusal') refusals.shift()?.(e.data.refused);
-      else if (e.data.type === 'disk') asked.get(e.data.id)?.(e.data);
-      else if (e.data.type === 'closed') {
-        for (const d of drained.splice(0)) d(); // a closed worker answers no drain
-        for (const r of refusals.splice(0)) r(undefined);
-        closed(e.data.stats);
+      const m = e.data;
+      if (m.type === 'ready') {
+        started = true;
+        resolve();
+      } else if (m.type === 'error') {
+        // The error as the device worker had it (its fields, an overlay's `problem`, kept: web/app/worker-errors.ts `explain`).
+        const err = m.error ? fromWire(m.error) : new Error(`device worker: ${m.message}`);
+        if (!started) return reject(err);
+        failed ??= err;
+        const why = failed;
+        failedNow(why);
+        settleAll((w) => w.fail(why));
+      } else if (m.type === 'console') out(m.device, m.text);
+      else if (m.type === 'notice') notice?.(m.message);
+      else if (m.type === 'closed') {
+        ended = true;
+        settleAll((w) => w.closed());
+        closedWith(m.stats);
+      } else {
+        const w = waiting.get(m.id);
+        waiting.delete(m.id);
+        w?.answer(m);
       }
     };
   });
@@ -2362,62 +2476,87 @@ async function deviceHost(
     ...(init.xhci?.port ? [init.xhci.port] : []),
     ...stateBuffers(init.state ?? []),
   ]);
-  await ready; // before anything blocks on it
+  // before anything blocks on it; a worker that failed to start is ended (its overlays' locks and the memory with it)
+  await ready.catch((e: unknown) => {
+    worker.terminate();
+    throw e;
+  });
   const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
+  const failureOf = (e: unknown) => backendsFailure(bell, failure, e);
   return {
     inFlight: () => false,
-    settle: async () => {},
+    settle: async () => {
+      if (failed !== undefined) throw failed;
+    },
+    failure: failureOf,
     // A remote disk's requests run on after a poll (realtime, R4): they complete before the doorbell is answered.
     quiesce: async () => {
-      await ringAsync(bell, () => closing !== undefined); // what the last poll hadn't taken: the drain waits for it too
-      if (closing) return;
-      await new Promise<void>((resolve) => {
-        drained.push(resolve);
-        worker.postMessage({ type: 'drain' });
+      // what the last poll hadn't taken: the drain waits for it too
+      await ringAsync(bell, () => closing !== undefined).catch(async (e: unknown) => {
+        throw await failureOf(e);
       });
+      if (closing) return;
+      await ask(
+        { type: 'drain' },
+        () => undefined,
+        () => undefined,
+      );
     },
     /** The backends' state for a snapshot (web/devices.ts `Devices.save`). */
     save: () =>
-      new Promise<unknown[]>((resolve, reject) => {
-        saved = (m) =>
-          m.state
-            ? resolve(m.state)
-            : reject(m.wire ? fromWire(m.wire) : new Error(m.error ?? 'the device worker has no state'));
-        worker.postMessage({ type: 'save' });
-      }),
+      ask(
+        { type: 'save' },
+        (a) => {
+          if (a.type === 'saved' && a.state) return a.state;
+          const m = a as Extract<DeviceAnswer, { type: 'saved' }>;
+          throw m.wire ? fromWire(m.wire) : new Error(m.error ?? 'the device worker has no state');
+        },
+        gone,
+      ),
     /** Why a snapshot would be refused now (web/devices.ts `Devices.refusal`), or undefined. */
     refusal: () =>
-      new Promise<WireError | undefined>((resolve) => {
-        if (closing) return resolve(undefined);
-        refusals.push(resolve);
-        worker.postMessage({ type: 'refusal' });
-      }),
-    written: async (i: number) => (await ask({ type: 'written', device: i })).written,
-    blocks: async (i: number, blocks: Uint32Array) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,
-    compact: async (measure?: boolean) =>
-      (await ask({ type: 'compact', measure })).compacted ?? { before: 0, after: 0 },
+      closing
+        ? Promise.resolve(undefined)
+        : ask(
+            { type: 'refusal' },
+            (a) => (a.type === 'refusal' ? a.refused : undefined),
+            () => undefined,
+          ),
+    written: (i: number) => ask({ type: 'written', device: i }, (a) => disk(a).written, gone),
+    blocks: (i: number, blocks: Uint32Array) => ask({ type: 'blocks', device: i, blocks }, (a) => disk(a).bytes!, gone),
+    compact: (measure?: boolean) =>
+      ask({ type: 'compact', measure }, (a) => disk(a).compacted ?? { before: 0, after: 0 }, gone),
     inspect: async (i: number, query: InspectQuery): Promise<InspectAnswer> =>
-      closing ? { kind: 'none' } : ((await ask({ type: 'inspect', device: i, query })).inspected ?? { kind: 'none' }),
-    // Bounded here too: a worker that closes meanwhile answers nothing.
+      closing
+        ? { kind: 'none' }
+        : ask<InspectAnswer>(
+            { type: 'inspect', device: i, query },
+            (a) => disk(a).inspected ?? { kind: 'none' },
+            () => ({ kind: 'none' }),
+          ),
+    // Bounded here too: a worker that hangs meanwhile answers nothing.
     hint: async (ms: number) =>
       closing
         ? undefined
-        : (
-            await Promise.race([
-              ask({ type: 'hint', ms }),
-              new Promise<Partial<DiskAnswer>>((r) => setTimeout(() => r({}), ms + 2000)),
-            ])
-          ).hinted,
+        : Promise.race([
+            ask(
+              { type: 'hint', ms },
+              (a) => disk(a).hinted,
+              () => undefined,
+            ),
+            new Promise<undefined>((r) => setTimeout(() => r(undefined), ms + 2000)),
+          ]),
     release: () => {
       if (!closing) worker.postMessage({ type: 'release' } satisfies ToDeviceWorker);
     },
     kick: (wait: boolean) => ring(bell, wait), // completions come back through SIGNAL_DEVICE
     output: () => text,
     flush: () =>
-      new Promise<void>((resolve) => {
-        flushed = resolve;
-        worker.postMessage({ type: 'flush' });
-      }),
+      ask(
+        { type: 'flush' },
+        () => undefined,
+        () => undefined,
+      ),
     /**
      * Resolves once it released its files (so another VM can open the overlay), or after `CLOSE_MS` and a little
      * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call. The value is
@@ -2425,8 +2564,12 @@ async function deviceHost(
      */
     close: () =>
       (closing ??= new Promise<unknown>((resolve) => {
-        closed = resolve;
-        setTimeout(resolve, CLOSE_MS + 500);
+        closedWith = resolve;
+        setTimeout(() => {
+          ended = true;
+          settleAll((w) => w.closed());
+          resolve(undefined);
+        }, CLOSE_MS + 500);
         worker.postMessage({ type: 'close' });
         Atomics.notify(bell, 1); // a quiesce waiting for its answer
       })),

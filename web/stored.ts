@@ -22,7 +22,8 @@ import {
   type OverlayFiles,
   type SyncFile,
 } from './overlay.ts';
-import { openDisk, type Disk, type Inflater } from './qcow2.ts';
+import { openDisk, qcow2Allocated, type Disk, type Inflater } from './qcow2.ts';
+import { wordsOf, zeroRange } from './ramdisk.ts';
 
 const BLOCK = 4096;
 /** A map entry for a block that reads as zeros without a slot (web/overlay.ts). */
@@ -106,9 +107,10 @@ export async function importImage(
     const bytes = await image.read(off, len);
     if (!bytes) throw new MsgError('disks:stored.imageUnreadable', { offset: off });
     // Runs of blocks with a byte that isn't zero, each one write.
+    const words = wordsOf(bytes);
     for (let b = 0; b * BLOCK < len;) {
       const nonzero = (k: number) =>
-        k * BLOCK < len && bytes.subarray(k * BLOCK, Math.min(len, (k + 1) * BLOCK)).some((x) => x !== 0);
+        k * BLOCK < len && !zeroRange(bytes, words, k * BLOCK, Math.min(len, (k + 1) * BLOCK));
       if (!nonzero(b)) {
         b++;
         continue;
@@ -132,29 +134,8 @@ export function storedEstimate(src: Source): { size: number; format: 'raw' | 'qc
   return {
     size: image.size,
     format: image.format,
-    estimate: image.format === 'qcow2' ? qcow2Allocated(src) : src.size,
+    estimate: image.format === 'qcow2' ? qcow2Allocated((off, len) => src.read(off, len)) : src.size,
   };
-}
-
-/** A qcow2's allocated clusters (standard and compressed; zero-flagged ones not), in virtual bytes. */
-function qcow2Allocated(src: Source) {
-  const h = new DataView(src.read(0, 112)!.buffer);
-  const clusterBits = h.getUint32(20);
-  const l1Size = h.getUint32(36);
-  const l1Offset = Number(h.getBigUint64(40));
-  const cluster = 2 ** clusterBits;
-  const l1 = new DataView(src.read(l1Offset, l1Size * 8)!.buffer);
-  let n = 0;
-  for (let i = 0; i < l1Size; i++) {
-    const l2Offset = Number(l1.getBigUint64(i * 8) & 0x00ff_ffff_ffff_fe00n);
-    if (!l2Offset) continue;
-    const l2 = new DataView(src.read(l2Offset, cluster)!.buffer);
-    for (let j = 0; j < cluster / 8; j++) {
-      const e = l2.getBigUint64(j * 8);
-      if (e & (1n << 62n) || (e & 0x00ff_ffff_ffff_fe00n) !== 0n) n++;
-    }
-  }
-  return n * cluster;
 }
 
 /**
@@ -200,6 +181,9 @@ export async function resumeMerge(diskPath: string, size: number, makeRoom?: () 
   }
 }
 
+/** The most blocks a merge copies in one read and write (1 MiB). */
+const MERGE_RUN = 256;
+
 /** The merge's copy, with the store open and marked: the overlay's blocks in (its zero blocks as zeros), the overlay deleted, the mark cleared. */
 async function copyIn(files: OverlayFiles, overlayPath: string, size: number, makeRoom?: () => Promise<boolean>) {
   let blocks = 0;
@@ -215,15 +199,30 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number, ma
       const store = overlay(zeroDisk(size), files.data, files.map); // no meta: the merge moved the generation once
       const changes = overlay(zeroDisk(size), ov.data, ov.map);
       const lands = withRoom(makeRoom);
-      for (const b of changes.written()) {
-        const at = b * BLOCK;
-        const len = Math.min(BLOCK, size - at);
-        const ok = await lands(() =>
-          changes.zeroed(b) ? store.zero(at, len) : store.write(at, changes.block(b)!.subarray(0, len)),
-        );
+      // Runs of consecutive blocks of one kind (data or zeroed), each one read and one write (a block at a time, a
+      // 2 GiB overlay was ~1.5M OPFS calls and 512k flushes).
+      const run: number[] = [];
+      let zeros = false;
+      const land = async () => {
+        if (!run.length) return;
+        const at = run[0] * BLOCK;
+        const len = Math.min(run.length * BLOCK, size - at);
+        const ok = await lands(() => {
+          if (zeros) return store.zero(at, len);
+          const bytes = changes.blocks!(run);
+          return bytes ? store.write(at, bytes.subarray(0, len)) : Promise.resolve(false);
+        });
         if (!ok) throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
-        blocks++;
+        blocks += run.length;
+        run.length = 0;
+      };
+      for (const b of changes.written()) {
+        const z = changes.zeroed(b);
+        if (run.length && (b !== run[run.length - 1] + 1 || z !== zeros || run.length === MERGE_RUN)) await land();
+        zeros = z;
+        run.push(b);
       }
+      await land();
       store.flush();
     } finally {
       ov.close();

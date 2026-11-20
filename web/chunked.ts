@@ -37,6 +37,72 @@ export type Manifest = {
 };
 
 /** Whether a disk's URL names a chunked image's manifest (by its path's `.json`). */
+/** A remote read's connection that brings no byte for this long is taken as stalled: aborted, and tried again. */
+export const STALL_MS = 20_000;
+/** Tries of a read whose connections stall (a failed or refused one isn't tried again: the guest's I/O error retries). */
+export const STALL_TRIES = 2;
+
+/**
+ * `url`'s body (with `headers`: a range) if the answer's status is `ok`, else undefined (the network failed, another
+ * status, or every try stalled). Bounded by progress, not by a total deadline: a slow server's read takes as long as
+ * its bytes keep coming, and a connection that went quiet (the network lost without an error, which `fetch` would
+ * wait out for good) doesn't hold the read, the block cache's fetch slots and the drain of a pause behind it.
+ */
+export async function fetchBytes(
+  url: string,
+  ok: number,
+  headers?: Record<string, string>,
+  stallMs = STALL_MS,
+  tries = STALL_TRIES,
+): Promise<Uint8Array | undefined> {
+  for (let t = 0; t < tries; t++) {
+    const quiet = new AbortController();
+    let timer = setTimeout(() => quiet.abort(), stallMs);
+    const progress = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => quiet.abort(), stallMs);
+    };
+    try {
+      const r = await fetch(url, { headers, signal: quiet.signal });
+      if (r.status !== ok) return void r.body?.cancel();
+      if (!r.body) return new Uint8Array(0);
+      progress();
+      // Into one buffer of the length it says, as `arrayBuffer()` would (an encoded body: the parts, joined).
+      const said = r.headers.get('content-encoding') ? NaN : Number(r.headers.get('content-length') ?? NaN);
+      const reader = r.body.getReader();
+      const parts: Uint8Array[] = [];
+      let n = 0;
+      let out = Number.isSafeInteger(said) ? new Uint8Array(said) : undefined;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        progress();
+        if (out && n + value.length <= out.length) out.set(value, n);
+        else {
+          if (out) parts.push(out.subarray(0, n));
+          out = undefined;
+          parts.push(value);
+        }
+        n += value.length;
+      }
+      if (out) return n === out.length ? out : out.subarray(0, n);
+      if (parts.length === 1) return parts[0];
+      const joined = new Uint8Array(n);
+      let at = 0;
+      for (const p of parts) {
+        joined.set(p, at);
+        at += p.length;
+      }
+      return joined;
+    } catch {
+      if (!quiet.signal.aborted) return undefined; // the network
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return undefined;
+}
+
 export const isManifestUrl = (url: string) => /\.json$/i.test(new URL(url, 'http://x').pathname);
 
 const isHash = (h: unknown) => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h);
@@ -121,14 +187,9 @@ export function chunkedSource(url: string, get: SyncGet = xhrGet, chunked?: stri
   /** `readPiece` without blocking (`fetch`; the platform's digest). */
   const readPieceAsync = async (i: number, off: number, len: number): Promise<Uint8Array | undefined> => {
     if (last?.[0] === i) return last[1].subarray(off, off + len);
-    try {
-      const r = await fetch(pieceUrl(i));
-      if (r.status !== 200) return void r.body?.cancel();
-      const b = new Uint8Array(await r.arrayBuffer());
-      if (b.length !== pieceLen(i) || (await sha256(b)) !== m.hashes[i]) return undefined;
-      return checked(i, b)?.subarray(off, off + len);
-    } catch {} // the network
-    return undefined;
+    const b = await fetchBytes(pieceUrl(i), 200);
+    if (b?.length !== pieceLen(i) || (await sha256(b)) !== m.hashes[i]) return undefined;
+    return checked(i, b)?.subarray(off, off + len);
   };
   return {
     size: m.size,

@@ -93,6 +93,34 @@ test('a merge writes the overlay into the stored disk, moves its generation and 
   await assert.rejects(openOverlay('overlays/test-merge-2', undefined, undefined, { readOnly: true }), /no overlay/);
 });
 
+test('a merge copies runs of blocks (data and zeroed, longer than one write, the last one partial) as they are', async () => {
+  const size = 600 * 4096 + 100;
+  const image = new Uint8Array(size).fill(0x11);
+  const disk = 'disks/test-merge-runs';
+  const f = await openStoredForWriting(disk, 'stored', size);
+  await importImage(bufferSource(image), f);
+  f.close();
+  const want = image.slice();
+  const base = await openStored(disk, size);
+  const o = await openOverlay('overlays/test-merge-runs', 'over-it');
+  const d = overlay(openDisk((off, len) => base.read(off, len), size), o.data, o.map, o.meta);
+  const write = async (at: number, len: number, v: number) => {
+    assert.ok(await d.write(at, new Uint8Array(len).fill(v)));
+    want.fill(v, at, at + len);
+  };
+  await write(10 * 4096, 391 * 4096, 0xa1); // blocks 10..400: longer than one run
+  assert.ok(await d.zero(401 * 4096, 5 * 4096)); // 401..405, right after
+  want.fill(0, 401 * 4096, 406 * 4096);
+  await write(406 * 4096, 4096, 0xa2);
+  await write(599 * 4096, 4096 + 100, 0xa3); // the last block, partial
+  o.close();
+  base.close();
+  assert.equal(await mergeOverlay(disk, 'overlays/test-merge-runs', 'stored', size), 391 + 5 + 1 + 2);
+  const src = await openStored(disk, size);
+  assert.ok(same(src.read(0, size), want), 'the merged disk reads as the overlay did');
+  src.close();
+});
+
 // OPFS removes an overlay's directory a file at a time: a tab closed meanwhile leaves some of its files, and the merge
 // that was deleting it resumes at the store's next opening (in Node an overlay is whole or gone).
 test('in Chromium (OPFS): a merge resumed after its overlay was partly deleted (its map gone, its data left) deletes the rest', async () => {

@@ -161,14 +161,18 @@ class Reader {
   }
 }
 
+const utf8 = new TextEncoder();
+
 class Writer {
   b = new Uint8Array(256);
+  private v = new DataView(this.b.buffer);
   k = 7;
   private room(n: number) {
     if (this.k + n <= this.b.length) return;
     const b = new Uint8Array(Math.max(this.b.length * 2, this.k + n));
     b.set(this.b);
     this.b = b;
+    this.v = new DataView(b.buffer);
   }
   u8(v: number) {
     this.room(1);
@@ -177,24 +181,24 @@ class Writer {
   }
   u16(v: number) {
     this.room(2);
-    new DataView(this.b.buffer).setUint16(this.k, v, true);
+    this.v.setUint16(this.k, v, true);
     this.k += 2;
     return this;
   }
   u32(v: number) {
     this.room(4);
-    new DataView(this.b.buffer).setUint32(this.k, v >>> 0, true);
+    this.v.setUint32(this.k, v >>> 0, true);
     this.k += 4;
     return this;
   }
   u64(v: number) {
     this.room(8);
-    new DataView(this.b.buffer).setBigUint64(this.k, BigInt(v), true);
+    this.v.setBigUint64(this.k, BigInt(v), true);
     this.k += 8;
     return this;
   }
   str(s: string) {
-    const e = new TextEncoder().encode(s);
+    const e = utf8.encode(s);
     this.u16(e.length);
     return this.bytes(e);
   }
@@ -1000,7 +1004,7 @@ export function p9Backend<N>(ctx: Ctx, server: P9Server<N>) {
         scatter(ctx.ram(), r.write, reply);
         return reply.length;
       };
-      const reply = server.handle(m.slice(0, size), room);
+      const reply = server.handle(m.subarray(0, size), room); // `gather`'s own buffer: no copy
       return reply instanceof Promise ? reply.then(send) : send(reply);
     },
     reset() {

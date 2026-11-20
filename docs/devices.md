@@ -72,7 +72,15 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   (`Atomics.notify`), word 1 the last value the device worker handled (`Devices.serve`). In
   parallel SMP every vCPU worker rings it (`ring`: a waiter compares with wrap-around, since the
   handled value may pass its own ring), Node serves it inline between the coordinator's awaits,
-  and completions also bump and notify every vCPU's wake word (`DevicesInit.wakes`).
+  and completions also bump and notify every vCPU's wake word (`DevicesInit.wakes`). The completions of one microtask
+  (a poll's, a frame's merged buffers) set the signal bit and wake the vCPUs once, at its end: before `serve` answers
+  the doorbell and before any wait inside a poll.
+- **The owner and the device worker** (`deviceHost` in web/vm.ts): every request but `init`, `release` and `close`
+  carries an id its answer has (two saves or flushes may be in flight); a closed worker's unanswered requests settle
+  (a drain or refusal as nothing, a save as an error). A worker that fails to start is terminated, and `Devices.open`
+  closes what it opened when a disk or a backend's `restore` fails, so another start can open the overlays at once. A
+  backend's error after the start (the doorbell's -1) reaches whatever waits on the backends: the waiting requests
+  reject with it, and a run or pause that sees "device backends failed" throws the backend's own error.
 - **I/O counters** (`DevicesInit.io`, `Vm.deviceIo`): a Float64Array over a SharedArrayBuffer that
   `bootVm` makes and hands over with the init message, two slots per device. blk adds the bytes of
   each completed read and write, net those of each frame given to the guest and sent by it (`Ctx.io`):
@@ -960,7 +968,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). The import, export and disk-job
   workers (`web/app/sources.ts`) read without the cache.
   **In realtime mode, requests run in parallel and nothing blocks** (R4): the sources read with `fetch`
-  (`Source.readAsync`), the cache fetches a block being fetched once and at most 8 at a time, qcow2 reads a request's
+  (`Source.readAsync`; a connection that brings no byte for 20 s is aborted and tried once more, a slow one that keeps
+  bringing bytes is waited for: `fetchBytes`), the cache fetches a block being fetched once and at most 8 at a time
+  (a block of a multi-block fetch kept as its own copy, so the cache's 256 MiB is what it holds), qcow2 reads a request's
   L2 tables and merged ranges at once (`openDisk`'s `readAsync`), and the blk backend is `concurrent`: `Devices.poll`
   completes its requests as they resolve (virtio allows any order) and serves the other devices meanwhile. A read
   starts once the last write, flush or discard before it ended; those wait for every request before them (the overlay

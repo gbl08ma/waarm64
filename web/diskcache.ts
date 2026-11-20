@@ -310,12 +310,14 @@ export function blockStore(
   mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 });
   const owner = new Int32Array(slots).fill(-1);
   let used = 0;
+  const dropped: number[] = [];
   for (let b = 0; b < blocks; b++) {
     const s = map[b] - 1;
     if (s < 0) continue;
-    if (s >= slots || owner[s] >= 0)
+    if (s >= slots || owner[s] >= 0) {
       map[b] = 0; // past a smaller budget, or a slot claimed twice: not held
-    else {
+      dropped.push(b);
+    } else {
       owner[s] = b;
       used = Math.max(used, s + 1);
     }
@@ -324,6 +326,8 @@ export function blockStore(
   const lengthOf = (b: number) => Math.min(block, size - b * block);
   /** Writes block `b`'s map entry; false if the write fell short. */
   const entry = (b: number) => mapFile.write(new Uint8Array(map.buffer, b * 4, 4), { at: b * 4 }) === 4;
+  // In the file too: a stale entry would claim its slot again in a later session, once another block holds it.
+  for (const b of dropped) entry(b);
   const n = { reads: 0, writes: 0, ms: 0 };
   let gaveUp = false;
   const store: BlockStore = {

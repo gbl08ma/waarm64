@@ -2,7 +2,7 @@
 // in-memory files shaped like OPFS sync access handles.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { encodeMeta, grown, lockOverlay, memFile, openOverlay, overlay, overlayMeta, readMeta, writeMeta, writeOwnSize } from '../web/overlay.ts';
+import { encodeMeta, grown, lockOverlay, memFile, openOverlay, overlay, overlayMeta, readMeta, writeMeta, writeOwnSize, writeWhole } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
@@ -587,4 +587,33 @@ test('writeOwnSize gives an overlay its size (made if it has no files yet), its 
   const z = grown(base, 3 * 4096);
   assert.deepEqual([...(await z.read(8192 - 2, 4))!], [7, 7, 0, 0]);
   assert.equal(grown(base, 4096), base, 'not smaller');
+});
+
+test("the variable store is rewritten in place: a full storage leaves the old one whole, a first save's short write none", () => {
+  // A storage with no room left: a write that would grow the file is refused (thrown, or cut short).
+  for (const how of ['short', 'throws'] as const) {
+    const file = memFile();
+    let full = false;
+    const f = Object.assign(memFile(), {
+      read: file.read.bind(file), getSize: file.getSize.bind(file), truncate: file.truncate.bind(file), flush: file.flush.bind(file),
+      write: (buf: Uint8Array, o: { at: number }) => {
+        if (!full || o.at + buf.length <= file.getSize()) return file.write(buf, o);
+        if (how === 'short') return file.write(buf.subarray(0, Math.max(0, file.getSize() - o.at)), o);
+        throw new DOMException('No space available for this operation', 'QuotaExceededError');
+      },
+    });
+    writeWhole(f, new Uint8Array(8192).fill(1));
+    full = true;
+    writeWhole(f, new Uint8Array(8192).fill(2)); // the same size: in place, no room needed
+    assert.ok(file.bytes().every((x) => x === 2) && file.getSize() === 8192, `${how}: rewritten`);
+    assert.throws(() => writeWhole(f, new Uint8Array(12288).fill(3)), /storage is full/, `${how}: a bigger one refused`);
+    assert.equal(file.getSize(), 8192, `${how}: the old length kept`);
+    const empty = memFile();
+    const g = Object.assign(memFile(), {
+      read: empty.read.bind(empty), getSize: empty.getSize.bind(empty), truncate: empty.truncate.bind(empty), flush: empty.flush.bind(empty),
+      write: (buf: Uint8Array, o: { at: number }) => empty.write(buf.subarray(0, 100), o),
+    });
+    assert.throws(() => writeWhole(g, new Uint8Array(8192).fill(4)), /storage is full/);
+    assert.equal(empty.getSize(), 0, `${how}: no half store (it would load as one)`);
+  }
 });

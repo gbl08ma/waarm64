@@ -16,6 +16,40 @@ import type { WritableDisk } from './overlay.ts';
 
 /** A chunk's size: what the memory comes back in. */
 export const RAM_CHUNK = 1 << 20;
+
+/** `b`'s 32-bit words where it is 4-aligned (a chunk, a fresh buffer), for `zeroRange`. */
+export const wordsOf = (b: Uint8Array) =>
+  (b.byteOffset & 3) === 0 ? new Uint32Array(b.buffer, b.byteOffset, b.length >>> 2) : undefined;
+
+/**
+ * Whether bytes [from, to) of `b` are all zeros, eight words at a time over `words` (`wordsOf(b)`) where `from` is
+ * 4-aligned: a snapshot's scan of a ramdisk's chunks, an import's of its image (a byte at a time was ~8G closure calls
+ * for a 4 GiB ramdisk).
+ */
+export function zeroRange(b: Uint8Array, words: Uint32Array | undefined, from: number, to: number) {
+  let k = from;
+  if (words && (from & 3) === 0) {
+    let i = from >>> 2;
+    const end = to >>> 2;
+    for (; i + 8 <= end; i += 8)
+      if (
+        (words[i] |
+          words[i + 1] |
+          words[i + 2] |
+          words[i + 3] |
+          words[i + 4] |
+          words[i + 5] |
+          words[i + 6] |
+          words[i + 7]) !==
+        0
+      )
+        return false;
+    for (; i < end; i++) if (words[i] !== 0) return false;
+    k = end << 2;
+  }
+  for (; k < to; k++) if (b[k] !== 0) return false;
+  return true;
+}
 const BLOCK = 4096;
 const BLOCKS_PER_CHUNK = RAM_CHUNK / BLOCK;
 /** What this realm's ramdisks keep in SharedArrayBuffers of their own, at most: half the tab's pool. */
@@ -184,8 +218,10 @@ export function ramDisk(
     written() {
       const out: number[] = [];
       for (const c of [...chunks.keys()].sort((x, y) => x - y)) {
-        for (let b = c * BLOCKS_PER_CHUNK; b < (c + 1) * BLOCKS_PER_CHUNK && b * BLOCK < size; b++)
-          if (blockOf(b)!.some((x) => x !== 0)) out.push(b);
+        const k = chunks.get(c)!;
+        const words = wordsOf(k);
+        for (let at = 0; at < k.length && c * RAM_CHUNK + at < size; at += BLOCK)
+          if (!zeroRange(k, words, at, Math.min(at + BLOCK, k.length))) out.push(c * BLOCKS_PER_CHUNK + at / BLOCK);
       }
       return out;
     },

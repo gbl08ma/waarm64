@@ -35,7 +35,7 @@ const MAX_RX = NET_HDR + 18 + 40 + 65_535;
 import { IoStats } from './iostats.ts';
 import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts';
 import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
-import { chunkedSource, isManifestUrl } from './chunked.ts';
+import { chunkedSource, fetchBytes, isManifestUrl } from './chunked.ts';
 import {
   blockList,
   openOverlay,
@@ -390,13 +390,14 @@ export type Ctx = {
   io?: Float64Array;
 };
 
+/** How long a machine's end waits for what the backends hold back (a shared folder's write sessions), ms. */
+export const CLOSE_MS = 2500;
+
 /**
  * A backend handles a request now (returns bytes written, or a promise of
  * them: requests complete in order either way), or keeps it and completes it
  * later. `config` runs when the guest wrote the config space.
  */
-/** How long a machine's end waits for what the backends hold back (a shared folder's write sessions), ms. */
-export const CLOSE_MS = 2500;
 
 export type Backend = {
   request(r: Request): number | Promise<number> | undefined;
@@ -540,13 +541,18 @@ export function gather(ram: Ram, segs: Segment[], len: number) {
   return out.subarray(0, k);
 }
 
-/** Writes `data` across the segments, in order. */
-export function scatter(ram: Ram, segs: Segment[], data: Uint8Array) {
+/** Writes `data` across the segments, in order, from byte `skip` of them (what an earlier write put there stays). */
+export function scatter(ram: Ram, segs: Segment[], data: Uint8Array, skip = 0) {
   let k = 0;
   for (const s of segs) {
     if (k === data.length) break;
-    const n = Math.min(s.len, data.length - k);
-    bytes(ram, s).set(data.subarray(k, k + n));
+    if (skip >= s.len) {
+      skip -= s.len;
+      continue;
+    }
+    const n = Math.min(s.len - skip, data.length - k);
+    bytes(ram, s).set(data.subarray(k, k + n), skip);
+    skip = 0;
     k += n;
   }
 }
@@ -589,24 +595,27 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
       const { hdr, frame } = ready[0];
       const total = NET_HDR + frame.length;
       let n = 1;
-      for (let have = room(rx[0]); have < total; n++) {
+      let have = room(rx[0]); // the room of buffers 0..n-1
+      for (; have < total; n++) {
         if (!mrg || n === rx.length) break;
         have += room(rx[n]);
       }
-      const fits = rx.slice(0, n).reduce((k, r) => k + room(r), 0) >= total;
+      const fits = have >= total;
       if (!fits && mrg && n === rx.length && total <= MAX_RX) break; // more buffers to come
       ready.shift();
       if (!fits) continue; // larger than the guest's buffers can hold: dropped
       hdr[10] = n & 255; // num_buffers
       hdr[11] = n >> 8;
-      const b = new Uint8Array(total);
-      b.set(hdr);
-      b.set(frame, NET_HDR);
       io[0] += frame.length;
+      const ram = ctx.ram();
+      // Bytes [at, at + len) of the header and the frame after it, each scattered from where it is (no joined copy).
       for (let k = 0, at = 0; k < n; k++) {
         const r = rx.shift()!;
         const len = Math.min(room(r), total - at);
-        scatter(ctx.ram(), r.write, b.subarray(at, at + len));
+        const h = Math.max(0, Math.min(NET_HDR, at + len) - at);
+        if (h) scatter(ram, r.write, hdr.subarray(at, at + h));
+        const from = Math.max(0, at - NET_HDR);
+        if (len > h) scatter(ram, r.write, frame.subarray(from, from + len - h), h);
         ctx.complete(r.w0, len);
         at += len;
       }
@@ -952,13 +961,8 @@ export function httpSource(url: string): Source & { validator?: string } {
       return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
     },
     async readAsync(off, len) {
-      try {
-        const r = await fetch(url, { headers: { Range: `bytes=${off}-${off + len - 1}` } });
-        const b = r.status === 206 ? new Uint8Array(await r.arrayBuffer()) : (void r.body?.cancel(), undefined);
-        return b?.length === len ? b : undefined;
-      } catch {
-        return undefined; // the network
-      }
+      const b = await fetchBytes(url, 206, { Range: `bytes=${off}-${off + len - 1}` });
+      return b?.length === len ? b : undefined;
     },
   };
 }
@@ -1054,14 +1058,10 @@ export async function fileSource(url: string): Promise<Source> {
 }
 
 /**
- * virtio-blk over a `Source` (HTTP ranges, or a file in Node). qcow2's compressed
- * clusters are inflated a request's together (web/deflate.ts; on web/inflate-pool.ts's
- * workers too where there are workers). Read-only, or
- * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
- * reach the overlay (`deviceEntry` offers them).
- */
-/**
- * A virtio-blk device over `src`, writable through `files` (an overlay) or by `src` itself (a ramdisk). `onFull`: a write
+ * A virtio-blk device over `src` (HTTP ranges, a stored disk, a file in Node; qcow2's compressed clusters inflated a
+ * request's together: web/deflate.ts, and on web/inflate-pool.ts's workers where there are workers), writable through
+ * `files` (an overlay) or by `src` itself (a ramdisk); with `discard`, DISCARD and WRITE_ZEROES reach the overlay
+ * (`deviceEntry` offers them). `onFull`: a write
  * the browser's storage refused (a short write, `QuotaExceededError`) failed the guest's request, told once until a
  * write lands again (a ramdisk says so through its own `onFull`). `size`: the disk's size as the guest sees it (the
  * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too);
@@ -1429,6 +1429,15 @@ function liveImage(src: Source, base: Disk): LiveDisk['disk'] {
   return { kind: 'image', id: 'disk', size, examine, read };
 }
 
+/** `Promise.all` that, when one rejects, closes the others' values once they settle (what they opened isn't left held). */
+async function allOrClose<T>(all: (Promise<T> | T)[], close: (x: T) => void): Promise<T[]> {
+  const r = await Promise.allSettled(all);
+  const failed = r.find((x) => x.status === 'rejected');
+  if (!failed) return r.map((x) => (x as PromiseFulfilledResult<T>).value);
+  for (const x of r) if (x.status === 'fulfilled') close(x.value);
+  throw failed.reason;
+}
+
 /** Rings the doorbell; with `wait`, returns once the backends took everything up to this ring. */
 export function ring(bell: Int32Array, wait: boolean) {
   const n = Atomics.add(bell, 0, 1) + 1;
@@ -1513,6 +1522,12 @@ export class Devices {
   /** The disks' sources, by device (an HTTP one's block cache has its counters). */
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
+  /** Views of `memory` for its buffer of now (a grown memory has a new one): `views`. */
+  private viewsOf?: { buffer: ArrayBufferLike; u32: Uint32Array; i32: Int32Array; ram: Uint8Array[] };
+  private ramAt: number;
+  private spillViews: Uint8Array[];
+  /** A `kick` is queued for this microtask's end (completions in one go wake the vCPUs once). */
+  private kickOwed = false;
   /** `out` receives what a console device's guest side wrote. */
   private constructor(
     {
@@ -1528,7 +1543,6 @@ export class Devices {
       deterministic,
       wakes,
       stops,
-      state,
       xhci,
       io,
     }: DevicesInit,
@@ -1547,7 +1561,8 @@ export class Devices {
       deterministic,
     ];
     // Spill memories are made at their final size: their views never go stale.
-    const spillViews = spill.map((m) => new Uint8Array(m.buffer));
+    this.spillViews = spill.map((m) => new Uint8Array(m.buffer));
+    this.ramAt = ram;
     const layout =
       given ??
       ramLayout(
@@ -1556,7 +1571,7 @@ export class Devices {
       );
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
-        ram: () => [new Uint8Array(this.memory.buffer, ram), ...spillViews],
+        ram: () => this.views().ram, // read-only: the same array until the memory grows
         layout,
         complete: (w0, len) => this.complete(i, w0, len),
         untaken: () => this.untaken(i),
@@ -1677,16 +1692,17 @@ export class Devices {
         attach: xhci.attach,
         io: io?.subarray(2 * specs.length, 2 * specs.length + 2),
       });
-    if (state) {
-      if (state.length !== specs.length) throw new Error('the snapshot is of a machine with other devices');
-      // The devices are as the snapshot left them (their epoch is not a reset), with the backends' state.
-      const u32 = new Uint32Array(memory.buffer);
-      this.epochs = shared.map((at) => Atomics.load(u32, (at + EPOCH) / 4) & 0xff);
-      this.backends.forEach((b, i) => {
-        if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]);
-      });
-      for (const b of this.backends) b.restored?.();
-    }
+  }
+
+  /** The devices as the snapshot left them (their epoch is not a reset), with the backends' `state`. */
+  private restore(state: unknown[]) {
+    if (state.length !== this.backends.length) throw new Error('the snapshot is of a machine with other devices');
+    const u32 = new Uint32Array(this.memory.buffer);
+    this.epochs = this.shared.map((at) => Atomics.load(u32, (at + EPOCH) / 4) & 0xff);
+    this.backends.forEach((b, i) => {
+      if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]);
+    });
+    for (const b of this.backends) b.restored?.();
   }
 
   /**
@@ -1747,8 +1763,12 @@ export class Devices {
     await Promise.all(this.backends.map((b) => b.flush?.()));
   }
 
-  /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
-  /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory, the storage full). */
+  /**
+   * Builds the backends, opening any overlays first (OPFS handles are created asynchronously). `notice`: what the page
+   * should tell the user while the machine runs on (a ramdisk out of memory, the storage full). If anything fails
+   * (an image that doesn't load, a backend's `restore` that throws), what was opened is closed again: another start
+   * can open the overlays (their locks released), not wait for them.
+   */
   static async open(
     init: DevicesInit,
     out: (device: number, text: string) => void,
@@ -1756,7 +1776,7 @@ export class Devices {
   ) {
     if (init.core) void coreModule(init.core);
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
-    const overlays = await Promise.all(
+    const overlays = await allOrClose(
       init.specs.map((d) =>
         d.type !== 'blk' || !d.overlay
           ? undefined
@@ -1764,8 +1784,15 @@ export class Devices {
             ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0)
             : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)),
       ),
+      (o) => o?.close(),
     );
-    const sources = await Promise.all(
+    const closeOverlays = () => {
+      for (const o of overlays) o?.close();
+    };
+    const closeSource = (s: Source | WritableDisk | undefined) => {
+      if (s && !('write' in s)) s.close?.();
+    };
+    const sources = await allOrClose(
       init.specs.map(async (d) => {
         if (d.type !== 'blk') return undefined;
         if (d.source) {
@@ -1783,7 +1810,11 @@ export class Devices {
         if (d.url.startsWith('file:')) return fileSource(d.url);
         return remoteSource(d.url, d.keep ?? true, !init.deterministic, d.chunked);
       }),
-    );
+      closeSource,
+    ).catch((e: unknown) => {
+      closeOverlays();
+      throw e;
+    });
     // At most once a minute for all disks: while it's full, overwrites of blocks an overlay holds still land (they
     // don't grow its file), and each disk tells again after one.
     let toldAt = -Infinity;
@@ -1792,7 +1823,21 @@ export class Devices {
       toldAt = performance.now();
       void storageFull().then(notice);
     };
-    return new Devices(init, overlays, sources, out, full);
+    let d: Devices;
+    try {
+      d = new Devices(init, overlays, sources, out, full);
+    } catch (e) {
+      closeOverlays();
+      sources.forEach(closeSource);
+      throw e;
+    }
+    try {
+      if (init.state) d.restore(init.state);
+    } catch (e) {
+      d.close(); // the backends' files and workers with it
+      throw e;
+    }
+    return d;
   }
 
   /** The I/O timers of the blk devices that have them (spec `stats`), by device index. */
@@ -1828,7 +1873,7 @@ export class Devices {
   async poll() {
     if (this.failed) throw this.failed;
     for (const [i, b] of this.backends.entries()) {
-      const u32 = new Uint32Array(this.memory.buffer);
+      const u32 = this.views().u32;
       const base = this.shared[i] / 4;
       const events = Atomics.exchange(u32, base + EVENTS / 4, 0);
       if (events & EV_CONFIG) b.config?.();
@@ -1878,33 +1923,53 @@ export class Devices {
   }
 
   private untaken(i: number) {
-    const u32 = new Uint32Array(this.memory.buffer);
+    const u32 = this.views().u32;
     const ring = (this.shared[i] + CPL) / 4;
     return ((Atomics.load(u32, ring) - Atomics.load(u32, ring + 1)) >>> 0) / 2;
   }
 
   private complete(i: number, w0: number, len: number) {
-    const u32 = new Uint32Array(this.memory.buffer);
+    const u32 = this.views().u32;
     const ring = (this.shared[i] + CPL) / 4;
     const head = u32[ring];
     if (RING_WORDS - ((head - Atomics.load(u32, ring + 1)) >>> 0) < 2) throw new Error('completion ring full'); // the core sizes it for every buffer in flight
     u32[ring + 2 + (head % RING_WORDS)] = w0;
     u32[ring + 2 + ((head + 1) % RING_WORDS)] = len;
     Atomics.store(u32, ring, (head + 2) >>> 0);
-    this.kick();
+    // One kick for every completion of this microtask (a poll's, a frame's merged buffers): at its end, so before
+    // `serve` answers the doorbell (that continuation is queued after it) and before any wait in a poll.
+    if (!this.kickOwed) {
+      this.kickOwed = true;
+      queueMicrotask(() => {
+        this.kickOwed = false;
+        this.kick();
+      });
+    }
+  }
+
+  /** `memory`'s views, made again when it grew (its buffer is a new one). */
+  private views() {
+    const buffer = this.memory.buffer;
+    if (this.viewsOf?.buffer !== buffer)
+      this.viewsOf = {
+        buffer,
+        u32: new Uint32Array(buffer),
+        i32: new Int32Array(buffer),
+        ram: [new Uint8Array(buffer, this.ramAt), ...this.spillViews],
+      };
+    return this.viewsOf;
   }
 
   /** Sets the signal word's device bit and wakes the vCPUs, so the core takes what the backends left. */
   private kick() {
-    const sig = new Int32Array(this.memory.buffer, this.signal, 1);
-    Atomics.or(sig, 0, SIGNAL_DEVICE);
-    Atomics.notify(sig, 0);
+    const i32 = this.views().i32;
+    Atomics.or(i32, this.signal / 4, SIGNAL_DEVICE);
+    Atomics.notify(i32, this.signal / 4);
     // Compiled code stops at its next poll (docs/abi.md "PERF: the stop word").
-    for (const p of this.stops ?? []) Atomics.store(new Int32Array(this.memory.buffer, p, 1), 0, 0);
+    for (const p of this.stops) Atomics.store(i32, p / 4, 0);
     for (const w of this.wakes) {
-      const word = new Int32Array(this.memory.buffer, w, 1);
-      Atomics.add(word, 0, 1);
-      Atomics.notify(word, 0);
+      Atomics.add(i32, w / 4, 1);
+      Atomics.notify(i32, w / 4);
     }
   }
 
@@ -1950,7 +2015,10 @@ export class Devices {
         const rung = Atomics.load(bell, 0);
         if (rung === seen) {
           const w = Atomics.waitAsync(bell, 0, seen);
-          if (w.async) await w.value;
+          if (w.async) {
+            await w.value;
+            since = performance.now(); // its wake-up came as a task: the event loop had its turn
+          }
           continue;
         }
         seen = rung;

@@ -135,3 +135,23 @@ test('on OPFS: kept across an opening, one opener at a time, Clear empties the o
     server.close();
   }
 });
+
+test("a slot claimed twice in the map file (damage) is mended in the file at the opening: the loser never claims it again", () => {
+  const [data, map] = [memFile(), memFile()];
+  const s = blockStore(data, map, SIZE, BLOCK, 4);
+  for (const b of [5, 9]) s.put(b, blockOf(b));
+  s.close();
+  // Block 12's entry names block 9's slot too.
+  const entries = new Uint32Array(map.bytes().slice().buffer);
+  map.write(new Uint8Array(Uint32Array.of(entries[9]).buffer), { at: 12 * 4 });
+  const again = blockStore(data, map, SIZE, BLOCK, 4);
+  assert.equal(again.get(12), undefined, 'block 12 not held: the first claimant in block order wins');
+  // 9's slot reused (the store full, oldest first) by a block after 12, then a reopening.
+  for (let b = 13; b <= 18; b++) again.put(b, blockOf(b));
+  again.close();
+  const third = blockStore(data, map, SIZE, BLOCK, 4);
+  for (let b = 0; b < 21; b++) {
+    const got = third.get(b);
+    if (got) sameBlock(got, b);
+  }
+});

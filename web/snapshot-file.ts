@@ -621,7 +621,11 @@ export class SnapshotWriter {
     return { frame, pages, scan, compress, crc: performance.now() - t };
   }
 
-  /** The overlay's blocks (4 KiB each) in ascending block order; consecutive blocks share frames of up to 256. */
+  /**
+   * The overlay's blocks (4 KiB each) in ascending block order; consecutive blocks share frames of up to 256. Their
+   * bytes are taken as they are (the caller doesn't change them after): a run of views that follow each other in one
+   * buffer (a batch of `vm.diskBlocks`) is a frame's bytes without a copy, any other run is copied once.
+   */
   async disk(
     blocks: AsyncIterable<{ block: number; data: Uint8Array }> | Iterable<{ block: number; data: Uint8Array }>,
   ): Promise<{ blocks: number }> {
@@ -630,8 +634,14 @@ export class SnapshotWriter {
     let run: Uint8Array[] = [];
     const flush = async () => {
       if (!run.length) return;
-      const raw = new Uint8Array(run.length * PAGE);
-      run.forEach((b, i) => raw.set(b, i * PAGE));
+      const [a] = run;
+      const adjacent = run.every((b, i) => b.buffer === a.buffer && b.byteOffset === a.byteOffset + i * PAGE);
+      let raw: Uint8Array;
+      if (adjacent) raw = new Uint8Array(a.buffer, a.byteOffset, run.length * PAGE);
+      else {
+        raw = new Uint8Array(run.length * PAGE);
+        run.forEach((b, i) => raw.set(b, i * PAGE));
+      }
       const at = first;
       run = [];
       await this.#frame('DISK', at, raw);
@@ -643,7 +653,7 @@ export class SnapshotWriter {
         throw new RangeError('overlay blocks must come in ascending order');
       if (run.length && (block !== next || run.length >= MAX_RUN)) await flush();
       if (!run.length) first = block;
-      run.push(data.slice()); // a copy: the caller may reuse the buffer
+      run.push(data);
       next = block + 1;
       n++;
     }

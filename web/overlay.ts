@@ -113,6 +113,8 @@ export function countOf(blocks: Iterable<number>) {
 
 /** A disk's `written()` as a list (a snapshot's, sent across workers): 4 bytes a block, counted first. */
 export function blockList(d: Pick<WritableDisk, 'written'>): Uint32Array {
+  const all = d.written();
+  if (Array.isArray(all)) return Uint32Array.from(all as number[]); // a ramdisk's, scanned once
   const out = new Uint32Array(countOf(d.written()));
   let k = 0;
   for (const b of d.written()) out[k++] = b;
@@ -680,7 +682,7 @@ export function overlay(
 
   const read = async (off: number, len: number) => {
     if (off < 0 || off + len > base.size) return undefined;
-    const out = new Uint8Array(len);
+    let out: Uint8Array | undefined; // made at the first part the base's read isn't the whole of
     const stop = off + len;
     for (let pos = off; pos < stop;) {
       const b = Math.floor(pos / BLOCK);
@@ -692,18 +694,20 @@ export function overlay(
         // Blocks in consecutive slots are one read (an OPFS call costs the same whatever its size).
         for (let c = b, x = e; end < stop && held(c + 1) && ent(c + 1) === x + 1; c++, x++)
           end = Math.min(end + BLOCK, stop);
+        out ??= new Uint8Array(len);
         if (data.read(out.subarray(pos - off, end - off), { at: (e - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos)
           return undefined;
       } else {
-        // Runs of blocks that aren't in the overlay go to the base in one read.
+        // Runs of blocks that aren't in the overlay go to the base in one read: the whole request's, its bytes as they are.
         while (end < stop && !ent(end / BLOCK)) end = Math.min(end + BLOCK, stop);
+        if (pos === off && end === stop) return base.read(off, len);
         const bytes = await base.read(pos, end - pos);
         if (!bytes) return undefined;
-        out.set(bytes, pos - off);
+        (out ??= new Uint8Array(len)).set(bytes, pos - off);
       }
       pos = end;
     }
-    return out;
+    return out ?? new Uint8Array(len);
   };
 
   /**
@@ -1338,10 +1342,24 @@ export async function saveFlash(name: string, bytes: Uint8Array) {
   const dir = await opfsDir(name, true);
   const h = await (await dir.getFileHandle('flash', { create: true })).createSyncAccessHandle();
   try {
-    h.truncate(0);
-    h.write(bytes, { at: 0 });
-    h.flush();
+    writeWhole(h, bytes);
   } finally {
     h.close();
   }
+}
+
+/**
+ * `bytes` as file `f`'s whole content: written over the old in place (the variable store keeps its size: no room to
+ * find, nothing released first), then cut to its length. A write the storage refuses or cuts short throws, the file
+ * left at its old length (an empty one stays empty: no store, rather than half of one).
+ */
+export function writeWhole(f: SyncFile, bytes: Uint8Array) {
+  const was = f.getSize();
+  const n = shortOnFull(f).write(bytes, { at: 0 });
+  if (n !== bytes.length) {
+    f.truncate(was);
+    throw new Error(`the file took ${n} of ${bytes.length} bytes (the storage is full)`);
+  }
+  f.truncate(bytes.length);
+  f.flush();
 }

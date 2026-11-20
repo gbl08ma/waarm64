@@ -205,11 +205,10 @@ type Segment = {
 };
 
 /**
- * A segment that may be merged: a valid TCP checksum (`checksumValid`), IPv4 without options or IPv6 without
- * extension headers, a payload, and no flags but ACK and PSH. Undefined for anything else.
+ * A segment that may be merged, of a frame whose checksum is valid (`checksumValid`, a TCP or UDP one): TCP over IPv4
+ * without options or IPv6 without extension headers, a payload, and no flags but ACK and PSH. Undefined for anything else.
  */
 function mergeable(f: Uint8Array): Segment | undefined {
-  if (!checksumValid(f)) return undefined;
   const { l3, v6 } = l3Of(f)!;
   if (v6 ? f[l3 + 6] !== 6 : f[l3 + 9] !== 6 || f[l3] !== 0x45) return undefined;
   const l4 = l3 + (v6 ? 40 : 20);
@@ -229,10 +228,17 @@ function follows(a: Segment, b: Segment, mss: number) {
   if (b.v6 !== a.v6 || b.hl !== a.hl || b.l4 !== a.l4 || a.len !== mss || b.len > mss || a.f[a.l4 + 13] & 0x08)
     return false;
   if (b.seq !== (a.seq + a.len) >>> 0) return false;
-  const skip = a.v6 ? [a.l3 + 4, a.l3 + 5] : [a.l3 + 2, a.l3 + 3, a.l3 + 4, a.l3 + 5, a.l3 + 10, a.l3 + 11];
-  skip.push(a.l4 + 4, a.l4 + 5, a.l4 + 6, a.l4 + 7, a.l4 + 13, a.l4 + 16, a.l4 + 17);
-  for (let k = 0; k < a.hl; k++) if (a.f[k] !== b.f[k] && !skip.includes(k)) return false;
-  return (b.f[b.l4 + 13] & ~0x08) === (a.f[a.l4 + 13] & ~0x08);
+  // The bytes between the ones that may differ: IPv6's payload length; IPv4's total length, ID and checksum; TCP's
+  // sequence number, flags (compared below, but for PSH) and checksum.
+  const { f, l3, l4 } = a;
+  const same = (from: number, to: number) => {
+    for (let k = from; k < to; k++) if (f[k] !== b.f[k]) return false;
+    return true;
+  };
+  const ip = a.v6 ? same(0, l3 + 4) && same(l3 + 6, l4) : same(0, l3 + 2) && same(l3 + 6, l3 + 10) && same(l3 + 12, l4);
+  if (!ip || !same(l4, l4 + 4) || !same(l4 + 8, l4 + 13) || !same(l4 + 14, l4 + 16) || !same(l4 + 18, a.hl))
+    return false;
+  return (b.f[b.l4 + 13] & ~0x08) === (f[l4 + 13] & ~0x08);
 }
 
 /** The largest merged IP packet: an IPv4 total length or IPv6 payload length. */
@@ -248,13 +254,27 @@ const MAX_IP = 65_535;
  */
 export function receive(frames: Uint8Array[], o: { csum: boolean; merge4: boolean; merge6: boolean }): RxFrame[] {
   const out: RxFrame[] = [];
+  const merging = o.merge4 || o.merge6;
+  // Frame `at`'s checksum and segment, checked once: the frame that ends a run starts the next one.
+  let at = -1,
+    valid = false as boolean, // set by `check`
+    seg: Segment | undefined;
+  const check = (k: number) => {
+    if (at === k) return;
+    at = k;
+    valid = checksumValid(frames[k]);
+    seg = merging && valid ? mergeable(frames[k]) : undefined;
+  };
   for (let i = 0; i < frames.length;) {
-    const first = o.merge4 || o.merge6 ? mergeable(frames[i]) : undefined;
+    if (merging || o.csum) check(i);
+    const first = seg;
+    const firstValid = valid;
     const run = first && (first.v6 ? o.merge6 : o.merge4) ? [first] : [];
     if (first && run.length) {
       let size = first.end - first.l3 - (first.v6 ? 40 : 0);
       for (let j = i + 1; j < frames.length; j++) {
-        const next = mergeable(frames[j]);
+        check(j);
+        const next = seg;
         if (!next || !follows(run[run.length - 1], next, first.len) || size + next.len > MAX_IP) break;
         run.push(next);
         size += next.len;
@@ -262,7 +282,7 @@ export function receive(frames: Uint8Array[], o: { csum: boolean; merge4: boolea
     }
     if (run.length < 2) {
       const hdr = new Uint8Array(NET_HDR);
-      if (o.csum && checksumValid(frames[i])) hdr[0] = DATA_VALID;
+      if (o.csum && firstValid) hdr[0] = DATA_VALID;
       out.push({ hdr, frame: frames[i] });
       i++;
       continue;

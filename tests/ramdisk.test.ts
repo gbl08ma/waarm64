@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { RAM_CHUNK, ramDisk, swapHeader } from '../web/ramdisk.ts';
+import { RAM_CHUNK, ramDisk, swapHeader, wordsOf, zeroRange } from '../web/ramdisk.ts';
 import { SWAP_OPTIONS, swapCredentials, swapLabel } from '../web/app/guest-swap.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
@@ -154,4 +154,20 @@ test("swap ramdisks' fstab.extra credential: one line per label, none without", 
   assert.deepEqual(swapCredentials([]), []);
   assert.deepEqual(swapCredentials([swapLabel(0), swapLabel(1)]), [{ name: 'fstab.extra', data: `LABEL=waarm64-swap0 none swap ${SWAP_OPTIONS} 0 0\nLABEL=waarm64-swap1 none swap ${SWAP_OPTIONS} 0 0\n` }]);
   assert.ok(new TextEncoder().encode(swapLabel(15)).length <= 15, "mkswap's label size");
+});
+
+test('zeroRange: a word-wise scan agrees with a byte-wise one, aligned or not, a byte set anywhere', () => {
+  const b = new Uint8Array(4096 + 64);
+  for (const off of [0, 1, 4, 13]) {
+    const v = b.subarray(off, off + 4096 + 7);
+    const words = wordsOf(v);
+    assert.equal(words === undefined, (off & 3) !== 0);
+    for (const [from, to] of [[0, 4096], [0, 4103], [4, 37], [5, 37], [4096, 4103], [0, 0]]) {
+      for (const at of [-1, from, to - 1, (from + to) >> 1]) {
+        v.fill(0);
+        if (at >= from && at < to) v[at] = 1;
+        assert.equal(zeroRange(v, words, from, to), !(at >= from && at < to), `off ${off} [${from}, ${to}) byte ${at}`);
+      }
+    }
+  }
 });

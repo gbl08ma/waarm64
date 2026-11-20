@@ -110,12 +110,13 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
     if (w.async) await w.value;
     yielded = performance.now();
   };
+  // The exit's record: kind, steps, value, x0-x3, cpu, wake (a new view once the memory grew: its buffer is new).
+  let e = new BigUint64Array(mem.buffer, info, 9);
   for (;;) {
     live?.enter();
     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
     live?.leave();
-    // kind, steps, value, x0-x3, cpu, wake (a fresh view: the memory may have grown).
-    const e = new BigUint64Array(mem.buffer, info, 9);
+    if (e.buffer !== mem.buffer) e = new BigUint64Array(mem.buffer, info, 9);
     switch (kind) {
       case Exit.BUDGET:
         live?.handled();

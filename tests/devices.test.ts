@@ -403,7 +403,7 @@ test('changeConfig: the generation goes odd around the write, even after it, and
   Atomics.store(new Int32Array(memory.buffer, stop, 1), 0, 32768);
   const gen = new Int32Array(memory.buffer, shared + 20, 1);
   const seen: number[] = [];
-  const self = { memory, shared: [shared], signal, wakes: [wake], stops: [stop], kick: (Devices.prototype as unknown as { kick(): void }).kick };
+  const self = { memory, shared: [shared], signal, wakes: [wake], stops: [stop], ramAt: 0, spillViews: [], kick: (Devices.prototype as unknown as { kick(): void }).kick, views: (Devices.prototype as unknown as { views(): unknown }).views };
   Atomics.add(gen, 0, 4); // earlier changes
   (Devices.prototype.changeConfig as (this: unknown, i: number, w: (c: Uint8Array) => void) => void).call(self, 0, (c) => {
     seen.push(gen[0]); // mid-update
@@ -428,11 +428,49 @@ test('poll: records from before a reset are skipped, and the signal word set (a 
   Atomics.store(u32, ring, 2);
   const seen: number[] = [];
   const backend = { reset() {}, request: (r: { w0: number }) => { seen.push(r.w0); return 0; } };
-  const self = { memory, shared: [shared], signal, wakes: [], stops: [], backends: [backend], epochs: [0], deterministic: true, detached: new Set(), kick: (Devices.prototype as unknown as { kick(): void }).kick };
+  const self = { memory, shared: [shared], signal, wakes: [], stops: [], backends: [backend], epochs: [0], deterministic: true, detached: new Set(), ramAt: 0, spillViews: [], kick: (Devices.prototype as unknown as { kick(): void }).kick, views: (Devices.prototype as unknown as { views(): unknown }).views };
   await (Devices.prototype.poll as (this: unknown) => Promise<void>).call(self);
   assert.deepEqual(seen, [], 'the stale record skipped');
   assert.equal(Atomics.load(u32, ring + 1), 2, 'and taken');
   assert.equal(Atomics.load(new Int32Array(memory.buffer, signal, 1), 0), 4, 'SIGNAL_DEVICE');
+});
+
+test("poll: a poll's completions wake each vCPU once, before the poll resolves (the doorbell's answer follows it)", async () => {
+  // The layout (docs/abi.md): events at 0, epoch at 16, the request ring at 280, the completion ring after its words.
+  const memory = { buffer: new SharedArrayBuffer(1 << 16) };
+  const [signal, wake] = [40_000, 40_004];
+  const u32 = new Uint32Array(memory.buffer);
+  const ring = 280 / 4;
+  u32.set([1, 0, 2, 0, 3, 0], ring + 2); // three records of epoch 0, no segments
+  Atomics.store(u32, ring, 6);
+  const backend = { reset() {}, request: () => 0 };
+  const proto = Devices.prototype as unknown as Record<string, unknown>;
+  const self = { memory, shared: [0], signal, wakes: [wake], stops: [], backends: [backend], epochs: [0], deterministic: true, detached: new Set(), ramAt: 0, spillViews: [], kickOwed: false, kick: proto.kick, views: proto.views, complete: proto.complete };
+  await (Devices.prototype.poll as (this: unknown) => Promise<void>).call(self);
+  const cpl = (280 + 8 + 4 * 4096) / 4;
+  assert.equal(Atomics.load(u32, cpl), 6, 'three completions');
+  assert.equal(Atomics.load(new Int32Array(memory.buffer, signal, 1), 0), 4, 'SIGNAL_DEVICE');
+  assert.equal(Atomics.load(new Int32Array(memory.buffer, wake, 1), 0), 1, 'the vCPU woken once');
+});
+
+test('net: a received frame across merged buffers (MRG_RXBUF): the header, then the frame, over their segments', () => {
+  const ram = new Uint8Array(1 << 16);
+  const done: number[] = [];
+  const ctx = { ram: () => [ram], complete: (_w0: number, len: number) => done.push(len), features: () => 1n << 15n, io: new Float64Array(2) } as unknown as Ctx;
+  const n = net(ctx, { type: 'net', adapter: 'loopback' });
+  // Two receive buffers: 20 bytes in segments of 5 and 15 (the header split across them), then 100.
+  n.request({ w0: 10, queue: 0, read: [], write: [{ off: 8000, len: 5, mem: 0 }, { off: 9000, len: 15, mem: 0 }] });
+  n.request({ w0: 11, queue: 0, read: [], write: [{ off: 10000, len: 100, mem: 0 }] });
+  const guest = [0x52, 0x54, 0, 0x12, 0x34, 0x56];
+  const arp = [...Array(6).fill(0xff), ...guest, 8, 6, 0, 1, 8, 0, 6, 4, 0, 1, ...guest, 10, 0, 2, 15, 0, 0, 0, 0, 0, 0, ...PEER_IP];
+  ram.fill(0, 0, 12);
+  ram.set(arp, 12);
+  n.request({ w0: 1, queue: 1, read: [{ off: 0, len: 12 + arp.length, mem: 0 }], write: [] });
+  // The 42-byte reply after its 12-byte header: 20 bytes in the first buffer, 34 in the second.
+  assert.deepEqual(done.slice(-2), [20, 34]);
+  const got = [...ram.subarray(8000, 8005), ...ram.subarray(9000, 9015), ...ram.subarray(10000, 10034)];
+  assert.deepEqual(got.slice(10, 12), [2, 0], 'num_buffers');
+  assert.deepEqual(got.slice(12), [...guest, ...PEER_MAC, 8, 6, 0, 1, 8, 0, 6, 4, 0, 2, ...PEER_MAC, ...PEER_IP, ...guest, 10, 0, 2, 15]);
 });
 
 test('terminalBytes: what a terminal sends for the keys that drive EDK2 and GRUB', async () => {
