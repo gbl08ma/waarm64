@@ -432,6 +432,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   uploads, and the fuzzer's decoders give no pictures, so those paths and the picture writes aren't fuzzed. A trace of
   dEQP-GLES3's transform_feedback and depth32f_stencil8 cases (`CAPTURE=`) and a decoder that outputs small pictures
   would add them.
+- **Portal (Windows build, Wine with wined3d on virgl, x86 through FEX) draws wrong** (a user's run, 2026-11-20; whether
+  this use case matters is the user's call): its menu is right since the BGRA vertex formats (graphics.md "Where WebGL2
+  refuses what GLES allows"), but the Bink intro videos have a green cast over the whole picture (the chroma planes
+  read as 0: their upload, wined3d's swizzle on its one-channel textures, or a plane never uploaded) and the levels are
+  overly dark. The renderer logged no `virgl:` complaint. Next: a `?gpu=virgl,debug` console over the intro (the
+  planes' resources, views and uploads). A desktop GL 2.1 gate (piglit, built and run as dEQP is) would find this kind
+  of bug without the game.
 - **Desktop GL 3.0 and 3.1 on WebGL2** (graphics.md "What isn't backed"): they need what WebGL2 lacks or has only as
   extensions: `gl_ClipDistance` (`WEBGL_clip_cull_distance`), depth clamp (`EXT_depth_clamp`), conditional
   rendering, the sRGB framebuffer switch, texture buffers, base vertex
@@ -2254,7 +2261,8 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   `guestReads` (line 51: the terminal never showed the guest's read). It passed alone each time (27.6 s the second: at
   the edge of its 30 s) and in the next full run. A wait that assumes the guest's pace, likely. Again 2026-11-20 in the
   demo's paused-start test (the host's copy after the grant never reached the agent within `guestReads`' 10 s; the
-  file passed alone, 5 of 5).
+  file passed alone, 5 of 5), and later that day both tests in one `ci.sh` run (the toolbar's `guestReads` got
+  nothing; the demo's case read `copied on the host ✓` where it waited for `shared after one click`), 5 of 5 alone.
 
 - **THIRD_PARTY.md from THIRD_PARTY.json** ([third-party.md](third-party.md)): a CI job or GitHub workflow that writes
   the Markdown (`node tools/third-party.ts --markdown`) whenever the JSON changes, if a readable page is wanted again.
