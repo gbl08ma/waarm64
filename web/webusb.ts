@@ -304,6 +304,8 @@ class InEndpoint {
 export type WebUsbOptions = {
   /** Called once when the device turns out to be gone (a transfer's NotFoundError, a failed reset). */
   gone?: () => void;
+  /** Called once when it's detached, with its release and close (the opener waits for them before opening it again). */
+  detached?: (closed: Promise<void>) => void;
 };
 
 /** An open failed, or left nothing the guest could use; `problems` says why, for the page. */
@@ -681,10 +683,11 @@ export class WebUsbPassthrough implements UsbDevice {
     this.dropAll();
     const dev = this.dev;
     const held = [...this.claimed];
-    this.serial(async () => {
+    const closed = this.serial(async () => {
       for (const n of held) await dev.releaseInterface(n).catch(() => {});
       await dev.close().catch(() => {});
     });
+    this.opts.detached?.(closed);
   }
 
   private dropAll() {
@@ -881,9 +884,12 @@ export function pickDevice<D extends { vendorId: number; productId: number; seri
  * calls `gone` when WebUSB reports it disconnected (or a transfer finds it gone).
  */
 export function webUsbOpener(usb: WebUsbLike) {
+  /** A detached device's release and close, still running: an open of it waits (an `opened` device would be closed under it). */
+  const closing = new WeakMap<WebUsbDeviceLike, Promise<void>>();
   return async (id: UsbIdentity, ctx: { gone?: () => void } = {}): Promise<WebUsbPassthrough> => {
     const dev = pickDevice(await usb.getDevices(), id);
     if (!dev) throw notFound();
+    await closing.get(dev);
     let p: WebUsbPassthrough | null = null;
     const onDisconnect = (e: { device: WebUsbDeviceLike }) => {
       if (e.device !== dev) return;
@@ -900,7 +906,13 @@ export function webUsbOpener(usb: WebUsbLike) {
     };
     usb.addEventListener('disconnect', onDisconnect);
     try {
-      p = await openWebUsb(dev, { gone });
+      p = await openWebUsb(dev, {
+        gone,
+        detached: (closed) => {
+          usb.removeEventListener('disconnect', onDisconnect);
+          closing.set(dev, closed);
+        },
+      });
     } catch (e) {
       usb.removeEventListener('disconnect', onDisconnect);
       throw e;

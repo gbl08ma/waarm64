@@ -25,8 +25,9 @@ export async function openState(profile: string) {
   const mem = new Map<string, string>();
   const range = IDBKeyRange.bound(key(''), key('￿'));
   const store = (mode: IDBTransactionMode) => db.transaction(STORE, mode).objectStore(STORE);
-  const keys = await idb(store('readonly').getAllKeys(range));
-  const values = await idb(store('readonly').getAll(range));
+  // One transaction: the keys and values agree even while another tab writes the same profile.
+  const read = store('readonly');
+  const [keys, values] = await Promise.all([idb(read.getAllKeys(range)), idb(read.getAll(range))]);
   keys.forEach((k, i) => mem.set(String(k).slice(profile.length + 1), values[i] as string));
   return {
     getState: (k: string) => mem.get(k) ?? '',
@@ -41,6 +42,7 @@ export async function openState(profile: string) {
       await idb(store('readwrite').delete(range));
       mem.clear();
     },
+    close: () => db.close(),
   };
 }
 
@@ -71,5 +73,10 @@ export async function keptProfiles(): Promise<string[]> {
 /** Forgets every entry of `profile` (a deleted connection's node). */
 export async function forgetProfile(profile: string) {
   if (typeof indexedDB === 'undefined') return;
-  await (await openState(profile)).clear();
+  const s = await openState(profile);
+  try {
+    await s.clear();
+  } finally {
+    s.close();
+  }
 }

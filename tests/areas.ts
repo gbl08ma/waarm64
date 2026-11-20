@@ -141,7 +141,7 @@ export const AREAS: Record<string, Area> = {
   },
   // ---- the network
   network: {
-    src: ['web/gateway.ts', 'web/net.ts', 'web/local-net*.ts', 'web/demo-net*.ts', 'web/app/demo-view.ts', 'web/local-release.ts', 'web/ip6.ts', 'web/reach6.ts', 'web/tailscale*.ts', 'web/tailnet-worker.ts', 'web/tailcat*.ts', 'web/ts-*.ts', 'web/offload.ts', 'net/**', 'web/app/Net*.svelte', 'web/app/net-*.ts', 'web/app/network*.ts', 'web/app/Network*.svelte', 'web/app/guest-net.ts', 'web/app/Connection*.svelte', 'web/app/connection*.ts', 'web/app/areas/network*.ts', 'web/app/areas/lease-actions.ts', 'tests/net/**', 'tests/waarm64-net.ts', 'tests/waarm64-demonet.ts', 'tests/go-pinned.ts', 'tools/tailscale.ts'],
+    src: ['web/gateway.ts', 'web/net.ts', 'web/bytes.ts', 'web/local-net*.ts', 'web/demo-net*.ts', 'web/app/demo-view.ts', 'web/local-release.ts', 'web/ip6.ts', 'web/reach6.ts', 'web/tailscale*.ts', 'web/tailnet-worker.ts', 'web/tailcat*.ts', 'web/ts-*.ts', 'web/offload.ts', 'net/**', 'web/app/Net*.svelte', 'web/app/net-*.ts', 'web/app/network*.ts', 'web/app/Network*.svelte', 'web/app/guest-net.ts', 'web/app/Connection*.svelte', 'web/app/connection*.ts', 'web/app/areas/network*.ts', 'web/app/areas/lease-actions.ts', 'tests/net/**', 'tests/waarm64-net.ts', 'tests/waarm64-demonet.ts', 'tests/go-pinned.ts', 'tools/tailscale.ts'],
     heavy: ['tests/page-local.test.ts', 'tests/page-connections.test.ts', 'tests/net-path.test.ts'],
     cargo: ['ts'],
     push: ['ci-net.sh'],

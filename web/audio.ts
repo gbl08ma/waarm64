@@ -37,8 +37,10 @@ export class PageAudio {
   private capture?: number;
   /** The microphone: not asked for (`idle`), being asked for, open, turned off in the menu, or refused by the browser. */
   micState: 'idle' | 'asking' | 'on' | 'off' | 'denied' = 'idle';
-  /** Context changes, one at a time. */
-  private chain = Promise.resolve();
+  /** Playback's context changes, one at a time. */
+  private playChain = Promise.resolve();
+  /** The microphone's opens and closes, one at a time: apart from playback's, which never waits for the browser's prompt. */
+  private micChain = Promise.resolve();
   private latencyTimer?: ReturnType<typeof setInterval>;
   private muted = false;
   /** The volume level (the gain is its cube). */
@@ -58,7 +60,7 @@ export class PageAudio {
   attach() {
     this.port?.close();
     const channel = new MessageChannel();
-    this.queue(() => this.closeMic());
+    this.queueMic(() => this.closeMic());
     [this.ring, this.mic, this.port, this.playing, this.capture] = [
       newRing(),
       newRing(),
@@ -74,7 +76,7 @@ export class PageAudio {
       const m = e.data;
       if (m.type === 'start') {
         this.playing = true;
-        this.queue(() => this.play(m.rate));
+        this.queuePlay(() => this.play(m.rate));
       } else if (m.type === 'stop') {
         this.playing = false;
         if (m.ms !== undefined) this.spans.push(m.ms);
@@ -82,10 +84,10 @@ export class PageAudio {
         this.stats.push(m.stats);
       } else if (m.type === 'capture-start') {
         this.capture = m.rate;
-        this.queue(() => this.openMic());
+        this.queueMic(() => this.openMic());
       } else if (m.type === 'capture-stop') {
         this.capture = undefined;
-        this.queue(() => this.closeMic());
+        this.queueMic(() => this.closeMic());
       } else if (m.type === 'mixer') {
         this.apply(m.level, m.muted);
         this.onMixer(m.level, m.muted);
@@ -95,7 +97,7 @@ export class PageAudio {
     return { ring: this.ring, mic: this.mic, port: channel.port2, level: this.level, muted: this.muted };
   }
 
-  /** The machine stopped: its ring is no longer played. */
+  /** The machine stopped: its ring is no longer played, and the context is suspended (it would render silence). */
   detach() {
     this.port?.close();
     this.node?.disconnect();
@@ -107,13 +109,18 @@ export class PageAudio {
       false,
       undefined,
     ];
-    this.queue(() => this.closeMic());
+    clearInterval(this.latencyTimer);
+    this.latencyTimer = undefined;
+    this.queuePlay(async () => {
+      if (!this.ring) await this.ctx?.suspend(); // unless another machine started meanwhile (`play` resumes it)
+    });
+    this.queueMic(() => this.closeMic());
     this.onChange();
   }
 
-  /** A click or key on the machine (a user gesture): the context may run now. */
+  /** A click or key on the machine (a user gesture): the context may run now (while a stream plays). */
   gesture() {
-    if (this.ctx?.state === 'suspended')
+    if (this.playing && this.ctx?.state === 'suspended')
       void this.ctx.resume().then(
         () => this.onChange(),
         () => {},
@@ -131,7 +138,7 @@ export class PageAudio {
     if (enabled === this.micEnabled && raw === this.micRaw) return;
     [this.micEnabled, this.micRaw] = [enabled, raw];
     if (!enabled && this.micState === 'denied') this.micState = 'off';
-    this.queue(async () => {
+    this.queueMic(async () => {
       await this.closeMic();
       if (this.capture !== undefined) await this.openMic();
     });
@@ -185,8 +192,12 @@ export class PageAudio {
     return this.gain;
   }
 
-  private queue(f: () => Promise<void>) {
-    this.chain = this.chain.then(f).catch((e) => console.warn(`waarm64: no sound: ${e}`));
+  private queuePlay(f: () => Promise<void>) {
+    this.playChain = this.playChain.then(f).catch((e: unknown) => console.warn(`waarm64: no sound: ${String(e)}`));
+  }
+
+  private queueMic(f: () => Promise<void>) {
+    this.micChain = this.micChain.then(f).catch((e: unknown) => console.warn(`waarm64: no microphone: ${String(e)}`));
   }
 
   /** Opens the microphone for the recording guest, into the current microphone ring, unless it's turned off. */
@@ -223,7 +234,12 @@ export class PageAudio {
     // A context at the stream's rate: the browser resamples the microphone to it.
     const ctx = new AudioContext({ sampleRate: rate, latencyHint: 'interactive' });
     this.micCtx = ctx;
-    await ctx.audioWorklet.addModule(WORKLET);
+    try {
+      await ctx.audioWorklet.addModule(WORKLET);
+    } catch (e) {
+      if (this.micCtx === ctx) await this.closeMic(); // the tracks stop: the browser's indicator goes off
+      throw e;
+    }
     if (this.micCtx !== ctx) return; // closed meanwhile
     const node = new AudioWorkletNode(ctx, 'waarm64-mic', {
       numberOfInputs: 1,

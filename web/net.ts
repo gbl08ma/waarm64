@@ -7,14 +7,14 @@
 // MessagePort handed to the device (`{type: 'net', adapter: port}`): each
 // message on the port is one frame, an ArrayBuffer, in either direction.
 
+import { eq } from './bytes.ts';
+
 /** Frames out (`send`, which may keep the array); frames in through the `receive` it was made with. */
 export type NetAdapter = { send(frame: Uint8Array): void; close?(): void };
 
 /** The fake peer the loopback adapter plays: 10.0.2.2 at 52:55:0a:00:02:02. */
 export const PEER_IP = [10, 0, 2, 2];
 export const PEER_MAC = [0x52, 0x55, 0x0a, 0x00, 0x02, 0x02];
-
-const eq = (a: Uint8Array, at: number, b: number[]) => b.every((v, k) => a[at + k] === v);
 
 /** The Internet checksum of `b`. */
 export function checksum(b: Uint8Array) {

@@ -506,7 +506,9 @@ does the work (`ts_names_*`, JSON in and out: make, mine in slices of 256 tries,
 anchors; the commitment to ask; a finished proof's anchor with its header; a zone; a title's status; a server's better
 item judged), in a worker of its own for proof of work; no JavaScript crypto. It needs no running machine.
 
-- **At every page load** (web/app/main.ts starts it when a title is kept) and hourly while open, for each title, under
+- **At every page load** (web/app/main.ts starts it when a title is kept) and hourly while open (a pass that fails,
+  such as a store's error, is tried again 5 minutes later; one still running when the agent stops arms nothing; its
+  worker's failure or close refuses what waits on it), for each title, under
   **one Web Lock a title** (`waarm64-names:<identityKey>:<room hash>:<name>`, taken if free): collect finished anchors
   (a pending proof asked 5 minutes doubling to an hour), each with its block's header from an explorer; renew when the
   owning chain's last entry is `TERM / 2` old and no renewal waits; make the claim of a title that has none. An entry

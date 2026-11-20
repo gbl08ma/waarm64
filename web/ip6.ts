@@ -3,6 +3,33 @@
 // DHCPv6 messages the gateway sends.
 import { checksum } from './net.ts';
 
+/** IPv6 text (`2606:4700:4700::1111`) as 16 bytes, or undefined. */
+export function parse6(s: string): number[] | undefined {
+  const halves = s.split('::');
+  if (halves.length > 2) return undefined;
+  const groups = (h: string) => (h ? h.split(':') : []);
+  const [head, tail] = [groups(halves[0]), groups(halves[1] ?? '')];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (fill < (halves.length === 2 ? 1 : 0) || head.length + fill + tail.length !== 8) return undefined;
+  const all = [...head, ...Array<string>(fill).fill('0'), ...tail];
+  if (!all.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))) return undefined;
+  return all.flatMap((g) => [parseInt(g, 16) >> 8, parseInt(g, 16) & 255]);
+}
+
+/** 16 bytes as IPv6 text, the longest run of two or more zero groups as `::` (RFC 5952). */
+export const v6text = (b: ArrayLike<number>) => {
+  const groups = Array.from({ length: 8 }, (_, k) => ((b[2 * k] << 8) | b[2 * k + 1]).toString(16));
+  let best = [-1, 0];
+  for (let k = 0; k < 8;) {
+    let n = 0;
+    while (k + n < 8 && groups[k + n] === '0') n++;
+    if (n > best[1] && n > 1) best = [k, n];
+    k += n || 1;
+  }
+  if (best[0] < 0) return groups.join(':');
+  return `${groups.slice(0, best[0]).join(':')}::${groups.slice(best[0] + best[1]).join(':')}`;
+};
+
 /** The gateway's link-local address, from its MAC (modified EUI-64): the router the guest's RAs name. */
 export const linkLocal = (mac: ArrayLike<number>) => [
   0xfe,

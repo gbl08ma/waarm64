@@ -200,3 +200,47 @@ test('a tag given again after its cancel in the same batch is the new TD\'s', as
   assert.deepEqual(completions(), [[9, 1 << 8, 18]], 'the first one never reached the device; the second did');
   usb.close();
 });
+
+test('a detach while the device is still opening lets it go when it opens: the connector stays empty', async () => {
+  let opened = () => {};
+  let detached = 0;
+  registerUsbOpener('usb', () => new Promise<UsbDevice>((resolve) => {
+    opened = () => resolve({ speed: 'high', submit() {}, cancel() {}, reset() {}, detach() { detached++; } });
+  }));
+  const { usb, completions } = rig(false);
+  const attach = usb.attach(0, { api: 'usb', vendorId: 1, productId: 2 });
+  assert.equal(usb.detach(0, 'page').state, 'detached');
+  opened();
+  const m = await attach;
+  assert.equal(m.state, 'error');
+  assert.equal(detached, 1, 'the opened device is released');
+  assert.deepEqual(usb.attached(), [undefined, undefined, undefined, undefined]);
+  assert.deepEqual(completions(), [], 'the guest never saw it');
+  usb.close();
+});
+
+test('a device that completes its TD and then throws completes it once', async () => {
+  registerUsbOpener('usb', async () => ({
+    speed: 'high',
+    submit(_t, done: (r: UsbResult) => void) {
+      done({ code: 'success', actual: 0 });
+      throw new TypeError('a bug after');
+    },
+    cancel() {},
+    reset() {},
+    detach() {},
+  }));
+  const { usb, completions, post } = rig(false);
+  const err = console.error;
+  console.error = () => {};
+  try {
+    assert.equal((await usb.attach(0, { api: 'usb', vendorId: 1, productId: 2 })).state, 'attached');
+    completions();
+    post([5, 0 | 1 << 8, 4, 0 | 4 << 16, 0, 0, 0]);
+    usb.poll();
+    assert.deepEqual(completions(), [[5, 1 << 8, 0]], 'one completion, the device\'s');
+  } finally {
+    console.error = err;
+  }
+  usb.close();
+});

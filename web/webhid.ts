@@ -121,6 +121,8 @@ type InTd = { tag: number; length: number; done: (r: UsbResult) => void };
 export type WebHidOptions = {
   /** The serial number the guest sees: fixed per connector, so its udev names stay stable. */
   serial?: string;
+  /** Called once when it's detached, with its close (the opener waits for it before opening the device again). */
+  detached?: (closed: Promise<void>) => void;
 };
 
 export class WebHidDevice extends VirtualDevice {
@@ -130,10 +132,25 @@ export class WebHidDevice extends VirtualDevice {
   problems: UsbProblem[] = [];
   private tds: InTd[] = [];
   private reports: Uint8Array[] = [];
-  private last = new Map<string, Uint8Array>();
+  /** The last report of each kind by ID, framed (GET_REPORT's answer). */
+  private last: Record<ReportKind, Map<number, Uint8Array>> = {
+    input: new Map(),
+    output: new Map(),
+    feature: new Map(),
+  };
   private idle = 0;
   private outChain: Promise<unknown> = Promise.resolve();
-  private onInput = (e: WebHidInputReport) => this.input(e.reportId, bytesOf(e.data));
+  private readonly opts: WebHidOptions;
+  // Framed straight from WebHID's view: one copy per report (up to ~1000 a second).
+  private onInput = (e: WebHidInputReport) => {
+    const dv = e.data;
+    const view = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+    if (!this.layout.ids) return this.input(e.reportId, view.slice());
+    const r = new Uint8Array(dv.byteLength + 1);
+    r[0] = e.reportId;
+    r.set(view, 1);
+    this.input(e.reportId, r);
+  };
 
   constructor(dev: WebHidDeviceLike, layout: HidLayout, opts: WebHidOptions = {}) {
     super(layout.speed, {
@@ -145,6 +162,7 @@ export class WebHidDevice extends VirtualDevice {
     });
     this.dev = dev;
     this.layout = layout;
+    this.opts = opts;
     dev.addEventListener('inputreport', this.onInput);
   }
 
@@ -157,10 +175,10 @@ export class WebHidDevice extends VirtualDevice {
     return b;
   }
 
-  private input(id: number, data: Uint8Array) {
+  /** An input report, framed. */
+  private input(id: number, r: Uint8Array) {
     if (this.gone) return;
-    const r = this.framed(id, data);
-    this.last.set(`input:${id}`, r);
+    this.last.input.set(id, r);
     const td = this.tds.shift();
     if (td) return td.done(fit(r, td.length));
     this.reports.push(r);
@@ -189,7 +207,7 @@ export class WebHidDevice extends VirtualDevice {
         }
         const size = this.layout.sizes[kind].get(id);
         if (size === undefined) return undefined;
-        return this.last.get(`${kind}:${id}`) ?? this.framed(id, new Uint8Array(size));
+        return this.last[kind].get(id) ?? this.framed(id, new Uint8Array(size));
       }
       case SET_REPORT: {
         if (kind !== 'output' && kind !== 'feature') return undefined;
@@ -198,7 +216,7 @@ export class WebHidDevice extends VirtualDevice {
           kind === 'output'
             ? this.dev.sendReport(rid, payload as Uint8Array<ArrayBuffer>)
             : this.dev.sendFeatureReport(rid, payload as Uint8Array<ArrayBuffer>);
-        if (kind === 'output') this.last.set(`output:${rid}`, this.framed(rid, payload.slice()));
+        if (kind === 'output') this.last.output.set(rid, this.framed(rid, payload.slice()));
         return send.then(
           () => true,
           () => undefined,
@@ -230,7 +248,7 @@ export class WebHidDevice extends VirtualDevice {
       const [id, payload] = this.split(data);
       const p = this.outChain.then(() => this.dev.sendReport(id, payload as Uint8Array<ArrayBuffer>));
       this.outChain = p.catch(() => {});
-      this.last.set(`output:${id}`, this.framed(id, payload.slice()));
+      this.last.output.set(id, this.framed(id, payload.slice()));
       p.then(
         () => {
           if (!this.gone) done({ code: 'success', actual: data.length });
@@ -261,7 +279,8 @@ export class WebHidDevice extends VirtualDevice {
     this.tds = [];
     this.reports = [];
     this.dev.removeEventListener('inputreport', this.onInput);
-    this.dev.close().catch(() => {});
+    const closed = this.dev.close().catch(() => {});
+    this.opts.detached?.(closed);
   }
 }
 
@@ -294,10 +313,13 @@ export async function openWebHid(dev: WebHidDeviceLike, opts: WebHidOptions = {}
  * WebHID reports it disconnected.
  */
 export function webHidOpener(hid: WebHidLike) {
+  /** A detached device's close, still running: an open of it waits (an `opened` device would be closed under it). */
+  const closing = new WeakMap<WebHidDeviceLike, Promise<void>>();
   return async (id: UsbIdentity, ctx: { gone?: () => void; connector?: number } = {}): Promise<WebHidDevice> => {
     const devs = (await hid.getDevices()).map((d) => ({ d, vendorId: d.vendorId, productId: d.productId }));
     const dev = pickDevice(devs, { ...id, serialNumber: undefined })?.d;
     if (!dev) throw notFound();
+    await closing.get(dev);
     let fired = false;
     const onDisconnect = (e: { device: WebHidDeviceLike }) => {
       if (e.device !== dev || fired) return;
@@ -307,7 +329,13 @@ export function webHidOpener(hid: WebHidLike) {
     };
     hid.addEventListener('disconnect', onDisconnect);
     try {
-      return await openWebHid(dev, { serial: `waarm64-hid-${ctx.connector ?? 0}` });
+      return await openWebHid(dev, {
+        serial: `waarm64-hid-${ctx.connector ?? 0}`,
+        detached: (closed) => {
+          hid.removeEventListener('disconnect', onDisconnect);
+          closing.set(dev, closed);
+        },
+      });
     } catch (e) {
       hid.removeEventListener('disconnect', onDisconnect);
       throw e;

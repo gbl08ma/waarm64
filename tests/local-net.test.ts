@@ -135,7 +135,7 @@ test("the client's lease is its own guest's, not another's on the same helper", 
     send() {}
     close() {}
   } as unknown as typeof WebSocket;
-  const port = { postMessage() {} } as unknown as MessagePort;
+  const port = { postMessage() {}, close() {} } as unknown as MessagePort;
   try {
     const net = startLocalNet('ws://127.0.0.1:1/t', port);
     socket!.onopen!();
@@ -152,6 +152,34 @@ test("the client's lease is its own guest's, not another's on the same helper", 
     net.close();
   } finally {
     globalThis.WebSocket = realSocket;
+  }
+});
+
+test('a closed client closes its frame port: a late message from the socket reaches no one', async () => {
+  const realSocket = globalThis.WebSocket;
+  let socket: { onmessage?: (e: MessageEvent) => void; onopen?: () => void } | undefined;
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    protocol = LOCAL_SUBPROTOCOL;
+    constructor() { socket = this as never; }
+    send() {}
+    close() {}
+  } as unknown as typeof WebSocket;
+  const mc = new MessageChannel();
+  let got = 0;
+  mc.port2.onmessage = () => got++;
+  try {
+    const net = startLocalNet('ws://127.0.0.1:1/t', mc.port1);
+    socket!.onopen!();
+    net.close();
+    socket!.onmessage!({ data: frameMessage([ackFrame(GUEST, 2)]).buffer } as MessageEvent);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(got, 0);
+  } finally {
+    globalThis.WebSocket = realSocket;
+    mc.port1.close();
+    mc.port2.close();
   }
 });
 

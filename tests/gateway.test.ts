@@ -426,6 +426,27 @@ test('no longer the default router but still one for routes: advertised again a 
   g.close?.();
 });
 
+test('two lease changes within the second: one repeat each time, none after close', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const { g, out, setLease } = rig(ECHO_LEASE, undefined, { advertiseMs: 60_000 });
+  g.send(rs());
+  out.length = 0;
+  // Default router, then not (a repeat a second later), back, and not again before the second is up (a reconnect).
+  setLease(unreached6(ECHO_LEASE, TAILNET_ROUTES.v6));
+  t.mock.timers.tick(500);
+  setLease(ECHO_LEASE);
+  setLease(unreached6(ECHO_LEASE, TAILNET_ROUTES.v6));
+  assert.equal(out.length, 3);
+  t.mock.timers.tick(1000);
+  assert.equal(out.length, 4, 'one repeat: the earlier one was replaced');
+  setLease(ECHO_LEASE);
+  setLease(unreached6(ECHO_LEASE, TAILNET_ROUTES.v6));
+  const n = out.length;
+  g.close?.();
+  t.mock.timers.tick(1000);
+  assert.equal(out.length, n, 'nothing after close');
+});
+
 test('neighbor discovery: the gateway answers for its own link-local address only; probes are ignored', () => {
   const { g, out } = rig();
   const ns = (target: number[], src = GUEST_LL, hop = 255) => toGateway(icmp6(src, SOLICITED, 135, 0, [0, 0, 0, 0], [...target, 1, 1, ...GUEST_MAC], hop), multicastMac(SOLICITED));

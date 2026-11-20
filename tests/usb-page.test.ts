@@ -202,3 +202,40 @@ test('the record: new machines have the controller, a settings save keeps the de
   }
   store.close();
 });
+
+test("the ports: a detach while the attach is still opening settles it; the attach's timer doesn't free a later device", async () => {
+  const channel = `waarm64-usb-test-held-${process.pid}`;
+  const store = new Store(memoryRecords(), memoryFiles(), { channel });
+  const locks = new UsbLocks(store, () => 'Machine A', () => {});
+  const mc = new MessageChannel();
+  let held = true; // the worker's opener is slow: the first attach has no answer yet
+  mc.port2.onmessage = (e: MessageEvent<UsbToWorker>) => {
+    const m = e.data;
+    const say = (s: UsbFromWorker) => mc.port2.postMessage(s);
+    if (m.type === 'usb-attach') {
+      if (held) held = false;
+      else say({ type: 'usb-state', connector: m.connector, state: 'attached', device: m.device, speed: 'high' });
+    } else if (m.type === 'usb-detach') say({ type: 'usb-state', connector: m.connector, state: 'detached', reason: 'page' });
+  };
+  const ports = new UsbPorts(mc.port1, locks);
+  try {
+    const dev = { api: 'usb' as const, vendorId: 1, productId: 2, serialNumber: 'H1' };
+    let first = 'pending';
+    const attach = ports.attach(0, dev, 'h1', 200).then(() => (first = 'resolved'), () => (first = 'rejected'));
+    await new Promise((r) => setTimeout(r, 20));
+    await ports.detach(0);
+    await attach;
+    assert.equal(first, 'resolved', 'the detach settled the attach');
+    // The worker's late answer to the first attach (it let the device go), then the same device again.
+    mc.port2.postMessage({ type: 'usb-state', connector: 0, state: 'error', message: 'went away' } satisfies UsbFromWorker);
+    await new Promise((r) => setTimeout(r, 20));
+    await ports.attach(0, dev, 'h1');
+    await new Promise((r) => setTimeout(r, 300)); // past the first attach's 200 ms
+    assert.equal(ports.connectors[0]?.state, 'attached');
+  } finally {
+    ports.close();
+    locks.close();
+    store.close();
+    mc.port2.close();
+  }
+});

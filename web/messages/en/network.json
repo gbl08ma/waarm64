@@ -915,6 +915,10 @@
     "message": "The tailnet client didn't answer.",
     "note": "The cause under “Couldn't use that exit node” (Network menu) when the tailnet client didn't answer in 10 s. A detail line."
   },
+  "tailscale.workerFailed": {
+    "message": "The connection's client stopped working.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter: a tailnet, tailcat, room, local helper or demo network connection) when its client failed by itself, before or after it was running (an error it didn't catch); the error's text is shown under it. A detail line."
+  },
   "tailcat.pasteAddress": {
     "message": "Paste the address that `tailcat serve exit-node` printed. It starts with “tc”.",
     "note": "The Network wizard, the tailcat step: the error when going online through a computer is ticked and its address is empty. `tailcat serve exit-node` is a command, as it is."

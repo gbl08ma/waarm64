@@ -202,6 +202,35 @@ test('a device whose collections WebHID hides fails to open; the opener finds by
   await assert.rejects(webHidOpener(hid)({ api: 'hid', vendorId: 1, productId: 1 }), UsbOpenError);
 });
 
+test("the opener: a detach removes its disconnect listener, and an attach right after waits for the old close", async () => {
+  const dev = new FakeHid(pad);
+  let closing = () => {};
+  dev.close = () => new Promise<void>((resolve) => {
+    closing = () => {
+      dev.opened = false;
+      dev.log.push('close');
+      resolve();
+    };
+  });
+  const listeners = new Set<(e: { device: WebHidDeviceLike }) => void>();
+  const hid = {
+    getDevices: async () => [dev],
+    addEventListener: (_: 'disconnect', l: (e: { device: WebHidDeviceLike }) => void) => listeners.add(l),
+    removeEventListener: (_: 'disconnect', l: (e: { device: WebHidDeviceLike }) => void) => listeners.delete(l),
+  };
+  const open = webHidOpener(hid);
+  const id = { api: 'hid' as const, vendorId: 0x054c, productId: 0x0ce6 };
+  const d = await open(id);
+  assert.equal(listeners.size, 1);
+  d.detach();
+  assert.equal(listeners.size, 0, 'no listener left holding the old session');
+  const again = open(id);
+  await settle();
+  closing(); // the old close lands after the new attach asked
+  await again;
+  assert.ok(dev.opened, `the new session's device is open (${dev.log.join(', ')})`);
+});
+
 test('a protected collection\'s input and output reports are left out; a device with nothing else fails to open', async () => {
   const kb = (usage: number, o: Partial<HidCollectionInfo>) => col(1, usage, o);
   const leds = { reportId: 1, items: [bytesItem(u(8, 1), 1)] };

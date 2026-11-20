@@ -348,7 +348,7 @@ function findRun(items: HidReportItem[], run: HidReportItem[], from: number): nu
   return -1;
 }
 
-/** Parses a report descriptor into WebHID's shape, the way Chromium groups it (see the header). */
+/** Parses a report descriptor into WebHID's shape, the way Chromium groups it (see the header); the tests' (round trips, fixtures). */
 export function parseReportDescriptor(b: Uint8Array): HidCollectionInfo[] {
   const top: HidCollectionInfo[] = [];
   const stack: HidCollectionInfo[] = [];

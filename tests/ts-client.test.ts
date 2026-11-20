@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { RTC_BUFFER, rtcSend, TsClient, TsModule, type TsEvent } from '../web/ts-client.ts';
+import { DERP_BUFFER, RTC_BUFFER, rtcSend, socketSend, TsClient, TsModule, type TsEvent } from '../web/ts-client.ts';
 
 const WASM = 'target/net/ts.wasm';
 const skip = existsSync(WASM) ? false : `${WASM} isn't built (net/ts/build.sh)`;
@@ -114,4 +114,14 @@ test("a room's data channel drops a packet once its queue holds more than a few 
   assert.equal(rtcSend(dc, packet), true);
   dc.readyState = 'closing';
   assert.equal(rtcSend(dc, packet), false);
+});
+
+test("a relay's WebSocket drops the module's frames once it holds DERP_BUFFER unsent; a Nostr relay's text always goes", () => {
+  const ws = { bufferedAmount: 0, sent: 0, send(b: string | Uint8Array) { this.sent++; this.bufferedAmount += b.length; } };
+  const frame = new Uint8Array(1400);
+  for (let k = 0; k < 4000; k++) socketSend(ws, false, frame);
+  assert.ok(ws.bufferedAmount <= DERP_BUFFER + frame.length, `${ws.bufferedAmount} bytes queued`);
+  assert.equal(socketSend(ws, true, new TextEncoder().encode('["EVENT"]')), true, 'text is lossless');
+  ws.bufferedAmount = 0;
+  assert.equal(socketSend(ws, false, frame), true);
 });

@@ -7,9 +7,11 @@
 // the page's network controller drives either; what a tailcat server doesn't
 // have (exit nodes, logging out) is refused.
 import type { Lease } from './gateway.ts';
+import { hex } from './bytes.ts';
+import { v6text } from './ip6.ts';
 import { fromWire, msg, MsgError, type Msg } from './msg.ts';
 import type { Reach6Options } from './reach6.ts';
-import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
+import { workerFailures, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
 
 export type TailcatConfig = {
   /** The `tc…` address the server printed: a secret (it lets anyone who has it in). Empty: serve only. */
@@ -59,20 +61,6 @@ export function parseTailcatAddr(input: string): { addr: string } | { error: Msg
   return { addr: s };
 }
 
-const v6text = (b: number[]) => {
-  const groups = Array.from({ length: 8 }, (_, k) => ((b[2 * k] << 8) | b[2 * k + 1]).toString(16));
-  // The longest run of two or more zero groups becomes '::' (RFC 5952).
-  let best = [-1, 0];
-  for (let k = 0; k < 8;) {
-    let n = 0;
-    while (k + n < 8 && groups[k + n] === '0') n++;
-    if (n > best[1] && n > 1) best = [k, n];
-    k += n || 1;
-  }
-  if (best[0] < 0) return groups.join(':');
-  return `${groups.slice(0, best[0]).join(':')}::${groups.slice(best[0] + best[1]).join(':')}`;
-};
-
 /** The clients let in, as typed (`tailcat serve --allow`'s keys, `nodekey:` and 64 hex digits, separated by commas,
  * spaces or lines), or an error to show. Empty: any client with the address. */
 export function parseAllow(input: string): { allow: string[] } | { error: Msg } {
@@ -114,8 +102,7 @@ function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T
   });
 }
 
-const hex32 = () =>
-  Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
+const hex32 = () => hex(crypto.getRandomValues(new Uint8Array(32)));
 
 /** A new identity (an ephemeral connection's lives in memory: docs/networking/adapters.md §2.1). */
 export const newTailcatIdentity = (): TailcatIdentity => ({ key: hex32(), psk: hex32() });
@@ -125,11 +112,16 @@ export const newTailcatIdentity = (): TailcatIdentity => ({ key: hex32(), psk: h
  * (docs/networking/adapters.md §2.2); a connection's is under its own key.
  */
 export async function tailcatIdentity(key = 'served'): Promise<TailcatIdentity> {
-  const kept = await idb<TailcatIdentity | undefined>('readonly', (s) => s.get(key));
+  const get = () => idb<TailcatIdentity | undefined>('readonly', (s) => s.get(key));
+  const kept = await get();
   if (kept) return kept;
   const made = newTailcatIdentity();
-  await idb('readwrite', (s) => s.put(made, key));
-  return made;
+  // `add` refuses a key that's there (two starts at once made one each): then the one kept first is everyone's.
+  const added = await idb('readwrite', (s) => s.add(made, key)).then(
+    () => true,
+    () => false,
+  );
+  return added ? made : ((await get()) ?? Promise.reject(new Error(`no tailcat identity under ${key}`)));
 }
 
 /** Whether there's a kept identity under `key` (an address to forget). */
@@ -145,7 +137,9 @@ export const forgetTailcatIdentity = (key = 'served') => idb('readwrite', (s) =>
 /** The region of a DERP map with the fastest `/derp/probe` (what tailcat's own server picks by), or 0 if none answers. */
 export async function nearestRegion(derpMapURL: string, timeoutMs = 3000): Promise<number> {
   type Node = { HostName: string; DERPPort?: number; STUNOnly?: boolean };
-  const map = (await (await fetch(derpMapURL)).json()) as { Regions: Record<string, { Nodes?: Node[] }> };
+  const map = (await (await fetch(derpMapURL, { signal: AbortSignal.timeout(timeoutMs) })).json()) as {
+    Regions: Record<string, { Nodes?: Node[] }>;
+  };
   const timed = await Promise.all(
     Object.entries(map.Regions).map(async ([id, r]) => {
       const n = r.Nodes?.find((x) => !x.STUNOnly && x.HostName);
@@ -202,9 +196,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
   const t0 = performance.now();
   const timings: { loadMs?: number; runningMs?: number } = {};
   const running = new Promise<NetMap>((resolve, reject) => {
-    worker.onerror = (e) => reject(new Error(e.message));
-    worker.onmessage = (e: MessageEvent<FromTailscale>) => {
-      const m = e.data;
+    const heard = (m: FromTailscale) => {
       if (m.type === 'state') state = m.state;
       else if (m.type === 'netmap') netmap = m.netmap;
       else if (m.type === 'loaded') timings.loadMs = m.ms;
@@ -216,6 +208,8 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
       }
       onEvent(m);
     };
+    worker.onmessage = (e: MessageEvent<FromTailscale>) => heard(e.data);
+    workerFailures(worker, (error) => heard({ type: 'error', error }));
   });
   running.catch(() => {});
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;

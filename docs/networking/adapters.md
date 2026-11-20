@@ -111,7 +111,9 @@ The Home page's **Network tab** (§3.1) lists a machine's adapters with their MA
 **[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
 browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and
 does: [frontend.md](../frontend.md) "The Home page" and "Network". The live side is web/app/net-live.ts
-(`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error; a
+(`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error (a
+client's worker that fails by itself, before or after `Running`, is an error as one it posts: web/tailscale.ts
+`workerFailures`); a
 restart hands the new machine's port to the running client, matched by the adapter's id (so a client follows its
 adapter when they move), and Disconnect takes the port back. A connection attached to or detached from a machine
 running in another tab takes effect there at once: that tab hears the record change on the store's channel

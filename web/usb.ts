@@ -94,6 +94,10 @@ export type UsbInit = {
 type Plugged = { dev: UsbDevice; device: UsbIdentity | UsbVirtual };
 type Segment = { off: number; len: number; mem: number; imm?: Uint8Array };
 type InFlight = { connector: number; gen: number; into: boolean; segs: Segment[]; length: number };
+/** An attach whose opener is still running; a detach meanwhile cancels it. */
+type Opening = { done: Promise<void>; cancelled: boolean };
+/** At most this many records in a batch (each has three words). */
+const MAX_RECORDS = Math.ceil(RING_WORDS / 3);
 
 export class Usb {
   private init: UsbInit;
@@ -104,8 +108,16 @@ export class Usb {
   /** Completion records that found the core's ring full, oldest first. */
   private waiting: [number, number, number][] = [];
   /** Attaches waiting for an opener, by connector. */
-  private opening = new Map<number, Promise<void>>();
+  private opening = new Map<number, Opening>();
   private closed = false;
+  /** Views of memory 0 and of guest RAM, made again when a memory grows (a new buffer). */
+  private u32View?: Uint32Array;
+  private ramView: Ram = [];
+  /** The batch's records, read out of the core's ring: each one's w0, w1 and where its words start in `words`. */
+  private readonly words = new Uint32Array(RING_WORDS);
+  private readonly recW0 = new Uint32Array(MAX_RECORDS);
+  private readonly recW1 = new Uint32Array(MAX_RECORDS);
+  private readonly recAt = new Uint32Array(MAX_RECORDS);
 
   constructor(init: UsbInit) {
     this.init = init;
@@ -115,7 +127,9 @@ export class Usb {
   }
 
   private u32() {
-    return new Uint32Array(this.init.memory.buffer);
+    const buffer = this.init.memory.buffer;
+    if (this.u32View?.buffer !== buffer) this.u32View = new Uint32Array(buffer);
+    return this.u32View;
   }
 
   private post(m: UsbFromWorker) {
@@ -177,12 +191,13 @@ export class Usb {
         return fail(device.api === 'usb' ? new MsgError('usb:usb.noWebUsb') : new MsgError('usb:usb.noWebHid'));
       const gen = this.gens[connector];
       let resolve = () => {};
-      this.opening.set(
-        connector,
-        new Promise<void>((r) => {
+      const opening: Opening = {
+        done: new Promise<void>((r) => {
           resolve = r;
         }),
-      );
+        cancelled: false,
+      };
+      this.opening.set(connector, opening);
       try {
         dev = await open(device, { connector, gone: () => this.gone(connector, gen) });
       } catch (e) {
@@ -194,7 +209,7 @@ export class Usb {
         this.opening.delete(connector);
         resolve();
       }
-      if (this.closed || this.plugged[connector]) {
+      if (this.closed || this.plugged[connector] || opening.cancelled) {
         dev.detach();
         return fail(new MsgError('usb:usb.wentAway'));
       }
@@ -221,6 +236,8 @@ export class Usb {
   /** Unplugs `connector`: the device is released, the core fails its TDs, the guest sees a disconnect. */
   detach(connector: number, reason: 'unplugged' | 'guest' | 'page' = 'page'): UsbState {
     const p = this.plugged[connector];
+    const opening = this.opening.get(connector);
+    if (opening) opening.cancelled = true; // its device is let go of when it opens (the page has heard `detached`)
     if (p) {
       this.plugged[connector] = undefined;
       this.gens[connector] = (this.gens[connector] + 1) & 0xff;
@@ -246,65 +263,76 @@ export class Usb {
     const ring = at + REQ / 4;
     let tail = u32[ring + 1];
     const head = Atomics.load(u32, ring);
-    const word = () => u32[ring + 2 + (tail++ % RING_WORDS)];
-    const records: { w0: number; w1: number; words: number[] }[] = [];
+    const { words, recW0, recW1, recAt } = this;
+    // The records are copied out before the tail moves (the core may reuse their room after): into `words`, which
+    // holds a whole ring.
+    let count = 0;
+    let used = 0;
+    let cancels = false;
     while (tail !== head) {
-      const w0 = word();
-      const w1 = word();
-      const n = word();
-      records.push({ w0, w1, words: Array.from({ length: n }, word) });
+      recW0[count] = u32[ring + 2 + (tail++ % RING_WORDS)];
+      const w1 = u32[ring + 2 + (tail++ % RING_WORDS)];
+      recW1[count] = w1;
+      const n = u32[ring + 2 + (tail++ % RING_WORDS)];
+      recAt[count++] = used;
+      for (let k = 0; k < n; k++) words[used++] = u32[ring + 2 + (tail++ % RING_WORDS)];
+      if (w1 >>> 16 === REQ_CANCEL) cancels = true;
       tail >>>= 0;
     }
     Atomics.store(u32, ring + 1, tail);
     this.flushCompletions();
     // A TD cancelled before it was read never reaches its device: the guest may have its buffer back already.
     // From the end, so that a tag given again after its cancel (in the same batch) is the new TD's.
-    const skip = new Set<number>();
-    const cancelled = new Set<number>();
-    for (let i = records.length - 1; i >= 0; i--) {
-      const r = records[i];
-      if (r.w1 >>> 16 === REQ_CANCEL) r.words.slice(1, 1 + r.words[0]).forEach((t) => cancelled.add(t));
-      else if (r.w1 >>> 16 === REQ_TRANSFER && cancelled.delete(r.w0 & 0xff_ffff)) skip.add(i);
+    let skip: Set<number> | undefined;
+    if (cancels) {
+      skip = new Set<number>();
+      const cancelled = new Set<number>();
+      for (let i = count - 1; i >= 0; i--) {
+        const kind = recW1[i] >>> 16;
+        const w = recAt[i];
+        if (kind === REQ_CANCEL) for (let k = 0; k < words[w]; k++) cancelled.add(words[w + 1 + k]);
+        else if (kind === REQ_TRANSFER && cancelled.delete(recW0[i] & 0xff_ffff)) skip.add(i);
+      }
     }
-    for (const [i, { w0, w1, words }] of records.entries()) {
-      const [connector, dci, kind] = [w1 & 0xff, (w1 >>> 8) & 0xff, w1 >>> 16];
+    for (let i = 0; i < count; i++) {
+      const w0 = recW0[i];
+      const w1 = recW1[i];
+      const w = recAt[i];
+      const connector = w1 & 0xff;
+      const dci = (w1 >>> 8) & 0xff;
       const gen = w0 >>> 24;
       const p = this.plugged[connector];
       if (!p || gen !== this.gens[connector]) continue; // for a device that's gone
       const ep = dci === 1 ? 0 : (dci >> 1) | ((dci & 1) << 7);
-      // A device that throws fails its TD (or loses the call), not the device worker with its disks and network.
-      const guarded = (what: string, f: () => void) => {
-        try {
-          f();
-        } catch (e) {
-          console.error(`waarm64: USB device on connector ${connector}: ${what} threw`, e);
-        }
-      };
-      switch (kind) {
+      switch (w1 >>> 16) {
         case REQ_TRANSFER: {
+          if (skip?.has(i)) break;
           const tag = w0 & 0xff_ffff;
-          if (skip.has(i)) break;
           try {
-            this.transfer(p, connector, gen, tag, ep, words);
+            this.transfer(p, connector, gen, tag, ep, w);
           } catch (e) {
+            // Before the TD reached the device (its words don't parse, its buffer isn't in RAM).
             console.error(`waarm64: USB device on connector ${connector}: a transfer threw`, e);
-            if (this.inflight.has(tag)) this.done(tag, { code: 'error', actual: 0 });
-            else this.completion([tag | (gen << 24), CPL_DONE | (CODES.error << 8), 0]);
+            this.completion([tag | (gen << 24), CPL_DONE | (CODES.error << 8), 0]);
           }
           break;
         }
         case REQ_RESET:
-          guarded('reset', () => p.dev.reset());
+          this.guarded(connector, 'reset', () => p.dev.reset());
           break;
         case REQ_CANCEL: {
-          const tags = words.slice(1, 1 + words[0]).filter((t) => this.inflight.has(t));
-          for (const t of tags) this.inflight.delete(t);
-          if (tags.length) guarded('cancel', () => p.dev.cancel(ep, tags));
+          const tags: number[] = [];
+          for (let k = 0; k < words[w]; k++) {
+            const t = words[w + 1 + k];
+            if (this.inflight.delete(t)) tags.push(t);
+          }
+          if (tags.length) this.guarded(connector, 'cancel', () => p.dev.cancel(ep, tags));
           break;
         }
         case REQ_CONFIGURED: {
-          const eps = Array.from({ length: words[0] }, (_, i) => {
-            const [a, b] = [words[1 + 2 * i], words[2 + 2 * i]];
+          const eps = Array.from({ length: words[w] }, (_, i) => {
+            const a = words[w + 1 + 2 * i];
+            const b = words[w + 2 + 2 * i];
             const d = a & 0xff;
             return {
               ep: (d >> 1) | ((d & 1) << 7),
@@ -313,26 +341,40 @@ export class Usb {
               interval: (a >>> 16) & 0xff,
             };
           });
-          guarded('configured', () => p.dev.configured?.(eps));
+          this.guarded(connector, 'configured', () => p.dev.configured?.(eps));
           break;
         }
         case REQ_CLEAR_HALT:
-          guarded('clearHalt', () => p.dev.clearHalt?.(ep));
+          this.guarded(connector, 'clearHalt', () => p.dev.clearHalt?.(ep));
           break;
       }
     }
     // In realtime mode the core holds the command that cancelled until this has read the cancel (no
     // `done` writes into those TDs' buffers after it): the signal lets it complete.
-    if (!this.init.deterministic && records.some((r) => r.w1 >>> 16 === REQ_CANCEL)) this.init.kick();
+    if (!this.init.deterministic && cancels) this.init.kick();
   }
 
-  private transfer(p: Plugged, connector: number, gen: number, tag: number, ep: number, w: number[]) {
-    const [nseg, eptype, hasSetup] = [w[0] & 0xffff, (w[0] >>> 16) & 0xff, (w[0] >>> 24) & 1];
-    const length = w[1];
-    let k = 2;
+  /** A device that throws fails its TD (or loses the call), not the device worker with its disks and network. */
+  private guarded(connector: number, what: string, f: () => void) {
+    try {
+      f();
+    } catch (e) {
+      console.error(`waarm64: USB device on connector ${connector}: ${what} threw`, e);
+    }
+  }
+
+  /** A TD to its device: its words are `this.words` from `w` (the record's after its three). */
+  private transfer(p: Plugged, connector: number, gen: number, tag: number, ep: number, w: number) {
+    const words = this.words;
+    const w0 = words[w];
+    const nseg = w0 & 0xffff;
+    const eptype = (w0 >>> 16) & 0xff;
+    const length = words[w + 1];
+    let k = w + 2;
     let setup: UsbTransfer['setup'];
-    if (hasSetup) {
-      const [a, b] = [w[2], w[3]];
+    if ((w0 >>> 24) & 1) {
+      const a = words[w + 2];
+      const b = words[w + 3];
       setup = {
         requestType: a & 0xff,
         request: (a >>> 8) & 0xff,
@@ -340,15 +382,17 @@ export class Usb {
         index: b & 0xffff,
         length: b >>> 16,
       };
-      k = 4;
+      k = w + 4;
     }
     const segs: Segment[] = [];
     for (let i = 0; i < nseg; i++) {
-      const [off, len] = [w[k++], w[k++]];
+      const off = words[k++];
+      const len = words[k++];
       if (len & SEG_IMMEDIATE) {
         const bytes = new Uint8Array(8);
-        new DataView(bytes.buffer).setUint32(0, w[k++], true);
-        new DataView(bytes.buffer).setUint32(4, w[k++], true);
+        const v = new DataView(bytes.buffer);
+        v.setUint32(0, words[k++], true);
+        v.setUint32(4, words[k++], true);
         segs.push({ off: 0, len: len & 0xff, mem: 0, imm: bytes.subarray(0, len & 0xff) });
       } else segs.push({ off, len: len & 0xff_ffff, mem: (len >>> SEG_MEM_SHIFT) & 0xf });
     }
@@ -358,14 +402,26 @@ export class Usb {
     if (!into && length > 0) t.data = this.gather(segs, length);
     if (type === 'isoch') t.packets = [length];
     this.inflight.set(tag, { connector, gen, into, segs, length });
-    p.dev.submit(t, (r) => this.done(tag, r));
+    try {
+      p.dev.submit(t, (r) => this.done(tag, r));
+    } catch (e) {
+      // A device that completed the TD and then threw has completed it: `done` is once per TD.
+      console.error(`waarm64: USB device on connector ${connector}: a transfer threw`, e);
+      this.done(tag, { code: 'error', actual: 0 });
+    }
   }
 
+  /** Guest RAM's views, made again only when a memory grew. */
   private ram(): Ram {
-    return [
-      new Uint8Array(this.init.memory.buffer, this.init.ram, this.init.ramSize),
-      ...(this.init.spill ?? []).map((m) => new Uint8Array(m.buffer)),
-    ];
+    const v = this.ramView;
+    const spill = this.init.spill ?? [];
+    let stale = v[0]?.buffer !== this.init.memory.buffer;
+    for (let i = 0; i < spill.length && !stale; i++) stale = v[i + 1].buffer !== spill[i].buffer;
+    if (stale) {
+      this.ramView = [new Uint8Array(this.init.memory.buffer, this.init.ram, this.init.ramSize)];
+      for (const m of spill) this.ramView.push(new Uint8Array(m.buffer));
+    }
+    return this.ramView;
   }
 
   private gather(segs: Segment[], length: number) {
@@ -429,7 +485,7 @@ export class Usb {
 
   /** Waits for attaches whose device is still opening. */
   async settled() {
-    await Promise.all(this.opening.values());
+    await Promise.all(Array.from(this.opening.values(), (o) => o.done));
   }
 
   close() {

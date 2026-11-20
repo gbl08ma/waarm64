@@ -11,6 +11,7 @@
 //
 // N5's API: `NamesAgent.register`, `setZone`, `release`, `titles` (each title's state and dates), `pass`; the
 // connection's export (`exportNames`, `importNames`, carried by web/app/connections.ts with the node key).
+import { hex } from './bytes.ts';
 import { NamesError, type IdsAnswer, type NamesBackend, type PutAnswer } from './names-ops.ts';
 import type { FromNames, ToNames } from './names-worker.ts';
 import { openIdb, roomOf } from './room.ts';
@@ -181,7 +182,6 @@ export type NamesStore = {
   forget(identityKey: string): Promise<void>;
 };
 
-const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 const unhex = (s: string) =>
   Uint8Array.from({ length: s.length >> 1 }, (_, i) => parseInt(s.slice(2 * i, 2 * i + 2), 16));
 
@@ -307,6 +307,14 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
   const worker = new Worker(new URL('./names-worker.ts', import.meta.url), { type: 'module' });
   const waiting = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>();
   let n = 0;
+  let closed = false;
+  /** A worker that failed or closed answers nothing: what waits is refused (a pass chained on it would hang). */
+  const refuseAll = (e: Error) => {
+    for (const w of waiting.values()) w.reject(e);
+    waiting.clear();
+  };
+  worker.onerror = (e) => refuseAll(new Error(`names: the worker failed: ${e.message}`));
+  worker.onmessageerror = () => refuseAll(new Error("names: the worker's answer couldn't be read"));
   worker.onmessage = (e: MessageEvent<FromNames>) => {
     const m = e.data;
     const w = waiting.get(m.n);
@@ -322,6 +330,7 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
     | { type: 'ids'; link: string; first: number };
   const ask = <T>(m: Ask) =>
     new Promise<T>((resolve, reject) => {
+      if (closed) return reject(new Error('names: the worker is closed'));
       const k = ++n;
       waiting.set(k, { resolve: (v) => resolve(v as T), reject });
       post({ ...m, n: k });
@@ -331,7 +340,11 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
     publish: (link, items) =>
       ask<Record<string, PutAnswer[]>>({ type: 'publish', link, items }).then((r) => new Map(Object.entries(r))),
     ids: (link, first) => ask<IdsAnswer>({ type: 'ids', link, first }),
-    close: () => worker.terminate(),
+    close: () => {
+      closed = true;
+      worker.terminate();
+      refuseAll(new Error('names: the worker is closed'));
+    },
   };
 }
 
@@ -395,6 +408,8 @@ export class NamesAgent {
   private channel: BroadcastChannel | undefined;
   private passing: Promise<void> | undefined;
   private started: Promise<void> | undefined;
+  /** Starts and stops so far: a pass of an earlier start that ends after `stop` arms no timer. */
+  private runs = 0;
 
   constructor(o: AgentOptions) {
     this.store = o.store;
@@ -603,9 +618,13 @@ export class NamesAgent {
     };
     // One pass at a time in a page.
     const p = (this.passing ?? Promise.resolve()).then(run, run);
-    this.passing = p.finally(() => {
-      if (this.passing === p) this.passing = undefined;
-    });
+    // The chain's link settles either way (its failure is the caller's, through `p`).
+    const link: Promise<void> = p
+      .catch(() => undefined)
+      .then(() => {
+        if (this.passing === link) this.passing = undefined;
+      });
+    this.passing = link;
     return p;
   }
 
@@ -614,21 +633,30 @@ export class NamesAgent {
     if (this.started) return this.started;
     let first = () => {};
     this.started = new Promise<void>((resolve) => (first = resolve));
+    const run = ++this.runs;
     const next = async () => {
-      await this.pass().finally(first);
-      let wait = PASS_MS;
-      for (const t of await this.store.titles()) {
-        for (const c of Object.values(t.collect)) wait = Math.min(wait, c.next - Date.now());
-        if (t.remake) wait = Math.min(wait, t.remake.next - Date.now());
-        if (t.putAgain) wait = Math.min(wait, t.putAgain - Date.now());
+      // A pass or the titles' read that fails (the store's transient error) tries again later, not never.
+      let wait = RETRY_MS;
+      try {
+        await this.pass().finally(first);
+        wait = PASS_MS;
+        for (const t of await this.store.titles()) {
+          for (const c of Object.values(t.collect)) wait = Math.min(wait, c.next - Date.now());
+          if (t.remake) wait = Math.min(wait, t.remake.next - Date.now());
+          if (t.putAgain) wait = Math.min(wait, t.putAgain - Date.now());
+        }
+      } catch (err) {
+        this.log(`the pass failed: ${String(err)}`);
+      } finally {
+        if (run === this.runs) this.timer = setTimeout(() => void next(), Math.max(wait, 30_000));
       }
-      this.timer = setTimeout(() => void next(), Math.max(wait, 30_000));
     };
     void next();
     return this.started;
   }
 
   stop() {
+    this.runs++;
     this.started = undefined;
     clearTimeout(this.timer);
     this.timer = undefined;

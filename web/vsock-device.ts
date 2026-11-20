@@ -105,8 +105,11 @@ export type Header = {
 export function encodeHeader(h: Header): Uint8Array {
   const b = new Uint8Array(HDR);
   const v = new DataView(b.buffer);
-  v.setBigUint64(0, BigInt(h.srcCid), true);
-  v.setBigUint64(8, BigInt(h.dstCid), true);
+  // CIDs are 64-bit; as numbers (exact below 2^53), without a BigInt per packet.
+  v.setUint32(0, h.srcCid >>> 0, true);
+  v.setUint32(4, Math.floor(h.srcCid / 2 ** 32), true);
+  v.setUint32(8, h.dstCid >>> 0, true);
+  v.setUint32(12, Math.floor(h.dstCid / 2 ** 32), true);
   v.setUint32(16, h.srcPort, true);
   v.setUint32(20, h.dstPort, true);
   v.setUint32(24, h.len, true);
@@ -121,8 +124,8 @@ export function encodeHeader(h: Header): Uint8Array {
 export function decodeHeader(b: Uint8Array): Header {
   const v = new DataView(b.buffer, b.byteOffset, HDR);
   return {
-    srcCid: Number(v.getBigUint64(0, true)),
-    dstCid: Number(v.getBigUint64(8, true)),
+    srcCid: v.getUint32(0, true) + v.getUint32(4, true) * 2 ** 32,
+    dstCid: v.getUint32(8, true) + v.getUint32(12, true) * 2 ** 32,
     srcPort: v.getUint32(16, true),
     dstPort: v.getUint32(20, true),
     len: v.getUint32(24, true),
@@ -184,12 +187,10 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
       if (room <= 0) break;
       const chunk = take(agent.pending, room);
       agent.held -= chunk.length;
-      const packet = new Uint8Array(HDR + chunk.length);
-      packet.set(agentHeader(agent, OP.RW, chunk.length));
-      packet.set(chunk, HDR);
       agent.txCnt = (agent.txCnt + chunk.length) >>> 0;
       const r = rx.shift()!;
-      ctx.complete(r.w0, scatter(ctx.ram(), r.write, packet));
+      // The header and the chunk straight into the guest's buffer.
+      ctx.complete(r.w0, scatter(ctx.ram(), r.write, agentHeader(agent, OP.RW, chunk.length), chunk));
       taken += chunk.length;
     }
     if (taken && agent) toPage({ type: 'taken', n: taken, conn: agent.id });
@@ -269,8 +270,8 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
       case OP.RW:
         if (payload.length) {
           a.fwdCnt = (a.fwdCnt + payload.length) >>> 0;
-          const bytes = payload.slice();
-          toPage({ type: 'data', bytes, conn: a.id }, [bytes.buffer]);
+          // The packet's own buffer (gathered for it): transferred, its header before the view.
+          toPage({ type: 'data', bytes: payload, conn: a.id }, [payload.buffer as ArrayBuffer]);
           if ((a.fwdCnt - a.told) >>> 0 >= CREDIT_STEP) send(port, AGENT_PORT, OP.CREDIT_UPDATE);
         }
         break;
@@ -431,14 +432,26 @@ function gather(ram: Ram, segs: Segment[], len: number) {
   return out.subarray(0, k);
 }
 
-/** Writes `data` across the segments; the bytes written. */
-function scatter(ram: Ram, segs: Segment[], data: Uint8Array) {
+/** Writes `data`, then `more`, across the segments, as one run of bytes; the bytes written. */
+function scatter(ram: Ram, segs: Segment[], data: Uint8Array, more?: Uint8Array) {
   let k = 0;
+  let src = data;
+  let at = 0;
   for (const s of segs) {
-    if (k === data.length) break;
-    const n = Math.min(s.len, data.length - k);
-    bytes(ram, s).set(data.subarray(k, k + n));
-    k += n;
+    let off = 0;
+    while (off < s.len) {
+      if (at === src.length) {
+        if (!more || src === more) return k;
+        src = more;
+        at = 0;
+        continue;
+      }
+      const n = Math.min(s.len - off, src.length - at);
+      ram[s.mem].set(src.subarray(at, at + n), s.off + off);
+      off += n;
+      at += n;
+      k += n;
+    }
   }
   return k;
 }

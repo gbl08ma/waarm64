@@ -8,7 +8,7 @@
 // "The local helper"). It runs in a worker of its own (web/local-net-worker.ts: off the page's main thread), behind the tailnet clients' handle
 // (`startLocal`), so the page's network drives it as it drives them.
 import { fromWire, msg, MsgError, type Msg } from './msg.ts';
-import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
+import { workerFailures, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
 
 /** The framing's name and version, checked by both ends (waarm64-net `Subprotocol`). */
 export const LOCAL_SUBPROTOCOL = 'waarm64-net.v1';
@@ -252,6 +252,7 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
     lease: () => lease,
     close() {
       frames.onmessage = null;
+      frames.close(); // the socket's late messages post into nothing
       ws.close();
     },
   };
@@ -304,9 +305,7 @@ export function framedClient(
   const t0 = performance.now();
   const timings: { loadMs?: number; runningMs?: number } = {};
   const running = new Promise<NetMap>((resolve, reject) => {
-    worker.onerror = (e) => reject(new Error(e.message));
-    worker.onmessage = (e: MessageEvent<FromTailscale>) => {
-      const m = e.data;
+    const heard = (m: FromTailscale) => {
       if (m.type === 'state') {
         state = m.state;
         if (state === 'Running') {
@@ -318,6 +317,8 @@ export function framedClient(
       else if (m.type === 'error') reject(fromWire(m.error));
       onEvent(m);
     };
+    worker.onmessage = (e: MessageEvent<FromTailscale>) => heard(e.data);
+    workerFailures(worker, (error) => heard({ type: 'error', error }));
   });
   running.catch(() => {});
   worker.postMessage({ type: 'start', url: config.url, ip: config.ip } satisfies ToLocal, [config.ip]);

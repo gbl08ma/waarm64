@@ -270,6 +270,28 @@ test("vsock: the agent's connection: opened, its bytes to the page, the page's t
   assert.equal(g.done.length, before);
 });
 
+test("vsock: the page's bytes into a receive buffer of several segments: the header and payload as one run across them", async () => {
+  const g = guest();
+  const d = agentDevice(g, 1);
+  d.dev.request(g.packet(2002, OP.REQUEST, { to: AGENT_PORT }));
+  await d.settle(1);
+  // Three segments, out of RAM order: the header ends inside the second, the payload runs on into the third.
+  const [a, b, c] = [{ off: 300_000, len: 20, mem: 0 }, { off: 200_000, len: 30, mem: 0 }, { off: 400_000, len: 4000, mem: 0 }];
+  const rx = { w0: 9999, queue: RX, read: [], write: [b, a, c] };
+  d.dev.request(rx);
+  const payload = Uint8Array.from({ length: 100 }, (_, i) => i + 1);
+  await d.page({ type: 'data', bytes: payload, conn: 1 });
+  const done = g.done.find((x) => x.w0 === 9999);
+  assert.equal(done?.len, HDR + 100);
+  const run = new Uint8Array(HDR + 100);
+  run.set(g.ram.subarray(b.off, b.off + 30), 0);
+  run.set(g.ram.subarray(a.off, a.off + 20), 30);
+  run.set(g.ram.subarray(c.off, c.off + HDR + 100 - 50), 50);
+  const h = decodeHeader(run);
+  assert.deepEqual([h.op, h.len, h.srcCid, h.dstCid], [OP.RW, 100, HOST_CID, GUEST_CID]);
+  assert.equal(Buffer.compare(run.subarray(HDR), payload), 0);
+});
+
 test("vsock: the agent's connection: the page's bytes as the guest's credit and buffers allow (nothing asked when it runs out); the device's credit given back as it takes", async () => {
   const g = guest();
   const d = agentDevice(g, 4);

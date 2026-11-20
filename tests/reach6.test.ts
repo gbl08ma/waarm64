@@ -2,7 +2,8 @@
 // the guest's packets, when it counts IPv6 as out and back, and the lease it makes then. On mocked timers.
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { parse6, PROBE_TARGETS, reach6, unreached6, type Reach6Options } from '../web/reach6.ts';
+import { parse6 } from '../web/ip6.ts';
+import { PROBE_TARGETS, reach6, unreached6, type Reach6Options } from '../web/reach6.ts';
 import { sum6, udp6 } from '../web/ip6.ts';
 import { ECHO_LEASE, TAILCAT_ROUTES, TAILNET_ROUTES } from '../web/gateway.ts';
 

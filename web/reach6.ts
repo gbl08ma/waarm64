@@ -6,7 +6,8 @@
 // resolvers (`unreached6`), so the guest's IPv6 to the internet fails at once and its clients use IPv4. The prober
 // lives in the backend's worker, between the backend's packets and the guest's: it sends as the guest and takes its
 // answers out of the packets to the guest. Any backend that carries the guest's IPv6 can use it.
-import { udp6 } from './ip6.ts';
+import { eq } from './bytes.ts';
+import { parse6, udp6 } from './ip6.ts';
 import type { Lease, Prefix } from './gateway.ts';
 
 export type Reach6Options = {
@@ -40,19 +41,6 @@ export type Reach6 = {
  */
 export const PROBE_TARGETS = ['2606:4700:4700::1111', '2001:4860:4860::8888', '2620:fe::fe'];
 
-/** IPv6 text (`2606:4700:4700::1111`) as 16 bytes, or undefined. */
-export function parse6(s: string): number[] | undefined {
-  const halves = s.split('::');
-  if (halves.length > 2) return undefined;
-  const groups = (h: string) => (h ? h.split(':') : []);
-  const [head, tail] = [groups(halves[0]), groups(halves[1] ?? '')];
-  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
-  if (fill < (halves.length === 2 ? 1 : 0) || head.length + fill + tail.length !== 8) return undefined;
-  const all = [...head, ...Array(fill).fill('0'), ...tail];
-  if (!all.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))) return undefined;
-  return all.flatMap((g) => [parseInt(g, 16) >> 8, parseInt(g, 16) & 255]);
-}
-
 /**
  * The lease for a guest whose IPv6 doesn't reach the internet: the address stays (the backend's own network, e.g. a
  * tailnet's or tailcat's clients), routed through `keep` only (unless the lease already has IPv6 routes), with no IPv6
@@ -60,8 +48,6 @@ export function parse6(s: string): number[] | undefined {
  */
 export const unreached6 = (lease: Lease | null, keep: Prefix[]): Lease | null =>
   !lease?.address6 ? lease : { ...lease, dns6: [], routes: { ...lease.routes, v6: lease.routes?.v6 ?? keep } };
-
-const eq = (a: Uint8Array, at: number, b: number[]) => b.every((v, k) => a[at + k] === v);
 
 /**
  * A prober: `send` puts a packet on the backend as if the guest had sent it, and `onChange` hears when the answer to

@@ -450,6 +450,28 @@ test('the opener finds the device by vendor, product and serial, or by index amo
   await assert.rejects(webUsbOpener(usb)({ api: 'usb', vendorId: 1, productId: 2 }), UsbOpenError);
 });
 
+test("the opener: a detach removes its disconnect listener, and an attach right after waits for the old close", async () => {
+  const dev = new FakeUsb(fx('FTDI'));
+  const listeners = new Set<(e: { device: WebUsbDeviceLike }) => void>();
+  const usb = {
+    getDevices: async () => [dev],
+    addEventListener: (_: 'disconnect', l: (e: { device: WebUsbDeviceLike }) => void) => listeners.add(l),
+    removeEventListener: (_: 'disconnect', l: (e: { device: WebUsbDeviceLike }) => void) => listeners.delete(l),
+  };
+  const open = webUsbOpener(usb);
+  const id = { api: 'usb' as const, vendorId: 0x0403, productId: 0x6001 };
+  const p = await open(id);
+  assert.equal(listeners.size, 1);
+  p.detach();
+  assert.equal(listeners.size, 0, 'no listener left holding the old session');
+  const q = await open(id); // moved to another connector at once
+  await settle();
+  assert.ok(dev.opened, `the new session's device is open (${dev.log.join(', ')})`);
+  assert.ok(q.claimed.size > 0 && dev.claimedSet.size === q.claimed.size, 'its interfaces are claimed');
+  q.detach();
+  await settle();
+});
+
 test('strings outside the cache pass through (a Microsoft OS string, an index only a class descriptor names)', async () => {
   const { dev, p } = await open(fx('FTDI'));
   const r = await control(p, getDesc(3, 0xee, 18, 0));

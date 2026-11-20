@@ -313,7 +313,8 @@ global public room on its machine's second adapter, so visitors' demo machines c
   next packet either way (a `bye` for an open channel isn't a failure: no backoff); a full channel drops the packet:
   one holding more than 64 KiB unsent (`bufferedAmount`; `RTC_BUFFER`, `rtcSend` in `web/ts-client.ts`), so the loss is
   at the path's rate and not seconds of queue in front of every flow and keepalive (Chromium queues megabytes before
-  `send` throws, which drops it too). A peer's new connection comes at most every 2 s (`RTC_GAP`: an
+  `send` throws, which drops it too). The relay's WebSocket has the same bound at 256 KiB (`DERP_BUFFER`,
+  `socketSend`), for every client of the module (tailnets and tailcat too); a Nostr relay's text is never dropped. A peer's new connection comes at most every 2 s (`RTC_GAP`: an
   answerer ignores a newer attempt sooner, so a member's signalling can't make the page set up connections as fast as
   it sends; an offerer, after a restart's epoch, waits), and our own offers, all peers', at most 4 a second. Relay only
   (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take;

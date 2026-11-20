@@ -11,6 +11,7 @@
 // DHCPv6 for the node's address, neighbor discovery for the gateway itself, ICMPv6
 // echo. It runs in the device worker, so a synchronous backend keeps deterministic
 // mode exact (the timer behind periodic advertisements exists only when asked for).
+import { eq } from './bytes.ts';
 import { batchSender, checksum, packetsOf, type NetAdapter } from './net.ts';
 import {
   ALL_DHCP_AGENTS,
@@ -135,7 +136,6 @@ export const gatewayOf = (n: number): { mac: number[]; ip: number[] } => ({
 });
 
 const BCAST = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-const eq = (a: ArrayLike<number>, at: number, b: ArrayLike<number>) => Array.from(b).every((v, k) => a[at + k] === v);
 const isZero = (a: Uint8Array, at: number, n: number) => a.subarray(at, at + n).every((v) => v === 0);
 const be16 = (b: Uint8Array, at: number) => (b[at] << 8) | b[at + 1];
 
@@ -275,6 +275,7 @@ export function gateway(
   let advertised = false;
   let defaultRouter = false;
   let again: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
   /** The IPv4 address the guest was last given (acknowledged). */
   let given: number[] | undefined;
 
@@ -304,6 +305,7 @@ export function gateway(
 
   /** A router advertisement to all nodes: the gateway is the default router while the lease has an IPv6 address, and isn't once it hasn't. */
   function advertise() {
+    if (closed) return;
     const lease = backend.lease();
     const on = !!lease?.address6;
     if (!on && !advertised) return;
@@ -331,7 +333,10 @@ export function gateway(
     }
     // No longer the default router but still one for `routes`: systemd-networkd drops the default route's nexthop,
     // which the routes this advertisement gave share, so they went too (back ~11 s later). Once more, a second on.
-    if (defaultRouter && !lifetime && routes.length && opts.advertiseMs) again = setTimeout(advertise, 1000);
+    if (defaultRouter && !lifetime && routes.length && opts.advertiseMs) {
+      clearTimeout(again);
+      again = setTimeout(advertise, 1000);
+    }
     defaultRouter = lifetime > 0;
   }
   const timer = opts.advertiseMs ? setInterval(advertise, opts.advertiseMs) : undefined;
@@ -546,7 +551,7 @@ export function gateway(
   return {
     send(f) {
       if (f.length < 14) return;
-      if ((f[6] & 1) === 0) guestMac = f.slice(6, 12);
+      if ((f[6] & 1) === 0 && !(guestMac && eq(f, 6, guestMac))) guestMac = f.slice(6, 12);
       const type = be16(f, 12);
       if (type === 0x86dd) return send6(f);
       if (type === 0x0806) {
@@ -595,6 +600,7 @@ export function gateway(
       backend.send(out);
     },
     close: () => {
+      closed = true;
       if (timer) clearInterval(timer);
       clearTimeout(again);
       backend.close?.();

@@ -48,7 +48,9 @@ class SndProcessor extends AudioWorkletProcessor {
   }
 
   process(_inputs: Float32Array[][], outputs: Float32Array[][]) {
-    const [left, right] = outputs[0];
+    const out = outputs[0];
+    const left = out[0];
+    const right = out[1] as Float32Array | undefined;
     const h = this.h;
     if (!Atomics.load(h, RUN) || Atomics.load(h, RATE) !== sampleRate) {
       left.fill(0);
@@ -56,7 +58,12 @@ class SndProcessor extends AudioWorkletProcessor {
       return true;
     }
     const epoch = Atomics.load(h, EPOCH);
-    if (epoch !== this.epoch) [this.epoch, this.played, this.dry, this.gap] = [epoch, false, false, 0];
+    if (epoch !== this.epoch) {
+      this.epoch = epoch;
+      this.played = false;
+      this.dry = false;
+      this.gap = 0;
+    }
     const r = Atomics.load(h, READ);
     let n = Math.min(QUANTUM, (Atomics.load(h, WRITE) - r) >>> 0);
     if (n > 0) {
@@ -74,7 +81,8 @@ class SndProcessor extends AudioWorkletProcessor {
     if (n > 0 && this.dry) {
       Atomics.add(h, UNDERRUNS, 1);
       Atomics.add(h, GAP_FRAMES, this.gap);
-      [this.dry, this.gap] = [false, 0];
+      this.dry = false;
+      this.gap = 0;
     }
     if (n < QUANTUM && (this.played || this.dry)) {
       this.dry = true;

@@ -579,44 +579,67 @@ export function encodeFrame(type: number, payload: Uint8Array = new Uint8Array(0
  * the link does with each new connection (it resets one out of step: the agent connects again).
  */
 export class FrameReader {
+  /** Bytes of a frame not yet complete: `buf[start..end)`, a buffer the reader owns (grown to the largest frame). */
   private buf = new Uint8Array(0);
+  private start = 0;
+  private end = 0;
   broken = false;
 
-  /** The frames `bytes` completes. */
+  /** The frames `bytes` completes: each piece is copied once at most (a frame cut across pieces is gathered here). */
   push(bytes: Uint8Array): Frame[] {
     if (this.broken) return [];
-    const all = this.buf.length ? concat(this.buf, bytes) : bytes;
     const out: Frame[] = [];
-    let at = 0;
-    while (all.length - at >= LEN) {
-      const len = new DataView(all.buffer, all.byteOffset + at, LEN).getUint32(0, true);
+    // Nothing waiting: the frames are cut from `bytes` itself, and only their incomplete tail is kept.
+    const own = this.end > this.start;
+    if (own) this.append(bytes);
+    const src = own ? this.buf : bytes;
+    const lim = own ? this.end : bytes.length;
+    let at = own ? this.start : 0;
+    while (lim - at >= LEN) {
+      const len = (src[at] | (src[at + 1] << 8) | (src[at + 2] << 16) | (src[at + 3] << 24)) >>> 0;
       if (len < 1 || len > MAX_PAYLOAD + 1) {
         this.broken = true;
-        this.buf = new Uint8Array(0);
+        this.clear();
         return out;
       }
-      if (all.length - at < LEN + len) break;
-      out.push({ type: all[at + LEN], payload: all.slice(at + LEN + 1, at + LEN + len) });
+      if (lim - at < LEN + len) break;
+      out.push({ type: src[at + LEN], payload: src.slice(at + LEN + 1, at + LEN + len) });
       at += LEN + len;
     }
-    this.buf = all.slice(at);
+    if (own) {
+      this.start = at;
+      if (at === this.end) this.start = this.end = 0;
+    } else if (at < lim) this.append(bytes.subarray(at));
     return out;
+  }
+
+  private append(b: Uint8Array) {
+    const kept = this.end - this.start;
+    if (this.end + b.length > this.buf.length) {
+      if (kept + b.length > this.buf.length) {
+        const into = new Uint8Array(Math.max(kept + b.length, 2 * this.buf.length));
+        into.set(this.buf.subarray(this.start, this.end));
+        this.buf = into;
+      } else this.buf.copyWithin(0, this.start, this.end);
+      this.start = 0;
+      this.end = kept;
+    }
+    this.buf.set(b, this.end);
+    this.end += b.length;
   }
 
   /** Bytes of a frame not yet complete. */
   get pending() {
-    return this.buf.length;
+    return this.end - this.start;
   }
 
   reset() {
-    this.buf = new Uint8Array(0);
+    this.clear();
     this.broken = false;
   }
-}
 
-function concat(a: Uint8Array, b: Uint8Array) {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a);
-  out.set(b, a.length);
-  return out;
+  private clear() {
+    this.buf = new Uint8Array(0);
+    this.start = this.end = 0;
+  }
 }

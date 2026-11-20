@@ -285,6 +285,26 @@ export function rtcSend(
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+/**
+ * The most bytes a relay's (DERP's) WebSocket holds unsent before the module's frames on it are dropped, as
+ * RTC_BUFFER bounds a data channel: Chromium queues a socket's sends without limit, so a guest's bulk upload through
+ * the relay would put seconds of queue in front of its interactive traffic (the guest's TCP recovers from the loss).
+ * Larger than RTC_BUFFER: the relay is the default path, and its TCP below carries more in flight.
+ */
+export const DERP_BUFFER = 256 * 1024;
+
+/** The module's message on an open socket (`SocketSend`): text (a room's Nostr relays) always goes, binary unless full. */
+export function socketSend(
+  ws: { readonly bufferedAmount: number; send(b: string | Uint8Array<ArrayBuffer>): void },
+  text: boolean,
+  b: Uint8Array<ArrayBuffer>,
+): boolean {
+  if (text) ws.send(decoder.decode(b));
+  else if (ws.bufferedAmount > DERP_BUFFER) return false;
+  else ws.send(b);
+  return true;
+}
+
 /** One instance of the module; it holds any number of clients. */
 export class TsModule {
   readonly x: Exports;
@@ -485,7 +505,14 @@ export class TsClient {
   private pump() {
     const { x } = this.m;
     for (let n = x.ts_poll(this.h); n > 0; n = x.ts_poll(this.h)) {
-      const a = this.m.buf(n);
+      const ptr = x.ts_buf();
+      const mem = new Uint8Array(x.memory.buffer);
+      // A packet for the guest (per packet): copied once, to an exact-sized buffer that the IP port transfers as it is.
+      if (mem[ptr] === 5) {
+        this.on.packet(mem.slice(ptr + 5, ptr + n));
+        continue;
+      }
+      const a = mem.slice(ptr, ptr + n);
       const id = a[1] | (a[2] << 8) | (a[3] << 16) | (a[4] << 24);
       const rest = a.subarray(5);
       switch (a[0]) {
@@ -499,7 +526,7 @@ export class TsClient {
           // Until it opens; a socket that never does holds at most SOCKET_QUEUE messages.
           if (s?.queue) {
             if (s.queue.length < SOCKET_QUEUE) s.queue.push(rest);
-          } else if (s?.ws.readyState === WebSocket.OPEN) s.ws.send(s.text ? decoder.decode(rest) : rest);
+          } else if (s?.ws.readyState === WebSocket.OPEN) socketSend(s.ws, s.text, rest);
           break;
         }
         case 3:
@@ -508,9 +535,6 @@ export class TsClient {
           break;
         case 4:
           this.fetch(id, decoder.decode(rest));
-          break;
-        case 5:
-          this.on.packet(rest);
           break;
         case 6:
           this.on.event(JSON.parse(decoder.decode(rest)));

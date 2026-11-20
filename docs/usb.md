@@ -338,6 +338,9 @@ that don't fit the request ring wait in order, and are posted after the next com
     device worker registers WebUSB's and WebHID's when it has `navigator.usb` and `navigator.hid`.
   - An opener gets `{connector, gone}`. `gone()` detaches the connector (`usb-state` detached,
     `unplugged`).
+  - A `usb-detach` while the device is still opening answers detached at once; the device is let go of when it
+    opens (its `usb-attach` then answers error), so the guest never sees it. The page settles the attach waiting on
+    that connector when it sends the detach.
   - Real devices are refused in deterministic mode.
 - **The page's messages** come on the port in `BootOptions.usb.port`, whenever they come, before the
   guest's driver runs too:
@@ -554,7 +557,8 @@ would lose a serial port's late bytes (the `acm` rig test relies on carry-over).
 `device.reset()`, and claims them again (see "The usbhost guest" for why the release comes first). The
 host keeps the device's configuration across the reset. A reset that fails, which on some hosts means WebUSB lost the device
 when it re-enumerated, calls `gone`. **Detach** completes nothing more, then releases the interfaces and
-closes the device.
+closes the device; the opener drops its `disconnect` listener and waits for that close before it opens the same
+device again (an attach right after, on this connector or another, would find it still open and be closed under it).
 
 **Tests:** `tests/usb-webusb.test.ts` runs the backend against a scripted fake (`tests/usb/fake-webusb.ts`).
 The fake answers GET_DESCRIPTOR from raw descriptors, refuses protected classes as Chromium does, refuses
@@ -645,7 +649,7 @@ WebHID's are.
   used. With no TD waiting, it waits in a queue of 32, which drops the oldest.
 - **OUT TDs:** an OUT TD is one `sendReport` (the ID is its first byte), in order. A rejected one stalls.
 - **Cancel** removes waiting IN TDs. **Reset** drops the queued reports and TDs. **Detach** stops the
-  reports and closes the device.
+  reports and closes the device; as WebUSB's, the opener drops its listener and waits for the close before opening it again.
 
 **Tests:**
 - `tests/usb-hid-descriptor.test.ts`: round trips of hand-built collections (a game pad with report IDs

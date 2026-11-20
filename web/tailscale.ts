@@ -6,7 +6,8 @@
 // changes, so the guest's DHCP gets the address the client reports.
 import type { DemoNotice, DemoStatus } from './demo-net.ts';
 import type { Lease, Routes } from './gateway.ts';
-import { fromWire, MsgError, type WireError } from './msg.ts';
+import { fromWire, MsgError, toWire, type WireError } from './msg.ts';
+import { parse6 } from './ip6.ts';
 import type { Reach6Options } from './reach6.ts';
 
 /** What the client reports of the node's network map (net/ts/src/netmap.rs). */
@@ -130,22 +131,6 @@ export type FromTailscale =
   /** The client failed: why, as web/msg.ts `toWire` posts it (`fromWire` takes it back). */
   | { type: 'error'; error: WireError };
 
-const ip6 = (s: string) => {
-  if (!s.includes(':') || !/^[0-9a-f:]+$/i.test(s)) return undefined;
-  const [head, tail, extra] = s.split('::');
-  if (extra !== undefined) return undefined;
-  const groups = (h: string) => (h ? h.split(':') : []);
-  const [a, b] = [groups(head), groups(tail ?? '')];
-  if (tail === undefined ? a.length !== 8 : a.length + b.length > 7) return undefined;
-  if (![...a, ...b].every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return undefined;
-  const all = tail === undefined ? a : [...a, ...Array(8 - a.length - b.length).fill('0'), ...b];
-  const bytes = all.flatMap((g) => {
-    const n = parseInt(g, 16);
-    return [n >> 8, n & 255];
-  });
-  return bytes;
-};
-
 const ip4 = (s: string) => {
   const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(s);
   return m ? m.slice(1).map(Number) : undefined;
@@ -163,7 +148,7 @@ export function subnetsOf(nm: NetMap | undefined): Required<Pick<Routes, 'v4' | 
   for (const r of nm.peers.flatMap((p) => p.routes ?? [])) {
     const [a, len] = r.split('/');
     const v4 = ip4(a);
-    const v6 = v4 ? undefined : ip6(a);
+    const v6 = v4 ? undefined : parse6(a);
     if (v4) out.v4.push([v4, Number(len)]);
     else if (v6) out.v6.push([v6, Number(len)]);
   }
@@ -174,8 +159,8 @@ export function leaseFrom(nm: NetMap): Lease | null {
   const address = nm.addresses.map((a) => ip4(a.replace(/\/\d+$/, ''))).find((a) => a);
   if (!address) return null;
   const dns = (nm.dns ?? []).map(ip4).filter((a): a is number[] => !!a);
-  const address6 = nm.addresses.map((a) => ip6(a.replace(/\/\d+$/, ''))).find((a) => a);
-  const dns6 = (nm.dns ?? []).map(ip6).filter((a): a is number[] => !!a);
+  const address6 = nm.addresses.map((a) => parse6(a.replace(/\/\d+$/, ''))).find((a) => a);
+  const dns6 = (nm.dns ?? []).map((d) => parse6(d)).filter((a): a is number[] => !!a);
   return { address, ...(address6 ? { address6, dns6 } : {}), mtu: nm.mtu, dns, domains: nm.domains ?? [] };
 }
 
@@ -215,6 +200,16 @@ export const tailscaleBuilt = (wasm = new URL('../target/net/ts.wasm', import.me
     () => false,
   );
 
+/**
+ * Routes a network client's worker failing by itself (an uncaught exception, a message that can't be read) to `failed`,
+ * as a posted `error` (docs/host-code.md §2.2): after `Running` too, when the start's promise has settled.
+ */
+export function workerFailures(worker: Worker, failed: (error: WireError) => void) {
+  const fail = (cause: Error) => failed(toWire(new MsgError('network:tailscale.workerFailed', undefined, { cause })));
+  worker.onerror = (e) => fail(new Error(e.message));
+  worker.onmessageerror = () => fail(new Error('a message from the worker could not be read'));
+}
+
 export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
   const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
   const own = config.ip ? undefined : new MessageChannel();
@@ -228,9 +223,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   const t0 = performance.now();
   const timings: { loadMs?: number; runningMs?: number } = {};
   const running = new Promise<NetMap>((resolve, reject) => {
-    worker.onerror = (e) => reject(new Error(e.message));
-    worker.onmessage = (e: MessageEvent<FromTailscale>) => {
-      const m = e.data;
+    const heard = (m: FromTailscale) => {
       if (m.type === 'state') {
         state = m.state;
         if (state === 'Running' && netmap) {
@@ -251,6 +244,8 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
       else if (m.type === 'error') reject(fromWire(m.error));
       onEvent(m);
     };
+    worker.onmessage = (e: MessageEvent<FromTailscale>) => heard(e.data);
+    workerFailures(worker, (error) => heard({ type: 'error', error }));
   });
   running.catch(() => {}); // the caller decides whether to look
   worker.postMessage(

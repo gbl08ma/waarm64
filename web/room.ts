@@ -6,8 +6,10 @@
 // travel inside the WireGuard tunnel, so a peer sees this machine's candidates only after a handshake
 // with the room's key.
 import type { Lease } from './gateway.ts';
+import { hex } from './bytes.ts';
+import { v6text } from './ip6.ts';
 import { fromWire, msg, type Msg, type WireError } from './msg.ts';
-import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
+import { workerFailures, type FromTailscale, type NetMap, type Tailscale } from './tailscale.ts';
 import type { RoomConfig, TsEvent } from './ts-client.ts';
 
 /** STUN only (no TURN: DERP is the relay). */
@@ -222,9 +224,7 @@ export function startRoom(
   }
 
   const running = new Promise<void>((resolve, reject) => {
-    worker.onerror = (e) => reject(new Error(e.message));
-    worker.onmessage = (e: MessageEvent<FromRoom>) => {
-      const m = e.data;
+    const heard = (m: FromRoom) => {
       if (closed) {
         if (m.type === 'closed') worker.terminate();
         return;
@@ -268,6 +268,8 @@ export function startRoom(
         }
       }
     };
+    worker.onmessage = (e: MessageEvent<FromRoom>) => heard(e.data);
+    workerFailures(worker, (error) => heard({ type: 'error', error }));
   });
   running.catch(() => {});
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;
@@ -346,8 +348,6 @@ function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T
       }),
   );
 }
-
-const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 
 /** A new identity (an ephemeral connection's lives in memory). */
 export const newRoomIdentity = (): RoomIdentity => ({ key: hex(crypto.getRandomValues(new Uint8Array(32))) });
@@ -626,19 +626,6 @@ export type RoomNetConfig = {
   iceServers?: RTCIceServer[];
   wasm?: string;
   ip?: MessagePort;
-};
-
-const v6text = (b: number[]) => {
-  const groups = Array.from({ length: 8 }, (_, k) => ((b[2 * k] << 8) | b[2 * k + 1]).toString(16));
-  let best = [-1, 0];
-  for (let k = 0; k < 8;) {
-    let n = 0;
-    while (k + n < 8 && groups[k + n] === '0') n++;
-    if (n > best[1] && n > 1) best = [k, n];
-    k += n || 1;
-  }
-  if (best[0] < 0) return groups.join(':');
-  return `${groups.slice(0, best[0]).join(':')}::${groups.slice(best[0] + best[1]).join(':')}`;
 };
 
 /**

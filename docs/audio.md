@@ -78,7 +78,10 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 - **Microphone:** a second ring of the same layout, which the page's `waarm64-mic` worklet fills from `getUserMedia`
   (through a context at the input stream's rate) while the device asks (`capture-start`, `capture-stop` on the port),
   and the device worker's `micSource` reads, at most a buffer behind; without it, silence on the source's clock.
-  Closed when the guest stops recording (the browser's indicator goes off).
+  Closed when the guest stops recording (the browser's indicator goes off). Its opens and closes run in order on a
+  chain of their own: playback never waits for the browser's prompt.
+- **A stopped machine** (`PageAudio.detach`): the context is suspended (it would render silence) and the latency
+  timer stops; the next stream's start resumes it.
 - **Time and determinism.** Deterministic mode (tests, native runners) has no wall clock: the sink (`checksumSink`,
   FNV-1a of the frames) completes a message at the end of the `DEVICE` exit that posted it, and the source
   (`patternSource`: integer triangle waves, 1 kHz left, 1.5 kHz right) fills at the end of the exit, so a guest plays a
