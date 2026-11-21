@@ -109,6 +109,18 @@ test("with a machine kept: a bare address isn't the introduction; `#intro` and A
   await ctx.close();
 });
 
+test('the introduction\'s path, /intro, opens it at the page\'s own address with #intro; Skip leaves from there', async () => {
+  const { ctx, page, errors } = await visitor();
+  await page.goto(`${base}/intro`);
+  await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
+  assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, '/web/app/#intro');
+  await page.locator('[data-action="skip-intro"]').click();
+  await page.locator('[data-intro]').waitFor({ state: 'detached', timeout: 10_000 });
+  assert.ok(!/intro/.test(page.url()), page.url());
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the sections: the bar\'s links scroll to them; the comparison names each project, ours lit, and the speed figures of the measurement', async () => {
   const { ctx, page, errors } = await visitor();
   await page.goto(`${base}/web/app/#intro`);

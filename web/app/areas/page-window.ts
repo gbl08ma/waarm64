@@ -13,7 +13,7 @@ import { machinesNav } from './machines-nav.svelte.ts';
 import { demos } from './demos.svelte.ts';
 import { demosAddress, demosRoute, firstVisit, leftDemos, pageQuery, type DemosRoute } from '../demos-route.ts';
 import { intro } from './intro.svelte.ts';
-import { afterIntro, INTRO_HASH, isIntroAddress } from '../intro-route.ts';
+import { afterIntro, INTRO_HASH, introFromPath, isIntroAddress } from '../intro-route.ts';
 import { records } from './records.svelte.ts';
 import { transition } from '../view-transition.ts';
 import type { Page } from '../page.ts';
@@ -257,6 +257,9 @@ export class PageWindow {
   }
 
   openFromAddress(machines: number) {
+    // `/intro` is a way in: the address becomes the page's own with `#intro` (web/app/intro-route.ts).
+    const own = introFromPath(location);
+    if (own) history.replaceState(null, '', own);
     const r = demosRoute(location);
     if (r) this.openDemos(r, 'replace');
     else if (location.hash === '#home' || location.hash === '#machines') this.openMachines();

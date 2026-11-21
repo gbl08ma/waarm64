@@ -123,7 +123,10 @@ const rootPage = (): Plugin => ({
       // under the page's directory as /demos is under the copy's, so its relative URLs resolve alike.
       if (url.pathname === '/demos' || url.pathname === '/demos.html')
         return void res.writeHead(302, { Location: `/web/app/demos${url.search}` }).end();
-      if (url.pathname === '/web/app/demos' || url.pathname === '/web/app/demos.html') {
+      // The introduction's path alike (`/intro`, the copy's intro.html: web/app/intro-route.ts).
+      if (url.pathname === '/intro' || url.pathname === '/intro.html')
+        return void res.writeHead(302, { Location: `/web/app/intro${url.search}` }).end();
+      if (/^\/web\/app\/(demos|intro)(\.html)?$/.test(url.pathname)) {
         req.url = `/web/app/index.html${url.search}`;
         return next();
       }
@@ -142,7 +145,10 @@ const demosPage = (): Plugin => ({
   name: 'waarm64-demos-page',
   apply: 'build',
   writeBundle: async (o) => {
-    if (o.dir) await copyFile(join(o.dir, 'index.html'), join(o.dir, 'demos.html'));
+    if (!o.dir) return;
+    await copyFile(join(o.dir, 'index.html'), join(o.dir, 'demos.html'));
+    // The introduction's way in, `/intro`, alike (web/app/intro-route.ts).
+    await copyFile(join(o.dir, 'index.html'), join(o.dir, 'intro.html'));
   },
 });
 

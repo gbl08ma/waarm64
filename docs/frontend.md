@@ -2665,6 +2665,8 @@ stops if a binary is missing, Vulkan's renderer among them), then builds the pag
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the
   page is.
+- `intro.html`, the same copy again: the introduction's way in, `/intro`, which the page rewrites to its own address
+  with `#intro` at its load (web/app/intro-route.ts `introFromPath`), so leaving it and a reload go by the fragment.
 - `demos.html`, the built `index.html` as it is (vite.config.ts `demosPage`), the demo store's page at `/demos` (above,
   "The demo store"): Cloudflare's `auto-trailing-slash` and Vite's preview server serve it there, one segment deep, so
   its `./assets/…` are the page's (not `demos/index.html`, served at `/demos/`, where they would be `/demos/assets/`).
