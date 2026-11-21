@@ -25,10 +25,12 @@ protocol's sake (65520 stays a flag: about 1.7× down and 1.6× up, bench/net/RE
 passed in the dev VM on 2026-11-02, and the helper's build matches the x86_64 sums on aarch64.
 
 **The move is done** (2026-11-02): `github.com/gbl08ma/waarm64-net` with `ci.yml` (vet and `-race` tests, ~2 min, on
-pushes touching code) and `release.yml` (~3 min on each of two runners). **v0.1.0 was released** (from commit
-`cf1c15b`) and the page's wizard offers its install
-lines (`web/local-release.ts`). Not deployed. The lines download from a private repository until the user makes it
-public: nobody has run them against the real release yet (the Linux line ran against a `file://` copy at L1).
+pushes touching code) and `release.yml` (~3 min on each of two runners).
+
+**L4 is done** (2026-11-21): the page (deployed) offers v0.4.0's install lines, the repository is public (with
+SECURITY.md and private vulnerability reporting; the releases before the rename deleted, their tags kept), and the
+lines ran against the real release on Windows, the Mac and Linux (docs/networking/local-helper.md "Releases and the
+pinned commit").
 
 **L3 is done** (2026-11-02): `tests/page-local.test.ts` from a public origin (granted through CDP, connected; refused,
 the menu's words for it; a planted `loopbackRefused` that never says denied is caught), and how it works in its own
@@ -55,10 +57,9 @@ machines (the user's idea, low priority).
 
 ## Next
 
-1. **L4, with the user:** the deploy (the wizard offers v0.1.0's install lines) and making `gbl08ma/waarm64-net` public;
-   then run the install lines against the real release on Linux, the Mac and, if one is at hand, Windows
-   (backlog.md "The local helper's loose ends").
-2. At the track's end: the plan's outcome is docs/networking/local-helper.md already; delete this handover, mark the plan done.
+1. The track's end: the plan's binding decisions (§1) into docs/decisions.md and docs/networking/local-helper.md, the
+   references to docs/plans/networking-local.md (docs, web/, tests/, bench/net/) moved to local-helper.md, the plan and
+   this handover deleted, PLAN.md's row set to done.
 
 ## Found (worth not re-discovering)
 

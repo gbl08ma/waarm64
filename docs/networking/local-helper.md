@@ -5,8 +5,8 @@ a program the user runs on their own computer. The page reaches it over a WebSoc
 traffic goes out through that computer's sockets, at loopback's latency and the user's own uplink. tailcat and
 Tailscale always go through DERP, because a page has no UDP.
 
-The helper is its own repository, [`github.com/gbl08ma/waarm64-net`](https://github.com/gbl08ma/waarm64-net) (private
-until the user makes it public). Its README covers the flags, the network it serves, the protocol and the trust
+The helper is its own repository, [`github.com/gbl08ma/waarm64-net`](https://github.com/gbl08ma/waarm64-net) (public
+since 2026-11-21). Its README covers the flags, the network it serves, the protocol and the trust
 argument, its THIRD_PARTY.md what it links, and its CLAUDE.md its rules. This page covers waarm64's side. The decisions
 and their history are in [plans/networking-local.md](../plans/networking-local.md).
 
@@ -83,12 +83,17 @@ The helper's releases are built by its own GitHub Actions, separately from waarm
 A `v*` tag is built on an x86_64 and an arm64 Linux runner, and the release is published only when the two builds
 are byte-identical. **The page offers a release** once `web/local-release.ts` takes its version and SHA256SUMS, in a
 change of waarm64's. v0.4.0 is the current one (its default origin `https://waarm64.com`; v0.1.0's and v0.3.0's sums also matched a build in the dev VM: `bench/net/results/local-helper/build-v0.3.0-aarch64.txt`). A release is cut only
-after an out-of-context review of what it adds (the user's, 2026-11-03: each one costs runner minutes).
+after an out-of-context review of what it adds (the user's, 2026-11-03: one cut too early means another).
+
+**The install lines ran against the real release** (v0.4.0, 2026-11-21, as the page shows them): on Windows (x86-64,
+PowerShell; the user's: no SmartScreen, Defender or firewall prompt, though that install may have had them turned off
+long ago, and the guest's DNS works, so gvisor-tap-vsock's forwarder finds Windows' resolvers), on the Mac (arm64: the
+hash matched and no quarantine attribute was set) and in the dev VM (Linux arm64).
 
 **waarm64's tests build the helper at the commit `tests/waarm64-net.ts` pins** (v0.4.0's). The commit is fetched with git
 into `target/net/waarm64-net-src`, over HTTPS or else SSH, and built into `target/net/waarm64-net`. With
 `WAARM64_NET_SRC=../waarm64-net` they build a checkout of yours instead, which is how to work on the page and the helper
-together. Where the commit can't be fetched (a cloud session, while the repository is private), those tests say
+together. Where the commit can't be fetched (no git, no network), those tests say
 SKIPPED. Move the pin when the page needs a change of the helper's, after the helper's CI has passed.
 
 **Taking a release:** tag it in waarm64-net, wait for its release workflow, then put the version and the sums in

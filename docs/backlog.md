@@ -2066,11 +2066,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   taken, and why"): for users who want their own unrestricted way out without the local helper; the page would need a
   TCP/IP endpoint (smoltcp, recommended there) and fake-address DNS. Not planned.
 - **The local helper's loose ends** ([networking/local-helper.md](networking/local-helper.md), waarm64-net's own repository):
-  - **Never run on Windows** (nor its install lines in PowerShell): whether gvisor-tap-vsock's DNS forwarder follows the
-    host's resolvers there (it asks Go's `net.Resolver` and forwards other types to `/etc/resolv.conf`'s servers,
-    which Windows hasn't), and what Defender and SmartScreen make of an unsigned binary fetched by `Invoke-WebRequest`.
-  - The install lines haven't run against a real release: the repository is private until L4. The Linux line ran
-    against a `file://` copy.
+  - **SmartScreen and Defender on a default Windows install:** untried. The install lines ran on the user's Windows
+    without a prompt (2026-11-21, local-helper.md "Releases and the pinned commit"), but that install may have had
+    them turned off.
   - `go install` waits on #745 landing in a gvisor-tap-vsock release (the `replace` goes then). If #745 stalls, a fork of
     ours with the module path renamed would bring it back.
   - The guest can't ping the internet over IPv6 (#745's ICMP forwarder is IPv4's only).

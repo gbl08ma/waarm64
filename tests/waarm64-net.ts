@@ -9,7 +9,7 @@ export const WAARM64_NET_COMMIT = '4e9d5859cf16bb332842b44172047b361aab8d3a'; //
 const pinned = pinnedGo({
   name: 'waarm64-net',
   commit: WAARM64_NET_COMMIT,
-  // Over HTTPS once the repository is public; while it's private, over SSH with the user's key.
+  // Over HTTPS (the repository is public), else over SSH with the user's key.
   repos: ['https://github.com/gbl08ma/waarm64-net.git', 'git@github.com:gbl08ma/waarm64-net.git'],
   env: 'WAARM64_NET_SRC',
 });
