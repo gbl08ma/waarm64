@@ -121,6 +121,16 @@ test("a room connection's Domains pane, never connected and no machine running: 
 
   // Where it points: at this connection's own name; a subdomain added there, saved; then pointed elsewhere and back.
   assert.equal(await page.locator(`${card('mybox')} [data-point=""] [data-field=target]`).inputValue(), member);
+  // Save and Revert only while something is unsaved; Revert drops the edit.
+  const saveZone = page.locator(`${card('mybox')} [data-action=save-zone]`);
+  const revertZone = page.locator(`${card('mybox')} [data-action=revert-zone]`);
+  assert.equal(await saveZone.count(), 0, 'nothing edited: no Save');
+  assert.equal(await revertZone.count(), 0, 'nothing edited: no Revert');
+  await page.click(`${card('mybox')} [data-action=add-label]`);
+  assert.equal(await saveZone.count(), 1, 'edited: Save');
+  await revertZone.click();
+  assert.equal(await page.locator(`${card('mybox')} [data-field=label]`).count(), 0, 'reverted: the subdomain gone');
+  assert.equal(await saveZone.count(), 0, 'reverted: no Save');
   await page.click(`${card('mybox')} [data-action=add-label]`);
   await page.fill(`${card('mybox')} [data-field=label]`, 'git');
   await page.fill(`${card('mybox')} [data-point="git"] [data-field=target]`, 'ab'.repeat(32));
@@ -129,6 +139,7 @@ test("a room connection's Domains pane, never connected and no machine running: 
   for (let k = 0; k < 50 && !(await pointsOf())?.includes('git>abab'); k++) await page.waitForTimeout(100);
   const [, here] = (await pointsOf())?.match(/^>(\w{4})/) ?? [];
   assert.equal(await pointsOf(), `>${here} git>abab`, 'saved: the domain at this connection, git at another key');
+  await saveZone.waitFor({ state: 'detached', timeout: 5_000 });
   await page.click(`${card('mybox')} [data-action=point-here]`);
   await page.click(`${card('mybox')} [data-action=save-zone]`);
   for (let k = 0; k < 50 && (await pointsOf())?.includes('abab'); k++) await page.waitForTimeout(100);

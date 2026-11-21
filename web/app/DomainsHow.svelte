@@ -1,6 +1,6 @@
 <!--
   The Domains pane's second explainer (DomainsPane.svelte; docs/networking/names.md "What the user sees"), once a room
-  connection has domains: folded under How domains work, collapsed. Keeping them, what the states mean, who can see
+  connection has domains: folded under How domains work, collapsed. Keeping them, what the states mean, how long a change takes to reach the members, who can see
   them, where they are kept.
 -->
 <script lang="ts">
@@ -21,6 +21,8 @@
       <li><T k="network:DomainsHow.states.grace" /></li>
       <li><T k="network:DomainsHow.states.ended" /></li>
     </ul>
+    <h4><T k="network:DomainsHow.changes.title" /></h4>
+    <p><T k="network:DomainsHow.changes" /></p>
     <h4><T k="network:DomainsHow.who.title" /></h4>
     <p><T k="network:DomainsHow.who" /></p>
     <h4><T k="network:DomainsHow.where.title" /></h4>

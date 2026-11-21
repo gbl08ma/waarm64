@@ -3,7 +3,7 @@
   user sees"): the whole domain (the name strong, the room's domain dim), its light and its state in words, its dates
   where the title has them (registered, the next renewal from, works until about), then where it points (the domain
   itself and each subdomain, each at a member's name in the room: this connection's, or one pasted), a subdomain added,
-  where one points changed, Save (a new zone: web/names.ts `setZone`), and Let it go (a release, after asking). A domain
+  where one points changed, Save (a new zone: web/names.ts `setZone`) and Revert while there are unsaved changes, and Let it go (a release, after asking). A domain
   let go, lost or lapsed shows its state and what that means, with nothing to edit. `here` (this connection's node key)
   and `domain` (the room's) are the names agent's `member`'s, so it works with the connection disconnected.
 -->
@@ -41,8 +41,9 @@
   // Its points as edited here: they follow the title's (a domain registered while the card shows, a save read back)
   // until edited, as a machine's or a connection's settings do.
   let rows = $state<Row[]>(untrack(() => rowsOf(v.points)));
-  let base = untrack(() => rowsOf(v.points));
+  let base = $state.raw<Row[]>(untrack(() => rowsOf(v.points)));
   const same = (a: Row[], b: Row[]) => JSON.stringify(a) === JSON.stringify(b);
+  const dirty = $derived(!same(rows, base));
   $effect(() => {
     const now = rowsOf(v.points);
     untrack(() => {
@@ -55,7 +56,12 @@
   const ended = $derived(endedWords(v));
   const runner = new Actions();
 
-  const save = () => runner.run('', () => pageNames.setZone(conn, v.name, zonePoints(rows)));
+  async function save() {
+    const saved = $state.snapshot(rows);
+    // Saved: the rows are the base until the zone is read back (which then replaces them, in its own words).
+    if (await runner.run('', () => pageNames.setZone(conn, v.name, zonePoints(saved)))) base = saved;
+  }
+  const revert = () => (rows = base.map((r) => ({ ...r })));
   async function letGo() {
     const sure = await ask.confirm(msg('network:DomainCard.release.confirm', { name: v.name }), {
       ok: t('network:DomainCard.release'),
@@ -133,7 +139,10 @@
         >
           {t('network:DomainCard.pointHere')}
         </Button>
-        <Button variant="primary" data-action="save-zone" onclick={save}>{t('network:DomainCard.save')}</Button>
+        {#if dirty}
+          <Button variant="primary" data-action="save-zone" onclick={save}>{t('network:DomainCard.save')}</Button>
+          <Button data-action="revert-zone" onclick={revert}>{t('network:DomainCard.revert')}</Button>
+        {/if}
         <span class="gap"></span>
         <Button variant="danger" data-action="release" onclick={letGo}>{t('network:DomainCard.release')}</Button>
       </div>

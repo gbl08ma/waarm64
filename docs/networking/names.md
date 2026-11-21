@@ -605,7 +605,10 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
   [{{names}} need renewing. Leave this web app open for a few hours to keep them.](ui:network:names-view.upkeep.soon_other),
   when one is in its last week or its grace; none while no live domain has a date yet), a card a domain, and the second
   explainer, collapsed (`DomainsHow.svelte`, [How domains work](ui:network:DomainsHow.summary): keeping them, what the
-  states mean, who can see them, where they are kept). Under it, while the connection is connected on this page, the
+  states mean, [Changing where a domain points](ui:network:DomainsHow.changes.title) (about 10 minutes to reach the
+  members, 10 more for a change within 10 minutes of the last: the servers' `ZONE_EVERY` and the agent's put 11 minutes
+  on; "The resolver" and "A member resolving a name" have the parts), who can see them, where they are kept). Under it,
+  while the connection is connected on this page, the
   registry's line (as Details has it).
 - **A card** (`DomainCard.svelte`): the whole domain (the name strong, `.<room's domain>` dim), a status light (ok for
   active, busy for preparing and reserved, warn for grace, off for lapsed and let go, error for lost: `titleTone`) and
@@ -619,7 +622,8 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
   date}}](ui:network:names-view.date.until); a Reserved domain has none yet), and where it and each subdomain point (a
   member's name or a key, pasted), [Add a subdomain](ui:network:DomainCard.addLabel) (15 at most; past four points the
   zone is sealed wide), [Point all at this connection](ui:network:DomainCard.pointHere), Save (checked as the module
-  will: a label's rule, none twice, a target a member's name or key), [Let it go](ui:network:DomainCard.release)
+  will: a label's rule, none twice, a target a member's name or key) and [Revert](ui:network:DomainCard.revert), both
+  only while there are unsaved changes, [Let it go](ui:network:DomainCard.release)
   (after asking). A domain lapsed, let go or lost shows its state and a sentence on what that means
   (`endedWords`, e.g. [You let this domain go. Anyone can register it once the release is public, which takes about 2
   hours.](ui:network:names-view.ended.released)) and nothing to edit. No key is shown or asked for.

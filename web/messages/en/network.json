@@ -1288,7 +1288,7 @@
     "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name's points: the accessible name of the field holding the member's name in the room (or its key) the name or its label points at."
   },
   "DomainCard.note": {
-    "message": "Each points at the name of a connection in the room, either this connection or another one. Paste a member's name to point there. A subdomain adds a domain under <name>{{name}}</name>.",
+    "message": "Each points at the name of a connection in the room, either this connection or another one. Paste a member's name to point there. A subdomain adds a domain under <name>{{name}}</name>. Other members see a saved change within about 10 minutes.",
     "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), under its points; {{name}} is the domain."
   },
   "DomainCard.addLabel": {
@@ -1306,6 +1306,10 @@
   "DomainCard.save": {
     "message": "Save",
     "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name: saves where it and its labels point (a new zone, published to the room)."
+  },
+  "DomainCard.revert": {
+    "message": "Revert",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name: button beside Save, while where it and its labels point has unsaved changes: drops them."
   },
   "DomainCard.release": {
     "message": "Let it go",
@@ -1798,6 +1802,14 @@
   "DomainsHow.states.ended": {
     "message": "<em>Lapsed, let go, or lost.</em> The domain is no longer yours.",
     "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the states' list, the three ends."
+  },
+  "DomainsHow.changes.title": {
+    "message": "Changing where a domain points",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the heading on how long a saved change takes to reach the members."
+  },
+  "DomainsHow.changes": {
+    "message": "After you save a change, the room's other members see it within about 10 minutes. If you change a domain again less than 10 minutes after the last change, the new change takes about 10 minutes longer and reaches the room only while this web app is open. Apps that are already connected may keep using the old address until they connect again.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the paragraph on how long a saved change takes to reach the members (the room's servers take a new zone for a name at most once in 10 minutes, the agent puts it again 11 minutes on, while the page is open; members refresh what they keep every 5 minutes)."
   },
   "DomainsHow.who.title": {
     "message": "Who can see your domains",
