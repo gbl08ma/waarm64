@@ -1,0 +1,75 @@
+{
+ "date": "2026-11-21T11:14:07.789Z",
+ "chromium": "153.0.8010.12",
+ "query": "ncpus=1&hooks",
+ "names": [
+  "back-edge",
+  "forward edge",
+  "transfer cache hit",
+  "miss function",
+  "jump cache hit",
+  "chain back",
+  "chain fwd",
+  "jc back",
+  "jc fwd",
+  "by-VA back",
+  "by-VA fwd",
+  "host call",
+  "host return",
+  "poll",
+  "edge storing NZCV for a cold path only",
+  "edge storing NZCV otherwise"
+ ],
+ "marks": [
+  {
+   "mark": "stub",
+   "s": 17.613,
+   "steps": 11552791836,
+   "diag": [
+    [
+     1053919563,
+     1217377217,
+     6908467,
+     439437,
+     33149,
+     105529209,
+     105998494,
+     13760736,
+     40266228,
+     1148932,
+     199528,
+     92006750,
+     91347703,
+     1367604415,
+     530018943,
+     504069374
+    ]
+   ]
+  },
+  {
+   "mark": "ready",
+   "s": 57.954,
+   "steps": 21901453197,
+   "diag": [
+    [
+     1319828274,
+     2274792714,
+     65218978,
+     11578486,
+     33149,
+     190337521,
+     267226418,
+     21637089,
+     110923745,
+     45634361,
+     11794512,
+     237508716,
+     230725847,
+     2084819530,
+     695742419,
+     576403522
+    ]
+   ]
+  }
+ ]
+}

@@ -1,0 +1,23 @@
+diff --git a/web/app/worker-profile.ts b/web/app/worker-profile.ts
+index 687fcf0..ee5628b 100644
+--- a/web/app/worker-profile.ts
++++ b/web/app/worker-profile.ts
+@@ -3,6 +3,8 @@
+ // disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts), and the questions about its
+ // surfaces (web/surface.ts: `inspect`).
+ import type { Vm } from '../vm.ts';
++import { Counter } from '../counters.ts';
++const DIAG_AT = Counter.LEN;
+ import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
+ import type { ToWorker } from './protocol.ts';
+ import { answerBuffers, type InspectAnswer, type InspectQuery } from '../surface.ts';
+@@ -14,7 +16,8 @@ export function asked(vm: Vm | undefined, m: ToWorker) {
+   if (m.type === 'profile') void profile(vm, m.on, m.id);
+   else if (m.type === 'timeline') void timeline(vm, m.on, m.id);
+   else if (m.type === 'heap') {
+-    if (vm) post({ type: 'heap', id: m.id, heap: vm.heapUse() });
++    // EXPERIMENT (not for commit): the diagnostic core's tallies with the heap.
++    if (vm) post({ type: 'heap', id: m.id, heap: { ...vm.heapUse(), steps: vm.stats().steps, diag: vm.counterBlocks.map((b) => Array.from(new BigUint64Array(vm.memory.buffer, b + 8 * DIAG_AT, 16), Number)) } as ReturnType<Vm['heapUse']> });
+   } else if (m.type === 'compact') {
+     const id = m.id;
+     void (vm ? vm.compact(m.measure) : Promise.resolve(undefined)).then(
