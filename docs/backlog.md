@@ -189,10 +189,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   members reachable from the prologue past the `loop` (or the `loop` opened at each entry).
 - **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
   heap bounded"):
-  - **The decoded blocks** were ~350-365 MiB on 4 vCPUs; since 8-byte micro-ops, a smaller block map entry and a
-    page index of one key a page (`bench/interp/REPORT.md` "M8-INTERP loop 12") the pages session's were 233 MB. A
-    budget that follows the heap's room would give back more where the arenas never fill. Test with `MEMLOG=5`
-    sessions and `m8-heap/long/tools/heapsum.ts`, and the block interpreter's yardstick for its speed.
   - **The page index without lists** ([jit.md](jit.md) "The core's heap": since 2026-10-22 2 bytes a key, a list's
     smallest allocation 8 bytes where it was 32): what's left of it is the table of pages (33 B a bucket) and a list
     header (24 B) a page, which matter where pages hold a key or two. Firefox's pages session: the block map and index 55 MiB at 1.45 M

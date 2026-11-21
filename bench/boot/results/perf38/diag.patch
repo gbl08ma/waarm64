@@ -1,0 +1,47 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index 74f87c22..c6c9e900 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -200,7 +200,7 @@ export async function openSession(o: SessionOptions) {
+       const pid = rendererPid();
+       const smaps = pid ? smapsClasses(pid) : undefined;
+       const u = process.env.MEMLOG_UASM === '0' ? undefined : await uasm(page).catch((e) => String(e).slice(0, 200));
+-      appendFileSync(`${o.out}/mem.jsonl`, JSON.stringify({ t: Date.now(), smaps, uasm: u, memory: st?.memory, jit: st?.stats.jit }) + '\n');
++      appendFileSync(`${o.out}/mem.jsonl`, JSON.stringify({ t: Date.now(), smaps, uasm: u, memory: st?.memory, jit: st?.stats.jit, cpus: (st as { cpus?: unknown } | undefined)?.cpus }) + '\n');
+     } catch {} finally { memBusy = false; }
+   }, Number(process.env.MEMLOG) * 1000) : undefined;
+ 
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index e7d9f5a0..17e8f410 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -3304,10 +3304,15 @@ impl Cache {
+                 // grows: an IC's tombstones take room, so with none left and
+                 // half its keys in it, it would double past them.)
+                 let n = self.map.len();
++                let by_arena = len != 0 && self.arena.len() + uops.len() > self.budget;
+                 if n >= self.keys
+                     || self.map.capacity() == n && n > crate::jit::grows_past(self.keys)
+-                    || len != 0 && self.arena.len() + uops.len() > self.budget
++                    || by_arena
+                 {
++                    // DIAG: a clear by the keys counts as a rescue.
++                    if !by_arena {
++                        self.rescues += 1;
++                    }
+                     self.clear();
+                 }
+                 if self.map.try_reserve(1).is_err()
+diff --git a/web/app/worker-status.ts b/web/app/worker-status.ts
+index bb5a2e3f..b3276f36 100644
+--- a/web/app/worker-status.ts
++++ b/web/app/worker-status.ts
+@@ -44,7 +44,7 @@ export function status(
+     disks: io.disks.map((i) => ({ read: c[2 * i], written: c[2 * i + 1] })),
+     nets: io.nets?.map((i) => ({ rx: c[2 * i], tx: c[2 * i + 1] })),
+     usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },
+-    cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
++    cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps, decBytes: b.jit.decBytes, decClears: b.jit.decClears, decoded: b.jit.decoded, decSteps: b.jit.decSteps, rescues: b.jit.rescues, knownBytes: b.jit.knownBytes })) : undefined,
+     asleep: vm.suspended(),
+   };
+ }

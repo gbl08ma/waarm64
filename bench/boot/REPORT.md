@@ -6392,3 +6392,46 @@ taken (1); a followed call's checked edge never leaving (1). `tests/jit.test.ts`
 function) now makes three functions of 10 blocks, not two of 7: its second call is a host call to the callee compiled
 as a head, through the dispatcher until that batch is emitted (8,336 dispatches, the same for 4× the turns). No step
 count moved. CI: `scripts/ci.sh` (663 s) and `scripts/ci-jit.sh` (261 s) pass.
+
+## PERF loop 38: the decoded blocks' budget, measured (2026-11-21)
+
+The backlog's "The core's heap, after the bound" asked whether the decoded blocks' budget (`interp::block::BUDGET`,
+16M micro-ops shared out among the tables: 4M, 32 MiB of arena, a table on 4 vCPUs) should follow the heap's room
+instead of being fixed. Measured, not built. Firefox's pages session from a fresh `pages.waarm64snap` (cda6cfa7's
+core) on the Mac (M4, Chrome for Testing 158.0.8127.36), `MEMLOG=5`, three rounds, the first arm alternating:
+`d1` main with a diagnostic (`results/perf38/diag.patch`: each vCPU's decoded-block counters in the page's status,
+and a table's clear for its keys rather than its arena counted apart), `d2` the same with `BUDGET` doubled (8M a
+table). Raw: `results/perf38/` (README). (`bench/gpu/sway-mac.sh` now passes `MEMLOG` to the Mac, and
+`bench/mem/probe.ts` skips smaps where there is no /proc.)
+
+**Where the memory is** (each session the same within 1 MiB; at the heap's live maximum): live 315 MiB, of it the
+decoded blocks 206 (four tables, ~50 MiB each: arena 32, map 17, its page index ~1; vCPU 0's 58), the block map 55
+(1.48 M keys, no prune), known blocks 9, the rest 45; the mark 315-329 MiB of the 1 GiB reserve. **Every table fills
+its arena** three times in the session (12 clears, all for the arena; ~0.75 M blocks a fill, ~5.5 micro-ops each;
+11.0-11.4 M decodes).
+
+| | `d1` (4M a table) r1 · r2 · r3 | `d2` (8M a table) r1 · r2 · r3 |
+|---|---|---|
+| decoded blocks at most (MiB) | 206 · 206 · 206 | 302 · 302 · 302 |
+| heap live at most; mark (MiB) | 315 · 315 · 315; 329 · 320 · 315 | 411 · 411 · 411; 411 · 412 · 411 |
+| clears (of them for the keys) | 12 · 12 · 12 (0) | 7 · 6 · 6 (all) |
+| blocks decoded (M) | 11.00 · 11.21 · 11.36 | 8.87 · 8.45 · 8.26 (−24%) |
+| Gsteps interpreted | 3.18 · 3.17 · 3.17 | 3.15 · 3.13 · 3.15 (−0.8%) |
+| JIT cache lock acquisitions (M) | 15.58 · 15.75 · 15.90 | 13.71 · 13.28 · 13.17 (−15%) |
+| Firefox's starts and the pages' loads, `pagesS` (s) | 75.1 · 73.5 · 74.4; **74.4** | 75.2 · 74.4 · 72.6; **74.4** |
+| starts (s) | 56.8 · 55.3 · 56.3 | 56.7 · 55.9 · 54.6 |
+| busy MIPS | 447 · 450 · 452 | 449 · 448 · 454 |
+| wiki / bbc load (s) | 5.9 · 5.7 · 5.5 / 5.8 · 6.0 · 6.2 | 6.0 · 5.8 · 5.7 / 5.8 · 5.8 · 5.9 |
+
+(r1 ran `d1` first, r2 `d2`, r3 `d1`; no stalls ≥ 20 ms in any.) With 8M a table the map's 900,000 keys start it
+over before the arena's 64 MiB (vCPU 0's arena stayed at 32 MiB).
+
+- **More room buys nothing measured**: 96 MiB more heap for a quarter fewer decodes, and every speed row's rounds
+  overlap (`pagesS` the same median). What the 2.7 M re-decodes cost is small beside the session's 3.2 G
+  interpreted steps (0.8% more of them interpreted, and the lock trips of the misses' reports). The other direction has its number already: 2M a
+  table was 3.5% slower on Chromium's renders in the guest (bench/apps/REPORT.md "M8: the decoded blocks' arenas").
+- **Less use gives nothing back**: an arena that never fills holds only what it decoded (Alpine on 1 vCPU, ~1M
+  micro-ops of 8M), and the heap's allocator keeps what it frees, so the tab pays the heap's mark: a budget that
+  followed the heap's room could only raise it.
+- **Dropped**: the budget stays fixed; the finding is in docs/jit.md "The core's heap", the backlog sub-item removed.
+  No core change, no step count moved.

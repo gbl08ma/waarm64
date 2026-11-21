@@ -163,7 +163,9 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
   measure), each round starting with the next arm, into the same layout as `ab.sh` (so `ab-summary.ts` reads it:
   `pagesS` is the starts and loads summed, `startsS` the starts), with `mac-leftovers.sh --kill` after each session.
   `@<tree>` runs an arm from another checkout's web/ (a core of an older ABI: `../waarm64-base` at its commit,
-  sharing this `target/`). ~4 min a session (bench/boot/REPORT.md "PERF loop 35").
+  sharing this `target/`). ~4 min a session (bench/boot/REPORT.md "PERF loop 35"). `MEMLOG` (and `MEMLOG_UASM=0`)
+  pass through to the Mac: `mem.jsonl` then has the page's accounting and the JIT's counters, no smaps (macOS has no
+  /proc).
 - **Turnaround** (the dev VM, Firefox's pages session, 160 against 320 MiB and an A/A, three rounds): from boot a
   session is 441-490 s, 72 s of it the boot, the login and sway; from the snapshot 376-428 s, 11 s of it the restore.
   Nine sessions: 70 min from boot, 59 from the snapshot. The measured phase is the cost: what saves time is a shorter

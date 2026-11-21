@@ -3,11 +3,12 @@
 // `performance.measureUserAgentSpecificMemory()` from the page, its breakdown grouped by realm (attribution scope and
 // URL) and by type. bench/gpu/guest-session.ts samples both under MEMLOG=<seconds> into <out>/mem.jsonl, with the
 // page's own estimate (`__status.memory`, web/app/memory.ts) beside them.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import type { Page } from 'playwright-core';
 
-/** The biggest Chromium renderer's pid (the page's: the guest's memory is in it). */
+/** The biggest Chromium renderer's pid (the page's: the guest's memory is in it); none without /proc (the Mac). */
 export function rendererPid(): number | undefined {
+  if (!existsSync('/proc')) return undefined;
   let best: number | undefined, rss = 0;
   for (const d of readdirSync('/proc')) {
     if (!/^\d+$/.test(d)) continue;

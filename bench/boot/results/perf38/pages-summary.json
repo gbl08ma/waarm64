@@ -1,0 +1,842 @@
+{
+ "sessions": [
+  {
+   "session": "d1-1",
+   "arm": "d1",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 2867,
+   "wasmMB": 134,
+   "share": 0.967,
+   "interpG": 3.18,
+   "gsteps": 97.43,
+   "busyMips": 447,
+   "stalls20": 0,
+   "stalls50": 0,
+   "startsS": 56.8,
+   "pagesS": 75.1,
+   "wikiLoadS": 5.9,
+   "bbcLoadS": 5.8,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 234,
+   "setupS": 5,
+   "measuredS": 214,
+   "restoreS": 1.4,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null,
+   "locks": 15579027,
+   "contended": 0.0063,
+   "waitMs": 729,
+   "emitMs": 2159,
+   "lockedMs": 2159,
+   "planMs": 569,
+   "perLock": 0.0041,
+   "skipped": 3517210,
+   "dsbMs": 130,
+   "platMs": 170,
+   "ics": 537508,
+   "overdue": 0
+  },
+  {
+   "session": "d1-2",
+   "arm": "d1",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 2861,
+   "wasmMB": 133,
+   "share": 0.967,
+   "interpG": 3.17,
+   "gsteps": 96.84,
+   "busyMips": 450,
+   "stalls20": 0,
+   "stalls50": 0,
+   "startsS": 55.3,
+   "pagesS": 73.5,
+   "wikiLoadS": 5.7,
+   "bbcLoadS": 6,
+   "pagesFps": "60/60/60/61/60",
+   "webglFps": null,
+   "wallS": 224,
+   "setupS": 4,
+   "measuredS": 211,
+   "restoreS": 1.2,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null,
+   "locks": 15750044,
+   "contended": 0.0062,
+   "waitMs": 755,
+   "emitMs": 2140,
+   "lockedMs": 2140,
+   "planMs": 566,
+   "perLock": 0.004,
+   "skipped": 3493935,
+   "dsbMs": 118,
+   "platMs": 167,
+   "ics": 533904,
+   "overdue": 0
+  },
+  {
+   "session": "d1-3",
+   "arm": "d1",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 2856,
+   "wasmMB": 133,
+   "share": 0.967,
+   "interpG": 3.17,
+   "gsteps": 97.78,
+   "busyMips": 452,
+   "stalls20": 0,
+   "stalls50": 0,
+   "startsS": 56.3,
+   "pagesS": 74.4,
+   "wikiLoadS": 5.5,
+   "bbcLoadS": 6.2,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 226,
+   "setupS": 4,
+   "measuredS": 213,
+   "restoreS": 1.1,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null,
+   "locks": 15896985,
+   "contended": 0.0064,
+   "waitMs": 790,
+   "emitMs": 2135,
+   "lockedMs": 2135,
+   "planMs": 561,
+   "perLock": 0.004,
+   "skipped": 3889396,
+   "dsbMs": 113,
+   "platMs": 164,
+   "ics": 544356,
+   "overdue": 0
+  },
+  {
+   "session": "d2-1",
+   "arm": "d2",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 2871,
+   "wasmMB": 135,
+   "share": 0.968,
+   "interpG": 3.15,
+   "gsteps": 97.69,
+   "busyMips": 449,
+   "stalls20": 0,
+   "stalls50": 0,
+   "startsS": 56.7,
+   "pagesS": 75.2,
+   "wikiLoadS": 6,
+   "bbcLoadS": 5.8,
+   "pagesFps": "60/61/61/60/60",
+   "webglFps": null,
+   "wallS": 227,
+   "setupS": 4,
+   "measuredS": 213,
+   "restoreS": 1.2,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null,
+   "locks": 13710489,
+   "contended": 0.0067,
+   "waitMs": 765,
+   "emitMs": 2157,
+   "lockedMs": 2157,
+   "planMs": 571,
+   "perLock": 0.0047,
+   "skipped": 3515428,
+   "dsbMs": 101,
+   "platMs": 163,
+   "ics": 540091,
+   "overdue": 0
+  },
+  {
+   "session": "d2-2",
+   "arm": "d2",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 2866,
+   "wasmMB": 135,
+   "share": 0.968,
+   "interpG": 3.13,
+   "gsteps": 97.12,
+   "busyMips": 448,
+   "stalls20": 0,
+   "stalls50": 0,
+   "startsS": 55.9,
+   "pagesS": 74.4,
+   "wikiLoadS": 5.8,
+   "bbcLoadS": 5.8,
+   "pagesFps": "60/60/59/60/60",
+   "webglFps": null,
+   "wallS": 227,
+   "setupS": 4,
+   "measuredS": 214,
+   "restoreS": 1.2,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null,
+   "locks": 13275431,
+   "contended": 0.007,
+   "waitMs": 792,
+   "emitMs": 2167,
+   "lockedMs": 2167,
+   "planMs": 574,
+   "perLock": 0.0048,
+   "skipped": 3698148,
+   "dsbMs": 120,
+   "platMs": 186,
+   "ics": 533061,
+   "overdue": 0
+  },
+  {
+   "session": "d2-3",
+   "arm": "d2",
+   "exit": 0,
+   "flushes": 0,
+   "modules": 2881,
+   "wasmMB": 136,
+   "share": 0.968,
+   "interpG": 3.15,
+   "gsteps": 97.36,
+   "busyMips": 454,
+   "stalls20": 0,
+   "stalls50": 0,
+   "startsS": 54.6,
+   "pagesS": 72.6,
+   "wikiLoadS": 5.7,
+   "bbcLoadS": 5.9,
+   "pagesFps": "60/60/60/60/60",
+   "webglFps": null,
+   "wallS": 221,
+   "setupS": 4,
+   "measuredS": 208,
+   "restoreS": 1.1,
+   "firstFlushS": null,
+   "flushesPerMin": 0,
+   "slowG": null,
+   "slowS": null,
+   "made": null,
+   "doneS": null,
+   "locks": 13171885,
+   "contended": 0.0076,
+   "waitMs": 834,
+   "emitMs": 2178,
+   "lockedMs": 2178,
+   "planMs": 575,
+   "perLock": 0.0049,
+   "skipped": 3507998,
+   "dsbMs": 103,
+   "platMs": 180,
+   "ics": 539268,
+   "overdue": 0
+  }
+ ],
+ "arms": {
+  "d1": {
+   "flushes": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "modules": {
+    "median": 2861,
+    "iqr": 5.5,
+    "n": 3,
+    "all": [
+     2867,
+     2861,
+     2856
+    ]
+   },
+   "wasmMB": {
+    "median": 133,
+    "iqr": 0.5,
+    "n": 3,
+    "all": [
+     134,
+     133,
+     133
+    ]
+   },
+   "share": {
+    "median": 0.967,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.967,
+     0.967,
+     0.967
+    ]
+   },
+   "interpG": {
+    "median": 3.17,
+    "iqr": 0.005,
+    "n": 3,
+    "all": [
+     3.18,
+     3.17,
+     3.17
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "locks": {
+    "median": 15750044,
+    "iqr": 158979,
+    "n": 3,
+    "all": [
+     15579027,
+     15750044,
+     15896985
+    ]
+   },
+   "contended": {
+    "median": 0.006,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.0063,
+     0.0062,
+     0.0064
+    ]
+   },
+   "waitMs": {
+    "median": 755,
+    "iqr": 30.5,
+    "n": 3,
+    "all": [
+     729,
+     755,
+     790
+    ]
+   },
+   "emitMs": {
+    "median": 2140,
+    "iqr": 12,
+    "n": 3,
+    "all": [
+     2159,
+     2140,
+     2135
+    ]
+   },
+   "lockedMs": {
+    "median": 2140,
+    "iqr": 12,
+    "n": 3,
+    "all": [
+     2159,
+     2140,
+     2135
+    ]
+   },
+   "planMs": {
+    "median": 566,
+    "iqr": 4,
+    "n": 3,
+    "all": [
+     569,
+     566,
+     561
+    ]
+   },
+   "perLock": {
+    "median": 0.004,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.0041,
+     0.004,
+     0.004
+    ]
+   },
+   "skipped": {
+    "median": 3517210,
+    "iqr": 197730.5,
+    "n": 3,
+    "all": [
+     3517210,
+     3493935,
+     3889396
+    ]
+   },
+   "dsbMs": {
+    "median": 118,
+    "iqr": 8.5,
+    "n": 3,
+    "all": [
+     130,
+     118,
+     113
+    ]
+   },
+   "platMs": {
+    "median": 167,
+    "iqr": 3,
+    "n": 3,
+    "all": [
+     170,
+     167,
+     164
+    ]
+   },
+   "ics": {
+    "median": 537508,
+    "iqr": 5226,
+    "n": 3,
+    "all": [
+     537508,
+     533904,
+     544356
+    ]
+   },
+   "overdue": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "busyMips": {
+    "median": 450,
+    "iqr": 2.5,
+    "n": 3,
+    "all": [
+     447,
+     450,
+     452
+    ]
+   },
+   "stalls20": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "startsS": {
+    "median": 56.3,
+    "iqr": 0.75,
+    "n": 3,
+    "all": [
+     56.8,
+     55.3,
+     56.3
+    ]
+   },
+   "pagesS": {
+    "median": 74.4,
+    "iqr": 0.8,
+    "n": 3,
+    "all": [
+     75.1,
+     73.5,
+     74.4
+    ]
+   },
+   "wikiLoadS": {
+    "median": 5.7,
+    "iqr": 0.2,
+    "n": 3,
+    "all": [
+     5.9,
+     5.7,
+     5.5
+    ]
+   },
+   "bbcLoadS": {
+    "median": 6,
+    "iqr": 0.2,
+    "n": 3,
+    "all": [
+     5.8,
+     6,
+     6.2
+    ]
+   },
+   "wallS": {
+    "median": 226,
+    "iqr": 5,
+    "n": 3,
+    "all": [
+     234,
+     224,
+     226
+    ]
+   },
+   "setupS": {
+    "median": 4,
+    "iqr": 0.5,
+    "n": 3,
+    "all": [
+     5,
+     4,
+     4
+    ]
+   },
+   "measuredS": {
+    "median": 213,
+    "iqr": 1.5,
+    "n": 3,
+    "all": [
+     214,
+     211,
+     213
+    ]
+   },
+   "restoreS": {
+    "median": 1.2,
+    "iqr": 0.15,
+    "n": 3,
+    "all": [
+     1.4,
+     1.2,
+     1.1
+    ]
+   }
+  },
+  "d2": {
+   "flushes": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "modules": {
+    "median": 2871,
+    "iqr": 7.5,
+    "n": 3,
+    "all": [
+     2871,
+     2866,
+     2881
+    ]
+   },
+   "wasmMB": {
+    "median": 135,
+    "iqr": 0.5,
+    "n": 3,
+    "all": [
+     135,
+     135,
+     136
+    ]
+   },
+   "share": {
+    "median": 0.968,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.968,
+     0.968,
+     0.968
+    ]
+   },
+   "interpG": {
+    "median": 3.15,
+    "iqr": 0.01,
+    "n": 3,
+    "all": [
+     3.15,
+     3.13,
+     3.15
+    ]
+   },
+   "flushesPerMin": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "locks": {
+    "median": 13275431,
+    "iqr": 269302,
+    "n": 3,
+    "all": [
+     13710489,
+     13275431,
+     13171885
+    ]
+   },
+   "contended": {
+    "median": 0.007,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.0067,
+     0.007,
+     0.0076
+    ]
+   },
+   "waitMs": {
+    "median": 792,
+    "iqr": 34.5,
+    "n": 3,
+    "all": [
+     765,
+     792,
+     834
+    ]
+   },
+   "emitMs": {
+    "median": 2167,
+    "iqr": 10.5,
+    "n": 3,
+    "all": [
+     2157,
+     2167,
+     2178
+    ]
+   },
+   "lockedMs": {
+    "median": 2167,
+    "iqr": 10.5,
+    "n": 3,
+    "all": [
+     2157,
+     2167,
+     2178
+    ]
+   },
+   "planMs": {
+    "median": 574,
+    "iqr": 2,
+    "n": 3,
+    "all": [
+     571,
+     574,
+     575
+    ]
+   },
+   "perLock": {
+    "median": 0.005,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0.0047,
+     0.0048,
+     0.0049
+    ]
+   },
+   "skipped": {
+    "median": 3515428,
+    "iqr": 95075,
+    "n": 3,
+    "all": [
+     3515428,
+     3698148,
+     3507998
+    ]
+   },
+   "dsbMs": {
+    "median": 103,
+    "iqr": 9.5,
+    "n": 3,
+    "all": [
+     101,
+     120,
+     103
+    ]
+   },
+   "platMs": {
+    "median": 180,
+    "iqr": 11.5,
+    "n": 3,
+    "all": [
+     163,
+     186,
+     180
+    ]
+   },
+   "ics": {
+    "median": 539268,
+    "iqr": 3515,
+    "n": 3,
+    "all": [
+     540091,
+     533061,
+     539268
+    ]
+   },
+   "overdue": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "busyMips": {
+    "median": 449,
+    "iqr": 3,
+    "n": 3,
+    "all": [
+     449,
+     448,
+     454
+    ]
+   },
+   "stalls20": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "stalls50": {
+    "median": 0,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     0,
+     0,
+     0
+    ]
+   },
+   "startsS": {
+    "median": 55.9,
+    "iqr": 1.05,
+    "n": 3,
+    "all": [
+     56.7,
+     55.9,
+     54.6
+    ]
+   },
+   "pagesS": {
+    "median": 74.4,
+    "iqr": 1.3,
+    "n": 3,
+    "all": [
+     75.2,
+     74.4,
+     72.6
+    ]
+   },
+   "wikiLoadS": {
+    "median": 5.8,
+    "iqr": 0.15,
+    "n": 3,
+    "all": [
+     6,
+     5.8,
+     5.7
+    ]
+   },
+   "bbcLoadS": {
+    "median": 5.8,
+    "iqr": 0.05,
+    "n": 3,
+    "all": [
+     5.8,
+     5.8,
+     5.9
+    ]
+   },
+   "wallS": {
+    "median": 227,
+    "iqr": 3,
+    "n": 3,
+    "all": [
+     227,
+     227,
+     221
+    ]
+   },
+   "setupS": {
+    "median": 4,
+    "iqr": 0,
+    "n": 3,
+    "all": [
+     4,
+     4,
+     4
+    ]
+   },
+   "measuredS": {
+    "median": 213,
+    "iqr": 3,
+    "n": 3,
+    "all": [
+     213,
+     214,
+     208
+    ]
+   },
+   "restoreS": {
+    "median": 1.2,
+    "iqr": 0.05,
+    "n": 3,
+    "all": [
+     1.2,
+     1.2,
+     1.1
+    ]
+   }
+  }
+ }
+}

@@ -707,7 +707,18 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
 - **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 16M micro-ops of 8 bytes,
   128 MiB, shared out among the tables, at most 64 MiB one), and its map and page index, which also start over at
   `MAX_KEYS` (900,000: 2^20 buckets, 17 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full table would double past the one that holds them (a block of
-  one micro-op, or none, filled the map long before the arena).
+  one micro-op, or none, filled the map long before the arena). On 4 vCPUs a table is ~50 MiB full: its arena 32 MiB,
+  its map 17. **The budget is fixed, not the heap's room**, and the measurements say neither way pays:
+  - **More room buys nothing measured.** In Firefox's pages session every table fills its arena three times (~0.75 M
+    blocks a fill, ~5.5 micro-ops each; 11.2 M decodes). Twice the budget (8M a table, its map's 900,000 keys then
+    what starts it over) cut the decodes to 8.5 M (−24%) and the JIT cache's lock acquisitions by 15%, for 96 MiB more
+    heap (mark 315-329 → 411 MiB), and changed nothing else: Firefox's starts and the pages' loads 74.4 s either way,
+    busy MIPS 450 and 449, three rounds overlapping (bench/boot/REPORT.md "PERF loop 38"). The half (2M a table, 16
+    MiB with 8-byte micro-ops then) was −3.5% on Chromium's renders in the guest (bench/apps/REPORT.md "M8: the
+    decoded blocks' arenas", 2026-10).
+  - **Less use gives nothing back.** An arena that never fills (Alpine on 1 vCPU: ~1M micro-ops of its 8M) holds only
+    what it decoded, and the heap is a fixed reserve whose allocator keeps what it frees: what the tab pays is the
+    heap's mark, so a budget that followed the heap's room could only raise it.
 - **A table's known blocks** (`Table::known`): at most a key per slot this epoch.
 - **Module bytes** held for tables that haven't taken them: at most `HELD_MAX` ([Sharing](#sharing)).
 - **The safety net:** before the block map, a table's decoded blocks or its known blocks grow, `try_reserve`; if the
@@ -730,15 +741,23 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   held bytes, and each table's counters what its decoded and known blocks take (`decBytes`, `knownBytes`); the
   page's status carries them (`Vm.hostUse`, `stats().jit`).
 
-**What fills it** (Firefox's pages session then 10 minutes of the churn screen, 4 vCPUs, 2.5 GiB, from the warm
-`pages` snapshot, `bench/boot/results/m8-heap/`; MiB at the sample where the heap's live bytes were highest):
+**What fills it** (4 vCPUs, 2.5 GiB, from the warm `pages` snapshot; MiB at the sample where the heap's live bytes
+were highest). Firefox's pages session on the Mac (`bench/boot/results/perf38/`, three sessions, all alike):
+
+| | live | decoded blocks | block map | known | held modules | the rest | mark | keys at most |
+|---|---|---|---|---|---|---|---|---|
+| the pages session (2026-11-21) | 315 | 206 | 55 | 9 | 0 | 45 | 315-329 | 1.48 M (no prune) |
+
+The decoded blocks are two thirds of it, at their bound (four tables of ~50 MiB, the first's map larger). Before
+8-byte micro-ops (the micro-op 16 bytes; `bench/boot/results/m8-heap/`), the same session then 10 minutes of the churn
+screen:
 
 | | live | decoded blocks | block map | known | held modules | the rest | mark | keys at most |
 |---|---|---|---|---|---|---|---|---|
 | bounded | 485 | 363 | 62 | 9 | 0 | 51 | 507 | 1.49 M (2 prunes) |
 | unbounded (the same core, the bounds off) | 523 | 349 | 116 | 9 | 0 | 50 | 568 | 1.93 M |
 
-The decoded blocks are most of it (the arenas' 256 MiB, their maps ~100 MiB), at their bound already. The block map
+There the decoded blocks were the arenas' 256 MiB and their maps ~100 MiB. The block map
 of the unbounded core had doubled to 2^22 buckets (105 MiB) at 1.6 M keys; the session flushed every ~2 minutes in the
 churn, so it never got further. The rest is the devices' buffers, the jump caches and hot words (~1 MiB each a
 table), the threads' stacks. The held bytes peaked at 4-10 MiB (a vCPU that slept through modules).
