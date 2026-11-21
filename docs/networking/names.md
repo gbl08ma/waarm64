@@ -641,12 +641,19 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
   domains. Copy it and keep it somewhere safe.](ui:network:ConnectionBackup.intro), or
   `ConnectionBackup.intro.none` with none yet), that it must stay secret, and how to restore it (a new connection's
   [A key to paste](ui:network:NetRoomStep.room.key.paste)). A stored connection that never connected has its key made
-  for it then (`member`). The Settings' [The connection's key](ui:network:ConnectionRoomSettings.key), under
-  Advanced, is the same export.
+  for it then (`member`). The field shows once the export is read; if it can't be, the dialog says why in its place
+  (`ConnectionBackup.failed`, or `names.memberFailed` below), with no empty field to copy. The Settings'
+  [The connection's key](ui:network:ConnectionRoomSettings.key), under Advanced, is the same export.
+- **When `member` fails** (the names worker doesn't start, the browser's storage refuses the key): the pane, the
+  backup and Details say so where its words would be ([This connection's key and its name in the room couldn't be
+  read](ui:network:names.memberFailed), a `MsgError` with the cause as details: `pageNames.memberError`), and the next
+  read (the page shown again) tries again. A read in flight when the key is forgotten (New name) answers for the old
+  key and is dropped (`pageNames.forgetMember` bumps a generation).
 - **An ephemeral connection with a key of its own** can't hold a name: its pane holds [This connection can't hold a domain: its key lasts only until this tab
   closes or reloads, and a domain lasts for weeks. To register one, use a connection kept in this
-  browser.](ui:network:DomainsPane.ephemeral) and nothing else, and it has no status link anywhere (the menu gives none to
-  any ephemeral connection).
+  browser.](ui:network:DomainsPane.ephemeral) and nothing else, and it has no status link anywhere (`names-view.ts`
+  `hasDomainsLink`, the menu's, the tab's and the cards' one rule: an ephemeral connection on a stored connection's key
+  has one).
 - **Elsewhere**: deleting a room connection that holds names asks in a question of its own, with the export to copy,
   then forgets them. A pasted export (the wizard's key to paste) brings its names. Words: `web/messages/en/network.json`
   (the Home page's column and Details' own lines in `machines.json`).

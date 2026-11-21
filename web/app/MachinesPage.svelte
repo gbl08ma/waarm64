@@ -103,6 +103,10 @@
     const [snapshots, runs] = [!!m && withSnapshots.has(m.id), !!m && running.has(m.id)];
     untrack(() => edit.follow(m, snapshots, runs));
   });
+  // A level whose connection is gone (deleted from its page, or unknown when its address was opened) is left.
+  $effect(() => {
+    if (machinesNav.dangling) untrack(() => page.contextGone());
+  });
   function choose(id: string) {
     machinesNav.choose(id);
     edit.dirty = false;
@@ -136,6 +140,7 @@
     const typing = 'input:not([type=checkbox], [type=radio], [type=range]), textarea, [contenteditable]';
     if (at?.closest(`dialog, details[open], ${typing}`)) return;
     e.preventDefault();
+    if (machinesNav.moving) return; // once per move: the level is still on its way
     if (inContext) page.leaveContext();
     else page.closeMachines();
   }
@@ -190,7 +195,7 @@
   <div class="panes">
     <HomeColumn {store} {net} {machines} {counts} stateOf={listState} actions={runner} onchoose={choose} />
     <!-- The pane, keyed by the level as the column is: a move between levels slides, one between panes doesn't. -->
-    <div class="slot">
+    <div class="slot" class:moving={machinesNav.moving}>
       {#key machinesNav.level}
         <div class="level" in:level out:level>
           {@render pane()}
@@ -280,6 +285,10 @@
   }
   .slot {
     overflow: hidden;
+  }
+  /* During a move between levels, no click lands on the level leaving or the one coming in. */
+  .moving {
+    pointer-events: none;
   }
   .level {
     grid-area: 1 / 1;

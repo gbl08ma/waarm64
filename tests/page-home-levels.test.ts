@@ -366,3 +366,154 @@ test('the wizard on an adapter that has a connection asks first: edit it (its Se
   assert.equal(await page.locator('#net-back').isVisible(), false);
   await page.close();
 });
+
+/** The element with the focus: its tag, and the pane (`data-selected`) it is in. */
+const focused = (page: Page) => page.evaluate(() => ({ tag: document.activeElement?.tagName, pane: document.activeElement?.closest('section[data-selected]')?.getAttribute('data-selected') }));
+const settledFor = (page: Page, ms = 600) => page.waitForTimeout(ms);
+
+test("a machine's draft through a connection's page and back; Home reopens where it was; the focus back on the tab", async () => {
+  const { page, s } = await seeded('#home');
+  // Bravo's Settings, a name typed (unsaved); its Network tab; the adapter's link to the room's Domains; Back.
+  await page.locator(`[data-machine="${s.bravo}"]`).click();
+  await page.locator('[data-tab=settings]').click();
+  await page.fill('[data-field=name]', 'Bravo edited');
+  await page.locator('[data-tab=network]').click();
+  await page.locator('[data-adapter="0"] [data-action=domains-link]').click();
+  assert.equal(await level(page), `connection:${s.room}`);
+  await page.locator('.machines nav [data-action=back]').click();
+  assert.equal(await level(page), 'root');
+  await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
+  assert.deepEqual(await focused(page), { tag: 'H3', pane: s.bravo }, "the machine's title has the focus");
+  await page.locator('[data-tab=settings]').click();
+  assert.equal(await page.locator('[data-field=name]').inputValue(), 'Bravo edited', 'the draft kept');
+  const revert = page.locator(`section[data-selected="${s.bravo}"] [data-action=revert]`);
+  assert.equal(await revert.count(), 1, 'still a change to save');
+  await revert.click();
+  assert.equal(await page.locator('[data-field=name]').inputValue(), 'Bravo');
+  assert.equal(await revert.count(), 0, 'nothing to save after Revert');
+
+  // Disks chosen, then the machine's screen, a connection's page from there and Back: Home reopens on Disks.
+  await page.locator('[data-machine="disks"]').click();
+  await page.locator('section[data-selected=disks]').waitFor();
+  await page.locator('[data-action=back-to-machine]').click();
+  assert.equal(await homeOpen(page), false);
+  await openConnection(page, s.room, { to: 'screen' });
+  await page.locator('[data-context-connection]').waitFor();
+  await page.locator('.machines nav [data-action=back]').click();
+  assert.equal(await homeOpen(page), false);
+  await page.locator('#machines-open').click();
+  await page.locator('section[data-selected=disks]').waitFor({ timeout: 5_000 });
+  await page.close();
+});
+
+test("Back and Esc twice during a move run once; a link out of a level is an entry; an origin from what Home shows", async () => {
+  const { page, s } = await seeded('#home');
+  await page.locator('[data-machine="connections"]').click();
+  await page.locator('section[data-selected=connections]').waitFor();
+  // Back double-clicked: one move, Home still open at Connections.
+  await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
+  assert.equal(await level(page), `connection:${s.room}`);
+  await page.locator('.machines nav [data-action=back]').dblclick();
+  await settledFor(page);
+  assert.equal(await homeOpen(page), true, 'Home still open');
+  assert.equal(await level(page), 'root');
+  assert.equal(await hash(page), '#home');
+  await page.locator('section[data-selected=connections]').waitFor();
+  // Esc twice at once: the same.
+  await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
+  assert.equal(await level(page), `connection:${s.room}`);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await settledFor(page);
+  assert.equal(await homeOpen(page), true, 'Home still open after two Esc');
+  assert.equal(await level(page), 'root');
+  assert.equal(await hash(page), '#home');
+
+  // Details' machine link out of a pushed level: an entry of its own, so the browser's Back returns to the level.
+  await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
+  assert.equal(await level(page), `connection:${s.room}`);
+  const before = await page.evaluate(() => history.length);
+  await page.locator(`[data-machine-tab="${s.bravo}"]`).click();
+  await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
+  assert.equal(await page.evaluate(() => history.length), before + 1);
+  await page.goBack();
+  assert.equal(await level(page), `connection:${s.room}`, "Back: the connection's page again");
+  await page.goBack();
+  assert.equal(await level(page), 'root');
+
+  // Home on Bravo's Settings: the toolbar's way in (its origin is what Home shows) leads back to Bravo's Settings.
+  await page.locator(`[data-machine="${s.bravo}"]`).click();
+  await page.locator('[data-tab=settings]').click();
+  await page.evaluate(async (id) => {
+    const { page: p } = await import('/web/app/page.ts' as string) as typeof import('../web/app/page.ts');
+    const { machinesNav } = await import('/web/app/areas/machines-nav.svelte.ts' as string) as typeof import('../web/app/areas/machines-nav.svelte.ts');
+    p.openConnection(id, 'details', machinesNav.origin());
+  }, s.room);
+  assert.equal(await level(page), `connection:${s.room}`);
+  assert.equal(await text(page, '.machines nav [data-action=back]'), t('machines:ConnectionNav.back.machine', { machine: 'Bravo' }));
+  await page.locator('.machines nav [data-action=back]').click();
+  await page.locator(`section[data-selected="${s.bravo}"] [data-tab=settings][aria-selected=true]`).waitFor();
+  assert.equal(await homeOpen(page), true);
+  await page.close();
+});
+
+test("a connection gone under its page: Home leaves the level for Connections; an unknown id never entered later; machines linked by id", async () => {
+  const { page, s } = await seeded('#home');
+  await answerAsks(page);
+  const inConnections = () => page.waitForFunction(() => document.activeElement?.tagName === 'H3' && document.activeElement.closest('section[data-selected]')?.getAttribute('data-selected') === 'connections', null, { timeout: 5_000 });
+  // Delete from its own page, entered from its card: Connections, its title focused, the address Home's root.
+  const spare = await page.evaluate(async () => {
+    const { page: p } = await import('/web/app/page.ts' as string) as typeof import('../web/app/page.ts');
+    return (await p.netCreate({ kind: 'tailnet', name: 'spare', tailnet: { controlURL: 'http://127.0.0.1:1', hostname: 's', exitNode: '' } })).id;
+  });
+  await page.locator('[data-machine="connections"]').click();
+  await page.locator(`[data-connection="${spare}"] [data-action=connection-details]`).click();
+  assert.equal(await level(page), `connection:${spare}`);
+  await page.locator('.machines nav [data-action=delete-connection]').click();
+  await page.locator('section[data-selected=connections]').waitFor({ timeout: 10_000 });
+  assert.equal(await level(page), 'root');
+  assert.equal(await hash(page), '#home');
+  await inConnections();
+  // The same entered by its address (another pane chosen before).
+  await page.locator(`[data-machine="${s.bravo}"]`).click();
+  await page.evaluate((id) => { location.hash = `#home/connections/${id}`; }, s.tailnet);
+  await page.locator('[data-context-connection]').waitFor({ timeout: 30_000 });
+  const tailnet = (await stored(page)).find((c) => c.id === s.tailnet);
+  await page.locator('.machines nav [data-action=delete-connection]').click();
+  await page.locator('section[data-selected=connections]').waitFor({ timeout: 10_000 });
+  assert.equal(await level(page), 'root');
+  assert.equal(await hash(page), '#home');
+  await page.waitForFunction(() => document.activeElement?.closest('section[data-selected]')?.getAttribute('data-selected') === 'connections', null, { timeout: 5_000 });
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'H3', "Connections' title has the focus");
+
+  // An address with an id unknown at load: Connections; the connection appearing later doesn't open its page.
+  await page.goto(`${base}/web/app/?m=${s.alpha}#home/connections/later`);
+  await page.locator('section[data-selected=connections]').waitFor({ timeout: 30_000 });
+  await page.evaluate(async (c) => {
+    const { page: p } = await import('/web/app/page.ts' as string) as typeof import('../web/app/page.ts');
+    await p.netRename(c as Parameters<typeof p.netRename>[0], 'Later');
+  }, { ...tailnet, id: 'later' });
+  await page.locator('li[data-connection="later"]').waitFor({ timeout: 5_000 });
+  await settledFor(page, 300);
+  assert.equal(await level(page), 'root', 'not entered unasked');
+
+  // Two machines with one name: each linked to its own Network tab.
+  const twin = await page.evaluate(async ([modules, room]) => {
+    const { Store } = await import(modules[0]) as typeof import('../web/app/store.ts');
+    const { createMachine, setAdapterConnection } = await import(modules[1]) as typeof import('../web/app/machines.ts');
+    const store = await Store.open();
+    const id = (await createMachine(store, { name: 'Bravo', ncpus: 1, ramMiB: 256, display: '2d', usb: false })).id;
+    await setAdapterConnection(store, id, 0, room);
+    // Named as the other (a new machine's name is made unique; a rename can still match another's).
+    const m = await store.get('machines', id);
+    if (m) await store.put('machines', { ...m, name: 'Bravo' });
+    store.close();
+    return id;
+  }, [['/web/app/store.ts', '/web/app/machines.ts'], s.room] as const);
+  await page.goto(`${base}/web/app/?m=${s.alpha}#home/connections/${s.room}`);
+  await page.locator('#connection-details-machines [data-machine-tab]').first().waitFor({ timeout: 30_000 });
+  assert.equal(await text(page, '#connection-details-machines'), t('machines:ConnectionDetails.machines', { machines: ['Bravo', 'Bravo'] }));
+  const tabs = await page.locator('#connection-details-machines [data-machine-tab]').evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.machineTab));
+  assert.deepEqual(tabs.sort(), [s.bravo, twin].sort(), 'one link each');
+  await page.close();
+});

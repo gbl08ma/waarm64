@@ -7,7 +7,8 @@
   card a domain (DomainCard.svelte) and the second explainer, collapsed (DomainsHow.svelte). The registry's line
   while the connection is connected on this page. An ephemeral connection with a key of its own can't hold a domain:
   the pane says so and holds nothing else. The key a domain points at and the room's domain are the names agent's
-  `member` (the stored key and the room's ID), so nothing here waits for a running machine.
+  `member` (the stored key and the room's ID), so nothing here waits for a running machine; when it can't be read, the
+  pane says why in the domains' place (shown again, it tries again).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -17,7 +18,9 @@
   import DomainCard from './DomainCard.svelte';
   import DomainsHow from './DomainsHow.svelte';
   import DomainsIntro from './DomainsIntro.svelte';
+  import ErrorText from './ErrorText.svelte';
   import T from './T.svelte';
+  import { errorView } from './usb-problems.ts';
   import { msg, t, text } from '../i18n.ts';
   import type { RoomConnection } from './connections.ts';
   import type { PageNetwork } from './net-live.ts';
@@ -34,6 +37,8 @@
   /** The connection as its room sees it (web/names.ts `Member`): the key a domain points at, its own name, the room's
    * domain. Undefined until the names agent has said. */
   const member = $derived(ephemeral ? undefined : pageNames.member(memberOf(room)));
+  /** Why `member` couldn't be read, if it couldn't. */
+  const failed = $derived(ephemeral ? undefined : pageNames.memberError(memberOf(room)));
   const titles = $derived(ephemeral ? [] : pageNames.of(conn));
   const upkeep = $derived(upkeepLine(titles));
   /** The adapter of this page's machine that has it connected, and the registry's line it reports. */
@@ -80,6 +85,8 @@
         <DomainsHow />
       {/if}
       {#if names}<Note size="md" id="domains-names-line">{text(namesLine(names))}</Note>{/if}
+    {:else if failed}
+      <Note size="md" tone="error" id="domains-member-error"><ErrorText error={errorView(failed)} /></Note>
     {/if}
   </div>
 </Pane>

@@ -72,7 +72,8 @@ export class MachineEdit {
     return this.draft !== undefined;
   }
 
-  /** Takes the page's read of the machine (undefined: none is chosen). */
+  /** Takes the page's read of the machine (undefined: none is chosen). A draft of another machine, or of none, is
+   *  dropped with its changes: nothing is left to save. */
   follow(record: MachineRecord | undefined, hasSnapshots: boolean, running: boolean) {
     this.record = record;
     this.hasSnapshots = hasSnapshots;
@@ -80,6 +81,7 @@ export class MachineEdit {
     if (!record || this.draft?.id !== record.id || !this.dirty) {
       this.draft = record ? plain(record) : undefined;
       this.splitProblem = undefined;
+      this.dirty = false;
     }
   }
 

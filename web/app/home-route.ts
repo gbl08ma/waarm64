@@ -7,8 +7,15 @@
 /** A connection's sections on its page: what it gives out, what can be changed, a room's domains. */
 export type ConnectionSection = 'details' | 'settings' | 'domains';
 
-/** Where a level was entered from, which its Back leads to: Connections, a machine's Network tab, or the machine's screen. */
-export type From = { to: 'connections' } | { to: 'tab'; machine: string } | { to: 'screen' };
+/** A machine's tabs on the Home page (MachinePane.svelte). */
+export const MACHINE_TABS = ['settings', 'disks', 'network', 'usb', 'folders', 'snapshots'] as const;
+export type MachineTab = (typeof MACHINE_TABS)[number];
+
+/**
+ * Where a level was entered from, which its Back leads to: Connections, a machine's pane (at `tab`; its Network tab
+ * when none is said), or the machine's screen.
+ */
+export type From = { to: 'connections' } | { to: 'tab'; machine: string; tab?: MachineTab } | { to: 'screen' };
 
 /** A level under the root: a connection's page. */
 export type HomeContext = { kind: 'connection'; id: string; section: ConnectionSection; from: From };
@@ -57,7 +64,8 @@ export function shownContext(ctx: HomeContext | undefined, find: (id: string) =>
 }
 
 /** Where a level's Back leads now: a machine gone, or the screen with no machine on the page, is Connections. */
-export type BackTo = { to: 'connections' } | { to: 'tab'; machine: string; name: string } | { to: 'screen' };
+export type BackTo =
+  { to: 'connections' } | { to: 'tab'; machine: string; tab?: MachineTab; name: string } | { to: 'screen' };
 
 /** Where Back from a level entered from `from` leads, given the page's machines (by id) and whether one is on the page. */
 export function backOf(from: From, o: { loaded: boolean; machineName: (id: string) => string | undefined }): BackTo {
@@ -79,9 +87,12 @@ const FROM_TO = new Set(['connections', 'tab', 'screen']);
 
 /** The level's part of a history entry's state, if it has a well-formed one. */
 export function homeState(state: unknown): HomeState['home'] | undefined {
-  const h = (state as { home?: { from?: { to?: unknown; machine?: unknown }; pushed?: unknown } } | null)?.home;
+  const h = (state as { home?: { from?: { to?: unknown; machine?: unknown; tab?: unknown }; pushed?: unknown } } | null)
+    ?.home;
   const to = h?.from?.to;
   if (typeof to !== 'string' || !FROM_TO.has(to)) return undefined;
   if (to === 'tab' && typeof h?.from?.machine !== 'string') return undefined;
+  const tab = h?.from?.tab;
+  if (to === 'tab' && tab !== undefined && !(MACHINE_TABS as readonly unknown[]).includes(tab)) return undefined;
   return h as HomeState['home'];
 }

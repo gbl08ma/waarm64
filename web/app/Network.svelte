@@ -4,8 +4,8 @@
   and its menu holds that adapter alone; otherwise one button's menu has a section per adapter (NetAdapter.svelte).
   Each section shows the adapter's connection and what can be done with it; Change connection… opens the Network wizard
   (web/app/NetWizard.svelte), Details… (and a room's warning) the connection's Details on the Home page, a room's
-  domains link (DomainsLink.svelte) its Domains, which takes the
-  screen's place (ConnectionPage.svelte: its Back and Esc return to the screen). A menu opens by itself when its
+  domains link (DomainsLink.svelte) its Domains, on the Home page in the screen's place or Home's (ConnectionPage.svelte:
+  its Back and Esc return to what showed: the screen, or Home's machine or pane, `machinesNav.origin`). A menu opens by itself when its
   adapter needs the user (a login) and when the page asks (the wizard's end, a status click). Adapter 1's menu is
   `#network` (the single one's too); adapter n's is `#network-<n-1>`. `data-net-menu` marks them for the toolbar,
   which measures them.
@@ -20,6 +20,7 @@
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { pageNames } from './areas/names.svelte.ts';
 
   type Props = { net: PageNetwork; split: boolean };
@@ -69,13 +70,13 @@
       adapter: i,
       here: views[i]?.on,
       attached,
-      from: { to: 'screen' },
+      from: machinesNav.origin(),
     });
   }
   function details(i: number) {
     const id = views[i]?.connection?.id;
     openAt = undefined;
-    if (id) page.openConnection(id, 'details', { to: 'screen' });
+    if (id) page.openConnection(id, 'details', machinesNav.origin());
   }
   // A room connection's titles publish through the link it has now (web/names.ts `relink`): here, where the adapters'
   // connections are read, whatever their menus show.

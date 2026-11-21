@@ -132,7 +132,7 @@ test("a room connection's Domains pane, never connected and no machine running: 
   // The backup: the key then its domains, secret, with the words for a connection that has domains.
   await page.click('.machines nav [data-action=backup-connection]');
   await page.waitForFunction(() => (document.getElementById('connection-backup') as HTMLDialogElement | null)?.open, null, { timeout: 5_000 });
-  await page.waitForFunction(() => /\./.test((document.getElementById('connection-backup-value') as HTMLInputElement).value), null, { timeout: 10_000 });
+  await page.waitForFunction(() => /\./.test((document.getElementById('connection-backup-value') as HTMLInputElement | null)?.value ?? ''), null, { timeout: 10_000 }); // no field until it is read
   assert.match(await page.locator('#connection-backup-value').inputValue(), /^[0-9a-f]{64}\.[A-Za-z0-9_-]+$/);
   assert.equal(await page.locator('#connection-backup-value').getAttribute('type'), 'password', 'hidden until shown');
   assert.equal(await text(page, '#connection-backup-intro'), t('network:ConnectionBackup.intro', { name: 'gabriel-lan' }));
@@ -199,7 +199,7 @@ test("the Domains pane: each state's light and words, the upkeep line, an epheme
   // The upkeep line: those in their last week and grace named, in the warning tone.
   assert.equal(await page.locator('#domains-upkeep').getAttribute('data-warn'), 'true');
   assert.equal(await text(page, '#domains-upkeep'), t('network:names-view.upkeep.soon', { names: ['soon', 'grace'], count: 2 }));
-  assert.equal(await text(page, '.machines nav [data-section=domains] .count'), '4', 'the live ones counted');
+  assert.equal(await text(page, '.machines nav [data-section=domains] .count'), '5', 'the ones the pane shows as held (live and lost), as the link counts them');
   // The Connections card's link: how many, and how many need attention, in the warning tone; it opens the pane again.
   await page.click('.machines nav [data-action=back]');
   const link = `li[data-connection="${id}"] [data-action=domains-link]`;
@@ -228,5 +228,125 @@ test("the Domains pane: each state's light and words, the upkeep line, an epheme
   await page.click('.machines nav [data-action=backup-connection]');
   await page.waitForFunction(() => /^[0-9a-f]{64}$/.test((document.getElementById('connection-backup-value') as HTMLInputElement | null)?.value ?? ''), null, { timeout: 10_000 });
   assert.equal(await text(page, '#connection-backup-intro'), t('network:ConnectionBackup.intro.none', { name: 'passing' }));
+  await ctx.close();
+});
+
+/** The backup's export as its dialog shows it (opened from the column, closed again). */
+async function backup(page: Page): Promise<string> {
+  await page.click('.machines nav [data-action=backup-connection]');
+  await page.waitForFunction(() => /^[0-9a-f]{64}/.test((document.getElementById('connection-backup-value') as HTMLInputElement | null)?.value ?? ''), null, { timeout: 10_000 });
+  const v = await page.locator('#connection-backup-value').inputValue();
+  await page.click('#connection-backup-close');
+  await page.waitForFunction(() => !document.getElementById('connection-backup'), null, { timeout: 5_000 });
+  return v;
+}
+
+test("New name, then Save or a rename from the card: the new key stays (the page reads the new record)", { skip, timeout: 120_000 }, async () => {
+  const ctx = await profile();
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`# page error: ${e}`));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  await page.waitForFunction(() => !!document.getElementById('machines-open'));
+  const eph = await page.evaluate(async ([m, link]) => {
+    const { page: p } = await import(m) as typeof import('../web/app/page.ts');
+    return (await p.netCreate({ kind: 'room', name: 'passing', ephemeral: true, room: { link, incoming: true, relayOnly: false } })).id;
+  }, ['/web/app/page.ts', LINK] as const);
+  await page.evaluate((h) => (location.hash = h), `#home/connections/${eph}/settings`);
+  await page.locator('section[data-selected=connection-settings]').waitFor({ timeout: 30_000 });
+  await page.click('#settings-room-advanced summary');
+  const keyField = () => page.locator('#settings-room-key-value').inputValue();
+  await page.waitForFunction(() => /^[0-9a-f]{64}$/.test((document.getElementById('settings-room-key-value') as HTMLInputElement).value), null, { timeout: 10_000 });
+  const old = await keyField();
+  await page.click('#settings-room-new-name');
+  await page.waitForFunction((old) => { const v = (document.getElementById('settings-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, old, { timeout: 10_000 });
+  const now = await keyField();
+  assert.equal(await backup(page), now, 'the backup exports the new key');
+  // A switch and Save: the record saved is the new one.
+  await page.uncheck('#settings-room-direct');
+  await page.click('section[data-selected=connection-settings] [data-action=save]');
+  await page.waitForFunction(() => !document.querySelector('section[data-selected=connection-settings] [data-action=revert]'), null, { timeout: 5_000 });
+  assert.equal(await backup(page), now, 'Save kept the new key');
+  // A rename from the Connections card: the same.
+  await page.click('.machines nav [data-action=back]');
+  const name = page.locator(`[data-connection="${eph}"] [data-field=connection-name]`);
+  await name.fill('renamed');
+  await name.press('Enter');
+  await page.waitForFunction((id) => !!document.querySelector(`[data-connection="${id}"]`) && !document.querySelector('.machines[data-busy=true]'), eph, { timeout: 5_000 });
+  await page.locator(`[data-connection="${eph}"] [data-action=connection-details]`).click();
+  await page.locator('[data-context-connection] h3').filter({ hasText: 'renamed' }).waitFor({ timeout: 5_000 });
+  assert.equal(await backup(page), now, 'the rename kept the new key');
+  await ctx.close();
+});
+
+test("a connection's name in its room that can't be read: said in the pane, the backup and Details, read again later; a read overtaken by New name dropped", { skip, timeout: 120_000 }, async () => {
+  const ctx = await profile();
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`# page error: ${e}`));
+  await page.goto(`${base}/web/app/`);
+  await page.waitForFunction(() => !!document.getElementById('machines-open'));
+  const id = await page.evaluate(async ([m, link]) => {
+    const { page: p } = await import(m) as typeof import('../web/app/page.ts');
+    return (await p.netCreate({ kind: 'room', name: 'gabriel-lan', room: { link, incoming: true, relayOnly: false } })).id;
+  }, ['/web/app/page.ts', LINK] as const);
+  // The agent refuses every `member` read.
+  await page.evaluate(async () => {
+    const n = await import('/web/names.ts' as string) as typeof import('../web/names.ts');
+    const a = n.namesAgent() as unknown as { member: unknown; realMember?: unknown };
+    a.realMember = a.member;
+    a.member = () => Promise.reject(new Error('the worker did not start'));
+  });
+  await page.evaluate((h) => (location.hash = h), `#home/connections/${id}/domains`);
+  const failed = t('network:names.memberFailed');
+  await page.locator('#domains-member-error').waitFor({ timeout: 30_000 });
+  assert.ok((await text(page, '#domains-member-error')).startsWith(failed), 'the pane says why it is empty');
+  assert.ok((await text(page, '#domains-member-error')).includes('the worker did not start'), 'with the cause');
+  // The backup: the error, no empty field to copy.
+  await page.click('.machines nav [data-action=backup-connection]');
+  await page.locator('#connection-backup-error').waitFor({ timeout: 10_000 });
+  assert.ok((await text(page, '#connection-backup-error')).startsWith(failed));
+  assert.equal(await page.locator('#connection-backup-value').count(), 0, 'no empty field to copy');
+  await page.click('#connection-backup-close');
+  await page.waitForFunction(() => !document.getElementById('connection-backup'), null, { timeout: 5_000 });
+  // Details: the same words where the name in the room goes.
+  await page.click('.machines nav [data-section=details]');
+  await page.locator('#net-details-room-name-error').waitFor({ timeout: 10_000 });
+  assert.ok((await text(page, '#net-details-room-name-error')).startsWith(failed));
+  // The agent answers again: a later read (the pane shown again) gets it.
+  await page.evaluate(async () => {
+    const n = await import('/web/names.ts' as string) as typeof import('../web/names.ts');
+    const a = n.namesAgent() as unknown as { member: unknown; realMember?: unknown };
+    a.member = a.realMember;
+  });
+  await page.click('.machines nav [data-section=domains]');
+  await page.locator('#domains-intro').waitFor({ timeout: 30_000 });
+  assert.equal(await page.locator('#domains-member-error').count(), 0, 'the error gone');
+
+  // A read in flight when the key is forgotten (New name), and the read after it: the first one's answer (the old
+  // key's) isn't kept, even arriving after the second one started; the second one's is.
+  const kept = await page.evaluate(async ([m]) => {
+    const n = await import('/web/names.ts' as string) as typeof import('../web/names.ts');
+    const { pageNames } = await import(m) as typeof import('../web/app/areas/names.svelte.ts');
+    const a = n.namesAgent() as unknown as { member: (c: unknown) => Promise<unknown> };
+    const real = a.member;
+    const answers: ((m: unknown) => void)[] = [];
+    a.member = () => new Promise((r) => answers.push(r));
+    const conn = { identityKey: 'slow-entry', link: 'waarm64-room:gabriel-lan' }; // i18n-ignore: a link
+    const tick = () => new Promise((r) => setTimeout(r, 50));
+    const said = () => pageNames.member(conn)?.key ?? 'none';
+    pageNames.member(conn); // the read starts
+    await tick();
+    pageNames.forgetMember('slow-entry'); // New name, before it answers
+    pageNames.member(conn); // read again (the new key)
+    await tick();
+    answers[0]?.({ key: 'old', name: 'o', domain: 'd', domains: [] });
+    await tick();
+    const first = said();
+    answers[1]?.({ key: 'new', name: 'n', domain: 'd', domains: [] });
+    await tick();
+    a.member = real;
+    return [answers.length, first, said()];
+  }, ['/web/app/areas/names.svelte.ts'] as const);
+  assert.deepEqual(kept, [2, 'none', 'new'], "the overtaken read's answer dropped, the later one's kept");
   await ctx.close();
 });

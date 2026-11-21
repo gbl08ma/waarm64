@@ -78,6 +78,8 @@ export type Page = {
   openConnection(id: string, section?: ConnectionSection, from?: From): void;
   /** A level's Back (and Esc): to where it was entered from. */
   leaveContext(): void;
+  /** The level's connection is gone: Home leaves it for Connections (web/app/areas/home-levels.ts `gone`). */
+  contextGone(): void;
   closeMachines(): void;
   /** The demo store's page (web/app/DemosPage.svelte): opened (on the store shown last), Back, a demo chosen in it. */
   openDemos(route?: DemosRoute): void;

@@ -8,7 +8,7 @@
   tabs are styled here.
 -->
 <script lang="ts">
-  import { untrack, type Snippet } from 'svelte';
+  import type { Snippet } from 'svelte';
   import Count from './Count.svelte';
   import Icon from './Icon.svelte';
   import T from '../T.svelte';
@@ -32,15 +32,18 @@
     tabs?: Tab<string>[];
     tab?: string;
     ontab?: (id: string) => void;
-    /** Asked once, as the pane appears: true gives its title the focus (a level of the Home page just entered). */
+    /** Asked as the pane appears, and again when what it reads changes: true gives its title the focus (a level of the
+     *  Home page just entered or left). */
     takeFocus?: () => boolean;
     children: Snippet;
   };
   let { id, title, meta, metaAttrs, actions, tabs, tab, ontab, takeFocus, children }: Props = $props();
 
   let heading = $state<HTMLHeadingElement>();
+  // Tracked: a pane already shown takes the focus when asked after it appeared (Connections, once the connection
+  // whose page was open is gone). A pane on its way out is paused, so it never takes it.
   $effect(() => {
-    if (heading && untrack(() => takeFocus?.())) heading.focus();
+    if (heading && takeFocus?.()) heading.focus();
   });
 </script>
 

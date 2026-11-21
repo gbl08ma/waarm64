@@ -1602,14 +1602,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The backup is copied, as the key is: no file to save or open.
   - Other dialogs could become pages on Home's levels (the precedent: a connection's page replaced its details dialog
     and the wizard's edit mode), such as a disk's Overlays or a machine's snapshots.
-  - The machines on a connection's Details are linked by name (`ConnectionDetails`, the catalog's `name` snippet): two
-    stored machines with one name both lead to the first's Network tab.
   - A domain let go before its claim was public shows Let go (loop 4's fix in web/names.ts `view`), but what the agent
     publishes for it once the claim is anchored later (the claim with no release after it?) was not looked into.
-  - After a trip to a connection's page, Home reopens on Connections, even when the page was reached from the toolbar
-    (entering a connection's page chooses that pane).
   - The toolbar menu's link to a room's Domains is checked by `tests/page-room.test.ts` (a running machine) but has no
     screenshot in `tools/screens.ts`.
+  - The toolbar's ways into a connection's page while Home shows a pane that isn't a machine's (Disks, Shared folders,
+    Preferences, About) are entered from Connections (`machinesNav.origin`): `From` has no pane of the root to return
+    to, so their Back leads to Connections rather than that pane.
 
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a

@@ -27,6 +27,7 @@
   import { current } from './areas/current.svelte.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { page } from './page.ts';
+  import { hasDomainsLink } from './names-view.ts';
 
   type Props = { net: PageNetwork; machines: MachineRecord[]; act: Act };
   let { net, machines, act }: Props = $props();
@@ -62,6 +63,7 @@
   id={CONNECTIONS}
   title={t('machines:ConnectionsPane.connections.heading')}
   meta={t('machines:ConnectionsPane.connections.meta')}
+  takeFocus={() => machinesNav.takeFocus()}
 >
   {#snippet actions()}
     <Button icon="plus" onclick={() => network.openWizard({ mode: 'new' })} data-action="new-connection">
@@ -83,7 +85,7 @@
                 void act(t('machines:ConnectionsPane.busy.renaming'), () => page.netRename(c, name))}
             />
             <Note inline class="meta"
-              ><T m={metaOf(c)} />{#if c.room && !c.room.identity}<span class="sep" aria-hidden="true">·</span
+              ><T m={metaOf(c)} />{#if c.room && hasDomainsLink(c)}<span class="sep" aria-hidden="true">·</span
                 ><DomainsLink id={c.id} room={c.room} from={{ to: 'connections' }} />{/if}</Note
             >
           </div>

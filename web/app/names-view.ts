@@ -246,12 +246,26 @@ export function endedWords(v: TitleView): Msg | undefined {
 }
 
 /**
+ * The domains a room connection holds as the page counts them (its link, its page's Domains entry): live or lost (a lost
+ * one is still shown in the pane, needing the user's eye), not those let go or lapsed.
+ */
+export const heldDomains = (views: TitleView[]) => views.filter((v) => isLive(v) || v.state === 'lost');
+
+/**
+ * Whether a connection has a link to its Domains (the toolbar's Network menu, a machine's Network tab, Connections'
+ * cards): a room connection without a key of its own (an ephemeral one with its own key can't hold a domain; one on a
+ * stored connection's key can).
+ */
+export const hasDomainsLink = (c: { room?: { identityKey: string; identity?: unknown } }) =>
+  !!c.room && !c.room.identity;
+
+/**
  * A room connection's one status link to its Domains pane (DomainsLink.svelte): Register a domain… with none;
  * how many it holds (live or lost: a lost one is still shown in the pane, needing the user's eye); and how many of them
  * need attention (`needsAttention`), in the warning tone.
  */
 export function domainsLink(views: TitleView[], now = Date.now()): { m: Msg; warn: boolean } {
-  const shown = views.filter((v) => isLive(v) || v.state === 'lost');
+  const shown = heldDomains(views);
   if (!shown.length) return { m: msg('network:DomainsPane.register'), warn: false };
   const held = msg('network:names-view.link.held', { count: shown.length });
   const attention = shown.filter((v) => needsAttention(v, now)).length;

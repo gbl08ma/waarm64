@@ -9,7 +9,7 @@ import type { PageMachine } from '../run/page-machine.svelte.ts';
 import type { MachinesTab } from './machines-nav.svelte.ts';
 import { machinesNav } from './machines-nav.svelte.ts';
 import { homeRoute, type Known } from '../home-route.ts';
-import { HomeLevels, writeHome } from './home-levels.ts';
+import { HomeLevels, inPushedLevel, writeHome } from './home-levels.ts';
 import { demos } from './demos.svelte.ts';
 import { demosAddress, demosRoute, firstVisit, leftDemos, pageQuery, type DemosRoute } from '../demos-route.ts';
 import { intro } from './intro.svelte.ts';
@@ -215,12 +215,14 @@ export class PageWindow {
       demos.open = false;
       history.replaceState(null, '', leftDemos(location));
     }
-    // A machine or a pane asked for is at the root.
+    // A machine or a pane asked for is at the root; asked from a level pushed in the history (Details' machine link),
+    // it is an entry of its own, so the browser's Back returns to the level.
+    const push = !!id && inPushedLevel();
     if (id) machinesNav.leave();
     if (tab) machinesNav.tab = tab;
     if (id) machinesNav.choose(id);
     machinesNav.open = true;
-    writeHome();
+    writeHome(push ? 'push' : 'replace');
   }
   closeMachines() {
     machinesNav.open = false;

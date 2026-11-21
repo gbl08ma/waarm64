@@ -24,6 +24,7 @@
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
+  import { hasDomainsLink } from './names-view.ts';
   import DomainsLink from './DomainsLink.svelte';
 
   type Props = {
@@ -85,7 +86,7 @@
       <strong>{t('machines:AdapterCard.adapter', { n: index + 1 })}</strong>
       <Note inline class="meta">{t('machines:AdapterCard.adapter.mac', { mac: adapter.mac })}</Note>
       <Note inline class="meta" data-connection-name><T m={head} />{rest}</Note>
-      {#if c?.room && !c.room.identity}<span class="meta"
+      {#if c?.room && hasDomainsLink(c)}<span class="meta"
           ><DomainsLink id={c.id} room={c.room} from={{ to: 'tab', machine: edit.draft.id }} /></span
         >{/if}
       {#if here?.note}<Note inline tone="warn" class="meta">{said(here.note).headline}</Note>{/if}

@@ -53,8 +53,6 @@
         return t('network:NetAdapter.adapter', { adapter });
     }
   });
-  /** A machine named in the line on the machines: its Network tab (the transient one has none). */
-  const tabOf = (name: string) => users.find((u) => u.name === name)?.id;
 </script>
 
 {#snippet code(words: string)}<code>{words}</code>{/snippet}
@@ -64,9 +62,10 @@
     <div id="net-details" class="details" data-kind={c.kind}>
       <div class="machines" data-connection-machines={users.length}>
         {#if users.length}
+          <!-- The `n`th name is the `n`th machine (two may share a name); the transient one has no tab. -->
           <Note size="md" id="connection-details-machines">
             <T k="machines:ConnectionDetails.machines" params={{ machines: users.map((u) => u.name) }}>
-              {#snippet name(words: string)}{@const to = tabOf(words)}{#if to}<Button
+              {#snippet name(words: string, n: number)}{@const to = users[n]?.id}{#if to}<Button
                     variant="link"
                     onclick={() => page.openMachines('network', to)}
                     data-machine-tab={to}>{words}</Button

@@ -312,6 +312,67 @@ Docs only, no code. Updated:
   done; "the details'" → the cards). The agent's root-only tests' entry was already there and stays as it is.
 - **docs/README.md**: frontend.md's, copy.md's and names.md's lines.
 
+## Review fixes (2026-11-21, cloud session)
+
+The out-of-context review of loops 1–5 (`git show review/connection-page:REVIEW.md`: 2 high, 2 medium, 7 low), each
+fix with its test, seen failing before the fix (the first run of the new tests on the old code: each failed at its
+first assertion; the later assertions in the same test were seen failing by planting the bug back, where noted).
+- **1 (High) New name / New address left the old record**: `newAddress` (areas/network-actions.ts) refreshes the list
+  when no adapter here runs the connection (`net.edit` did only then). Test: page-domains "New name, then Save or a
+  rename from the card" (an ephemeral room: the backup, Save and the card's rename keep the new key); failed first
+  (the backup exported the old key).
+- **2 (High) A machine's draft lost through a connection's page**: `machinesNav.enter` no longer chooses Connections
+  (the root's pane stays, so the editor keeps following the machine); `leave({ connections })` chooses it when Back
+  leads there or the connection is gone; `MachineEdit.follow` resets `dirty` whenever it replaces the draft. Home
+  reopens on the pane chosen before (the backlog's item removed). Test: page-home-levels "a machine's draft through a
+  connection's page and back" (the draft kept and Revert clearing it; Home reopening on Disks); its draft assertion
+  seen failing with `#chosen = CONNECTIONS` planted back.
+- **3 (Medium) A failed `member` read swallowed**: `pageNames` keeps the error (`memberError`, a `MsgError`
+  `network:names.memberFailed` with the cause); the next read tries again. DomainsPane (`#domains-member-error`),
+  ConnectionBackup (`#connection-backup-error`, no field until the export is read; `network:ConnectionBackup.failed`
+  for the export's own failure) and Details (`#net-details-room-name-error`) say it. Test: page-domains "a connection's
+  name in its room that can't be read" (the agent's `member` made to reject, then restored); failed first.
+- **4 (Medium) Deleting the connection from its own page**: `machinesNav.dangling` (a context entered whose
+  connection isn't listed) → MachinesPage's effect → `page.contextGone()` (`HomeLevels.gone`: leave for Connections,
+  `#home` in place, Connections' title focused through `Pane`'s `takeFocus`, now tracked so a pane already shown takes
+  it); the same clears a context whose id was unknown at load, so it isn't entered later. `direction` reads `up` while
+  dangling. Test: page-home-levels "a connection gone under its page" (from a card and from an address; an id unknown
+  at load listed later); failed first (the address still named it).
+- **5 (Low) Back/Esc twice during the outro**: the outgoing level is `inert` (home-level.ts); `machinesNav.moving`
+  (from the change of level on an open Home until the outgoing column level's `outroend`, 500 ms at most) takes the
+  column's and the pane's clicks (`pointer-events: none`) and Esc; `leaveContext` ignores Back while a
+  `history.back()` it started hasn't reached `popstate` (1 s at most). Test: page-home-levels "Back and Esc twice
+  during a move run once" (a double-click on Back, two Esc); failed first (Home closed).
+- **6 (Low) The toolbar's origin always the screen**: `machinesNav.origin()` (the screen; in a level, its `from`; a
+  machine's pane at its tab; else Connections) for Network.svelte's Details… and wizard, the menu's DomainsLink
+  (`from` optional, read when clicked) and the names notice's action. `From`'s tab gains an optional `tab`
+  (`MACHINE_TABS` in home-route.ts, checked by `homeState`), so Back returns to the tab it was on. Tests: home-route
+  (`homeState`/`backOf` with a tab: failed first on a bad tab accepted); page-home-levels "… an origin from what Home
+  shows" (Home on Bravo's Settings → Back to Bravo's Settings). The toolbar's menu itself needs a running machine:
+  not driven here (page-room.test.ts goes through it).
+- **7 (Low) A link out of a pushed level replaced its entry**: `openMachines(tab, id)` from a pushed level
+  (`inPushedLevel`) pushes `#home` (`writeHome('push')`). Test: same page-home-levels test (history length, Back
+  returns to the level); seen failing with the push planted out.
+- **8 (Low) A `member` read in flight when the key is forgotten**: reads carry a generation, bumped by `forgetMember`
+  (which also drops the pending and failed reads under the entry); an older generation's answer is dropped. Test:
+  page-domains (same test, its last part: forget, read again, the old read answering after the new one started); seen
+  failing with the bump planted out (`[2, 'old', 'old']`).
+- **9 (Low) Back to a machine's Network tab focused nothing**: leaving for a tab focuses the machine pane's title
+  (`MachinePane` passes `takeFocus`). Test: page-home-levels "a machine's draft …" (H3 of Bravo's pane focused); failed
+  first.
+- **10 (Low) Two counts**: `names-view.ts` `heldDomains` (live or lost) for both the link and the column's count (the
+  key's note updated: "Domains (N)" counts what "N domains registered" says). Tests: names-page "the domains held";
+  page-domains' count of the six states now 5; failed first ('4').
+- **11 (Low) Details linked machines by name**: T.svelte passes a marker's snippet its piece's place among that
+  marker's pieces; ConnectionDetails links the `n`th name to `users[n]`. Test: page-home-levels "… machines linked by
+  id" (two machines named Bravo); seen failing with the lookup by name planted back (the backlog's item removed).
+- **Also: the toolbar menu's domains link** followed "stored only"; now `hasDomainsLink` (names-view.ts, a room
+  connection without a key of its own) in the menu, the tab and the cards alike (an ephemeral connection on a stored
+  connection's key gets one in the menu too). Test: names-page "which connections have a domains link" (unit; the menu
+  needs a running machine).
+- Deferred: none. New backlog line: the toolbar's ways in while Home shows a non-machine pane (Disks…) are entered
+  from Connections (`From` has no root pane to return to).
+
 ## Tiers passed
 
 | Commit | Tier |
@@ -321,3 +382,4 @@ Docs only, no code. Updated:
 | DOMAINS loop 3 | T1 (`scripts/ci-fast.sh`: OK, 346 s, 165 files). T2 as far as a cloud session goes: `scripts/ci.sh` **whole** (with 6921f2b's skips): CI OK (901 s): static checks, clippy, Rust tests, the agent's tests (the six root-only ones skipped), TestFloat, builds, JS 2090 tests: 1483 passed, 0 failed, 607 skipped; its native guest-image and TSan steps said SKIPPED (no images here). The network's Rust tests: 287 passed (`member`'s among them). With `WAARM64_DISTROS=debian WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1`: `tests/names-page.test.ts` passed; `tests/page-room.test.ts` failed once (New name left the key field empty: fixed in ConnectionRoomSettings), then passed (135 s); `tests/page-home-levels.test.ts` passed again after the fix. Those last three runs and the quick static checks (eslint, prettier, svelte-check, `cargo fmt --check`) are all that ran after the fix: the user, in a hurry, asked for targeted checks only, so the broad CI on the final tree (ci.sh, ci-fast.sh and the topic scripts: ci-net, ci-machines, ci-debian) is left for the track's end, run by the supervisor. |
 | DOMAINS loop 4 | Targeted only (the user's instruction): tsc, svelte-check, eslint/prettier/stylelint on the touched files, `tools/i18n-check.ts`, `tools/ci-select.ts --check`; `tests/names-page.test.ts`, `tests/names-agent.test.ts`, `tests/page-domains.test.ts`, `tests/page-home-levels.test.ts` passed. `tests/page-room.test.ts` not run in this loop (run after loop 5). Not run: ci-fast, ci.sh, the topic scripts. |
 | DOMAINS loop 5 | Targeted only (the user's instruction): tsc, svelte-check, eslint/prettier/stylelint on the touched files, `tools/i18n-check.ts`, `tools/ci-select.ts --check`; `tests/names-page.test.ts`, `tests/page-domains.test.ts`, `tests/page-home-levels.test.ts` passed; `tests/page-room.test.ts` with `WAARM64_DISTROS=debian WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1` passed (128 s: the menu's link, the pane's register, the label, B's ephemeral pane, the message bar's Domains action; it covers loop 4's changes to it too). Not run: ci-fast, ci.sh, the topic scripts (ci-net, ci-debian, ci-machines), `tests/names-browser.test.ts` and the other names tests: left for the supervisor at the track's end. |
+| DOMAINS: the review's findings fixed | Targeted only (the user's instruction): see the commit's report — tsc, svelte-check, `npm run lint` (eslint, stylelint, prettier), `tools/i18n-check.ts`, `tools/ci-select.ts --check`; `tests/home-route.test.ts`, `tests/names-page.test.ts`, `tests/page-home-levels.test.ts`, `tests/page-domains.test.ts` passed. Not run: ci-fast, ci.sh, the topic scripts, `tests/page-room.test.ts` (a guest): left for the supervisor. |

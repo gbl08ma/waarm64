@@ -22,7 +22,7 @@
   import { msg, t, type Msg } from '../i18n.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { pageNames } from './areas/names.svelte.ts';
-  import { isLive } from './names-view.ts';
+  import { heldDomains } from './names-view.ts';
   import { page } from './page.ts';
 
   type Props = { net: PageNetwork; ctx: HomeContext; act: Act };
@@ -44,9 +44,9 @@
     return t('machines:ConnectionsPane.connection.unused');
   });
 
-  /** A room's domains held (not let go, lapsed or lost): the Domains entry's count. */
+  /** A room's domains held (live or lost, as its link counts them): the Domains entry's count. */
   const held = $derived(
-    c?.room ? pageNames.of({ identityKey: c.room.identityKey, link: c.room.link }).filter(isLive).length : 0,
+    c?.room ? heldDomains(pageNames.of({ identityKey: c.room.identityKey, link: c.room.link })).length : 0,
   );
   type Section = { id: ConnectionSection; icon: IconName; label: string; count?: number; name?: string };
   const sections = $derived<Section[]>([

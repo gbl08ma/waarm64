@@ -19,12 +19,25 @@ import { machinesNav, type MachinesTab } from './machines-nav.svelte.ts';
 
 const addressOf = (hash: string) => `${location.pathname}${location.search}${hash}`;
 
-/** Home's address as its level says (`#home`, or a connection's section), in place: a level's entry keeps its state. */
-export function writeHome() {
+/**
+ * Home's address as its level says (`#home`, or a connection's section), in place: a level's entry keeps its state.
+ * `push`: as an entry of its own (a link out of a pushed level, whose entry the browser's Back then returns to).
+ */
+export function writeHome(nav: 'replace' | 'push' = 'replace') {
   const ctx = machinesNav.context;
   const hash = homeHash(ctx && { id: ctx.id, section: ctx.section });
-  if (location.hash !== hash) history.replaceState(ctx ? history.state : null, '', addressOf(hash));
+  if (nav === 'push') history.pushState(null, '', addressOf(hash));
+  else if (location.hash !== hash) history.replaceState(ctx ? history.state : null, '', addressOf(hash));
 }
+
+/** Whether the level shown was pushed on top of where it was entered from (its entry is the history's current one). */
+export const inPushedLevel = () =>
+  !!machinesNav.context &&
+  !!homeState(history.state)?.pushed &&
+  homeRoute(location.hash)?.connection?.id === machinesNav.context.id;
+
+/** How long a `history.back()` the column's Back started may take to arrive (`popstate`) before Back is taken again. */
+const BACK_MAX_MS = 1000;
 
 type HomeDeps = {
   /** The browser's connections (a level is a connection's page while it exists). */
@@ -35,6 +48,8 @@ type HomeDeps = {
 
 export class HomeLevels {
   readonly #d: HomeDeps;
+  /** When a `history.back()` the column's Back started (0: none on its way): Back and Esc wait for its `popstate`. */
+  #backing = 0;
   constructor(d: HomeDeps) {
     this.#d = d;
     machinesNav.follow({ connections: d.connections });
@@ -71,7 +86,10 @@ export class HomeLevels {
     if (now && !same) {
       const url = addressOf(homeHash({ id, section: now.section }));
       // A plain copy of `from`: a component's state (a proxy) can't be cloned into the history.
-      const plain: From = from.to === 'tab' ? { to: 'tab', machine: from.machine } : { to: from.to };
+      const plain: From =
+        from.to === 'tab'
+          ? { to: 'tab', machine: from.machine, ...(from.tab ? { tab: from.tab } : {}) }
+          : { to: from.to };
       if (nav === 'push') history.pushState({ home: { from: plain, pushed: true } } satisfies HomeState, '', url);
       else history.replaceState(null, '', url);
     }
@@ -81,15 +99,25 @@ export class HomeLevels {
   /**
    * The column's Back (and Esc) in a context: to where it was entered from (`machinesNav.back`). A level whose entry
    * was pushed on top of that place goes back in the browser's history (`follow` then leaves it), so Forward enters it
-   * again and no entry is left over; one the address opened is left in place.
+   * again and no entry is left over; one the address opened is left in place. Once only: while a move between levels
+   * shows, or the history's Back is on its way, Back and Esc pressed again are ignored.
    */
   leaveContext() {
-    const st = homeState(history.state);
-    if (st?.pushed && homeRoute(location.hash)?.connection?.id === machinesNav.context?.id) {
+    if (machinesNav.moving || (this.#backing && performance.now() - this.#backing < BACK_MAX_MS)) return;
+    if (inPushedLevel()) {
+      this.#backing = performance.now();
       history.back();
       return;
     }
     this.#leave();
+  }
+  /**
+   * The level's connection is gone (deleted from its page or elsewhere, or unknown when its address was opened): Home
+   * leaves it for Connections, whose title takes the focus, and its address is Home's root, in place.
+   */
+  gone() {
+    machinesNav.leave({ connections: true, focus: 'title' });
+    writeHome();
   }
   /**
    * The browser's Back or Forward (`popstate`, an address of neither the store's page nor the introduction): Home's
@@ -97,6 +125,7 @@ export class HomeLevels {
    * the state says it was entered, else Connections); any other leaves the level for where its Back leads.
    */
   follow() {
+    this.#backing = 0;
     const r = homeRoute(location.hash);
     const ctx = machinesNav.context;
     const at = r?.connection;
@@ -111,19 +140,24 @@ export class HomeLevels {
       this.#d.openMachines();
     } else if (ctx) this.#leave(r ? undefined : 'screen');
   }
-  /** Leaves the level for where its Back leads (`screen`: the address says the machine's), in place. */
+  /**
+   * Leaves the level for where its Back leads (`screen`: the address says the machine's), in place: Connections with
+   * the card's Details focused, a machine's pane at its tab with its title focused, or the machine's screen.
+   */
   #leave(force?: 'screen') {
     const to = force ? { to: force } : machinesNav.back;
-    machinesNav.leave(to?.to === 'connections');
+    if (to?.to === 'connections') machinesNav.leave({ connections: true, focus: 'card' });
+    else machinesNav.leave({ focus: to?.to === 'tab' ? 'title' : undefined });
     if (to?.to === 'screen') this.#d.closeMachines();
-    else if (to?.to === 'tab') this.#d.openMachines('network', to.machine);
+    else if (to?.to === 'tab') this.#d.openMachines(to.tab ?? 'network', to.machine);
     else writeHome();
   }
   /** Their part of `page`. */
-  page(): Pick<Page, 'openConnection' | 'leaveContext'> {
+  page(): Pick<Page, 'openConnection' | 'leaveContext' | 'contextGone'> {
     return {
       openConnection: (id, section, from) => this.openConnection(id, section, from),
       leaveContext: () => this.leaveContext(),
+      contextGone: () => this.gone(),
     };
   }
 }

@@ -24,6 +24,7 @@
   import { ask } from './ask.svelte.ts';
   import { defaultsOf, phaseTone, roomWarned, type AdapterView } from './network-view.ts';
   import { page } from './page.ts';
+  import { hasDomainsLink } from './names-view.ts';
 
   type Props = { a: AdapterView; heading: boolean; onwizard: () => void; ondetails: () => void; ondomains: () => void };
   let { a, heading, onwizard, ondetails, ondomains }: Props = $props();
@@ -188,15 +189,9 @@
       />
     </div>
   {/if}
-  {#if a.connection?.room && !a.connection.ephemeral}
+  {#if a.connection?.room && hasDomainsLink(a.connection)}
     <div>
-      <DomainsLink
-        id={a.connection.id}
-        room={a.connection.room}
-        from={{ to: 'screen' }}
-        onopen={ondomains}
-        data-domains-link={i}
-      />
+      <DomainsLink id={a.connection.id} room={a.connection.room} onopen={ondomains} data-domains-link={i} />
     </div>
   {/if}
   <Note tone="error" id={`net-menu-error${s}`} hidden={!runner.error}

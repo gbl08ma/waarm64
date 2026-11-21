@@ -15,6 +15,8 @@ const SHIFT = 24;
 
 /** One block's move in (`in`) or out (`out`) of its level. */
 export function level(node: Element, _params: unknown, o: { direction: 'in' | 'out' | 'both' }): TransitionConfig {
+  // What leaves is gone already for the keyboard (its focused Back pressed again, Tab into it).
+  if (o.direction === 'out' && node instanceof HTMLElement) node.inert = true;
   if (prefersReducedMotion.current) return fade(node, { duration: DURATION });
   const incoming = o.direction !== 'out';
   // Down: in from the right (+), out to the left (-); up: the reverse.

@@ -1347,6 +1347,10 @@
     "message": "Domains",
     "note": "The button of the message bar's notice at load of domains in their last week (names.lastWeek): opens the Domains pane of the connection that holds the first of them (its page on the Home page)."
   },
+  "names.memberFailed": {
+    "message": "This connection's key and its name in the room couldn't be read",
+    "note": "Error on a room connection's page (Home page, under Connections) when the names agent couldn't read the connection's key and its name in the room (its worker didn't start, the browser's storage refused): in its Domains pane in the domains' place, in Back up key and domains in the key's place, and in its Details in its name's place. Its cause follows as details. Showing the page again tries again."
+  },
   "connections.demoNetwork": {
     "message": "Demo network",
     "note": "The default name of a new connection to the demo network (the project's public server that lets the guest reach a few allowed hosts, such as Alpine's package mirror), as the Network wizard, the Network menu and the Home page's Connections show it. It is stored with the connection, which the user can rename."
@@ -1826,6 +1830,10 @@
   "ConnectionBackup.label": {
     "message": "Key and domains",
     "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): the label of the field holding the export (hidden until shown, with Copy)."
+  },
+  "ConnectionBackup.failed": {
+    "message": "The key and domains couldn't be read",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): an error in the field's place when the browser's storage didn't give the connection's export. Its cause follows as details."
   },
   "ConnectionBackup.warning": {
     "message": "Keep it secret. Whoever has it can take this connection's name and address in the room, and its domains.",

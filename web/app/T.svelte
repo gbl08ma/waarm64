@@ -4,7 +4,8 @@
   words (`<ui>`, with its icon before them: `<ui-network>`), code (`<code>`), words stressed or a name set apart
   in a sentence (`<em>`, bold), and words in italics (`<i>`: a writer's own stress in their own prose); a snippet per other marker, named as
   the marker and given the words it wraps (`{#snippet b(text)}<b>{text}</b>{/snippet}`), which can stand in for these
-  too. A message without markers needs none of this: `{t('ns:Source.name')}`.
+  too; and, second, which of that marker's pieces it is (0, 1…: a list's items in a marker are one piece each, so a
+  snippet can tell two equal names apart). A message without markers needs none of this: `{t('ns:Source.name')}`.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -21,9 +22,18 @@
     k?: string;
     m?: Msg;
     params?: Params;
-    [marker: string]: Snippet<[string]> | Params | Msg | string | undefined;
+    [marker: string]: Snippet<[string]> | Snippet<[string, number]> | Params | Msg | string | undefined;
   } = $props();
   const pieces = $derived(m ? marked(m.key, m.params) : marked(k ?? '', params));
+  /** Each piece's place among its marker's pieces (0 for the first `<name>`, 1 for the second…). */
+  const nth = $derived.by(() => {
+    const seen: Record<string, number> = {};
+    return pieces.map((p) => {
+      const n = seen[p.tag ?? ''] ?? 0;
+      seen[p.tag ?? ''] = n + 1;
+      return n;
+    });
+  });
   /** The icon of a `<ui-…>` marker, if it names one. */
   const iconOf = (tag: string) =>
     tag.startsWith('ui-') && tag.slice(3) in ICONS ? (tag.slice(3) as IconName) : undefined;
@@ -33,9 +43,9 @@
 </script>
 
 {#each pieces as p, i (i)}{#if p.tag && typeof markers[p.tag] === 'function'}{@render (
-      markers[p.tag] as Snippet<[string]>
-    )(p.text)}{:else if p.tag === 'name'}<span class="name">{p.text}</span>{:else if p.tag === 'ui'}<span class="ui"
-      >{p.text}</span
+      markers[p.tag] as Snippet<[string, number]>
+    )(p.text, nth[i])}{:else if p.tag === 'name'}<span class="name">{p.text}</span>{:else if p.tag === 'ui'}<span
+      class="ui">{p.text}</span
     >{:else if p.tag?.startsWith('ui-')}{@const icon = iconOf(p.tag)}<span class="ui"
       >{#if icon}<span class="first"
           ><span class="icon" aria-hidden="true"><Icon name={icon} size="0.9em" /></span>{firstWord(p.text)}</span

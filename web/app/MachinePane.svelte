@@ -157,6 +157,7 @@
   {tabs}
   tab={machinesNav.tab}
   ontab={(x) => (machinesNav.tab = x as MachinesTab)}
+  takeFocus={() => machinesNav.takeFocus()}
 >
   {#snippet actions()}
     {#if m.id !== current.id && edit.running}

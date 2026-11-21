@@ -2197,7 +2197,7 @@
   },
   "ConnectionNav.domains.named": {
     "message": "Domains ({{n}})",
-    "note": "Home page, a room connection's page: the accessible name of its Domains entry in the left column when it holds domains (the page shows the count in a pill). {{n}}: how many it holds (not let go, lapsed or lost)."
+    "note": "Home page, a room connection's page: the accessible name of its Domains entry in the left column when it holds domains (the page shows the count in a pill). {{n}}: how many it holds (live, or lost: the pane still shows it; as its link to Domains counts them, names-view.link.held)."
   },
   "ConnectionNav.backup": {
     "message": "Back up key and domains…",

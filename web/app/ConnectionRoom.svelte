@@ -1,6 +1,6 @@
 <!--
   A room connection's part of its Details (ConnectionDetails.svelte; docs/networking/rooms.md): its name in the room,
-  connected or not (the names agent's `member`, from its key and the room's ID), the room's link and who may connect (kept with the connection, so always), why
+  connected or not (the names agent's `member`, from its key and the room's ID; why not, when it can't be read), the room's link and who may connect (kept with the connection, so always), why
   members go through the relay where a direct path was wanted (the toolbar's warning leads here) and what may fix it,
   and the registry's line while it is connected here. Its domains are in the page's Domains section (DomainsPane.svelte).
 -->
@@ -8,6 +8,8 @@
   import Note from './ui/Note.svelte';
   import ValueField from './ui/ValueField.svelte';
   import T from './T.svelte';
+  import ErrorText from './ErrorText.svelte';
+  import { errorView } from './usb-problems.ts';
   import { memberOf, pageNames } from './areas/names.svelte.ts';
   import { namesLine } from './names-view.ts';
   import { t, text } from '../i18n.ts';
@@ -20,6 +22,7 @@
   /** The connection as its room sees it, connected or not: its key, its name, the room's domain (web/names.ts
    * `Member`): a member's name is its key's label under the domain. */
   const member = $derived(pageNames.member(memberOf(room)));
+  const failed = $derived(pageNames.memberError(memberOf(room)));
 </script>
 
 {#snippet code(words: string)}<code>{words}</code>{/snippet}
@@ -33,6 +36,8 @@
     readonly
     copy
   />
+{:else if failed}
+  <Note size="md" tone="error" id="net-details-room-name-error"><ErrorText error={errorView(failed)} /></Note>
 {/if}
 <ValueField
   id="net-details-room-link"

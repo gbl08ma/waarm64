@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { t, text } from '../web/i18n.ts';
 import type { NameCheck, TitleView } from '../web/names.ts';
-import { canRegister, checkWords, domainsLink, endedWords, isLive, NameForm, needsAttention, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleDates, titleState, titleTone, titlesOf, upkeepLine, zonePoints } from '../web/app/names-view.ts';
+import { canRegister, checkWords, domainsLink, hasDomainsLink, heldDomains, endedWords, isLive, NameForm, needsAttention, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleDates, titleState, titleTone, titlesOf, upkeepLine, zonePoints } from '../web/app/names-view.ts';
 import { msg, MsgError } from '../web/i18n.ts';
 
 const NOW = 1_800_000_000_000;
@@ -261,6 +261,19 @@ test('the status link: Register a domain… with none, how many, and how many ne
   assert.deepEqual(said([v({ state: 'grace' }), v({ name: 'b', state: 'lost' }), v({ name: 'c', state: 'released' })]), [text(msg('network:names-view.link.attention', { held: held(2), count: 2 })), true], 'the grace and a lost one; one let go not counted');
   assert.equal(needsAttention(v({ keptUntil: nowS + 8 * DAY_S }), NOW), false);
   assert.equal(needsAttention(v({ keptUntil: nowS + 6 * DAY_S }), NOW), true);
+});
+
+test("the domains held, as the link and the column's count both say them: live and lost", () => {
+  const all = (['preparing', 'reserved', 'active', 'grace', 'lapsed', 'released', 'lost'] as const).map((state) => v({ name: state, state }));
+  assert.deepEqual(heldDomains(all).map((x) => x.name), ['preparing', 'reserved', 'active', 'grace', 'lost']);
+  assert.equal(text(domainsLink(all, NOW).m).startsWith(t('network:names-view.link.held', { count: heldDomains(all).length })), true, 'the link counts the same');
+});
+
+test('which connections have a domains link: a room one without a key of its own (an ephemeral one sharing a stored key too)', () => {
+  assert.equal(hasDomainsLink({ room: { identityKey: 'k' } }), true);
+  assert.equal(hasDomainsLink({ room: { identityKey: 'k' } }), true, "an ephemeral connection on a stored connection's key (no identity in its record)");
+  assert.equal(hasDomainsLink({ room: { identityKey: 'k', identity: { key: 'ab' } } }), false, 'a key of its own');
+  assert.equal(hasDomainsLink({}), false, 'not a room');
 });
 
 test('wording: the upkeep line, the dates, the link (the kickoff\'s words)', () => {

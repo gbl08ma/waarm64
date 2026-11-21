@@ -12,6 +12,8 @@ import type { Member, MemberConn, NameCheck, NamesConn, TitleView } from '../../
 import { roomOf } from '../../room.ts';
 import type { ZonePoint } from '../../names-store.ts';
 import { titlesOf } from '../names-view.ts';
+import type { From } from '../home-route.ts';
+import { machinesNav } from './machines-nav.svelte.ts';
 
 const names = () => import('../../names.ts');
 /** How often the titles are read again while nothing changes (the reserved state's hours). */
@@ -39,8 +41,12 @@ class PageNames {
   registering = $state.raw<{ identityKey: string; link: string; name: string }[]>([]);
   /** Room connections as their rooms see them, by `memberKey`. */
   readonly #members = new SvelteMap<string, Member>();
-  /** Those being read (not reactive: a read starts once). */
-  readonly #asking = new Set<string>();
+  /** Why the last read of one failed, by `memberKey` (until a later read, which tries again, answers). */
+  readonly #failed = new SvelteMap<string, MsgError>();
+  /** Those being read, with the generation each started in (not reactive: a read starts once). */
+  readonly #asking = new Map<string, number>();
+  /** Bumped when a key is forgotten (`forgetMember`): a read started before then answers for the old key, dropped. */
+  #generation = 0;
   #watching = false;
 
   /** Reads the titles now, again at each change the agent announces, and every minute. */
@@ -75,28 +81,47 @@ class PageNames {
   /**
    * Room connection `c` as its room sees it (web/names.ts `Member`: its node key, its name in the room, the room's
    * domains), whether or not it is connected: undefined until the agent has said, then kept (reactive). Its key is
-   * made under its entry if it never started (web/names.ts `NamesAgent.member`).
+   * made under its entry if it never started (web/names.ts `NamesAgent.member`). A read that fails says why
+   * (`memberError`); the next call reads again.
    */
   member(c: MemberConn): Member | undefined {
     const k = memberKey(c);
     const have = this.#members.get(k);
     if (have || this.#asking.has(k)) return have;
-    this.#asking.add(k);
+    const gen = this.#generation;
+    this.#asking.set(k, gen);
     const plain = memberOf(c); // not a proxy: it crosses to the worker
+    const current = () => this.#asking.get(k) === gen;
     void names()
       .then((n) => n.namesAgent().member(plain))
       .then(
-        (m) => void this.#members.set(k, m),
-        (e: unknown) => console.warn("names: a connection's name in its room could not be read:", e),
+        (m) => {
+          if (!current()) return;
+          this.#members.set(k, m);
+          this.#failed.delete(k);
+        },
+        (e: unknown) => {
+          if (current()) this.#failed.set(k, new MsgError('network:names.memberFailed', {}, { cause: e }));
+        },
       )
-      .finally(() => this.#asking.delete(k));
+      .finally(() => {
+        if (current()) this.#asking.delete(k);
+      });
     return undefined;
   }
 
-  /** The key kept under `identityKey` changed (New name): what `member` said of it is read again. */
+  /** Why connection `c`'s last `member` read failed (a `MsgError`: the headline, the cause as details), if it did. */
+  memberError(c: MemberConn): MsgError | undefined {
+    return this.#failed.get(memberKey(c));
+  }
+
+  /** The key kept under `identityKey` changed (New name): what `member` said of it, or is still reading, is read again. */
   forgetMember(identityKey: string) {
-    for (const k of [...this.#members.keys()])
-      if ((JSON.parse(k) as string[])[1] === identityKey) this.#members.delete(k);
+    this.#generation++;
+    const under = (k: string) => (JSON.parse(k) as string[])[1] === identityKey;
+    for (const k of [...this.#members.keys()]) if (under(k)) this.#members.delete(k);
+    for (const k of [...this.#failed.keys()]) if (under(k)) this.#failed.delete(k);
+    for (const k of [...this.#asking.keys()]) if (under(k)) this.#asking.delete(k);
   }
 
   /** Connection `c` is up with link `c.link`: its titles in the room publish through it (web/names.ts `relink`). */
@@ -174,20 +199,21 @@ export const pageNames = new PageNames();
 
 /**
  * At every load (web/app/main.ts): the agent, and the notice of names in their last week (`messages`), whose Domains
- * action opens the Domains of the room connection among `net`'s that holds the first of them (Back leading to the
- * machine's screen; `page` read then, once it is made).
+ * action opens the Domains of the room connection among `net`'s that holds the first of them (Back leading to what
+ * showed when it was pressed: the machine's screen, or Home's pane, `machinesNav.origin`; `page` read then, once it is
+ * made).
  */
 export const startPageNames = (
   messages: { notify(m: Msg, kind: 'info', actions: Action[]): void },
   net: { connections: { id: string; room?: { identityKey: string; link: string } }[] },
-  page: () => { openConnection(id: string, section: 'domains', from: { to: 'screen' }): void },
+  page: () => { openConnection(id: string, section: 'domains', from: From): void },
 ) =>
   pageNames
     .start(
       (m, actions) => messages.notify(m, 'info', actions),
       (o) => {
         const c = net.connections.find((x) => x.room?.identityKey === o.identityKey && roomOf(x.room.link) === o.room);
-        if (c) page().openConnection(c.id, 'domains', { to: 'screen' });
+        if (c) page().openConnection(c.id, 'domains', machinesNav.origin());
       },
     )
     .catch((e: unknown) => console.warn('names agent:', e));

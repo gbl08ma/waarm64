@@ -606,32 +606,41 @@ next start, `failedAgain`: not again).
 **Levels.** Home shows one level at a time: its **root** (the column above and its panes) or a **context** one level
 down, which replaces all of the column's entries and the pane with its own; leaving restores them. The one context now
 is **a connection's page**, under Connections (`machinesNav`'s context, `{ kind: 'connection', id, section, from }`:
-web/app/areas/machines-nav.svelte.ts; its logic DOM-free in `home-route.ts`; `selected` stays Connections in it).
+web/app/areas/machines-nav.svelte.ts; its logic DOM-free in `home-route.ts`). Entering a context leaves the pane
+chosen at the root as it was (a machine's, with its unsaved draft), so Back to anywhere but Connections finds it so.
 **Back is the column's first entry at every level** (`HomeBack.svelte`): at the root, Back to the machine (above); in a
 context, back to where the user came from (`from`, not in the address): [Back to Connections](ui:machines:ConnectionNav.back.connections)
 (from a card's [Details](ui:machines:ConnectionsPane.connection.details), an address or a reload, where the card's
-Details takes the focus back), "Back to <machine>" (`ConnectionNav.back.machine`, from a machine's Network tab), or
-[Back to the machine](ui:machines:MachinesNav.back) (from the toolbar's Network menu: Home closes and the screen is
-back; also from the toolbar's or the tab's link to a room's Domains, and from the wizard's
-[Edit {{name}}](ui:network:NetChangeStep.edit), Back leading to where the wizard was opened); a machine deleted since,
+Details takes the focus back), "Back to <machine>" (`ConnectionNav.back.machine`, from a machine's Network tab, or
+from the toolbar while Home showed that machine: its pane again at the tab it was on, its title focused), or
+[Back to the machine](ui:machines:MachinesNav.back) (from the toolbar's Network menu while the screen showed: Home
+closes and the screen is back; also from the tab's link to a room's Domains, and from the wizard's
+[Edit {{name}}](ui:network:NetChangeStep.edit), Back leading to where the wizard was opened). The toolbar's ways in
+(Details…, its Domains link, the wizard's Edit) and the message bar's Domains take their origin from what shows
+(`machinesNav.origin()`: the screen; in Home, a machine's pane at its tab, else Connections). A machine deleted since,
 or none on the page any more, leads to Connections (`backOf`). Esc does what Back does, under the conditions above
-(in a context, with or without a machine on the page). The toolbar's Home and the wordmark still lead to the machine from any level, and Home
-opens at its root next time, on Connections (entering a connection's page chose that pane, even from the toolbar:
-docs/backlog.md). Going down, the column's entries and the pane leave to the left and the new ones come
+(in a context, with or without a machine on the page), once per move: while a move between levels shows
+(`machinesNav.moving`, until the outgoing level's transition ends; the outgoing level is `inert`, and the column and
+the pane take no clicks), or while a `history.back()` Back started hasn't reached its `popstate`, Back and Esc pressed
+again are ignored. The toolbar's Home and the wordmark still lead to the machine from any level, and Home opens at its
+root next time, on the pane chosen there. Going down, the column's entries and the pane leave to the left and the new ones come
 from the right; going up, the reverse (`home-level.ts`: 150 ms, `cubicOut`, a plain fade under
 `prefers-reduced-motion`; the column (`HomeColumn.svelte`) and the pane's slot are keyed by the level, the outgoing and
 incoming blocks stacked in one grid cell); choosing between panes or sections of one level is instant. Entering, the
 pane's title takes the focus (`Pane`'s `takeFocus`). **The address says the level** (`areas/home-levels.ts`):
 `#home`, or `#home/connections/<id>` (Details), `…/settings`, `…/domains`; a reload, a link or a change of fragment
 lands there (the older `#machines` is the root); an id that is gone (`shownContext`, also when the connection is
-deleted while its page shows) opens Connections. `page.openConnection(id, section, from)` enters one. **Going down a
+deleted while its page shows) opens Connections, and the level is left (`machinesNav.dangling` → `page.contextGone`:
+the address `#home` in place, Connections' title focused), so a connection with that id listed later is never entered
+unasked. `page.openConnection(id, section, from)` enters one. **Going down a
 level is an entry of the browser's history** (`pushState`, from a card, a machine's tab, the toolbar or the wizard's
 Edit), with where it was entered from in the entry's state (`history.state.home`: `{ from, pushed }`, `homeState`), so
 the browser's Back leaves the level for that place and Forward enters it again from there (`HomeLevels.follow`, on
 `popstate`, with the transitions' direction); moving between a level's sections, and Home opened or closed, write the
 address in place, as moving between the root's panes does. The column's Back and Esc on a pushed level go back in the
 history (no entry is left over to come back to by mistake); on a level the address opened (a reload, a pasted address:
-its state dropped, entered from Connections) they write in place, as before.
+its state dropped, entered from Connections) they write in place, as before. A link out of a pushed level to a pane
+(Details' machine link) pushes `#home`, so the browser's Back returns to the level.
 
 **A connection's page** (`ConnectionNav.svelte` the column, `ConnectionPage.svelte` the pane): Back, the connection's
 name with its line (its kind, and who has it now: the card's words), and its sections,
@@ -640,9 +649,11 @@ connection, **[Domains](ui:machines:ConnectionNav.domains)**, and under a rule t
 [Back up key and domains…](ui:machines:ConnectionNav.backup) (a dialog with the connection's key and its domains to
 copy: networking/names.md "What the user sees"), a tailcat server's
 [New address](ui:machines:ConnectionNav.newAddress), [Log out](ui:machines:ConnectionNav.logout) where a node is kept
-(it asks first), and [Delete](ui:machines:ConnectionsPane.connection.delete), after which the page falls back to
-Connections. A pane's own primary action stays in its head (Domains' Register a domain…). **Details** (`ConnectionDetails.svelte`, `ConnectionRoom.svelte` a room's part) says first which
-machines have it attached, each a link to that machine's Network tab ([Attached to {{machines}}.](ui:machines:ConnectionDetails.machines)
+(it asks first), and [Delete](ui:machines:ConnectionsPane.connection.delete), after which the page leaves the level
+for Connections (its title focused). The Domains entry counts the domains held as the link does (live or lost:
+`names-view.ts` `heldDomains`). A pane's own primary action stays in its head (Domains' Register a domain…). **Details** (`ConnectionDetails.svelte`, `ConnectionRoom.svelte` a room's part) says first which
+machines have it attached, each a link to that machine's Network tab, by its id (T.svelte gives a snippet each piece's
+place among its marker's: the `n`th name is the `n`th machine) ([Attached to {{machines}}.](ui:machines:ConnectionDetails.machines)
 or [Not attached to any machine.](ui:machines:ConnectionDetails.machines.none)), and where connections are attached;
 then what the browser keeps for it, always (a tailnet's hostname and control server, the local helper's install lines,
 the demo network's server, a room's link and who may connect, a room's own name in the room, from the names agent's
@@ -2542,9 +2553,11 @@ and the guest's default way out (below).
   pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest), tests/page-room.test.ts (two Debian guests in one Chromium, two profiles: one creates a private room in the wizard on the tests' Nostr relay and the rig's derper, the other joins by its link, and they ping each other by name; the wizard's refusals; then the menu's link to the Domains pane on one, its Register a domain…, the dialog's check, Register, the
 name reached from the other with nothing done there, a subdomain on its card, the last week's notice and its Domains
 action, the key in the Settings and the export in Delete's question, the other's ephemeral connection's pane),
-tests/page-home-levels.test.ts (Home's levels, a connection's Details and Settings, the wizard's first choice),
+tests/page-home-levels.test.ts (Home's levels, a connection's Details and Settings, the wizard's first choice; a
+machine's draft kept through a level, Back and Esc once per move, a link out of a level an entry, the origin from what
+Home shows, a connection gone under its page, machines linked by id),
 tests/page-domains.test.ts (the Domains pane with no machine: its explainers, register, a card's states, the backup, the
-links), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
+links; the new key kept after New name, `member` failing and read again, an overtaken read dropped), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
   control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 
