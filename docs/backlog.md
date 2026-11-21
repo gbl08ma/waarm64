@@ -2267,8 +2267,8 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   once in `scripts/ci-debian.sh` (2026-11-21, on a commit that touched nothing of the map) and passed in the script's
   rerun. A look on a 1 GiB machine under the script's load can take longer than the wait: wait for the next answer
   (as its `until` does for the first two), with a bound, rather than for three seconds.
-- **A clipboard page test that failed once under CI's load** (2026-11-20, `scripts/ci.sh` on INTRO loop 8's fixes,
-  which touch nothing of it): `tests/page-clipboard-ui.test.ts` "a demo's machine starts each run paused…" at its last
+- **A clipboard page test that fails under CI's load** (2026-11-20, `scripts/ci.sh` on INTRO loop 8's fixes,
+  which touch nothing of it; again 2026-11-21 on DOTCOM's copy changes, then 1 of 1 alone): `tests/page-clipboard-ui.test.ts` "a demo's machine starts each run paused…" at its last
   step ("the agent's end got [], not 62 bytes": `guestReads` waits 10 s for the page's frames after the stub agent
   opens). It passed 3 runs of 3 alone, and in the two `scripts/ci.sh` runs before. Either the wait is short under
   load, or a frame is lost when the open races the machine's start: look at what the page sent, not only at the count.
