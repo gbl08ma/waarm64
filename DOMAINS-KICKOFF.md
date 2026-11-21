@@ -99,7 +99,7 @@ dialog and the wizard's edit mode go.
 
 - `machinesNav` gains the context: none, or `{ kind: 'connection', id, section: 'details' | 'settings' | 'domains' }`.
   `selected` stays `CONNECTIONS` in it. Moving between a context's sections is instant, as between the root's panes. `enter(context)` and `leave()` set a direction the transitions read.
-- `MachinesNav.svelte` becomes the root's entries and a context's (a component each, so A+ adds entries in one place),
+- `MachinesNav.svelte` becomes the root's entries and a context's (a component each),
   keyed by level inside one `nav`; the outgoing and incoming blocks overlap during the transition (grid-stacked), the
   column's width fixed.
 - `MachinesPage.svelte` shows the context's section (`ConnectionDetails`, `ConnectionSettings`, `DomainsPane`) when
