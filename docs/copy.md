@@ -154,6 +154,15 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 - **Setup screens and wizards**: steps first, then the field they lead to. A choice the user makes is followed by
   numbered steps that end at its input, and a short note after only for consequences and warnings ("Keep the address
   to yourself, as it lets anyone use the connection."). No long explainer after a field.
+- **Explainers in a pane**: where a pane has room and a system needs its big picture before the user acts (a room's
+  domains: networking/names.md "What the user sees"), explain it there, before the dialog that asks. What the thing is
+  first, in the user's terms, and only then our name for it ("A domain is a short name of your choice, such as mybox,
+  that the room's members can use to reach this connection."); then numbered steps for what the user will go through,
+  each led by its action in emphasis ("*Choose a domain.* A domain belongs to whoever registered it first…"); then what to know before acting,
+  a short list of consequences. Outside services are named in passing, by what they are, not explained ("may contact
+  Nostr relays, OpenTimestamps servers, and Bitcoin block explorers"). A returning user, who has done it already, gets a
+  different explainer, collapsed under a summary ([How domains work](ui:network:DomainsHow.summary)): how to keep what
+  they have, what its states mean, who sees it.
 - **Lists in a sentence**: commas, with a serial comma ("qcow2, raw, or an installer or live ISO").
 - **Numbers and units**: digits, a space before the unit (4 GiB, 160 MiB); sizes as the page formats them
   (`{{size, bytes}}`).

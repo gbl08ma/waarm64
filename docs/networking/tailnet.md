@@ -11,7 +11,7 @@ I/O. It speaks two protocols, and holds a room's member beside them ([rooms.md](
 - **Tailscale**: a node on a tailnet (Tailscale's control server or a Headscale), with peers, the
   packet filter, exit nodes and MagicDNS.
 
-What the user sees (the Network wizard and menu, the settings, the lease) is
+What the user sees (the Network wizard and menu, a connection's page on the Home page, the lease) is
 [frontend.md](../frontend.md) "Network". Why our own client and not Tailscale's Go one built to wasm (the
 page's until 2026-10-17): the Go module was 26.9 MB of wasm (4.3 MB Brotli), a Go runtime and heap of
 20 to 26 MB in its worker, and WireGuard in pure Go on one thread; this one is about 0.6 MB Brotli (576 KB on 2026-11-10, rooms' lookups and `k256` 42 KB of it) and

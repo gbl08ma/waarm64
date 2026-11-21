@@ -14,7 +14,8 @@ What's left open (onion routing, broadcast, IPv4 between guests, a directory on 
 with `room/link.rs` (the link), `room/lookup.rs` (lookups) and `nostr.rs` (NIP-01 and BIP-340 over `k256`);
 `web/room.ts` and `web/room-worker.ts` are its page and worker, sharing `web/ts-client.ts`'s I/O. A room is a
 connection kind on the page ([frontend.md](../frontend.md) "Network": the wizard's Join the global public room, Create
-a room and Join a room, the menu's name and link to copy); the node key a connection keeps is in `waarm64-room`
+a room and Join a room, the menu's name and link to copy; a connection's page on the Home page with its name in the
+room, its key under Settings' Advanced and its Domains); the node key a connection keeps is in `waarm64-room`
 ([adapters.md](adapters.md) §2.1), which the worker reads at the start (`identityKey`; an ephemeral connection's comes
 as `identity`). It reuses tailcat's data plane (WireGuard through DERP, an address from the node key), the Ethernet
 gateway ([devices.md](../devices.md) "net") and network adapters ([adapters.md](adapters.md)). Measurements:

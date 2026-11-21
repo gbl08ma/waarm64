@@ -1595,6 +1595,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     resident memory 372 MiB before, 381 MiB after; writing 512 MiB of it then added 512 MiB); a zero-or-not pass per
     4 KiB page over the 4 GiB took 0.46–1.0 s there.
 
+- **A connection's page and its Domains pane** (DOMAINS, 2026-11-21; frontend.md "The Home page",
+  networking/names.md "What the user sees"):
+  - A key can't be imported into an existing connection: a pasted key (or a backup) makes a new connection, in the
+    wizard's [A key to paste](ui:network:NetRoomStep.room.key.paste).
+  - The backup is copied, as the key is: no file to save or open.
+  - Other dialogs could become pages on Home's levels (the precedent: a connection's page replaced its details dialog
+    and the wizard's edit mode), such as a disk's Overlays or a machine's snapshots.
+  - The machines on a connection's Details are linked by name (`ConnectionDetails`, the catalog's `name` snippet): two
+    stored machines with one name both lead to the first's Network tab.
+  - A domain let go before its claim was public shows Let go (loop 4's fix in web/names.ts `view`), but what the agent
+    publishes for it once the claim is anchored later (the claim with no release after it?) was not looked into.
+  - After a trip to a connection's page, Home reopens on Connections, even when the page was reached from the toolbar
+    (entering a connection's page chooses that pane).
+  - The toolbar menu's link to a room's Domains is checked by `tests/page-room.test.ts` (a running machine) but has no
+    screenshot in `tools/screens.ts`.
+
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
   desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't
@@ -1972,18 +1988,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - Done (N5): the wizard's key field is the export with names, and a pasted one brings them.
     - The page's loose ends (N5):
       - New name on a room connection that holds names keeps its titles (under the same entry) pointing at the old
-        key: the details' [Point all at this connection](ui:network:DomainCard.pointHere) fixes it by hand. New name could
+        key: each card's [Point all at this connection](ui:network:DomainCard.pointHere) fixes it by hand. New name could
         offer it, or repoint them itself.
-      - Name this machine… is shown only while the room is connected (the node key comes with the connection's start).
-        A stored connection's key is in `waarm64-room` before that; reading it there would offer the dialog offline.
+      - Done (DOMAINS): a connection's Domains pane registers and manages its domains with the connection
+        disconnected (the names agent's `member`, the key made in `waarm64-room` if it never started).
       - The dialog's check opens a checker (a publisher: a new key, "who serves?") for each press of Register (N5b), so
         Register waits for servers to be found (a few seconds) before a free name registers. A running room's own
         names client could ask sooner, but it would link one press to the next and to the node's own lookups.
       - "Taken until" is a server's word, unchecked: a lying server can make a free name look taken (Register is then
         disabled). Two servers are asked and the latest date wins; a check that showed both answers apart could say so.
-      - The details' points take a member's name or key pasted; nothing lists the room's members to choose from.
-      - The last week's notice is a message bar notice that clears itself; a name past its term in grace says so in the
-        menu only.
+      - A card's points take a member's name or key pasted; nothing lists the room's members to choose from.
+      - The last week's notice is a message bar notice that clears itself (with a Domains action since DOMAINS); a name
+        past its term in grace says so in its card, the pane's upkeep line and the status links' warning.
     - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
       entries a month, 1.17 to 1.52 KB each with their anchors and headers (R1; measured by N0b), and is put whole. Pruning dead branches and
       stale entries from the item (they never count again) would keep puts small.

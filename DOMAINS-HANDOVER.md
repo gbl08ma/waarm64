@@ -288,6 +288,30 @@ Domains action on the load in the last week. `tools/screens.ts` touches none of 
 - Not seen in a screenshot: the toolbar menu's link (needs a running machine; `tests/page-room.test.ts` exercises it).
 - The agent's view fix (loop 4): what a released, never-public claim does once anchored later.
 
+## Loop 6 (docs) (2026-11-21, cloud session)
+
+Docs only, no code. Updated:
+- **docs/networking/names.md**: the files (the pane's components, the backup); "Decisions" "The two hot paths"
+  reworded per the kickoff's decision 7 (registering through the Domains pane, which explains first, then the one
+  dialog); "The names agent"'s `member` readers; **"What the user sees" rewritten** for the pane: the status link
+  everywhere else and its words, the pane (meta, both explainers, the upkeep line, cards with lights, dates and ended
+  words, the registry line), that it works disconnected with no machine, the dialog, the backup, the ephemeral case,
+  the message bar's Domains action.
+- **docs/frontend.md**: the Files rows (the pane's components, ConnectionBackup, the Settings' parts); "The Home
+  page": Back's other ways in (the links, the wizard's Edit), Esc in a context, Home reopening on Connections, the
+  column's backup command, the Domains section (no longer "its title alone"), Connections' cards; "Network": the
+  menu's one domains link, the Names paragraph rewritten (the pane, not `NetNames`/`NameEntry`/the menu's list),
+  "Editing shows the field alone" and "its details" fixed, the tests' list (page-room's new path,
+  page-home-levels, page-domains).
+- **docs/networking/adapters.md** §3 (a connection's page with Domains and the backup, the cards), **rooms.md** and
+  **tailnet.md** (one line each: where the room's name, key and domains are on the page).
+- **docs/copy.md**: "The elements" gained **Explainers in a pane**.
+- **docs/backlog.md**: a DOMAINS entry under "The page" (importing a key into a connection, a file for the backup,
+  other dialogs as pages, machine links by name, a let-go-before-public claim anchored later, Home reopening on
+  Connections, the menu link's missing screenshot); the N5 names entries brought up to date (offline registration
+  done; "the details'" → the cards). The agent's root-only tests' entry was already there and stays as it is.
+- **docs/README.md**: frontend.md's, copy.md's and names.md's lines.
+
 ## Tiers passed
 
 | Commit | Tier |

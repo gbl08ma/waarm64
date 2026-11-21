@@ -109,8 +109,11 @@ disconnects and says it was taken.
 ## 3. The page
 
 The Home page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
-**[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's, each with a page of its own one level down (its Details, its
-Settings, which change what can change without a new node, and its commands: New address, Log out, Delete); the
+**[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's, each with a page of its own one level down (its Details, which say
+which machines have it attached and what it gives out; its Settings, which change what can change without a new node;
+a room connection's Domains ([names.md](names.md) "What the user sees"); and its commands: a room's Back up key and
+domains…, New address, Log out, Delete), the cards keeping only the name, a line (a room's ending with the link to its
+Domains) and Details and Delete; the
 **Network wizard** (§3.2) makes connections and attaches one, a new one or one of the browser's, and edits none: on an
 adapter that already has a connection it first asks whether that connection is to be edited (its Settings open, Back
 leading to where the wizard was opened) or another attached; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and

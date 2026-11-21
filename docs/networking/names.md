@@ -19,7 +19,8 @@ floor), `zone.rs`, `chain.rs` (who owns a name; `Name`, `Kept`), `wire.rs` (mess
 publisher, the resolver's cases). The page: `web/names.ts` (the names agent), `web/names-store.ts` (its stores, and the titles a room's worker
 reads), `web/names-fetch.ts` (the compiled services), `web/names-export.ts` (a connection's export), `web/names-worker.ts`, `web/names-ops.ts`,
 `web/room.ts` and `web/room-worker.ts` (the records' store, the titles to a running room), and in `web/app/`
-`NameDialog.svelte`, `DomainsPane.svelte`, `DomainCard.svelte`, `DomainsLink.svelte`, `areas/names.svelte.ts`, `names-view.ts`,
+`DomainsPane.svelte` (`DomainsIntro.svelte`, `DomainsHow.svelte`: its two explainers), `DomainCard.svelte`,
+`NameDialog.svelte`, `DomainsLink.svelte`, `ConnectionBackup.svelte`, `areas/names.svelte.ts`, `names-view.ts`,
 `room-export.ts`. The module's side of the interface is [tailnet.md](tailnet.md) "The module"; the page's is
 [frontend.md](../frontend.md) "Network". Measurements: bench/net/REPORT.md "NAMES loop 0" to "NAMES loop 6b".
 
@@ -50,9 +51,11 @@ The user's, 2026-11-15 to 2026-11-18; they bind.
   user's call.
 - **Names are never in the registry in words**: looked up by a keyed hash, where they point sealed under the name, an
   owner key per name. Which names are acceptable is the resolver's and the dialog's rule.
-- **The two hot paths**: reaching someone's name takes no switch, notice or reading; registering one is one dialog with
-  two notices (discoverable; visit every 2 weeks) and no key shown. The room's servers are asked when Register is
-  pressed, one first byte of the id a press, nothing as typed (the user, 2026-11-17). A step added to either is asked.
+- **The two hot paths**: reaching someone's name takes no switch, notice or reading; registering one goes through the
+  connection's Domains pane, which explains the system first, then one dialog with two notices (discoverable; visit
+  every 2 weeks) and no key shown (the user, 2026-11-21: the step longer than the dialog alone is wanted, so the user
+  learns what registering means before doing it). The room's servers are asked when Register is pressed, one first
+  byte of the id a press, nothing as typed (the user, 2026-11-17). A step added to either is asked.
 - **Short terms**: 30 days, a week's grace, renewed past half the term; the page says "every 2 weeks".
 - **The page may reach a room without a guest** to publish names (a names client, no machine, no node key).
 - **Reserved names** are compiled in ("Names"); the list may grow by the same reasoning (what a guest asks unprompted
@@ -561,42 +564,92 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   kept under `identityKey` in `waarm64-room`'s `identity`, **made there** if the connection never started (web/room.ts
   `roomIdentity`, the one its first start then reads). The page reads it through `pageNames.member(conn)`
   (areas/names.svelte.ts: cached by the key's entry, or an ephemeral key, and the room; read again after New name),
-  which Details' name in the room, the domains' rows and the dialog take their key and domain from. Measured: register to public ~0.15 s once the
+  which Details' name in the room, the Domains pane and its cards, the dialog and the backup take their key and domain
+  from. Measured: register to public ~0.15 s once the
   blocks are there (pretend services); production proof of work 3 to 64 s an entry in Chromium.
 
 ## What the user sees
 
-(NameDialog.svelte, DomainsPane.svelte, DomainCard.svelte, DomainsLink.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "Network".)
+(DomainsPane.svelte, DomainsIntro.svelte, DomainsHow.svelte, DomainCard.svelte, NameDialog.svelte, DomainsLink.svelte,
+ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The Home page" and "Network".)
 
-- **Reaching someone's name: nothing.** No switch, no notice. The adapter's details have one line for the curious (a
-  member's names resolved and servers held, or a server's names held and servers synced with: the module's `names`
-  event).
-- **Registering a domain.** In a room adapter's menu, [Register a domain…](ui:network:DomainsPane.register) opens one
-  dialog: a field, the whole domain under it (`<name>.<room name>.p2p.internal`, or under the tag in a room whose ID
-  isn't a label), and as typed only what the page can say alone (not a valid name; this connection's already). Two
-  notices, always shown, no boxes: [Members of this room who know the domain can reach this connection's address and
-  see when it's online. While this connection is connected, this web app helps other members look domains
-  up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to keep the
-  domain.](ui:network:NameDialog.notice.visit) [Register](ui:network:NameDialog.register) asks the room's servers for one
-  first byte; then **free**: registered, the dialog closes; **taken** (every server that answered lists it): it stays
-  open with the earliest date given; **the servers disagree**: it says so ([The room's servers disagree about mybox: one
-  says it is taken, until about <date>, and another doesn't. Press Register again to register it all the
+- **Reaching someone's name: nothing.** No switch, no notice. A room connection's Details on the Home page have one
+  line for the curious while it is connected there (a member's names resolved and servers held, or a server's names
+  held and servers synced with: the module's `names` event).
+- **A room connection's domains have a pane of their own**: the **[Domains](ui:machines:ConnectionNav.domains)** section
+  of its page on the Home page, one level under Connections (`#home/connections/<id>/domains`), with how many it holds
+  beside the column's entry (live ones). Everywhere else a room connection appears there is **one status link** to it
+  and nothing more (`DomainsLink.svelte`, `names-view.ts` `domainsLink`): [Register a domain…](ui:network:DomainsPane.register)
+  with none, [1 domain registered](ui:network:names-view.link.held_one) or "N domains registered" (lost ones counted,
+  as the pane still shows them), and [{{held}}, 1 needs attention](ui:network:names-view.link.attention_one) in the
+  warning tone when one is in its last week, its grace, or lost. It is in the toolbar's Network menu (a stored room
+  connection's adapter; Back from the pane returns to the machine's screen), on a machine's Network tab (the adapter's
+  card; Back to that tab) and at the end of a Connections card's line (Back to Connections). The message bar's notice
+  at load, after the agent's first pass, that names the domains in their last week has a
+  **[Domains](ui:network:names.domains)** action that opens the pane of the connection holding them.
+- **The pane** (`ui/Pane`): its title, a meta line ([Domains that the connection {{name}} holds in the room {{room}}.
+  They end in .{{domain}}, which guests can usually leave out.](ui:network:DomainsPane.meta)), and Register a domain…
+  in its head. **It all works with the connection disconnected and no machine running**: the key a domain points at,
+  the connection's own name and the room's domain are the agent's `member` (the stored key and the room's ID), so
+  registering, pointing, letting go and the backup need nothing running, and a visit to the pane lets the agent renew
+  (an open page is a visit). With **no domains**, the first explainer stands in the cards' place, always open
+  (`DomainsIntro.svelte`): [Give this connection a name other people can remember](ui:network:DomainsIntro.title)
+  (what a domain is, with the connection's own name in the room as what members need without one; free, no account,
+  no central server), [What registering involves](ui:network:DomainsIntro.steps) in three numbered steps (choose a
+  domain; wait about 2 hours, reserved meanwhile; reopen this web app at least every 2 weeks), and
+  [Before you register](ui:network:DomainsIntro.before) (who can reach and see what, that this web app serves the
+  room's records while connected, that this browser holds the only copy and the backup keeps one, the outside
+  services named in passing, the rare earlier registration), then a second Register a domain…. With **some**, the
+  **upkeep line** (`names-view.ts` `upkeepLine`: [Reopen this web app by about {{when, date}} to keep these
+  domains.](ui:network:names-view.upkeep_other), from the live domains' earliest `keptUntil`; in the warning tone,
+  [{{names}} need renewing. Leave this web app open for a few hours to keep them.](ui:network:names-view.upkeep.soon_other),
+  when one is in its last week or its grace; none while no live domain has a date yet), a card a domain, and the second
+  explainer, collapsed (`DomainsHow.svelte`, [How domains work](ui:network:DomainsHow.summary): keeping them, what the
+  states mean, who can see them, where they are kept). Under it, while the connection is connected on this page, the
+  registry's line (as Details has it).
+- **A card** (`DomainCard.svelte`): the whole domain (the name strong, `.<room's domain>` dim), a status light (ok for
+  active, busy for preparing and reserved, warn for grace, off for lapsed and let go, error for lost: `titleTone`) and
+  the state's words: [Preparing](ui:network:names-view.preparing) (proof of work), Reserved, public in about N hours
+  (it already works in machines that use this connection; past the usual wait [Reserved, public once this web app has
+  been open a while; it already works in machines that use this connection.](ui:network:names-view.reservedLate)),
+  Active, kept until about a date unless you visit, in its grace, [Lapsed: anyone can register it
+  now.](ui:network:names-view.lapsed), [Let go](ui:network:names-view.released), lost. Then its dates where the title
+  has them (`titleDates`: [Registered {{when, date}}](ui:network:names-view.date.claimed), [Next renewal from {{when,
+  date}}](ui:network:names-view.date.renew) with a tooltip on when renewing happens, [Works until about {{when,
+  date}}](ui:network:names-view.date.until); a Reserved domain has none yet), and where it and each subdomain point (a
+  member's name or a key, pasted), [Add a subdomain](ui:network:DomainCard.addLabel) (15 at most; past four points the
+  zone is sealed wide), [Point all at this connection](ui:network:DomainCard.pointHere), Save (checked as the module
+  will: a label's rule, none twice, a target a member's name or key), [Let it go](ui:network:DomainCard.release)
+  (after asking). A domain lapsed, let go or lost shows its state and a sentence on what that means
+  (`endedWords`, e.g. [You let this domain go. Anyone can register it once the release is public, which takes about 2
+  hours.](ui:network:names-view.ended.released)) and nothing to edit. No key is shown or asked for.
+- **Registering a domain.** The pane's Register a domain… opens one dialog for that connection: a field, the whole
+  domain under it (`<name>.<room name>.p2p.internal`, or under the tag in a room whose ID isn't a label), and as typed
+  only what the page can say alone (not a valid name; this connection's already). Two notices, always shown, no boxes:
+  [Members of this room who know the domain can reach this connection's address and see when it's online. While this
+  connection is connected, this web app helps other members look domains up.](ui:network:NameDialog.notice.find) and
+  [Open this web app at least every 2 weeks to keep the domain.](ui:network:NameDialog.notice.visit)
+  [Register](ui:network:NameDialog.register) asks the room's servers for one first byte; then **free**: registered,
+  the dialog closes and the card shows Preparing; **taken** (every server that answered lists it): it stays open with
+  the earliest date given; **the servers disagree**: it says so ([The room's servers disagree about mybox: one says it
+  is taken, until about <date>, and another doesn't. Press Register again to register it all the
   same.](ui:network:names-view.check.disputed)), and a second press registers; **nobody can say**: likewise, a second
   press registers. A second press is the least intrusive way on: no button, box or question, and none on the free path.
-- **States**: [Preparing](ui:network:names-view.preparing) (proof of work), Reserved, public in about N hours (it already
-  works on this machine; past the usual wait [Reserved, public once this web app has been open a while; it already works in machines that use this connection.](ui:network:names-view.reservedLate)), Active, kept until about a date unless you visit, in its grace,
-  [Lapsed: anyone can register it now.](ui:network:names-view.lapsed), [Let go](ui:network:names-view.released), lost.
-- **The details** per name: where it and each label point (a member's name or a key, pasted), [Add a
-  subdomain](ui:network:DomainCard.addLabel) (15 at most; past four points the zone is sealed wide),
-  [Point all at this connection](ui:network:DomainCard.pointHere), Save (checked as the module will: a label's rule, none
-  twice, a target a member's name or key), Let it go, whether or not the connection is connected (its key and the
-  room's domain from `member`). No key is shown or asked for.
-- **Elsewhere**: a stored machine's Network tab lists each room adapter's names with the date each stops resolving
-  unless renewed; at load, after the agent's first pass, the message bar names those in their last week. An ephemeral
-  connection with its own key can't hold a name (the dialog says so, no Register). Deleting a room connection that holds
-  names asks in a question of its own, with the export to copy, then forgets them. The wizard's key field is the
-  export, and a pasted one brings its names. Words: `web/messages/en/network.json` (the Home page's in
-  `machines.json`).
+- **The backup**: [Back up key and domains…](ui:machines:ConnectionNav.backup), a command in a room connection's column,
+  opens a dialog (`ConnectionBackup.svelte`) with the connection's export (its key, then its domains after a dot:
+  `roomExportOf`) in a secret field to copy, what it is ([This is the key of the connection {{name}}, followed by its
+  domains. Copy it and keep it somewhere safe.](ui:network:ConnectionBackup.intro), or
+  `ConnectionBackup.intro.none` with none yet), that it must stay secret, and how to restore it (a new connection's
+  [A key to paste](ui:network:NetRoomStep.room.key.paste)). A stored connection that never connected has its key made
+  for it then (`member`). The Settings' [The connection's key](ui:network:ConnectionRoomSettings.key), under
+  Advanced, is the same export.
+- **An ephemeral connection with a key of its own** can't hold a name: its pane holds [This connection can't hold a domain: its key lasts only until this tab
+  closes or reloads, and a domain lasts for weeks. To register one, use a connection kept in this
+  browser.](ui:network:DomainsPane.ephemeral) and nothing else, and it has no status link anywhere (the menu gives none to
+  any ephemeral connection).
+- **Elsewhere**: deleting a room connection that holds names asks in a question of its own, with the export to copy,
+  then forgets them. A pasted export (the wizard's key to paste) brings its names. Words: `web/messages/en/network.json`
+  (the Home page's column and Details' own lines in `machines.json`).
 
 ## Bounds and budgets
 
