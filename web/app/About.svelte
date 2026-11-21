@@ -37,6 +37,7 @@
 
 <div class="about" data-about>
   <Logo label={t('machines:About.logo')} />
+  <p class="tagline" data-about-tagline>{t('machines:About.tagline')}</p>
   <div class="intro">
     <Note size="md">{t('machines:About.intro.words')}</Note>
     <Button onclick={() => page.openIntro()} data-action="open-intro">{t('machines:About.intro')}</Button>
@@ -122,6 +123,12 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+  /* What waarm64 is, in a line under its logo. */
+  .tagline {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-bold);
   }
   /* What the introduction is, and the way to it. */
   .intro {

@@ -104,8 +104,8 @@
     "note": "Title of a section of the introduction, under “How it works”: who made the project and how. No period."
   },
   "IntroMade.lede": {
-    "message": "A single human is behind $t(common:product.name). This is how it went, in my own words.",
-    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): the section's first paragraph. The whole section is written in the author's voice (their website, gbl08ma.com: long sentences, first person, parentheses, a spaced hyphen for a dash, dry humor)."
+    "message": "$t(common:product.name) was created by a single individual with copious amounts of AI assistance, to the point that the project's informal codename was “slopulator”. That was almost its final name, but I figured that I had put enough of my own thinking into achieving a high quality result that it could no longer be considered sloppy. Here are some conclusions.",
+    "note": "The introduction's section “How it was made”, in the author's own first person and their own words (one person made the project with AI agents): the section's first paragraph, the author's own. “slopulator” is a made-up word (slop + emulator): keep it."
   },
   "IntroMade.who": {
     "message": "One human, two months",
@@ -172,7 +172,7 @@
     "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): heading over a numbered list of reasons. No period."
   },
   "IntroMade.why.llm": {
-    "message": "To find out if frontier LLMs can build something that exceeds prior art in this field.",
+    "message": "To find out if frontier LLMs can build something that exceeds prior art in this field. They clearly did, and both the feature set and the achieved performance levels even beat other nascent AI-assisted projects, like unkernel.",
     "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): a reason. LLM: large language model, the term of the trade."
   },
   "IntroMade.why.browser": {
@@ -186,6 +186,18 @@
   "IntroMade.why.web": {
     "message": "And to showcase just how well optimized modern websites are: an entire OS and a browser will boot in here, and the slowest part will still be waiting for everything that appears around the player on a YouTube video page!",
     "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): the last reason, a joke said with sarcasm: “carefully optimized” means the opposite. Keep the dry tone; the exclamation mark is the author's, and ironic."
+  },
+  "IntroMade.close.work": {
+    "message": "I am being pushed to use AI so much at work that I figured that I almost had an obligation to also build something more to my taste, rather than just what the company wants, using this rather resource-intensive newfangled “AI” thing. I definitely like to use it more for my personal ideas than for work; it really excites the “curious builder” part of my brain, the one that got me into computers in the first place, while completely breaking the heart and mind of the engineer that I am.",
+    "note": "The introduction's section “How it was made”, in the author's own first person and their own words (one person made the project with AI agents): the first of three closing paragraphs, under the list of reasons. The author's own words: keep their expressions."
+  },
+  "IntroMade.close.friends": {
+    "message": "This project will not be seen with good eyes by some of my friends, which is understandable and even commendable; a large part of me still finds much of <i>all this</i> quite objectionable too. It's extremely exciting, extremely powerful, and extremely negative as well (in so many directions), and before long we'll know whether it led us to freedom and light, or capture and darkness.",
+    "note": "The introduction's section “How it was made”, in the author's own first person and their own words (one person made the project with AI agents): the second closing paragraph. <i> marks words in italics. The author's own words: keep their expressions (“seen with good eyes” is theirs)."
+  },
+  "IntroMade.close.hurry": {
+    "message": "Don't worry: I get the feeling that this situation is more temporary than most things on Earth, and I suspect that, five years from now, most people won't be able to build slopulators like this, for one reason or another. Let's hurry up and value the progress of technology before it values us back.",
+    "note": "The introduction's section “How it was made”, in the author's own first person and their own words (one person made the project with AI agents): the last closing paragraph, before the signature. “slopulators”: the made-up word of the first paragraph, in the plural."
   },
   "IntroEnd.title": {
     "message": "Pick a machine and start it",

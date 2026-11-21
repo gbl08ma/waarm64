@@ -747,7 +747,8 @@ over the machine and the Home page.
 
 ### About
 
-**[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: its logo at 200 px (`Logo.svelte`: the page's icon's shapes, in the panel's tokens), a link to its
+**[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: its logo at 200 px (`Logo.svelte`: the page's icon's shapes, in the panel's tokens) with what it
+is in a line under it, a link to its
 repository (`package.json`'s `repository`), the version it was built from (the tag on the commit when one was cut, with
 the commit; otherwise the commit; "with local changes" when tracked files differed), that commit's date (the console's
 line has the same: below, "A static copy"), waarm64's license, and **[Third-party software](ui:machines:About.thirdParty)**: a table per part
@@ -882,7 +883,8 @@ and the floating windows don't show, and the machine, Home or the store's page s
     what they knew and what they learned; that it stands on open-source projects that are in those models' training
     data, with a button to the credits ([See the projects credited](ui:intro:IntroMade.thanks.about): it leaves the
     introduction for Home's About pane, `page.closeIntro('about')`); and why it was made, four reasons, the last a
-    dry one; signed "- gbl08ma", a link to the author's website. Its words keep to that website's voice. A
+    dry one; then three closing paragraphs that are the user's word for word (grammar and layout only touched);
+    signed "- gbl08ma", a link to the author's website. Its words keep to that website's voice. A
     disclosure: none of it is a figure of ours.
 - **The captures** (`web/intro-captures/blocks.json`, written by `tools/intro-capture.ts`; the page fetches it when
   the processor's deep dive opens: `intro/captures.ts`; an asset of the build, data and not one more script, which

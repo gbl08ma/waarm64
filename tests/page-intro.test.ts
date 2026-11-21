@@ -282,6 +282,8 @@ test("How it was made: the author's account, the reasons, and the way to the cre
   // Three across and two down in a wide window.
   assert.equal(new Set(await made.locator('dl > div').evaluateAll((es) => es.map((e) => Math.round(e.getBoundingClientRect().left)))).size, 3);
   assert.equal(await made.locator('ol li').count(), 4);
+  assert.equal(await made.locator('.close p').count(), 3, "the author's closing paragraphs");
+  assert.equal(await made.locator('.close i').count(), 1, 'their stress, in italics');
   // It comes after how it works, before the end.
   const order = await page.locator('[data-intro] [data-section]').evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.section));
   assert.deepEqual(order.slice(order.indexOf('intro-how')), ['intro-how', 'intro-made', ...order.slice(order.indexOf('intro-made') + 1)]);

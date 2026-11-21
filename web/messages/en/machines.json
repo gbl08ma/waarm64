@@ -1007,10 +1007,6 @@
     "message": "About",
     "note": "Home page: button under the list of machines (after Preferences), and the title of the pane it shows: this web app's version, source code and third-party software."
   },
-  "MachinesPage.about.meta": {
-    "message": "A whole-system AArch64 emulator for the browser.",
-    "note": "Home page, About: the line beside the pane's title, what this web app is."
-  },
   "About.intro": {
     "message": "Show the introduction",
     "note": "Button at the top of the About pane (Home page): opens the introduction, the page a first-time visitor sees."
@@ -1070,6 +1066,10 @@
   "About.thirdParty.intro": {
     "message": "This web app includes the following software, or code derived from it, by the part of it they are in. Each is used under its license; its texts are linked beside it.",
     "note": "Home page, About: the sentences under Third-party software, above the tables (one per part of the web app)."
+  },
+  "About.tagline": {
+    "message": "A whole-system AArch64 emulator for the browser.",
+    "note": "Home page, About: the line under the project's logo, what this web app is."
   },
   "About.logo": {
     "message": "The $t(common:product.name) logo",

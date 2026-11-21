@@ -2,7 +2,7 @@
   The introduction's "How it was made" (web/app/IntroPage.svelte), under "How it works": who made waarm64 and how, in
   the author's own first person (the user's words of 2026-11-20, set down here: one person, two months of spare time
   steering AI agents, which wrote the code), what they knew and learned, whose work it stands on (the open-source projects, with a button
-  to the credits in Home's About pane), and why they made it; signed with their handle, a link to their website. Its
+  to the credits in Home's About pane), why they made it, and three closing paragraphs of theirs, word for word; signed with their handle, a link to their website. Its
   words follow that website's voice (the user asked: long sentences, parentheses, a spaced hyphen, dry humor). A disclosure: nothing
   here is a figure of ours to measure.
 -->
@@ -62,6 +62,12 @@
       {/each}
     </ol>
   </div>
+  <!-- The account's close, the author's own paragraphs. -->
+  <div class="close">
+    <p>{t('intro:IntroMade.close.work')}</p>
+    <p><T k="intro:IntroMade.close.friends" /></p>
+    <p>{t('intro:IntroMade.close.hurry')}</p>
+  </div>
   <p class="signed">- <a href={AUTHOR.url} {...EXTERNAL} data-action="intro-author">{AUTHOR.name}</a></p>
 </IntroSection>
 
@@ -110,6 +116,17 @@
     font-size: var(--text-lg);
   }
   .thanks p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: var(--text-lg);
+  }
+  .close {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    max-width: 760px;
+  }
+  .close p {
     margin: 0;
     color: var(--text-dim);
     font-size: var(--text-lg);

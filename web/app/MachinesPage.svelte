@@ -186,7 +186,7 @@
     {#if machinesNav.selected === PREFERENCES}
       <PreferencesPane {net} />
     {:else if machinesNav.selected === ABOUT}
-      <Pane id={ABOUT} title={t('machines:MachinesPage.about')} meta={t('machines:MachinesPage.about.meta')}>
+      <Pane id={ABOUT} title={t('machines:MachinesPage.about')}>
         <About />
       </Pane>
     {:else if machinesNav.selected === DISKS}
