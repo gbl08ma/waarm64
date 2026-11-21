@@ -60,7 +60,7 @@ const ROOT = new URL('../../', import.meta.url).pathname;
  * `--session <json>`: a desktop started on the screen as the machine resumes (tools/build-demos.ts's recipe `session`):
  * `user` logged in on the screen (tty1; its password the same, as images/arch's logins are), `start-desktop.sh` waiting
  * there, then the snapshot; after a restore it starts sway (`WLR_RENDERER=gles2` on a 3D machine, `pixman` on 2D) and
- * each of `apps` through sway (`swaymsg exec`; the last runs the countdown). `window` is an app_id or X11 class in sway's
+ * each of `apps` through sway (`swaymsg exec`, once sway answers, again until it takes it; the last runs the countdown). `window` is an app_id or X11 class in sway's
  * tree (the build's thumbnail waits for the last's, or the countdown's). `screen` is the page's fixed screen size (its
  * Size menu's: sway takes the size the screen has). Root is logged in on the serial console first (`root`/`root`) to
  * drive it, and stays logged in there (the demo's serial console, as the Alpine demo's). `settle` isn't used.
@@ -232,6 +232,8 @@ const GO = '/run/waarm64-demo-go';
  * the machine's display's) and in it `apps` through `swaymsg exec`, the last with the countdown's script (tools/
  * demo-site.ts `Countdown`: a terminal that counts down to its app, then stays a shell).
  */
+/** The program a command line runs (`env VAR=x prog …`'s `prog`), as `pgrep -x` knows it (15 characters). */
+const bin = (run: string) => (run.split(' ').find((w) => w !== 'env' && !w.includes('=')) ?? run).slice(0, 15);
 async function startOnResume(page: Page, s: Session, id: string) {
   const display = await page.evaluate(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -257,8 +259,26 @@ async function startOnResume(page: Page, s: Session, id: string) {
       '  sleep 1',
       '  n=$((n - 1))',
       'done',
-      `printf '\\rOpening ${c.name}...%50s\\n' ''`,
-      `exec swaymsg -q exec '${c.run}'`,
+      `printf '\\rOpening ${c.name}. It can take a minute or more.%30s\\n' ''`,
+      // Through sway (the app gets sway's environment). A request sway is too busy to answer within swaymsg's 3 s is
+      // dropped by sway, so it goes again until sway takes it (not once the app runs: one sway did take).
+      `until swaymsg -q exec '${c.run}' 2>/dev/null; do sleep 1; pgrep -x ${bin(c.run)} >/dev/null && break; done`,
+      // Until its window is in sway's tree: how long so far, and how busy the machine's processors are (/proc/stat).
+      't=0',
+      'p=',
+      `while ! swaymsg -t get_tree 2>/dev/null | grep -q -E '"(app_id|class)": "${c.window}"'; do`,
+      '  read -r _ us ni sy id io ir so st _ < /proc/stat',
+      '  b=$((us + ni + sy + ir + so + st))',
+      '  a=$((b + id + io))',
+      // Waiting for the disk is idle time to the processors: much of an app's start here is its files read from afar.
+      '  if [ -n "$p" ] && [ "$a" -gt "$pa" ]; then pct=$(((b - pb) * 100 / (a - pa))); dsk=$(((io - pio) * 100 / (a - pa))); else pct=0 dsk=0; fi',
+      '  p=1 pb=$b pa=$a pio=$io',
+      `  printf '\\r  Still opening: %d s so far; the processors %3d%% busy, %3d%% waiting for the disk. ' "$t" "$pct" "$dsk"`,
+      `  if [ "$t" -ge 600 ]; then printf '\\n${c.name} has not opened after 10 minutes.\\n'; exit 0; fi`,
+      '  sleep 1',
+      '  t=$((t + 1))',
+      'done',
+      `printf '\\r${c.name} is open, after %d s.%40s\\n' "$t" ''`,
       '',
     ].join('\n'));
   // Each app through sway once its socket is there; the last runs the countdown, then a shell (`exec bash`).
@@ -275,7 +295,10 @@ async function startOnResume(page: Page, s: Session, id: string) {
     `export WLR_RENDERER=${display === '3d' ? 'gles2' : 'pixman'}`,
     '(',
     '  until s=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null); do sleep 0.5; done',
-    ...runs.map((r) => `  SWAYSOCK=$s swaymsg -q exec "${r}" >/dev/null`),
+    // sway answers once its event loop runs, long after the socket on a slow machine or disk: asked before, swaymsg
+    // gives up after 3 s and sway drops its request. So first an answer to a question, then each app until sway takes it.
+    '  until SWAYSOCK=$s swaymsg -t get_version >/dev/null 2>&1; do sleep 1; done',
+    ...runs.map((r, k) => `  until SWAYSOCK=$s swaymsg -q exec "${r}" >/dev/null 2>&1; do sleep 1; pgrep -x ${bin(s.apps[k].run)} >/dev/null && break; done`),
     ') &',
     'exec sway 2>/tmp/sway.log',
     '',
@@ -384,7 +407,16 @@ try {
   const plain = join(work, 'plain.waarm64snap');
   await download.saveAs(plain);
   // The desktop started in this machine after the snapshot (the build's go): the card's thumbnail with its app open.
-  if (session) await run(page, `touch ${GO}`);
+  // The launch must survive a busy sway (a slow machine, a disk read from far away): as root, sway stopped for 5 s just
+  // after its socket appears, when start-desktop.sh asks it for the apps, and again as the countdown ends, when the
+  // countdown asks it for its app. The windows waited for below must come all the same.
+  if (session) {
+    const uid = (await run(page, `id -u ${session.user}`)).trim();
+    const hold = 'p=$(pgrep -x sway) && kill -STOP $p && sleep 5 && kill -CONT $p';
+    const last = session.countdown ? `; until pgrep -x foot >/dev/null; do sleep 0.2; done; sleep ${session.countdown.seconds - 1}; ${hold}` : '';
+    await run(page, `(until ls /run/user/${uid}/sway-ipc.*.sock >/dev/null 2>&1; do sleep 0.05; done; ${hold}${last}) >/dev/null 2>&1 & true`); // `& true`: run() adds `; echo …`
+    await run(page, `touch ${GO}`);
+  }
   if (a.thumbnail && session) {
     const c = session.countdown ?? { window: session.apps.at(-1)!.window, name: session.apps.at(-1)!.run, script: 'start-desktop.sh', run: 'sway' };
     const uid = (await run(page, `id -u ${session.user}`)).trim();

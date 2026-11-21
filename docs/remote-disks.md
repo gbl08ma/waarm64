@@ -173,10 +173,18 @@ compacted (`--compact`). **No GL client runs before the snapshot:** `~/start-des
 (the snapshot's screen: "Starting the desktop...") for the machine's new id (the agent's RENEW at a template's first
 restore, agent/src/renew.rs) or the build's go (`/run/waarm64-demo-go`, after its snapshot), then starts sway
 (`WLR_RENDERER=gles2` on a 3D machine) and in it each app through `swaymsg exec`, the last (foot) running the
-`countdown` (`{script, run, window, name, seconds, notes?}`: `~/open-firefox.sh`, `~/open-shader-demo.sh`, which shows
-the `notes` (what else is installed, `sudo pacman -S`, the demo network's web), says what opens in how many seconds,
-then `swaymsg exec <run>`, so closing the terminal leaves the app; Ctrl+C stops the count and leaves the terminal with
-a shell: the script exits by its own trap, and the `bash -c` around it ignores the signal until its `exec bash`). So the
+`countdown` (`{script, run, window, name, seconds, notes?}`: `~/open-firefox.sh`, `~/open-shader-demo.sh`, 5 s; which
+shows the `notes` (what else is installed, that the app takes a while, `sudo pacman -S`, the demo network's web), says
+what opens in how many seconds, then `swaymsg exec <run>`, so closing the terminal leaves the app, and until the app's
+window is in sway's tree a line with the seconds so far, how busy the guest's processors are and how much of
+their time goes to waiting for the disk (much of an app's start: its files from the remote disk); Ctrl+C stops the
+count and leaves the terminal with a shell: the script exits by its own trap, and the `bash -c` around it ignores the
+signal until its `exec bash`). **Every `swaymsg exec` waits for sway first and goes again until sway takes it:**
+swaymsg gives up after 3 s without an answer, and a sway still starting (its files read from the remote disk, a slow
+machine: ~82 s with each piece 2.5 s late) drops the request of a client that left. A single `exec` left a visitor's
+desktop with sway and no window, not even foot's (2026-11-19 and 2026-11-21: tty1 said `Unable to receive IPC
+response` 3 s in). The build stops sway for 5 s just after its socket appears and again as the countdown ends, and
+waits for the app's window all the same. So the
 template's guest has read no 3D caps (the device saves them only once read: graphics.md "The caps"),
 and its visitor's guest reads the caps of the browser that restores it. A template made with sway running carried the
 build's SwiftShader caps, and a browser whose WebGL2 backs less (the Mac's: a smaller `max_aliased_point_size`) had 3D

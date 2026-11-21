@@ -63,8 +63,9 @@
       "run": "firefox",
       "window": "firefox",
       "name": "Firefox",
-      "seconds": 10,
+      "seconds": 5,
       "notes": [
+       "Firefox takes a while to start in this machine: a minute or more can pass before its window appears.",
        "Chromium is installed too. To open it, type chromium.",
        "To install more software, type sudo pacman -S followed by the package's name. The password is arch.",
        "Websites load slowly on the demo network. For a faster web, attach a connection through tailcat or the helper on your computer instead."
@@ -114,8 +115,9 @@
       "run": "env GDK_DISABLE=offload gtk4-demo --run=shadertoy",
       "window": "gtk4-demo",
       "name": "The shader demo",
-      "seconds": 10,
+      "seconds": 5,
       "notes": [
+       "The shader demo takes a while to start in this machine: its window can take a minute to appear.",
        "Firefox and Chromium are installed too. To open one, type firefox or chromium.",
        "To install more software, type sudo pacman -S followed by the package's name. The password is arch."
       ]
