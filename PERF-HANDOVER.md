@@ -111,28 +111,21 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-21, after loop 44)
+## State (2026-11-21, after loop 44): paused
 
-What every loop kept, dropped and found is in its REPORT entry and the docs pages it names; the out-of-context reviews
-(after loops 8, 19, 21, 23, 28, 32, 34, 36 and 42) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37 and 43. Built but off by
-default (measured slower): I8MM, FCMA, FP16, FHM, BF16. Loop 36 made a region follow a call only when the callee can't
-leave it; loop 37 fixed its review (a call is followed only through the call that took its callee, where a callee's
-code runs is a fixpoint, recursion is no loop, checked edges leave: Mac gates unchanged, returns elsewhere in the boot
-−22%). Loop 38 measured the decoded blocks' budget and kept it fixed (twice the budget: +96 MiB heap, −24% decodes,
-the pages session the same). Loop 39 measured the block map's page index and kept it (5.1-5.6 MiB, pages of ~50
-keys: a list-free index would save ~4.5 MiB at most); it found the churn's heap mark set by the map's table doubling
-again after a prune. Loop 40 kept the table across a prune, its tombstones rehashed in place (the churn's mark 333 →
-313 MiB, the prune's time the same, the gates unchanged). Loop 41 measured the block map's constants: only
-`MAP_KEYS` decides anything in the pages session and the churn; halved to 900,000 (the table at 2^20 buckets), the heap's
-mark is 27 MiB lower in both at the same speed; the keep rules stay (no measured effect). Loop 42 bounded lazy NZCV at a loop's head on the Mac (7-11 laps a 1000 steps store NZCV only for cold paths;
-the unsound bound measured nothing on the gates or the pages session) and dropped it with the branch outcome kept across
-a loop (a tenth of that bound by its counts): no code, no new flag state, so no review is due for it. Loop 43 fixed the
-review of the block map and the heap's bounds (the prune's off-by-one at half a 2^20 table, a prune that allocates
-nothing, the page index under the safety net, gauges counting tombstones, a u16 clock, `mapRescues` at ABI 72): the
-Mac's pages session, churn and gates unchanged; `install`'s growth outside the bound is a backlog entry. Loop 44 replayed the crash's session (the desktop guest
-booted, 15 minutes of six real sites through tailcat, in the guest's Chromium and in its Firefox, `MEMLOG=5`, on the
-dev VM): heap live at most 284 and 293 MiB, marks 285 and 295, the block map at its 900,000 keys with 52-57 prunes,
-one flush (Firefox's), no rescue, no slowdown; no code change (the sites phase takes `GUEST_BROWSER=chromium`). `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
+**Paused by the user on 2026-11-21 after loop 44: the machine is needed for another track.** To resume, start the
+next row of the queue below as loop 45; nothing is half done (main is clean at loop 44's commit, no branch or run is
+pending). An out-of-context review is due within the next ~3 loops (the last one was after loop 42, fixed in 43).
+
+What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
+44" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+36 and 42) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37 and 43. Built but off by default (measured slower): I8MM,
+FCMA, FP16, FHM, BF16. Where things stand: regions follow a call only when its callee can't leave them (loops 36-37,
+the gates −2.5%); the core's heap is measured and bounded (loops 38-44: the block map at 900,000 keys and 2^20
+buckets, its table kept across a prune, its prune allocating nothing; 15 minutes of real sites in the desktop guest's
+Chromium and Firefox stay at 284-295 MiB with no rescue); lazy NZCV at a loop's head measured nothing on the Mac and
+was dropped (loop 42). The ABI is 72 (loop 43's `mapRescues`); snapshots are unaffected. `target/snapbench/pages.waarm64snap`
+was remade from cda6cfa7's core.
 
 ## Still open (the queue: the first is next; by expected gain)
 
