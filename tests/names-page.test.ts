@@ -180,7 +180,7 @@ test('wording: the dialog\'s two notices (decision 6: discoverable, and the visi
 });
 
 test('wording: a domain, not a name (the user, 2026-11-18: a term to look up, held by the connection, not the machine)', () => {
-  assert.equal(t('network:NameDialog.full', { full: 'mybox.abcdefgh.p2p.internal', name: 'mybox' }), 'Guests in this room will reach it as mybox.abcdefgh.p2p.internal, and usually as mybox alone.');
+  assert.equal(t('network:NameDialog.full', { full: 'mybox.abcdefgh.p2p.internal', name: 'mybox' }), 'Guests in this room will reach it as mybox.abcdefgh.p2p.internal, and usually as just mybox.');
   assert.equal(t('network:NameDialog.suffix', { domain: 'abcdefgh.p2p.internal' }), 'A domain in this room ends in .abcdefgh.p2p.internal, which guests can usually leave out.');
   assert.equal(t('network:DomainCard.addLabel'), 'Add a subdomain');
   assert.equal(t('network:DomainCard.pointHere'), 'Point all at this connection');
@@ -188,14 +188,14 @@ test('wording: a domain, not a name (the user, 2026-11-18: a term to look up, he
 
 test('wording: the adapter\'s states as the spec words them', () => {
   assert.equal(t('network:names-view.preparing'), 'Preparing');
-  assert.equal(t('network:names-view.reserved', { count: 3 }), 'Reserved, public in about 3 hours; it already works in machines that use this connection.');
+  assert.equal(t('network:names-view.reserved', { count: 3 }), 'Reserved, public in about 3 hours; presently it only works in machines that use this connection.');
   assert.match(t('network:names-view.active', { when: new Date(NOW) }), /^Active, kept until about .+ unless you visit$/);
 });
 
 test('wording: the dialog\'s check', () => {
   assert.match(t('network:names-view.check.taken', { name: 'mybox', when: new Date(NOW) }), /^mybox is taken, until about .+ unless its owner renews it\.$/);
-  assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /^Nobody in the room can say whether mybox is free/);
-  assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /Press Register again to register it all the same\.$/, 'nobody can say: the way on');
+  assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /^Nobody in the room can say whether mybox is currently available/);
+  assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /Press Register again to register it anyway\.$/, 'nobody can say: the way on');
   assert.match(t('network:names-view.check.disputed', { name: 'mybox', when: new Date(NOW) }), /^The room's servers disagree about mybox: one says it is taken, until about .+, and another doesn't\./);
   assert.match(t('network:names-view.check.disputed', { name: 'mybox', when: new Date(NOW) }), /Press Register again to register it all the same\.$/, 'the servers disagree: the way on');
   assert.match(t('network:names-view.check.invalid'), /^Not a domain that can be registered\./);
