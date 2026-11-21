@@ -1856,7 +1856,7 @@
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). The row's line under its name."
   },
   "DemoIdeas.lede": {
-    "message": "None of these is a demo to start. They are things that work on a machine of your own, a desktop demo or a disk image you bring, once you install the program from its distribution's packages.",
+    "message": "None of these is a demo to start. They are things that work on a machine of your own, a desktop demo or a disk image you bring, once you install the program from its distribution's packages. All of these were tried by the $t(common:product.name) creator and they worked, to some extent. Some of these are only practical on a powerful host computer.",
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). The pane's first paragraph."
   },
   "DemoIdeas.desktop": {
@@ -1868,7 +1868,7 @@
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name (the KDE desktop): don't translate."
   },
   "DemoIdeas.plasma.words": {
-    "message": "The whole desktop runs through the OpenGL ES layer, animations included, and they are smooth. The processor is the slow part: programs take their time to open.",
+    "message": "The whole desktop runs through the OpenGL ES layer, animations included, and they are smooth. The processor is the slow part: signing in takes a while, and programs take their time to open.",
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of KDE Plasma in the guest."
   },
   "DemoIdeas.luanti": {
@@ -1884,7 +1884,7 @@
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name (a PlayStation Portable emulator): don't translate."
   },
   "DemoIdeas.ppsspp.words": {
-    "message": "An emulator inside the emulator: a PlayStation Portable, on an ARM computer, in a browser tab.",
+    "message": "An emulator inside the emulator: a PlayStation Portable, on an ARM computer, in a browser tab. At least simpler 3D games were perfectly playable, with just minor audio stutters.",
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of PPSSPP in the guest."
   },
   "DemoIdeas.godot": {
@@ -1892,7 +1892,7 @@
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name (the Godot game engine's editor)."
   },
   "DemoIdeas.godot.words": {
-    "message": "The game engine's editor opens and works, on OpenGL or, on a machine with Vulkan on, on Vulkan.",
+    "message": "The game engine's editor opens and works, on OpenGL or, on a machine with Vulkan enabled, on Vulkan.",
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of the Godot editor in the guest. Vulkan is a setting of the machine."
   },
   "DemoIdeas.webgl": {
@@ -1908,7 +1908,7 @@
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). A program's name: don't translate."
   },
   "DemoIdeas.steam.words": {
-    "message": "Its unofficial build for 64-bit ARM installs and starts.",
+    "message": "It's tricky to install and it takes some fine tuning, like passing <code>--disable-gpu-compositing</code> to avoid some visual glitches in Steam's UI. Still, the native AArch64 version (in Beta, yet to be officially promoted by Valve) works well enough to sign in, launch games, maybe even gamble a bit in the community market. FEX works too, slowly, for the ultimate nested ISA translation experience.",
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). What to expect of Steam's unofficial ARM port in the guest."
   },
   "DemoIdeas.network": {
@@ -1932,7 +1932,7 @@
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). How to connect two machines through a room (a kind of connection in the Network menu)."
   },
   "DemoIdeas.fine": {
-    "message": "These were tried by hand, not measured. A desktop needs a machine with several processors and a few GiB of memory, and OpenGL or Vulkan needs a GPU your browser can use.",
+    "message": "These were tried by hand: they were not benchmarked and are not part of any continuous integration testing suites. A desktop needs a machine with several processors and at least 5 to 6 GiB of memory free, for a guest with at least 2.5 GiB of total RAM. Ideas involving OpenGL or Vulkan need a GPU your browser can use.",
     "note": "Demo store's page, “Things to try” (the last row of the list, which is no demo; its pane lists what a visitor can do with a machine of their own). The pane's fine print."
   },
   "DemosPage.heading": {
@@ -1940,7 +1940,7 @@
     "note": "Demo store's page: its heading, over the list of the store's demos."
   },
   "DemosPage.intro": {
-    "message": "Ready-made machines to try. Choose one, and it starts in this tab already booted and set up, with nothing to install. The changes you make are kept in this browser, and the machine is added to the <ui-home>Home</ui-home> page.",
+    "message": "Ready-made machines to try. Choose one, and it starts in this tab already booted and set up, with nothing to install. Because a web app can't make arbitrary network connections, they'll automatically connect to a demo-oriented network adapter that has strict traffic restrictions. We recommend that you set up a network connection of your own. The changes you make are kept in this browser, and the machine is added to the <ui-home>Home</ui-home> page.",
     "note": "Demo store's page: the paragraph under its heading, over the list of the store's demos: what a demo is, for a visitor who may have just arrived. The <ui-home> marker shows the Home icon before the word (the toolbar's Home)."
   },
   "DemosPage.loading": {

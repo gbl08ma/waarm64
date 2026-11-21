@@ -287,6 +287,14 @@ test("How it was made: the author's account, the reasons, and the way to the cre
   // It comes after how it works, before the end.
   const order = await page.locator('[data-intro] [data-section]').evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.section));
   assert.deepEqual(order.slice(order.indexOf('intro-how')), ['intro-how', 'intro-made', ...order.slice(order.indexOf('intro-made') + 1)]);
+  // The call to the demos comes before it (the account is long), and again, small, at the page's very end, with the
+  // source's address and the license.
+  const tops = await page.evaluate(() => ['[data-intro-end]', '[data-section="intro-made"]', '[data-intro-foot]'].map((s) => document.querySelector(s)!.getBoundingClientRect().top));
+  assert.ok(tops[0]! < tops[1]! && tops[1]! < tops[2]!, `the order down the page: ${tops.join(', ')}`);
+  const foot = page.locator('[data-intro-foot]');
+  assert.deepEqual([await foot.locator('[data-action="intro-source"]').getAttribute('href'), await foot.locator('[data-action="intro-source"]').getAttribute('target')], ['https://github.com/gbl08ma/waarm64', '_blank']);
+  assert.equal((await foot.locator('[data-field="license"]').innerText()).trim(), t('intro:IntroEnd.license'));
+  assert.equal(await foot.locator('[data-action="intro-foot-demos"]').count(), 1);
   // Signed, with a link to the author's own site that opens apart from the page.
   const signed = made.locator('[data-action="intro-author"]');
   assert.deepEqual([await signed.getAttribute('href'), await signed.getAttribute('target'), (await signed.innerText()).trim()], ['https://gbl08ma.com', '_blank', 'gbl08ma']);

@@ -876,7 +876,11 @@ and the floating windows don't show, and the machine, Home or the store's page s
     - **Memory's** ([Try the split](ui:intro:IntroHow.memory.deeper); `intro/IntroRam.svelte`): a slider of guest RAM
       (256 MiB to 16 GiB) and under it a bar per WebAssembly memory, 4 GiB long, filled as the machine really splits
       that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
-  - **[How it was made](ui:intro:IntroMade.title)** (`intro/IntroMade.svelte`), last before the end: the author's
+  - **The call to the demos** (`intro/IntroEnd.svelte`: [Pick a machine and start it](ui:intro:IntroEnd.title)) comes
+    here, after how it works and before the long account that follows, so that it isn't far down; and again, small,
+    as the page's last lines (`foot`), with a link to the repository
+    ([Source code on GitHub](ui:intro:IntroEnd.source)) and waarm64's license in a line.
+  - **[How it was made](ui:intro:IntroMade.title)** (`intro/IntroMade.svelte`), after the call to the demos: the author's
     own account in the first person (the user's words of 2026-11-20): one person and two months of spare time
     steering AI agents, which models wrote the code and what was done by hand, what it cost, what it would have
     taken otherwise,

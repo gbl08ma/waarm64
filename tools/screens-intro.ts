@@ -56,6 +56,8 @@ async function at(browser: Browser, o: Shots, viewport: { width: number; height:
   }
   await take('made', (page) => to(page, '[data-section="intro-made"]'));
   await take('end', (page) => page.locator('[data-action="intro-end-demos"]').scrollIntoViewIfNeeded());
+  // The page's last lines: the account's close and its signature, the call again, the source and the license.
+  await take('foot', (page) => page.locator('[data-intro-foot]').evaluate((e) => e.scrollIntoView({ behavior: 'instant', block: 'end' })));
   await ctx.close();
 
   // Where the machine can't run (its file isn't there): the plate.

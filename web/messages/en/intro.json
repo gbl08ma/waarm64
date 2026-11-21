@@ -192,8 +192,8 @@
     "note": "The introduction's section “How it was made”, in the author's own first person and their own words (one person made the project with AI agents): the first of three closing paragraphs, under the list of reasons. The author's own words: keep their expressions."
   },
   "IntroMade.close.friends": {
-    "message": "This project will not be seen with good eyes by some of my friends, which is understandable and even commendable; a large part of me still finds much of <i>all this</i> quite objectionable too. It's extremely exciting, extremely powerful, and extremely negative as well (in so many directions), and before long we'll know whether it led us to freedom and light, or capture and darkness.",
-    "note": "The introduction's section “How it was made”, in the author's own first person and their own words (one person made the project with AI agents): the second closing paragraph. <i> marks words in italics. The author's own words: keep their expressions (“seen with good eyes” is theirs)."
+    "message": "This project will not be seen in a good light by some of my friends, which is understandable and even commendable; a large part of me still finds much of <i>all this</i> quite objectionable too. It's extremely exciting, extremely powerful, and extremely negative as well (in so many directions), and before long we'll know whether it led us to freedom and light, or capture and darkness.",
+    "note": "The introduction's section “How it was made”, in the author's own first person and their own words (one person made the project with AI agents): the second closing paragraph. <i> marks words in italics. The author's own words: keep their expressions."
   },
   "IntroMade.close.hurry": {
     "message": "Don't worry: I get the feeling that this situation is more temporary than most things on Earth, and I suspect that, five years from now, most people won't be able to build slopulators like this, for one reason or another. Let's hurry up and value the progress of technology before it values us back.",
@@ -206,6 +206,14 @@
   "IntroEnd.words": {
     "message": "The demos are ready-made machines. The smallest is a 25 MB download and puts you at a shell prompt in a few seconds. The largest is a desktop with a browser in it.",
     "note": "The introduction's last paragraph, over the button to the demos. The figures are the Alpine demo's (docs/comparison.md §3)."
+  },
+  "IntroEnd.source": {
+    "message": "Source code on GitHub",
+    "note": "A link in the introduction's last lines: opens the project's repository on GitHub in a new tab. GitHub is a name."
+  },
+  "IntroEnd.license": {
+    "message": "$t(common:product.name) is MIT-licensed.",
+    "note": "Beside the link to the source code in the introduction's last lines: the project's own license (MIT is the license's name)."
   },
   "IntroEnd.demos": {
     "message": "Open the demos",

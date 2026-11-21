@@ -2,7 +2,8 @@
   The introduction (docs/frontend.md "The introduction"; docs/decisions.md "Demos"): what a visitor without machines
   sees first, and what About's button shows again. It takes the whole window, one page scrolled from top to bottom:
   a bar of its own (the wordmark, the ways to its sections, Skip), what waarm64 is, what runs on it, how it compares,
-  how it works, how it was made, and at its end the way into the demo store. Leaving it (Skip, a button to the demos) brings the toolbar and the status bar in
+  how it works, the way into the demo store, how it was made, and at its very end that way again, small, with the
+  source code's address and the license. Leaving it (Skip, a button to the demos) brings the toolbar and the status bar in
   (web/app/view-transition.ts). Its words are the catalog's `intro` area, in a voice of their own (docs/copy.md "The
   introduction").
 -->
@@ -55,8 +56,9 @@
   <IntroFacts bind:ref={facts} />
   <IntroCompare bind:ref={compare} />
   <IntroHow bind:ref={how} />
-  <IntroMade onabout={() => void page.closeIntro('about')} />
   <IntroEnd ondemos={toDemos} machines={records.machines.length} onhome={() => void page.closeIntro()} />
+  <IntroMade onabout={() => void page.closeIntro('about')} />
+  <IntroEnd foot ondemos={toDemos} machines={records.machines.length} onhome={() => void page.closeIntro()} />
 </div>
 
 <style>

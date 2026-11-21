@@ -8,7 +8,9 @@
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
+  import T from './T.svelte';
   import { t } from '../i18n.ts';
+  import { msg } from '../msg.ts';
 
   type Props = {
     /** Its row in the list (after the demos' rows), not its pane; `chosen`: its pane shows; `onopen`: the row pressed. */
@@ -21,7 +23,7 @@
   };
   let { row = false, chosen = false, onopen, back = false, onback }: Props = $props();
 
-  /** A group's title and its ideas, each a name and what to expect (the catalog's keys, written out for i18n-check). */
+  /** A group's title and its ideas, each a name and what to expect (drawn with its markers: a command in `<code>`) (the catalog's keys, written out for i18n-check). */
   const GROUPS = [
     [
       'machines:DemoIdeas.desktop',
@@ -74,7 +76,7 @@
               {#each ideas as [name, words] (name)}
                 <div>
                   <dt>{t(name)}</dt>
-                  <dd>{t(words)}</dd>
+                  <dd><T m={msg(words)} /></dd>
                 </div>
               {/each}
             </dl>

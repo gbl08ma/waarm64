@@ -104,9 +104,11 @@
     font-weight: var(--weight-bold);
     line-height: 22px;
   }
+  /* Its line is shorter than the title's, so a head with a small line is as tall as one without (About's has none). */
   .meta {
     color: var(--text-dim);
     font-size: var(--text-sm);
+    line-height: 18px;
   }
   .tabs {
     flex: none;
