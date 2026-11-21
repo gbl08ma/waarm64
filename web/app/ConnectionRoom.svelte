@@ -2,13 +2,11 @@
   A room connection's part of its Details (ConnectionDetails.svelte; docs/networking/rooms.md): its name in the room,
   connected or not (the names agent's `member`, from its key and the room's ID), the room's link and who may connect (kept with the connection, so always), why
   members go through the relay where a direct path was wanted (the toolbar's warning leads here) and what may fix it,
-  the registry's line, and its domains (NameEntry.svelte, as the details dialog had them: DOMAINS loops 4 and 5 move
-  them to the connection's Domains section).
+  and the registry's line while it is connected here. Its domains are in the page's Domains section (DomainsPane.svelte).
 -->
 <script lang="ts">
   import Note from './ui/Note.svelte';
   import ValueField from './ui/ValueField.svelte';
-  import NameEntry from './NameEntry.svelte';
   import T from './T.svelte';
   import { memberOf, pageNames } from './areas/names.svelte.ts';
   import { namesLine } from './names-view.ts';
@@ -19,8 +17,6 @@
   type Props = { room: RoomConnection; v: NetworkView | undefined };
   let { room, v }: Props = $props();
 
-  const conn = $derived({ identityKey: room.identityKey, link: room.link });
-  const roomNames = $derived(pageNames.of(conn));
   /** The connection as its room sees it, connected or not: its key, its name, the room's domain (web/names.ts
    * `Member`): a member's name is its key's label under the domain. */
   const member = $derived(pageNames.member(memberOf(room)));
@@ -75,8 +71,3 @@
   >
 {/if}
 {#if v?.room?.names}<Note size="md" id="net-details-names-line">{text(namesLine(v.room.names))}</Note>{/if}
-{#if member}
-  {#each roomNames as n (n.name)}
-    <NameEntry v={n} {conn} domain={member.domain} here={member.key} />
-  {/each}
-{/if}

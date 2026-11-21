@@ -827,3 +827,12 @@ test('a room connection\'s key, name and domains without running it: as its runn
   assert.equal(`nodekey:${e.key}`, (await runningSelf(LINK, own)).key);
   assert.notEqual(e.name, m.name);
 });
+
+test('Let it go before the claim is public: the title says let go, not Reserved (DOMAINS loop 4: the pane\'s card kept Let it go)', { skip, timeout: 60_000 }, async () => {
+  const { agent } = await testAgent({ publish: fakePublish() });
+  const c = conn('conn-early');
+  assert.equal((await agent.register(c, 'early', point())).state, 'reserved');
+  assert.equal((await agent.release(c, 'early')).state, 'released');
+  assert.deepEqual((await agent.titles(c.identityKey)).map((v) => v.state), ['released']);
+  assert.deepEqual(await agent.held(c.identityKey), [], 'not held: deleting the connection loses nothing');
+});

@@ -1,15 +1,15 @@
 <!--
   Register a domain… (docs/networking/names.md "What the user sees", where it is a name): one dialog from a room
-  adapter's section of the Network menu, for the adapter's connection (which holds the domain by its key, wherever
-  the connection is attached). A field, with the whole domain under it (`<name>.<room name or tag>.p2p.internal`), checked as typed by this page alone (not a valid name, this connection's already: no server
+  connection's Domains pane (DomainsPane.svelte), for that connection (which holds the domain by its key, wherever the
+  connection is attached, connected or not). A field, with the whole domain under it (`<name>.<room name or
+  tag>.p2p.internal`), checked as typed by this page alone (not a valid name, this connection's already: no server
   asked); Register asks the room's servers (one first byte of the name's id a press, the user's decision 2026-11-17:
-  web/names-view.ts `NameForm`, web/names.ts `check`): free, it registers and closes (the adapter then shows the name
-  as Preparing, Reserved, Active); taken, it stays open and says until about when; nobody in the room can say, it says
-  so and Register pressed again registers. The two notices, always shown, no boxes. **No key is shown or asked for**,
-  and nothing is added to the path where the name is free (the kickoff's decision 6). A connection whose key is
-  ephemeral can't hold a name: it says so instead. The key a domain points at and the room's domain come from the
-  names agent (`pageNames.member`: the connection's stored key and the room's ID), not from the adapter's live view, so
-  nothing in it waits for the connection to be connected.
+  web/names-view.ts `NameForm`, web/names.ts `check`): free, it registers and closes (the pane then shows the domain as
+  Preparing, Reserved, Active); taken, it stays open and says until about when; nobody in the room can say, it says
+  so and Register pressed again registers. The two notices, always shown, no boxes. **No key is shown or asked for**.
+  The pane doesn't open it for an ephemeral connection with a key of its own (it can't hold a domain: the pane says so).
+  The key a domain points at and the room's domain come from the names agent (`pageNames.member`: the connection's
+  stored key and the room's ID), so nothing in it waits for the connection to be connected.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -29,12 +29,12 @@
 
   let dialog = $state<{ open: () => void; close: () => void }>();
   let field = $state<HTMLInputElement>();
-  let index = $state<number>();
+  /** The room connection it registers for (its id). */
+  let id = $state<string>();
   let typed = $state('');
   let check = $state<CheckShown>({ state: 'empty' });
 
-  const ad = $derived(index === undefined ? undefined : net.views()[index]);
-  const room = $derived(ad?.connection?.room);
+  const room = $derived(id === undefined ? undefined : net.connections.find((c) => c.id === id)?.room);
   const conn = $derived<NamesOf | undefined>(
     room && { identityKey: room.identityKey, link: room.link, ephemeralKey: !!room.identity },
   );
@@ -62,8 +62,8 @@
   );
 
   $effect(() =>
-    network.naming.handle((i) => {
-      [index, typed] = [i, ''];
+    network.naming.handle((c) => {
+      [id, typed] = [c, ''];
       form.typed('');
       dialog?.open();
       queueMicrotask(() => field?.focus());
@@ -84,12 +84,10 @@
   onsubmit={register}
   onclose={() => {
     form.close();
-    index = undefined;
+    id = undefined;
   }}
 >
-  {#if conn?.ephemeralKey}
-    <Note size="md" id="net-name-ephemeral">{t('network:NameDialog.ephemeral')}</Note>
-  {:else}
+  {#if conn && !conn.ephemeralKey}
     <Field label={t('network:NameDialog.name')}>
       <input
         id="net-name-input"
@@ -119,7 +117,7 @@
   {/if}
   {#snippet buttons()}
     <Button type="button" id="net-name-cancel" onclick={() => dialog?.close()}>{t('network:NameDialog.cancel')}</Button>
-    {#if !conn?.ephemeralKey}
+    {#if conn && !conn.ephemeralKey}
       <Button type="submit" variant="primary" id="net-name-register" disabled={!key || !canRegister(check)}>
         {t('network:NameDialog.register')}
       </Button>

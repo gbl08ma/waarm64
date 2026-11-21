@@ -1113,115 +1113,175 @@
   },
   "NameDialog.title": {
     "message": "Register a domain in this room",
-    "note": "Title of Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu)."
+    "note": "Title of Register a domain… (a dialog opened from a room connection's Domains pane on the Home page)."
   },
   "NameDialog.name": {
     "message": "Domain",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the label of the field the name is typed in. As typed, the line under it says only what this page can tell (not a valid name, this connection's already); the room is asked when Register is pressed."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the label of the field the name is typed in. As typed, the line under it says only what this page can tell (not a valid name, this connection's already); the room is asked when Register is pressed."
   },
   "NameDialog.full": {
     "message": "Guests in this room will reach it as <name>{{full}}</name>, and usually as <name>{{name}}</name> alone.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field once a name is typed. {{full}} is the whole domain (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` when the room's ID isn't a plain DNS label: the room's domain), {{name}} the part typed (the guest's search domain lets it be used alone; not every guest's). Both are domains someone typed, marked as names."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the field once a name is typed. {{full}} is the whole domain (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` when the room's ID isn't a plain DNS label: the room's domain), {{name}} the part typed (the guest's search domain lets it be used alone; not every guest's). Both are domains someone typed, marked as names."
   },
   "NameDialog.suffix": {
     "message": "A domain in this room ends in .{{domain}}, which guests can usually leave out.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field while nothing is typed. {{domain}} is the room's domain (`<room name>.p2p.internal`, or `<tag>.p2p.internal` when the room's ID isn't a plain DNS label; the other form, under the tag, works too)."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the field while nothing is typed. {{domain}} is the room's domain (`<room name>.p2p.internal`, or `<tag>.p2p.internal` when the room's ID isn't a plain DNS label; the other form, under the tag, works too)."
   },
   "NameDialog.notice.find": {
     "message": "Members of this room who know the domain can reach this connection's address and see when it's online. While this connection is connected, this web app helps other members look domains up.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the first of its two notices, always shown, with no box to tick: what registering a name reveals, and that the machine then serves the room's names."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the first of its two notices, always shown, with no box to tick: what registering a name reveals, and that the machine then serves the room's names."
   },
   "NameDialog.notice.visit": {
     "message": "Open this web app at least every 2 weeks to keep the domain.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the second of its two notices, always shown, with no box to tick: this web app renews the name only while it is open (the kickoff's decision 13: every 2 weeks)."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the second of its two notices, always shown, with no box to tick: this web app renews the name only while it is open (the kickoff's decision 13: every 2 weeks)."
   },
   "NameDialog.register": {
     "message": "Register",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the main button. It first asks the room whether the name is free: free, it registers the name and closes the dialog (the adapter's section then shows the name with its state: Preparing, Reserved, Active); taken, the dialog stays open and says until when; when nobody in the room can say, the dialog says so and pressing it again registers the name."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the main button. It first asks the room whether the name is free: free, it registers the name and closes the dialog (the Domains pane then shows it on a card with its state: Preparing, Reserved, Active); taken, the dialog stays open and says until when; when nobody in the room can say, the dialog says so and pressing it again registers the name."
   },
   "NameDialog.cancel": {
     "message": "Cancel",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the button that closes it without registering."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the button that closes it without registering."
   },
-  "NameDialog.ephemeral": {
+  "DomainsPane.ephemeral": {
     "message": "This connection can't hold a domain: its key lasts only until this tab closes or reloads, and a domain lasts for weeks. To register one, use a connection kept in this browser.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu), for a connection that isn't kept (an ephemeral one with a key of its own): shown in place of the field and the notices, with no Register button. A name registered on it would point at a key gone with the page, and its renewals would go on with nothing to reach."
+    "note": "The Domains pane of an ephemeral room connection with a key of its own (a room connection's Domains pane on the Home page (its page under Connections, its Domains section)): all the pane holds, in place of the domains and Register a domain…. A domain registered on it would point at a key gone with the page, and its renewals would go on with nothing to reach."
   },
   "names-view.check.checking": {
     "message": "Checking…",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name after Register is pressed, while the room is asked whether the name is free."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the name after Register is pressed, while the room is asked whether the name is free."
   },
   "names-view.check.disputed": {
     "message": "The room's servers disagree about <name>{{name}}</name>: one says it is taken, until about {{when, date}}, and another doesn't. Press <ui>Register</ui> again to register it all the same.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and of the servers asked, some list the name as held and some don't (one may be lying): the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed, {{when}} the latest date a server gave."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the name when Register was pressed and of the servers asked, some list the name as held and some don't (one may be lying): the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed, {{when}} the latest date a server gave."
   },
   "names-view.check.invalid": {
     "message": "Not a domain that can be registered. It takes 1 to 32 lower-case letters, digits and hyphens, not starting or ending with a hyphen; some, such as every two-letter one, are reserved.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when it breaks the rules of names (docs/networking/names.md \"Names\")."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the name when it breaks the rules of names (docs/networking/names.md \"Names\")."
   },
   "names-view.check.yours": {
     "message": "This connection already holds <name>{{name}}</name>.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when this connection registered it already; {{name}} is the name typed."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the name when this connection registered it already; {{name}} is the name typed."
   },
   "names-view.check.taken": {
     "message": "<name>{{name}}</name> is taken, until about {{when, date}} unless its owner renews it.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and another owner holds it: the dialog stays open and Register is disabled until the name changes. {{name}} is the name typed, {{when}} when it lapses if not renewed."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the name when Register was pressed and another owner holds it: the dialog stays open and Register is disabled until the name changes. {{name}} is the name typed, {{when}} when it lapses if not renewed."
   },
   "names-view.check.unknown": {
     "message": "Nobody in the room can say whether <name>{{name}}</name> is free right now: no member serving the room's domains answered. Press <ui>Register</ui> again to register it all the same.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and no server of the room's names answered: the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed."
+    "note": "Register a domain… (a dialog opened from a room connection's Domains pane on the Home page): the line under the name when Register was pressed and no server of the room's names answered: the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed."
   },
   "names-view.preparing": {
     "message": "Preparing",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim is made (a proof of work, a minute or so)."
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state while its claim is made (a proof of work, a minute or so)."
   },
   "names-view.reserved_one": {
-    "message": "Reserved, public in about 1 hour; it already works on this machine.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."
+    "message": "Reserved, public in about 1 hour; it already works in machines that use this connection.",
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."
   },
   "names-view.reservedLate": {
-    "message": "Reserved, public once this web app has been open a while; it already works on this machine.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when its claim's timestamp is later than the usual couple of hours (this web app collects it only while open)."
+    "message": "Reserved, public once this web app has been open a while; it already works in machines that use this connection.",
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state when its claim's timestamp is later than the usual couple of hours (this web app collects it only while open)."
   },
   "names-view.reserved_other": {
-    "message": "Reserved, public in about {{count}} hours; it already works on this machine.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."
+    "message": "Reserved, public in about {{count}} hours; it already works in machines that use this connection.",
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."
   },
   "names-view.active": {
     "message": "Active, kept until about {{when, date}} unless you visit",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state once members reach it. {{when}} is when it stops resolving if this web app isn't opened again (each visit past half of its term renews it)."
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state once members reach it. {{when}} is when it stops resolving if this web app isn't opened again (each visit past half of its term renews it)."
   },
   "names-view.grace": {
     "message": "Not renewed in time: members don't reach it until it's renewed. It lapses about {{when, date}}.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state after its term, in the week of grace in which only its owner can renew it. {{when}} is when it lapses for good."
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state after its term, in the week of grace in which only its owner can renew it. {{when}} is when it lapses for good."
   },
   "names-view.lapsed": {
     "message": "Lapsed: anyone can register it now.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state after its grace ran out unrenewed."
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state after its grace ran out unrenewed."
   },
   "names-view.released": {
     "message": "Let go",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state after Let it go."
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state after Let it go."
   },
   "names-view.lost": {
     "message": "Lost: another owner's claim holds it.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when a server showed another owner's chain that owns the name now (docs/networking/names.md \"Who owns a name\": an older claim, or a younger one once this name had lapsed); this web app no longer renews it."
+    "note": "The toolbar's Network menu (a room adapter's section) and a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), beside its light: a registered name's state when a server showed another owner's chain that owns the name now (docs/networking/names.md \"Who owns a name\": an older claim, or a younger one once this name had lapsed); this web app no longer renews it."
+  },
+  "names-view.date.claimed": {
+    "message": "Registered {{when, date}}",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section): the first of its dates, under its name: when it was registered (its claim's time). {{when}} is that date."
+  },
+  "names-view.date.renew": {
+    "message": "Next renewal from {{when, date}}",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section): the second of its dates: from when this web app renews it (the first time it's open on or after that date). {{when}} is that date."
+  },
+  "names-view.date.renew.title": {
+    "message": "This web app renews the domain the first time it's open on or after this date.",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section): the tooltip of its date of the next renewal (names-view.date.renew)."
+  },
+  "names-view.date.until": {
+    "message": "Works until about {{when, date}}",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section): the last of its dates: until when members can look it up unless it is renewed. {{when}} is that date."
+  },
+  "names-view.ended.lapsed": {
+    "message": "It wasn't renewed for 30 days and the week that followed. You can register it again if nobody else has.",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), for a domain that lapsed: the sentence under its state (the card has nothing to edit)."
+  },
+  "names-view.ended.released": {
+    "message": "You let this domain go. Anyone can register it once the release is public, which takes about 2 hours.",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), for a domain let go: the sentence under its state (the card has nothing to edit)."
+  },
+  "names-view.ended.lost": {
+    "message": "Another member registered this domain before you, or registered it while yours had lapsed. This web app no longer renews it.",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), for a domain lost to another owner: the sentence under its state (the card has nothing to edit)."
+  },
+  "names-view.upkeep_one": {
+    "message": "Reopen this web app by about {{when, date}} to keep this domain.",
+    "note": "The line over the domains' cards in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), when one domain is held: by when this web app must be opened again to renew it. {{when}} is that date."
+  },
+  "names-view.upkeep_other": {
+    "message": "Reopen this web app by about {{when, date}} to keep these domains.",
+    "note": "The line over the domains' cards in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), when several are held: by when this web app must be opened again to keep them all (the earliest date any of them works until). {{when}} is that date, {{count}} how many domains."
+  },
+  "names-view.upkeep.soon_one": {
+    "message": "<name>{{names}}</name> needs renewing. Leave this web app open for a few hours to keep it.",
+    "note": "The line over the domains' cards in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), in the warning tone, when a domain is in its last week or not renewed in time (its grace). {{names}} is the domain."
+  },
+  "names-view.upkeep.soon_other": {
+    "message": "<name>{{names}}</name> need renewing. Leave this web app open for a few hours to keep them.",
+    "note": "The line over the domains' cards in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), in the warning tone, when several domains are in their last week or their grace. {{names}} are the domains, {{count}} how many."
+  },
+  "names-view.link.held_one": {
+    "message": "1 domain registered",
+    "note": "A room connection's link to its Domains pane (the toolbar's Network menu, a machine's Network tab, Connections' cards), when it holds one domain (live, or lost: the pane shows it). {{count}} is 1."
+  },
+  "names-view.link.held_other": {
+    "message": "{{count}} domains registered",
+    "note": "A room connection's link to its Domains pane (the toolbar's Network menu, a machine's Network tab, Connections' cards), when it holds several domains. {{count}} is how many."
+  },
+  "names-view.link.attention_one": {
+    "message": "{{held}}, 1 needs attention",
+    "note": "A room connection's link to its Domains pane, in the warning tone, when one of its domains is in its last week, not renewed in time, or lost. {{held}} is the message names-view.link.held (how many it holds), {{count}} is 1."
+  },
+  "names-view.link.attention_other": {
+    "message": "{{held}}, {{count}} need attention",
+    "note": "A room connection's link to its Domains pane, in the warning tone, when several of its domains are in their last week, not renewed in time, or lost. {{held}} is the message names-view.link.held (how many it holds), {{count}} how many need attention."
   },
   "names-view.line.serving_one": {
     "message": "This web app serves the room's domains for this connection: it keeps the records of 1 domain, and synced with {{servers}} other servers lately.",
-    "note": "A room connection's Details on the Home page (its page under Connections, also opened by Details… in the toolbar's Network menu): the registry's line on a machine that holds a name. {{count}} is the names it holds, {{servers}} the servers it synced with lately."
+    "note": "A room connection's Details and its Domains pane on the Home page (its page under Connections), while it is connected in this tab: the registry's line on a machine that holds a name. {{count}} is the names it holds, {{servers}} the servers it synced with lately."
   },
   "names-view.line.serving_other": {
     "message": "This web app serves the room's domains for this connection: it keeps the records of {{count}} domains, and synced with {{servers}} other servers lately.",
-    "note": "A room connection's Details on the Home page: the registry's line on a machine that holds a name. {{count}} is how many names it holds, {{servers}} the servers it synced with lately."
+    "note": "A room connection's Details and its Domains pane on the Home page, while it is connected in this tab: the registry's line on a machine that holds a name. {{count}} is how many names it holds, {{servers}} the servers it synced with lately."
   },
   "names-view.line.member_one": {
     "message": "Domains: 1 resolved; {{servers}} servers held.",
-    "note": "A room connection's Details on the Home page: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
+    "note": "A room connection's Details and its Domains pane on the Home page, while it is connected in this tab: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
   },
   "names-view.line.member_other": {
     "message": "Domains: {{count}} resolved; {{servers}} servers held.",
-    "note": "A room connection's Details on the Home page: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
+    "note": "A room connection's Details and its Domains pane on the Home page, while it is connected in this tab: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
   },
   "names-view.machine.new": {
     "message": "<name>{{name}}</name> (being registered)",
@@ -1231,57 +1291,57 @@
     "message": "<name>{{name}}</name> (until about {{when, date}})",
     "note": "The Home page, a machine's Network tab, an adapter's line of names (machines:AdapterCard.adapter.names): a name with the date it stops resolving unless this web app renews it. {{name}} is the name, {{when}} that date."
   },
-  "NameEntry.label": {
+  "DomainCard.label": {
     "message": "Subdomain",
-    "note": "A room connection's Details on the Home page, a registered domain's points: the accessible name of the field holding a subdomain (`git` in git.<name>)."
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered domain's points: the accessible name of the field holding a subdomain (`git` in git.<name>)."
   },
-  "NameEntry.target": {
+  "DomainCard.target": {
     "message": "Points at",
-    "note": "A room connection's Details on the Home page, a registered name's points: the accessible name of the field holding the member's name in the room (or its key) the name or its label points at."
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name's points: the accessible name of the field holding the member's name in the room (or its key) the name or its label points at."
   },
-  "NameEntry.note": {
-    "message": "Each points at a member's name in the room, this connection's or another's: paste one to point there. A subdomain adds a domain under <name>{{name}}</name>.",
-    "note": "A room connection's Details on the Home page, under a registered name's points; {{name}} is the name."
+  "DomainCard.note": {
+    "message": "Each points at a member's name in the room, which can be this connection's or another's. Paste a member's name to point there. A subdomain adds a domain under <name>{{name}}</name>.",
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), under its points; {{name}} is the domain."
   },
-  "NameEntry.addLabel": {
+  "DomainCard.addLabel": {
     "message": "Add a subdomain",
-    "note": "A room connection's Details on the Home page, a registered name: adds a row for a subdomain, pointing at this connection."
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name: adds a row for a subdomain, pointing at this connection."
   },
-  "NameEntry.removeLabel": {
+  "DomainCard.removeLabel": {
     "message": "Remove this subdomain",
-    "note": "A room connection's Details on the Home page, a registered name: the tooltip and accessible name of the icon that removes a subdomain's row (Save keeps it)."
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name: the tooltip and accessible name of the icon that removes a subdomain's row (Save keeps it)."
   },
-  "NameEntry.pointHere": {
+  "DomainCard.pointHere": {
     "message": "Point all at this connection",
-    "note": "A room connection's Details on the Home page, a registered name: sets every row's target to this connection's name in the room (Save keeps it)."
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name: sets every row's target to this connection's name in the room (Save keeps it)."
   },
-  "NameEntry.save": {
+  "DomainCard.save": {
     "message": "Save",
-    "note": "A room connection's Details on the Home page, a registered name: saves where it and its labels point (a new zone, published to the room)."
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name: saves where it and its labels point (a new zone, published to the room)."
   },
-  "NameEntry.release": {
+  "DomainCard.release": {
     "message": "Let it go",
-    "note": "A room connection's Details on the Home page, a registered name: the button that releases it (after asking), and the confirm button of that question (drawn as a warning)."
+    "note": "A domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section), a registered name: the button that releases it (after asking), and the confirm button of that question (drawn as a warning)."
   },
-  "NameEntry.release.confirm": {
+  "DomainCard.release.confirm": {
     "message": "Let <name>{{name}}</name> go? It will stop working for the room's members, and anyone can register it once the release is public.",
-    "note": "The question asked by a registered name's Let it go; {{name}} is the name."
+    "note": "The question asked by a domain card's Let it go (a room connection's Domains pane on the Home page (its page under Connections, its Domains section)); {{name}} is the domain."
   },
   "names-view.badLabel": {
     "message": "“{{label}}” isn't a subdomain: use letters, digits and inner hyphens, 63 at most, and not two hyphens as its third and fourth characters.",
-    "note": "Error shown in a room connection's Details on the Home page when Save finds a subdomain that isn't a DNS label, or has “--” in its third and fourth places (the punycode prefix's, as in “xn--”); {{label}} is what was typed."
+    "note": "Error shown on a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section) when Save finds a subdomain that isn't a DNS label, or has “--” in its third and fourth places (the punycode prefix's, as in “xn--”); {{label}} is what was typed."
   },
   "names-view.labelTwice": {
     "message": "“{{label}}” is listed twice: a subdomain points at one place.",
-    "note": "Error shown in a room connection's Details on the Home page when Save finds the same subdomain in two rows; {{label}} is the subdomain."
+    "note": "Error shown on a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section) when Save finds the same subdomain in two rows; {{label}} is the subdomain."
   },
   "names-view.badTarget": {
     "message": "“{{target}}” isn't a member's name in the room or a key.",
-    "note": "Error shown in a room connection's Details on the Home page when Save finds a target that isn't a member's name (<key>.<room name or tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
+    "note": "Error shown on a domain's card in a room connection's Domains pane on the Home page (its page under Connections, its Domains section) when Save finds a target that isn't a member's name (<key>.<room name or tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
   },
   "names.ephemeral": {
     "message": "A connection that isn't kept in this browser can't hold a domain",
-    "note": "Error in the message bar if a name is registered on a connection whose key goes with the page (the dialog says so first: NameDialog.ephemeral)."
+    "note": "Error in the message bar if a domain is registered on a connection whose key goes with the page (its Domains pane says so instead of offering Register: DomainsPane.ephemeral)."
   },
   "names.registerFailed": {
     "message": "<name>{{name}}</name> couldn't be registered",
@@ -1646,5 +1706,145 @@
   "ConnectionTailcatSettings.address": {
     "message": "The tailcat server's address",
     "note": "A tailcat connection's Settings on the Home page (its page under Connections), under “Go online through a computer” (network.NetTailcatStep.tailcat.exit): the label of the field (hidden by default, with a Show icon) holding the address of the tailcat server it goes online through, which starts with “tc”."
+  },
+  "DomainsPane.meta": {
+    "message": "Domains that the connection <name>{{name}}</name> holds in the room <name>{{room}}</name>. They end in .{{domain}}, which guests can usually leave out.",
+    "note": "The small line beside the title of a room connection's Domains pane on the Home page (its page under Connections, its Domains section). {{name}} is the connection's name, {{room}} the room's (its ID without a private room's suffix), {{domain}} the room's domain (`<room name>.p2p.internal`, or `<tag>.p2p.internal` when the room's ID isn't a plain DNS label)."
+  },
+  "DomainsPane.register": {
+    "message": "Register a domain…",
+    "note": "The button in the head of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), and again under its first explainer while it has no domains; also a room connection's link to that pane while it has none (the toolbar's Network menu, a machine's Network tab, Connections' cards). It opens a dialog to register a domain in the room for this connection (docs/networking/names.md, where it is a \"name\")."
+  },
+  "DomainsIntro.title": {
+    "message": "Give this connection a name other people can remember",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: its first heading."
+  },
+  "DomainsIntro.what": {
+    "message": "A domain is a short name of your choice, such as mybox, that the room's members can use to reach this connection. Without one, they need its own name in the room, which is {{member}}. A domain can also have subdomains, and each can point at this connection or at another member.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the first paragraph, what a domain is. {{member}} is the connection's own name in the room (`<key>.<room name>.p2p.internal`)."
+  },
+  "DomainsIntro.free": {
+    "message": "Registering is free and needs no account. No central server keeps the room's domains. The members who hold domains keep the records and answer lookups for everyone else.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the second paragraph, what registering costs and who keeps the records."
+  },
+  "DomainsIntro.steps": {
+    "message": "What registering involves",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the heading of its numbered steps."
+  },
+  "DomainsIntro.step.choose": {
+    "message": "<em>Choose a domain.</em> A domain belongs to whoever registered it first and has renewed it ever since.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: step 1 (its first words stressed)."
+  },
+  "DomainsIntro.step.wait": {
+    "message": "<em>Wait about 2 hours.</em> Until then the domain is reserved. It already works in machines that use this connection, but other members can't look it up yet. The wait is the time it takes to prove publicly when you registered.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: step 2 (its first words stressed): the claim's timestamp."
+  },
+  "DomainsIntro.step.reopen": {
+    "message": "<em>Reopen this web app at least every 2 weeks.</em> It renews your domains while it's open, and no machine needs to be running. A domain that goes 30 days without a renewal stops working, and a week after that anyone can register it.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: step 3 (its first words stressed): the renewals."
+  },
+  "DomainsIntro.before": {
+    "message": "Before you register",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the heading of its list of things to know."
+  },
+  "DomainsIntro.before.reach": {
+    "message": "Members who know a domain can reach the connection it points at and see when that connection is online. Nobody can list the room's domains, but any member can check whether a name they guess is registered.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the list's first item: who sees what."
+  },
+  "DomainsIntro.before.serve": {
+    "message": "While this connection is connected, this web app keeps the room's domain records and helps other members look domains up.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the list's second item: the connection serves the room's domains."
+  },
+  "DomainsIntro.before.copy": {
+    "message": "This browser holds the only copy of your domains. If its data is cleared, they are lost. To keep a copy, use <ui>Back up key and domains…</ui>.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the list's third item: the backup (a command in the connection's left column, machines:ConnectionNav.backup)."
+  },
+  "DomainsIntro.before.services": {
+    "message": "Domains rely on decentralized infrastructure. To use them, the browsers of the room's members may contact Nostr relays, OpenTimestamps servers, and Bitcoin block explorers. No payment or wallet is involved.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the list's fourth item: the outside services."
+  },
+  "DomainsIntro.before.earlier": {
+    "message": "Rarely, a domain that looked free turns out to have an earlier registration, for example by a member who was away when you registered. The earlier registration wins, and this web app tells you when that happens.",
+    "note": "The first explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), shown in the cards' place while the connection has no domains: the list's last item: a domain lost to an earlier claim."
+  },
+  "DomainsHow.summary": {
+    "message": "How domains work",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the summary line that unfolds it (collapsed by default)."
+  },
+  "DomainsHow.keep.title": {
+    "message": "Keeping your domains",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: its first heading."
+  },
+  "DomainsHow.keep": {
+    "message": "This web app renews each domain about every 2 weeks, while it's open. No machine needs to be running, and a short visit is enough. A domain that goes 30 days without a renewal stops working for the room's members. You can still renew it for a week after that by reopening this web app. Then it lapses, and anyone can register it.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the paragraph on renewals."
+  },
+  "DomainsHow.states.title": {
+    "message": "What the states mean",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the heading of its list of states."
+  },
+  "DomainsHow.states.preparing": {
+    "message": "<em>Preparing.</em> This web app is doing the work a registration requires, which takes up to a minute or two.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the states' list, Preparing (its first word stressed)."
+  },
+  "DomainsHow.states.reserved": {
+    "message": "<em>Reserved.</em> The domain is registered but not public yet. It already works in machines that use this connection. Other members can look it up about 2 hours after you registered it.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the states' list, Reserved."
+  },
+  "DomainsHow.states.active": {
+    "message": "<em>Active.</em> Members can look the domain up.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the states' list, Active."
+  },
+  "DomainsHow.states.grace": {
+    "message": "<em>Not renewed in time.</em> Members can't look the domain up until this web app renews it.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the states' list, the week of grace."
+  },
+  "DomainsHow.states.ended": {
+    "message": "<em>Lapsed, let go, or lost.</em> The domain is no longer yours.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the states' list, the three ends."
+  },
+  "DomainsHow.who.title": {
+    "message": "Who can see them",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the heading on who sees what."
+  },
+  "DomainsHow.who": {
+    "message": "Members who know a domain can reach the connection it points at and see when that connection is online. Nobody can list the room's domains, but any member can check whether a name they guess is registered. Domains can be looked up only while at least one member that holds a domain is connected to the room.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the paragraph on who sees what."
+  },
+  "DomainsHow.where.title": {
+    "message": "Where they are kept",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the heading on where domains are kept."
+  },
+  "DomainsHow.where": {
+    "message": "This browser holds the only copy of your domains. If its data is cleared, they are lost. To keep a copy, or to move them to another browser, use <ui>Back up key and domains…</ui>. Domains rely on decentralized infrastructure. To use them, the browsers of the room's members may contact Nostr relays, OpenTimestamps servers, and Bitcoin block explorers.",
+    "note": "The second explainer of a room connection's Domains pane on the Home page (its page under Connections, its Domains section), folded under its summary once the connection has domains: the paragraph on the only copy, the backup (machines:ConnectionNav.backup) and the outside services."
+  },
+  "ConnectionBackup.title": {
+    "message": "Back up key and domains",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): its title."
+  },
+  "ConnectionBackup.intro": {
+    "message": "This is the key of the connection <name>{{name}}</name>, followed by its domains. Copy it and keep it somewhere safe.",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): the line above the field, when the connection holds domains. {{name}} is the connection's name."
+  },
+  "ConnectionBackup.intro.none": {
+    "message": "This is the key of the connection <name>{{name}}</name>. It has no domains yet. Copy it and keep it somewhere safe.",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): the line above the field, when the connection holds no domains. {{name}} is the connection's name."
+  },
+  "ConnectionBackup.label": {
+    "message": "Key and domains",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): the label of the field holding the export (hidden until shown, with Copy)."
+  },
+  "ConnectionBackup.warning": {
+    "message": "Keep it secret. Whoever has it can take this connection's name and address in the room, and its domains.",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): the warning under the field."
+  },
+  "ConnectionBackup.restore": {
+    "message": "To restore it, create or join the room in a new connection, open <ui>Advanced</ui>, choose <ui>A key to paste</ui>, and paste it there. Don't connect two connections with the same key at the same time.",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): how to restore it (the Network wizard's room step: Advanced, its key choice)."
+  },
+  "ConnectionBackup.close": {
+    "message": "Close",
+    "note": "Back up key and domains (a dialog opened from a room connection's left column on the Home page): the button that closes it."
   }
 }

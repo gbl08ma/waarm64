@@ -195,6 +195,61 @@ rewritten for the page. `tools/screens.ts` shoots `connection-settings-<kind>` a
   `member` from the stored connection (`net.connections`) rather than `net.views()[index]`.
 - An ephemeral connection with its own key: NameDialog skips `member` (nothing to register).
 
+## Loop 4: a room connection's Domains pane (2026-11-21, cloud session)
+
+**What it did**
+- **`DomainsPane.svelte`** (the Domains section of `ConnectionPage.svelte`): `Pane` with the title, the meta line
+  (`network:DomainsPane.meta`: the connection's name, the room's `roomName(roomOf(link))`, `member.domain`) and
+  Register a domain… (`data-action=register-domain`); with no domains `DomainsIntro.svelte` (the first explainer:
+  headings as `h4`, `ui/Steps` for the three steps, a `ul` for "Before you register") and a second Register a domain…
+  (`register-domain-intro`); with some, the upkeep line (`#domains-upkeep`, `data-warn`), a `CardList` of
+  `DomainCard`s and `DomainsHow.svelte` (`ui/Disclosure` `#domains-how`, collapsed); the registry line
+  (`#domains-names-line`) while connected here. An ephemeral connection with its own key: `#domains-ephemeral`
+  (`DomainsPane.ephemeral`, moved from `NameDialog.ephemeral`) and nothing else. Wrapper `#domains`.
+- **`DomainCard.svelte`** (from `NameEntry.svelte`, gone; keys `NameEntry.*` → `DomainCard.*`, the note's new words): a
+  `ui/Card`, the light (`StatusDot`, which gained a `warn` tone and the token `--status-warn`), the whole domain
+  (`.full`: name strong, `.<domain>` dim), the state (`titleState`, kept), the dates (`[data-date=claimed|renew|until]`,
+  the renewal's tooltip), the ended sentence (`[data-field=ended]`), the editor as NameEntry had it (Let it go at the
+  row's end). The rows now follow the title's points until edited (a domain registered while its card shows came up
+  with no rows otherwise).
+- **`names-view.ts`**: `isLive`, `titleTone`, `needsAttention`, `upkeepLine`, `titleDates`, `endedWords`, and loop 5's
+  `domainsLink` (written here with its words: same file).
+- **NameDialog** opens with a connection id (`network.naming: Command<[string]>`); it finds the stored connection in
+  `net.connections`. Its ephemeral branch is gone (the pane never opens it there). The toolbar's NetNames button
+  (still there until loop 5) passes the adapter's connection id.
+- **ConnectionRoom** lost the domain rows (Details keeps the registry line).
+- **The backup**: `ConnectionNav`'s Back up key and domains… (`data-action=backup-connection`, icon `file-export`: no
+  key icon in the set) mounts **`ConnectionBackup.svelte`** (`#connection-backup`, `#connection-backup-value` secret
+  mono, `-copy`, `-show`, `-close`; `#connection-backup-intro[data-domains]`). It reads `member` first (so a stored
+  connection's key exists), then `net.conns.exportKey`; "with domains" is the export having a dot.
+- **The column's count**: Domains has a `Count` of live domains and `aria-label` `machines:ConnectionNav.domains.named`,
+  only when there are some (as MachinesNav's panes).
+- **A fix in the agent's view** (web/names.ts `view`): a claim let go before it was public stayed **Reserved** (the
+  release makes no entry then; `t.released` was ignored on that path). Now `released`. Test first, failing without it:
+  `tests/names-agent.test.ts` "Let it go before the claim is public". **For the review:** what such a title does once
+  its claim is anchored later (the agent may publish the claim with no release after it) was not looked into.
+
+**Where it differs from the kickoff, and why**
+- The keys follow the stem rule: the explainers are `DomainsIntro.*` / `DomainsHow.*`, the card's computed words
+  `names-view.date.*`, `names-view.ended.*`, `names-view.upkeep*`, `names-view.link.*`; Register a domain… is
+  `DomainsPane.register` (also the link's words); the title reuses `machines:ConnectionNav.domains`.
+- The link's count counts lost domains as well as live ones ("1 domain registered, 1 needs attention" for a lost one:
+  the pane still shows it); the column's count is live ones only.
+- The upkeep line has no line when no live domain has a date yet (only Preparing/Reserved ones: no `keptUntil`).
+- A Reserved domain shows no dates (the agent gives none before the claim is public).
+- Words unchanged except where the kickoff's "Changed" says; `<em>` for the steps' and states' lead words.
+
+**Tests**: `tests/names-page.test.ts` (unit: tones, dates, ended words, the upkeep line, the link; `wording:` cases);
+**`tests/page-domains.test.ts`** (Chromium, the names agent on `ts-test.wasm`, pretend calendars, relays refused, no
+machine): the first explainer with the member's name, register through the dialog (nobody can say → second press),
+the card Reserved, the column's count, a subdomain saved then Point all, the second explainer collapsed, the backup
+(with domains; an ephemeral connection's without), Let it go; the states' lights, ended words and the upkeep line from
+titles set in the area; an ephemeral connection's pane. Heavy in the `rooms` area. `tests/page-home-levels.test.ts`
+(the commands now include the backup) and `tests/page-room.test.ts` (the label through the pane; B's ephemeral
+connection through its Domains) adjusted.
+Screenshots: `bench/results/local/loop4-shots.ts` (git-ignored). In its backup shot the injected titles aren't stored,
+so it says "no domains yet": staged, not a defect.
+
 ## Tiers passed
 
 | Commit | Tier |
@@ -202,3 +257,4 @@ rewritten for the page. `tools/screens.ts` shoots `connection-settings-<kind>` a
 | DOMAINS loop 1 | T1 (`scripts/ci-fast.sh`: OK, 437 s, 166 files). T2 as far as a cloud session goes: `scripts/ci.sh`'s static checks, Rust tests, TestFloat and builds passed; its **agent** step failed with the six known root-container failures (docs/cloud.md: `x11::…display_socket_gets_the_cookie` and five `serve_test` cases), which stops the script, so its JS step was run by hand with ci.sh's settings (`WAARM64_DISTROS=` (no Alpine images), `WAARM64_LONG_TESTS=1`, `node --test 'tests/**/*.test.ts'`): 1461 passed, 0 failed, 618 skipped (images, rigs, topic-only). Not run: ci.sh's TSan and native guest-image steps (no images here). Of the topic scripts ci-fast names (ci-net, ci-debian, ci-graphics, ci-machines), only `tests/page-room.test.ts` was run (Debian via `images/build.sh debian`, `WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1`): passed (256 s), Details… → the page and Back included. The four scripts whole are left for the dev VM. |
 | DOMAINS loop 2 | T1 (`scripts/ci-fast.sh`: OK, 362 s, 169 files). T2 as far as a cloud session goes: `scripts/ci.sh`'s static checks, clippy, Rust tests, TestFloat and builds passed; its agent step failed with the same six known root-container failures and stopped the script, so its JS step was run by hand as loop 1 did (`WAARM64_DISTROS=`, `WAARM64_LONG_TESTS=1`, `node --test 'tests/**/*.test.ts'`): 1482 passed, 0 failed, 607 skipped. `target/net/ts.wasm` was missing in this container and was built (`net/ts/build.sh`), so `tests/page-connections.test.ts` ran (passed). With `WAARM64_DISTROS=debian WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1`: `tests/page-room.test.ts` passed (125 s) and `tests/page-network.test.ts` passed (171 s, the tailcat rig's served machine and New address from the column included). Not run: ci.sh's TSan and native guest-image steps, and the topic scripts ci-fast names (ci-net, ci-debian, ci-graphics, ci-machines) whole: left for the dev VM. |
 | DOMAINS loop 3 | T1 (`scripts/ci-fast.sh`: OK, 346 s, 165 files). T2 as far as a cloud session goes: `scripts/ci.sh` **whole** (with 6921f2b's skips): CI OK (901 s): static checks, clippy, Rust tests, the agent's tests (the six root-only ones skipped), TestFloat, builds, JS 2090 tests: 1483 passed, 0 failed, 607 skipped; its native guest-image and TSan steps said SKIPPED (no images here). The network's Rust tests: 287 passed (`member`'s among them). With `WAARM64_DISTROS=debian WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1`: `tests/names-page.test.ts` passed; `tests/page-room.test.ts` failed once (New name left the key field empty: fixed in ConnectionRoomSettings), then passed (135 s); `tests/page-home-levels.test.ts` passed again after the fix. Those last three runs and the quick static checks (eslint, prettier, svelte-check, `cargo fmt --check`) are all that ran after the fix: the user, in a hurry, asked for targeted checks only, so the broad CI on the final tree (ci.sh, ci-fast.sh and the topic scripts: ci-net, ci-machines, ci-debian) is left for the track's end, run by the supervisor. |
+| DOMAINS loop 4 | Targeted only (the user's instruction): tsc, svelte-check, eslint/prettier/stylelint on the touched files, `tools/i18n-check.ts`, `tools/ci-select.ts --check`; `tests/names-page.test.ts`, `tests/names-agent.test.ts`, `tests/page-domains.test.ts`, `tests/page-home-levels.test.ts` passed. `tests/page-room.test.ts` not run in this loop (run after loop 5). Not run: ci-fast, ci.sh, the topic scripts. |

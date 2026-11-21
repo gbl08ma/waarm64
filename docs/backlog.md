@@ -1972,7 +1972,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - Done (N5): the wizard's key field is the export with names, and a pasted one brings them.
     - The page's loose ends (N5):
       - New name on a room connection that holds names keeps its titles (under the same entry) pointing at the old
-        key: the details' [Point all at this connection](ui:network:NameEntry.pointHere) fixes it by hand. New name could
+        key: the details' [Point all at this connection](ui:network:DomainCard.pointHere) fixes it by hand. New name could
         offer it, or repoint them itself.
       - Name this machine… is shown only while the room is connected (the node key comes with the connection's start).
         A stored connection's key is in `waarm64-room` before that; reading it there would offer the dialog offline.

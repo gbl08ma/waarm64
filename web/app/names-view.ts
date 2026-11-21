@@ -180,6 +180,85 @@ export function namesLine(n: { serving: boolean; names: number; servers: number 
       });
 }
 
+/** A domain still held (not let go, lapsed or lost): its card has the points editor, the pane's count counts it. */
+export const isLive = (v: TitleView) =>
+  v.state === 'preparing' || v.state === 'reserved' || v.state === 'active' || v.state === 'grace';
+
+/** A domain's light (DomainCard.svelte, ui/StatusDot): on, on its way, needing a renewal, gone, or taken by another. */
+export type TitleTone = 'ok' | 'busy' | 'warn' | 'off' | 'bad';
+const TONES: Record<TitleView['state'], TitleTone> = {
+  active: 'ok',
+  preparing: 'busy',
+  reserved: 'busy',
+  grace: 'warn',
+  lapsed: 'off',
+  released: 'off',
+  lost: 'bad',
+};
+export const titleTone = (v: TitleView): TitleTone => TONES[v.state];
+
+/** The last week of a domain's term (web/names.ts `LAST_WEEK_S`, the load's notice: `inLastWeek`). */
+const LAST_WEEK_MS = 7 * 24 * HOUR_MS;
+
+/** In its last week or its grace: it needs this web app open a while to stay (the upkeep line's warning). */
+const renewSoon = (v: TitleView, now: number) =>
+  v.state === 'grace' || (v.state === 'active' && v.keptUntil !== undefined && v.keptUntil * 1000 - now < LAST_WEEK_MS);
+
+/** Needs the user's eye (the status link's warning): in its last week, its grace, or lost to another owner. */
+export const needsAttention = (v: TitleView, now = Date.now()) => v.state === 'lost' || renewSoon(v, now);
+
+/**
+ * The Domains pane's upkeep line, over the cards (DomainsPane.svelte): the domains in their last week or grace named in
+ * the warning tone; else by when this web app must be reopened to keep them all (the earliest `keptUntil`); none when no
+ * domain is live, or none has a date yet.
+ */
+export function upkeepLine(views: TitleView[], now = Date.now()): { m: Msg; warn: boolean } | undefined {
+  const live = views.filter(isLive);
+  const soon = live.filter((v) => renewSoon(v, now)).map((v) => v.name);
+  if (soon.length) return { m: msg('network:names-view.upkeep.soon', { names: soon, count: soon.length }), warn: true };
+  const until = live.flatMap((v) => (v.keptUntil === undefined ? [] : [v.keptUntil]));
+  if (!until.length) return undefined;
+  return { m: msg('network:names-view.upkeep', { when: date(Math.min(...until)), count: live.length }), warn: false };
+}
+
+/** A card's dates, where its title has them: registered, the next renewal from (with its tooltip), works until about. */
+export function titleDates(v: TitleView): { m: Msg; title?: Msg; key: string }[] {
+  const out: { m: Msg; title?: Msg; key: string }[] = [];
+  if (v.claimedAt !== undefined)
+    out.push({ key: 'claimed', m: msg('network:names-view.date.claimed', { when: date(v.claimedAt) }) });
+  if (v.renewAt !== undefined)
+    out.push({
+      key: 'renew',
+      m: msg('network:names-view.date.renew', { when: date(v.renewAt) }),
+      title: msg('network:names-view.date.renew.title'),
+    });
+  if (v.keptUntil !== undefined)
+    out.push({ key: 'until', m: msg('network:names-view.date.until', { when: date(v.keptUntil) }) });
+  return out;
+}
+
+/** What a domain let go, lapsed or lost means, under its state (its card has nothing to edit then). */
+export function endedWords(v: TitleView): Msg | undefined {
+  if (v.state === 'lapsed') return msg('network:names-view.ended.lapsed');
+  if (v.state === 'released') return msg('network:names-view.ended.released');
+  if (v.state === 'lost') return msg('network:names-view.ended.lost');
+  return undefined;
+}
+
+/**
+ * A room connection's one status link to its Domains pane (DomainsLink.svelte): Register a domain… with none;
+ * how many it holds (live or lost: a lost one is still shown in the pane, needing the user's eye); and how many of them
+ * need attention (`needsAttention`), in the warning tone.
+ */
+export function domainsLink(views: TitleView[], now = Date.now()): { m: Msg; warn: boolean } {
+  const shown = views.filter((v) => isLive(v) || v.state === 'lost');
+  if (!shown.length) return { m: msg('network:DomainsPane.register'), warn: false };
+  const held = msg('network:names-view.link.held', { count: shown.length });
+  const attention = shown.filter((v) => needsAttention(v, now)).length;
+  if (!attention) return { m: held, warn: false };
+  return { m: msg('network:names-view.link.attention', { held, count: attention }), warn: true };
+}
+
 /** A stored machine's names on the Home page: each with the date it stops resolving unless renewed. */
 export function machineNames(views: TitleView[]): Msg[] {
   return views

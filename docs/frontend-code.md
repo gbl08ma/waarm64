@@ -38,7 +38,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      `--toolbar-edge`; `--chevron` (a mask); the main button `--primary-bg`, `--primary-border`, `--primary-fg`,
      `--primary-edge`; the destructive one `--danger-bg`, `--danger-border`, `--danger-fg`, `--danger-edge`;
    - tones: words `--ok-fg`, `--warn-fg`, `--error-fg`; the bars that carry one `--warn-bar-fg`, `--warn-bg`,
-     `--warn-border`, `--error-bar-fg`, `--error-bg`, `--error-border`; a state's light `--status-ok`, `--status-busy`,
+     `--warn-border`, `--error-bar-fg`, `--error-bg`, `--error-border`; a state's light `--status-ok`, `--status-busy`, `--status-warn`,
      `--status-bad`, `--status-off`;
    - a block map's looks `--map-*` (`--map-empty`, `--map-absent`, `--map-opaque`, `--map-rim-1..4`, `--map-core-1..4`,
      `--map-hollow`, `--map-tick`, `--map-read`, `--map-write`, `--map-end`, `--map-pin`: BlockGrid's canvas reads them);

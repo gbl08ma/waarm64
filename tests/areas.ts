@@ -148,7 +148,8 @@ export const AREAS: Record<string, Area> = {
   },
   rooms: {
     // Rooms and names: net/ts's room, the page's names.
-    src: ['net/ts/src/room.rs', 'net/ts/src/room/**', 'net/ts/src/nostr.rs', 'web/room*.ts', 'web/names*.ts', 'web/app/names-view.ts', 'web/app/room-*.ts', 'web/app/NetNames.svelte', 'web/app/NetRoom*.svelte', 'web/app/Name*.svelte', 'web/app/areas/names.svelte.ts'],
+    src: ['net/ts/src/room.rs', 'net/ts/src/room/**', 'net/ts/src/nostr.rs', 'web/room*.ts', 'web/names*.ts', 'web/app/names-view.ts', 'web/app/room-*.ts', 'web/app/NetNames.svelte', 'web/app/NetRoom*.svelte', 'web/app/Name*.svelte', 'web/app/Domain*.svelte', 'web/app/areas/names.svelte.ts'],
+    heavy: ['tests/page-domains.test.ts'],
     cargo: ['ts'],
     push: ['ci-net.sh'],
   },

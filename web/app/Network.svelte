@@ -76,9 +76,10 @@
     if (id) page.openConnection(id, 'details', { to: 'screen' });
   }
   function naming(i: number) {
+    const id = views[i]?.connection?.id;
     toButton(i);
     openAt = undefined;
-    network.openNaming(i);
+    if (id) network.openNaming(id);
   }
 </script>
 

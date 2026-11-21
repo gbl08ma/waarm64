@@ -2203,6 +2203,18 @@
     "message": "Domains",
     "note": "Home page, a room connection's page: the left column's entry for its Domains section (the domains the connection holds in the room), and that pane's title."
   },
+  "ConnectionNav.domains.named": {
+    "message": "Domains ({{n}})",
+    "note": "Home page, a room connection's page: the accessible name of its Domains entry in the left column when it holds domains (the page shows the count in a pill). {{n}}: how many it holds (not let go, lapsed or lost)."
+  },
+  "ConnectionNav.backup": {
+    "message": "Back up key and domains…",
+    "note": "Home page, a room connection's page: a command in the left column, opening a dialog with the connection's key and its domains to copy (network:ConnectionBackup.*)."
+  },
+  "ConnectionNav.backup.title": {
+    "message": "Copy this connection's key together with its domains, to keep them if this browser's data is lost or to move them to another browser.",
+    "note": "Home page, a room connection's page: the tooltip of the left column's Back up key and domains…."
+  },
   "ConnectionsPane.connection.details": {
     "message": "Details",
     "note": "Home page, Connections: button on each connection that opens the connection's page (its Details, Settings and, for a room, Domains), one level down."

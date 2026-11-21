@@ -2,12 +2,15 @@
   The Home page's left column in a connection's context (HomeColumn.svelte; docs/frontend.md "The Home page"), one
   level under Connections: Back to where the user came from (Connections, a machine's Network tab, or the machine's
   screen: web/app/home-route.ts `backOf`), the connection's name with its line (its kind, and who has it now), its
-  sections (Details, Settings and a room's Domains: a section is chosen instantly, as the root's panes are), then the
-  connection's commands under a rule: a tailcat server's New address, Log out where a node is kept, Delete (each runs
-  through the Home page's runner; Delete leaves the page for Connections once the connection is gone).
+  sections (Details, Settings and a room's Domains, with how many domains it holds: a section is chosen instantly, as
+  the root's panes are), then the connection's commands under a rule: a room's Back up key and domains…
+  (ConnectionBackup.svelte), a tailcat server's New address, Log out where a node is kept, Delete (each runs through
+  the Home page's runner; Delete leaves the page for Connections once the connection is gone).
 -->
 <script lang="ts">
+  import Count from './ui/Count.svelte';
   import Icon from './ui/Icon.svelte';
+  import ConnectionBackup from './ConnectionBackup.svelte';
   import HomeBack from './HomeBack.svelte';
   import { kindText } from './connection-kind.ts';
   import type { Connection } from './connections.ts';
@@ -18,6 +21,8 @@
   import type { PageNetwork } from './net-live.ts';
   import { msg, t, type Msg } from '../i18n.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
+  import { pageNames } from './areas/names.svelte.ts';
+  import { isLive } from './names-view.ts';
   import { page } from './page.ts';
 
   type Props = { net: PageNetwork; ctx: HomeContext; act: Act };
@@ -39,14 +44,27 @@
     return t('machines:ConnectionsPane.connection.unused');
   });
 
-  type Section = { id: ConnectionSection; icon: IconName; label: string };
+  /** A room's domains held (not let go, lapsed or lost): the Domains entry's count. */
+  const held = $derived(
+    c?.room ? pageNames.of({ identityKey: c.room.identityKey, link: c.room.link }).filter(isLive).length : 0,
+  );
+  type Section = { id: ConnectionSection; icon: IconName; label: string; count?: number; name?: string };
   const sections = $derived<Section[]>([
     { id: 'details', icon: 'info-circle', label: t('machines:ConnectionNav.details') },
     { id: 'settings', icon: 'settings', label: t('machines:ConnectionNav.settings') },
     ...(c?.kind === 'room'
-      ? [{ id: 'domains' as const, icon: 'world-www' as const, label: t('machines:ConnectionNav.domains') }]
+      ? [
+          {
+            id: 'domains' as const,
+            icon: 'world-www' as const,
+            label: t('machines:ConnectionNav.domains'),
+            ...(held ? { count: held, name: t('machines:ConnectionNav.domains.named', { n: held }) } : {}),
+          },
+        ]
       : []),
   ]);
+  /** The room's backup dialog is open. */
+  let backingUp = $state(false);
 
   async function logout(conn: Connection) {
     const sure = await ask.confirm(msg('machines:ConnectionNav.logout.confirm', { name: conn.name }), {
@@ -70,14 +88,26 @@
         aria-current={ctx.section === s.id ? 'page' : undefined}
         onclick={() => page.openConnection(ctx.id, s.id)}
         data-section={s.id}
+        aria-label={s.name}
       >
-        <Icon name={s.icon} size={16} />{s.label}
+        <Icon name={s.icon} size={16} />{s.label}{#if s.count !== undefined}<Count n={s.count} />{/if}
       </button>
     {/each}
   </div>
-  <!-- The connection's commands (a room's Back up key and domains… joins them: DOMAINS loop 4). -->
   {@const conn = c}
   <div class="entries ruled">
+    {#if conn.room}
+      <button
+        onclick={() => (backingUp = true)}
+        data-action="backup-connection"
+        title={t('machines:ConnectionNav.backup.title')}
+      >
+        <Icon name="file-export" size={16} />{t('machines:ConnectionNav.backup')}
+      </button>
+      {#if backingUp}
+        <ConnectionBackup {net} connection={{ ...conn, room: conn.room }} onclose={() => (backingUp = false)} />
+      {/if}
+    {/if}
     {#if conn.tailcat?.serve}
       <button
         onclick={() => act(t('machines:ConnectionNav.busy.forgettingAddress'), () => page.netNewAddress(conn))}

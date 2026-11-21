@@ -302,9 +302,9 @@ test("a connection's Settings: its values, Revert, a refusal, Save and a rename;
   const room = (await stored(page)).find((c) => c.id === s.room) as { room?: { relayOnly: boolean; incoming: boolean } } | undefined;
   assert.deepEqual([room?.room?.relayOnly, room?.room?.incoming], [true, true]);
 
-  // The commands: no Log out without a node, no New address on a room; Delete leaves for Connections.
+  // The commands: a room's backup, no Log out without a node, no New address on a room; Delete leaves for Connections.
   const commands = () => page.locator('.machines nav [data-level] [data-action]').evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.action));
-  assert.deepEqual(await commands(), ['back', 'delete-connection']);
+  assert.deepEqual(await commands(), ['back', 'backup-connection', 'delete-connection']);
   assert.equal(await page.locator('.machines nav [data-action=delete-connection]').getAttribute('title'), t('machines:ConnectionsPane.connection.delete.title'));
   await page.locator('.machines nav [data-action=delete-connection]').click();
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 10_000 });

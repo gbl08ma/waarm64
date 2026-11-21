@@ -1,0 +1,222 @@
+// A room connection's Domains pane in Chromium (web/app/DomainsPane.svelte, DomainCard.svelte, NameDialog.svelte,
+// ConnectionBackup.svelte; docs/networking/names.md "What the user sees"), with the connection never connected and no
+// machine on the page: the names agent's worker on the tests' module (target/net/ts-test.wasm in ts.wasm's place: a
+// cheap proof of work), the compiled calendars and explorers routed to the pretend ones (tests/net/ots-calendar.ts), the
+// room's relays refused (nobody can say whether a domain is free). The first explainer with the connection's own name
+// in the room; Register a domain… from the pane, pressed twice (nobody could say); the card Reserved with its date, the
+// column's count; a subdomain added and saved, then every point at this connection; the second explainer collapsed;
+// the backup (with domains, and an ephemeral connection's without); Let it go; the cards' other states and the upkeep
+// line's warning from titles set in the area (the agent's own states are tests/names-agent.test.ts's); an ephemeral
+// connection's pane.
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { after, before, test } from 'node:test';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
+import { startServer } from '../tools/serve.ts';
+import { t } from '../web/i18n.ts';
+import type { TitleView } from '../web/names.ts';
+import { CALENDARS, EXPLORERS } from '../web/names-fetch.ts';
+import { CALENDARS as PRETEND, startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
+import { TEST_WASM } from './net/names-agent.ts';
+import { answerAsks } from './page-ask.ts';
+import { words } from './words.ts';
+
+const skip = !existsSync(TEST_WASM) ? 'net/ts/build.sh --test-params' : !existsSync(process.env.CHROMIUM ?? '/usr/bin/chromium') ? 'no Chromium' : false;
+const LINK = 'waarm64-room:gabriel-lan?nostr=ws%3A%2F%2F127.0.0.1%3A9&derp=127.0.0.1%3A9'; // i18n-ignore: a link
+
+let browser: Browser;
+let cal: OtsCalendar;
+let base = '';
+let closeServer = () => {};
+before(async () => {
+  if (skip) return;
+  cal = await startOtsCalendar({ depth: 6 });
+  const server = await startServer();
+  closeServer = () => server.close();
+  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+});
+after(async () => {
+  await browser?.close();
+  closeServer();
+  await cal?.close();
+});
+
+/** A browser profile with the services routed (names-browser.test.ts's): anything else outside the page is refused. */
+async function profile(): Promise<BrowserContext> {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const map: [string, string][] = [...CALENDARS.map((c, i): [string, string] => [c, cal.calendars[PRETEND[i]]]), ...EXPLORERS.map((e): [string, string] => [e, cal.explorer])];
+  await ctx.route('**/target/net/ts.wasm', (r) => r.fulfill({ path: TEST_WASM, contentType: 'application/wasm' }));
+  await ctx.route((u) => u.origin !== base, async (r) => {
+    const url = r.request().url();
+    const to = map.find(([from]) => url.startsWith(`${from}/`));
+    if (!to) return r.abort();
+    await r.fulfill({ response: await r.fetch({ url: to[1] + url.slice(to[0].length) }) });
+  });
+  return ctx;
+}
+
+const text = async (page: Page, sel: string) => ((await page.locator(sel).textContent()) ?? '').replace(/\s+/g, ' ').trim();
+const card = (name: string) => `#domains [data-name="${name}"]`;
+const stateOf = (page: Page, name: string) => page.locator(card(name)).getAttribute('data-state');
+/** The titles the names agent keeps, as the page reads them. */
+const titles = (page: Page) => page.evaluate(() => import('/web/names.ts' as string).then((n: typeof import('../web/names.ts')) => n.namesAgent().titles())) as Promise<TitleView[]>;
+
+test("a room connection's Domains pane, never connected and no machine running: explain, register, point, back up, let go", { skip, timeout: 180_000 }, async () => {
+  const ctx = await profile();
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`# page error: ${e}`));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  await page.waitForFunction(() => !!document.getElementById('machines-open'));
+  const id = await page.evaluate(async ([m, link]) => {
+    const { page: p } = await import(m) as typeof import('../web/app/page.ts');
+    return (await p.netCreate({ kind: 'room', name: 'gabriel-lan', room: { link, incoming: true, relayOnly: false } })).id;
+  }, ['/web/app/page.ts', LINK] as const);
+
+  // The address of its Domains: the first explainer in the cards' place, with the connection's own name in the room.
+  await page.goto(`${base}/web/app/#home/connections/${id}/domains`);
+  await page.locator('#domains-intro').waitFor({ timeout: 30_000 });
+  const meta = await text(page, 'section[data-selected=connection-domains] .meta');
+  assert.equal(meta, t('network:DomainsPane.meta', { name: 'gabriel-lan', room: 'gabriel-lan', domain: 'gabriel-lan.p2p.internal' }));
+  const intro = await text(page, '#domains-intro');
+  const member = /[a-z2-7]{52}\.gabriel-lan\.p2p\.internal/.exec(intro)?.[0];
+  assert.ok(member, `its own name in the room: ${intro}`);
+  assert.ok(intro.includes(t('network:DomainsIntro.what', { member })), 'what a domain is, with its own name');
+  assert.equal(await page.locator('#domains-intro ol > li').count(), 3, 'three steps');
+  assert.equal(await page.locator('#domains-intro ul > li').count(), 5, 'five things to know first');
+  assert.equal(await page.locator('[data-action=register-domain], [data-action=register-domain-intro]').count(), 2, 'Register a domain… in the head and under the explainer');
+  assert.equal(await page.locator('#domains-how').count(), 0, 'no second explainer yet');
+  assert.equal(await page.locator('.machines nav [data-section=domains] .count').count(), 0, 'no count with none');
+
+  // Register through the dialog: the relays refused, nobody can say; pressed again, registered, the dialog closed.
+  await page.click('[data-action=register-domain-intro]');
+  await page.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  assert.match(await text(page, '#net-name-full'), words('network:NameDialog.suffix', { domain: 'gabriel-lan.p2p.internal' }));
+  await page.fill('#net-name-input', 'mybox');
+  await page.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'valid', null, { timeout: 10_000 });
+  await page.click('#net-name-register');
+  await page.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'unknown', null, { timeout: 40_000 });
+  await page.click('#net-name-register');
+  await page.waitForFunction(() => !(document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  await page.locator(card('mybox')).waitFor({ timeout: 10_000 });
+  await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('data-state') === 'reserved', card('mybox'), { timeout: 60_000, polling: 250 })
+    .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf(page, 'mybox')}`); });
+  assert.equal(await page.locator('#domains-intro').count(), 0, 'the first explainer gone');
+  assert.match(await text(page, `${card('mybox')} [data-field=state]`), words('network:names-view.reserved', {}));
+  assert.equal(await page.locator(`${card('mybox')} [data-date]`).count(), 0, 'reserved: no dates before its claim is public');
+  assert.equal(await text(page, `${card('mybox')} .full`), 'mybox.gabriel-lan.p2p.internal');
+  assert.equal(await text(page, '.machines nav [data-section=domains] .count'), '1', 'the column counts it');
+  assert.equal(await page.locator('.machines nav [data-section=domains]').getAttribute('aria-label'), t('machines:ConnectionNav.domains.named', { n: 1 }));
+  // The second explainer, collapsed; open on a click.
+  assert.equal(await page.locator('#domains-how').evaluate((d) => (d as HTMLDetailsElement).open), false, 'collapsed');
+  await page.click('#domains-how summary');
+  assert.ok((await text(page, '#domains-how')).includes(t('network:DomainsHow.keep')));
+  assert.equal(await page.locator('#domains-names-line').count(), 0, 'not connected: no registry line');
+
+  // Where it points: at this connection's own name; a subdomain added there, saved; then pointed elsewhere and back.
+  assert.equal(await page.locator(`${card('mybox')} [data-point=""] [data-field=target]`).inputValue(), member);
+  await page.click(`${card('mybox')} [data-action=add-label]`);
+  await page.fill(`${card('mybox')} [data-field=label]`, 'git');
+  await page.fill(`${card('mybox')} [data-point="git"] [data-field=target]`, 'ab'.repeat(32));
+  await page.click(`${card('mybox')} [data-action=save-zone]`);
+  const pointsOf = async () => (await titles(page)).find((v) => v.name === 'mybox')?.points.map((p) => `${p.label ?? ''}>${p.key.slice(0, 4)}`).join(' ');
+  for (let k = 0; k < 50 && !(await pointsOf())?.includes('git>abab'); k++) await page.waitForTimeout(100);
+  const [, here] = (await pointsOf())?.match(/^>(\w{4})/) ?? [];
+  assert.equal(await pointsOf(), `>${here} git>abab`, 'saved: the domain at this connection, git at another key');
+  await page.click(`${card('mybox')} [data-action=point-here]`);
+  await page.click(`${card('mybox')} [data-action=save-zone]`);
+  for (let k = 0; k < 50 && (await pointsOf())?.includes('abab'); k++) await page.waitForTimeout(100);
+  assert.equal(await pointsOf(), `>${here} git>${here}`, 'all at this connection');
+
+  // The backup: the key then its domains, secret, with the words for a connection that has domains.
+  await page.click('.machines nav [data-action=backup-connection]');
+  await page.waitForFunction(() => (document.getElementById('connection-backup') as HTMLDialogElement | null)?.open, null, { timeout: 5_000 });
+  await page.waitForFunction(() => /\./.test((document.getElementById('connection-backup-value') as HTMLInputElement).value), null, { timeout: 10_000 });
+  assert.match(await page.locator('#connection-backup-value').inputValue(), /^[0-9a-f]{64}\.[A-Za-z0-9_-]+$/);
+  assert.equal(await page.locator('#connection-backup-value').getAttribute('type'), 'password', 'hidden until shown');
+  assert.equal(await text(page, '#connection-backup-intro'), t('network:ConnectionBackup.intro', { name: 'gabriel-lan' }));
+  await page.click('#connection-backup-close');
+  await page.waitForFunction(() => !document.getElementById('connection-backup'), null, { timeout: 5_000 });
+
+  // Let it go (asked, answered OK): its state and what it means, nothing to edit, no upkeep line, no count.
+  await page.click(`${card('mybox')} [data-action=release]`);
+  await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('data-state') === 'released', card('mybox'), { timeout: 30_000, polling: 250 })
+    .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf(page, 'mybox')}; the card says ${await text(page, card('mybox'))}; asked: ${await page.evaluate(() => document.getElementById('ask')?.textContent)}`); });
+  assert.equal(await text(page, `${card('mybox')} [data-field=ended]`), t('network:names-view.ended.released'));
+  assert.equal(await page.locator(`${card('mybox')} input`).count(), 0, 'nothing to edit');
+  assert.equal(await page.locator('#domains-upkeep').count(), 0, 'none live: no upkeep line');
+  assert.equal(await page.locator('.machines nav [data-section=domains] .count').count(), 0, 'none held: no count');
+  await ctx.close();
+});
+
+test("the Domains pane: each state's light and words, the upkeep line, an ephemeral connection's pane and its backup", { skip, timeout: 120_000 }, async () => {
+  const ctx = await profile();
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`# page error: ${e}`));
+  await page.goto(`${base}/web/app/`);
+  await page.waitForFunction(() => !!document.getElementById('machines-open'));
+  const [id, eph] = await page.evaluate(async ([m, link]) => {
+    const { page: p } = await import(m) as typeof import('../web/app/page.ts');
+    const a = (await p.netCreate({ kind: 'room', name: 'gabriel-lan', room: { link, incoming: true, relayOnly: false } })).id;
+    const b = (await p.netCreate({ kind: 'room', name: 'passing', ephemeral: true, room: { link, incoming: true, relayOnly: false } })).id;
+    return [a, b];
+  }, ['/web/app/page.ts', LINK] as const);
+  await page.evaluate(([c]) => import('/web/app/page.ts' as string).then((m: typeof import('../web/app/page.ts')) => m.page.openConnection(c, 'domains')), [id] as const);
+  await page.locator('#domains-intro').waitFor({ timeout: 30_000 });
+  // Titles in every state, set in the area (its reads stopped, so the agent's titles don't come back over them).
+  const now = Math.floor(Date.now() / 1000);
+  const day = 86400;
+  const identityKey = await page.evaluate(async ([c]) => {
+    const all = await (await import('/web/app/store.ts' as string) as typeof import('../web/app/store.ts')).Store.open().then((s) => s.all('connections'));
+    return (all as { id: string; room?: { identityKey: string } }[]).find((x) => x.id === c)?.room?.identityKey ?? '';
+  }, [id] as const);
+  const v = (name: string, state: TitleView['state'], o: Partial<TitleView> = {}): TitleView => ({ identityKey, room: 'gabriel-lan', link: LINK, name, state, points: [{ label: null, key: 'ab'.repeat(32) }], ...o });
+  const set: TitleView[] = [
+    v('active', 'active', { claimedAt: now - 20 * day, renewAt: now - day, keptUntil: now + 10 * day }),
+    v('soon', 'active', { claimedAt: now - 26 * day, renewAt: now - 12 * day, keptUntil: now + 3 * day }),
+    v('grace', 'grace', { claimedAt: now - 40 * day, keptUntil: now - 2 * day, lapsesAt: now + 5 * day }),
+    v('reserved', 'reserved', { claimedAt: now, publicAbout: Date.now() + 90 * 60_000 }),
+    v('lapsed', 'lapsed'),
+    v('lost', 'lost'),
+  ];
+  await page.evaluate(async ([m, set]) => {
+    const { pageNames } = await import(m) as typeof import('../web/app/areas/names.svelte.ts');
+    pageNames.refresh = () => Promise.resolve();
+    pageNames.titles = set;
+  }, ['/web/app/areas/names.svelte.ts', set] as const);
+  await page.locator(card('lost')).waitFor({ timeout: 10_000 });
+  const tones = { active: 'ok', soon: 'ok', grace: 'warn', reserved: 'busy', lapsed: 'off', lost: 'bad' };
+  for (const [name, tone] of Object.entries(tones)) {
+    assert.equal(await page.locator(`${card(name)} .dot.${tone}`).count(), 1, `${name}: its light ${tone}`);
+  }
+  assert.equal(await text(page, `${card('lapsed')} [data-field=ended]`), t('network:names-view.ended.lapsed'));
+  assert.equal(await text(page, `${card('lost')} [data-field=ended]`), t('network:names-view.ended.lost'));
+  assert.equal(await page.locator(`${card('lost')} input`).count(), 0, 'lost: nothing to edit');
+  assert.equal(await page.locator(`${card('grace')} [data-field=target]`).count(), 1, 'in its grace: still its points');
+  assert.equal(await page.locator(`${card('active')} [data-date]`).count(), 3, 'the three dates');
+  assert.equal(await page.locator(`${card('active')} [data-date=renew]`).getAttribute('title'), t('network:names-view.date.renew.title'));
+  // The upkeep line: those in their last week and grace named, in the warning tone.
+  assert.equal(await page.locator('#domains-upkeep').getAttribute('data-warn'), 'true');
+  assert.equal(await text(page, '#domains-upkeep'), t('network:names-view.upkeep.soon', { names: ['soon', 'grace'], count: 2 }));
+  assert.equal(await text(page, '.machines nav [data-section=domains] .count'), '4', 'the live ones counted');
+  // Without them: the earliest date, not a warning.
+  await page.evaluate(async ([m, set]) => {
+    const { pageNames } = await import(m) as typeof import('../web/app/areas/names.svelte.ts');
+    pageNames.titles = set;
+  }, ['/web/app/areas/names.svelte.ts', set.filter((x) => x.name !== 'soon' && x.name !== 'grace')] as const);
+  await page.waitForFunction(() => document.getElementById('domains-upkeep')?.dataset.warn === 'false', null, { timeout: 5_000 });
+  assert.equal(await text(page, '#domains-upkeep'), t('network:names-view.upkeep', { when: new Date((now + 10 * day) * 1000), count: 2 }));
+
+  // An ephemeral connection with a key of its own: why it can't hold a domain, and nothing else.
+  await page.evaluate(([c]) => import('/web/app/page.ts' as string).then((m: typeof import('../web/app/page.ts')) => m.page.openConnection(c, 'domains')), [eph] as const);
+  await page.locator('#domains-ephemeral').waitFor({ timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelectorAll('section[data-selected=connection-domains]').length === 1, null, { timeout: 5_000 }); // the other pane gone (a move between levels)
+  assert.equal(await text(page, '#domains-ephemeral'), t('network:DomainsPane.ephemeral'));
+  assert.equal(await page.locator('[data-action=register-domain], [data-action=register-domain-intro], #domains-intro, #domains-how').count(), 0, 'nothing else');
+  // Its backup: its key alone, with the words for no domains.
+  await page.click('.machines nav [data-action=backup-connection]');
+  await page.waitForFunction(() => /^[0-9a-f]{64}$/.test((document.getElementById('connection-backup-value') as HTMLInputElement | null)?.value ?? ''), null, { timeout: 10_000 });
+  assert.equal(await text(page, '#connection-backup-intro'), t('network:ConnectionBackup.intro.none', { name: 'passing' }));
+  await ctx.close();
+});

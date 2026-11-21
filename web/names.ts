@@ -967,6 +967,8 @@ export class NamesAgent {
         lapsesAt: st.best.coverEnd,
       };
     const claim = st?.entries.find((e) => e.kind === 'claim' && !e.stale);
+    // A claim let go before it was public is shown let go (its card had Let it go: it stayed Reserved otherwise).
+    if (claim && t.released) return { ...base, state: 'released' };
     if (claim && !this.making.has(titleKey(t)))
       return { ...base, state: 'reserved', publicAbout: (t.stampedAt ?? t.made) + PUBLIC_IN_MS };
     return { ...base, state: 'preparing' };

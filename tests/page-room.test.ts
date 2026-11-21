@@ -588,13 +588,17 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   const ping = await run(b, `ping -6 -c 2 -W 10 mybox.${domain} | tail -2`, 60_000);
   assert.match(ping, / 0% packet loss/, ping);
   assert.deepEqual(await untouched(b), before, 'nothing on B\'s page');
-  // A's details: the registry's line, and a label added under the name (at this machine), which A's resolver answers.
+  // A's details: the registry's line; its Domains: the line too, and a label added under the name (at this machine),
+  // which A's resolver answers.
   await a.click('#net-details-open');
   await a.waitForFunction(() => !!document.getElementById('net-details-names-line'), null, { timeout: 30_000 });
   assert.match(await text(a, '#net-details-names-line'), words('network:names-view.line.serving_other', {}));
-  await a.click('#net-details [data-name="mybox"] [data-action="add-label"]');
-  await a.fill('#net-details [data-name="mybox"] [data-point=""] [data-field="label"] >> nth=0', 'web');
-  await a.click('#net-details [data-name="mybox"] [data-action="save-zone"]');
+  await a.locator('.machines nav [data-section=domains]').last().click();
+  await a.waitForFunction(() => !!document.getElementById('domains-names-line'), null, { timeout: 30_000 });
+  assert.match(await text(a, '#domains-names-line'), words('network:names-view.line.serving_other', {}));
+  await a.click('#domains [data-name="mybox"] [data-action="add-label"]');
+  await a.fill('#domains [data-name="mybox"] [data-point=""] [data-field="label"] >> nth=0', 'web');
+  await a.click('#domains [data-name="mybox"] [data-action="save-zone"]');
   await a.click('.machines nav [data-action=back]');
   let web = '';
   for (let k = 0; k < 20 && !web; k++) {
@@ -637,11 +641,12 @@ async function namesKeptWithTheConnection(a: Page, b: Page) {
   assert.equal(q.value, exported, 'the export to copy');
   await a.waitForFunction(() => !(document.getElementById('ask') as HTMLDialogElement).open, null, { timeout: 5_000 });
   assert.equal((await rooms(a)).length, 1, 'Cancel: kept');
-  // B's connection isn't kept (its key is in the page's memory): it can't hold a name, and the dialog says so.
+  // B's connection isn't kept (its key is in the page's memory): it can't hold a name, and its Domains say so.
   if (!(await b.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await b.locator('#network summary').click();
-  await b.click('#net-name-open');
-  await b.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
-  assert.match(await text(b, '#net-name-ephemeral'), words('network:NameDialog.ephemeral'));
-  assert.equal(await b.locator('#net-name-register').count(), 0, 'no Register');
-  assert.equal(await b.locator('#net-name-input').count(), 0, 'no field');
+  await b.click('#net-details-open');
+  await b.locator('.machines nav [data-section=domains]').last().click();
+  await b.locator('#domains-ephemeral').waitFor({ timeout: 10_000 });
+  assert.match(await text(b, '#domains-ephemeral'), words('network:DomainsPane.ephemeral'));
+  assert.equal(await b.locator('[data-action=register-domain], [data-action=register-domain-intro]').count(), 0, 'no Register a domain…');
+  await b.click('.machines nav [data-action=back]');
 }

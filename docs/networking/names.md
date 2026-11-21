@@ -534,7 +534,7 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   stops and the page says so. Not while the title's own chain has an entry waiting for its anchor, nor when another
   server of the same pass took it, nor until an explorer knows the better chain's first block (a forged header can't
   stop the owner's renewals). A lost title is still put hourly, and judged again.
-- **[Let it go](ui:network:NameEntry.release)** drops the renewals waiting for their anchors and the one made ahead,
+- **[Let it go](ui:network:DomainCard.release)** drops the renewals waiting for their anchors and the one made ahead,
   and makes the release on the owning chain's last entry (made again if no calendar stamped it). A renewal servers
   already finished is ended by the release once both are anchored.
 - **A running room** is given the connection's titles (`room.names.titles`, the owner key and item each) and again as
@@ -584,12 +584,11 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   same.](ui:network:names-view.check.disputed)), and a second press registers; **nobody can say**: likewise, a second
   press registers. A second press is the least intrusive way on: no button, box or question, and none on the free path.
 - **States**: [Preparing](ui:network:names-view.preparing) (proof of work), Reserved, public in about N hours (it already
-  works on this machine; past the usual wait [Reserved, public once this web app has been open a while; it already works
-  on this machine.](ui:network:names-view.reservedLate)), Active, kept until about a date unless you visit, in its grace,
+  works on this machine; past the usual wait [Reserved, public once this web app has been open a while; it already works in machines that use this connection.](ui:network:names-view.reservedLate)), Active, kept until about a date unless you visit, in its grace,
   [Lapsed: anyone can register it now.](ui:network:names-view.lapsed), [Let go](ui:network:names-view.released), lost.
 - **The details** per name: where it and each label point (a member's name or a key, pasted), [Add a
-  subdomain](ui:network:NameEntry.addLabel) (15 at most; past four points the zone is sealed wide),
-  [Point all at this connection](ui:network:NameEntry.pointHere), Save (checked as the module will: a label's rule, none
+  subdomain](ui:network:DomainCard.addLabel) (15 at most; past four points the zone is sealed wide),
+  [Point all at this connection](ui:network:DomainCard.pointHere), Save (checked as the module will: a label's rule, none
   twice, a target a member's name or key), Let it go, whether or not the connection is connected (its key and the
   room's domain from `member`). No key is shown or asked for.
 - **Elsewhere**: a stored machine's Network tab lists each room adapter's names with the date each stops resolving

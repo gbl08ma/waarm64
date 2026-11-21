@@ -2459,11 +2459,11 @@ and the guest's default way out (below).
   is connected here (a server's names held and the servers it synced with, or a member's names resolved and servers
   held: the module's `names` event) and, per name (`NameEntry.svelte`, connected or not), where it and each label under
   it point (a member's
-  name in the room, or a key, pasted), [Add a subdomain](ui:network:NameEntry.addLabel),
-  [Point all at this connection](ui:network:NameEntry.pointHere), Save (a new zone; its rows checked as the module will,
+  name in the room, or a key, pasted), [Add a subdomain](ui:network:DomainCard.addLabel),
+  [Point all at this connection](ui:network:DomainCard.pointHere), Save (a new zone; its rows checked as the module will,
   names-view.ts `zonePoints`: a subdomain a DNS label with no `--` in its third and fourth places, none twice, a target
   a member's name or a key, each refusal in the catalog's words) and
-  [Let it go](ui:network:NameEntry.release) (after asking). A stored machine's Network tab lists each room adapter's
+  [Let it go](ui:network:DomainCard.release) (after asking). A stored machine's Network tab lists each room adapter's
   names with the date each stops resolving unless renewed. At every load the agent starts when titles are kept and,
   after its first pass, the message bar names those in their last week (web/names.ts `inLastWeek`). The Settings'
   [The connection's key](ui:network:ConnectionRoomSettings.key) is the connection's export (its key, then its names
