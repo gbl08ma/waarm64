@@ -130,7 +130,9 @@ mark is 27 MiB lower in both at the same speed; the keep rules stay (no measured
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: the core's heap, the 320 MiB budget session (docs/backlog.md "The user's own session wasn't replayed") | memory more than speed; measure before building (`MEMLOG` works on the Mac; `sway-mac.sh` passes `CHURN`, `CHURN_S`) |
+| **Next:** JIT: lazy NZCV at a loop's head (new 2026-11-21, from a cloud session; ranked first by the supervisor: its unsound bound was +2-5% on small guests, the heap rows left are memory) | a loop whose head touches memory before its first flag setter stores NZCV every lap for its cold paths: 16 edges per 1000 steps in Debian's boot, the byte-sum loop 54 → 29 x86-64 instructions a lap; bench/boot/REPORT.md "Lazy NZCV at loop heads, counted", `bench/boot/results/flagx/` (the tallies, an unsound bound `--features flagx`, tools). Counts on the gates and the pages session first, then the bound on the Mac's gate screen, then the sound form (a new flag state: an out-of-context review after it) |
+| JIT: the branch outcome kept across a loop (new 2026-11-21, the same exploration) | small, tight loops only: 3 of 15 host instructions a lap in a loop with no memory; `--features takenx` in the same patch is a partial prototype. Count the shape first; with the row above or not at all |
+| JIT: the core's heap, the 320 MiB budget session (docs/backlog.md "The user's own session wasn't replayed") | memory more than speed; measure before building (`MEMLOG` works on the Mac; `sway-mac.sh` passes `CHURN`, `CHURN_S`) |
 | JIT: V8's per-function overhead (whether superseded blocks' modules stay alive through siblings) | memory; measure first |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | JIT: followed calls whose callee completes inside the region (loop 36's follow-up) | bound ~0.5%; exits from inside a followed call as host calls to the pending continuation |

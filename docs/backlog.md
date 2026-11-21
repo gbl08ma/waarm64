@@ -180,6 +180,32 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   expecting the pending continuation (nested, one per pending call), and a `ret` there an indirect transfer at the
   current depth instead of `ret_up`. Bound: ~5M host calls and returns a phase in Lua and SQLite, ~0.5% of them by the
   counts; build only with a measured A/B.
+- **Lazy NZCV at a loop's head** ([jit.md](jit.md) "Emission", lazy NZCV; `bench/boot/REPORT.md` "Lazy NZCV at loop
+  heads, counted", 2026-11-21; patch, tools and counts in `bench/boot/results/flagx/`): a region's head never starts
+  lazy, and it counts as needing NZCV in memory when only a cold path before its first setter could want it (a load's
+  or store's slow arm, a failure chain: `Func::touched`), so the back-edge of a loop like `ldrb; subs; add; b.ne`
+  computes and stores NZCV every lap (54 x86-64 instructions a lap, 29 without). Counted in a cloud session: 16 such
+  edges per 1000 guest steps in Debian's boot (Linux's part) and 16.5 on the integer guest, 7 more per 1000 in the boot
+  stored for another reason (an FP instruction's slow arm, a block with no setter, a real reader). An unsound bound (such
+  heads' flags dead) ran the small guests +2 to +5% and the FP guest +13% in a noisy paired A/B on x86-64 Node; not
+  measured on the gates. To do, in order: (1) the patch's two tallies on the gates' guests and Firefox's pages session
+  (`bench/boot/preempt-counts.ts` reads the diagnostic core's slots; the patch adds 14 and 15); (2) the bound
+  (`--features flagx`) on the Mac's gate screen: it boots Debian, and its exceptions from a slow arm save a stale NZCV,
+  so it is for measuring only; (3) if it shows, the sound form: a head state "lazy on the back-edges, in memory from
+  the entry" with a local saying which (set on the edges into the head, zero at the entry), and every path that
+  leaves or calls before the head's first setter storing NZCV when it is pending: the slow arms, the failure chains'
+  return, the spill arms, the FP guard. The failure chains' class of rule: a planted bug for each path, the
+  differential test's region classes, `scripts/ci-jit.sh`. Then the "other" class: an FP fast path's slow arm is as
+  cold as a load's (the tally counts it hot), and a member with no setter needs flags only if what follows it does (a
+  liveness pass over the region's members).
+- **The branch outcome kept across a loop** (the same REPORT entry): a member whose conditional branch has a
+  successor in the region keeps its outcome in `TAKEN` for the exit's PC and chain (`Func::defer_pc`), so V8 makes it
+  a 0/1 value on every lap: 3 of the Collatz capture's 15 AArch64 instructions a lap (`cset; tst; cset` and a second
+  compare). The exit computing a lazy B.cond's outcome again from the flag locals (`--features takenx` in the patch:
+  x86-64's four unrolled laps 63 → 51 instructions) reached only that capture's loop: the byte-sum loop keeps its
+  `setnz` (find the use the prototype missed), and CBZ/TBZ outcomes would be read again from their register. Small,
+  and for tight loops only: count the laps of that shape first (a tally at the edge of a member with `defer_pc` and a
+  conditional branch), and build it with the entry above or not at all.
 - **Entries for loops through calls** ([jit.md](jit.md) "Continuations are entries"; the review after PERF loop 36): a
   forward region with an edge back to its head (`for (…) f(x);`: the head, the call, the block after it branching back)
   is `looped()`, and `Region::entries` gives a region with a `loop` none, so after anything that unwinds inside `f` (a

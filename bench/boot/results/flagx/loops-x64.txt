@@ -1,0 +1,16 @@
+tools/loopcode.mjs, x86-64, V8 14.6.202.34-node.40 TurboFan (--no-liftoff), the introduction's capture guest
+(tools/intro-capture/guest.bin). Instructions from the loop's head to its last back jump (nops left out).
+
+function (guest loop)                         base  takenx  flagx  both
+sum+0x8      ldrb; subs; add; b.ne  (1 lap)     54      54     29    29
+collatz+0x14 7 instructions, no memory
+             (V8 unrolls it: 4 laps)            63      51     63    51
+total+0x8, cap+0x10/+0x1c/+0x28, move+0x0: the same in all four (total's head has an FADD before its SUBS, whose
+slow arm the experiment counts as a hot reader; cap's and move's edges store nothing).
+
+Edges that stored NZCV, per 1000 guest steps (tools/counts.mjs, tools/debian-page.mjs):
+                                        back-edges  forward edges  for a cold path only  otherwise
+bench/interp guest-vm.bin (MMU on, off)      127.2          112.6                  16.5        0.0
+Debian's boot on the page, 1 vCPU:
+  the firmware (11.55 G steps)                91.2          105.4                  45.9       43.6
+  Linux, EFI stub to login (10.35 G steps)    25.7          102.2                  16.0        7.0

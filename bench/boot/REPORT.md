@@ -6615,3 +6615,45 @@ size: `Jit::miss` 11,308 → 11,307 bytes. No step count moved.
   table now finds room and only the decoded blocks' maps started over (9 rescues, no flush); in 48, 24 rescues and 12
   flushes. The native tests take the bound from `MAP_BUCKETS`.
 - docs/jit.md "The core's heap" has the bound and the finding; the backlog sub-item removed.
+
+## Lazy NZCV at loop heads, counted (2026-11-21)
+
+From the introduction's captures (web/intro-captures/blocks.json): the byte-sum loop (`ldrb w9, [x0], #1; subs x1,
+x1, #1; add w8, w8, w9; b.ne`) computes and stores NZCV on every lap, though nothing on the lap reads it. A loop's
+head is never lazy (M5 step 8.4: the function starts from memory), and a head counts as needing NZCV in memory when
+anything before its first setter could want it, a load's or store's slow arm included (`Func::touched`; a head that
+sets flags first, like the Collatz capture's, takes its back-edges without a store). So the back-edge of nearly every
+loop that touches memory before its first setter pays the store for a cold path. Explored in a cloud session
+(x86_64 container, Node v26.13.1, Chromium 153.0.8010.12): counts and machine code, **no speed claim** (docs/cloud.md:
+this host can't rank builds). Patch, tools and data: `results/flagx/` (README).
+
+- **How often** (a diagnostic core, two tallies at the edges; per 1000 guest steps): edges that stored NZCV for a
+  member where only cold paths (slow arms, failure chains) need it before its first setter, and the other storing
+  edges (a hot reader, a helper, an FP instruction's slow arm, a block with no setter):
+
+| | back-edges | forward edges | stored, cold only | stored, other |
+|---|---|---|---|---|
+| bench/interp's EL1 guest (Node; MMU on and off the same) | 127.2 | 112.6 | 16.5 | 0.0 |
+| Debian's boot on the page, 1 vCPU: Linux, EFI stub to login (10.35 G steps) | 25.7 | 102.2 | 16.0 | 7.0 |
+| the same run's firmware (11.55 G steps) | 91.2 | 105.4 | 45.9 | 43.6 |
+
+- **What a store costs** (TurboFan, x86-64, `results/flagx/loops-x64.txt`): the byte-sum loop is 54 instructions a
+  lap, 29 with the store off the lap (a core that calls such a head's flags dead: unsound, a bound). The AArch64
+  capture has the same lines (about 15 instructions and, on Linux, a bounds check and the store). At 16 a 1000 steps
+  that is some 0.3-0.4 host instructions a guest step in a Linux boot. Liftoff runs every one of them too.
+- **A paired A/B of that bound** in Node (`results/flagx/tools/paired.mjs`, arms side by side, 40 iterations of 100 M
+  steps; percent over the base, median [quartiles]; the A/A arm says how much this host resolves): the integer guest
+  +4.5 [2.2, 8.7] and +5.6 [3.2, 10.8] at two placements (A/A +0.6 [−2.6, 3.3], +2.1 [−3.8, 5.6]), at EL1 +3.9
+  [1.8, 8.1] and +2.1 [0.0, 7.1] (A/A +1.1, +0.4), the FP guest +13.2 [8.5, 15.8] (A/A −0.3 [−5.3, 3.7]). A second
+  run of 30 gave the same signs with wider quartiles. Suggestive, not a measurement: the Mac's gates decide.
+  Debian boots to its login on the page with it.
+- **The branch outcome at a loop's exit** (`TAKEN`): the Collatz capture's lap is 15 host instructions on AArch64
+  for 7 of the guest's, 3 of them the outcome made a 0/1 value (`cset; tst; cset`) and a repeated compare, because
+  the exit reads the outcome from a local that then lives across the loop. Computing a lazy B.cond's outcome again
+  at the exit (`takenx`) takes x86-64's four unrolled laps from 63 instructions to 51; it changes nothing in the
+  other captured loops (the byte-sum loop keeps its `setnz`: an exit use the prototype didn't reach), and its paired
+  A/B is inside this host's noise (−1.7 to +0.9, A/A −2.8 to +1.3). Not counted: how many laps have that shape.
+- **Not built.** A sound form keeps the store off the lap and has the cold paths store NZCV when it is pending: a
+  head state "lazy on the back-edges, in memory from the entry", a local saying which, set on the edges and tested
+  in the slow arms, the failure chains and any exit before the head's first setter (the failure chains' class of
+  rule: a planted bug each, the differential test's region classes). docs/backlog.md "JIT" has both entries.
