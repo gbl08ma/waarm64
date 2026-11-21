@@ -1,6 +1,8 @@
 // What the machine worker (web/app/worker.ts) fetches to start a machine: the core, the kernel and initrd whole (with
 // their progress posted), the disks' presence; a file that isn't there is a failure a user can act on.
+import coreSize from 'virtual:waarm64-core-size';
 import { CORE } from '../deflate.ts';
+import { bodySize, totalOf } from './download-size.ts';
 import { msg, MsgError } from '../msg.ts';
 import type { Machine } from './machine.ts';
 import { failure } from './worker-errors.ts';
@@ -52,7 +54,7 @@ async function get(url: string, machine: Machine) {
   return r;
 }
 
-/** A response's body whole: `size` bytes as announced (any past them kept too); `read` counts each part as it comes. */
+/** A response's body whole: `size` bytes as expected (any past them kept too); `read` counts each part as it comes. */
 async function body(r: Response, size: number, read: (n: number) => void, stopped: () => boolean) {
   const out = new Uint8Array(size);
   const parts: Uint8Array[] = []; // past the announced length (none expected)
@@ -74,11 +76,13 @@ async function body(r: Response, size: number, read: (n: number) => void, stoppe
   return all;
 }
 
-/** Fetches `urls` whole, posting the progress over all of them (Content-Length; the server sends it). */
+/** Fetches `urls` whole, posting the progress over all of them: of a total when every file's size is known (its
+ *  Content-Length, or the core's size from the build when the server compressed it: web/app/download-size.ts), else
+ *  only what arrived. */
 export async function download(urls: string[], machine: Machine, stopped: () => boolean) {
   const responses = await Promise.all(urls.map((url) => get(url, machine)));
-  const sizes = responses.map((r) => Number(r.headers.get('content-length')) || 0);
-  const total = sizes.reduce((a, b) => a + b, 0);
+  const sizes = responses.map((r, i) => bodySize(r.headers, urls[i] === CORE ? coreSize : undefined));
+  const total = totalOf(sizes);
   let loaded = 0;
   let posted = 0;
   const progress = (force = false) => {
@@ -93,7 +97,7 @@ export async function download(urls: string[], machine: Machine, stopped: () => 
     loaded += n;
     progress();
   };
-  const files = await Promise.all(responses.map((r, i) => body(r, sizes[i], read, stopped)));
+  const files = await Promise.all(responses.map((r, i) => body(r, sizes[i] ?? 0, read, stopped)));
   progress(true);
   return files;
 }

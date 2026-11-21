@@ -4,6 +4,7 @@
 // serves the whole repository from source, so the test pages under tests/browser/ and bench/ load web/'s modules as they are.
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
+import { statSync } from 'node:fs';
 import { copyFile, stat } from 'node:fs/promises';
 import { extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +39,30 @@ const about = (): Plugin => {
       if (id !== `\0${ID}`) return null;
       this.addWatchFile(THIRD_PARTY);
       return `export default ${JSON.stringify(aboutData({ build }, ROOT))};`;
+    },
+  };
+};
+
+/**
+ * `virtual:waarm64-core-size`: the core's wasm's size in bytes (0 when it isn't built), for the boot's download total
+ * where the server compresses the core and so sends no length (web/app/download-size.ts). Read when first loaded, not
+ * watched: the dev server sends the core's length itself, and a size off by a rebuild only moves the progress.
+ */
+const coreSize = (): Plugin => {
+  const ID = 'virtual:waarm64-core-size';
+  const CORE = join(ROOT, 'target/wasm32-unknown-unknown/release/waarm64_core.wasm');
+  return {
+    name: 'waarm64-core-size',
+    resolveId: (id) => (id === ID ? `\0${ID}` : null),
+    load(id) {
+      if (id !== `\0${ID}`) return null;
+      let size = 0;
+      try {
+        size = statSync(CORE).size;
+      } catch {
+        // Not built: no size (the worker reports the missing core when it fetches it).
+      }
+      return `export default ${size};`;
     },
   };
 };
@@ -164,9 +189,9 @@ export default defineConfig(({ command, mode }) => ({
   appType: 'mpa',
   // Copied as they are into the static copy: the hosts' headers files and web/app/'s old address's redirect.
   publicDir: command === 'build' ? `${ROOT}web/app/public` : false,
-  plugins: [plainGzip(), svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), rootPage(), demosPage(), nodeModules()],
+  plugins: [plainGzip(), svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), coreSize(), rootPage(), demosPage(), nodeModules()],
   resolve: mode === 'test' ? { conditions: ['module', 'browser', 'production'] } : {},
-  worker: { format: 'es', plugins: () => [nodeModules()], rollupOptions: { output: { assetFileNames } } },
+  worker: { format: 'es', plugins: () => [coreSize(), nodeModules()], rollupOptions: { output: { assetFileNames } } },
   // No pre-bundling: the few packages the page uses are ES modules, and every test process runs its own dev server (a
   // shared cache directory would race). Svelte's plugin adds Svelte unless it is excluded.
   optimizeDeps: { noDiscovery: true, include: [], exclude: ['svelte'] },

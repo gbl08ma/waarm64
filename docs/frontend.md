@@ -1209,8 +1209,11 @@ Worker → page:
   details: the kernel's panic line, the emulator's stack, the overlay's lock), and `note` a message the page says
   beside the state (resumed, suspended). An `error` without a `problem` is a note too (a suspended machine that
   couldn't be resumed, so the machine boots).
-- `progress {loaded, total}`: bytes downloaded of the core, the kernel and the initrd (from
-  `Content-Length`), at most every 100 ms while `loading`.
+- `progress {loaded, total}`: bytes downloaded of the core, the kernel and the initrd, at most every 100 ms while
+  `loading`. `loaded` counts the bodies as fetch hands them over, decoded, so `total` is each file's `Content-Length`
+  only where the server didn't encode it; a compressed core (waarm64.com sends it zstd, with no length) counts as its
+  size at build time (`virtual:waarm64-core-size`, vite.config.ts); with any size unknown `total` is 0 and the boot
+  card says only what arrived (web/app/download-size.ts).
 - `screen`: the screen first showed a pixel that isn't black (the guest's console took it), once
   per machine.
 - `serial {data}`: the serial console's output, UTF-8 decoded. The worker drains the TX ring
@@ -2493,7 +2496,8 @@ and the guest's default way out (below).
   member's name in the room, or a key, pasted), [Add a subdomain](ui:network:DomainCard.addLabel),
   [Point all at this connection](ui:network:DomainCard.pointHere), Save (a new zone; its rows checked as the module will,
   names-view.ts `zonePoints`: a subdomain a DNS label with no `--` in its third and fourth places, none twice, a target
-  a member's name or a key, each refusal in the catalog's words) and [Let it go](ui:network:DomainCard.release) (after
+  a member's name or a key, each refusal in the catalog's words) and [Revert](ui:network:DomainCard.revert), both
+  only while there are unsaved changes, and [Let it go](ui:network:DomainCard.release) (after
   asking). The connection's Details show its own name in the room
   ([This connection's name in the room](ui:network:ConnectionRoom.name)) from `member` too, connected or not (its key
   made under its entry if it never started, so its Settings' key and the backup are there from then), and the
