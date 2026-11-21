@@ -1,6 +1,6 @@
-# DOMAINS: a place of their own for a room connection's domains — kickoff
+# DOMAINS: a page for each connection, and a place of their own for its domains — kickoff
 
-Drafted 2026-11-21 from the user's two briefs of that day; **not started until the user confirms it**.
+Drafted 2026-11-21 from the user's three briefs of that day; **not started until the user confirms it**.
 
 The user's brief, in their words:
 
@@ -38,17 +38,26 @@ On the navigation, the path, the pane while disconnected, the backup and the exp
 > I'd show one kind of explainer when there are no domains, and a different explainer once there are domains. [...]
 > Once there are domains, the explainer may be collapsed by default.
 
+And, on seeing the first draft (which kept the details and the editing as dialogs, with links to the domains):
+
+> Since we'll be doing so much work to support the multiple levels, I think it's best if we go ahead and collapse the
+> connection details + connection editing screens into the connection's subsection in this go too. This avoids the
+> work of adding links to the domains section to the modals in question.
+
 ## Goal
 
-A room connection's domains are registered, watched and managed in **one pane of the Home page, inside Connections,
-scoped to that connection**, which works whether or not the connection is connected. Everywhere else a room
-connection appears there is **one status link** to it and nothing more. The pane explains the system.
+Every connection has **a page of its own on the Home page, one level under Connections**, with what the details
+dialog showed, what the wizard's editing changed, and, for a room connection, **its domains in a pane of their own**:
+registered, watched and managed there, whether or not the connection is connected, with the system explained.
+Everywhere else a room connection appears there is **one status link** to its domains and nothing more. The details
+dialog and the wizard's edit mode go.
 
 ## Decisions taken
 
-1. **Option A**: the pane lives under Connections, one level down, for one connection. Domains don't become a
-   top-level section. ("A+", a whole page per connection that absorbs the details dialog, is not this track; the
-   navigation built here is what it would use.)
+1. **A page per connection** under Connections, one level down, with sections: **Details** (what the adapter's
+   details dialog shows), **Settings** (what the wizard's edit mode changes) and, for a room connection, **Domains**.
+   Domains don't become a top-level section. `NetDetails.svelte`'s dialog and the wizard's `edit` mode are removed;
+   the wizard keeps making and attaching connections.
 2. **Home gets levels.** The left column shows one level at a time: the root (as today) or a **context** (here, a
    connection). Entering a context replaces all of the column's entries with that context's; leaving restores them.
 3. **Back is the column's first entry, at every level.** At the root it is
@@ -60,10 +69,12 @@ connection appears there is **one status link** to it and nothing more. The pane
    and the new ones come from the right; going up, the reverse; 150 ms, `cubicOut`; a plain fade with
    `prefers-reduced-motion` (as `ui/crossfade.ts` does). Choosing between panes of one level stays instant, as today.
 5. **A context's column** holds, top to bottom: Back; the context's name with a line under it (the connection's name;
-   its kind and room); its sections (now one: **Domains**, with its count); its commands (now one: **Back up key and
-   domains…**). A pane's own primary action stays in the pane's head (Register a domain…), as New connection is.
-6. **The address says the level**: `#home/connections/<connection id>/domains`, so a reload, a link and the message
-   bar's action land there. `#home` and the older `#machines` keep working; an id that is gone opens Connections.
+   its kind, and who has it now); its sections (**Details**, **Settings**, and a room's **Domains** with its count);
+   its commands (a room's **Back up key and domains…**, a tailcat server's **New address**, **Log out** where a node
+   is kept, **Delete**). A pane's own primary action stays in the pane's head (Register a domain…), as New connection
+   is.
+6. **The address says the level**: `#home/connections/<connection id>` (its Details), `…/settings`, `…/domains`, so a
+   reload, a link and the message bar's action land there. `#home` and the older `#machines` keep working; an id that is gone opens Connections.
 7. **The registration path is one step longer** and that is wanted (the user, 2026-11-21): the pane explains before
    the dialog asks. names.md's decision "The two hot paths" changes accordingly (reaching a name: still nothing;
    registering: the pane, then one dialog with its two notices, no key shown).
@@ -74,26 +85,54 @@ connection appears there is **one status link** to it and nothing more. The pane
    know first), always open; another once it has some (keeping them, the states, who sees what, backup), collapsed.
 10. **The copy is written here** ("The words"), by docs/copy.md. Implementers add the entries with notes; they change
     a message only where it turns out false, and say so in the handover.
-11. **Not in this track**: importing a key into an existing connection (a pasted key still makes a new connection, in
-    the wizard); a file for the backup (it is copied, as the key is today); A+; any change to the registry, the agent's
-    schedule or the dialog's check.
+11. **The toolbar's Details… leaves the machine's screen** for the connection's page (the machine runs on behind
+    Home; Back and Esc return to it): so does the menu's warning about a room's relayed members.
+12. **The attach wizard's pick step loses its Edit…** (it opened the edit mode in the wizard): a connection is edited
+    on its page.
+13. **Not in this track**: importing a key into an existing connection (a pasted key still makes a new connection, in
+    the wizard); a file for the backup (it is copied, as the key is today); connecting or attaching from the
+    connection's page; any change to the registry, the agent's schedule or the dialog's check.
 
 ## The design
 
 ### Navigation (`areas/machines-nav.svelte.ts`, `MachinesNav.svelte`, `MachinesPage.svelte`, `areas/page-window.ts`)
 
-- `machinesNav` gains the context: none, or `{ kind: 'connection', id, section: 'domains' }`. `selected` stays
-  `CONNECTIONS` in it. `enter(context)` and `leave()` set a direction the transitions read.
+- `machinesNav` gains the context: none, or `{ kind: 'connection', id, section: 'details' | 'settings' | 'domains' }`.
+  `selected` stays `CONNECTIONS` in it. Moving between a context's sections is instant, as between the root's panes. `enter(context)` and `leave()` set a direction the transitions read.
 - `MachinesNav.svelte` becomes the root's entries and a context's (a component each, so A+ adds entries in one place),
   keyed by level inside one `nav`; the outgoing and incoming blocks overlap during the transition (grid-stacked), the
   column's width fixed.
-- `MachinesPage.svelte` shows `DomainsPane` when the context is a connection's; the pane region is keyed the same
+- `MachinesPage.svelte` shows the context's section (`ConnectionDetails`, `ConnectionSettings`, `DomainsPane`) when
+  the context is a connection's; the pane region is keyed the same
   way. Under 720 px the column and the pane stack as today and both still slide.
-- `page.openMachines` learns the context (`page.openDomains(connectionId)` for the links); `page-window.ts` parses
+- `page.openMachines` learns the context (`page.openConnection(connectionId, section)` for the links); `page-window.ts` parses
   and writes the address.
 - Focus moves to the pane's title on entering and back to the card's link on leaving.
 
-### The pane (`DomainsPane.svelte`, with `DomainCard.svelte` from `NameEntry.svelte`)
+### Connections, and a connection's Details and Settings
+
+- **Connections' cards** (`ConnectionsPane.svelte`) keep the name to rename and the line (kind, who has it, the
+  machines that use it), and have two buttons: **Details**, which enters the connection's page, and Delete. Edit…, New
+  address and Log out move to the page (`ConnectionEditButton.svelte` goes). A room connection's line ends with its
+  domains' status link.
+- **Details** (`ConnectionDetails.svelte`, from `NetDetails.svelte`'s body, its words kept): the connection's values to
+  copy and what they let in, by kind, as the dialog has them. It reads the stored connection, and the adapter's live
+  view while the connection is connected on this page (`net.runs(id)`): then the adapter's line, the guest's address,
+  a tailcat address or key, a room's warnings about relayed members and the registry line show too. While it isn't,
+  one line says what is missing and why. A room connection's own name in the room shows either way (the module's
+  `member`, below). The local helper's install lines are open unless it is connected, as now.
+- **Settings** (`ConnectionSettings.svelte`): the connection's name, then what the wizard's edit mode offered for its
+  kind (a tailnet's hostname; tailcat's server and relay, and who is let in; the helper's and the demo network's
+  address; a room's two switches and, under Advanced, its key to copy and a new key), with Save and Revert in the
+  machine pane's row (`SaveRow.svelte`), saved through `page.netEdit`. The steps' components host it where that is the
+  smaller change (their `flow.editing` branches), or their edit branches move out: the implementer's choice, said in
+  the handover. The wizard loses `mode: 'edit'`, `EDIT_STEP`, `roomEdit` and the pick step's Edit….
+- **The toolbar's Network menu**: Details… and the room's warning open the connection's Details
+  (`page.openConnection`); `network.details` and `network.openDetails` go.
+- An **ephemeral** connection has a page as the stored ones do (it is one of the page's connections); with a key of
+  its own, its Domains section says why it can't hold a domain and offers nothing else.
+
+### The Domains pane (`DomainsPane.svelte`, with `DomainCard.svelte` from `NameEntry.svelte`)
 
 `ui/Pane.svelte`, title **Domains**, the meta line naming the room and the suffix, **Register a domain…** in its head.
 
@@ -120,10 +159,10 @@ This web app serves the room's domains for this connection: …   (while connect
 - **The upkeep line** above the cards, from the titles' earliest `keptUntil`; in the warning tone when a domain is in
   its last week or its grace.
 - **No domains**: the first explainer in the cards' place, with a second Register a domain… under it.
-- **An ephemeral key's connection** never reaches the pane (it isn't one of the browser's connections); its adapter's
-  details say why it can't hold a domain (the dialog's words today), and its menu has no link.
-- **The registry line** (names-view.ts `namesLine`) moves here from the details, shown while the connection is
-  connected on this page.
+- **An ephemeral connection with a key of its own**: the pane holds the dialog's sentence on why it can't hold a
+  domain (`NameDialog.ephemeral`, moved) and nothing else; its menu and card have no status link.
+- **The registry line** (names-view.ts `namesLine`) is under the explainer, shown while the connection is connected on
+  this page (Details has it too, as the dialog did).
 - `NameDialog` opens from the pane for a connection (not an adapter's index): `network.naming` takes the connection's
   id. Its field, check, notices and second-press rule don't change.
 
@@ -140,13 +179,11 @@ is in its grace, lost, or in its last week. It opens the pane (closing the menu 
 | Where | Today | Then |
 |---|---|---|
 | The toolbar's Network menu, a room adapter (`NetAdapter` → `NetNames`) | every domain with its state, and the button | the link (stored connections only) |
-| The adapter's details (`NetDetails`) | the registry line and a `NameEntry` a domain | the link |
-| The Network wizard's room step, editing (`NetRoomStep`) | nothing | the link, under the room's name |
 | A machine's Network tab (`AdapterCard`) | "Domains in the room: …" | the link |
-| Connections (`ConnectionsPane`), a room connection's card | nothing | a **Domains** button with its count, and the attention words in the card's line |
+| Connections (`ConnectionsPane`), a room connection's card | nothing | the link, at the end of the card's line |
 | The message bar at load (names in their last week) | words | the same words and a **Domains** action |
 
-`NetNames.svelte` goes; its effect that relinks a connection's titles moves to where the adapter's view is read.
+The details and the editing need none: Domains is beside them in the column. `NetNames.svelte` goes; its effect that relinks a connection's titles moves to where the adapter's view is read.
 
 ### The module and the agent (the pane while disconnected)
 
@@ -160,8 +197,8 @@ is in its grace, lost, or in its last week. It opens the pane (closing the menu 
 
 ## The words
 
-New entries in `web/messages/en/network.json` (the pane, the link, the backup) and `machines.json` (the column, the
-card's button). `{{domain}}` is the room's suffix (`gabriel-lan.p2p.internal`), `{{member}}` the connection's own
+New entries in `web/messages/en/network.json` (the Domains pane, the link, the backup) and `machines.json` (the column,
+the card, Details' and Settings' own lines). `{{domain}}` is the room's suffix (`gabriel-lan.p2p.internal`), `{{member}}` the connection's own
 name in the room, `<name>` and `<ui>` the catalog's markers. Existing entries are kept unless listed under "Changed".
 
 **The column (a connection's context)**
@@ -169,10 +206,23 @@ name in the room, `<name>` and `<ui>` the catalog's markers. Existing entries ar
 | | |
 |---|---|
 | Back | Back to Connections |
-| the line under the connection's name | Peer-to-peer room <name>{{room}}</name> |
-| the section | Domains |
-| the command | Back up key and domains… |
+| the line under the connection's name | {{kind}} · {{state}} (the card's words: `kindText`, and connected here, in another tab, or not in use) |
+| the sections | Details / Settings / Domains |
+| a command | Back up key and domains… |
 | its tooltip | Copy this connection's key together with its domains, to keep them if this browser's data is lost or to move them to another browser. |
+| the other commands | New address / Log out / Delete (the card's words and tooltips today, moved) |
+
+**Connections' cards, Details and Settings**
+
+| | |
+|---|---|
+| the card's button | Details |
+| its tooltip | See what this connection gives out and how to use it, and change its settings. |
+| Details, not connected in this tab | This connection isn't connected in this tab. The addresses it gives out are shown here while a machine in this tab is connected through it. |
+| Details, connected in another tab | This connection is in use in another tab. The addresses it gives out are shown in that tab. |
+| Settings, the name's label | Name |
+| Settings, under Save, while connected here | Changes apply the next time the connection connects. (unless `page.netEdit` applies them live: then no line) |
+| the rest | `NetDetails.*`, the steps' and the wizard's Save's entries as they are; their notes say "a connection's Details (or Settings) on the Home page" in place of the dialog and the wizard |
 
 **The pane's head**
 
@@ -284,10 +334,8 @@ Heading: **Where they are kept**
 | none | Register a domain… |
 | one / several | 1 domain registered / {{count}} domains registered |
 | attention, one / several | 1 domain registered, {{attention}} needs attention / {{count}} domains registered, {{attention}} need attention |
-| Connections' card, the button | Domains |
-| its tooltip | Register domains in this connection's room, and manage the ones it holds. |
 | the message bar's action | Domains |
-| an ephemeral key's connection, in its details | (the dialog's `NameDialog.ephemeral`, moved) |
+| an ephemeral key's connection, in the pane | (the dialog's `NameDialog.ephemeral`, moved) |
 
 **Changed**
 
@@ -298,6 +346,7 @@ Heading: **Where they are kept**
 | `names-view.reservedLate` | (the same clause) | (the same change) |
 | `NameEntry.note` | Each points at a member's name in the room, this connection's or another's: paste one to point there. A subdomain adds a domain under <name>{{name}}</name>. | Each points at a member's name in the room, which can be this connection's or another's. Paste a member's name to point there. A subdomain adds a domain under <name>{{name}}</name>. |
 | `AdapterCard.adapter.names_*` | Domains in the room: {{names}} | (removed: the link) |
+| `NetAdapter.details`, `NetDetails.edit`, `NetDetails.close`, `ConnectionEditButton.*`, `NetWizard.title.edit` | the dialog's and the edit mode's | Details… stays (it now opens the page); the others are removed |
 
 ## Loops
 
@@ -305,22 +354,29 @@ One slice, one commit and a short report each; `scripts/ci-fast.sh` after every 
 (`DOMAINS-HANDOVER.md`) says which tier each commit passed. Implemented by Opus subagents, one loop at a time (they
 share files), supervised here.
 
-1. **Levels in Home.** The context in `machinesNav`, the column's two levels, Back first at every level, Esc, the
-   transitions, the address. `DomainsPane` exists with its head only. Tests: the nav's state and the address's parse
-   (unit), the column's swap, Back, Esc and a reload (the page tests).
-2. **The pane while disconnected.** tailnet.md's line, the module's `member`, the agent's and the area's `member`,
-   their tests (Rust for the operation, the names agent's tests for the stored key).
-3. **The pane.** Cards, dates, the upkeep line, both explainers, Register from the pane, the registry line, the
-   backup dialog; the catalog's entries. Tests: names-view's new words and tones (unit), the pane on the page with the
-   connection disconnected (register, point, let go), the `wording:` cases.
-4. **One link everywhere else.** The table above; `NetNames` and the details' cards removed; the message bar's
-   action. The tests that reach names through the menu and the details (`tests/page-room.test.ts`,
-   `tests/names-page.test.ts`) go through the link and the pane.
-5. **Docs and the end.** names.md ("Decisions": the two hot paths; "What the user sees"; the files), frontend.md
-   ("The Home page": levels, Back, the address; "Network": the menu, the details), adapters.md §3.1, copy.md (an
-   explainer's shape, if the user keeps these), tailnet.md, the backlog (A+, importing a key into a connection, a file
-   for the backup); `tests/areas.ts` for the new files; an out-of-context review of the Home navigation and the pane,
-   its findings triaged; PLAN.md's row done; this file and the handover deleted.
+1. **Levels in Home, and a connection's Details.** The context in `machinesNav`, the column's two levels, Back first
+   at every level, Esc, the transitions, the address; Connections' cards; `ConnectionDetails` from the dialog, the
+   toolbar's Details… and warning leading to it, the dialog removed. Tests: the nav's state and the address's parse
+   (unit); the column's swap, Back, Esc and a reload, and the details' values through the page (the page tests that
+   read `#net-details-*`).
+2. **Settings.** `ConnectionSettings`, Save and Revert, the commands in the column; the wizard's edit mode and the
+   pick step's Edit… removed. Tests: each kind's edit through the page, where the wizard's were.
+3. **The Domains pane while disconnected.** tailnet.md's line, the module's `member`, the agent's and the area's
+   `member`, their tests (Rust for the operation, the names agent's tests for the stored key); Details shows a room
+   connection's name from it.
+4. **The Domains pane.** Cards, dates, the upkeep line, both explainers, Register from the pane, the registry line,
+   the backup dialog; the catalog's entries. Tests: names-view's new words and tones (unit), the pane on the page with
+   the connection disconnected (register, point, let go), the `wording:` cases.
+5. **One link everywhere else.** The table above; `NetNames` removed; the message bar's action. The tests that reach
+   names through the menu and the details (`tests/page-room.test.ts`, `tests/names-page.test.ts`) go through the link
+   and the pane.
+6. **Docs and the end.** names.md ("Decisions": the two hot paths; "What the user sees"; the files), frontend.md
+   ("The Home page": levels, Back, the address, a connection's page; "Network": the menu, no details dialog, the
+   wizard without its edit mode), adapters.md §3, copy.md (an explainer's shape, if the user keeps these), tailnet.md,
+   `tools/screens.ts`, the backlog (importing a key into a connection, a file for the backup, other dialogs that could
+   become pages); `tests/areas.ts` for the new files; an out-of-context review of the Home navigation, the
+   connection's page and the Domains pane, its findings triaged; PLAN.md's row done; this file and the handover
+   deleted.
 
 ## What needs the user's OK
 
@@ -335,7 +391,8 @@ share files), supervised here.
   (the page, the Home page), as far as a cloud session runs them (docs/cloud.md says what it skips; the handover
   lists what is left for the dev VM).
 - By hand, in headless Chromium with screenshots sent to the user: the column going down and up (both widths, and
-  with reduced motion), the pane with none, one and several domains, each state, the backup dialog, each link.
+  with reduced motion), each kind's Details (connected here and not) and Settings, the Domains pane with none, one
+  and several domains, each state, the backup dialog, each link.
 
 ## The end
 
