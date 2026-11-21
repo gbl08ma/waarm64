@@ -1597,6 +1597,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **A connection's page and its Domains pane** (DOMAINS, 2026-11-21; frontend.md "The Home page",
   networking/names.md "What the user sees"):
+  - **Its topic scripts have not run** (2026-11-21): the track was built in a cloud session, where `scripts/ci.sh` passed whole (1498 passed, 0 failed, 607 skipped) and `tests/page-room.test.ts` and `tests/page-network.test.ts` passed on Debian, but `scripts/ci-net.sh`, `scripts/ci-debian.sh` and `scripts/ci-machines.sh` refuse to start there (the alpine-uefi, linux-snd and alpine-demo images are missing: docs/cloud.md), as do the image and TSan steps of `ci.sh`. Run them in the dev VM.
   - A key can't be imported into an existing connection: a pasted key (or a backup) makes a new connection, in the
     wizard's [A key to paste](ui:network:NetRoomStep.room.key.paste).
   - The backup is copied, as the key is: no file to save or open.
