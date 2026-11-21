@@ -352,7 +352,7 @@
     "note": "Beside a speed figure on the introduction: reads on from “4.1×”. {{peer}} is another project's name."
   },
   "IntroSpeed.basis": {
-    "message": "Measured on {{when, day}}, in Chrome on a Mac with an Apple M4 processor: the same Perl program, six small workloads, run in each project's own Linux guest as it ships. $t(common:product.name) and unkernel ran the very same Debian build of Perl. v86 emulates a 32-bit x86 PC, so its Perl is another build of an older version.",
+    "message": "From measuring the same Perl program, six small workloads, run in the Linux guest that each project ships. Benchmarked in Chrome on a Mac with an Apple M4 processor, on {{when, day}}. $t(common:product.name) and unkernel ran the very same Debian build of Perl. On v86 (32-bit x86), only an earlier version of Perl was available.",
     "note": "Under the speed figures on the introduction: what was measured. {{when}} is the measurement's date. unkernel and v86 are other projects' names; Perl, Debian and Chromium are names too."
   },
   "IntroCompare.title": {
@@ -360,7 +360,7 @@
     "note": "Title of the introduction's comparison section. No period."
   },
   "IntroCompare.lede": {
-    "message": "Other projects run Linux in a browser, and each made a different trade. These are the facts as their own documentation and source state them on {{when, day}}.",
+    "message": "Other projects run Linux in a browser, and each prioritized different aspects. These are the facts according to their documentation and sources, as of {{when, day}}.",
     "note": "Paragraph under the title of the introduction's comparison section. {{when}} is the date the other projects were last checked."
   },
   "IntroCompare.caption": {
@@ -880,7 +880,7 @@
     "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the machine code of the slow path's helper call."
   },
   "IntroTranslate.honest": {
-    "message": "Nothing here is drawn by hand. The guest's code ran in $t(common:product.name), and these are its micro-ops and the WebAssembly it emitted, printed by wasm-tools. The machine code is what <code>{{compiler}}</code> made of that function. V8 says which line a load, a store, or a call came from, so only those light up in the last pane. The notes between the lines are ours: rules place them by reading the captured code.",
+    "message": "These are examples taken from actual runs of $t(common:product.name). The machine code was produced by <code>{{compiler}}</code> from the WebAssembly produced by $t(common:product.name).",
     "note": "Fine print under the panes of the introduction's code viewer (the CPU's deep dive): where the code shown comes from. {{compiler}} names the V8 version and compiler tier."
   },
   "IntroPage.nav.how": {
@@ -1344,11 +1344,11 @@
     "note": "Line under the small machine's empty screen on the introduction before it is started (a visitor who asked for less motion). The time is the measured one: keep it approximate."
   },
   "IntroGuest.caption.scope": {
-    "message": "This picture is being drawn now, by a machine that started a moment ago in this tab.",
+    "message": "This picture is being drawn by a machine that just started running in this tab.",
     "note": "Line under the small machine's screen on the introduction while its first picture runs alone (an oscilloscope-like figure), before anything shows that it is Linux."
   },
   "IntroGuest.caption.reveal": {
-    "message": "The machine is an emulated ARM computer running Linux. The picture is a small C program on it, and these are its commands.",
+    "message": "The machine is an emulated ARM computer running Linux. The picture is produced by a small program it is running, and its shell is below.",
     "note": "Line under the small machine's screen on the introduction when its terminal starts typing commands (uname, ls): the reveal that the picture comes from a Linux machine."
   },
   "IntroGuest.caption.ridges": {
@@ -1356,7 +1356,7 @@
     "note": "Line under the small machine's screen on the introduction while its second picture runs (a flight over a landscape of lines)."
   },
   "IntroGuest.caption.life": {
-    "message": "A third. The whole machine, kernel and programs, came with this page in one file of under 2 MB.",
+    "message": "A third program. The whole machine, kernel and programs, were downloaded as one file of under 2 MB.",
     "note": "Line under the small machine's screen on the introduction while its third picture runs (Conway's Game of Life). The size is the guest image's as downloaded (1.7 MB): keep “under 2 MB”."
   },
   "IntroGuest.caption.shell": {

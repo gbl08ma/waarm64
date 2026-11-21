@@ -99,7 +99,7 @@
         maxlength="32"
       />
     </Field>
-    {#if domain}
+    {#if domain && check.state !== 'invalid'}
       <Note size="md" tone="dim" id="net-name-full">
         {#if name}<T k="network:NameDialog.full" params={{ full: `${name}.${domain}`, name }} />{:else}{t(
             'network:NameDialog.suffix',

@@ -82,7 +82,7 @@ test("a room connection's Domains pane, never connected and no machine running: 
   const intro = await text(page, '#domains-intro');
   const member = /[a-z2-7]{52}\.gabriel-lan\.p2p\.internal/.exec(intro)?.[0];
   assert.ok(member, `its own name in the room: ${intro}`);
-  assert.ok(intro.includes(t('network:DomainsIntro.what', { member })), 'what a domain is, with its own name');
+  assert.match(intro, words('network:DomainsIntro.what', { member }), 'what a domain is, with its own name');
   assert.equal(await page.locator('#domains-intro ol > li').count(), 3, 'three steps');
   assert.equal(await page.locator('#domains-intro ul > li').count(), 5, 'five things to know first');
   assert.equal(await page.locator('[data-action=register-domain], [data-action=register-domain-intro]').count(), 2, 'Register a domain… in the head and under the explainer');
@@ -93,8 +93,13 @@ test("a room connection's Domains pane, never connected and no machine running: 
   await page.click('[data-action=register-domain-intro]');
   await page.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
   assert.match(await text(page, '#net-name-full'), words('network:NameDialog.suffix', { domain: 'gabriel-lan.p2p.internal' }));
+  // A name that can't be registered: what it's refused for, and no line saying how guests would reach it.
+  await page.fill('#net-name-input', '-x');
+  await page.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'invalid', null, { timeout: 10_000 });
+  assert.equal(await page.locator('#net-name-full').count(), 0, 'no full name beside the refusal');
   await page.fill('#net-name-input', 'mybox');
   await page.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'valid', null, { timeout: 10_000 });
+  assert.match(await text(page, '#net-name-full'), words('network:NameDialog.full', { full: 'mybox.gabriel-lan.p2p.internal', name: 'mybox' }));
   await page.click('#net-name-register');
   await page.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'unknown', null, { timeout: 40_000 });
   await page.click('#net-name-register');
