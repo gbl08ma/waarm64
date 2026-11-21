@@ -872,7 +872,7 @@ inputs() {
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
   [ "$1" = intro ] && files+=($(find images/intro -type f | sort)) && pins='^(INTRO_|USERLAND_CONTAINER)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/Waarm64XhciDxe -type f | sort)) && pins='^EDK2_'
-  [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
+  [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^ALPINE_UEFI_' # none: '^$' matched every blank line
   [ "$1" = alpine-demo ] && files+=($(find images/alpine-demo -type f | sort)) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER|DEMO_)'
   [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml agent/no-unwind.ld $(find agent/src -type f | sort)) && pins='^AGENT_'
   [ "$1" = venus ] && files=(vk/build.sh) && pins='^VENUS_'
