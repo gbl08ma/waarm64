@@ -1,94 +1,91 @@
 <!--
-  A machine's RAM split, set by hand (its Settings tab's advanced section; docs/spill-memories.md): memory 0, then the
-  NUMA nodes past it, MiB. A valid split sets the RAM to its sum; one that doesn't hold says why, and Save waits.
+  A machine's RAM split, set by hand (its Settings tab, while "Set a custom split" beside the RAM slider is ticked;
+  docs/spill-memories.md): rows of the settings grid under the RAM slider, memory 0's size, then one per NUMA node past
+  it with its "remove" link, an "add a node" link, and the split's note. A valid split sets the RAM to its sum; one
+  that doesn't hold says why, and Save waits.
 -->
 <script lang="ts">
-  import Check from './ui/Check.svelte';
+  import Button from './ui/Button.svelte';
+  import Field from './ui/Field.svelte';
   import Note from './ui/Note.svelte';
   import { t, text } from '../i18n.ts';
+  import { MAX_SPILL } from '../ram.ts';
   import type { Editing } from './machine-edit.svelte.ts';
-  import { MEMORY0_MIB, ramSplitError, ramSplitMiB } from './machine.ts';
+  import { MEMORY0_MIB, ramSplitError } from './machine.ts';
 
   type Props = { edit: Editing };
   let { edit }: Props = $props();
 
-  let ram0Input = $state<HTMLInputElement>();
-  let nodesInput = $state<HTMLInputElement>();
+  /** A node's size when it's added, MiB: one that every split may add (Vulkan's first node included). */
+  const NEW_NODE_MIB = 1024;
 
-  function custom(on: boolean) {
+  /**
+   * The sizes as typed, memory 0 first (NaN: a field left empty): the draft's split, until a change that doesn't hold
+   * overrides them (the draft keeps its last valid split meanwhile).
+   */
+  let sizes = $derived(edit.draft.ramSplit ? [...edit.draft.ramSplit] : []);
+
+  /** Takes the sizes as typed: a valid split sets the RAM to its sum, else says what's wrong. */
+  function take(next: number[]) {
+    sizes = next;
     const d = edit.draft;
-    d.ramSplit = on ? ramSplitMiB(d.ramMiB, undefined, !!d.vulkan) : undefined;
-    edit.splitProblem = undefined;
+    edit.splitProblem = ramSplitError(next, !!d.vulkan);
+    if (!edit.splitProblem) [d.ramSplit, d.ramMiB] = [[...next], next.reduce((a, b) => a + b, 0)];
     edit.touch();
   }
-  /** Takes the two fields: a valid split sets the RAM to its sum, else says what's wrong. */
-  function change() {
-    const nodes = (nodesInput?.value ?? '')
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map(Number);
-    const split = [Number(ram0Input?.value), ...nodes];
-    const d = edit.draft;
-    edit.splitProblem = ramSplitError(split, !!d.vulkan);
-    if (!edit.splitProblem) [d.ramSplit, d.ramMiB] = [split, split.reduce((a, b) => a + b, 0)];
-    edit.touch();
-  }
+  const typed = (i: number) => (e: Event & { currentTarget: HTMLInputElement }) =>
+    take(sizes.with(i, e.currentTarget.valueAsNumber));
 </script>
 
-<details class="advanced" data-ram-split open={!!edit.draft.ramSplit}>
-  <summary>{t('machines:RamSplit.split')}</summary>
-  <Check checked={!!edit.draft.ramSplit} onchange={custom} field="custom-split">
-    {t('machines:RamSplit.split.custom')}
-  </Check>
-  {#if edit.draft.ramSplit}
-    <div class="split">
-      <label>
-        {t('machines:RamSplit.split.memory0')}
-        <input
-          bind:this={ram0Input}
-          type="number"
-          min="64"
-          step="1"
-          value={edit.draft.ramSplit[0]}
-          onchange={change}
-          data-field="ram0"
-        />
-      </label>
-      <label>
-        {t('machines:RamSplit.split.nodes')}
-        <input
-          bind:this={nodesInput}
-          value={edit.draft.ramSplit.slice(1).join(', ')}
-          placeholder={t('machines:RamSplit.split.nodes.placeholder')}
-          onchange={change}
-          data-field="ram-nodes"
-        />
-      </label>
+{#if edit.draft.ramSplit}
+  <Field label={t('machines:RamSplit.memory0')}>
+    <input
+      type="number"
+      min="64"
+      step="1"
+      value={Number.isNaN(sizes[0]) ? '' : sizes[0]}
+      onchange={typed(0)}
+      data-field="ram0"
+    />
+  </Field>
+  {#each sizes.slice(1) as mib, i (i)}
+    <Field label={t('machines:RamSplit.node', { n: i + 1 })}>
+      {#snippet after()}
+        <Button variant="link" data-action="ram-node-remove" onclick={() => take(sizes.toSpliced(i + 1, 1))}
+          >{t('machines:RamSplit.node.remove')}</Button
+        >
+      {/snippet}
+      <input
+        type="number"
+        min="1"
+        step="1"
+        value={Number.isNaN(mib) ? '' : mib}
+        onchange={typed(i + 1)}
+        data-field="ram-node"
+      />
+    </Field>
+  {/each}
+  {#if sizes.length - 1 < MAX_SPILL}
+    <div class="add">
+      <span
+        ><Button variant="link" data-action="ram-node-add" onclick={() => take([...sizes, NEW_NODE_MIB])}
+          >{t('machines:RamSplit.node.add')}</Button
+        ></span
+      >
     </div>
-    {#if edit.splitProblem}<Note tone="warn" data-split-problem>{text(edit.splitProblem)}</Note>{/if}
   {/if}
-  <Note>{t('machines:RamSplit.split.note', { max: MEMORY0_MIB })}</Note>
-</details>
+  {#if edit.splitProblem}<Note tone="warn" data-split-problem>{text(edit.splitProblem)}</Note>{/if}
+  <Note>{t('machines:RamSplit.note', { max: MEMORY0_MIB })}</Note>
+{/if}
 
 <style>
-  .advanced {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-  summary {
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .split {
+  /* The "add a node" link sits in the controls' column, under the nodes' fields. */
+  .add {
     display: grid;
-    grid-template-columns: max-content minmax(0, 200px);
-    gap: var(--space-3) var(--space-5);
-    align-items: center;
+    grid-template-columns: subgrid;
   }
-  label {
-    display: contents;
-    color: var(--text-dim);
+  .add > span {
+    grid-column: 2;
+    display: flex;
   }
 </style>

@@ -465,7 +465,7 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   await context.close();
 });
 
-test("a machine's RAM past memory 0: the note, and the advanced section's split, checked, saved and kept over a reload", async () => {
+test("a machine's RAM past memory 0: the note, and a custom split's fields (a node added, removed), checked, saved and kept over a reload", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -483,32 +483,54 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 3072 MiB');
   await m.locator('[data-field=ram]').fill('4096');
   assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3072, rest: 1024 }, { whole: true }));
-  // The advanced section, closed: set by hand, it starts from the automatic split; the RAM is then its sum.
-  assert.equal(await m.locator('[data-ram-split]').getAttribute('open'), null);
-  await m.locator('[data-ram-split] summary').click();
-  await m.locator('[data-field=custom-split]').check();
-  assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue()], ['3072', '1024']);
+  // A custom split, the box beside the RAM slider: it starts from the automatic split, a field per NUMA node; the RAM
+  // is then its sum.
+  assert.equal(await m.locator('[data-field=ram0]').count(), 0, 'no split fields while the split is automatic');
+  const box = m.getByRole('checkbox', { name: t('machines:SettingsTab.ram.custom') });
+  await box.check();
+  const nodes = m.locator('[data-field=ram-node]');
+  const values = async () => [await m.locator('[data-field=ram0]').inputValue(), ...await Promise.all((await nodes.all()).map((n) => n.inputValue()))];
+  assert.deepEqual(await values(), ['3072', '1024']);
+  assert.equal(await m.getByLabel(t('machines:RamSplit.node', { n: 1 })).inputValue(), '1024');
   assert.equal(await m.locator('[data-field=ram]').isDisabled(), true);
   await m.locator('[data-field=ram0]').fill('2048');
   await m.locator('[data-field=ram0]').dispatchEvent('change');
-  await m.locator('[data-field=ram-nodes]').fill('1024, 5000');
-  await m.locator('[data-field=ram-nodes]').dispatchEvent('change');
+  assert.equal(await m.locator('[data-field=ram]').inputValue(), '3072');
+  // Added nodes come at 1024 MiB; one out of range says why, and Save waits.
+  await m.getByRole('button', { name: t('machines:RamSplit.node.add') }).click();
+  await m.getByRole('button', { name: t('machines:RamSplit.node.add') }).click();
+  assert.deepEqual(await values(), ['2048', '1024', '1024', '1024']);
+  assert.equal(await m.locator('[data-field=ram]').inputValue(), '5120');
+  await nodes.nth(1).fill('5000');
+  await nodes.nth(1).dispatchEvent('change');
   assert.match(await m.locator('[data-split-problem]').textContent() ?? '', words('machines:machine.split.node', { max: 4096, mib: 5000 }));
   assert.equal(await m.locator('[data-action=save]').isDisabled(), true);
-  await m.locator('[data-field=ram-nodes]').fill('1024, 512');
-  await m.locator('[data-field=ram-nodes]').dispatchEvent('change');
+  assert.equal(await m.locator('[data-field=ram]').inputValue(), '5120', 'the RAM keeps the last valid split\'s sum');
+  // Removed, the out-of-range node takes its warning with it; the RAM is the new sum.
+  await m.getByRole('button', { name: t('machines:RamSplit.node.remove') }).nth(1).click();
+  assert.deepEqual(await values(), ['2048', '1024', '1024']);
   assert.equal(await m.locator('[data-split-problem]').count(), 0);
+  await nodes.nth(1).fill('512');
+  await nodes.nth(1).dispatchEvent('change');
   assert.equal(await m.locator('[data-field=ram]').inputValue(), '3584');
   assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 2048, rest: 1536 }, { whole: true }));
+  // Up to 8 nodes: no "add a node" past them.
+  for (let i = 2; i < 8; i++) await m.getByRole('button', { name: t('machines:RamSplit.node.add') }).click();
+  assert.equal(await nodes.count(), 8);
+  assert.equal(await m.getByRole('button', { name: t('machines:RamSplit.node.add') }).count(), 0);
+  for (let i = 2; i < 8; i++) await m.getByRole('button', { name: t('machines:RamSplit.node.remove') }).last().click();
+  assert.deepEqual(await values(), ['2048', '1024', '512']);
   await m.locator('[data-action=save]').click();
   await m.locator('[data-action=save]').and(page.locator(':disabled')).waitFor();
-  // Kept: after a reload the section is open with the split, and turning it off is the automatic split again.
+  // Kept: after a reload the box is ticked with the split, and turning it off is the automatic split again.
   await page.reload();
   await openHome(page);
   await modal(page).locator('.pick').first().click();
-  await m.locator('[data-ram-split][open]').waitFor();
-  assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue(), await m.locator('[data-field=ram]').inputValue()], ['2048', '1024, 512', '3584']);
-  await m.locator('[data-field=custom-split]').uncheck();
+  await m.locator('[data-field=ram0]').waitFor();
+  assert.equal(await box.isChecked(), true);
+  assert.deepEqual([...await values(), await m.locator('[data-field=ram]').inputValue()], ['2048', '1024', '512', '3584']);
+  await box.uncheck();
+  assert.equal(await m.locator('[data-field=ram0]').count(), 0);
   assert.equal(await m.locator('[data-field=ram]').isDisabled(), false);
   assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3072, rest: 512 }, { whole: true }));
   assert.deepEqual(errors, []);
@@ -653,7 +675,7 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
   await context.close();
 });
 
-test('a disk\'s read-only box on a running machine: powered off after asking, then saved; Visualize beside RAM while it runs; no gap over the Home page', async () => {
+test('a disk\'s read-only box on a running machine: powered off after asking, then saved; "visualize" after RAM\'s label while it runs; no gap over the Home page', async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -668,18 +690,21 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await m.locator('[data-tab=disks]').click();
   await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` });
   await disk(page, 0);
-  assert.equal(await m.locator('[data-action=ram-open]').count(), 0, 'no Visualize beside RAM while it is off');
+  assert.equal(await m.locator('[data-action=ram-open]').count(), 0, 'no "visualize" beside RAM while it is off');
   await m.locator('[data-action=open]').click();
   // Running (its Web Lock held): the box asks to power it off, then takes its value from the click.
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
   await openHome(page);
-  // Its Settings tab: Visualize beside RAM opens the RAM's map over the page, once it has RAM (booting or running).
+  // Its Settings tab: "visualize" beside RAM's label opens the RAM's map over the page, once it has RAM (booting or running).
   await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
   // No message: no floating bar over the Home page (its messages show in the page's own banner), and no banner.
   await page.locator('#message').waitFor({ state: 'detached', timeout: 5_000 });
   // (A banner that was there folds away in 250 ms.)
   await page.locator('.machines .banner').waitFor({ state: 'detached', timeout: 5_000 }); // no gap over the Home page
   await m.locator('[data-tab=settings]').click();
+  // A link beside the label's words (the box for a custom split beside the slider), outside the label: its words still name the slider.
+  assert.equal(await m.locator('.name [data-action=ram-open]').count(), 1);
+  assert.equal(await m.getByLabel(t('machines:SettingsTab.ram'), { exact: true }).getAttribute('data-field'), 'ram');
   await m.locator('[data-action=ram-open]').click();
   await page.locator('#ram-window').waitFor({ timeout: 10_000 });
   await page.locator('#ram-window [data-action=close]').click();
@@ -702,7 +727,7 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   assert.equal(await page.locator('.machines .error').count(), 0, 'no error');
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 10_000 });
   await m.locator('[data-tab=settings]').click();
-  assert.equal(await m.locator('[data-action=ram-open]').count(), 0, 'no Visualize after the power-off');
+  assert.equal(await m.locator('[data-action=ram-open]').count(), 0, 'no "visualize" after the power-off');
   assert.deepEqual(errors, []);
   await context.close();
 });

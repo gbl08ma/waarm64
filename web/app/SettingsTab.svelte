@@ -2,7 +2,8 @@
   A machine's Settings tab (docs/machines.md §7): its name and shape (vCPUs, RAM and its split, the JIT's budget, the
   display, Vulkan, USB, the input and clock devices, clipboard sharing) and its keyboard layout. A change of shape
   warns where it orphans the machine's snapshots; Save asks before it does (machine-edit.svelte.ts). While the machine
-  runs on this page, Visualize beside RAM opens its RAM's map (RamWindow.svelte), as the status bar's RAM does.
+  runs on this page, a "visualize" link beside RAM's label opens its RAM's map (RamWindow.svelte), as the status bar's
+  RAM does. The box beside the RAM slider sets the split by hand, its fields (RamSplit.svelte) the rows under it.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -20,7 +21,7 @@
   import { current } from './areas/current.svelte.ts';
   import { ramHost, ramWindow } from './areas/ram.svelte.ts';
   import type { Editing } from './machine-edit.svelte.ts';
-  import { CPU_SLIDER, JIT_DEFAULT_MIB, JIT_SLIDER, numaNote, RAM_SLIDER } from './machine.ts';
+  import { CPU_SLIDER, JIT_DEFAULT_MIB, JIT_SLIDER, numaNote, RAM_SLIDER, ramSplitMiB } from './machine.ts';
 
   type Props = { edit: Editing };
   let { edit }: Props = $props();
@@ -39,6 +40,15 @@
   /** The machine runs on this page: its RAM's map can open from here (RamWindow.svelte), as from the status bar. */
   const ramLive = $derived(d.id === current.id && !!ramHost());
   const numa = $derived(numaNote(d.ramMiB, d.ramSplit, !!d.vulkan));
+  /** The RAM slider's id, for its label (which holds only its words beside the "visualize" link). */
+  const ramId = $props.id();
+
+  /** A split set by hand starts from the automatic one; turned off, it's the automatic one again. */
+  function custom(on: boolean) {
+    d.ramSplit = on ? ramSplitMiB(d.ramMiB, undefined, !!d.vulkan) : undefined;
+    edit.splitProblem = undefined;
+    edit.touch();
+  }
 
   /** What turning Vulkan on or off says: it orphans the snapshots, or this browser can't draw what it renders. */
   function vulkanNoteOf(): { words: string; hook: string } | undefined {
@@ -55,9 +65,15 @@
 </script>
 
 {#snippet visualize()}
-  <Button data-action="ram-open" title={t('machines:SettingsTab.ram.visualize.title')} onclick={() => ramWindow.show()}>
-    {t('machines:SettingsTab.ram.visualize')}
-  </Button>
+  <Button
+    variant="link"
+    data-action="ram-open"
+    title={t('machines:SettingsTab.ram.visualize.title')}
+    onclick={() => ramWindow.show()}>{t('machines:SettingsTab.ram.visualize')}</Button
+  >
+{/snippet}
+{#snippet customSplit()}
+  <Check checked={!!d.ramSplit} onchange={custom} field="custom-split">{t('machines:SettingsTab.ram.custom')}</Check>
 {/snippet}
 
 <Fields oninput={edit.touch} onchange={edit.touch}>
@@ -65,9 +81,15 @@
   <Field label={t('machines:SettingsTab.ncpus')}>
     <Slider bind:value={d.ncpus} field="ncpus" --slider-value-w="15ch" {...CPU_SLIDER} label={cpuLabel} />
   </Field>
-  <Field label={t('machines:SettingsTab.ram')} after={ramLive ? visualize : undefined}>
+  <Field
+    label={t('machines:SettingsTab.ram')}
+    for={ramId}
+    labelAfter={ramLive ? visualize : undefined}
+    after={customSplit}
+  >
     <Slider
       bind:value={d.ramMiB}
+      id={ramId}
       field="ram"
       --slider-value-w="15ch"
       {...RAM_SLIDER}
@@ -76,8 +98,8 @@
       title={d.ramSplit ? t('machines:SettingsTab.ram.title') : ''}
     />
   </Field>
-  {#if numa}<Note tone="warn" data-numa>{text(numa)}</Note>{/if}
   <RamSplit {edit} />
+  {#if numa}<Note tone="warn" data-numa>{text(numa)}</Note>{/if}
   <Field label={t('machines:SettingsTab.jit')}>
     <Slider
       bind:value={jitGet, jitSet}

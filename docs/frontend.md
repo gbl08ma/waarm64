@@ -523,9 +523,13 @@ left column's Disks, Shared folders and Connections the same):
 - **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs and RAM on sliders (`ui/Slider.svelte`: notches at the suggested values, the value beside; `machine.ts` `CPU_SLIDER`, `RAM_SLIDER`: 1 to 8 vCPUs; 256 MiB to 16 GiB in 64 MiB steps, a notch every 512 MiB that a pointer snaps to within 128 MiB, the arrow keys stepping past it; past `MEMORY0_MIB`, 3072 MiB, the rest goes to spill memories (on a machine with Vulkan
   the first holds at most 1,536 MiB: Venus's arena and window come first in memory 1) that the guest sees
   as NUMA nodes, slower to reach, and a note under the choice says so (`numaNote`, with the machine's Vulkan setting): [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
-  is), **[Memory split (advanced)](ui:machines:RamSplit.split)**, closed unless the machine has one: *[Set the split myself](ui:machines:RamSplit.split.custom)* starts from the
-  automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
-  (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
+  is); to the RAM slider's right, *[Set a custom split (advanced)](ui:machines:SettingsTab.ram.custom)*, ticked when
+  the machine has one: it starts from the automatic split and adds rows to the grid under the slider (`RamSplit.svelte`),
+  [Memory 0, MiB](ui:machines:RamSplit.memory0) and a field per NUMA node past it ([NUMA node 1, MiB](ui:machines:RamSplit.node), …) with a
+  [remove](ui:machines:RamSplit.node.remove) link beside it, then an [add a node](ui:machines:RamSplit.node.add) link (a
+  1024 MiB node, up to 8, `MAX_SPILL`) and the split's note; each change is checked (`ramSplitError`: a warning
+  under the fields, Save waiting), and a valid split makes the RAM their sum (the slider disabled, the machine's
+  `ramSplit`, in its shape and its definition), display,
   **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **[Save and restart](ui:machines:SaveRow.saveRestart)**
   (asked first), the USB controller, the **[Mouse (the mouse lock's Raw mode)](ui:machines:DeviceSwitches.mouse)** and the **[Touchscreen](ui:machines:DeviceSwitches.touch)**, and
   **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default, its note under it; ticking it asks for the browser's read permission), and
@@ -709,7 +713,7 @@ was (on the screen).
 
 While a machine runs in this tab, the status bar's RAM element is a link (`StatusBar.svelte`; a press leaves the
 keyboard's focus on the screen), and its Settings tab on the Home page has
-[Visualize](ui:machines:SettingsTab.ram.visualize) beside the RAM slider (`SettingsTab.svelte`); either opens the
+a [visualize](ui:machines:SettingsTab.ram.visualize) link right after the RAM slider's label (`SettingsTab.svelte`, `ui/Field.svelte`'s `labelAfter`; the label holds only its words and names the slider by `for`); either opens the
 running machine's RAM as a block map in a floating window
 (`RamWindow.svelte`, the disk surface window's pieces: `ui/FloatingWindow.svelte`, its place remembered under
 `windows.ram`, `ui/BlockGrid.svelte`, `SurfaceLegend.svelte`, `surface-poll.svelte.ts`). It is open independently of a

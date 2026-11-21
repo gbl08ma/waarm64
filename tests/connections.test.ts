@@ -148,7 +148,11 @@ test("rooms: another tab's ephemeral connection on a stored one's key keeps it t
   assert.deepEqual(forgot.at(-1), `room:${again.id}`);
 });
 
-test('rooms: a pasted key is kept as the new connection\'s, or is the connection\'s that has it', async () => {
+test('rooms: a pasted key is kept as the new connection\'s, or is the connection\'s that has it', async (ctx) => {
+  // A key's holder is the oldest connection that has it (`list`: by `created`, then by the random id): a clock that
+  // ticks at each read keeps two connections made in one millisecond in the order they were made.
+  let now = Date.now();
+  ctx.mock.method(Date, 'now', () => ++now);
   const { rooms, state } = fakeState();
   const conns = new Connections(store(), state);
   const link = 'waarm64-room:lobby';

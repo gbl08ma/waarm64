@@ -17,27 +17,27 @@
   },
   "machine.split.whole": {
     "message": "each size must be a whole number of MiB",
-    "note": "Home page, Settings tab, Memory split (advanced): the warning under the split's fields when a size isn't a whole number of MiB (Save waits)."
+    "note": "Home page, Settings tab, a custom memory split: the warning under the split's fields when a size isn't a whole number of MiB (Save waits)."
   },
   "machine.split.memory0Min": {
     "message": "memory 0 needs at least 64 MiB",
-    "note": "Home page, Settings tab, Memory split (advanced): the warning under the split's fields when memory 0 is under 64 MiB (Save waits)."
+    "note": "Home page, Settings tab, a custom memory split: the warning under the split's fields when memory 0 is under 64 MiB (Save waits)."
   },
   "machine.split.memory0Max": {
     "message": "memory 0 holds at most {{max}} MiB",
-    "note": "Home page, Settings tab, Memory split (advanced): the warning under the split's fields when memory 0 is too large (Save waits). {{max}}: the most memory 0 holds, MiB."
+    "note": "Home page, Settings tab, a custom memory split: the warning under the split's fields when memory 0 is too large (Save waits). {{max}}: the most memory 0 holds, MiB."
   },
   "machine.split.nodes": {
     "message": "there can be at most {{max}} NUMA nodes past memory 0",
-    "note": "Home page, Settings tab, Memory split (advanced): the warning under the split's fields when it lists too many NUMA nodes (Save waits). {{max}}: the most NUMA nodes (8)."
+    "note": "Home page, Settings tab, a custom memory split: the warning under the split's fields when it lists too many NUMA nodes (Save waits). {{max}}: the most NUMA nodes (8)."
   },
   "machine.split.node": {
     "message": "a NUMA node holds 1 to {{max}} MiB, not {{mib}}",
-    "note": "Home page, Settings tab, Memory split (advanced): the warning under the split's fields when a NUMA node's size is out of range (Save waits). {{max}}: the largest node, MiB; {{mib}}: the size the user wrote."
+    "note": "Home page, Settings tab, a custom memory split: the warning under the split's fields when a NUMA node's size is out of range (Save waits). {{max}}: the largest node, MiB; {{mib}}: the size the user wrote."
   },
   "machine.split.vulkan": {
     "message": "with Vulkan, the first NUMA node holds at most {{max}} MiB",
-    "note": "Home page, Settings tab, Memory split (advanced): the warning under the split's fields when, on a machine with Vulkan, the first NUMA node leaves no room for Vulkan's memory (Save waits). {{max}}: its most, MiB."
+    "note": "Home page, Settings tab, a custom memory split: the warning under the split's fields when, on a machine with Vulkan, the first NUMA node leaves no room for Vulkan's memory (Save waits). {{max}}: its most, MiB."
   },
   "machine.numa_one": {
     "message": "The first {{fast}} MiB is the machine's fast memory. The guest gets the other {{rest}} MiB as a second NUMA node, which is slower to reach; Linux uses it once the first node is full.",
@@ -1436,44 +1436,44 @@
     "note": "Home page, Settings tab: the label of the memory size slider."
   },
   "SettingsTab.ram.visualize": {
-    "message": "Visualize",
-    "note": "Home page, Settings tab: the button beside the RAM slider, shown while the machine runs in this tab; it opens the map of the machine's RAM (the same window as the status bar's RAM link)."
+    "message": "visualize",
+    "note": "Home page, Settings tab: the link right after the RAM slider's label, shown while the machine runs in this tab; it opens the map of the machine's RAM (the same window as the status bar's RAM link). Lower case, like the disks' \"visualize\" link."
   },
   "SettingsTab.ram.visualize.title": {
     "message": "See the machine's RAM as a map: which parts hold data, and what changes.",
-    "note": "Home page, Settings tab: tooltip of the Visualize button beside the RAM slider, which opens the map of the running machine's RAM in a window over the page."
+    "note": "Home page, Settings tab: tooltip of the \"visualize\" link after the RAM slider's label, which opens the map of the running machine's RAM in a window over the page."
   },
   "SettingsTab.ram.title": {
     "message": "The sum of the split below",
-    "note": "Home page, Settings tab: tooltip of the RAM slider while it is disabled, the memory split being set by hand."
+    "note": "Home page, Settings tab: tooltip of the RAM slider while it is disabled, the memory split being set by hand in the fields under it."
+  },
+  "SettingsTab.ram.custom": {
+    "message": "Set a custom split (advanced)",
+    "note": "Home page, Settings tab: the label of the box to the right of the RAM slider that sets the memory split by hand: ticked, the fields for memory 0's and each NUMA node's size show under the slider, and the RAM becomes their sum."
   },
   "SettingsTab.mib": {
     "message": "{{n}} MiB",
     "note": "Home page, Settings tab: the value shown beside the RAM and JIT cache sliders. {{n}}: the size, MiB."
   },
-  "RamSplit.split": {
-    "message": "Memory split (advanced)",
-    "note": "Home page, Settings tab: the summary of the folded section that sets the memory split by hand."
-  },
-  "RamSplit.split.custom": {
-    "message": "Set the split myself",
-    "note": "Home page, Settings tab: Memory split (advanced): the label of the box that sets the split by hand."
-  },
-  "RamSplit.split.memory0": {
+  "RamSplit.memory0": {
     "message": "Memory 0, MiB",
-    "note": "Home page, Settings tab: Memory split (advanced): the label of memory 0's size field."
+    "note": "Home page, Settings tab, under the RAM slider while a custom split is set: the label of memory 0's size field."
   },
-  "RamSplit.split.nodes": {
-    "message": "NUMA nodes past it, MiB each",
-    "note": "Home page, Settings tab: Memory split (advanced): the label of the field that lists the NUMA nodes' sizes, comma-separated."
+  "RamSplit.node": {
+    "message": "NUMA node {{n}}, MiB",
+    "note": "Home page, Settings tab, under the RAM slider while a custom split is set: the label of one NUMA node's size field, one per node past memory 0. {{n}}: the node's number, 1 for the first past memory 0."
   },
-  "RamSplit.split.nodes.placeholder": {
-    "message": "none",
-    "note": "Home page, Settings tab: Memory split (advanced): the placeholder of the NUMA nodes field when it is empty."
+  "RamSplit.node.remove": {
+    "message": "remove",
+    "note": "Home page, Settings tab, under the RAM slider while a custom split is set: the link beside a NUMA node's size field that removes that node from the split. Lower case, a link."
   },
-  "RamSplit.split.note": {
+  "RamSplit.node.add": {
+    "message": "add a node",
+    "note": "Home page, Settings tab, under the RAM slider while a custom split is set: the link under the NUMA nodes' fields that adds one more node (1024 MiB) to the split; it shows while there are fewer than the most nodes (8). Lower case, a link."
+  },
+  "RamSplit.note": {
     "message": "Memory 0 is the fast memory, up to {{max}} MiB. Each NUMA node past it is slower to reach; there can be up to 8, of up to 4096 MiB each. The guest's vCPUs are all on memory 0's node, so Linux fills it first.",
-    "note": "Home page, Settings tab: Memory split (advanced): the note at its bottom. {{max}}: the most memory 0 holds, MiB."
+    "note": "Home page, Settings tab, under the RAM slider while a custom split is set: the note under the split's fields. {{max}}: the most memory 0 holds, MiB."
   },
   "SettingsTab.jit": {
     "message": "JIT cache",

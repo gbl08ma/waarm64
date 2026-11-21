@@ -69,8 +69,8 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
   (`env.ram1`); the compile worker reads no guest RAM.
 - **The page** ([frontend.md](frontend.md) "Settings") offers one RAM value, up to 16 GiB. Past memory 0, a note says
   that the rest goes to NUMA nodes and is slower to reach. 3 GiB isn't offered: it would spill 1 MiB. A stored
-  machine's Settings has an advanced section, hidden by default, for the split (`ramSplit`, part of its shape and
-  definition); a transient machine takes `?split=`. The host-memory check counts all of the RAM.
+  machine's Settings has a box beside the RAM slider, unticked by default, that shows fields for the split
+  (`ramSplit`, part of its shape and definition); a transient machine takes `?split=`. The host-memory check counts all of the RAM.
   `navigator.deviceMemory` reports at most 8, so the page can't confirm more than that and says so instead of
   refusing.
 - **Snapshots** ([platform.md](platform.md) "The snapshot file"): the spill memories' `RAM ` chunks follow memory 0's in
