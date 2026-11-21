@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo.svg" width="120" height="120" alt="The waarm64 logo: a lit w on a key, steam over it"></p>
+
 # waarm64
 
 **A whole 64-bit ARM computer in a browser tab.**
@@ -6,6 +8,8 @@ waarm64 is a whole-system AArch64 (arm64) emulator that runs in the browser. It 
 operating system: unmodified Linux images boot through UEFI with their own kernels, as they would on a real machine or
 in QEMU. Guest code is compiled to WebAssembly while it runs, which makes it fast enough for a desktop with a web
 browser inside it, video and 3D included. Everything runs on your computer; nothing is emulated on a server.
+
+![The introduction of waarm64's page: a small Linux machine running live beside the headline, its picture on a screen and its shell in a terminal](docs/assets/intro.png)
 
 **Try it: [vm.tny.im](https://vm.tny.im)** (Chrome, Edge or another Chromium-based browser). The page opens on an
 introduction with a small machine booting live in it, then offers demos that start in a few seconds: Alpine at a

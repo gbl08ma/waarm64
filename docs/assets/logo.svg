@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="200" height="200" role="img" aria-label="waarm64">
+  <!-- waarm64's logo: the page's icon (web/app/index.html, web/app/Logo.svelte): a lit w on a key, steam over it. -->
+  <rect width="16" height="16" rx="2" fill="#262624"/>
+  <path shape-rendering="crispEdges" fill="#fa6432" d="M3 7h2v5h2V7h2v5h2V7h2v7H3z"/>
+  <path fill="none" stroke="#6e6e67" stroke-width="1.1" stroke-linecap="round" d="M6 5.6C7.6 4 4.4 2.5 6 .9M10 5.6C8.4 4 11.6 2.5 10 .9"/>
+</svg>

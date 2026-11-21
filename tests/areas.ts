@@ -212,6 +212,7 @@ export const AREAS: Record<string, Area> = {
     src: ['bench/**', 'tools/**', 'tests/**'],
   },
   repo: {
-    src: ['.gitattributes', '.gitignore', '.git-blame-ignore-revs', 'LICENSE', 'wrangler.jsonc'],
+    // (docs/assets: the README's pictures; no test reads them.)
+    src: ['.gitattributes', '.gitignore', '.git-blame-ignore-revs', 'LICENSE', 'wrangler.jsonc', 'docs/assets/**'],
   },
 };
