@@ -413,6 +413,16 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
 /// docs/jit.md "Calls"), and the block after the call is taken as where
 /// that call returns: one of the region's entries ([`Region::entries`]).
 ///
+/// **A call is followed only if its callee can't leave the region** but by
+/// its predicted return ([`Region::open_call`]): a member taken inside it
+/// that branches to a block not taken, branches indirectly, or ends on a
+/// `ret` with no member to return to makes the innermost call it is in a
+/// host call, and the region is walked again. Followed, that exit would be a
+/// tail call out of the function with the call's frame still owed, and the
+/// callee's `ret` a host return to the region's caller, one frame early: a
+/// return elsewhere than its continuation at every frame up to the
+/// dispatcher (docs/jit.md "Calls"; PERF loop 36).
+///
 /// Where [`region`] is a loop, compiled once its head is hot, this is
 /// straight-line code, its branches and its calls, compiled together the
 /// first time (`Cache::plan`): the edges between its blocks keep registers
@@ -424,20 +434,44 @@ pub fn forward(
     va: u64,
     member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
 ) -> Region {
+    let mut not = vec![];
+    loop {
+        let (r, inside) = walk(mem, key, va, member, &not);
+        match r.open_call(&inside) {
+            Some(k) if !not.contains(&k) => not.push(k),
+            _ => return r,
+        }
+    }
+}
+
+/// [`forward`]'s walk, with the callees of the calls that end the blocks at
+/// `not` not taken; also gives the members taken inside a call of the region,
+/// each with the key of the innermost call's block.
+fn walk(
+    mem: &Mem,
+    key: u64,
+    va: u64,
+    member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
+    not: &[u64],
+) -> (Region, Vec<(u64, u64)>) {
+    /// A return pending: the VA after the call, its key if it's in the
+    /// call's page, and the key of the call's block.
+    type Call = (u64, Option<u64>, u64);
     struct Walk<'a> {
         mem: &'a Mem,
         member: &'a dyn Fn(u64, Option<u64>) -> Option<u64>,
+        not: &'a [u64],
         /// The blocks taken so far: (key, VA).
         seen: Vec<(u64, u64)>,
         post: Vec<Block>,
         returns: Vec<(u64, u64)>,
+        inside: Vec<(u64, u64)>,
     }
     impl Walk<'_> {
         /// Takes the block at `va` (`near`: its key, if it's in the page of
         /// the block that leads to it) unless it or its VA is taken, and
-        /// what it reaches; `calls` are the returns pending: the VA after
-        /// each call on the way here, and its key if it's in the call's page.
-        fn take(&mut self, va: u64, near: Option<u64>, calls: &[(u64, Option<u64>)]) {
+        /// what it reaches; `calls` are the returns pending on the way here.
+        fn take(&mut self, va: u64, near: Option<u64>, calls: &[Call]) {
             if self.seen.len() >= REGION {
                 return;
             }
@@ -450,19 +484,22 @@ pub fn forward(
             let words = form(self.mem, key & !3);
             if !words.is_empty() {
                 self.seen.push((key, va));
+                if let Some(c) = calls.last() {
+                    self.inside.push((key, c.2));
+                }
                 self.visit(Block { key, va, words }, calls);
             }
         }
 
-        fn visit(&mut self, b: Block, calls: &[(u64, Option<u64>)]) {
+        fn visit(&mut self, b: Block, calls: &[Call]) {
             let last = b.words.last().copied().unwrap_or(0);
             let after = 4 * b.words.len() as i64;
             match decode(last) {
-                Op::BL => {
+                Op::BL if !self.not.contains(&b.key) => {
                     let k = succ(b.key, after);
                     let near = ((k ^ b.key) >> 12 == 0).then_some(k);
                     let mut inner = calls.to_vec();
-                    inner.push((b.va.wrapping_add(after as u64), near));
+                    inner.push((b.va.wrapping_add(after as u64), near, b.key));
                     for o in offsets(&b.words) {
                         self.edge(&b, o, &inner);
                     }
@@ -475,9 +512,9 @@ pub fn forward(
                         self.edge(&b, after, calls);
                     }
                 }
-                Op::BLR => self.edge(&b, after, calls),
+                Op::BL | Op::BLR => self.edge(&b, after, calls),
                 Op::RET if crate::interp::bits(last, 9, 5) == 30 => {
-                    if let Some((&(va, near), calls)) = calls.split_last() {
+                    if let Some((&(va, near, _), calls)) = calls.split_last() {
                         self.returns.push((b.key, va));
                         self.take(va, near, calls);
                     }
@@ -491,7 +528,7 @@ pub fn forward(
             self.post.push(b);
         }
 
-        fn edge(&mut self, b: &Block, o: i64, calls: &[(u64, Option<u64>)]) {
+        fn edge(&mut self, b: &Block, o: i64, calls: &[Call]) {
             let k = succ(b.key, o);
             let near = ((k ^ b.key) >> 12 == 0).then_some(k);
             self.take(b.va.wrapping_add(o as u64), near, calls);
@@ -500,23 +537,51 @@ pub fn forward(
     let mut w = Walk {
         mem,
         member,
+        not,
         seen: vec![(key, va)],
         post: vec![],
         returns: vec![],
+        inside: vec![],
     };
     let words = form(mem, key & !3);
     if !words.is_empty() {
         w.visit(Block { key, va, words }, &[]);
     }
     w.post.reverse();
-    Region {
+    let r = Region {
         blocks: w.post,
         tier: None,
         returns: w.returns,
-    }
+    };
+    (r, w.inside)
 }
 
 impl Region {
+    /// The call whose callee [`forward`] took but whose code can leave the
+    /// region other than by its predicted return (the key of its block), if
+    /// any: `inside` gives each member taken inside a call, with the key of
+    /// the innermost call's block.
+    fn open_call(&self, inside: &[(u64, u64)]) -> Option<u64> {
+        // What a member's edge to `off` reaches: a member it can branch to.
+        let stays = |i: usize, off: i64| self.target(i, off).is_some_and(|j| j > i || j == 0);
+        self.blocks.iter().enumerate().find_map(|(i, b)| {
+            let &(_, call) = inside.iter().find(|x| x.0 == b.key)?;
+            let w = *b.words.last()?;
+            let leaves = match decode(w) {
+                Op::RET => self.returns_to(i).is_none(),
+                Op::BR | Op::ERET => true,
+                // The callee taken, or a host call returning after it.
+                Op::BL => {
+                    !offsets(&b.words).iter().any(|&o| stays(i, o))
+                        && !call_after(&b.words).is_some_and(|a| stays(i, a))
+                }
+                Op::BLR => !call_after(&b.words).is_some_and(|a| stays(i, a)),
+                _ => offsets(&b.words).iter().any(|&o| !stays(i, o)),
+            };
+            leaves.then_some(call)
+        })
+    }
+
     /// Whether a member branches back to the head.
     pub fn looped(&self) -> bool {
         self.back_edges() > 0
@@ -2253,6 +2318,37 @@ mod tests {
     }
 
     #[test]
+    fn a_callee_that_can_leave_the_region_is_called() {
+        // 0x100: bl 0x120; 0x104: ret
+        // 0x120: bl 0x140; 0x124: ret
+        // 0x140: b 0x200 (not admitted)
+        let mut words = [0u32; 17];
+        words[0] = 0x94000008;
+        words[1] = 0xd65f03c0;
+        words[8] = 0x94000008;
+        words[9] = 0xd65f03c0;
+        words[16] = 0x14000030;
+        let (_r, m) = mem_with(0x100, &words);
+        let keys = |r: &Region| r.blocks.iter().map(|b| b.key).collect::<Vec<_>>();
+        // 0x140 leaves for 0x200: had both calls been followed, its tail call
+        // there would have left their host frames behind, so the inner call
+        // is a host call (its continuation taken) and the outer one, whose
+        // callee now returns as predicted, stays followed.
+        let r = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x200));
+        assert_eq!(keys(&r), [0x100, 0x120, 0x124, 0x104]);
+        assert_eq!(r.returns, [(0x124, 0x104)]);
+        assert_eq!(r.entries(), [2, 3]);
+        // Admitted, 0x200 (a `udf`: no words) leaves too.
+        let r = forward(&m, 0x100, 0x100, &|_, k| k);
+        assert_eq!(keys(&r), [0x100, 0x120, 0x124, 0x104]);
+        // A callee whose `ret` isn't X30's.
+        words[9] = 0xd65f0020; // ret x1
+        let (_r, m) = mem_with(0x100, &words);
+        let r = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x200));
+        assert_eq!((keys(&r), r.returns.len()), (vec![0x100, 0x104], 0));
+    }
+
+    #[test]
     fn a_forward_region_is_the_blocks_in_reach_with_calls_and_their_returns() {
         // 0x100: cbz x1, 0x10c
         // 0x104: add x2, x2, #1; b 0x110
@@ -2283,9 +2379,13 @@ mod tests {
         };
         assert_eq!(only(&|k| k != 0x104), (vec![0x100, 0x10c, 0x120, 0x118], 1));
         assert_eq!(only(&|k| k == 0x104), (vec![0x100, 0x104], 0));
-        // Without the block after the call the return isn't an edge.
+        // Without the block after the call the return isn't an edge, so the
+        // callee isn't taken: called, it returns to its host call.
         let r5 = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x118));
-        assert_eq!((r5.blocks.len(), r5.returns_to(4)), (5, None));
+        assert_eq!(
+            (keys(&r5), r5.returns.len()),
+            (vec![0x100, 0x104, 0x110, 0x10c], 0)
+        );
         // One function without a loop, every instruction inline. The
         // callee's return to the block after the call is an edge: taken when
         // x30 is that address (the entry PC + 0x18) and the steps left cover
@@ -2326,7 +2426,7 @@ mod tests {
                 None,
             )
             .inl,
-            [9]
+            [8]
         );
         // Not past the page, and nothing where the head has no words.
         let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);

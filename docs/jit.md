@@ -304,9 +304,10 @@ the interpreter's own code.
   - **What reaches the miss function** (PERF loop 28, a diagnostic core, Alpine's userspace run in Node): a probe
     misses 23% of the time in the boot, 25% in the churn phase, 13% at shutdown and 1.5-8% in the compute phases; of
     the boot's 3.2M misses through a probe 2.1M find a zeroed entry (a target not entered yet), 0.95M another VA's
-    and 0.13M an older generation. Most calls in the compute phases (compress 2.0M of 2.3M, Lua 1.8M of 2.0M) come
-    instead from host returns that land elsewhere than the call's continuation ([Calls](#calls)), whose entry was
-    valid; a by-VA link whose check failed is rare (5,700 in the boot).
+    and 0.13M an older generation. Until PERF loop 36 most calls in the compute phases (compress 2.0M of 2.3M, Lua
+    1.8M of 2.0M) came instead from host returns that landed elsewhere than the call's continuation, a region's
+    followed callee returning one host frame early ([Calls](#calls)): compress's calls are 0.31M now, Lua's 0.23M;
+    a by-VA link whose check failed is rare (5,700 in the boot).
   - The stale-code checker, which needs the key, is called with `u64::MAX` on a hit
     (`jit_check` then computes the key from the PC).
 - **Inside a region:** members are nested wasm `block`s; an edge to a later member is a `br`
@@ -347,9 +348,22 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   a block not compiled), and every caller returns it in turn, unwinding to the dispatcher. A returned one moves
   `acc`/`left` as if the callee's steps were the caller's, and if the PC is the call's continuation (the instruction
   after the BL/BLR) the region runs on there; if it isn't (a longjmp, a coroutine switch), the PC's block is found
-  through the transfer cache's miss function (with the MMU off, the block returns). That isn't rare: 10-16% of the host
-  returns in Alpine's userspace phases (~1 per 1,000-2,000 instructions), at a host depth under 8, nearly none of them
-  a region's mispredicted internal return (PERF loop 28, a diagnostic core; docs/backlog.md has the follow-up).
+  through the transfer cache's miss function (with the MMU off, the block returns). That is rare now: 5-31K a phase of
+  Alpine's userspace run, 74K in its boot, under 0.3% of the host returns (PERF loop 36; the rule below).
+- **A region follows a call only if the callee can't leave it** but by its predicted return (`block::forward`,
+  `Region::open_call`): a call whose callee is a member is a `br`, not a host call, so the frame it would have pushed is
+  owed for as long as the callee runs. A member taken inside such a call that branches to a block not taken, branches
+  indirectly, or ends on a `ret` with no member to return to makes the innermost call it is in a host call, and the
+  region is walked again (until none is left open; each walk ≤ 16 blocks). Before PERF loop 36 such a callee's exit
+  was a tail call out of the region's function, and its `ret` a host return (`ret_up`) one frame early, to the region's
+  caller, whose continuation it wasn't; that caller went to the miss function, and so did every frame above it in turn,
+  each one frame off, up to the dispatcher. That was 10-16% of the host returns of Alpine's userspace phases and most of
+  the miss function's calls there (compress 1.82M, Lua 1.61M, SQLite 1.03M a phase, the boot 1.57M; nearly every
+  followed call could leave: of Lua's 8.6M, 3.1M did). With the rule: 5K, 15K, 11K and 74K; host calls +23-28%,
+  followed calls −93 to −97%; wasm −3 to −4%; on the Mac Alpine's boot −2.7% and the userspace benchmark −2.5% (bench/boot/REPORT.md
+  "PERF loop 36"). Keeping the callees that complete inside (64% of Lua's followed calls) would need every exit from
+  inside a call to be a host call to the pending continuation, nested per pending call: at most ~0.5% more by the counts,
+  in docs/backlog.md.
 - **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
   function (`Region::entries`; none in a loop region, whose members sit inside the `loop`), because a return also
   reaches it from outside, at depth 0 after anything that unwound the host frames. Only a member where the head's

@@ -173,14 +173,13 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   worker). With a worker per vCPU, V8 compiles off the vCPU's thread: the JIT's compile worker
   ([jit.md](jit.md) "Sharing"), built for the install stalls a GUI guest showed; the vCPU still
   instantiates each module. Without the worker (round-robin, Node's runs, `?jit=nocw`) it compiles too.
-- **Host returns that land elsewhere than the call's continuation** ([jit.md](jit.md) "Calls", "Linking"; PERF loop
-  28): 10-16% of the host-call returns in Alpine's userspace phases (compress 2.0M, Lua 1.8M, SQLite 1.2M; ~1 per
-  1,000-2,000 instructions) return with a PC that isn't the call's continuation and go through the transfer cache's
-  miss function (most of its calls outside the boot), though the entry for that PC is valid. Not a cascade (a host-call
-  loop at the mismatch left them as many), not deep (host depth under 8), not a region's mispredicted internal return.
-  Next: a diagnostic core's histogram of the PCs (the callee's RET and its X30) to find the guest code, then fix the
-  cause; a likely one is a callee taken into a region that leaves it before its RET, whose RET then returns to the
-  host caller with the region's inner continuation. Bound unmeasured (a miss-function call and a lost host return each).
+- **Followed calls whose callee completes inside the region** ([jit.md](jit.md) "Calls"; PERF loop 36): a region now
+  follows a call only if its callee can't leave the region, so a callee with any exit (a cold error path, a page's
+  edge) is a host call even on the runs that return inside: Lua's followed calls went 8.6M → 0.28M a phase, though
+  5.5M of them had completed inside. Keeping them needs every exit from inside a followed call to be a host call
+  expecting the pending continuation (nested, one per pending call), and a `ret` there an indirect transfer at the
+  current depth instead of `ret_up`. Bound: ~5M host calls and returns a phase in Lua and SQLite, ~0.5% of them by the
+  counts; build only with a measured A/B.
 - **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
   heap bounded"):
   - **The decoded blocks** were ~350-365 MiB on 4 vCPUs; since 8-byte micro-ops, a smaller block map entry and a

@@ -6256,3 +6256,68 @@ guest's own time dominates. The one separation is the virgl frame (the device si
 number, CallQueue.pass's reused sets), small. `fio` and `net` ran in B only (A's `target/` is a symlink out of its
 worktree, which Vite's strict serving refuses): they pass, unpaired. The allocation changes (per packet, per TD, per
 WebHID report, the agent's frames) were not measured: no benchmark here drives them hard enough to show.
+
+## PERF loop 36: host returns that landed elsewhere, a region's followed calls (2026-11-21)
+
+The backlog's "Host returns that land elsewhere than the call's continuation" (PERF loop 28: 10-16% of the userspace
+phases' host returns go to the miss function with a valid entry). Raw: `results/perf36/` (README).
+
+**Counted** (a diagnostic core: a histogram of each such return's RET, continuation, PC and the code around them;
+`bench/boot/userprof.ts` in Node). Returns elsewhere per phase: boot 1.57M, compress 1.82M, Lua 1.61M, churn 0.83M,
+SQLite 1.03M, shutdown 0.46M. The top entries are pairs, e.g. compress's (772,718 and 504,624): F calls G with BLR (a
+host call, expecting F's continuation), G calls a leaf L with BL, and L's `ret` lands in F's frame; then G's `ret`
+lands in the frame of F's caller. One host frame was missing: G's call to L wasn't a host call. G's region had
+**followed** that call (`block::forward`: the callee taken as a member, the BL a `br`, its `ret` predicted to return
+to the member after the call), but the callee could leave the region before its predicted return: here L's `ret` had
+no member to return to (the continuation wasn't taken); in Lua's and SQLite's pairs the callee was too long and its
+code left the region by a chain. Leaving is a tail call at the region's depth, so the callee's `ret` is a `ret_up`
+to the region's caller, one frame early, which doesn't match there; that frame goes to the miss function, and every
+frame above it in turn (the cascade loop 28's host-call loop half-undid). Tallied: followed calls per phase compress
+3.30M, Lua 8.64M, SQLite 6.64M; exits from inside them 0.66M, 3.11M, 2.84M; `ret_up`s of a followed callee with no
+prediction (the leaf's case) compress 0.78M; with a wrong one (loop 28's "mispredicted internal return") under 15K
+anywhere.
+
+**Bound**: each return elsewhere is a miss-function call (an instruction-TLB probe, the jump cache, the entry's fill,
+an indirect call) and a frame lost; ~7.3M in the userspace run, at ~15 ns each on the Mac ~1% of it, more if the lost
+frames' later returns cost too.
+
+**Built: a region follows a call only if its callee can't leave the region** but by its predicted return
+(docs/jit.md "Calls"): after the walk, a member taken inside a followed call that branches to a block not taken,
+branches indirectly or ends on a `ret` with no member to return to makes the innermost call it is in a host call
+(its continuation taken as an entry), and the walk runs again until none is open (`forward`, `walk`,
+`Region::open_call`). Emission is unchanged. Counted with the rule (`diag-fix-marks.json`): returns elsewhere boot
+74K, compress 5K, Lua 15K, churn 31K, SQLite 11K, shutdown 22K (−95 to −99.7%); miss-function calls compress 2.12M →
+0.31M, Lua 1.84M → 0.23M, SQLite 1.50M → 0.38M, boot 4.77M → 3.19M; host calls +23-28%; followed calls −93 to −97%
+(nearly every followed callee had some exit). Arms by size: `block::forward` 1,236 → 4,735 bytes (the walk inlined
+into it), `Walk::visit` 2,354 → 2,585.
+
+`bench/interp/ab-mac.sh` on the Mac (M4, Chrome for Testing 158.0.8127.36), base 3d71d489, base first in rounds 1
+and 3, fix first in round 2, ms:
+
+| | base r1 · r2 · r3; median | fix r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 3,833.8 · 3,943.8 · 3,950.3; **3,943.8** | 3,806.3 · 3,837.4 · 3,852.7; **3,837.4** (−2.7%) |
+| `alpine_user_jit_total` | 10,383.2 · 10,597.3 · 10,619.2; **10,597.3** | 10,264.3 · 10,333.2 · 10,361.2; **10,333.2** (−2.5%) |
+| compress | 1,502.7 · 1,529.4 · 1,542.5; 1,529.4 | 1,495.0 · 1,499.5 · 1,497.5; 1,497.5 (−2.1%) |
+| Lua | 2,568.3 · 2,609.5 · 2,605.0; 2,605.0 | 2,565.8 · 2,581.1 · 2,580.3; 2,580.3 (−0.9%) |
+| SQLite | 1,892.0 · 1,916.7 · 1,914.0; 1,914.0 | 1,871.4 · 1,897.9 · 1,884.4; 1,884.4 (−1.5%) |
+
+The userspace total's rounds don't overlap (fix's slowest 10,361 under base's fastest 10,383); the boot's do by one
+round (base's first, 3,833.8, inside fix's range), the fix faster in every round (−0.7, −2.7, −2.5%). The steps are
+the same (2,650,367,147 and 10,431,311,691). Compile side, per run: wasm 12.12 → 11.73 MB in the boot (−3.3%), 16.60 →
+15.94 MB in the userspace run (−4.0%), modules 312 → 310 and 547 → 534; `emitNs` 173-176 → 169-170 ms and 240-244 →
+228-233 ms; `compileNs` the same (50-51, 76-80 ms); dispatches −2.3%. Memory: less (the code), nothing kept besides.
+Static counts (`codestats.json`, Alpine's boot, 7,230 → 7,220 functions): arm64 instructions −2.0% in all, −1.8% per
+function, frame memory operands −1.8%; x64 −1.7% in all, −1.5% per function, frame operands −2.8%. Kept. Not measured
+in Firefox's pages session (no block's end changes; the same rule in polled code).
+
+Left: callees that complete inside the region are host calls now too when they have any exit (Lua's 5.5M of 8.6M
+followed calls had completed inside); keeping them needs every exit from inside a followed call to be a host call to
+the pending continuation, bound ~0.5% by the counts (docs/backlog.md "Followed calls whose callee completes inside
+the region").
+
+**Tests**: `jit::block` "a callee that can leave the region is called" (a callee whose callee branches out: the inner
+call a host call, the outer followed with its return predicted; a `ret x1`: neither followed) and the forward test's
+case without the block after the call (now 4 blocks, the callee called). Planted, each failing a test: `open_call`
+never finding one; a `ret` never leaving; the walk ignoring the calls not to follow; branches never leaving. No step
+count moved. CI: `scripts/ci.sh` (620 s) and `scripts/ci-jit.sh` (256 s) pass.

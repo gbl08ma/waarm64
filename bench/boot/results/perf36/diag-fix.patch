@@ -1,0 +1,412 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index bc4bbd14..c2b50908 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -226,6 +226,8 @@ pub struct Region {
+     /// that call. When X30 holds it, the return is an edge to the member
+     /// there instead of an indirect branch.
+     pub returns: Vec<(u64, u64)>,
++    /// diag: members taken inside a call of the region, with its pending continuations.
++    pub inside: Vec<(u64, Vec<u64>)>,
+ }
+ 
+ impl From<Block> for Region {
+@@ -234,6 +236,7 @@ impl From<Block> for Region {
+             blocks: vec![b],
+             tier: None,
+             returns: vec![],
++            inside: vec![],
+         }
+     }
+ }
+@@ -244,6 +247,7 @@ impl Region {
+             blocks,
+             tier: None,
+             returns: vec![],
++            inside: vec![],
+         }
+     }
+ 
+@@ -424,20 +428,46 @@ pub fn forward(
+     va: u64,
+     member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
+ ) -> Region {
++    let mut not = vec![];
++    loop {
++        let (r, inside) = walk(mem, key, va, member, &not);
++        match r.open_call(&inside) {
++            Some(k) if !not.contains(&k) => not.push(k),
++            _ => return r,
++        }
++    }
++}
++
++/// [`forward`]'s walk, with the callees of the calls that end the blocks at
++/// `not` not taken; also gives the members taken inside a call of the region,
++/// each with the key of the innermost call's block.
++fn walk(
++    mem: &Mem,
++    key: u64,
++    va: u64,
++    member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
++    not: &[u64],
++) -> (Region, Vec<(u64, u64)>) {
++    /// A return pending: the VA after the call, its key if it's in the
++    /// call's page, and the key of the call's block.
++    type Call = (u64, Option<u64>, u64);
+     struct Walk<'a> {
+         mem: &'a Mem,
+         member: &'a dyn Fn(u64, Option<u64>) -> Option<u64>,
++        not: &'a [u64],
+         /// The blocks taken so far: (key, VA).
+         seen: Vec<(u64, u64)>,
+         post: Vec<Block>,
+         returns: Vec<(u64, u64)>,
++        inside: Vec<(u64, u64)>,
++        #[cfg(feature = "diag")]
++        dinside: Vec<(u64, Vec<u64>)>,
+     }
+     impl Walk<'_> {
+         /// Takes the block at `va` (`near`: its key, if it's in the page of
+         /// the block that leads to it) unless it or its VA is taken, and
+-        /// what it reaches; `calls` are the returns pending: the VA after
+-        /// each call on the way here, and its key if it's in the call's page.
+-        fn take(&mut self, va: u64, near: Option<u64>, calls: &[(u64, Option<u64>)]) {
++        /// what it reaches; `calls` are the returns pending on the way here.
++        fn take(&mut self, va: u64, near: Option<u64>, calls: &[Call]) {
+             if self.seen.len() >= REGION {
+                 return;
+             }
+@@ -450,19 +480,24 @@ pub fn forward(
+             let words = form(self.mem, key & !3);
+             if !words.is_empty() {
+                 self.seen.push((key, va));
++                if let Some(c) = calls.last() {
++                    self.inside.push((key, c.2));
++                    #[cfg(feature = "diag")]
++                    self.dinside.push((key, calls.iter().map(|c| c.0).collect()));
++                }
+                 self.visit(Block { key, va, words }, calls);
+             }
+         }
+ 
+-        fn visit(&mut self, b: Block, calls: &[(u64, Option<u64>)]) {
++        fn visit(&mut self, b: Block, calls: &[Call]) {
+             let last = b.words.last().copied().unwrap_or(0);
+             let after = 4 * b.words.len() as i64;
+             match decode(last) {
+-                Op::BL => {
++                Op::BL if !self.not.contains(&b.key) => {
+                     let k = succ(b.key, after);
+                     let near = ((k ^ b.key) >> 12 == 0).then_some(k);
+                     let mut inner = calls.to_vec();
+-                    inner.push((b.va.wrapping_add(after as u64), near));
++                    inner.push((b.va.wrapping_add(after as u64), near, b.key));
+                     for o in offsets(&b.words) {
+                         self.edge(&b, o, &inner);
+                     }
+@@ -475,9 +510,9 @@ pub fn forward(
+                         self.edge(&b, after, calls);
+                     }
+                 }
+-                Op::BLR => self.edge(&b, after, calls),
++                Op::BL | Op::BLR => self.edge(&b, after, calls),
+                 Op::RET if crate::interp::bits(last, 9, 5) == 30 => {
+-                    if let Some((&(va, near), calls)) = calls.split_last() {
++                    if let Some((&(va, near, _), calls)) = calls.split_last() {
+                         self.returns.push((b.key, va));
+                         self.take(va, near, calls);
+                     }
+@@ -491,7 +526,7 @@ pub fn forward(
+             self.post.push(b);
+         }
+ 
+-        fn edge(&mut self, b: &Block, o: i64, calls: &[(u64, Option<u64>)]) {
++        fn edge(&mut self, b: &Block, o: i64, calls: &[Call]) {
+             let k = succ(b.key, o);
+             let near = ((k ^ b.key) >> 12 == 0).then_some(k);
+             self.take(b.va.wrapping_add(o as u64), near, calls);
+@@ -500,23 +535,55 @@ pub fn forward(
+     let mut w = Walk {
+         mem,
+         member,
++        not,
+         seen: vec![(key, va)],
+         post: vec![],
+         returns: vec![],
++        inside: vec![],
++        #[cfg(feature = "diag")]
++        dinside: vec![],
+     };
+     let words = form(mem, key & !3);
+     if !words.is_empty() {
+         w.visit(Block { key, va, words }, &[]);
+     }
+     w.post.reverse();
+-    Region {
++    let r = Region {
+         blocks: w.post,
+         tier: None,
+         returns: w.returns,
+-    }
++        #[cfg(feature = "diag")]
++        inside: w.dinside,
++        #[cfg(not(feature = "diag"))]
++        inside: vec![],
++    };
++    (r, w.inside)
+ }
+ 
+ impl Region {
++    /// The call whose callee [`forward`] took but whose code can leave the
++    /// region other than by its predicted return (the key of its block), if
++    /// any: `inside` gives each member taken inside a call, with the key of
++    /// the innermost call's block.
++    fn open_call(&self, inside: &[(u64, u64)]) -> Option<u64> {
++        // What a member's edge to `off` reaches: a member it can branch to.
++        let stays = |i: usize, off: i64| self.target(i, off).is_some_and(|j| j > i || j == 0);
++        self.blocks.iter().enumerate().find_map(|(i, b)| {
++            let &(_, call) = inside.iter().find(|x| x.0 == b.key)?;
++            let w = *b.words.last()?;
++            let leaves = match decode(w) {
++                Op::RET => self.returns_to(i).is_none(),
++                Op::BR | Op::ERET => true,
++                // The callee taken, or a host call returning after it.
++                Op::BL => !offsets(&b.words).iter().any(|&o| stays(i, o))
++                    && !call_after(&b.words).is_some_and(|a| stays(i, a)),
++                Op::BLR => !call_after(&b.words).is_some_and(|a| stays(i, a)),
++                _ => offsets(&b.words).iter().any(|&o| !stays(i, o)),
++            };
++            leaves.then_some(call)
++        })
++    }
++
+     /// Whether a member branches back to the head.
+     pub fn looped(&self) -> bool {
+         self.back_edges() > 0
+@@ -564,6 +631,7 @@ struct Env<'a> {
+     jc: bool,
+     /// `jit_hot`, for the tier-up prologues.
+     hot: Option<u32>,
++    dret: u32,
+     /// The transfer cache's miss functions for EL0 and EL1 with the MMU on
+     /// ([`miss_module`]), imported by a module with a jump cache and such blocks.
+     xmiss: [Option<u32>; 2],
+@@ -651,6 +719,10 @@ pub fn module(
+         let t = m.ty(&[I32, I64, I64], &[]);
+         m.import_func("env", "jit_hot", t)
+     });
++    let dret = {
++        let ct = m.ty(&[I32, I64], &[]);
++        m.import_func("env", "jit_diag_ret", ct)
++    };
+     // Successors outside their region: this batch's heads, or imports.
+     let heads = |k| regions.iter().any(|r| r.blocks[0].key == k);
+     let entries: Vec<Vec<usize>> = regions.iter().map(|r| r.entries()).collect();
+@@ -793,6 +865,7 @@ pub fn module(
+             checker,
+             jc,
+             hot,
++            dret,
+             xmiss: misses,
+             base: base as usize as u64,
+             phys,
+@@ -1043,6 +1116,11 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             c.end(); // member i's label
+         }
+         c.base = b.va.wrapping_sub(head) as i64;
++        if b.words.last().map(|&w| decode(w)) == Some(Op::BL)
++            && offsets(&b.words).first().and_then(|&o| r.target(i, o)).is_some()
++        {
++            emit::dbump(&mut c, 16);
++        }
+         c.note(
+             super::wasm::NOTE_BLOCK,
+             b.va.wrapping_sub(head),
+@@ -1252,6 +1330,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+         // The rest leave the region (or stay when `left` doesn't cover them).
+         c.flush();
+         c.sync_flags();
++        {
++            let lop = b.words.last().map(|&w| decode(w));
++            if r.inside.iter().any(|x| x.0 == b.key)
++                && !matches!(lop, Some(Op::BL | Op::BLR | Op::RET))
++            {
++                emit::dbump(&mut c, 17);
++            }
++        }
+         if c.defer_pc {
+             c.local_get(0);
+             match succs {
+@@ -1327,6 +1413,11 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             },
+             Next::None => {
+                 if op == Some(Op::RET) {
++                    if r.returns.iter().any(|x| x.0 == b.key) {
++                        c.local_get(emit::DEPTH).if_();
++                        emit::dbump(&mut c, if r.returns_to(i).is_some() { 13 } else { 14 });
++                        c.end();
++                    }
+                     emit::ret_up(&mut c, len);
+                 }
+                 if e.jc && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
+@@ -1488,6 +1579,9 @@ fn call(
+     c.forget(!0);
+     emit::returned(c, len, after);
+     cont(c);
++    c.local_get(0);
++    emit::pc_plus(c, after);
++    c.call(e.dret);
+     if e.jc && b.key & KEY_MMU != 0 {
+         let miss = emit::To::Func(e.miss(b.key), 0);
+         emit::transfer(c, Xfer::Tail, len, e.bt, miss, 0);
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index 1d65cb40..f4dd749f 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -1988,6 +1988,13 @@ pub const ENTRY_BIT: u32 = 16;
+ pub fn ret_up(c: &mut Func, len: u32) {
+     c.local_get(DEPTH).if_();
+     dbump(c, crate::tally::HOST_RET);
++    #[cfg(feature = "diag")]
++    {
++        let o = (offset_of!(Vcpu, diag) + 8 * 15) as u32;
++        c.local_get(VCPU);
++        pc_plus(c, 4 * (len as i64 - 1));
++        c.i64_store(o);
++    }
+     if c.polled {
+         poll(c, false);
+         c.hint(true).if_();
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 4b28121d..b19a1984 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -1514,6 +1514,10 @@ pub struct Table {
+     /// the last report of them ([`Table::helper_report`]).
+     helper_ops: Vec<u64>,
+     report: String,
++    #[cfg(feature = "diag")]
++    pub dret: HashMap<(u64, u64, u64, u64), (u64, String)>,
++    #[cfg(feature = "diag")]
++    pub dslots: Vec<u64>,
+     /// Steps dispatched so far (the batch timeout's clock), and the cache's
+     /// pending batch and this clock when this table first saw it pending.
+     clock: u64,
+@@ -1559,6 +1563,10 @@ impl Table {
+             waiting: 0,
+             helper_ops: vec![0; crate::decode::Op::ALL.len()],
+             report: String::new(),
++            #[cfg(feature = "diag")]
++            dret: HashMap::new(),
++            #[cfg(feature = "diag")]
++            dslots: Vec::new(),
+             clock: 0,
+             since: (u64::MAX, 0),
+             stats: Stats::default(),
+@@ -1839,6 +1847,22 @@ impl Table {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        #[cfg(feature = "diag")]
++        {
++            let mut r: Vec<_> = self.dret.iter().collect();
++            r.sort_by_key(|a| core::cmp::Reverse(a.1.0));
++            for ((ret, cont, pc, asid), (n, w)) in r.iter().take(400) {
++                self.report.push_str(&format!(
++                    "R:{ret:x},{cont:x},{pc:x},{asid:x},{w} {n}\n"
++                ));
++            }
++            let tot: u64 = self.dret.values().map(|v| v.0).sum();
++            self.report.push_str(&format!("R:total {tot}\n"));
++            self.report.push_str(&format!("R:distinct {}\n", self.dret.len()));
++            for (i, n) in self.dslots.iter().enumerate() {
++                self.report.push_str(&format!("T:{i} {n}\n"));
++            }
++        }
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+@@ -2718,6 +2742,56 @@ pub unsafe extern "C" fn jit_check(v: *mut Vcpu, key: u64) {
+         .check(key, mem);
+ }
+ 
++/// The diagnostic build: a host call's return that landed elsewhere than the
++/// call's continuation `cont`.
++///
++/// # Safety
++/// As for [`jit_exec_flat`].
++#[cfg(feature = "diag")]
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn jit_diag_ret(v: *mut Vcpu, cont: u64) {
++    // SAFETY: guaranteed by the caller.
++    let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
++    let ret = v.diag[15];
++    let pc = v.cpu.pc;
++    let asid = v.cpu.ttbr0_el1 >> 48 | (v.cpu.el() as u64) << 20;
++    let mut word = |va: u64| -> String {
++        if v.cpu.sctlr_el1 & sctlr::M == 0 {
++            return "-".into();
++        }
++        match Mmu::new(mem, Some(&mut v.tlb)).fetch_ptr(&v.cpu, va) {
++            Ok(p) => mem
++                .read(mem.pa(p), 4)
++                .map_or("?".into(), |w| format!("{w:08x}")),
++            Err(_) => "f".into(),
++        }
++    };
++    let key = (ret, cont, pc, asid);
++    let new = !v.jit.cache.as_deref().expect("jit").table.dret.contains_key(&key);
++    let w = if new {
++        let mut s = String::new();
++        // The RET's block, the call before the continuation, around the PC.
++        for a in (0..16).rev() {
++            s.push_str(&word(ret.wrapping_sub(4 * a)));
++            s.push('.');
++        }
++        s.push('|');
++        s.push_str(&word(cont.wrapping_sub(4)));
++        s.push('|');
++        for a in [-8i64, -4, 0, 4] {
++            s.push_str(&word(pc.wrapping_add(a as u64)));
++            s.push('.');
++        }
++        s.push_str(&format!("|x30={:x}", v.cpu.x[30]));
++        s
++    } else {
++        String::new()
++    };
++    let t = &mut v.jit.cache.as_deref_mut().expect("jit").table;
++    let e = t.dret.entry(key).or_insert((0, w));
++    e.0 += 1;
++}
++
+ /// A loop head compiled alone got hot (step 8.3, [`emit::tier_up`]): its
+ /// loop region is compiled now, at the head's entry (`pc`: its VA).
+ ///
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index 8a5f1a22..8971bc93 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -462,11 +462,16 @@ pub unsafe extern "C" fn jit_stats(v: *const mmu::Vcpu) -> *const jit::Stats {
+ #[unsafe(no_mangle)]
+ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+     // SAFETY: guaranteed by the caller.
+-    unsafe { &mut *v }
+-        .jit
+-        .cache
+-        .as_deref_mut()
+-        .map_or(core::ptr::null(), |j| j.table.helper_report())
++    let v = unsafe { &mut *v };
++    #[cfg(feature = "diag")]
++    let d = v.diag;
++    v.jit.cache.as_deref_mut().map_or(core::ptr::null(), |j| {
++        #[cfg(feature = "diag")]
++        {
++            j.table.dslots = d[..48].to_vec();
++        }
++        j.table.helper_report()
++    })
+ }
+ 
+ // The whole-VM ABI (docs/abi.md). Every `vm` argument
