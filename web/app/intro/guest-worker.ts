@@ -72,11 +72,12 @@ async function run(m: GuestStart) {
   if (!fb) throw new Error('the machine has no framebuffer');
   let shown: ReturnType<typeof showFramebuffer> | undefined;
   screen = {
-    start: () => (shown ??= showFramebuffer(m.screen, v.memory, fb, () => post({ type: 'screen' }))),
-    stop: () => {
-      shown?.stop();
-      shown = undefined;
+    // One context for the canvas's life: a pause stops the drawing, a resume starts it again.
+    start: () => {
+      if (shown) shown.start();
+      else shown = showFramebuffer(m.screen, v.memory, fb, () => post({ type: 'screen' }));
     },
+    stop: () => shown?.stop(),
   };
   if (!paused) screen.start();
   // Paused too: the counters then stand still because the vCPU does, not because nobody reads them.

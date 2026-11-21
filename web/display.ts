@@ -72,12 +72,23 @@ export function showFramebuffer(
   };
   const shown = () => !('checkVisibility' in canvas) || canvas.checkVisibility(); // a hidden view: display: none
   let presents = 0;
-  let id = requestAnimationFrame(function frame() {
+  let id: number | undefined;
+  const frame = () => {
     if (shown()) {
       const [first, end] = draw();
       if (first !== end) presents++;
     }
     id = requestAnimationFrame(frame);
-  });
-  return { draw, presents: () => presents, stop: () => cancelAnimationFrame(id) };
+  };
+  /** Draws each display frame again after a `stop` (nothing while it already does). The canvas's context is taken
+   *  once, above: Firefox refuses a second `getContext` on a transferred canvas. */
+  const start = () => {
+    id ??= requestAnimationFrame(frame);
+  };
+  const stop = () => {
+    if (id !== undefined) cancelAnimationFrame(id);
+    id = undefined;
+  };
+  start();
+  return { draw, presents: () => presents, start, stop };
 }

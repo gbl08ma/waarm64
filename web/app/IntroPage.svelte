@@ -30,6 +30,7 @@
   let facts = $state<HTMLElement>();
   let compare = $state<HTMLElement>();
   let how = $state<HTMLElement>();
+  let made = $state<HTMLElement>();
   const show = (section: HTMLElement | undefined) =>
     section?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
 </script>
@@ -47,6 +48,9 @@
       <Button variant="plain" onclick={() => show(how)} data-to-section="intro-how">
         {t('intro:IntroPage.nav.how')}
       </Button>
+      <Button variant="plain" onclick={() => show(made)} data-to-section="intro-made">
+        {t('intro:IntroPage.nav.made')}
+      </Button>
     </nav>
     <Button variant="plain" onclick={() => void page.closeIntro()} data-action="skip-intro" data-to={skipTo}>
       {skipTo === 'home' ? t('intro:IntroPage.skip.home') : t('intro:IntroPage.skip')}
@@ -57,7 +61,7 @@
   <IntroCompare bind:ref={compare} />
   <IntroHow bind:ref={how} />
   <IntroEnd ondemos={toDemos} machines={records.machines.length} onhome={() => void page.closeIntro()} />
-  <IntroMade onabout={() => void page.closeIntro('about')} />
+  <IntroMade bind:ref={made} onabout={() => void page.closeIntro('about')} />
   <IntroEnd foot ondemos={toDemos} machines={records.machines.length} onhome={() => void page.closeIntro()} />
 </div>
 
@@ -89,7 +93,8 @@
   :global(html[data-vt='intro']) header {
     view-transition-name: page-bar;
   }
-  /* The ways to the sections, after the wordmark; Skip at the bar's end. In a narrow window, Skip alone. */
+  /* The ways to the sections, after the wordmark; Skip at the bar's end. In a narrow window (the four links
+     and Skip need 730px), Skip alone. */
   nav {
     display: flex;
     gap: var(--space-1);
@@ -97,7 +102,7 @@
     color: var(--text-dim);
     font-size: var(--bar-text-md);
   }
-  @media (max-width: 720px) {
+  @media (max-width: 760px) {
     nav {
       display: none;
     }

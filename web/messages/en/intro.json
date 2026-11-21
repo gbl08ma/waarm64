@@ -887,6 +887,10 @@
     "message": "How it works",
     "note": "Link in the introduction's bar: scrolls to the section of that title."
   },
+  "IntroPage.nav.made": {
+    "message": "How it was made",
+    "note": "Link in the introduction's bar: scrolls to the section of that title."
+  },
   "IntroHero.how": {
     "message": "See how it works",
     "note": "Second button under the introduction's first paragraphs: scrolls down to the “How it works” section."

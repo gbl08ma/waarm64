@@ -115,7 +115,7 @@ test('the sections: the bar\'s links scroll to them; the comparison names each p
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   const top = (id: string) => page.locator(`[data-section="${id}"]`).evaluate((e) => Math.round(e.getBoundingClientRect().top));
   const bar = await page.locator('[data-intro] > header').evaluate((e) => e.getBoundingClientRect().height);
-  for (const id of ['intro-facts', 'intro-compare', 'intro-how']) {
+  for (const id of ['intro-facts', 'intro-compare', 'intro-how', 'intro-made']) {
     assert.ok((await top(id)) > bar + 100, `${id} starts further down`);
     await page.locator(`[data-to-section="${id}"]`).click();
     await page.waitForFunction(([i, b]) => Math.abs(document.querySelector(`[data-section="${i}"]`)!.getBoundingClientRect().top - (b as number)) < 40, [id, bar] as const, { timeout: 10_000, polling: 50 });
