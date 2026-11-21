@@ -273,7 +273,7 @@
   .panes {
     display: grid;
     grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.2fr);
-    grid-auto-rows: 440px;
+    grid-auto-rows: 520px;
     gap: var(--space-4);
   }
   @media (max-width: 1200px) {
