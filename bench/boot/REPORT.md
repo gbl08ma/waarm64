@@ -4790,7 +4790,7 @@ flush by VA there drop the EL's whole transfer cache, which hid planted bugs. `m
 transfer cache for fetched pages". Planted, each failing both: never scanning; dropping the nG entries clearing the
 global maps; a bump clearing them; global fetches not marked. Skipping the IS by-VA flushes on the other vCPUs fails
 the bare-metal test too. `isb.bin` came out of `build.sh` different (the clang here), rebuilt with the others. No step
-count moved. CI: `scripts/ci.sh` (794 s) and `scripts/ci-jit.sh` pass.
+count moved. CI: `scripts/ci.sh` (794 s) and `scripts/ci-jit.sh` (261 s) pass.
 
 ## PERF loop 29: the review of loop 28 (2026-11-16)
 
@@ -6321,3 +6321,74 @@ call a host call, the outer followed with its return predicted; a `ret x1`: neit
 case without the block after the call (now 4 blocks, the callee called). Planted, each failing a test: `open_call`
 never finding one; a `ret` never leaving; the walk ignoring the calls not to follow; branches never leaving. No step
 count moved. CI: `scripts/ci.sh` (620 s) and `scripts/ci-jit.sh` (256 s) pass.
+
+## PERF loop 37: the review of region formation, fixed (2026-11-21)
+
+An out-of-context static review of loop 36's region formation (`block::forward`, `walk`, `Region::open_call`, the
+emitter's calls and returns) left seven findings. Raw: `results/perf37/` (README). Each was checked against the code
+with a unit test in `jit::block` that failed on 10882a61 first:
+
+1. **A second call to a callee taken was a `br` with no prediction** (confirmed): the emitter made any BL to a later
+   member a branch, and the walk, finding the callee's VA taken, took neither it nor the call's continuation; the
+   callee's `ret` compared X30 with the first call's return and went `ret_up`, one frame early. Now a call is followed
+   only through the call that took the callee (`Region::follows`; the emitter, `module`'s links and `open_call` all
+   decide by it), every other BL is a host call, and its continuation is taken. Test: "a second call to a callee taken
+   is a host call".
+2. **A callee branching into a block taken outside it could leave unseen** (confirmed): `open_call` knew each member
+   only by the call that first took it. Now where each followed call's code runs is a fixpoint over the region's
+   edges (a predicted return carries on in its call's caller only when it matches that call; a `ret` reached inside a
+   call it doesn't predict leaves). Test: "a callee that leaves through a block taken elsewhere is called" (a shared
+   tail-call target; a callee tail-calling another call's callee).
+3. **Recursion to the head was a loop back-edge** (confirmed): `block::region` followed a BL to its target, so a
+   self-recursive entry headed a loop region with `bl` its back-edge, and a forward region whose callee called the
+   head (across pages) became `looped()`, without entries. A BL is no edge in `region` now (`branches`), and a BL to
+   the head is a host call by 1. Test: "recursion to the head is called".
+4. **`open_call` ignored checked edges** (confirmed): an edge inside a followed callee that checks its member's
+   mapping chains out when the check fails. It leaves now, and so does a followed call's own checked edge (its
+   fallback is a host call) when the continuation it then returns to is checked or not a member. Tests: "a callee
+   with a checked edge is called", "a checked call whose continuation is checked is called in a call".
+5. **Loops through calls have no entries** (true, a docs and design finding): `for (…) f(x);` is a forward region with
+   an edge back to its head, so `entries()` gives none. Written in docs/jit.md "Continuations are entries"; a counted
+   backlog entry ("Entries for loops through calls").
+6. **`member` ran before the dedup and again on every re-walk** (confirmed): `take` now checks the VA (and a near key)
+   first, and `Cache::plan` asks whether a block outside the batch heads a loop once per batch (a memo). Test: the
+   second-call test counts `member`'s calls (5, was 6).
+7. **Docs** (confirmed): docs/jit.md said both region kinds stay in one page, and that a failed predicted return is an
+   indirect branch (at depth > 0 it is `ret_up`, also when only the edge's budget or page check fails); the
+   `forward` comment contradicted itself. Corrected.
+
+**Counted** (loop 36's diagnostic ported, `results/perf37/diag.py`; Alpine's userspace benchmark in Node): returns
+elsewhere boot 74K → 58K, compress 5K, Lua 15K, churn 31K → 30K, SQLite 11K (the same), shutdown 22K → 20K;
+miss-function calls the same (boot 3.19M → 3.18M, the phases within 0.3%); followed calls −7 to −19% (boot 0.73M →
+0.68M, Lua 0.28M → 0.23M, SQLite 0.21M → 0.17M); host calls +0.1-0.2%; a followed callee's `ret_up` past its
+prediction (tally 13) churn 3K → 1K. So the cases were real but rare in Alpine: the fix is for correctness of the
+rule, not a speedup.
+
+`bench/interp/ab-mac.sh` on the Mac (M4, Chrome for Testing 158.0.8127.36), base 10882a61, base first in rounds 1
+and 3, fix first in round 2, ms:
+
+| | base r1 · r2 · r3; median | fix r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 3,712.8 · 3,814.6 · 3,830.1; **3,814.6** | 3,806.3 · 3,810.0 · 3,847.3; **3,810.0** (−0.1%) |
+| `alpine_user_jit_total` | 10,135.3 · 10,307.7 · 10,322.1; **10,307.7** | 10,274.5 · 10,299.1 · 10,386.2; **10,299.1** (−0.1%) |
+| compress | 1,474.0 · 1,500.1 · 1,497.6; 1,497.6 | 1,472.5 · 1,490.7 · 1,486.7; 1,486.7 (−0.7%) |
+| Lua | 2,525.0 · 2,574.2 · 2,586.5; 2,574.2 | 2,587.6 · 2,589.3 · 2,591.3; 2,589.3 (+0.6%) |
+| SQLite | 1,859.0 · 1,891.2 · 1,875.6; 1,875.6 | 1,877.9 · 1,878.0 · 1,886.1; 1,878.0 (+0.1%) |
+
+No difference: the rounds overlap in every row, all within 1%. Steps the same (2,650,367,147 and 10,431,311,691).
+Compile side: wasm 11.73 → 11.69 MB in the boot, 15.94 → 15.90 MB in the userspace run (−0.3%, −0.2%), modules 310 →
+308 and 534 → 532; `planNs` 42-43 → 45 ms and 58-59 → 61 ms (+4%: the fixpoint, after the memo and the dedup took
+their share), `emitNs` (which includes it) 165-170 → 171-173 and 227-232 → 235-236 ms; `compileNs` the same (50,
+77 ms); dispatches +0.1% and −0.3%. Memory: nothing kept (the memo lives for one `plan`). Static counts
+(`codestats.json`, Alpine's boot, 7,220 → 7,225 functions): arm64 instructions per function +0.0%, frame memory
+operands −0.1%; x64 +0.1% and −0.0%. The measured fix arm lacked the last rule of 4 (a followed call's checked edge);
+the final core's modules of Alpine's boot are the measured arm's (the same 315, two of them differing in 32 and 45
+bytes of embedded addresses). Kept.
+
+**Planted**, each failing a test: the emitter ignoring `follows` (4 tests); the walk not taking a host call's
+continuation when the callee is taken (2); the fixpoint not propagating a branch (2); a `ret` matching any call's
+return (1); checked edges staying (1); `region`'s loop pass following a BL (1); `take` asking `member` for a VA
+taken (1); a followed call's checked edge never leaving (1). `tests/jit.test.ts`'s forward region (two calls of one
+function) now makes three functions of 10 blocks, not two of 7: its second call is a host call to the callee compiled
+as a head, through the dispatcher until that batch is emitted (8,336 dispatches, the same for 4× the turns). No step
+count moved. CI: `scripts/ci.sh` (663 s) and `scripts/ci-jit.sh` (261 s) pass.

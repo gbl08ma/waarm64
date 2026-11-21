@@ -180,6 +180,13 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   expecting the pending continuation (nested, one per pending call), and a `ret` there an indirect transfer at the
   current depth instead of `ret_up`. Bound: ~5M host calls and returns a phase in Lua and SQLite, ~0.5% of them by the
   counts; build only with a measured A/B.
+- **Entries for loops through calls** ([jit.md](jit.md) "Continuations are entries"; the review after PERF loop 36): a
+  forward region with an edge back to its head (`for (…) f(x);`: the head, the call, the block after it branching back)
+  is `looped()`, and `Region::entries` gives a region with a `loop` none, so after anything that unwinds inside `f` (a
+  failed poll in parallel SMP, an exception, the chunk's end) the continuation runs interpreted until it is compiled
+  again as a head. Count first (a diagnostic tally: dispatches of a block that is a looped region's call
+  continuation); if it matters, give such regions entries for the members a call returns to, which needs those
+  members reachable from the prologue past the `loop` (or the `loop` opened at each entry).
 - **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
   heap bounded"):
   - **The decoded blocks** were ~350-365 MiB on 4 vCPUs; since 8-byte micro-ops, a smaller block map entry and a

@@ -362,10 +362,10 @@ test('a forward region spans pages behind a check of the mapping, and goes with 
 //   0x1018 T:  subs x5, x5, #1; b.ne H; brk
 //   0x1040 f:  add x3, x3, #1; ret
 // With a threshold of 2 and a batch of 16 every block is pending when the batch is emitted (a
-// million steps after its first). H's region takes both calls and f, whose `ret` is predicted
-// to return after the call at S2 (the side reached first); from S1's call it returns to
-// 0x1008, which only X30 says: a predicted return taken without comparing X30 would count in
-// x7 for both.
+// million steps after its first). H's region takes f through the call at S2 (the side reached
+// first), and f's `ret` is predicted to return after it; the call at S1 is a host call (a
+// second call to a callee taken: PERF loop 37), to f compiled as a head of its own, returning
+// to 0x1008. A predicted return taken without comparing X30 would count in x7 for both.
 function forwardRegion(threshold: number) {
   const { ex, memory } = core(true);
   const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
@@ -388,8 +388,10 @@ test('the blocks of a batch that static edges join are one forward region, calls
   assert.deepEqual(interpreted, want);
   const { regions, blocks, dispatches, jitSteps, ...jit } = forwardRegion(2);
   assert.deepEqual(jit, want);
-  assert.deepEqual([regions, blocks], [2n, 7n], 'two functions: H with both calls, f and what follows the second; what follows the first');
-  assert.ok(jitSteps > 1_500_000n && dispatches < 20n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
+  assert.deepEqual([regions, blocks], [3n, 10n], 'three functions: H with both calls, f and what follows the second; f; what follows the first');
+  // Until f's own batch is emitted (a million steps after f first ran alone) the call at S1
+  // reaches it through the dispatcher: ~8,300 dispatches, then none.
+  assert.ok(jitSteps > 1_500_000n && dispatches < 10_000n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
 });
 
 // Guest calls as host calls (docs/jit.md "Calls"): a BL is a wasm `call` of its callee, and the

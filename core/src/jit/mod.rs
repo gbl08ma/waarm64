@@ -1154,6 +1154,10 @@ impl Cache {
         // isn't its own plus an offset. Another address space may have
         // another block at that VA: the edge checks the mapping when it runs.
         let at: Map<u64> = pending.iter().map(|&(k, va)| (va | k & 3, k)).collect();
+        // Whether a block outside the batch heads a loop, once per block: a
+        // walk asks again for every call it opens, and the batch's heads
+        // share their successors.
+        let loop_heads: core::cell::RefCell<Map<bool>> = Default::default();
         let mut regions = Vec::with_capacity(pending.len());
         for ((key, va), mut r) in pending.into_iter().zip(loops) {
             if batch[&key] == TAKEN {
@@ -1184,7 +1188,10 @@ impl Cache {
                                 && self.map.get(&k).is_some_and(|i| {
                                     i.idx == 0 && !i.queued && i.len > 0 && i.hits as u32 >= warm
                                 }))
-                                && !heads_loop(&self.region(k, 0, mem))
+                                && !*loop_heads
+                                    .borrow_mut()
+                                    .entry(k)
+                                    .or_insert_with(|| heads_loop(&self.region(k, 0, mem)))
                         }
                     };
                     free.then_some(k)

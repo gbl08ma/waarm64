@@ -111,13 +111,14 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-21, after loop 36)
+## State (2026-11-21, after loop 37)
 
 What every loop kept, dropped and found is in its REPORT entry and the docs pages it names; the out-of-context reviews
-(after loops 8, 19, 21, 23, 28, 32 and 34) were fixed in loops 9, 20, 22, 24, 29, 33 and 35. Built but off by default
-(measured slower): I8MM, FCMA, FP16, FHM, BF16. The last loop, 36, made a region follow a call only when the callee
-can't leave it (the host returns that landed elsewhere: −95 to −99.7%; Mac boot −2.7%, userspace −2.5%). It changed
-region formation, a new rule in `block::forward`: an out-of-context review of it is due.
+(after loops 8, 19, 21, 23, 28, 32, 34 and 36) were fixed in loops 9, 20, 22, 24, 29, 33, 35 and 37. Built but off by
+default (measured slower): I8MM, FCMA, FP16, FHM, BF16. Loop 36 made a region follow a call only when the callee can't
+leave it; loop 37 fixed its review (a call is followed only through the call that took its callee, where a callee's
+code runs is a fixpoint, recursion is no loop, checked edges leave: Mac gates unchanged, returns elsewhere in the boot
+−22%).
 
 ## Still open (the queue: the first is next; by expected gain)
 
@@ -127,6 +128,7 @@ region formation, a new rule in `block::forward`: an out-of-context review of it
 | JIT: V8's per-function overhead (whether superseded blocks' modules stay alive through siblings) | memory; measure first |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | JIT: followed calls whose callee completes inside the region (loop 36's follow-up) | bound ~0.5%; exits from inside a followed call as host calls to the pending continuation |
+| JIT: entries for loops through calls (loop 37's review finding 5) | count first: a looped forward region's call continuations run interpreted after an unwind |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: keep

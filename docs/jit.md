@@ -109,8 +109,8 @@ the interpreter's own code.
   Fewer, larger modules run faster (chains stay within a module) and cost V8 ~16 KB less each
   ([Memory](#memory)): Alpine's userspace benchmark makes 970 modules (3,860 with the 1M-step
   timeout alone, which emitted half of them with one function).
-- **Regions** (the compile unit, one function each) are of two kinds, both within one guest page
-  and of up to 16 blocks (`block::REGION`), in reverse postorder:
+- **Regions** (the compile unit, one function each) are of two kinds, of up to 16 blocks (`block::REGION`), in
+  reverse postorder: loop regions within one guest page, forward regions across pages ("Across pages" below):
   - **Forward regions** (`block::forward`, formed when a batch is compiled: `Cache::plan`): a
     block of the batch and the batch's other blocks that static edges reach from it, so each block
     of a batch is compiled **once**, as a head or as a member. The edges between members keep
@@ -138,8 +138,12 @@ the interpreter's own code.
       region with an edge back to its head.
     - **Calls and returns:** a call's target is taken like any successor, and a `ret` (of X30) in
       what the call reaches is predicted to return after that call: the block there is taken
-      too, and the `ret` is an edge to it when X30 holds that address, an indirect branch
-      otherwise (`Region::returns`). Only for callees compiled in the same batch: one already
+      too, and the `ret` is an edge to it when X30 holds that address (`Region::returns`); otherwise, and when the
+      edge's budget or page check fails, it is the `ret` it would be alone: at depth > 0 a host return
+      (`emit::ret_up`), at depth 0 an indirect branch. A call is followed (a branch to its callee) only through the
+      call that took the callee (`Region::follows`); a call to a block taken already (the head: recursion; a callee
+      another call took, whose `ret` predicts that call's return) is a host call, and so is one whose callee could
+      leave the region ("Calls" below). Only for callees compiled in the same batch: one already
       compiled keeps its own function, and is called as a host call ("Calls" below). The indirect
       branch takes the target from `ADDR`, where the `ret` left it, unless a checked edge's page
       check wrote its own VA there first; then it loads the PC again. Before that was handled
@@ -153,7 +157,10 @@ the interpreter's own code.
       and the tests' forced mode take any block in reach in the head's page (any page with the
       MMU off), as their loop regions do.
   - **Loop regions** (`block::region`): a hot block and the blocks that lead back to it by static
-    edges (its loop; seen by the dispatcher). Without a loop the region is the head alone.
+    edges (its loop; seen by the dispatcher). Without a loop the region is the head alone. A call (BL) is no edge
+    there: its target is a host call's, so recursion is no loop (before PERF loop 37 a self-recursive function's
+    entry headed one, its `bl` the back-edge, and every return of the recursion was a host return one frame early),
+    and the block after it isn't taken either, so a loop through a call (`for (…) f(x);`) isn't a loop region.
 - **Tier-up:** a loop head is first compiled **alone** with a hot word (one u32 per slot of each
   function table, which blocks reach through `jit::State::hot`) counting entries down from `region_after` (**1000**); the entry that reaches 0 calls
   `jit_hot(vcpu, key, pc)`, which queues the loop region for the **next batch** (`Cache::tierq`); once that is
@@ -351,10 +358,20 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   through the transfer cache's miss function (with the MMU off, the block returns). That is rare now: 5-31K a phase of
   Alpine's userspace run, 74K in its boot, under 0.3% of the host returns (PERF loop 36; the rule below).
 - **A region follows a call only if the callee can't leave it** but by its predicted return (`block::forward`,
-  `Region::open_call`): a call whose callee is a member is a `br`, not a host call, so the frame it would have pushed is
-  owed for as long as the callee runs. A member taken inside such a call that branches to a block not taken, branches
-  indirectly, or ends on a `ret` with no member to return to makes the innermost call it is in a host call, and the
-  region is walked again (until none is left open; each walk ≤ 16 blocks). Before PERF loop 36 such a callee's exit
+  `Region::open_call`): a followed call (`Region::follows`: the walk took the callee through that call) is a `br`, not
+  a host call, so the frame it would have pushed is owed for as long as the callee runs. Every other call is a host
+  call, even when its target is a member: the emitter decides by `follows`, not by the target's place in the region.
+  Where each followed call's code runs is a fixpoint over the region's edges (a callee's branch to a block the walk
+  took outside it runs that block inside the call too; a predicted return that matches its call runs on where that
+  call's block does). A member that can run inside a followed call and branches to a block not taken, branches
+  indirectly, takes an edge that checks its target's mapping (it may fail, then the edge is a chain), or ends on a
+  `ret` not predicted to return after that call makes the innermost call a host call, and the region is walked again
+  (until none is left open; each walk ≤ 16 blocks, `member` asked once per VA a walk reaches, and whether a block
+  outside the batch heads a loop once per batch). Before PERF loop 37 the emitter made any call to a later member or
+  the head a `br`, and the rule saw only where the walk first took each member, so a second call to a callee taken
+  (a helper called on both arms of an `if`, the machine outliner's `OUTLINED_FUNCTION`s), a callee that tail-called
+  through a block taken outside it, a call back to the head and a checked edge inside a callee each still left with
+  a frame owed (bench/boot/REPORT.md "PERF loop 37"). Before PERF loop 36 such a callee's exit
   was a tail call out of the region's function, and its `ret` a host return (`ret_up`) one frame early, to the region's
   caller, whose continuation it wasn't; that caller went to the miss function, and so did every frame above it in turn,
   each one frame off, up to the dispatcher. That was 10-16% of the host returns of Alpine's userspace phases and most of
@@ -365,7 +382,9 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   inside a call to be a host call to the pending continuation, nested per pending call: at most ~0.5% more by the counts,
   in docs/backlog.md.
 - **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
-  function (`Region::entries`; none in a loop region, whose members sit inside the `loop`), because a return also
+  function (`Region::entries`; none in a region with a `loop`, whose members sit inside it: a loop region, and a
+  forward region with an edge back to its head, which is what a loop through a call is, `for (…) f(x);`: after anything
+  that unwound inside `f` its continuation runs interpreted until compiled again as a head; docs/backlog.md), because a return also
   reaches it from outside, at depth 0 after anything that unwound the host frames. Only a member where the head's
   page has it is an entry (the head's PA page, at its PA offset from the head): entered by its own VA, the function
   then has the head's mapping too, which the edges `Region::checked` leaves unchecked rely on. A continuation reached
