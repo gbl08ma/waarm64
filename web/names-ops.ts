@@ -1,7 +1,8 @@
 // The names agent's work in the module (docs/networking/names.md "The names agent"): the pure operations of
 // net/ts/src/room/names/agent.rs (`ts_names_*`: make, mine, sign and check an entry, sign a pending anchor, make a zone,
-// a title's status, what a server showed), and a publisher, a room client that is a names client alone (no machine, no
-// guest, a key made new each time) which puts titles to the room's servers. One instance of the module does both: in
+// a title's status, what a server showed, a room connection's key and name from its stored key), and a publisher, a
+// room client that is a names client alone (no machine, no guest, a key made new each time) which puts titles to the
+// room's servers. One instance of the module does both: in
 // the names worker (web/names-worker.ts), or in Node for the tests. No JavaScript crypto: the module's.
 import { TsClient, type NamesIds, type NamesOp, type NamesPut, type TsModule } from './ts-client.ts';
 

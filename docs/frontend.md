@@ -640,16 +640,18 @@ Connections. **Details** (`ConnectionDetails.svelte`, `ConnectionRoom.svelte` a 
 machines have it attached, each a link to that machine's Network tab ([Attached to {{machines}}.](ui:machines:ConnectionDetails.machines)
 or [Not attached to any machine.](ui:machines:ConnectionDetails.machines.none)), and where connections are attached;
 then what the browser keeps for it, always (a tailnet's hostname and control server, the local helper's install lines,
-the demo network's server, a room's link and who may connect), and, while it is connected on this page (`net.runs`),
+the demo network's server, a room's link and who may connect, a room's own name in the room and its domains,
+`NameEntry`, from the names agent's `member`, connected or not), and, while it is connected on this page (`net.runs`),
 the adapter's live view (below, "Network": the adapter's line, the guest's address, tailcat's address or key, the demo
-network's page in the guest, a room's name, warnings, registry line and domains, `NameEntry`); while it isn't, one
+network's page in the guest, a room's warnings and registry line); while it isn't, one
 line says why: it isn't connected in this tab (`ConnectionDetails.notHere`), or another tab has it
 (`ConnectionDetails.otherTab`). **Settings** (`ConnectionSettings.svelte`; a tailcat's part
 `ConnectionTailcatSettings.svelte`, a room's `ConnectionRoomSettings.svelte`; the form's logic DOM-free in
 `connection-settings.ts`) is what can change without a new node: the connection's
 [Name](ui:machines:ConnectionSettings.name), a tailnet's hostname (its control server shown, not editable), tailcat's
 exit address, whether it serves, its relay and who is let in, the local helper's link, the demo network's server, and
-a room's two switches with, under Advanced, its key to copy (followed by its domains) and
+a room's two switches with, under Advanced, its key to copy (followed by its domains; a stored connection's is made
+when its page first shows it, by `member`) and
 [New name](ui:network:ConnectionRoomSettings.newName), a new key at once (after asking). Save and Revert are a
 machine's (`SaveRow.svelte`): Save checks what was typed with the wizard's own messages (the Home page's banner says
 what's wrong), writes the connection through `page.netEdit` (an adapter here that runs it connects again with it, so
@@ -2449,9 +2451,14 @@ and the guest's default way out (below).
   keep the domain.](ui:network:NameDialog.notice.visit)); no key shown or asked for; once
   [Register](ui:network:NameDialog.register) has registered it, the name shows Preparing until its claim is made. A connection whose key is ephemeral (its own, in the
   page's memory) can't hold a name: the dialog says so in place of the field and has no Register (the name would point
-  at a key gone with the page while its title, in IndexedDB, went on being renewed). The connection's Details add the
-  registry's line (a server's names held and the servers it synced with, or a member's names resolved and servers held:
-  the module's `names` event) and, per name (`NameEntry.svelte`), where it and each label under it point (a member's
+  at a key gone with the page while its title, in IndexedDB, went on being renewed). The dialog takes the key a domain
+  points at and the room's domain from the names agent's `member` (`pageNames.member`: the connection's stored key and
+  the room's ID), not from the adapter's live view. The connection's Details show its own name in the room
+  ([This connection's name in the room](ui:network:ConnectionRoom.name)) from `member` too, connected or not (its key
+  made under its entry if it never started, so its Settings' key is there from then), add the registry's line while it
+  is connected here (a server's names held and the servers it synced with, or a member's names resolved and servers
+  held: the module's `names` event) and, per name (`NameEntry.svelte`, connected or not), where it and each label under
+  it point (a member's
   name in the room, or a key, pasted), [Add a subdomain](ui:network:NameEntry.addLabel),
   [Point all at this connection](ui:network:NameEntry.pointHere), Save (a new zone; its rows checked as the module will,
   names-view.ts `zonePoints`: a subdomain a DNS label with no `--` in its third and fourth places, none twice, a target

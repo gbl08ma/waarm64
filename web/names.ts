@@ -10,14 +10,15 @@
 // page tests route these URLs to the pretend ones (tests/net/ots-calendar.ts), as Node's tests do through `fetch`.
 //
 // N5's API: `NamesAgent.register`, `setZone`, `release`, `titles` (each title's state and dates), `pass`; the
-// connection's export (`exportNames`, `importNames`, carried by web/app/connections.ts with the node key).
+// connection's export (`exportNames`, `importNames`, carried by web/app/connections.ts with the node key); `member`, a
+// room connection's node key, its name in the room and the room's domains, without the connection running.
 //
 // The titles' stores are web/names-store.ts, the compiled services' fetches web/names-fetch.ts, the connection's export
 // web/names-export.ts.
 import { hex } from './bytes.ts';
 import { NamesError, type IdsAnswer, type NamesBackend, type PutAnswer } from './names-ops.ts';
 import type { FromNames, ToNames } from './names-worker.ts';
-import { roomOf } from './room.ts';
+import { roomIdentity, roomOf, type RoomIdentity } from './room.ts';
 
 export { roomOf };
 import type { NamesOp } from './ts-client.ts';
@@ -50,6 +51,17 @@ export const PUBLIC_IN_MS = 2 * 60 * 60 * 1000;
 
 /** A room connection, as the agent knows it: its key's entry and the room's link. */
 export type NamesConn = { identityKey: string; link: string };
+
+/** A room connection whose node key is wanted: an ephemeral one's own key (`identity`, kept in its record, never under
+ * `identityKey`) or, without it, the key kept under `identityKey` (web/app/connections.ts `RoomConnection`). */
+export type MemberConn = NamesConn & { identity?: RoomIdentity };
+
+/** A room connection as the room sees it, from its node key and the room's ID (net/ts room/names/agent.rs `member`),
+ * exactly as its running node reports it: its public key (64 hex digits, a zone's point: the adapter's view's `key`),
+ * its name in the room (`<key in base32>.<domain>`), the room's domain (`<room name>.p2p.internal` or
+ * `<tag>.p2p.internal`: a registered domain is `<name>.<domain>`), and every domain the room answers under, `domain`
+ * first. */
+export type Member = { key: string; name: string; domain: string; domains: string[] };
 
 /** The dialog's check of a name: as typed, by this page alone (`NamesAgent.checkHere`: `invalid`, `yours`, or `valid`,
  * the servers not asked); at Register, with the room's servers too (`NamesAgent.check`): `until` in Unix seconds. */
@@ -176,6 +188,9 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
 export type AgentOptions = {
   store: NamesStore;
   backend: NamesBackend;
+  /** A room connection's node key under `identityKey`, made the first time (default: web/room.ts `roomIdentity`, in
+   * `waarm64-room`, where the room's worker reads it; the tests' in memory). */
+  identity?: (identityKey: string) => Promise<RoomIdentity>;
   /** The first wait before asking again (default RETRY_MS; the tests' is 0). */
   retryMs?: number;
   log?: (s: string) => void;
@@ -188,6 +203,7 @@ export class NamesAgent {
   private readonly b: NamesBackend;
   private readonly retryMs: number;
   private readonly log: (s: string) => void;
+  private readonly identity: (identityKey: string) => Promise<RoomIdentity>;
   /** Titles published by this agent since the page loaded (each is put once a visit, at least). */
   private readonly session = new Set<string>();
   /** Titles whose first entry is being made here (proof of work). */
@@ -203,6 +219,7 @@ export class NamesAgent {
     this.store = o.store;
     this.b = o.backend;
     this.retryMs = o.retryMs ?? RETRY_MS;
+    this.identity = o.identity ?? roomIdentity;
     this.log = o.log ?? ((s) => console.log('names:', s));
     try {
       this.channel = new BroadcastChannel(NAMES_CHANNEL);
@@ -450,6 +467,16 @@ export class NamesAgent {
     this.timer = undefined;
     this.channel?.close();
     this.b.close();
+  }
+
+  /**
+   * Room connection `c` as its room sees it (`Member`), whether or not it is connected: from its own key when it is an
+   * ephemeral one's (`c.identity`), else the key kept under `c.identityKey`, **made there** if the connection never
+   * started (the one its first start then uses). No network.
+   */
+  async member(c: MemberConn): Promise<Member> {
+    const node = c.identity?.key ?? (await this.identity(c.identityKey)).key;
+    return this.b.op<Member>('member', { room: roomOf(c.link), node });
   }
 
   // ---- A connection's export ----

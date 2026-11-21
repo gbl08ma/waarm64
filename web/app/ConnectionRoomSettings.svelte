@@ -2,8 +2,9 @@
   A room connection's part of its Settings (ConnectionSettings.svelte; docs/networking/rooms.md), in its Fields grid:
   its two switches (direct connections to the room's members, and members connecting to the guest), with the wizard's
   room step's words (NetRoomStep.svelte), and under Advanced its key to copy, its domains after it (the names agent's
-  owners' secret and titles), and New name, which gives it a new key now (`page.netNewAddress`, after asking): an
-  ephemeral connection has it at once, a stored one at its next start.
+  owners' secret and titles), and New name, which gives it a new key now (`page.netNewAddress`, after asking). A stored
+  connection's key is made under its entry when its page first shows it (the names agent's `member`, which Details' name
+  in the room reads too: `pageNames.member`), so the field has it whether or not the connection ever connected.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -19,6 +20,7 @@
   import type { SettingsDraft } from './connection-settings.ts';
   import type { PageNetwork } from './net-live.ts';
   import { page } from './page.ts';
+  import { memberOf, pageNames } from './areas/names.svelte.ts';
 
   type Props = { net: PageNetwork; connection: Connection; act: Act; draft: SettingsDraft };
   let { net, connection, act, draft = $bindable() }: Props = $props();
@@ -27,31 +29,42 @@
   const NOSTR_DOC = 'https://github.com/nostr-protocol/nips/blob/master/01.md';
   const STUN_DOC = 'https://en.wikipedia.org/wiki/STUN';
 
-  /** The connection's key and domains, to copy ('' before it's made), hidden until shown (or the clipboard refused it). */
+  /** The connection's key and domains, to copy ('' until read), hidden until shown (or the clipboard refused it). */
   let exported = $state('');
   let keyShown = $state(false);
   let advanced = $state(false);
   /** It keeps a key of its own: New name can drop it. */
   let kept = $state(false);
 
-  // Read once for the connection shown (not again at each read of the records: New name says what follows it).
+  // Read for the connection shown and its key (made by `member` the first time: not again at each read of the records).
   const id = $derived(connection.id);
+  const member = $derived(connection.room ? pageNames.member(memberOf(connection.room)) : undefined);
+  const key = $derived(member?.key);
+  /** Reads overtaken by a later one are dropped. */
+  let reads = 0;
   $effect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- read to track it (the effect's dependency)
-    void id;
+    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- read to track them (the effect's dependencies)
+    void [id, key];
     untrack(() => {
+      const n = ++reads;
       void net.conns.exportKey(connection).then(
-        (k) => ([kept, exported] = [!!k, k]),
-        () => ([kept, exported] = [false, '']),
+        (k) => n === reads && ([kept, exported] = [!!k, k]),
+        () => n === reads && ([kept, exported] = [false, '']),
       );
     });
   });
-  /** A new key, after asking: an ephemeral connection's is in its record now (to copy), a stored one's comes at its
-   *  next start. */
+  /** A new key, after asking: an ephemeral connection's is in its record now, a stored one's is made under its entry
+   *  again (`member`, read again), each then shown to copy. */
   function newName() {
     return act(t('machines:ConnectionNav.busy.forgettingAddress'), async () => {
+      const before = connection.room?.identityKey;
       const now = await page.netNewAddress(connection);
-      if (now) [kept, exported] = [false, now.room?.identity ? await net.conns.exportKey(now) : ''];
+      if (!now) return;
+      if (before) pageNames.forgetMember(before);
+      // Read now (an ephemeral one's new key is in the record; a stored one's entry is gone until `member` makes it).
+      const n = ++reads;
+      const k = await net.conns.exportKey(now);
+      if (n === reads) [kept, exported] = [!!k, k];
     });
   }
 </script>
@@ -98,11 +111,7 @@
     secret
     mono
   />
-  <Note size="md">
-    {#if exported}<T k="network:ConnectionRoomSettings.key.note" />{:else}{t(
-        'network:ConnectionRoomSettings.key.none',
-      )}{/if}
-  </Note>
+  {#if exported}<Note size="md"><T k="network:ConnectionRoomSettings.key.note" /></Note>{/if}
   <div class="row">
     <Button type="button" id="settings-room-new-name" disabled={!kept} onclick={newName}>
       {t('network:ConnectionRoomSettings.newName')}

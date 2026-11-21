@@ -505,7 +505,8 @@ anchors, the zone's points and counter, the backoffs, lost or released, the rene
 copy of ownership**: registering asks for persistent storage, and deleting the connection shows its export. The module
 does the work (`ts_names_*`, JSON in and out: make, mine in slices of 256 tries, sign and check an entry; pending
 anchors; the commitment to ask; a finished proof's anchor with its header; a zone; a title's status; a server's better
-item judged), in a worker of its own for proof of work; no JavaScript crypto. It needs no running machine.
+item judged; a room connection's node key, name and the room's domains from its private key and the room's ID), in a
+worker of its own for proof of work; no JavaScript crypto. It needs no running machine.
 
 - **At every page load** (web/app/main.ts starts it when a title is kept) and hourly while open (a pass that fails,
   such as a store's error, is tried again 5 minutes later; one still running when the agent stops arms nothing; its
@@ -552,7 +553,15 @@ item judged), in a worker of its own for proof of work; no JavaScript crypto. It
   its calendar by index, a receipt's own URI is never fetched, and no link, option or stored value names a service.
 - **The API** (`NamesAgent`, `namesAgent()`): `register(conn, name, points)`, `setZone`, `release`, `titles` (each
   `state`: `preparing`, `reserved` with `publicAbout`, `active`, `grace`, `lapsed`, `released`, `lost`; `claimedAt`,
-  `keptUntil`, `renewAt`, `lapsesAt`), `pass`, `check`, `checkHere`. Measured: register to public ~0.15 s once the
+  `keptUntil`, `renewAt`, `lapsesAt`), `pass`, `check`, `checkHere`, and `member(conn)`: a room connection as its room
+  sees it whether or not it is connected, `{ key, name, domain, domains }` (its public key in hex, a zone's point; its
+  name in the room; `Room::domain`, under which a domain is registered; every domain the room answers under, that one
+  first), from the module's `member` operation, each exactly what its running node reports (agent.rs's test pins it to
+  a running `Client`'s `self` event). The node key is an ephemeral connection's own (`conn.identity`), else the one
+  kept under `identityKey` in `waarm64-room`'s `identity`, **made there** if the connection never started (web/room.ts
+  `roomIdentity`, the one its first start then reads). The page reads it through `pageNames.member(conn)`
+  (areas/names.svelte.ts: cached by the key's entry, or an ephemeral key, and the room; read again after New name),
+  which Details' name in the room, the domains' rows and the dialog take their key and domain from. Measured: register to public ~0.15 s once the
   blocks are there (pretend services); production proof of work 3 to 64 s an entry in Chromium.
 
 ## What the user sees
@@ -562,7 +571,7 @@ item judged), in a worker of its own for proof of work; no JavaScript crypto. It
 - **Reaching someone's name: nothing.** No switch, no notice. The adapter's details have one line for the curious (a
   member's names resolved and servers held, or a server's names held and servers synced with: the module's `names`
   event).
-- **Registering a domain.** In a connected room adapter's menu, [Register a domain…](ui:network:NetNames.name) opens one
+- **Registering a domain.** In a room adapter's menu, [Register a domain…](ui:network:NetNames.name) opens one
   dialog: a field, the whole domain under it (`<name>.<room name>.p2p.internal`, or under the tag in a room whose ID
   isn't a label), and as typed only what the page can say alone (not a valid name; this connection's already). Two
   notices, always shown, no boxes: [Members of this room who know the domain can reach this connection's address and
@@ -581,7 +590,8 @@ item judged), in a worker of its own for proof of work; no JavaScript crypto. It
 - **The details** per name: where it and each label point (a member's name or a key, pasted), [Add a
   subdomain](ui:network:NameEntry.addLabel) (15 at most; past four points the zone is sealed wide),
   [Point all at this connection](ui:network:NameEntry.pointHere), Save (checked as the module will: a label's rule, none
-  twice, a target a member's name or key), Let it go. No key is shown or asked for.
+  twice, a target a member's name or key), Let it go, whether or not the connection is connected (its key and the
+  room's domain from `member`). No key is shown or asked for.
 - **Elsewhere**: a stored machine's Network tab lists each room adapter's names with the date each stops resolving
   unless renewed; at load, after the agent's first pass, the message bar names those in their last week. An ephemeral
   connection with its own key can't hold a name (the dialog says so, no Register). Deleting a room connection that holds

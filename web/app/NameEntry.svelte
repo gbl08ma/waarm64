@@ -1,8 +1,9 @@
 <!--
   One registered name in a room connection's Details (ConnectionRoom.svelte; docs/networking/names.md "What the user sees"):
   its state, where it points (the name itself and each label under it, each at a member's name in the room: this
-  machine's, or one pasted), a label added, where one points changed, Save (a new zone: web/names.ts `setZone`), and
-  Let it go (a release, after asking). A name let go, lost or lapsed shows its state alone.
+  connection's, or one pasted), a label added, where one points changed, Save (a new zone: web/names.ts `setZone`), and
+  Let it go (a release, after asking). A name let go, lost or lapsed shows its state alone. `here` (this connection's
+  node key) and `domain` (the room's) are the names agent's `member`'s, so it works with the connection disconnected.
 -->
 <script lang="ts">
   import ErrorText from './ErrorText.svelte';

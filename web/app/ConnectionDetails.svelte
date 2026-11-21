@@ -3,11 +3,11 @@
   Home page one level under Connections (ConnectionPage.svelte). First the machines it is attached to, each a link to
   that machine's Network tab, or that there are none, with where connections are attached; then what it gives out and
   what that lets in, by kind: the values the browser keeps for it always (a tailnet's hostname and control server, the
-  local helper's install lines, the demo network's server, a room's link and who may connect), and, while it is
-  connected on this page (`net.runs`), the adapter's live view (web/app/network-view.ts): the adapter's line, the guest's
-  address, a tailcat address or key and the line that lets only this machine through a tailcat server, the demo
-  network's page inside the guest, and a room's name, warnings and domains (ConnectionRoom.svelte). While it isn't, a
-  line says why those are missing. What can be changed is in the page's Settings (ConnectionSettings.svelte).
+  local helper's install lines, the demo network's server, a room's link, who may connect, its own name in the room and
+  its domains: ConnectionRoom.svelte), and, while it is connected on this page (`net.runs`), the adapter's live view
+  (web/app/network-view.ts): the adapter's line, the guest's address, a tailcat address or key and the line that lets
+  only this machine through a tailcat server, the demo network's page inside the guest, and a room's warnings and
+  registry line. While it isn't, a line says why those are missing. What can be changed is in the page's Settings (ConnectionSettings.svelte).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';

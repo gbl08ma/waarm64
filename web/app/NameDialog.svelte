@@ -7,7 +7,9 @@
   as Preparing, Reserved, Active); taken, it stays open and says until about when; nobody in the room can say, it says
   so and Register pressed again registers. The two notices, always shown, no boxes. **No key is shown or asked for**,
   and nothing is added to the path where the name is free (the kickoff's decision 6). A connection whose key is
-  ephemeral can't hold a name: it says so instead.
+  ephemeral can't hold a name: it says so instead. The key a domain points at and the room's domain come from the
+  names agent (`pageNames.member`: the connection's stored key and the room's ID), not from the adapter's live view, so
+  nothing in it waits for the connection to be connected.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -18,7 +20,7 @@
   import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
   import { network } from './areas/network.ts';
-  import { pageNames, type NamesOf } from './areas/names.svelte.ts';
+  import { memberOf, pageNames, type NamesOf } from './areas/names.svelte.ts';
   import { canRegister, checkWords, NameForm, type CheckShown } from './names-view.ts';
   import { inBar } from './page.ts';
 
@@ -33,13 +35,15 @@
 
   const ad = $derived(index === undefined ? undefined : net.views()[index]);
   const room = $derived(ad?.connection?.room);
-  const key = $derived(ad?.view.room?.key);
   const conn = $derived<NamesOf | undefined>(
     room && { identityKey: room.identityKey, link: room.link, ephemeralKey: !!room.identity },
   );
-  /** The room's domain the module named the member under (`<room name>.p2p.internal`, or `<tag>.p2p.internal`: net/ts room.rs
-   * `Room::domain`): a domain registered here is `<name>.<domain>` (and under the tag's as well). */
-  const domain = $derived(ad?.view.room?.name.split('.').slice(1).join('.') ?? '');
+  /** The connection as its room sees it (web/names.ts `Member`): the key a domain registered here points at, and the
+   * room's domain (`<room name>.p2p.internal`, or `<tag>.p2p.internal`: net/ts room.rs `Room::domain`), under which a
+   * domain registered here is `<name>.<domain>` (and under the tag's as well). */
+  const member = $derived(room && !room.identity ? pageNames.member(memberOf(room)) : undefined);
+  const key = $derived(member?.key);
+  const domain = $derived(member?.domain ?? '');
   const name = $derived(typed.trim().toLowerCase());
   const said = $derived(checkWords(name, check));
   const tone = $derived(check.state === 'checking' ? 'dim' : 'warn');

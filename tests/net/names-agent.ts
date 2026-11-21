@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { localBackend, type NamesBackend, type PutAnswer } from '../../web/names-ops.ts';
 import { CALENDARS, EXPLORERS, SERVICES } from '../../web/names-fetch.ts';
 import { memoryNamesStore, type NamesStore, type TitleRecord, type ZonePoint } from '../../web/names-store.ts';
-import { NamesAgent, type NamesConn, type TitleStatus } from '../../web/names.ts';
+import { NamesAgent, type AgentOptions, type NamesConn, type TitleStatus } from '../../web/names.ts';
 import { TsModule } from '../../web/ts-client.ts';
 import { CALENDARS as PRETEND, type OtsCalendar } from './ots-calendar.ts';
 
@@ -66,11 +66,11 @@ export function fakePublish(answer: (item: string) => PutAnswer[] = () => [{ id:
 }
 
 /** An agent on the tests' module, a store of its own (a browser) or the one given (another tab of it). */
-export async function testAgent(o: { store?: NamesStore; publish?: ReturnType<typeof fakePublish>; log?: string[] } = {}): Promise<{ agent: NamesAgent; store: NamesStore; backend: NamesBackend }> {
+export async function testAgent(o: { store?: NamesStore; publish?: ReturnType<typeof fakePublish>; log?: string[]; identity?: AgentOptions['identity'] } = {}): Promise<{ agent: NamesAgent; store: NamesStore; backend: NamesBackend }> {
   const store = o.store ?? memoryNamesStore();
   const local = localBackend(await testModule());
   const backend = o.publish ? o.publish.wrap(local) : local;
-  const agent = new NamesAgent({ store, backend, retryMs: 0, log: (s) => { o.log?.push(s); } });
+  const agent = new NamesAgent({ store, backend, retryMs: 0, log: (s) => { o.log?.push(s); }, ...(o.identity ? { identity: o.identity } : {}) });
   return { agent, store, backend };
 }
 

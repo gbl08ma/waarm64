@@ -291,10 +291,6 @@
     "message": "Whoever has this key can take this connection's name and address in a room, and its registered domains, which follow the key after a dot: keep it secret. To use it in another connection, perhaps on another computer, choose <ui>A key to paste</ui> when creating or joining a room, and don't connect both at once.",
     "note": "A room connection's Settings on the Home page (its page under Connections), Advanced: the text under the connection's key. “A key to paste” is network.NetRoomStep.room.key.paste, a choice of the Network wizard's room step."
   },
-  "ConnectionRoomSettings.key.none": {
-    "message": "The key is made when the connection first connects.",
-    "note": "A room connection's Settings on the Home page (its page under Connections), for a connection that has never connected, Advanced: the text under the connection's key (empty, its Copy icon disabled): there's no key yet."
-  },
   "ConnectionRoomSettings.newName": {
     "message": "New name",
     "note": "A room connection's Settings on the Home page (its page under Connections), Advanced: the button that gives the connection a new key, and so a new name in the room (it asks first: network.network-actions.newName.confirm)."
@@ -521,7 +517,7 @@
   },
   "NetAdapter.room.name": {
     "message": "This machine's name in the room",
-    "note": "The toolbar's Network menu and a connection's Details on the Home page (while the connection is connected in this tab): the label of the field (with a Copy icon in it) with the machine's name in a peer-to-peer room (<key>.<room name>.p2p.internal when the room's ID is a plain DNS label, else <key>.<tag>.p2p.internal, where the tag is 8 letters and digits derived from the ID), when its connection is a room's."
+    "note": "The toolbar's Network menu: the label of the field (with a Copy icon in it) with the machine's name in a peer-to-peer room (<key>.<room name>.p2p.internal when the room's ID is a plain DNS label, else <key>.<tag>.p2p.internal, where the tag is 8 letters and digits derived from the ID), when its connection is a room's."
   },
   "NetAdapter.room.link": {
     "message": "The room's link",
@@ -611,17 +607,17 @@
     "message": "If the helper prints a different link, paste it in <ui>Settings</ui>.",
     "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: the text under its install lines. “Settings” is machines.ConnectionNav.settings, the section beside Details in the page's left column."
   },
+  "ConnectionRoom.name": {
+    "message": "This connection's name in the room",
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection, connected or not: the label of the field (with a Copy icon in it) with the connection's name in the peer-to-peer room (<key>.<room name>.p2p.internal when the room's ID is a plain DNS label, else <key>.<tag>.p2p.internal, where the tag is 8 letters and digits derived from the ID). The connection holds it (by its key), whichever machine it is attached to."
+  },
   "ConnectionRoom.note": {
-    "message": "Members who have the machine's name can reach any port the guest listens on. Give it only to those you want to let in.",
-    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may connect to it."
+    "message": "Members who have this connection's name can reach any port the guest listens on. Give it only to those you want to let in.",
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the connection's name in the room (ConnectionRoom.name) and the room's link, while members may connect to it. “The guest” is the guest of the machine the connection is attached to."
   },
   "ConnectionRoom.note.off": {
     "message": "Incoming connections are off. Members can reach the guest only with replies to connections it opens.",
-    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may not connect to it (the connection's “Allow incoming connections from members” is off)."
-  },
-  "ConnectionRoom.offline": {
-    "message": "The machine's name in the room will show here once it's connected.",
-    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection that isn't connected: the text in place of the machine's name in the room."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the connection's name in the room (ConnectionRoom.name) and the room's link, while members may not connect to it (the connection's “Allow incoming connections from members” is off)."
   },
   "ConnectionRoom.directBlocked": {
     "message": "This browser doesn't allow direct connections, so all traffic to the room's members goes through the relay, which is slower. In ungoogled-chromium, set <code>{{flag}}</code> to Default in <code>{{page}}</code> and restart the browser; elsewhere, an extension that limits WebRTC may be the cause. Direct connections start again once the browser allows them.",

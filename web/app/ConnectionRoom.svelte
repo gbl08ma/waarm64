@@ -1,6 +1,6 @@
 <!--
-  A room connection's part of its Details (ConnectionDetails.svelte; docs/networking/rooms.md): its name in the room
-  while it is connected on this page, the room's link and who may connect (kept with the connection, so always), why
+  A room connection's part of its Details (ConnectionDetails.svelte; docs/networking/rooms.md): its name in the room,
+  connected or not (the names agent's `member`, from its key and the room's ID), the room's link and who may connect (kept with the connection, so always), why
   members go through the relay where a direct path was wanted (the toolbar's warning leads here) and what may fix it,
   the registry's line, and its domains (NameEntry.svelte, as the details dialog had them: DOMAINS loops 4 and 5 move
   them to the connection's Domains section).
@@ -10,7 +10,7 @@
   import ValueField from './ui/ValueField.svelte';
   import NameEntry from './NameEntry.svelte';
   import T from './T.svelte';
-  import { pageNames } from './areas/names.svelte.ts';
+  import { memberOf, pageNames } from './areas/names.svelte.ts';
   import { namesLine } from './names-view.ts';
   import { t, text } from '../i18n.ts';
   import type { RoomConnection } from './connections.ts';
@@ -21,19 +21,19 @@
 
   const conn = $derived({ identityKey: room.identityKey, link: room.link });
   const roomNames = $derived(pageNames.of(conn));
-  /** The room's domain the module named the member under (`<room name>.p2p.internal`, or `<tag>.p2p.internal`: net/ts
-   * room.rs `Room::domain`): a member's name is its key's label under it. */
-  const domain = $derived(v?.room?.name.split('.').slice(1).join('.') ?? '');
+  /** The connection as its room sees it, connected or not: its key, its name, the room's domain (web/names.ts
+   * `Member`): a member's name is its key's label under the domain. */
+  const member = $derived(pageNames.member(memberOf(room)));
 </script>
 
 {#snippet code(words: string)}<code>{words}</code>{/snippet}
 
-{#if v?.room}
+{#if member}
   <ValueField
     id="net-details-room-name"
     copyId="net-details-room-name-copy"
-    label={t('network:NetAdapter.room.name')}
-    value={v.room.name}
+    label={t('network:ConnectionRoom.name')}
+    value={member.name}
     readonly
     copy
   />
@@ -51,7 +51,6 @@
 <Note size="md" id="net-details-room-note">
   {room.incoming ? t('network:ConnectionRoom.note') : t('network:ConnectionRoom.note.off')}
 </Note>
-{#if !v?.room}<Note size="md">{t('network:ConnectionRoom.offline')}</Note>{/if}
 {#if v?.room?.blocked}
   <Note size="md" tone="warn" id="net-details-room-blocked">
     <T
@@ -76,8 +75,8 @@
   >
 {/if}
 {#if v?.room?.names}<Note size="md" id="net-details-names-line">{text(namesLine(v.room.names))}</Note>{/if}
-{#if v?.room?.key && domain}
+{#if member}
   {#each roomNames as n (n.name)}
-    <NameEntry v={n} {conn} {domain} here={v.room.key} />
+    <NameEntry v={n} {conn} domain={member.domain} here={member.key} />
   {/each}
 {/if}

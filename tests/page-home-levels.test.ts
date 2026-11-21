@@ -2,7 +2,8 @@
 // web/app/areas/home-levels.ts, HomeColumn.svelte), without a guest: two stored machines without disks, Alpha on the
 // page (`?m=`) and Bravo with a room connection attached, and a tailnet connection besides (neither ever connects).
 // At the root, Back to the machine is the column's first entry. A reload on a connection's address opens its page
-// (Back to Connections, Details chosen, its machines linked, why its live values are missing, its room's link); the
+// (Back to Connections, Details chosen, its machines linked, why its live values are missing, its room's link, its own
+// name in the room, its key made for it); the
 // column's entries and the pane slide as a level is entered; Esc and Back return to Connections, the card's Details
 // taking the focus back; a section is chosen instantly and in the address; Domains is a room's alone; Bravo's link
 // leads to its Network tab, and a page entered from there or from the machine's screen leads back there; an unknown
@@ -104,6 +105,11 @@ test("Home's levels: a connection's page by its address, Back and Esc to each or
   assert.equal(await page.locator(`#connection-details-machines [data-machine-tab="${s.bravo}"]`).count(), 1, 'Bravo is a link');
   assert.equal(await text(page, '#net-details-elsewhere'), t('machines:ConnectionDetails.notHere'));
   assert.equal(await page.locator('#net-details-room-link').inputValue(), s.link);
+  // Its name in the room, though it never connected (the names agent's `member`, its key made under its entry): under
+  // the room's tag, the link's ID being a private room's.
+  await page.locator('#net-details-room-name').waitFor({ timeout: 30_000 });
+  assert.match(await page.locator('#net-details-room-name').inputValue(), /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/);
+  assert.equal(await page.locator('label:has(#net-details-room-name) .name').textContent(), t('network:ConnectionRoom.name'));
 
   // A section: instant, in the address; Esc leaves for Connections, the card's Details taking the focus back.
   await page.locator('[data-section=domains]').click();
@@ -280,16 +286,16 @@ test("a connection's Settings: its values, Revert, a refusal, Save and a rename;
   await page.locator('[data-section=settings]').click();
   assert.equal(await page.locator('#settings-hostname').inputValue(), 'box');
 
-  // A room's Settings: its switches, and its key under Advanced (none before it first connects).
+  // A room's Settings: its switches, and its key under Advanced (made when its Details first showed its name, though it
+  // never connected).
   await openConnection(page, s.room, { to: 'connections' });
   assert.equal(await level(page), `connection:${s.room}`);
   await page.locator('[data-section=settings]').click();
   assert.equal(await page.isChecked('#settings-room-direct'), true);
   assert.equal(await page.isChecked('#settings-room-incoming'), true);
   await page.locator('#settings-room-advanced summary').click();
-  assert.equal(await page.locator('#settings-room-key-value').inputValue(), '', 'no key before it first connects');
-  assert.ok((await text(page, '#settings-room-advanced')).includes(t('network:ConnectionRoomSettings.key.none')));
-  assert.equal(await page.locator('#settings-room-new-name').isDisabled(), true, 'no key of its own to drop');
+  await page.waitForFunction(() => /^[0-9a-f]{64}$/.test((document.getElementById('settings-room-key-value') as HTMLInputElement).value), null, { timeout: 10_000 });
+  assert.equal(await page.locator('#settings-room-new-name').isDisabled(), false, 'a key of its own to drop');
   await page.uncheck('#settings-room-direct');
   await save.click();
   await page.waitForFunction(() => !document.querySelector('section[data-selected=connection-settings] [data-action=revert]'), null, { timeout: 5000 });

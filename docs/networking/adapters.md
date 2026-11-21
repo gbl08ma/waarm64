@@ -70,7 +70,8 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   of IndexedDB.
 - **A room's link and key**: the link (`room.link`, `waarm64-room:<id>?nostr=…&derp=…`, web/room.ts `roomLink`; a
   private room's is a secret) and the switches (`incoming`, `relayOnly`) in the record; the node key in
-  `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
+  `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect, or before
+  it when the connection's page shows its name in the room: names.md "The names agent", `member`), so the
   machine's address and name in the room stay the same. The same database's `names` store (version 2) keeps a stored
   connection's room-names records, by room (a hash of its ID) and name id (web/room.ts `roomNamesStore`,
   [names.md](names.md) "Servers"); its `owner` and `titles` stores (version 3) keep the names agent's owners' secret and

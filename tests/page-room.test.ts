@@ -351,9 +351,9 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
       assert.equal(await b.locator('#settings-room-key-value').inputValue(), pasted.key);
       // New name: a new key at once (it's ephemeral: the new key is in the record already, so it's the one to copy).
       await b.click('#settings-room-new-name');
-      await b.waitForFunction(() => (document.getElementById('settings-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
       await b.waitForFunction((old) => { const v = (document.getElementById('settings-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
       const renamed = await b.locator('#settings-room-key-value').inputValue();
+      await b.waitForFunction(() => !(document.getElementById('settings-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
       assert.match(await text(b, '#settings-room-advanced'), words('network:ConnectionRoomSettings.key.note'));
       // Then a switch and Save: the new key stays (Save writes the connection as it is now, not as the page read it).
       await b.uncheck('#settings-room-incoming');

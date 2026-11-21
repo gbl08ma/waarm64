@@ -72,7 +72,9 @@ makes a router advertisement), and their page-side handles share `web/tailscale.
   a running room node its titles as they change (a member given some becomes a server). The agent's operations are
   pure exports, `ts_names_<op>(ptr, len)` (JSON in, the length of JSON out in `ts_buf()`, minus that of why not;
   room/names/agent.rs): `key`, `make`, `mine`, `sign`, `add`, `pending`, `commitment`, `finish`, `anchor`, `zone`,
-  `status`, `judge`, `drop`.
+  `status`, `judge`, `drop`, and `member` (`ts_names_member`: from a room's ID and a node's private key, the node's
+  public key, its name in the room and the room's domains, each exactly as a running room node with that key reports
+  them; no network, no state: the page shows a room connection's name and registers its domains without running it).
   Bytes cross through the module's memory (`ts_alloc`), one copy each way. One thread, no shared
   memory, no atomics: one worker per client.
 - **`wasm32-wasip1`, not the core's target.** On `wasm32-unknown-unknown` std's `Instant::now()` and

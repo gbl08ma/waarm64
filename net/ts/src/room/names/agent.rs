@@ -16,6 +16,9 @@
 //!   chain (`ours`), another branch of it (`branch`: taken into the title), or a better chain of another key's
 //!   (`lost`).
 //! - `drop`: entries taken out of the title (one that can no longer link).
+//! - `member`: a node's public key, its name in the room and the room's domains, from the room's ID and the node's
+//!   private key (`node`), as a running room node with that key reports them (room.rs, its `self` event): the page
+//!   shows a room connection's name and registers its domains without running it. The room's own derivations.
 
 use std::{cell::RefCell, collections::BTreeSet};
 
@@ -32,6 +35,7 @@ use super::{
     wire::{Item, WireEntry},
     zone::Zone,
 };
+use crate::room::{Room, node_public};
 
 thread_local! {
     /// The proof of work's memory (1 MiB in production), kept between calls.
@@ -164,6 +168,8 @@ struct In {
     ids: Vec<String>,
     #[serde(default)]
     now: u64,
+    /// A room node's private key (`member`).
+    node: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -354,6 +360,16 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
             let mut n = name_of(&item);
             n.retain(|id, _| !ids.contains(id));
             Ok(json!({ "item": hex(&item_of(&n, item.zone).encode()) }))
+        }
+        "member" => {
+            let public = node_public(&unhex32(need(&i.node, "node")?)?);
+            let room = Room::derive(&i.room);
+            Ok(json!({
+                "key": hex(&public),
+                "name": room.name(&public),
+                "domain": room.domain(),
+                "domains": room.domains(),
+            }))
         }
         _ => Err(format!("no operation {op}")),
     }
@@ -773,6 +789,84 @@ mod tests {
                 .unwrap()
                 .entries
                 .is_empty()
+        );
+    }
+
+    /// What a running room node with key `node` (hex) in room `id` says of itself: its `self` event.
+    fn running(id: &str, node: &str) -> Value {
+        use crate::{
+            client::Action,
+            room::{Client, Config, link::Link},
+        };
+        let cfg = Config {
+            link: Link::bare(id).unwrap(),
+            key: Some(unhex32(node).unwrap()),
+            home: None,
+            derp_map_url: String::new(),
+            known: Vec::new(),
+            relay_only: false,
+            incoming: true,
+            unix_time: Some(1_800_000_000),
+            names: None,
+            params: params(),
+            publish: false,
+        };
+        let mut c = Client::new(cfg, std::time::Instant::now()).unwrap();
+        let mut me = None;
+        while let Some(a) = c.poll() {
+            if let Action::Event(e) = a {
+                let v: Value = serde_json::from_str(&e).unwrap();
+                if v["type"] == "self" {
+                    me = Some(v);
+                }
+            }
+        }
+        me.expect("a self event")
+    }
+
+    #[test]
+    fn a_member_is_what_a_running_node_with_its_key_reports() {
+        let node = "5a".repeat(32);
+        let private = format!("lan-{}", crate::room::base32(&[7; 16]));
+        // A room named by a label, a private room's ID, and an ID that is no label.
+        for id in ["gabriel-lan", private.as_str(), "test room"] {
+            let m = ok("member", json!({ "room": id, "node": node }));
+            let me = running(id, &node);
+            assert_eq!(me["key"], format!("nodekey:{}", s(&m, "key")), "{id}");
+            assert_eq!(m["name"], me["name"], "{id}");
+            let room = Room::derive(id);
+            assert_eq!(m["domain"], room.domain(), "{id}");
+            assert_eq!(m["domains"], json!(room.domains()), "{id}");
+            assert_eq!(m["domains"][0], m["domain"], "{id}: the domain first");
+            let name = s(&m, "name");
+            assert!(
+                name.ends_with(&format!(".{}", room.domain())),
+                "{id}: {name}"
+            );
+            if id == "gabriel-lan" {
+                assert_eq!(m["domain"], "gabriel-lan.p2p.internal");
+                assert_eq!(m["domains"].as_array().unwrap().len(), 2);
+            } else {
+                assert_eq!(m["domain"], format!("{}.p2p.internal", room.tag), "{id}");
+                assert_eq!(m["domains"].as_array().unwrap().len(), 1, "{id}");
+            }
+        }
+        // Another key: another name.
+        let other = ok(
+            "member",
+            json!({ "room": "gabriel-lan", "node": "5b".repeat(32) }),
+        );
+        let m = ok("member", json!({ "room": "gabriel-lan", "node": node }));
+        assert_ne!(other["key"], m["key"]);
+        assert_ne!(other["name"], m["name"]);
+        // No key, or not one: refused.
+        assert_eq!(
+            run("member", json!({ "room": "gabriel-lan" })),
+            Err("no node".into())
+        );
+        assert_eq!(
+            run("member", json!({ "room": "gabriel-lan", "node": "5a" })),
+            Err("a 32-byte value".into())
         );
     }
 }

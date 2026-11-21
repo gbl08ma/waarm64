@@ -2,9 +2,13 @@
 // (web/names.ts), read into `$state` at load and again whenever the agent changes one (its BroadcastChannel, in any tab)
 // and every minute (a reserved name's "in about N hours"); the dialog's checks (as typed, and at Register), Register (the dialog has closed: the
 // adapter shows Preparing until the title is stored), a name's zone and its release; and, at load, the notice of names
-// in their last week. The agent and its worker are loaded only when titles exist or the dialog is used.
+// in their last week; and a room connection as its room sees it (its key, its name in the room, the room's domains:
+// `member`), connected or not. The agent and its worker are loaded only when titles exist, the dialog is used, or a
+// room connection's own name or domains are shown.
+import { SvelteMap } from 'svelte/reactivity';
 import { msg, MsgError, type Msg } from '../../i18n.ts';
-import type { NameCheck, NamesConn, TitleView } from '../../names.ts';
+import type { Member, MemberConn, NameCheck, NamesConn, TitleView } from '../../names.ts';
+import { roomOf } from '../../room.ts';
 import type { ZonePoint } from '../../names-store.ts';
 import { titlesOf } from '../names-view.ts';
 
@@ -16,11 +20,26 @@ const REFRESH_MS = 60_000;
  * connection's own key is gone with the page). */
 export type NamesOf = NamesConn & { ephemeralKey: boolean };
 
+/** Room connection `r` (web/app/connections.ts `RoomConnection`) as `member` takes it: an ephemeral one's own key with it. */
+export const memberOf = (r: { identityKey: string; link: string; identity?: { key: string } }): MemberConn => ({
+  identityKey: r.identityKey,
+  link: r.link,
+  ...(r.identity ? { identity: { key: r.identity.key } } : {}),
+});
+
+/** `member`'s cache key: the key's entry or the key itself, and the room (not its link: relays don't change it). */
+const memberKey = (c: MemberConn) =>
+  JSON.stringify([c.identity?.key ?? '', c.identity ? '' : c.identityKey, roomOf(c.link)]);
+
 class PageNames {
   /** Every title kept in this browser, with its state and dates. */
   titles = $state.raw<TitleView[]>([]);
   /** Names being registered here: Preparing until their title is stored. */
   registering = $state.raw<{ identityKey: string; link: string; name: string }[]>([]);
+  /** Room connections as their rooms see them, by `memberKey`. */
+  readonly #members = new SvelteMap<string, Member>();
+  /** Those being read (not reactive: a read starts once). */
+  readonly #asking = new Set<string>();
   #watching = false;
 
   /** Reads the titles now, again at each change the agent announces, and every minute. */
@@ -50,6 +69,33 @@ class PageNames {
   /** Connection `c`'s titles in its room, those being registered first (as Preparing). */
   of(c: NamesConn): TitleView[] {
     return titlesOf(this.titles, this.registering, c);
+  }
+
+  /**
+   * Room connection `c` as its room sees it (web/names.ts `Member`: its node key, its name in the room, the room's
+   * domains), whether or not it is connected: undefined until the agent has said, then kept (reactive). Its key is
+   * made under its entry if it never started (web/names.ts `NamesAgent.member`).
+   */
+  member(c: MemberConn): Member | undefined {
+    const k = memberKey(c);
+    const have = this.#members.get(k);
+    if (have || this.#asking.has(k)) return have;
+    this.#asking.add(k);
+    const plain = memberOf(c); // not a proxy: it crosses to the worker
+    void names()
+      .then((n) => n.namesAgent().member(plain))
+      .then(
+        (m) => void this.#members.set(k, m),
+        (e: unknown) => console.warn("names: a connection's name in its room could not be read:", e),
+      )
+      .finally(() => this.#asking.delete(k));
+    return undefined;
+  }
+
+  /** The key kept under `identityKey` changed (New name): what `member` said of it is read again. */
+  forgetMember(identityKey: string) {
+    for (const k of [...this.#members.keys()])
+      if ((JSON.parse(k) as string[])[1] === identityKey) this.#members.delete(k);
   }
 
   /** Connection `c` is up with link `c.link`: its titles in the room publish through it (web/names.ts `relink`). */

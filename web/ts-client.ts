@@ -56,7 +56,8 @@ export type NamesOp =
   | 'zone'
   | 'status'
   | 'judge'
-  | 'drop';
+  | 'drop'
+  | 'member';
 
 /** A room's member (net/ts/src/room.rs, docs/networking/rooms.md). */
 /** The most messages a WebSocket holds before it opens (a room's lookups while a Nostr relay connects, say). */
