@@ -1378,6 +1378,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `usb-state` `message`) and shown later isn't followed.
   - **Copy in lower case without a sentence's end** isn't flagged: the code's lower-case phrases without one are
     developers' (15 of them in the renderers, 2026-11-02), and copy ends with a period.
+- **Safari** (not a target; the user's own runs, 2026-11-21, unmeasured): the demo with Firefox in its guest boots in
+  macOS Safari, and the introduction's machine runs in iOS 18's Safari. Nothing is tested there: what works, what
+  doesn't (WebUSB and the folder picker are absent; WebGPU for Vulkan unchecked) and how fast are open. The public
+  words (the introduction's Browsers cell and "Where they lead", the README, comparison.md) still name only Firefox
+  beside Chromium: widen them once the user says how. The cap on live wasm modules (below) is what the user expects
+  to make Firefox steady.
 - **Firefox** (not a target; 2026-10-15): Debian boots on the page in Firefox 157 (headless, the dev VM)
   once qcow2's compressed clusters stopped relying on Chromium's DecompressionStream handing over
   its output before the junk error (since SNAPZ loop 6 the core inflates them: web/deflate.ts) and SpiderMonkey runs without the
