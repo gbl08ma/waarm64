@@ -1,5 +1,5 @@
 <!--
-  The Network wizard's step for the local helper on this computer (NetWizard.svelte; docs/plans/networking-local.md):
+  The Network wizard's step for the local helper on this computer (NetWizard.svelte; docs/networking/local-helper.md):
   how to install and run it (this platform's lines first), then its pairing link pasted. A connection's Settings on the
   Home page change the link (ConnectionSettings.svelte).
 -->

@@ -7,8 +7,42 @@ Tailscale always go through DERP, because a page has no UDP.
 
 The helper is its own repository, [`github.com/gbl08ma/waarm64-net`](https://github.com/gbl08ma/waarm64-net) (public
 since 2026-11-21). Its README covers the flags, the network it serves, the protocol and the trust
-argument, its THIRD_PARTY.md what it links, and its CLAUDE.md its rules. This page covers waarm64's side. The decisions
-and their history are in [plans/networking-local.md](../plans/networking-local.md).
+argument, its THIRD_PARTY.md what it links, and its CLAUDE.md its rules. This page covers waarm64's side and the
+decisions below.
+
+## Decisions (the user's, 2026-10-23, with the changes noted)
+
+- **A helper of ours, in Go, in its own repository**, for the user who runs their own machine for a long while and
+  wants a fast connection they trust. Users who don't want to trust us keep tailcat and Tailscale. Go because it reads
+  more easily than Rust for a reviewer, cross-compiles all six targets with `CGO_ENABLED=0` from one host, and the
+  library that does the work is Go. Its releases are its own GitHub Actions', **separate from waarm64's deploy** (the
+  user's, 2026-11-02), and waarm64's tests build it at a pinned commit rather than a sibling checkout or a submodule (the
+  user's choice). Trust comes from:
+  - **Little code of ours**, glue over libraries users already run, and a README that says honestly what's ours and
+    what's imported.
+  - **Reproducible binaries** for Linux, macOS and Windows on x86_64 and arm64, with published SHA-256s. **No code
+    signing** (Apple's or Authenticode would change the bytes; revisit if Gatekeeper, SmartScreen or Defender get in
+    the way).
+  - **Plain install lines**, one per target: download (`curl`, or `Invoke-WebRequest`), check the hash, mark it
+    executable, run it. No `curl | sh`, nothing installed to start at login, no administrator rights.
+- **Ethernet frames over a WebSocket, and no gateway in the page:** the helper's DHCP, DNS and gateway serve the guest,
+  and the page only forwards frames, so less code competes with the VM in the tab.
+- **IPv6 on by default (the user's, 2026-11-01), but never promised when the host can't route it**, as the page does
+  for tailcat's and a tailnet's far end. It comes from gvisor-tap-vsock's unmerged #745 through a `replace` to its
+  author's fork at one commit, chosen over a fork of ours (a stable branch and `go install` back, at the price of an
+  import path to undo later) and over vendoring (a large diff): the smallest to drop when #745 lands.
+- **Chromium's Local Network Access prompt is acceptable:** one click.
+- **A link flap for any kind** whenever what the guest holds would go stale (the path between the page's gateway and the
+  helper, or the gateway's lease moving to another address), never for a reconnect to the same address (the user's,
+  2026-11-01; [devices.md](../devices.md) "net").
+- **Not chosen:** WebSocket relays or Wisp ([tailnet.md](tailnet.md)), a hosted open proxy (the user won't operate
+  one), a WebTransport or LAN helper (tailnets serve that), the Direct Sockets API (Isolated Web Apps only), a helper
+  assembled from QEMU and websockify or websocat (no good Windows story). For the demos, this helper deployed on a
+  server with an allowlist was chosen over a Wisp-style proxy (the user, 2026-11-18: [demo-network.md](demo-network.md)).
+- **Other libraries looked at** (2026-10-23, from their docs): xjasonlyu/tun2socks takes IP packets, not frames, so
+  ARP, DHCP, router advertisements and DNS would be ours, several times the code; tailcat's exit node is behind
+  WireGuard, not a library for a LAN; majek/slirpnetstack looks dormant and is built around Linux file descriptors;
+  jtolio/tinyemu-go's `slirp` is old slirp, IPv4 only. A network of our own on gVisor would be a thousand lines or more.
 
 ## The helper, briefly
 

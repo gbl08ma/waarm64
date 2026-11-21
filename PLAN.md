@@ -47,7 +47,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | Vulkan through Venus (VK0–VK3) | Done 2026-10-29 | [graphics.md](docs/graphics.md) "Vulkan through Venus", [vk/README.md](vk/README.md) |
 | Vulkan's breadth (VK4) | In progress since 2026-10-29 | [VK4-KICKOFF.md](VK4-KICKOFF.md), `bench/vulkan/REPORT.md` |
 | Shared folders | Done 2026-10-31 | [shares.md](docs/shares.md) |
-| A local network helper (NET) | L0–L3 done 2026-11-02; open | [NET-HANDOVER.md](NET-HANDOVER.md), [networking/local-helper.md](docs/networking/local-helper.md) |
+| A local network helper (NET) | Done 2026-11-21 | [networking/local-helper.md](docs/networking/local-helper.md), [bench/net/REPORT.md](bench/net/REPORT.md) "The local helper" |
 | The on-screen keyboard (OSK) | Done 2026-11-02 | [frontend.md](docs/frontend.md) |
 | The page's words (i18n) | Done 2026-11-02 | [i18n.md](docs/i18n.md), [copy.md](docs/copy.md) |
 | Indirect transfers (XF) | Done 2026-11-05 | [jit.md](docs/jit.md) "Calls" |

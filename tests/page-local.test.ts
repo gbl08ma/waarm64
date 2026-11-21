@@ -1,4 +1,4 @@
-// The local helper as a connection on the page (docs/frontend.md "Network", docs/plans/networking-local.md L2), in
+// The local helper as a connection on the page (docs/frontend.md "Network", docs/networking/local-helper.md), in
 // Chromium, on a stored machine whose only disk is blank (the firmware runs and finds nothing to boot: all an adapter
 // needs to be live). The helper's pairing link opens the page: the fragment leaves the address, the Network wizard opens
 // on This computer with the link filled in, and Attach keeps a `local` connection on the machine's first adapter, which

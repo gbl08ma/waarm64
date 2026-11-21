@@ -1,4 +1,4 @@
-// The local helper's release as the page shows it (docs/plans/networking-local.md §1 "Plain install lines"): its version,
+// The local helper's release as the page shows it (docs/networking/local-helper.md "Decisions", "Plain install lines"): its version,
 // the published SHA-256 of each binary, and the install lines for a platform, the same as the release's INSTALL.md
 // (waarm64-net's build.sh `install`; tests/local-release.test.ts holds the two together). Each release replaces
 // `RELEASE` from its SHA256SUMS (a change of waarm64's, separate from the release itself).

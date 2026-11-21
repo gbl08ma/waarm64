@@ -1,4 +1,4 @@
-// The local network helper for the tests (github.com/gbl08ma/waarm64-net, its own repository; docs/plans/networking-local.md):
+// The local network helper for the tests (github.com/gbl08ma/waarm64-net, its own repository; docs/networking/local-helper.md):
 // its source at the commit pinned below, fetched with git into target/net/waarm64-net-src, or a checkout of yours with
 // WAARM64_NET_SRC (e.g. ../waarm64-net, when the page and the helper change together). Move the pin with a change of the
 // helper the page needs, after its CI passed. (tests/go-pinned.ts does the fetching and building.)

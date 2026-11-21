@@ -74,7 +74,7 @@ export type Connection = {
   ephemeral: boolean;
   tailnet?: TailnetConnection;
   tailcat?: TailcatConnection;
-  /** The local helper on this computer (github.com/gbl08ma/waarm64-net, docs/plans/networking-local.md). */
+  /** The local helper on this computer (github.com/gbl08ma/waarm64-net, docs/networking/local-helper.md). */
   local?: LocalConnection;
   /** The demo network (github.com/gbl08ma/waarm64-demonet, docs/networking/demo-network.md). */
   demo?: DemoConnection;

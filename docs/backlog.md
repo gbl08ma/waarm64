@@ -2073,6 +2073,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     ours with the module path renamed would bring it back.
   - The guest can't ping the internet over IPv6 (#745's ICMP forwarder is IPv4's only).
   - Two `local` adapters both offer a default route: the menu says so, nothing picks one.
+  - Firefox's and Safari's handling of `ws://127.0.0.1` from an https page: untried (never blockers).
   - **Machines with the same MAC share an address on one helper** (its network knows a guest by its MAC, and the
     switch's table flips between their links): new machines have MACs of their own since 2026-11-03, but machines made
     before all have `52:54:00:12:34:56`, a copy keeps its machine's MACs, and an imported definition without MACs gets

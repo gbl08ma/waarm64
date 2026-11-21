@@ -1,4 +1,4 @@
-// The local helper against tailcat (docs/plans/networking-local.md L0, bench/net/REPORT.md "The local helper"): the
+// The local helper against tailcat (docs/networking/local-helper.md "Numbers", bench/net/REPORT.md "The local helper"): the
 // page's Debian on one connection, and from the guest the round trip and bulk TCP each way to a server on this machine's
 // LAN address, with the CPU of the renderer's threads over each transfer. One boot per arm.
 //   local        the helper here, frames over a WebSocket on loopback (the page's client: tests/browser/netguest.html's connectLocal)

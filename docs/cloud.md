@@ -78,7 +78,7 @@ The OpenTimestamps calendars (`alice` and `bob` at opentimestamps.org, `finney` 
 explorers (blockstream.info, mempool.space) answer `curl` through the proxy (2026-11-16); WebSockets to public Nostr
 relays and DERP from here are untried.
 
-**The local helper** (`github.com/gbl08ma/waarm64-net`, docs/plans/networking-local.md) is public: the tests that need it
+**The local helper** (`github.com/gbl08ma/waarm64-net`, docs/networking/local-helper.md) is public: the tests that need it
 (tests/waarm64-net.ts) fetch it over HTTPS, and say SKIPPED only when they can't. It built and tested here (Go fetches its
 pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` passed in Chromium (2026-11-01: DNS,
 `apt-get update` and TCP straight out, which the container allows). The container has **no IPv6 at all** (no

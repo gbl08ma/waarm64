@@ -1,4 +1,4 @@
-// IPv6 through the local helper on hosts that have it (docs/plans/networking-local.md §5, L0; bench/net/REPORT.md "The
+// IPv6 through the local helper on hosts that have it (docs/networking/local-helper.md "The helper, briefly"; bench/net/REPORT.md "The
 // local helper"). Debian on the page in the dev VM, which has no IPv6 of its own, so one of two rigs:
 //   node bench/net/local-ipv6.ts mac <out.json>      the helper on the Mac (cross-built here, kept in ~/waarm64-net-test
 //                                                    there) over an ssh tunnel: the Mac's real IPv6, curl and apt over it

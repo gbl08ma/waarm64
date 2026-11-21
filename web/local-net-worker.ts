@@ -1,4 +1,4 @@
-// The local helper's client in a worker of its own (web/local-net.ts `startLocal`; docs/plans/networking-local.md §3: off
+// The local helper's client in a worker of its own (web/local-net.ts `startLocal`; docs/networking/local-helper.md "The page's side": off
 // the page's main thread at no cost, and a worker's socket asks for Local Network Access as the page's does). It holds
 // the card's IP port while it runs and puts the card on a frame port of its own (web/gateway.ts `FramePath`); the frames
 // go to the helper's WebSocket (`startLocalNet`). It speaks the tailnet clients' worker protocol as far as it has the

@@ -1,4 +1,4 @@
-// Chromium's Local Network Access for the local helper (docs/plans/networking-local.md L0, bench/net/REPORT.md "The
+// Chromium's Local Network Access for the local helper (docs/networking/local-helper.md "Local Network Access", bench/net/REPORT.md "The
 // local helper"): a page of a public origin opens a WebSocket to the helper on loopback, from the page and from a worker,
 // and we see what the permission does. A public origin: `https://waarm64.com` as it is deployed (the page's code doesn't
 // matter: this drives the socket from outside) when it's reachable, else any public https site named by LNA_ORIGIN; and a

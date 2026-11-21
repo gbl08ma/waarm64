@@ -240,7 +240,7 @@ one; not explained from these runs.
 
 ## The local helper against tailcat (L0, 2026-11-01)
 
-docs/plans/networking-local.md L0's questions, in Chromium 153.0.8010.52 on the dev VM (Lima, M4 Mac mini, 8 vCPUs, 18 GiB).
+The NET track's L0 questions (its plan, docs/plans/networking-local.md, is in git history since the track ended), in Chromium 153.0.8010.52 on the dev VM (Lima, M4 Mac mini, 8 vCPUs, 18 GiB).
 Raw JSON in `results/local-helper/`: `arms.json`, `variants.json`, `lna.json`, `ipv6-mac.json`, `ipv6-reach.json`.
 
 **Setup.** The page's Debian, curl in the guest to a Node server on this machine's LAN address, so every arm crosses the

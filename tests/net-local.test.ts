@@ -1,4 +1,4 @@
-// The local network helper (docs/plans/networking-local.md; github.com/gbl08ma/waarm64-net): the page's Debian with one card on an IP
+// The local network helper (docs/networking/local-helper.md; github.com/gbl08ma/waarm64-net): the page's Debian with one card on an IP
 // port, as the page has it, first on the page's gateway with a lease of its own, then handed to the local helper's
 // client (web/local-net.ts `startLocal`, its worker) as the Network menu does: the card goes on a frame port, the
 // page's gateway bypassed, its frames over a WebSocket on loopback to the helper, whose DHCP, DNS and gateway serve the
