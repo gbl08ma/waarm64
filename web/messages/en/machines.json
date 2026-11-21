@@ -1071,6 +1071,10 @@
     "message": "This web app includes the following software, or code derived from it, by the part of it they are in. Each is used under its license; its texts are linked beside it.",
     "note": "Home page, About: the sentences under Third-party software, above the tables (one per part of the web app)."
   },
+  "About.logo": {
+    "message": "The $t(common:product.name) logo",
+    "note": "Home page, About: a screen reader's name for the project's logo drawn at the pane's top (a lit letter w on a key, steam over it)."
+  },
   "About.group.page": {
     "message": "The interface",
     "note": "Home page, About, Third-party software: heading of the table of the projects in the web page itself (its components, words, icons, terminal)."

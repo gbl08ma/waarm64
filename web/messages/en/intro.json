@@ -123,6 +123,14 @@
     "message": "Effectively all of the code was written by Claude Opus 5.5, with a minority of it by Claude Fable 5.2. Some of the UI/UX design and some copy adjustments were made by human hand.",
     "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): which AI models wrote the code. Claude Opus 5.5 and Claude Fable 5.2 are models' names: don't translate."
   },
+  "IntroMade.cost": {
+    "message": "What it cost",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): title of a part. No period."
+  },
+  "IntroMade.cost.words": {
+    "message": "Two months of a Claude Max subscription, almost fully utilized. At API prices, the same usage would have cost upwards of $5000.",
+    "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): what the AI usage cost. Claude Max is a subscription's name; API prices are what the same model usage costs when paid by use."
+  },
   "IntroMade.time": {
     "message": "What it would have taken",
     "note": "The introduction's section “How it was made”, in the author's own first person (one person made the project with AI agents): title of a part. No period."
@@ -324,7 +332,7 @@
     "note": "Beside a speed figure on the introduction: reads on from “4.1×”. {{peer}} is another project's name."
   },
   "IntroSpeed.basis": {
-    "message": "Measured on {{when, date}}, in Chrome on a Mac with an Apple M4 processor: the same Perl program, six small workloads, run in each project's own Linux guest as it ships. $t(common:product.name) and unkernel ran the very same Debian build of Perl. v86 emulates a 32-bit x86 PC, so its Perl is another build of an older version.",
+    "message": "Measured on {{when, day}}, in Chrome on a Mac with an Apple M4 processor: the same Perl program, six small workloads, run in each project's own Linux guest as it ships. $t(common:product.name) and unkernel ran the very same Debian build of Perl. v86 emulates a 32-bit x86 PC, so its Perl is another build of an older version.",
     "note": "Under the speed figures on the introduction: what was measured. {{when}} is the measurement's date. unkernel and v86 are other projects' names; Perl, Debian and Chromium are names too."
   },
   "IntroCompare.title": {
@@ -332,7 +340,7 @@
     "note": "Title of the introduction's comparison section. No period."
   },
   "IntroCompare.lede": {
-    "message": "Other projects run Linux in a browser, and each made a different trade. These are the facts as their own documentation and source state them on {{when, date}}.",
+    "message": "Other projects run Linux in a browser, and each made a different trade. These are the facts as their own documentation and source state them on {{when, day}}.",
     "note": "Paragraph under the title of the introduction's comparison section. {{when}} is the date the other projects were last checked."
   },
   "IntroCompare.caption": {

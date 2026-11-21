@@ -747,7 +747,7 @@ over the machine and the Home page.
 
 ### About
 
-**[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: a link to its
+**[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: its logo at 200 px (`Logo.svelte`: the page's icon's shapes, in the panel's tokens), a link to its
 repository (`package.json`'s `repository`), the version it was built from (the tag on the commit when one was cut, with
 the commit; otherwise the commit; "with local changes" when tracked files differed), that commit's date (the console's
 line has the same: below, "A static copy"), waarm64's license, and **[Third-party software](ui:machines:About.thirdParty)**: a table per part
@@ -877,7 +877,8 @@ and the floating windows don't show, and the machine, Home or the store's page s
       that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
   - **[How it was made](ui:intro:IntroMade.title)** (`intro/IntroMade.svelte`), last before the end: the author's
     own account in the first person (the user's words of 2026-11-20): one person and two months of spare time
-    steering AI agents, which models wrote the code and what was done by hand, what it would have taken otherwise,
+    steering AI agents, which models wrote the code and what was done by hand, what it cost, what it would have
+    taken otherwise,
     what they knew and what they learned; that it stands on open-source projects that are in those models' training
     data, with a button to the credits ([See the projects credited](ui:intro:IntroMade.thanks.about): it leaves the
     introduction for Home's About pane, `page.closeIntro('about')`); and why it was made, four reasons, the last a

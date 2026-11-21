@@ -7,6 +7,7 @@
 <script lang="ts">
   import about from 'virtual:waarm64-about';
   import Button from './ui/Button.svelte';
+  import Logo from './Logo.svelte';
   import Note from './ui/Note.svelte';
   import T from './T.svelte';
   import { page } from './page.ts';
@@ -35,6 +36,7 @@
 </script>
 
 <div class="about" data-about>
+  <Logo label={t('machines:About.logo')} />
   <div class="intro">
     <Note size="md">{t('machines:About.intro.words')}</Note>
     <Button onclick={() => page.openIntro()} data-action="open-intro">{t('machines:About.intro')}</Button>

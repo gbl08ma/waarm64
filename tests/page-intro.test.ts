@@ -223,15 +223,17 @@ test('wording: the introduction', async () => {
   await ctx.close();
 });
 
-test("the comparison's day is the one written, west of UTC too", async () => {
+test("the comparison's day is the one written, in words, west of UTC and in another language's browser too", async () => {
   const { CHECKED } = await import('../web/app/intro/compare.ts');
-  const ctx = await browser.newContext({ timezoneId: 'America/Los_Angeles', locale: 'en-US' });
+  const ctx = await browser.newContext({ timezoneId: 'America/Los_Angeles', locale: 'pt-PT' }); // another language's browser: the day stays English
   const page = await ctx.newPage();
   await ctx.route(OUR_STORE, (r) => r.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: { type: 'waarm64-store', version: 1, demos: [] } }));
   await page.goto(`${base}/web/app/#intro`);
   const lede = await page.locator('[data-section="intro-compare"] p').first().innerText();
   const [y, m, d] = CHECKED.split('-').map(Number);
-  assert.ok(lede.includes(`${m}/${d}/${y}`), `the day shown isn't ${CHECKED}: ${lede}`);
+  // Written out in the catalog's language, whatever the browser's (`{{when, day}}`: "November 20, 2026").
+  const written = new Date(y, m - 1, d).toLocaleDateString('en', { dateStyle: 'long' });
+  assert.ok(lede.includes(written), `the day shown isn't ${written}: ${lede}`);
   await ctx.close();
 });
 
@@ -276,7 +278,9 @@ test("How it was made: the author's account, the reasons, and the way to the cre
   const made = page.locator('[data-section="intro-made"]');
   await made.waitFor({ timeout: 30_000 });
   assert.equal((await made.locator('h2').innerText()).trim(), t('intro:IntroMade.title'));
-  assert.equal(await made.locator('dl dt').count(), 5);
+  assert.equal(await made.locator('dl dt').count(), 6);
+  // Three across and two down in a wide window.
+  assert.equal(new Set(await made.locator('dl > div').evaluateAll((es) => es.map((e) => Math.round(e.getBoundingClientRect().left)))).size, 3);
   assert.equal(await made.locator('ol li').count(), 4);
   // It comes after how it works, before the end.
   const order = await page.locator('[data-intro] [data-section]').evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.section));

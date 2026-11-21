@@ -127,6 +127,11 @@ i18n.services.formatter?.add('bytes', (v: unknown) => bytesText(Number(v)));
 i18n.services.formatter?.add('lines', (v: unknown) => (Array.isArray(v) ? v.join('\n') : String(v)));
 i18n.services.formatter?.add('time', (v: unknown) => (v instanceof Date ? v.toLocaleTimeString() : String(v)));
 i18n.services.formatter?.add('date', (v: unknown) => (v instanceof Date ? v.toLocaleDateString() : String(v)));
+// A day written out in the catalog's language (`{{when, day}}`: "November 20, 2026"), for a sentence that states a
+// date: the browser's own short form (`date`) would set another language's order of numbers in these words.
+i18n.services.formatter?.add('day', (v: unknown) =>
+  v instanceof Date ? v.toLocaleDateString(LANGUAGE, { dateStyle: 'long' }) : String(v),
+);
 // A date and its time to the minute, as the browser's locale writes them (`{{when, minutes}}`): no seconds.
 i18n.services.formatter?.add('minutes', (v: unknown) =>
   v instanceof Date ? v.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : String(v),

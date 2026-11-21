@@ -24,6 +24,7 @@
   const PARTS = [
     ['intro:IntroMade.who', 'intro:IntroMade.who.words'],
     ['intro:IntroMade.code', 'intro:IntroMade.code.words'],
+    ['intro:IntroMade.cost', 'intro:IntroMade.cost.words'],
     ['intro:IntroMade.time', 'intro:IntroMade.time.words'],
     ['intro:IntroMade.knew', 'intro:IntroMade.knew.words'],
     ['intro:IntroMade.learned', 'intro:IntroMade.learned.words'],
@@ -65,10 +66,11 @@
 </IntroSection>
 
 <style>
-  /* The account's parts: a sheet's entries, a seam over each (as IntroFacts.svelte's topics). */
+  /* The account's six parts: a sheet's entries, a seam over each, three across and two down where the window has the
+     room (then two across, then one). */
   dl {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0 var(--space-7);
     margin: 0;
   }
@@ -85,6 +87,16 @@
   dd {
     margin: 0;
     color: var(--text-dim);
+  }
+  @media (max-width: 1000px) {
+    dl {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    dl {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   .thanks,
   .why {
