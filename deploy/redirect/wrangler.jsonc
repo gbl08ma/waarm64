@@ -1,0 +1,15 @@
+// The old names' redirect (docs/frontend.md "Deployed at waarm64.com"): a Worker with static assets only, no script,
+// whose one file, _redirects, sends every path on vm.tny.im and www.waarm64.com to the same path on https://waarm64.com
+// (301; the query goes with it, the fragment stays in the browser). Requests to static assets aren't billed.
+//   wrangler deploy --config deploy/redirect/wrangler.jsonc
+{
+  "name": "waarm64-redirect",
+  "compatibility_date": "2026-11-21",
+  "assets": { "directory": "./site", "html_handling": "none", "not_found_handling": "none" },
+  "routes": [
+    { "pattern": "vm.tny.im", "custom_domain": true },
+    { "pattern": "www.waarm64.com", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "preview_urls": false
+}

@@ -457,7 +457,11 @@ export function applyPlan(plan: Plan, site: string): void {
     rmSync(join(site, `${LEDGER}${STAGED}`), { force: true });
     throw e;
   }
-  for (const to of staged) renameSync(`${to}${STAGED}`, to);
+  for (const to of staged) {
+    renameSync(`${to}${STAGED}`, to);
+    // Both already names of one file (a hard link to the build's, published again): rename() does nothing then.
+    rmSync(`${to}${STAGED}`, { force: true });
+  }
   writeFileSync(join(site, IGNORE), `${LEDGER}\n`);
   for (const p of plan.removed) rmSync(join(site, p), { force: true });
   // Directories left empty by what went.

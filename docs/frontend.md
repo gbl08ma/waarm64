@@ -2801,7 +2801,7 @@ bundle (a few hashed files, no source), serves it so and boots Buildroot from it
 
 ### Deployed at waarm64.com
 
-The user's public copy: `https://waarm64.com` (until DOTCOM's cutover still at `vm.tny.im`, its address since 2026-10-17: DOTCOM-KICKOFF.md), a **Worker with static assets only** (no script) named
+The user's public copy: `https://waarm64.com` (since 2026-11-21; from 2026-10-17 it was `vm.tny.im`, which now redirects), a **Worker with static assets only** (no script) named
 `waarm64` on the user's account (`wrangler.jsonc` at the repo's root; also at `waarm64.gbl08ma.workers.dev`), uploaded from
 the dev VM. **Deploying is outward-facing: only when the user asks.** Redeploy (the copy is rebuilt first; a deploy is
 atomic and replaces the site):
@@ -2829,7 +2829,13 @@ deployed page and screenshots it as `live.png` in `$CLAUDE_JOB_DIR/tmp`, else th
   DNS only, to the user's server: remote-disks.md "Deploying the demos") and the ones that say the domain sends no mail
   (a null MX, SPF `-all`, DMARC `p=reject`, every DKIM key revoked at `*._domainkey`); no CAA (it would bind the demo
   network's Caddy certificate too). **Every record in the `tny.im` zone is the user's: leave them exactly as they
-  are** (`tny.im` itself is a Pages project).
+  are** (`tny.im` itself is a Pages project); ours there is `vm.tny.im` alone, the redirect's (below).
+- **The old names' redirect:** `waarm64-redirect` (`deploy/redirect/`: `wrangler.jsonc`, `site/_redirects`), another
+  assets-only Worker, at `vm.tny.im` and `www.waarm64.com`: every path goes to the same one on `https://waarm64.com`
+  with a 301, the query with it (`/* https://waarm64.com/:splat 301`; checked on its workers.dev address first).
+  Deployed with `wrangler deploy --config deploy/redirect/wrangler.jsonc`; it never changes with the page.
+  `vmdisks.tny.im` and `demonet.tny.im` are gone (2026-11-21): a stored record that names them no longer works.
+  A Worker's custom domain that a deploy's `routes` no longer lists is removed by that deploy, its DNS record with it.
 - **From Pages (2026-10-23):** the site was a classic Pages project under the project's former name (`wrangler pages deploy`) until then;
   moved by Cloudflare's guide (workers/static-assets/migration-guides/migrate-from-pages): the Worker deployed and
   checked on workers.dev, every file of `target/dist` compared, then the Pages project's domain and its `vm.tny.im` CNAME

@@ -112,6 +112,17 @@ test("a site: the store with each demo's definition inline, its files under its 
   assert.equal(readFileSync(join(s, '.assetsignore'), 'utf8'), '.publish.json\n', 'the ledger is not deployed');
   const again = await plan(source([demo('alpine-term', a, { replaces: ['alpine-old'], template: true })]), s);
   assert.deepEqual([again.added, again.removed], [[], []], 'published again: nothing changes');
+  // With a thumbnail (a file linked in, not written), published twice: the second time its files are already hard
+  // links to the build's, and rename() leaves both names of one file, so the staged name must go too (a deploy once
+  // uploaded three `thumb.webp.publishing`).
+  writeFileSync(join(tmp, a, 'thumb.webp'), 'webp');
+  const pictured = source([{ ...demo('alpine-term', a, { replaces: ['alpine-old'], template: true }), thumbnail: `${a}/thumb.webp` }]);
+  applyPlan(await plan(pictured, s), s);
+  applyPlan(await plan(pictured, s), s);
+  assert.ok(existsSync(join(s, 'alpine-term/thumb.webp')), 'the thumbnail in place');
+  const left = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? left(join(dir, e.name)) : e.name.endsWith('.publishing') ? [join(dir, e.name)] : []));
+  assert.deepEqual(left(s), [], 'no staged file left behind');
 });
 
 test('refused: another core format, another shape, not a template, a download off the files, a typo, an id twice, a build outside target/', async () => {
