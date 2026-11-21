@@ -189,10 +189,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   members reachable from the prologue past the `loop` (or the `loop` opened at each entry).
 - **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
   heap bounded"):
-  - **The user's own session wasn't replayed:** no Chromium in the desktop image and no real sites offline; the
-    run-once churn screen (`CHURN='rate=300&calls=120&n=2'`) grew an unbounded map to 3.2 M keys in 12 minutes without a
-    flush (heap 630 MiB, mark 725), the crash's path. Check with `TAILCAT=rig PHASES=sites` over 15 minutes and
-    Chromium in the guest (in `images/arch/desktop.sh` since 2026-10-22).
   - **What a module's install adds outside the bound** (the review after PERF loop 42; jit.md "The core's heap", "Not
     covered"): `Cache::install` files a region's members entered at an entry (`info`, new keys only where the map
     doesn't hold them), the links (`linkers`), the checker's spans and the heads under a region's other pages without

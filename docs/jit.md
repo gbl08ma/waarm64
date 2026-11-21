@@ -745,6 +745,12 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   flushes are rare: the desktop guest (4 vCPUs, Firefox's sites, then Chromium's) ran the heap out after 15 minutes
   and one flush when the table doubled from 2^22 buckets (`rust_oom` in `Jit::miss`, 2026-10-21). JavaScript
   engines' code that runs a few times, at addresses later reused, is most of those keys.
+  **That session, replayed** (bench/boot/REPORT.md "PERF loop 44"): the desktop guest booted, 4 vCPUs, the 320 MiB
+  budget, 15 minutes of six real sites (YouTube, three news sites, Excalidraw, Google Maps) in the guest's Chromium and
+  then, in a session of its own, its Firefox: the block map stops at its 900,000 keys and prunes every ~16 s, the
+  heap's live bytes stay at 281-284 MiB (Chromium) and 280-293 (Firefox, one flush at 845 s), its mark within 2.5 MiB
+  of them, no rescue, nothing slower by the end. Of the live bytes 198 MiB are the decoded blocks (below), 29 the
+  block map, 8.5-17 the known blocks, 48 the rest.
 - **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 16M micro-ops of 8 bytes,
   128 MiB, shared out among the tables, at most 64 MiB one), and its map and page index, which also start over at
   `MAX_KEYS` (900,000: 2^20 buckets, 17 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full

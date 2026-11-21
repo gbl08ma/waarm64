@@ -1,0 +1,47 @@
+{
+ "hostChromium": "155.0.8059.84",
+ "guestBrowser": "chromium 156.0.8078.79-1",
+ "core": "ff64159774cea367",
+ "net": {
+  "addr": "192.0.0.2/32",
+  "check": "http 200 in 0.559625s"
+ },
+ "sites": {
+  "urls": [
+   "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+   "https://www.theguardian.com/international",
+   "https://edition.cnn.com/",
+   "https://www.bbc.com/news",
+   "https://excalidraw.com/",
+   "https://www.google.com/maps"
+  ],
+  "dwell": 30,
+  "cycles": 5,
+  "seconds": 906,
+  "started": 6.6,
+  "at": "2026-11-21T15:16:47.447Z"
+ },
+ "visits": 30,
+ "jit": {
+  "steps": 428789237188,
+  "blocks": 105646,
+  "modules": 7748,
+  "bytes": 233175129,
+  "invalidations": 19384,
+  "flushes": 0,
+  "prunes": 57,
+  "pruneNs": 1624874752,
+  "rescues": 0,
+  "mapRescues": 0,
+  "lagFlushes": 0,
+  "decClears": 161,
+  "decoded": 85904900,
+  "tierUps": 7929,
+  "lockWaitNs": 8030088704
+ },
+ "warnings": {
+  "virgl: ctx 9: video: 1 picture(s) never came out of the decoder: given up": 2,
+  "virgl: ctx 9: video: 3 picture(s) never came out of the decoder: given up": 1,
+  "virgl: ctx 9: video: 8 picture(s) never came out of the decoder: given up": 1
+ }
+}

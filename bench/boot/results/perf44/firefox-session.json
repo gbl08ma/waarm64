@@ -1,0 +1,47 @@
+{
+ "hostChromium": "155.0.8059.84",
+ "guest": "7.3.4-arch1-3error: package 'wlroots0.19' was not found firefox 160.0-1 sway 1:1.12-4 mesa 1:26.2.7-1 Mem:            2440         219        1827           4         466        2220",
+ "core": "ff64159774cea367",
+ "net": {
+  "addr": "192.0.0.2/32",
+  "check": "http 200 in 0.562772s"
+ },
+ "sites": {
+  "urls": [
+   "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+   "https://www.theguardian.com/international",
+   "https://edition.cnn.com/",
+   "https://www.bbc.com/news",
+   "https://excalidraw.com/",
+   "https://www.google.com/maps"
+  ],
+  "dwell": 30,
+  "cycles": 5,
+  "seconds": 910,
+  "started": 20.4,
+  "at": "2026-11-21T15:34:15.227Z"
+ },
+ "visits": 30,
+ "jit": {
+  "steps": 447656918566,
+  "blocks": 203120,
+  "modules": 14047,
+  "bytes": 474657475,
+  "invalidations": 100725,
+  "flushes": 1,
+  "prunes": 52,
+  "pruneNs": 1539449856,
+  "rescues": 0,
+  "mapRescues": 0,
+  "lagFlushes": 0,
+  "decClears": 173,
+  "decoded": 82204426,
+  "tierUps": 15854,
+  "lockWaitNs": 38650847488
+ },
+ "warnings": {
+  "virgl: ctx 11: video: 7 picture(s) never came out of the decoder: given up": 1,
+  "virgl: ctx 11: video: 1 picture(s) never came out of the decoder: given up": 1,
+  "virgl: ctx 11: video: 6 picture(s) never came out of the decoder: given up": 1
+ }
+}

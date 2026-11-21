@@ -249,7 +249,9 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
    the page's adapter connected to the rig's exit node, the guest on IPv4 only (the dev VM has no IPv6 out: its IPv6
    default route dropped, DNS at 1.1.1.1, IPv4 preferred, Firefox's `network.dns.disableIPv6`), a curl checked, then
    `bench/gpu/firefox/sites.html` opens `SITES` (a video watch page, three news sites, two web apps by default) in one
-   tab, `DWELL_S` (20) each, `CYCLES` times; `results.sites` has the URLs and each visit's time. Real sites change
+   tab, `DWELL_S` (20) each, `CYCLES` times; `results.sites` has the URLs and each visit's time. `GUEST_BROWSER=chromium` opens
+   them in the guest's Chromium instead (`target/arch/desktop.qcow2`, `WAARM64_GUEST_USER=arch`: the image with it,
+   booted, not the pages snapshot). Real sites change
    daily: an A/A in the same run as each A/B, arms close in time. Six sites at 20 s each didn't flush at 320 MiB (264
    MB in 130 s, against the churn's 424 MB in 120 s): longer runs or more cycles to see a flush.
 4. **The `go build` loop** from `debian-go.waarm64snap`: `bench/stress/go-ab.sh <outdir> <rounds> <arm>=<core>…` (4

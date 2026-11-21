@@ -111,7 +111,7 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-21, after loop 43)
+## State (2026-11-21, after loop 44)
 
 What every loop kept, dropped and found is in its REPORT entry and the docs pages it names; the out-of-context reviews
 (after loops 8, 19, 21, 23, 28, 32, 34, 36 and 42) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37 and 43. Built but off by
@@ -129,14 +129,16 @@ the unsound bound measured nothing on the gates or the pages session) and droppe
 a loop (a tenth of that bound by its counts): no code, no new flag state, so no review is due for it. Loop 43 fixed the
 review of the block map and the heap's bounds (the prune's off-by-one at half a 2^20 table, a prune that allocates
 nothing, the page index under the safety net, gauges counting tombstones, a u16 clock, `mapRescues` at ABI 72): the
-Mac's pages session, churn and gates unchanged; `install`'s growth outside the bound is a backlog entry. `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
+Mac's pages session, churn and gates unchanged; `install`'s growth outside the bound is a backlog entry. Loop 44 replayed the crash's session (the desktop guest
+booted, 15 minutes of six real sites through tailcat, in the guest's Chromium and in its Firefox, `MEMLOG=5`, on the
+dev VM): heap live at most 284 and 293 MiB, marks 285 and 295, the block map at its 900,000 keys with 52-57 prunes,
+one flush (Firefox's), no rescue, no slowdown; no code change (the sites phase takes `GUEST_BROWSER=chromium`). `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: the core's heap, the 320 MiB budget session (docs/backlog.md "The user's own session wasn't replayed") | memory more than speed; measure before building (`MEMLOG` works on the Mac; `sway-mac.sh` passes `CHURN`, `CHURN_S`) |
-| JIT: V8's per-function overhead (whether superseded blocks' modules stay alive through siblings) | memory; measure first |
+| **Next:** JIT: V8's per-function overhead (whether superseded blocks' modules stay alive through siblings) | memory; measure first |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | JIT: followed calls whose callee completes inside the region (loop 36's follow-up) | bound ~0.5%; exits from inside a followed call as host calls to the pending continuation |
 | JIT: entries for loops through calls (loop 37's review finding 5) | count first: a looped forward region's call continuations run interpreted after an unwind |

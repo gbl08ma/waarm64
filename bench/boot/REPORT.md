@@ -6752,3 +6752,45 @@ tests/heap.test.ts's 320 MiB guest prunes 12 times at 16.1-17.5 ms (base) and 16
 `decoded_keys_at_half_…`, `decoded_keys_are_bounded`); no age clamp (`the_map_clock_…`); no page reservation in `room`
 (`a_page_index_without_room_rescues` aborts); the links' `shrink_to(0)` back (`a_prune_takes_no_memory`); no
 `map_rescues` count (`a_rescue_frees_the_maps`; tests/heap.test.ts too).
+
+## PERF loop 44: the core's heap over 15 minutes of real sites (2026-11-21)
+
+The backlog's "The core's heap, after the bound", "The user's own session wasn't replayed": the crash of "M8: the core's
+heap bounded" came after 15 minutes of the desktop guest on real sites (Firefox's, then Chromium's) and one flush.
+That session, replayed with the bounds as loops 40-43 left them: main's core at 732f9498, booted from
+`target/arch/desktop.qcow2` (Arch Linux aarch64 with sway; Chromium 156.0.8078.79 and Firefox 160.0 in the guest, the
+image `images/arch/desktop.sh` makes), 4 vCPUs, 2.5 GiB, the 320 MiB JIT budget, online through `tests/net/tailcat.sh`'s
+exit node (`TAILCAT=rig PHASES=sites`), the six default sites (a YouTube watch page, the Guardian, CNN, the BBC's
+news, Excalidraw, Google Maps) 30 s each, five times through (900 s), `MEMLOG=5`. One session in the guest's Chromium
+(`GUEST_BROWSER=chromium`, new: the sites phase drove only Firefox), one in its Firefox. On the dev VM (Chromium
+155.0.8059.84): the tailcat rig runs there, and `bench/gpu/sway-mac.sh` doesn't pass it to the Mac; the heap's gauges
+are the core's own accounting, the same on either host. Raw: `results/perf44/` (README; `sum.ts`).
+
+| | Chromium in the guest | Firefox in the guest |
+|---|---|---|
+| visits; the sites' phase (s) | 30; 906 | 30; 910 |
+| heap live at most (MiB; when, s) | **283.7** (815) | **293.0** (765) |
+| heap's mark (MiB) | **284.5** | **295.4** |
+| of the live maximum: decoded blocks · block map · known blocks · held · the rest | 198.1 · 29.3 · 8.5 · 0.0 · 47.7 | 198.1 · 29.3 · 17.0 · 0.0 · 48.6 |
+| block map's keys at most | 896,720 | 899,078 |
+| prunes (ms each) | 57 (28.5) | 52 (29.6) |
+| flushes; rescues; `mapRescues`; lag flushes | 0; 0; 0; 0 | **1** (845 s, the byte budget); 0; 0; 0 |
+| JIT live bytes at most (MiB); wasm compiled (MB) | 217.4; 233 | 317.8; 475 |
+| decoded-block clears; ICs | 161; 19,384 | 173; 100,725 |
+| guest MIPS a pass through the sites (180 s each) | 460 · 449 · 406 · 438 · 480 | 605 · 386 · 463 · 422 · 433 |
+
+- **Within the budget, nothing aborted.** The block map stops at its 900,000 keys in both and prunes every ~16 s
+  (1.5-1.6 s under the cache's lock in 15 minutes); the heap's live bytes stay flat from the second minute on
+  (281-284 MiB in Chromium; 280-293 in Firefox, whose known blocks' table doubled once, 8.5 → 17 MiB, with the code
+  this epoch compiled before its flush), its mark within 2.5 MiB of the live maximum: no table doubles beside its old
+  one, the crash's path. Firefox's session flushed once at 845 s, the crash's moment: the heap's live bytes fell 3.5
+  MiB and stayed below their maximum after it. The decoded blocks are the largest part (the 128 MiB arena and four maps, loop 38's
+  fixed budget); the rest (devices, jump caches, stacks) 48 MiB.
+- **Nothing slowed over the session**: the guest's MIPS a pass through the sites shows no trend (Firefox's first pass
+  holds its start); no slow commands, every visit made. The only warnings were virgl's video decoder giving
+  up on 1-8 pictures at YouTube's page in both (a decoder warning, not the heap).
+- **What the run doesn't cover**: a session longer than one flush, Chromium's at the point its budget fills (217 of
+  320 MiB at 15 minutes); the module install's growth outside the bound (the other sub-item of the backlog entry)
+  isn't seen in any gauge here (the block map never passed its 900,000 keys).
+- No core change; the tool change: `bench/gpu/firefox-load.ts`'s sites phase takes `GUEST_BROWSER=chromium`, and
+  `firefox/sites.html` logs through the console where there's no `dump()`. The backlog sub-item is removed.

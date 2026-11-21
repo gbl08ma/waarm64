@@ -29,6 +29,8 @@
 // DNS at 1.1.1.1, IPv4 preferred, Firefox's network.dns.disableIPv6), checked with a curl. PHASES=sites (needs it):
 // real sites in one tab by bot (firefox/sites.html), SITES the URLs (comma separated; a default list of heavy ones),
 // DWELL_S seconds each (20), CYCLES times through (1); every visit's URL and host time in results.sites.
+// GUEST_BROWSER=chromium opens them in the guest's Chromium instead (the desktop image's, images/arch/desktop.sh; kiosk,
+// popups allowed, no background throttling of the driver's timers, its console on stderr).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { GUEST_USER, openSession } from './guest-session.ts';
 import { saveSnapshotFile } from '../snapshot-start.ts';
@@ -284,9 +286,16 @@ if (PHASES.includes('sites')) {
   await pasteSerial(`grep -q disableIPv6 ${HOME}/ffbench/profile/user.js || cat >> ${HOME}/ffbench/profile/user.js <<'EOF'\n${prefs.join('\n')}\nEOF`);
   await run(`chown -R ${GUEST_USER}:${GUEST_USER} ${HOME}/ffbench`);
   await run('. /root/ff.sh; ffkill', 120_000);
+  const chromium = process.env.GUEST_BROWSER === 'chromium';
+  if (chromium) results.guestBrowser = await run('pacman -Q chromium');
   const startAt = Date.now();
   if (process.env.TIMELINE_ALL) await s.timeline.start();
-  await run(`. /root/ff.sh; ffrun file://${HOME}/ffbench/sites.html?q=${encodeURIComponent(new URLSearchParams({ dwell: String(dwell), cycles: String(cycles), urls: urls.join(',') }).toString())} sites`);
+  const url = `file://${HOME}/ffbench/sites.html?q=${encodeURIComponent(new URLSearchParams({ dwell: String(dwell), cycles: String(cycles), urls: urls.join(',') }).toString())}`;
+  if (chromium) {
+    // ffrun's log and start time, Chromium's command (its console lines, FFBENCH ones included, on stderr).
+    const flags = '--no-first-run --password-store=basic --user-data-dir=/tmp/crsites --kiosk --disable-popup-blocking --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --enable-logging=stderr --log-level=0';
+    await run(`rm -f /tmp/ff-sites.log; date +%s.%N > /tmp/ff-sites.t0; ${s.asUser(`swaymsg exec 'chromium ${flags} ${url} > /tmp/ff-sites.log 2>&1' >/dev/null`)}`);
+  } else await run(`. /root/ff.sh; ffrun ${url} sites`);
   const started = await run('. /root/ff.sh; ffwait sites', 330_000);
   const readyAt = Date.now();
   log('sites', started);

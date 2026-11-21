@@ -7,12 +7,14 @@
 // through a tailcat exit node, docs/benchmarking.md "Screening an A/B"): this page opens each URL of `urls` (comma
 // separated, encoded) in turn in one named tab (`window.open(url, 'site')`: the same tab navigated, the last page
 // unloaded), `dwell` seconds each (20), the list `cycles` times (1). Lines on Firefox's stdout: `FFBENCH sites ready`,
-// `FFBENCH site <n> <url> t=<ms>` at each visit (t since this page's start), `FFBENCH sites done t=<ms>`.
+// `FFBENCH site <n> <url> t=<ms>` at each visit (t since this page's start), `FFBENCH sites done t=<ms>`. In
+// Chromium (GUEST_BROWSER=chromium) the same lines through its console log.
 // The query, or all of it encoded in `q` (sway's exec runs the command through a shell, where a bare `&` ends it).
 const q0 = new URLSearchParams(location.search), q = q0.has('q') ? new URLSearchParams(q0.get('q')) : q0;
 const urls = (q.get('urls') ?? '').split(',').filter(Boolean), dwell = +(q.get('dwell') ?? 20), cycles = +(q.get('cycles') ?? 1);
 const t0 = performance.now();
-const say = (s) => { dump(`FFBENCH ${s}\n`); document.getElementById('o').textContent += `${s}\n`; };
+// Firefox's dump() writes stdout; Chromium has none: its console goes to stderr (`--enable-logging=stderr`).
+const say = (s) => { if (typeof dump === 'function') dump(`FFBENCH ${s}\n`); else console.log(`FFBENCH ${s}`); document.getElementById('o').textContent += `${s}\n`; };
 say('sites ready');
 let n = 0;
 const next = () => {
