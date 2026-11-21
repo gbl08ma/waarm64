@@ -1,0 +1,81 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 0088cb41..dd4ac8cb 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -608,7 +608,7 @@ pub struct Cache {
+ #[repr(C)]
+ #[derive(Default)]
+ pub struct Gauge(pub [AtomicU64; GAUGE_WORDS]);
+-pub const GAUGE_WORDS: usize = 8;
++pub const GAUGE_WORDS: usize = 16;
+ /// The wasm bytes and the modules installed since the last flush: what V8
+ /// holds code and metadata for (until its GC collects a flushed epoch's).
+ pub const G_LIVE_BYTES: usize = 0;
+@@ -731,6 +731,7 @@ impl Cache {
+         let g = &self.gauge.0;
+         g[G_KEYS].store(self.map.len() as u64, Ordering::Relaxed);
+         g[G_KEY_BYTES].store(self.map_bytes(), Ordering::Relaxed);
++        g[11].store(self.map.capacity() as u64, Ordering::Relaxed);
+     }
+ 
+     /// The bytes the block map's table and its page index take.
+@@ -750,9 +751,22 @@ impl Cache {
+         if n >= MAP_KEYS || self.map.capacity() == n && n > grows_past(MAP_KEYS) {
+             self.prune(s);
+         }
++        // DIAG: reserves that rehashed in place (8, ns 9) or resized (12, ns
++        // 13); the table's full capacity (10, its most since allocated).
++        let g = &self.gauge.0;
++        let full = self.map.capacity() == self.map.len();
++        let old = g[10].load(Ordering::Relaxed);
++        let t0 = if full { now_ns() } else { 0 };
+         if self.map.try_reserve(1).is_err() {
+             self.rescue(s);
+         }
++        let g = &self.gauge.0;
++        if full {
++            let w = if (self.map.capacity() as u64) > old { 12 } else { 8 };
++            g[w].fetch_add(1, Ordering::Relaxed);
++            g[w + 1].fetch_add(now_ns().saturating_sub(t0), Ordering::Relaxed);
++        }
++        g[10].fetch_max(self.map.capacity() as u64, Ordering::Relaxed);
+     }
+ 
+     /// The block map's clock: keys added to it, in units of
+@@ -795,6 +809,7 @@ impl Cache {
+             return;
+         }
+         self.map.shrink_to(0);
++        self.gauge.0[10].store(self.map.capacity() as u64, Ordering::Relaxed);
+         let map = &self.map;
+         self.pages.retain(|k| map.contains_key(&k));
+         self.linkers.retain(|k, _| map.contains_key(k));
+@@ -810,6 +825,7 @@ impl Cache {
+     fn rescue(&mut self, s: &mut Stats) {
+         self.flush(s);
+         self.map = Map::default();
++        self.gauge.0[10].store(0, Ordering::Relaxed);
+         self.pages = PageIndex::default();
+         self.linkers = Map::default();
+         self.spans = Map::default();
+diff --git a/web/vm.ts b/web/vm.ts
+index 7d92153a..33ff9aee 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -333,7 +333,7 @@ const S_CMDLINE = 4096;
+ export type Vm = Awaited<ReturnType<typeof bootVm>>;
+ 
+ /** The JIT cache's gauge words (`jit::GAUGE_WORDS`, `vm_jit_gauge`). */
+-const GAUGE_WORDS = 8;
++const GAUGE_WORDS = 16;
+ 
+ /**
+  * The core's heap in a fixed-size memory, its static data and stack included: the JIT's maps and
+@@ -885,6 +885,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+         jitKeys: g(5),
+         jitKeyBytes: g(6),
+         jitHeld: g(7),
++        mr: [8, 9, 10, 11, 12, 13].map(g),
+       };
+     },
+     /** Caps the JIT's budget at `bytes` (the gauge's limit word, ABI 45; at least 16 MiB; 0: the machine's budget): the page's memory signal. */

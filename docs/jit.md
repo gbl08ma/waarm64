@@ -695,8 +695,14 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   `HashMap::capacity` drops with each tombstone), a **prune** (`Cache::prune`) keeps what the cache needs (compiled, queued,
   tiering or covered blocks), the keys reported in the last 262,144 keys added (`RECENT_TICKS` of the map's clock,
   `Cache::tick`: the code running now) and those counted `KEEP_HITS` (16) times reported in the last 2 M (on their way
-  to the threshold), with their counts; it drops the rest and rebuilds the table to fit, and the page index and links
-  to match. If that leaves more than half of `MAP_KEYS`, the needed and the recent keys stay; then only the needed;
+  to the threshold), with their counts; it drops the rest and rebuilds the page index and links to match. The table
+  keeps its buckets (a prune comes only with it at 2^21), and since it was full the dropped keys leave tombstones, so
+  the prune rehashes it in place (a reserve of the room past them, while that's at most half the table's:
+  hashbrown's `reserve_rehash`). **Why it stays** (bench/boot/REPORT.md "PERF loop 40"): rebuilt to fit, the keys
+  growing back doubled it from 2^19 to 2^21 buckets after every prune, and at 2^20 → 2^21 the old 25 MiB and the new 50
+  lived together with the heap near its maximum: the run-once churn's mark 333 MiB against a live maximum of 311, now
+  313. Kept without the rehash, the tombstones (1.5 M) lengthened every probe and left no room: 7 prunes instead of 5,
+  42 ms each instead of 36, and rehashes on demand. If that leaves more than half of `MAP_KEYS`, the needed and the recent keys stay; then only the needed;
   if even those are too many, the cache flushes. **Why recent ones too:** with only the warm ones kept, the prune
   (which lands in the pages session's bbc load, 210-240 s in) made that load 0.5-1 s slower: its code, reported a
   few times, counted from zero again, and each key coming back is formed again under the lock. So the table never passes 2^21 buckets (50 MiB). A pruned key
@@ -741,9 +747,11 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   and the headers aren't what it costs. Lists threaded through `Info` (a 2-byte next key, the decoded blocks' way,
   room made by packing its flags) would leave ~0.5 MiB: at most ~4.5 MiB of a heap whose mark is 315-333 MiB
   (1-1.4%), for an `IC IVAU` path that must unlink a linker from the middle of another page's chain. Not built.
-- **A prune** over 1.5 M keys takes 6-11 ms natively, ~19 ms in wasm (Node; counter word 120, `pruneNs`) and ~35 ms
-  in Firefox's pages session on 4 vCPUs, all of it under the cache's lock.
-- **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys and bytes (table and page index) and the
+- **A prune** over 1.5 M keys takes 6-11 ms natively, ~28 ms in wasm (Node, tests/heap.test.ts's guest, which keeps
+  almost nothing: the rehash in place costs ~7 ms more there than rebuilding a small table did; counter word 120,
+  `pruneNs`) and ~35 ms in the run-once churn on 4 vCPUs, all of it under the cache's lock.
+- **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys and bytes (table and page index; the table
+  counted whole, from the most keys it has held since it was allocated, as `capacity` leaves its tombstones out) and the
   held bytes, and each table's counters what its decoded and known blocks take (`decBytes`, `knownBytes`); the
   page's status carries them (`Vm.hostUse`, `stats().jit`).
 
@@ -757,9 +765,10 @@ were highest). Firefox's pages session on the Mac (`bench/boot/results/perf38/`,
 The decoded blocks are two thirds of it, at their bound (four tables of ~50 MiB, the first's map larger). **What sets
 the mark:** in the pages session the heap's live maximum (the block map's table doubles to 2^21 buckets early, at 0.92
 M keys, while the heap is ~285 MiB). In the run-once churn (`CHURN='rate=300&calls=120&n=2'`, 10 minutes: 5 prunes,
-0.3 M `IC IVAU`s) the doubling after a prune: a prune rebuilds the table to fit its kept keys, the keys grow back, and
-at 2^20 → 2^21 buckets the old 25 MiB and the new 50 live together, the mark 333 MiB against a live maximum of 310
-(bench/boot/REPORT.md "PERF loop 39"). Before
+0.3 M `IC IVAU`s) the same doubling, before its first prune: 313 MiB against a live maximum of 311, with the table
+kept across the prunes (rebuilt to fit, its doubling after each prune set the mark at 333: bench/boot/REPORT.md "PERF
+loop 39", "PERF loop 40"). Where that first doubling lands in the heap's free space moves the mark by up to ~15 MiB
+from session to session (315-329 in either). Before
 8-byte micro-ops (the micro-op 16 bytes; `bench/boot/results/m8-heap/`), the same session then 10 minutes of the churn
 screen:
 

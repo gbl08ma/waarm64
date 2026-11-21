@@ -542,6 +542,10 @@ pub struct Cache {
     held: u64,
     /// Keys added to the block map so far (at misses: [`Cache::tick`]).
     added: u64,
+    /// The most keys the block map's table has held since it was allocated
+    /// (its room without tombstones, which `capacity` doesn't count): what
+    /// its bytes are counted from ([`Cache::map_bytes`]).
+    map_full: usize,
     /// The bytes of the modules installed since the last flush (`Config::max_bytes`).
     live_bytes: u64,
     /// The compile threshold now, and the one it starts from after a flush
@@ -682,6 +686,7 @@ impl Cache {
             next: MISS_SLOTS,
             held: 0,
             added: 0,
+            map_full: 0,
             live_bytes: 0,
             threshold: cfg.threshold,
             floor: cfg.threshold,
@@ -735,7 +740,10 @@ impl Cache {
 
     /// The bytes the block map's table and its page index take.
     fn map_bytes(&self) -> u64 {
-        table_bytes(self.map.capacity(), size_of::<(u64, Info)>()) + self.pages.bytes()
+        table_bytes(
+            self.map_full.max(self.map.capacity()),
+            size_of::<(u64, Info)>(),
+        ) + self.pages.bytes()
     }
 
     /// Before a key may join the block map (a miss, from the dispatcher: it
@@ -753,6 +761,7 @@ impl Cache {
         if self.map.try_reserve(1).is_err() {
             self.rescue(s);
         }
+        self.map_full = self.map_full.max(self.map.capacity());
     }
 
     /// The block map's clock: keys added to it, in units of
@@ -765,8 +774,9 @@ impl Cache {
     /// the last [`RECENT_TICKS`], and those counted [`KEEP_HITS`] times
     /// reported in the last [`WARM_TICKS`]; if that leaves more than half of
     /// [`MAP_KEYS`], only the needed and the recent ones; then only the
-    /// needed ones; and flushes if even that does. Then rebuilds the map's table to fit, and
-    /// the page index and the links to match. A pruned key that runs again
+    /// needed ones; and flushes if even that does. Then rehashes the map's
+    /// table in place (it keeps its buckets), and rebuilds the page index and
+    /// the links to match. A pruned key that runs again
     /// counts from zero (its decoded blocks report it as new).
     fn prune(&mut self, s: &mut Stats) {
         let t0 = now_ns();
@@ -794,7 +804,19 @@ impl Cache {
             self.flush(s);
             return;
         }
-        self.map.shrink_to(0);
+        // The table stays: rebuilt to fit, the keys growing back doubled it
+        // again with the heap near its mark, the old table and the new one
+        // live together (PERF loop 40). A prune comes only with it at 2^21
+        // buckets ([`Cache::room`]), full, so the retains left tombstones
+        // where the keys were, which lengthen every probe and leave no room:
+        // a reserve of the room past them, if that's at most half the
+        // table's, rehashes it in place (hashbrown's `reserve_rehash`).
+        let cap = self.map.capacity();
+        if cap < grows_past(MAP_KEYS) && self.map.try_reserve(cap - self.map.len() + 1).is_err() {
+            self.rescue(s);
+            return;
+        }
+        self.map_full = self.map_full.max(self.map.capacity());
         let map = &self.map;
         self.pages.retain(|k| map.contains_key(&k));
         self.linkers.retain(|k, _| map.contains_key(k));
@@ -810,6 +832,7 @@ impl Cache {
     fn rescue(&mut self, s: &mut Stats) {
         self.flush(s);
         self.map = Map::default();
+        self.map_full = 0;
         self.pages = PageIndex::default();
         self.linkers = Map::default();
         self.spans = Map::default();
@@ -3564,6 +3587,63 @@ mod tests {
         );
         assert!(t.stats.prunes >= 2 && t.stats.flushes == 0 && s.flushes == 0);
         assert_eq!(size_of::<(u64, Info)>(), 24);
+    }
+
+    /// A prune keeps the block map's table (2^21 buckets once grown): rebuilt
+    /// to fit, the keys growing back doubled it again with the heap near its
+    /// mark, the old table and the new one live together (PERF loop 40). The
+    /// tombstones the prune leaves go in a rehash in place, never a growth.
+    #[test]
+    fn a_prune_keeps_the_table() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let mut least = usize::MAX;
+        for k in 0..4_000_000u64 {
+            let key = ((1 << 32) + k * 16) | block::KEY_MMU;
+            let _ = c.miss(&mut t, key, key, &mem, 1, Some(4));
+            if t.stats.prunes > 0 {
+                least = least.min(c.map.capacity());
+            }
+        }
+        assert!(t.stats.prunes >= 2 && t.stats.flushes == 0);
+        // Its room past the tombstones: more than a table of 2^20 buckets
+        // holds, and never past 2^21's.
+        assert!(
+            least > grows_past(MAP_KEYS),
+            "the table shrank to {least} keys"
+        );
+        assert!(c.map.capacity() <= (1 << 21) / 8 * 7);
+    }
+
+    /// The block map's bytes count its table whole, tombstones too (which
+    /// `capacity` leaves out): the gauge's, the page's status.
+    #[test]
+    fn the_map_bytes_count_tombstones() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        // 2^21 buckets, filled (past `room`'s prune): the keys dropped from
+        // a full table leave tombstones.
+        let mut k = 0u64;
+        while c.map.len() < 1_400_000 {
+            c.info(k << 4, || 1);
+            k += 1;
+        }
+        c.room(s);
+        while c.map.capacity() > c.map.len() {
+            c.info(k << 4, || 1);
+            k += 1;
+        }
+        c.map.retain(|k, _| k % 1024 == 0);
+        assert!(
+            c.map.capacity() < grows_past(MAP_KEYS),
+            "{} keys' room",
+            c.map.capacity()
+        );
+        let whole = (1u64 << 21) * 25 + c.pages.bytes();
+        assert_eq!(c.map_bytes(), whole);
     }
 
     /// ICs that keep dropping pages leave tombstones, which take room in the

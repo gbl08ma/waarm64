@@ -111,7 +111,7 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-21, after loop 39)
+## State (2026-11-21, after loop 40)
 
 What every loop kept, dropped and found is in its REPORT entry and the docs pages it names; the out-of-context reviews
 (after loops 8, 19, 21, 23, 28, 32, 34 and 36) were fixed in loops 9, 20, 22, 24, 29, 33, 35 and 37. Built but off by
@@ -121,13 +121,14 @@ code runs is a fixpoint, recursion is no loop, checked edges leave: Mac gates un
 −22%). Loop 38 measured the decoded blocks' budget and kept it fixed (twice the budget: +96 MiB heap, −24% decodes,
 the pages session the same). Loop 39 measured the block map's page index and kept it (5.1-5.6 MiB, pages of ~50
 keys: a list-free index would save ~4.5 MiB at most); it found the churn's heap mark set by the map's table doubling
-again after a prune (filed). `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
+again after a prune. Loop 40 kept the table across a prune, its tombstones rehashed in place (the churn's mark 333 →
+313 MiB, the prune's time the same, the gates unchanged). `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: the core's heap (the block map's table kept across a prune, the untuned constants), the 320 MiB budget session | memory more than speed; measure before building; one loop each (`MEMLOG` works on the Mac; `sway-mac.sh` passes `CHURN`, `CHURN_S`) |
+| **Next:** JIT: the core's heap (the untuned constants), the 320 MiB budget session | memory more than speed; measure before building; one loop each (`MEMLOG` works on the Mac; `sway-mac.sh` passes `CHURN`, `CHURN_S`) |
 | JIT: V8's per-function overhead (whether superseded blocks' modules stay alive through siblings) | memory; measure first |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | JIT: followed calls whose callee completes inside the region (loop 36's follow-up) | bound ~0.5%; exits from inside a followed call as host calls to the pending continuation |

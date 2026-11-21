@@ -6479,3 +6479,58 @@ The pages session's speed was as loop 38's: `pagesS` 73.3 s, busy MIPS 451.)
   (up to ~23 MiB of the churn's mark).
 - **Dropped**: the finding is in docs/jit.md "The core's heap"; the backlog sub-item replaced by that follow-up. No
   core change, no step count moved.
+
+## PERF loop 40: the block map's table kept across a prune (2026-11-21)
+
+The backlog's "The block map's table kept across a prune" (loop 39's finding): a prune rebuilt the table to fit
+(`shrink_to(0)`), so in the run-once churn the keys growing back doubled it again near the heap's maximum. Built: the
+table keeps its buckets, and the prune rehashes it in place. Diagnostic gauges (`results/perf40/diag.patch`: the
+block map's reserves that rehashed in place or resized, with their ns, and its tombstones) on 87a8dd52, from
+`target/snapbench/pages.waarm64snap` on the Mac (M4, Chrome for Testing 158.0.8127.36), `MEMLOG=5`: `d0` main, `d1`
+the `shrink_to(0)` removed, `d2` the kept change. The run-once churn (`CHURN='rate=300&calls=120&n=2'`, 600 s) in the
+order d0 d1 d1 d0 d2 d0 d2; Firefox's pages session two rounds alternated each for d0/d1 and d2/d0. Raw:
+`results/perf40/` (README); `memsum.json` from `sum.ts`.
+
+| the run-once churn | `d0` main (3 sessions) | `d1` the shrink removed (2) | `d2` kept, rehashed (2) |
+|---|---|---|---|
+| heap mark (MiB) | 333.1 · 333.2 · 333.2 | 328.7 · 312.6 | **312.6 · 312.9** |
+| heap live at most (MiB) | 310.7 · 310.7 · 310.6 | 309.8 · 309.8 | 310.7 · 310.6 |
+| the mark set at | 90-95 s (the doubling after the first prune) | 15 s | 15-20 s (the first doubling, before any prune) |
+| prunes; ms each (`pruneNs`) | 5; 36.9 · 34.8 · 36.3 | 7; 42.4 · 41.6 | 5; 35.7 · 35.2 |
+| rehashes on demand; their ms in all | 0 | 3 · 4; 28.7 · 42.1 | 0 |
+| tombstones at most | 0.34-0.36 M (the ICs') | 1.45-1.55 M | 0.35-0.36 M |
+
+- **The mechanism holds**: main's table went 2^21 → 2^19 at each prune and doubled back; at the 2^20 → 2^21 doubling
+  after the first prune the old 25 MiB and the new 50 lived together and the heap's top grew: the mark 333 MiB.
+  Kept, the mark is what the pages session's is: the table's first doubling (at ~0.95 M keys, 15 s in, before the
+  churn prunes), 313 MiB, −20 MiB. Where that doubling lands in the heap's free space moves it by up to ~15 MiB
+  (one `d1` session 329, the pages sessions 315-329 in every arm).
+- **Removing the shrink alone isn't enough**: a prune comes only with the table full at 2^21 buckets (at
+  `MAP_KEYS`, or the tombstones' guard), so the dropped keys leave tombstones, not empty buckets (1.5 M of them): every
+  probe longer (the prune's own page-index pass among them: 42 ms instead of 36) and no room, so the guard pruned
+  early (7 prunes instead of 5) and reserves rehashed on demand (~10 ms each). Kept: the prune reserves the room past
+  the tombstones, which hashbrown does as a rehash in place while that's at most half the table's
+  (`reserve_rehash`); a prune then takes what main's did (35 ms: the rehash replaces the rebuild). Where a prune
+  keeps almost nothing (tests/heap.test.ts's guest of `b .+4` in Node, 6 prunes, two runs each alternated) the
+  rehash of the 2^21 buckets costs more than rebuilding a table of the few kept keys: 27.0-29.7 ms a prune against
+  19.6-22.6; the mark the same there (111 MiB).
+- **The pages session** (no prune) is unchanged: marks 315.4-320.2 (`d0`, 4 sessions), 320.3-320.5 (`d1`),
+  315.6-328.7 (`d2`), live at most 314.8-314.9 in all; `pagesS` 72.8-74.0 s (`d0`), 71.1-73.3 (`d1`), 73.2-73.8
+  (`d2`), busy MIPS 449-459.
+- **The page's gauge**: with tombstones, `HashMap::capacity` leaves them out, and the table's bytes counted from it
+  read 2^19 buckets for a 2^21 table; they're counted now from the most keys the table has held since it was
+  allocated (`Cache::map_full`).
+- **Speed** (the gate screen, `bench/interp/ab-mac.sh`, `results/perf40/screen.json`), base 87a8dd52, base first
+  in rounds 1 and 3, ms:
+
+| | base r1 · r2 · r3; median | kept r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 3,796.4 · 3,850.5 · 3,847.7; **3,847.7** | 3,826.3 · 3,832.5 · 3,844.9; **3,832.5** |
+| `alpine_user_jit_total` | 10,270.4 · 10,360.6 · 10,356.8; **10,356.8** | 10,300.4 · 10,342.6 · 10,372.8; **10,342.6** |
+
+  The rounds overlap: no change (neither prunes). Arms by size: `Jit::miss` (the prune inlined) 12,076 → 11,308
+  bytes. No step count moved.
+- **Kept**: docs/jit.md "The core's heap" says what exists and why; tests `a_prune_keeps_the_table` (the table's room
+  after each prune past 2^20 buckets' and within 2^21's: fails with the shrink back and with the rehash left out) and
+  `the_map_bytes_count_tombstones` (fails with the bytes from `capacity` and with `room` not tracking the most); the
+  backlog sub-item removed.
