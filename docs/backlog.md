@@ -1695,11 +1695,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
-- **pacman doesn't reach the Arch demos' repository through the demo network** (2026-11-21, on https://waarm64.com
-  through `demonet.waarm64.com`): `pacman -Sy` in the Arch desktop demo says "Could not resolve host: arch.bens.haus"
-  (core.db, extra.db), where Alpine's `apk add` through the same server works. The hosted server's allowlist is the
-  user's (networking/demo-network.md: it should have the Arch image's repository): check that it names
-  `arch.bens.haus`, as the image's `pacman.d/mirrorlist` does (images/arch/base.sh `MIRROR`).
 - **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md)): `isPrivateRoom` labels any ID ending in a hyphen
   and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
   a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.
