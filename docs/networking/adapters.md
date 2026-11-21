@@ -198,7 +198,16 @@ running in another tab takes effect there at once: that tab hears the record cha
   reaching this machine over both, and IPv6's default gone once the second's probe stops answering.
 - **DNS:** each lease carries its own connection's resolvers and domains, and systemd-resolved keeps them per link:
   a tailnet's MagicDNS domain sends its names to the tailnet's adapter (checked against headscale beside tailcat), and
-  the rest go to the primary's resolvers. A guest without systemd-resolved gets every adapter's resolvers in one list.
+  a room's domains to the room's (a bare name searched under them: `<label>` is `<label>.<room>.p2p.internal`). **Every
+  link is a default route too**, so resolved asks the other adapters' resolvers for the rest as well and takes the
+  first answer that finds the name: it works, but a room's resolver sees the guest's other lookups (Arch's demo,
+  2026-11-21). A lease can't make a link route-only (DHCP has no such flag); a guest can, with networkd's
+  `DNSDefaultRoute=no` on that card (tried at run time with `resolvectl default-route`: bare names still resolve
+  through the room, the rest through the primary alone). Not done: no image knows which card is a room's (a machine's
+  definition decides), and having the agent set it (the page naming the non-primary cards, a networkd drop-in) was
+  judged more machinery acting behind the user than the gain is worth (the user, 2026-11-21). A guest without
+  systemd-resolved gets every adapter's resolvers in one list (on Alpine the agent's forwarder routes by domain
+  instead: devices.md "Names through the agent").
 
 ## 5. Snapshots, definitions, copies
 
