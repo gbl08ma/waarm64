@@ -3,7 +3,8 @@
   (`split`), each network adapter of the page's machine has its own button, its state's light and its number on it,
   and its menu holds that adapter alone; otherwise one button's menu has a section per adapter (NetAdapter.svelte).
   Each section shows the adapter's connection and what can be done with it; Change connection… opens the Network wizard
-  (web/app/NetWizard.svelte), Details… the adapter's details (NetDetails.svelte). A menu opens by itself when its
+  (web/app/NetWizard.svelte), Details… (and a room's warning) the connection's Details on the Home page, which takes the
+  screen's place (ConnectionPage.svelte: its Back and Esc return to the screen). A menu opens by itself when its
   adapter needs the user (a login) and when the page asks (the wizard's end, a status click). Adapter 1's menu is
   `#network` (the single one's too); adapter n's is `#network-<n-1>`. `data-net-menu` marks them for the toolbar,
   which measures them.
@@ -17,6 +18,7 @@
   import { phaseTone } from './network-view.ts';
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { net: PageNetwork; split: boolean };
   let { net, split }: Props = $props();
@@ -61,9 +63,9 @@
     network.openWizard({ mode: 'attach', machine: current.id, adapter: i, here: views[i]?.on });
   }
   function details(i: number) {
-    toButton(i);
+    const id = views[i]?.connection?.id;
     openAt = undefined;
-    network.openDetails(i);
+    if (id) page.openConnection(id, 'details', { to: 'screen' });
   }
   function naming(i: number) {
     toButton(i);

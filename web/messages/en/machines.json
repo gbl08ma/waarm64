@@ -869,7 +869,7 @@
   },
   "MachinesNav.back": {
     "message": "Back to the machine",
-    "note": "Home page: the button at the foot of the page's left column, shown while a machine is on the page; it closes the Home page and shows the machine again (as the toolbar's Home, the product's name and Esc do)."
+    "note": "Home page: the first entry of the page's left column at its root, shown while a machine is on the page; it closes the Home page and shows the machine again (as the toolbar's Home, the product's name and Esc do). Also the first entry of a connection's page there when that page was opened from the toolbar's Network menu: it leads back to the machine's screen the same way."
   },
   "MachinesNav.list.empty": {
     "message": "No machines yet. The machines you create, or open from a disk image, are kept here, in this browser.",
@@ -2178,5 +2178,57 @@
   "template.tooBig.cause": {
     "message": "Its snapshot is {{size, bytes}}, more than the {{most, bytes}} it may download. The store may be broken: nothing was downloaded.",
     "note": "Error details, the cause under the headline machines:template.tooBig, on the line under it in the same place. {{size}}: the snapshot's bytes on the server; {{most}}: the card's download, or the page's limit when that is less."
+  },
+  "ConnectionNav.back.connections": {
+    "message": "Back to Connections",
+    "note": "Home page, a connection's page (one level under Connections): the first entry of the left column, shown when the page was entered from Connections (its card's Details, an address or a reload); it leads back to Connections, as Esc does."
+  },
+  "ConnectionNav.back.machine": {
+    "message": "Back to <name>{{machine}}</name>",
+    "note": "Home page, a connection's page (one level under Connections): the first entry of the left column, shown when the page was entered from a machine's Network tab; it leads back to that tab, as Esc does. {{machine}} is the machine's name. (Entered from the toolbar's Network menu, the entry is machines.MachinesNav.back.)"
+  },
+  "ConnectionNav.line": {
+    "message": "{{kind}} · {{state}}",
+    "note": "Home page, a connection's page: the line under the connection's name in the left column. {{kind}}: what it is (a connection-kind.* message); {{state}}: who has it now (ConnectionsPane.connection.here, .otherTab or .unused)."
+  },
+  "ConnectionNav.details": {
+    "message": "Details",
+    "note": "Home page, a connection's page: the left column's entry for its Details section (what the connection gives out and how to use it), and that pane's title."
+  },
+  "ConnectionNav.settings": {
+    "message": "Settings",
+    "note": "Home page, a connection's page: the left column's entry for its Settings section (what can be changed in the connection), and that pane's title."
+  },
+  "ConnectionNav.domains": {
+    "message": "Domains",
+    "note": "Home page, a room connection's page: the left column's entry for its Domains section (the domains the connection holds in the room), and that pane's title."
+  },
+  "ConnectionsPane.connection.details": {
+    "message": "Details",
+    "note": "Home page, Connections: button on each connection that opens the connection's page (its Details, Settings and, for a room, Domains), one level down."
+  },
+  "ConnectionsPane.connection.details.title": {
+    "message": "See what this connection gives out and how to use it, and change its settings.",
+    "note": "Home page, Connections: tooltip of a connection's Details button."
+  },
+  "ConnectionDetails.machines": {
+    "message": "Attached to <name>{{machines}}</name>.",
+    "note": "Home page, a connection's Details (its page under Connections): the first line, naming the machines whose network adapters have the connection attached. {{machines}}: their names, comma-separated, each a link to that machine's Network tab (the page's own machine, which has none, is a name alone)."
+  },
+  "ConnectionDetails.machines.none": {
+    "message": "Not attached to any machine.",
+    "note": "Home page, a connection's Details (its page under Connections): the first line, when no machine's network adapter has the connection attached."
+  },
+  "ConnectionDetails.machines.where": {
+    "message": "To attach a connection to a machine, open the machine's <ui-network>Network</ui-network> tab on the <ui-home>Home</ui-home> page.",
+    "note": "Home page, a connection's Details (its page under Connections): the line under ConnectionDetails.machines (or .none), saying where connections are attached. The <ui-network> and <ui-home> markers show the Network and Home icons before the words."
+  },
+  "ConnectionDetails.notHere": {
+    "message": "This connection isn't connected in this tab. The addresses it gives out are shown here while a machine in this tab is connected through it.",
+    "note": "Home page, a connection's Details (its page under Connections): shown while no adapter of the machine in this tab runs the connection and no other tab holds it, in place of the values only a connected adapter has (the guest's address, a tailcat address or key, a room's name in the room)."
+  },
+  "ConnectionDetails.otherTab": {
+    "message": "This connection is in use in another tab. The addresses it gives out are shown in that tab.",
+    "note": "Home page, a connection's Details (its page under Connections): shown while a machine in another tab holds the connection, in place of the values only a connected adapter has."
   }
 }

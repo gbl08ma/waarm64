@@ -1,8 +1,8 @@
 <!--
   The Home page's Connections (docs/networking/adapters.md §3.1): the browser's network connections, each with its
-  kind, who has it now and the machines that use it; rename, edit (the Network wizard, ConnectionEditButton.svelte), a
-  tailcat server's new address,
-  log out, delete. Logic is web/app/net-live.ts's, through `page`.
+  kind, who has it now and the machines that use it; rename, Details (the connection's page, one level down:
+  ConnectionPage.svelte), edit (the Network wizard, ConnectionEditButton.svelte), a tailcat server's new address, log
+  out, delete. Logic is web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -21,10 +21,11 @@
   import type { Act } from './actions.svelte.ts';
   import { msg, t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
-  import { settings } from './settings.ts';
+  import { usersOf } from './connection-users.ts';
   import type { MachineRecord } from './shape.ts';
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { page } from './page.ts';
 
   type Props = { net: PageNetwork; machines: MachineRecord[]; act: Act };
@@ -38,11 +39,8 @@
     if (net.held.has(c.id)) return t('machines:ConnectionsPane.connection.otherTab');
     return t('machines:ConnectionsPane.connection.unused');
   }
-  /** The machines whose adapters use `c` (the page's transient machine too). */
-  const usedBy = (c: Connection) => [
-    ...machines.filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name),
-    ...(settings().transientNet === c.id && current.transient ? [current.transient.label] : []),
-  ];
+  /** The names of the machines whose adapters use `c` (the page's transient machine too). */
+  const usedBy = (c: Connection) => usersOf(c.id, machines, current.transient?.label).map((u) => u.name);
   function metaOf(c: Connection) {
     const users = usedBy(c);
     return msg('machines:ConnectionsPane.connection.meta', {
@@ -53,6 +51,11 @@
         : msg('machines:ConnectionsPane.connection.usedByNone'),
     });
   }
+  /** The cards' Details buttons: the one of a connection whose page was just left takes the focus back. */
+  const details = $state<Record<string, HTMLButtonElement | undefined>>({});
+  $effect(() => {
+    for (const [id, el] of Object.entries(details)) if (el && machinesNav.takeReturn(id)) el.focus();
+  });
   async function logout(c: Connection) {
     const sure = await ask.confirm(msg('machines:ConnectionsPane.logout.confirm', { name: c.name }), {
       ok: t('machines:ConnectionsPane.logout.ok'),
@@ -90,6 +93,14 @@
           </div>
         </div>
         {#snippet actions()}
+          <Button
+            bind:ref={details[c.id]}
+            onclick={() => page.openConnection(c.id)}
+            data-action="connection-details"
+            title={t('machines:ConnectionsPane.connection.details.title')}
+          >
+            {t('machines:ConnectionsPane.connection.details')}
+          </Button>
           <ConnectionEditButton connection={c} onclick={() => network.openWizard({ mode: 'edit', connection: c.id })} />
           {#if c.tailcat?.serve}
             <Button

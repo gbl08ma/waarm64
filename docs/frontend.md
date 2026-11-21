@@ -26,14 +26,14 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts` (`shape-diff.ts`: what differs between two shapes, in words), `web/app/store.ts` (`store-backends.ts`: the records and files in memory, IndexedDB and OPFS) | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Home page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/MachinesPage.svelte`, `MachinesNav.svelte` (`NewMachine`: its New machine dialog), `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Home page (below, "The Home page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
+| `web/app/MachinesPage.svelte`, `HomeColumn.svelte` (the left column by level: `MachinesNav.svelte` at the root, with `NewMachine`, its New machine dialog; `ConnectionNav.svelte` in a connection's context; `HomeBack.svelte`, Back), `home-route.ts` (the levels' address and Back, DOM-free), `home-level.ts` (the moves between levels), `areas/home-levels.ts`, `ConnectionPage.svelte` (`ConnectionDetails`, `ConnectionRoom`), `connection-users.ts`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Home page (below, "The Home page"): the page that composes, its levels, its list, a connection's page, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
 | `web/app/actions.svelte.ts`, `ErrorWords.svelte`, `file-pickers.ts`, `FilePickers.svelte` | the components' action runner (busy, the error as the page shows it) and its error's view; the page's hidden file inputs and what opens them (below, "The page's code") |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/networking/adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts` (`usb-problems.ts`: the device worker's problems in words, with the host's remedies), `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
-| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetDetails.svelte` (an adapter's details), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts`, `ConnectionEditButton.svelte` (a connection's Edit…: Connections and the wizard's pick step) | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
+| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts`, `ConnectionEditButton.svelte` (a connection's Edit…: Connections and the wizard's pick step) | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -489,7 +489,8 @@ again, with its actions, when it closes.
 The page's side of [machines.md](machines.md). `MachinesPage.svelte` composes it: it reads the records, runs the
 panes' actions and holds the machine being edited (`machine-edit.svelte.ts` `MachineEdit`: the record, the draft the tabs
 edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab), and shows the list
-(`MachinesNav.svelte`; the other panes' ids in `machines-panes.ts`) and the chosen pane: a machine's
+(`MachinesNav.svelte`; the other panes' ids in `machines-panes.ts`) and the chosen pane, or a connection's page one
+level down (below, "Levels"): a machine's
 (`MachinePane.svelte`: its head and a component per tab, `SettingsTab`, `Disks`, `NetworkTab`, `UsbTab`, `FoldersTab`,
 `Snapshots`), the transient machine's (`PagePane.svelte`), `DisksPane`, `FoldersPane`, `ConnectionsPane`,
 `PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
@@ -497,7 +498,7 @@ called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav
 theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
 address opens it, so a reload keeps it, and the older `#machines` still does): the toolbar leads back (below; or a view button), and,
 while a machine is on the page (a stored one, or a transient one with its disk: `current.loaded`), so do
-**[Back to the machine](ui:machines:MachinesNav.back)** at the foot of the left column and Esc (as it closes a dialog;
+**[Back to the machine](ui:machines:MachinesNav.back)**, the left column's first entry, and Esc (as it closes a dialog;
 not from a dialog, an open menu or a field being typed in). It has no bar of its own: what it's doing while an action runs is said at the end of its bottom bar (`StorageBar`'s `busy`). Its heading,
 **[Home](ui:machines:MachinesPage.heading)**, is for a screen reader alone (an `h2`, the toolbar's `h1` above it): it
 names the left column (a `nav`), and the list's heading and each pane's title (`h3`) are under it. The left
@@ -601,6 +602,42 @@ take {{size}}.](ui:machine:grow-actions.grown), `grownWhole` for a disk without 
 left), or a headline (`partOnly`: the partition but not its filesystem; `notGrown`) with why as its cause and what the
 user can do in the guest (`notMounted`, `unsupported`, `stacked`, `notLast`, `badTable`; `failed`: tried again at the
 next start, `failedAgain`: not again).
+
+**Levels.** Home shows one level at a time: its **root** (the column above and its panes) or a **context** one level
+down, which replaces all of the column's entries and the pane with its own; leaving restores them. The one context now
+is **a connection's page**, under Connections (`machinesNav`'s context, `{ kind: 'connection', id, section, from }`:
+web/app/areas/machines-nav.svelte.ts; its logic DOM-free in `home-route.ts`; `selected` stays Connections in it).
+**Back is the column's first entry at every level** (`HomeBack.svelte`): at the root, Back to the machine (above); in a
+context, back to where the user came from (`from`, not in the address): [Back to Connections](ui:machines:ConnectionNav.back.connections)
+(from a card's [Details](ui:machines:ConnectionsPane.connection.details), an address or a reload, where the card's
+Details takes the focus back), "Back to <machine>" (`ConnectionNav.back.machine`, from a machine's Network tab), or
+[Back to the machine](ui:machines:MachinesNav.back) (from the toolbar's Network menu: Home closes and the screen is
+back); a machine deleted since, or none on the page any more, leads to Connections (`backOf`). Esc does what Back
+does, under the conditions above. The toolbar's Home and the wordmark still lead to the machine from any level, and Home
+opens at its root next time. Going down, the column's entries and the pane leave to the left and the new ones come
+from the right; going up, the reverse (`home-level.ts`: 150 ms, `cubicOut`, a plain fade under
+`prefers-reduced-motion`; the column (`HomeColumn.svelte`) and the pane's slot are keyed by the level, the outgoing and
+incoming blocks stacked in one grid cell); choosing between panes or sections of one level is instant. Entering, the
+pane's title takes the focus (`Pane`'s `takeFocus`). **The address says the level** (`areas/home-levels.ts`, written in
+place): `#home`, or `#home/connections/<id>` (Details), `…/settings`, `…/domains`; a reload, a link or a change of
+fragment lands there (the older `#machines` is the root); an id that is gone (`shownContext`, also when the connection
+is deleted while its page shows) opens Connections. `page.openConnection(id, section, from)` enters one.
+
+**A connection's page** (`ConnectionNav.svelte` the column, `ConnectionPage.svelte` the pane): Back, the connection's
+name with its line (its kind, and who has it now: the card's words), and its sections,
+**[Details](ui:machines:ConnectionNav.details)**, **[Settings](ui:machines:ConnectionNav.settings)** and, for a room
+connection, **[Domains](ui:machines:ConnectionNav.domains)** (the place for the connection's commands is under them,
+empty for now). **Details** (`ConnectionDetails.svelte`, `ConnectionRoom.svelte` a room's part) says first which
+machines have it attached, each a link to that machine's Network tab ([Attached to {{machines}}.](ui:machines:ConnectionDetails.machines)
+or [Not attached to any machine.](ui:machines:ConnectionDetails.machines.none)), and where connections are attached;
+then what the browser keeps for it, always (a tailnet's hostname and control server, the local helper's install lines,
+the demo network's server, a room's link and who may connect), and, while it is connected on this page (`net.runs`),
+the adapter's live view (below, "Network": the adapter's line, the guest's address, tailcat's address or key, the demo
+network's page in the guest, a room's name, warnings, registry line and domains, `NameEntry`); while it isn't, one
+line says why: it isn't connected in this tab (`ConnectionDetails.notHere`), or another tab has it
+(`ConnectionDetails.otherTab`). [Edit connection…](ui:network:ConnectionDetails.edit) in
+its head opens the Network wizard on it. Settings and Domains are their titles alone for now (the DOMAINS track fills
+them).
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **[Reset disk…](ui:machines:PagePane.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
@@ -2202,12 +2239,13 @@ connect again), **[Disconnect](ui:network:NetAdapter.disconnect)**, [Log out](ui
 copy are `ui/ValueField.svelte`s: Copy (a check for a moment once copied) and, for a secret, Show and Hide are icons
 inside the field, after its text; where the clipboard refuses, the value is shown and selected. The wizard's pasted
 secrets (a tailcat address, the helper's link, a room's link or key, an auth key) are the same fields, with Show alone.
-[Details…](ui:network:NetAdapter.details) opens the adapter's details (`NetDetails.svelte`, a dialog that follows the adapter live), with what the
-menu leaves out to stay short: the guest's address (IPv4, or a room's IPv6); a tailnet's hostname and control server; tailcat's address
-and the commands that use it, or the machine's key and the line that lets only it through the server
-(`tailcat serve --allow=<key> exit-node`, to copy); the local helper's install lines (`NetLocalInstall.svelte`, the
-wizard's too); a room's name, link and who may connect; and [Edit connection…](ui:network:NetDetails.edit), the
-wizard on the connection. Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
+[Details…](ui:network:NetAdapter.details) leaves the machine's screen for the connection's Details on the Home page
+(above, "The Home page": a page of its own, no dialog; the machine runs on behind it, and its Back and Esc return to the
+screen), with what the menu leaves out to stay short: the guest's address (IPv4, or a room's IPv6); a tailnet's
+hostname and control server; tailcat's address and the commands that use it, or the machine's key and the line that
+lets only it through the server (`tailcat serve --allow=<key> exit-node`, to copy); the local helper's install lines
+(`NetLocalInstall.svelte`, the wizard's too); a room's name, link and who may connect; and
+[Edit connection…](ui:network:ConnectionDetails.edit), the wizard on the connection. Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
 the submit; a component per step with its own form, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
 `NetLocalStep`, `NetDemoStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetPickStep.pick.new)
@@ -2218,7 +2256,7 @@ settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
 the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Home
-page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: rename, Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
+page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: rename, Details (the connection's page, above), Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
@@ -2387,7 +2425,7 @@ and the guest's default way out (below).
   keep the domain.](ui:network:NameDialog.notice.visit)); no key shown or asked for; once
   [Register](ui:network:NameDialog.register) has registered it, the name shows Preparing until its claim is made. A connection whose key is ephemeral (its own, in the
   page's memory) can't hold a name: the dialog says so in place of the field and has no Register (the name would point
-  at a key gone with the page while its title, in IndexedDB, went on being renewed). The adapter's details add the
+  at a key gone with the page while its title, in IndexedDB, went on being renewed). The connection's Details add the
   registry's line (a server's names held and the servers it synced with, or a member's names resolved and servers held:
   the module's `names` event) and, per name (`NameEntry.svelte`), where it and each label under it point (a member's
   name in the room, or a key, pasted), [Add a subdomain](ui:network:NameEntry.addLabel),
@@ -2404,7 +2442,7 @@ and the guest's default way out (below).
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `waarm64-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
-  then [Connected to the room](ui:network:network-view.room) with [1 active connection (1 direct)](ui:network:network-view.room.connectionsDirect_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count; and how many of them its packets reach over WebRTC rather than the relay, `path` `direct`; with none, [0 active connections](ui:network:network-view.room.connections_other)). When members go through the relay where a direct path was wanted (this browser or theirs makes none, or attempts failed: docs/networking/rooms.md "Why the menu says nothing is direct"), a small warning follows the count ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)) and opens the adapter's details, which say why and what may fix it; a relay-only connection has none. The
+  then [Connected to the room](ui:network:network-view.room) with [1 active connection (1 direct)](ui:network:network-view.room.connectionsDirect_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count; and how many of them its packets reach over WebRTC rather than the relay, `path` `direct`; with none, [0 active connections](ui:network:network-view.room.connections_other)). When members go through the relay where a direct path was wanted (this browser or theirs makes none, or attempts failed: docs/networking/rooms.md "Why the menu says nothing is direct"), a small warning follows the count ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)) and opens the connection's Details on the Home page, which say why and what may fix it; a relay-only connection has none. The
   menu then shows the machine's name in the room (`<key>.<room name>.p2p.internal` when the room's ID is a DNS label
   that doesn't look derived, else `<key>.<tag>.p2p.internal`; both resolve) to copy, the room's link to copy and, under
   them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).

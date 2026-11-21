@@ -342,8 +342,8 @@ global public room on its machine's second adapter, so visitors' demo machines c
   gathered, so nothing is sent).
 - **Why the menu says nothing is direct:** the Network menu puts a small warning after a room's count of connections
   when members go through the relay where a direct path was wanted (never for relay only, which chose it); it opens
-  the adapter's details ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)), which say why
-  and what may fix it (NetDetails.svelte): this browser blocks (the flag to change in ungoogled-chromium), members' browsers do (`no-direct` `blocked`, `room.peersBlocked`), or attempts failed though this browser gathers
+  the connection's Details on the Home page ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)), which say why
+  and what may fix it (ConnectionRoom.svelte): this browser blocks (the flag to change in ungoogled-chromium), members' browsers do (`no-direct` `blocked`, `room.peersBlocked`), or attempts failed though this browser gathers
   (`no-direct` `failed`, `room.directFailed`: a firewall that drops UDP, a router that doesn't hairpin, a network that
   isolates its clients, mDNS dropped between two machines of one LAN). Which of those it is between two browsers that
   both gather can't be told apart from here.

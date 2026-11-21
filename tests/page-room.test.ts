@@ -239,14 +239,16 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
       assert.match(nameA, /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/, 'its name to give out');
       assert.equal(await visible(a, '#net-room-link-copy'), true, 'the link to copy');
       assert.equal(await a.locator('#net-room-link-value').getAttribute('type'), 'password', 'the link is hidden');
-      // Details…: the name, the link and who may connect, in a dialog of their own.
+      // Details…: the name, the link and who may connect, on the connection's page of the Home page (the screen's place).
       await a.click('#net-details-open');
+      await a.locator('#net-details-room-name').waitFor();
       assert.equal(await a.locator('#net-details-room-name').inputValue(), nameA);
-      assert.equal(await a.locator('label:has(#net-details-address) .name').textContent(), t('network:NetDetails.address.v6'), 'a room has IPv6 alone');
+      assert.equal(await a.locator('label:has(#net-details-address) .name').textContent(), t('network:ConnectionDetails.address.v6'), 'a room has IPv6 alone');
       assert.equal(await a.locator('#net-details-room-link').inputValue(), ra.room.link);
-      assert.match(await text(a, '#net-details-room-note'), words('network:NetDetails.room.note'));
-      await a.click('#net-details-close');
-      assert.equal(await a.evaluate(() => (document.getElementById('net-details') as HTMLDialogElement).open), false, 'Close closes it');
+      assert.match(await text(a, '#net-details-room-note'), words('network:ConnectionRoom.note'));
+      assert.equal(await a.locator('.machines nav [data-action=back]').getAttribute('data-back'), 'screen');
+      await a.click('.machines nav [data-action=back]');
+      assert.equal(await a.locator('#machines-open').getAttribute('aria-pressed'), 'false', 'Back returns to the machine');
 
       // Join: a damaged link is refused; the link the first one keeps joins the same room.
       await roomWizard(b);
@@ -586,7 +588,7 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   await a.click('#net-details [data-name="mybox"] [data-action="add-label"]');
   await a.fill('#net-details [data-name="mybox"] [data-point=""] [data-field="label"] >> nth=0', 'web');
   await a.click('#net-details [data-name="mybox"] [data-action="save-zone"]');
-  await a.click('#net-details-close');
+  await a.click('.machines nav [data-action=back]');
   let web = '';
   for (let k = 0; k < 20 && !web; k++) {
     web = await run(a, `getent ahosts web.mybox.${domain} | head -1`);

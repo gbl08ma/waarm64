@@ -1,15 +1,15 @@
 // The page around the machine (docs/frontend.md "Views", "Full screen", docs/machines.md §7): the views, full screen
-// with the keyboard lock, where the keys go, the Home page in the machine's place, leaving the page while the
-// machine runs, a file dropped on the page, and the local helper's pairing link.
+// with the keyboard lock, where the keys go, the Home page in the machine's place and its levels, leaving the page while
+// the machine runs, a file dropped on the page, and the local helper's pairing link (web/app/areas/pairing.ts).
 import { flushSync } from 'svelte';
-import { devText } from '../../msg.ts';
-import { parseLocalURL } from '../../local-net.ts';
 import { leaveWarning, remember, settings } from '../settings.ts';
 import { shows } from '../statusbar.ts';
 import { params } from '../run/knobs.ts';
 import type { PageMachine } from '../run/page-machine.svelte.ts';
 import type { MachinesTab } from './machines-nav.svelte.ts';
 import { machinesNav } from './machines-nav.svelte.ts';
+import { homeRoute, type Known } from '../home-route.ts';
+import { HomeLevels, writeHome } from './home-levels.ts';
 import { demos } from './demos.svelte.ts';
 import { demosAddress, demosRoute, firstVisit, leftDemos, pageQuery, type DemosRoute } from '../demos-route.ts';
 import { intro } from './intro.svelte.ts';
@@ -18,7 +18,7 @@ import { records } from './records.svelte.ts';
 import { transition } from '../view-transition.ts';
 import type { Page } from '../page.ts';
 import { keys } from './keys.svelte.ts';
-import { network } from './network.ts';
+import { takePairing } from './pairing.ts';
 import { isStopped, power } from './power.svelte.ts';
 import { screen, splitShare, type View } from './screen.svelte.ts';
 import type { ScreenElements, ScreenView } from './screen-view.ts';
@@ -72,6 +72,8 @@ export type WindowDeps = {
   machine: PageMachine;
   screen: ScreenView;
   terminal: SerialTerminal;
+  /** The browser's connections (Home's levels: a connection's page). */
+  connections: () => readonly Known[];
   /** What the Home page's closing reads again (a stored machine's record, while nothing runs or switches). */
   reloadStored(): Promise<unknown>;
   /** A file dropped: a disk image, a snapshot or a changes file; a directory: a folder. */
@@ -86,8 +88,15 @@ export class PageWindow {
   readonly #d: WindowDeps;
   /** The page's `main` (the machine's place): full screen takes it, unless the status bar goes along. */
   #main: HTMLElement | undefined;
+  /** Home's levels: a connection's page. */
+  readonly home: HomeLevels;
   constructor(d: WindowDeps) {
     this.#d = d;
+    this.home = new HomeLevels({
+      connections: d.connections,
+      openMachines: (tab, id) => this.openMachines(tab, id),
+      closeMachines: () => this.closeMachines(),
+    });
   }
 
   /** What App.svelte gives and calls. */
@@ -104,8 +113,10 @@ export class PageWindow {
         hashChange: () => {
           this.takePairing();
           const r = demosRoute(location);
+          const home = homeRoute(location.hash);
           if (r) this.openDemos(r, 'replace');
           else if (isIntroAddress(location)) this.openIntro('none');
+          else if (home) this.home.open(home);
         },
         popState: () => this.followAddress(),
         dragOver: (e) => this.dragOver(e),
@@ -196,19 +207,24 @@ export class PageWindow {
   }
 
   // The Home page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind
-  // it. `#home` in the address opens it (a reload keeps it open; main.ts takes the older `#machines` too).
+  // it. `#home` in the address opens it (a reload keeps it open; main.ts takes the older `#machines` too), and
+  // `#home/connections/<id>` (`…/settings`, `…/domains`) a connection's page, one level down (`home`:
+  // web/app/areas/home-levels.ts).
   openMachines(tab?: MachinesTab, id?: string) {
     if (demos.open) {
       demos.open = false;
       history.replaceState(null, '', leftDemos(location));
     }
+    // A machine or a pane asked for is at the root.
+    if (id) machinesNav.leave();
     if (tab) machinesNav.tab = tab;
     if (id) machinesNav.choose(id);
     machinesNav.open = true;
-    if (location.hash !== '#home') history.replaceState(null, '', `${location.pathname}${location.search}#home`);
+    writeHome();
   }
   closeMachines() {
     machinesNav.open = false;
+    machinesNav.reset();
     // What the page changed shows in the toolbar now (a running machine takes it at its next start). Stopped by the
     // guest (off, crashed, suspended), the run is still `machine.run` until the next stop: the state says.
     if (isStopped(power.state) && !power.busy) void this.#d.reloadStored();
@@ -261,8 +277,9 @@ export class PageWindow {
     const own = introFromPath(location);
     if (own) history.replaceState(null, '', own);
     const r = demosRoute(location);
+    const home = homeRoute(location.hash);
     if (r) this.openDemos(r, 'replace');
-    else if (location.hash === '#home' || location.hash === '#machines') this.openMachines();
+    else if (home) this.home.open(home);
     else if (isIntroAddress(location) || firstVisit(location, machines, navigator.webdriver)) this.openIntro('replace');
   }
 
@@ -348,20 +365,8 @@ export class PageWindow {
     })();
   }
 
-  // The local helper's pairing link (waarm64-net prints `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`): the
-  // fragment never reached a server; it leaves the address at once (it holds the token) and opens the Network wizard
-  // on it, attaching to the page's machine's first adapter when there's one. Also when the link is opened in a tab
-  // that already shows the page: only the fragment changes, and the browser doesn't load the page again.
+  /** The local helper's pairing link in the address, if any (web/app/areas/pairing.ts). */
   takePairing() {
-    const pairing = new URLSearchParams(location.hash.slice(1)).get('net');
-    if (!pairing) return;
-    history.replaceState(null, '', `${location.pathname}${location.search}`);
-    const p = parseLocalURL(pairing);
-    const id = this.#d.machine.stored?.record.id;
-    if ('url' in p)
-      network.openWizard(
-        id ? { mode: 'attach', machine: id, adapter: 0, localURL: p.url } : { mode: 'new', localURL: p.url },
-      );
-    else console.warn(`#net: ${devText(p.error)}`);
+    takePairing(this.#d.machine.stored?.record.id);
   }
 }

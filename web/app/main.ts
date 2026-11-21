@@ -109,10 +109,9 @@ const net: PageNetwork = new PageNetwork({
   },
 });
 const network = new NetworkActions(machine, net);
-await network
-  .migrate()
-  .catch((e: unknown) => console.warn('the network settings could not be made into connections:', e));
-void net.refresh();
+await network.migrate().catch((e: unknown) => console.warn('the network settings could not be migrated:', e));
+// Read before the address opens Home, which may name one of them (`#home/connections/<id>`).
+await net.refresh().catch((e: unknown) => console.warn('waarm64: the connections could not be read:', e));
 const audio = new PageAudio();
 sound.follow(audio);
 const folders = new PageFolders({ store, me: () => machineTitle(machine) });
@@ -201,6 +200,7 @@ const pageWindow: PageWindow = new PageWindow({
   machine,
   screen,
   terminal,
+  connections: () => net.connections,
   reloadStored: () => powerActions.reloadStored(),
   dropped: (file, handle) => disks.choose({ file, handle }),
   droppedFolder: (handle) => folderActions.dropped(handle),
@@ -294,6 +294,7 @@ const page: Page = {
     screen.scheduleSize();
   },
   openMachines: (tab, id) => pageWindow.openMachines(tab, id),
+  ...pageWindow.home.page(),
   closeMachines: () => pageWindow.closeMachines(),
   dismiss: () => messages.dismiss(),
   ...usbActions.page(),

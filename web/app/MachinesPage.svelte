@@ -1,8 +1,9 @@
 <!--
   The Home page (docs/machines.md §7; the toolbar's Home, a toggle: it, the wordmark, Esc and the list's Back to the
   machine lead back to the machine): it takes the machine's place on the page (which runs on behind it). It
-  composes: the list (MachinesNav.svelte: the machines kept in this browser, the commands that make one, the browser's
-  panes) and the chosen pane, a machine's (MachinePane.svelte and its tabs), the page's own transient machine's
+  composes: the left column (HomeColumn.svelte: at the root MachinesNav.svelte, the machines kept in this browser, the
+  commands that make one, the browser's panes; in a context, a connection's page, ConnectionNav.svelte) and the chosen
+  pane (a connection's page: ConnectionPage.svelte), a machine's (MachinePane.svelte and its tabs), the page's own transient machine's
   (PagePane.svelte), the browser's Disks (DisksPane.svelte), Shared folders (FoldersPane.svelte) and Connections
   (ConnectionsPane.svelte), Preferences (PreferencesPane.svelte) and About (About.svelte); the browser's storage at the
   bottom (StorageBar.svelte). It reads the records, runs the panes' actions (one runner: what runs, the error) and
@@ -16,7 +17,9 @@
   import ErrorWords from './ErrorWords.svelte';
   import FoldersPane from './FoldersPane.svelte';
   import MachinePane from './MachinePane.svelte';
-  import MachinesNav from './MachinesNav.svelte';
+  import ConnectionPage from './ConnectionPage.svelte';
+  import HomeColumn from './HomeColumn.svelte';
+  import { level } from './home-level.ts';
   import { ABOUT, CONNECTIONS, DISKS, FOLDERS, PAGE, PREFERENCES } from './machines-panes.ts';
   import PagePane from './PagePane.svelte';
   import PreferencesPane from './PreferencesPane.svelte';
@@ -122,16 +125,19 @@
   });
 
   /**
-   * Esc leaves the page for the machine, as it closes a dialog: not from a dialog (Esc closes that), an open menu or a
-   * field being typed in (the draft stays where the user is).
+   * Esc does what the column's Back does, as it closes a dialog: in a context, back to where it was entered from; at the
+   * root, to the machine (while one is on the page). Not from a dialog (Esc closes that), an open menu or a field being
+   * typed in (the draft stays where the user is).
    */
   function escape(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || !current.loaded) return;
+    const inContext = !!machinesNav.context;
+    if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || !(inContext || current.loaded)) return;
     const at = e.target instanceof Element ? e.target : null;
     const typing = 'input:not([type=checkbox], [type=radio], [type=range]), textarea, [contenteditable]';
     if (at?.closest(`dialog, details[open], ${typing}`)) return;
     e.preventDefault();
-    page.closeMachines();
+    if (inContext) page.leaveContext();
+    else page.closeMachines();
   }
   /** Powers machine `m` off, after asking, before an edit that needs it off; false if it can't be (or the user says no). */
   async function offFirst(m: MachineRecord) {
@@ -182,51 +188,15 @@
     </ErrorBanner>
   {/if}
   <div class="panes">
-    <MachinesNav {store} {machines} {counts} stateOf={listState} actions={runner} onchoose={choose} />
-    {#if machinesNav.selected === PREFERENCES}
-      <PreferencesPane {net} />
-    {:else if machinesNav.selected === ABOUT}
-      <Pane id={ABOUT} title={t('machines:MachinesPage.about')}>
-        <About />
-      </Pane>
-    {:else if machinesNav.selected === DISKS}
-      <Pane id={DISKS} title={t('machines:MachinesPage.disks.heading')} meta={t('machines:MachinesPage.disks.meta')}>
-        <DisksPane {store} {machines} {disks} {overlays} {running} {act} {offFirst} />
-      </Pane>
-    {:else if machinesNav.selected === FOLDERS}
-      <Pane
-        id={FOLDERS}
-        title={t('machines:MachinesPage.folders.heading')}
-        meta={t('machines:MachinesPage.folders.meta')}
-      >
-        {#snippet actions()}
-          <Button icon="plus" onclick={() => shares.openWizard({})} data-action="new-folder">
-            {t('machines:MachinesPage.folders.new')}
-          </Button>
-        {/snippet}
-        <FoldersPane {folders} {store} {act} />
-      </Pane>
-    {:else if machinesNav.selected === CONNECTIONS}
-      <ConnectionsPane {net} {machines} {act} />
-    {:else if machinesNav.selected === PAGE && current.transient}
-      <PagePane {store} {act} label={current.transient.label} disk={current.transient.disk} />
-    {:else if edit.editing()}
-      <MachinePane
-        {edit}
-        {store}
-        {net}
-        {folders}
-        {machines}
-        {disks}
-        {overlays}
-        state={stateText(edit.draft.id)}
-        {act}
-        {offFirst}
-        onchoose={choose}
-      />
-    {:else}
-      <section class="empty"><p>{t('machines:MachinesPage.empty')}</p></section>
-    {/if}
+    <HomeColumn {store} {net} {machines} {counts} stateOf={listState} actions={runner} onchoose={choose} />
+    <!-- The pane, keyed by the level as the column is: a move between levels slides, one between panes doesn't. -->
+    <div class="slot">
+      {#key machinesNav.level}
+        <div class="level" in:level out:level>
+          {@render pane()}
+        </div>
+      {/key}
+    </div>
   </div>
   {#if storage}
     <StorageBar
@@ -236,6 +206,55 @@
     />
   {/if}
 </div>
+
+{#snippet pane()}
+  {#if machinesNav.context}
+    <ConnectionPage {net} {machines} ctx={machinesNav.context} />
+  {:else if machinesNav.selected === PREFERENCES}
+    <PreferencesPane {net} />
+  {:else if machinesNav.selected === ABOUT}
+    <Pane id={ABOUT} title={t('machines:MachinesPage.about')}>
+      <About />
+    </Pane>
+  {:else if machinesNav.selected === DISKS}
+    <Pane id={DISKS} title={t('machines:MachinesPage.disks.heading')} meta={t('machines:MachinesPage.disks.meta')}>
+      <DisksPane {store} {machines} {disks} {overlays} {running} {act} {offFirst} />
+    </Pane>
+  {:else if machinesNav.selected === FOLDERS}
+    <Pane
+      id={FOLDERS}
+      title={t('machines:MachinesPage.folders.heading')}
+      meta={t('machines:MachinesPage.folders.meta')}
+    >
+      {#snippet actions()}
+        <Button icon="plus" onclick={() => shares.openWizard({})} data-action="new-folder">
+          {t('machines:MachinesPage.folders.new')}
+        </Button>
+      {/snippet}
+      <FoldersPane {folders} {store} {act} />
+    </Pane>
+  {:else if machinesNav.selected === CONNECTIONS}
+    <ConnectionsPane {net} {machines} {act} />
+  {:else if machinesNav.selected === PAGE && current.transient}
+    <PagePane {store} {act} label={current.transient.label} disk={current.transient.disk} />
+  {:else if edit.editing()}
+    <MachinePane
+      {edit}
+      {store}
+      {net}
+      {folders}
+      {machines}
+      {disks}
+      {overlays}
+      state={stateText(edit.draft.id)}
+      {act}
+      {offFirst}
+      onchoose={choose}
+    />
+  {:else}
+    <section class="empty"><p>{t('machines:MachinesPage.empty')}</p></section>
+  {/if}
+{/snippet}
 
 <style>
   .machines {
@@ -250,6 +269,20 @@
     min-height: 0;
     display: grid;
     grid-template-columns: minmax(200px, 260px) 1fr;
+  }
+  /* The pane's place: the level leaving and the one coming in stack in its one cell during a move. */
+  .slot,
+  .level {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  }
+  .slot {
+    overflow: hidden;
+  }
+  .level {
+    grid-area: 1 / 1;
   }
   section.empty {
     min-width: 0;

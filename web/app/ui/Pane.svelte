@@ -8,7 +8,7 @@
   tabs are styled here.
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import Count from './Count.svelte';
   import Icon from './Icon.svelte';
   import T from '../T.svelte';
@@ -32,15 +32,22 @@
     tabs?: Tab<string>[];
     tab?: string;
     ontab?: (id: string) => void;
+    /** Asked once, as the pane appears: true gives its title the focus (a level of the Home page just entered). */
+    takeFocus?: () => boolean;
     children: Snippet;
   };
-  let { id, title, meta, metaAttrs, actions, tabs, tab, ontab, children }: Props = $props();
+  let { id, title, meta, metaAttrs, actions, tabs, tab, ontab, takeFocus, children }: Props = $props();
+
+  let heading = $state<HTMLHeadingElement>();
+  $effect(() => {
+    if (heading && untrack(() => takeFocus?.())) heading.focus();
+  });
 </script>
 
 <section class="machine" data-selected={id}>
   <div class="head">
     <span class="title"
-      ><h3>{title}</h3>
+      ><h3 bind:this={heading} tabindex="-1">{title}</h3>
       {#if isMsg(meta)}<span class="meta" {...metaAttrs}><T m={meta} /></span>{:else if meta !== undefined}<span
           class="meta"
           {...metaAttrs}>{meta}</span
@@ -100,6 +107,7 @@
   }
   h3 {
     margin: 0;
+    outline: none;
     font-size: var(--text-lg);
     font-weight: var(--weight-bold);
     line-height: 22px;

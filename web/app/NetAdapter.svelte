@@ -2,9 +2,9 @@
   One network adapter's section of a toolbar Network menu (web/app/Network.svelte): its number and connection on one
   line, its state, and what can be done with it (Log in…, the exit node, the peers' subnet routes, the machine's
   tailcat address and key, its name in a room and the room's link to copy, Connect, Retry, Disconnect, Log out, Change
-  connection…). What they're for and how to use them is in its details (Details…: NetDetails.svelte), so the menu stays
-  short: a room whose members go through the relay where a direct path was wanted has a small warning after its count
-  of connections, which opens the details, where the reason is. Adapter 1's elements keep the ids they always had;
+  connection…). What they're for and how to use them is in the connection's Details (Details…: a page of the Home page,
+  ConnectionDetails.svelte), so the menu stays short: a room whose members go through the relay where a direct path was
+  wanted has a small warning after its count of connections, which opens the Details, where the reason is. Adapter 1's elements keep the ids they always had;
   adapter n's end in `-<n-1>`. `heading`: the machine has more than one adapter. `onwizard`: Change connection… (or Set up…), `ondetails`: Details…, `onname`: a room's Name this machine… (NetNames.svelte, with its names' states); each closes the menu. Logic is
   web/app/net-live.ts's, through `page`.
 -->

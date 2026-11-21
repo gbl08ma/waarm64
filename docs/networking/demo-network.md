@@ -88,7 +88,7 @@ The words are the catalog's (web/app/demo-view.ts; codes to keys, a note each):
   lane on: the traffic slowed (the fast budget's 100 %, the lane `slow`), the slow budget's 80 % and its 100 % while
   the fast lane goes on (in the lane `slow` the lane `none` says it); the allowance back, a restart announced (when, and
   when it's back), a connected socket lost.
-- **The adapter's details**: what the connection is, the server's URL, and `curl http://<gateway>/status`, the same
+- **The connection's Details** (on the Home page): what the connection is, the server's URL, and `curl http://<gateway>/status`, the same
   numbers inside the guest (the fork's `/status`; the alpine-demo image's motd says so).
 
 ## Tests

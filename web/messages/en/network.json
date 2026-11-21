@@ -349,19 +349,19 @@
   },
   "NetLocalInstall.install": {
     "message": "Install waarm64-net {{version}}",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog): the summary of the section with the install lines, when there's a release. {{version}} is the release's version (e.g. v1.0.0)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's Details on the Home page): the summary of the section with the install lines, when there's a release. {{version}} is the release's version (e.g. v1.0.0)."
   },
   "NetLocalInstall.install.for": {
     "message": "For",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog): the label of the list of platforms (e.g. “Linux, x86-64”) whose install lines are shown: “For Linux, x86-64”."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's Details on the Home page): the label of the list of platforms (e.g. “Linux, x86-64”) whose install lines are shown: “For Linux, x86-64”."
   },
   "NetLocalInstall.install.note": {
     "message": "In a terminal, run these lines, which download waarm64-net, check it against its published SHA-256, and run it:",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog), inside its first step's install box: the line above the install lines, for Linux and macOS. The colon introduces the lines."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's Details on the Home page), inside its first step's install box: the line above the install lines, for Linux and macOS. The colon introduces the lines."
   },
   "NetLocalInstall.install.note.windows": {
     "message": "In PowerShell, run these lines, which download waarm64-net, check it against its published SHA-256, and run it:",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog), inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the local helper's step (and a local connection's Details on the Home page), inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
   },
   "NetTailnetStep.control": {
     "message": "Control server",
@@ -501,11 +501,11 @@
   },
   "NetAdapter.adapter": {
     "message": "Adapter {{adapter}}",
-    "note": "The toolbar's Network menu: the heading of one network adapter's section, when the machine has more than one (the connection's name follows it, on the same line where it fits); also the line under the title of an adapter's details (a dialog). {{adapter}} is its number (1, 2, …)."
+    "note": "The toolbar's Network menu: the heading of one network adapter's section, when the machine has more than one (the connection's name follows it, on the same line where it fits); also a line of a connection's Details on the Home page while that adapter has it connected. {{adapter}} is its number (1, 2, …)."
   },
   "NetAdapter.adapter.primary": {
     "message": "Adapter {{adapter}} (default gateway)",
-    "note": "The toolbar's Network menu: the heading of the adapter the guest's default route goes through (its default gateway is on that adapter), when the machine has more than one; also the line under the title of an adapter's details (a dialog). {{adapter}} is its number."
+    "note": "The toolbar's Network menu: the heading of the adapter the guest's default route goes through (its default gateway is on that adapter), when the machine has more than one; also a line of a connection's Details on the Home page while that adapter has it connected. {{adapter}} is its number."
   },
   "NetAdapter.adapter.primary4": {
     "message": "Adapter {{adapter}} (IPv4's default gateway)",
@@ -549,23 +549,23 @@
   },
   "NetAdapter.served": {
     "message": "This machine's tailcat address",
-    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (hidden by default, with Show and Copy icons in it) with the machine's own tailcat address, when its connection lets tailcat clients in."
+    "note": "The toolbar's Network menu and a connection's Details on the Home page (while the connection is connected in this tab): the label of the field (hidden by default, with Show and Copy icons in it) with the machine's own tailcat address, when its connection lets tailcat clients in."
   },
   "NetAdapter.key": {
     "message": "This machine's key",
-    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (with a Copy icon in it) with the machine's tailcat node key (nodekey:…), when it goes online through a computer running tailcat."
+    "note": "The toolbar's Network menu and a connection's Details on the Home page (while the connection is connected in this tab): the label of the field (with a Copy icon in it) with the machine's tailcat node key (nodekey:…), when it goes online through a computer running tailcat."
   },
   "NetAdapter.room.name": {
     "message": "This machine's name in the room",
-    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (with a Copy icon in it) with the machine's name in a peer-to-peer room (<key>.<room name>.p2p.internal when the room's ID is a plain DNS label, else <key>.<tag>.p2p.internal, where the tag is 8 letters and digits derived from the ID), when its connection is a room's."
+    "note": "The toolbar's Network menu and a connection's Details on the Home page (while the connection is connected in this tab): the label of the field (with a Copy icon in it) with the machine's name in a peer-to-peer room (<key>.<room name>.p2p.internal when the room's ID is a plain DNS label, else <key>.<tag>.p2p.internal, where the tag is 8 letters and digits derived from the ID), when its connection is a room's."
   },
   "NetAdapter.room.link": {
     "message": "The room's link",
-    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (hidden by default, with Show and Copy icons in it) with the room's link (waarm64-room:…), which others need to join the room."
+    "note": "The toolbar's Network menu and a connection's Details on the Home page (while the connection is connected in this tab): the label of the field (hidden by default, with Show and Copy icons in it) with the room's link (waarm64-room:…), which others need to join the room."
   },
   "NetAdapter.room.warn": {
     "message": "Why some members aren't reached directly",
-    "note": "The toolbar's Network menu, for a room connection: the tooltip and accessible name of the small warning icon after the count of active connections (network-view.room.connectionsDirect), shown when members go through the room's relay where a direct (WebRTC) connection was wanted. Clicking it opens the adapter's details, which say why (NetDetails.room.directBlocked, NetDetails.room.peersBlocked, NetDetails.room.directFailed)."
+    "note": "The toolbar's Network menu, for a room connection: the tooltip and accessible name of the small warning icon after the count of active connections (network-view.room.connectionsDirect), shown when members go through the room's relay where a direct (WebRTC) connection was wanted. Clicking it opens the connection's Details on the Home page (in the machine's screen's place), which say why (ConnectionRoom.directBlocked, ConnectionRoom.peersBlocked, ConnectionRoom.directFailed)."
   },
   "NetAdapter.connect": {
     "message": "Connect",
@@ -597,95 +597,91 @@
   },
   "NetAdapter.details": {
     "message": "Details…",
-    "note": "The toolbar's Network menu: the small link-like button at the end of an adapter's section (when it has a connection) that opens the adapter's details, a dialog with its connection's settings, what it lets in and how to use it."
+    "note": "The toolbar's Network menu: the small link-like button at the end of an adapter's section (when it has a connection) that opens the connection's Details on the Home page (in the machine's screen's place; its Back returns there), with its settings, what it lets in and how to use it."
   },
   "NetAdapter.details.title": {
     "message": "Show this connection's settings, what it lets in and how to use it.",
     "note": "The toolbar's Network menu: the tooltip of “Details…”."
   },
-  "NetDetails.address": {
+  "ConnectionDetails.address": {
     "message": "The guest's IPv4 address",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's address on that adapter's network, while it is connected, when that address is an IPv4 one."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's address on that adapter's network, while it is connected, when that address is an IPv4 one."
   },
-  "NetDetails.address.v6": {
+  "ConnectionDetails.address.v6": {
     "message": "The guest's IPv6 address",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's address on that adapter's network, while it is connected, when that address is an IPv6 one (a peer-to-peer room's: rooms carry IPv6 alone)."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's address on that adapter's network, while it is connected, when that address is an IPv6 one (a peer-to-peer room's: rooms carry IPv6 alone)."
   },
-  "NetDetails.tailnet.hostname": {
+  "ConnectionDetails.tailnet.hostname": {
     "message": "Hostname",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the label of the field (with a Copy icon in it) with the machine's hostname on the tailnet."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the label of the field (with a Copy icon in it) with the machine's hostname on the tailnet."
   },
-  "NetDetails.tailnet.control": {
+  "ConnectionDetails.tailnet.control": {
     "message": "Control server",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the label of the field (with a Copy icon in it) with the tailnet's control server's URL (Tailscale's, or another such as Headscale)."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the label of the field (with a Copy icon in it) with the tailnet's control server's URL (Tailscale's, or another such as Headscale)."
   },
-  "NetDetails.tailnet.note": {
+  "ConnectionDetails.tailnet.note": {
     "message": "The tailnet's admin console lists this machine under its hostname. <ui>Log out</ui>, in the <ui-network>Network</ui-network> menu, removes it from the tailnet and forgets its keys in this browser.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the text under its settings. “Log out” is network.NetAdapter.logout. The <ui-network> marker shows the Network icon before the words."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the text under its settings. “Log out” is network.NetAdapter.logout. The <ui-network> marker shows the Network icon before the words."
   },
-  "NetDetails.served.note": {
+  "ConnectionDetails.served.note": {
     "message": "On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on. Keep the address to yourself, as it lets anyone in.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailcat connection that lets clients in: the text under the machine's tailcat address. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a tailcat connection that lets clients in: the text under the machine's tailcat address. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
   },
-  "NetDetails.key.note": {
+  "ConnectionDetails.key.note": {
     "message": "To let only this machine use that computer, run this command there:",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailcat connection through a computer running tailcat: the text under the machine's key, before a field (with a Copy icon in it) holding the command, tailcat serve --allow=nodekey:… exit-node."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a tailcat connection through a computer running tailcat: the text under the machine's key, before a field (with a Copy icon in it) holding the command, tailcat serve --allow=nodekey:… exit-node."
   },
-  "NetDetails.key.ephemeral": {
+  "ConnectionDetails.key.ephemeral": {
     "message": "This connection is ephemeral, so the machine will have another key after this tab closes or reloads.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for an ephemeral tailcat connection through a computer running tailcat: the text under the command that lets only this machine use that computer."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for an ephemeral tailcat connection through a computer running tailcat: the text under the command that lets only this machine use that computer."
   },
-  "NetDetails.tailcat.offline": {
+  "ConnectionDetails.tailcat.offline": {
     "message": "The machine's tailcat address or key will show here once it's connected.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailcat connection that isn't connected: the text in place of the machine's tailcat address and key."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a tailcat connection that isn't connected: the text in place of the machine's tailcat address and key."
   },
-  "NetDetails.local.note": {
+  "ConnectionDetails.local.note": {
     "message": "The guest's network goes through <a>waarm64-net</a>, a helper that runs on your computer. It has to be running for the machine to connect.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: its first text. <a>…</a> links to the helper's source and releases; its install lines (network.NetLocalInstall.install) follow."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: its first text. <a>…</a> links to the helper's source and releases; its install lines (network.NetLocalInstall.install) follow."
   },
-  "NetDetails.local.link": {
+  "ConnectionDetails.local.link": {
     "message": "If the helper prints a different link, use <ui>Edit connection…</ui> to paste it.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: the text under its install lines. “Edit connection…” is network.NetDetails.edit, the dialog's button."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: the text under its install lines. “Edit connection…” is network.ConnectionDetails.edit, the button in the pane's head."
   },
-  "NetDetails.room.note": {
+  "ConnectionRoom.note": {
     "message": "Members who have the machine's name can reach any port the guest listens on. Give it only to those you want to let in.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may connect to it."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may connect to it."
   },
-  "NetDetails.room.note.off": {
+  "ConnectionRoom.note.off": {
     "message": "Incoming connections are off. Members can reach the guest only with replies to connections it opens.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may not connect to it (the connection's “Allow incoming connections from members” is off)."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may not connect to it (the connection's “Allow incoming connections from members” is off)."
   },
-  "NetDetails.room.offline": {
+  "ConnectionRoom.offline": {
     "message": "The machine's name in the room will show here once it's connected.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a room connection that isn't connected: the text in place of the machine's name in the room."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a room connection that isn't connected: the text in place of the machine's name in the room."
   },
-  "NetDetails.room.directBlocked": {
+  "ConnectionRoom.directBlocked": {
     "message": "This browser doesn't allow direct connections, so all traffic to the room's members goes through the relay, which is slower. In ungoogled-chromium, set <code>{{flag}}</code> to Default in <code>{{page}}</code> and restart the browser; elsewhere, an extension that limits WebRTC may be the cause. Direct connections start again once the browser allows them.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown while the browser gathers no address for a direct (WebRTC) connection: it uses no UDP for WebRTC, so every member is reached through the room's DERP relays. ungoogled-chromium does this by default. {{flag}} (#webrtc-ip-handling-policy) and {{page}} (chrome://flags) are the flag's and the page's names, shown as code."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown while the browser gathers no address for a direct (WebRTC) connection: it uses no UDP for WebRTC, so every member is reached through the room's DERP relays. ungoogled-chromium does this by default. {{flag}} (#webrtc-ip-handling-policy) and {{page}} (chrome://flags) are the flag's and the page's names, shown as code."
   },
-  "NetDetails.room.peersBlocked_one": {
+  "ConnectionRoom.peersBlocked_one": {
     "message": "A member's browser doesn't allow direct connections, so traffic with them goes through the relay, which is slower. They can change that in their browser: in ungoogled-chromium, by setting <code>{{flag}}</code> to Default.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when members this machine exchanges traffic with ({{count}}) said their browser makes no direct (WebRTC) connections, so they're reached through the room's relay. Connections to them go direct again once they allow it. {{flag}} is ungoogled-chromium's flag (#webrtc-ip-handling-policy), shown as code."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when members this machine exchanges traffic with ({{count}}) said their browser makes no direct (WebRTC) connections, so they're reached through the room's relay. Connections to them go direct again once they allow it. {{flag}} is ungoogled-chromium's flag (#webrtc-ip-handling-policy), shown as code."
   },
-  "NetDetails.room.peersBlocked_other": {
+  "ConnectionRoom.peersBlocked_other": {
     "message": "{{count}} members' browsers don't allow direct connections, so traffic with them goes through the relay, which is slower. They can change that in their browsers: in ungoogled-chromium, by setting <code>{{flag}}</code> to Default.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when members this machine exchanges traffic with ({{count}}) said their browser makes no direct (WebRTC) connections, so they're reached through the room's relay. Connections to them go direct again once they allow it. {{flag}} is ungoogled-chromium's flag (#webrtc-ip-handling-policy), shown as code."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when members this machine exchanges traffic with ({{count}}) said their browser makes no direct (WebRTC) connections, so they're reached through the room's relay. Connections to them go direct again once they allow it. {{flag}} is ungoogled-chromium's flag (#webrtc-ip-handling-policy), shown as code."
   },
-  "NetDetails.room.directFailed_one": {
+  "ConnectionRoom.directFailed_one": {
     "message": "A direct connection to a member was tried and failed, so traffic with them goes through the relay, which is slower. Something between the two machines stops it: a firewall that blocks UDP, a router that doesn't connect two machines behind it to each other, or a network that keeps its machines apart (as guest Wi-Fi often does). Connecting one of the machines through another network, a phone's hotspot say, may help. It's tried again every few minutes.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when attempts at direct (WebRTC) connections to members ({{count}}) failed though this browser allows them, so those members are reached through the room's relay. The page tries again with a growing wait, up to 5 minutes."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when attempts at direct (WebRTC) connections to members ({{count}}) failed though this browser allows them, so those members are reached through the room's relay. The page tries again with a growing wait, up to 5 minutes."
   },
-  "NetDetails.room.directFailed_other": {
+  "ConnectionRoom.directFailed_other": {
     "message": "Direct connections to {{count}} members were tried and failed, so traffic with them goes through the relay, which is slower. Something between the machines stops them: a firewall that blocks UDP, a router that doesn't connect two machines behind it to each other, or a network that keeps its machines apart (as guest Wi-Fi often does). Connecting through another network, a phone's hotspot say, may help. They're tried again every few minutes.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when attempts at direct (WebRTC) connections to members ({{count}}) failed though this browser allows them, so those members are reached through the room's relay. The page tries again with a growing wait, up to 5 minutes."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when attempts at direct (WebRTC) connections to members ({{count}}) failed though this browser allows them, so those members are reached through the room's relay. The page tries again with a growing wait, up to 5 minutes."
   },
-  "NetDetails.edit": {
+  "ConnectionDetails.edit": {
     "message": "Edit connection…",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the button that closes it and opens the Network wizard on the adapter's connection, to change its settings."
-  },
-  "NetDetails.close": {
-    "message": "Close",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the button that closes it."
+    "note": "A connection's Details on the Home page (its page under Connections): the button in the pane's head that opens the Network wizard on the connection, to change its settings."
   },
   "connections.thisComputer": {
     "message": "Your computer",
@@ -1257,19 +1253,19 @@
   },
   "names-view.line.serving_one": {
     "message": "This web app serves the room's domains for this connection: it keeps the records of 1 domain, and synced with {{servers}} other servers lately.",
-    "note": "A room adapter's details (Details… in the toolbar's Network menu): the registry's line on a machine that holds a name. {{count}} is the names it holds, {{servers}} the servers it synced with lately."
+    "note": "A room connection's Details on the Home page (its page under Connections, also opened by Details… in the toolbar's Network menu): the registry's line on a machine that holds a name. {{count}} is the names it holds, {{servers}} the servers it synced with lately."
   },
   "names-view.line.serving_other": {
     "message": "This web app serves the room's domains for this connection: it keeps the records of {{count}} domains, and synced with {{servers}} other servers lately.",
-    "note": "A room adapter's details: the registry's line on a machine that holds a name. {{count}} is how many names it holds, {{servers}} the servers it synced with lately."
+    "note": "A room connection's Details on the Home page: the registry's line on a machine that holds a name. {{count}} is how many names it holds, {{servers}} the servers it synced with lately."
   },
   "names-view.line.member_one": {
     "message": "Domains: 1 resolved; {{servers}} servers held.",
-    "note": "A room adapter's details: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
+    "note": "A room connection's Details on the Home page: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
   },
   "names-view.line.member_other": {
     "message": "Domains: {{count}} resolved; {{servers}} servers held.",
-    "note": "A room adapter's details: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
+    "note": "A room connection's Details on the Home page: the registry's line on a machine that holds no name: {{count}} the registered names it resolved and keeps, {{servers}} the servers of the room's names it holds now."
   },
   "names-view.machine.new": {
     "message": "<name>{{name}}</name> (being registered)",
@@ -1281,35 +1277,35 @@
   },
   "NameEntry.label": {
     "message": "Subdomain",
-    "note": "A room adapter's details, a registered domain's points: the accessible name of the field holding a subdomain (`git` in git.<name>)."
+    "note": "A room connection's Details on the Home page, a registered domain's points: the accessible name of the field holding a subdomain (`git` in git.<name>)."
   },
   "NameEntry.target": {
     "message": "Points at",
-    "note": "A room adapter's details, a registered name's points: the accessible name of the field holding the member's name in the room (or its key) the name or its label points at."
+    "note": "A room connection's Details on the Home page, a registered name's points: the accessible name of the field holding the member's name in the room (or its key) the name or its label points at."
   },
   "NameEntry.note": {
     "message": "Each points at a member's name in the room, this connection's or another's: paste one to point there. A subdomain adds a domain under <name>{{name}}</name>.",
-    "note": "A room adapter's details, under a registered name's points; {{name}} is the name."
+    "note": "A room connection's Details on the Home page, under a registered name's points; {{name}} is the name."
   },
   "NameEntry.addLabel": {
     "message": "Add a subdomain",
-    "note": "A room adapter's details, a registered name: adds a row for a subdomain, pointing at this connection."
+    "note": "A room connection's Details on the Home page, a registered name: adds a row for a subdomain, pointing at this connection."
   },
   "NameEntry.removeLabel": {
     "message": "Remove this subdomain",
-    "note": "A room adapter's details, a registered name: the tooltip and accessible name of the icon that removes a subdomain's row (Save keeps it)."
+    "note": "A room connection's Details on the Home page, a registered name: the tooltip and accessible name of the icon that removes a subdomain's row (Save keeps it)."
   },
   "NameEntry.pointHere": {
     "message": "Point all at this connection",
-    "note": "A room adapter's details, a registered name: sets every row's target to this connection's name in the room (Save keeps it)."
+    "note": "A room connection's Details on the Home page, a registered name: sets every row's target to this connection's name in the room (Save keeps it)."
   },
   "NameEntry.save": {
     "message": "Save",
-    "note": "A room adapter's details, a registered name: saves where it and its labels point (a new zone, published to the room)."
+    "note": "A room connection's Details on the Home page, a registered name: saves where it and its labels point (a new zone, published to the room)."
   },
   "NameEntry.release": {
     "message": "Let it go",
-    "note": "A room adapter's details, a registered name: the button that releases it (after asking), and the confirm button of that question (drawn as a warning)."
+    "note": "A room connection's Details on the Home page, a registered name: the button that releases it (after asking), and the confirm button of that question (drawn as a warning)."
   },
   "NameEntry.release.confirm": {
     "message": "Let <name>{{name}}</name> go? It will stop working for the room's members, and anyone can register it once the release is public.",
@@ -1317,15 +1313,15 @@
   },
   "names-view.badLabel": {
     "message": "“{{label}}” isn't a subdomain: use letters, digits and inner hyphens, 63 at most, and not two hyphens as its third and fourth characters.",
-    "note": "Error shown in a room adapter's details when Save finds a subdomain that isn't a DNS label, or has “--” in its third and fourth places (the punycode prefix's, as in “xn--”); {{label}} is what was typed."
+    "note": "Error shown in a room connection's Details on the Home page when Save finds a subdomain that isn't a DNS label, or has “--” in its third and fourth places (the punycode prefix's, as in “xn--”); {{label}} is what was typed."
   },
   "names-view.labelTwice": {
     "message": "“{{label}}” is listed twice: a subdomain points at one place.",
-    "note": "Error shown in a room adapter's details when Save finds the same subdomain in two rows; {{label}} is the subdomain."
+    "note": "Error shown in a room connection's Details on the Home page when Save finds the same subdomain in two rows; {{label}} is the subdomain."
   },
   "names-view.badTarget": {
     "message": "“{{target}}” isn't a member's name in the room or a key.",
-    "note": "Error shown in a room adapter's details when Save finds a target that isn't a member's name (<key>.<room name or tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
+    "note": "Error shown in a room connection's Details on the Home page when Save finds a target that isn't a member's name (<key>.<room name or tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
   },
   "names.ephemeral": {
     "message": "A connection that isn't kept in this browser can't hold a domain",
@@ -1387,21 +1383,21 @@
     "message": "Leave it empty for the project's server. Another must be a wss:// URL; only a server on your computer may use ws://.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Home page's Network tab and Connections), the demo network's step, under “Another server”: the note under the server's field."
   },
-  "NetDetails.demo.note": {
+  "ConnectionDetails.demo.note": {
     "message": "The guest's traffic goes through the demo network's server, which reaches only the hosts it allows. The machine's network is its own: it closes when the guest is idle for a while and opens again when the guest sends something.",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection to the demo network: its first text."
+    "note": "A connection's Details on the Home page (its page under Connections, also opened by “Details…” in the toolbar's Network menu), for a connection to the demo network: its first text."
   },
-  "NetDetails.demo.server": {
+  "ConnectionDetails.demo.server": {
     "message": "Server",
-    "note": "An adapter's details, for a connection to the demo network: the label of the server's address (a wss:// URL), with a Copy button."
+    "note": "A connection's Details on the Home page, for a connection to the demo network: the label of the server's address (a wss:// URL), with a Copy button."
   },
-  "NetDetails.demo.status": {
+  "ConnectionDetails.demo.status": {
     "message": "Inside the guest",
-    "note": "An adapter's details, for a connection to the demo network: the label of a command to copy (curl and the gateway's /status URL) that shows the network's numbers inside the guest."
+    "note": "A connection's Details on the Home page, for a connection to the demo network: the label of a command to copy (curl and the gateway's /status URL) that shows the network's numbers inside the guest."
   },
-  "NetDetails.demo.status.note": {
+  "ConnectionDetails.demo.status.note": {
     "message": "It prints the allowance used today, when it resets, and the destinations refused, so a script in the guest can tell why a download stopped.",
-    "note": "An adapter's details, for a connection to the demo network: the note under the command that shows the network's numbers inside the guest."
+    "note": "A connection's Details on the Home page, for a connection to the demo network: the note under the command that shows the network's numbers inside the guest."
   },
   "demo-net.notURL": {
     "message": "“{{input}}” isn't a URL. Enter one such as wss://demonet.example.org/.",
