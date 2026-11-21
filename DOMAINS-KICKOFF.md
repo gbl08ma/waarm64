@@ -1,6 +1,8 @@
 # DOMAINS: a page for each connection, and a place of their own for its domains — kickoff
 
-Drafted 2026-11-21 from the user's three briefs of that day; **not started until the user confirms it**.
+Drafted 2026-11-21 from the user's briefs of that day, and **confirmed by them that day** with the changes their
+last answer asked for (the outside services' sentence, "other people", the wizard's first choice, Back to where one
+came from, the machines a connection is attached to).
 
 The user's brief, in their words:
 
@@ -62,9 +64,11 @@ dialog and the wizard's edit mode go.
    connection). Entering a context replaces all of the column's entries with that context's; leaving restores them.
 3. **Back is the column's first entry, at every level.** At the root it is
    [Back to the machine](ui:machines:MachinesNav.back) (moved up from the foot, shown as today only while a machine is
-   on the page). In a context it leads one level up ("Back to Connections"). One Back at a time; the toolbar's Home
-   and wordmark still lead to the machine from any level. **Esc does what the column's Back does** (one level up,
-   then the machine), under the same conditions as today.
+   on the page). In a context it leads **back to where the user came from**: Connections (from a card, an address or a
+   reload), a machine's Network tab (from its adapter's card or the wizard opened there: "Back to <machine>"), or
+   the machine's screen (from the toolbar's menu or the wizard opened there: "Back to the machine"). One Back at a
+   time; the toolbar's Home and wordmark still lead to the machine from any level. **Esc does what the column's Back
+   does**, under the same conditions as today.
 4. **Snappy Svelte transitions** show the movement: going down, the column's entries and the pane leave to the left
    and the new ones come from the right; going up, the reverse; 150 ms, `cubicOut`; a plain fade with
    `prefers-reduced-motion` (as `ui/crossfade.ts` does). Choosing between panes of one level stays instant, as today.
@@ -87,9 +91,14 @@ dialog and the wizard's edit mode go.
     a message only where it turns out false, and say so in the handover.
 11. **The toolbar's Details… leaves the machine's screen** for the connection's page (the machine runs on behind
     Home; Back and Esc return to it): so does the menu's warning about a room's relayed members.
-12. **The attach wizard's pick step loses its Edit…** (it opened the edit mode in the wizard): a connection is edited
-    on its page.
-13. **Not in this track**: importing a key into an existing connection (a pasted key still makes a new connection, in
+12. **Change connection… asks which change is meant** (the user, 2026-11-21): on an adapter that has a connection, the
+    wizard opens on a first step with two choices, **edit the attached connection** (the wizard closes and the
+    connection's Settings open, Back leading to where the wizard was opened) or **attach a different connection**
+    (the wizard's steps as today). An adapter with no connection opens on the steps as today. The pick step loses
+    its Edit… on each connection.
+13. **A connection's Details say which machines have it attached**, each a link to that machine's Network tab, or
+    that none has, with a line on where connections are attached. Attaching and detaching stay there.
+14. **Not in this track**: importing a key into an existing connection (a pasted key still makes a new connection, in
     the wizard); a file for the backup (it is copied, as the key is today); connecting or attaching from the
     connection's page; any change to the registry, the agent's schedule or the dialog's check.
 
@@ -97,7 +106,8 @@ dialog and the wizard's edit mode go.
 
 ### Navigation (`areas/machines-nav.svelte.ts`, `MachinesNav.svelte`, `MachinesPage.svelte`, `areas/page-window.ts`)
 
-- `machinesNav` gains the context: none, or `{ kind: 'connection', id, section: 'details' | 'settings' | 'domains' }`.
+- `machinesNav` gains the context: none, or `{ kind: 'connection', id, section: 'details' | 'settings' | 'domains',
+  from }` (`from`: Connections, a machine's Network tab by its id, or the machine's screen; not in the address).
   `selected` stays `CONNECTIONS` in it. Moving between a context's sections is instant, as between the root's panes. `enter(context)` and `leave()` set a direction the transitions read.
 - `MachinesNav.svelte` becomes the root's entries and a context's (a component each),
   keyed by level inside one `nav`; the outgoing and incoming blocks overlap during the transition (grid-stacked), the
@@ -116,7 +126,8 @@ dialog and the wizard's edit mode go.
   address and Log out move to the page (`ConnectionEditButton.svelte` goes). A room connection's line ends with its
   domains' status link.
 - **Details** (`ConnectionDetails.svelte`, from `NetDetails.svelte`'s body, its words kept): the connection's values to
-  copy and what they let in, by kind, as the dialog has them. It reads the stored connection, and the adapter's live
+  copy and what they let in, by kind, as the dialog has them, and first **the machines it is attached to** (the
+  card's `usedBy`), each a link to that machine's Network tab, or that there are none, with where to attach one. It reads the stored connection, and the adapter's live
   view while the connection is connected on this page (`net.runs(id)`): then the adapter's line, the guest's address,
   a tailcat address or key, a room's warnings about relayed members and the registry line show too. While it isn't,
   one line says what is missing and why. A room connection's own name in the room shows either way (the module's
@@ -126,7 +137,10 @@ dialog and the wizard's edit mode go.
   address; a room's two switches and, under Advanced, its key to copy and a new key), with Save and Revert in the
   machine pane's row (`SaveRow.svelte`), saved through `page.netEdit`. The steps' components host it where that is the
   smaller change (their `flow.editing` branches), or their edit branches move out: the implementer's choice, said in
-  the handover. The wizard loses `mode: 'edit'`, `EDIT_STEP`, `roomEdit` and the pick step's Edit….
+  the handover. The wizard loses `mode: 'edit'`, `EDIT_STEP`, `roomEdit` and the pick step's Edit…, and gains a first
+  step (`NetChangeStep.svelte`, two `ui/Choice`s as the kind step has) shown when it is opened to attach on an adapter
+  that has a connection: edit that connection (closes the wizard, `page.openConnection(id, 'settings', from)`) or
+  attach a different one (the pick step, or the kind step where there is nothing to pick; Back returns to the choice).
 - **The toolbar's Network menu**: Details… and the room's warning open the connection's Details
   (`page.openConnection`); `network.details` and `network.openDetails` go.
 - An **ephemeral** connection has a page as the stored ones do (it is one of the page's connections); with a key of
@@ -205,7 +219,7 @@ name in the room, `<name>` and `<ui>` the catalog's markers. Existing entries ar
 
 | | |
 |---|---|
-| Back | Back to Connections |
+| Back | Back to Connections / Back to <name>{{machine}}</name> / Back to the machine (the root's words) |
 | the line under the connection's name | {{kind}} · {{state}} (the card's words: `kindText`, and connected here, in another tab, or not in use) |
 | the sections | Details / Settings / Domains |
 | a command | Back up key and domains… |
@@ -218,6 +232,14 @@ name in the room, `<name>` and `<ui>` the catalog's markers. Existing entries ar
 |---|---|
 | the card's button | Details |
 | its tooltip | See what this connection gives out and how to use it, and change its settings. |
+| Details, the machines, some | Attached to <name>{{machines}}</name>. (each name a link) |
+| Details, the machines, none | Not attached to any machine. |
+| Details, under either | To attach a connection to a machine, open the machine's <ui-network>Network</ui-network> tab on the <ui-home>Home</ui-home> page. |
+| the wizard's first step, title | Change connection |
+| its first choice | Edit <name>{{name}}</name> |
+| under it | Change the settings of the connection attached to this adapter. This opens the connection's page. |
+| its second choice | Attach a different connection |
+| under it | Choose another connection for this adapter, or create one. <name>{{name}}</name> stays in this browser. |
 | Details, not connected in this tab | This connection isn't connected in this tab. The addresses it gives out are shown here while a machine in this tab is connected through it. |
 | Details, connected in another tab | This connection is in use in another tab. The addresses it gives out are shown in that tab. |
 | Settings, the name's label | Name |
@@ -234,7 +256,7 @@ name in the room, `<name>` and `<ui>` the catalog's markers. Existing entries ar
 
 **The first explainer (no domains yet)**
 
-Heading: **Give this connection a name people can remember**
+Heading: **Give this connection a name other people can remember**
 
 > A domain is a short name of your choice, such as mybox, that the room's members can use to reach this connection.
 > Without one, they need its own name in the room, which is {{member}}. A domain can also have subdomains, and each
@@ -261,8 +283,8 @@ Heading: **Before you register**
 >   domains up.
 > - This browser holds the only copy of your domains. If its data is cleared, they are lost. To keep a copy, use
 >   <ui>Back up key and domains…</ui>.
-> - To prove when a domain was registered or renewed, this web app contacts public OpenTimestamps servers and Bitcoin
->   block explorers. No payment or wallet is involved.
+> - Domains rely on decentralized infrastructure. To use them, the browsers of the room's members may contact Nostr
+>   relays, OpenTimestamps servers, and Bitcoin block explorers. No payment or wallet is involved.
 > - Rarely, a domain that looked free turns out to have an earlier registration, for example by a member who was away
 >   when you registered. The earlier registration wins, and this web app tells you when that happens.
 
@@ -312,8 +334,9 @@ Heading: **Who can see them**
 Heading: **Where they are kept**
 
 > This browser holds the only copy of your domains. If its data is cleared, they are lost. To keep a copy, or to move
-> them to another browser, use <ui>Back up key and domains…</ui>. To prove when a domain was registered or renewed,
-> this web app contacts public OpenTimestamps servers and Bitcoin block explorers.
+> them to another browser, use <ui>Back up key and domains…</ui>. Domains rely on decentralized infrastructure. To use
+> them, the browsers of the room's members may contact Nostr relays, OpenTimestamps servers, and Bitcoin block
+> explorers.
 
 **The backup dialog**
 
@@ -360,7 +383,7 @@ share files), supervised here.
    (unit); the column's swap, Back, Esc and a reload, and the details' values through the page (the page tests that
    read `#net-details-*`).
 2. **Settings.** `ConnectionSettings`, Save and Revert, the commands in the column; the wizard's edit mode and the
-   pick step's Edit… removed. Tests: each kind's edit through the page, where the wizard's were.
+   pick step's Edit… removed, its first choice added (Back from the page to where the wizard was opened). Tests: each kind's edit through the page, where the wizard's were.
 3. **The Domains pane while disconnected.** tailnet.md's line, the module's `member`, the agent's and the area's
    `member`, their tests (Rust for the operation, the names agent's tests for the stored key); Details shows a room
    connection's name from it.
@@ -380,9 +403,8 @@ share files), supervised here.
 
 ## What needs the user's OK
 
-- This brief, and **the words** above.
-- **The module's interface grows by `member`** (tailnet.md "The module").
-- **names.md's decision "The two hot paths"** is reworded (decision 7 here).
+- Given 2026-11-21: this brief and its words; the module's interface growing by `member` (tailnet.md "The module");
+  names.md's decision "The two hot paths" reworded (decision 7 here).
 - Anything guest-visible or a step count: none expected. A dependency: none expected (Svelte's own transitions).
 
 ## Validation
