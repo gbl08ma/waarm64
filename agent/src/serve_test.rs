@@ -377,6 +377,9 @@ fn hello_with(caps: u32) -> [u8; 6] {
 
 #[test]
 fn no_session_child_without_the_clipboard() {
+    if crate::skipped_in_cloud("no_session_child_without_the_clipboard") {
+        return;
+    }
     let mut h = Harness::start("noclip");
     h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
     let a =
@@ -422,6 +425,9 @@ fn sets_the_clock_from_time_past_the_slack() {
 
 #[test]
 fn follows_the_session_and_passes_the_child_its_frames() {
+    if crate::skipped_in_cloud("follows_the_session_and_passes_the_child_its_frames") {
+        return;
+    }
     let mut h = Harness::start("session");
     h.page.send(frame::HELLO, &hello());
     assert!(
@@ -522,6 +528,9 @@ fn an_inotify_overflow_is_a_change() {
 
 #[test]
 fn a_child_for_the_screens_size_hears_the_hello_and_the_size_first() {
+    if crate::skipped_in_cloud("a_child_for_the_screens_size_hears_the_hello_and_the_size_first") {
+        return;
+    }
     let mut h = Harness::start("display");
     let size = |w: u32, hh: u32| [w.to_le_bytes(), hh.to_le_bytes()].concat();
     h.page.send(
@@ -568,6 +577,9 @@ fn a_child_for_the_screens_size_hears_the_hello_and_the_size_first() {
 
 #[test]
 fn applies_the_pages_layout_where_the_session_hasnt_it() {
+    if crate::skipped_in_cloud("applies_the_pages_layout_where_the_session_hasnt_it") {
+        return;
+    }
     use crate::keymap::Keymap;
     use std::os::unix::fs::PermissionsExt;
     let mut h = Harness::start("keymap");
@@ -1240,6 +1252,9 @@ fn drops_the_caches_and_says_what_became_of_it() {
 
 #[test]
 fn says_the_childs_desktop_to_a_page_that_asks() {
+    if crate::skipped_in_cloud("says_the_childs_desktop_to_a_page_that_asks") {
+        return;
+    }
     let mut h = Harness::start("desktop");
     let caps = frame::cap::TIME | frame::cap::DESKTOP;
     h.page.send(frame::HELLO, &hello_with(caps));

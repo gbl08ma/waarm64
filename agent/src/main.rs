@@ -45,6 +45,19 @@ mod rt;
 mod screen;
 #[cfg(test)]
 mod serve_test;
+
+/// A test that can't pass as root in a Claude Code cloud session's container (`CLAUDE_CODE_REMOTE`; docs/cloud.md: a
+/// root-owned socket is trusted by design, and a session whose UID is 0 gets no child) says so and is skipped there.
+/// Everywhere else, as a user or as root, it runs.
+#[cfg(test)]
+pub(crate) fn skipped_in_cloud(test: &str) -> bool {
+    let skip =
+        std::env::var_os("CLAUDE_CODE_REMOTE").is_some() && rustix::process::getuid().is_root();
+    if skip {
+        eprintln!("SKIPPED {test}: it can't pass as root in a cloud session (docs/cloud.md)");
+    }
+    skip
+}
 mod session;
 #[cfg(test)]
 mod sway_test;
