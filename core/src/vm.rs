@@ -381,8 +381,9 @@ pub struct Counters {
     /// table that lacked modules whose bytes were dropped; the heap bytes the
     /// table's decoded blocks and its known blocks take.
     /// Then (ABI 48) the misses that found the lock held and didn't wait;
-    /// (ABI 50) the ns the block map's prunes took.
-    pub jx: [AtomicU64; 13],
+    /// (ABI 50) the ns the block map's prunes took; (ABI 72) the block map's
+    /// rescues alone.
+    pub jx: [AtomicU64; 14],
     /// The diagnostic build's tallies (`crate::tally`), past the words the host knows.
     #[cfg(feature = "diag")]
     pub diag: [AtomicU64; crate::tally::N],
@@ -416,7 +417,7 @@ impl Default for Counters {
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
-            jx: [const { AtomicU64::new(0) }; 13],
+            jx: [const { AtomicU64::new(0) }; 14],
             #[cfg(feature = "diag")]
             diag: [const { AtomicU64::new(0) }; crate::tally::N],
         }
@@ -1732,6 +1733,7 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         s.known_bytes,
         s.lock_skipped,
         s.prune_ns,
+        s.map_rescues,
     ];
     for (a, v) in c.jx.iter().zip(jx) {
         a.store(v, Ordering::Relaxed);

@@ -6705,3 +6705,50 @@ against 456 · 454 · 457 (**456**). Every row overlaps. The arms differ where t
   which measured nothing: dropped, not built.
 - No core change, no step count moved. The findings are in docs/jit.md "Tried and not kept"; both backlog entries
   are removed.
+
+## PERF loop 43: the review of the block map and the heap's bounds, fixed (2026-11-21)
+
+An out-of-context static review after loop 42 (`review/jit-heap.md` on the deleted `review/jit-heap` branch) ranked
+seven findings. Each was checked against the code and hashbrown 0.17.1 / dlmalloc 0.2.14 (std's, in the pinned
+nightly's `rust-src`), confirmed by a test failing on 84ed7551 where it was real, then fixed. A test hook in the core's
+allocator (`crate::test_heap`, `cfg(test)`: the bytes growing allocations asked for on the thread, and a full heap that
+fails them until a free of 1 MiB) lets the native tests check what allocates.
+
+| finding | verdict | test (fails on 84ed7551) | fix |
+|---|---|---|---|
+| 1. off by one at `grows_past`: a 2^20 table with no room and exactly 458,752 keys doubles | real (`reserve_rehash_inner` rehashes in place only at `items + 1 <= full / 2`), for the decoded blocks' map too | `a_full_table_at_half_its_keys_prunes` (doubled to 1,835,008), `decoded_keys_at_half_start_over` (3,584) | prune (start over) with no room at **at least** the half, the table at its bound (`map_full`, the decoded blocks' new `full`, more than half of it held); `a_half_table_grows_to_the_bound` keeps a 2^19 table's growth |
+| 2a. the prune's `shrink_to` of the page index's and links' tables allocates infallibly | real for the tables (0.5 MiB in the test's prune); the lists' `shrink_to_fit` isn't (dlmalloc shrinks in place) | `a_prune_takes_no_memory` | the tables kept, as the map's |
+| 2b. the page index grows with no `try_reserve` | real: a new page's list traps (`memory allocation of 8 bytes failed`) | `a_page_index_without_room_rescues` (aborted) | `room` reserves the new key's page entry and list place (`PageIndex::reserve`), rescuing if not; `room` runs for new keys only |
+| 2c. `install` / `tier_up` file keys and links outside `room` | real, latent (members are keys the map holds but in the forced mode) | | docs/jit.md "Not covered", a backlog entry (count first) |
+| 3. gauges under-count tombstones elsewhere; `invalidate` doesn't publish the keys | real | `the_page_index_bytes_count_tombstones`, `the_known_bytes_count_tombstones`, `the_decoded_bytes_count_tombstones`, `the_key_gauge_follows_an_ic` | every table counted from the most it held with its room since allocated; `publish_keys` at an IC |
+| 4. tests/heap.test.ts's safety net doesn't show the block map rescued | real (`rescues` sums three) | | counter word 121 `mapRescues` (ABI 72); the 48 MiB run: 12 of the block map's of 24 |
+| 5. the map's u8 clock wraps between far-apart prunes | real | `the_map_clock_does_not_wrap_into_recent` | a u16 clock (`Info` stays 16 bytes) and a prune clamps the ages it keeps to `WARM_TICKS`; prunes ~9,000 keys apart when a prune can't rehash: real, not seen (docs) |
+| 6. a key-count flush doubles the threshold's floor | real, intended | | stated in docs/jit.md |
+| 7. stale comments and docs (2^21; a key per slot; "counts from zero") | real | | corrected |
+
+**Measured** (Mac M4, Chrome for Testing 158.0.8127.36; `base` 84ed7551, `fix` this commit, both from
+`target/snapbench/pages.waarm64snap`, `MEMLOG=5`; arms checked by size: `Jit::miss` 11,307 → 11,708 bytes,
+`interp::block::Cache::miss` 5,870 → 5,941). Raw: `results/perf43/` (`pages-summary.txt`, `pages-mem.json`,
+`churn-mem.json` from `sum.ts`, loop 41's; `screen.json`).
+
+| | base | fix |
+|---|---|---|
+| pages session (3 rounds, first arm alternating): `pagesS` (s) | 73.2 · 72.3 · 71.5; **72.3** | 71.6 · 72.2 · 73.2; **72.2** |
+| busy MIPS; Gsteps interpreted | 459 · 460 · 457; 3.54-3.58 | 459 · 455 · 451; 3.52-3.55 |
+| heap's mark; live at most; block map at most (MiB) | 288.0-288.9; 287.5-287.6; 28.2-28.4 | 288.2-288.4; 287.4-287.7; 28.2-28.5 |
+| prunes (ms each) | 9 · 9 · 7 (22-24) | 7 · 7 · 9 (23-25) |
+| run-once churn (fix base base fix, 600 s): mark; live at most (MiB) | 285.0 · 285.4; 283.2 · 283.2 | 286.2 · 285.6; 283.8 · 283.7 |
+| block map at most (MiB); prunes (ms each) | 28.3; 15 (20.3-20.4) | 29.0; 15 (20.8-21.2) |
+| `alpine_jit_total` (ms; base first in rounds 1 and 3) | 3,812.2 · 3,852.5 · 3,865.4; **3,852.5** | 3,861.2 · 3,850.5 · 3,855.9; **3,855.9** |
+| `alpine_user_jit_total` (ms) | 10,312.7 · 10,346.0 · 10,333.7; **10,333.7** | 10,347.0 · 10,380.1 · 10,360.5; **10,360.5** (+0.25%) |
+
+The pages session is the same in every row. In the churn the block map counts 0.7 MiB more (the page index's tables
+kept across prunes, and now counted whole) and the heap's live maximum is 0.5 MiB higher; prunes the same count and
+time. The user-mode gate's rounds don't overlap by 0.25%, under the floor; the boot's overlap. In Node,
+tests/heap.test.ts's 320 MiB guest prunes 12 times at 16.1-17.5 ms (base) and 16.5-18.0 (fix). No step count moved.
+
+**Planted bugs** (each caught, the source restored, the wasm rebuilt): the old `n > half` (both maps:
+`a_full_table_…`, `decoded_keys_at_half_…`); `n >= half` without the table's size (`a_half_table_grows_to_the_bound`,
+`decoded_keys_at_half_…`, `decoded_keys_are_bounded`); no age clamp (`the_map_clock_…`); no page reservation in `room`
+(`a_page_index_without_room_rescues` aborts); the links' `shrink_to(0)` back (`a_prune_takes_no_memory`); no
+`map_rescues` count (`a_rescue_frees_the_maps`; tests/heap.test.ts too).

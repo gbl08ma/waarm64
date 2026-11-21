@@ -673,6 +673,7 @@ tests.
 | 69 | `snapshot_version_min` gone: a restore reads `snapshot::VERSION` only, older files are refused ("SNAPZ: older files refused") |
 | 70 | `inflate_raw(src, len, dst, cap)` and `deflate_raw(src, len, dst, cap, level)`: qcow2's clusters through miniz_oxide ("SNAPZ: qcow2's clusters through miniz_oxide") |
 | 71 | `vm_cpu_stop(vm, i)`: parallel SMP's stop words, which a host that sets a signal bit clears too; `vm_set_chunk` past 32768 in parallel mode under the JIT ("PERF: the stop word") |
+| 72 | counter word 121: the JIT block map's rescues alone (a flush with its maps freed whole), of word 115's, which also counts a table's decoded and known blocks starting over without a flush (tests/heap.test.ts) |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

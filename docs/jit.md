@@ -690,15 +690,30 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
 The core's heap is a fixed reserve (1 GiB, `HEAP_RESERVE` in web/vm.ts; [abi.md](abi.md) "A fixed-size memory"), and
 running it out traps the machine. Everything the JIT keeps there is bounded:
 - **The block map** (`Cache::map`: every block key a vCPU dispatched, compiled or not, with its count; `Info` is 16
-  bytes, 25 a bucket) and its page index. At `MAP_KEYS` (900,000 keys), or when its full table would double past the 2^20 buckets that hold them (`MAP_BUCKETS`)
-  (the keys an IC removed leave tombstones that take room: counting the removals instead missed resizes, since
-  `HashMap::capacity` drops with each tombstone), a **prune** (`Cache::prune`) keeps what the cache needs (compiled, queued,
-  tiering or covered blocks), the keys reported in the last 262,144 keys added (`RECENT_TICKS` of the map's clock,
-  `Cache::tick`: the code running now) and those counted `KEEP_HITS` (16) times reported in the last 2 M (on their way
-  to the threshold), with their counts; it drops the rest and rebuilds the page index and links to match. The table
-  keeps its buckets (a prune comes only with it at 2^20), and since it was full the dropped keys leave tombstones, so
-  the prune rehashes it in place (a reserve of the room past them, while that's at most half the table's:
-  hashbrown's `reserve_rehash`). **Why it stays** (bench/boot/REPORT.md "PERF loop 40"): rebuilt to fit, the keys
+  bytes, 25 a bucket) and its page index. At `MAP_KEYS` (900,000 keys), or when its full table would double past the
+  2^20 buckets that hold them (`MAP_BUCKETS`), a **prune** (`Cache::prune`) keeps what the cache needs (compiled,
+  queued, tiering or covered blocks), the keys reported in the last 262,144 keys added (`RECENT_TICKS` of the map's
+  clock, `Cache::tick`: the code running now) and those counted `KEEP_HITS` (16) times reported in the last 2 M (on
+  their way to the threshold), with their counts; it drops the rest from the page index and the links too, whose
+  tables it keeps, as it keeps the map's: **a prune allocates nothing** (it runs with the heap near its mark, where a
+  failed allocation traps; until PERF loop 43 it shrank the page index's tables and the links' to fit, which allocates
+  them again, infallibly: 0.5 MiB in the unit test's prune of 900,000 keys, `a_prune_takes_no_memory`; the lists
+  still shrink, which a reallocation down does in place in dlmalloc). **When the
+  table would double:** the keys an IC removed leave tombstones that take its room (`HashMap::capacity` is the keys
+  plus the room left, so it drops with each tombstone: counting the removals instead missed resizes), and with no room
+  left hashbrown rehashes in place while the keys are at most half the table's (`reserve_rehash`: 458,752 at 2^20
+  buckets) and doubles it past that. So the prune comes with no room, at least that half, and the table at 2^20
+  buckets (it has held more than half of them, `map_full`; a smaller table full at that count grows to 2^20). One
+  past the half, as it was until PERF loop 43, let the table double to 2^21 at exactly 458,752 keys (the review after
+  loop 42). The table keeps its buckets, and since it was full the dropped keys leave tombstones, so the prune
+  rehashes it in place (a reserve of the room past them, while that's at most half the table's). **When that can't
+  be done:** a prune whose retains left the table more room than half of it (erased slots become empty, not
+  tombstones, where a neighbour is empty) can't make hashbrown rehash (std's `HashMap` has no call for it; a reserve
+  past the room doubles it), so its tombstones stay and the next prune can come after as little as the room past
+  the kept keys (~9,000 keys added at worst). Not seen: the pages session prunes every ~0.8 M keys added, the churn
+  every ~2 M. **The clock** is a u16 (it wraps at 2^30 keys added), and a prune brings the ages it keeps to at most
+  `WARM_TICKS` old: under IC churn the table can go on rehashing in place without a prune for any number of keys, and
+  with the u8 it had until PERF loop 43 a key last reported 256 ticks before a prune read as recent. **Why it stays** (bench/boot/REPORT.md "PERF loop 40"): rebuilt to fit, the keys
   growing back doubled it again after every prune, the old table and the new one living together with the heap near
   its maximum (with the bound at 2^21 buckets: the run-once churn's mark 333 MiB against a live maximum of 311, then
   313). Kept without the rehash, the tombstones (1.5 M) lengthened every probe and left no room: 7 prunes instead of 5,
@@ -706,7 +721,10 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   if even those are too many, the cache flushes. **Why recent ones too:** with only the warm ones kept, the prune
   (which lands in the pages session's bbc load, 210-240 s in) made that load 0.5-1 s slower: its code, reported a
   few times, counted from zero again, and each key coming back is formed again under the lock (that was at 2^21
-  buckets, 2026-10, with a core at less than half today's speed). **Why 2^20 buckets** (bench/boot/REPORT.md "PERF
+  buckets, 2026-10, with a core at less than half today's speed). A prune that flushes (the needed keys past half
+  of `MAP_KEYS`) and a rescue double the compile threshold's floor as every flush does ([Compile
+  policy](#compile-policy)): both mean more code compiled than the map or the heap hold, which compiling less answers
+  too. **Why 2^20 buckets** (bench/boot/REPORT.md "PERF
   loop 41"): the table holds what a prune keeps, not what makes code fast, and the keys a browser runs a few times are
   most of it. At 1.5 M keys (2^21 buckets, 50 MiB) Firefox's pages session never pruned and the table set the
   heap's mark when it doubled; at 900,000 the heap's mark is 27 MiB lower in the pages session (315 → 288 MiB) and in
@@ -721,15 +739,17 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   come back and 7% fewer steps interpreted, also no faster; and 450,000 keys (2^19 buckets) 16 MiB less again in
   the pages session (22 prunes) and 15 in the churn (51), no slower either, but its half (225,000) is near what a
   busy cache needs kept (a flush past it). So `KEEP_HITS`, `RECENT_TICKS`, `WARM_TICKS` and the half are set by
-  nothing measured: what they change costs less than the noise. So the table never passes 2^20 buckets (25 MiB). A pruned key
-  that runs again counts from zero. **Why:** the map held every key since the last flush, and with the 320 MiB budget
+  nothing measured: what they change costs less than the noise. So the table never passes 2^20 buckets (25 MiB). A
+  pruned key that runs again counts from what a table's decoded block counted since it last reported it (at most a
+  report's quota, 255 once it had run `warm` times), not from zero. **Why:** the map held every key since the last flush, and with the 320 MiB budget
   flushes are rare: the desktop guest (4 vCPUs, Firefox's sites, then Chromium's) ran the heap out after 15 minutes
   and one flush when the table doubled from 2^22 buckets (`rust_oom` in `Jit::miss`, 2026-10-21). JavaScript
   engines' code that runs a few times, at addresses later reused, is most of those keys.
 - **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 16M micro-ops of 8 bytes,
   128 MiB, shared out among the tables, at most 64 MiB one), and its map and page index, which also start over at
-  `MAX_KEYS` (900,000: 2^20 buckets, 17 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full table would double past the one that holds them (a block of
-  one micro-op, or none, filled the map long before the arena). On 4 vCPUs a table is ~50 MiB full: its arena 32 MiB,
+  `MAX_KEYS` (900,000: 2^20 buckets, 17 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full
+  table would double past the one that holds them (no room, half that table's keys, the table at that size: the block
+  map's rule) (a block of one micro-op, or none, filled the map long before the arena). On 4 vCPUs a table is ~50 MiB full: its arena 32 MiB,
   its map 17. **The budget is fixed, not the heap's room**, and the measurements say neither way pays:
   - **More room buys nothing measured.** In Firefox's pages session every table fills its arena three times (~0.75 M
     blocks a fill, ~5.5 micro-ops each; 11.2 M decodes). Twice the budget (8M a table, its map's 900,000 keys then
@@ -741,18 +761,27 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   - **Less use gives nothing back.** An arena that never fills (Alpine on 1 vCPU: ~1M micro-ops of its 8M) holds only
     what it decoded, and the heap is a fixed reserve whose allocator keeps what it frees: what the tab pays is the
     heap's mark, so a budget that followed the heap's room could only raise it.
-- **A table's known blocks** (`Table::known`): at most a key per slot this epoch.
+- **A table's known blocks** (`Table::known`): at most the keys this epoch compiled that the table has run (a
+  region's head, and its members entered at an entry, each a key of its own in one slot).
 - **Module bytes** held for tables that haven't taken them: at most `HELD_MAX` ([Sharing](#sharing)).
-- **The safety net:** before the block map, a table's decoded blocks or its known blocks grow, `try_reserve`; if the
-  heap has no room the cache flushes (or the table's decoded blocks start over) and the maps are freed whole (a clear
-  keeps their tables), counted as `rescues` (counter word 115). `tests/heap.test.ts` runs a guest of 4M `b .+4` in a
-  48 MiB heap through it (in 64 the block map finds room since its bound is 2^20 buckets). An allocation that still fails records its size and the heap's live bytes and mark for the
+- **The safety net:** before the block map, its page index (a new key's page and its place in the page's list), a
+  table's decoded blocks or its known blocks grow, `try_reserve`; if the heap has no room the cache flushes (or the
+  table's decoded blocks start over) and the maps are freed whole (a clear keeps their tables), counted as `rescues`
+  (counter word 115), the block map's alone also as `mapRescues` (word 121, ABI 72). `tests/heap.test.ts` runs a
+  guest of 4M `b .+4` in a 48 MiB heap through it (12 of the block map's rescues and 12 of the decoded blocks'; in
+  64 the block map finds room since its bound is 2^20 buckets); the unit tests run a heap made full
+  (`crate::test_heap`, the allocator's test hook) through the page index's. **Not covered:** what a module's install
+  files (`Cache::install`: a member entered at an entry that the map doesn't hold, the links, the checker's spans,
+  the heads filed under a region's other pages) grows those maps without a `try_reserve`, also from a tier-up inside
+  JIT code, which can't flush. Its members are nearly always keys the map holds (a region takes blocks that ran), so
+  it's a few keys a module past the bound at most, outside the forced mode (docs/backlog.md). An allocation that still fails records its size and the heap's live bytes and mark for the
   host (the allocation error hook, `diag`: `handle_alloc_error` skips the panic hook, so the crash above came with
   no message); `tests/heap.test.ts` runs one out through `heap_probe` (ABI 50) on the exact core and the growable one.
 - **The block map's page index** (`PageIndex`, for `IC IVAU`): a page's own keys by their low 12 bits (offset and
   regime bits; the page is the rest; a key is filed once, though an IC of another page that dropped it as a linker
   leaves it in its list), 2 bytes a key, and the regions filed under a page other than their head's by
-  the head's whole key. Its byte count is exact (the lists' capacities, the tables, 8 bytes of allocator a list). It
+  the head's whole key. Its byte count is exact (the lists' capacities, the tables whole with their tombstones, 8 bytes
+  of allocator a list). It
   held whole keys before (8 bytes a key, a list's smallest allocation 32 bytes): tests/heap.test.ts's guest, 1024 keys
   a page, 0.9 M keys: the heap's live bytes 86 → 81 MiB, its mark 111 → 106 MiB; Firefox's pages session, 1.45 M
   keys: 294 → 283 MiB live, the mark 313 → 307, its speed the same (bench/boot/REPORT.md "M8: the core with exact
@@ -766,11 +795,14 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
 - **A prune** over 1.5 M keys (the bound before PERF loop 41) takes 6-11 ms natively, ~28 ms in wasm (Node, tests/heap.test.ts's guest, which keeps
   almost nothing: the rehash in place costs ~7 ms more there than rebuilding a small table did; counter word 120,
   `pruneNs`) and ~35 ms in the run-once churn on 4 vCPUs; over 900,000 keys 21-24 ms in the churn and the pages
-  session, all of it under the cache's lock.
-- **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys and bytes (table and page index; the table
-  counted whole, from the most keys it has held since it was allocated, as `capacity` leaves its tombstones out) and the
-  held bytes, and each table's counters what its decoded and known blocks take (`decBytes`, `knownBytes`); the
-  page's status carries them (`Vm.hostUse`, `stats().jit`).
+  session, all of it under the cache's lock; in Node over tests/heap.test.ts's 900,000, 16-18 ms (keeping the page
+  index's tables and the links' changed nothing there or in the sessions: bench/boot/REPORT.md "PERF loop 43").
+- **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys (updated at each new key and each IC) and
+  bytes (table and page index) and the held bytes, and each table's counters what its decoded and known blocks take
+  (`decBytes`, `knownBytes`); the page's status carries them (`Vm.hostUse`, `stats().jit`). Every table is counted
+  whole, from the most it has held with its room since it was allocated, as `capacity` leaves its tombstones out
+  (until PERF loop 43 only the block map's was: the decoded blocks', the known blocks' and the page index's dropped
+  with each IC, by up to half a table).
 
 **What fills it** (4 vCPUs, 2.5 GiB, from the warm `pages` snapshot; MiB at the sample where the heap's live bytes
 were highest). Firefox's pages session on the Mac (`bench/boot/results/perf38/`, three sessions, all alike):

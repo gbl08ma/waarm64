@@ -79,7 +79,9 @@ export const Counter = {
   JIT_LOCK_SKIPPED: 119,
   // ABI 50: ns the block map's prunes took (under the cache's lock).
   JIT_PRUNE_NS: 120,
-  LEN: 121,
+  // ABI 72: the block map's rescues alone (of JIT_RESCUES: a flush, its maps freed whole).
+  JIT_MAP_RESCUES: 121,
+  LEN: 122,
 } as const;
 
 /** A snapshot of counters read through `n` (word index → value); exceptions by EC only where non-zero. */
@@ -135,6 +137,7 @@ export function stats(n: (i: number) => number) {
       knownBytes: n(Counter.JIT_KNOWN_BYTES),
       lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
       pruneNs: n(Counter.JIT_PRUNE_NS),
+      mapRescues: n(Counter.JIT_MAP_RESCUES),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS),

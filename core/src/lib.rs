@@ -35,7 +35,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 71;
+pub const ABI_VERSION: u32 = 72;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -53,9 +53,53 @@ struct Counting;
 static HEAP_LIVE: AtomicUsize = AtomicUsize::new(0);
 static HEAP_PEAK: AtomicUsize = AtomicUsize::new(0);
 
+/// The unit tests' view of the heap, per thread: the bytes growing
+/// allocations asked for, and a full heap (growing allocations fail until a
+/// free of at least [`test_heap::ROOM`] bytes makes room).
+#[cfg(test)]
+pub(crate) mod test_heap {
+    use core::cell::Cell;
+
+    /// The bytes a free must give back to end [`full`].
+    pub const ROOM: usize = 1 << 20;
+
+    thread_local! {
+        static GROWN: Cell<usize> = const { Cell::new(0) };
+        static FULL: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// The bytes growing allocations (new ones, reallocations up) asked for
+    /// on this thread so far.
+    pub fn grown() -> usize {
+        GROWN.with(Cell::get)
+    }
+
+    /// Makes this thread's growing allocations fail until a free of
+    /// [`ROOM`] bytes (or `full(false)`).
+    pub fn full(on: bool) {
+        FULL.with(|f| f.set(on));
+    }
+
+    /// A growing allocation of `n` bytes: false if the heap is full.
+    pub(super) fn grow(n: usize) -> bool {
+        GROWN.with(|g| g.set(g.get() + n));
+        !FULL.with(Cell::get)
+    }
+
+    pub(super) fn freed(n: usize) {
+        if n >= ROOM {
+            FULL.with(|f| f.set(false));
+        }
+    }
+}
+
 // SAFETY: every call goes to the system allocator as is; the counts are only counts.
 unsafe impl std::alloc::GlobalAlloc for Counting {
     unsafe fn alloc(&self, l: std::alloc::Layout) -> *mut u8 {
+        #[cfg(test)]
+        if !test_heap::grow(l.size()) {
+            return core::ptr::null_mut();
+        }
         // SAFETY: the caller's contract, passed on.
         let p = unsafe { std::alloc::System.alloc(l) };
         if !p.is_null() {
@@ -64,6 +108,10 @@ unsafe impl std::alloc::GlobalAlloc for Counting {
         p
     }
     unsafe fn alloc_zeroed(&self, l: std::alloc::Layout) -> *mut u8 {
+        #[cfg(test)]
+        if !test_heap::grow(l.size()) {
+            return core::ptr::null_mut();
+        }
         // SAFETY: the caller's contract, passed on.
         let p = unsafe { std::alloc::System.alloc_zeroed(l) };
         if !p.is_null() {
@@ -72,11 +120,17 @@ unsafe impl std::alloc::GlobalAlloc for Counting {
         p
     }
     unsafe fn dealloc(&self, p: *mut u8, l: std::alloc::Layout) {
+        #[cfg(test)]
+        test_heap::freed(l.size());
         // SAFETY: the caller's contract, passed on.
         unsafe { std::alloc::System.dealloc(p, l) };
         counted(-(l.size() as isize));
     }
     unsafe fn realloc(&self, p: *mut u8, l: std::alloc::Layout, size: usize) -> *mut u8 {
+        #[cfg(test)]
+        if size > l.size() && !test_heap::grow(size - l.size()) {
+            return core::ptr::null_mut();
+        }
         // SAFETY: the caller's contract, passed on.
         let q = unsafe { std::alloc::System.realloc(p, l, size) };
         if !q.is_null() {

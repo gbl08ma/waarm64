@@ -193,6 +193,13 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
     run-once churn screen (`CHURN='rate=300&calls=120&n=2'`) grew an unbounded map to 3.2 M keys in 12 minutes without a
     flush (heap 630 MiB, mark 725), the crash's path. Check with `TAILCAT=rig PHASES=sites` over 15 minutes and
     Chromium in the guest (in `images/arch/desktop.sh` since 2026-10-22).
+  - **What a module's install adds outside the bound** (the review after PERF loop 42; jit.md "The core's heap", "Not
+    covered"): `Cache::install` files a region's members entered at an entry (`info`, new keys only where the map
+    doesn't hold them), the links (`linkers`), the checker's spans and the heads under a region's other pages without
+    a `try_reserve`, and `Cache::tier_up` reaches it from JIT code, where nothing may flush. Count first (a diagnostic
+    tally of the keys `install` adds new, in the pages session and the churn); if any, reserve them before
+    `emit_batch` with `room`'s rules (one `try_reserve` of the new members' count, the prune or the rescue there), and
+    in `tier_up` skip the tier-up when they don't fit (it comes again at the next hot word).
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
   ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
   which every function needs for the table; writing the table from an active element segment

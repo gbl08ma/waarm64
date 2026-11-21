@@ -111,10 +111,10 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-21, after loop 42)
+## State (2026-11-21, after loop 43)
 
 What every loop kept, dropped and found is in its REPORT entry and the docs pages it names; the out-of-context reviews
-(after loops 8, 19, 21, 23, 28, 32, 34 and 36) were fixed in loops 9, 20, 22, 24, 29, 33, 35 and 37. Built but off by
+(after loops 8, 19, 21, 23, 28, 32, 34, 36 and 42) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37 and 43. Built but off by
 default (measured slower): I8MM, FCMA, FP16, FHM, BF16. Loop 36 made a region follow a call only when the callee can't
 leave it; loop 37 fixed its review (a call is followed only through the call that took its callee, where a callee's
 code runs is a fixpoint, recursion is no loop, checked edges leave: Mac gates unchanged, returns elsewhere in the boot
@@ -126,7 +126,10 @@ again after a prune. Loop 40 kept the table across a prune, its tombstones rehas
 `MAP_KEYS` decides anything in the pages session and the churn; halved to 900,000 (the table at 2^20 buckets), the heap's
 mark is 27 MiB lower in both at the same speed; the keep rules stay (no measured effect). Loop 42 bounded lazy NZCV at a loop's head on the Mac (7-11 laps a 1000 steps store NZCV only for cold paths;
 the unsound bound measured nothing on the gates or the pages session) and dropped it with the branch outcome kept across
-a loop (a tenth of that bound by its counts): no code, no new flag state, so no review is due for it. `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
+a loop (a tenth of that bound by its counts): no code, no new flag state, so no review is due for it. Loop 43 fixed the
+review of the block map and the heap's bounds (the prune's off-by-one at half a 2^20 table, a prune that allocates
+nothing, the page index under the safety net, gauges counting tombstones, a u16 clock, `mapRescues` at ABI 72): the
+Mac's pages session, churn and gates unchanged; `install`'s growth outside the bound is a backlog entry. `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
 
 ## Still open (the queue: the first is next; by expected gain)
 

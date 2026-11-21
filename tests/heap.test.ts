@@ -35,18 +35,22 @@ test('8M blocks run once fit a 320 MiB heap', { timeout: 240_000 }, async () => 
   assert.ok(j.prunes >= 4, `${j.prunes} prunes`);
   assert.ok(use.jitKeyBytes <= 32 * MiB, `${use.jitKeyBytes} bytes of keys`); // the table (25 MiB at most: jit::MAP_BUCKETS) and its page index
   assert.equal(j.rescues, 0);
+  assert.equal(j.mapRescues, 0);
   assert.ok(use.heapPeak < 300 * MiB, `${use.heapPeak} bytes at most`);
 });
 
 // The safety net: in a heap too small for the bounded maps, a map that can't grow flushes the cache (or starts a
 // table's decoded blocks over) and frees its table whole, instead of trapping. 48 MiB: in 64 the block map's table
-// (25 MiB at most since PERF loop 41) finds room and only the decoded blocks' maps start over, without a flush.
+// (25 MiB at most since PERF loop 41) finds room and only the decoded blocks' maps start over, without a flush. The
+// block map's own rescues have their counter (`mapRescues`, of `rescues`, which counts the decoded blocks' too).
 test('in a 48 MiB heap the maps give their memory back', { timeout: 240_000 }, async () => {
   const blocks = 4 << 20;
   const r = await runToPowerOff(WASM, { ramSize: 64 * MiB, kernel: branches(blocks), cmdline: '', jit: 1, heapReserve: 48 * MiB }, 1e9);
   assert.equal(r.kind, Exit.PSCI, r.console);
   assert.equal(r.steps, blocks + 3);
-  assert.ok(r.stats.jit.rescues > 0 && r.stats.jit.flushes > 0, `${r.stats.jit.rescues} rescues`);
+  const j = r.stats.jit;
+  console.log(`${j.mapRescues} of the block map's, ${j.rescues} rescues in all; ${j.flushes} flushes, ${j.prunes} prunes`);
+  assert.ok(j.mapRescues > 0 && j.flushes >= j.mapRescues, `${j.mapRescues} of the block map's rescues, ${j.rescues} in all`);
 });
 
 // The allocation error hook (core/src/diag.rs) in wasm: an allocation the heap can't hold traps with the hook's

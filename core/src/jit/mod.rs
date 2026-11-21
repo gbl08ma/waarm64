@@ -338,9 +338,10 @@ pub struct Stats {
     pub emit_locked_ns: u64,
     pub plan_ns: u64,
     /// The core's heap (ABI 47): the block map's prunes ([`MAP_KEYS`]);
-    /// flushes because the heap had no room for a map to grow (the block
-    /// map's, a table's decoded blocks or its known ones); and flushes
-    /// because a table lacked modules whose bytes were dropped ([`HELD_MAX`]).
+    /// times a map had no room in the heap to grow and freed its memory (the
+    /// block map's, with a flush: [`Cache::rescue`]; a table's decoded blocks
+    /// or its known ones, which start over without one); and flushes because
+    /// a table lacked modules whose bytes were dropped ([`HELD_MAX`]).
     pub prunes: u64,
     pub rescues: u64,
     pub lag_flushes: u64,
@@ -354,6 +355,8 @@ pub struct Stats {
     /// The ns the block map's prunes took, under the cache's lock (ABI 50;
     /// 0 natively, which has no clock here).
     pub prune_ns: u64,
+    /// The block map's rescues alone, of `rescues` (ABI 72).
+    pub map_rescues: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -398,8 +401,9 @@ struct Info {
     /// A loop head that a region tiered up with it runs the loop of: it
     /// doesn't tier up itself.
     covered: bool,
-    /// The cache's tick ([`Cache::tick`]) at its last report.
-    age: u8,
+    /// The cache's tick ([`Cache::tick`]) at its last report, or at most
+    /// [`WARM_TICKS`] before the last prune's (which kept it).
+    age: u16,
 }
 
 impl Info {
@@ -437,14 +441,17 @@ pub const KEEP_HITS: u16 = 16;
 /// added to it. A prune keeps every key reported in the last [`RECENT_TICKS`]
 /// (262,144 keys added: the code running now, which a page's load would
 /// otherwise count again from zero), and the warm ones reported in the last
-/// [`WARM_TICKS`] (2 M keys added: past the last prune, which comes at most
-/// every 450,000; under the u8's wrap at 256). With the table at
+/// [`WARM_TICKS`] (2 M keys added). Prunes can be any number of keys apart
+/// (under `IC IVAU` churn the table rehashes in place instead): the clock is
+/// a u16, which wraps at 2^30 keys added, and a prune brings the ages it
+/// keeps to at most `WARM_TICKS` old, so only 2^30 keys added with no prune
+/// at all could make an old key read as recent. With the table at
 /// [`MAP_BUCKETS`] the recent keys alone are more than half of [`MAP_KEYS`]
 /// in a browser's sessions, and the prune keeps only the needed ones (PERF
 /// loop 41: no slower for it).
 pub const TICK_SHIFT: u32 = 14;
-pub const RECENT_TICKS: u8 = 16;
-pub const WARM_TICKS: u8 = 128;
+pub const RECENT_TICKS: u16 = 16;
+pub const WARM_TICKS: u16 = 128;
 
 /// Module bytes the cache holds for tables that haven't taken them yet
 /// (`Cache::held`): past it the oldest go, and a table that still lacked
@@ -756,19 +763,22 @@ impl Cache {
         ) + self.pages.bytes()
     }
 
-    /// Before a key may join the block map (a miss, from the dispatcher: it
-    /// may flush): a prune at [`MAP_KEYS`], and room for the key. If the
-    /// heap has no room, the cache flushes and frees its maps whole
-    /// ([`Cache::rescue`]).
-    fn room(&mut self, s: &mut Stats) {
+    /// Before `key` joins the block map (a miss, from the dispatcher: it
+    /// may flush): a prune at [`MAP_KEYS`], and room for the key in the
+    /// table and the page index. If the heap has no room, the cache flushes
+    /// and frees its maps whole ([`Cache::rescue`]).
+    fn room(&mut self, key: u64, s: &mut Stats) {
         // `capacity` is the keys it holds now plus the room left before it
-        // grows (tombstones take room): none left, with as many keys as
-        // `grows_past` in it, it would double past 2^21 buckets.
-        let n = self.map.len();
-        if n >= MAP_KEYS || self.map.capacity() == n && n > grows_past(MAP_KEYS) {
+        // grows (tombstones take room). With none left hashbrown rehashes in
+        // place while the keys are at most half the table's
+        // (`reserve_rehash`), and past that doubles it: with the table at
+        // MAP_BUCKETS (it has held more than half of them) and half its keys
+        // in it, it prunes. A smaller table full at that count grows to them.
+        let (n, half) = (self.map.len(), grows_past(MAP_KEYS));
+        if n >= MAP_KEYS || self.map.capacity() == n && n >= half && self.map_full > half {
             self.prune(s);
         }
-        if self.map.try_reserve(1).is_err() {
+        if self.map.try_reserve(1).is_err() || self.pages.reserve(key).is_err() {
             self.rescue(s);
         }
         self.map_full = self.map_full.max(self.map.capacity());
@@ -776,8 +786,8 @@ impl Cache {
 
     /// The block map's clock: keys added to it, in units of
     /// 2^[`TICK_SHIFT`] (wrapping).
-    fn tick(&self) -> u8 {
-        (self.added >> TICK_SHIFT) as u8
+    fn tick(&self) -> u16 {
+        (self.added >> TICK_SHIFT) as u16
     }
 
     /// Drops the keys nothing needs ([`Info::needed`]) but those reported in
@@ -785,9 +795,11 @@ impl Cache {
     /// reported in the last [`WARM_TICKS`]; if that leaves more than half of
     /// [`MAP_KEYS`], only the needed and the recent ones; then only the
     /// needed ones; and flushes if even that does. Then rehashes the map's
-    /// table in place (it keeps its buckets), and rebuilds the page index and
-    /// the links to match. A pruned key that runs again
-    /// counts from zero (its decoded blocks report it as new).
+    /// table in place (it keeps its buckets), and drops what the page index
+    /// and the links hold of the keys gone (their tables kept too: a prune
+    /// allocates nothing). A pruned key that runs again counts from what its
+    /// decoded blocks counted since they last reported it (at most a
+    /// report's quota, [`interp::block::REPORT_IDLE`]).
     fn prune(&mut self, s: &mut Stats) {
         let t0 = now_ns();
         self.prune_keys(s);
@@ -800,6 +812,9 @@ impl Cache {
         let since = move |i: &Info| tick.wrapping_sub(i.age);
         self.map.retain(|_, i| {
             let d = since(i);
+            // What it keeps is at most WARM_TICKS old from here, so a long
+            // time to the next prune can't wrap it back to recent.
+            i.age = tick.wrapping_sub(d.min(WARM_TICKS));
             i.needed() || d < RECENT_TICKS || i.hits >= KEEP_HITS && d < WARM_TICKS
         });
         if self.map.len() > MAP_KEYS / 2 {
@@ -816,7 +831,7 @@ impl Cache {
         }
         // The table stays: rebuilt to fit, the keys growing back doubled it
         // again with the heap near its mark, the old table and the new one
-        // live together (PERF loop 40). A prune comes only with it at 2^21
+        // live together (PERF loop 40). A prune comes with it at 2^20
         // buckets ([`Cache::room`]), full, so the retains left tombstones
         // where the keys were, which lengthen every probe and leave no room:
         // a reserve of the room past them, if that's at most half the
@@ -830,7 +845,6 @@ impl Cache {
         let map = &self.map;
         self.pages.retain(|k| map.contains_key(&k));
         self.linkers.retain(|k, _| map.contains_key(k));
-        self.linkers.shrink_to(0);
         self.publish();
     }
 
@@ -849,6 +863,7 @@ impl Cache {
         self.tiers = Map::default();
         self.log = Vec::new();
         s.rescues += 1;
+        s.map_rescues += 1;
         self.publish();
     }
 
@@ -973,6 +988,7 @@ impl Cache {
             if !self.pending.is_empty() {
                 self.pending.retain(|p| gone.binary_search(&p.0).is_err());
             }
+            self.publish_keys();
         } else {
             return;
         }
@@ -1029,7 +1045,9 @@ impl Cache {
         n: u32,
         len: Option<u32>,
     ) -> (Result<(u32, u32), u32>, u32) {
-        self.room(&mut t.stats);
+        if !self.map.contains_key(&key) {
+            self.room(key, &mut t.stats);
+        }
         let (keys, tick) = (self.map.len(), self.tick());
         let info = info(&mut self.map, &mut self.pages, key, || {
             len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
@@ -1494,6 +1512,9 @@ impl Cache {
                 }
             }
         }
+        // A member new to the map grew it outside [`Cache::room`] (docs/jit.md
+        // "The core's heap"): its bound goes by the table's size.
+        self.map_full = self.map_full.max(self.map.capacity());
         Some(idx)
     }
 }
@@ -1518,6 +1539,9 @@ pub struct Table {
     /// installed), as (table index, length): a jump-cache miss for one of
     /// them needs no lock ([`Jit::miss`]). Caught up as the jump cache is.
     known: Map<(u32, u32)>,
+    /// The most `known` has held with its room since its table was
+    /// allocated: its whole table, tombstones too ([`Table::stats`]).
+    known_full: usize,
     /// One hot word per slot ([`emit::tier_up`]).
     hot: Box<[u32]>,
     /// The cache's epoch its slots hold, how many of that epoch's
@@ -1584,6 +1608,7 @@ impl Table {
                 .expect("JC entries"),
             jc_used: Vec::new(),
             known: Map::default(),
+            known_full: 0,
             hot: vec![0; c.cfg.capacity as usize].into_boxed_slice(),
             epoch: c.epoch,
             installed: 0,
@@ -1857,7 +1882,10 @@ impl Table {
     pub fn stats(&self) -> Stats {
         Stats {
             dec_bytes: self.dec.bytes(),
-            known_bytes: table_bytes(self.known.capacity(), size_of::<(u64, (u32, u32))>()),
+            known_bytes: table_bytes(
+                self.known_full.max(self.known.capacity()),
+                size_of::<(u64, (u32, u32))>(),
+            ),
             ..self.stats
         }
     }
@@ -2032,12 +2060,14 @@ impl Jit {
         self.install();
         match r {
             Ok((idx, len)) if idx & IDX_MASK < self.table.limit => {
-                if self.table.known.try_reserve(1).is_err() {
+                let t = &mut self.table;
+                if t.known.try_reserve(1).is_err() {
                     // No room in the heap: it starts over (a clear keeps its table).
-                    self.table.known = Map::default();
-                    self.table.stats.rescues += 1;
+                    (t.known, t.known_full) = (Map::default(), 0);
+                    t.stats.rescues += 1;
                 }
-                self.table.known.insert(key, (idx, len));
+                t.known.insert(key, (idx, len));
+                t.known_full = t.known_full.max(t.known.capacity());
                 self.table.dec.quota(key, 0);
                 self.table.fill(key, idx, len);
                 Ok((idx, len))
@@ -2192,9 +2222,26 @@ struct PageIndex {
     heads: Map<Vec<u64>>,
     /// The lists' capacities in bytes.
     lists: u64,
+    /// The most `own` and `heads` have held with their room since their
+    /// tables were allocated: their whole tables, as `capacity` leaves out
+    /// the tombstones of the pages taken.
+    own_full: usize,
+    heads_full: usize,
 }
 
 impl PageIndex {
+    /// Room to file `key` without allocating (its page's entry and a place
+    /// in its list), as [`PageIndex::file`] would allocate infallibly.
+    fn reserve(&mut self, key: u64) -> Result<(), std::collections::TryReserveError> {
+        self.own.try_reserve(1)?;
+        self.own_full = self.own_full.max(self.own.capacity());
+        let l = self.own.entry(key >> 12).or_default();
+        let cap = l.capacity();
+        l.try_reserve(1)?;
+        self.lists += 2 * (l.capacity() - cap) as u64;
+        Ok(())
+    }
+
     /// Files a new key under its page.
     fn file(&mut self, key: u64) {
         let l = self.own.entry(key >> 12).or_default();
@@ -2206,6 +2253,7 @@ impl PageIndex {
             l.push(o);
             self.lists += 2 * (l.capacity() - cap) as u64;
         }
+        self.own_full = self.own_full.max(self.own.capacity());
     }
 
     /// Files a region's head under another page the region covers.
@@ -2216,6 +2264,7 @@ impl PageIndex {
             l.push(head);
             self.lists += 8 * (l.capacity() - cap) as u64;
         }
+        self.heads_full = self.heads_full.max(self.heads.capacity());
     }
 
     /// Takes the keys filed under `page`: its own and the region heads.
@@ -2232,7 +2281,9 @@ impl PageIndex {
         Some(keys)
     }
 
-    /// Keeps the keys `keep` says, without duplicates, the lists and tables shrunk to fit.
+    /// Keeps the keys `keep` says, without duplicates, the lists shrunk to
+    /// fit (in place: a reallocation down doesn't allocate) and the tables
+    /// kept, so it allocates nothing ([`Cache::prune`]).
     fn retain(&mut self, keep: impl Fn(u64) -> bool) {
         let mut lists = 0;
         self.own.retain(|&page, l| {
@@ -2251,8 +2302,6 @@ impl PageIndex {
             lists += 8 * l.capacity() as u64;
             !l.is_empty()
         });
-        self.own.shrink_to(0);
-        self.heads.shrink_to(0);
         self.lists = lists;
     }
 
@@ -2266,8 +2315,10 @@ impl PageIndex {
     /// The heap bytes it takes: the tables, the lists, and the allocator's
     /// 8 bytes a list.
     fn bytes(&self) -> u64 {
-        table_bytes(self.own.capacity(), size_of::<(u64, Vec<u16>)>())
-            + table_bytes(self.heads.capacity(), size_of::<(u64, Vec<u64>)>())
+        let own = self.own_full.max(self.own.capacity());
+        let heads = self.heads_full.max(self.heads.capacity());
+        table_bytes(own, size_of::<(u64, Vec<u16>)>())
+            + table_bytes(heads, size_of::<(u64, Vec<u64>)>())
             + self.lists
             + 8 * (self.own.len() + self.heads.len()) as u64
     }
@@ -3644,7 +3695,7 @@ mod tests {
             c.info(k << 4, || 1);
             k += 1;
         }
-        c.room(s);
+        c.room(k << 4, s);
         while c.map.capacity() > c.map.len() {
             c.info(k << 4, || 1);
             k += 1;
@@ -3689,6 +3740,247 @@ mod tests {
             "the map grew to hold {most} keys"
         );
         assert!(t.stats.prunes > 0, "pruned for the tombstones");
+    }
+
+    /// With the table at [`MAP_BUCKETS`], no room left and exactly half its
+    /// keys (`grows_past`), the next key prunes: hashbrown rehashes in place
+    /// only up to half the table's keys, so a reserve there doubles it
+    /// (the review after PERF loop 42).
+    #[test]
+    fn a_full_table_at_half_its_keys_prunes() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        let half = grows_past(MAP_KEYS);
+        // Grown to 2^20 buckets.
+        let mut k = 0u64;
+        while c.map.len() <= half + 1000 {
+            c.room(k << 4, s);
+            c.info(k << 4, || 1);
+            k += 1;
+            assert_eq!(s.prunes, 0, "pruned at {} keys", c.map.len());
+        }
+        assert_eq!(c.map_full, MAP_BUCKETS / 8 * 7);
+        // Tombstones until its room is gone with `half` keys in it: a key
+        // in and an old one out at a time.
+        let mut old = 0u64;
+        while c.map.len() >= half {
+            c.map.remove(&(old << 4));
+            old += 1;
+        }
+        loop {
+            c.info(k << 4, || 1);
+            k += 1;
+            if c.map.capacity() == c.map.len() {
+                break;
+            }
+            c.map.remove(&(old << 4));
+            old += 1;
+            assert!(k < 100_000_000, "never ran out of room");
+        }
+        assert_eq!(c.map.len(), half);
+        c.room(k << 4, s);
+        assert!(
+            c.map.capacity() <= MAP_BUCKETS / 8 * 7,
+            "the table doubled to hold {} keys",
+            c.map.capacity()
+        );
+        assert_eq!(s.prunes, 1);
+    }
+
+    /// A table below [`MAP_BUCKETS`] full at the same count grows to them,
+    /// without a prune.
+    #[test]
+    fn a_half_table_grows_to_the_bound() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        let mut k = 0u64;
+        while c.map.len() < grows_past(MAP_KEYS) {
+            c.room(k << 4, s);
+            c.info(k << 4, || 1);
+            k += 1;
+        }
+        assert_eq!(c.map.capacity(), c.map.len(), "full at 2^19 buckets");
+        c.room(k << 4, s);
+        assert_eq!((s.prunes, c.map_full), (0, MAP_BUCKETS / 8 * 7));
+    }
+
+    /// The prune allocates nothing: it runs with the heap near its mark,
+    /// where an allocation that fails traps (the tables it keeps; the lists
+    /// shrink in place).
+    #[test]
+    fn a_prune_takes_no_memory() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        for k in 0..MAP_KEYS as u64 - 1 {
+            let key = (1 << 32) + (k << 4);
+            c.info(key, || 1).idx = (k % 64 == 0) as u32 * 7;
+            if k % 16 == 0 {
+                c.linkers.entry(key).or_default().push(key + 4);
+                c.pages.file_head((key >> 12) + 1, key);
+            }
+        }
+        c.added = (RECENT_TICKS as u64 + 1) << TICK_SHIFT;
+        let grown = crate::test_heap::grown();
+        c.prune(s);
+        assert_eq!(
+            c.map.len(),
+            (MAP_KEYS - 1).div_ceil(64),
+            "the compiled ones"
+        );
+        assert_eq!(crate::test_heap::grown() - grown, 0, "bytes allocated");
+    }
+
+    /// A new key whose page index can't grow in a full heap: the cache
+    /// rescues, as for the block map's table, instead of trapping.
+    #[test]
+    fn a_page_index_without_room_rescues() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        for k in 0..100_000u64 {
+            let key = (1 << 32) + (k << 4);
+            let _ = c.miss(&mut t, key, key, &mem, 1, Some(4));
+        }
+        assert!(c.map.capacity() > c.map.len() && c.pages.own.capacity() > c.pages.own.len());
+        let key = 1 << 40;
+        crate::test_heap::full(true);
+        let _ = c.miss(&mut t, key, key, &mem, 1, Some(4));
+        crate::test_heap::full(false);
+        assert_eq!(t.stats.rescues, 1);
+        assert_eq!(c.map.len(), 1);
+    }
+
+    /// The byte counts take each table whole, its tombstones too (which
+    /// `capacity` leaves out): the page index's after ICs.
+    #[test]
+    fn the_page_index_bytes_count_tombstones() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        let mut p = 0u64;
+        while p < 1000 || c.pages.own.capacity() > c.pages.own.len() {
+            c.info((1 << 32) + (p << 12), || 1);
+            p += 1;
+        }
+        let whole = c.pages.bytes() - c.pages.lists - 8 * c.pages.own.len() as u64;
+        for q in 16..p {
+            c.invalidate((1 << 32) + (q << 12), s);
+        }
+        assert!(c.pages.own.capacity() < p as usize / 2, "no tombstones");
+        assert_eq!(
+            c.pages.bytes(),
+            whole + c.pages.lists + 8 * c.pages.own.len() as u64,
+            "the page index's table"
+        );
+    }
+
+    /// The gauge's key words follow an IC at once.
+    #[test]
+    fn the_key_gauge_follows_an_ic() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let s = &mut Stats::default();
+        for k in 0..1000u64 {
+            let _ = c.miss(&mut t, k << 4, k << 4, &mem, 1, Some(4));
+        }
+        c.invalidate(0x1000, s);
+        assert_eq!(c.map.len(), 1000 - 256);
+        assert_eq!(
+            c.gauge.0[G_KEYS].load(Ordering::Relaxed),
+            c.map.len() as u64
+        );
+        assert_eq!(
+            c.gauge.0[G_KEY_BYTES].load(Ordering::Relaxed),
+            c.map_bytes()
+        );
+    }
+
+    /// A table's known blocks count their table whole after ICs dropped
+    /// most of them.
+    #[test]
+    fn the_known_bytes_count_tombstones() {
+        let mut ram = vec![0u128; (1 << 20) / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 1 << 20) };
+        for a in (0..1 << 20).step_by(4) {
+            mem.write(a, 4, 0x1400_0001).unwrap(); // b .+4
+        }
+        let mut j = Jit::new(Cache::new(Config::DEFAULT));
+        j.table.limit = 1 << 20;
+        let mut n = 0u64;
+        while n < 1000 || j.table.known.capacity() > j.table.known.len() {
+            let key = n << 12;
+            j.cache.lock().info(key, || 1).idx = 7 + n as u32;
+            assert_eq!(j.miss(key, key, &mem), Ok((7 + n as u32, 1)));
+            n += 1;
+        }
+        let whole = j.table.stats().known_bytes;
+        for q in 16..n {
+            j.invalidate(q << 12);
+        }
+        j.fresh(&mem);
+        assert!(j.table.known.capacity() < n as usize / 2, "no tombstones");
+        assert_eq!(
+            j.table.stats().known_bytes,
+            whole,
+            "the known blocks' table"
+        );
+    }
+
+    /// A table's decoded blocks count their tables whole after ICs dropped
+    /// most of them.
+    #[test]
+    fn the_decoded_bytes_count_tombstones() {
+        let mut ram = vec![0u128; (1 << 20) / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 1 << 20) };
+        for a in (0..1 << 20).step_by(4) {
+            mem.write(a, 4, 0x1400_0001).unwrap(); // b .+4
+        }
+        let mut d = interp::block::Cache::new(1 << 20);
+        let mut n = 0u64;
+        while n < 200 || d.capacity() > d.len() {
+            assert!(d.get(n << 12, &mem).is_some());
+            n += 1;
+        }
+        let whole = d.bytes();
+        for q in 16..n {
+            d.drop_page(q);
+        }
+        assert!(d.capacity() < n as usize / 2, "no tombstones");
+        assert_eq!(d.bytes(), whole, "the decoded blocks' tables");
+    }
+
+    /// The map's clock doesn't wrap into the keep rules: a key last reported
+    /// 256 ticks ago isn't recent, nor one a prune kept long ago (needed then)
+    /// once its clock comes round again.
+    #[test]
+    fn the_map_clock_does_not_wrap_into_recent() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let s = &mut Stats::default();
+        let (old, kept) = (0x1000, 0x2000);
+        for k in [old, kept] {
+            let _ = c.miss(&mut t, k, k, &mem, 1, Some(4));
+        }
+        c.info(kept, || 4).idx = 7;
+        c.added = 256 << TICK_SHIFT;
+        c.prune(s);
+        assert!(!c.map.contains_key(&old), "256 ticks ago: not recent");
+        c.info(kept, || 4).idx = 0;
+        c.added = (1 << 16 | 5) << TICK_SHIFT;
+        c.prune(s);
+        assert!(
+            !c.map.contains_key(&kept),
+            "kept 2^16 ticks ago: not recent"
+        );
     }
 
     /// A prune keeps what the cache needs (compiled, queued, tiering
@@ -3745,7 +4037,7 @@ mod tests {
         // An IC on page 1 still drops the compiled block.
         c.invalidate(0x1000, s);
         assert_eq!(keys(&c), [hot, now]);
-        // Run again, a pruned key counts from zero.
+        // Run again, a pruned key counts from what its report brings (one here).
         let _ = c.miss(&mut t, cold, cold, &mem, 1, Some(4));
         assert_eq!(c.map[&cold].hits, 1);
     }
@@ -3791,7 +4083,7 @@ mod tests {
         }
         c.rescue(s);
         assert!(c.map.capacity() == 0 && c.pages.own.capacity() == 0 && c.pages.bytes() == 0);
-        assert_eq!((s.flushes, s.rescues), (1, 1));
+        assert_eq!((s.flushes, s.rescues, s.map_rescues), (1, 1, 1));
     }
 
     /// Module bytes held for tables that haven't taken them stay under
@@ -3927,6 +4219,53 @@ mod tests {
             most = most.max(d.capacity());
         }
         assert!(most <= 1792, "{most}");
+    }
+
+    /// A table's decoded blocks at the size that holds their key bound, with
+    /// no room and exactly half its keys, start over rather than double
+    /// (as the block map: [`a_full_table_at_half_its_keys_prunes`]).
+    #[test]
+    fn decoded_keys_at_half_start_over() {
+        const PAGES: u64 = 4096;
+        let mut ram = vec![0u128; (PAGES << 12) as usize / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), PAGES << 12) };
+        for p in 0..PAGES {
+            mem.write(p << 12, 4, 0xd400_0001).unwrap(); // svc #0: no micro-ops
+        }
+        // 1,792 keys at most: 2,048 buckets, half of them 896.
+        let mut d = interp::block::Cache::new(1792 * interp::block::KEY_UOPS);
+        let half = grows_past(1792);
+        let key = |p: u64| (p % PAGES) << 12;
+        let (mut new, mut old) = (0, 0);
+        // Filled, then most dropped: tombstones.
+        while d.len() < 1791 {
+            assert!(d.get(key(new), &mem).is_none());
+            new += 1;
+            assert_eq!(d.clears, 0, "started over at {} keys", d.len());
+        }
+        assert_eq!(d.capacity(), 1792);
+        while d.len() >= half {
+            d.drop_page(old % PAGES);
+            old += 1;
+        }
+        loop {
+            assert!(d.get(key(new), &mem).is_none());
+            new += 1;
+            if d.capacity() == d.len() {
+                break;
+            }
+            d.drop_page(old % PAGES);
+            old += 1;
+            assert!(
+                new - old < PAGES && new < 10_000_000,
+                "never ran out of room"
+            );
+        }
+        assert_eq!((d.len(), d.clears), (half, 0));
+        assert!(d.get(key(new), &mem).is_none());
+        assert!(d.capacity() <= 1792, "doubled to {}", d.capacity());
+        assert_eq!(d.clears, 1);
     }
 
     /// Module numbers wrap (u32), and 0 is a module the worker didn't take.

@@ -3221,6 +3221,11 @@ pub struct Cache {
     /// ([`KEY_UOPS`]).
     budget: usize,
     keys: usize,
+    /// The most `map` and `pages` have held with their room since their
+    /// tables were allocated: their whole tables, as `capacity` leaves out
+    /// the tombstones of the blocks an IC dropped.
+    full: usize,
+    pages_full: usize,
     /// Blocks decoded, times the cache started over, and times it freed
     /// its memory because the heap had no room for it to grow (`jit::Stats`).
     pub decoded: u64,
@@ -3253,6 +3258,8 @@ impl Cache {
             arena: Vec::new(),
             budget,
             keys: (budget / KEY_UOPS).clamp(1, MAX_KEYS),
+            full: 0,
+            pages_full: 0,
             decoded: 0,
             clears: 0,
             rescues: 0,
@@ -3302,10 +3309,11 @@ impl Cache {
                 // room in the heap for it to grow, it frees its memory too.
                 // (`capacity` is its keys plus the room left before it
                 // grows: an IC's tombstones take room, so with none left and
-                // half its keys in it, it would double past them.)
-                let n = self.map.len();
+                // half its table's keys in it, a table at the size that
+                // holds its bound would double past it: `jit::Cache::room`.)
+                let (n, half) = (self.map.len(), crate::jit::grows_past(self.keys));
                 if n >= self.keys
-                    || self.map.capacity() == n && n > crate::jit::grows_past(self.keys)
+                    || self.map.capacity() == n && n >= half && self.full > half
                     || len != 0 && self.arena.len() + uops.len() > self.budget
                 {
                     self.clear();
@@ -3316,6 +3324,8 @@ impl Cache {
                 {
                     self.rescue();
                 }
+                self.full = self.full.max(self.map.capacity());
+                self.pages_full = self.pages_full.max(self.pages.capacity());
                 let low = (key & 0xfff) as u16;
                 let next = self.pages.insert(key >> 12, low).unwrap_or(low);
                 if len == 0 {
@@ -3451,6 +3461,11 @@ impl Cache {
     }
 
     #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    #[cfg(test)]
     pub fn has(&self, key: u64) -> bool {
         self.map.contains_key(&key)
     }
@@ -3478,8 +3493,14 @@ impl Cache {
     pub fn bytes(&self) -> u64 {
         use crate::jit::table_bytes;
         (self.arena.capacity() * size_of::<Uop>()) as u64
-            + table_bytes(self.map.capacity(), size_of::<(u64, Known)>())
-            + table_bytes(self.pages.capacity(), size_of::<(u64, u16)>())
+            + table_bytes(
+                self.full.max(self.map.capacity()),
+                size_of::<(u64, Known)>(),
+            )
+            + table_bytes(
+                self.pages_full.max(self.pages.capacity()),
+                size_of::<(u64, u16)>(),
+            )
     }
 
     /// Drops every block and frees the memory the maps and the arena hold
@@ -3490,6 +3511,7 @@ impl Cache {
         self.clear();
         self.map = HashMap::default();
         self.pages = HashMap::default();
+        (self.full, self.pages_full) = (0, 0);
         self.arena = Vec::new();
         self.rescues += 1;
     }
