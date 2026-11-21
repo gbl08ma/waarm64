@@ -72,3 +72,4 @@ here changes, and that row stays one line: a name, a state with a date, and link
 The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([backlog.md](docs/backlog.md)).
 | The introduction (INTRO) | In progress since 2026-11-20 | [INTRO-KICKOFF.md](INTRO-KICKOFF.md), [frontend.md](docs/frontend.md) "The introduction" |
 | A page per connection, and its domains (DOMAINS) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "The Home page", [names.md](docs/networking/names.md) "What the user sees", [backlog.md](docs/backlog.md) "DOMAINS" |
+| The move to waarm64.com (DOTCOM) | In progress since 2026-11-21 | [DOTCOM-KICKOFF.md](DOTCOM-KICKOFF.md) |
