@@ -192,7 +192,7 @@
     "note": "Button in the toolbar's Folders menu: opens the Folder wizard."
   },
   "FoldersMenu.where": {
-    "message": "The guest finds them in <path>{{path}}</path>.",
+    "message": "They can be found in the guest under <path>{{path}}</path>.",
     "note": "Note at the bottom of the toolbar's Folders menu when this emulator mounts the folders. <path> is shown as code: the mount point {{path}} followed by /<name>. Details… follows it."
   },
   "FoldersMenu.where.byHand": {
