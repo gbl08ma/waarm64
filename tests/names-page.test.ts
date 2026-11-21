@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { t, text } from '../web/i18n.ts';
 import type { NameCheck, TitleView } from '../web/names.ts';
-import { canRegister, checkWords, domainsLink, endedWords, isLive, machineNames, NameForm, needsAttention, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleDates, titleState, titleTone, titlesOf, upkeepLine, zonePoints } from '../web/app/names-view.ts';
+import { canRegister, checkWords, domainsLink, endedWords, isLive, NameForm, needsAttention, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleDates, titleState, titleTone, titlesOf, upkeepLine, zonePoints } from '../web/app/names-view.ts';
 import { msg, MsgError } from '../web/i18n.ts';
 
 const NOW = 1_800_000_000_000;
@@ -131,10 +131,7 @@ test('the dialog: an answer to a name typed over, or a dialog closed, is dropped
   assert.deepEqual(asked.registered, [], 'closed: nothing registered');
 });
 
-test('the Home page\'s line: the live names with their dates; the details\' line by role', () => {
-  const until = 1_800_000_000;
-  const lines = machineNames([v({ keptUntil: until }), v({ name: 'new', state: 'reserved' }), v({ name: 'gone', state: 'lapsed', keptUntil: 1 }), v({ name: 'lost', state: 'lost' })]).map(text);
-  assert.deepEqual(lines, [t('network:names-view.machine.until', { name: 'mybox', when: new Date(until * 1000) }), t('network:names-view.machine.new', { name: 'new' })]);
+test('the registry\'s line by role', () => {
   assert.equal(text(namesLine({ serving: true, names: 3, servers: 2 })), t('network:names-view.line.serving', { count: 3, servers: 2 }));
   assert.equal(text(namesLine({ serving: false, names: 1, servers: 2 })), t('network:names-view.line.member', { count: 1, servers: 2 }));
 });
@@ -179,7 +176,6 @@ test('Save\'s rows as a zone\'s points: a subdomain the module would refuse, or 
 test('wording: the dialog\'s two notices (decision 6: discoverable, and the visits; decision 13: every 2 weeks)', () => {
   assert.equal(t('network:NameDialog.notice.find'), 'Members of this room who know the domain can reach this connection\'s address and see when it\'s online. While this connection is connected, this web app helps other members look domains up.');
   assert.equal(t('network:NameDialog.notice.visit'), 'Open this web app at least every 2 weeks to keep the domain.');
-  assert.equal(t('network:NetNames.name'), 'Register a domain…');
   assert.equal(t('network:NameDialog.register'), 'Register');
 });
 

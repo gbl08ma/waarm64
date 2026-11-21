@@ -1827,14 +1827,6 @@
     "message": "{{what}}: {{size, bytes}}",
     "note": "Home page: Storage in this browser (StorageDetails.title). An item of What uses the space (StorageDetails.items). {{what}}: what (a storage-report.storage.* message, which marks the names in it); {{size}}: its bytes."
   },
-  "AdapterCard.adapter.names_one": {
-    "message": "Domain in the room: {{names}}",
-    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds a registered name: its line of names. {{names}}: a list of one message (network:names-view.machine.*), the domain with its date, which marks the domain itself (so {{names}} isn't wrapped)."
-  },
-  "AdapterCard.adapter.names_other": {
-    "message": "Domains in the room: {{names}}",
-    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds registered names: its line of names. {{names}}: a list of messages (network:names-view.machine.*), each domain with its date, which mark the domains themselves (so {{names}} isn't wrapped), {{count}} how many."
-  },
   "connection-kind.demo": {
     "message": "the demo network",
     "note": "Home page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: the project's public demo network."

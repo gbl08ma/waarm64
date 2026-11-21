@@ -1,7 +1,8 @@
 <!--
   One network adapter of a machine (its Network tab, NetworkTab.svelte): its MAC, its connection (the record's: saved
   first) and, on this page's running machine, the connection's state; attach, change or detach the connection,
-  connect or disconnect it here, whether it connects at the start, its place among the adapters, remove it.
+  connect or disconnect it here, whether it connects at the start, its place among the adapters, remove it. A room
+  connection's line ends with its link to its Domains (DomainsLink.svelte; Back leads to this tab).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -23,8 +24,7 @@
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
-  import { pageNames } from './areas/names.svelte.ts';
-  import { machineNames } from './names-view.ts';
+  import DomainsLink from './DomainsLink.svelte';
 
   type Props = {
     edit: Editing;
@@ -62,11 +62,6 @@
     return parts.map((p) => ` · ${p}`).join('');
   });
 
-  /** A room connection's names, each with the date it stops resolving unless renewed. */
-  const names = $derived(
-    c?.room ? machineNames(pageNames.of({ identityKey: c.room.identityKey, link: c.room.link })) : [],
-  );
-
   async function setAtStart(conn: Connection, on: boolean) {
     await net.conns.put({ ...conn, connectAtStart: on });
     await net.refresh();
@@ -90,8 +85,8 @@
       <strong>{t('machines:AdapterCard.adapter', { n: index + 1 })}</strong>
       <Note inline class="meta">{t('machines:AdapterCard.adapter.mac', { mac: adapter.mac })}</Note>
       <Note inline class="meta" data-connection-name><T m={head} />{rest}</Note>
-      {#if names.length}<Note inline class="meta" data-names
-          ><T k="machines:AdapterCard.adapter.names" params={{ names, count: names.length }} /></Note
+      {#if c?.room && !c.room.identity}<span class="meta"
+          ><DomainsLink id={c.id} room={c.room} from={{ to: 'tab', machine: edit.draft.id }} /></span
         >{/if}
       {#if here?.note}<Note inline tone="warn" class="meta">{said(here.note).headline}</Note>{/if}
     </div>

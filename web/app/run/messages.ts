@@ -91,12 +91,12 @@ export class Messages {
   }
 
   /**
-   * A notice, the machine staying as it is: by default an error's is a warning and anything else's is `info`. An `info`
+   * A notice, the machine staying as it is (with `actions`, its buttons: names in their last week, Domains): by default an error's is a warning and anything else's is `info`. An `info`
    * notice closes itself after `NOTICE_MS`; a warning or an error stays until closed. Either way its end shows what the
    * state said again (a stopped machine's error and its actions), else the standing note.
    */
-  notify(message: Said, kind: MessageKind = message instanceof Error ? 'warn' : 'info') {
-    this.show(message, [], kind);
+  notify(message: Said, kind: MessageKind = message instanceof Error ? 'warn' : 'info', actions: Action[] = []) {
+    this.show(message, actions, kind);
     this.#notice = true;
     if (kind !== 'info') return;
     const id = ++this.#notices;

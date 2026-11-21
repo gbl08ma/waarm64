@@ -162,7 +162,7 @@ test("the Domains pane: each state's light and words, the upkeep line, an epheme
     const b = (await p.netCreate({ kind: 'room', name: 'passing', ephemeral: true, room: { link, incoming: true, relayOnly: false } })).id;
     return [a, b];
   }, ['/web/app/page.ts', LINK] as const);
-  await page.evaluate(([c]) => import('/web/app/page.ts' as string).then((m: typeof import('../web/app/page.ts')) => m.page.openConnection(c, 'domains')), [id] as const);
+  await page.evaluate((h) => (location.hash = h), `#home/connections/${id}/domains`);
   await page.locator('#domains-intro').waitFor({ timeout: 30_000 });
   // Titles in every state, set in the area (its reads stopped, so the agent's titles don't come back over them).
   const now = Math.floor(Date.now() / 1000);
@@ -200,6 +200,16 @@ test("the Domains pane: each state's light and words, the upkeep line, an epheme
   assert.equal(await page.locator('#domains-upkeep').getAttribute('data-warn'), 'true');
   assert.equal(await text(page, '#domains-upkeep'), t('network:names-view.upkeep.soon', { names: ['soon', 'grace'], count: 2 }));
   assert.equal(await text(page, '.machines nav [data-section=domains] .count'), '4', 'the live ones counted');
+  // The Connections card's link: how many, and how many need attention, in the warning tone; it opens the pane again.
+  await page.click('.machines nav [data-action=back]');
+  const link = `li[data-connection="${id}"] [data-action=domains-link]`;
+  await page.locator(link).waitFor({ timeout: 10_000 });
+  assert.equal(await text(page, link), t('network:names-view.link.attention', { held: t('network:names-view.link.held', { count: 5 }), count: 3 }), 'five held (a lost one too), three need attention');
+  assert.equal(await page.locator(link).getAttribute('data-warn'), 'true');
+  assert.equal(await page.locator(`li[data-connection="${eph}"] [data-action=domains-link]`).count(), 0, 'none for an ephemeral key');
+  await page.click(link);
+  await page.locator(card('lost')).waitFor({ timeout: 10_000 });
+  assert.equal(await page.locator('.machines nav [data-action=back]').getAttribute('data-back'), 'connections');
   // Without them: the earliest date, not a warning.
   await page.evaluate(async ([m, set]) => {
     const { pageNames } = await import(m) as typeof import('../web/app/areas/names.svelte.ts');

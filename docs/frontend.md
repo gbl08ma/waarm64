@@ -2435,7 +2435,7 @@ and the guest's default way out (below).
   minute; web/app/names-view.ts their words): a connected room adapter's section of the menu lists its connection's
   names with their states (`NetNames.svelte`: [Preparing](ui:network:names-view.preparing), Reserved, public in about N
   hours, Active, kept until about a date, in its grace, [Lapsed: anyone can register it now.](ui:network:names-view.lapsed),
-  [Let go](ui:network:names-view.released), lost) and [Register a domain…](ui:network:NetNames.name), which opens one
+  [Let go](ui:network:names-view.released), lost) and [Register a domain…](ui:network:DomainsPane.register), which opens one
   dialog (`NameDialog.svelte`, its logic `NameForm` in names-view.ts): the name's field, checked as typed by the page
   alone, asking no server (the agent's `checkHere`: not a valid name, this connection's own); **the room's servers are
   asked when Register is pressed** (the user's decision, 2026-11-17; the agent's `check`): every id under the name's

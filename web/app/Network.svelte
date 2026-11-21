@@ -3,7 +3,8 @@
   (`split`), each network adapter of the page's machine has its own button, its state's light and its number on it,
   and its menu holds that adapter alone; otherwise one button's menu has a section per adapter (NetAdapter.svelte).
   Each section shows the adapter's connection and what can be done with it; Change connection… opens the Network wizard
-  (web/app/NetWizard.svelte), Details… (and a room's warning) the connection's Details on the Home page, which takes the
+  (web/app/NetWizard.svelte), Details… (and a room's warning) the connection's Details on the Home page, a room's
+  domains link (DomainsLink.svelte) its Domains, which takes the
   screen's place (ConnectionPage.svelte: its Back and Esc return to the screen). A menu opens by itself when its
   adapter needs the user (a login) and when the page asks (the wizard's end, a status click). Adapter 1's menu is
   `#network` (the single one's too); adapter n's is `#network-<n-1>`. `data-net-menu` marks them for the toolbar,
@@ -19,6 +20,7 @@
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
+  import { pageNames } from './areas/names.svelte.ts';
 
   type Props = { net: PageNetwork; split: boolean };
   let { net, split }: Props = $props();
@@ -75,12 +77,15 @@
     openAt = undefined;
     if (id) page.openConnection(id, 'details', { to: 'screen' });
   }
-  function naming(i: number) {
-    const id = views[i]?.connection?.id;
-    toButton(i);
-    openAt = undefined;
-    if (id) network.openNaming(id);
-  }
+  // A room connection's titles publish through the link it has now (web/names.ts `relink`): here, where the adapters'
+  // connections are read, whatever their menus show.
+  $effect(() => {
+    for (const a of views) {
+      const room = a.connection?.room;
+      if (room && pageNames.of(room).some((v) => v.link !== room.link))
+        void pageNames.relink({ identityKey: room.identityKey, link: room.link });
+    }
+  });
 </script>
 
 {#snippet section(a: (typeof views)[number])}
@@ -89,7 +94,7 @@
     heading={views.length > 1}
     onwizard={() => wizard(a.index)}
     ondetails={() => details(a.index)}
-    onname={() => naming(a.index)}
+    ondomains={() => (openAt = undefined)}
   />
 {/snippet}
 

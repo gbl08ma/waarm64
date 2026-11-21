@@ -258,7 +258,7 @@ The user's, or taken with them, 2026-10-18 to 2026-11-18; they bind. Registered 
   and an ID that isn't a label (`test lan`, `café`, `a.b`), has the tag's domain alone. The lease's domains are both,
   the room name's first (DHCPv6's domain list; DHCPv4's option 15 takes the first), so a guest with resolved routes
   either to the room's resolver and searches both; the module's `self` event names the member under the room name's
-  domain, which the page shows and builds on (the name to copy, [Register a domain…](ui:network:NetNames.name)'s whole domain, a zone's targets).
+  domain, which the page shows and builds on (the name to copy, [Register a domain…](ui:network:DomainsPane.register)'s whole domain, a zone's targets).
   Two rooms whose IDs differ only in case (`Gabriel-LAN`, `gabriel-lan`) are two rooms with one such domain: their
   tags still tell them apart.
 

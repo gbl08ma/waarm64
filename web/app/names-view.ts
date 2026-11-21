@@ -1,6 +1,6 @@
 // Registered names as the page says them (docs/networking/names.md "What the user sees"): a title's state in the
-// adapter's menu and details, the dialog's check (as typed, and at Register), the details' line of the registry, a stored machine's names on
-// the Home page, and where a name points in words (a member's name in the room) and back. Pure: the area
+// Domains pane (its cards, the upkeep line, the status link), the dialog's check (as typed, and at Register), the
+// registry's line, and where a name points in words (a member's name in the room) and back. Pure: the area
 // (web/app/areas/names.svelte.ts) and the components call these.
 import { msg, MsgError, type Msg } from '../i18n.ts';
 import type { NameCheck, TitleView } from '../names.ts';
@@ -257,20 +257,6 @@ export function domainsLink(views: TitleView[], now = Date.now()): { m: Msg; war
   const attention = shown.filter((v) => needsAttention(v, now)).length;
   if (!attention) return { m: held, warn: false };
   return { m: msg('network:names-view.link.attention', { held, count: attention }), warn: true };
-}
-
-/** A stored machine's names on the Home page: each with the date it stops resolving unless renewed. */
-export function machineNames(views: TitleView[]): Msg[] {
-  return views
-    .filter((v) => v.state === 'active' || v.state === 'grace' || v.state === 'reserved' || v.state === 'preparing')
-    .map((v) =>
-      v.keptUntil === undefined
-        ? msg('network:names-view.machine.new', { name: v.name })
-        : msg('network:names-view.machine.until', {
-            name: v.name,
-            when: date(v.keptUntil),
-          }),
-    );
 }
 
 /** Whether `label` (lower case) is a subdomain the module takes under a name (net/ts room/names/id.rs `label_ok`): a

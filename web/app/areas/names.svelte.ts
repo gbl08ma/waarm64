@@ -6,7 +6,8 @@
 // `member`), connected or not. The agent and its worker are loaded only when titles exist, the dialog is used, or a
 // room connection's own name or domains are shown.
 import { SvelteMap } from 'svelte/reactivity';
-import { msg, MsgError, type Msg } from '../../i18n.ts';
+import { msg, MsgError, t, type Msg } from '../../i18n.ts';
+import type { Action } from './message-bar.svelte.ts';
 import type { Member, MemberConn, NameCheck, NamesConn, TitleView } from '../../names.ts';
 import { roomOf } from '../../room.ts';
 import type { ZonePoint } from '../../names-store.ts';
@@ -148,8 +149,11 @@ class PageNames {
     await this.refresh();
   }
 
-  /** At load: the agent starts when titles are kept; after its first pass, the names in their last week are said. */
-  async start(notify: (m: Msg) => void) {
+  /**
+   * At load: the agent starts when titles are kept; after its first pass, the names in their last week are said, with
+   * a Domains action that opens (`open`) the pane of the connection holding the first of them.
+   */
+  async start(notify: (m: Msg, actions: Action[]) => void, open: (o: { identityKey: string; room: string }) => void) {
     this.watch();
     const n = await names();
     const agent = await n.startNamesAgent();
@@ -159,12 +163,31 @@ class PageNames {
     const first = soon.at(0);
     if (first?.keptUntil === undefined) return;
     const list = soon.map((v) => v.name);
-    notify(msg('network:names.lastWeek', { names: list, count: list.length, when: new Date(first.keptUntil * 1000) }));
+    const of = { identityKey: first.identityKey, room: first.room };
+    notify(msg('network:names.lastWeek', { names: list, count: list.length, when: new Date(first.keptUntil * 1000) }), [
+      { label: t('network:names.domains'), run: () => open(of) },
+    ]);
   }
 }
 
 export const pageNames = new PageNames();
 
-/** At every load (web/app/main.ts): the agent, and the notice of names in their last week (`notify`). */
-export const startPageNames = (notify: (m: Msg) => void) =>
-  pageNames.start(notify).catch((e: unknown) => console.warn('names agent:', e));
+/**
+ * At every load (web/app/main.ts): the agent, and the notice of names in their last week (`messages`), whose Domains
+ * action opens the Domains of the room connection among `net`'s that holds the first of them (Back leading to the
+ * machine's screen; `page` read then, once it is made).
+ */
+export const startPageNames = (
+  messages: { notify(m: Msg, kind: 'info', actions: Action[]): void },
+  net: { connections: { id: string; room?: { identityKey: string; link: string } }[] },
+  page: () => { openConnection(id: string, section: 'domains', from: { to: 'screen' }): void },
+) =>
+  pageNames
+    .start(
+      (m, actions) => messages.notify(m, 'info', actions),
+      (o) => {
+        const c = net.connections.find((x) => x.room?.identityKey === o.identityKey && roomOf(x.room.link) === o.room);
+        if (c) page().openConnection(c.id, 'domains', { to: 'screen' });
+      },
+    )
+    .catch((e: unknown) => console.warn('names agent:', e));

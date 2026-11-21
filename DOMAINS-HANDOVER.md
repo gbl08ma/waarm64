@@ -250,6 +250,44 @@ connection through its Domains) adjusted.
 Screenshots: `bench/results/local/loop4-shots.ts` (git-ignored). In its backup shot the injected titles aren't stored,
 so it says "no domains yet": staged, not a defect.
 
+## Loop 5: one link to a connection's domains everywhere else (2026-11-21, cloud session)
+
+**What it did**
+- **`DomainsLink.svelte`** (`data-action=domains-link`, `data-warn`; a `Button` `variant="link"`, `tone="warn"` when
+  one needs attention): words from `names-view.ts` `domainsLink` (loop 4). It calls `onopen` (the menu closes), then
+  `page.openConnection(id, 'domains', from)`.
+- **Where**: the toolbar's Network menu, a stored room connection's adapter (`NetAdapter.svelte`,
+  `[data-domains-link=<adapter index>]`, `from: screen`; NetNames.svelte and its `onname` gone); a machine's Network tab
+  (`AdapterCard.svelte`, at the end of the card's lines, `from: tab`; "Domains in the room: …", `machineNames` and
+  `names-view.machine.*` gone); a Connections card (`ConnectionsPane.svelte`, after the line and a dot, `from:
+  connections`). None for a connection whose room has a key of its own (`room.identity`); the menu also skips any
+  ephemeral connection, as the kickoff's table says (stored only).
+- **The relink effect** (a connection's titles publish through its current link) moved from NetNames into
+  `Network.svelte`, over all the adapters' views, so it runs without any list shown.
+- **The message bar's notice at load** (names in their last week) has a **Domains** action (`network:names.domains`):
+  `messages.notify` takes `actions` now; `startPageNames(messages, net, () => page)` finds the connection holding the
+  first of those names (by `identityKey` and room) and opens its Domains, Back leading to the machine's screen.
+- **Removed**: `NetNames.svelte`, `network:NetNames.name` (its words are `DomainsPane.register`'s), `names-view.machine.*`,
+  `machines:AdapterCard.adapter.names_*`; the docs' quotes of `NetNames.name` point at `DomainsPane.register`, the file
+  lists in names.md name the new components.
+
+**Where it differs from the kickoff, and why**
+- The links counts lost domains in "N domains registered" (loop 4's note).
+- A link inside a Connections card's line (a `Note`) is drawn at the note's size, in the accent (or the warning tone).
+
+**Tests**: `tests/names-page.test.ts` (the link's words and tone, loop 4's cases); `tests/page-domains.test.ts` (the
+Connections card's link: words, warning tone, none for an ephemeral key, opening the pane with Back to Connections);
+`tests/page-room.test.ts` goes through the menu's link (Register a domain… → the pane, Back to the machine), the
+pane's Register a domain…, the card's states in the pane, the link's count back in the menu, and the message bar's
+Domains action on the load in the last week. `tools/screens.ts` touches none of this (no change).
+
+**For loop 6 (docs) and the review**
+- frontend.md's "Network" prose still describes the menu's list of names, `NetNames.svelte`, `NameEntry.svelte` and the
+  details' rows (lines ~644, ~2436, ~2460), and names.md "What the user sees" the menu's Register a domain…: the doc pass
+  rewrites them (only the `ui:` quotes and file lists were fixed here).
+- Not seen in a screenshot: the toolbar menu's link (needs a running machine; `tests/page-room.test.ts` exercises it).
+- The agent's view fix (loop 4): what a released, never-public claim does once anchored later.
+
 ## Tiers passed
 
 | Commit | Tier |
@@ -258,3 +296,4 @@ so it says "no domains yet": staged, not a defect.
 | DOMAINS loop 2 | T1 (`scripts/ci-fast.sh`: OK, 362 s, 169 files). T2 as far as a cloud session goes: `scripts/ci.sh`'s static checks, clippy, Rust tests, TestFloat and builds passed; its agent step failed with the same six known root-container failures and stopped the script, so its JS step was run by hand as loop 1 did (`WAARM64_DISTROS=`, `WAARM64_LONG_TESTS=1`, `node --test 'tests/**/*.test.ts'`): 1482 passed, 0 failed, 607 skipped. `target/net/ts.wasm` was missing in this container and was built (`net/ts/build.sh`), so `tests/page-connections.test.ts` ran (passed). With `WAARM64_DISTROS=debian WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1`: `tests/page-room.test.ts` passed (125 s) and `tests/page-network.test.ts` passed (171 s, the tailcat rig's served machine and New address from the column included). Not run: ci.sh's TSan and native guest-image steps, and the topic scripts ci-fast names (ci-net, ci-debian, ci-graphics, ci-machines) whole: left for the dev VM. |
 | DOMAINS loop 3 | T1 (`scripts/ci-fast.sh`: OK, 346 s, 165 files). T2 as far as a cloud session goes: `scripts/ci.sh` **whole** (with 6921f2b's skips): CI OK (901 s): static checks, clippy, Rust tests, the agent's tests (the six root-only ones skipped), TestFloat, builds, JS 2090 tests: 1483 passed, 0 failed, 607 skipped; its native guest-image and TSan steps said SKIPPED (no images here). The network's Rust tests: 287 passed (`member`'s among them). With `WAARM64_DISTROS=debian WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1`: `tests/names-page.test.ts` passed; `tests/page-room.test.ts` failed once (New name left the key field empty: fixed in ConnectionRoomSettings), then passed (135 s); `tests/page-home-levels.test.ts` passed again after the fix. Those last three runs and the quick static checks (eslint, prettier, svelte-check, `cargo fmt --check`) are all that ran after the fix: the user, in a hurry, asked for targeted checks only, so the broad CI on the final tree (ci.sh, ci-fast.sh and the topic scripts: ci-net, ci-machines, ci-debian) is left for the track's end, run by the supervisor. |
 | DOMAINS loop 4 | Targeted only (the user's instruction): tsc, svelte-check, eslint/prettier/stylelint on the touched files, `tools/i18n-check.ts`, `tools/ci-select.ts --check`; `tests/names-page.test.ts`, `tests/names-agent.test.ts`, `tests/page-domains.test.ts`, `tests/page-home-levels.test.ts` passed. `tests/page-room.test.ts` not run in this loop (run after loop 5). Not run: ci-fast, ci.sh, the topic scripts. |
+| DOMAINS loop 5 | Targeted only (the user's instruction): tsc, svelte-check, eslint/prettier/stylelint on the touched files, `tools/i18n-check.ts`, `tools/ci-select.ts --check`; `tests/names-page.test.ts`, `tests/page-domains.test.ts`, `tests/page-home-levels.test.ts` passed; `tests/page-room.test.ts` with `WAARM64_DISTROS=debian WAARM64_NET_TESTS=1 WAARM64_TAILCAT=1` passed (128 s: the menu's link, the pane's register, the label, B's ephemeral pane, the message bar's Domains action; it covers loop 4's changes to it too). Not run: ci-fast, ci.sh, the topic scripts (ci-net, ci-debian, ci-machines), `tests/names-browser.test.ts` and the other names tests: left for the supervisor at the track's end. |

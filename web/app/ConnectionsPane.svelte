@@ -1,6 +1,7 @@
 <!--
   The Home page's Connections (docs/networking/adapters.md §3.1): the browser's network connections, each with its
-  kind, who has it now and the machines that use it; rename, Details (the connection's page, one level down:
+  kind, who has it now and the machines that use it (a room's line ending with its link to its Domains:
+  DomainsLink.svelte); rename, Details (the connection's page, one level down:
   ConnectionPage.svelte, where its settings and its other commands are), delete. Logic is web/app/net-live.ts's,
   through `page`.
 -->
@@ -13,6 +14,7 @@
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
   import T from './T.svelte';
+  import DomainsLink from './DomainsLink.svelte';
   import { CONNECTIONS } from './machines-panes.ts';
   import { kindText } from './connection-kind.ts';
   import type { Connection } from './connections.ts';
@@ -80,7 +82,10 @@
               onchange={(name: string) =>
                 void act(t('machines:ConnectionsPane.busy.renaming'), () => page.netRename(c, name))}
             />
-            <Note inline class="meta"><T m={metaOf(c)} /></Note>
+            <Note inline class="meta"
+              ><T m={metaOf(c)} />{#if c.room && !c.room.identity}<span class="sep" aria-hidden="true">·</span
+                ><DomainsLink id={c.id} room={c.room} from={{ to: 'connections' }} />{/if}</Note
+            >
           </div>
         </div>
         {#snippet actions()}
@@ -112,6 +117,9 @@
     display: flex;
     align-items: center;
     gap: var(--space-4);
+  }
+  .sep {
+    padding-inline: var(--space-2);
   }
   .lines {
     min-width: 0;

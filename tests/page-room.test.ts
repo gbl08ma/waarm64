@@ -505,8 +505,13 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   const domain = o.nameA.split('.').slice(1).join('.');
   const ipA = o.a6.split('/')[0];
   const keyA = keyOfName(o.nameA);
+  // The menu's one link to the connection's Domains (none yet: Register a domain…), then the pane's Register a domain….
   if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
-  await a.click('#net-name-open');
+  assert.equal(await text(a, '[data-domains-link="0"]'), t('network:DomainsPane.register'));
+  await a.click('[data-domains-link="0"]');
+  await a.locator('#domains-intro').waitFor({ timeout: 30_000 });
+  assert.equal(await a.locator('.machines nav [data-action=back]').getAttribute('data-back'), 'screen', 'Back leads to the machine');
+  await a.click('section[data-selected=connection-domains] [data-action=register-domain]');
   await a.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
   // Decision 6: one dialog, exactly the two notices, no box, no key shown or asked for; the field the only input.
   const dialog = await a.evaluate(() => {
@@ -545,11 +550,10 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   await a.click('#net-name-register');
   await a.waitForFunction(() => !(document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 30_000 })
     .catch(async (e) => { throw new Error(`${e}; it says ${await text(a, '#net-name-check')}`); });
-  await a.locator('#network summary').click();
-  const stateOf = () => a.evaluate(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state'));
-  await a.waitForFunction(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state') === 'reserved', null, { timeout: 120_000, polling: 250 })
+  const stateOf = () => a.evaluate(() => document.querySelector('#domains [data-name="mybox"]')?.getAttribute('data-state'));
+  await a.waitForFunction(() => document.querySelector('#domains [data-name="mybox"]')?.getAttribute('data-state') === 'reserved', null, { timeout: 120_000, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf()}; the bar says ${await untouched(a)}`); });
-  assert.match(await text(a, '#net-names [data-name="mybox"]'), words('network:names-view.reserved_other', {}));
+  assert.match(await text(a, '#domains [data-name="mybox"] [data-field=state]'), words('network:names-view.reserved_other', {}));
   // Its anchor: mined six deep, collected by a pass (the one the agent makes when its backoff on the pending proof ends,
   // 5 minutes after the pass at Register: its backoff ended now in the title's record), published.
   cal.mine(7);
@@ -575,9 +579,9 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
     };
   }));
   await a.evaluate('import("/web/names.ts").then((n) => n.namesAgent().pass())');
-  await a.waitForFunction(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state') === 'active', null, { timeout: 90_000, polling: 250 })
+  await a.waitForFunction(() => document.querySelector('#domains [data-name="mybox"]')?.getAttribute('data-state') === 'active', null, { timeout: 90_000, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf()}`); });
-  assert.match(await text(a, '#net-names [data-name="mybox"]'), words('network:names-view.active', {}));
+  assert.match(await text(a, '#domains [data-name="mybox"] [data-field=state]'), words('network:names-view.active', {}));
   // Decision 6: B's guest reaches it by name, with nothing done on B's page (no switch, notice or dialog).
   let got = '';
   for (let k = 0; k < 30 && !new RegExp(`^${ipA}\\s`).test(got); k++) {
@@ -588,8 +592,11 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   const ping = await run(b, `ping -6 -c 2 -W 10 mybox.${domain} | tail -2`, 60_000);
   assert.match(ping, / 0% packet loss/, ping);
   assert.deepEqual(await untouched(b), before, 'nothing on B\'s page');
-  // A's details: the registry's line; its Domains: the line too, and a label added under the name (at this machine),
-  // which A's resolver answers.
+  // Back on the machine's screen, the menu's link counts it; A's details: the registry's line; its Domains: the line
+  // too, and a label added under the name (at this machine), which A's resolver answers.
+  await a.click('.machines nav [data-action=back]');
+  if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
+  assert.equal(await text(a, '[data-domains-link="0"]'), t('network:names-view.link.held', { count: 1 }));
   await a.click('#net-details-open');
   await a.waitForFunction(() => !!document.getElementById('net-details-names-line'), null, { timeout: 30_000 });
   assert.match(await text(a, '#net-details-names-line'), words('network:names-view.line.serving_other', {}));
@@ -612,6 +619,9 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   await later.goto(`${base}/web/app/`);
   await later.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('network:names.lastWeek_one', { names: 'mybox' }).source, { timeout: 60_000, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; the bar says ${await later.evaluate(() => document.getElementById('message-text')?.textContent)}`); });
+  // Its Domains action: the pane of the connection that holds it.
+  await later.locator('#message-actions button', { hasText: t('network:names.domains') }).click();
+  await later.locator('#domains [data-name="mybox"]').waitFor({ timeout: 30_000 });
   await later.close();
 }
 

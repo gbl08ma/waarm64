@@ -19,7 +19,7 @@ floor), `zone.rs`, `chain.rs` (who owns a name; `Name`, `Kept`), `wire.rs` (mess
 publisher, the resolver's cases). The page: `web/names.ts` (the names agent), `web/names-store.ts` (its stores, and the titles a room's worker
 reads), `web/names-fetch.ts` (the compiled services), `web/names-export.ts` (a connection's export), `web/names-worker.ts`, `web/names-ops.ts`,
 `web/room.ts` and `web/room-worker.ts` (the records' store, the titles to a running room), and in `web/app/`
-`NameDialog.svelte`, `NetNames.svelte`, `NameEntry.svelte`, `areas/names.svelte.ts`, `names-view.ts`,
+`NameDialog.svelte`, `DomainsPane.svelte`, `DomainCard.svelte`, `DomainsLink.svelte`, `areas/names.svelte.ts`, `names-view.ts`,
 `room-export.ts`. The module's side of the interface is [tailnet.md](tailnet.md) "The module"; the page's is
 [frontend.md](../frontend.md) "Network". Measurements: bench/net/REPORT.md "NAMES loop 0" to "NAMES loop 6b".
 
@@ -566,12 +566,12 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
 
 ## What the user sees
 
-(NameDialog.svelte, NetNames.svelte, NameEntry.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "Network".)
+(NameDialog.svelte, DomainsPane.svelte, DomainCard.svelte, DomainsLink.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "Network".)
 
 - **Reaching someone's name: nothing.** No switch, no notice. The adapter's details have one line for the curious (a
   member's names resolved and servers held, or a server's names held and servers synced with: the module's `names`
   event).
-- **Registering a domain.** In a room adapter's menu, [Register a domain…](ui:network:NetNames.name) opens one
+- **Registering a domain.** In a room adapter's menu, [Register a domain…](ui:network:DomainsPane.register) opens one
   dialog: a field, the whole domain under it (`<name>.<room name>.p2p.internal`, or under the tag in a room whose ID
   isn't a label), and as typed only what the page can say alone (not a valid name; this connection's already). Two
   notices, always shown, no boxes: [Members of this room who know the domain can reach this connection's address and
