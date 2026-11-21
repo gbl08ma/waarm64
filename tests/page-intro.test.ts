@@ -180,8 +180,14 @@ test('how it works: five paths that step and stop on a click; the processor\'s c
   await cpu.locator('[data-translate="sum-loop"]').waitFor({ timeout: 15_000 });
   for (const pane of ['guest', 'uops', 'wasm', 'host']) assert.ok((await cpu.locator(`[data-pane="${pane}"] .row`).count()) > 3, `${pane} has code`);
   assert.equal(await cpu.locator('[data-pane="guest"] .row').count(), 4, "the block's four instructions");
-  // A row under the pointer picks its instruction: its lines in the other panes light up, and the place says so.
-  await cpu.locator('[data-pane="guest"] .row').nth(2).hover();
+  // The pointer passing over a row picks nothing (it fought a visitor scrolling to read); a click picks its instruction:
+  // its lines in the other panes light up, and the place says so.
+  const play = cpu.locator('[data-step="play"]');
+  if ((await play.getAttribute('aria-pressed')) === 'true') await play.click(); // still, so only the hover could move it
+  const before = await cpu.locator('[data-pane="guest"] .row.lit').innerText();
+  for (const n of [0, 1, 2, 3]) await cpu.locator('[data-pane="guest"] .row').nth(n).hover();
+  assert.equal(await cpu.locator('[data-pane="guest"] .row.lit').innerText(), before, 'a hover picks nothing');
+  await cpu.locator('[data-pane="guest"] .row').nth(2).click();
   assert.equal(await cpu.locator('[data-pane="guest"] .row.lit').count(), 1);
   assert.match(await cpu.locator('[data-pane="guest"] .row.lit').innerText(), /add\s+w8, w8, w9/);
   assert.equal(await cpu.locator('[data-pane="uops"] .row.lit').count(), 1);

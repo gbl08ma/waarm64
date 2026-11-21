@@ -3,7 +3,7 @@
   side by side (captures.ts; ui/CodePane.svelte): the AArch64 instructions, the block interpreter's micro-ops, the
   WebAssembly our JIT emitted, and the machine code V8 made of that. One instruction is active at a time and lit in
   every pane: the stepper walks them (by itself while the viewer is in view, unless the visitor asked for less
-  motion), and the pointer over a line picks its instruction. Chips choose the block; its C source and what to look
+  motion), and a click on a line picks its instruction. Chips choose the block; its C source and what to look
   for are under them.
 -->
 <script lang="ts">
@@ -57,7 +57,7 @@
     id = block;
     at = 0;
   };
-  /** The pointer on a line: its instruction, and the steps stop running by themselves. */
+  /** A line clicked: its instruction, and the steps stop running by themselves. */
   const pick = (g: number) => {
     auto.playing = false;
     at = g;

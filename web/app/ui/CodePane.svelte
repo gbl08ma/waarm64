@@ -1,7 +1,8 @@
 <!--
   A pane of code (the introduction's deep dives): a title and a line under it, then the code in a sunk well, monospace,
   a row a line. A row may belong to a `group` (a number): the rows of the `active` group are lit, the first of them
-  scrolled into the pane's view, and the pointer over a row or a click on it picks its group (`onpick`). Items that
+  scrolled into the pane's view, and a click on a row picks its group (`onpick`; not the pointer passing over it,
+  which fought a visitor scrolling to read). Items that
   are folds (code-pane.ts) show their label as a button that unfolds their rows in place; a note is plain words about
   the rows after it, in the page's typeface, wrapped to the pane's width (a fold's first note shows under its label
   while it is folded). The pane keeps a height and
@@ -54,7 +55,6 @@
   <div
     class={['row', { lit: r.group !== undefined && r.group === active, gap: r.gap, grouped: r.group !== undefined }]}
     use:reveal={r.group !== undefined && r.group === active}
-    onpointerenter={() => r.group !== undefined && onpick?.(r.group)}
     onclick={() => r.group !== undefined && onpick?.(r.group)}
   >
     {#if r.gutter !== undefined}<span class="gutter">{r.gutter}</span>{/if}<span class="text">{r.text}</span>
@@ -166,7 +166,7 @@
   }
   .grouped {
     color: var(--text);
-    cursor: default;
+    cursor: pointer;
   }
   .gap {
     margin-top: var(--space-4);

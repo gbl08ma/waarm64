@@ -938,7 +938,7 @@ and the floating windows don't show, and the machine, Home or the store's page s
       (`ui/CodePane.svelte`): the AArch64 instructions, the block interpreter's micro-ops, the WebAssembly our JIT
       emitted, and the machine code V8 made of it. One guest instruction is active and lit in every pane (the rows
       emitted for it; the pane scrolls its first lit row into view); a **stepper** (`ui/Stepper.svelte`) walks the
-      instructions, by itself while on screen, and the pointer over a row picks its instruction. What surrounds an
+      instructions, by itself while on screen, and a click on a row picks its instruction (not the pointer passing over it: that fought a visitor scrolling to read). What surrounds an
       instruction's own WebAssembly is folded under a label that unfolds it (what runs before a block's first
       instruction, a slow path, what leaves a block). Chips choose among five captures; the C source, what to look
       for, and the compiler's line are beside them; under the panes, a chip per host (x86-64, AArch64) whose machine code
