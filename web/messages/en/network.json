@@ -936,7 +936,7 @@
     "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): the helper closed the connection for another reason; what it said, if anything, is shown under it."
   },
   "local-net.pasteLink": {
-    "message": "Paste the link that waarm64-net prints. It looks like https://vm.tny.im/#net=ws://127.0.0.1:…",
+    "message": "Paste the link that waarm64-net prints. It looks like https://waarm64.com/#net=ws://127.0.0.1:…",
     "note": "The Network wizard, the local helper's step: the error when the link's field is empty. The link is an example of the helper's, as it is."
   },
   "local-net.notLink": {

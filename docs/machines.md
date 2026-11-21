@@ -604,7 +604,7 @@ store's URL (`resolveUrls`). A single definition's URL is taken where a store's 
 `type`): a store of that one demo, the definition's URL its store. A demo the page can't read (a later version,
 damaged, not a demo, an id seen before in the store) is left out and listed in `skipped` with its error, so a store
 with a newer demo still shows the others; the store itself unreadable (unreachable, a status, not JSON, not a store,
-another version) is a `MsgError` (`machines:demo-store.*`). `OUR_STORE` is `https://vmdisks.tny.im/store.json`.
+another version) is a `MsgError` (`machines:demo-store.*`). `OUR_STORE` is `https://disks.waarm64.com/store.json`.
 
 **A demo's machine** (`machineFromDemo`, web/app/template.ts): its snapshot fetched first, its manifest once (a 404 is
 `machines:template.gone`, "this demo's files are gone"; a manifest whose `id`, or its hashes' content id, isn't the

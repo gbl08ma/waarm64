@@ -116,7 +116,7 @@ sway and X11 clipboard tests need `images/debian-sway/build.sh` (a QEMU install,
 
 **The UEFI firmware** (`images/build.sh edk2`, Podman on arm64) can't be built here either, but its
 build is pinned and reproducible, so `scripts/cloud-setup.sh` fetches the deployed page's copy
-(`https://vm.tny.im`: the firmware under its hashed name in `assets/`, found in the page's bundled
+(`https://waarm64.com`: the firmware under its hashed name in `assets/`, found in the page's bundled
 code, and `EDK2-LICENSES.txt`, as `npm run dist` writes them; `target/images/edk2/` first, where an
 older deploy had them), keeps both only if they match `images/SHA256SUMS`, and writes `images/build.sh
 --inputs edk2`'s key to `.inputs` (so `--check edk2` passes). The hashed names broke the old fetch

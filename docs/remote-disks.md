@@ -19,13 +19,13 @@ fresh profile:
 | A block cache in memory (1 MiB blocks): 425 requests | 110 s |
 | Requests in parallel (realtime mode), the device worker never waiting on the network (its longest answer 0.7 s → 17 ms) | 101 s |
 | A boot's reads in the manifest, fetched ahead | **65 s** |
-| The same, paced: a window ahead of the guest, not the whole list at once (20 MiB fetched at the boot menu, not 380; R6, from vmdisks.tny.im, against 64.6 s there) | 66 s |
+| The same, paced: a window ahead of the guest, not the whole list at once (20 MiB fetched at the boot menu, not 380; R6, from vmdisks.tny.im (its name then), against 64.6 s there) | 66 s |
 | A local file | 64 s |
 | The next boot (the blocks kept in OPFS): no requests | 63 s |
 
 The chunked format costs nothing against ranges where the host has them, and 2 MiB pieces boot as fast as ranges
 where it hasn't. From the hosts below (the Desktop Demo, 2026-10-23): 66.5 s from `static.gbl08ma.com`; from
-`vmdisks.tny.im` 78.1 s on the very first fetch of each piece (Cloudflare's edge filling from its storage), then
+`vmdisks.tny.im` (its name then) 78.1 s on the very first fetch of each piece (Cloudflare's edge filling from its storage), then
 62.9 s.
 Since DEMO's review fixes (2026-11-19) the page fetches a chunked image's pieces whole on every host, to check each
 against its hash before it's used (web/chunked.ts): the no-ranges path above, which booted as fast; not re-measured
@@ -86,7 +86,7 @@ longer match (refused at open).
 node tools/chunk-image.ts <image> target/images/remote/<name> 2 --name "<what the page calls it>"  # manifest.json, pieces/ (or --pieces <site>/pieces)
 node bench/remote-disk/boot.ts <label> local::<name>/manifest.json      # a boot from it, its reads traced
 D=target/images/remote/<name>; node tools/disk-trace.ts bench/results/local/remote-disk/<label>.json $D/manifest.json $D/prefetch.json
-cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh   # vmdisks.tny.im (below)
+cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh   # disks.waarm64.com (below)
 ```
 
 (`bench/remote-disk/boot.ts` boots the desktop guest's session; another guest needs its own marks.)
@@ -212,7 +212,7 @@ shape's stability, `--out`, the core's lookup).
 
 ### Deploying the demos
 
-**Only when the user asks** (outward-facing). The page (vm.tny.im) and the demos (vmdisks.tny.im) go out together:
+**Only when the user asks** (outward-facing). The page (waarm64.com) and the demos (disks.waarm64.com) go out together:
 the publish refuses a template whose snapshot format or machine's shape isn't the deployed page's, so a page update
 that changes either needs its demos made again (any build of that commit's core will do: step 5).
 
@@ -235,33 +235,33 @@ that changes either needs its demos made again (any build of that commit's core 
    in the header), and refuses one that differs; make that one again. A demo whose image changed is refused too: that's
    a new id with `replaces`.
 6. **Deploy both**, the disks first, each with the credentials sourced (`set -a; . ~/.config/cloudflare/waarm64.env;
-   set +a`; never print them): `deploy/disks/deploy.sh "<message>"` (vmdisks.tny.im: refuses past 20,000 files), then
-   `wrangler deploy` from the checkout's root (vm.tny.im: frontend.md "Deployed at vm.tny.im"). The site's files can
+   set +a`; never print them): `deploy/disks/deploy.sh "<message>"` (disks.waarm64.com: refuses past 20,000 files), then
+   `wrangler deploy` from the checkout's root (waarm64.com: frontend.md "Deployed at waarm64.com"). The site's files can
    answer 404 for some seconds after `deploy.sh` (seen once for `alpine-term/snapshot.json`): check again before calling
    one missing.
-7. **Check from headless Chromium:** `https://vm.tny.im/demos` lists every demo; each starts (Alpine to a command
+7. **Check from headless Chromium:** `https://waarm64.com/demos` lists every demo; each starts (Alpine to a command
    answered, `apk add python3` through the demo network; a desktop to its screen and the countdown's app); then the
    numbers with bench/demo (bench/demo/REPORT.md). A demo whose image changed keeps its id only where nobody depends on
    the old one (the user's call: no visitors yet, 2026-11-19): its directory and ledger entry are dropped from the deploy
    checkout's copy of the site (never main's: hard links, the ledger replaced, not written through), and it publishes as
    new.
 
-**The demo network's server** (`wss://demonet.tny.im/`, the page's default: web/demo-net.ts `DEMO_URL`) is
+**The demo network's server** (`wss://demonet.waarm64.com/`, the page's default: web/demo-net.ts `DEMO_URL`) is
 [waarm64-demonet](https://github.com/gbl08ma/waarm64-demonet), hosted by the user outside these deploys: its README
 "In a container" (a distroless image and Docker Compose behind the host's Caddy; `trusted_proxies` naming the Docker
 bridge's gateway, `public_addresses` the host's), its config's `server.origins` listing the page's origin (only
-`https://vm.tny.im`: a page on another origin, a local one included, is refused). The page's side:
+`https://waarm64.com`: a page on another origin, a local one included, is refused). The page's side:
 [networking/demo-network.md](networking/demo-network.md).
 
 ## Where our images are
 
-- **`https://vmdisks.tny.im`** (the Desktop Demo: `?disk=https://vmdisks.tny.im/desktop/prefetch.json`): the Worker
+- **`https://disks.waarm64.com`** (the Desktop Demo: `?disk=https://disks.waarm64.com/desktop/prefetch.json`): the Worker
   `waarm64-disks` on the user's Cloudflare account, static assets only, no script (`deploy/disks/`: `wrangler.jsonc`,
   `_headers`, `deploy.sh`), serving the dev VM's `target/disks/` (`<name>/manifest.json`, `prefetch.json`, `pieces/`).
   `_headers`: CORS `*` everywhere, pieces `Cache-Control: immutable` (named by their hash), manifests 5 minutes. A deploy
   replaces the whole site, so `target/disks/` holds every image that stays; wrangler uploads only pieces it hasn't
   seen. `deploy.sh` refuses past 20,000 files. **Deploy only when the user asks** (credentials: [frontend.md](frontend.md)
-  "Deployed at vm.tny.im").
+  "Deployed at waarm64.com").
 - **`https://static.gbl08ma.com/diskimages/`** (the user's server, Caddy, with ranges): `desktop.qcow2` (the whole
   image) and `desktop/` (the same chunked copy). Uploads by an rsync-only key confined to that directory: it can't
   replace or delete the root-owned files there (upload under another name; the user moves it), and the server allows

@@ -35,7 +35,7 @@ plan (the tracks: PLAN.md). This section stays short: a track's progress goes in
 here. Facts most sessions need:
 - The page (`web/app/`, [docs/frontend.md](docs/frontend.md)) starts no disk image: the user opens one. Debian 13
   through UEFI is the tests' guest (`?machine=debian`, `images/build.sh debian`); the desktop guest is Arch Linux with
-  sway, PipeWire and Firefox (`images/arch/desktop.sh`). The page is deployed at `https://vm.tny.im` (`npm run dist`;
+  sway, PipeWire and Firefox (`images/arch/desktop.sh`). The page is deployed at `https://waarm64.com` (`npm run dist`;
   deploy only when the user asks).
 - Machines are stored in the browser with their disks and snapshots ([docs/machines.md](docs/machines.md));
   3D goes through virgl onto WebGL2, Vulkan through Venus onto WebGPU (`?gpu=vulkan`, in progress: `vk/README.md`).

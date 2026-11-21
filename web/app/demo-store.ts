@@ -13,8 +13,8 @@ import type { Store } from './store.ts';
 
 export const STORE_TYPE = 'waarm64-store';
 export const STORE_VERSION = 1;
-/** The project's store (vmdisks.tny.im, tools/publish-demos.ts writes it). */
-export const OUR_STORE = 'https://vmdisks.tny.im/store.json';
+/** The project's store (disks.waarm64.com, tools/publish-demos.ts writes it). */
+export const OUR_STORE = 'https://disks.waarm64.com/store.json';
 
 /** A store's file as it's published. */
 export type StoreFile = {

@@ -10,15 +10,15 @@ export type Release = { version: string; /** SHA256SUMS: file name to hash. */ s
 
 /** The release the page offers: its SHA256SUMS, from github.com/gbl08ma/waarm64-net/releases (built twice there, and matched). */
 export const RELEASE: Release = {
-  version: 'v0.3.0',
+  version: 'v0.4.0',
   sums: {
-    'LICENSES.txt': '871505601d614f0107098be41f93f10ea69e9d29bfc1bce9eae659aa8a32993f',
-    'waarm64-net-v0.3.0-darwin-amd64': '4ac08fd59f906e6b4d526786a7e95f1727a2ba15349fb534bd68974365f0a0f7',
-    'waarm64-net-v0.3.0-darwin-arm64': '8d2e335d07f83282a2cce14ed58e6fc638d270c5713a156f9c5edc3dc4ceb69a',
-    'waarm64-net-v0.3.0-linux-amd64': '6a5aa7a9c6baedca8c555f12b8ef8b0cec4af3c2a0e5a5d3b7792580ff643908',
-    'waarm64-net-v0.3.0-linux-arm64': '439d3efd180aeb10762cc30d393b1aa8969f8e309624e929db1220a0df4d349f',
-    'waarm64-net-v0.3.0-windows-amd64.exe': 'b69e9032b81e50fff4ac3cedbee931308baf2ed086d710e0424de225d21476e1',
-    'waarm64-net-v0.3.0-windows-arm64.exe': 'b23a420e78f6865f30b58f522c91237fb643911ce60146c4ed89d4f45facdc8e',
+    'LICENSES.txt': 'f2975483ed7ed5758a9cd99890868eb87f3d18f3731d191b6fd1b73910735deb',
+    'waarm64-net-v0.4.0-darwin-amd64': 'fd9479d7c812277503901b50c08cc62b622349a0872168738b4fc6876dea88aa',
+    'waarm64-net-v0.4.0-darwin-arm64': '3fd0421b51eb5939b537586c40ffa695c7732df053b0d5e94b903e2cef6fa50b',
+    'waarm64-net-v0.4.0-linux-amd64': 'd18dce52de674a846a6899e591b87224f89b955fa4fd60e8cbb29471a1182325',
+    'waarm64-net-v0.4.0-linux-arm64': '5fa686da83a21ba470f066cae2d746e87627317083ceb2b1b46ef4ee8fd8ace6',
+    'waarm64-net-v0.4.0-windows-amd64.exe': '1da4b883f0ba3dd0dc925b0814f5f5aa429c0d4a2d475853c840f15026449a3d',
+    'waarm64-net-v0.4.0-windows-arm64.exe': '8d9828c80b212723446aeb93e9ec54978507c05956d88a33f1dff617fee09cb8',
   },
 };
 

@@ -1,6 +1,6 @@
 // The demo store's page with a guest (docs/frontend.md "The demo store"; DEMO loop 6): a demo's template, built as the
 // demos' site lays it out (`<site>/<name>/definition.json`, `snapshot.json` and the disk's `manifest.json`, one shared
-// `<site>/pieces/`: bench/demo/make-template.ts, the demos' build), served by a local stand-in for vmdisks.tny.im
+// `<site>/pieces/`: bench/demo/make-template.ts, the demos' build), served by a local stand-in for disks.waarm64.com
 // (bench/demo/site.ts, another origin), listed by a store the test makes. In a fresh profile, the store's card →
 // Start → a `#` prompt that answers a command (the template restored, nothing booted); a file written there survives a
 // reload, the machine booting again from its overlay. A desktop's (its card's view the screen: the Arch desktop, DEMO

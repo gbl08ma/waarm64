@@ -84,11 +84,11 @@ test("the helper's link: ws:// on loopback with a token", () => {
 });
 
 test('the pairing link the helper prints gives its ws:// link', () => {
-  assert.deepEqual(parseLocalURL('https://vm.tny.im/#net=ws://127.0.0.1:8740/abc'), { url: 'ws://127.0.0.1:8740/abc' });
+  assert.deepEqual(parseLocalURL('https://waarm64.com/#net=ws://127.0.0.1:8740/abc'), { url: 'ws://127.0.0.1:8740/abc' });
   assert.deepEqual(parseLocalURL(' http://localhost:8080/#net=ws%3A%2F%2F127.0.0.1%3A9%2Fx '), { url: 'ws://127.0.0.1:9/x' });
-  assert.ok('error' in parseLocalURL('https://vm.tny.im/#net='));
-  assert.ok('error' in parseLocalURL('https://vm.tny.im/#net=ws://example.com:8740/abc'), 'loopback only');
-  assert.ok('error' in parseLocalURL('https://vm.tny.im/#net=ws://127.0.0.1:8740/%E0%A4%A'), 'a malformed escape: a message, not a throw');
+  assert.ok('error' in parseLocalURL('https://waarm64.com/#net='));
+  assert.ok('error' in parseLocalURL('https://waarm64.com/#net=ws://example.com:8740/abc'), 'loopback only');
+  assert.ok('error' in parseLocalURL('https://waarm64.com/#net=ws://127.0.0.1:8740/%E0%A4%A'), 'a malformed escape: a message, not a throw');
 });
 
 const GUEST = [0x52, 0x54, 0, 0x12, 0x34, 0x56];

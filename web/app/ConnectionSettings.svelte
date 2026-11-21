@@ -111,7 +111,7 @@
             bind:value={draft.url}
             secret
             // i18n-ignore-next: an example of the link, not words
-            placeholder="https://vm.tny.im/#net=ws://127.0.0.1:8740/…"
+            placeholder="https://waarm64.com/#net=ws://127.0.0.1:8740/…"
           />
           <Note size="md">{t('network:NetLocalStep.local.note')}</Note>
           <NetLocalInstall prefix="settings-local" open={false} />

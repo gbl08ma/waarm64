@@ -1,5 +1,5 @@
 // The demo store's page (docs/frontend.md "The demo store"; DEMO loop 6), in Chromium without a guest: the machine
-// worker is a stand-in that records each start (tests/demo-fixture.ts), and our store (vmdisks.tny.im) is answered by
+// worker is a stand-in that records each start (tests/demo-fixture.ts), and our store (disks.waarm64.com) is answered by
 // the test with a demo whose template is made on the page in a fresh profile (and a second demo of it, for the list).
 // The store's demos are a list beside the chosen one's pane (the first with none named; another is a click on its row),
 // and in a narrow window one column: the list, then the pane with All demos back. A first visit opens the introduction, which leads to the store; a row
@@ -18,7 +18,7 @@ import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { makeTemplate, standIn, type Start } from './demo-fixture.ts';
 
-const OURS = 'https://vmdisks.tny.im';
+const OURS = 'https://disks.waarm64.com';
 const OTHER = 'https://other.example';
 /** The snapshot's content id: its one piece's hash's (web/chunked.ts `contentId`). */
 let SNAP = '';

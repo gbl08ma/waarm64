@@ -99,9 +99,9 @@ moved QEMU from 11.1.1 to 11.1.2 on 2026-10-18, while `qemu-linux-user` (the cor
 
 ## Deploying
 
-The page and the disk images' host `vmdisks.tny.im` (`deploy/disks/`), only when the user asks; images never on R2
+The page and the disk images' host `disks.waarm64.com` (`deploy/disks/`), only when the user asks; images never on R2
 (remote-disks.md): wrangler in `~/.local/bin`, the Cloudflare token in `~/.config/cloudflare/waarm64.env` (never print
-it); frontend.md "Deployed at vm.tny.im".
+it); frontend.md "Deployed at waarm64.com".
 
 ## Dev-only tools
 

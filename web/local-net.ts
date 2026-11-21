@@ -78,7 +78,7 @@ export function framesOf(msg: Uint8Array): Uint8Array[] | undefined {
 
 /**
  * A `ws://127.0.0.1:<port>/<token>` (or `[::1]`, `localhost`) URL, or an error to show. The pairing link the helper
- * prints (`https://vm.tny.im/#net=ws://…`) gives its `net`.
+ * prints (`https://waarm64.com/#net=ws://…`) gives its `net`.
  */
 export function parseLocalURL(input: string): { url: string } | { error: Msg } {
   let s = input.trim();

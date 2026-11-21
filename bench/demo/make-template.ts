@@ -1,5 +1,5 @@
 // Makes a demo's template (bench/demo/REPORT.md "DEMO loop 1", "DEMO loop 3"; loop 5's automated build starts from it):
-// the image chunked into a site laid out as vmdisks.tny.im's will be (bench/demo/site.ts: one shared `pieces/`), a
+// the image chunked into a site laid out as disks.waarm64.com's will be (bench/demo/site.ts: one shared `pieces/`), a
 // stored machine made on the page (the dev server, `?ready=guest`) with that image by its URL on the site, booted in a
 // fresh profile until the guest agent says it's up (the machine `running`) and root's prompt is on the serial console,
 // the console cleared to the motd, a snapshot kept there (the page has the agent drop the guest's caches first), flagged

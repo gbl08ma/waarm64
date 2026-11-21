@@ -4,7 +4,7 @@
 // helper the page needs, after its CI passed. (tests/go-pinned.ts does the fetching and building.)
 import { pinnedGo } from './go-pinned.ts';
 
-export const WAARM64_NET_COMMIT = 'b6d9c06b1450f5135303a488f9307198b3493380'; // v0.3.0
+export const WAARM64_NET_COMMIT = '4e9d5859cf16bb332842b44172047b361aab8d3a'; // v0.4.0
 
 const pinned = pinnedGo({
   name: 'waarm64-net',

@@ -20,7 +20,7 @@ export const DEMO_SUBPROTOCOL = 'waarm64-demonet.v1';
  * The demo network's server, where a `demo` connection made without a URL goes: the user's (docs/networking/
  * demo-network.md). A stored connection keeps its URL, so changing this later needs a new record or an edit.
  */
-export const DEMO_URL = 'wss://demonet.tny.im/';
+export const DEMO_URL = 'wss://demonet.waarm64.com/';
 
 /** The most a message may hold either way (waarm64-demonet `MaxMessage`): past it the server closes with 1009. */
 export const DEMO_MAX_MESSAGE = 1 << 20;

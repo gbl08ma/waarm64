@@ -16,10 +16,10 @@ and their history are in [plans/networking-local.md](../plans/networking-local.m
   ours. Its IPv6 comes from the unmerged [#745](https://github.com/containers/gvisor-tap-vsock/pull/745), taken by a
   `replace` to its author's fork at one commit. Because of that `replace`, `go install` refuses the module.
 - **Listens on `127.0.0.1:8740`** (`--listen`). It accepts a WebSocket only on `/<token>`, only from an allowed origin
-  (`https://vm.tny.im`, plus each `--origin`, matched exactly), and only with the subprotocol `waarm64-net.v1`. A refusal
+  (`https://waarm64.com`, plus each `--origin`, matched exactly), and only with the subprotocol `waarm64-net.v1`. A refusal
   completes the handshake and closes with 4001 (another version), 4003 (the origin) or 4004 (the token), so the page
   can say which. The token is kept in the user's config directory, so a paired page keeps working across restarts.
-- **Prints the pairing link**, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`, and one for each `--origin`.
+- **Prints the pairing link**, `https://waarm64.com/#net=ws://127.0.0.1:<port>/<token>`, and one for each `--origin`.
 - **One network per helper:** DHCP on `192.168.127.0/24` with the gateway and resolver at `.1`, and IPv6 on
   `fd77:6562:7063::/64` unless `--no-ipv6`. Every page connected to one helper is on the same switch. The guest
   reaches the internet and the LAN, and reaches the host's own loopback only with `--host-loopback`
@@ -82,10 +82,10 @@ measured.
 The helper's releases are built by its own GitHub Actions, separately from waarm64's deploy (the user's, 2026-11-02).
 A `v*` tag is built on an x86_64 and an arm64 Linux runner, and the release is published only when the two builds
 are byte-identical. **The page offers a release** once `web/local-release.ts` takes its version and SHA256SUMS, in a
-change of waarm64's. v0.3.0 is the current one (the rename; v0.1.0's and v0.3.0's sums also matched a build in the dev VM: `bench/net/results/local-helper/build-v0.3.0-aarch64.txt`). A release is cut only
+change of waarm64's. v0.4.0 is the current one (its default origin `https://waarm64.com`; v0.1.0's and v0.3.0's sums also matched a build in the dev VM: `bench/net/results/local-helper/build-v0.3.0-aarch64.txt`). A release is cut only
 after an out-of-context review of what it adds (the user's, 2026-11-03: each one costs runner minutes).
 
-**waarm64's tests build the helper at the commit `tests/waarm64-net.ts` pins** (v0.3.0's). The commit is fetched with git
+**waarm64's tests build the helper at the commit `tests/waarm64-net.ts` pins** (v0.4.0's). The commit is fetched with git
 into `target/net/waarm64-net-src`, over HTTPS or else SSH, and built into `target/net/waarm64-net`. With
 `WAARM64_NET_SRC=../waarm64-net` they build a checkout of yours instead, which is how to work on the page and the helper
 together. Where the commit can't be fetched (a cloud session, while the repository is private), those tests say

@@ -158,12 +158,12 @@ const ours = {
   prompt: (page: Page, ms: number) => page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: ms, polling: 100 }).then(() => undefined),
 };
 
-/** The deployed page's Desktop Demo (docs/remote-disks.md): Arch with sway on a chunked image from vmdisks.tny.im, a first boot. */
+/** The deployed page's Desktop Demo (docs/remote-disks.md): Arch with sway on a chunked image from disks.waarm64.com, a first boot. */
 const desktop: Target = {
   name: 'waarm64-desktop',
   system: 'waarm64',
-  what: 'https://vm.tny.im/?disk=https://vmdisks.tny.im/desktop/prefetch.json (the Desktop Demo, Arch Linux ARM with sway, UEFI) as deployed, its first boot, the page\'s defaults, the serial terminal shown beside the screen (`view=both`)',
-  url: () => `https://vm.tny.im/?disk=${encodeURIComponent('https://vmdisks.tny.im/desktop/prefetch.json')}&view=both`,
+  what: 'https://waarm64.com/?disk=https://disks.waarm64.com/desktop/prefetch.json (the Desktop Demo, Arch Linux ARM with sway, UEFI) as deployed, its first boot, the page\'s defaults, the serial terminal shown beside the screen (`view=both`)',
+  url: () => `https://waarm64.com/?disk=${encodeURIComponent('https://disks.waarm64.com/desktop/prefetch.json')}&view=both`,
   ...ours,
   prompt: ours.prompt,
   promptIs: 'the login prompt on the serial console (the machine `running`)',
@@ -211,7 +211,7 @@ const SITE = new URL('../results/local/demo/site/', import.meta.url).pathname;
 /**
  * DEMO loop 1's spike: the spike's Alpine template (bench/demo/make-template.ts) restored in a fresh profile with no
  * network past this computer: the page as `npm run dist` builds it on 127.0.0.1, the template's site (its image's and
- * snapshot's pieces, the definition) on localhost as vmdisks.tny.im would serve it, both counting what they send.
+ * snapshot's pieces, the definition) on localhost as disks.waarm64.com would serve it, both counting what they send.
  * The click is the page's hook for a demo's card (web/app/template.ts: the definition imported, the snapshot fetched
  * and kept, the machine opened, its first start the restore).
  */

@@ -336,7 +336,7 @@ rule.
 | cargo tests, TestFloat, the agent's tests | yes | as a non-root user, so the agent's six root failures (docs/cloud.md) don't occur. dtc 1.7.2 is built as cloud-setup.sh does |
 | `npm test` without images | yes, sharded | 3,440 s of test time at 3 files a job is ~20 min a job. Three or four jobs by file list (the areas map gives balanced shards) take ~8–12 min wall |
 | The native image tests, `boot-node`'s guests | not on x86 without images | Buildroot, Alpine, the kernels, LTP, kvm-unit-tests and litmus are built in arm64 Podman: hours under qemu-user. Either an arm64 runner builds them (cached by each image's `.inputs` key), or they're prebuilt and hosted |
-| Debian page tests (ci-debian, ci-machines, ci-net minus Podman's tailnet) | possible, slow | `tools/debian.ts` fetches the pinned qcow2 (403 MB); cloud-setup.sh fetches EDK2 from vm.tny.im; `linux-snd`'s `snd-play` is missing, so `page-debian` skips. Debian boots ~2.5× slower than in the VM (147 s), so the realtime bounds may fail. One job per script |
+| Debian page tests (ci-debian, ci-machines, ci-net minus Podman's tailnet) | possible, slow | `tools/debian.ts` fetches the pinned qcow2 (403 MB); cloud-setup.sh fetches EDK2 from waarm64.com; `linux-snd`'s `snd-play` is missing, so `page-debian` skips. Debian boots ~2.5× slower than in the VM (147 s), so the realtime bounds may fail. One job per script |
 | dEQP-GLES and dEQP-VK | no (x86) | the pass lists are a census on the M4's SwiftShader. x86 SwiftShader has 6 color attachments, not 8, and other differences. The disk and guest are on static.gbl08ma.com (1.3 GB) |
 | USB rigs, Mac oracles, benchmarks | no | |
 

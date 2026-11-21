@@ -12,7 +12,7 @@ export type DemosRoute = {
   store: string;
   /** The demo to open at its interstitial (`?id=`). */
   id?: string;
-  /** Our store's (vmdisks.tny.im): another's gets a warning before anything past its JSON is fetched. */
+  /** Our store's (disks.waarm64.com): another's gets a warning before anything past its JSON is fetched. */
   ours: boolean;
 };
 

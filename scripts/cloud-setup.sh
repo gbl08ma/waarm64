@@ -67,7 +67,9 @@ images/build.sh agent >/dev/null || echo "the guest agent didn't build (images/b
 # that had both under target/images/edk2/, tried first.
 # shell.img (the Node firmware test's disk) isn't deployed: that test skips here.
 fw=target/images/edk2
-site=https://vm.tny.im
+# DOTCOM: vm.tny.im until waarm64.com is deployed (then vm.tny.im redirects; the fallback goes at the cutover).
+site=https://waarm64.com
+curl -fsSI "$site/" >/dev/null 2>&1 || site=https://vm.tny.im
 if ! images/build.sh --check edk2 >/dev/null 2>&1; then
   mkdir -p "$fw"
   # The firmware's URL in the deployed page: the hashed name its index.html's scripts mention.

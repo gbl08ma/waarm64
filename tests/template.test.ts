@@ -41,12 +41,12 @@ test("a chunked image's identity is its content: the same image from another hos
   const store = fresh();
   const d = await createDisk(store, { kind: 'url', url: 'http://localhost:4000/alpine/manifest.json', size: 256 * MiB, bytes: 80 * MiB, chunked: ID });
   assert.deepEqual(d.identity, { kind: 'url', chunked: ID, bytes: 80 * MiB }, 'no path in it');
-  const moved = { kind: 'url' as const, url: 'https://vmdisks.tny.im/alpine-term/manifest.json', size: 256 * MiB, bytes: 80 * MiB, chunked: ID };
+  const moved = { kind: 'url' as const, url: 'https://disks.waarm64.com/alpine-term/manifest.json', size: 256 * MiB, bytes: 80 * MiB, chunked: ID };
   assert.equal((await knownDisk(store, moved))?.id, d.id, 'hosted elsewhere: the disk the browser has');
   assert.equal(await knownDisk(store, { ...moved, chunked: 'cd'.repeat(32) }), undefined, 'other content: another disk');
   // A disk record made before: the URL's path, the manifest's id as its etag.
   const old = fresh();
-  await old.put('disks', { id: 'd00000000001', kind: 'url', name: 'm', size: 256 * MiB, url: 'https://vmdisks.tny.im/alpine-term/manifest.json', identity: { kind: 'url', path: '/alpine-term/manifest.json', bytes: 80 * MiB, etag: ID }, created: 0 });
+  await old.put('disks', { id: 'd00000000001', kind: 'url', name: 'm', size: 256 * MiB, url: 'https://disks.waarm64.com/alpine-term/manifest.json', identity: { kind: 'url', path: '/alpine-term/manifest.json', bytes: 80 * MiB, etag: ID }, created: 0 });
   assert.equal((await knownDisk(old, moved))?.id, 'd00000000001', "the old record's overlays come back with it");
 });
 
@@ -55,14 +55,14 @@ test("a template's definition imported in another browser makes a machine of the
   const m = await templateMachine(a);
   const def = await exportDefinition(a, m.id);
   def.disks[0].url = 'manifest.json'; // as the site publishes it: beside the definition
-  const resolved = resolveUrls(parseDefinition(JSON.stringify(def)), 'https://vmdisks.tny.im/alpine-term/definition.json');
-  assert.equal(resolved.disks[0].url, 'https://vmdisks.tny.im/alpine-term/manifest.json');
+  const resolved = resolveUrls(parseDefinition(JSON.stringify(def)), 'https://disks.waarm64.com/alpine-term/definition.json');
+  assert.equal(resolved.disks[0].url, 'https://disks.waarm64.com/alpine-term/manifest.json');
   const b = fresh();
   const { machine } = await importDefinition(b, resolved);
   assert.equal(await shape(b, machine), await shape(a, m), 'the same shape: a snapshot of the template restores on it');
   const disk = (await b.all('disks'))[0];
   assert.equal(canonical(disk.identity), canonical({ kind: 'url', chunked: ID, bytes: 80 * MiB }));
-  assert.equal(disk.url, 'https://vmdisks.tny.im/alpine-term/manifest.json');
+  assert.equal(disk.url, 'https://disks.waarm64.com/alpine-term/manifest.json');
 });
 
 /** The template's machine in browser A, its definition imported in a fresh browser B, and the template's pins (slot by slot). */
@@ -139,12 +139,12 @@ test("a definition's URL disk is reused only at its own URL: another store's rec
   };
   const store = fresh();
   const evil = await importDefinition(store, await at('https://evil.example/fake/manifest.json'));
-  const ours = await importDefinition(store, await at('https://vmdisks.tny.im/alpine-term/manifest.json'));
+  const ours = await importDefinition(store, await at('https://disks.waarm64.com/alpine-term/manifest.json'));
   const disk = await store.get('disks', ours.machine.attachments[0].disk);
-  assert.equal(disk?.url, 'https://vmdisks.tny.im/alpine-term/manifest.json', "the project's demo reads another store's URL");
+  assert.equal(disk?.url, 'https://disks.waarm64.com/alpine-term/manifest.json', "the project's demo reads another store's URL");
   assert.notEqual(ours.machine.attachments[0].disk, evil.machine.attachments[0].disk);
   assert.equal(await shape(store, ours.machine), await shape(a, m), "the template's shape all the same");
-  const again = await importDefinition(store, await at('https://vmdisks.tny.im/alpine-term/manifest.json'));
+  const again = await importDefinition(store, await at('https://disks.waarm64.com/alpine-term/manifest.json'));
   assert.equal(again.machine.attachments[0].disk, ours.machine.attachments[0].disk, 'the same URL: the same disk');
 });
 

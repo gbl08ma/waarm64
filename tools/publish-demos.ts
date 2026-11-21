@@ -1,4 +1,4 @@
-// Assembles the demos' site for vmdisks.tny.im in target/disks/ (tools/demo-site.ts says what it writes and checks;
+// Assembles the demos' site for disks.waarm64.com in target/disks/ (tools/demo-site.ts says what it writes and checks;
 // docs/remote-disks.md "Publishing the demos"). Prints the plan (each demo, what's retired, what a deploy would drop,
 // the files against the budget) and writes nothing without --apply. Deploying is deploy/disks/deploy.sh's, and only
 // when the user asks.

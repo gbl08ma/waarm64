@@ -9,7 +9,7 @@ import { allMet, canStart, checkDemo, listedChecks, room, type BrowserEnv, type 
 import { OUR_STORE } from '../web/app/demo-store.ts';
 import { demosAddress, demosRoute, firstVisit, leftDemos, pageQuery } from '../web/app/demos-route.ts';
 
-const SITE = 'https://vm.tny.im'; // i18n-ignore: an address
+const SITE = 'https://waarm64.com'; // i18n-ignore: an address
 const at = (path: string) => new URL(path, SITE);
 
 test("the store's page by its path or its fragment, with its id and store", () => {

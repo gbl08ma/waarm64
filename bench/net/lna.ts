@@ -1,6 +1,6 @@
 // Chromium's Local Network Access for the local helper (docs/plans/networking-local.md L0, bench/net/REPORT.md "The
 // local helper"): a page of a public origin opens a WebSocket to the helper on loopback, from the page and from a worker,
-// and we see what the permission does. A public origin: `https://vm.tny.im` as it is deployed (the page's code doesn't
+// and we see what the permission does. A public origin: `https://waarm64.com` as it is deployed (the page's code doesn't
 // matter: this drives the socket from outside) when it's reachable, else any public https site named by LNA_ORIGIN; and a
 // copy on 127.0.0.1 that `--ip-address-space-overrides` calls public. The helper accepts each origin with --origin.
 // Usage: node bench/net/lna.ts [<out.json>]    (headless: no prompt to click; what a headless browser shows is what a
@@ -16,7 +16,7 @@ import { buildHelper } from '../../tests/waarm64-net.ts';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const out = process.argv[2];
-const origin = process.env.LNA_ORIGIN ?? 'https://vm.tny.im';
+const origin = process.env.LNA_ORIGIN ?? 'https://waarm64.com';
 const server = await startServer();
 const port = (server.address() as { port: number }).port;
 const copy = `http://127.0.0.1:${port}`;

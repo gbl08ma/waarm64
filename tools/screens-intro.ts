@@ -9,7 +9,7 @@ import type { Browser, Page } from 'playwright-core';
 import { ROOT } from './serve.ts';
 import type { Shots } from './screens-demos.ts';
 
-const STORE = 'https://vmdisks.tny.im/**';
+const STORE = 'https://disks.waarm64.com/**';
 
 async function at(browser: Browser, o: Shots, viewport: { width: number; height: number }, suffix: string) {
   const ctx = await browser.newContext({ viewport, reducedMotion: 'reduce' });

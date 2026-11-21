@@ -20,7 +20,7 @@ waarm64's side.
 
 - **`demo`** (web/app/connections.ts): its record holds the server's URL, `demo.url`, `wss://…` (`parseDemoURL`;
   `ws://` only on this computer, for testing a server of one's own). Not a secret: no token, no pairing, and no Local
-  Network Access prompt (the server is public). The default is `DEMO_URL` in web/demo-net.ts, **`wss://demonet.tny.im/`**
+  Network Access prompt (the server is public). The default is `DEMO_URL` in web/demo-net.ts, **`wss://demonet.waarm64.com/`**
   (the user's, hosted since 2026-11-19: remote-disks.md "Deploying the demos"). A stored connection keeps its URL, so
   changing the default later needs a new record or an edit of each browser's.
 - **No lock** (`exclusive`: false): any number of machines, in any tabs, and several adapters of one, run it at once,

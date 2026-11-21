@@ -1,4 +1,4 @@
-// A local stand-in for vmdisks.tny.im (bench/demo/REPORT.md "DEMO loop 1"): a static server for a site laid out as
+// A local stand-in for disks.waarm64.com (bench/demo/REPORT.md "DEMO loop 1"): a static server for a site laid out as
 // deploy/disks/ publishes one (one shared `pieces/`, a directory per image with its manifest, a template's definition
 // and its snapshot's manifest beside it: docs/remote-disks.md "Publishing an image"), with CORS and `_headers`' caching,
 // and a byte count of every response by kind (the page, the snapshot, the disk), so a run's bytes split the way the
@@ -55,7 +55,7 @@ export async function siteServer(root: string, log: Served[], kindOf: (path: str
   count(server, log, kindOf);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const port = (server.address() as { port: number }).port;
-  // `localhost`: another origin than the page's 127.0.0.1, as vmdisks.tny.im is vm.tny.im's.
+  // `localhost`: another origin than the page's 127.0.0.1, as disks.waarm64.com is waarm64.com's.
   return { base: `http://localhost:${port}`, close: () => new Promise((r) => server.close(() => r())) };
 }
 

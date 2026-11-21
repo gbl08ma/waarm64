@@ -1041,7 +1041,7 @@ the query's form serves (decisions.md "Demos").
   for `#home`, else to the machine), so Back retraces the store; what the address itself opened only tidies it
   (`replaceState`). A store's read that is no longer the one shown (another store opened meanwhile) is dropped, its
   failure and busy state with it. The store's URL is ours,
-  `https://vmdisks.tny.im/store.json` (`OUR_STORE`), unless `?store=` names another (not http(s): ours).
+  `https://disks.waarm64.com/store.json` (`OUR_STORE`), unless `?store=` names another (not http(s): ours).
 - **The layout** (`DemosPage.svelte`), Home's: the store's demos in a list on the left (a column of 280 to 360 px on
   the raised surface, under the page's heading and what a demo is), the chosen demo's pane on the right (`ui/Pane.svelte`,
   as a machine's), so another demo is a click on its row and nothing leads back. **With no demo named, the store's
@@ -1061,7 +1061,7 @@ the query's form serves (decisions.md "Demos").
   the demo's row. Tried and left: cards in a grid with the demo's details on a screen of their own (the first build:
   every other demo was a trip back through All demos, and the details filled half a wide window).
 - **A row** (`DemoCard.svelte`): a button (Tab and Enter reach and choose it), its thumbnail (`crossorigin`:
-  vmdisks.tny.im sends CORS, the page is cross-origin isolated; decorative, `alt=""`: the button's name is the demo's), name,
+  disks.waarm64.com sends CORS, the page is cross-origin isolated; decorative, `alt=""`: the button's name is the demo's), name,
   summary (its first two lines beside the pane, whole in one column) and
   download size, and a mark when the visitor has a machine from it ([You have this demo](ui:machines:DemoCard.mine)) or
   from a version it replaces ([You have an older version of this demo](ui:machines:DemoCard.older); `demo-store.ts` `machinesOf`). The chosen row is sunk with the
@@ -2318,12 +2318,12 @@ side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) 
 and the guest's default way out (below).
 
 - [Your computer](ui:network:connections.thisComputer) (the local helper, waarm64-net: [networking/local-helper.md](networking/local-helper.md)): a
-  program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>` (and one for each `--origin`). Opening it
+  program the user runs prints a pairing link, `https://waarm64.com/#net=ws://127.0.0.1:<port>/<token>` (and one for each `--origin`). Opening it
   takes the fragment out of the address at once (it holds the token) and opens the wizard on [Your computer](ui:network:connections.thisComputer), the
   link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
   the link (or its `ws://` part) into that step does the same. A new connection's step is numbered steps that end at
   the link's field: run waarm64-net, with the install lines for this browser's platform under it (`web/local-release.ts`:
-  client hints, a choice of the six; the release's version and SHA-256s, v0.3.0's now); then paste the link; a short note after (the link is a secret, allow local network access). The connection's
+  client hints, a choice of the six; the release's version and SHA-256s, v0.4.0's now); then paste the link; a short note after (the link is a secret, allow local network access). The connection's
   Settings show the link's field, the install lines folded under it. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
   which puts the card on a frame port, the page's gateway bypassed (web/gateway.ts `FramePath`: the link flaps, so
   the guest asks the helper for a lease at once), and moves its frames to the helper's WebSocket, those before a
@@ -2760,7 +2760,7 @@ Debian through UEFI).
 web server: no Node behind it. It first does `npm start --prepare-only`'s steps (`--no-prepare` skips them and
 stops if a binary is missing, Vulkan's renderer among them), then builds the page with Vite (below, "The build") and adds the licenses:
 
-- `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`), with a `<meta name="waarm64-build">`
+- `index.html`, the page at the site's root (`https://waarm64.com/?disk=<url>`), with a `<meta name="waarm64-build">`
   holding the commit it was built from, its date and "with local changes" when tracked files differed
   (`tools/stamp.ts`, written by `vite.config.ts` into every load of the page, the dev server's too); the page logs it
   at load (`waarm64: built from …`), so a user's console says which build they ran.
@@ -2799,9 +2799,9 @@ so a disk's saved changes stay with the site they were made on. `tests/dist.test
 bundle (a few hashed files, no source), serves it so and boots Buildroot from it (its images linked in at
 `target/images/`, where the page's direct-boot machines look: `web/app/machine.ts`).
 
-### Deployed at vm.tny.im
+### Deployed at waarm64.com
 
-The user's public copy (since 2026-10-17): `https://vm.tny.im`, a **Worker with static assets only** (no script) named
+The user's public copy: `https://waarm64.com` (until DOTCOM's cutover still at `vm.tny.im`, its address since 2026-10-17: DOTCOM-KICKOFF.md), a **Worker with static assets only** (no script) named
 `waarm64` on the user's account (`wrangler.jsonc` at the repo's root; also at `waarm64.gbl08ma.workers.dev`), uploaded from
 the dev VM. **Deploying is outward-facing: only when the user asks.** Redeploy (the copy is rebuilt first; a deploy is
 atomic and replaces the site):
@@ -2819,27 +2819,30 @@ deployed page and screenshots it as `live.png` in `$CLAUDE_JOB_DIR/tmp`, else th
 - **Credentials:** an account API token and the account ID in `~/.config/cloudflare/waarm64.env`
   (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written by the user on the VM. Source it; never print
   it. Its permissions (2026-10-23): Account → Workers Scripts, Workers KV Storage → Edit, Workers Tail and Account
-  Settings → Read; Zone (`tny.im`) → DNS, Workers Routes → Edit. No Pages (the old project is deleted), R2, Cache
+  Settings → Read; Zone (`waarm64.com`, `tny.im`) → DNS, Workers Routes → Edit. No Pages (the old project is deleted), R2, Cache
   Rules or WAF: R2 was tried for disk images and dropped ([remote-disks.md](remote-disks.md)
   "Hosting on Cloudflare"). The user edits it in the dashboard (its value stays). `wrangler login` doesn't suit the VM (its OAuth callback is on the VM's
   localhost), and `wrangler whoami` fails with this token (no user-level permission): verify it with
   `GET /client/v4/user/tokens/verify` instead.
-- **The domain:** `routes` in `wrangler.jsonc` makes `vm.tny.im` the Worker's custom domain (Cloudflare adds its DNS
-  record). **Every other record in the `tny.im` zone is the user's: leave them exactly as they are** (`tny.im` itself
-  is a Pages project).
+- **The domain:** `routes` in `wrangler.jsonc` makes `waarm64.com` the Worker's custom domain (Cloudflare adds its DNS
+  record), as `deploy/disks/wrangler.jsonc` does `disks.waarm64.com`. The zone's other records: `demonet` (an A record,
+  DNS only, to the user's server: remote-disks.md "Deploying the demos") and the ones that say the domain sends no mail
+  (a null MX, SPF `-all`, DMARC `p=reject`, every DKIM key revoked at `*._domainkey`); no CAA (it would bind the demo
+  network's Caddy certificate too). **Every record in the `tny.im` zone is the user's: leave them exactly as they
+  are** (`tny.im` itself is a Pages project).
 - **From Pages (2026-10-23):** the site was a classic Pages project under the project's former name (`wrangler pages deploy`) until then;
   moved by Cloudflare's guide (workers/static-assets/migration-guides/migrate-from-pages): the Worker deployed and
-  checked on workers.dev, every file of `target/dist` compared, then the Pages project's domain and its `vm` CNAME
+  checked on workers.dev, every file of `target/dist` compared, then the Pages project's domain and its `vm.tny.im` CNAME
   to `pages.dev` deleted and the Worker deployed with the route (under a minute without the site); the user then
   deleted the Pages project. In the dashboard (Workers & Pages) the Workers `waarm64` and `waarm64-disks` showed only after
   a hard reload. One difference kept: an unknown path is a 404
   (`not_found_handling: none`), where Pages answered the root page (its single-page fallback, with no `404.html`).
 
-**Disk images** are a second assets-only Worker, `waarm64-disks` at `https://vmdisks.tny.im` (`deploy/disks/deploy.sh`,
+**Disk images** are a second assets-only Worker, `waarm64-disks` at `https://disks.waarm64.com` (`deploy/disks/deploy.sh`,
 the same credentials), never a bucket: [remote-disks.md](remote-disks.md).
 
 What it gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `application/wasm`, `.js`
 `text/javascript`, a missing trailing slash and `index.html` redirect (307). 25 MiB a file, 20,000 files (the free
 plan). Disks aren't hosted with the page (above). The dev VM's resolver may cache a
-new name's absence for a while after a DNS change: Chromium's `--host-resolver-rules=MAP vm.tny.im <ip>` (the
+new name's absence for a while after a DNS change: Chromium's `--host-resolver-rules=MAP waarm64.com <ip>` (the
 script's `MAP=`) checks the real site meanwhile.

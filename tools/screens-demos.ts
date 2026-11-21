@@ -1,5 +1,5 @@
 // The demo store's page for tools/screens.ts (docs/frontend.md "Screenshots", "The demo store"): our store
-// (vmdisks.tny.im) and another's (demos.example) answered here, without the network, with three demos shaped like the
+// (disks.waarm64.com) and another's (demos.example) answered here, without the network, with three demos shaped like the
 // published ones (a terminal, a desktop, a 3D desktop; their thumbnails drawn stand-ins), and the states the page has
 // without a guest: the list and a chosen demo, a demo started before, a start's download partway and its failure,
 // another store's consent step and its demos once accepted, an id the store doesn't have, the store's server down, a
@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import type { Browser, BrowserContext, Page, Route } from 'playwright-core';
 
-const OURS = 'https://vmdisks.tny.im';
+const OURS = 'https://disks.waarm64.com';
 const OTHER = 'https://demos.example';
 const CORS = { 'Access-Control-Allow-Origin': '*' };
 const MIB = 1 << 20;
@@ -27,9 +27,9 @@ const thumb = (kind: 'terminal' | 'desktop' | '3d') => {
 
 type Card = { id: string; name: string; kind: 'terminal' | 'desktop' | '3d'; ramMiB: number; download: number; summary: string };
 const CARDS: Card[] = [
-  { id: 'alpine-term', name: 'Alpine (terminal)', kind: 'terminal', ramMiB: 512, download: 15835257, summary: "Alpine Linux at a root prompt, in a few seconds. Type a command it doesn't have and it installs it; apk reaches Alpine's package mirror." },
-  { id: 'arch-desktop', name: 'Arch Linux (desktop)', kind: 'desktop', ramMiB: 2048, download: 65322416, summary: "Arch Linux's sway desktop, started as the machine resumes, with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it and keeps the terminal). Chromium is installed too, and pacman installs more software. Websites load slowly on the demo network." },
-  { id: 'arch-3d', name: 'Arch Linux (3D)', kind: '3d', ramMiB: 2048, download: 72394917, summary: "OpenGL on Arch Linux's sway desktop: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2. pacman installs more software." },
+  { id: 'alpine-term', name: 'Alpine (terminal)', kind: 'terminal', ramMiB: 512, download: 15835257, summary: "Alpine Linux at a root prompt, in a few seconds, logged in as root (no password). Type a command it doesn't have and it installs it; apk reaches Alpine's package mirror." },
+  { id: 'arch-desktop', name: 'Arch Linux (desktop)', kind: 'desktop', ramMiB: 2048, download: 65322416, summary: "Arch Linux's sway desktop, started as the machine resumes, with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it and keeps the terminal). Chromium is installed too, and pacman installs more software. Websites load slowly on the demo network. Logged in as arch, password arch (root's password is root). Arch Linux for 64-bit ARM from https://arch.bens.haus/." },
+  { id: 'arch-3d', name: 'Arch Linux (3D)', kind: '3d', ramMiB: 2048, download: 72394917, summary: "OpenGL on Arch Linux's sway desktop: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2. pacman installs more software. Logged in as arch, password arch (root's password is root). Arch Linux for 64-bit ARM from https://arch.bens.haus/." },
 ];
 const definition = (c: Card, i: number) => ({
   type: 'waarm64-machine',

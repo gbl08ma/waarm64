@@ -100,13 +100,13 @@ with tun2socks-style forwarders.
 
 **What it does:**
 - Listens on `127.0.0.1` only (a port with a fixed default; `--listen` changes it).
-- Accepts a WebSocket only on the path `/<token>` and only from allowed origins: `https://vm.tny.im` by default,
+- Accepts a WebSocket only on the path `/<token>` and only from allowed origins: `https://waarm64.com` by default,
   `--origin` for a self-hosted copy (`npm run dist`) or the dev server. Without both, any site the user visits
   could use it as a way into their LAN. The token is random, kept in the user's config directory so a stored
   connection survives a restart of the helper (`--new-token` replaces it).
 - Checks a subprotocol with a version (`waarm64-net.v1`, provisional) so page and helper can refuse each other
   clearly.
-- Prints the pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`. The fragment never reaches the
+- Prints the pairing link, `https://waarm64.com/#net=ws://127.0.0.1:<port>/<token>`. The fragment never reaches the
   page's server or its logs.
 - **One network per helper**, every WebSocket on its switch: two adapters or two machines attached to the same
   helper share a LAN and see each other (one user's machines; MACs are random per adapter).
@@ -206,7 +206,7 @@ with tun2socks-style forwarders.
     `?localnet=` is gone. Tests: tests/page-local.test.ts (the pairing link, the wizard, the real helper, Retry),
     tests/net-local.test.ts (now through the card's IP port: the gateway's lease, then the helper's after the switch),
     and the unit tests docs/testing.md lists.
-  - **Seen by the user** (2026-11-02, on the deployed page at vm.tny.im): the prompt appears at the connection to the
+  - **Seen by the user** (2026-11-02, on the deployed page, then at vm.tny.im): the prompt appears at the connection to the
     helper on loopback, and the connection works, in an Incognito window too. A denial is kept for good: asking again
     never prompts again, until the user removes the block from the site's permissions (the icon in the address bar).
     Nothing the page can do about it; its message says where the setting is.

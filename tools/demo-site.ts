@@ -1,5 +1,5 @@
 // The demos' site (docs/remote-disks.md "Publishing the demos"; docs/decisions.md "Demos"): what
-// tools/publish-demos.ts writes into target/disks/ for vmdisks.tny.im, planned before anything is written.
+// tools/publish-demos.ts writes into target/disks/ for disks.waarm64.com, planned before anything is written.
 //
 // The input is a source file (deploy/disks/demos.json): per demo, its card (`demo`: id, summary, view, network, room,
 // replaces, download, template: whether New machine offers it as a template too), a name, a thumbnail, its recipe (how

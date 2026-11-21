@@ -22,7 +22,7 @@
    },
    "demo": {
     "id": "alpine-term",
-    "summary": "Alpine Linux at a root prompt, in a few seconds. Type a command it doesn't have and it installs it; apk reaches Alpine's package mirror.",
+    "summary": "Alpine Linux at a root prompt, in a few seconds, logged in as root (no password). Type a command it doesn't have and it installs it; apk reaches Alpine's package mirror.",
     "view": "serial",
     "network": "demo",
     "room": "global",
@@ -74,7 +74,7 @@
    },
    "demo": {
     "id": "arch-desktop",
-    "summary": "Arch Linux's sway desktop, started as the machine resumes, with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it and keeps the terminal). Chromium is installed too, and pacman installs more software. Websites load slowly on the demo network.",
+    "summary": "Arch Linux's sway desktop, started as the machine resumes, with a terminal open; Firefox starts a few seconds later (Ctrl+C in the terminal stops it and keeps the terminal). Chromium is installed too, and pacman installs more software. Websites load slowly on the demo network. Logged in as arch, password arch (root's password is root). Arch Linux for 64-bit ARM from https://arch.bens.haus/.",
     "view": "screen",
     "network": "demo",
     "room": "global"
@@ -124,7 +124,7 @@
    },
    "demo": {
     "id": "arch-3d",
-    "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2. pacman installs more software.",
+    "summary": "OpenGL on Arch Linux's sway desktop: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2. pacman installs more software. Logged in as arch, password arch (root's password is root). Arch Linux for 64-bit ARM from https://arch.bens.haus/.",
     "view": "screen",
     "network": "demo",
     "room": "global"

@@ -11,7 +11,7 @@ browser inside it, video and 3D included. Everything runs on your computer; noth
 
 ![The introduction of waarm64's page: a small Linux machine running live beside the headline, its picture on a screen and its shell in a terminal](docs/assets/intro.png)
 
-**Try it: [vm.tny.im](https://vm.tny.im)** (Chrome, Edge or another Chromium-based browser). The page opens on an
+**Try it: [waarm64.com](https://waarm64.com)** (Chrome, Edge or another Chromium-based browser). The page opens on an
 introduction with a small machine booting live in it, then offers demos that start in a few seconds: Alpine at a
 shell, and Arch Linux desktops with and without 3D.
 

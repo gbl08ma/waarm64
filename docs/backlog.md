@@ -408,7 +408,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
      by us.
   3. **An Android or ChromeOS phone** (Mali or Adreno): the strictest precision and limits.
   4. **Intel or AMD integrated GPUs.**
-  The cheap way (proposed, not scheduled): a dEQP runner page (`?deqp` on the page, or on vm.tny.im) that anyone opens
+  The cheap way (proposed, not scheduled): a dEQP runner page (`?deqp` on the page, or on waarm64.com) that anyone opens
   in their own browser: it boots the dEQP guest, runs the lists and downloads a results file with the renderer string
   and the limits; and a tool that compares result files across platforms (as G5 compared Metal with SwiftShader).
   Until then, `bench/gpu/sway-mac.sh`'s route (`SCRIPT=deqp-run.ts`) is the way for a host we can reach.
@@ -1298,7 +1298,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   wasn't checked. `tools/intro-capture.ts --baseline` captures Liftoff's (about twice the size), not shown.
 - **A bench target for the deployed demos** (the DEMO track's end, 2026-11-19): bench/demo measures a local build
   through a modelled link; the deployed store's numbers (bench/demo/REPORT.md "DEMO's end", comparison.md §3) are single
-  runs of an ad-hoc check. A target for `https://vm.tny.im/demos` (each demo's click → command, bytes, `apk add`,
+  runs of an ad-hoc check. A target for `https://waarm64.com/demos` (each demo's click → command, bytes, `apk add`,
   a desktop's app) with the bench's medians makes comparison.md's rows like for like with the peers'.
 - **arch-desktop's Firefox didn't come once, on the deployed site** (2026-11-19): one run of four, the first visit after
   the deploy (the CDN cold: a command took 12.6 s, 3.5 s after): after 189 s only sway's bar was on the screen, foot's

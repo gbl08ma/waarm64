@@ -24,7 +24,7 @@ const ROOT = new URL('..', import.meta.url).pathname;
 const skip = !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh edk2' : helperSkip();
 
 let browser: Browser;
-/** The same Chromium with the test server's address called public, as https://vm.tny.im is: Local Network Access gates its sockets to loopback. */
+/** The same Chromium with the test server's address called public, as https://waarm64.com is: Local Network Access gates its sockets to loopback. */
 let publicBrowser: Browser;
 let base: string;
 let closeServer: () => void;
