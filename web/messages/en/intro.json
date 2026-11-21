@@ -552,8 +552,8 @@
     "note": "Row heading of the comparison table on the introduction. No period."
   },
   "IntroCompare.browsers.ours": {
-    "message": "Chromium-based first, Firefox for smaller guests",
-    "note": "Cell of the comparison table on the introduction: “Host browser compatibility” for waarm64. The web app is built and tested for Chromium-based browsers; Firefox runs it too, for smaller guests, more slowly and without some features. Not “only”. Not a sentence: no period."
+    "message": "Chromium-based first; Firefox and Safari run it with fewer features",
+    "note": "Cell of the comparison table on the introduction: “Host browser compatibility” for waarm64. The web app is built and tested for Chromium-based browsers; Firefox and Safari run it too, without some features (USB devices, shared folders). Not “only”. Not a sentence: no period."
   },
   "IntroCompare.browsers.unkernel": {
     "message": "Chrome, Edge, Firefox, Safari",
