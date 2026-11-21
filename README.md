@@ -115,6 +115,15 @@ Run `npm start` again after pulling: it redoes only what changed, and with nothi
 
 ## Developing
 
+> **A note from the author.** This project is presently set up for development by a single person, on a specific
+> set of machines. [`CLAUDE.md`](CLAUDE.md) and the progress-tracking files in the repository's root (`PLAN.md`, the
+> `*-KICKOFF.md` and `*-HANDOVER.md` files) reflect that specific setup. If you're interested in developing this for
+> yourself with agentic help, you will need to adjust these files, and ideally one of your first contributions would
+> be to modify them so that they're less specific. I'm not going to go through that trouble until a serious
+> contributor shows up (you are always free to fork, and to maintain your fork as you please, of course). Let's just
+> say I take the "without warranty" part of the MIT license very seriously, and that extends to (not) helping others
+> collaborate on my projects.
+
 ```sh
 npm run serve          # the dev server (Vite) with hot reloading, on :8080
 scripts/ci-fast.sh     # after every change (~3 min): static checks and the tests the change touches
@@ -124,7 +133,8 @@ images/build.sh        # guest images for the tests, in rootless Podman
 ```
 
 - [`CLAUDE.md`](CLAUDE.md) has every command, the conventions and the working rules. It is written for the AI agents
-  that work on the repository, and it is the most complete guide for a human too.
+  that work on the repository, and it is the most complete guide for a human too (with the author's own machines and
+  hosts in it: the note above).
 - [docs/devenv.md](docs/devenv.md) describes the development environment, [docs/testing.md](docs/testing.md) the
   test layers and CI tiers, [docs/benchmarking.md](docs/benchmarking.md) the benchmarks and their rules, and
   [docs/images.md](docs/images.md) the guest images.
