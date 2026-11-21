@@ -8,6 +8,7 @@ import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { OverlayRecord } from './store.ts';
 import type { EntryView } from './usb-live.ts';
 import type { MachinesTab } from './areas/machines-nav.svelte.ts';
+import type { ConnectionSection, From } from './home-route.ts';
 import type { LockMode } from '../input.ts';
 import type { Mods } from './osk.ts';
 import type { View } from './areas/screen.svelte.ts';
@@ -70,6 +71,15 @@ export type Page = {
   oskKey(code: string, down: boolean, mods: Mods, repeat?: boolean): void;
   screenSize(): void;
   openMachines(tab?: MachinesTab, id?: string): void;
+  /**
+   * Connection `id`'s page on the Home page, one level under Connections, at `section` (Details by default), entered
+   * from `from` (Connections by default): its column's Back and Esc lead there.
+   */
+  openConnection(id: string, section?: ConnectionSection, from?: From): void;
+  /** A level's Back (and Esc): to where it was entered from. */
+  leaveContext(): void;
+  /** The level's connection is gone: Home leaves it for Connections (web/app/areas/home-levels.ts `gone`). */
+  contextGone(): void;
   closeMachines(): void;
   /** The demo store's page (web/app/DemosPage.svelte): opened (on the store shown last), Back, a demo chosen in it. */
   openDemos(route?: DemosRoute): void;

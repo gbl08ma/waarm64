@@ -16,7 +16,6 @@
   import MachinesPage from './MachinesPage.svelte';
   import MessageBar from './MessageBar.svelte';
   import NetWizard from './NetWizard.svelte';
-  import NetDetails from './NetDetails.svelte';
   import NameDialog from './NameDialog.svelte';
   import Osk from './Osk.svelte';
   import RamWindow from './RamWindow.svelte';
@@ -150,7 +149,6 @@
 {#if ramWindow.open && !intro.open}<RamWindow />{/if}
 <StatusBar {net} />
 <NetWizard {net} />
-<NetDetails {net} />
 <NameDialog {net} />
 <FolderWizard {folders} />
 <FoldersMount />

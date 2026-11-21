@@ -109,10 +109,9 @@ const net: PageNetwork = new PageNetwork({
   },
 });
 const network = new NetworkActions(machine, net);
-await network
-  .migrate()
-  .catch((e: unknown) => console.warn('the network settings could not be made into connections:', e));
-void net.refresh();
+await network.migrate().catch((e: unknown) => console.warn('the network settings could not be migrated:', e));
+// Read before the address opens Home, which may name one of them (`#home/connections/<id>`).
+await net.refresh().catch((e: unknown) => console.warn('waarm64: the connections could not be read:', e));
 const audio = new PageAudio();
 sound.follow(audio);
 const folders = new PageFolders({ store, me: () => machineTitle(machine) });
@@ -140,8 +139,9 @@ const messages = new Messages(machine, () => {
   // The guest's cursor (an image, or hidden by a graphical session) goes with the machine: the host's pointer is back over its screen.
   if (screen.cursor) screen.setCursor(undefined);
 });
-// The names agent at every load (titles kept: collect, renew, publish), and the notice of names in their last week.
-void import('./areas/names.svelte.ts').then((n) => n.startPageNames((m) => messages.notify(m)));
+// The names agent at every load (titles kept: collect, renew, publish), and the notice of names in their last week,
+// whose Domains action opens the Domains of the connection holding the first (Back leading to the machine's screen).
+void import('./areas/names.svelte.ts').then((n) => n.startPageNames(messages, net, () => page));
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
 const growActions = new GrowActions(messages, store, () => machine.stored?.record.id);
 const shownByAgent = agentShown(power, status);
@@ -201,6 +201,7 @@ const pageWindow: PageWindow = new PageWindow({
   machine,
   screen,
   terminal,
+  connections: () => net.connections,
   reloadStored: () => powerActions.reloadStored(),
   dropped: (file, handle) => disks.choose({ file, handle }),
   droppedFolder: (handle) => folderActions.dropped(handle),
@@ -294,6 +295,7 @@ const page: Page = {
     screen.scheduleSize();
   },
   openMachines: (tab, id) => pageWindow.openMachines(tab, id),
+  ...pageWindow.home.page(),
   closeMachines: () => pageWindow.closeMachines(),
   dismiss: () => messages.dismiss(),
   ...usbActions.page(),

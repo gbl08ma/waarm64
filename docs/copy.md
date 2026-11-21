@@ -105,7 +105,7 @@ rather than operated, by someone deciding whether to care. Its voice differs fro
 | **machine**, **virtual machine** | a virtual machine as the user keeps it: its settings and disks; "virtual machine" where it must be explicit | "VM" in copy, "computer" |
 | **guest** | the operating system running in a machine | "the OS" |
 | **connection** | a way onto a network kept in this browser (a tailnet, tailcat, this computer's helper, a room) and what goes with it: its settings, a room connection's key and so its name and address in the room. A machine has it attached; detached, it keeps all of that for the next machine | "this machine's key", "this machine's name in the room", "let members connect to this machine" where the connection holds it |
-| **domain**, **subdomain** | a name registered in a room (`<name>.<tag>.p2p.internal`, which guests usually reach as `<name>` alone), held by a room connection's key, and a label under it (`git.<name>…`): a term people can look up, which can't be taken for a connection's, an adapter's or the room's own name ([Register a domain…](ui:network:NetNames.name)) | "name", "this machine's name", "label" |
+| **domain**, **subdomain** | a name registered in a room (`<name>.<tag>.p2p.internal`, which guests usually reach as `<name>` alone), held by a room connection's key, and a label under it (`git.<name>…`): a term people can look up, which can't be taken for a connection's, an adapter's or the room's own name ([Register a domain…](ui:network:DomainsPane.register)) | "name", "this machine's name", "label" |
 | **member** | another room connection in the same room (whichever machine it's attached to) | "machine" for the other end |
 | **image**, **base image** | a disk's normally unchanging contents: a file, a URL, a copy stored in this browser; a blank disk's base image is all zeros | |
 | **overlay** | where a machine's writes to a disk go, over its base image; a disk can have several | "variant", "changes file" (that's an export) |
@@ -146,7 +146,7 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
   <name>{{name}}</name>", "Delete the overlay <name>{{name}}</name>?" (i18n.md "Markers"); the page draws them as
   names.
 - **The page's elements named in a sentence** (a button, a menu's item, a tab, a pane) are marked with their words as
-  the element says them: "use <ui>Edit connection…</ui> to paste it"; with their icon before them where they have
+  the element says them: "paste it in <ui>Settings</ui>"; with their icon before them where they have
   one: "on its <ui-network>Network</ui-network> tab or in the toolbar's <ui-network>Network</ui-network> menu", "on the
   <ui-home>Home</ui-home> page". Only the element's own words are marked ("the toolbar's", "menu", "tab" stay
   outside). The note on the clipboard sharing names the toolbar's clipboard menu with its icon after the words (its own
@@ -154,6 +154,15 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 - **Setup screens and wizards**: steps first, then the field they lead to. A choice the user makes is followed by
   numbered steps that end at its input, and a short note after only for consequences and warnings ("Keep the address
   to yourself, as it lets anyone use the connection."). No long explainer after a field.
+- **Explainers in a pane**: where a pane has room and a system needs its big picture before the user acts (a room's
+  domains: networking/names.md "What the user sees"), explain it there, before the dialog that asks. What the thing is
+  first, in the user's terms, and only then our name for it ("A domain is a short name of your choice, such as mybox,
+  that the room's members can use to reach this connection."); then numbered steps for what the user will go through,
+  each led by its action in emphasis ("*Choose a domain.* A domain belongs to whoever registered it first…"); then what to know before acting,
+  a short list of consequences. Outside services are named in passing, by what they are, not explained ("may contact
+  Nostr relays, OpenTimestamps servers, and Bitcoin block explorers"). A returning user, who has done it already, gets a
+  different explainer, collapsed under a summary ([How domains work](ui:network:DomainsHow.summary)): how to keep what
+  they have, what its states mean, who sees it.
 - **Lists in a sentence**: commas, with a serial comma ("qcow2, raw, or an installer or live ISO").
 - **Numbers and units**: digits, a space before the unit (4 GiB, 160 MiB); sizes as the page formats them
   (`{{size, bytes}}`).

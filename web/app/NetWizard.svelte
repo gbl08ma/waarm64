@@ -1,11 +1,12 @@
 <!--
   The Network wizard (docs/networking/adapters.md §3.2), a dialog opened by web/app/areas/network.ts `openWizard`: attach a connection
-  to a machine's adapter (one of the browser's, or a new one: New connection… first), make a new connection on its own,
-  or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay, a room's switches),
-  opened on it or from the pick step's Edit… (then Save and Back return to the pick step, Cancel closes).
+  to a machine's adapter (one of the browser's, or a new one: New connection… first), or make a new connection on its
+  own. On an adapter that has a connection it first asks which change is meant (NetChangeStep.svelte): editing that
+  connection closes the wizard for the connection's Settings on the Home page, Back there leading to where the wizard
+  was opened; attaching another goes on to the steps. A connection is edited on its page, not here.
   The shell: the session, the steps' navigation, Keep (a new connection is kept in this browser unless it's off:
   ephemeral, gone when the page closes), the error and the submit; each step is a component with its own form
-  (NetPickStep, NetKindStep, NetTailnetStep, NetTailcatStep, NetLocalStep, NetDemoStep, NetRoomPickStep, NetRoomStep;
+  (NetChangeStep, NetPickStep, NetKindStep, NetTailnetStep, NetTailcatStep, NetLocalStep, NetDemoStep, NetRoomPickStep, NetRoomStep;
   web/app/net-wizard.ts). The toolbar's Network menu and the Home page's Network tab and Connections open it; the
   page (web/app/areas/network-actions.ts) attaches and connects.
 -->
@@ -15,6 +16,7 @@
   import Check from './ui/Check.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
+  import NetChangeStep from './NetChangeStep.svelte';
   import NetKindStep from './NetKindStep.svelte';
   import NetDemoStep from './NetDemoStep.svelte';
   import NetLocalStep from './NetLocalStep.svelte';
@@ -25,9 +27,9 @@
   import NetTailnetStep from './NetTailnetStep.svelte';
   import { Actions } from './actions.svelte.ts';
   import type { Connection } from './connections.ts';
-  import { msg, t } from '../i18n.ts';
+  import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
-  import { EDIT_STEP, MAKING_STEPS, type Flow, type Opened, type Step, type StepApi } from './net-wizard.ts';
+  import { firstStep, MAKING_STEPS, stepBack, type Flow, type Opened, type Step, type StepApi } from './net-wizard.ts';
   import { network } from './areas/network.ts';
   import { page } from './page.ts';
 
@@ -39,14 +41,17 @@
   let opened = $state<Opened>({ mode: 'new' });
   let step = $state<Step>('kind');
   let keep = $state(true);
-  let editing = $state.raw<Connection>(); // raw: the record goes to the store whole (a deep proxy can't be cloned)
-  /** The edit was opened from the pick step (its Edit…): Save and Back return there. */
-  let editFromPick = $state(false);
   const runner = new Actions();
   const pickable = $derived(opened.mode === 'attach' && net.connections.length > 0);
   const here = $derived(opened.mode === 'attach' && !!opened.here);
+  /** The connection the adapter has now: the wizard asks first whether it's to be edited (the change step). */
+  const attached = $derived(
+    opened.mode === 'attach' && !opened.localURL ? net.connections.find((c) => c.id === opened.attached) : undefined,
+  );
+  const start = $derived({ pickable, changing: !!attached });
 
   // The steps (their components' exports).
+  let change = $state<StepApi>();
   let pick = $state<StepApi & { chosen: () => boolean }>();
   let kind = $state<StepApi>();
   let tailnet = $state<StepApi>();
@@ -56,6 +61,7 @@
   let roomPick = $state<StepApi>();
   let room = $state<StepApi>();
   const steps = $derived<Record<Step, StepApi | undefined>>({
+    change,
     pick,
     kind,
     tailscale: tailnet,
@@ -66,16 +72,12 @@
     roomGlobal: room,
     roomCreate: room,
     roomJoin: room,
-    roomEdit: room,
   });
   const api = (s: Step) => steps[s];
 
   const flow: Flow = {
     get opened() {
       return opened;
-    },
-    get editing() {
-      return editing;
     },
     get keep() {
       return keep;
@@ -84,26 +86,8 @@
       return here;
     },
     made: (c, key) => (opened.mode === 'attach' ? attach(c, key) : Promise.resolve(close())),
-    edited: async (c) => {
-      await page.netEdit(c);
-      if (editFromPick) backToPick();
-      else close();
-    },
-    edit: (c) => {
-      editFromPick = true;
-      editing = c;
-      const to = EDIT_STEP[c.kind];
-      api(to)?.begin(); // the step's form takes the connection's values
-      show(to);
-    },
     fail: (e) => runner.fail(e),
     go: (to) => show(to),
-    forget: async () => {
-      const now = editing && (await page.netNewAddress(editing));
-      if (!now) return false;
-      editing = now; // what Save writes back: the new key or identity, not the one the wizard opened with
-      return true;
-    },
   };
 
   $effect(() => network.wizard.handle(begin));
@@ -111,14 +95,9 @@
   function begin(o: Opened) {
     opened = o;
     keep = true;
-    editFromPick = false;
-    editing = o.mode === 'edit' ? net.connections.find((c) => c.id === o.connection) : undefined;
-    for (const s of [pick, kind, tailnet, tailcat, local, demo, roomPick, room]) s?.begin();
+    for (const s of [change, pick, kind, tailnet, tailcat, local, demo, roomPick, room]) s?.begin();
     wizard?.open();
-    if (editing) show(EDIT_STEP[editing.kind]);
-    else if (o.localURL)
-      show('local'); // the helper's pairing link opened the page
-    else show(pickable ? 'pick' : 'kind');
+    show(firstStep(o, start));
   }
 
   function show(to: Step) {
@@ -126,19 +105,15 @@
     runner.clear();
     api(to)?.enter();
   }
-  /** Ends an edit opened from the pick step: the step's form back to a new connection's, and the pick step shown. */
-  function backToPick() {
-    const from = step;
-    editing = undefined;
-    editFromPick = false;
-    api(from)?.begin();
-    show('pick');
-  }
   function goBack() {
-    if (editFromPick) backToPick();
-    else if (step === 'kind') show('pick');
-    else if (step === 'roomGlobal' || step === 'roomCreate' || step === 'roomJoin') show('roomPick');
-    else show('kind');
+    const to = stepBack(step, start);
+    if (to) show(to);
+  }
+  /** Edits the adapter's connection: on its page's Settings, whose Back leads to where the wizard was opened. */
+  function editAttached() {
+    const c = attached;
+    close();
+    if (c) page.openConnection(c.id, 'settings', opened.from);
   }
   function close() {
     wizard?.close();
@@ -159,6 +134,7 @@
   }
 
   const TITLES: Record<Step, () => string> = {
+    change: () => t('network:NetWizard.title.change'),
     pick: () => t('network:NetWizard.title.pick', { adapter: (opened.adapter ?? 0) + 1 }),
     kind: () => t('network:NetWizard.title.kind'),
     tailscale: () => t('network:NetWizard.title.tailnet'),
@@ -168,22 +144,29 @@
     roomGlobal: () => t('network:NetWizard.title.roomGlobal'),
     roomCreate: () => t('network:NetWizard.title.roomCreate'),
     roomJoin: () => t('network:NetWizard.title.roomJoin'),
-    roomEdit: () => t('network:NetWizard.title.tailcat'),
     tailcat: () => t('network:NetWizard.title.tailcat'),
   };
-  const title = $derived(editing ? msg('network:NetWizard.title.edit', { name: editing.name }) : TITLES[step]());
+  const title = $derived(TITLES[step]());
   function submitLabelOf() {
-    if (editing) return t('network:NetWizard.save');
     if (opened.mode === 'new') return t('network:NetWizard.create');
     return here ? t('network:NetWizard.connect') : t('network:NetWizard.attach');
   }
   const submitLabel = $derived(submitLabelOf());
   /** The steps that only choose have no Save; the pick step's shows once a connection is chosen. */
-  const noSubmit = $derived(step === 'kind' || step === 'roomPick' || (step === 'pick' && !pick?.chosen()));
-  const noBack = $derived((!!editing && !editFromPick) || step === 'pick' || (step === 'kind' && !pickable));
+  const noSubmit = $derived(
+    step === 'change' || step === 'kind' || step === 'roomPick' || (step === 'pick' && !pick?.chosen()),
+  );
+  const noBack = $derived(!stepBack(step, start));
 </script>
 
 <Modal id="net-wizard" bodyId="net-form" bind:this={wizard} {title} auto={false} onsubmit={submit}>
+  <NetChangeStep
+    bind:this={change}
+    connection={attached}
+    active={step === 'change'}
+    onedit={editAttached}
+    onother={() => show(pickable ? 'pick' : 'kind')}
+  />
   <NetPickStep bind:this={pick} {flow} {net} active={step === 'pick'} onsubmit={() => submit()} />
   <NetKindStep bind:this={kind} {flow} active={step === 'kind'} />
   <NetRoomPickStep bind:this={roomPick} {flow} active={step === 'roomPick'} />
@@ -192,7 +175,7 @@
   <NetDemoStep bind:this={demo} {flow} active={step === 'demo'} />
   <NetTailnetStep bind:this={tailnet} {flow} active={step === 'tailscale'} />
   <NetTailcatStep bind:this={tailcat} {flow} active={step === 'tailcat'} />
-  {#if !editing && MAKING_STEPS.has(step)}
+  {#if MAKING_STEPS.has(step)}
     <Check id="net-keep" bind:checked={keep}>
       {t('network:NetWizard.keep')}
       {#snippet note()}

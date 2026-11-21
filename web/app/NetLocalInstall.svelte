@@ -1,7 +1,7 @@
 <!--
   How to install and run the local helper (waarm64-net, docs/networking/local-helper.md), folded under a line with its version:
   the platform to install it on (this browser's first, else Linux x86-64), its note, and the lines to type. The Network
-  wizard's local step (NetLocalStep.svelte) and a local connection's details (NetDetails.svelte). `open`: unfolded at
+  wizard's local step (NetLocalStep.svelte) and a local connection's Details (ConnectionDetails.svelte). `open`: unfolded at
   first; `prefix` names its elements (tests' handles): `<prefix>-install` (the Disclosure), `-target`, `-lines`.
 -->
 <script lang="ts">

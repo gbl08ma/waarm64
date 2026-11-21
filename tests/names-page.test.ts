@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { t, text } from '../web/i18n.ts';
 import type { NameCheck, TitleView } from '../web/names.ts';
-import { canRegister, checkWords, machineNames, NameForm, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleState, titlesOf, zonePoints } from '../web/app/names-view.ts';
-import { MsgError } from '../web/i18n.ts';
+import { canRegister, checkWords, domainsLink, hasDomainsLink, heldDomains, endedWords, isLive, NameForm, needsAttention, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleDates, titleState, titleTone, titlesOf, upkeepLine, zonePoints } from '../web/app/names-view.ts';
+import { msg, MsgError } from '../web/i18n.ts';
 
 const NOW = 1_800_000_000_000;
 const v = (o: Partial<TitleView>): TitleView => ({ identityKey: 'k', room: 'r', link: 'l', name: 'mybox', state: 'active', points: [], ...o });
@@ -131,10 +131,7 @@ test('the dialog: an answer to a name typed over, or a dialog closed, is dropped
   assert.deepEqual(asked.registered, [], 'closed: nothing registered');
 });
 
-test('the Home page\'s line: the live names with their dates; the details\' line by role', () => {
-  const until = 1_800_000_000;
-  const lines = machineNames([v({ keptUntil: until }), v({ name: 'new', state: 'reserved' }), v({ name: 'gone', state: 'lapsed', keptUntil: 1 }), v({ name: 'lost', state: 'lost' })]).map(text);
-  assert.deepEqual(lines, [t('network:names-view.machine.until', { name: 'mybox', when: new Date(until * 1000) }), t('network:names-view.machine.new', { name: 'new' })]);
+test('the registry\'s line by role', () => {
   assert.equal(text(namesLine({ serving: true, names: 3, servers: 2 })), t('network:names-view.line.serving', { count: 3, servers: 2 }));
   assert.equal(text(namesLine({ serving: false, names: 1, servers: 2 })), t('network:names-view.line.member', { count: 1, servers: 2 }));
 });
@@ -179,20 +176,19 @@ test('Save\'s rows as a zone\'s points: a subdomain the module would refuse, or 
 test('wording: the dialog\'s two notices (decision 6: discoverable, and the visits; decision 13: every 2 weeks)', () => {
   assert.equal(t('network:NameDialog.notice.find'), 'Members of this room who know the domain can reach this connection\'s address and see when it\'s online. While this connection is connected, this web app helps other members look domains up.');
   assert.equal(t('network:NameDialog.notice.visit'), 'Open this web app at least every 2 weeks to keep the domain.');
-  assert.equal(t('network:NetNames.name'), 'Register a domain…');
   assert.equal(t('network:NameDialog.register'), 'Register');
 });
 
 test('wording: a domain, not a name (the user, 2026-11-18: a term to look up, held by the connection, not the machine)', () => {
   assert.equal(t('network:NameDialog.full', { full: 'mybox.abcdefgh.p2p.internal', name: 'mybox' }), 'Guests in this room will reach it as mybox.abcdefgh.p2p.internal, and usually as mybox alone.');
   assert.equal(t('network:NameDialog.suffix', { domain: 'abcdefgh.p2p.internal' }), 'A domain in this room ends in .abcdefgh.p2p.internal, which guests can usually leave out.');
-  assert.equal(t('network:NameEntry.addLabel'), 'Add a subdomain');
-  assert.equal(t('network:NameEntry.pointHere'), 'Point all at this connection');
+  assert.equal(t('network:DomainCard.addLabel'), 'Add a subdomain');
+  assert.equal(t('network:DomainCard.pointHere'), 'Point all at this connection');
 });
 
 test('wording: the adapter\'s states as the spec words them', () => {
   assert.equal(t('network:names-view.preparing'), 'Preparing');
-  assert.equal(t('network:names-view.reserved', { count: 3 }), 'Reserved, public in about 3 hours; it already works on this machine.');
+  assert.equal(t('network:names-view.reserved', { count: 3 }), 'Reserved, public in about 3 hours; it already works in machines that use this connection.');
   assert.match(t('network:names-view.active', { when: new Date(NOW) }), /^Active, kept until about .+ unless you visit$/);
 });
 
@@ -212,4 +208,86 @@ test('a connection\'s names: by its key and room, whatever link it was registere
   assert.deepEqual(titlesOf(titles, [], { identityKey: 'k', link: b }).map((x) => x.name), ['one'], 'another link to the same room');
   const making = [{ identityKey: 'k', link: a, name: 'new' }];
   assert.deepEqual(titlesOf(titles, making, { identityKey: 'k', link: b }).map((x) => [x.name, x.state]), [['new', 'preparing'], ['one', 'active']]);
+});
+
+const DAY_S = 86400;
+const nowS = NOW / 1000;
+
+test('a domain\'s light: on, on its way, needing a renewal, gone or taken; live while held', () => {
+  const tones = { active: 'ok', preparing: 'busy', reserved: 'busy', grace: 'warn', lapsed: 'off', released: 'off', lost: 'bad' } as const;
+  for (const [state, tone] of Object.entries(tones)) {
+    assert.equal(titleTone(v({ state: state as keyof typeof tones })), tone, state);
+    assert.equal(isLive(v({ state: state as keyof typeof tones })), ['active', 'preparing', 'reserved', 'grace'].includes(state), state);
+  }
+});
+
+test('a card\'s dates where the title has them, and what an end means', () => {
+  const d = titleDates(v({ claimedAt: nowS - 20 * DAY_S, renewAt: nowS - DAY_S, keptUntil: nowS + 10 * DAY_S }));
+  assert.deepEqual(d.map((x) => x.key), ['claimed', 'renew', 'until']);
+  assert.equal(text(d[0].m), t('network:names-view.date.claimed', { when: new Date((nowS - 20 * DAY_S) * 1000) }));
+  assert.equal(text(d[1].title!), t('network:names-view.date.renew.title'), 'the next renewal has its tooltip');
+  assert.equal(text(d[2].m), t('network:names-view.date.until', { when: new Date((nowS + 10 * DAY_S) * 1000) }));
+  assert.deepEqual(titleDates(v({ state: 'preparing' })), [], 'none before its claim is made');
+  assert.equal(text(endedWords(v({ state: 'lapsed' }))!), t('network:names-view.ended.lapsed'));
+  assert.equal(text(endedWords(v({ state: 'released' }))!), t('network:names-view.ended.released'));
+  assert.equal(text(endedWords(v({ state: 'lost' }))!), t('network:names-view.ended.lost'));
+  for (const state of ['active', 'grace', 'reserved', 'preparing'] as const) assert.equal(endedWords(v({ state })), undefined, state);
+});
+
+test('the upkeep line: by the earliest date, the last week and the grace named in the warning tone, none when nothing is live', () => {
+  const later = nowS + 20 * DAY_S;
+  const sooner = nowS + 10 * DAY_S;
+  const one = upkeepLine([v({ keptUntil: later })], NOW)!;
+  assert.deepEqual([text(one.m), one.warn], [t('network:names-view.upkeep', { when: new Date(later * 1000), count: 1 }), false]);
+  const two = upkeepLine([v({ keptUntil: later }), v({ name: 'blog', keptUntil: sooner }), v({ name: 'new', state: 'reserved' }), v({ name: 'gone', state: 'lapsed', keptUntil: nowS - 40 * DAY_S })], NOW)!;
+  assert.deepEqual([text(two.m), two.warn], [t('network:names-view.upkeep', { when: new Date(sooner * 1000), count: 3 }), false], 'the earliest date of those live; a lapsed one left out');
+  const soon = upkeepLine([v({ keptUntil: nowS + 3 * DAY_S }), v({ name: 'blog', keptUntil: later })], NOW)!;
+  assert.deepEqual([text(soon.m), soon.warn], [t('network:names-view.upkeep.soon', { names: ['mybox'], count: 1 }), true], 'its last week');
+  const grace = upkeepLine([v({ state: 'grace', keptUntil: nowS - DAY_S }), v({ name: 'blog', keptUntil: nowS + DAY_S })], NOW)!;
+  assert.deepEqual([text(grace.m), grace.warn], [t('network:names-view.upkeep.soon', { names: ['mybox', 'blog'], count: 2 }), true], 'the grace and the last week together');
+  assert.equal(upkeepLine([v({ state: 'released' }), v({ state: 'lost' }), v({ state: 'lapsed' })], NOW), undefined, 'none live: no line');
+  assert.equal(upkeepLine([], NOW), undefined);
+  assert.equal(upkeepLine([v({ state: 'preparing' })], NOW), undefined, 'no date yet: no line');
+});
+
+test('the status link: Register a domain… with none, how many, and how many need attention in the warning tone', () => {
+  const said = (views: TitleView[]) => { const l = domainsLink(views, NOW); return [text(l.m), l.warn]; };
+  assert.deepEqual(said([]), [t('network:DomainsPane.register'), false]);
+  assert.deepEqual(said([v({ state: 'released' }), v({ state: 'lapsed' })]), [t('network:DomainsPane.register'), false], 'none held');
+  const held = (count: number) => msg('network:names-view.link.held', { count });
+  assert.deepEqual(said([v({ keptUntil: nowS + 20 * DAY_S })]), [t('network:names-view.link.held', { count: 1 }), false]);
+  assert.deepEqual(said([v({ keptUntil: nowS + 20 * DAY_S }), v({ name: 'b', state: 'reserved' })]), [t('network:names-view.link.held', { count: 2 }), false]);
+  assert.deepEqual(said([v({ keptUntil: nowS + 2 * DAY_S }), v({ name: 'b', state: 'reserved' })]), [text(msg('network:names-view.link.attention', { held: held(2), count: 1 })), true], 'its last week');
+  assert.deepEqual(said([v({ state: 'grace' }), v({ name: 'b', state: 'lost' }), v({ name: 'c', state: 'released' })]), [text(msg('network:names-view.link.attention', { held: held(2), count: 2 })), true], 'the grace and a lost one; one let go not counted');
+  assert.equal(needsAttention(v({ keptUntil: nowS + 8 * DAY_S }), NOW), false);
+  assert.equal(needsAttention(v({ keptUntil: nowS + 6 * DAY_S }), NOW), true);
+});
+
+test("the domains held, as the link and the column's count both say them: live and lost", () => {
+  const all = (['preparing', 'reserved', 'active', 'grace', 'lapsed', 'released', 'lost'] as const).map((state) => v({ name: state, state }));
+  assert.deepEqual(heldDomains(all).map((x) => x.name), ['preparing', 'reserved', 'active', 'grace', 'lost']);
+  assert.equal(text(domainsLink(all, NOW).m).startsWith(t('network:names-view.link.held', { count: heldDomains(all).length })), true, 'the link counts the same');
+});
+
+test('which connections have a domains link: a room one without a key of its own (an ephemeral one sharing a stored key too)', () => {
+  assert.equal(hasDomainsLink({ room: { identityKey: 'k' } }), true);
+  assert.equal(hasDomainsLink({ room: { identityKey: 'k' } }), true, "an ephemeral connection on a stored connection's key (no identity in its record)");
+  assert.equal(hasDomainsLink({ room: { identityKey: 'k', identity: { key: 'ab' } } }), false, 'a key of its own');
+  assert.equal(hasDomainsLink({}), false, 'not a room');
+});
+
+test('wording: the upkeep line, the dates, the link (the kickoff\'s words)', () => {
+  const when = new Date(NOW);
+  assert.match(t('network:names-view.upkeep', { when, count: 1 }), /^Reopen this web app by about .+ to keep this domain\.$/);
+  assert.match(t('network:names-view.upkeep', { when, count: 2 }), /^Reopen this web app by about .+ to keep these domains\.$/);
+  assert.equal(t('network:names-view.upkeep.soon', { names: ['mybox'], count: 1 }), 'mybox needs renewing. Leave this web app open for a few hours to keep it.');
+  assert.equal(t('network:names-view.upkeep.soon', { names: ['mybox', 'blog'], count: 2 }), 'mybox, blog need renewing. Leave this web app open for a few hours to keep them.');
+  assert.match(t('network:names-view.date.claimed', { when }), /^Registered /);
+  assert.match(t('network:names-view.date.renew', { when }), /^Next renewal from /);
+  assert.match(t('network:names-view.date.until', { when }), /^Works until about /);
+  assert.equal(t('network:DomainsPane.register'), 'Register a domain…');
+  assert.equal(t('network:names-view.link.held', { count: 1 }), '1 domain registered');
+  assert.equal(t('network:names-view.link.held', { count: 3 }), '3 domains registered');
+  assert.equal(text(msg('network:names-view.link.attention', { held: msg('network:names-view.link.held', { count: 1 }), count: 1 })), '1 domain registered, 1 needs attention');
+  assert.equal(text(msg('network:names-view.link.attention', { held: msg('network:names-view.link.held', { count: 3 }), count: 2 })), '3 domains registered, 2 need attention');
 });

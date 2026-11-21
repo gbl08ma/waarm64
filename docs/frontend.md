@@ -26,14 +26,14 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts` (`shape-diff.ts`: what differs between two shapes, in words), `web/app/store.ts` (`store-backends.ts`: the records and files in memory, IndexedDB and OPFS) | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/merge.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Home page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/MachinesPage.svelte`, `MachinesNav.svelte` (`NewMachine`: its New machine dialog), `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Home page (below, "The Home page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
+| `web/app/MachinesPage.svelte`, `HomeColumn.svelte` (the left column by level: `MachinesNav.svelte` at the root, with `NewMachine`, its New machine dialog; `ConnectionNav.svelte` in a connection's context; `HomeBack.svelte`, Back), `home-route.ts` (the levels' address and Back, DOM-free), `home-level.ts` (the moves between levels), `areas/home-levels.ts`, `ConnectionPage.svelte` (`ConnectionDetails` and `ConnectionRoom`; `ConnectionSettings`, `ConnectionTailcatSettings`, `ConnectionRoomSettings`; `DomainsPane`), `ConnectionBackup.svelte`, `connection-users.ts`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Home page (below, "The Home page"): the page that composes, its levels, its list, a connection's page (its Details, Settings and Domains, the backup), a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
 | `web/app/actions.svelte.ts`, `ErrorWords.svelte`, `file-pickers.ts`, `FilePickers.svelte` | the components' action runner (busy, the error as the page shows it) and its error's view; the page's hidden file inputs and what opens them (below, "The page's code") |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/networking/adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts` (`usb-problems.ts`: the device worker's problems in words, with the host's remedies), `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
-| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetDetails.svelte` (an adapter's details), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts`, `ConnectionEditButton.svelte` (a connection's Edit…: Connections and the wizard's pick step) | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
+| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts`, a connection's page on the Home page (`Connection*.svelte`; `connection-settings.ts`: its Settings' draft and checks), a room's domains (`DomainsPane.svelte`, `DomainsIntro.svelte`, `DomainsHow.svelte`, `DomainCard.svelte`, `NameDialog.svelte`, `DomainsLink.svelte`; `areas/names.svelte.ts`, `names-view.ts`: their state and words) | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -489,7 +489,8 @@ again, with its actions, when it closes.
 The page's side of [machines.md](machines.md). `MachinesPage.svelte` composes it: it reads the records, runs the
 panes' actions and holds the machine being edited (`machine-edit.svelte.ts` `MachineEdit`: the record, the draft the tabs
 edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab), and shows the list
-(`MachinesNav.svelte`; the other panes' ids in `machines-panes.ts`) and the chosen pane: a machine's
+(`MachinesNav.svelte`; the other panes' ids in `machines-panes.ts`) and the chosen pane, or a connection's page one
+level down (below, "Levels"): a machine's
 (`MachinePane.svelte`: its head and a component per tab, `SettingsTab`, `Disks`, `NetworkTab`, `UsbTab`, `FoldersTab`,
 `Snapshots`), the transient machine's (`PagePane.svelte`), `DisksPane`, `FoldersPane`, `ConnectionsPane`,
 `PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
@@ -497,7 +498,7 @@ called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav
 theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
 address opens it, so a reload keeps it, and the older `#machines` still does): the toolbar leads back (below; or a view button), and,
 while a machine is on the page (a stored one, or a transient one with its disk: `current.loaded`), so do
-**[Back to the machine](ui:machines:MachinesNav.back)** at the foot of the left column and Esc (as it closes a dialog;
+**[Back to the machine](ui:machines:MachinesNav.back)**, the left column's first entry, and Esc (as it closes a dialog;
 not from a dialog, an open menu or a field being typed in). It has no bar of its own: what it's doing while an action runs is said at the end of its bottom bar (`StorageBar`'s `busy`). Its heading,
 **[Home](ui:machines:MachinesPage.heading)**, is for a screen reader alone (an `h2`, the toolbar's `h1` above it): it
 names the left column (a `nav`), and the list's heading and each pane's title (`h3`) are under it. The left
@@ -605,6 +606,87 @@ take {{size}}.](ui:machine:grow-actions.grown), `grownWhole` for a disk without 
 left), or a headline (`partOnly`: the partition but not its filesystem; `notGrown`) with why as its cause and what the
 user can do in the guest (`notMounted`, `unsupported`, `stacked`, `notLast`, `badTable`; `failed`: tried again at the
 next start, `failedAgain`: not again).
+
+**Levels.** Home shows one level at a time: its **root** (the column above and its panes) or a **context** one level
+down, which replaces all of the column's entries and the pane with its own; leaving restores them. The one context now
+is **a connection's page**, under Connections (`machinesNav`'s context, `{ kind: 'connection', id, section, from }`:
+web/app/areas/machines-nav.svelte.ts; its logic DOM-free in `home-route.ts`). Entering a context leaves the pane
+chosen at the root as it was (a machine's, with its unsaved draft), so Back to anywhere but Connections finds it so.
+**Back is the column's first entry at every level** (`HomeBack.svelte`): at the root, Back to the machine (above); in a
+context, back to where the user came from (`from`, not in the address): [Back to Connections](ui:machines:ConnectionNav.back.connections)
+(from a card's [Details](ui:machines:ConnectionsPane.connection.details), an address or a reload, where the card's
+Details takes the focus back), "Back to <machine>" (`ConnectionNav.back.machine`, from a machine's Network tab, or
+from the toolbar while Home showed that machine: its pane again at the tab it was on, its title focused), or
+[Back to the machine](ui:machines:MachinesNav.back) (from the toolbar's Network menu while the screen showed: Home
+closes and the screen is back; also from the tab's link to a room's Domains, and from the wizard's
+[Edit {{name}}](ui:network:NetChangeStep.edit), Back leading to where the wizard was opened). The toolbar's ways in
+(Details…, its Domains link, the wizard's Edit) and the message bar's Domains take their origin from what shows
+(`machinesNav.origin()`: the screen; in Home, a machine's pane at its tab, else Connections). A machine deleted since,
+or none on the page any more, leads to Connections (`backOf`). Esc does what Back does, under the conditions above
+(in a context, with or without a machine on the page), once per move: while a move between levels shows
+(`machinesNav.moving`, until the outgoing level's transition ends; the outgoing level is `inert`, and the column and
+the pane take no clicks), or while a `history.back()` Back started hasn't reached its `popstate`, Back and Esc pressed
+again are ignored. The toolbar's Home and the wordmark still lead to the machine from any level, and Home opens at its
+root next time, on the pane chosen there. Going down, the column's entries and the pane leave to the left and the new ones come
+from the right; going up, the reverse (`home-level.ts`: 150 ms, `cubicOut`, a plain fade under
+`prefers-reduced-motion`; the column (`HomeColumn.svelte`) and the pane's slot are keyed by the level, the outgoing and
+incoming blocks stacked in one grid cell); choosing between panes or sections of one level is instant. Entering, the
+pane's title takes the focus (`Pane`'s `takeFocus`). **The address says the level** (`areas/home-levels.ts`):
+`#home`, or `#home/connections/<id>` (Details), `…/settings`, `…/domains`; a reload, a link or a change of fragment
+lands there (the older `#machines` is the root); an id that is gone (`shownContext`, also when the connection is
+deleted while its page shows) opens Connections, and the level is left (`machinesNav.dangling` → `page.contextGone`:
+the address `#home` in place, Connections' title focused), so a connection with that id listed later is never entered
+unasked. `page.openConnection(id, section, from)` enters one. **Going down a
+level is an entry of the browser's history** (`pushState`, from a card, a machine's tab, the toolbar or the wizard's
+Edit), with where it was entered from in the entry's state (`history.state.home`: `{ from, pushed }`, `homeState`), so
+the browser's Back leaves the level for that place and Forward enters it again from there (`HomeLevels.follow`, on
+`popstate`, with the transitions' direction); moving between a level's sections, and Home opened or closed, write the
+address in place, as moving between the root's panes does. The column's Back and Esc on a pushed level go back in the
+history (no entry is left over to come back to by mistake); on a level the address opened (a reload, a pasted address:
+its state dropped, entered from Connections) they write in place, as before. A link out of a pushed level to a pane
+(Details' machine link) pushes `#home`, so the browser's Back returns to the level.
+
+**A connection's page** (`ConnectionNav.svelte` the column, `ConnectionPage.svelte` the pane): Back, the connection's
+name with its line (its kind, and who has it now: the card's words), and its sections,
+**[Details](ui:machines:ConnectionNav.details)**, **[Settings](ui:machines:ConnectionNav.settings)** and, for a room
+connection, **[Domains](ui:machines:ConnectionNav.domains)**, and under a rule the connection's commands: a room's
+[Back up key and domains…](ui:machines:ConnectionNav.backup) (a dialog with the connection's key and its domains to
+copy: networking/names.md "What the user sees"), a tailcat server's
+[New address](ui:machines:ConnectionNav.newAddress), [Log out](ui:machines:ConnectionNav.logout) where a node is kept
+(it asks first), and [Delete](ui:machines:ConnectionsPane.connection.delete), after which the page leaves the level
+for Connections (its title focused). The Domains entry counts the domains held as the link does (live or lost:
+`names-view.ts` `heldDomains`). A pane's own primary action stays in its head (Domains' Register a domain…). **Details** (`ConnectionDetails.svelte`, `ConnectionRoom.svelte` a room's part) says first which
+machines have it attached, each a link to that machine's Network tab, by its id (T.svelte gives a snippet each piece's
+place among its marker's: the `n`th name is the `n`th machine) ([Attached to {{machines}}.](ui:machines:ConnectionDetails.machines)
+or [Not attached to any machine.](ui:machines:ConnectionDetails.machines.none)), and where connections are attached;
+then what the browser keeps for it, always (a tailnet's hostname and control server, the local helper's install lines,
+the demo network's server, a room's link and who may connect, a room's own name in the room, from the names agent's
+`member`, connected or not), and, while it is connected on this page (`net.runs`),
+the adapter's live view (below, "Network": the adapter's line, the guest's address, tailcat's address or key, the demo
+network's page in the guest, a room's warnings and registry line); while it isn't, one
+line says why: it isn't connected in this tab (`ConnectionDetails.notHere`), or another tab has it
+(`ConnectionDetails.otherTab`). **Settings** (`ConnectionSettings.svelte`; a tailcat's part
+`ConnectionTailcatSettings.svelte`, a room's `ConnectionRoomSettings.svelte`; the form's logic DOM-free in
+`connection-settings.ts`) is what can change without a new node: the connection's
+[Name](ui:machines:ConnectionSettings.name), a tailnet's hostname (its control server shown, not editable), tailcat's
+exit address, whether it serves, its relay and who is let in, the local helper's link, the demo network's server, and
+a room's two switches with, under Advanced, its key to copy (followed by its domains; a stored connection's is made
+when its page first shows it, by `member`) and
+[New name](ui:network:ConnectionRoomSettings.newName), a new key at once (after asking). Save and Revert are a
+machine's (`SaveRow.svelte`): Save checks what was typed with the wizard's own messages (the Home page's banner says
+what's wrong), writes the connection through `page.netEdit` (an adapter here that runs it connects again with it, so
+the change applies at once) or renames it alone through `page.netRename`, from the record as it is then (a new key
+since the page was read stays). The draft follows the stored connection unless it's being edited; leaving the section
+drops it, as leaving a machine's Settings does. **Domains** (`DomainsPane.svelte`, a room connection's only; its
+entry in the column shows how many live domains it holds) is the connection's domains, registered, watched and
+managed there whether or not the connection is connected, with the system explained: networking/names.md "What the
+user sees". An ephemeral connection has a page as the stored ones do; with a key of its own, its Domains say why it
+can't hold a domain and offer nothing else.
+
+**Connections' cards** (`ConnectionsPane.svelte`) each have the name to rename, a line (its kind, who has it now: in use
+in this tab, in another tab, or not in use, and the machines it is attached to; a room connection's ending with the
+link to its Domains, `DomainsLink.svelte`), and two buttons: [Details](ui:machines:ConnectionsPane.connection.details),
+which enters the connection's page, and Delete. Everything else a connection offers is on its page.
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **[Reset disk…](ui:machines:PagePane.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
@@ -2200,29 +2282,38 @@ with the connection's name beside it (under it where it doesn't fit), the status
 [Log in…](ui:network:NetAdapter.login), [Internet through](ui:network:NetAdapter.exitNode) (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
 peers route subnets), [This machine's tailcat address](ui:network:NetAdapter.served) (when it lets clients
 in), [This machine's key](ui:network:NetAdapter.key) (tailcat through a server), [This machine's name in the
-room](ui:network:NetAdapter.room.name) and [The room's link](ui:network:NetAdapter.room.link) (a room's), **[Connect](ui:network:NetAdapter.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:NetAdapter.retry)** (a connection that failed: disconnect and
+room](ui:network:NetAdapter.room.name) and [The room's link](ui:network:NetAdapter.room.link) (a room's), a stored room
+connection's one link to its domains (`DomainsLink.svelte`: [Register a domain…](ui:network:DomainsPane.register) or
+how many it holds; it leaves the screen for the connection's Domains on the Home page), **[Connect](ui:network:NetAdapter.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:NetAdapter.retry)** (a connection that failed: disconnect and
 connect again), **[Disconnect](ui:network:NetAdapter.disconnect)**, [Log out](ui:network:NetAdapter.logout), [Connect…](ui:network:NetAdapter.setup) or
 [Change connection…](ui:network:NetAdapter.change), and [Details…](ui:network:NetAdapter.details). The values to
 copy are `ui/ValueField.svelte`s: Copy (a check for a moment once copied) and, for a secret, Show and Hide are icons
 inside the field, after its text; where the clipboard refuses, the value is shown and selected. The wizard's pasted
 secrets (a tailcat address, the helper's link, a room's link or key, an auth key) are the same fields, with Show alone.
-[Details…](ui:network:NetAdapter.details) opens the adapter's details (`NetDetails.svelte`, a dialog that follows the adapter live), with what the
-menu leaves out to stay short: the guest's address (IPv4, or a room's IPv6); a tailnet's hostname and control server; tailcat's address
-and the commands that use it, or the machine's key and the line that lets only it through the server
-(`tailcat serve --allow=<key> exit-node`, to copy); the local helper's install lines (`NetLocalInstall.svelte`, the
-wizard's too); a room's name, link and who may connect; and [Edit connection…](ui:network:NetDetails.edit), the
-wizard on the connection. Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
-the submit; a component per step with its own form, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
-`NetLocalStep`, `NetDemoStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
+[Details…](ui:network:NetAdapter.details) leaves the machine's screen for the connection's Details on the Home page
+(above, "The Home page": a page of its own, no dialog; the machine runs on behind it, and its Back and Esc return to the
+screen), with what the menu leaves out to stay short: the guest's address (IPv4, or a room's IPv6); a tailnet's
+hostname and control server; tailcat's address and the commands that use it, or the machine's key and the line that
+lets only it through the server (`tailcat serve --allow=<key> exit-node`, to copy); the local helper's install lines
+(`NetLocalInstall.svelte`, the wizard's too); and a room's name, link and who may connect. What can be changed is in the
+page's Settings (above). Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
+the submit; a component per step with its own form, `NetChangeStep`, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
+`NetLocalStep`, `NetDemoStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create and join; `net-wizard.ts` the steps' API and
+their way through, `firstStep` and `stepBack`). The wizard makes and attaches connections; it doesn't edit them. **On an
+adapter that already has a connection it first asks which change is meant** ([Change connection](ui:network:NetWizard.title.change),
+`NetChangeStep.svelte`, two choices): [Edit {{name}}](ui:network:NetChangeStep.edit) closes the wizard and opens that
+connection's Settings on the Home page, whose Back leads to where the wizard was opened (the machine's Network tab, or
+the machine's screen for the toolbar's menu: `Opened`'s `attached` and `from`); [Attach a different connection](ui:network:NetChangeStep.other)
+goes on to the steps, and their first Back returns to the choice. An adapter with no connection (and the local
+helper's pairing link) opens on the steps at once: first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetPickStep.pick.new)
-(without connections it starts at the next step), each with the Connections pane's [Edit…](ui:network:ConnectionEditButton.edit)
-(`ConnectionEditButton.svelte`, inside its choice's frame: `ui/Choice.svelte`'s `after`), which opens the connection's
-editor in the wizard's place (Save and Back return to the choice, that connection chosen; Cancel closes); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal), [The demo network](ui:network:NetKindStep.kind.pickDemo) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
+(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal), [The demo network](ui:network:NetKindStep.kind.pickDemo) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
 settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
-the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Home
-page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: rename, Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
+the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), and makes one on its own (the Home
+page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: each card renames, opens the connection's page with Details (above: its
+Settings, Domains and commands are there), and Delete, which logs a kept node out and names the machines that lose it). The live
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
@@ -2232,8 +2323,8 @@ and the guest's default way out (below).
   link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
   the link (or its `ws://` part) into that step does the same. A new connection's step is numbered steps that end at
   the link's field: run waarm64-net, with the install lines for this browser's platform under it (`web/local-release.ts`:
-  client hints, a choice of the six; the release's version and SHA-256s, v0.3.0's now); then paste the link; a short note after (the link is a secret, allow local network access). Editing shows the
-  field alone. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
+  client hints, a choice of the six; the release's version and SHA-256s, v0.3.0's now); then paste the link; a short note after (the link is a secret, allow local network access). The connection's
+  Settings show the link's field, the install lines folded under it. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
   which puts the card on a frame port, the page's gateway bypassed (web/gateway.ts `FramePath`: the link flaps, so
   the guest asks the helper for a lease at once), and moves its frames to the helper's WebSocket, those before a
   timer's turn in one message. The helper's DHCP gives the lease, routes and resolvers, so the adapter is the guest's
@@ -2252,7 +2343,7 @@ and the guest's default way out (below).
   control messages: the menu's line says connected (the guest's address), idle, the allowance used up, or why it waits
   and when it tries again; under it the day's traffic of its limit, the destinations refused (a count, the last few
   names) and a restart announced. The message bar says 80 % of the day's allowance, the allowance spent or back, a
-  restart announced and a connection lost. The details give the server's URL and `curl http://<gateway>/status`.
+  restart announced and a connection lost. The connection's Details give the server's URL and `curl http://<gateway>/status`.
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,
@@ -2313,11 +2404,11 @@ and the guest's default way out (below).
     `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
     through the exit node). What the guest reaches is TCP and UDP to wherever that computer
     reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out. Connected, the menu shows
-    [This machine's key](ui:network:NetAdapter.key) (`nodekey:…`, to copy) and its details the command that lets only it
+    [This machine's key](ui:network:NetAdapter.key) (`nodekey:…`, to copy) and the connection's Details the command that lets only it
     use that computer (`tailcat serve --allow=<key> exit-node`): the connection's identity is its node, going online alone too,
     so a kept connection's key is the same at every connect (an ephemeral one's, until the page closes).
   - [Let tailcat clients in to this machine](ui:network:NetTailcatStep.tailcat.serve): the machine is a tailcat server. The menu
-    shows **its own tailcat address** (a hidden field to copy), and its details how to use it:
+    shows **its own tailcat address** (a hidden field to copy), and the connection's Details how to use it:
     on another computer, `tailcat ssh <address>` logs in to the guest's sshd (tailcat runs `ssh`
     with `tailcat <address> 22` as its ProxyCommand) and `tailcat <address> <port>` reaches any
     port the guest listens on; `tailcat ping <address>` gets its pong over the relay. Clients reach the guest at its tunnel
@@ -2331,9 +2422,9 @@ and the guest's default way out (below).
     region with the fastest `/derp/probe` (`nearestRegion`, as tailcat's own server picks; the
     map's first if none answers), or one's own derper's `host[:port]`; [Let in only these clients](ui:network:NetTailcatStep.allow):
     the clients' keys as `tailcat genkey --client` prints them, one per line (tailcat's own `--allow`; empty: anyone
-    with the address; `parseAllow`, kept as the connection's `tailcat.allow`); and, editing a connection, [New address](ui:network:NetTailcatStep.newAddress), which
-    forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
-    connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
+    with the address; `parseAllow`, kept as the connection's `tailcat.allow`). A connection's Settings change these, and
+    its page's [New address](ui:machines:ConnectionNav.newAddress) (a command in its column) forgets the kept identity
+    (after a confirmation), so the old address stops working (the adapter that runs it connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
     the clients. The status says [Letting tailcat clients in](ui:network:network-view.servingOnly) (or adds it to the exit node's).
 - [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom) (docs/networking/rooms.md): machines in
   other browsers that join the same room reach each other by name, browser to browser over WebRTC when they can and
@@ -2360,55 +2451,63 @@ and the guest's default way out (below).
   `waarm64-room`, and the key's lock, named by the key, holds either way), or another stored room connection's (the
   same key in another room: docs/networking/adapters.md §2.1). The connection's default name is the room's (a private
   one's without its suffix); the Home page says [a peer-to-peer room](ui:machines:connection-kind.room).
-  Editing changes the two switches (the adapter running it connects again), and under Advanced [New
-  name](ui:network:NetRoomStep.room.newName) gives the connection a new key after asking, so its old name stops working,
-  [The connection's key](ui:network:NetRoomStep.room.exportKey) is a hidden field to copy (shown, selected, where
+  The connection's Settings (on its page) change the two switches (the adapter running it connects again), and under
+  Advanced [New name](ui:network:ConnectionRoomSettings.newName) gives the connection a new key after asking, so its
+  old name stops working, and [The connection's key](ui:network:ConnectionRoomSettings.key) is a hidden field to copy (shown, selected, where
   the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
   computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/networking/tailnet.md
   "Rooms").
-  **Names** ([networking/names.md](networking/names.md) "The names agent"): web/names.ts is the names agent (titles and the owners'
-  secret in `waarm64-room`'s `owner` and `titles`; collecting, renewing and publishing, started at every load when a
-  title is kept, hourly while open, with no machine running), web/names-worker.ts its worker (the module's `ts_names_*`
-  operations and the publishers), web/names-ops.ts what both run; a running room's worker gives the module the
-  connection's titles; a room connection's export carries its names (web/app/room-export.ts). On the page
-  (web/app/areas/names.svelte.ts, the titles read into `$state` at load, at each change the agent announces and every
-  minute; web/app/names-view.ts their words): a connected room adapter's section of the menu lists its connection's
-  names with their states (`NetNames.svelte`: [Preparing](ui:network:names-view.preparing), Reserved, public in about N
-  hours, Active, kept until about a date, in its grace, [Lapsed: anyone can register it now.](ui:network:names-view.lapsed),
-  [Let go](ui:network:names-view.released), lost) and [Register a domain…](ui:network:NetNames.name), which opens one
-  dialog (`NameDialog.svelte`, its logic `NameForm` in names-view.ts): the name's field, checked as typed by the page
-  alone, asking no server (the agent's `checkHere`: not a valid name, this connection's own); **the room's servers are
-  asked when Register is pressed** (the user's decision, 2026-11-17; the agent's `check`): every id under the name's
-  id's first byte, one byte a press, never the id, through a checker made for that press (a publisher, closed with its
-  answer), each with when its owner's hold ends, each server's answer weighed apart. Free, the name is registered and
-  the dialog closes; taken (every server that answered lists it), the dialog stays open and says until about the
-  earliest date given; the servers disagree (one lists it, another doesn't), or nobody in the room can say, the dialog
-  says so and Register pressed again with the same name registers it; under the field, the whole domain (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` in a room whose
-  ID isn't a label of its own, docs/networking/rooms.md "The room's name as a domain"; or the room's suffix
-  while nothing is typed); the two notices, always shown, no boxes ([Members of this room who know the domain can
-  reach this connection's address and see when it's online. While this connection is connected, this web app helps
-  other members look domains up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to
-  keep the domain.](ui:network:NameDialog.notice.visit)); no key shown or asked for; once
-  [Register](ui:network:NameDialog.register) has registered it, the name shows Preparing until its claim is made. A connection whose key is ephemeral (its own, in the
-  page's memory) can't hold a name: the dialog says so in place of the field and has no Register (the name would point
-  at a key gone with the page while its title, in IndexedDB, went on being renewed). The adapter's details add the
-  registry's line (a server's names held and the servers it synced with, or a member's names resolved and servers held:
-  the module's `names` event) and, per name (`NameEntry.svelte`), where it and each label under it point (a member's
-  name in the room, or a key, pasted), [Add a subdomain](ui:network:NameEntry.addLabel),
-  [Point all at this connection](ui:network:NameEntry.pointHere), Save (a new zone; its rows checked as the module will,
+  **Names** ([networking/names.md](networking/names.md) "The names agent" and "What the user sees"): web/names.ts is
+  the names agent (titles and the owners' secret in `waarm64-room`'s `owner` and `titles`; collecting, renewing and
+  publishing, started at every load when a title is kept, hourly while open, with no machine running), web/names-worker.ts
+  its worker (the module's `ts_names_*` operations and the publishers), web/names-ops.ts what both run; a running room's
+  worker gives the module the connection's titles; a room connection's export carries its names
+  (web/app/room-export.ts). On the page (web/app/areas/names.svelte.ts, the titles read into `$state` at load, at each
+  change the agent announces and every minute, and `pageNames.member`; web/app/names-view.ts their words) **a room
+  connection's domains are its page's Domains pane** on the Home page (above, "A connection's page";
+  `DomainsPane.svelte`, `DomainCard.svelte` a card a domain, `DomainsIntro.svelte` and `DomainsHow.svelte` its two
+  explainers), which works with the connection disconnected: the key a domain points at and the room's domain come from
+  the agent's `member` (the connection's stored key and the room's ID), not from an adapter's live view. Everywhere else
+  there is one link to it (`DomainsLink.svelte`: the menu's section above, a machine's Network tab, a Connections
+  card), and the message bar's notice at load on the domains in their last week (web/names.ts `inLastWeek`) has a
+  [Domains](ui:network:names.domains) action that opens it. The pane's
+  [Register a domain…](ui:network:DomainsPane.register) opens one dialog for that connection (`NameDialog.svelte`, its
+  logic `NameForm` in names-view.ts; `network.naming` takes the connection's id): the name's field, checked as typed
+  by the page alone, asking no server (the agent's `checkHere`: not a valid name, this connection's own); **the room's
+  servers are asked when Register is pressed** (the user's decision, 2026-11-17; the agent's `check`): every id under
+  the name's id's first byte, one byte a press, never the id, through a checker made for that press (a publisher,
+  closed with its answer), each with when its owner's hold ends, each server's answer weighed apart. Free, the name is
+  registered and the dialog closes; taken (every server that answered lists it), the dialog stays open and says until
+  about the earliest date given; the servers disagree (one lists it, another doesn't), or nobody in the room can say,
+  the dialog says so and Register pressed again with the same name registers it; under the field, the whole domain
+  (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` in a room whose ID isn't a label of its own,
+  docs/networking/rooms.md "The room's name as a domain"; or the room's suffix while nothing is typed); the two
+  notices, always shown, no boxes ([Members of this room who know the domain can reach this connection's address and
+  see when it's online. While this connection is connected, this web app helps other members look domains
+  up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to keep the
+  domain.](ui:network:NameDialog.notice.visit)); no key shown or asked for; once
+  [Register](ui:network:NameDialog.register) has registered it, its card shows Preparing until its claim is made. A
+  connection whose key is ephemeral (its own, in the page's memory) can't hold a name: its Domains pane says so and
+  has no Register, and it gets no link (the name would point at a key gone with the page while its title, in
+  IndexedDB, went on being renewed). Each card has the domain's state, its dates, where it and each subdomain point (a
+  member's name in the room, or a key, pasted), [Add a subdomain](ui:network:DomainCard.addLabel),
+  [Point all at this connection](ui:network:DomainCard.pointHere), Save (a new zone; its rows checked as the module will,
   names-view.ts `zonePoints`: a subdomain a DNS label with no `--` in its third and fourth places, none twice, a target
-  a member's name or a key, each refusal in the catalog's words) and
-  [Let it go](ui:network:NameEntry.release) (after asking). A stored machine's Network tab lists each room adapter's
-  names with the date each stops resolving unless renewed. At every load the agent starts when titles are kept and,
-  after its first pass, the message bar names those in their last week (web/names.ts `inLastWeek`). The wizard's
-  [The connection's key](ui:network:NetRoomStep.room.exportKey) is the connection's export (its key, then its names
+  a member's name or a key, each refusal in the catalog's words) and [Let it go](ui:network:DomainCard.release) (after
+  asking). The connection's Details show its own name in the room
+  ([This connection's name in the room](ui:network:ConnectionRoom.name)) from `member` too, connected or not (its key
+  made under its entry if it never started, so its Settings' key and the backup are there from then), and the
+  registry's line while it is connected here (a server's names held and the servers it synced with, or a member's names
+  resolved and servers held: the module's `names` event; the Domains pane has it too). The Settings'
+  [The connection's key](ui:network:ConnectionRoomSettings.key) and the column's
+  [Back up key and domains…](ui:machines:ConnectionNav.backup) are the connection's export (its key, then its names
   after a dot), and a pasted one brings its names with it (web/room.ts `parseRoomExport`). Deleting a room connection
   that holds names (its key no other connection's) asks in a question of its own that says it holds them, with the
   export in its field to copy; deleting it forgets its owners' secret and titles.
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `waarm64-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
-  then [Connected to the room](ui:network:network-view.room) with [1 active connection (1 direct)](ui:network:network-view.room.connectionsDirect_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count; and how many of them its packets reach over WebRTC rather than the relay, `path` `direct`; with none, [0 active connections](ui:network:network-view.room.connections_other)). When members go through the relay where a direct path was wanted (this browser or theirs makes none, or attempts failed: docs/networking/rooms.md "Why the menu says nothing is direct"), a small warning follows the count ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)) and opens the adapter's details, which say why and what may fix it; a relay-only connection has none. The
+  then [Connected to the room](ui:network:network-view.room) with [1 active connection (1 direct)](ui:network:network-view.room.connectionsDirect_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count; and how many of them its packets reach over WebRTC rather than the relay, `path` `direct`; with none, [0 active connections](ui:network:network-view.room.connections_other)). When members go through the relay where a direct path was wanted (this browser or theirs makes none, or attempts failed: docs/networking/rooms.md "Why the menu says nothing is direct"), a small warning follows the count ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)) and opens the connection's Details on the Home page, which say why and what may fix it; a relay-only connection has none. The
   menu then shows the machine's name in the room (`<key>.<room name>.p2p.internal` when the room's ID is a DNS label
   that doesn't look derived, else `<key>.<tag>.p2p.internal`; both resolve) to copy, the room's link to copy and, under
   them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).
@@ -2455,9 +2554,14 @@ and the guest's default way out (below).
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest), tests/page-room.test.ts (two Debian guests in one Chromium, two profiles: one creates a private room in the wizard on the tests' Nostr relay and the rig's derper, the other joins by its link, and they ping each other by name; the wizard's refusals; then Name this machine… on one, its check, Register, the
-name reached from the other with nothing done there, a label in the details, the last week's notice, the export in
-the wizard and in Delete's question), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest), tests/page-room.test.ts (two Debian guests in one Chromium, two profiles: one creates a private room in the wizard on the tests' Nostr relay and the rig's derper, the other joins by its link, and they ping each other by name; the wizard's refusals; then the menu's link to the Domains pane on one, its Register a domain…, the dialog's check, Register, the
+name reached from the other with nothing done there, a subdomain on its card, the last week's notice and its Domains
+action, the key in the Settings and the export in Delete's question, the other's ephemeral connection's pane),
+tests/page-home-levels.test.ts (Home's levels, a connection's Details and Settings, the wizard's first choice; a
+machine's draft kept through a level, Back and Esc once per move, a link out of a level an entry, the origin from what
+Home shows, a connection gone under its page, machines linked by id),
+tests/page-domains.test.ts (the Domains pane with no machine: its explainers, register, a card's states, the backup, the
+links; the new key kept after New name, `member` failing and read again, an overtaken read dropped), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
   control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 

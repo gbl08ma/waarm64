@@ -32,15 +32,25 @@
     tabs?: Tab<string>[];
     tab?: string;
     ontab?: (id: string) => void;
+    /** Asked as the pane appears, and again when what it reads changes: true gives its title the focus (a level of the
+     *  Home page just entered or left). */
+    takeFocus?: () => boolean;
     children: Snippet;
   };
-  let { id, title, meta, metaAttrs, actions, tabs, tab, ontab, children }: Props = $props();
+  let { id, title, meta, metaAttrs, actions, tabs, tab, ontab, takeFocus, children }: Props = $props();
+
+  let heading = $state<HTMLHeadingElement>();
+  // Tracked: a pane already shown takes the focus when asked after it appeared (Connections, once the connection
+  // whose page was open is gone). A pane on its way out is paused, so it never takes it.
+  $effect(() => {
+    if (heading && takeFocus?.()) heading.focus();
+  });
 </script>
 
 <section class="machine" data-selected={id}>
   <div class="head">
     <span class="title"
-      ><h3>{title}</h3>
+      ><h3 bind:this={heading} tabindex="-1">{title}</h3>
       {#if isMsg(meta)}<span class="meta" {...metaAttrs}><T m={meta} /></span>{:else if meta !== undefined}<span
           class="meta"
           {...metaAttrs}>{meta}</span
@@ -100,6 +110,7 @@
   }
   h3 {
     margin: 0;
+    outline: none;
     font-size: var(--text-lg);
     font-weight: var(--weight-bold);
     line-height: 22px;

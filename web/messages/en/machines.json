@@ -715,17 +715,17 @@
     "message": "not in use",
     "note": "Home page, Connections: who has the connection now, in each connection's line. Here: no one."
   },
-  "ConnectionsPane.logout.confirm": {
+  "ConnectionNav.logout.confirm": {
     "message": "Log out of <name>{{name}}</name>? This will remove its node from the tailnet and delete its keys from this browser. Connecting again will log in as a new node.",
-    "note": "Home page, Connections: confirmation dialog's text after a connection's Log out button. {{name}}: the connection."
+    "note": "Home page, a connection's page (one level under Connections): confirmation dialog's text after the left column's Log out. {{name}}: the connection."
   },
-  "ConnectionsPane.logout.ok": {
+  "ConnectionNav.logout.ok": {
     "message": "Log out",
-    "note": "Home page, Connections: the confirm button of ConnectionsPane.logout.confirm's dialog."
+    "note": "Home page, a connection's page (one level under Connections): the confirm button of ConnectionNav.logout.confirm's dialog."
   },
-  "ConnectionsPane.busy.loggingOut": {
+  "ConnectionNav.busy.loggingOut": {
     "message": "Logging out",
-    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's Log out."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's Log out (its page's left column)."
   },
   "UsbSwitch.usb.title": {
     "message": "Give the machine an xHCI USB controller with four connectors, each USB 2 and USB 3, for its USB devices.",
@@ -869,7 +869,7 @@
   },
   "MachinesNav.back": {
     "message": "Back to the machine",
-    "note": "Home page: the button at the foot of the page's left column, shown while a machine is on the page; it closes the Home page and shows the machine again (as the toolbar's Home, the product's name and Esc do)."
+    "note": "Home page: the first entry of the page's left column at its root, shown while a machine is on the page; it closes the Home page and shows the machine again (as the toolbar's Home, the product's name and Esc do). Also the first entry of a connection's page there when that page was opened from the toolbar's Network menu: it leads back to the machine's screen the same way."
   },
   "MachinesNav.list.empty": {
     "message": "No machines yet. The machines you create, or open from a disk image, are kept here, in this browser.",
@@ -1231,33 +1231,33 @@
     "message": "attached to no machine",
     "note": "Home page, Connections: the end of a connection's line when no machine's adapter has it."
   },
-  "ConnectionsPane.busy.forgettingAddress": {
+  "ConnectionNav.busy.forgettingAddress": {
     "message": "Replacing the address",
-    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's New address."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's New address (its page's left column), or a room connection's New name (its Settings)."
   },
-  "ConnectionsPane.connection.newAddress.title": {
+  "ConnectionNav.newAddress.title": {
     "message": "Give the connection a new tailcat address. Anyone with the old address can no longer connect.",
-    "note": "Home page, Connections: tooltip of New address."
+    "note": "Home page, a connection's page (one level under Connections): tooltip of the left column's New address."
   },
-  "ConnectionsPane.connection.newAddress": {
+  "ConnectionNav.newAddress": {
     "message": "New address",
-    "note": "Home page, Connections: button on a tailcat connection that lets clients in: gives it a new address."
+    "note": "Home page, a connection's page (one level under Connections): a command in the left column, on a tailcat connection that lets clients in: gives it a new address (it asks first)."
   },
-  "ConnectionsPane.connection.logout.title": {
+  "ConnectionNav.logout.title": {
     "message": "Remove the node from the tailnet and delete its keys from this browser.",
-    "note": "Home page, Connections: tooltip of a connection's Log out button."
+    "note": "Home page, a connection's page (one level under Connections): tooltip of the left column's Log out."
   },
-  "ConnectionsPane.connection.logout": {
+  "ConnectionNav.logout": {
     "message": "Log out",
-    "note": "Home page, Connections: button on a connection logged in to a tailnet (asks first: ConnectionsPane.logout.confirm)."
+    "note": "Home page, a connection's page (one level under Connections): a command in the left column, on a connection logged in to a tailnet (asks first: ConnectionNav.logout.confirm)."
   },
   "ConnectionsPane.connection.delete.title": {
     "message": "Delete the connection and everything this browser stores for it. Adapters that use it are left without a connection.",
-    "note": "Home page, Connections: tooltip of a connection's Delete button."
+    "note": "Home page, Connections, and a connection's page (a command in its left column): tooltip of a connection's Delete button."
   },
   "ConnectionsPane.connection.delete": {
     "message": "Delete",
-    "note": "Home page, Connections: button on each connection that deletes it."
+    "note": "Home page, Connections, and a connection's page (a command in its left column): button on each connection that deletes it."
   },
   "ConnectionsPane.connections.none": {
     "message": "No connections yet. Create one here, or from a machine's adapter, on its <ui-network>Network</ui-network> tab or in the toolbar's <ui-network>Network</ui-network> menu.",
@@ -1827,14 +1827,6 @@
     "message": "{{what}}: {{size, bytes}}",
     "note": "Home page: Storage in this browser (StorageDetails.title). An item of What uses the space (StorageDetails.items). {{what}}: what (a storage-report.storage.* message, which marks the names in it); {{size}}: its bytes."
   },
-  "AdapterCard.adapter.names_one": {
-    "message": "Domain in the room: {{names}}",
-    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds a registered name: its line of names. {{names}}: a list of one message (network:names-view.machine.*), the domain with its date, which marks the domain itself (so {{names}} isn't wrapped)."
-  },
-  "AdapterCard.adapter.names_other": {
-    "message": "Domains in the room: {{names}}",
-    "note": "The Home page, a machine's Network tab, an adapter whose room connection holds registered names: its line of names. {{names}}: a list of messages (network:names-view.machine.*), each domain with its date, which mark the domains themselves (so {{names}} isn't wrapped), {{count}} how many."
-  },
   "connection-kind.demo": {
     "message": "the demo network",
     "note": "Home page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: the project's public demo network."
@@ -2178,5 +2170,73 @@
   "template.tooBig.cause": {
     "message": "Its snapshot is {{size, bytes}}, more than the {{most, bytes}} it may download. The store may be broken: nothing was downloaded.",
     "note": "Error details, the cause under the headline machines:template.tooBig, on the line under it in the same place. {{size}}: the snapshot's bytes on the server; {{most}}: the card's download, or the page's limit when that is less."
+  },
+  "ConnectionNav.back.connections": {
+    "message": "Back to Connections",
+    "note": "Home page, a connection's page (one level under Connections): the first entry of the left column, shown when the page was entered from Connections (its card's Details, an address or a reload); it leads back to Connections, as Esc does."
+  },
+  "ConnectionNav.back.machine": {
+    "message": "Back to <name>{{machine}}</name>",
+    "note": "Home page, a connection's page (one level under Connections): the first entry of the left column, shown when the page was entered from a machine's Network tab; it leads back to that tab, as Esc does. {{machine}} is the machine's name. (Entered from the toolbar's Network menu, the entry is machines.MachinesNav.back.)"
+  },
+  "ConnectionNav.line": {
+    "message": "{{kind}} · {{state}}",
+    "note": "Home page, a connection's page: the line under the connection's name in the left column. {{kind}}: what it is (a connection-kind.* message); {{state}}: who has it now (ConnectionsPane.connection.here, .otherTab or .unused)."
+  },
+  "ConnectionNav.details": {
+    "message": "Details",
+    "note": "Home page, a connection's page: the left column's entry for its Details section (what the connection gives out and how to use it), and that pane's title."
+  },
+  "ConnectionNav.settings": {
+    "message": "Settings",
+    "note": "Home page, a connection's page: the left column's entry for its Settings section (what can be changed in the connection), and that pane's title."
+  },
+  "ConnectionNav.domains": {
+    "message": "Domains",
+    "note": "Home page, a room connection's page: the left column's entry for its Domains section (the domains the connection holds in the room), and that pane's title."
+  },
+  "ConnectionNav.domains.named": {
+    "message": "Domains ({{n}})",
+    "note": "Home page, a room connection's page: the accessible name of its Domains entry in the left column when it holds domains (the page shows the count in a pill). {{n}}: how many it holds (live, or lost: the pane still shows it; as its link to Domains counts them, names-view.link.held)."
+  },
+  "ConnectionNav.backup": {
+    "message": "Back up key and domains…",
+    "note": "Home page, a room connection's page: a command in the left column, opening a dialog with the connection's key and its domains to copy (network:ConnectionBackup.*)."
+  },
+  "ConnectionNav.backup.title": {
+    "message": "Copy this connection's key together with its domains, to keep them if this browser's data is lost or to move them to another browser.",
+    "note": "Home page, a room connection's page: the tooltip of the left column's Back up key and domains…."
+  },
+  "ConnectionsPane.connection.details": {
+    "message": "Details",
+    "note": "Home page, Connections: button on each connection that opens the connection's page (its Details, Settings and, for a room, Domains), one level down."
+  },
+  "ConnectionsPane.connection.details.title": {
+    "message": "See what this connection gives out and how to use it, and change its settings.",
+    "note": "Home page, Connections: tooltip of a connection's Details button."
+  },
+  "ConnectionDetails.machines": {
+    "message": "Attached to <name>{{machines}}</name>.",
+    "note": "Home page, a connection's Details (its page under Connections): the first line, naming the machines whose network adapters have the connection attached. {{machines}}: their names, comma-separated, each a link to that machine's Network tab (the page's own machine, which has none, is a name alone)."
+  },
+  "ConnectionDetails.machines.none": {
+    "message": "Not attached to any machine.",
+    "note": "Home page, a connection's Details (its page under Connections): the first line, when no machine's network adapter has the connection attached."
+  },
+  "ConnectionDetails.machines.where": {
+    "message": "To attach a connection to a machine, open the machine's <ui-network>Network</ui-network> tab on the <ui-home>Home</ui-home> page.",
+    "note": "Home page, a connection's Details (its page under Connections): the line under ConnectionDetails.machines (or .none), saying where connections are attached. The <ui-network> and <ui-home> markers show the Network and Home icons before the words."
+  },
+  "ConnectionDetails.notHere": {
+    "message": "This connection isn't connected in this tab. The addresses it gives out are shown here while a machine in this tab is connected through it.",
+    "note": "Home page, a connection's Details (its page under Connections): shown while no adapter of the machine in this tab runs the connection and no other tab holds it, in place of the values only a connected adapter has (the guest's address, a tailcat address or key, a room's name in the room)."
+  },
+  "ConnectionDetails.otherTab": {
+    "message": "This connection is in use in another tab. The addresses it gives out are shown in that tab.",
+    "note": "Home page, a connection's Details (its page under Connections): shown while a machine in another tab holds the connection, in place of the values only a connected adapter has."
+  },
+  "ConnectionSettings.name": {
+    "message": "Name",
+    "note": "Home page, a connection's Settings (its page under Connections): the label of the field holding the connection's name."
   }
 }

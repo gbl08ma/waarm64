@@ -239,14 +239,16 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
       assert.match(nameA, /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/, 'its name to give out');
       assert.equal(await visible(a, '#net-room-link-copy'), true, 'the link to copy');
       assert.equal(await a.locator('#net-room-link-value').getAttribute('type'), 'password', 'the link is hidden');
-      // Details…: the name, the link and who may connect, in a dialog of their own.
+      // Details…: the name, the link and who may connect, on the connection's page of the Home page (the screen's place).
       await a.click('#net-details-open');
+      await a.locator('#net-details-room-name').waitFor();
       assert.equal(await a.locator('#net-details-room-name').inputValue(), nameA);
-      assert.equal(await a.locator('label:has(#net-details-address) .name').textContent(), t('network:NetDetails.address.v6'), 'a room has IPv6 alone');
+      assert.equal(await a.locator('label:has(#net-details-address) .name').textContent(), t('network:ConnectionDetails.address.v6'), 'a room has IPv6 alone');
       assert.equal(await a.locator('#net-details-room-link').inputValue(), ra.room.link);
-      assert.match(await text(a, '#net-details-room-note'), words('network:NetDetails.room.note'));
-      await a.click('#net-details-close');
-      assert.equal(await a.evaluate(() => (document.getElementById('net-details') as HTMLDialogElement).open), false, 'Close closes it');
+      assert.match(await text(a, '#net-details-room-note'), words('network:ConnectionRoom.note'));
+      assert.equal(await a.locator('.machines nav [data-action=back]').getAttribute('data-back'), 'screen');
+      await a.click('.machines nav [data-action=back]');
+      assert.equal(await a.locator('#machines-open').getAttribute('aria-pressed'), 'false', 'Back returns to the machine');
 
       // Join: a damaged link is refused; the link the first one keeps joins the same room.
       await roomWizard(b);
@@ -320,40 +322,47 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
       await a.waitForFunction(() => document.activeElement?.id === 'net-room-link-value', null, { timeout: 5_000 });
       assert.equal(await a.evaluate(() => getSelection()?.toString() || (document.activeElement as HTMLInputElement).value.slice((document.activeElement as HTMLInputElement).selectionStart!, (document.activeElement as HTMLInputElement).selectionEnd!)), ra.room.link);
 
-      // New name, then Save in the same Edit: the new key stays (Save once wrote back the record the wizard opened with).
+      // A connection's Settings (its card's Details on the Home page, then Settings): under Advanced, Copy key copies the
+      // connection's key; where the clipboard refuses, it's shown in its field, selected.
       await openHome(b);
       await b.click('[data-machine="connections"]');
-      await b.click('li[data-connection] [data-action="edit-connection"]');
-      await b.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
-      // Copy key copies the connection's key; where the clipboard refuses, it's shown in its field, selected.
+      await b.click('li[data-connection] [data-action="connection-details"]');
+      await b.locator('[data-context-connection]').waitFor();
+      await b.locator('.machines nav [data-section=settings]').last().click();
+      await b.locator('#settings-room-advanced summary').click();
       await b.evaluate(() => {
         const w = window as unknown as { copied: string[] };
         w.copied = [];
         navigator.clipboard.writeText = (s: string) => { w.copied.push(s); return Promise.resolve(); };
       });
-      await b.waitForFunction(() => !(document.getElementById('net-room-key-copy') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'hidden');
-      await b.click('#net-room-key-copy');
+      await b.waitForFunction(() => !(document.getElementById('settings-room-key-copy') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'password', 'hidden');
+      await b.click('#settings-room-key-copy');
       assert.deepEqual(await b.evaluate(() => (window as unknown as { copied: string[] }).copied), [pasted.key]);
-      assert.equal(await b.locator('#net-room-key-copy').getAttribute('aria-label'), t('common:ValueField.copied'), 'the icon says it copied');
-      await b.click('#net-room-key-show');
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'Show');
-      await b.click('#net-room-key-show');
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'Hide');
+      assert.equal(await b.locator('#settings-room-key-copy').getAttribute('aria-label'), t('common:ValueField.copied'), 'the icon says it copied');
+      await b.click('#settings-room-key-show');
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'text', 'Show');
+      await b.click('#settings-room-key-show');
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'password', 'Hide');
       await b.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
-      await b.click('#net-room-key-copy');
-      await b.waitForFunction(() => document.activeElement?.id === 'net-room-key-value', null, { timeout: 5_000 });
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'shown where the clipboard refused');
-      assert.equal(await b.locator('#net-room-key-value').inputValue(), pasted.key);
-      await b.click('#net-room-new-name');
-      await b.waitForFunction(() => (document.getElementById('net-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
-      // Ephemeral: the new key is in the record already, so it's the one to copy (a stored one's comes at its next start).
-      await b.waitForFunction((old) => { const v = (document.getElementById('net-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
-      assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.exportKey.note'));
-      await b.click('#net-connect');
-      await b.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 30_000 })
-        .catch(async (e) => { throw new Error(`${e}; the wizard says ${await text(b, '#net-error')}; step ${await b.evaluate(() => [...document.querySelectorAll('#net-wizard section:not([hidden])')].map((x) => x.id))}`); });
-      await b.click('[data-action="back"]');
+      await b.click('#settings-room-key-copy');
+      await b.waitForFunction(() => document.activeElement?.id === 'settings-room-key-value', null, { timeout: 5_000 });
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'text', 'shown where the clipboard refused');
+      assert.equal(await b.locator('#settings-room-key-value').inputValue(), pasted.key);
+      // New name: a new key at once (it's ephemeral: the new key is in the record already, so it's the one to copy).
+      await b.click('#settings-room-new-name');
+      await b.waitForFunction((old) => { const v = (document.getElementById('settings-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
+      const renamed = await b.locator('#settings-room-key-value').inputValue();
+      await b.waitForFunction(() => !(document.getElementById('settings-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+      assert.match(await text(b, '#settings-room-advanced'), words('network:ConnectionRoomSettings.key.note'));
+      // Then a switch and Save: the new key stays (Save writes the connection as it is now, not as the page read it).
+      await b.uncheck('#settings-room-incoming');
+      await b.click('section[data-selected=connection-settings] [data-action=save]');
+      await b.waitForFunction(() => !document.querySelector('section[data-selected=connection-settings] [data-action=revert]'), null, { timeout: 30_000 })
+        .catch(async (e) => { throw new Error(`${e}; the page says ${await text(b, '.machines-page').catch(() => 'nothing')}`); });
+      assert.equal(await b.locator('#settings-room-key-value').inputValue(), renamed, 'the new key kept');
+      await b.click('.machines nav [data-action="back"]');
+      await b.click('[data-action="back-to-machine"]');
       await b.locator('#network summary').click();
       await b.waitForFunction((old) => { const v = (document.getElementById('net-room-name') as HTMLInputElement | null)?.value; return !!v && v !== old; }, nameB, { timeout: 30_000 })
         .catch(async (e) => { throw new Error(`${e}; the name stayed ${await b.locator('#net-room-name').inputValue()}`); });
@@ -496,8 +505,13 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   const domain = o.nameA.split('.').slice(1).join('.');
   const ipA = o.a6.split('/')[0];
   const keyA = keyOfName(o.nameA);
+  // The menu's one link to the connection's Domains (none yet: Register a domain…), then the pane's Register a domain….
   if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
-  await a.click('#net-name-open');
+  assert.equal(await text(a, '[data-domains-link="0"]'), t('network:DomainsPane.register'));
+  await a.click('[data-domains-link="0"]');
+  await a.locator('#domains-intro').waitFor({ timeout: 30_000 });
+  assert.equal(await a.locator('.machines nav [data-action=back]').getAttribute('data-back'), 'screen', 'Back leads to the machine');
+  await a.click('section[data-selected=connection-domains] [data-action=register-domain]');
   await a.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
   // Decision 6: one dialog, exactly the two notices, no box, no key shown or asked for; the field the only input.
   const dialog = await a.evaluate(() => {
@@ -536,11 +550,10 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   await a.click('#net-name-register');
   await a.waitForFunction(() => !(document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 30_000 })
     .catch(async (e) => { throw new Error(`${e}; it says ${await text(a, '#net-name-check')}`); });
-  await a.locator('#network summary').click();
-  const stateOf = () => a.evaluate(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state'));
-  await a.waitForFunction(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state') === 'reserved', null, { timeout: 120_000, polling: 250 })
+  const stateOf = () => a.evaluate(() => document.querySelector('#domains [data-name="mybox"]')?.getAttribute('data-state'));
+  await a.waitForFunction(() => document.querySelector('#domains [data-name="mybox"]')?.getAttribute('data-state') === 'reserved', null, { timeout: 120_000, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf()}; the bar says ${await untouched(a)}`); });
-  assert.match(await text(a, '#net-names [data-name="mybox"]'), words('network:names-view.reserved_other', {}));
+  assert.match(await text(a, '#domains [data-name="mybox"] [data-field=state]'), words('network:names-view.reserved_other', {}));
   // Its anchor: mined six deep, collected by a pass (the one the agent makes when its backoff on the pending proof ends,
   // 5 minutes after the pass at Register: its backoff ended now in the title's record), published.
   cal.mine(7);
@@ -566,9 +579,9 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
     };
   }));
   await a.evaluate('import("/web/names.ts").then((n) => n.namesAgent().pass())');
-  await a.waitForFunction(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state') === 'active', null, { timeout: 90_000, polling: 250 })
+  await a.waitForFunction(() => document.querySelector('#domains [data-name="mybox"]')?.getAttribute('data-state') === 'active', null, { timeout: 90_000, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf()}`); });
-  assert.match(await text(a, '#net-names [data-name="mybox"]'), words('network:names-view.active', {}));
+  assert.match(await text(a, '#domains [data-name="mybox"] [data-field=state]'), words('network:names-view.active', {}));
   // Decision 6: B's guest reaches it by name, with nothing done on B's page (no switch, notice or dialog).
   let got = '';
   for (let k = 0; k < 30 && !new RegExp(`^${ipA}\\s`).test(got); k++) {
@@ -579,14 +592,21 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   const ping = await run(b, `ping -6 -c 2 -W 10 mybox.${domain} | tail -2`, 60_000);
   assert.match(ping, / 0% packet loss/, ping);
   assert.deepEqual(await untouched(b), before, 'nothing on B\'s page');
-  // A's details: the registry's line, and a label added under the name (at this machine), which A's resolver answers.
+  // Back on the machine's screen, the menu's link counts it; A's details: the registry's line; its Domains: the line
+  // too, and a label added under the name (at this machine), which A's resolver answers.
+  await a.click('.machines nav [data-action=back]');
+  if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
+  assert.equal(await text(a, '[data-domains-link="0"]'), t('network:names-view.link.held', { count: 1 }));
   await a.click('#net-details-open');
   await a.waitForFunction(() => !!document.getElementById('net-details-names-line'), null, { timeout: 30_000 });
   assert.match(await text(a, '#net-details-names-line'), words('network:names-view.line.serving_other', {}));
-  await a.click('#net-details [data-name="mybox"] [data-action="add-label"]');
-  await a.fill('#net-details [data-name="mybox"] [data-point=""] [data-field="label"] >> nth=0', 'web');
-  await a.click('#net-details [data-name="mybox"] [data-action="save-zone"]');
-  await a.click('#net-details-close');
+  await a.locator('.machines nav [data-section=domains]').last().click();
+  await a.waitForFunction(() => !!document.getElementById('domains-names-line'), null, { timeout: 30_000 });
+  assert.match(await text(a, '#domains-names-line'), words('network:names-view.line.serving_other', {}));
+  await a.click('#domains [data-name="mybox"] [data-action="add-label"]');
+  await a.fill('#domains [data-name="mybox"] [data-point=""] [data-field="label"] >> nth=0', 'web');
+  await a.click('#domains [data-name="mybox"] [data-action="save-zone"]');
+  await a.click('.machines nav [data-action=back]');
   let web = '';
   for (let k = 0; k < 20 && !web; k++) {
     web = await run(a, `getent ahosts web.mybox.${domain} | head -1`);
@@ -599,20 +619,26 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   await later.goto(`${base}/web/app/`);
   await later.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('network:names.lastWeek_one', { names: 'mybox' }).source, { timeout: 60_000, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; the bar says ${await later.evaluate(() => document.getElementById('message-text')?.textContent)}`); });
+  // Its Domains action: the pane of the connection that holds it.
+  await later.locator('#message-actions button', { hasText: t('network:names.domains') }).click();
+  await later.locator('#domains [data-name="mybox"]').waitFor({ timeout: 30_000 });
   await later.close();
 }
 
-/** After the name: the wizard's key carries the names; Delete says so; B's connection, not kept, can't hold one. */
+/** After the name: the Settings' key carries the names; Delete says so; B's connection, not kept, can't hold one. */
 async function namesKeptWithTheConnection(a: Page, b: Page) {
-  // The Home page: the wizard's key carries the names; Delete says so.
+  // The Home page: the key in the connection's Settings carries the names; Delete says so.
   await openHome(a);
   await a.click('[data-machine="connections"]');
-  await a.click('li[data-connection] [data-action="edit-connection"] >> nth=0');
-  await a.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
-  await a.waitForFunction(() => /\./.test((document.getElementById('net-room-key-value') as HTMLInputElement).value), null, { timeout: 10_000 });
-  const exported = await a.locator('#net-room-key-value').inputValue();
+  await a.click('li[data-connection] [data-action="connection-details"] >> nth=0');
+  await a.locator('[data-context-connection]').waitFor();
+  await a.locator('.machines nav [data-section=settings]').last().click();
+  await a.locator('#settings-room-advanced summary').click();
+  await a.waitForFunction(() => /\./.test((document.getElementById('settings-room-key-value') as HTMLInputElement).value), null, { timeout: 10_000 });
+  const exported = await a.locator('#settings-room-key-value').inputValue();
   assert.match(exported, /^[0-9a-f]{64}\.[A-Za-z0-9_-]+$/, 'the key, then its names');
-  await a.keyboard.press('Escape');
+  await a.click('.machines nav [data-action="back"]');
+  await a.locator('section[data-selected=connections]').waitFor();
   cancelling = true;
   const n = asked.length;
   await a.click('li[data-connection] [data-action="delete-connection"] >> nth=0');
@@ -625,11 +651,12 @@ async function namesKeptWithTheConnection(a: Page, b: Page) {
   assert.equal(q.value, exported, 'the export to copy');
   await a.waitForFunction(() => !(document.getElementById('ask') as HTMLDialogElement).open, null, { timeout: 5_000 });
   assert.equal((await rooms(a)).length, 1, 'Cancel: kept');
-  // B's connection isn't kept (its key is in the page's memory): it can't hold a name, and the dialog says so.
+  // B's connection isn't kept (its key is in the page's memory): it can't hold a name, and its Domains say so.
   if (!(await b.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await b.locator('#network summary').click();
-  await b.click('#net-name-open');
-  await b.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
-  assert.match(await text(b, '#net-name-ephemeral'), words('network:NameDialog.ephemeral'));
-  assert.equal(await b.locator('#net-name-register').count(), 0, 'no Register');
-  assert.equal(await b.locator('#net-name-input').count(), 0, 'no field');
+  await b.click('#net-details-open');
+  await b.locator('.machines nav [data-section=domains]').last().click();
+  await b.locator('#domains-ephemeral').waitFor({ timeout: 10_000 });
+  assert.match(await text(b, '#domains-ephemeral'), words('network:DomainsPane.ephemeral'));
+  assert.equal(await b.locator('[data-action=register-domain], [data-action=register-domain-intro]').count(), 0, 'no Register a domain…');
+  await b.click('.machines nav [data-action=back]');
 }

@@ -608,6 +608,7 @@ names_ops! {
     ts_names_status => "status",
     ts_names_judge => "judge",
     ts_names_drop => "drop",
+    ts_names_member => "member",
 }
 
 fn with_room(h: u32, f: impl FnOnce(&mut room::Client, Instant)) {

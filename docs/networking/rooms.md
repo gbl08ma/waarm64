@@ -14,7 +14,8 @@ What's left open (onion routing, broadcast, IPv4 between guests, a directory on 
 with `room/link.rs` (the link), `room/lookup.rs` (lookups) and `nostr.rs` (NIP-01 and BIP-340 over `k256`);
 `web/room.ts` and `web/room-worker.ts` are its page and worker, sharing `web/ts-client.ts`'s I/O. A room is a
 connection kind on the page ([frontend.md](../frontend.md) "Network": the wizard's Join the global public room, Create
-a room and Join a room, the menu's name and link to copy); the node key a connection keeps is in `waarm64-room`
+a room and Join a room, the menu's name and link to copy; a connection's page on the Home page with its name in the
+room, its key under Settings' Advanced and its Domains); the node key a connection keeps is in `waarm64-room`
 ([adapters.md](adapters.md) §2.1), which the worker reads at the start (`identityKey`; an ephemeral connection's comes
 as `identity`). It reuses tailcat's data plane (WireGuard through DERP, an address from the node key), the Ethernet
 gateway ([devices.md](../devices.md) "net") and network adapters ([adapters.md](adapters.md)). Measurements:
@@ -258,7 +259,7 @@ The user's, or taken with them, 2026-10-18 to 2026-11-18; they bind. Registered 
   and an ID that isn't a label (`test lan`, `café`, `a.b`), has the tag's domain alone. The lease's domains are both,
   the room name's first (DHCPv6's domain list; DHCPv4's option 15 takes the first), so a guest with resolved routes
   either to the room's resolver and searches both; the module's `self` event names the member under the room name's
-  domain, which the page shows and builds on (the name to copy, [Register a domain…](ui:network:NetNames.name)'s whole domain, a zone's targets).
+  domain, which the page shows and builds on (the name to copy, [Register a domain…](ui:network:DomainsPane.register)'s whole domain, a zone's targets).
   Two rooms whose IDs differ only in case (`Gabriel-LAN`, `gabriel-lan`) are two rooms with one such domain: their
   tags still tell them apart.
 
@@ -342,8 +343,8 @@ global public room on its machine's second adapter, so visitors' demo machines c
   gathered, so nothing is sent).
 - **Why the menu says nothing is direct:** the Network menu puts a small warning after a room's count of connections
   when members go through the relay where a direct path was wanted (never for relay only, which chose it); it opens
-  the adapter's details ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)), which say why
-  and what may fix it (NetDetails.svelte): this browser blocks (the flag to change in ungoogled-chromium), members' browsers do (`no-direct` `blocked`, `room.peersBlocked`), or attempts failed though this browser gathers
+  the connection's Details on the Home page ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)), which say why
+  and what may fix it (ConnectionRoom.svelte): this browser blocks (the flag to change in ungoogled-chromium), members' browsers do (`no-direct` `blocked`, `room.peersBlocked`), or attempts failed though this browser gathers
   (`no-direct` `failed`, `room.directFailed`: a firewall that drops UDP, a router that doesn't hairpin, a network that
   isolates its clients, mDNS dropped between two machines of one LAN). Which of those it is between two browsers that
   both gather can't be told apart from here.

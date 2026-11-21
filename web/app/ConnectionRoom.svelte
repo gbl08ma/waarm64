@@ -1,0 +1,78 @@
+<!--
+  A room connection's part of its Details (ConnectionDetails.svelte; docs/networking/rooms.md): its name in the room,
+  connected or not (the names agent's `member`, from its key and the room's ID; why not, when it can't be read), the room's link and who may connect (kept with the connection, so always), why
+  members go through the relay where a direct path was wanted (the toolbar's warning leads here) and what may fix it,
+  and the registry's line while it is connected here. Its domains are in the page's Domains section (DomainsPane.svelte).
+-->
+<script lang="ts">
+  import Note from './ui/Note.svelte';
+  import ValueField from './ui/ValueField.svelte';
+  import T from './T.svelte';
+  import ErrorText from './ErrorText.svelte';
+  import { errorView } from './usb-problems.ts';
+  import { memberOf, pageNames } from './areas/names.svelte.ts';
+  import { namesLine } from './names-view.ts';
+  import { t, text } from '../i18n.ts';
+  import type { RoomConnection } from './connections.ts';
+  import type { NetworkView } from './network-view.ts';
+
+  type Props = { room: RoomConnection; v: NetworkView | undefined };
+  let { room, v }: Props = $props();
+
+  /** The connection as its room sees it, connected or not: its key, its name, the room's domain (web/names.ts
+   * `Member`): a member's name is its key's label under the domain. */
+  const member = $derived(pageNames.member(memberOf(room)));
+  const failed = $derived(pageNames.memberError(memberOf(room)));
+</script>
+
+{#snippet code(words: string)}<code>{words}</code>{/snippet}
+
+{#if member}
+  <ValueField
+    id="net-details-room-name"
+    copyId="net-details-room-name-copy"
+    label={t('network:ConnectionRoom.name')}
+    value={member.name}
+    readonly
+    copy
+  />
+{:else if failed}
+  <Note size="md" tone="error" id="net-details-room-name-error"><ErrorText error={errorView(failed)} /></Note>
+{/if}
+<ValueField
+  id="net-details-room-link"
+  copyId="net-details-room-link-copy"
+  showId="net-details-room-link-show"
+  label={t('network:NetAdapter.room.link')}
+  value={room.link}
+  readonly
+  copy
+  secret
+/>
+<Note size="md" id="net-details-room-note">
+  {room.incoming ? t('network:ConnectionRoom.note') : t('network:ConnectionRoom.note.off')}
+</Note>
+{#if v?.room?.blocked}
+  <Note size="md" tone="warn" id="net-details-room-blocked">
+    <T
+      k="network:ConnectionRoom.directBlocked"
+      params={{ flag: '#webrtc-ip-handling-policy', page: 'chrome://flags' }}
+      {code}
+    />
+  </Note>
+{/if}
+{#if v?.room?.peersBlocked}
+  <Note size="md" tone="warn" id="net-details-room-peers-blocked">
+    <T
+      k="network:ConnectionRoom.peersBlocked"
+      params={{ count: v.room.peersBlocked, flag: '#webrtc-ip-handling-policy' }}
+      {code}
+    />
+  </Note>
+{/if}
+{#if v?.room?.failed}
+  <Note size="md" tone="warn" id="net-details-room-failed"
+    >{t('network:ConnectionRoom.directFailed', { count: v.room.failed })}</Note
+  >
+{/if}
+{#if v?.room?.names}<Note size="md" id="net-details-names-line">{text(namesLine(v.room.names))}</Note>{/if}

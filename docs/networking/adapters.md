@@ -70,7 +70,8 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   of IndexedDB.
 - **A room's link and key**: the link (`room.link`, `waarm64-room:<id>?nostr=…&derp=…`, web/room.ts `roomLink`; a
   private room's is a secret) and the switches (`incoming`, `relayOnly`) in the record; the node key in
-  `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
+  `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect, or before
+  it when the connection's page shows its name in the room: names.md "The names agent", `member`), so the
   machine's address and name in the room stay the same. The same database's `names` store (version 2) keeps a stored
   connection's room-names records, by room (a hash of its ID) and name id (web/room.ts `roomNamesStore`,
   [names.md](names.md) "Servers"); its `owner` and `titles` stores (version 3) keep the names agent's owners' secret and
@@ -108,8 +109,14 @@ disconnects and says it was taken.
 ## 3. The page
 
 The Home page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
-**[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
-browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and
+**[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's, each with a page of its own one level down (its Details, which say
+which machines have it attached and what it gives out; its Settings, which change what can change without a new node;
+a room connection's Domains ([names.md](names.md) "What the user sees"); and its commands: a room's Back up key and
+domains…, New address, Log out, Delete), the cards keeping only the name, a line (a room's ending with the link to its
+Domains) and Details and Delete; the
+**Network wizard** (§3.2) makes connections and attaches one, a new one or one of the browser's, and edits none: on an
+adapter that already has a connection it first asks whether that connection is to be edited (its Settings open, Back
+leading to where the wizard was opened) or another attached; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and
 does: [frontend.md](../frontend.md) "The Home page" and "Network". The live side is web/app/net-live.ts
 (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error (a
 client's worker that fails by itself, before or after `Running`, is an error as one it posts: web/tailscale.ts

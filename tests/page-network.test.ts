@@ -10,7 +10,7 @@
 // that isn't there, on an ephemeral connection (never stored), is waited for, then fails, and the
 // machine lets tailcat clients in on that relay: the menu shows its address, the tailcat CLI
 // reaches a web server in the guest through it, the address is the same after a reload (which
-// reconnects by itself) and a new one after New address (the connection's Edit). An ephemeral
+// reconnects by itself) and a new one after New address (a command of the connection's page, whose Settings show its relay). An ephemeral
 // tailnet connection is gone after the last reload. What needs a control server (login, the
 // address, peers) is tests/net-tailnet.test.ts's. Two Debian boots, ~4 min alone. Opt-in with
 // WAARM64_DISTROS=debian, like Debian's other Chromium tests.
@@ -118,6 +118,8 @@ async function wizard(page: Page) {
   if (!(await page.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await page.locator('#network summary').click();
   await page.click('#net-setup');
   assert.equal(await visible(page, '#net-wizard'), true, 'the wizard opens');
+  // On an adapter that has a connection it asks first: Attach a different connection goes on.
+  if (await visible(page, '#net-step-change')) await page.click('#net-change-other');
   // With connections in this browser it opens at them: New connection… goes on to the kind.
   if (await visible(page, '#net-step-pick')) await page.click('#net-pick-new');
   assert.equal(await visible(page, '#net-step-kind'), true, 'at the choice');
@@ -244,7 +246,6 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       await page.uncheck('#net-tc-exit');
       await page.check('#net-tc-serve');
       await page.click('#net-tc-advanced summary');
-      assert.equal(await page.locator('#net-tc-forget').count(), 0, 'a new connection has no address to forget');
       await page.fill('#net-tc-relay', 'https://nope/');
       await page.click('#net-connect');
       assert.match(await text(page, '#net-error'), words('network:tailcat.badRelay'));
@@ -278,16 +279,19 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       await statusIs(page, words('network:network-view.servingOnly'), 60_000);
       await page.click('#net-served-show');
       assert.equal(await page.locator('#net-served-addr').inputValue(), served, 'the same address after a reload');
-      // New address, from the connection's Edit (the Home page's Connections): the kept one is forgotten, and
-      // Save serves at another.
+      // New address, a command of the connection's page (its card's Details on the Home page's Connections; its
+      // Settings show the relay): the kept one is forgotten, and the machine serves at another.
       await openHome(page);
       await page.click('[data-machine="connections"]');
-      await page.click(`li[data-connection="${cat!.id}"] [data-action="edit-connection"]`);
-      assert.equal(await page.locator('#net-tc-relay').inputValue(), '127.0.0.1:8444');
-      assert.equal(await page.locator('#net-tc-advanced').evaluate((d) => (d as HTMLDetailsElement).open), true, 'Advanced is open: its relay is set');
-      await page.click('#net-tc-forget');
-      await page.click('#net-connect');
-      await page.click('[data-action="back"]');
+      await page.click(`li[data-connection="${cat!.id}"] [data-action="connection-details"]`);
+      await page.locator('[data-context-connection]').waitFor();
+      await page.locator('.machines nav [data-section=settings]').last().click();
+      assert.equal(await page.locator('#settings-tc-relay').inputValue(), '127.0.0.1:8444');
+      assert.equal(await page.isChecked('#settings-tc-serve'), true);
+      await page.locator('.machines nav [data-action="new-address"]').last().click();
+      await page.waitForFunction(() => !document.querySelector('.machines')?.hasAttribute('data-busy'), null, { timeout: 30_000 });
+      await page.click('.machines nav [data-action="back"]');
+      await page.click('[data-action="back-to-machine"]');
       await page.locator('#network summary').click();
       await statusIs(page, words('network:network-view.servingOnly'), 30_000);
       await page.waitForFunction((old) => (document.getElementById('net-served-addr') as HTMLInputElement).value !== old, served, { timeout: 10_000 });

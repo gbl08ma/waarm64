@@ -398,6 +398,18 @@ impl Room {
     }
 }
 
+/// A node's public key from its private key, as the room's client derives it (the page's names agent shows it, with
+/// the node's [`Room::name`], for a connection that isn't running: room/names/agent.rs `member`).
+pub fn node_public(private: &[u8; 32]) -> [u8; 32] {
+    public_of(&NodeKeyPair::from(
+        Export::<NodePrivateKey>::from_bytes(*private).import(),
+    ))
+}
+
+fn public_of(pair: &NodeKeyPair) -> [u8; 32] {
+    *pair.public.export().as_bytes()
+}
+
 pub struct Config {
     pub link: Link,
     /// The node's private key; a fresh one when None.
@@ -894,7 +906,7 @@ impl Client {
             }
         };
         let pair = NodeKeyPair::from(Export::<NodePrivateKey>::from_bytes(private).import());
-        let public = *pair.public.export().as_bytes();
+        let public = public_of(&pair);
         let unix0 = cfg.unix_time.unwrap_or_else(|| {
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)

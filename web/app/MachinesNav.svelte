@@ -1,6 +1,8 @@
 <!--
-  The Home page's left column (MachinesPage.svelte): under its Machines heading, the page's own machine (a transient
-  one) and the machines kept in this browser (each with its disks and its state), or a line saying there are none yet;
+  The Home page's left column at its root (HomeColumn.svelte; a context has ConnectionNav.svelte's instead): first,
+  while a machine is on the page, Back to the machine (HomeBack.svelte); under its Machines heading, the page's own
+  machine (a transient one) and the machines kept in this browser (each with its disks and its state), or a line saying
+  there are none yet;
   the commands that make one (new: NewMachine.svelte's dialog, an empty machine or a template; from a disk image;
   import a definition: docs/machines.md §6), then the browser's
   panes (Disks, Shared folders, Connections, Preferences, About) with Demos before About, which opens the demo store's
@@ -9,6 +11,7 @@
 <script lang="ts">
   import Count from './ui/Count.svelte';
   import Icon from './ui/Icon.svelte';
+  import HomeBack from './HomeBack.svelte';
   import { ABOUT, CONNECTIONS, DISKS, FOLDERS, PAGE, PREFERENCES } from './machines-panes.ts';
   import type { IconName } from './icons.ts';
   import type { Actions } from './actions.svelte.ts';
@@ -114,88 +117,76 @@
   }
 </script>
 
-<nav aria-labelledby="home-heading">
-  <h3 id="machines-heading">{t('machines:MachinesNav.heading')}</h3>
-  {#if listed}
-    <ul>
-      {#if current.transient}
-        <li class:chosen={machinesNav.selected === PAGE}>
-          <button class="pick" onclick={() => onchoose(PAGE)} data-machine={PAGE}>
-            <span class="name">{current.transient.label}</span>
-            <span class="meta">{t('machines:MachinesNav.list.transient')}</span>
-          </button>
-        </li>
-      {/if}
-      {#each machines as m (m.id)}
-        <li class:chosen={m.id === machinesNav.selected}>
-          <button class="pick" onclick={() => onchoose(m.id)} data-machine={m.id}>
-            <span class="name">{m.name}</span>
-            <span class="meta">
-              {t('machines:MachinesNav.list.meta', { count: m.attachments.length, state: stateOf(m.id) })}
-            </span>
-          </button>
-        </li>
-      {/each}
-    </ul>
-  {:else}
-    <p class="none" data-empty="machines">{t('machines:MachinesNav.list.empty')}</p>
-  {/if}
-  <div class="new" class:ruled={listed}>
-    <button onclick={() => (making = true)} data-action="new-machine">
-      <Icon name="plus" size={16} />{t('machines:MachinesNav.newMachine')}
-    </button>
-    {#if current.firmware}
-      <button onclick={() => inBar(() => page.openDisk())} title={t('machines:MachinesNav.fromImage.title')}>
-        <Icon name="file" size={16} />{t('machines:MachinesNav.fromImage')}
-      </button>
+{#if current.loaded}
+  <!-- Back to the machine (the toolbar's Home and the wordmark do it too, and Esc), first in the column. -->
+  <HomeBack
+    words={msg('machines:MachinesNav.back')}
+    onclick={() => page.closeMachines()}
+    data-action="back-to-machine"
+  />
+{/if}
+<h3 id="machines-heading">{t('machines:MachinesNav.heading')}</h3>
+{#if listed}
+  <ul>
+    {#if current.transient}
+      <li class:chosen={machinesNav.selected === PAGE}>
+        <button class="pick" onclick={() => onchoose(PAGE)} data-machine={PAGE}>
+          <span class="name">{current.transient.label}</span>
+          <span class="meta">{t('machines:MachinesNav.list.transient')}</span>
+        </button>
+      </li>
     {/if}
-    <button onclick={() => defInput?.click()} title={t('machines:MachinesNav.importDefinition.title')}>
-      <Icon name="file-import" size={16} />{t('machines:MachinesNav.importDefinition')}
-    </button>
-    <input
-      type="file"
-      accept=".json,application/json"
-      hidden
-      bind:this={defInput}
-      onchange={importDef}
-      data-field="import-definition"
-    />
-  </div>
-  <div class="new ruled">
-    {#each panes as p (p.id)}
-      <button
-        class:chosen={machinesNav.selected === p.id}
-        onclick={() => (p.open ? p.open() : onchoose(p.id))}
-        data-machine={p.id}
-        title={p.title}
-        aria-label={p.name}
-      >
-        <Icon name={p.icon} size={16} />{p.label}{#if p.count !== undefined}<Count n={p.count} />{/if}
-      </button>
+    {#each machines as m (m.id)}
+      <li class:chosen={m.id === machinesNav.selected}>
+        <button class="pick" onclick={() => onchoose(m.id)} data-machine={m.id}>
+          <span class="name">{m.name}</span>
+          <span class="meta">
+            {t('machines:MachinesNav.list.meta', { count: m.attachments.length, state: stateOf(m.id) })}
+          </span>
+        </button>
+      </li>
     {/each}
-  </div>
-  {#if current.loaded}
-    <!-- Back to the machine (the toolbar's Home and the wordmark do it too, and Esc), at the column's foot. -->
-    <div class="new ruled back">
-      <button onclick={() => page.closeMachines()} data-action="back-to-machine">
-        <Icon name="arrow-left" size={16} />{t('machines:MachinesNav.back')}
-      </button>
-    </div>
+  </ul>
+{:else}
+  <p class="none" data-empty="machines">{t('machines:MachinesNav.list.empty')}</p>
+{/if}
+<div class="new" class:ruled={listed}>
+  <button onclick={() => (making = true)} data-action="new-machine">
+    <Icon name="plus" size={16} />{t('machines:MachinesNav.newMachine')}
+  </button>
+  {#if current.firmware}
+    <button onclick={() => inBar(() => page.openDisk())} title={t('machines:MachinesNav.fromImage.title')}>
+      <Icon name="file" size={16} />{t('machines:MachinesNav.fromImage')}
+    </button>
   {/if}
-</nav>
+  <button onclick={() => defInput?.click()} title={t('machines:MachinesNav.importDefinition.title')}>
+    <Icon name="file-import" size={16} />{t('machines:MachinesNav.importDefinition')}
+  </button>
+  <input
+    type="file"
+    accept=".json,application/json"
+    hidden
+    bind:this={defInput}
+    onchange={importDef}
+    data-field="import-definition"
+  />
+</div>
+<div class="new ruled">
+  {#each panes as p (p.id)}
+    <button
+      class:chosen={machinesNav.selected === p.id}
+      onclick={() => (p.open ? p.open() : onchoose(p.id))}
+      data-machine={p.id}
+      title={p.title}
+      aria-label={p.name}
+    >
+      <Icon name={p.icon} size={16} />{p.label}{#if p.count !== undefined}<Count n={p.count} />{/if}
+    </button>
+  {/each}
+</div>
 {#if making}<NewMachine {store} act={actions.run} onmade={made} close={() => (making = false)} />{/if}
 
 <style>
-  nav {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    min-height: 0;
-    overflow: auto;
-    padding: var(--space-3);
-    border-right: 1px solid var(--border);
-    background: var(--surface-raised);
-  }
   /* The list's heading, a label over it, in line with its machines' names. */
   h3 {
     margin: 0 0 calc(-1 * var(--space-2));
@@ -252,10 +243,6 @@
     flex-direction: column;
     gap: var(--space-1);
   }
-  /* At the column's foot, below whatever the list leaves free. */
-  .back {
-    margin-top: auto;
-  }
   .ruled {
     padding-top: var(--space-3);
     border-top: 1px solid var(--border);
@@ -263,11 +250,5 @@
   .new button {
     align-items: center;
     gap: var(--space-3);
-  }
-  @media (max-width: 720px) {
-    nav {
-      border-right: 0;
-      border-bottom: 1px solid var(--border);
-    }
   }
 </style>

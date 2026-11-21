@@ -1,7 +1,7 @@
 <!--
   The Network wizard's step for the demo network (NetWizard.svelte; docs/networking/demo-network.md): what it is and
   reaches, and its server, the project's unless another is given (a server of one's own, `ws://` on this computer for
-  testing). Editing changes the server.
+  testing). A connection's Settings on the Home page change the server (ConnectionSettings.svelte).
 -->
 <script lang="ts">
   import Disclosure from './ui/Disclosure.svelte';
@@ -20,8 +20,7 @@
   let serverInput = $state<HTMLInputElement>();
 
   export function begin() {
-    const url = flow.editing?.demo?.url;
-    server = url && url !== DEMO_URL ? url : '';
+    server = '';
   }
   export function enter() {
     queueMicrotask(() => serverInput?.focus());
@@ -29,8 +28,6 @@
   export async function save() {
     const u = parseDemoURL(server);
     if ('error' in u) return flow.fail(u.error);
-    const editing = flow.editing;
-    if (editing) return flow.edited({ ...editing, demo: { url: u.url } });
     await flow.made(await page.netCreate({ kind: 'demo', ephemeral: !flow.keep, demo: { url: u.url } }));
   }
 </script>

@@ -3,7 +3,9 @@
   (`split`), each network adapter of the page's machine has its own button, its state's light and its number on it,
   and its menu holds that adapter alone; otherwise one button's menu has a section per adapter (NetAdapter.svelte).
   Each section shows the adapter's connection and what can be done with it; Change connection… opens the Network wizard
-  (web/app/NetWizard.svelte), Details… the adapter's details (NetDetails.svelte). A menu opens by itself when its
+  (web/app/NetWizard.svelte), Details… (and a room's warning) the connection's Details on the Home page, a room's
+  domains link (DomainsLink.svelte) its Domains, on the Home page in the screen's place or Home's (ConnectionPage.svelte:
+  its Back and Esc return to what showed: the screen, or Home's machine or pane, `machinesNav.origin`). A menu opens by itself when its
   adapter needs the user (a login) and when the page asks (the wizard's end, a status click). Adapter 1's menu is
   `#network` (the single one's too); adapter n's is `#network-<n-1>`. `data-net-menu` marks them for the toolbar,
   which measures them.
@@ -17,6 +19,9 @@
   import { phaseTone } from './network-view.ts';
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
+  import { pageNames } from './areas/names.svelte.ts';
 
   type Props = { net: PageNetwork; split: boolean };
   let { net, split }: Props = $props();
@@ -58,18 +63,30 @@
   function wizard(i: number) {
     toButton(i);
     openAt = undefined;
-    network.openWizard({ mode: 'attach', machine: current.id, adapter: i, here: views[i]?.on });
+    const attached = views[i]?.connection?.id;
+    network.openWizard({
+      mode: 'attach',
+      machine: current.id,
+      adapter: i,
+      here: views[i]?.on,
+      attached,
+      from: machinesNav.origin(),
+    });
   }
   function details(i: number) {
-    toButton(i);
+    const id = views[i]?.connection?.id;
     openAt = undefined;
-    network.openDetails(i);
+    if (id) page.openConnection(id, 'details', machinesNav.origin());
   }
-  function naming(i: number) {
-    toButton(i);
-    openAt = undefined;
-    network.openNaming(i);
-  }
+  // A room connection's titles publish through the link it has now (web/names.ts `relink`): here, where the adapters'
+  // connections are read, whatever their menus show.
+  $effect(() => {
+    for (const a of views) {
+      const room = a.connection?.room;
+      if (room && pageNames.of(room).some((v) => v.link !== room.link))
+        void pageNames.relink({ identityKey: room.identityKey, link: room.link });
+    }
+  });
 </script>
 
 {#snippet section(a: (typeof views)[number])}
@@ -78,7 +95,7 @@
     heading={views.length > 1}
     onwizard={() => wizard(a.index)}
     ondetails={() => details(a.index)}
-    onname={() => naming(a.index)}
+    ondomains={() => (openAt = undefined)}
   />
 {/snippet}
 

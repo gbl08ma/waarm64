@@ -1,11 +1,11 @@
 <!--
   One network adapter's section of a toolbar Network menu (web/app/Network.svelte): its number and connection on one
   line, its state, and what can be done with it (Log in…, the exit node, the peers' subnet routes, the machine's
-  tailcat address and key, its name in a room and the room's link to copy, Connect, Retry, Disconnect, Log out, Change
-  connection…). What they're for and how to use them is in its details (Details…: NetDetails.svelte), so the menu stays
-  short: a room whose members go through the relay where a direct path was wanted has a small warning after its count
-  of connections, which opens the details, where the reason is. Adapter 1's elements keep the ids they always had;
-  adapter n's end in `-<n-1>`. `heading`: the machine has more than one adapter. `onwizard`: Change connection… (or Set up…), `ondetails`: Details…, `onname`: a room's Name this machine… (NetNames.svelte, with its names' states); each closes the menu. Logic is
+  tailcat address and key, its name in a room and the room's link to copy, a stored room connection's link to its Domains
+  (DomainsLink.svelte), Connect, Retry, Disconnect, Log out, Change connection…). What they're for and how to use them is in the connection's Details (Details…: a page of the Home page,
+  ConnectionDetails.svelte), so the menu stays short: a room whose members go through the relay where a direct path was
+  wanted has a small warning after its count of connections, which opens the Details, where the reason is. Adapter 1's elements keep the ids they always had;
+  adapter n's end in `-<n-1>`. `heading`: the machine has more than one adapter. `onwizard`: Change connection… (or Set up…), `ondetails`: Details…, `ondomains`: the room's link to its Domains; each closes the menu. Logic is
   web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
@@ -16,18 +16,18 @@
   import Note from './ui/Note.svelte';
   import StatusDot from './ui/StatusDot.svelte';
   import ValueField from './ui/ValueField.svelte';
-  import NetNames from './NetNames.svelte';
+  import DomainsLink from './DomainsLink.svelte';
   import T from './T.svelte';
   import { Actions } from './actions.svelte.ts';
   import { t } from '../i18n.ts';
   import { MsgError } from '../msg.ts';
   import { ask } from './ask.svelte.ts';
-  import { defaultsOf, phaseTone, roomWarned } from './network-view.ts';
-  import type { AdapterView } from './network-view.ts';
+  import { defaultsOf, phaseTone, roomWarned, type AdapterView } from './network-view.ts';
   import { page } from './page.ts';
+  import { hasDomainsLink } from './names-view.ts';
 
-  type Props = { a: AdapterView; heading: boolean; onwizard: () => void; ondetails: () => void; onname: () => void };
-  let { a, heading, onwizard, ondetails, onname }: Props = $props();
+  type Props = { a: AdapterView; heading: boolean; onwizard: () => void; ondetails: () => void; ondomains: () => void };
+  let { a, heading, onwizard, ondetails, ondomains }: Props = $props();
   const v = $derived(a.view);
   const i = $derived(a.index);
   const s = $derived(i ? `-${i}` : '');
@@ -189,7 +189,11 @@
       />
     </div>
   {/if}
-  <NetNames {a} {onname} />
+  {#if a.connection?.room && hasDomainsLink(a.connection)}
+    <div>
+      <DomainsLink id={a.connection.id} room={a.connection.room} onopen={ondomains} data-domains-link={i} />
+    </div>
+  {/if}
   <Note tone="error" id={`net-menu-error${s}`} hidden={!runner.error}
     >{#if runner.error}<ErrorText error={runner.error} />{/if}</Note
   >

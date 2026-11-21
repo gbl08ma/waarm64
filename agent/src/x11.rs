@@ -1910,6 +1910,9 @@ mod tests {
 
     #[test]
     fn only_roots_or_the_users_display_socket_gets_the_cookie() {
+        if crate::skipped_in_cloud("only_roots_or_the_users_display_socket_gets_the_cookie") {
+            return;
+        }
         let me = rustix::process::getuid().as_raw();
         let (_l, dir) = listener("x11owner", 3);
         let d = dir.to_str().unwrap();

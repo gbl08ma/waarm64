@@ -247,7 +247,10 @@ export class NetworkActions {
     }
     const at = net.runs(c.id);
     const now = await net.conns.get(c.id);
+    // Every reader of the page's list (the connection's page: its Settings' Save, Details, the backup, Domains; the
+    // cards' rename) has the new record, so none writes the old key back (an adapter here that runs it reconnects).
     if (now && at >= 0) await net.edit(now);
+    else await net.refresh();
     return now;
   }
 

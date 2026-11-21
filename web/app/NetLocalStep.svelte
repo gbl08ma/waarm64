@@ -1,7 +1,7 @@
 <!--
   The Network wizard's step for the local helper on this computer (NetWizard.svelte; docs/plans/networking-local.md):
-  how to install and run it (this platform's lines first), then its pairing link pasted. Editing changes the link (the install
-  lines folded under it).
+  how to install and run it (this platform's lines first), then its pairing link pasted. A connection's Settings on the
+  Home page change the link (ConnectionSettings.svelte).
 -->
 <script lang="ts">
   import NetLocalInstall from './NetLocalInstall.svelte';
@@ -23,7 +23,7 @@
   let urlInput = $state<HTMLInputElement>();
 
   export function begin() {
-    localURL = flow.editing?.local?.url ?? flow.opened.localURL ?? '';
+    localURL = flow.opened.localURL ?? '';
   }
   export function enter() {
     queueMicrotask(() => urlInput?.focus());
@@ -31,41 +31,31 @@
   export async function save() {
     const u = parseLocalURL(localURL);
     if ('error' in u) return flow.fail(u.error);
-    const editing = flow.editing;
-    if (editing) return flow.edited({ ...editing, local: { url: u.url } });
     await flow.made(await page.netCreate({ kind: 'local', ephemeral: !flow.keep, local: { url: u.url } }));
   }
 </script>
 
-{#snippet localField(label: string)}
-  <ValueField
-    id="net-local-url"
-    showId="net-local-url-show"
-    {label}
-    bind:ref={urlInput}
-    bind:value={localURL}
-    secret
-    // i18n-ignore-next: an example of the link, not words
-    placeholder="https://vm.tny.im/#net=ws://127.0.0.1:8740/…"
-  />
-{/snippet}
-
-<!-- Editing, the link comes first (what Save changes); the helper's install lines stay at hand, folded. -->
 <Step id="net-step-local" {active}>
-  {#if flow.editing}
-    {@render localField(t('network:NetLocalStep.local.link'))}
-    <NetLocalInstall prefix="net-local" open={false} />
-  {:else}
-    <Steps>
-      <li>
-        <T k="network:NetLocalStep.local.run">
-          {#snippet a(words: string)}<a href={SOURCE} target="_blank" rel="noopener">{words}</a>{/snippet}
-        </T>
-        <div class="install"><NetLocalInstall prefix="net-local" open={!localURL} /></div>
-      </li>
-      <li>{@render localField(t('network:NetLocalStep.local.paste'))}</li>
-    </Steps>
-  {/if}
+  <Steps>
+    <li>
+      <T k="network:NetLocalStep.local.run">
+        {#snippet a(words: string)}<a href={SOURCE} target="_blank" rel="noopener">{words}</a>{/snippet}
+      </T>
+      <div class="install"><NetLocalInstall prefix="net-local" open={!localURL} /></div>
+    </li>
+    <li>
+      <ValueField
+        id="net-local-url"
+        showId="net-local-url-show"
+        label={t('network:NetLocalStep.local.paste')}
+        bind:ref={urlInput}
+        bind:value={localURL}
+        secret
+        // i18n-ignore-next: an example of the link, not words
+        placeholder="https://vm.tny.im/#net=ws://127.0.0.1:8740/…"
+      />
+    </li>
+  </Steps>
   <Note size="md">{t('network:NetLocalStep.local.note')}</Note>
 </Step>
 

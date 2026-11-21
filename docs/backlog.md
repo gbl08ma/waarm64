@@ -348,7 +348,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
   tells a page it is off the record. Found by tests/page-folders.test.ts, which runs on a disk profile; not yet tried on
   another Chromium build or filed upstream.
-- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) six fail (2026-11-15), which stops `scripts/ci.sh` there: `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test`'s `follows_the_session_and_passes_the_child_its_frames`, `a_child_for_the_screens_size_hears_the_hello_and_the_size_first`, `applies_the_pages_layout_where_the_session_hasnt_it`, `no_session_child_without_the_clipboard` and `says_the_childs_desktop_to_a_page_that_asks`. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
+- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) six can't pass, and are skipped there since 2026-11-21 (`agent/src/main.rs` `skipped_in_cloud`), so they are tested only as a user: `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test`'s `follows_the_session_and_passes_the_child_its_frames`, `a_child_for_the_screens_size_hears_the_hello_and_the_size_first`, `applies_the_pages_layout_where_the_session_hasnt_it`, `no_session_child_without_the_clipboard` and `says_the_childs_desktop_to_a_page_that_asks`. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
 - 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
   (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).
 - **The firmware's keyboard on machines without the USB controller:** a machine with the controller has one since 2026-10-18 (the built-in USB keyboard on EDK2's USB stack, docs/usb.md "The keyboard"). One without it still gets the screen's keys on the serial console as a terminal sends them (`terminalBytes`: no key-up, no modifiers by themselves) until its virtio keyboard is live. A virtio-input DXE driver for the mmio transport (none to port from OvmfPkg) would cover those too; worth it only if machines without the controller stay common (new ones have it). The other way out removes the serial path instead: every page machine gets the controller (older ones at their next start, which orphans their snapshots once, so ask first) and the tests' transient guests take it by default (guest-visible: the user's OK); then `terminalBytes` and `attachInput`'s serial `text` path can go. Kept for now (2026-10-18) so machines from before USB don't lose their firmware keyboard.
@@ -1572,6 +1572,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     resident memory 372 MiB before, 381 MiB after; writing 512 MiB of it then added 512 MiB); a zero-or-not pass per
     4 KiB page over the 4 GiB took 0.46–1.0 s there.
 
+- **A connection's page and its Domains pane** (DOMAINS, 2026-11-21; frontend.md "The Home page",
+  networking/names.md "What the user sees"):
+  - **Its topic scripts have not run** (2026-11-21): the track was built in a cloud session, where `scripts/ci.sh` passed whole (1498 passed, 0 failed, 607 skipped) and `tests/page-room.test.ts` and `tests/page-network.test.ts` passed on Debian, but `scripts/ci-net.sh`, `scripts/ci-debian.sh` and `scripts/ci-machines.sh` refuse to start there (the alpine-uefi, linux-snd and alpine-demo images are missing: docs/cloud.md), as do the image and TSan steps of `ci.sh`. Run them in the dev VM: `DOMAINS-HANDOVER.md` lists the runs, and is deleted with this item once they pass.
+  - A key can't be imported into an existing connection: a pasted key (or a backup) makes a new connection, in the
+    wizard's [A key to paste](ui:network:NetRoomStep.room.key.paste).
+  - The backup is copied, as the key is: no file to save or open.
+  - Other dialogs could become pages on Home's levels (the precedent: a connection's page replaced its details dialog
+    and the wizard's edit mode), such as a disk's Overlays or a machine's snapshots.
+  - A domain let go before its claim was public shows Let go (loop 4's fix in web/names.ts `view`), but what the agent
+    publishes for it once the claim is anchored later (the claim with no release after it?) was not looked into.
+  - The toolbar menu's link to a room's Domains is checked by `tests/page-room.test.ts` (a running machine) but has no
+    screenshot in `tools/screens.ts`.
+  - The toolbar's ways into a connection's page while Home shows a pane that isn't a machine's (Disks, Shared folders,
+    Preferences, About) are entered from Connections (`machinesNav.origin`): `From` has no pane of the root to return
+    to, so their Back leads to Connections rather than that pane.
+
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
   desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't
@@ -1949,18 +1965,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - Done (N5): the wizard's key field is the export with names, and a pasted one brings them.
     - The page's loose ends (N5):
       - New name on a room connection that holds names keeps its titles (under the same entry) pointing at the old
-        key: the details' [Point all at this connection](ui:network:NameEntry.pointHere) fixes it by hand. New name could
+        key: each card's [Point all at this connection](ui:network:DomainCard.pointHere) fixes it by hand. New name could
         offer it, or repoint them itself.
-      - Name this machine… is shown only while the room is connected (the node key comes with the connection's start).
-        A stored connection's key is in `waarm64-room` before that; reading it there would offer the dialog offline.
+      - Done (DOMAINS): a connection's Domains pane registers and manages its domains with the connection
+        disconnected (the names agent's `member`, the key made in `waarm64-room` if it never started).
       - The dialog's check opens a checker (a publisher: a new key, "who serves?") for each press of Register (N5b), so
         Register waits for servers to be found (a few seconds) before a free name registers. A running room's own
         names client could ask sooner, but it would link one press to the next and to the node's own lookups.
       - "Taken until" is a server's word, unchecked: a lying server can make a free name look taken (Register is then
         disabled). Two servers are asked and the latest date wins; a check that showed both answers apart could say so.
-      - The details' points take a member's name or key pasted; nothing lists the room's members to choose from.
-      - The last week's notice is a message bar notice that clears itself; a name past its term in grace says so in the
-        menu only.
+      - A card's points take a member's name or key pasted; nothing lists the room's members to choose from.
+      - The last week's notice is a message bar notice that clears itself (with a Domains action since DOMAINS); a name
+        past its term in grace says so in its card, the pane's upkeep line and the status links' warning.
     - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
       entries a month, 1.17 to 1.52 KB each with their anchors and headers (R1; measured by N0b), and is put whole. Pruning dead branches and
       stale entries from the item (they never count again) would keep puts small.

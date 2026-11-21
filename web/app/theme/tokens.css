@@ -107,6 +107,7 @@
   /* A state's light (the status bar, the network menu, the keyboard's LEDs). */
   --status-ok: #4cc38a;
   --status-busy: #e0b341;
+  --status-warn: #ffb36b;
   --status-bad: #e5484d;
   --status-off: #6b7280;
 

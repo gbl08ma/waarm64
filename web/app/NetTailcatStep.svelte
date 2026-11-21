@@ -1,9 +1,9 @@
 <!--
   The Network wizard's tailcat step (NetWizard.svelte; docs/tailcat.md): an exit through a tailcat address, and or a
-  server others reach the machine at (its relay and who's let in, under Advanced; editing: a new address).
+  server others reach the machine at (its relay and who's let in, under Advanced). A connection's Settings on the Home
+  page change them (ConnectionSettings.svelte).
 -->
 <script lang="ts">
-  import Button from './ui/Button.svelte';
   import Check from './ui/Check.svelte';
   import Disclosure from './ui/Disclosure.svelte';
   import Field from './ui/Field.svelte';
@@ -14,7 +14,7 @@
   import ValueField from './ui/ValueField.svelte';
   import { msg, t } from '../i18n.ts';
   import type { Flow } from './net-wizard.ts';
-  import { hasTailcatIdentity, parseAllow, parseRelay, parseTailcatAddr, tailcatBuilt } from './network.ts';
+  import { parseAllow, parseRelay, parseTailcatAddr, tailcatBuilt } from './network.ts';
   import { page } from './page.ts';
 
   type Props = { flow: Flow; active: boolean };
@@ -27,27 +27,12 @@
   let relay = $state('');
   let allow = $state('');
   let advanced = $state(false);
-  /** The connection being edited keeps its identity: New address can drop it. */
-  let identityKept = $state(false);
   let exitBox = $state<HTMLInputElement>();
 
   export function begin() {
-    const cat = flow.editing?.tailcat;
-    exit = cat ? !!cat.exit : true;
-    serve = cat?.serve ?? false;
-    address = cat?.exit ?? '';
-    relay = cat?.relay ?? '';
-    allow = (cat?.allow ?? []).join('\n');
-    advanced = !!relay || !!allow;
+    [exit, serve, address, relay, allow, advanced] = [true, false, '', '', '', false];
   }
   export function enter() {
-    const cat = flow.editing?.tailcat;
-    if (!cat) identityKept = false;
-    else if (cat.identity) identityKept = true;
-    else
-      void hasTailcatIdentity(cat.identityKey).then((kept) => {
-        identityKept = kept;
-      });
     queueMicrotask(() => exitBox?.focus());
   }
   export async function save() {
@@ -65,12 +50,7 @@
       relay: r.relay,
       allow: letIn.allow.length ? letIn.allow : undefined,
     };
-    const editing = flow.editing;
-    if (editing?.tailcat) return flow.edited({ ...editing, tailcat: { ...editing.tailcat, ...settings } });
     await flow.made(await page.netCreate({ kind: 'tailcat', ephemeral: !flow.keep, tailcat: settings }));
-  }
-  async function forget() {
-    if (await flow.forget()) identityKept = false;
   }
 </script>
 
@@ -143,14 +123,6 @@
           {code}
         />
       </Note>
-      {#if flow.editing}
-        <div class="row">
-          <Button type="button" id="net-tc-forget" disabled={!identityKept} onclick={forget}>
-            {t('network:NetTailcatStep.newAddress')}
-          </Button>
-        </div>
-        <Note size="md">{t('network:NetTailcatStep.newAddress.note')}</Note>
-      {/if}
     </Disclosure>
   </div>
 </Step>
@@ -162,10 +134,6 @@
     flex-direction: column;
     gap: var(--space-3);
     margin-left: var(--space-6);
-  }
-  .row {
-    display: flex;
-    gap: var(--space-3);
   }
   textarea {
     resize: vertical;

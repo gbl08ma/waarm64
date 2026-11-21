@@ -3,7 +3,8 @@
 // routed there through `fetch` (tests/net/names-agent.ts): a claim held back until anchored, then published; an anchor
 // counted whenever it comes, and a renewal that can no longer link dropped; one Web Lock a title (two tabs make one entry);
 // a lost title not renewed; a zone's `seq` never shared by two copies of a title; nothing asked of any service but the
-// compiled ones; the dialog's check (as typed, by the page alone; at Register, its servers asked for one first byte, never the id) and the last week's notice. A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
+// compiled ones; the dialog's check (as typed, by the page alone; at Register, its servers asked for one first byte, never the id) and the last week's notice;
+// a room connection's key, name and domains without running it (`member`). A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -12,7 +13,8 @@ import { exportNames, importNames } from '../web/names-export.ts';
 import { inLastWeek, LAST_WEEK_S, NamesAgent, roomOf, type TitleView } from '../web/names.ts';
 import { memoryNamesStore } from '../web/names-store.ts';
 import { localBackend, mergeIds, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
-import type { NamesIds } from '../web/ts-client.ts';
+import { TsClient, type NamesIds, type TsEvent } from '../web/ts-client.ts';
+import { memoryState } from '../web/app/connection-memory.ts';
 import { subdomainOk } from '../web/app/names-view.ts';
 import { aged, DAY, fakePublish, nowS, point, routeServices, statusOf, TEST_WASM, testAgent, testModule, type Asked } from './net/names-agent.ts';
 import { startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
@@ -780,4 +782,57 @@ test('a room\'s server fetches through the page only the compiled calendars and 
   const missing = await serviceFetch(`${EXPLORERS[0]}/block/${'00'.repeat(32)}/header`);
   assert.equal(missing.status, 404, 'a block the explorer doesn\'t know: denied, not failed');
   assert.deepEqual(asked.foreign, []);
+});
+
+/** What a running room node with key `key` (hex) says of itself in the room of `link`: its `self` event. */
+async function runningSelf(link: string, key: string): Promise<Extract<TsEvent, { type: 'self' }>> {
+  let me: Extract<TsEvent, { type: 'self' }> | undefined;
+  const c = new TsClient(await testModule(), { room: { link }, key }, { packet() {}, event(e) { if (e.type === 'self') me = e; } });
+  c.close();
+  assert.ok(me, 'a self event');
+  return me;
+}
+
+test('a room connection\'s key, name and domains without running it: as its running node reports them, its key made where the room reads it', { skip, timeout: 30_000 }, async () => {
+  const kept = memoryState();
+  const made: string[] = [];
+  const { agent } = await testAgent({ identity: (k) => { made.push(k); return kept.roomIdentity(k); } });
+  // Never started: its key is made under its entry, the one its first start then reads.
+  assert.equal(await kept.readRoom('conn-a'), undefined);
+  const m = await agent.member(conn());
+  const key = (await kept.readRoom('conn-a'))?.key;
+  assert.match(key ?? '', /^[0-9a-f]{64}$/, 'made under the connection\'s entry');
+  assert.deepEqual(await agent.member(conn()), m, 'the same key again');
+  const me = await runningSelf(LINK, key!);
+  assert.equal(`nodekey:${m.key}`, me.key);
+  assert.equal(m.name, me.name);
+  assert.equal(m.name, `${m.name.split('.')[0]}.${m.domain}`);
+  // The tests' room ID ("names agent") is no DNS label: the tag's domain alone.
+  assert.equal(m.domain, `${me.tag}.p2p.internal`);
+  assert.deepEqual(m.domains, [m.domain]);
+  // A room named by a label: its name's domain first, then the tag's.
+  const lan = 'waarm64-room:gabriel-lan?nostr=ws%3A%2F%2F127.0.0.1%3A9&derp=127.0.0.1%3A9';
+  const l = await agent.member({ identityKey: 'conn-a', link: lan });
+  const lme = await runningSelf(lan, key!);
+  assert.equal(l.key, m.key, 'one key in both rooms');
+  assert.equal(l.name, lme.name);
+  assert.deepEqual(l.domains, ['gabriel-lan.p2p.internal', `${lme.tag}.p2p.internal`]);
+  assert.equal(l.domain, l.domains[0]);
+  // An ephemeral connection's own key: that one, nothing read or made under its entry.
+  const own = 'cd'.repeat(32);
+  made.length = 0;
+  const e = await agent.member({ identityKey: 'conn-e', link: LINK, identity: { key: own } });
+  assert.deepEqual(made, [], 'no entry read');
+  assert.equal(await kept.readRoom('conn-e'), undefined);
+  assert.equal(`nodekey:${e.key}`, (await runningSelf(LINK, own)).key);
+  assert.notEqual(e.name, m.name);
+});
+
+test('Let it go before the claim is public: the title says let go, not Reserved (DOMAINS loop 4: the pane\'s card kept Let it go)', { skip, timeout: 60_000 }, async () => {
+  const { agent } = await testAgent({ publish: fakePublish() });
+  const c = conn('conn-early');
+  assert.equal((await agent.register(c, 'early', point())).state, 'reserved');
+  assert.equal((await agent.release(c, 'early')).state, 'released');
+  assert.deepEqual((await agent.titles(c.identityKey)).map((v) => v.state), ['released']);
+  assert.deepEqual(await agent.held(c.identityKey), [], 'not held: deleting the connection loses nothing');
 });
