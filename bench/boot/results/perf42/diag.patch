@@ -1,0 +1,421 @@
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index a3b94137..558cd98c 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -18,9 +18,9 @@ import { Counter } from '../../web/counters.ts';
+ import { DISTROS } from '../../web/test-guests.ts';
+ 
+ /** core/src/tally.rs's slots. */
+-const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
++const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)', 'NZCV stored, cold only', 'NZCV stored, other'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+-const N = 64, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60;
++const N = 72, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60;
+ 
+ type Tallies = number[];
+ type Phase = { name: string; steps: number; t: Tallies };
+@@ -68,6 +68,7 @@ function print(r: Run) {
+   const rows: [string, number, Tallies][] = [['all', r.steps, r.t], ...r.phases.map((p) => [p.name, p.steps, p.t] as [string, number, Tallies])];
+   console.log(`${'per 1000 steps'.padEnd(24)} ${rows.map(([n]) => n.slice(0, 9).padStart(9)).join(' ')}`);
+   JIT.forEach((n, i) => console.log(`${n.padEnd(24).slice(0, 24)} ${rows.map(([, s, t]) => ((1000 * t[i]) / s).toFixed(3).padStart(9)).join(' ')}`));
++  [['taken back: lazy B.cond', 64], ['taken back: other', 65], ['taken fwd loop: lazy', 66], ['taken fwd loop: other', 67]].forEach(([n, i]) => console.log(`${String(n).padEnd(24)} ${rows.map(([, s, t]) => ((1000 * t[i as number]) / s).toFixed(3).padStart(9)).join(' ')}`));
+   if (!r.parallel) return;
+   const chunks = END.reduce((s, _, k) => s + r.t[END_AT + k], 0);
+   console.log(`chunks: ${chunks} (${(r.steps / chunks).toFixed(0)} steps each); by how they ended: count, share, mean steps`);
+diff --git a/core/Cargo.toml b/core/Cargo.toml
+index 234cfda4..65cf3ae0 100644
+--- a/core/Cargo.toml
++++ b/core/Cargo.toml
+@@ -10,6 +10,8 @@ crate-type = ["cdylib", "rlib"]
+ [features]
+ # The diagnostic build's tallies (core/src/tally.rs): `scripts/build-wasm.sh --features diag`, never the normal build.
+ diag = []
++flagx = []
++takenx = []
+ # The differential tests' polled core (scripts/ci-jit.sh): user-mode JIT vCPUs (`jit_new`) compile parallel SMP's polled
+ # code, and `jit_run` stores the steps left in the stop word and returns the steps it ran (docs/testing.md "Polled code
+ # against the interpreter"). A test build in its own target directory, never the normal build: no export changes.
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 5fda939d..3f908668 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -1020,7 +1020,8 @@ pub fn module(
+         // whose flags are dead at entry, and what lazy flags the edges carry.
+         let n = r.blocks.len();
+         let mem = vec![In::Mem; n];
+-        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem);
++        let none = vec![false; n];
++        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem, &none);
+         let plain = if r.looped() {
+             0
+         } else {
+@@ -1031,6 +1032,9 @@ pub fn module(
+             let flags = (0..n)
+                 .map(|j| match x.flags[j] {
+                     _ if first.dead[j] => In::Dead,
++                    // EXPERIMENT (unsound: a cold path's exception sees a stale NZCV): the bound of a fix.
++                    #[cfg(feature = "flagx")]
++                    _ if first.dead_hot[j] => In::Dead,
+                     In::Lazy(k, sf) if j > 0 => In::Lazy(k, sf),
+                     _ => In::Mem,
+                 })
+@@ -1041,7 +1045,14 @@ pub fn module(
+         if n > 1 {
+             let mut settled = false;
+             for _ in 0..4 {
+-                let next = settle(&emit_region(&env, r, plain, &entry, &flags));
++                let next = settle(&emit_region(
++                    &env,
++                    r,
++                    plain,
++                    &entry,
++                    &flags,
++                    &first.dead_hot,
++                ));
+                 if next == (entry.clone(), flags.clone()) {
+                     settled = true;
+                     break;
+@@ -1054,16 +1065,23 @@ pub fn module(
+                 entry = entry.iter().map(|s| s.loose()).collect();
+             }
+         }
+-        let mut x = emit_region(&env, r, plain, &entry, &flags);
++        let mut x = emit_region(&env, r, plain, &entry, &flags, &first.dead_hot);
+         if x.bad {
+             // The lazy states didn't settle: flags in memory on every edge.
+-            let dead = |j: usize| if first.dead[j] { In::Dead } else { In::Mem };
++            let dead = |j: usize| {
++                if first.dead[j] || (cfg!(feature = "flagx") && first.dead_hot[j]) {
++                    In::Dead
++                } else {
++                    In::Mem
++                }
++            };
+             x = emit_region(
+                 &env,
+                 r,
+                 plain,
+                 &entry,
+                 &(0..n).map(dead).collect::<Vec<_>>(),
++                &first.dead_hot,
+             );
+             assert!(!x.bad);
+         }
+@@ -1163,13 +1181,21 @@ struct Emission {
+     into: Vec<emit::Regs>,
+     flags: Vec<In>,
+     dead: Vec<bool>,
++    dead_hot: Vec<bool>,
+     bad: bool,
+ }
+ 
+ /// One emission of region `r` with the registers in `plain` read without a
+ /// local, each member starting in its `entry` register state and `fin` flag
+ /// state.
+-fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]) -> Emission {
++fn emit_region(
++    e: &Env,
++    r: &Region,
++    plain: u64,
++    entry: &[emit::Regs],
++    fin: &[In],
++    hotdead: &[bool],
++) -> Emission {
+     let n = r.blocks.len();
+     let head = r.blocks[0].va;
+     let mut c = emit::Func::default();
+@@ -1187,6 +1213,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+     reached[0] = true;
+     let mut flags = vec![In::Unset; n];
+     let mut dead = vec![false; n];
++    let mut dead_hot = vec![false; n];
+     let mut bad = false;
+     let mut inl = 0;
+     c.local_get(0).i64_load(emit::PC).local_set(1);
+@@ -1345,6 +1372,18 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             emit::set_pc(&mut c, 4 * len as i64);
+         }
+         dead[i] = c.touched == Some(false);
++        // EXPERIMENT: the branch outcome's shape (a conditional branch whose outcome the exits read from `TAKEN`).
++        let taken_slot = match succs {
++            Next::Cond(..) if c.defer_pc => Some(
++                if b.words.last().map(|&w| decode(w)) == Some(Op::B_cond) && c.lazy().is_some() {
++                    tally::TAKEN_LAZY
++                } else {
++                    tally::TAKEN_OTHER
++                },
++            ),
++            _ => None,
++        };
++        dead_hot[i] = c.touched_hot == Some(false);
+         // Edges to later members and back to the head: NZCV stored on the
+         // way unless the member's flags are dead or its edges' lazy ones.
+         // `when`: an i32 on the stack that must hold too.
+@@ -1400,6 +1439,16 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             let lazy = c.lazy();
+             flags[j] = flags[j].merge(lazy.map_or(In::Mem, |(k, sf)| In::Lazy(k, sf)));
+             if store(j, lazy) {
++                if lazy.is_some() {
++                    emit::dbump(
++                        c,
++                        if hotdead[j] {
++                            tally::FLAG_COLD
++                        } else {
++                            tally::FLAG_HOT
++                        },
++                    );
++                }
+                 c.commit_flags();
+             }
+             bad |= matches!(fin[j], In::Lazy(..)) && store(j, lazy);
+@@ -1412,6 +1461,11 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                 c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
+                 c.local_set(emit::LEFT);
+             }
++            match taken_slot {
++                Some(t) if j == 0 => emit::dbump(c, t),
++                Some(t) if looped => emit::dbump(c, t + 2),
++                _ => {}
++            }
+             emit::dbump(
+                 c,
+                 if j == 0 {
+@@ -1469,7 +1523,8 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                 Next::Cond(t, o) => {
+                     emit::pc_plus(&mut c, t);
+                     emit::pc_plus(&mut c, o);
+-                    c.local_get(emit::TAKEN).select();
++                    emit::push_taken(&mut c);
++                    c.select();
+                 }
+                 Next::None => unreachable!("members only"),
+             }
+@@ -1526,7 +1581,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                 }
+                 (false, false) => {}
+                 (lt, _) => {
+-                    c.local_get(emit::TAKEN);
++                    emit::push_taken(&mut c);
+                     if !lt {
+                         c.op(0x45); // i32.eqz
+                     }
+@@ -1565,6 +1620,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+         into,
+         flags,
+         dead,
++        dead_hot,
+         bad,
+     }
+ }
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index 1d65cb40..8f0540aa 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -295,6 +295,11 @@ pub struct Func {
+     /// commit did. A region member that sets flags before anything else
+     /// needs none from its edges.
+     pub touched: Option<bool>,
++    /// EXPERIMENT (flagx): as `touched`, but a cold path's store (a slow arm, a failure chain) doesn't count.
++    pub touched_hot: Option<bool>,
++    /// EXPERIMENT (takenx): the block's B.cond and the lazy flags it read, for an exit to compute its outcome again
++    /// from the flag locals instead of reading `TAKEN`.
++    pub taken_re: Option<(u32, Flags)>,
+     /// The block's branch leaves the PC to its exits (step 8.5): a
+     /// successor is a region member (since M6: either side of a conditional
+     /// branch), so only the paths that leave store it; a conditional branch
+@@ -680,6 +685,7 @@ impl Func {
+         self.words.clear();
+         self.words.extend_from_slice(words);
+         self.scalar.clear();
++        self.taken_re = None;
+     }
+ 
+     /// Pushes Vn.
+@@ -872,6 +878,7 @@ impl Func {
+     /// A new flag setter replaces the current one.
+     fn set_flags(&mut self, kind: Kind, sf: bool) {
+         self.touched.get_or_insert(false);
++        self.touched_hot.get_or_insert(false);
+         self.retire_flags();
+         self.flags = Flags::Lazy {
+             kind,
+@@ -907,6 +914,9 @@ impl Func {
+ 
+     fn store_flags_in(&mut self, cold: bool) {
+         self.touched.get_or_insert(true);
++        if !cold {
++            self.touched_hot.get_or_insert(true);
++        }
+         if let Flags::Lazy { kind, sf, .. } = self.flags {
+             self.c.local_get(VCPU);
+             self.push_nzcv(kind, sf, cold);
+@@ -937,6 +947,7 @@ impl Func {
+     /// (`bench/interp/REPORT.md` "M5 step 6").
+     pub fn commit_flags(&mut self) {
+         self.touched.get_or_insert(true);
++        self.touched_hot.get_or_insert(true);
+         if let Flags::Lazy { current: false, .. } = self.flags {
+             self.store_flags();
+             if let Flags::Lazy { current, .. } = &mut self.flags {
+@@ -976,6 +987,7 @@ impl Func {
+     /// (or dead: nothing reads it before a setter replaces it).
+     pub fn enter_flags(&mut self, lazy: Option<(Kind, bool)>) {
+         self.touched = None;
++        self.touched_hot = None;
+         self.flags = match lazy {
+             Some((kind, sf)) => Flags::Lazy {
+                 kind,
+@@ -1557,7 +1569,12 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+                 pc_plus(c, here + 4);
+             }
+             match op {
+-                B_cond => cond(c, bits(i, 3, 0)),
++                B_cond => {
++                    if c.defer_pc && matches!(c.flags, Flags::Lazy { .. }) {
++                        c.taken_re = Some((bits(i, 3, 0), c.flags));
++                    }
++                    cond(c, bits(i, 3, 0))
++                }
+                 CBZ | CBNZ => {
+                     get(c, sf, rd);
+                     cmp(c, sf, EQZ);
+@@ -1754,6 +1771,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+                 c.regs,
+             );
+             let chain = c.chain.clone();
++            let th = c.touched_hot;
+             fp_guard(c, cx, i, k);
+             if !(cx.crypto && crypto::inline(c, i, op))
+                 && !(cx.sha3 && crypto::inline_sha3(c, i, op))
+@@ -1774,6 +1792,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+                 (c.flags, c.touched, c.fp_ok, c.fpa_ok, c.fp16_ok, c.regs) =
+                     (flags, touched, fp_ok, fpa_ok, fp16_ok, regs);
+                 c.chain = chain;
++                c.touched_hot = th;
+                 return false;
+             }
+         }
+@@ -4881,12 +4900,29 @@ fn nzcv_of(c: &mut Func, kind: Kind, sf: bool) {
+ /// Pushes an i32 that is non-zero iff condition `cond` holds for the current
+ /// flags: from a lazy setter's operands where its kind has a direct form,
+ /// else from its NZCV computed in registers or from NZCV in memory.
++/// EXPERIMENT (takenx): pushes the block's conditional branch's outcome on an exit path: computed again from the
++/// lazy setter's operands (the flag locals still hold them) with the feature, else `TAKEN`.
++pub fn push_taken(c: &mut Func) {
++    match c.taken_re {
++        Some((cc, fl)) if cfg!(feature = "takenx") => {
++            let (flags, counts) = (c.flags, c.counts);
++            c.flags = fl;
++            cond(c, cc);
++            (c.flags, c.counts) = (flags, counts);
++        }
++        _ => {
++            c.local_get(TAKEN);
++        }
++    }
++}
++
+ fn cond(c: &mut Func, cond: u32) {
+     if cond >> 1 == 7 {
+         c.i32_const(1);
+         return;
+     }
+     c.touched.get_or_insert(true);
++    c.touched_hot.get_or_insert(true);
+     match c.flags {
+         Flags::Mem => {
+             c.counts.cond_memory += 1;
+@@ -4983,6 +5019,7 @@ fn direct(c: &mut Func, kind: Kind, sf: bool, cond: u32) -> bool {
+ /// Pushes C (0 or 1) of the current flags, for ADC and SBC.
+ fn carry(c: &mut Func) {
+     c.touched.get_or_insert(true);
++    c.touched_hot.get_or_insert(true);
+     match c.flags {
+         Flags::Mem => {
+             c.counts.cond_memory += 1;
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 1c1a01b9..34240019 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -8,7 +8,17 @@
+ //! steps), and two latencies of parallel mode (a timer line seen late, an interrupt line's rise to its IRQ).
+ 
+ /// Words in each table.
+-pub const N: usize = 64;
++pub const N: usize = 72;
++/// EXPERIMENT: more compiled-code slots past the parallel tables (copied as the ones below JIT_SLOTS).
++pub const JIT_MORE: usize = 64;
++/// EXPERIMENT: a region edge taken from a member ending in a conditional branch (its outcome kept in `TAKEN` for the
++/// exits, `defer_pc`): a lazy B.cond's.
++pub const TAKEN_LAZY: u32 = 64;
++/// The same, a CBZ/CBNZ/TBZ/TBNZ or a B.cond on flags in memory.
++pub const TAKEN_OTHER: u32 = 65;
++/// The same two, on an edge to a later member of a looped region (64, 65: the back-edges).
++pub const TAKEN_LAZY_FWD: u32 = 66;
++pub const TAKEN_OTHER_FWD: u32 = 67;
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+@@ -41,6 +51,11 @@ pub const HOST_CALL: u32 = 11;
+ pub const HOST_RET: u32 = 12;
+ /// Polled code (parallel SMP): a poll of the stop word (`jit::emit::poll`) run, whether or not it stopped.
+ pub const POLL: u32 = 13;
++/// EXPERIMENT: a region's edge taken whose block stored lazy NZCV for the member it enters, where only that
++/// member's cold paths (slow arms, failure chains) need it before its first setter.
++pub const FLAG_COLD: u32 = 14;
++/// The same, the member needing it otherwise (a reader, a helper, its own end before any setter).
++pub const FLAG_HOT: u32 = 15;
+ /// Slots below this are compiled code's (copied from the vCPU's table at each publication).
+ pub const JIT_SLOTS: usize = 16;
+ 
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 55aa3cb2..5a0f968a 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1274,7 +1274,10 @@ impl Vm {
+             publish_jit(c, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
++        for (i, a) in c.diag.iter().enumerate() {
++            if i >= crate::tally::JIT_SLOTS && i < crate::tally::JIT_MORE {
++                continue;
++            }
+             a.store(
+                 self.vcpus.iter().map(|v| v.diag[i]).sum(),
+                 Ordering::Relaxed,
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index c4a6f76d..0730b677 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -1180,8 +1180,10 @@ impl Vm {
+             publish_jit(k, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+-            a.store(x, Ordering::Relaxed);
++        for (i, (a, &x)) in k.diag.iter().zip(&v.diag).enumerate() {
++            if i < crate::tally::JIT_SLOTS || i >= crate::tally::JIT_MORE {
++                a.store(x, Ordering::Relaxed);
++            }
+         }
+     }
+ }
+diff --git a/web/vm.ts b/web/vm.ts
+index 7d92153a..3c253a1a 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -958,7 +958,12 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+     /** Parallel mode's steps between two publications of a vCPU's PC (0: the default); the PC sampler shortens it. */
+     setChunk: (steps: number) => ex.vm_set_chunk(vm, BigInt(steps)),
+     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
+-    stats: () => stats(counter),
++    // EXPERIMENT (PERF loop 42, not for commit): the diagnostic core's tallies, summed over the vCPUs.
++    stats: () => {
++      const st = stats(counter);
++      (st.jit as Record<string, unknown>).diag = Array.from({ length: 72 }, (_, k) => blocks.reduce((sum, b) => sum + Number(new BigUint64Array(memory.buffer, b + Counter.LEN * 8, 72)[k]), 0));
++      return st;
++    },
+     /** The vCPUs run each on its own worker (`VmConfig.parallel`): `cpuStats` is then per vCPU. */
+     parallel,
+     /**

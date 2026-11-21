@@ -1002,7 +1002,10 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   block's branch (after it, TurboFan ran the integer guest 35% slower). In regions, a member
   starts with lazy flags when every edge into it carries the same setter, else in memory or dead;
   an edge stores NZCV only into a member that needs it in memory, and exits store it; a region
-  whose edges disagree is emitted again with flags in memory.
+  whose edges disagree is emitted again with flags in memory. A loop's head is never lazy (the
+  function enters it with NZCV in memory), so its back-edges store NZCV unless a setter comes
+  before anything that could read it, a cold path's store included: measured, not worth changing
+  ([Tried and not kept](#tried-and-not-kept), "Lazy NZCV at a loop's head").
 - **The PC on the way out:** a block whose successors are all members doesn't store the next PC
   (`Func::defer_pc`; a conditional branch keeps its outcome in `TAKEN`); only the exit paths do.
 - **Integer:** MOVZ/N/K, ADR/ADRP (ADRP's page is the entry PC plus a constant, `Func::page`: a
@@ -1503,6 +1506,17 @@ fast paths send there (`WAARM64_JIT_DIFF_HELPERS=1` on the differential test lis
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **Lazy NZCV at a loop's head** (PERF loop 42, 2026-11-21; `bench/boot/REPORT.md` "Lazy NZCV at loop heads,
+  counted" and "PERF loop 42", `bench/boot/results/flagx/` and `results/perf42/`): a head whose flags only cold paths
+  (a slow arm, a failure chain, the FP guard) want before its first setter still takes NZCV in memory, so the
+  back-edge of a loop like `ldrb; subs; add; b.ne` computes and stores it every lap: 7-11 such laps a 1000 guest steps
+  on Alpine's boot and userspace and Firefox's pages session. An unsound bound (such heads' flags dead: no store on the
+  lap, and a stale NZCV on a cold path) measured nothing on the Mac: the gates −0.2% and +0.2%, `pagesS` and busy MIPS
+  within the rounds' spread; the store is off the loop's dependence chain. The sound form (the head lazy on its
+  back-edges and in memory from the entry, a local saying which, tested on every cold path before the first setter)
+  isn't worth its flag state. Likewise **the branch outcome kept across a loop** (`TAKEN`, read by the exits of a
+  member whose conditional branch has a successor in the region, so V8 makes it a 0/1 value every lap): 9-13.5 back-edges
+  a 1000 steps from a lazy B.cond, ~3 host instructions each, a tenth of that bound.
 - **A host return elsewhere absorbed in the caller's frame** (PERF loop 28; `bench/boot/REPORT.md` "PERF loop 28"):
   a `loop` around the call, the mismatch host-calling the miss function (depth + 1) and checking the continuation
   again, instead of tail-calling it in the caller's frame, so a lost frame couldn't make every outer return miss too.

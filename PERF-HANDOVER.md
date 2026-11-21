@@ -111,7 +111,7 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-21, after loop 41)
+## State (2026-11-21, after loop 42)
 
 What every loop kept, dropped and found is in its REPORT entry and the docs pages it names; the out-of-context reviews
 (after loops 8, 19, 21, 23, 28, 32, 34 and 36) were fixed in loops 9, 20, 22, 24, 29, 33, 35 and 37. Built but off by
@@ -124,15 +124,15 @@ keys: a list-free index would save ~4.5 MiB at most); it found the churn's heap 
 again after a prune. Loop 40 kept the table across a prune, its tombstones rehashed in place (the churn's mark 333 →
 313 MiB, the prune's time the same, the gates unchanged). Loop 41 measured the block map's constants: only
 `MAP_KEYS` decides anything in the pages session and the churn; halved to 900,000 (the table at 2^20 buckets), the heap's
-mark is 27 MiB lower in both at the same speed; the keep rules stay (no measured effect). `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
+mark is 27 MiB lower in both at the same speed; the keep rules stay (no measured effect). Loop 42 bounded lazy NZCV at a loop's head on the Mac (7-11 laps a 1000 steps store NZCV only for cold paths;
+the unsound bound measured nothing on the gates or the pages session) and dropped it with the branch outcome kept across
+a loop (a tenth of that bound by its counts): no code, no new flag state, so no review is due for it. `target/snapbench/pages.waarm64snap` was remade from cda6cfa7's core.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: lazy NZCV at a loop's head (new 2026-11-21, from a cloud session; ranked first by the supervisor: its unsound bound was +2-5% on small guests, the heap rows left are memory) | a loop whose head touches memory before its first flag setter stores NZCV every lap for its cold paths: 16 edges per 1000 steps in Debian's boot, the byte-sum loop 54 → 29 x86-64 instructions a lap; bench/boot/REPORT.md "Lazy NZCV at loop heads, counted", `bench/boot/results/flagx/` (the tallies, an unsound bound `--features flagx`, tools). Counts on the gates and the pages session first, then the bound on the Mac's gate screen, then the sound form (a new flag state: an out-of-context review after it) |
-| JIT: the branch outcome kept across a loop (new 2026-11-21, the same exploration) | small, tight loops only: 3 of 15 host instructions a lap in a loop with no memory; `--features takenx` in the same patch is a partial prototype. Count the shape first; with the row above or not at all |
-| JIT: the core's heap, the 320 MiB budget session (docs/backlog.md "The user's own session wasn't replayed") | memory more than speed; measure before building (`MEMLOG` works on the Mac; `sway-mac.sh` passes `CHURN`, `CHURN_S`) |
+| **Next:** JIT: the core's heap, the 320 MiB budget session (docs/backlog.md "The user's own session wasn't replayed") | memory more than speed; measure before building (`MEMLOG` works on the Mac; `sway-mac.sh` passes `CHURN`, `CHURN_S`) |
 | JIT: V8's per-function overhead (whether superseded blocks' modules stay alive through siblings) | memory; measure first |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | JIT: followed calls whose callee completes inside the region (loop 36's follow-up) | bound ~0.5%; exits from inside a followed call as host calls to the pending continuation |

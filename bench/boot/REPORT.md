@@ -6657,3 +6657,51 @@ this host can't rank builds). Patch, tools and data: `results/flagx/` (README).
   head state "lazy on the back-edges, in memory from the entry", a local saying which, set on the edges and tested
   in the slow arms, the failure chains and any exit before the head's first setter (the failure chains' class of
   rule: a planted bug each, the differential test's region classes). docs/backlog.md "JIT" has both entries.
+
+## PERF loop 42: lazy NZCV at a loop's head, bounded on the Mac: dropped (2026-11-21)
+
+The backlog's "Lazy NZCV at a loop's head" (the entry above, "Lazy NZCV at loop heads, counted") in its order: the
+patch's tallies on the gates' guests and Firefox's pages session, then its unsound bound (`--features flagx`: a head
+whose flags only cold paths want before its first setter counts them dead, so its back-edges store no NZCV) on the
+Mac. `results/flagx/experiment.patch` applied unchanged on baf10886 (after loops 36 and 37); this loop's additions
+(tallies of the branch outcome's shape, for the entry after it) are in `results/perf42/diag.patch`. Raw:
+`results/perf42/` (README).
+
+**Counts** (per 1000 guest steps; the gates' guests in Node on the dev VM, the pages session on the Mac, 97.9 G steps):
+
+| | back-edges | forward edges | NZCV stored, cold only | stored, other | `TAKEN` laps: lazy B.cond, other (back-edges) | the same, forward in a loop |
+|---|---|---|---|---|---|---|
+| Alpine's boot (`boot_alpine_jit`) | 19.5 | 107.3 | **11.0** | 4.2 | 13.5, 5.1 | 12.4, 10.9 |
+| Alpine's userspace (`alpine_user_jit`) | 12.5 | 113.7 | **6.9** | 4.0 | 9.1, 3.1 | 11.8, 6.1 |
+| of it: compress · Lua · churn · SQLite | | | 11.3 · 1.0 · 6.2 · 9.3 | | | |
+| Firefox's pages session | 12.6 | 133.7 | **6.9** | 5.7 | 9.4, 3.1 | 17.6, 11.0 |
+
+The cold-only stores are as frequent as the cloud session counted in Debian's boot (16) and the small guests (16.5):
+7-11 a 1000 steps on the gates and the pages session.
+
+**The bound** (Mac M4, Chrome for Testing 158.0.8127.36; `results/perf42/screen.json`, base first in rounds 1 and 3;
+ms):
+
+| | base r1 · r2 · r3; median | flagx r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 3,807.4 · 3,867.6 · 3,857.6; **3,857.6** | 3,848.7 · 3,838.1 · 3,861.2; **3,848.7** (−0.2%) |
+| `alpine_user_jit_total` | 10,300.2 · 10,328.9 · 10,362.1; **10,328.9** | 10,359.6 · 10,341.5 · 10,346.8; **10,346.8** (+0.2%) |
+
+Firefox's pages session (`bench/gpu/ab-mac.sh`, 3 rounds, the first arm alternating; `results/perf42/pages-summary.txt`):
+`pagesS` base 73.5 · 72.3 · 73.1 (**73.1**), flagx 73.5 · 73.5 · 72.5 (**73.5**); busy MIPS 450 · 458 · 453 (**453**)
+against 456 · 454 · 457 (**456**). Every row overlaps. The arms differ where they should: the flagx core's wasm is
+0.23% (boot) and 0.29% (userspace) smaller, its `emitNs` 1-2% higher (the patch's second `touched`).
+
+- **Dropped.** Taking the store off every such lap, unsoundly and so at no cost to the cold paths, gains nothing the
+  Mac's gates or the pages session can see: the cloud session's +2-5% on x86-64 Node was that host's noise or
+  x86-64's alone. At 7-11 laps a 1000 steps and ~25 instructions a lap (the x86-64 count), the store is ~0.2-0.3 host
+  instructions a guest step, none on the loop's dependence chain (NZCV computed from the flag locals and stored,
+  nothing reads it back): on the M4 it costs no measurable time. The sound form (a head
+  state lazy on the back-edges and in memory from the entry, a local saying which, tested on every cold path before
+  the first setter) would add that test to the cold paths and a flag state to review; not built.
+- **The branch outcome kept across a loop**, decided by its counts with it: 9-13.5 back-edges a 1000 steps leave a
+  member whose lazy B.cond's outcome lives in `TAKEN` (the shape the `takenx` prototype reaches), 12-18 more forward
+  edges in loops. At the 3 host instructions a lap the Collatz capture showed, that is a tenth of the bound above,
+  which measured nothing: dropped, not built.
+- No core change, no step count moved. The findings are in docs/jit.md "Tried and not kept"; both backlog entries
+  are removed.

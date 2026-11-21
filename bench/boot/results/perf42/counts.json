@@ -1,0 +1,83 @@
+{
+ "note": "per 1000 guest steps; diag.patch core; gates in Node on the dev VM (preempt-counts.ts), pages on the Mac (jit.jsonl first to last record)",
+ "gates": {
+  "boot": {
+   "all": {
+    "back-edge": 19.513,
+    "forward edge": 107.272,
+    "NZCV stored, cold only": 11.042,
+    "NZCV stored, other": 4.247,
+    "taken back: lazy B.cond": 13.534,
+    "taken back: other": 5.104,
+    "taken fwd in a loop: lazy B.cond": 12.38,
+    "taken fwd in a loop: other": 10.875
+   }
+  },
+  "user": {
+   "all": {
+    "back-edge": 12.522,
+    "forward edge": 113.742,
+    "NZCV stored, cold only": 6.903,
+    "NZCV stored, other": 4.021,
+    "taken back: lazy B.cond": 9.106,
+    "taken back: other": 3.112,
+    "taken fwd in a loop: lazy B.cond": 11.822,
+    "taken fwd in a loop: other": 6.088
+   },
+   "compress": {
+    "back-edge": 18.031,
+    "forward edge": 98.465,
+    "NZCV stored, cold only": 11.332,
+    "NZCV stored, other": 3.001,
+    "taken back: lazy B.cond": 16.114,
+    "taken back: other": 1.865,
+    "taken fwd in a loop: lazy B.cond": 35.511,
+    "taken fwd in a loop: other": 10.267
+   },
+   "lua": {
+    "back-edge": 1.404,
+    "forward edge": 116.817,
+    "NZCV stored, cold only": 0.994,
+    "NZCV stored, other": 5.113,
+    "taken back: lazy B.cond": 0.971,
+    "taken back: other": 0.342,
+    "taken fwd in a loop: lazy B.cond": 0.792,
+    "taken fwd in a loop: other": 0.599
+   },
+   "churn": {
+    "back-edge": 14.489,
+    "forward edge": 117.362,
+    "NZCV stored, cold only": 6.24,
+    "NZCV stored, other": 5.016,
+    "taken back: lazy B.cond": 9.304,
+    "taken back: other": 4.836,
+    "taken fwd in a loop: lazy B.cond": 6.06,
+    "taken fwd in a loop: other": 10.869
+   },
+   "sqlite": {
+    "back-edge": 17.002,
+    "forward edge": 126.64,
+    "NZCV stored, cold only": 9.296,
+    "NZCV stored, other": 3.103,
+    "taken back: lazy B.cond": 10.912,
+    "taken back: other": 5.924,
+    "taken fwd in a loop: lazy B.cond": 6.885,
+    "taken fwd in a loop: other": 4.05
+   }
+  }
+ },
+ "pages": {
+  "steps": 97949897616,
+  "per1000": {
+   "back-edge": 12.574,
+   "forward edge": 133.721,
+   "poll": 68.167,
+   "NZCV cold only": 6.873,
+   "NZCV other": 5.668,
+   "taken back lazy": 9.362,
+   "taken back other": 3.1,
+   "taken fwd-loop lazy": 17.608,
+   "taken fwd-loop other": 10.997
+  }
+ }
+}
