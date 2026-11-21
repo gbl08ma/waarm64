@@ -880,7 +880,7 @@
     "note": "A note between the lines of the “What your processor runs” pane (machine code) in the introduction's code viewer, in plain words for a reader who doesn't know assembly: before the machine code of the slow path's helper call."
   },
   "IntroTranslate.honest": {
-    "message": "These are examples taken from actual runs of $t(common:product.name). The machine code was produced by <code>{{compiler}}</code> from the WebAssembly produced by $t(common:product.name).",
+    "message": "These are examples taken from actual runs of $t(common:product.name). The machine code was produced by <code>{{compiler}}</code> from the WebAssembly emitted by $t(common:product.name).",
     "note": "Fine print under the panes of the introduction's code viewer (the CPU's deep dive): where the code shown comes from. {{compiler}} names the V8 version and compiler tier."
   },
   "IntroPage.nav.how": {
