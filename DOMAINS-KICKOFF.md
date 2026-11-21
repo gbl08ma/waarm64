@@ -79,6 +79,9 @@ dialog and the wizard's edit mode go.
    is.
 6. **The address says the level**: `#home/connections/<connection id>` (its Details), `…/settings`, `…/domains`, so a
    reload, a link and the message bar's action land there. `#home` and the older `#machines` keep working; an id that is gone opens Connections.
+   Going down a level pushes an entry of the browser's history (its Back leaves the level, Forward enters it again,
+   where it was entered from kept in the entry's state); moving between a level's sections replaces, as moving between
+   the root's panes does (the user, 2026-11-21).
 7. **The registration path is one step longer** and that is wanted (the user, 2026-11-21): the pane explains before
    the dialog asks. names.md's decision "The two hot paths" changes accordingly (reaching a name: still nothing;
    registering: the pane, then one dialog with its two notices, no key shown).

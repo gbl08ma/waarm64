@@ -322,40 +322,47 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
       await a.waitForFunction(() => document.activeElement?.id === 'net-room-link-value', null, { timeout: 5_000 });
       assert.equal(await a.evaluate(() => getSelection()?.toString() || (document.activeElement as HTMLInputElement).value.slice((document.activeElement as HTMLInputElement).selectionStart!, (document.activeElement as HTMLInputElement).selectionEnd!)), ra.room.link);
 
-      // New name, then Save in the same Edit: the new key stays (Save once wrote back the record the wizard opened with).
+      // A connection's Settings (its card's Details on the Home page, then Settings): under Advanced, Copy key copies the
+      // connection's key; where the clipboard refuses, it's shown in its field, selected.
       await openHome(b);
       await b.click('[data-machine="connections"]');
-      await b.click('li[data-connection] [data-action="edit-connection"]');
-      await b.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
-      // Copy key copies the connection's key; where the clipboard refuses, it's shown in its field, selected.
+      await b.click('li[data-connection] [data-action="connection-details"]');
+      await b.locator('[data-context-connection]').waitFor();
+      await b.locator('.machines nav [data-section=settings]').last().click();
+      await b.locator('#settings-room-advanced summary').click();
       await b.evaluate(() => {
         const w = window as unknown as { copied: string[] };
         w.copied = [];
         navigator.clipboard.writeText = (s: string) => { w.copied.push(s); return Promise.resolve(); };
       });
-      await b.waitForFunction(() => !(document.getElementById('net-room-key-copy') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'hidden');
-      await b.click('#net-room-key-copy');
+      await b.waitForFunction(() => !(document.getElementById('settings-room-key-copy') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'password', 'hidden');
+      await b.click('#settings-room-key-copy');
       assert.deepEqual(await b.evaluate(() => (window as unknown as { copied: string[] }).copied), [pasted.key]);
-      assert.equal(await b.locator('#net-room-key-copy').getAttribute('aria-label'), t('common:ValueField.copied'), 'the icon says it copied');
-      await b.click('#net-room-key-show');
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'Show');
-      await b.click('#net-room-key-show');
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'Hide');
+      assert.equal(await b.locator('#settings-room-key-copy').getAttribute('aria-label'), t('common:ValueField.copied'), 'the icon says it copied');
+      await b.click('#settings-room-key-show');
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'text', 'Show');
+      await b.click('#settings-room-key-show');
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'password', 'Hide');
       await b.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
-      await b.click('#net-room-key-copy');
-      await b.waitForFunction(() => document.activeElement?.id === 'net-room-key-value', null, { timeout: 5_000 });
-      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'shown where the clipboard refused');
-      assert.equal(await b.locator('#net-room-key-value').inputValue(), pasted.key);
-      await b.click('#net-room-new-name');
-      await b.waitForFunction(() => (document.getElementById('net-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
-      // Ephemeral: the new key is in the record already, so it's the one to copy (a stored one's comes at its next start).
-      await b.waitForFunction((old) => { const v = (document.getElementById('net-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
-      assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.exportKey.note'));
-      await b.click('#net-connect');
-      await b.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 30_000 })
-        .catch(async (e) => { throw new Error(`${e}; the wizard says ${await text(b, '#net-error')}; step ${await b.evaluate(() => [...document.querySelectorAll('#net-wizard section:not([hidden])')].map((x) => x.id))}`); });
-      await b.click('[data-action="back"]');
+      await b.click('#settings-room-key-copy');
+      await b.waitForFunction(() => document.activeElement?.id === 'settings-room-key-value', null, { timeout: 5_000 });
+      assert.equal(await b.locator('#settings-room-key-value').getAttribute('type'), 'text', 'shown where the clipboard refused');
+      assert.equal(await b.locator('#settings-room-key-value').inputValue(), pasted.key);
+      // New name: a new key at once (it's ephemeral: the new key is in the record already, so it's the one to copy).
+      await b.click('#settings-room-new-name');
+      await b.waitForFunction(() => (document.getElementById('settings-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+      await b.waitForFunction((old) => { const v = (document.getElementById('settings-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
+      const renamed = await b.locator('#settings-room-key-value').inputValue();
+      assert.match(await text(b, '#settings-room-advanced'), words('network:ConnectionRoomSettings.key.note'));
+      // Then a switch and Save: the new key stays (Save writes the connection as it is now, not as the page read it).
+      await b.uncheck('#settings-room-incoming');
+      await b.click('section[data-selected=connection-settings] [data-action=save]');
+      await b.waitForFunction(() => !document.querySelector('section[data-selected=connection-settings] [data-action=revert]'), null, { timeout: 30_000 })
+        .catch(async (e) => { throw new Error(`${e}; the page says ${await text(b, '.machines-page').catch(() => 'nothing')}`); });
+      assert.equal(await b.locator('#settings-room-key-value').inputValue(), renamed, 'the new key kept');
+      await b.click('.machines nav [data-action="back"]');
+      await b.click('[data-action="back-to-machine"]');
       await b.locator('#network summary').click();
       await b.waitForFunction((old) => { const v = (document.getElementById('net-room-name') as HTMLInputElement | null)?.value; return !!v && v !== old; }, nameB, { timeout: 30_000 })
         .catch(async (e) => { throw new Error(`${e}; the name stayed ${await b.locator('#net-room-name').inputValue()}`); });
@@ -604,17 +611,20 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   await later.close();
 }
 
-/** After the name: the wizard's key carries the names; Delete says so; B's connection, not kept, can't hold one. */
+/** After the name: the Settings' key carries the names; Delete says so; B's connection, not kept, can't hold one. */
 async function namesKeptWithTheConnection(a: Page, b: Page) {
-  // The Home page: the wizard's key carries the names; Delete says so.
+  // The Home page: the key in the connection's Settings carries the names; Delete says so.
   await openHome(a);
   await a.click('[data-machine="connections"]');
-  await a.click('li[data-connection] [data-action="edit-connection"] >> nth=0');
-  await a.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
-  await a.waitForFunction(() => /\./.test((document.getElementById('net-room-key-value') as HTMLInputElement).value), null, { timeout: 10_000 });
-  const exported = await a.locator('#net-room-key-value').inputValue();
+  await a.click('li[data-connection] [data-action="connection-details"] >> nth=0');
+  await a.locator('[data-context-connection]').waitFor();
+  await a.locator('.machines nav [data-section=settings]').last().click();
+  await a.locator('#settings-room-advanced summary').click();
+  await a.waitForFunction(() => /\./.test((document.getElementById('settings-room-key-value') as HTMLInputElement).value), null, { timeout: 10_000 });
+  const exported = await a.locator('#settings-room-key-value').inputValue();
   assert.match(exported, /^[0-9a-f]{64}\.[A-Za-z0-9_-]+$/, 'the key, then its names');
-  await a.keyboard.press('Escape');
+  await a.click('.machines nav [data-action="back"]');
+  await a.locator('section[data-selected=connections]').waitFor();
   cancelling = true;
   const n = asked.length;
   await a.click('li[data-connection] [data-action="delete-connection"] >> nth=0');

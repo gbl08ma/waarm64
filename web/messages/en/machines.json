@@ -715,17 +715,17 @@
     "message": "not in use",
     "note": "Home page, Connections: who has the connection now, in each connection's line. Here: no one."
   },
-  "ConnectionsPane.logout.confirm": {
+  "ConnectionNav.logout.confirm": {
     "message": "Log out of <name>{{name}}</name>? This will remove its node from the tailnet and delete its keys from this browser. Connecting again will log in as a new node.",
-    "note": "Home page, Connections: confirmation dialog's text after a connection's Log out button. {{name}}: the connection."
+    "note": "Home page, a connection's page (one level under Connections): confirmation dialog's text after the left column's Log out. {{name}}: the connection."
   },
-  "ConnectionsPane.logout.ok": {
+  "ConnectionNav.logout.ok": {
     "message": "Log out",
-    "note": "Home page, Connections: the confirm button of ConnectionsPane.logout.confirm's dialog."
+    "note": "Home page, a connection's page (one level under Connections): the confirm button of ConnectionNav.logout.confirm's dialog."
   },
-  "ConnectionsPane.busy.loggingOut": {
+  "ConnectionNav.busy.loggingOut": {
     "message": "Logging out",
-    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's Log out."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's Log out (its page's left column)."
   },
   "UsbSwitch.usb.title": {
     "message": "Give the machine an xHCI USB controller with four connectors, each USB 2 and USB 3, for its USB devices.",
@@ -1231,33 +1231,33 @@
     "message": "attached to no machine",
     "note": "Home page, Connections: the end of a connection's line when no machine's adapter has it."
   },
-  "ConnectionsPane.busy.forgettingAddress": {
+  "ConnectionNav.busy.forgettingAddress": {
     "message": "Replacing the address",
-    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's New address."
+    "note": "Home page: what the page is doing, shown at the end of the bottom bar (MachinesPage.busy) while an action runs. Here: a connection's New address (its page's left column), or a room connection's New name (its Settings)."
   },
-  "ConnectionsPane.connection.newAddress.title": {
+  "ConnectionNav.newAddress.title": {
     "message": "Give the connection a new tailcat address. Anyone with the old address can no longer connect.",
-    "note": "Home page, Connections: tooltip of New address."
+    "note": "Home page, a connection's page (one level under Connections): tooltip of the left column's New address."
   },
-  "ConnectionsPane.connection.newAddress": {
+  "ConnectionNav.newAddress": {
     "message": "New address",
-    "note": "Home page, Connections: button on a tailcat connection that lets clients in: gives it a new address."
+    "note": "Home page, a connection's page (one level under Connections): a command in the left column, on a tailcat connection that lets clients in: gives it a new address (it asks first)."
   },
-  "ConnectionsPane.connection.logout.title": {
+  "ConnectionNav.logout.title": {
     "message": "Remove the node from the tailnet and delete its keys from this browser.",
-    "note": "Home page, Connections: tooltip of a connection's Log out button."
+    "note": "Home page, a connection's page (one level under Connections): tooltip of the left column's Log out."
   },
-  "ConnectionsPane.connection.logout": {
+  "ConnectionNav.logout": {
     "message": "Log out",
-    "note": "Home page, Connections: button on a connection logged in to a tailnet (asks first: ConnectionsPane.logout.confirm)."
+    "note": "Home page, a connection's page (one level under Connections): a command in the left column, on a connection logged in to a tailnet (asks first: ConnectionNav.logout.confirm)."
   },
   "ConnectionsPane.connection.delete.title": {
     "message": "Delete the connection and everything this browser stores for it. Adapters that use it are left without a connection.",
-    "note": "Home page, Connections: tooltip of a connection's Delete button."
+    "note": "Home page, Connections, and a connection's page (a command in its left column): tooltip of a connection's Delete button."
   },
   "ConnectionsPane.connection.delete": {
     "message": "Delete",
-    "note": "Home page, Connections: button on each connection that deletes it."
+    "note": "Home page, Connections, and a connection's page (a command in its left column): button on each connection that deletes it."
   },
   "ConnectionsPane.connections.none": {
     "message": "No connections yet. Create one here, or from a machine's adapter, on its <ui-network>Network</ui-network> tab or in the toolbar's <ui-network>Network</ui-network> menu.",
@@ -2230,5 +2230,9 @@
   "ConnectionDetails.otherTab": {
     "message": "This connection is in use in another tab. The addresses it gives out are shown in that tab.",
     "note": "Home page, a connection's Details (its page under Connections): shown while a machine in another tab holds the connection, in place of the values only a connected adapter has."
+  },
+  "ConnectionSettings.name": {
+    "message": "Name",
+    "note": "Home page, a connection's Settings (its page under Connections): the label of the field holding the connection's name."
   }
 }

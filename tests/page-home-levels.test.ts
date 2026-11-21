@@ -6,12 +6,17 @@
 // column's entries and the pane slide as a level is entered; Esc and Back return to Connections, the card's Details
 // taking the focus back; a section is chosen instantly and in the address; Domains is a room's alone; Bravo's link
 // leads to its Network tab, and a page entered from there or from the machine's screen leads back there; an unknown
-// id opens Connections.
+// id opens Connections. Going down a level is an entry of the browser's history: its Back leaves the level for where
+// it was entered from, Forward enters it again, the column's Back after a push goes back in the history (no entry left
+// over), a section replaces, and after a reload the level is entered from Connections. A connection's Settings save,
+// revert and refuse what's wrong; its commands are in its column; the wizard opened on an adapter that has a
+// connection asks first whether to edit it (its Settings, Back leading to the machine's tab or screen) or attach another.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
+import { answerAsks } from './page-ask.ts';
 
 let browser: Browser;
 let base: string;
@@ -39,6 +44,7 @@ async function seed(page: Page): Promise<Seeded> {
     const room = (await p.netCreate({ kind: 'room', name: 'test lan', room: { link, incoming: true, relayOnly: false } })).id;
     const tailnet = (await p.netCreate({ kind: 'tailnet', name: 'tails', tailnet: { controlURL: 'http://127.0.0.1:1', hostname: 'h', exitNode: '' } })).id;
     await setAdapterConnection(store, bravo, 0, room);
+    await setAdapterConnection(store, alpha, 0, tailnet);
     store.close();
     return { alpha, bravo, room, tailnet, link };
   }, [['/web/app/store.ts', '/web/app/machines.ts', '/web/app/page.ts'], LINK] as const);
@@ -55,6 +61,27 @@ const openConnection = (page: Page, id: string, from: unknown) =>
     const { page: p } = await import('/web/app/page.ts' as string) as typeof import('../web/app/page.ts');
     p.openConnection(id, 'details', from as Parameters<typeof p.openConnection>[2]);
   }, [id, from] as const);
+/** The stored connections, as the page's store has them. */
+const stored = (page: Page) =>
+  page.evaluate(async (m) => {
+    const { Store } = await import(m) as typeof import('../web/app/store.ts');
+    const store = await Store.open();
+    const all = await store.all('connections');
+    store.close();
+    return all as { id: string; name: string; tailnet?: { hostname: string } }[];
+  }, '/web/app/store.ts');
+/** A fresh page with the machines and connections seeded, Alpha on it (`?m=`), on `hash`. */
+async function seeded(hash = '') {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(`${base}/web/app/`);
+  await page.waitForFunction(() => !!document.getElementById('machines-open'));
+  const s = await seed(page);
+  await page.goto(`${base}/web/app/?m=${s.alpha}${hash}`);
+  await page.waitForFunction(() => !!document.getElementById('machines-open'));
+  return { page, s };
+}
+const backTo = (page: Page) => page.locator('.machines nav [data-action=back]').getAttribute('data-back');
+const homeOpen = async (page: Page) => (await page.locator('#machines-open').getAttribute('aria-pressed')) === 'true';
 
 test("Home's levels: a connection's page by its address, Back and Esc to each origin, the column's swap", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -137,5 +164,199 @@ test("Home's levels: a connection's page by its address, Back and Esc to each or
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 30_000 });
   assert.equal(await level(page), 'root');
   assert.equal(await hash(page), '#home');
+  await page.close();
+});
+
+test("Home's levels in the browser's history: Back and Forward from each origin, the column's Back, a reload", async () => {
+  const { page, s } = await seeded('#home');
+  await page.locator('[data-machine="connections"]').click();
+  await page.locator('section[data-selected=connections]').waitFor();
+  const length = () => page.evaluate(() => history.length);
+  const before = await length();
+
+  // From Connections: down pushes, a section replaces; Back leaves for Connections, Forward enters again.
+  await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
+  assert.equal(await level(page), `connection:${s.room}`);
+  assert.equal(await length(), before + 1, 'down a level: an entry of its own');
+  await page.locator('[data-section=settings]').click();
+  assert.equal(await length(), before + 1, 'a section: in place');
+  await page.goBack();
+  assert.equal(await level(page), 'root');
+  assert.equal(await hash(page), '#home');
+  await page.locator('section[data-selected=connections]').waitFor();
+  await page.goForward();
+  assert.equal(await level(page), `connection:${s.room}`);
+  assert.equal(await hash(page), `#home/connections/${s.room}/settings`);
+  assert.equal(await backTo(page), 'connections', 'entered from Connections again');
+  // The column's Back after a push: back in the history, so no entry is left to come back to by mistake.
+  await page.locator('.machines nav [data-action=back]').click();
+  assert.equal(await level(page), 'root');
+  assert.equal(await page.evaluate(() => history.state), null, "Connections' entry, not a new one");
+  await page.goForward();
+  assert.equal(await level(page), `connection:${s.room}`);
+  await page.keyboard.press('Escape');
+  assert.equal(await level(page), 'root');
+
+  // From a machine's Network tab: Back returns to the tab, Forward to the page with its Back to the machine.
+  await page.locator(`[data-machine="${s.bravo}"]`).click();
+  await page.locator('[data-tab=network]').click();
+  await openConnection(page, s.room, { to: 'tab', machine: s.bravo });
+  assert.equal(await level(page), `connection:${s.room}`);
+  await page.goBack();
+  await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
+  assert.equal(await level(page), 'root');
+  await page.goForward();
+  assert.equal(await level(page), `connection:${s.room}`);
+  assert.equal(await backTo(page), 'tab', 'the origin kept in the entry');
+  assert.equal(await text(page, '.machines nav [data-action=back]'), t('machines:ConnectionNav.back.machine', { machine: 'Bravo' }));
+
+  // After a reload the level is entered from Connections: its Back replaces, and the browser's Back still leaves it.
+  await page.reload();
+  await page.locator('[data-context-connection]').waitFor({ timeout: 30_000 });
+  assert.equal(await backTo(page), 'connections');
+  const reloaded = await length();
+  await page.locator('.machines nav [data-action=back]').click();
+  assert.equal(await level(page), 'root');
+  assert.equal(await length(), reloaded, 'in place');
+  assert.equal(await hash(page), '#home');
+
+  // From the machine's screen: Back closes Home, Forward opens the level again, Back to the machine.
+  await page.locator('[data-action=back-to-machine]').click();
+  assert.equal(await homeOpen(page), false);
+  await openConnection(page, s.tailnet, { to: 'screen' });
+  assert.equal(await level(page), `connection:${s.tailnet}`);
+  await page.goBack();
+  await page.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
+  assert.equal(await hash(page), '');
+  await page.goForward();
+  assert.equal(await level(page), `connection:${s.tailnet}`);
+  assert.equal(await backTo(page), 'screen');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
+  await page.close();
+});
+
+test("a connection's Settings: its values, Revert, a refusal, Save and a rename; the commands in its column", async () => {
+  const { page, s } = await seeded();
+  const asked: string[] = [];
+  await answerAsks(page, (q) => { asked.push(q.text); });
+  await page.evaluate((id) => { location.hash = `#home/connections/${id}/settings`; }, s.tailnet);
+  await page.locator('section[data-selected=connection-settings]').waitFor({ timeout: 30_000 });
+  assert.equal(await page.locator('#settings-name').inputValue(), 'tails');
+  assert.equal(await page.locator('#settings-hostname').inputValue(), 'h');
+  assert.equal(await page.locator('#settings-control').isDisabled(), true, 'a new control server needs a new connection');
+  const save = page.locator('section[data-selected=connection-settings] [data-action=save]');
+  const revert = page.locator('section[data-selected=connection-settings] [data-action=revert]');
+  assert.equal(await save.isDisabled(), true, 'nothing to save');
+  assert.equal(await revert.count(), 0);
+  // Revert drops the draft.
+  await page.fill('#settings-hostname', 'other');
+  assert.equal(await save.isDisabled(), false);
+  await revert.click();
+  assert.equal(await page.locator('#settings-hostname').inputValue(), 'h');
+  // What's wrong is refused, in the wizard's words, in the Home page's banner; nothing is written. (The message bar's
+  // word on Alpha's disks goes first: the banner shows it before an action's error.)
+  await page.evaluate(async () => (await import('/web/app/page.ts' as string) as typeof import('../web/app/page.ts')).page.dismiss());
+  await page.fill('#settings-hostname', 'no good');
+  await save.click();
+  await page.waitForFunction((w) => (document.querySelector('.machines-page')?.textContent ?? '').includes(w), t('network:network.badHostname'), { timeout: 5000 })
+    .catch(async (e) => { throw new Error(`${e}; the banner says ${await page.locator('.machines-page').textContent().catch(() => 'nothing')}`); });
+  assert.equal((await stored(page)).find((c) => c.id === s.tailnet)?.tailnet?.hostname, 'h');
+  // Save writes the hostname and the name.
+  await page.fill('#settings-hostname', 'box');
+  await page.fill('#settings-name', 'Tails two');
+  await save.click();
+  await page.waitForFunction(() => !document.querySelector('section[data-selected=connection-settings] [data-action=revert]'), null, { timeout: 5000 });
+  const tn = (await stored(page)).find((c) => c.id === s.tailnet);
+  assert.deepEqual([tn?.name, tn?.tailnet?.hostname], ['Tails two', 'box']);
+  assert.equal(await text(page, '[data-context-connection] h3'), 'Tails two', 'the column follows');
+  // A rename alone.
+  await page.fill('#settings-name', 'Tails');
+  await save.click();
+  await page.waitForFunction((id) => document.querySelector(`[data-context-connection="${id}"] h3`)?.textContent === 'Tails', s.tailnet, { timeout: 5000 });
+  // Leaving the section drops a draft, as a machine's Settings does.
+  await page.fill('#settings-hostname', 'dropped');
+  await page.locator('[data-section=details]').click();
+  await page.locator('[data-section=settings]').click();
+  assert.equal(await page.locator('#settings-hostname').inputValue(), 'box');
+
+  // A room's Settings: its switches, and its key under Advanced (none before it first connects).
+  await openConnection(page, s.room, { to: 'connections' });
+  assert.equal(await level(page), `connection:${s.room}`);
+  await page.locator('[data-section=settings]').click();
+  assert.equal(await page.isChecked('#settings-room-direct'), true);
+  assert.equal(await page.isChecked('#settings-room-incoming'), true);
+  await page.locator('#settings-room-advanced summary').click();
+  assert.equal(await page.locator('#settings-room-key-value').inputValue(), '', 'no key before it first connects');
+  assert.ok((await text(page, '#settings-room-advanced')).includes(t('network:ConnectionRoomSettings.key.none')));
+  assert.equal(await page.locator('#settings-room-new-name').isDisabled(), true, 'no key of its own to drop');
+  await page.uncheck('#settings-room-direct');
+  await save.click();
+  await page.waitForFunction(() => !document.querySelector('section[data-selected=connection-settings] [data-action=revert]'), null, { timeout: 5000 });
+  const room = (await stored(page)).find((c) => c.id === s.room) as { room?: { relayOnly: boolean; incoming: boolean } } | undefined;
+  assert.deepEqual([room?.room?.relayOnly, room?.room?.incoming], [true, true]);
+
+  // The commands: no Log out without a node, no New address on a room; Delete leaves for Connections.
+  const commands = () => page.locator('.machines nav [data-level] [data-action]').evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.action));
+  assert.deepEqual(await commands(), ['back', 'delete-connection']);
+  assert.equal(await page.locator('.machines nav [data-action=delete-connection]').getAttribute('title'), t('machines:ConnectionsPane.connection.delete.title'));
+  await page.locator('.machines nav [data-action=delete-connection]').click();
+  await page.locator('section[data-selected=connections]').waitFor({ timeout: 10_000 });
+  assert.equal(await level(page), 'root');
+  assert.equal(asked.length, 1, 'Delete asks first');
+  assert.equal((await stored(page)).some((c) => c.id === s.room), false);
+  // A card keeps its name, its line, Details and Delete.
+  assert.deepEqual(await page.locator(`[data-connection="${s.tailnet}"] [data-action]`).evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.action)), ['connection-details', 'delete-connection']);
+  await page.close();
+});
+
+test('the wizard on an adapter that has a connection asks first: edit it (its Settings, Back to where it was opened) or attach another', async () => {
+  const { page, s } = await seeded('#home');
+  // Bravo's Network tab: Change… asks; Attach a different connection goes on to the pick step, whose Back returns.
+  await page.locator(`[data-machine="${s.bravo}"]`).click();
+  await page.locator('[data-tab=network]').click();
+  const change = page.locator('[data-adapter="0"] [data-action=attach-connection]');
+  await change.click();
+  await page.locator('#net-step-change').waitFor({ state: 'visible' });
+  assert.equal(await text(page, '#net-wizard-title'), t('network:NetWizard.title.change'));
+  assert.equal(await text(page, '#net-change-edit b'), t('network:NetChangeStep.edit', { name: 'test lan' }));
+  assert.equal(await page.locator('#net-back').isVisible(), false, 'nothing before it');
+  assert.equal(await page.locator('#net-connect').isVisible(), false, 'it only chooses');
+  await page.click('#net-change-other');
+  assert.equal(await page.locator('#net-step-pick').isVisible(), true);
+  assert.equal(await page.locator('[id^=net-pick-edit-]').count(), 0, 'no Edit… on the connections to pick');
+  await page.click('#net-back');
+  assert.equal(await page.locator('#net-step-change').isVisible(), true, 'Back: the choice again');
+  // Edit: the wizard closes for the connection's Settings, Back leading to Bravo's tab.
+  await page.click('#net-change-edit');
+  await page.locator('section[data-selected=connection-settings]').waitFor();
+  assert.equal(await page.evaluate(() => (document.getElementById('net-wizard') as HTMLDialogElement).open), false);
+  assert.equal(await hash(page), `#home/connections/${s.room}/settings`);
+  assert.equal(await text(page, '.machines nav [data-action=back]'), t('machines:ConnectionNav.back.machine', { machine: 'Bravo' }));
+  await page.locator('.machines nav [data-action=back]').click();
+  await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
+
+  // Opened from the machine's screen (as the toolbar's Network menu opens it: its Change connection… on Alpha's adapter;
+  // the menu itself needs a running machine, tests/page-connections.test.ts): Edit leads to the Settings, Back to the
+  // screen.
+  await page.locator('[data-action=back-to-machine]').click();
+  await page.evaluate(async ([alpha, attached]) => {
+    const { network } = await import('/web/app/areas/network.ts' as string) as typeof import('../web/app/areas/network.ts');
+    network.openWizard({ mode: 'attach', machine: alpha, adapter: 0, attached, from: { to: 'screen' } });
+  }, [s.alpha, s.tailnet] as const);
+  await page.locator('#net-step-change').waitFor({ state: 'visible' });
+  assert.equal(await text(page, '#net-change-edit b'), t('network:NetChangeStep.edit', { name: 'tails' }));
+  await page.click('#net-change-edit');
+  await page.locator('section[data-selected=connection-settings]').waitFor();
+  assert.equal(await backTo(page), 'screen');
+  await page.locator('.machines nav [data-action=back]').click();
+  await page.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
+  // An adapter without a connection opens as before: on the pick step.
+  await page.evaluate(async (alpha) => {
+    const { network } = await import('/web/app/areas/network.ts' as string) as typeof import('../web/app/areas/network.ts');
+    network.openWizard({ mode: 'attach', machine: alpha, adapter: 1, from: { to: 'screen' } });
+  }, s.alpha);
+  await page.locator('#net-step-pick').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#net-back').isVisible(), false);
   await page.close();
 });

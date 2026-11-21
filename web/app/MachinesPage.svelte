@@ -209,7 +209,7 @@
 
 {#snippet pane()}
   {#if machinesNav.context}
-    <ConnectionPage {net} {machines} ctx={machinesNav.context} />
+    <ConnectionPage {net} {machines} ctx={machinesNav.context} {act} />
   {:else if machinesNav.selected === PREFERENCES}
     <PreferencesPane {net} />
   {:else if machinesNav.selected === ABOUT}

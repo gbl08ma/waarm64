@@ -249,19 +249,18 @@ export class PageWindow {
   }
   /**
    * The browser's Back or Forward (`popstate`): the store's page as the address now says, without writing the history:
-   * opened on its route, or closed (to Home for `#home`, else to the machine).
+   * opened on its route, or closed (to Home for `#home`, else to the machine); and Home's level (`home.follow`).
    */
   followAddress() {
     intro.open = isIntroAddress(location);
     const r = demosRoute(location);
     if (r) return this.openDemos(r, 'none');
-    if (!demos.open) return;
-    if (location.hash === '#home') {
-      demos.from = 'home';
-      return this.closeDemos(true, 'none');
+    if (demos.open) {
+      demos.from = location.hash === '#home' ? 'home' : 'machine';
+      this.closeDemos(true, 'none');
     }
-    demos.from = 'machine';
-    this.closeDemos(true, 'none');
+    // Home's levels: the browser's Back leaves one, Forward enters it again (web/app/areas/home-levels.ts).
+    if (!intro.open) this.home.follow();
   }
   /**
    * What the address opens at the page's load: the store's page (`/demos`, `#demos`), Home (`#home`, the older

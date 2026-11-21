@@ -68,3 +68,20 @@ export function backOf(from: From, o: { loaded: boolean; machineName: (id: strin
   }
   return from;
 }
+
+/**
+ * What a level's entry of the browser's history keeps (`history.state.home`): where it was entered from, which the
+ * address doesn't say, and whether it was pushed on top of that place (then the column's Back goes back in the history).
+ */
+export type HomeState = { home: { from: From; pushed?: boolean } };
+
+const FROM_TO = new Set(['connections', 'tab', 'screen']);
+
+/** The level's part of a history entry's state, if it has a well-formed one. */
+export function homeState(state: unknown): HomeState['home'] | undefined {
+  const h = (state as { home?: { from?: { to?: unknown; machine?: unknown }; pushed?: unknown } } | null)?.home;
+  const to = h?.from?.to;
+  if (typeof to !== 'string' || !FROM_TO.has(to)) return undefined;
+  if (to === 'tab' && typeof h?.from?.machine !== 'string') return undefined;
+  return h as HomeState['home'];
+}

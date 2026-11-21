@@ -4,7 +4,7 @@
 // Domains only for a room), and where Back leads from each origin (a machine gone, or none on the page, is Connections).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { backOf, homeHash, homeRoute, shownContext, type HomeContext } from '../web/app/home-route.ts';
+import { backOf, homeHash, homeRoute, homeState, shownContext, type HomeContext } from '../web/app/home-route.ts';
 
 test("Home's address: the root, a connection's sections, and what isn't Home's", () => {
   assert.deepEqual(homeRoute('#home'), {});
@@ -47,4 +47,11 @@ test('Back leads where the level was entered from, or to Connections once that i
   assert.deepEqual(backOf({ to: 'tab', machine: 'gone' }, o(true)), { to: 'connections' }, 'a machine deleted since');
   assert.deepEqual(backOf({ to: 'screen' }, o(true)), { to: 'screen' });
   assert.deepEqual(backOf({ to: 'screen' }, o(false)), { to: 'connections' }, 'no machine on the page');
+});
+
+test("a level's history entry: where it was entered from, read only when well formed", () => {
+  assert.deepEqual(homeState({ home: { from: { to: 'tab', machine: 'm1' }, pushed: true } }), { from: { to: 'tab', machine: 'm1' }, pushed: true });
+  assert.deepEqual(homeState({ home: { from: { to: 'screen' } } }), { from: { to: 'screen' } });
+  for (const s of [null, undefined, 3, {}, { home: {} }, { home: { from: { to: 'nowhere' } } }, { home: { from: { to: 'tab' } } }])
+    assert.equal(homeState(s), undefined, JSON.stringify(s));
 });

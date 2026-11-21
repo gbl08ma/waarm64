@@ -1,13 +1,12 @@
 <!--
   The Network wizard's room step (NetWizard.svelte; docs/networking/rooms.md): join the global public room (its name
   given, the defaults), create a room (a name, private or public, its relays under Advanced: web/room.ts builds the
-  link), join one (a link, or a public room's name), or edit
-  one (its switches, a new name, its key to copy). Direct connections and incoming ones are switches; a new room
+  link), or join one (a link, or a public room's name); a connection's Settings on the Home page change its switches
+  (ConnectionRoomSettings.svelte). Direct connections and incoming ones are switches; a new room
   connection has a key of its own, another room connection's, or one pasted (copied from a connection, perhaps on
   another computer, or mined by net/ts/examples/room-key-mine.rs for an address).
 -->
 <script lang="ts">
-  import Button from './ui/Button.svelte';
   import Check from './ui/Check.svelte';
   import Disclosure from './ui/Disclosure.svelte';
   import Field from './ui/Field.svelte';
@@ -42,12 +41,7 @@
   let keyOf = $state('');
   const PASTE = '#paste';
   let pastedKey = $state('');
-  /** The edited connection's key, to copy ('' before it's made), hidden until shown (or the clipboard refused it). */
-  let exported = $state('');
-  let keyShown = $state(false);
   let advanced = $state(false);
-  /** The room connection being edited keeps its identity: New name can drop it. */
-  let kept = $state(false);
   let nameInput = $state<HTMLInputElement>();
   let linkInput = $state<HTMLInputElement>();
   let directBox = $state<HTMLInputElement>();
@@ -59,33 +53,13 @@
   const sameKeyAs = (name: string) => t('network:NetRoomStep.room.key.of', { name });
 
   export function begin() {
-    const r = flow.editing?.room;
-    [name, isPrivate, joinLink, nostr, derp, keyOf, pastedKey, exported, advanced, keyShown] = [
-      '',
-      true,
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      false,
-      false,
-    ];
-    incoming = r?.incoming ?? true;
-    relayOnly = r?.relayOnly ?? false;
+    [name, isPrivate, joinLink, nostr, derp, keyOf, pastedKey, advanced] = ['', true, '', '', '', '', '', false];
+    [incoming, relayOnly] = [true, false];
   }
   export function enter() {
-    const c = flow.editing;
-    // The connection's export: its key, and its names after a dot (the names agent's owners' secret and titles).
-    if (step === 'roomEdit' && c?.room)
-      void net.conns.exportKey(c).then(
-        (k) => ([kept, exported] = [!!k, k]),
-        () => ([kept, exported] = [false, '']),
-      );
     queueMicrotask(() => firstControl()?.focus());
   }
-  /** What a step's focus starts on: the name, the link, or (editing) the first switch. */
+  /** What a step's focus starts on: the name, the link, or (the global room) the first switch. */
   function firstControl() {
     if (step === 'roomCreate') return nameInput;
     if (step === 'roomJoin') return linkInput;
@@ -94,9 +68,6 @@
   /** The relays as typed: one per line (or separated by spaces or commas). */
   const lines = (s: string) => s.split(/[\s,]+/).filter((x) => x);
   export async function save() {
-    const editing = flow.editing;
-    if (step === 'roomEdit' && editing?.room)
-      return flow.edited({ ...editing, room: { ...editing.room, incoming, relayOnly } });
     let link: { link: string; room?: RoomLink } | { error: Msg };
     if (step === 'roomGlobal') link = roomLink({ id: GLOBAL_ROOM, nostr: [], derp: [] });
     else if (step === 'roomCreate') {
@@ -125,14 +96,6 @@
   function keyChoice(pasted: { key: string; names?: string } | undefined) {
     if (pasted) return pasted.names ? { key: pasted.key, names: pasted.names } : { key: pasted.key };
     return keyOf ? { keyOf } : {};
-  }
-  async function forget() {
-    // A stored connection's next start makes its new key; an ephemeral one has it now (`forget` replaced `editing`).
-    if (await flow.forget()) {
-      const c = flow.editing;
-      kept = false;
-      exported = c?.room?.identity ? await net.conns.exportKey(c) : '';
-    }
   }
 </script>
 
@@ -192,86 +155,53 @@
     >
       {t('network:NetRoomStep.room.incoming')}
     </Check>
-    {#if step === 'roomEdit'}
-      <div class="row">
-        <Button type="button" id="net-room-new-name" disabled={!kept} onclick={forget}>
-          {t('network:NetRoomStep.room.newName')}
-        </Button>
-      </div>
-      <Note size="md">{t('network:NetRoomStep.room.newName.note')}</Note>
+    {#if step === 'roomCreate'}
+      <Field label={t('network:NetRoomStep.room.nostr')}>
+        <textarea
+          id="net-room-nostr"
+          bind:value={nostr}
+          rows="2"
+          placeholder={t('network:NetRoomStep.room.nostr.placeholder')}
+          autocomplete="off"
+          spellcheck="false"></textarea>
+      </Field>
+      <Note size="md">{t('network:NetRoomStep.room.nostr.note')}</Note>
+      <Field label={t('network:NetRoomStep.room.derp')}>
+        <textarea
+          id="net-room-derp"
+          bind:value={derp}
+          rows="2"
+          placeholder={t('network:NetRoomStep.room.derp.placeholder')}
+          autocomplete="off"
+          spellcheck="false"></textarea>
+      </Field>
+      <Note size="md">
+        <T k="network:NetRoomStep.room.derp.note">
+          {#snippet a(words: string)}<a href={DERPER} target="_blank" rel="noopener">{words}</a>{/snippet}
+        </T>
+      </Note>
+    {/if}
+    <Field label={t('network:NetRoomStep.room.key')}>
+      <select id="net-room-key" bind:value={keyOf}>
+        <option value="">{t('network:NetRoomStep.room.key.new')}</option>
+        <option value={PASTE}>{t('network:NetRoomStep.room.key.paste')}</option>
+        {#each keys as k (k.id)}<option value={k.id}>{sameKeyAs(k.name)}</option>{/each}
+      </select>
+    </Field>
+    {#if keyOf === PASTE}
       <ValueField
-        id="net-room-key-value"
-        copyId="net-room-key-copy"
-        showId="net-room-key-show"
-        label={t('network:NetRoomStep.room.exportKey')}
-        value={exported}
-        bind:shown={keyShown}
-        readonly
-        copy
+        id="net-room-key-paste"
+        showId="net-room-key-paste-show"
+        label={t('network:NetRoomStep.room.key.pasted')}
+        bind:value={pastedKey}
         secret
         mono
       />
-      <Note size="md">
-        {#if exported}<T k="network:NetRoomStep.room.exportKey.note" />{:else}{t(
-            'network:NetRoomStep.room.exportKey.none',
-          )}{/if}
-      </Note>
-    {:else}
-      {#if step === 'roomCreate'}
-        <Field label={t('network:NetRoomStep.room.nostr')}>
-          <textarea
-            id="net-room-nostr"
-            bind:value={nostr}
-            rows="2"
-            placeholder={t('network:NetRoomStep.room.nostr.placeholder')}
-            autocomplete="off"
-            spellcheck="false"></textarea>
-        </Field>
-        <Note size="md">{t('network:NetRoomStep.room.nostr.note')}</Note>
-        <Field label={t('network:NetRoomStep.room.derp')}>
-          <textarea
-            id="net-room-derp"
-            bind:value={derp}
-            rows="2"
-            placeholder={t('network:NetRoomStep.room.derp.placeholder')}
-            autocomplete="off"
-            spellcheck="false"></textarea>
-        </Field>
-        <Note size="md">
-          <T k="network:NetRoomStep.room.derp.note">
-            {#snippet a(words: string)}<a href={DERPER} target="_blank" rel="noopener">{words}</a>{/snippet}
-          </T>
-        </Note>
-      {/if}
-      <Field label={t('network:NetRoomStep.room.key')}>
-        <select id="net-room-key" bind:value={keyOf}>
-          <option value="">{t('network:NetRoomStep.room.key.new')}</option>
-          <option value={PASTE}>{t('network:NetRoomStep.room.key.paste')}</option>
-          {#each keys as k (k.id)}<option value={k.id}>{sameKeyAs(k.name)}</option>{/each}
-        </select>
-      </Field>
-      {#if keyOf === PASTE}
-        <ValueField
-          id="net-room-key-paste"
-          showId="net-room-key-paste-show"
-          label={t('network:NetRoomStep.room.key.pasted')}
-          bind:value={pastedKey}
-          secret
-          mono
-        />
-      {/if}
-      <Note size="md">
-        {#if keyOf === PASTE}<T k="network:NetRoomStep.room.key.paste.note" />{:else}{t(
-            'network:NetRoomStep.room.key.note',
-          )}{/if}
-      </Note>
     {/if}
+    <Note size="md">
+      {#if keyOf === PASTE}<T k="network:NetRoomStep.room.key.paste.note" />{:else}{t(
+          'network:NetRoomStep.room.key.note',
+        )}{/if}
+    </Note>
   </Disclosure>
 </Step>
-
-<style>
-  .row {
-    display: flex;
-    gap: var(--space-3);
-  }
-</style>

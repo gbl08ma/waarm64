@@ -60,7 +60,15 @@
   function wizard(i: number) {
     toButton(i);
     openAt = undefined;
-    network.openWizard({ mode: 'attach', machine: current.id, adapter: i, here: views[i]?.on });
+    const attached = views[i]?.connection?.id;
+    network.openWizard({
+      mode: 'attach',
+      machine: current.id,
+      adapter: i,
+      here: views[i]?.on,
+      attached,
+      from: { to: 'screen' },
+    });
   }
   function details(i: number) {
     const id = views[i]?.connection?.id;

@@ -1,8 +1,8 @@
 <!--
   The Home page's Connections (docs/networking/adapters.md §3.1): the browser's network connections, each with its
   kind, who has it now and the machines that use it; rename, Details (the connection's page, one level down:
-  ConnectionPage.svelte), edit (the Network wizard, ConnectionEditButton.svelte), a tailcat server's new address, log
-  out, delete. Logic is web/app/net-live.ts's, through `page`.
+  ConnectionPage.svelte, where its settings and its other commands are), delete. Logic is web/app/net-live.ts's,
+  through `page`.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -12,12 +12,10 @@
   import NameInput from './ui/NameInput.svelte';
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
-  import ConnectionEditButton from './ConnectionEditButton.svelte';
   import T from './T.svelte';
   import { CONNECTIONS } from './machines-panes.ts';
   import { kindText } from './connection-kind.ts';
   import type { Connection } from './connections.ts';
-  import { ask } from './ask.svelte.ts';
   import type { Act } from './actions.svelte.ts';
   import { msg, t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
@@ -56,13 +54,6 @@
   $effect(() => {
     for (const [id, el] of Object.entries(details)) if (el && machinesNav.takeReturn(id)) el.focus();
   });
-  async function logout(c: Connection) {
-    const sure = await ask.confirm(msg('machines:ConnectionsPane.logout.confirm', { name: c.name }), {
-      ok: t('machines:ConnectionsPane.logout.ok'),
-      danger: true,
-    });
-    if (sure) await act(t('machines:ConnectionsPane.busy.loggingOut'), () => page.netLogoutConnection(c));
-  }
 </script>
 
 <Pane
@@ -101,25 +92,6 @@
           >
             {t('machines:ConnectionsPane.connection.details')}
           </Button>
-          <ConnectionEditButton connection={c} onclick={() => network.openWizard({ mode: 'edit', connection: c.id })} />
-          {#if c.tailcat?.serve}
-            <Button
-              onclick={() => act(t('machines:ConnectionsPane.busy.forgettingAddress'), () => page.netNewAddress(c))}
-              data-action="new-address"
-              title={t('machines:ConnectionsPane.connection.newAddress.title')}
-            >
-              {t('machines:ConnectionsPane.connection.newAddress')}
-            </Button>
-          {/if}
-          {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}
-            <Button
-              onclick={() => logout(c)}
-              data-action="logout-connection"
-              title={t('machines:ConnectionsPane.connection.logout.title')}
-            >
-              {t('machines:ConnectionsPane.connection.logout')}
-            </Button>
-          {/if}
           <Button
             icon="trash"
             onclick={() => act(t('machines:MachinePane.busy.deleting'), () => page.netDelete(c))}

@@ -71,7 +71,16 @@
     await net.conns.put({ ...conn, connectAtStart: on });
     await net.refresh();
   }
-  const attach = () => network.openWizard({ mode: 'attach', machine: edit.draft.id, adapter: at, here: !!here?.on });
+  // Change… on an adapter that has a connection asks first whether to edit it (on its page, Back leading here).
+  const attach = () =>
+    network.openWizard({
+      mode: 'attach',
+      machine: edit.draft.id,
+      adapter: at,
+      here: !!here?.on,
+      attached: c?.id,
+      from: { to: 'tab', machine: edit.draft.id },
+    });
 </script>
 
 <Card data-adapter={index}>

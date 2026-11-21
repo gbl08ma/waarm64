@@ -146,7 +146,7 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
   <name>{{name}}</name>", "Delete the overlay <name>{{name}}</name>?" (i18n.md "Markers"); the page draws them as
   names.
 - **The page's elements named in a sentence** (a button, a menu's item, a tab, a pane) are marked with their words as
-  the element says them: "use <ui>Edit connection…</ui> to paste it"; with their icon before them where they have
+  the element says them: "paste it in <ui>Settings</ui>"; with their icon before them where they have
   one: "on its <ui-network>Network</ui-network> tab or in the toolbar's <ui-network>Network</ui-network> menu", "on the
   <ui-home>Home</ui-home> page". Only the element's own words are marked ("the toolbar's", "menu", "tab" stay
   outside). The note on the clipboard sharing names the toolbar's clipboard menu with its icon after the words (its own

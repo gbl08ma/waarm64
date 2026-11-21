@@ -108,8 +108,11 @@ disconnects and says it was taken.
 ## 3. The page
 
 The Home page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
-**[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
-browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and
+**[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's, each with a page of its own one level down (its Details, its
+Settings, which change what can change without a new node, and its commands: New address, Log out, Delete); the
+**Network wizard** (§3.2) makes connections and attaches one, a new one or one of the browser's, and edits none: on an
+adapter that already has a connection it first asks whether that connection is to be edited (its Settings open, Back
+leading to where the wizard was opened) or another attached; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and
 does: [frontend.md](../frontend.md) "The Home page" and "Network". The live side is web/app/net-live.ts
 (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error (a
 client's worker that fails by itself, before or after `Running`, is an error as one it posts: web/tailscale.ts

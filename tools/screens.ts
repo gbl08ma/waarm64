@@ -440,6 +440,11 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
     await tab(page, machine, 'network');
     await page.click('[data-action=attach-connection]');
     await page.locator('#net-wizard[open]').waitFor();
+    // An adapter that has a connection: the wizard asks first which change is meant.
+    if (await page.locator('#net-step-change').isVisible()) {
+      await shot(page, 'net-wizard-change');
+      await page.click('#net-change-other');
+    }
     await shot(page, 'net-wizard-pick');
     await escape(page);
   });
@@ -451,12 +456,14 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
     return all.map((c: { id: string; kind: string }) => [c.kind, c.id] as const);
   });
   for (const [kind, id] of conns) {
-    await state(`net-wizard-edit-${kind}`, async () => {
+    await state(`connection-settings-${kind}`, async () => {
       await choose(page, 'connections');
-      await page.click(`[data-connection="${id}"] [data-action=edit-connection]`);
-      await page.locator('#net-wizard[open]').waitFor();
-      await shot(page, `net-wizard-edit-${kind}`);
-      await escape(page);
+      await page.click(`[data-connection="${id}"] [data-action=connection-details]`);
+      await page.locator('[data-context-connection]').waitFor();
+      await page.locator('.machines nav [data-section=settings]').last().click();
+      await page.locator('section[data-selected=connection-settings]').waitFor();
+      await shot(page, `connection-settings-${kind}`);
+      await page.locator('.machines nav [data-action=back]').last().click();
     });
   }
 

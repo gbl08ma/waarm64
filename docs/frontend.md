@@ -33,7 +33,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/networking/adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts` (`usb-problems.ts`: the device worker's problems in words, with the host's remedies), `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
-| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts`, `ConnectionEditButton.svelte` (a connection's Edit…: Connections and the wizard's pick step) | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
+| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts`, a connection's page on the Home page (`Connection*.svelte`; `connection-settings.ts`: its Settings' draft and checks) | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -618,16 +618,25 @@ opens at its root next time. Going down, the column's entries and the pane leave
 from the right; going up, the reverse (`home-level.ts`: 150 ms, `cubicOut`, a plain fade under
 `prefers-reduced-motion`; the column (`HomeColumn.svelte`) and the pane's slot are keyed by the level, the outgoing and
 incoming blocks stacked in one grid cell); choosing between panes or sections of one level is instant. Entering, the
-pane's title takes the focus (`Pane`'s `takeFocus`). **The address says the level** (`areas/home-levels.ts`, written in
-place): `#home`, or `#home/connections/<id>` (Details), `…/settings`, `…/domains`; a reload, a link or a change of
-fragment lands there (the older `#machines` is the root); an id that is gone (`shownContext`, also when the connection
-is deleted while its page shows) opens Connections. `page.openConnection(id, section, from)` enters one.
+pane's title takes the focus (`Pane`'s `takeFocus`). **The address says the level** (`areas/home-levels.ts`):
+`#home`, or `#home/connections/<id>` (Details), `…/settings`, `…/domains`; a reload, a link or a change of fragment
+lands there (the older `#machines` is the root); an id that is gone (`shownContext`, also when the connection is
+deleted while its page shows) opens Connections. `page.openConnection(id, section, from)` enters one. **Going down a
+level is an entry of the browser's history** (`pushState`, from a card, a machine's tab, the toolbar or the wizard's
+Edit), with where it was entered from in the entry's state (`history.state.home`: `{ from, pushed }`, `homeState`), so
+the browser's Back leaves the level for that place and Forward enters it again from there (`HomeLevels.follow`, on
+`popstate`, with the transitions' direction); moving between a level's sections, and Home opened or closed, write the
+address in place, as moving between the root's panes does. The column's Back and Esc on a pushed level go back in the
+history (no entry is left over to come back to by mistake); on a level the address opened (a reload, a pasted address:
+its state dropped, entered from Connections) they write in place, as before.
 
 **A connection's page** (`ConnectionNav.svelte` the column, `ConnectionPage.svelte` the pane): Back, the connection's
 name with its line (its kind, and who has it now: the card's words), and its sections,
 **[Details](ui:machines:ConnectionNav.details)**, **[Settings](ui:machines:ConnectionNav.settings)** and, for a room
-connection, **[Domains](ui:machines:ConnectionNav.domains)** (the place for the connection's commands is under them,
-empty for now). **Details** (`ConnectionDetails.svelte`, `ConnectionRoom.svelte` a room's part) says first which
+connection, **[Domains](ui:machines:ConnectionNav.domains)**, and under a rule the connection's commands: a tailcat
+server's [New address](ui:machines:ConnectionNav.newAddress), [Log out](ui:machines:ConnectionNav.logout) where a node
+is kept (it asks first), and [Delete](ui:machines:ConnectionsPane.connection.delete), after which the page falls back to
+Connections. **Details** (`ConnectionDetails.svelte`, `ConnectionRoom.svelte` a room's part) says first which
 machines have it attached, each a link to that machine's Network tab ([Attached to {{machines}}.](ui:machines:ConnectionDetails.machines)
 or [Not attached to any machine.](ui:machines:ConnectionDetails.machines.none)), and where connections are attached;
 then what the browser keeps for it, always (a tailnet's hostname and control server, the local helper's install lines,
@@ -635,9 +644,18 @@ the demo network's server, a room's link and who may connect), and, while it is 
 the adapter's live view (below, "Network": the adapter's line, the guest's address, tailcat's address or key, the demo
 network's page in the guest, a room's name, warnings, registry line and domains, `NameEntry`); while it isn't, one
 line says why: it isn't connected in this tab (`ConnectionDetails.notHere`), or another tab has it
-(`ConnectionDetails.otherTab`). [Edit connection…](ui:network:ConnectionDetails.edit) in
-its head opens the Network wizard on it. Settings and Domains are their titles alone for now (the DOMAINS track fills
-them).
+(`ConnectionDetails.otherTab`). **Settings** (`ConnectionSettings.svelte`; a tailcat's part
+`ConnectionTailcatSettings.svelte`, a room's `ConnectionRoomSettings.svelte`; the form's logic DOM-free in
+`connection-settings.ts`) is what can change without a new node: the connection's
+[Name](ui:machines:ConnectionSettings.name), a tailnet's hostname (its control server shown, not editable), tailcat's
+exit address, whether it serves, its relay and who is let in, the local helper's link, the demo network's server, and
+a room's two switches with, under Advanced, its key to copy (followed by its domains) and
+[New name](ui:network:ConnectionRoomSettings.newName), a new key at once (after asking). Save and Revert are a
+machine's (`SaveRow.svelte`): Save checks what was typed with the wizard's own messages (the Home page's banner says
+what's wrong), writes the connection through `page.netEdit` (an adapter here that runs it connects again with it, so
+the change applies at once) or renames it alone through `page.netRename`, from the record as it is then (a new key
+since the page was read stays). The draft follows the stored connection unless it's being edited; leaving the section
+drops it, as leaving a machine's Settings does. Domains is its title alone for now (the DOMAINS track fills it).
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **[Reset disk…](ui:machines:PagePane.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
@@ -2244,19 +2262,25 @@ secrets (a tailcat address, the helper's link, a room's link or key, an auth key
 screen), with what the menu leaves out to stay short: the guest's address (IPv4, or a room's IPv6); a tailnet's
 hostname and control server; tailcat's address and the commands that use it, or the machine's key and the line that
 lets only it through the server (`tailcat serve --allow=<key> exit-node`, to copy); the local helper's install lines
-(`NetLocalInstall.svelte`, the wizard's too); a room's name, link and who may connect; and
-[Edit connection…](ui:network:ConnectionDetails.edit), the wizard on the connection. Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
-the submit; a component per step with its own form, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
-`NetLocalStep`, `NetDemoStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
+(`NetLocalInstall.svelte`, the wizard's too); and a room's name, link and who may connect. What can be changed is in the
+page's Settings (above). Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
+the submit; a component per step with its own form, `NetChangeStep`, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
+`NetLocalStep`, `NetDemoStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create and join; `net-wizard.ts` the steps' API and
+their way through, `firstStep` and `stepBack`). The wizard makes and attaches connections; it doesn't edit them. **On an
+adapter that already has a connection it first asks which change is meant** ([Change connection](ui:network:NetWizard.title.change),
+`NetChangeStep.svelte`, two choices): [Edit {{name}}](ui:network:NetChangeStep.edit) closes the wizard and opens that
+connection's Settings on the Home page, whose Back leads to where the wizard was opened (the machine's Network tab, or
+the machine's screen for the toolbar's menu: `Opened`'s `attached` and `from`); [Attach a different connection](ui:network:NetChangeStep.other)
+goes on to the steps, and their first Back returns to the choice. An adapter with no connection (and the local
+helper's pairing link) opens on the steps at once: first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetPickStep.pick.new)
-(without connections it starts at the next step), each with the Connections pane's [Edit…](ui:network:ConnectionEditButton.edit)
-(`ConnectionEditButton.svelte`, inside its choice's frame: `ui/Choice.svelte`'s `after`), which opens the connection's
-editor in the wizard's place (Save and Back return to the choice, that connection chosen; Cancel closes); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal), [The demo network](ui:network:NetKindStep.kind.pickDemo) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
+(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal), [The demo network](ui:network:NetKindStep.kind.pickDemo) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
 settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
-the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Home
-page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: rename, Details (the connection's page, above), Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
+the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), and makes one on its own (the Home
+page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: each card renames, opens the connection's page with Details (above: its
+Settings, New address and Log out are there), and Delete, which logs a kept node out and names the machines that lose it). The live
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
@@ -2365,9 +2389,9 @@ and the guest's default way out (below).
     region with the fastest `/derp/probe` (`nearestRegion`, as tailcat's own server picks; the
     map's first if none answers), or one's own derper's `host[:port]`; [Let in only these clients](ui:network:NetTailcatStep.allow):
     the clients' keys as `tailcat genkey --client` prints them, one per line (tailcat's own `--allow`; empty: anyone
-    with the address; `parseAllow`, kept as the connection's `tailcat.allow`); and, editing a connection, [New address](ui:network:NetTailcatStep.newAddress), which
-    forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
-    connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
+    with the address; `parseAllow`, kept as the connection's `tailcat.allow`). A connection's Settings change these, and
+    its page's [New address](ui:machines:ConnectionNav.newAddress) (a command in its column) forgets the kept identity
+    (after a confirmation), so the old address stops working (the adapter that runs it connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
     the clients. The status says [Letting tailcat clients in](ui:network:network-view.servingOnly) (or adds it to the exit node's).
 - [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom) (docs/networking/rooms.md): machines in
   other browsers that join the same room reach each other by name, browser to browser over WebRTC when they can and
@@ -2394,9 +2418,9 @@ and the guest's default way out (below).
   `waarm64-room`, and the key's lock, named by the key, holds either way), or another stored room connection's (the
   same key in another room: docs/networking/adapters.md §2.1). The connection's default name is the room's (a private
   one's without its suffix); the Home page says [a peer-to-peer room](ui:machines:connection-kind.room).
-  Editing changes the two switches (the adapter running it connects again), and under Advanced [New
-  name](ui:network:NetRoomStep.room.newName) gives the connection a new key after asking, so its old name stops working,
-  [The connection's key](ui:network:NetRoomStep.room.exportKey) is a hidden field to copy (shown, selected, where
+  The connection's Settings (on its page) change the two switches (the adapter running it connects again), and under
+  Advanced [New name](ui:network:ConnectionRoomSettings.newName) gives the connection a new key after asking, so its
+  old name stops working, and [The connection's key](ui:network:ConnectionRoomSettings.key) is a hidden field to copy (shown, selected, where
   the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
   computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/networking/tailnet.md
   "Rooms").
@@ -2434,8 +2458,8 @@ and the guest's default way out (below).
   a member's name or a key, each refusal in the catalog's words) and
   [Let it go](ui:network:NameEntry.release) (after asking). A stored machine's Network tab lists each room adapter's
   names with the date each stops resolving unless renewed. At every load the agent starts when titles are kept and,
-  after its first pass, the message bar names those in their last week (web/names.ts `inLastWeek`). The wizard's
-  [The connection's key](ui:network:NetRoomStep.room.exportKey) is the connection's export (its key, then its names
+  after its first pass, the message bar names those in their last week (web/names.ts `inLastWeek`). The Settings'
+  [The connection's key](ui:network:ConnectionRoomSettings.key) is the connection's export (its key, then its names
   after a dot), and a pasted one brings its names with it (web/room.ts `parseRoomExport`). Deleting a room connection
   that holds names (its key no other connection's) asks in a question of its own that says it holds them, with the
   export in its field to copy; deleting it forgets its owners' secret and titles.

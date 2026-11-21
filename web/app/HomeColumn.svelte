@@ -31,7 +31,7 @@
   {#key machinesNav.level}
     <div class="level" in:level out:level data-level={machinesNav.level}>
       {#if machinesNav.context}
-        <ConnectionNav {net} ctx={machinesNav.context} />
+        <ConnectionNav {net} ctx={machinesNav.context} act={actions.run} />
       {:else}
         <MachinesNav {store} {machines} {counts} {stateOf} {actions} {onchoose} />
       {/if}

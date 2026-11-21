@@ -7,7 +7,7 @@
   connected on this page (`net.runs`), the adapter's live view (web/app/network-view.ts): the adapter's line, the guest's
   address, a tailcat address or key and the line that lets only this machine through a tailcat server, the demo
   network's page inside the guest, and a room's name, warnings and domains (ConnectionRoom.svelte). While it isn't, a
-  line says why those are missing. Edit connection… opens the Network wizard on the connection.
+  line says why those are missing. What can be changed is in the page's Settings (ConnectionSettings.svelte).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -23,7 +23,6 @@
   import type { PageNetwork } from './net-live.ts';
   import type { MachineRecord } from './shape.ts';
   import { defaultsOf } from './network-view.ts';
-  import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
 
@@ -62,11 +61,6 @@
 
 {#if c}
   <Pane id="connection-details" title={t('machines:ConnectionNav.details')} {takeFocus}>
-    {#snippet actions()}
-      <Button id="net-details-edit" onclick={() => network.openWizard({ mode: 'edit', connection: c.id })}>
-        {t('network:ConnectionDetails.edit')}
-      </Button>
-    {/snippet}
     <div id="net-details" class="details" data-kind={c.kind}>
       <div class="machines" data-connection-machines={users.length}>
         {#if users.length}

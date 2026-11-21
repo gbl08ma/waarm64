@@ -67,7 +67,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    folder's, a snapshot's, a connection's, a file's, a USB device's) is drawn in running text as a soft pill: its own
    color a step brighter (`--name-fg`), on a faint tint of the text's color (`--name-bg`), radius `--radius-sm`, 3 px
    of padding, at the weight around it (`--name-weight`). The words of the page's own elements named in a sentence (a
-   button, a menu's item, a tab, a pane: `Open disk…`, `Edit connection…`) are framed faintly, like a small button
+   button, a menu's item, a tab, a pane: `Open disk…`, `Add a disk…`) are framed faintly, like a small button
    (`--ui-ref-border`), with the element's icon before them where it has one (the Network tab, the toolbar's Network
    menu, Home). Neither grows its line, at any size of text: no vertical padding, the frame a shadow inside the pill
    (`--ui-ref-frame`; a border's pixels past the font's box made the message bar's words scroll in fonts whose box
@@ -95,8 +95,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `Slider`: a number on a slider, notches under it at the suggested values (a pointer snaps to one nearby), the
      value in words beside it (a machine's vCPUs, RAM, JIT cache; the Sound menu's volume).
    - `Check`, `Radio`: a checkbox or a radio button and its words (`ref` binds Check's box).
-   - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line; `after`: controls of its own inside
-     its frame at the end, a connection's Edit…).
+   - `Choice`: a wizard's big choice button (`label`, a message drawn with its markers or words; `icon`, `pressed`, a
+     dim line).
    - `Step`: a wizard's step (a column, hidden unless `active`); `Steps`: numbered steps to follow; `Disclosure`: more
      of a form folded under a small line (Advanced; `plain` with a `lead`: a line in the words' own size with a light
      before it, a demo's requirements all met).

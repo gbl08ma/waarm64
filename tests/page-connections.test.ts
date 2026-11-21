@@ -3,7 +3,8 @@
 // client gets the machine's port at the start). The control server, 127.0.0.1:1, never answers, so no client gets
 // further than trying, and its connection is held all the same. A new machine connects in one wizard (no connections
 // yet: straight to the kind); a second tab's machine sees that connection in use by the first, named, and takes it
-// after asking, the first saying so; the Network tab detaches it; an ephemeral connection is kept nowhere and is gone
+// after asking, the first saying so; Change connection… on an adapter that has one asks first, and Edit leads to the
+// connection's Settings (Back to the machine), Details… to its Details; the Network tab detaches it; an ephemeral connection is kept nowhere and is gone
 // after a reload, its adapter detached and saying why; Connections renames and deletes (naming the machines it is on).
 // A machine powered off lets its connection go; attached and detached from another tab, a running machine follows at
 // once; adapters move up and down.
@@ -81,6 +82,8 @@ async function menu(page: Page) {
 async function newTailnet(page: Page, o: { hostname: string; pick: boolean; keep?: boolean }) {
   await menu(page);
   await page.click('#net-setup');
+  // An adapter that has a connection: the wizard asks first; another one is attached.
+  if (await page.locator('#net-step-change').isVisible()) await page.click('#net-change-other');
   assert.equal(await page.locator('#net-step-pick').isVisible(), o.pick, o.pick ? 'the connections to choose from first' : 'no connections yet: the kind at once');
   if (o.pick) await page.click('#net-pick-new');
   await page.click('#net-pick-tailnet');
@@ -118,6 +121,35 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   assert.match(await text(pageA, '#net-conn'), /127\.0\.0\.1:1/);
   assert.equal(await text(pageA, '#net-setup'), CHANGE);
 
+  // Change connection… on Alpha's adapter, which has a connection: the wizard asks first. Attach a different connection
+  // goes on to the pick step (Back returns to the choice); Edit closes it for the connection's Settings on the Home
+  // page, whose Save writes it back and whose Back leads to the machine's screen.
+  await pageA.click('#net-setup');
+  await pageA.locator('#net-step-change').waitFor({ state: 'visible' });
+  assert.equal(await text(pageA, '#net-wizard-title'), tWords('network:NetWizard.title.change'));
+  await pageA.click('#net-change-other');
+  assert.equal(await pageA.locator('#net-step-pick').isVisible(), true);
+  assert.equal(await pageA.locator('[id^=net-pick-edit-]').count(), 0, 'no Edit… on the connections to pick');
+  await pageA.click('#net-back');
+  await pageA.click('#net-change-edit');
+  await pageA.locator('section[data-selected=connection-settings]').waitFor();
+  assert.equal(await pageA.evaluate(() => location.hash), `#home/connections/${t.id}/settings`);
+  assert.equal(await pageA.locator('.machines nav [data-action=back]').getAttribute('data-back'), 'screen');
+  assert.equal(await pageA.locator('#settings-hostname').inputValue(), 'alpha');
+  await pageA.fill('#settings-hostname', 'alpha-two');
+  await pageA.click('section[data-selected=connection-settings] [data-action=save]');
+  await pageA.waitForFunction(() => !document.querySelector('section[data-selected=connection-settings] [data-action=revert]'), null, { timeout: 15_000 });
+  assert.equal(((await records(pageA, 'connections'))[0].tailnet as { hostname: string }).hostname, 'alpha-two', 'saved');
+  await pageA.click('.machines nav [data-action=back]');
+  await pageA.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
+  // Details… leads to the connection's Details, Back to the machine's screen too.
+  await menu(pageA);
+  await pageA.click('#net-details-open');
+  await pageA.locator('section[data-selected=connection-details]').waitFor();
+  assert.equal(await pageA.evaluate(() => location.hash), `#home/connections/${t.id}`);
+  await pageA.keyboard.press('Escape');
+  await pageA.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
+
   // Bravo, in another tab: Alpha has it, and says so; Use it here takes it (Alpha disconnects and says why).
   const pageB = await context.newPage();
   pageB.on('pageerror', (e) => errors.push(`B: ${e}`));
@@ -128,22 +160,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await pageB.click('#net-setup');
   assert.equal(await pageB.locator('#net-step-pick').isVisible(), true);
   const choice = pageB.locator(`[data-connection="${t.id}"]`);
-  // Its Edit… (the Connections pane's) edits it in the wizard's place; Back, then Save, come back to the choice.
-  await pageB.click(`#net-pick-edit-${t.id}`);
-  assert.equal(await pageB.locator('#net-step-tailnet').isVisible(), true, 'the editor in the wizard');
-  assert.equal(await pageB.locator('#net-hostname').inputValue(), 'alpha');
-  assert.equal(await text(pageB, '#net-wizard-title'), tWords('network:NetWizard.title.edit', { name: t.name as string }));
-  await pageB.click('#net-back');
-  assert.equal(await pageB.locator('#net-step-pick').isVisible(), true, 'Back: the choice again');
-  assert.equal(await choice.getAttribute('aria-pressed'), 'true', 'the connection edited is chosen');
-  await pageB.click(`#net-pick-edit-${t.id}`);
-  await pageB.fill('#net-hostname', 'alpha-two');
-  await pageB.click('#net-connect');
-  await pageB.waitForFunction(() => !!document.getElementById('net-step-pick')?.checkVisibility(), null, { timeout: 10_000 });
-  assert.equal(await pageB.evaluate(() => (document.getElementById('net-wizard') as HTMLDialogElement).open), true, 'Save keeps the wizard open, at the choice');
-  assert.equal(((await records(pageB, 'connections'))[0].tailnet as { hostname: string }).hostname, 'alpha-two', 'saved');
-  assert.equal(await text(pageB, '#net-connect'), CONNECT, 'attaching again');
-  // New connection… after an edit: an empty form, not the edited connection's.
+  // New connection… and Back: the choice again.
   await pageB.click('#net-pick-new');
   await pageB.click('#net-pick-tailnet');
   assert.equal(await pageB.locator('#net-hostname').inputValue(), '', "a new connection's form");
@@ -164,8 +181,9 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   assert.equal(await pageA.locator('#net-connect-now').isVisible(), true, 'Alpha keeps it attached: Connect is there');
   assert.equal((await adapterOf(pageB, b)).connection, t.id, 'attached to Bravo too');
 
-  // Alpha's Network tab: Detach takes it off Alpha.
+  // Alpha's Network tab: Detach takes it off Alpha. (Home opens where the connection's page was left: Connections.)
   await openHome(pageA);
+  await pageA.click(`[data-machine="${a}"]`);
   await pageA.click('[data-tab="network"]');
   await pageA.waitForSelector('[data-adapter="0"] [data-action="detach-connection"]');
   await pageA.click('[data-adapter="0"] [data-action="detach-connection"]');
