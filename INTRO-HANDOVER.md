@@ -128,7 +128,6 @@ frame ~0.6 s after the navigation (0.93 s under the bench's harness), in Firefox
   live). Read `IntroTranslate`'s five "what to look for" paragraphs against a new capture all the same: they describe
   what the WebAssembly does (one TLB probe for a group, the compare without flags, `f64.add` and its checks).
 - Found while reading for the copy, not fixed (docs only; filed in docs/backlog.md "Documentation"): docs/jit.md
-  gives the TLB entry mask as `0x7ff80` where the emitted code masks with `0x1fff80` (16,384 entries); docs/architecture.md
-  still says memory 0 holds "≤ ~3.5 GiB" of RAM (it's 3 GiB less 1 MiB); docs/testing.md's dEQP-VK counts don't match
-  `tests/deqp/vk.txt`.
+  gives the TLB entry mask as `0x7ff80` where the emitted code masks with `0x1fff80` (16,384 entries); docs/testing.md's
+  dEQP-VK counts don't match `tests/deqp/vk.txt`. (Memory 0's ceiling, also on that list, is now 3 GiB, PERF loop 45.)
 - Left for the backlog (kickoff): deep dives for Vulkan and for OpenGL and video; panels fed by the running machine.

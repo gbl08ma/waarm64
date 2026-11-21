@@ -38,18 +38,19 @@ export function ramLayout(ramSize: number, spill: number[] = [], window = 0, spi
 }
 
 /**
- * The least heap a fixed memory gets (docs/spill-memories.md "The heap floor"): the reserve is what 4 GiB leaves
- * after the scratch page, RAM and fw_cfg's files, capped at `HEAP_RESERVE` (web/vm.ts) and never under this. The
- * heap reaches ~540–600 MiB under a heavy 4-vCPU load, so 1 GiB, and the reserve is always 1 GiB.
+ * The least heap reserve a fixed memory gets (docs/spill-memories.md "The heap floor"): the reserve, which holds
+ * everything in memory 0 but RAM (the core's static data and stack, the scratch page, fw_cfg's files and the heap), is
+ * what 4 GiB leaves after RAM, capped at `HEAP_RESERVE` (web/vm.ts) and never under this. The heap reaches ~540–600 MiB
+ * under a heavy 4-vCPU load, so 1 GiB, and the reserve is always 1 GiB.
  */
 export const HEAP_FLOOR = 1 << 30;
 
 /**
- * The most RAM memory 0 holds with the heap at its floor: 4 GiB less the floor and 1 MiB for the scratch page and
- * fw_cfg's files (up to 960 KiB: the credentials). Fixed, so that a machine's split never depends on its fw_cfg files
- * (a snapshot restores only onto the same layout); the rest of a machine's RAM goes to spill memories.
+ * The most RAM memory 0 holds with the heap reserve at its floor: 4 GiB less the floor, so 3 GiB. Fixed, so that a
+ * machine's split never depends on its fw_cfg files (a snapshot restores only onto the same layout): they come out of
+ * the reserve. The rest of a machine's RAM goes to spill memories.
  */
-export const MAX_MEMORY0_RAM = 2 ** 32 - HEAP_FLOOR - (1 << 20);
+export const MAX_MEMORY0_RAM = 2 ** 32 - HEAP_FLOOR;
 
 /**
  * The host-visible window a machine with a Venus GPU gets (`BootOptions.window`): Venus's rings, command streams and

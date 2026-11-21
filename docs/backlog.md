@@ -2277,10 +2277,9 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   the two "needs busybox and script" skips). A candidate since: `tests/audio-page.test.ts` hung for good the same way
   (idle, nothing printed) in ~6% of runs under load until 2026-11-20, when a check failed by a fixed 10 ms wait and
   skipped the clean-up that closes its port; fixed. If the cloud's stall recurs, it wasn't that.
-- **Three stale figures in the docs** (found reading for the introduction's copy, 2026-11-20; not fixed): jit.md
+- **Two stale figures in the docs** (found reading for the introduction's copy, 2026-11-20; not fixed): jit.md
   "Loads and stores (the TLB fast path)" gives the entry mask as `0x7ff80`, and the emitted code masks with
-  `0x1fff80` (16,384 entries since 2026-11-03); architecture.md "Guest memory: layout A" says memory 0 holds
-  "≤ ~3.5 GiB" of RAM where its own Risks, abi.md and `web/ram.ts` say 3 GiB less 1 MiB; testing.md's dEQP-VK counts
+  `0x1fff80` (16,384 entries since 2026-11-03); testing.md's dEQP-VK counts
   ("~5,600 of 40,166", "58,906 cases") don't match `tests/deqp/vk.txt` (81,734 cases).
 - [B] **`debug` fails on the hvf oracle** (`tests/baremetal/oracle.sh --hvf`, exit 2; PERF loop 34): QEMU's hvf
   backend traps the debug registers and models them itself, and its `OSLSR_EL1` reads 0 after `OSLAR_EL1` = 0 (OSLM

@@ -383,6 +383,8 @@ export type FromWorker =
       type: 'heap';
       id: number;
       heap: {
+        /** Memory 0's size: 4 GiB for a fixed memory of memory 0's largest RAM (web/vm.ts `fixedPages`). */
+        memoryBytes: number;
         belowBytes: number;
         reserveBytes: number;
         touchedBytes: number;

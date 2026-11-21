@@ -255,8 +255,8 @@ export type BootOptions = {
    */
   fixedMemory?: boolean;
   /**
-   * Tests only: the core's heap reserve in bytes instead of {@link HEAP_RESERVE} (and never under `HEAP_FLOOR`), so a
-   * test runs the heap out in a minute (tests/heap.test.ts).
+   * Tests only: the core's heap reserve in bytes (with the scratch page and fw_cfg's files, as {@link fixedPages}'s)
+   * instead of {@link HEAP_RESERVE}, so a test runs the heap out in a minute (tests/heap.test.ts).
    */
   heapReserve?: number;
   /**
@@ -342,6 +342,18 @@ const GAUGE_WORDS = 8;
  */
 export const HEAP_RESERVE = 1 << 30;
 
+/**
+ * A fixed memory's size in pages (docs/abi.md "A fixed-size memory"): `ramSize` bytes of RAM and the heap reserve, which
+ * holds everything else in memory 0 (the core's static data and stack, the scratch page, fw_cfg's files and the heap):
+ * what 4 GiB leaves after RAM, capped at {@link HEAP_RESERVE}, never under `HEAP_FLOOR` (or the tests' `heapReserve`).
+ * So memory 0's largest RAM (`MAX_MEMORY0_RAM`, 3 GiB) makes exactly 4 GiB, whatever fw_cfg's files; undefined past
+ * 4 GiB, where the memory grows instead.
+ */
+export function fixedPages(ramSize: number, heapReserve?: number): number | undefined {
+  const pages = ((heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - ramSize))) + ramSize) / 65536;
+  return pages <= 65536 ? pages : undefined;
+}
+
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   try {
     return await boot(wasm, o);
@@ -353,18 +365,17 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
 
 async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
-  // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
-  // The reserve takes what 4 GiB leaves, capped at HEAP_RESERVE, never under HEAP_FLOOR.
+  // The memory's final size when it is fixed: RAM and the heap reserve, which holds the scratch page and fw_cfg's files.
   // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says. It is in memory 1,
   // after a Venus machine's renderer arena there (web/venus-host.ts, vk/README.md), before node 1's RAM.
   const venus = (o.devices ?? []).some((d) => d.type === 'gpu' && d.virgl && d.venus);
   const windowBytes = o.window ?? (venus ? VENUS_WINDOW : 0);
   const windowAt = windowBytes ? (o.windowAt ?? (venus ? VENUS_ARENA : 0)) : 0;
   const spillAt = windowBytes ? windowAt + windowBytes : 0;
-  const rest = 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0);
-  const pages = ((o.heapReserve ?? Math.max(HEAP_FLOOR, Math.min(HEAP_RESERVE, 2 ** 32 - rest))) + rest) / 65536;
-  const fixed = o.fixedMemory !== false && pages <= 65536;
-  const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
+  const fixedAt = o.fixedMemory !== false ? fixedPages(o.ramSize, o.heapReserve) : undefined;
+  const fixed = fixedAt !== undefined;
+  const pages = fixedAt ?? 65536;
+  const memory = new WebAssembly.Memory({ initial: 32, maximum: pages, shared: true });
   // Memories 1 and up (docs/spill-memories.md), each at its final size: the spill memories' RAM, memory 1's after
   // what it holds before it (`VmConfig::memory_sizes`).
   const spillSizes = o.spill ?? [];
@@ -938,6 +949,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
         buckets[b] = (buckets[b] ?? 0) + 1 / 256;
       }
       return {
+        memoryBytes: top * 4096,
         belowBytes: below * 4096,
         reserveBytes: top * 4096 - reserve * 4096,
         touchedBytes: touched * 4096,

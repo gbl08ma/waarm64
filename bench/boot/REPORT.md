@@ -6794,3 +6794,27 @@ are the core's own accounting, the same on either host. Raw: `results/perf44/` (
   isn't seen in any gauge here (the block map never passed its 900,000 keys).
 - No core change; the tool change: `bench/gpu/firefox-load.ts`'s sites phase takes `GUEST_BROWSER=chromium`, and
   `firefox/sites.html` logs through the console where there's no `dump()`. The backlog sub-item is removed.
+
+## PERF loop 45: memory 0 holds a whole 3 GiB of RAM (2026-11-21)
+
+The user's request: memory 0 held at most 3071 MiB (`MAX_MEMORY0_RAM` = 4 GiB − `HEAP_FLOOR` − 1 MiB), the MiB kept
+for the scratch page and fw_cfg's files outside the 1 GiB heap reserve. Now the reserve holds them, as it holds the
+core's static data and stack: `MAX_MEMORY0_RAM` = 3 GiB, and a fixed memory is RAM + the reserve (web/vm.ts
+`fixedPages`), exactly 65536 pages at 3072 MiB whatever fw_cfg's files (the heap gets at most ~1 MiB less than
+before at that size). The RAM slider's 3 GiB no longer stands for 3071 MiB (`stands` removed from ui/Slider.svelte);
+the introduction's memory deep dive at 3 GiB shows memory 0 full and no 1 MiB memory 1, its words say "3 GiB", and its
+slider has a notch at 3 GiB. Machines of more than 3071 MiB on the automatic split get the new layout (node 1 now at
+5 GiB, the boundary past RAM's end at 4 GiB); their older snapshots refuse to restore (the memory differs), which the
+user accepted; machines of 3071 MiB or less, or with a split set by hand, are unchanged (docs/machines.md §5.1).
+
+- Tests: tests/core-wasm.test.ts (`fixedPages`: 65536 pages at 3 GiB; the split's numbers), tests/heap.test.ts (a boot
+  in Node with 3 GiB of RAM, with 960 KiB of fw_cfg files and without: a 4 GiB memory, the exact core, an 896 MiB
+  allocation in the heap; 3073 MiB grows), tests/page-intro.test.ts (3 GiB is one full bar). The old formula planted
+  back failed both of the first two; restored.
+- The real run: tests/page-spill.test.ts now runs Debian on the page with `?split=3072,1024,512`: memory 0 at
+  2^32 bytes (`__waarm64Heap`'s new `memoryBytes`), the DT's memory nodes at 0x40000000 (size 0xc0000000),
+  0x140000000 and 0x1c0000000 (node 0's reg 0xbfe00000 bytes: 3 GiB less the firmware's 2 MiB DTB space), MemTotal
+  node 0 2,986,676 kB, node 1 1,032,176 kB, node 2 505,984 kB, the snapshot reloaded in a fresh profile.
+- CI: `scripts/ci-fast.sh`, `scripts/ci.sh` (1907 passed), `scripts/ci-debian.sh` (15 of 15), `scripts/ci-machines.sh`
+  (14 passed, 1 skipped).
+- `tests/steps.txt` didn't move (the test guests are small).

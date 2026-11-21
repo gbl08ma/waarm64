@@ -111,10 +111,11 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-21, after loop 44): paused
+## State (2026-11-21, after loop 45): paused
 
-**Paused by the user on 2026-11-21 after loop 44: the machine is needed for another track.** To resume, start the
-next row of the queue below as loop 45; nothing is half done (main is clean at loop 44's commit, no branch or run is
+**Paused by the user on 2026-11-21 after loop 44: the machine is needed for another track.** Loop 45 was the user's
+own request between (memory 0 holds a whole 3 GiB of RAM: bench/boot/REPORT.md "PERF loop 45"). To resume, start the
+next row of the queue below as loop 46; nothing is half done (main is clean at loop 45's commit, no branch or run is
 pending). An out-of-context review is due within the next ~3 loops (the last one was after loop 42, fixed in 43).
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop

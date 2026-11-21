@@ -37,7 +37,7 @@ const TABLE: Row[] = [
   // The size.
   ['transient: the default size', '', undefined, {}, { ncpus: 4, ramMiB: 2048, ramSplit: undefined, jitMiB: 0 }],
   ['transient: the size chosen last', '', undefined, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }],
-  ['transient: a remembered 3071 MiB (the slider\'s 3 GiB)', '', undefined, { ncpus: 2, ramMiB: 3071 }, { ncpus: 2, ramMiB: 3071 }],
+  ['transient: a remembered 3 GiB', '', undefined, { ncpus: 2, ramMiB: 3072 }, { ncpus: 2, ramMiB: 3072 }],
   ['transient: a remembered size not offered', '', undefined, { ncpus: 9, ramMiB: 1000 }, { ncpus: 4, ramMiB: 2048 }],
   ['transient: the address over the settings', 'ncpus=3&ram=3072&jitmb=96', undefined, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }, { ncpus: 3, ramMiB: 3072, jitMiB: 96 }],
   ['stored: its record, not the settings', '', OFF, { ncpus: 6, ramMiB: 4096, jitMiB: 64 }, { ncpus: 2, ramMiB: 1024, jitMiB: 0 }],
@@ -45,7 +45,7 @@ const TABLE: Row[] = [
   ['stored: the address over its record', 'ncpus=4&ram=2048&jitmb=128', OFF, {}, { ncpus: 4, ramMiB: 2048, jitMiB: 128 }],
   ['stored: its split', '', record({ ramSplit: [768, 256] }), {}, { ramMiB: 1024, ramSplit: [768, 256] }],
   ['stored: ?ram= drops its split', 'ram=2048', record({ ramSplit: [768, 256] }), {}, { ramMiB: 2048, ramSplit: undefined }],
-  ['?split= over ?ram=', 'ram=2048&split=3071,1024', OFF, {}, { ramMiB: 4095, ramSplit: [3071, 1024] }],
+  ['?split= over ?ram=', 'ram=2048&split=3072,1024', OFF, {}, { ramMiB: 4096, ramSplit: [3072, 1024] }],
   ['a ?split= that can\'t be laid out is ignored', 'split=0,1024', OFF, {}, { ramMiB: 1024, ramSplit: undefined }],
   // The display (before what the browser can do), Vulkan and the keyboard layout.
   ['transient: 3D by default', '', undefined, {}, { three: true, vulkan: false, keyboard: 'browser' }],

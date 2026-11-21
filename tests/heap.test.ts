@@ -68,3 +68,28 @@ test('an allocation the heap cannot hold traps with its size and the heap\'s', a
     }
   }
 });
+
+// Memory 0's largest RAM (web/ram.ts `MAX_MEMORY0_RAM`, 3 GiB) in a fixed memory of exactly 4 GiB, with fw_cfg's
+// largest files (960 KiB: the firmware's credentials) or none: the heap reserve holds them, and the heap still takes
+// most of its gigabyte. A MiB more is a memory that grows. Untouched RAM costs nothing.
+test("3 GiB of RAM is a fixed memory of 4 GiB, with fw_cfg's files or without; a MiB more grows", async () => {
+  const fwCfg = [{ name: 'opt/io.systemd.credentials/big', data: new Uint8Array(960 * 1024 - 60) }];
+  for (const firmware of [undefined, { fwCfg }]) {
+    const vm = await bootVm(WASM, { ramSize: 3072 * MiB, kernel: branches(1), cmdline: '', jit: 1, firmware });
+    try {
+      const what = firmware ? 'with the files' : 'without';
+      assert.equal(vm.memory.buffer.byteLength, 2 ** 32, `${what}: 65536 pages`);
+      assert.equal(vm.exactCore, true, `${what}: the core imports the memory at its size`);
+      vm.heapProbe(896 * MiB);
+    } finally {
+      vm.close();
+    }
+  }
+  const vm = await bootVm(WASM, { ramSize: 3073 * MiB, kernel: branches(1), cmdline: '', jit: 1 });
+  try {
+    assert.equal(vm.exactCore, false, 'a growable memory');
+    assert.ok(vm.memory.buffer.byteLength < 2 ** 32);
+  } finally {
+    vm.close();
+  }
+});

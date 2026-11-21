@@ -438,7 +438,11 @@ The file's format, what the core saves and the page's toolbar and header fields:
   came later joins only when it's on** (the USB controller as `usb: true`; the mouse, the touchscreen, the clock,
   9p and clipboard sharing's `agent` as transports on machines that have them), so machines made before it keep their hash; `sha3` among the CPU
   features is left out of the hash for the same reason (the features after it, ABI 59's, are in it). Its SHA-256 is the **shape hash** (`shapeHash`). Names, the
-  overlay chosen and writing in place aren't in it. The machine's JIT cache budget (`jitMiB`, when set) rides in the
+  overlay chosen and writing in place aren't in it. Nor is the automatic split of the RAM (`ramSplitMiB`), only a split
+  set by hand: it moved once, on 2026-11-21, when memory 0's ceiling went from 3071 to 3072 MiB (spill-memories.md
+  "Sizes"). A machine of more than 3071 MiB on the automatic split boots with the new layout, and its snapshots from
+  before then keep their hash but refuse to restore (the page says the memory differs: 3071 MiB then, 3072 now); a
+  machine of 3071 MiB or less, or with a split set by hand, is as it was. The machine's JIT cache budget (`jitMiB`, when set) rides in the
   shape **outside the hash**: the guest doesn't see it and a state restores under any budget, so lowering it after a
   crash orphans nothing. The snapshot header carries the whole shape, so a snapshot file can make its machine.
 - **The pins** (`SnapshotDisk`, web/snapshot.ts): per writable disk, its path (`overlays/<id>`, or `disks/<id>` for

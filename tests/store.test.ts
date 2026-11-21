@@ -396,24 +396,26 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   const { MEMORY0_MIB, numaNote, ramSplitError, ramSplitMiB } = await import('../web/app/machine.ts');
   const { createMachine } = await import('../web/app/machines.ts');
   const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
-  assert.equal(MEMORY0_MIB, 3071);
+  assert.equal(MEMORY0_MIB, 3072);
   assert.deepEqual(ramSplitMiB(2560), [2560]);
-  assert.deepEqual(ramSplitMiB(16384), [3071, 4096, 4096, 4096, 1025]);
+  assert.deepEqual(ramSplitMiB(16384), [3072, 4096, 4096, 4096, 1024]);
   assert.deepEqual(ramSplitMiB(2048, [1024, 1024]), [1024, 1024]);
   assert.equal(numaNote(2560), undefined);
+  // A machine stored at the old ceiling (3071 MiB) is memory 0 alone still.
+  assert.deepEqual(ramSplitMiB(3071), [3071]);
   // With Vulkan, memory 0 is as without; memory 1 holds Venus's arena and window before node 1 (as web/app/worker.ts
   // splits it), so node 1 is smaller.
-  assert.equal(numaNote(3071, undefined, true), undefined);
-  assert.deepEqual(ramSplitMiB(4096, undefined, true), [3071, 1025]);
-  assert.deepEqual(ramSplitMiB(8192, undefined, true), [3071, 1536, 3585]);
-  assert.equal(text(numaNote(4096, undefined, true)!), t('machines:machine.numa', { count: 1, fast: 3071, rest: 1025 }));
+  assert.equal(numaNote(3072, undefined, true), undefined);
+  assert.deepEqual(ramSplitMiB(4096, undefined, true), [3072, 1024]);
+  assert.deepEqual(ramSplitMiB(8192, undefined, true), [3072, 1536, 3584]);
+  assert.equal(text(numaNote(4096, undefined, true)!), t('machines:machine.numa', { count: 1, fast: 3072, rest: 1024 }));
   assert.equal(ramSplitError([1024, 1536], true), undefined);
   assert.match(text(ramSplitError([1024, 1537], true)!), words('machines:machine.split.vulkan', { max: 1536 }, { whole: true }));
-  assert.equal(text(numaNote(4096)!), t('machines:machine.numa', { count: 1, fast: 3071, rest: 1025 }));
+  assert.equal(text(numaNote(4096)!), t('machines:machine.numa', { count: 1, fast: 3072, rest: 1024 }));
   assert.match(text(numaNote(8192)!), words('machines:machine.numa', { count: 2 }, { whole: true }));
   assert.match(text(numaNote(2048, [1024, 1024])!), words('machines:machine.numa', { count: 1, rest: 1024 }, { whole: true }));
   assert.equal(ramSplitError([1024, 1024]), undefined);
-  assert.match(text(ramSplitError([3072])!), words('machines:machine.split.memory0Max', { max: 3071 }, { whole: true }));
+  assert.match(text(ramSplitError([3073])!), words('machines:machine.split.memory0Max', { max: 3072 }, { whole: true }));
   assert.match(text(ramSplitError([1024.5])!), words('machines:machine.split.whole', {}, { whole: true }));
   const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
   const m = { ...(await createMachine(store, { name: 'Numa', ramMiB: 3072 })), ramSplit: [2048, 1024] };
@@ -426,10 +428,10 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
     assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, ramSplit } })), /damaged/, JSON.stringify(ramSplit));
   }
   // A split is checked with Vulkan's renderer and window in memory 1 when the definition has Vulkan (it couldn't boot).
-  const big = { ...def, machine: { ...def.machine, ramMiB: 7167, ramSplit: [3071, 4096] } };
-  assert.deepEqual(parseDefinition(JSON.stringify(big)).machine.ramSplit, [3071, 4096]);
+  const big = { ...def, machine: { ...def.machine, ramMiB: 7168, ramSplit: [3072, 4096] } };
+  assert.deepEqual(parseDefinition(JSON.stringify(big)).machine.ramSplit, [3072, 4096]);
   assert.throws(() => parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, display: '3d', vulkan: true } })), /damaged/);
-  assert.ok(parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, ramMiB: 4607, ramSplit: [3071, 1536], display: '3d', vulkan: true } })));
+  assert.ok(parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, ramMiB: 4608, ramSplit: [3072, 1536], display: '3d', vulkan: true } })));
 });
 
 test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule; its keyboard layout and network settings by its definition", async () => {

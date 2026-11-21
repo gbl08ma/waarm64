@@ -520,7 +520,7 @@ locks being read again as the tab comes back into view or focus) (for the page's
 Duplicate, Export the definition, Delete; then tabs, each of those that hold something (disks, network adapters, USB
 devices, shared folders, snapshots) with how many in a pill (`ui/Count.svelte`) when there are some, none at zero (the
 left column's Disks, Shared folders and Connections the same):
-- **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs and RAM on sliders (`ui/Slider.svelte`: notches at the suggested values, the value beside; `machine.ts` `CPU_SLIDER`, `RAM_SLIDER`: 1 to 8 vCPUs; 256 MiB to 16 GiB in 64 MiB steps, a notch every 512 MiB that a pointer snaps to within 128 MiB, the arrow keys stepping past it; its 3 GiB is 3071 MiB, memory 0 whole, rather than 3072 and a 1 MiB NUMA node; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
+- **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs and RAM on sliders (`ui/Slider.svelte`: notches at the suggested values, the value beside; `machine.ts` `CPU_SLIDER`, `RAM_SLIDER`: 1 to 8 vCPUs; 256 MiB to 16 GiB in 64 MiB steps, a notch every 512 MiB that a pointer snaps to within 128 MiB, the arrow keys stepping past it; past `MEMORY0_MIB`, 3072 MiB, the rest goes to spill memories (on a machine with Vulkan
   the first holds at most 1,536 MiB: Venus's arena and window come first in memory 1) that the guest sees
   as NUMA nodes, slower to reach, and a note under the choice says so (`numaNote`, with the machine's Vulkan setting): [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
   is), **[Memory split (advanced)](ui:machines:RamSplit.split)**, closed unless the machine has one: *[Set the split myself](ui:machines:RamSplit.split.custom)* starts from the
@@ -2014,7 +2014,7 @@ it without being saved. A stored machine's size is its Settings tab (Save and re
 the code cache's budget: a slider from 32 to 512 MiB in 32 MiB steps (`JIT_SLIDER`, notches at 64, 128, 160, 256, 320 and 512), its default (320 MiB) reading Default and saved as none, `MachineRecord.jitMiB`, in its definition and carried by
 its shape outside the hash, so changing it restarts the machine but orphans no snapshot); a transient
 machine's (a test's `?machine=`) is the toolbar's **Machine** menu, which sets the vCPU count and the RAM on the same sliders as Settings
-(256 MiB to 16 GiB; past 3071 MiB the note under it says how much becomes NUMA nodes) and
+(256 MiB to 16 GiB; past 3072 MiB the note under it says how much becomes NUMA nodes) and
 applies them with a confirmed restart; both are remembered per browser too (`ncpus`, `ramMiB`),
 with `?ncpus=` and `?ram=` over them (and `?split=2560,1024`, a split set by hand, MiB, memory 0 first, its sum the RAM). Defaults: `min(4, cores − 2)` vCPUs and the machine's RAM
 (1 GiB). The page's memory check (`hostMemoryGiB`) warns in the confirmation when the device

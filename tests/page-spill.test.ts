@@ -1,5 +1,6 @@
 // Guest RAM past memory 0 (docs/spill-memories.md): Debian on the page with its RAM split by hand
-// (`?split=2560,1024,512`): memory 0, then two spill memories, CPU-less NUMA nodes. The Machine menu's note for a size
+// (`?split=3072,1024,512`): memory 0 as large as it goes (3 GiB, a fixed memory of exactly 4 GiB), then two spill
+// memories, CPU-less NUMA nodes. The Machine menu's note for a size
 // past memory 0 first; then one boot: the guest sees three nodes at the distances the DT gives, NUMA balancing is off through the SMBIOS credential, a tmpfs bound to node 1 keeps its data, and
 // direct disk reads into node 1 and writes out of it are intact (the virtio records name the spill memory). Opt-in with
 // WAARM64_DISTROS=debian (scripts/ci-debian.sh).
@@ -46,7 +47,7 @@ async function run(page: Page, cmd: string, re: RegExp, ms = 120_000): Promise<s
 }
 
 test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes, balancing off, data on node 1, disk reads and writes through it intact; a snapshot of it loads in a fresh profile', { skip, timeout: 25 * 60_000 }, async () => {
-  const query = `${PAGE_QUERY}ncpus=2&view=both&split=2560,1024,512&${unattendedQuery()}`;
+  const query = `${PAGE_QUERY}ncpus=2&view=both&split=3072,1024,512&hooks&${unattendedQuery()}`;
   // From a booted-Debian fixture of this split (tests/debian-fixture.ts): no boot is tested here.
   const fixture = await pageFixture(browser, base, query);
   await withDebianLock(async () => {
@@ -60,9 +61,9 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
     await page.goto(`${base}/web/app/?${query}`);
     // The Machine menu: the running split's note, the automatic one's for another size, none for a size memory 0 holds.
     await page.locator('#machine-menu summary').click();
-    assert.match(await page.locator('#machine-numa').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 2560, rest: 1536 }, { whole: true }));
+    assert.match(await page.locator('#machine-numa').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 3072, rest: 1536 }, { whole: true }));
     await page.fill('#machine-ram', '8192');
-    assert.match(await page.locator('#machine-numa').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 3071, rest: 5121 }, { whole: true }));
+    assert.match(await page.locator('#machine-numa').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 3072, rest: 5120 }, { whole: true }));
     await page.fill('#machine-ram', '2048');
     assert.equal(await page.locator('#machine-numa').count(), 0);
     await page.locator('#machine-menu summary').click();
@@ -72,14 +73,24 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
     assert.equal(state, 'running', message);
     // `running` may come from systemd's READY=1 before the getty's prompt (docs/devices.md "vsock"): wait for the prompt.
     await page.waitForFunction(() => /login: /.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 120_000, polling: 250 });
+    // Memory 0's 3 GiB of RAM and the heap reserve, which holds the scratch page and fw_cfg's files (the credentials):
+    // a fixed memory of 65536 pages.
+    await page.evaluate(() => window.__waarm64Heap!());
+    await page.waitForFunction(() => window.__heap, null, { timeout: 60_000, polling: 250 });
+    assert.equal(await page.evaluate(() => window.__heap!.memoryBytes), 2 ** 32, 'memory 0 is fixed at 4 GiB');
     await page.locator('.xterm').click();
     await run(page, 'root', /root@\S+:~#\s/);
     const N = '/sys/devices/system/node';
     const field = (node: number, name: string) => `$(grep '${name}:' ${N}/node${node}/meminfo | tr -s ' ' | cut -d' ' -f4)`;
 
-    // The nodes: memory 0's RAM is node 0 with both CPUs, the spill memories nodes 1 (1 GiB) and 2 (512 MiB), 20 apart.
-    const [online, cpus, total1, total2, dist] = await run(page, `echo "R1 $(cat ${N}/online) $(cat ${N}/node0/cpulist) ${field(1, 'MemTotal')} ${field(2, 'MemTotal')} $(cat ${N}/node1/distance | tr ' ' ,)."`, /R1\s(\S+)\s(\S+)\s(\d+)\s(\d+)\s([\d,]+)\./);
+    // The nodes: memory 0's RAM is node 0 with both CPUs (3 GiB, 0x4000_0000 up to 4 GiB), the spill memories nodes 1
+    // (1 GiB, from 5 GiB: the 1 GiB boundary past RAM's end) and 2 (512 MiB), 20 apart.
+    const [online, cpus, total0, total1, total2, dist, nodes, reg0] = await run(page, `echo "R1 $(cat ${N}/online) $(cat ${N}/node0/cpulist) ${field(0, 'MemTotal')} ${field(1, 'MemTotal')} ${field(2, 'MemTotal')} $(cat ${N}/node1/distance | tr ' ' ,) $(ls -d /proc/device-tree/memory@* | cut -d@ -f2 | tr '\\n' ,) $(od -An -tx4 --endian=big /proc/device-tree/memory@40000000/reg | tr -d ' ')."`, /R1\s(\S+)\s(\S+)\s(\d+)\s(\d+)\s(\d+)\s([\d,]+)\s([\da-f,]+)\s([\da-f]+)\./);
     assert.deepEqual([online, cpus, dist], ['0-2', '0-1', '20,10,20']);
+    // Node 0's DT node leaves out the top 2 MiB of RAM, the firmware's DTB space (core/src/boot.rs): 3 GiB less 2 MiB.
+    assert.deepEqual([nodes, reg0], ['140000000,1c0000000,40000000,', '000000004000000000000000bfe00000'], "the DT's memory nodes and node 0's");
+    console.log(`# MemTotal: node 0 ${total0} kB, node 1 ${total1} kB, node 2 ${total2} kB; DT memory nodes ${nodes} node 0's reg ${reg0}`);
+    assert.ok(Number(total0) > 2900 * 1024 && Number(total0) <= 3072 * 1024, `node 0 has ${total0} kB`);
     assert.ok(Number(total1) > 900 * 1024 && Number(total1) <= 1024 * 1024, `node 1 has ${total1} kB`);
     assert.ok(Number(total2) > 400 * 1024 && Number(total2) <= 512 * 1024, `node 2 has ${total2} kB`);
     // The SMBIOS credential (core/src/smbios.rs NUMA_CREDENTIAL), and its sysctl applied.

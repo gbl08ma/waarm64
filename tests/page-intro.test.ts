@@ -212,13 +212,18 @@ test('how it works: five paths that step and stop on a click; the processor\'s c
   await cpu.locator('[data-action="go-deeper"]').click();
   assert.equal(await cpu.locator('[data-translate]').count(), 0, 'folded away again');
 
-  // Memory's: 8 GiB is memory 0 and two more memories; 2 GiB is memory 0 alone.
+  // Memory's: 8 GiB is memory 0 and two more memories; 2 GiB and 3 GiB are memory 0 alone, 3 GiB filling it.
   const memory = how.locator('[data-topic="intro-how-memory"]');
   await memory.locator('[data-action="go-deeper"]').click();
   await memory.locator('[data-field="ram-split"]').waitFor();
   assert.equal(await memory.locator('[data-memory]').count(), 3);
   await memory.locator('[data-field="intro-ram"]').fill('2048');
   await page.waitForFunction(() => document.querySelectorAll('[data-field="ram-split"] [data-memory]').length === 1, null, { timeout: 5000 });
+  await memory.locator('[data-field="intro-ram"]').fill('3072');
+  await page.waitForFunction(() => {
+    const bars = [...document.querySelectorAll<HTMLElement>('[data-field="ram-split"] [data-memory] .track span')];
+    return document.querySelectorAll('[data-field="ram-split"] [data-memory]').length === 1 && bars.map((b) => b.style.width).join() === '75%,25%';
+  }, null, { timeout: 5000 });
   await memory.locator('[data-field="intro-ram"]').fill('16384');
   await page.waitForFunction(() => document.querySelectorAll('[data-field="ram-split"] [data-memory]').length === 5, null, { timeout: 5000 });
   assert.deepEqual(errors, []);

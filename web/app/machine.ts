@@ -172,16 +172,14 @@ export type SliderRange = {
   step: number;
   notches: number[];
   snap?: number;
-  /** Positions that stand for another value: [position, value]. */
-  stands?: [number, number][];
 };
 
 /** The vCPUs a machine's slider offers (a transient machine's Machine menu, a stored one's Settings). */
 export const CPU_SLIDER: SliderRange = { min: 1, max: 8, step: 1, notches: [1, 2, 3, 4, 5, 6, 7, 8] };
 /**
  * The RAM a machine's slider offers, MiB (the Machine menu, Settings): 256 MiB to 16 GiB in 64 MiB steps, a notch
- * every 512 MiB that a pointer snaps to; its 3 GiB is 3071 MiB (`MEMORY0_MIB`). Up to `MEMORY0_MIB` it all lives in memory 0, beside the core; past it the
- * rest goes to spill memories, which the guest sees as NUMA nodes (docs/spill-memories.md).
+ * every 512 MiB that a pointer snaps to. Up to `MEMORY0_MIB` (3 GiB) it all lives in memory 0, beside the core; past it
+ * the rest goes to spill memories, which the guest sees as NUMA nodes (docs/spill-memories.md).
  */
 export const RAM_SLIDER: SliderRange = {
   min: 256,
@@ -189,14 +187,12 @@ export const RAM_SLIDER: SliderRange = {
   step: 64,
   notches: Array.from({ length: 32 }, (_, i) => 512 * (i + 1)),
   snap: 128,
-  // 3 GiB is memory 0 as large as it goes, 3071 MiB: 3072 would put 1 MiB in a NUMA node of its own.
-  stands: [[Math.ceil(MAX_MEMORY0_RAM / 2 ** 20 / 64) * 64, MAX_MEMORY0_RAM / 2 ** 20]],
 };
 /**
  * The RAM sizes the page suggests in its words, MiB (a smaller one when the host's memory is short:
- * run/memory-signal.ts). 3 GiB isn't one: it would spill 1 MiB.
+ * run/memory-signal.ts).
  */
-export const RAM_CHOICES = [512, 1024, 1536, 2048, 2560, 4096, 6144, 8192, 12288, 16384];
+export const RAM_CHOICES = [512, 1024, 1536, 2048, 2560, 3072, 4096, 6144, 8192, 12288, 16384];
 /** The most RAM memory 0 holds, MiB (web/ram.ts `MAX_MEMORY0_RAM`). */
 export const MEMORY0_MIB = MAX_MEMORY0_RAM / 2 ** 20;
 /**

@@ -2,7 +2,7 @@
   A number on a slider, with notches under it at the suggested values and the value in words beside it (`label`): a
   machine's vCPUs, RAM and JIT cache, the Sound menu's volume. It moves in `step`s from `min` to `max` (widened to take a `value` outside
   them); dragged or clicked within `snap` of a notch, it lands on the notch (the keyboard's arrows step past them, so
-  they never stick). A position can stand for another value (`stands`: RAM's 3 GiB is memory 0's 3071 MiB). `value` binds; `onchange` gets each new value. `id` and `field` (`data-field`) go on the input,
+  they never stick). `value` binds; `onchange` gets each new value. `id` and `field` (`data-field`) go on the input,
   the tests' handles (Playwright's `fill` sets it); `title` and `disabled` too. A parent sets the value's width with
   `--slider-value-w`.
 -->
@@ -16,8 +16,6 @@
     notches: number[];
     /** How near a notch a pointer's value lands on it (0: no snapping). */
     snap?: number;
-    /** Positions that stand for another value: [position, value]. */
-    stands?: [number, number][];
     label: (n: number) => string;
     id?: string;
     field?: string;
@@ -32,7 +30,6 @@
     step,
     notches,
     snap = 0,
-    stands = [],
     label,
     id,
     field,
@@ -41,12 +38,8 @@
     onchange,
   }: Props = $props();
 
-  /** The position a value sits at, and the value a position stands for. */
-  const posOf = (v: number) => stands.find(([, x]) => x === v)?.[0] ?? v;
-  const valueAt = (p: number) => stands.find(([x]) => x === p)?.[1] ?? p;
-  const pos = $derived(posOf(value));
-  const lo = $derived(Math.min(min, pos));
-  const hi = $derived(Math.max(max, pos));
+  const lo = $derived(Math.min(min, value));
+  const hi = $derived(Math.max(max, value));
   /** Where each notch sits along the track, 0 to 1. */
   const marks = $derived(
     notches.filter((n) => n >= lo && n <= hi).map((n) => ({ n, at: hi > lo ? (n - lo) / (hi - lo) : 0 })),
@@ -60,9 +53,8 @@
     return Math.abs(near - n) <= snap ? near : n;
   }
   function input(e: Event & { currentTarget: HTMLInputElement }) {
-    const p = snapped(Number(e.currentTarget.value));
-    e.currentTarget.value = String(p);
-    const n = valueAt(p);
+    const n = snapped(Number(e.currentTarget.value));
+    e.currentTarget.value = String(n);
     if (n !== value) {
       value = n;
       onchange?.(n);
@@ -81,7 +73,7 @@
       min={lo}
       max={hi}
       {step}
-      value={pos}
+      {value}
       aria-valuetext={label(value)}
       oninput={input}
       onpointerdown={() => (pointer = true)}
@@ -89,7 +81,7 @@
       onpointercancel={() => (pointer = false)}
     />
     <span class="notches" aria-hidden="true">
-      {#each marks as m (m.n)}<span class={['notch', { on: m.n === pos }]} style:--at={m.at}></span>{/each}
+      {#each marks as m (m.n)}<span class={['notch', { on: m.n === value }]} style:--at={m.at}></span>{/each}
     </span>
   </span>
   <output for={id}>{label(value)}</output>

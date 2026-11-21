@@ -36,9 +36,7 @@ export const wants3d = (o: { gpu: boolean; simple: boolean; asked?: Display; rec
 
 /** A size kept in the settings, if its slider stops at it (0: none). */
 const kept = (n: number | undefined, r: SliderRange) =>
-  n && ((n >= r.min && n <= r.max && Number.isInteger((n - r.min) / r.step)) || r.stands?.some(([, v]) => v === n))
-    ? n
-    : 0;
+  n && n >= r.min && n <= r.max && Number.isInteger((n - r.min) / r.step) ? n : 0;
 
 /** The devices a machine may have or not, and the guest's network settings (`MachineRecord`'s switches). */
 export type DeviceSwitches = {
@@ -103,7 +101,7 @@ function resolveSize(
   const ncpus = first(asked('ncpus'), record?.ncpus, kept(s.ncpus, CPU_SLIDER), defaultCpus(env.cores));
   const ramMiB = first(asked('ram'), record?.ramMiB, kept(s.ramMiB, RAM_SLIDER), env.ramMiB);
   const jitMiB = first(Math.max(0, Math.round(asked('jitmb'))), record ? record.jitMiB : s.jitMiB);
-  // `?split=3071,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own.
+  // `?split=3072,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own.
   const split = q.get('split')?.split(',').map(Number);
   const ramSplit = split && !ramSplitError(split) ? split : q.has('ram') ? undefined : record?.ramSplit;
   return { ncpus, ramMiB: ramSplit ? ramSplit.reduce((a, b) => a + b, 0) : ramMiB, ramSplit, jitMiB };

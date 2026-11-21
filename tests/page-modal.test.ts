@@ -477,17 +477,17 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-field=ram]').fill('2048');
   assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 2 GiB');
-  // 3 GiB on the slider is memory 0 whole, 3071 MiB: no 1 MiB NUMA node.
+  // 3 GiB is memory 0 whole: no NUMA node.
   await m.locator('[data-field=ram]').fill('3072');
-  assert.equal(await m.locator('output').filter({ hasText: t('machines:SettingsTab.mib', { n: 3071 }) }).count() > 0, true, 'the slider says 3071 MiB');
-  assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 3071 MiB');
+  assert.equal(await m.locator('output').filter({ hasText: t('machines:SettingsTab.mib', { n: 3072 }) }).count() > 0, true, 'the slider says 3072 MiB');
+  assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 3072 MiB');
   await m.locator('[data-field=ram]').fill('4096');
-  assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3071, rest: 1025 }, { whole: true }));
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3072, rest: 1024 }, { whole: true }));
   // The advanced section, closed: set by hand, it starts from the automatic split; the RAM is then its sum.
   assert.equal(await m.locator('[data-ram-split]').getAttribute('open'), null);
   await m.locator('[data-ram-split] summary').click();
   await m.locator('[data-field=custom-split]').check();
-  assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue()], ['3071', '1025']);
+  assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue()], ['3072', '1024']);
   assert.equal(await m.locator('[data-field=ram]').isDisabled(), true);
   await m.locator('[data-field=ram0]').fill('2048');
   await m.locator('[data-field=ram0]').dispatchEvent('change');
@@ -510,7 +510,7 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue(), await m.locator('[data-field=ram]').inputValue()], ['2048', '1024, 512', '3584']);
   await m.locator('[data-field=custom-split]').uncheck();
   assert.equal(await m.locator('[data-field=ram]').isDisabled(), false);
-  assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3071, rest: 513 }, { whole: true }));
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3072, rest: 512 }, { whole: true }));
   assert.deepEqual(errors, []);
   await context.close();
 });

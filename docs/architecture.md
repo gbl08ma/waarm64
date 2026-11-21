@@ -40,8 +40,8 @@ WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the
 
 ## Guest memory: layout A
 
-**One shared wasm32 memory holds the core's state first, then guest RAM** (≤ ~3.5 GiB, sized
-against host RAM at VM start), then the rest of the core's heap: `bootVm` makes the memory its
+**One shared wasm32 memory holds the core's state first, then guest RAM** (≤ 3 GiB, sized
+against host RAM at VM start; past it, spill memories), then the rest of the core's heap: `bootVm` makes the memory its
 final size, with a 1 GiB heap reserve, unless RAM leaves no room for it ([abi.md](abi.md) "A
 fixed-size memory"); the Rust core targets wasm32. Decided in M0.5
 (`bench/spike/memory/REPORT.md`): every >4 GiB-capable layout cost more than the 5% threshold in
@@ -133,7 +133,7 @@ What could still bound the design, each with where it's measured or handled:
   ([backlog.md](backlog.md)).
 - **FP exactness** costing more than expected: it is confined to slow paths, and TestFloat and the differential test
   catch regressions ([cpu.md](cpu.md)).
-- **The guest RAM ceiling:** memory 0 holds at most 3 GiB less 1 MiB of RAM. Past it, spill memories serve as NUMA nodes
+- **The guest RAM ceiling:** memory 0 holds at most 3 GiB of RAM. Past it, spill memories serve as NUMA nodes
   (up to 16 GiB on the page): node 1 at 1.0–1.6× memory 0's time through the JIT's spill arm, nodes 2 and up 2–19×
   ([spill-memories.md](spill-memories.md)). Chromium gives no catchable error when host RAM runs out (the renderer is
   OOM-killed), so the page sizes guest RAM against host RAM up front ([frontend.md](frontend.md) "Errors").

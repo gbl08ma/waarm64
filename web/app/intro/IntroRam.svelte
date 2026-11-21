@@ -25,7 +25,7 @@
       min={256}
       max={16384}
       step={256}
-      notches={[1024, 2048, 4096, 8192, 16384]}
+      notches={[1024, 2048, 3072, 4096, 8192, 16384]}
       snap={128}
       label={gib}
       title={t('intro:IntroRam.slider')}

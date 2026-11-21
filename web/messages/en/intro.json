@@ -1316,7 +1316,7 @@
     "note": "Legend of the bars in the introduction's memory deep dive: the part of memory 0 the emulator keeps for itself. Not a sentence: no period."
   },
   "IntroRam.words": {
-    "message": "Each bar is one WebAssembly memory, 4 GiB long. Memory 0 can hold 3 GiB less 1 MiB of RAM, because the emulator keeps a gigabyte of it for decoded code and its own data. Whatever is left over goes to more memories, which Linux sees as NUMA nodes and fills last.",
+    "message": "Each bar is one WebAssembly memory, 4 GiB long. Memory 0 can hold 3 GiB of RAM, because the emulator keeps a gigabyte of it for decoded code and its own data. Whatever is left over goes to more memories, which Linux sees as NUMA nodes and fills last.",
     "note": "First paragraph under the bars of the introduction's memory deep dive."
   },
   "IntroRam.cost": {

@@ -36,8 +36,10 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
   ([platform.md](platform.md) "Memory map"; `VmConfig::spill_layout`). EDK2 passes the nodes on, and Linux's
   `of_numa` reads them ("OF: NUMA: parsing numa-distance-map-v1", "Fallback order for Node 1: 1 0").
 - **Sizes.** Memory 0 holds at most `MAX_MEMORY0_RAM` (web/ram.ts): 4 GiB less `HEAP_FLOOR` (1 GiB, [The heap
-  floor](#the-heap-floor)) and 1 MiB for the scratch page and fw_cfg's files, so 3 GiB less 1 MiB. It is fixed, not
-  what fw_cfg's files leave, so a machine's layout never moves between boots. The rest goes to up to 8 spill
+  floor](#the-heap-floor)), so 3 GiB. The scratch page and fw_cfg's files come out of the heap's reserve, as the core's
+  static data and stack do, so the ceiling doesn't depend on them and a machine's layout never moves between boots.
+  (Until 2026-11-21 they were kept outside the reserve and the ceiling was 3 GiB less 1 MiB: a machine past it on the
+  automatic split got the new layout then, and its older snapshots refuse to restore, [machines.md](machines.md) §5.1.) The rest goes to up to 8 spill
   memories (`MAX_SPILL`) of up to 4 GiB each (`splitRam`).
 - **The TLB tag carries the memory index**, in bits 11:3, stored inverted (core/src/mmu.rs). Every inline compare
   (the JIT's `emit::access`, `xmiss`, the interpreter's `Mmu::host` and `fast`) expects memory 0's all-ones, so it
@@ -83,7 +85,7 @@ The dev VM, headless Chromium 153, 2026-10-19. The JSON and tools are in `bench/
 
 ### Where the guest puts its pages
 
-- **After boot** (Debian, `?ram=6144`: memory 0's 3071 MiB and a 3073 MiB node): node 1 has 29 MB used (Slab 5 MB,
+- **After boot** (Debian, `?ram=6144`: then memory 0's 3071 MiB and a 3073 MiB node): node 1 has 29 MB used (Slab 5 MB,
   the rest the node's own structures) and no anonymous or file pages. Node 0 has 188 MB. Early memblock allocations
   going top-down put nothing that matters on node 1.
 - **The kernel fills node 0 first and leaves its page cache there.** All CPUs are on node 0, so allocations are
@@ -104,7 +106,7 @@ With the JIT's spill arm, an access to spill memory 1 costs a little more than o
 workloads at 1.0–1.6× node 0's time. Before it, every spill access left JIT code for the interpreter (2.1–17×), which
 is still what an access to spill memory 2 and up costs.
 
-Debian, `?ram=6144` (memory 0's 3071 MiB and a 3073 MiB node), 2 vCPUs. Each workload is bound to node 0, then to
+Debian, `?ram=6144` (then memory 0's 3071 MiB and a 3073 MiB node), 2 vCPUs. Each workload is bound to node 0, then to
 node 1 (systemd-run's `NUMAPolicy=bind`; its input is on a tmpfs bound to the same node). 2026-10-24, the dev VM,
 Chromium 153: the arm off and on alternated twice (`base, arm, base, arm`), three rounds each alternating 0,1 and 1,0;
 ms in the guest, median of the six [range] (`bench/boot/results/m8-spill/debian-arm/`):

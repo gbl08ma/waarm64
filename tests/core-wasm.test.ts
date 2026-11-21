@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { MAX_MEMORY0_RAM, splitError, splitRam } from '../web/vm.ts';
+import { fixedPages, MAX_MEMORY0_RAM, splitError, splitRam } from '../web/vm.ts';
 import { coreImports, memoryLimits, panicMessage, POINTERS, withPanic } from '../web/core.ts';
 import { VENUS_RESERVE } from '../web/ram.ts';
 import { callsIn, HOT } from '../tools/wasm-calls.ts';
@@ -283,25 +283,38 @@ for (const jit of [0, 4, 1, 2]) {
   });
 }
 
-// The page's split of a machine's RAM: memory 0 as large as the heap's floor leaves (1 MiB kept for the scratch page and
-// fw_cfg's files), then spill memories of up to 4 GiB; and the checks on a split a user sets.
+// A fixed memory's size (web/vm.ts `fixedPages`): RAM and the heap reserve, which holds the scratch page and fw_cfg's
+// files beside the core's data, stack and heap, so memory 0's largest RAM makes exactly 4 GiB whatever the files.
+test("a fixed memory is RAM and the heap reserve: 4 GiB at memory 0's largest RAM", () => {
+  const [M, G] = [2 ** 20, 2 ** 30];
+  assert.equal(fixedPages(MAX_MEMORY0_RAM), 65536);
+  assert.equal(fixedPages(3 * G - M), 65536 - 16);
+  assert.equal(fixedPages(G), (2 * G) / 65536);
+  assert.equal(fixedPages(3 * G + 65536), undefined, "past memory 0's largest RAM the memory grows instead");
+  assert.equal(fixedPages(64 * M, 48 * M), (112 * M) / 65536, "the tests' reserve");
+});
+
+// The page's split of a machine's RAM: memory 0 as large as the heap's floor leaves (the floor holds the scratch page and
+// fw_cfg's files too), then spill memories of up to 4 GiB; and the checks on a split a user sets.
 test('guest RAM splits into memory 0 and spill memories', () => {
   const [M, G] = [2 ** 20, 2 ** 30];
-  assert.equal(MAX_MEMORY0_RAM, 3 * G - M);
+  assert.equal(MAX_MEMORY0_RAM, 3 * G);
   assert.deepEqual(splitRam(2 * G), { ramSize: 2 * G, spill: [] });
-  assert.deepEqual(splitRam(3 * G - M), { ramSize: 3 * G - M, spill: [] });
-  assert.deepEqual(splitRam(4 * G), { ramSize: 3 * G - M, spill: [G + M] });
-  assert.deepEqual(splitRam(12 * G), { ramSize: 3 * G - M, spill: [4 * G, 4 * G, G + M] });
+  assert.deepEqual(splitRam(3 * G), { ramSize: 3 * G, spill: [] });
+  assert.deepEqual(splitRam(4 * G), { ramSize: 3 * G, spill: [G] });
+  assert.deepEqual(splitRam(12 * G), { ramSize: 3 * G, spill: [4 * G, 4 * G, G] });
   // A Venus machine's memory 1 holds its renderer's arena and window before node 1 (2.5 GiB): memory 0 as without.
   assert.equal(VENUS_RESERVE, 2.5 * G);
-  assert.deepEqual(splitRam(3 * G - M, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [] });
-  assert.deepEqual(splitRam(4 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [G + M] });
-  assert.deepEqual(splitRam(12 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [1.5 * G, 4 * G, 3.5 * G + M] });
+  assert.deepEqual(splitRam(3 * G, VENUS_RESERVE), { ramSize: 3 * G, spill: [] });
+  assert.deepEqual(splitRam(4 * G, VENUS_RESERVE), { ramSize: 3 * G, spill: [G] });
+  assert.deepEqual(splitRam(12 * G, VENUS_RESERVE), { ramSize: 3 * G, spill: [1.5 * G, 4 * G, 3.5 * G] });
   assert.equal(splitError(2 * G, [1.5 * G], VENUS_RESERVE), undefined);
   assert.deepEqual(splitError(2 * G, [1.5 * G + 64 * 1024], VENUS_RESERVE), { code: 'vulkan', max: 1536 });
   assert.throws(() => splitRam(40 * G), RangeError);
   assert.equal(splitError(2 * G, [G, 4 * G]), undefined);
-  assert.deepEqual(splitError(3 * G, []), { code: 'memory0-max', max: 3071 });
+  assert.equal(splitError(3 * G, []), undefined);
+  assert.deepEqual(splitError(3 * G + 65536, []), { code: 'memory0-max', max: 3072 });
+  assert.deepEqual(splitRam(3 * G + M), { ramSize: 3 * G, spill: [M] });
   assert.deepEqual(splitError(32 * M, []), { code: 'memory0-min' });
   assert.deepEqual(splitError(G, [5 * G]), { code: 'node', max: 4096, mib: 5120 });
   assert.deepEqual(splitError(G, Array(9).fill(G)), { code: 'nodes', max: 8 });
