@@ -6435,3 +6435,47 @@ over before the arena's 64 MiB (vCPU 0's arena stayed at 32 MiB).
   followed the heap's room could only raise it.
 - **Dropped**: the budget stays fixed; the finding is in docs/jit.md "The core's heap", the backlog sub-item removed.
   No core change, no step count moved.
+
+## PERF loop 39: the block map's page index, measured (2026-11-21)
+
+The backlog's "The core's heap, after the bound" had the page index without lists (`jit::PageIndex`: a table of pages,
+a list of 2-byte keys a page) as its next item, on the premise that the table and the list headers matter where pages
+hold a key or two. Measured, not built. A diagnostic core (`results/perf39/diag.patch`: gauge words 8-15 with the
+index's parts, recounted every 4,096 keys added and after a prune; on 3cfc1834) from `target/snapbench/pages.waarm64snap`
+on the Mac (M4, Chrome for Testing 158.0.8127.36), `MEMLOG=5`, one session each (loop 38's three sessions agreed within
+1 MiB): Firefox's pages session (`bench/gpu/ab-mac.sh`) and the run-once churn (`PHASES=churn
+CHURN='rate=300&calls=120&n=2' CHURN_S=600` through `bench/gpu/sway-mac.sh`, which now passes `CHURN` and `CHURN_S`
+on). Raw: `results/perf39/` (README); `indexsum.json` from `indexsum.ts`.
+
+| at the heap's live maximum | pages session | run-once churn |
+|---|---|---|
+| heap live; mark (MiB) | 314.9; 315.4 | 310.4; 333.2 |
+| keys; block map with index (MiB) | 1.48 M; 55.1 | 1.40 M; 55.6 |
+| **the index** (MiB) | **5.12** | **5.62** |
+| its lists (MiB; bytes a key) | 4.04; 2.87 | 3.76; 2.83 |
+| its table of pages (MiB; pages) | 0.78; 25,049 | 1.56; 29,527 |
+| the allocator's 8 bytes a list; the regions' heads (MiB) | 0.19; 0.11 | 0.23; 0.07 |
+| keys a page; pages with 1 key; with 2-4 | 58.8; 515; 1,383 | 47.2; 956; 2,531 |
+| guest ICs in the session; of them on a page with keys | 0.53 M; 7,696 | 24.6 M; 0.31 M (5 prunes) |
+
+(In wasm a `Vec` header is 12 bytes, a bucket of the table of pages 25; the backlog's 33 and 24 were the native sizes.
+The pages session's speed was as loop 38's: `pagesS` 73.3 s, busy MIPS 451.)
+
+- **The premise doesn't hold**: pages hold ~50 keys, 2-3% one; the table of pages and the headers are ~1-1.8 MiB, the
+  rest is the keys themselves (2 bytes and the lists' doubling slack).
+- **The bound**: lists threaded through `Info` (a 2-byte next key per entry, as the decoded blocks' map does, with
+  `Info`'s three flags packed into a byte to keep it 16 bytes) and a table of 17-byte buckets (a page's first key)
+  would leave ~0.5 MiB: at most ~4.5 MiB saved, 1.4% of the pages session's mark; in the churn the mark is set when
+  the index is 3.3 MiB (below), so ~3 MiB, 0.9%. The heap is a small part of the tab (guest RAM alone is 2.5 GiB).
+  It would need an `IC IVAU` that unlinks a linker from the middle of another page's chain, and a prune that threads
+  the chains again: out of proportion. The lookup the backlog asked for, a cheap test of whether a page has keys, is
+  what the index is already: 1.4% of the pages session's 0.53 M guest ICs and 1.3% of the churn's 24.6 M found keys
+  (one hash probe for the rest).
+- **What sets the mark** (found on the way): in the churn the mark rose from 315 to 333 MiB between two samples where
+  the block map's table went from 2^20 to 2^21 buckets (28 → 53 MiB with its index) after the first prune, the old
+  table and the new one live together; a prune rebuilds the table to fit (`shrink_to(0)`), so every prune's regrowth
+  doubles it again near the heap's maximum. In the pages session (no prune) the doubling came at 0.92 M keys with the
+  heap at 284 MiB and the mark is its live maximum. Filed: docs/backlog.md "The block map's table kept across a prune"
+  (up to ~23 MiB of the churn's mark).
+- **Dropped**: the finding is in docs/jit.md "The core's heap"; the backlog sub-item replaced by that follow-up. No
+  core change, no step count moved.

@@ -189,13 +189,14 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   members reachable from the prologue past the `loop` (or the `loop` opened at each entry).
 - **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
   heap bounded"):
-  - **The page index without lists** ([jit.md](jit.md) "The core's heap": since 2026-10-22 2 bytes a key, a list's
-    smallest allocation 8 bytes where it was 32): what's left of it is the table of pages (33 B a bucket) and a list
-    header (24 B) a page, which matter where pages hold a key or two. Firefox's pages session: the block map and index 55 MiB at 1.45 M
-    keys (exact), the heap 11 MiB smaller than with whole keys (bench/boot/REPORT.md "M8: the core with exact memory
-    limits"). Dropping the index
-    (an IC scanning the map) costs a scan of ~1.5 M entries per IC on a page with code, and a guest issues ~1 M ICs
-    in the churn screen: not without a cheap test of whether the page has keys.
+  - **The block map's table kept across a prune** ([jit.md](jit.md) "The core's heap", "What sets the mark"): a prune
+    rebuilds the table to fit (`shrink_to(0)`), so in the run-once churn the keys growing back double it from 2^20 to
+    2^21 buckets with the heap near its maximum, the old 25 MiB and the new 50 live together: the mark 333 MiB against a
+    live maximum of 310 (bench/boot/REPORT.md "PERF loop 39"). Keeping the 2^21 buckets once grown (hashbrown rehashes
+    in place while at most half full; the tombstones' guard, `grows_past`, stays) would cut the mark by up to ~23 MiB
+    there and leave the pages session (no prune) as it is; check the prune's time (`pruneNs`) and the mark in both
+    sessions, `MEMLOG=5`. (The page index's lists, measured in the same loop, aren't worth a redesign: ~4.5 MiB at
+    most.)
   - **Not tuned:** `KEEP_HITS` (16), `RECENT_TICKS` (the last 262,144 keys), `WARM_TICKS`, the prune's target (half
     of `MAP_KEYS`) and `MAX_KEYS` were set from the heap's budget and one A/B (keeping only the warm keys cost the
     pages session's bbc load ~0.8 s; with the recent ones nothing measured: `bench/boot/REPORT.md` "M8: the core's

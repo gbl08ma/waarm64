@@ -734,7 +734,13 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   held whole keys before (8 bytes a key, a list's smallest allocation 32 bytes): tests/heap.test.ts's guest, 1024 keys
   a page, 0.9 M keys: the heap's live bytes 86 → 81 MiB, its mark 111 → 106 MiB; Firefox's pages session, 1.45 M
   keys: 294 → 283 MiB live, the mark 313 → 307, its speed the same (bench/boot/REPORT.md "M8: the core with exact
-  memory limits").
+  memory limits"). **What it takes now, and why its lists stay** (bench/boot/REPORT.md "PERF loop 39"; in wasm a
+  `Vec` header is 12 bytes and a bucket of the table of pages 25): in Firefox's pages session 5.1 MiB at 1.48 M keys
+  (the lists 4.0 at 2.9 bytes a key, the table of pages 0.8, the allocator's words 0.2, the regions' heads 0.1), in
+  the run-once churn 5.6 MiB at 1.40 M keys. Pages hold 59 and 47 keys on average; 2% and 3% hold one, so the table
+  and the headers aren't what it costs. Lists threaded through `Info` (a 2-byte next key, the decoded blocks' way,
+  room made by packing its flags) would leave ~0.5 MiB: at most ~4.5 MiB of a heap whose mark is 315-333 MiB
+  (1-1.4%), for an `IC IVAU` path that must unlink a linker from the middle of another page's chain. Not built.
 - **A prune** over 1.5 M keys takes 6-11 ms natively, ~19 ms in wasm (Node; counter word 120, `pruneNs`) and ~35 ms
   in Firefox's pages session on 4 vCPUs, all of it under the cache's lock.
 - **What the page sees:** `vm_jit_gauge` (ABI 47) has the block map's keys and bytes (table and page index) and the
@@ -748,7 +754,12 @@ were highest). Firefox's pages session on the Mac (`bench/boot/results/perf38/`,
 |---|---|---|---|---|---|---|---|---|
 | the pages session (2026-11-21) | 315 | 206 | 55 | 9 | 0 | 45 | 315-329 | 1.48 M (no prune) |
 
-The decoded blocks are two thirds of it, at their bound (four tables of ~50 MiB, the first's map larger). Before
+The decoded blocks are two thirds of it, at their bound (four tables of ~50 MiB, the first's map larger). **What sets
+the mark:** in the pages session the heap's live maximum (the block map's table doubles to 2^21 buckets early, at 0.92
+M keys, while the heap is ~285 MiB). In the run-once churn (`CHURN='rate=300&calls=120&n=2'`, 10 minutes: 5 prunes,
+0.3 M `IC IVAU`s) the doubling after a prune: a prune rebuilds the table to fit its kept keys, the keys grow back, and
+at 2^20 → 2^21 buckets the old 25 MiB and the new 50 live together, the mark 333 MiB against a live maximum of 310
+(bench/boot/REPORT.md "PERF loop 39"). Before
 8-byte micro-ops (the micro-op 16 bytes; `bench/boot/results/m8-heap/`), the same session then 10 minutes of the churn
 screen:
 

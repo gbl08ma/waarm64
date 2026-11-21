@@ -1,0 +1,87 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 0088cb41..b20e08fa 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -608,7 +608,7 @@ pub struct Cache {
+ #[repr(C)]
+ #[derive(Default)]
+ pub struct Gauge(pub [AtomicU64; GAUGE_WORDS]);
+-pub const GAUGE_WORDS: usize = 8;
++pub const GAUGE_WORDS: usize = 16;
+ /// The wasm bytes and the modules installed since the last flush: what V8
+ /// holds code and metadata for (until its GC collects a flushed epoch's).
+ pub const G_LIVE_BYTES: usize = 0;
+@@ -733,6 +733,34 @@ impl Cache {
+         g[G_KEY_BYTES].store(self.map_bytes(), Ordering::Relaxed);
+     }
+ 
++    /// DIAG: the page index's parts in gauge words 8-15.
++    fn diag_index(&self) {
++        let g = &self.gauge.0;
++        let p = &self.pages;
++        let (mut lists, mut keys, mut one, mut few) = (0u64, 0u64, 0u64, 0u64);
++        for l in p.own.values() {
++            lists += 2 * l.capacity() as u64;
++            keys += l.len() as u64;
++            one += (l.len() == 1) as u64;
++            few += (l.len() >= 2 && l.len() <= 4) as u64;
++        }
++        let mut hl = 0u64;
++        for l in p.heads.values() {
++            hl += 8 * l.capacity() as u64;
++        }
++        g[8].store(p.own.len() as u64, Ordering::Relaxed);
++        g[9].store(table_bytes(p.own.capacity(), size_of::<(u64, Vec<u16>)>()), Ordering::Relaxed);
++        g[10].store(lists, Ordering::Relaxed);
++        g[11].store(keys, Ordering::Relaxed);
++        g[12].store(one, Ordering::Relaxed);
++        g[13].store(few, Ordering::Relaxed);
++        g[14].store(p.heads.len() as u64, Ordering::Relaxed);
++        g[15].store(
++            table_bytes(p.heads.capacity(), size_of::<(u64, Vec<u64>)>()) + hl + 8 * p.heads.len() as u64,
++            Ordering::Relaxed,
++        );
++    }
++
+     /// The bytes the block map's table and its page index take.
+     fn map_bytes(&self) -> u64 {
+         table_bytes(self.map.capacity(), size_of::<(u64, Info)>()) + self.pages.bytes()
+@@ -797,6 +825,7 @@ impl Cache {
+         self.map.shrink_to(0);
+         let map = &self.map;
+         self.pages.retain(|k| map.contains_key(&k));
++        self.diag_index();
+         self.linkers.retain(|k, _| map.contains_key(k));
+         self.linkers.shrink_to(0);
+         self.publish();
+@@ -1015,6 +1044,9 @@ impl Cache {
+         if keys != self.map.len() {
+             self.added += 1;
+             self.publish_keys();
++            if self.added % 4096 == 0 {
++                self.diag_index();
++            }
+         }
+         // A cache that never compiles (no JIT, or `jit` 4's threshold) needs
+         // no counts: its blocks report as rarely as a slot counts.
+diff --git a/web/vm.ts b/web/vm.ts
+index 7d92153a..5a58febb 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -333,7 +333,7 @@ const S_CMDLINE = 4096;
+ export type Vm = Awaited<ReturnType<typeof bootVm>>;
+ 
+ /** The JIT cache's gauge words (`jit::GAUGE_WORDS`, `vm_jit_gauge`). */
+-const GAUGE_WORDS = 8;
++const GAUGE_WORDS = 16;
+ 
+ /**
+  * The core's heap in a fixed-size memory, its static data and stack included: the JIT's maps and
+@@ -885,6 +885,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+         jitKeys: g(5),
+         jitKeyBytes: g(6),
+         jitHeld: g(7),
++        pi: [8, 9, 10, 11, 12, 13, 14, 15].map(g),
+       };
+     },
+     /** Caps the JIT's budget at `bytes` (the gauge's limit word, ABI 45; at least 16 MiB; 0: the machine's budget): the page's memory signal. */
