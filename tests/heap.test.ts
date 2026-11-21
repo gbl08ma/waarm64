@@ -33,16 +33,17 @@ test('8M blocks run once fit a 320 MiB heap', { timeout: 240_000 }, async () => 
   const j = r.stats.jit;
   console.log(`heap ${(use.heapLive / MiB).toFixed(0)} MiB live, ${(use.heapPeak / MiB).toFixed(0)} at most; ${use.jitKeys} keys (${(use.jitKeyBytes / MiB).toFixed(0)} MiB); ${j.prunes} prunes (${(j.pruneNs / 1e6 / Math.max(1, j.prunes)).toFixed(1)} ms each), ${j.decClears} decoded starts over, ${j.rescues} rescues, ${j.flushes} flushes`);
   assert.ok(j.prunes >= 4, `${j.prunes} prunes`);
-  assert.ok(use.jitKeyBytes <= 64 * MiB, `${use.jitKeyBytes} bytes of keys`); // the table (50 MiB at most) and its page index
+  assert.ok(use.jitKeyBytes <= 32 * MiB, `${use.jitKeyBytes} bytes of keys`); // the table (25 MiB at most: jit::MAP_BUCKETS) and its page index
   assert.equal(j.rescues, 0);
   assert.ok(use.heapPeak < 300 * MiB, `${use.heapPeak} bytes at most`);
 });
 
 // The safety net: in a heap too small for the bounded maps, a map that can't grow flushes the cache (or starts a
-// table's decoded blocks over) and frees its table whole, instead of trapping.
-test('in a 64 MiB heap the maps give their memory back', { timeout: 240_000 }, async () => {
+// table's decoded blocks over) and frees its table whole, instead of trapping. 48 MiB: in 64 the block map's table
+// (25 MiB at most since PERF loop 41) finds room and only the decoded blocks' maps start over, without a flush.
+test('in a 48 MiB heap the maps give their memory back', { timeout: 240_000 }, async () => {
   const blocks = 4 << 20;
-  const r = await runToPowerOff(WASM, { ramSize: 64 * MiB, kernel: branches(blocks), cmdline: '', jit: 1, heapReserve: 64 * MiB }, 1e9);
+  const r = await runToPowerOff(WASM, { ramSize: 64 * MiB, kernel: branches(blocks), cmdline: '', jit: 1, heapReserve: 48 * MiB }, 1e9);
   assert.equal(r.kind, Exit.PSCI, r.console);
   assert.equal(r.steps, blocks + 3);
   assert.ok(r.stats.jit.rescues > 0 && r.stats.jit.flushes > 0, `${r.stats.jit.rescues} rescues`);

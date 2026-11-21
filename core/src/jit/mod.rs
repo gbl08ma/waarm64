@@ -413,11 +413,18 @@ impl Info {
 
 /// Keys the block map holds, compiled or not, before a prune drops the cold
 /// ones ([`Cache::prune`]); it prunes too when its full table would double
-/// past the 2^21 buckets that hold them ([`grows_past`]: the keys an IC
-/// removed leave tombstones, which fill it until it's rebuilt). So the table
-/// stays at 2^21 buckets at most (1.835 M keys, 50 MiB at 25 B): it held a whole session's keys before, and the desktop guest's
-/// doubling from 2^22 buckets ran the core's 1 GiB heap out (2026-10-21).
-pub const MAP_KEYS: usize = 1_500_000;
+/// past the [`MAP_BUCKETS`] that hold them ([`grows_past`]: the keys an IC
+/// removed leave tombstones, which fill it until it's rebuilt). It held a
+/// whole session's keys before, and the desktop guest's doubling from 2^22
+/// buckets ran the core's 1 GiB heap out (2026-10-21). 1.5 M (2^21 buckets)
+/// before PERF loop 41: this bound left the heap 27 MiB lower in Firefox's
+/// pages session and the run-once churn at the same speed (docs/jit.md "The
+/// core's heap").
+pub const MAP_KEYS: usize = 900_000;
+/// The buckets the block map's table has at most: 917,504 keys, 25 MiB at 25
+/// B a bucket.
+pub const MAP_BUCKETS: usize = 1 << 20;
+const _: () = assert!(MAP_KEYS <= MAP_BUCKETS / 8 * 7 && MAP_KEYS > MAP_BUCKETS / 16 * 7);
 const _: () = assert!(block::CAP <= u8::MAX as usize, "Info::len");
 
 /// The dispatches that keep an uncompiled key reported in the last
@@ -430,8 +437,11 @@ pub const KEEP_HITS: u16 = 16;
 /// added to it. A prune keeps every key reported in the last [`RECENT_TICKS`]
 /// (262,144 keys added: the code running now, which a page's load would
 /// otherwise count again from zero), and the warm ones reported in the last
-/// [`WARM_TICKS`] (2 M keys added: since the last prune, which comes at most
-/// every 1.5 M; under the u8's wrap at 256).
+/// [`WARM_TICKS`] (2 M keys added: past the last prune, which comes at most
+/// every 450,000; under the u8's wrap at 256). With the table at
+/// [`MAP_BUCKETS`] the recent keys alone are more than half of [`MAP_KEYS`]
+/// in a browser's sessions, and the prune keeps only the needed ones (PERF
+/// loop 41: no slower for it).
 pub const TICK_SHIFT: u32 = 14;
 pub const RECENT_TICKS: u8 = 16;
 pub const WARM_TICKS: u8 = 128;
@@ -3569,10 +3579,13 @@ mod tests {
             bytes = bytes.max(table_bytes(c.map.capacity(), size_of::<(u64, Info)>()));
             pages = pages.max(c.pages.own.len());
         }
-        assert!(most < 2_000_000, "the map grew to hold {most} keys");
-        assert!(bytes <= 50 << 20, "{bytes} bytes");
         assert!(
-            c.map_bytes() <= 64 << 20,
+            most <= MAP_BUCKETS / 8 * 7,
+            "the map grew to hold {most} keys"
+        );
+        assert!(bytes <= (MAP_BUCKETS * 25) as u64, "{bytes} bytes");
+        assert!(
+            c.map_bytes() <= 32 << 20,
             "{} bytes with the page index",
             c.map_bytes()
         );
@@ -3589,7 +3602,7 @@ mod tests {
         assert_eq!(size_of::<(u64, Info)>(), 24);
     }
 
-    /// A prune keeps the block map's table (2^21 buckets once grown): rebuilt
+    /// A prune keeps the block map's table ([`MAP_BUCKETS`] once grown): rebuilt
     /// to fit, the keys growing back doubled it again with the heap near its
     /// mark, the old table and the new one live together (PERF loop 40). The
     /// tombstones the prune leaves go in a rehash in place, never a growth.
@@ -3609,13 +3622,13 @@ mod tests {
             }
         }
         assert!(t.stats.prunes >= 2 && t.stats.flushes == 0);
-        // Its room past the tombstones: more than a table of 2^20 buckets
-        // holds, and never past 2^21's.
+        // Its room past the tombstones: more than a table of half the
+        // buckets holds, and never past the whole one's.
         assert!(
             least > grows_past(MAP_KEYS),
             "the table shrank to {least} keys"
         );
-        assert!(c.map.capacity() <= (1 << 21) / 8 * 7);
+        assert!(c.map.capacity() <= MAP_BUCKETS / 8 * 7);
     }
 
     /// The block map's bytes count its table whole, tombstones too (which
@@ -3624,10 +3637,10 @@ mod tests {
     fn the_map_bytes_count_tombstones() {
         let mut c = Cache::new(Config::DEFAULT);
         let s = &mut Stats::default();
-        // 2^21 buckets, filled (past `room`'s prune): the keys dropped from
-        // a full table leave tombstones.
+        // The whole table, filled (past `room`'s prune): the keys dropped
+        // from a full table leave tombstones.
         let mut k = 0u64;
-        while c.map.len() < 1_400_000 {
+        while c.map.len() < MAP_KEYS - 100_000 {
             c.info(k << 4, || 1);
             k += 1;
         }
@@ -3642,7 +3655,7 @@ mod tests {
             "{} keys' room",
             c.map.capacity()
         );
-        let whole = (1u64 << 21) * 25 + c.pages.bytes();
+        let whole = MAP_BUCKETS as u64 * 25 + c.pages.bytes();
         assert_eq!(c.map_bytes(), whole);
     }
 
@@ -3658,9 +3671,9 @@ mod tests {
         let mut t = Table::new(&mut c);
         let s = &mut Stats::default();
         let mut most = 0;
-        // ~1.4 M keys live, 256 a page: each new page's keys, then an IC on
-        // the oldest page.
-        let live = 1_400_000 / 256;
+        // Nearly `MAP_KEYS` live, 256 a page: each new page's keys, then an
+        // IC on the oldest page.
+        let live = (MAP_KEYS - 100_000) / 256;
         for p in 0..(live + 16_000) as u64 {
             for k in 0..256 {
                 let key = ((1 << 32) + (p << 12) + k * 16) | block::KEY_MMU;
@@ -3671,7 +3684,10 @@ mod tests {
             }
             most = most.max(c.map.capacity());
         }
-        assert!(most < 2_000_000, "the map grew to hold {most} keys");
+        assert!(
+            most <= MAP_BUCKETS / 8 * 7,
+            "the map grew to hold {most} keys"
+        );
         assert!(t.stats.prunes > 0, "pruned for the tombstones");
     }
 

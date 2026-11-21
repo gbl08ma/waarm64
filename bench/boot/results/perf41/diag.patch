@@ -1,0 +1,223 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index 74f87c22..c6c9e900 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -200,7 +200,7 @@ export async function openSession(o: SessionOptions) {
+       const pid = rendererPid();
+       const smaps = pid ? smapsClasses(pid) : undefined;
+       const u = process.env.MEMLOG_UASM === '0' ? undefined : await uasm(page).catch((e) => String(e).slice(0, 200));
+-      appendFileSync(`${o.out}/mem.jsonl`, JSON.stringify({ t: Date.now(), smaps, uasm: u, memory: st?.memory, jit: st?.stats.jit }) + '\n');
++      appendFileSync(`${o.out}/mem.jsonl`, JSON.stringify({ t: Date.now(), smaps, uasm: u, memory: st?.memory, jit: st?.stats.jit, cpus: (st as { cpus?: unknown } | undefined)?.cpus }) + '\n');
+     } catch {} finally { memBusy = false; }
+   }, Number(process.env.MEMLOG) * 1000) : undefined;
+ 
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index e7d9f5a0..17e8f410 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -3304,10 +3304,15 @@ impl Cache {
+                 // grows: an IC's tombstones take room, so with none left and
+                 // half its keys in it, it would double past them.)
+                 let n = self.map.len();
++                let by_arena = len != 0 && self.arena.len() + uops.len() > self.budget;
+                 if n >= self.keys
+                     || self.map.capacity() == n && n > crate::jit::grows_past(self.keys)
+-                    || len != 0 && self.arena.len() + uops.len() > self.budget
++                    || by_arena
+                 {
++                    // DIAG: a clear by the keys counts as a rescue.
++                    if !by_arena {
++                        self.rescues += 1;
++                    }
+                     self.clear();
+                 }
+                 if self.map.try_reserve(1).is_err()
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 94796f5e..3f5074a3 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -546,6 +546,9 @@ pub struct Cache {
+     /// (its room without tombstones, which `capacity` doesn't count): what
+     /// its bytes are counted from ([`Cache::map_bytes`]).
+     map_full: usize,
++    /// DIAG: four Bloom filters of 2^24 bits (gone cold, gone warm, back cold, back warm).
++    dg: Vec<u64>,
++    dg_pruned: bool,
+     /// The bytes of the modules installed since the last flush (`Config::max_bytes`).
+     live_bytes: u64,
+     /// The compile threshold now, and the one it starts from after a flush
+@@ -612,7 +615,7 @@ pub struct Cache {
+ #[repr(C)]
+ #[derive(Default)]
+ pub struct Gauge(pub [AtomicU64; GAUGE_WORDS]);
+-pub const GAUGE_WORDS: usize = 8;
++pub const GAUGE_WORDS: usize = 24;
+ /// The wasm bytes and the modules installed since the last flush: what V8
+ /// holds code and metadata for (until its GC collects a flushed epoch's).
+ pub const G_LIVE_BYTES: usize = 0;
+@@ -687,6 +690,8 @@ impl Cache {
+             held: 0,
+             added: 0,
+             map_full: 0,
++            dg: vec![0; 4 << 18],
++            dg_pruned: false,
+             live_bytes: 0,
+             threshold: cfg.threshold,
+             floor: cfg.threshold,
+@@ -764,6 +769,23 @@ impl Cache {
+         self.map_full = self.map_full.max(self.map.capacity());
+     }
+ 
++    fn dg_at(f: usize, k: u64) -> [(usize, u64); 2] {
++        let a = (k.wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40) as usize;
++        let b = (k.wrapping_mul(0xc2b2_ae3d_27d4_eb4f) >> 40) as usize;
++        [((f << 18) | a >> 6, 1 << (a & 63)), ((f << 18) | b >> 6, 1 << (b & 63))]
++    }
++    fn dg_set(&mut self, f: usize, k: u64) {
++        for (w, b) in Self::dg_at(f, k) {
++            self.dg[w] |= b;
++        }
++    }
++    fn dg_has(&self, f: usize, k: u64) -> bool {
++        Self::dg_at(f, k).iter().all(|&(w, b)| self.dg[w] & b != 0)
++    }
++    fn dg_add(&self, w: usize, n: u64) {
++        self.gauge.0[w].fetch_add(n, Ordering::Relaxed);
++    }
++
+     /// The block map's clock: keys added to it, in units of
+     /// 2^[`TICK_SHIFT`] (wrapping).
+     fn tick(&self) -> u8 {
+@@ -788,6 +810,64 @@ impl Cache {
+     fn prune_keys(&mut self, s: &mut Stats) {
+         let tick = self.tick();
+         let since = move |i: &Info| tick.wrapping_sub(i.age);
++        // DIAG: 8 keys before, 9 needed, 10 recent, 11 warm (kept classes);
++        // 12/13 second/third retain; 19 dropped cold, 20 dropped warm, 22
++        // dropped recent; 23 the diag's own ns.
++        let t0 = now_ns();
++        {
++            let (mut need, mut rec, mut warm) = (0u64, 0u64, 0u64);
++            for i in self.map.values() {
++                let d = since(i);
++                if i.needed() {
++                    need += 1
++                } else if d < RECENT_TICKS {
++                    rec += 1
++                } else if i.hits >= KEEP_HITS && d < WARM_TICKS {
++                    warm += 1
++                }
++            }
++            let half = (MAP_KEYS / 2) as u64;
++            let level = if need + rec + warm <= half { 0 } else if need + rec <= half { 1 } else { 2 };
++            self.dg_add(8, self.map.len() as u64);
++            self.dg_add(9, need);
++            self.dg_add(10, rec);
++            self.dg_add(11, warm);
++            if level >= 1 {
++                self.dg_add(12, 1);
++            }
++            if level >= 2 {
++                self.dg_add(13, 1);
++            }
++            self.dg.fill(0);
++            let gone: Vec<(u64, bool, bool)> = self
++                .map
++                .iter()
++                .filter_map(|(&k, i)| {
++                    let d = since(i);
++                    let (r, w) = (d < RECENT_TICKS, i.hits >= KEEP_HITS && d < WARM_TICKS);
++                    let keep = i.needed() || level <= 1 && r || level == 0 && w;
++                    (!keep).then_some((k, r, i.hits >= KEEP_HITS))
++                })
++                .collect();
++            let (mut gc, mut gw, mut gr) = (0, 0, 0);
++            for (k, r, w) in gone {
++                if r {
++                    gr += 1;
++                }
++                if w {
++                    gw += 1;
++                    self.dg_set(1, k);
++                } else {
++                    gc += 1;
++                    self.dg_set(0, k);
++                }
++            }
++            self.dg_add(19, gc);
++            self.dg_add(20, gw);
++            self.dg_add(22, gr);
++            self.dg_pruned = true;
++        }
++        self.dg_add(23, now_ns().saturating_sub(t0));
+         self.map.retain(|_, i| {
+             let d = since(i);
+             i.needed() || d < RECENT_TICKS || i.hits >= KEEP_HITS && d < WARM_TICKS
+@@ -1030,6 +1110,14 @@ impl Cache {
+             if info.hits as u32 > self.threshold && !info.queued {
+                 info.queued = true;
+                 self.pending.push((key, va));
++                // DIAG: 17/18 returned keys (cold/warm when dropped) that reach the threshold.
++                if self.dg_pruned {
++                    if self.dg_has(2, key) {
++                        self.dg_add(17, 1);
++                    } else if self.dg_has(3, key) {
++                        self.dg_add(18, 1);
++                    }
++                }
+             } else if info.queued {
+                 self.pending_steps += info.len as u64 * n as u64;
+             }
+@@ -1037,6 +1125,18 @@ impl Cache {
+         }
+         if keys != self.map.len() {
+             self.added += 1;
++            // DIAG: 14/15 dropped keys back (cold/warm), 16 new keys, 21 new keys after a prune.
++            self.dg_add(16, 1);
++            if self.dg_pruned {
++                self.dg_add(21, 1);
++                if self.dg_has(0, key) {
++                    self.dg_add(14, 1);
++                    self.dg_set(2, key);
++                } else if self.dg_has(1, key) {
++                    self.dg_add(15, 1);
++                    self.dg_set(3, key);
++                }
++            }
+             self.publish_keys();
+         }
+         // A cache that never compiles (no JIT, or `jit` 4's threshold) needs
+diff --git a/web/app/worker-status.ts b/web/app/worker-status.ts
+index bb5a2e3f..b3276f36 100644
+--- a/web/app/worker-status.ts
++++ b/web/app/worker-status.ts
+@@ -44,7 +44,7 @@ export function status(
+     disks: io.disks.map((i) => ({ read: c[2 * i], written: c[2 * i + 1] })),
+     nets: io.nets?.map((i) => ({ rx: c[2 * i], tx: c[2 * i + 1] })),
+     usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },
+-    cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
++    cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps, decBytes: b.jit.decBytes, decClears: b.jit.decClears, decoded: b.jit.decoded, decSteps: b.jit.decSteps, rescues: b.jit.rescues, knownBytes: b.jit.knownBytes })) : undefined,
+     asleep: vm.suspended(),
+   };
+ }
+diff --git a/web/vm.ts b/web/vm.ts
+index 7d92153a..e095f8d9 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -333,7 +333,7 @@ const S_CMDLINE = 4096;
+ export type Vm = Awaited<ReturnType<typeof bootVm>>;
+ 
+ /** The JIT cache's gauge words (`jit::GAUGE_WORDS`, `vm_jit_gauge`). */
+-const GAUGE_WORDS = 8;
++const GAUGE_WORDS = 24;
+ 
+ /**
+  * The core's heap in a fixed-size memory, its static data and stack included: the JIT's maps and
+@@ -885,6 +885,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+         jitKeys: g(5),
+         jitKeyBytes: g(6),
+         jitHeld: g(7),
++        pr: Array.from({ length: 16 }, (_, i) => g(8 + i)),
+       };
+     },
+     /** Caps the JIT's budget at `bytes` (the gauge's limit word, ABI 45; at least 16 MiB; 0: the machine's budget): the page's memory signal. */

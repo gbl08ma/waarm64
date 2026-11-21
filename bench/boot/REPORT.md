@@ -6534,3 +6534,84 @@ order d0 d1 d1 d0 d2 d0 d2; Firefox's pages session two rounds alternated each f
   after each prune past 2^20 buckets' and within 2^21's: fails with the shrink back and with the rehash left out) and
   `the_map_bytes_count_tombstones` (fails with the bytes from `capacity` and with `room` not tracking the most); the
   backlog sub-item removed.
+
+## PERF loop 41: the block map's constants, measured; its bound halved (2026-11-21)
+
+The backlog's "The core's heap, after the bound", "Not tuned": `KEEP_HITS` (16), `RECENT_TICKS` (262,144 keys),
+`WARM_TICKS` (2 M), the prune's target (half of `MAP_KEYS`), `MAP_KEYS` (1.5 M) and the decoded blocks' `MAX_KEYS`
+(900,000) had been set from the heap's budget and one A/B. Counts first: a diagnostic core (`results/perf41/diag.patch`
+on 54507cfd: at each prune the keys by class, which retain it fell to, the keys dropped; Bloom filters of the dropped
+keys, so the ones added again before the next prune and those of them that reached the threshold), then clean arms.
+All on the Mac (M4, Chrome for Testing 158.0.8127.36), from `target/snapbench/pages.waarm64snap` (cda6cfa7's core),
+`MEMLOG=5`: Firefox's pages session (`bench/gpu/ab-mac.sh`, 3 rounds, the first arm alternating) and the run-once
+churn (`CHURN='rate=300&calls=120&n=2'`, 600 s). Raw: `results/perf41/` (README); `memsum.json` from `sum.ts`.
+
+**What decides what, at main's 1.5 M keys:**
+- **The pages session never prunes** (1.48 M keys at most, 1.65 M added): none of `KEEP_HITS`, `RECENT_TICKS`,
+  `WARM_TICKS` or the half do anything there. `MAP_KEYS` decides the table: 2^21 buckets once past 0.92 M keys.
+- **The run-once churn prunes 5 times**, each from 1.49 M keys to its second retain (the needed and the recent keys:
+  ~67,000 and ~147,000; the warm ones, 0.76 M a prune, would pass the half): the warm rule never applies. Of 26.7 M keys
+  added, 1.2 M are dropped keys added again; 2,100 of those reached the threshold. Its keys run a few times by design:
+  what the rules keep changes nothing there.
+- **`MAX_KEYS` never binds**: every decoded-block clear in both sessions is for the arena (loop 38: ~0.75 M blocks a
+  fill, under 900,000); the table is at 2^20 buckets either way (0.75 M > 2^19's 458,752). Keeping it at 2^19 would
+  need clears at ~60% of the arena, a smaller budget in effect (the half cost 3.5% on Chromium's renders: bench/apps/REPORT.md
+  "M8: the decoded blocks' arenas"). Left.
+
+So `MAP_KEYS` is the one that can matter, and it's the table's size: tried at 900,000 (2^20 buckets, `d1`), 450,000
+(2^19, `d2`), and 900,000 with the prune's second retain keeping the needed and the warm keys instead of the recent ones
+(`d3`).
+
+| diagnostic arms, the pages session | `d0` 1.5 M | `d1` 900,000 | `d2` 450,000 | `d3` 900,000, warm first |
+|---|---|---|---|---|
+| prunes (ms each, the diagnostic's own taken out) | 0 | 7-8 (22-24) | 22 (11) | 8 (27) |
+| of them to the third retain (the needed alone) | | 5-7 | 22 | 0 (all to needed + warm) |
+| keys added (M); dropped keys added again (M) | 1.65; 0 | 6.2; 3.5 | 9.0; 3.1 | 5.3; 1.8 |
+| of those, reached the threshold | | 55,000 | 58,000 | 6,400 |
+| Gsteps interpreted | 3.15-3.17 | 3.51-3.55 | 3.86-3.97 | 3.26-3.29 |
+| heap live at most (MiB) | 322.8 | 295.4-295.9 | 278.8-282.0 | 295.9-296.1 |
+| `pagesS` (s), first A/B: d0 · d1 | 74.6 · 74.2 · 73.9 | 72.8 · 73.3 · 72.7 | | |
+| `pagesS`, second A/B: d1 · d2 · d3 | | 76.8 · 73.6 · 72.4 | 73.0 · 72.2 · 73.9 | 74.6 · 73.7 · 72.8 |
+
+(The diagnostic's Bloom filters take 8 MiB and its prune a `Vec` of the dropped keys, so its marks are high; the clean
+arms' are below.) At 900,000 the recent keys alone are ~440,000 a prune (those reported, not added, in the last 262,144
+keys added), more than the half, so a prune keeps the needed ones only; 12% more steps run interpreted and the speed
+doesn't move (the first A/B even had `d1` ahead, the second not). Keeping the warm keys first brings the re-added keys
+and the interpreted steps back most of the way and isn't faster either. At 450,000 its half (225,000) is near what a
+busy cache needs kept (past it a prune flushes), for 16 MiB more: not taken.
+
+**The clean arms** (`c0` main, `c1` `MAP_KEYS` 900,000 with the table's bound `MAP_BUCKETS` 2^20):
+
+| | `c0` main | `c1` 900,000 |
+|---|---|---|
+| pages session: mark (MiB) | 315.1 · 315.3 · 315.4 | **288.1 · 288.9 · 288.1** (−27) |
+| heap live at most; block map at most (MiB) | 314.8-314.9; 55.1 | 287.5-288.0; 28.3-28.5 |
+| prunes (ms each) | 0 | 7-8 (23.6-24.4) |
+| `pagesS` (s) | 71.8 · 72.8 · 71.3; **71.8** | 72.4 · 73.4 · 71.9; **72.4** |
+| busy MIPS; wiki / bbc load (s) | 452 · 457 · 457; 5.5-5.9 / 5.5-5.9 | 454 · 456 · 458; 5.7-5.9 / 5.7-5.9 |
+| run-once churn (2 sessions, c1 c0 c0 c1): mark (MiB) | 313.1 · 311.1 | **285.3 · 283.6** (−27) |
+| heap live at most (MiB); prunes (ms each) | 310.7 · 310.6; 5 (36.2 · 35.8) | 283.1 · 283.2; 13 · 15 (20.7) |
+
+Every speed row overlaps (`pagesS` +0.8% in the medians, within the session-to-session spread; no stalls ≥ 50 ms in
+any). The churn makes the same 179,850 functions in every session (it's rate-bound: memory, not speed). Prunes under
+the cache's lock: 0.19 s in 10 minutes of the churn before, 0.29 s now.
+
+**The gates** (`bench/interp/ab-mac.sh`, `results/perf41/screen.json`; base first in rounds 1 and 3; ms):
+
+| | base r1 · r2 · r3; median | 900,000 r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 3,846.3 · 3,850.3 · 3,851.1; **3,850.3** | 3,857.9 · 3,855.7 · 3,865.0; **3,857.9** (+0.2%) |
+| `alpine_user_jit_total` | 10,332.8 · 10,347.3 · 10,370.3; **10,347.3** | 10,298.3 · 10,344.6 · 10,379.7; **10,344.6** |
+
+The boot's rounds don't overlap but differ by 0.2%, under the floor; neither guest gets near 900,000 keys. Arms by
+size: `Jit::miss` 11,308 → 11,307 bytes. No step count moved.
+
+- **Kept**: `MAP_KEYS` 900,000, the table at most `MAP_BUCKETS` (2^20 buckets, 25 MiB; a `const` assert ties the
+  two): the heap's mark 27 MiB lower in both sessions at the same speed. `KEEP_HITS`, `RECENT_TICKS`, `WARM_TICKS` and
+  the half stay as they are: in these sessions the prune falls past the warm rule (and at 900,000 in the pages session
+  past the recent one too), and what keeping more brings back measured no faster.
+- **Tests**: tests/heap.test.ts's 320 MiB guest checks the block map at most 32 MiB with its page index (was 64): with
+  the old bound back it fails at 54 MB. Its safety-net test runs in 48 MiB instead of 64: in 64 the block map's
+  table now finds room and only the decoded blocks' maps started over (9 rescues, no flush); in 48, 24 rescues and 12
+  flushes. The native tests take the bound from `MAP_BUCKETS`.
+- docs/jit.md "The core's heap" has the bound and the finding; the backlog sub-item removed.
