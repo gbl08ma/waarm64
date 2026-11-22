@@ -93,18 +93,10 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 
 ## JIT
 
-- **Parallel SMP's code without `acc`, stage 3: build it** (PERF loops 34 and 53, bench/boot/REPORT.md; the design
-  in docs/abi.md "PERF: parallel SMP's code without `acc`", ABI 73): the bound holds on today's code (Firefox's pages
-  session −3.6% in two sessions, the gates −1 to −1.6%) and a ticker worker waiting by halves meets decision 3 on the
-  Mac (4-9 µs late, against today's 31-80). To build, each with its test and planted bug: the ticker
-  (`web/ticker-worker.ts`, its exports `vm_cpu_tick`, `vm_tick_bell`, `vm_tick_period`, its thread in `run_parallel`
-  natively), the run loop's `due` publication and tick bits, the compile worker's stores (`bench/boot/results/perf53/
-  compile-stops.patch`), the emitter without `acc` in polled code (`noacc.patch`, made exact: nothing else reads the
-  constant), `TIMER_STEPS`, `JIT_PUBLISH`, `BATCH_TIMEOUT` and `vm_run_cpu`'s budget by time in that mode, the PC
-  sampler's period, and the status bar's MIPS and JIT share in parallel SMP by time (a page change: words in the
-  catalog, docs/copy.md). The spin tests with 2^30-step chunks catch a missing setter; the polled differential test
-  needs its step accounting reworked (it compares the steps the JIT ran). Then the Mac's gates and pages session, the
-  round-robin gates unchanged, an out-of-context review.
+- **The ticker on an idle machine** (PERF loop 55, docs/platform.md "Parallel SMP"): while polled code runs without
+  `acc`, the ticker's periodic tick wakes it every 1 ms and stores 0 in every stop word, even with every vCPU idle (in
+  WFI) or the machine paused: ~1,000 wakes a second for nothing. To try: skip the tick while no vCPU is in RUN (a word
+  the run loops keep, or `CpuPar::state` exposed), measured by an idle guest's host CPU on the Mac.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such

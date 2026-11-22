@@ -167,6 +167,8 @@ export const POINTERS = [
   'vm_signal',
   'vm_cpu_signal',
   'vm_cpu_stop',
+  'vm_cpu_tick',
+  'vm_ticker',
   'vm_device',
   'vm_xhci',
   'vm_counters',

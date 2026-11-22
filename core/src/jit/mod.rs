@@ -208,6 +208,11 @@ pub struct Config {
     /// dispatcher stops when its steps reach the word. Round-robin's and
     /// user mode's code is counted (`left`), its chunks exact.
     pub polled: bool,
+    /// Polled code without `acc` (PERF loop 55; docs/jit.md "Preemption"): its steps go uncounted, and a chunk
+    /// ends only at an exit or a setter's 0 (the ticker's, the compile worker's, the signals'). Parallel SMP
+    /// compiles it while the host asks for no step counts (`vm_set_count`); switching flushes the cache, and a
+    /// table takes the mode of each epoch it catches up with.
+    pub uncounted: bool,
 }
 
 impl Config {
@@ -228,6 +233,7 @@ impl Config {
         warm: WARM,
         fma: false,
         polled: false,
+        uncounted: false,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -245,6 +251,7 @@ impl Config {
         warm: 0,
         fma: false,
         polled: false,
+        uncounted: false,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -530,7 +537,8 @@ const MISS_SLOTS: u32 = 2;
 pub const BATCH_STEPS: u64 = 50_000;
 
 /// Steps after the first block joins a pending batch before it's emitted
-/// anyway, so a lukewarm block doesn't wait forever.
+/// anyway, so a lukewarm block doesn't wait forever (ns in polled code
+/// without `acc`, whose steps go uncounted: 64 ms, [`Jit::tick`]).
 pub const BATCH_TIMEOUT: u64 = 64_000_000;
 
 /// [`Config::DEFAULT`]'s `warm`.
@@ -1592,7 +1600,7 @@ impl Cache {
 pub struct Table {
     /// Its index in `Cache::tables`.
     id: usize,
-    /// The cache's (fixed).
+    /// The cache's (fixed, but `uncounted`: the epoch's it caught up with last).
     cfg: Config,
     jc: Box<[Jc; JC]>,
     /// The jump-cache entries filled since it was last cleared whole (up to
@@ -1643,10 +1651,13 @@ pub struct Table {
     /// the last report of them ([`Table::helper_report`]).
     helper_ops: Vec<u64>,
     report: String,
-    /// Steps dispatched so far (the batch timeout's clock), and the cache's
-    /// pending batch and this clock when this table first saw it pending.
+    /// Steps dispatched so far (the batch timeout's clock; in polled code
+    /// without `acc`, ns instead: [`Jit::tick`]), and the cache's pending
+    /// batch and this clock when this table first saw it pending.
     clock: u64,
     since: (u64, u64),
+    /// The host's ns at the last [`Jit::tick`] (0: none since the mode changed).
+    ticked: u64,
     /// What this table's vCPUs ran and what it compiled, flushed and
     /// invalidated (`vm::Counters` sums the tables').
     pub stats: Stats,
@@ -1691,6 +1702,7 @@ impl Table {
             report: String::new(),
             clock: 0,
             since: (u64::MAX, 0),
+            ticked: 0,
             stats: Stats::default(),
             dec: interp::block::Cache::new(c.cfg.decoded as usize),
             ivals: c.ival_base + c.ival_log.len() as u64,
@@ -1733,6 +1745,11 @@ impl Table {
                 (self.limit, self.waiting) = (0, 0);
                 self.todo.clear();
                 self.redirects.clear();
+                // The epoch's mode (`Jit::set_uncounted` flushes to change it); the batch clock in its units.
+                if self.cfg.uncounted != c.cfg.uncounted {
+                    self.cfg.uncounted = c.cfg.uncounted;
+                    (self.since, self.ticked) = ((u64::MAX, 0), 0);
+                }
             }
             self.clear_jc();
             self.known.clear();
@@ -2023,6 +2040,37 @@ impl Jit {
     /// `Config::polled`: its code polls the vCPU's stop word (parallel SMP).
     pub fn polled(&self) -> bool {
         self.table.cfg.polled
+    }
+
+    /// `Config::uncounted` of the epoch this table runs: polled code without `acc`.
+    pub fn uncounted(&self) -> bool {
+        self.table.cfg.uncounted
+    }
+
+    /// Makes the cache compile polled code without `acc` (`on`) or with it from now on, flushing it if that
+    /// changes its mode, and catches this table up (from the run loop, no JIT code on the stack): what any table
+    /// runs after its next catch-up is the new mode's. Polled caches only.
+    pub fn set_uncounted(&mut self, on: bool, mem: &Mem) {
+        debug_assert!(self.table.cfg.polled, "a mode of polled code");
+        let mut c = lock(&self.cache, &mut self.table.stats);
+        if c.cfg.uncounted != on {
+            // A flush that isn't the cache's pressure: the compile threshold stays.
+            c.cfg.uncounted = on;
+            c.drop_all();
+            self.table.stats.flushes += 1;
+        }
+        drop(c);
+        self.sync(mem);
+    }
+
+    /// The batch timeout's clock in polled code without `acc`, which counts no steps: the host's ns `now`, from
+    /// the run loop at its periodic tick.
+    pub fn tick(&mut self, now: u64) {
+        let t = &mut self.table;
+        if t.ticked != 0 {
+            t.clock += now.saturating_sub(t.ticked);
+        }
+        t.ticked = now.max(1);
     }
 
     /// `Config::fma`, for what's compiled from now on.
@@ -2458,16 +2506,30 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
     (vr.jit.jc, vr.jit.hot) = jit.table.ptrs();
     // Polled code (parallel SMP) runs on past `n` to a poll, and stops early
     // when the stop word drops under the steps done (docs/jit.md "Preemption").
+    // Without `acc` (`Config::uncounted`) its steps go uncounted: only the
+    // interpreted ones reach `n`, and it stops when the word is 0, but not
+    // before its first dispatch (whose code stops at its first poll then).
     let polled = jit.table.cfg.polled;
+    let uncounted = jit.table.cfg.uncounted;
     let stop: *const AtomicU32 = &raw const vr.jit.stop;
     let mut done = 0;
+    let mut first = true;
     // The next block's key when the interpreter found it compiled (`interpret`), else 0.
     let mut next = 0;
     while done < n {
         // SAFETY: `stop` is in the vCPU, valid for the call; it's only accessed atomically.
-        if polled && unsafe { &*stop }.load(Ordering::Acquire) as u64 <= done {
-            return (done, None);
+        if polled {
+            // SAFETY: as above.
+            let w = unsafe { &*stop }.load(Ordering::Acquire) as u64;
+            if if uncounted {
+                w == 0 && !first
+            } else {
+                w <= done
+            } {
+                return (done, None);
+            }
         }
+        first = false;
         let left = n - done;
         // SAFETY: guaranteed by the caller; the reference ends before a block runs.
         let vr = unsafe { &mut *v };
@@ -2491,6 +2553,12 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         let pc = vr.cpu.pc;
         let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
         jit.fresh(mem);
+        // A catch-up into an epoch of the other mode (another vCPU's `Jit::set_uncounted`): the chunk ends, so
+        // that the run loop stores the stop word as the new mode reads it (and its ticker runs) before any of
+        // that code does.
+        if jit.table.cfg.uncounted != uncounted {
+            return (done, None);
+        }
         let r = key.map_or(Err(1), |k| jit.enter(k, pc, mem));
         if vr.tlb.xdrops != jit.table.drops {
             vr.tlb.xdrops = jit.table.drops;
@@ -2516,7 +2584,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             let (f, entry) = (idx & IDX_MASK, idx >> ENTRY_SHIFT << emit::ENTRY_BIT);
             // Polled code's `acc` starts at the steps done, which its polls
             // compare with the stop word (the chunk's steps, or 0).
-            let (acc, left) = if polled {
+            let (acc, left) = if uncounted {
+                (0, 0)
+            } else if polled {
                 (done as u32, 0)
             } else {
                 (0, left.min(i32::MAX as u64) as u32)
@@ -2539,7 +2609,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             s.dispatches += 1;
             s.steps += ran;
             s.inline_steps += ran - (vr.jit.helper_steps - helped);
-            jit.table.clock += k;
+            if !uncounted {
+                jit.table.clock += k;
+            }
             done += k;
             if e.is_some() {
                 return (done, e);
@@ -2573,7 +2645,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
                 None => None,
             };
             let (k, e) = r.unwrap_or_else(|| interp::steps(cpu, mem, Some(tlb), m.min(left)));
-            t.clock += k;
+            if !uncounted {
+                t.clock += k;
+            }
             done += k;
             if e.is_some() {
                 return (done, e);
@@ -2722,14 +2796,31 @@ pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
         .cache
         .as_ref()
         .is_some_and(|j| j.polled());
+    // SAFETY: guaranteed by the caller.
+    let uncounted = polled
+        && unsafe { &*v }
+            .jit
+            .cache
+            .as_ref()
+            .is_some_and(|j| j.uncounted());
     let mut done = 0;
     while done < n {
         // Polled code (the polled test core's, Cargo feature `polled`) runs on to its first poll past the steps left,
-        // stored as a parallel run loop stores its chunk's; the steps it ran are what this returns.
+        // stored as a parallel run loop stores its chunk's; the steps it ran are what this returns. Without `acc`
+        // (`jit_uncounted`), one dispatch to its first poll (the word 0), whose compiled steps go uncounted: the
+        // differential test finds them by stepping the interpreter (docs/testing.md "Polled code against the
+        // interpreter").
         if polled {
             // SAFETY: guaranteed by the caller; the word is only accessed atomically.
             let stop = unsafe { &(*v).jit.stop };
-            stop.store((n - done).min(1 << 30) as u32, Ordering::SeqCst);
+            stop.store(
+                if uncounted {
+                    0
+                } else {
+                    (n - done).min(1 << 30) as u32
+                },
+                Ordering::SeqCst,
+            );
         }
         // SAFETY: guaranteed by the caller.
         let (k, e) = unsafe { steps(v, mem, n - done) };
@@ -2751,6 +2842,9 @@ pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
                 done += 1;
             }
             Some(e) => return (done, Err(e)),
+        }
+        if uncounted {
+            break;
         }
     }
     (if polled { done } else { n }, Ok(()))
@@ -3025,6 +3119,7 @@ mod tests {
             warm: 0,
             fma: false,
             polled: false,
+            uncounted: false,
         });
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());
@@ -3378,6 +3473,48 @@ mod tests {
         t.sync(&mut c, &mem);
         assert!(!t.dec.has(0x1000));
         assert_eq!(t.dec.clears, 1);
+    }
+
+    /// Polled code's mode (`Jit::set_uncounted`, PERF loop 55): a change flushes the cache (no pressure: the
+    /// threshold stays), the table that made it runs the new mode at once, another table at its next catch-up, and
+    /// the batch clock's start goes with the units; asking for the mode it has changes nothing.
+    #[test]
+    fn a_mode_change_flushes_and_every_table_follows() {
+        let mut ram = vec![0u128; 0x2000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x2000) };
+        let mut a = Jit::new(Cache::new(Config {
+            polled: true,
+            threshold: 100,
+            threshold_max: 400,
+            ..Config::DEFAULT
+        }));
+        let mut b = a.join();
+        b.table.since = (7, 7);
+        let epoch = a.cache.lock().epoch;
+        a.set_uncounted(false, &mem);
+        assert_eq!(
+            (a.cache.lock().epoch, a.table.stats.flushes),
+            (epoch, 0),
+            "no change, no flush"
+        );
+        a.set_uncounted(true, &mem);
+        assert!(a.uncounted() && !b.uncounted() && b.behind());
+        assert_eq!(
+            (a.cache.lock().epoch, a.table.stats.flushes),
+            (epoch + 1, 1)
+        );
+        assert_eq!(a.cache.lock().threshold, 100, "not the cache's pressure");
+        b.fresh(&mem);
+        assert!(b.uncounted() && !b.behind());
+        assert_eq!(b.table.since, (u64::MAX, 0));
+        // The batch clock by time: from the second tick.
+        b.tick(1_000);
+        b.tick(5_000);
+        assert_eq!(b.table.clock, 4_000);
+        a.set_uncounted(false, &mem);
+        b.fresh(&mem);
+        assert!(!a.uncounted() && !b.uncounted());
     }
 
     /// A decoded block counts dispatches locally and reports them, but the

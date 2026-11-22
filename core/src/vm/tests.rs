@@ -1696,3 +1696,62 @@ fn a_wait_for_the_lock_counts_on_the_vcpu_that_waited() {
     assert!(waits(&a, 0) >= 1, "vCPU 0 waited");
     assert_eq!(waits(&a, 1), 0, "vCPU 1 never asked");
 }
+
+/// Parallel SMP without step counts (`vm_set_count`, ABI 73), natively through the block interpreter (`jit` 4, whose
+/// dispatcher runs the polled modes): its run loop publishes its timer's deadline for the ticker (VM clock ns) and
+/// rings the bell; the TIMER bit has it published again (the ticker took it); counting again withdraws it. The stop
+/// word holds 1 there.
+#[test]
+fn without_step_counts_the_timer_deadline_is_published_for_the_ticker() {
+    use super::parallel::TICK_TIMER;
+    let mut t = T::new(&[B_SELF], VmConfig { jit: 4, ..par(1) });
+    let tk = |vm: &Vm| -> (u32, u32, u64) {
+        // SAFETY: the VM outlives the reads.
+        let (tick, k) = unsafe { (&*vm.cpu_tick(0), &*vm.ticker()) };
+        (
+            k.bell.load(Ordering::SeqCst),
+            k.count.load(Ordering::SeqCst),
+            tick.due.load(Ordering::SeqCst),
+        )
+    };
+    assert_eq!(tk(&t.vm).1, 1, "counted by default");
+    let cval = t.vm.now() + 62_500_000 * 10; // 10 s on
+    t.vtimer_at(cval);
+    // SAFETY: this thread is the only one that runs a vCPU.
+    unsafe { t.vm.run_cpu(0, 1000) };
+    assert_eq!(tk(&t.vm).2, u64::MAX, "counted: no deadline published");
+    t.vm.set_count(false);
+    let (bell, count, _) = tk(&t.vm);
+    assert_eq!(count, 0);
+    // SAFETY: as above.
+    unsafe { t.vm.run_cpu(0, 1000) };
+    let (bell2, _, due) = tk(&t.vm);
+    let ns = t.vm.ns();
+    assert!(
+        due > ns + 9_000_000_000 && due < ns + 11_000_000_000,
+        "due {due}, now {ns}"
+    );
+    assert!(bell2 != bell, "the bell rang");
+    assert_eq!(t.vm.vcpus[0].jit.stop.load(Ordering::SeqCst), 1);
+    // The ticker takes it early (a clock a little ahead): the TIMER bit has it published again.
+    // SAFETY: the VM outlives the reads; no vCPU runs.
+    let tick = unsafe { &*t.vm.cpu_tick(0) };
+    tick.due.store(u64::MAX, Ordering::SeqCst);
+    tick.bits.fetch_or(TICK_TIMER, Ordering::SeqCst);
+    // SAFETY: as above.
+    unsafe { t.vm.run_cpu(0, 1000) };
+    let again = tick.due.load(Ordering::SeqCst);
+    assert!(
+        again.abs_diff(due) < 1_000_000,
+        "published again: {again}, was {due}"
+    );
+    assert_eq!(tick.bits.load(Ordering::SeqCst), 0, "the bits taken");
+    t.vm.set_count(true);
+    // SAFETY: as above.
+    unsafe { t.vm.run_cpu(0, 1000) };
+    assert_eq!(
+        tick.due.load(Ordering::SeqCst),
+        u64::MAX,
+        "counted again: withdrawn"
+    );
+}

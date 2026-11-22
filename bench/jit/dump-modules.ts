@@ -6,8 +6,9 @@
 // `--parallel N`: the boot in parallel SMP (realtime, N vCPU workers, the compile worker), whose code is polled (PERF
 // loop 31): the workers compile the modules, so this re-runs itself with every thread's `WebAssembly.Module` wrapped
 // (`--import`, which workers inherit), each module saved once as m<its hash's first 48 bits>.wasm. Not reproducible:
-// two runs' sets differ a little (compare per-function means, not sets).
-//   node bench/jit/dump-modules.ts <out> [--wasm core.wasm] [--guest alpine|buildroot] [--parallel N]
+// two runs' sets differ a little (compare per-function means, not sets). Its code counts its steps (`acc`) unless
+// `--uncounted` (PERF loop 55: web/vm.ts `BootOptions.count`).
+//   node bench/jit/dump-modules.ts <out> [--wasm core.wasm] [--guest alpine|buildroot] [--parallel N [--uncounted]]
 // alpine: Alpine's boot to power-off as boot_alpine_jit (~2.65G steps, 319 modules on 2026-11-16's core);
 // buildroot: Buildroot's boot as boot_jit.
 import { spawnSync } from 'node:child_process';
@@ -19,7 +20,7 @@ import { DISTROS, GUEST_CMDLINE, runToPowerOff, testDevices, guestDevices } from
 
 const { values: a, positionals } = parseArgs({
   allowPositionals: true,
-  options: { wasm: { type: 'string', default: 'target/wasm32-unknown-unknown/release/waarm64_core.wasm' }, guest: { type: 'string', default: 'alpine' }, parallel: { type: 'string' } },
+  options: { wasm: { type: 'string', default: 'target/wasm32-unknown-unknown/release/waarm64_core.wasm' }, guest: { type: 'string', default: 'alpine' }, parallel: { type: 'string' }, uncounted: { type: 'boolean' } },
 });
 // The parallel boot's every thread (`--import` of this file with DUMP_DIR set): saves each module once, by its hash.
 const DUMP = process.env.WAARM64_DUMP_DIR;
@@ -83,12 +84,12 @@ async function main() {
       ? { ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(new URL('buildroot/rootfs.ext4', IMAGES).href) }
       : (() => { throw new Error(`--guest ${a.guest}: alpine or buildroot`); })();
   const ncpus = Number(a.parallel ?? 1);
-  const r = await runToPowerOff(wasm, { ...o, jit: 1, ...(DUMP ? { parallel: true, ncpus, idleLimitMs: 30_000 } : {}) });
+  const r = await runToPowerOff(wasm, { ...o, jit: 1, ...(DUMP ? { parallel: true, ncpus, idleLimitMs: 30_000, count: !a.uncounted } : {}) });
   if (DUMP) {
     const files = readdirSync(out).filter((f) => /^m\d+\.wasm$/.test(f));
     [n, bytes] = [files.length, files.reduce((s, f) => s + readFileSync(`${out}/${f}`).byteLength, 0)];
   }
-  const index = { date: new Date().toISOString(), node: process.version, guest: a.guest, wasm: a.wasm, wasmSha256: createHash('sha256').update(wasm).digest('hex'), parallel: DUMP ? ncpus : undefined, steps: r.steps, modules: n, bytes };
+  const index = { date: new Date().toISOString(), node: process.version, guest: a.guest, wasm: a.wasm, wasmSha256: createHash('sha256').update(wasm).digest('hex'), parallel: DUMP ? ncpus : undefined, counted: DUMP ? !a.uncounted : undefined, steps: r.steps, modules: n, bytes };
   writeFileSync(`${out}/index.json`, JSON.stringify(index, null, 1));
   console.log(`${a.guest}${DUMP ? ` (parallel, ${ncpus} vCPUs)` : ''}: ${r.steps} steps, ${n} modules (${(bytes / 1e6).toFixed(1)} MB) in ${out}`);
 }

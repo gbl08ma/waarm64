@@ -137,10 +137,21 @@ indexes of their instance).
   `Vm::refresh`, a CPU_ON, a drain that a waiter waits for, `Vm::signal`), `broadcast` for each vCPU whose drain the
   issuer's DSB will wait for, and the host after setting a signal bit (`web/vm.ts` `raise`, the device backends'
   `kick`). A store that lands before the run loop's is seen by its reads; one after stops the chunk at its next poll.
-  What has no event (the vCPU's own timer deadline, the xHCI's due time, the worker's event-loop visit, the periodic
-  publications, the PC sampler) stays paced by the chunk's steps as before: a vCPU that loops with no exit ends a
-  chunk within a poll of 32,768 steps. A ticker that let chunks run longer didn't pay (PERF loop 32: a chunk end
-  costs ~0.2 µs, and it's where the vCPU sees its timer and installs compiled modules; [jit.md](jit.md) "No ticker"). The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a
+  In the counted mode, what has no event (the vCPU's own timer deadline, the xHCI's due time, the worker's event-loop
+  visit, the periodic publications, the PC sampler) stays paced by the chunk's steps: a vCPU that loops with no exit
+  ends a chunk within a poll of 32,768 steps (a ticker that let counted chunks run longer didn't pay, PERF loop 32).
+- **The ticker** (PERF loop 55; [jit.md](jit.md) "Preemption", [abi.md](abi.md) "PERF: parallel SMP's code without
+  `acc`"): polled code without `acc` (the mode the host asks for with `vm_set_count`: the page's unless its status bar
+  shows MIPS or JIT share) has no steps to end a chunk, and the run loop stores 1 in the stop word. One worker per
+  machine (`web/ticker-worker.ts`, idle while the code counts) stores 0 there instead: at each vCPU's timer deadline,
+  which the run loop publishes (`CpuTick::due`, the VM clock's ns, written when it drives the timers; the bell rings
+  when it moves) and the ticker takes with a TIMER bit; at the xHCI's due time; and every 1 ms with a PERIODIC bit.
+  The run loop swaps the bits after its store of the stop word: TIMER and PERIODIC look at the timers; PERIODIC also
+  publishes the counters, checks the budget (`vm_run_cpu`'s as ns) and advances the JIT's batch clock by time. The
+  compile worker stores 0 in every stop word when compiled modules are ready. The ticker's wait for a deadline takes
+  half the time left, again, and spins the last 40 µs (macOS's timed waits come back late by a share of the timeout:
+  4-9 µs late on the Mac where a plain wait is 158-561 µs, bench/boot/REPORT.md "PERF loop 53"); its periodic tick is
+  a plain wait. Memory: one more worker (an isolate, a few MiB). The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a
   looping vCPU answers. Against the counted code before it, on Firefox's pages session (the Mac, PERF loop 35):
   Firefox's starts and the pages' loads −4.7%, busy MIPS +3.4%, and the time issuers' DSBs waited for TLBI IS −83%
   (639 → 107 ms a session: a target stops at its next poll instead of its chunk's end).

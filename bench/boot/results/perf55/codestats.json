@@ -1,0 +1,64 @@
+{
+ "date": "2026-11-22T11:40:31.017Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-base",
+  "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-counted",
+  "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-uncounted"
+ ],
+ "results": {
+  "arm64": {
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-base": {
+    "functions": 6855,
+    "insns": 6307581,
+    "bytes": 23912352,
+    "slots": 100160,
+    "frame": 1178266
+   },
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-counted": {
+    "functions": 6915,
+    "insns": 6323459,
+    "bytes": 23978104,
+    "slots": 100972,
+    "frame": 1189043
+   },
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-uncounted": {
+    "functions": 6870,
+    "insns": 6074288,
+    "bytes": 22992392,
+    "slots": 93806,
+    "frame": 1045736
+   }
+  },
+  "x64": {
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-base": {
+    "functions": 6855,
+    "insns": 4774066,
+    "bytes": 21160688,
+    "slots": 88443,
+    "frame": 938833
+   },
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-counted": {
+    "functions": 6915,
+    "insns": 4790571,
+    "bytes": 21223536,
+    "slots": 89189,
+    "frame": 946363
+   },
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/b3a66905-f538-42d9-89a5-6dcdefc7c39e/scratchpad/par-uncounted": {
+    "functions": 6870,
+    "insns": 4557414,
+    "bytes": 20316940,
+    "slots": 81575,
+    "frame": 819577
+   }
+  }
+ }
+}

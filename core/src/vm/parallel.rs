@@ -19,7 +19,7 @@
 //!   (off, idle or back in the host: it drains before it runs again).
 
 use super::*;
-use core::sync::atomic::fence;
+use core::sync::atomic::{AtomicUsize, fence};
 
 /// `CpuPar::state`: off (PSCI), running guest code in `run_cpu`, or out of it
 /// (idle, or anywhere in the host).
@@ -116,6 +116,86 @@ pub(super) struct CpuPar {
     /// Its stop word (`jit::State::stop`, in its `Vcpu`, which is boxed: the
     /// address holds for the VM's life), which [`Vm::stop`] clears.
     stop: AtomicPtr<AtomicU32>,
+    /// Its words for the ticker (`vm_cpu_tick`).
+    pub(super) tick: CpuTick,
+}
+
+/// A vCPU's words for the ticker (`vm_cpu_tick`, ABI 73; docs/abi.md "PERF: parallel SMP's code without `acc`"),
+/// used while its polled code runs without `acc` (the [`Ticker`]'s `count` 0).
+#[repr(C)]
+#[derive(Debug)]
+pub struct CpuTick {
+    /// The VM clock's ns (`Vm::ns`) of its next timer deadline, the earliest of CNTV and CNTP enabled and unmasked
+    /// (u64::MAX: none), as its run loop last drove its timers; the bell rings when it changes. The ticker takes it
+    /// at the deadline (u64::MAX in its place, a compare-exchange), and the run loop publishes it again after the
+    /// TIMER bit: a deadline the ticker's clock saw early comes again.
+    pub due: AtomicU64,
+    /// [`TICK_TIMER`] and [`TICK_PERIODIC`], ORed in by the ticker before it stores 0 in the stop word; the run
+    /// loop swaps them to 0 after its store of the stop word.
+    pub bits: AtomicU32,
+    _pad: u32,
+}
+
+impl Default for CpuTick {
+    fn default() -> CpuTick {
+        CpuTick {
+            due: AtomicU64::new(u64::MAX),
+            bits: AtomicU32::new(0),
+            _pad: 0,
+        }
+    }
+}
+
+/// [`CpuTick::bits`]: its `due` passed.
+pub const TICK_TIMER: u32 = 1;
+/// [`CpuTick::bits`]: a period passed (the publications, the budget, the timers' look, the batch clock).
+pub const TICK_PERIODIC: u32 = 2;
+/// The periodic tick's period (ns) unless `vm_set_chunk` set one.
+pub const TICK_NS: u64 = 1_000_000;
+/// The shortest period `vm_set_chunk` sets (ns): the PC sampler's 256 steps read as ns would have the ticker do
+/// nothing but tick.
+pub const TICK_MIN_NS: u64 = 20_000;
+
+/// The ticker's words for the whole VM (`vm_ticker`, ABI 73): one ticker per machine (web/ticker-worker.ts) waits
+/// for the earliest of every vCPU's `due`, the xHCI's due time and the next period, and stores 0 in the stop words
+/// at it (docs/platform.md "Parallel SMP").
+#[repr(C)]
+#[derive(Debug)]
+pub struct Ticker {
+    /// Bumped and notified when a `due`, the xHCI's due time, `count` or `period` changes.
+    pub bell: AtomicU32,
+    /// 1 while parallel SMP's polled code counts its steps (`acc`; `vm_set_count`, the default): the ticker idles.
+    /// 0: the code runs without `acc`, and only the setters end its chunks.
+    pub count: AtomicU32,
+    /// The periodic tick's period, ns.
+    pub period: AtomicU64,
+    /// Addresses the ticker reads (wasm32: u32s), set by `vm_ticker`: the VM clock's start and base (`Clock::t0`,
+    /// `Clock::base`: its ns are `base + (now_ms - f64::from_bits(t0)) * 1e6`, `base` alone while `t0` is
+    /// u64::MAX) and the xHCI's due time (`Shared::xhci_due`, the VM clock's ns).
+    pub t0: AtomicUsize,
+    pub base: AtomicUsize,
+    pub xhci_due: AtomicUsize,
+}
+
+impl Default for Ticker {
+    fn default() -> Ticker {
+        Ticker {
+            bell: AtomicU32::new(0),
+            count: AtomicU32::new(1),
+            period: AtomicU64::new(TICK_NS),
+            t0: AtomicUsize::new(0),
+            base: AtomicUsize::new(0),
+            xhci_due: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl Ticker {
+    /// Rings the bell (after the change it's for).
+    pub fn ring(&self) {
+        self.bell.fetch_add(1, Ordering::SeqCst);
+        notify(&self.bell);
+    }
 }
 
 /// [`jit::Fast::f`] for a [`Vm`] in parallel mode ([`Vm::fast`]).
@@ -173,6 +253,7 @@ impl Default for CpuPar {
             waiting: AtomicBool::new(false),
             asid: AtomicU64::new(ANY),
             stop: AtomicPtr::new(core::ptr::null_mut()),
+            tick: CpuTick::default(),
         }
     }
 }
@@ -230,6 +311,12 @@ pub(super) struct Own {
     /// not checked yet, as after a restore).
     timer_at: u64,
     timer_regs: Option<[u64; 4]>,
+    /// Its polled code runs without `acc` this pass (the ticker's bits pace what the steps paced), and a periodic
+    /// tick came (the publications are due at the chunk's end).
+    ticked: bool,
+    publish: bool,
+    /// The counter's deadline its `CpuTick::due` was published for (`None`: none yet, as after a mode change).
+    due_at: Option<Option<u64>>,
 }
 
 /// Waits while `word` holds `expected`, at most `ns` nanoseconds (or until a
@@ -325,6 +412,61 @@ impl Vm {
             .map_or(core::ptr::null(), |s| s.par.stop_word())
     }
 
+    /// vCPU `c`'s ticker words (`vm_cpu_tick`): null past the last vCPU and in round-robin mode.
+    pub fn cpu_tick(&self, c: usize) -> *const CpuTick {
+        match self.shared.cpus.get(c) {
+            Some(s) if self.parallel() => &s.par.tick,
+            _ => core::ptr::null(),
+        }
+    }
+
+    /// The ticker's words (`vm_ticker`), its addresses filled in; null in round-robin mode.
+    pub fn ticker(&self) -> *const Ticker {
+        if !self.parallel() {
+            return core::ptr::null();
+        }
+        let t = &self.shared.ticker;
+        t.t0.store(
+            &self.clock.t0 as *const AtomicU64 as usize,
+            Ordering::SeqCst,
+        );
+        t.base.store(
+            &self.clock.base as *const AtomicU64 as usize,
+            Ordering::SeqCst,
+        );
+        t.xhci_due.store(
+            &self.shared.xhci_due as *const AtomicU64 as usize,
+            Ordering::SeqCst,
+        );
+        t
+    }
+
+    /// Parallel SMP's polled code with `acc` (`on`: its steps counted, the default) or without (`vm_set_count`):
+    /// the mode, then the bell (the ticker runs only without), then 0 in every stop word, so each vCPU's run loop
+    /// looks at it soon and flushes the JIT's code into the other mode. Any thread.
+    pub fn set_count(&self, on: bool) {
+        let t = &self.shared.ticker;
+        if t.count.swap(on as u32, Ordering::SeqCst) == on as u32 {
+            return;
+        }
+        t.ring();
+        (0..self.vcpus.len()).for_each(|i| self.stop(i));
+    }
+
+    /// `vm_set_chunk`'s steps, read as the periodic tick's ns (polled code without `acc` has no steps to count:
+    /// the PC sampler's chunk becomes its period, at least [`TICK_MIN_NS`]; a test's long chunk a long period).
+    pub fn set_tick_period(&self, steps: u64) {
+        let ns = if steps == 0 {
+            TICK_NS
+        } else {
+            steps.clamp(TICK_MIN_NS, POLL_MAX)
+        };
+        let t = &self.shared.ticker;
+        if t.period.swap(ns, Ordering::SeqCst) != ns {
+            t.ring();
+        }
+    }
+
     /// vCPU `c`'s last exit (parallel mode).
     pub fn exit_of(&self, c: usize) -> *const ExitInfo {
         // Only a pointer: its thread may be writing it.
@@ -340,6 +482,9 @@ impl Vm {
             j.unpark();
         }
         let polled = v.jit.cache.as_ref().is_some_and(|j| j.polled());
+        let ticker = &self.shared.ticker;
+        // The budget by time while the code runs without `acc` (its steps go uncounted): ns from here.
+        let t_start = if polled { self.ns() } else { 0 };
         // The diagnostic build: when the last chunk ended by its steps (the time to the next one's start).
         #[cfg(feature = "diag")]
         let mut between: Option<u64> = None;
@@ -352,15 +497,44 @@ impl Vm {
                 k => k.min(CHUNK),
             };
             let n = chunk.min(budget.saturating_sub(own.steps - start)).max(1);
+            // Without `acc` (the epoch this table runs; `vm_set_count`), polled code's chunk ends only at an exit or
+            // a setter's 0: the ticker's bits pace what the steps pace otherwise.
+            let unc = polled && v.jit.cache.as_ref().is_some_and(|j| j.uncounted());
             // Polled code's bound, stored before anything here looks for work: whatever makes work for this vCPU
             // after these reads stores 0 there after making it ([`Vm::stop`]), and the chunk stops at its next poll.
+            // The chunk's steps, or without `acc` 1 (its polls read `0 <u word`).
             if polled {
-                v.jit.stop.store(n as u32, Ordering::SeqCst);
+                v.jit
+                    .stop
+                    .store(if unc { 1 } else { n as u32 }, Ordering::SeqCst);
                 // A store then loads of other words (the setters: their news, then a store of 0): with a SeqCst
                 // fence on both sides ([`Vm::stop`]), either these reads see the news or the setter's 0 comes after
                 // this store, whatever ordering the news and its reads take (C++20's fence rules; the Rust model's).
                 // The wasm build's atomics are all sequentially consistent anyway.
                 fence(Ordering::SeqCst);
+                // The mode the host asks for (`vm_set_count`: its news, then 0 in every stop word), after the
+                // store like any news: a change flushes the JIT's code and goes on in the other mode, with the stop
+                // word stored again as that mode reads it.
+                let want = ticker.count.load(Ordering::SeqCst) == 0;
+                if want != unc {
+                    if let Some(j) = &mut v.jit.cache {
+                        j.set_uncounted(want, &self.mem);
+                    }
+                    self.mode_changed(c, own);
+                    continue;
+                }
+            }
+            own.ticked = unc;
+            // The ticker's news (its bits, then 0 in the stop word), read after the store as the signals are.
+            let bits = if unc {
+                p.tick.bits.swap(0, Ordering::SeqCst)
+            } else {
+                0
+            };
+            own.publish |= bits & TICK_PERIODIC != 0;
+            if bits & TICK_TIMER != 0 {
+                // The ticker took the deadline: the look below publishes the next (or this one again, early).
+                own.due_at = None;
             }
             // Read before looking for work (see the module docs).
             let wake = sh.wake.load(Ordering::SeqCst);
@@ -417,6 +591,17 @@ impl Vm {
             if own.steps - start >= budget {
                 return exit::BUDGET;
             }
+            // Without `acc`, the budget is ns (the worker's 100M steps: 100 ms) and the batch clock time, both
+            // looked at on the periodic tick.
+            if bits & TICK_PERIODIC != 0 {
+                let ns = self.ns();
+                if let Some(j) = &mut v.jit.cache {
+                    j.tick(ns);
+                }
+                if ns.saturating_sub(t_start) >= budget {
+                    return exit::BUDGET;
+                }
+            }
             // The timers against the clock (a host call) when TIMER_STEPS steps passed since they last were,
             // their registers changed, or the vCPU waits in WFI. This runs between chunks, so a timer that
             // comes due between is seen less than TIMER_STEPS plus a chunk (up to CHUNK) steps late (and at
@@ -427,8 +612,15 @@ impl Vm {
                 v.cpu.cntp_ctl_el0,
                 v.cpu.cntp_cval_el0,
             ];
-            let check =
-                own.wfi || own.timer_regs != Some(regs) || own.steps - own.timer_at >= TIMER_STEPS;
+            // Without `acc`: when the ticker says a deadline passed, and at its periodic tick (a clock that moved
+            // under a published deadline, as after a catch-up, is then seen within a period).
+            let check = own.wfi
+                || own.timer_regs != Some(regs)
+                || if unc {
+                    bits != 0
+                } else {
+                    own.steps - own.timer_at >= TIMER_STEPS
+                };
             let now = if check { self.now() } else { 0 };
             if check {
                 self.drive_timers(c, v, own, now);
@@ -545,8 +737,9 @@ impl Vm {
                 return kind;
             }
             // Early, for the host's event loop to deliver a compiled module
-            // (`jit::Jit::park_exit`); the host tells it by the steps.
+            // (`jit::Jit::park_exit`); the host tells it by the value 1.
             if v.jit.cache.as_mut().is_some_and(|j| j.park_exit()) {
+                own.exit.value = 1;
                 return exit::BUDGET;
             }
         }
@@ -638,6 +831,9 @@ impl Vm {
     /// (`run_loop` every [`TIMER_STEPS`] steps or when they may have changed,
     /// and before a platform access that can show them).
     fn drive_timers(&self, c: usize, v: &Vcpu, own: &mut Own, now: u64) {
+        if own.ticked {
+            self.publish_due(c, v, own, now);
+        }
         own.timer_at = own.steps;
         own.timer_regs = Some([
             v.cpu.cntv_ctl_el0,
@@ -664,6 +860,37 @@ impl Vm {
             pl.gic.set_level(c, IRQ_PTIMER, ppi.1);
             self.refresh(&mut pl);
             own.ppi = ppi;
+        }
+    }
+
+    /// Publishes vCPU `c`'s next timer deadline for the ticker (`CpuTick::due`, VM clock ns) as of counter value
+    /// `now`, ringing the bell when it moved: polled code without `acc` sees its timer when the ticker stores 0 in
+    /// its stop word there.
+    fn publish_due(&self, c: usize, v: &Vcpu, own: &mut Own, now: u64) {
+        let at = deadline(&v.cpu, now);
+        if own.due_at == Some(at) {
+            return;
+        }
+        own.due_at = Some(at);
+        let due = match ns_to(at, now, self.cfg.cntfrq) {
+            u64::MAX => u64::MAX,
+            d => self.ns().saturating_add(d),
+        };
+        if self.shared.cpus[c].par.tick.due.swap(due, Ordering::SeqCst) != due {
+            self.shared.ticker.ring();
+        }
+    }
+
+    /// vCPU `c`'s run state after its polled code changed mode (`vm_set_count`): its timers looked at again (and
+    /// their deadline published for the ticker, or withdrawn), its counters published at the next chunk's end.
+    fn mode_changed(&self, c: usize, own: &mut Own) {
+        own.timer_regs = None;
+        own.due_at = None;
+        own.publish = true;
+        let t = &self.shared.cpus[c].par.tick;
+        t.bits.store(0, Ordering::SeqCst);
+        if t.due.swap(u64::MAX, Ordering::SeqCst) != u64::MAX {
+            self.shared.ticker.ring();
         }
     }
 
@@ -1168,9 +1395,16 @@ impl Vm {
         let k = &self.shared.cpus[c].counters;
         k.retired.store(own.steps, Ordering::Relaxed);
         k.pc.store(v.cpu.pc, Ordering::Relaxed);
-        if !all && own.steps - own.jit_at < JIT_PUBLISH {
+        // Without `acc` at the ticker's periodic tick, which `publish` says came.
+        let due = if own.ticked {
+            own.publish
+        } else {
+            own.steps - own.jit_at >= JIT_PUBLISH
+        };
+        if !all && !due {
             return;
         }
+        own.publish = false;
         own.jit_at = own.steps;
         let t = &v.tlb.stats;
         k.tlb_misses.store(t.misses, Ordering::Relaxed);

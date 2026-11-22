@@ -48,7 +48,7 @@ use crate::virtio::{self, DevShared, DeviceEntry, Transport};
 use crate::xhci::{self, Xhci, XhciShared};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
-mod parallel;
+pub mod parallel;
 mod state;
 pub use parallel::{notify, wait};
 
@@ -453,6 +453,8 @@ pub struct Shared {
     pub xhci_due: AtomicU64,
     /// The guest is in PSCI SYSTEM_SUSPEND (`Platform::suspended`), for the host to read at any time.
     pub suspended: AtomicBool,
+    /// Parallel SMP's ticker's words (`vm_ticker`), and its polled code's mode (`vm_set_count`).
+    pub ticker: parallel::Ticker,
 }
 
 /// A vCPU's words other threads read or write.
@@ -1755,7 +1757,13 @@ fn spis(p: &mut Platform, shared: &Shared) {
     }
     if let Some(x) = &p.xhci {
         p.gic.set_level(0, xhci::IRQ, x.irq());
-        shared.xhci_due.store(x.due(), Ordering::Relaxed);
+        let due = x.due();
+        // The ticker waits for it too while polled code runs without `acc`.
+        if shared.xhci_due.swap(due, Ordering::Relaxed) != due
+            && shared.ticker.count.load(Ordering::Relaxed) == 0
+        {
+            shared.ticker.ring();
+        }
     }
 }
 

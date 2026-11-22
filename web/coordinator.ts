@@ -1,13 +1,14 @@
-// Parallel SMP's coordinator (docs/abi.md "M7 (SMP)"): the vCPU workers (web/vcpu-worker.ts) and the JIT's
-// compile worker, their start, the run's end, pausing and resuming.
+// Parallel SMP's coordinator (docs/abi.md "M7 (SMP)"): the vCPU workers (web/vcpu-worker.ts), the JIT's compile
+// worker and the ticker (web/ticker-worker.ts), their start, the run's end, pausing and resuming.
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit } from './jit-compile-worker.ts';
+import type { TickerJob } from './ticker-worker.ts';
 import { Exit, panicNote, STOP, threadAlloc, unsigned, type Stall } from './core.ts';
 import { newWorker, type WarmWorkers } from './warm-workers.ts';
 
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
-const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
+const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts', ticker: './ticker-worker.ts' };
 
 /**
  * Parallel mode's vCPU workers (web/vcpu-worker.ts), started at the first
@@ -29,6 +30,9 @@ export function coordinator(c: {
   parked: number;
   start: number;
   raise: (bits: number) => void;
+  stops: number[];
+  /** The ticker's words and each vCPU's (`vm_ticker`, `vm_cpu_tick`), under the JIT: its worker runs with the vCPUs'. */
+  ticker?: { at: number; ticks: number[] };
   clearStop: () => void;
   quiesce: () => Promise<void>;
   stall: Stall[];
@@ -36,7 +40,10 @@ export function coordinator(c: {
   yieldMs: number;
   warm?: WarmWorkers;
 }) {
-  type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
+  type Handle = {
+    post(m: VcpuJob | VcpuClock | CompileInit | TickerJob, transfer?: Transferable[]): void;
+    terminate(): void;
+  };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
   let error: Error | undefined;
@@ -113,7 +120,7 @@ export function coordinator(c: {
   };
   // A browser's worker (one started ahead if there is: `BootOptions.warm`); Node's worker_threads get the same files by
   // a URL it leaves alone.
-  const spawn = async (which: 'vcpu' | 'compile' = 'vcpu'): Promise<Handle> => {
+  const spawn = async (which: 'vcpu' | 'compile' | 'ticker' = 'vcpu'): Promise<Handle> => {
     if (typeof Worker !== 'undefined') {
       const w = c.warm?.take(which) ?? newWorker(which);
       const h: Handle = { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => w.terminate() };
@@ -123,19 +130,28 @@ export function coordinator(c: {
     }
     const { Worker: NodeWorker } = await import('node:worker_threads');
     const w = new NodeWorker(new URL(NODE_WORKERS[which], import.meta.url));
+    // The ticker never ends by itself: it mustn't hold Node's process.
+    if (which === 'ticker') w.unref();
     const h: Handle = { post: (m, t) => w.postMessage(m, t as never), terminate: () => void w.terminate() };
     w.on('message', (m: VcpuEnd | VcpuClock) => heard(h, m));
     w.on('error', (e: Error) => ended({ type: 'error', cpu: -1, message: String(e.stack ?? e) }));
     return h;
   };
-  // The JIT's compile worker, and a port to it for each vCPU worker.
+  // The JIT's compile worker, and a port to it for each vCPU worker; the ticker.
   let compiler: Promise<Handle> | undefined;
+  let ticker: Promise<Handle> | undefined;
   const start = () => {
     const channels = c.compileWorker ? Array.from({ length: c.ncpus }, () => new MessageChannel()) : [];
     if (channels.length) {
       compiler = spawn('compile');
       const ports = channels.map((ch) => ch.port2);
-      void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
+      const init = { memory: c.memory, ports, stops: c.stops, ticker: c.ticker?.at } satisfies CompileInit;
+      void compiler.then((h) => h.post(init, ports));
+    }
+    if (c.ticker) {
+      const job = { memory: c.memory, ticker: c.ticker.at, ticks: c.ticker.ticks, stops: c.stops } satisfies TickerJob;
+      ticker = spawn('ticker');
+      void ticker.then((h) => h.post(job));
     }
     const made = Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();
@@ -228,6 +244,7 @@ export function coordinator(c: {
       bump();
       for (const w of workers ?? []) void w.then((h) => h.terminate());
       void compiler?.then((h) => h.terminate());
+      void ticker?.then((h) => h.terminate());
     },
   };
 }

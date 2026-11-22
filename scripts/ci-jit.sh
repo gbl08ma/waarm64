@@ -7,8 +7,8 @@
 # keeps the plain JIT's runs, the default path. ~2 min, alone (the litmus run takes 4 vCPUs). WAARM64_JIT_STRESS=1 adds
 # JIT-stress for the guests that skip it (Buildroot's, litmus). Needs the images the tests name (they skip without);
 # builds the wasm core, and the polled test core (Cargo feature `polled`, target/polled/) for the differential test,
-# the user-mode lockstep and the corpus on parallel SMP's polled code (docs/testing.md "Polled code against the
-# interpreter").
+# the user-mode lockstep and the corpus on parallel SMP's polled code, and the differential test on its polled code
+# without `acc` (docs/testing.md "Polled code against the interpreter").
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
@@ -33,4 +33,8 @@ CARGO_TARGET_DIR=target/polled scripts/build-wasm.sh -q --features polled
 WAARM64_CORE=target/polled/wasm32-unknown-unknown/release/waarm64_core.wasm WAARM64_POLLED=1 WAARM64_JIT_DIFF=1024 \
   node --disable-warning=ExperimentalWarning --test --test-name-pattern='^(JIT vs interpreter|lockstep: .*user mode, JIT$|golden corpus on the wasm core: JIT)' \
   tests/jit-diff-[1-4].test.ts tests/jit-lockstep.test.ts tests/corpus-wasm.test.ts
+# The same core's polled code without `acc` (`jit_uncounted`): a run to the first poll, the interpreter stepped to
+# its state (the steps uncounted; docs/testing.md "Polled code against the interpreter").
+WAARM64_CORE=target/polled/wasm32-unknown-unknown/release/waarm64_core.wasm WAARM64_POLLED=2 WAARM64_JIT_DIFF=1024 \
+  node --disable-warning=ExperimentalWarning --test --test-name-pattern='^JIT vs interpreter' tests/jit-diff-[1-4].test.ts
 printf '\nCI-JIT OK (%d s)\n' "$SECONDS"

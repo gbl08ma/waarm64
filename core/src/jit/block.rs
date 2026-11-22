@@ -784,6 +784,8 @@ struct Env<'a> {
     nzcv: Option<[u32; emit::NZCV_HELPERS]>,
     /// `Config::polled`: no `left`, [`emit::poll`] where a cycle can close.
     polled: bool,
+    /// `Config::uncounted`: polled code without `acc` (`emit::Func::uncounted`).
+    uncounted: bool,
 }
 
 impl Env<'_> {
@@ -1007,6 +1009,7 @@ pub fn module(
             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
             nzcv,
             polled: cfg.polled,
+            uncounted: cfg.polled && cfg.uncounted,
         };
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
@@ -1176,6 +1179,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     c.plain = plain;
     c.nzcv = e.nzcv;
     c.polled = e.polled;
+    c.uncounted = e.uncounted;
     c.page = (head & 0xfff) as i64;
     // Each member's merged incoming state, over the edges seen so far
     // (`reached`): the head's starts with the function's entry, where
@@ -1404,7 +1408,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             }
             bad |= matches!(fin[j], In::Lazy(..)) && store(j, lazy);
             c.conform(entry[j]);
-            if !c.sum {
+            if !c.sum && !e.uncounted {
                 c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
                 c.local_set(emit::ACC);
             }
@@ -2331,6 +2335,53 @@ mod tests {
         // no region.
         let (_r, m) = mem_with(0x100, &[0xd4000001]); // svc #0
         assert!(region(&m, 0x100, 0, &|_| true).blocks.is_empty());
+    }
+
+    /// Polled code without `acc` (`Config::uncounted`, PERF loop 55): the same loop as polled code with it, its edges
+    /// bumping and its polls reading the parameter; without, nothing reads or writes it (the polls compare 0), and
+    /// transfers pass 0.
+    #[test]
+    fn polled_code_without_acc_reads_no_acc() {
+        let words = [
+            0x91000421, 0xb4000062, 0x91000423, 0x14000002, 0x91000823, 0xb5ffff63, 0xd65f03c0,
+        ];
+        let (_r, m) = mem_with(0x100, &words);
+        let emit = |uncounted| {
+            let r = region(&m, 0x100, 0x100, &|_| true);
+            let cfg = Config {
+                polled: true,
+                uncounted,
+                ..Config::DEFAULT
+            };
+            module(
+                &[r],
+                &test_mem(),
+                |_| None,
+                &cfg,
+                false,
+                crate::cpu::FEATURES,
+                None,
+            )
+            .bytes
+        };
+        let acc = 1; // `emit::ACC`, the second parameter once the locals are compacted
+        let (get, set) = ([0x20, acc], [0x21, acc]);
+        let counted = emit(false);
+        assert!(has(&counted, &get) && has(&counted, &set));
+        // The edges' bump: acc += 2 (the head's length).
+        assert!(has(&counted, &[0x20, acc, 0x41, 2, 0x6a, 0x21, acc]));
+        let uncounted = emit(true);
+        assert!(!has(&uncounted, &get) && !has(&uncounted, &set));
+        // A poll: 0 <u the stop word.
+        let mut poll = vec![0x41, 0, 0x20, 0, 0xfe, 0x10, 2];
+        let mut stop = emit::STOP;
+        while stop >= 0x80 {
+            poll.push(stop as u8 | 0x80);
+            stop >>= 7;
+        }
+        poll.extend([stop as u8, 0x49]);
+        assert!(has(&uncounted, &poll));
+        assert!(uncounted.len() < counted.len());
     }
 
     /// An entry is found by its own VA, never the head's, so a member is one

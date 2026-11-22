@@ -423,7 +423,17 @@ In parallel SMP (what the page runs) compiled code carries **no step budget** (P
 `left` checks, no `left -= len`, no `SUM`; a transfer passes `left` as 0. Round-robin (deterministic and realtime) and
 user mode keep the counted code above, byte for byte (Alpine's boot dumped by both cores: the same 319 modules, two
 differing only in the address of a core table they embed, the CRC tables).
-- **`acc` stays** (steps and MIPS still count) and is a plain local: an edge adds its block's length to it.
+- **Two modes** (PERF loop 55; abi.md "PERF: parallel SMP's code without `acc`", the user's decision, decisions.md
+  "JIT"): **counted**, `acc` a plain local that an edge adds its block's length to (steps and MIPS count), and
+  **uncounted** (`Config::uncounted`), `acc` the constant 0: no edge bumps it, transfers pass 0, a poll reads `0 <u
+  word`, a host call's return carries nothing back, and only what the core runs itself counts (interpreted steps,
+  exits). The host picks one (`vm_set_count`): the page counts while its status bar shows MIPS or JIT share (the
+  default layout does, so the gain goes to users who take them off or pick the faster preset: frontend.md "The status
+  bar"), the benchmarks count unless asked not to (`bench/run.ts --query=uncounted`), web/vm.ts doesn't by default.
+  A change flushes the cache into a new epoch (the compile threshold left alone) and every table takes the mode with
+  the epoch: its dispatcher ends the chunk at that catch-up, so its run loop stores the stop word as the new code
+  reads it before any of it runs. A flush at any point is safe as any flush is (the dispatcher's catch-up is the one
+  place code of an epoch is replaced). The transfer cache's miss functions are the same in both modes.
 - **The poll** (`emit::poll`): `acc < stop`, `stop` the vCPU's stop word (`jit::State::stop`, at a fixed `Vcpu`
   offset: `emit::STOP`), ANDed into the transfer's condition (hinted likely, as the budget check was), so a failed poll
   falls to the path a failed budget check took: the block returns to the dispatcher with its PC stored. No register is
@@ -460,15 +470,20 @@ differing only in the address of a core table they embed, the CRC tables).
   interprets at most `jit::POLLED_RUN` (32,768, a default chunk) steps before it reads the word again (the block
   interpreter, the debug interpreter of an EL armed for debug, one instruction at a time). A forward edge or chain to a
   fixed target checks nothing: in loop 30's counts those were 55-63% of the budget checks.
-- **The word:** the parallel run loop stores the chunk's steps (`n`) there at the top of each pass, before it looks
-  for work; the dispatcher passes the steps done as `acc` (so a block's polls compare the chunk's count) and stops
-  when the word is at or under them. Whatever has news for the vCPU stores 0 after making it (platform.md "Parallel
+- **The word:** the parallel run loop stores the chunk's steps (`n`) there at the top of each pass (counted; 1
+  uncounted), before it looks for work; the dispatcher passes the steps done as `acc` (so a block's polls compare the
+  chunk's count; uncounted 0) and stops when the word is at or under them (uncounted: at 0, after its first dispatch). Whatever has news for the vCPU stores 0 after making it (platform.md "Parallel
   SMP"): the chunk then ends at the next poll instead of its steps. A chunk ends about where it did otherwise (at the
   first poll past `n`: 25 steps past it on average in Alpine's boot), so what has no event of its own (the vCPU's
   timer deadline, the worker's event-loop visit, the periodic publications, the PC sampler) keeps its bounds without
   a ticker thread, and `acc` stays far from `RETURNED`. `vm_set_chunk` may set chunks of up to 2^30 steps here (the
   spin tests'), past which only the setters end one.
-- **No ticker** (PERF loop 32, bench/boot/REPORT.md): a chunk end costs ~0.2 µs of run loop (Node on the dev VM), at
+- **The ticker, without `acc`** (PERF loop 55; platform.md "Parallel SMP"): uncounted code's chunk has no steps to
+  end it, so `web/ticker-worker.ts` stores 0 in a vCPU's stop word at its timer deadline (published by its run loop),
+  at the xHCI's due time, and every 1 ms (the publications, the budget by time, the batch clock by time, a look at the
+  timers); the compile worker stores 0 when modules are ready. Its waits by halves are what loop 53 measured meets
+  decision 3 on the Mac (4-9 µs late on average).
+- **No ticker for counted code** (PERF loop 32, bench/boot/REPORT.md): a chunk end costs ~0.2 µs of run loop (Node on the dev VM), at
   most ~0.5% of the gates' vCPU time, and 4× as many (8,192-step chunks) didn't move the Mac's gates. Longer chunks
   lose instead: 2^20 steps with nothing to end them slowed Alpine's boots 3.5-4.1%, because a chunk end is also where
   the vCPU sees its own timer and where the dispatcher installs the modules the compile worker finished (`Jit::fresh`:
@@ -482,16 +497,16 @@ differing only in the address of a core table they embed, the CRC tables).
   function arm64 −2 to −3% instructions and **−9% frame memory operands**, x64 −3% and −10 to −11%; on the Mac (the
   compile worker storing 0 when modules were ready, so installs stayed prompt) Alpine's boots −1.0 to −2.0% to the
   script (n1 and n4 past the rounds' spread) and the userspace phases −2.5% (overlapping). So `acc` costs ~1-2% (all the polls,
-  for comparison: arm64 −3.5% instructions, x64 −5.4%, with no spills of their own). It stays: it is the chunk's bound (the timer and the installs, PERF loop 32) and the step count
-  the MIPS readout, the run loop's step clocks and the sampler use; dropping it needs a setter for each of those, a
-  redesign filed in docs/backlog.md. **Re-measured on PERF loop 53's code** (bench/boot/REPORT.md "PERF loop 53"):
+  for comparison: arm64 −3.5% instructions, x64 −5.4%, with no spills of their own). It was the chunk's bound (the timer and the installs, PERF loop 32) and the step count
+  the MIPS readout, the run loop's step clocks and the sampler use: the uncounted mode (above) has a setter for each. **Re-measured on PERF loop 53's code** (bench/boot/REPORT.md "PERF loop 53"):
   the same bound on the gates (boots −0.8 to −2.3%, n4 −1.6% past the rounds' spread; userspace −0.8%), and **−3.6%
   on Firefox's pages session** in two sessions of runs (the noacc arm's fewer modules, its batch clock counting only
   interpreted steps, aren't the gain: that alone ran even). The setter its chunk bound needs for the vCPU's own timer
   exists: a ticker worker whose `Atomics.wait` takes half the time left, again, and spins the last 40 µs is 4-9 µs
   late on the Mac on average (p99 under 45 µs), where the chunk's steps give 31-80 µs today; a plain wait to the
   deadline is 158-561 µs late (macOS's timer leeway grows with the timeout), `Atomics.waitAsync` ~630 µs, `setTimeout`
-  ~4.8 ms. The design is docs/abi.md "PERF: parallel SMP's code without `acc`"; it isn't built yet.
+  ~4.8 ms. Built in PERF loop 55 as the uncounted mode (above; abi.md "PERF: parallel SMP's code without `acc`"),
+  its numbers in bench/boot/REPORT.md "PERF loop 55".
 - **No poll point is redundant** (PERF loop 34): each closes cycles no other one does. Polls only on a region's
   back-edge (not on its other edges to a lower VA) drop the polls 19% and hang a spin test: a cycle through other
   functions (the 20-block chain, out of its region and back through chains forward) has its one backward step on such

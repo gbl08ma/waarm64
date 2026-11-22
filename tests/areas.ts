@@ -87,7 +87,7 @@ export const AREAS: Record<string, Area> = {
   },
   smp: {
     // Parallel SMP: the runner, its workers, the stop word, the guests that stress it.
-    src: ['core/src/vm/parallel.rs', 'web/vcpu-worker.ts', 'web/coordinator.ts', 'tests/litmus/**', 'images/litmus/**', 'images/stress/**', 'tests/threads-*.ts', 'tests/hoststall/**'],
+    src: ['core/src/vm/parallel.rs', 'web/vcpu-worker.ts', 'web/coordinator.ts', 'web/ticker-worker.ts', 'tests/ticker.test.ts', 'tests/spin.test.ts', 'tests/litmus/**', 'images/litmus/**', 'images/stress/**', 'tests/threads-*.ts', 'tests/hoststall/**'],
     heavy: ['tests/boot-node-parallel.test.ts', 'tests/boot-node-litmus.test.ts', 'tests/browser.test.ts', 'tests/hoststall.test.ts', 'tests/pause.test.ts'],
     cargo: ['core'],
     push: ['ci-jit.sh'],

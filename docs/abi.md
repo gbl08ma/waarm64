@@ -538,57 +538,69 @@ implemented by this step).
   host's change hasn't been taken), so a snapshot waits like it does for other events; nothing new is
   saved (a restore starts at generation 0, the interrupt state `isr` is saved already).
 
-## PERF: parallel SMP's code without `acc` (design note for ABI 73; not built yet)
+## PERF: parallel SMP's code without `acc` (ABI 73)
 
-PERF loop 53 measured it (bench/boot/REPORT.md "PERF loop 53"; the track decides on measurement, decisions.md
-"JIT"): parallel SMP's polled code without `acc` would run Firefox's pages session 3.6% faster on the Mac and the
-parallel gates 1-1.6%, and its one hard setter, the vCPU's own timer, can be met in the page. This is the design stage
-3 builds; until it lands, polled code keeps `acc` ([jit.md](jit.md) "Preemption").
+PERF loop 53 measured it and loop 55 built it (bench/boot/REPORT.md "PERF loop 53", "PERF loop 55"; the user's
+decision on the readout, 2026-11-22, [decisions.md](decisions.md) "JIT"): parallel SMP's polled code has **two modes**,
+with `acc` (its steps counted, as before) and without (faster, its compiled steps uncounted). The host chooses; the
+page counts while its status bar shows an element that needs every step (MIPS, JIT share, in any form: frontend.md
+"The status bar"), which the default layout does. Round-robin (deterministic and realtime) and user mode keep the
+counted code byte for byte; `tests/steps.txt` didn't move.
 
-**What `acc` does now, and what takes each over:**
-- *The chunk's bound* (the stop word holds the chunk's steps, so a vCPU looping with no exit ends a chunk ~32K steps
-  on): the vCPU's own timer deadline, the compiled modules' installs (`Jit::fresh`), the xHCI's completions, the
-  worker's event-loop visit, the periodic publications and the PC sampler's chunk. **Taken over by setters**, each
-  storing 0 after its news as the others do (below, "PERF: the stop word"): the **ticker** (below) for the deadlines and
-  a periodic tick, the **compile worker** when `ready` moves (loop 32's `compile-stops.patch`: 0 in every stop word;
-  the coordinator passes it their addresses, which `vm_cpu_stop` gives).
-- *The step count* (`ExitInfo.retired`, counter word `retired`, `jit.steps`): compiled code's steps go uncounted;
-  only interpreted steps and exits count. What reads it moves to time: `TIMER_STEPS` (the run loop checks the timers
-  when the ticker's bit says a deadline passed, when the timer registers changed, or in WFI), `JIT_PUBLISH` (at the
-  periodic tick), `BATCH_TIMEOUT` (ns in this mode: 64 ms; round-robin keeps the steps), `vm_run_cpu`'s budget (ns in
-  this mode: the worker's 100M steps become 100 ms, checked at the tick), the PC sampler's chunk (`vm_set_chunk`
-  becomes the tick's period while it samples). The status bar's MIPS and JIT share, in parallel SMP, become what time
-  can say (each vCPU's busy share, time in guest code against idle): a page change with its words in the catalog,
-  stage 3's to make.
-- Round-robin (deterministic and realtime) and user mode keep the counted code, byte for byte; `tests/steps.txt`
-  doesn't move.
+**The modes** (`jit::Config::uncounted`; [jit.md](jit.md) "Preemption"):
+- *Counted* (the core's default; `vm_set_count(vm, 1)`): polled code as ABI 71 made it. The run loop stores the
+  chunk's steps in the stop word, the chunk ends at its first poll past them, the step clocks run on steps.
+- *Uncounted* (`vm_set_count(vm, 0)`; web/vm.ts's default unless `BootOptions.count`): `acc` is the constant 0, no
+  edge bumps it, a transfer passes 0, a poll is `0 <u word`; functions keep the return protocol (`RETURNED`, a count,
+  which is only their own last block's steps). The run loop stores 1 in the stop word, so a chunk ends only at an exit
+  or a setter's 0. The transfer cache's miss functions are the same in both modes (they pass on and return what they
+  were given, 0 here).
+- *A change* (`vm_set_count`, any thread: the mode, then the bell, then 0 in every stop word): each vCPU's run loop
+  reads the mode after its store of the stop word (as any news), and on a change calls `Jit::set_uncounted`: the cache
+  drops every block into a new epoch (a flush that leaves the compile threshold alone) and the table catches up; another
+  table takes the mode with the next epoch it catches up with, and its dispatcher ends the chunk there, so the run loop
+  stores the stop word as that mode reads it before any of its code runs. A run loop that sees the other mode asked
+  for flushes again: the cache converges on the last one asked.
 
-**The compiled code:** `Config::polled` drops `acc` (the patch measured: no edge bumps, the dispatcher passes 0, the
-polls `0 <u word`); functions keep their return protocol (`RETURNED`, the count then 0). The run loop stores 1 in the
-stop word instead of the chunk's steps.
+**What uncounted code's chunk bound took over** (the counted mode's steps paced all of it):
+- **The ticker** (`web/ticker-worker.ts`, one per machine, a browser worker or a Node worker thread, started by the
+  coordinator with the vCPU workers, idle while the code counts): it waits for the earliest of every vCPU's timer
+  deadline (`CpuTick::due`), the xHCI's due time and the next period. At a deadline it takes the `due` (a compare-and-
+  exchange to u64::MAX), ORs `TICK_TIMER` into the vCPU's tick bits and stores 0 in its stop word; at the xHCI's due
+  time 0 in every stop word (again every 50 µs while it stays due and unhandled); every period (1 ms) `TICK_PERIODIC`
+  in every vCPU's bits and 0 in every stop word. For a deadline its `Atomics.wait` takes half the time left, again,
+  until 40 µs remain, then spins; the periodic tick is one plain wait (no precision needed, nothing spun). Its clock
+  is the creator's, measured as the vCPU workers' is (web/core.ts `clockOffset`), which agrees with theirs to a round
+  trip: the run loop publishes a deadline again after a TIMER it found not due yet, so one seen early comes again.
+- **The run loop** swaps the bits to 0 after its store of the stop word and its fence, and acts on them: TIMER and
+  PERIODIC look at the timers (a clock read and `drive_timers`, which publishes the next deadline in VM clock ns and
+  rings the bell when it moved); PERIODIC also publishes the JIT's and TLB's counters (`JIT_PUBLISH`'s steps in the
+  counted mode), checks `vm_run_cpu`'s budget as ns (the worker's 100M steps: 100 ms) and advances the batch clock
+  by time (`BATCH_TIMEOUT` read as 64 ms). The xHCI's completions are looked at on every pass, as before.
+- **The compile worker** stores 0 in every stop word after `ready` moves (while the ticker's `count` is 0), so each
+  dispatcher installs the new modules at its next poll; it gets the stop words' and the ticker's addresses with its
+  ports (`CompileInit`).
+- **The PC sampler's chunk:** `vm_set_chunk`'s steps read as the tick's period in ns (at least 20 µs, at most 2^30;
+  0: 1 ms). The spin tests' 2^30 then make a period of a second, so the setters' latency shows.
+- **The host's early return** for a compiled module (`Jit::park_exit`) is now said by `ExitInfo.value` 1 on a BUDGET
+  exit (it was the steps short of the budget, which uncounted code can't say).
 
-**The ticker** (`web/ticker-worker.ts`, one per machine, started by the coordinator with the vCPU workers; Node's
-runners a worker thread too; natively a thread in `run_parallel`): for each vCPU the core publishes **`due`**, the VM
-clock's ns of its next timer deadline (the earliest of CNTV and CNTP enabled and unmasked; `u64::MAX` none), written
-by the run loop when it drives the timers, and a **tick word** of bits (TIMER: a deadline passed; PERIODIC: the
-period passed). The ticker waits on a **bell** (a u32 the run loop bumps and notifies when a vCPU's `due` moves
-earlier, or the period changes) for the earliest of every `due`, the xHCI's due time and the next period; at it, it
-ORs the bit into that vCPU's tick word, then stores 0 in its stop word (the periodic tick: every running vCPU). The
-run loop swaps the tick word to 0 after its store of the stop word and its fence, and acts on the bits: a clock read
-and `drive_timers` for TIMER; the publications, the xHCI's completions and the budget for PERIODIC. It reads the
-creator's clock as vCPU workers do (`web/core.ts` `clockOffset`).
-- **Its wait: by halves.** `Atomics.wait` on the bell for half the time left, again until under 40 µs remain, then a
-  spin to the deadline. On the Mac (4 spinners, deadlines ~1 ms and ~4 ms apart): 4.1 / 8.5 µs late on average, p99 35
-  / 43 µs, 1.3 / 2.2 waits a deadline, 6.3% / 1.5% of one core spinning. Decision 3's bound is today's: the timer
-  seen 31-80 µs late on average while running (the Mac, `preempt-counts.ts`).
-- **Exports, new:** `vm_cpu_tick(vm, i) -> *const CpuTick` (`#[repr(C)] {due: AtomicU64, bits: AtomicU32, _: u32}`, in
-  vCPU *i*'s shared state, null past the last and in round-robin), `vm_tick_bell(vm) -> *const AtomicU32`,
-  `vm_tick_period(vm) -> u64` (ns, the periodic tick's; the sampler's shorter one while it runs: `vm_set_chunk`'s
-  steps read as ns there, documented with it). `vm_cpu_stop` stays. `ExitInfo.retired` and `retired` count only what
-  the core counts in this mode (documented as such).
+**Exports, new:**
+- `vm_cpu_tick(vm, i) -> *const CpuTick`: `#[repr(C)] {due: AtomicU64, bits: AtomicU32, _: u32}`, vCPU *i*'s; null
+  past the last and in round-robin.
+- `vm_ticker(vm) -> *const Ticker`: on wasm32 `{bell: u32, count: u32, period: u64, t0: u32, base: u32, xhci_due:
+  u32}` (`vm::parallel::Ticker`): the bell (bumped and notified when a `due`, the xHCI's due time, `count` or `period`
+  changes), the mode (1: counted, the default), the period in ns, and the addresses the ticker reads, filled in by the
+  call: the VM clock's start and base (`Clock::t0`, f64 bits of `now_ms` or u64::MAX while held, and `Clock::base`:
+  its ns are `base + (now_ms - t0) * 1e6`) and `Shared::xhci_due` (VM clock ns). Null in round-robin.
+- `vm_set_count(vm, on)`: the mode (above); nothing in round-robin.
+- `jit_uncounted(v, mem, on)`: a `jit_new` vCPU of the polled test core without `acc`, for the differential test
+  (docs/testing.md "Polled code against the interpreter"): a `jit_run_exit` is then one dispatch to the first poll.
+- `ExitInfo.retired` and the counters' `retired` count, in the uncounted mode, only what the core still counts: the
+  interpreted steps, the exits, and each function's last block where it returned.
 
 **Alternatives, measured or argued (loop 53):**
-- *Keep `acc`*: the 3.6% and the 1-1.6% stay lost; it stays the fallback if stage 3's measurement doesn't hold.
+- *Keep `acc`*: the counted mode, still there for what needs the steps.
 - *A plain `Atomics.wait` to the deadline*: 158 µs late on average at 1 ms, 561 µs at 4 ms (17% past 1 ms): macOS's
   timer leeway grows with the timeout. *A fixed lead then a spin* (200 µs): 10 µs at 1 ms for 36% of a core, 342 µs
   at 4 ms. Both fail decision 3 at long gaps.
@@ -599,6 +611,8 @@ creator's clock as vCPU workers do (`web/core.ts` `clockOffset`).
 - *Compiled code reading a clock*: a host call at a poll, far dearer than `acc`.
 - *Steps counted in memory instead* (a store per edge): the spills `acc` costs are memory operands already, so it
   would save little; the status bar's MIPS is what it would keep.
+- *The status bar's MIPS by time instead of steps* (each vCPU's busy share): the user chose the two modes instead
+  (2026-11-22), so the readout keeps its meaning wherever it is shown.
 
 ## PERF: the stop word (design note for ABI 71)
 
@@ -738,6 +752,7 @@ tests.
 | 70 | `inflate_raw(src, len, dst, cap)` and `deflate_raw(src, len, dst, cap, level)`: qcow2's clusters through miniz_oxide ("SNAPZ: qcow2's clusters through miniz_oxide") |
 | 71 | `vm_cpu_stop(vm, i)`: parallel SMP's stop words, which a host that sets a signal bit clears too; `vm_set_chunk` past 32768 in parallel mode under the JIT ("PERF: the stop word") |
 | 72 | counter word 121: the JIT block map's rescues alone (a flush with its maps freed whole), of word 115's, which also counts a table's decoded and known blocks starting over without a flush (tests/heap.test.ts) |
+| 73 | parallel SMP's polled code with or without `acc`: `vm_set_count`, `vm_ticker`, `vm_cpu_tick` (the ticker's words), `ExitInfo.value` 1 on a BUDGET exit for a compiled module, `vm_set_chunk` read as the tick's ns without `acc`; `jit_uncounted` (the test core's) ("PERF: parallel SMP's code without `acc`") |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

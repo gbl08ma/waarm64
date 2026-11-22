@@ -108,12 +108,13 @@ test('Alpine\'s userspace benchmark (1 GiB) through 3 snapshot files', { skip: !
 });
 
 // Parallel SMP (a worker per vCPU, realtime): the VM is paused (web/vm.ts `pause`), saved, closed, and
-// a new one with new workers started from the file. Not reproducible: WAARM64_PARALLEL_RUNS repeats it.
+// a new one with new workers started from the file. Not reproducible: WAARM64_PARALLEL_RUNS repeats it. Counted
+// (`count`): the snapshots are taken at steps.
 const RUNS = Number(process.env.WAARM64_PARALLEL_RUNS ?? 2);
 test('parallel: Buildroot on 4 vCPUs (JIT) through snapshot files', { skip }, async () => {
   for (let i = 0; i < RUNS; i++) {
     const at = Array.from({ length: 8 }, (_, k) => (k + 1) * 5_000_000 + i * 1_234_567);
-    const r = await runThroughSnapshots(WASM, buildroot({ ncpus: 4, parallel: true, idleLimitMs: 30_000 }), at, 1e12);
+    const r = await runThroughSnapshots(WASM, buildroot({ ncpus: 4, parallel: true, idleLimitMs: 30_000, count: true }), at, 1e12);
     report(`parallel Buildroot on 4 vCPUs, run ${i + 1}`, r);
     poweredOff(r);
     assert.ok(r.files.length >= 6, `${r.files.length} snapshots`);
@@ -124,7 +125,7 @@ test('parallel: Buildroot on 4 vCPUs (JIT) through snapshot files', { skip }, as
 
 const litmusImage = new URL('litmus/initramfs.cpio', IMAGES);
 test('parallel: litmus and the atomics stress on 4 vCPUs (JIT) through snapshot files', { skip: skip || (!existsSync(litmusImage) && 'SKIPPED: run images/build.sh linux litmus') }, async () => {
-  const o: BootOptions = { ramSize: 256 << 20, kernel: image('linux/Image'), initrd: readFileSync(litmusImage), cmdline: 'console=ttyAMA0 panic=-1 waarm64.litmus=-s,100,-r,1 waarm64.stress=-n,20000', ncpus: 4, parallel: true, idleLimitMs: 30_000, jit: 1 };
+  const o: BootOptions = { ramSize: 256 << 20, kernel: image('linux/Image'), initrd: readFileSync(litmusImage), cmdline: 'console=ttyAMA0 panic=-1 waarm64.litmus=-s,100,-r,1 waarm64.stress=-n,20000', ncpus: 4, parallel: true, idleLimitMs: 30_000, jit: 1, count: true };
   const at = Array.from({ length: 10 }, (_, k) => (k + 1) * 60_000_000);
   const r = await runThroughSnapshots(WASM, o, at, 1e12);
   report('parallel litmus and stress', r);

@@ -346,6 +346,11 @@ pub struct Func {
     /// neither checked nor kept (a transfer passes 0); what can close a cycle
     /// ([`poll`]'s points) compares `acc` with the vCPU's stop word instead.
     pub polled: bool,
+    /// Polled code without `acc` (`jit::Config::uncounted`, PERF loop 55): `acc` is the constant 0, no edge
+    /// bumps it, a transfer passes 0, and a poll is `0 <u word`, so a chunk ends only at an exit or a setter's 0
+    /// (the ticker's, docs/jit.md "Preemption"). Its steps go uncounted: a function returns only the steps of
+    /// its own last block. Set only with `polled`.
+    pub uncounted: bool,
     /// The instruction being emitted (its index in `words`).
     pub at: usize,
     /// The bytes a SIMD&FP load about to call [`access`] writes into each of
@@ -956,7 +961,9 @@ impl Func {
     /// instructions retired (the registers and flags already in the `Cpu`).
     /// Pushes `acc`: the parameter, or `SUM - left` in a region with edges.
     pub fn acc(&mut self) {
-        if self.sum {
+        if self.uncounted {
+            self.c.i32_const(0);
+        } else if self.sum {
             self.c.local_get(SUM).local_get(LEFT).op(0x6b); // i32.sub
         } else {
             self.c.local_get(ACC);
@@ -1919,8 +1926,14 @@ impl To {
 /// for an indirect transfer.
 fn args(c: &mut Func, len: u32, deeper: bool, to: To) {
     c.local_get(VCPU);
-    c.acc();
-    c.i32_const(len as i32).op(ADD);
+    if c.uncounted {
+        // No `acc`: every function gets 0 (the transfer cache's miss function, shared by both modes, passes on
+        // and returns what it was given).
+        c.i32_const(0);
+    } else {
+        c.acc();
+        c.i32_const(len as i32).op(ADD);
+    }
     if c.polled {
         c.i32_const(0);
     } else {
@@ -2012,19 +2025,22 @@ pub fn ret_up(c: &mut Func, len: u32) {
 /// closes it.
 pub fn returned(c: &mut Func, len: u32, off: i64) {
     c.local_get(RESULT).i32_const(0).op(LT_S).hint(true).if_();
-    // left += acc - (result - len); acc = result - len, the flag dropped.
-    c.local_get(RESULT).i32_const(!RETURNED as i32).op(AND);
-    c.i32_const(len as i32).op(SUB).local_set(RESULT);
-    if c.sum {
-        // acc + left stays SUM.
-        c.local_get(SUM).local_get(RESULT).op(SUB).local_set(LEFT);
-    } else {
-        // Polled code reads no `left`: `acc` alone.
-        if !c.polled {
-            c.local_get(LEFT).local_get(ACC).op(ADD);
-            c.local_get(RESULT).op(SUB).local_set(LEFT);
+    // Polled code without `acc` has nothing to carry on.
+    if !c.uncounted {
+        // left += acc - (result - len); acc = result - len, the flag dropped.
+        c.local_get(RESULT).i32_const(!RETURNED as i32).op(AND);
+        c.i32_const(len as i32).op(SUB).local_set(RESULT);
+        if c.sum {
+            // acc + left stays SUM.
+            c.local_get(SUM).local_get(RESULT).op(SUB).local_set(LEFT);
+        } else {
+            // Polled code reads no `left`: `acc` alone.
+            if !c.polled {
+                c.local_get(LEFT).local_get(ACC).op(ADD);
+                c.local_get(RESULT).op(SUB).local_set(LEFT);
+            }
+            c.local_get(RESULT).local_set(ACC);
         }
-        c.local_get(RESULT).local_set(ACC);
     }
     c.local_get(VCPU).i64_load(PC);
     pc_plus(c, off);
@@ -2296,7 +2312,8 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
     c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
     c.i32_load(off).local_tee(V);
     c.i32_const(0).op(LT_S).if_();
-    c.local_get(VCPU).local_get(ACC);
+    c.local_get(VCPU);
+    c.acc();
     if c.polled {
         c.i32_const(0);
     } else {
