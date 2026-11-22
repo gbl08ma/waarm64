@@ -575,7 +575,13 @@ The machine's first start (`PowerActions.startOpened`, or Start after a page tha
 snapshot instead of booting, with no question (`SnapshotRestore.first`): the shape is the definition's (its disks'
 identities and serials), so it matches; the pins, by slot, fork onto the machine's fresh overlays (none yet: new
 ones; a fresh one: that one, §5.2). The mark is cleared before the start; a snapshot that can't be restored (another
-shape: said) boots the machine instead. Afterwards it's an ordinary machine: its overlay, Suspend, and the template
+shape: said) boots the machine instead, and so does one that can't load once the start is under way (`SnapshotRestore`'s boot instead,
+said as [{{machine}} started from power on: its demo's saved state couldn't be restored in this browser.](ui:snapshots:snapshot-restore.firstBooted)): a 3D or Vulkan template whose 3D fails
+to start in this browser (the GPU worker's `failed`: the machine runs 2D, another shape, and the snapshot never reaches
+the worker), or the worker refusing it (a `snapshot` problem, which a first start doesn't leave to the user's Start).
+Either way the overlays its plan named that nothing wrote (generation 0) lose their fork mark (`snapshots.ts`
+`unfork`): they hold no block of the template, so a later restore of it forks anew rather than taking one back, and
+"started before" doesn't find the demo unchanged. Afterwards it's an ordinary machine: its overlay, Suspend, and the template
 kept as a snapshot to go back to. The page's hook `window.__waarm64FromTemplate(definition, snapshot)` (`?hooks`) is
 bench/demo's click; tests/template.test.ts the identity and the plan in Node.
 
@@ -623,8 +629,8 @@ before", the most recently changed first) and from the versions it replaces (`ol
 a definition; a copy drops it (the card would open a copy that starts cold, off the demo network: a copy is the user's
 own machine) and `restoreFirst` (the template is a snapshot of the original, not of the copy). A download cut off
 partway is `machines:template.cutOff`; the storage full when the snapshot is kept, `machines:template.full`. The store's page, which makes
-these machines: [frontend.md](frontend.md) "The demo store". Tests: tests/demo-store.test.ts (Node), tests/page-template-first.test.ts (a store's
-demo made and restored at its first start in Chromium).
+these machines: [frontend.md](frontend.md) "The demo store". Tests: tests/demo-store.test.ts (Node), tests/demo-open.test.ts (Node), tests/page-template-first.test.ts (a store's
+demo made and restored at its first start in Chromium; a 3D template whose 3D fails booted instead).
 
 ### 6.3 Templates under New machine
 

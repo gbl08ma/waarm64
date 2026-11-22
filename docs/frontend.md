@@ -1103,11 +1103,19 @@ the query's form serves (decisions.md "Demos").
   browser's own Back and a narrowed window aren't asked; and the switch is asked again just
   before it when the machine running then isn't the one the visitor agreed to stop.
 - **Started before** (a machine whose `fromDemo` is the demo's): the pane says so, with its name and when it was
-  last used (when its disks' overlays were last written, `demo-open.ts` `lastUsed`, else its record's change), with
+  last used (when its disks' overlays were last written, `demo-open.ts` `lastUsed`, else its record's change), and
+  whether it has changes since the demo started (`DemoChanges.svelte`, `changesOf`, a line under it): [Nothing in it has changed since the demo started.](ui:machines:DemoChanges.none)
+  (its first start not taken yet, or each overlay still the template's fork at the generation its first restore left),
+  [Its disk has changed since the demo started. A fresh copy starts without those changes.](ui:machines:DemoChanges.disk) (an overlay written since, or one that's no fork of the template: another
+  snapshot restored, another overlay chosen) or [It was suspended: opening it resumes it where it was left. A fresh copy starts without its changes.](ui:machines:DemoChanges.suspended) (a suspended copy:
+  it resumes). In practice a machine that has run says its disk changed (a running guest writes). It offers
   **[Open my machine](ui:machines:DemoStart.openMine)** (the default: the main button, with the focus in one column) and **[Start a fresh copy](ui:machines:DemoStart.fresh)** (another
   machine; `importDefinition` names it with a suffix, `Alpine (2)`); a note when that machine runs in another tab.
-  Open my machine checks its chunked disks' manifests first (`checkDisks`); for the machine running here already, it
-  closes the store's page to that machine.
+  Open my machine checks its chunked disks' manifests first (`checkDisks`: gone, or the server down, said in the pane
+  before the machine running here stops); for the machine running here already, it closes the store's page to that
+  machine. **Every start of a demo's machine** (Home's Start, its address, a restart) checks them too, before the
+  worker (web/app/run/runner.ts `#openDisks`, `goneOnly`): a 404 is [This demo's files are gone](ui:machines:template.gone) in the message
+  bar with Retry, not the guest's failed reads; the server unreachable lets the start go on.
 - **Its words** are written for a first-time visitor (copy.md "A first-time visitor's screens"): the download's size
   is drawn stronger in its note (the `<size>` marker), "last used" is to the minute (`{{when, minutes}}`), and errors
   and the other store's warning are `ui/Callout.svelte` boxes.
@@ -1119,12 +1127,13 @@ the query's form serves (decisions.md "Demos").
   `chunked.pieceStatus`, `chunked.pieceWrong`; a piece's 404 is `template.gone`; the first failure stops the other
   pieces), the download cut off partway (`template.cutOff`, nothing kept), the storage full when the
   snapshot is kept (`template.full`, its cause the storage's numbers; the machine made for it is deleted again), and
-  another machine running in the tab (the switch's question; a note says so beforehand). None leaves a machine.
+  another machine running in the tab (the switch's question; a note says so beforehand). None leaves a machine. A demo
+  machine's first start whose template can't be restored here boots instead (machines.md §6.1).
 
 Tests: `tests/demos-route.test.ts` (the address, the first visit, the checks; Node), `tests/demo-store.test.ts` (the
-cut-off download), `tests/page-demos.test.ts` (Chromium, a stand-in worker and the stores answered by the test: the
+cut-off download), `tests/demo-open.test.ts` (`changesOf`, a start's `goneOnly` check, `unfork`; Node), `tests/page-demos.test.ts` (Chromium, a stand-in worker and the stores answered by the test: the
 first visit's introduction skipped, a row by the keyboard to a machine restored at its first start in its view, a reload, `/demos` and
-started before, a fresh copy, `?id=`, an unknown id, Home's Demos and Back, the list beside the pane and one column
+started before (its changes: the disk, none, suspended), a fresh copy, a start by the machine's address with its files gone, `?id=`, an unknown id, Home's Demos and Back, the list beside the pane and one column
 when narrow (the first demo by default, another row with no trip back, All demos, the focus), `?store=`'s warning and what it fetches,
 the server down, the files gone, the download cut off), `tests/page-demos-guest.test.ts` (scripts/ci-machines.sh: a
 demo's template made from the build under test by `tools/build-demos.ts` into `target/ci-demos` (`WAARM64_DEMO_SITE`;

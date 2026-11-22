@@ -98,6 +98,8 @@ function state(x: Runner, r: Run, m: StateMessage) {
   x.d.messages.setState(m.state, done ? undefined : (m.error ?? m.note), actions, error ? 'error' : 'warn');
   if (done) x.d.messages.notify(done);
   stateChanged(x, r, m);
+  // A template's first start whose snapshot the worker refused: it boots instead (the restart replaces the failure).
+  if (m.problem === 'snapshot' && r.first) void x.firstFailed(r.first, true);
 }
 
 /** A download's progress, on the boot card and in the state's words. */

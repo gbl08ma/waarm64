@@ -79,6 +79,12 @@ export class Messages {
   }
 
   /** The machine's state, and the message that goes with it (none: the standing note). */
+  /** A notice for when the next run runs or stops (`notifyLater`): every state before then is the bar's. */
+  #later: Said | undefined;
+  notifyLater(message: Said) {
+    this.#later = message;
+  }
+
   setState(s: PageState, message?: Said, actions: Action[] = [], kind: MessageKind = 'error') {
     power.state = s;
     power.stateText = t(STATE_WORDS[s]);
@@ -88,6 +94,11 @@ export class Messages {
     bootCard.shown = (s === 'loading' || s === 'booting') && !bootCard.done;
     bootCard.serial = !!this.#machine.spec.firmware && s === 'booting';
     if (isStopped(s)) this.#stopped(); // a restart doesn't pass here: its clients stay, on the new machine's ports
+    const later = this.#later;
+    if (later && (s === 'running' || isStopped(s))) {
+      this.#later = undefined;
+      this.notify(later, 'warn');
+    }
   }
 
   /**

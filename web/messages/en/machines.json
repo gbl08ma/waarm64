@@ -2043,6 +2043,18 @@
     "message": "You already have a machine from this demo, <name>{{machine}}</name>. Open it to continue where you left off, or start a fresh copy alongside it.",
     "note": "Demo store's page, a demo's details: said over the buttons when this browser has a machine made from the demo, before its last use is known. {{machine}}: its name."
   },
+  "DemoChanges.none": {
+    "message": "Nothing in it has changed since the demo started.",
+    "note": "Demo store's page, a demo's details: said under “You already have a machine from this demo…” when that machine is as the demo started (not started yet, or its disk not written since its first start), so opening it and starting a fresh copy give the same."
+  },
+  "DemoChanges.disk": {
+    "message": "Its disk has changed since the demo started. A fresh copy starts without those changes.",
+    "note": "Demo store's page, a demo's details: said under “You already have a machine from this demo…” when that machine's disk was written since the demo first started in it (by the guest, a restored snapshot, another disk's changes chosen)."
+  },
+  "DemoChanges.suspended": {
+    "message": "It was suspended: opening it resumes it where it was left. A fresh copy starts without its changes.",
+    "note": "Demo store's page, a demo's details: said under “You already have a machine from this demo…” when that machine is suspended (its running state kept): Open my machine resumes it."
+  },
   "DemoStart.elsewhere": {
     "message": "<name>{{machine}}</name> is running in another tab.",
     "note": "Demo store's page, a demo's details: a warning when the visitor's machine from the demo runs in another tab of this browser (it must be stopped there to open here). {{machine}}: its name."

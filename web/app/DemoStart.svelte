@@ -4,7 +4,7 @@
   with how to start it at the pane's head (ui/Pane.svelte, as a machine's pane on Home), then its screenshot and
   summary (the store's data, plain text), its download, what it needs of the browser (DemoChecks.svelte: checked here,
   before any download), and what the project is. Started before (a machine of the visitor's from it): **Open my
-  machine** (the default) or **Start a fresh copy**, with when theirs was last used. Start makes the machine from the
+  machine** (the default) or **Start a fresh copy**, with when theirs was last used and whether it has changes. Start makes the machine from the
   definition (web/app/template.ts `machineFromDemo`: the template snapshot downloaded first, with its progress), opens
   it in the demo's view, and its first start restores the template. A failure (the files gone, the server down, the
   download cut off, the storage full) is said here. A start belongs to its pane: one at a time on the page
@@ -18,6 +18,7 @@
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
   import T from './T.svelte';
+  import DemoChanges from './DemoChanges.svelte';
   import DemoChecks from './DemoChecks.svelte';
   import { Actions } from './actions.svelte.ts';
   import { allMet, canStart, checkDemo, needsOf, readEnv, type Check } from './demo-check.ts';
@@ -190,6 +191,7 @@
             <T k="machines:DemoStart.mine.undated" params={{ machine: mine.name }} />
           {/if}
         </Note>
+        <DemoChanges {store} machine={mine} />
         {#if elsewhere}
           <Note tone="warn"><T k="machines:DemoStart.elsewhere" params={{ machine: mine.name }} /></Note>
         {/if}

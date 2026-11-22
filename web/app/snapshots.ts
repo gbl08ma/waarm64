@@ -292,6 +292,21 @@ function runSlots(m: MachineRecord, run: RunShape) {
 }
 
 /**
+ * A restore's plan not carried out (the machine boots instead: a template's first start whose snapshot couldn't load):
+ * the overlays it would have written and that nothing wrote (their files' generation 0) are no forks of the snapshot,
+ * so their fork marks go (else a later restore would attach one again as the snapshot's blocks, and "started before"
+ * would find the demo unchanged).
+ */
+export async function unfork(store: Store, plan: DiskPlan[]) {
+  for (const p of plan) {
+    if (p.action !== 'write' || !p.overlay.startsWith('overlays/')) continue;
+    const o = await store.get('overlays', p.overlay.slice('overlays/'.length));
+    if (!o?.fork || (await overlayMeta(p.overlay)).generation !== 0) continue;
+    await store.put('overlays', { ...o, fork: undefined });
+  }
+}
+
+/**
  * The plan to restore snapshot `snap` (its pins; `key` identifies it for reusing a fork: a kept snapshot's id, or a
  * file's creation time) onto machine `m`, whose shape the caller checked to be the snapshot's; `run` is the shape it
  * runs with (its display, web/app/run/config.ts `effectiveDisplay`, and its devices, the address's over the record's).

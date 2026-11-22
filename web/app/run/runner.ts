@@ -21,6 +21,7 @@ import type { PageNetwork } from '../net-live.ts';
 import type { FromWorker, MachineConfig, Problem, Status, ToWorker } from '../protocol.ts';
 import { onReady } from '../../vsock-device.ts';
 import type { UsbPorts } from '../usb-live.ts';
+import { checkDisks, isGone } from '../demo-open.ts';
 import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
 import type { Messages } from './messages.ts';
@@ -71,7 +72,8 @@ export type RunnerDeps = {
 };
 
 /** A start's arguments: booted, or (with `snapshot`) the one the file holds; `resume` false drops a suspended machine. */
-type StartArgs = { snapshot?: File; resume: boolean; plan?: DiskPlan[]; config: MachineConfig };
+/** `first`: a template's first start (`restoreFirst`), which boots instead when its snapshot can't load here. */
+type StartArgs = { snapshot?: File; resume: boolean; plan?: DiskPlan[]; first?: boolean; config: MachineConfig };
 
 /** A file disk whose file the page can't read without the user: no handle (picked again), or a handle without permission (granted again by a click). */
 export class NeedsUser extends Error {
@@ -86,6 +88,11 @@ export class Runner {
   readonly d: RunnerDeps;
   readonly lock = new MachineLock();
 
+  /**
+   * A template's first start whose snapshot can't load once under way (`plan`: its restore's disks; `restart`: its run
+   * has ended): the restore's to handle (web/app/areas/snapshot-restore.ts `bootInstead`).
+   */
+  firstFailed: (plan: DiskPlan[], restart: boolean) => Promise<void> = () => Promise.resolve();
   constructor(d: RunnerDeps) {
     this.d = d;
   }
@@ -101,9 +108,10 @@ export class Runner {
 
   /**
    * Starts a machine: booted, or (with `snapshot`) the one the file holds. A machine suspended on
-   * this disk is resumed instead of booting, unless `resume` is false (it is then dropped).
+   * this disk is resumed instead of booting, unless `resume` is false (it is then dropped). `first`: the snapshot is a
+   * template's at the machine's first start (`restoreFirst`): one that 3D's failure leaves unloadable boots instead.
    */
-  start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
+  start(snapshot?: File, resume = true, plan?: DiskPlan[], first = false) {
     const { machine: m, screen, net, audio } = this.d;
     const size = m.hasGpu ? screen.wantedSize() : m.spec.framebuffer;
     screen.sent = m.hasGpu ? size : undefined;
@@ -115,8 +123,9 @@ export class Runner {
     const ch = channels(config, audio.attach(), nets);
     current.hasNetwork = ch.nets.length > 0;
     const r = this.#newRun(canvas, ch);
+    if (first && snapshot) r.first = plan ?? [];
     this.#loading(snapshot);
-    const args = { snapshot, resume, plan, config };
+    const args = { snapshot, resume, plan, first, config };
     if (config.display === '3d') this.#gpu(r, ch, offscreen, args, size);
     else void this.#begin(r, ch, { ...args, screen: offscreen, size });
     if (ch.nets.length) void net.autoconnect();
@@ -207,6 +216,8 @@ export class Runner {
       r.worker.terminate();
       r.input.detach();
       this.d.machine.run = undefined;
+      // A template's snapshot needs the 3D it was taken with (its shape): the machine's first start boots instead.
+      if (args.first && args.snapshot) return void this.firstFailed(args.plan ?? [], false);
       this.start(args.snapshot, args.resume, args.plan);
     };
     const fromGpu = gpuHandlers(this, r, ready, failed);
@@ -284,6 +295,8 @@ export class Runner {
     try {
       const needs = m.stored ? await filesNeedingUser(m, m.stored) : [];
       if (needs.length) throw new NeedsUser(needs);
+      // A demo's machine (from Home as from the store's page): its files gone from the server is said as that.
+      if (m.stored?.record.fromDemo) await checkDisks(m.store, m.stored.record, { goneOnly: true });
       const { disks, home } = await startDisks(m);
       status.disks = disks.map((d) => d.name);
       const about = await m.about(config);
@@ -293,6 +306,7 @@ export class Runner {
       if (!r.live()) return undefined;
       this.lock.drop();
       if (e instanceof NeedsUser) this.d.later.problems().needsUser(e.disks);
+      else if (isGone(e)) this.d.messages.setState('failed', e as Error, [this.d.later.problems().retry]);
       else
         this.d.messages.setState('failed', new MsgError('disks:runner.notOpened', {}, { cause: e }), [
           this.d.later.problems().retry,

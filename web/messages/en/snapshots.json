@@ -431,6 +431,10 @@
     "message": "Load snapshot…",
     "note": "Button in the message bar (under the toolbar) after a snapshot was refused: it picks another snapshot file."
   },
+  "snapshot-restore.firstBooted": {
+    "message": "<name>{{machine}}</name> started from power on: its demo's saved state couldn't be restored in this browser.",
+    "note": "Notice in the message bar (under the toolbar) at the first start of a machine made from a demo, when the demo's saved state (its template snapshot) can't be loaded here, typically because 3D graphics failed to start in this browser: the machine boots instead. {{machine}}: the machine's name."
+  },
   "run.stopped": {
     "message": "The machine stopped before the save was done.",
     "note": "Error (message bar, under the toolbar) of a snapshot's save or a suspend when the machine stopped by itself (the guest powered off or crashed) while it was still being saved, and the save couldn't finish."

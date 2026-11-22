@@ -153,6 +153,7 @@ test('finding 7: a kept snapshot restored during a save says to wait, and asks n
     const restore = new SnapshotRestore({
       machine: { stored: { record: { id: 'aaaaaaaaaaaa' } }, store: { get: async () => void calls.push('store') } },
       power: { busy: () => (calls.push('busy'), true), exclusively: async () => void calls.push('exclusively') },
+      runner: {},
     });
     await restore.restoreKept('bbbbbbbbbbbb');
     return calls;
