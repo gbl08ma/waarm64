@@ -849,8 +849,8 @@ noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 
 ## The introduction
 
-What a new visitor sees first (`IntroPage.svelte`, its sections in `web/app/intro/`; decisions.md "Demos"; the track's
-brief while it's open: `INTRO-KICKOFF.md`): one page scrolled from top to bottom that says what waarm64 is and ends in
+What a new visitor sees first (`IntroPage.svelte`, its sections in `web/app/intro/`; decisions.md "Demos"): one
+page scrolled from top to bottom that says what waarm64 is and ends in
 the demo store. It takes the **whole window** (`body[data-page=intro]`): the toolbar, the message bar, the status bar
 and the floating windows don't show, and the machine, Home or the store's page stay as they were under it.
 

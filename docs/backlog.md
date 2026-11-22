@@ -1284,9 +1284,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     second view transition of one kind started before the first ends loses its names (`view-transition.ts`); a path's
     interval runs on in a hidden tab (`autoplay.svelte.ts`); `tools/intro-capture.ts` leaves its temporary directory
     in the system's tmp when it throws.
-- **The introduction's speed figure** (INTRO): `web/app/intro/speed.ts` is empty until comparison.md §3's rows are
-  measured; and its comparison's facts are dated 2026-11-18 (`web/app/intro/compare.ts`): read the peers' sources
-  again before a deploy.
 - **The processor's deep dive on Liftoff** (INTRO): the host pane shows TurboFan's code for the function compiled
   alone (`--no-liftoff`); a browser runs Liftoff's first and tiers up, and whether the tiered-up code is the same
   wasn't checked. `tools/intro-capture.ts --baseline` captures Liftoff's (about twice the size), not shown.

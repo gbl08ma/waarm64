@@ -1,4 +1,4 @@
-// The introduction page's captures (INTRO-KICKOFF.md "Truth"): for a few small C functions, the AArch64 code clang
+// The introduction page's captures (docs/frontend.md "The captures"): for a few small C functions, the AArch64 code clang
 // made of one of their blocks, the block interpreter's micro-ops for it, the WebAssembly our JIT emitted for it and
 // the machine code V8 made of that on this host. Everything is what the tools printed: nothing here is written by hand.
 //

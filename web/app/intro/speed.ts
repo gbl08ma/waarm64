@@ -1,4 +1,4 @@
-// The introduction's speed figures (web/app/intro/IntroSpeed.svelte; INTRO-KICKOFF.md "The comparison"): how many
+// The introduction's speed figures (web/app/intro/IntroSpeed.svelte; docs/frontend.md "The introduction"): how many
 // times as fast waarm64 ran one workload as the projects it's compared with: the next fastest, named so, and v86,
 // the oldest and best known of them (the user, 2026-11-20). The numbers are bench/compare/REPORT.md's on the Mac
 // host (the user: those, not the dev VM's), the ratio of the medians (docs/benchmarking.md "Rules": no claim without a run behind it); a figure is taken out again if its

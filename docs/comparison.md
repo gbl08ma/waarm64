@@ -118,7 +118,7 @@ AES-128-GCM 232 MB/s with the crypto extensions.
 The introduction (frontend.md "The introduction") is where this copy went, 2026-11-20: its comparison's table and
 [Where other projects beat waarm64](ui:intro:IntroCompare.leads) are §2's and §4's facts in the catalog's `intro` area, dated by `web/app/intro/compare.ts`
 `CHECKED`. A change to §2 to §4 changes those words and that date in the same commit; the one speed figure the page
-keeps a place for (`web/app/intro/speed.ts`) is filled from §3 once its rows are measured. What follows is the draft
+keeps (`web/app/intro/speed.ts`) are §3's Perl rows (bench/compare/REPORT.md, 2026-11-20). What follows is the draft
 they were written from.
 
 
