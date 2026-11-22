@@ -690,7 +690,9 @@ pub struct Stats {
 
 /// Nonces and draws. In the tests, a stream seeded from the test's name (its thread's): a test draws the same bytes
 /// whatever runs beside it, so a failure reproduces alone (before, a test met a rare draw under one run in a few
-/// dozen and passed when run again).
+/// dozen and passed when run again). `WAARM64_TS_SEED` (any text, added to the name) draws another stream: a sweep of
+/// it finds the draws a test's bounds can't take. Entries' BIP-340 aux bytes and zones' unused slots draw from it too
+/// in the tests (they change ids, and so the order of ids).
 #[cfg(not(test))]
 pub(super) fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
@@ -704,7 +706,8 @@ pub(super) fn random<const N: usize>() -> [u8; N] {
     thread_local! {
         static STATE: Cell<u64> = Cell::new({
             // FNV-1a of the thread's name (libtest names a test's thread after the test).
-            let name = std::thread::current().name().unwrap_or("").to_owned();
+            let name = std::thread::current().name().unwrap_or("").to_owned()
+                + &std::env::var("WAARM64_TS_SEED").unwrap_or_default();
             name.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3)) | 1
         });
     }

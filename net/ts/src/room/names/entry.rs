@@ -61,8 +61,9 @@ pub(super) fn tagged(tag: &str, parts: &[&[u8]]) -> [u8; 32] {
 }
 
 pub(super) fn sign(key: &SigningKey, msg: &[u8; 32]) -> [u8; 64] {
-    let mut aux = [0u8; 32];
-    let _ = getrandom::fill(&mut aux); // BIP-340's aux randomness is hardening only
+    // BIP-340's aux randomness is hardening only; in the tests it comes from the test's seeded stream, since it
+    // changes the signature and with it the entry's id (and the order of ids).
+    let aux: [u8; 32] = super::server::random();
     key.sign_prehash_with_aux_rand(msg, &aux)
         .expect("a valid key signs")
         .to_bytes()

@@ -2248,28 +2248,18 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 
 ## Tests and tools
 
-- **The RAM map's test waits a fixed 3 s for the next look** (`tests/page-ram.test.ts:118`, "looked again"): it failed
-  once in `scripts/ci-debian.sh` (2026-11-21, on a commit that touched nothing of the map) and passed in the script's
-  rerun. A look on a 1 GiB machine under the script's load can take longer than the wait: wait for the next answer
-  (as its `until` does for the first two), with a bound, rather than for three seconds.
+- **The remote disks' cache test hangs at `cacheBytes before`** (`tests/page-modal.test.ts` "remote disks' blocks: in
+  an expiring bucket…", its 60 s bound naming the step): once in `scripts/ci-fast.sh` in a cloud session
+  (2026-11-22, a commit that touched no `web/`), then 1 of 10 runs alone with four busy loops beside it (4.6–9.7 s
+  when it passes). The page's `cacheBytes()` (web/diskcache.ts `entries`) lists the bucket and calls `getFile()` on
+  `data` and `map` while the test's worker holds sync access handles on them. With a step noted before each storage
+  call in `entries` and `cacheRoot` it passed 91 runs of 91 (55 alone with the busy loops, 36 three at a time), so
+  which call doesn't return is still not known: a `getFile()` racing the worker's open handles is the first suspect.
 - **A clipboard page test that fails under CI's load** (2026-11-20, `scripts/ci.sh` on INTRO loop 8's fixes,
   which touch nothing of it; again 2026-11-21 on DOTCOM's copy changes, then 1 of 1 alone): `tests/page-clipboard-ui.test.ts` "a demo's machine starts each run paused…" at its last
   step ("the agent's end got [], not 62 bytes": `guestReads` waits 10 s for the page's frames after the stub agent
   opens). It passed 3 runs of 3 alone, and in the two `scripts/ci.sh` runs before. Either the wait is short under
   load, or a frame is lost when the open races the machine's start: look at what the page sent, not only at the count.
-- **A names-server test that fails about one run in eight**: `room::names::server_tests::a_release_beats_a_renewal_waiting_at_its_parent`
-  (net/ts) failed in `scripts/ci.sh` on 2026-11-20 (a run that touched no Rust) and then 1 time in 8 run alone
-  (`cargo test --lib a_release_beats_a_renewal_waiting_at_its_parent` in `net/ts`), in either order of its loop
-  ("renewal first true" in CI, "false" alone): at `server_tests.rs:4044` server 0 still resolves `letgo` to its node
-  where the test wants `Nx` after the release. The bus's time is simulated, so the difference between runs is what is
-  drawn at random (keys, and with them ids and their order): either the release can lose to the waiting renewal for
-  some orders of ids, which is a defect in the server, or the test assumes an order. Start by fixing the keys' seed
-  to a failing draw.
-  A second of that file's tests failed the same day, once, in `scripts/ci.sh` on a commit that touched no Rust:
-  `calendar_asks_stay_bounded_across_twenty_servers` (`server_tests.rs:3067`, "24 after 19": it wants no more calendar
-  asks in a run's second 12 hours than in its first, and the counts by hour are drawn by chance, 19 then 24 that
-  time). A bound that chance can pass is the test's to loosen, or the draws' seed to fix. Each stops `scripts/ci.sh`
-  before its JS tests (the Rust step fails fast), so a run lost to one is a whole run again.
 - **The fast lane stalls when started from an agent's shell in the cloud** (INTRO, 2026-11-20): `scripts/ci-fast.sh`
   run by the Bash tool directly stopped twice 67 tests into the JS step with every process idle (once for 31 min);
   started detached (`nohup … &`) it ran through both times. Most likely a test or a tool it starts reads the
@@ -2289,14 +2279,19 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   debug registers aren't what runs there). (`mmio` and `watch`, which also failed there, were fixed in PERF loop 34: the
   `-DHVF` build leaves out what QEMU can't emulate under hvf, and `oracle.sh` skips `// window` tests.)
 - [B] **net/ts's other draws are unseeded in its tests** (CI loop 1, 2026-11-18): the room names' `random()`
-  (`room/names/server.rs`) draws from a stream seeded by the test's name under `cfg(test)`, which ended three names
-  tests' flakes (2 of 12 runs of the lib failed four at a time; 28 of 28 passed after). The crate's other
-  `getrandom::fill` calls (room.rs's keys and nonces, `zone.rs`'s slots, `agent.rs`, the DERP and tailnet nonces) still
-  draw from the OS in tests; seed them the same way if a test that reaches them turns flaky. One has (2026-11-19,
-  `scripts/ci.sh`): `server_tests::a_release_beats_a_renewal_waiting_at_its_parent` failed 1 of 30 runs alone (server
-  0, `renewal_first` false: the name still resolves to its node, not Nx). `entry.rs` `sign` draws BIP-340's aux bytes
-  from the OS, which changes the entries' signatures and so their ids. Before seeding it, find which draw loses: if an
-  id's order decides whether a release beats a waiting renewal, that's the server's bug, not the test's.
+  (`room/names/server.rs`) draws from a stream seeded by the test's name under `cfg(test)`, and since 2026-11-22 so do
+  entries' BIP-340 aux bytes (`entry.rs` `sign`, which changed ids and so their order) and zones' unused slots. The
+  crate's other `getrandom::fill` calls (room.rs's keys and nonces, `agent.rs`, the DERP and tailnet nonces) still draw
+  from the OS in tests; seed them the same way if a test that reaches them turns flaky. `WAARM64_TS_SEED=<text>`
+  draws another stream: sweeping it is how a test's bounds are checked against chance (below).
+- **A names test whose bound a few draws miss** (found sweeping `WAARM64_TS_SEED`, 2026-11-22; it doesn't flake now
+  that its draws are fixed, but a change that moves the draws can land on a failing one):
+  `calendar_asks_stay_bounded_across_twenty_servers` fails 1 seed in 80 (`later <= first`: 22 asks after 21; the
+  second 12 hours' chance is half the first's, so ~16 against ~32 expected). Comparing the first 12 hours with hours
+  24–36 (a quarter) would leave chance no room, at half again its ~23 s.
+  (`a_release_beats_a_renewal_waiting_at_its_parent`, the "one run in eight" here before, failed ~1 run in 30 the same
+  way: a renewal or the release not finished in the fixed six hours it gave them, because two servers can count the
+  room as five or nine and ask the calendar at that rate. It now waits for them, a day at most: 400 seeds of 400.)
 - [B] **`tests/browser.test.ts` "the page says what's wrong…" stalled once** (2026-11-18, `scripts/ci.sh`): 600 s at
   idle CPU, no step named; 24 runs alone and 20 with every CPU busy passed in 8-18 s. A page-side hang would fail its
   30 s waits, so a Playwright call with no timeout (an `evaluate`, `close`, `newPage`) didn't return. It now notes each
@@ -2305,9 +2300,6 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   guest sent the 2 MB (372 packets, 0.8 s) but curl printed nothing, so the console's next line (the end marker's echo)
   was read as its answer; the download just before passed, and the next run passed. Print curl's exit code and
   `%{http_code}` with its answer if it recurs.
-- [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
-  end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
-  passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.
 - [B] **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
   case and runs the 2,032-case slice in 143 s against 162–163 at 2 (−12%, one machine of 1,536 MiB). `tests/page-deqp-vk.test.ts`
   takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two

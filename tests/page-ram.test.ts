@@ -114,8 +114,8 @@ test("the RAM map, live on Debian: data and changes counted, a guest's 64 MiB wr
   const second = await until(page, 'a second look, with changes', (v) => v.changed >= 0);
   assert.match((await page.locator('#ram-window [data-legend]').getAttribute('data-legend'))!, /zero some full changed cleared/);
   assert.match((await page.locator('#ram-window [data-field=ram-every]').textContent())!, /\d|second/);
-  await page.waitForTimeout(3000);
-  assert.ok((await now(page)).answers >= second.answers + 1, 'looked again');
+  // The next look: on a 1 GiB machine under CI's load one can take longer than a fixed wait (3 s once failed).
+  await until(page, 'looked again', (v) => v.answers >= second.answers + 1, 30_000);
 
   // 64 MiB of random bytes in a tmpfs: its pages hold data, and changed since the look before.
   // Every look's changed pages, summed as they come (the write may span two looks).
@@ -136,8 +136,13 @@ test("the RAM map, live on Debian: data and changes counted, a guest's 64 MiB wr
   const ahead = await changedSum();
   await ok(page, 'head -c 64M /dev/urandom > /dev/shm/x');
   const written = await until(page, '64 MiB written counted', (v) => v.data >= before.data + 14_000);
-  await page.waitForTimeout(3000); // a look after the write's last pages
-  const moved = (await changedSum()) - ahead;
+  // The looks after the write's last pages: waited for, not a fixed 3 s (the same wait as the one above).
+  const t0 = Date.now();
+  let moved = (await changedSum()) - ahead;
+  while (moved < 16_384 && Date.now() - t0 < 30_000) {
+    await page.waitForTimeout(100);
+    moved = (await changedSum()) - ahead;
+  }
   assert.ok(moved >= 16_384, `64 MiB of pages seen changed over the looks: ${String(moved)}`);
   if (process.env.RAM_SHOTS) await page.screenshot({ path: `${process.env.RAM_SHOTS}/ram-live.png` });
   // Gone: the guest gives the memory back (free page reporting zeroes it, ~2 s after the free), and it's cleared.
