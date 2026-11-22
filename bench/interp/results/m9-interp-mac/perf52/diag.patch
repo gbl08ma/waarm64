@@ -1,0 +1,420 @@
+diff --git a/core/src/interp.rs b/core/src/interp.rs
+index 1c574d37..380ff57c 100644
+--- a/core/src/interp.rs
++++ b/core/src/interp.rs
+@@ -4,7 +4,7 @@
+ //! a user-mode host wants (the golden corpus, the benchmarks); [`run_system`]
+ //! takes them into EL1 the way hardware does.
+ 
+-pub(crate) mod block;
++pub mod block;
+ /// The capture build only (Cargo feature `capture`): the block interpreter's micro-ops, for `examples/uops.rs`.
+ #[cfg(feature = "capture")]
+ pub use block::{Described, describe};
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index fd1154ea..5b9f2a59 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -1530,6 +1530,12 @@ impl Run {
+         }
+     }
+ 
++    /// DIAGNOSTIC: the micro-ops from `u` to the prefix's end.
++    pub fn prefix(&self) -> &[Uop] {
++        // SAFETY: `u` <= `end`, in the arena.
++        unsafe { core::slice::from_raw_parts(self.u, self.end.offset_from(self.u) as usize) }
++    }
++
+     /// The micro-op [`hot`] stopped at, as an index of `arena` (its).
+     pub fn at(&self, arena: &[Uop]) -> usize {
+         // SAFETY: `u` is in `arena`.
+@@ -3548,3 +3554,296 @@ impl Cache {
+ 
+ #[cfg(test)]
+ mod tests;
++
++/// DIAGNOSTIC (PERF loop 52; not for commit): `hot`'s returns, its slow exits by class and copy, the switches.
++pub mod diag {
++    use super::{K, Uop, ra, rsp};
++    use crate::decode::Op;
++    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
++    use std::collections::HashMap;
++    use std::sync::Mutex;
++    const NOPS: usize = Op::ALL.len();
++    /// Classes: an `Op` (generic), a kind (`NOPS + k`), then the loads' and stores' causes.
++    const X: usize = NOPS + 64;
++    const KINDS: [K; 7] = [K::Ld, K::St, K::LdO, K::StO, K::Fp, K::Ldp, K::Stp];
++    const CAUSES: [&str; 5] = ["mis", "cross", "other", "fpen", "sp"];
++    const N: usize = X + 8 * 5 + 8;
++    const FAR: usize = X + 8 * 5;
++    const FCAUSES: [&str; 8] = ["fpen", "mode", "ixc", "zero_sum", "zero_exact", "zero_other", "tiny", "big"];
++    /// [copy][class]: exits by the first micro-op's class; micro-ops run in stretches by class.
++    static EXITS: [[AtomicU64; N]; 2] = [const { [const { AtomicU64::new(0) }; N] }; 2];
++    static UOPS: [[AtomicU64; N]; 2] = [const { [const { AtomicU64::new(0) }; N] }; 2];
++    /// [copy][status]: `hot`'s returns; [copy]: steps retired in each copy.
++    static RETS: [[AtomicU64; 4]; 2] = [const { [const { AtomicU64::new(0) }; 4] }; 2];
++    static STEPS: [AtomicU64; 2] = [const { AtomicU64::new(0) }; 2];
++    /// Copy changes: 0 SWITCH into rich, 1 SWITCH into lean, 2 into rich through `interpret`'s
++    /// slow path (NEXT), 3 into lean so, 4 `interpret` starting in rich, 5 starting lean.
++    static CHG: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
++    /// Blocks entered rich (a switch or a start or NEXT), by their rich micro-ops: 0 one VImm and
++    /// nothing else rich, 1 VImms only (more than one), 2 anything else; [3..6] their steps in the
++    /// stint they start (to the next change or the end of the call); [6..9] stints of exactly the
++    /// block's prefix (it ran alone in the rich copy).
++    static RB: [AtomicU64; 9] = [const { AtomicU64::new(0) }; 9];
++    /// Rich stints' lengths in steps: <=4, <=16, <=64, <=256, more.
++    static STINT: [AtomicU64; 5] = [const { AtomicU64::new(0) }; 5];
++    static TOT: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
++    /// Exits by copy and the stretch's distinct classes (sorted, at most 4; 5th 0xffff if more).
++    #[allow(clippy::type_complexity)]
++    static COMBO: Mutex<Option<HashMap<(u8, [u16; 5]), (u64, u64)>>> = Mutex::new(None);
++
++    fn class(u: &Uop) -> usize {
++        if u.kind() == K::Generic {
++            (u.d as u16 | (u.n as u16) << 8) as usize
++        } else {
++            NOPS + u.k as usize
++        }
++    }
++
++    fn name(i: usize) -> String {
++        if i >= FAR {
++            return format!("Farith_{}", FCAUSES[i - FAR]);
++        }
++        if i >= X {
++            let k = ["Ld", "St", "LdO", "StO", "FpL", "Ldp", "Stp", "FpS"][(i - X) / 5];
++            return format!("{k}_{}", CAUSES[(i - X) % 5]);
++        }
++        if i < NOPS {
++            format!("{:?}", Op::ALL[i])
++        } else {
++            // SAFETY: a K's discriminant.
++            format!("K_{:?}", unsafe { core::mem::transmute::<u8, K>((i - NOPS) as u8) })
++        }
++    }
++
++    /// A load's or store's slow path's cause, as a class.
++    fn cause(c: &crate::cpu::Cpu, u: &Uop) -> Option<usize> {
++        if u.kind() == K::Farith {
++            let w = u.w;
++            let (rd_, rn_, rm_) = ((w & 31) as usize, (w >> 5 & 31) as usize, (w >> 16 & 31) as usize);
++            let _ = rd_;
++            let x = u.m as u32;
++            let (dbl, op) = (x & 1 != 0, x >> 1 & 3);
++            let k = if !super::fp_on(c) {
++                0
++            } else if c.fpcr & (super::RMODE | super::FZ) != 0 {
++                1
++            } else if c.fpsr & super::IXC == 0 {
++                2
++            } else {
++                let (a, b) = (c.v[rn_] as u64, c.v[rm_] as u64);
++                let (e, za, zb) = if dbl {
++                    let (p, q) = (f64::from_bits(a), f64::from_bits(b));
++                    let r = match op { 0 => p * q, 1 => p / q, 2 => p + q, _ => p - q };
++                    ((r.to_bits() >> 52 & 0x7ff) as i64 | ((r == 0.0) as i64) << 20, p == 0.0, q == 0.0)
++                } else {
++                    let (p, q) = (f32::from_bits(a as u32), f32::from_bits(b as u32));
++                    let r = match op { 0 => p * q, 1 => p / q, 2 => p + q, _ => p - q };
++                    ((r.to_bits() >> 23 & 0xff) as i64 | ((r == 0.0) as i64) << 20, p == 0.0, q == 0.0)
++                };
++                let big = if dbl { 0x7ff } else { 0xff };
++                if e >> 20 != 0 {
++                    if op >= 2 {
++                        3
++                    } else if za || op == 0 && zb {
++                        4
++                    } else {
++                        5
++                    }
++                } else if e & 0xfffff == big {
++                    7
++                } else {
++                    6
++                }
++            };
++            return Some(FAR + k);
++        }
++        let j = KINDS.iter().position(|&k| k == u.kind())?;
++        let base = rsp(c, u.n as u32);
++        let w = u.w;
++        let imm = (w as i32 >> 16) as i64 as u64;
++        let (addr, bytes, align, fpen, store, j) = match u.kind() {
++            K::LdO | K::StO => {
++                let b = 4u64 << (w & 1);
++                (base.wrapping_add(imm), b, b, true, u.kind() == K::StO, j)
++            }
++            K::Ld | K::St => {
++                let a = match w >> 2 & 3 {
++                    0 | 1 => base.wrapping_add(imm),
++                    2 => base,
++                    _ => base.wrapping_add(super::super::extend(ra(c, u.m as u32), w >> 8 & 7, w >> 12 & 7)),
++                };
++                (a, 1u64 << (w & 3), 1u64 << (w & 3), true, u.kind() == K::St, j)
++            }
++            K::Ldp | K::Stp => {
++                let (size, mode) = ((w & 15) as u64, w >> 8 & 3);
++                let a = if mode == 1 { base } else { base.wrapping_add(imm) };
++                (a, 2 * size, size, true, u.kind() == K::Stp, if u.kind() == K::Ldp { 5 } else { 6 })
++            }
++            _ => {
++                // SAFETY: an Fp's `w` is its constant's distance.
++                let kv = unsafe { super::konst(u) };
++                let x = (kv >> 32) as u32 & 0xff;
++                let (log, mode) = (x & 7, x >> 3 & 3);
++                let off = ((kv as i64) >> 40) as u64;
++                let a = if mode == 2 { base } else { base.wrapping_add(off) };
++                let bytes = 1u64 << log;
++                let span = if x >> 6 & 1 != 0 { 2 * bytes } else { bytes };
++                let en = c.cpacr_el1 >> 20 & 3;
++                let load = x >> 5 & 1 != 0;
++                (a, span, bytes.min(8), en == 3 || en == 1 && c.el() == 1, !load, if load { 4 } else { 7 })
++            }
++        };
++        let cause = if !fpen {
++            3
++        } else if u.n == 31 && base & 15 != 0 {
++            4
++        } else if (addr & 0xfff) + bytes > 0x1000 {
++            1
++        } else if store && addr & (align - 1) != 0 {
++            0
++        } else {
++            2
++        };
++        Some(X + 5 * j + cause)
++    }
++
++    /// One exit from `hot`'s copy `rich`: the stretch's `n` micro-ops from `b[0]`.
++    pub fn exit(rich: bool, c: &crate::cpu::Cpu, b: &[Uop], n: usize) {
++        let r = rich as usize;
++        let k0 = cause(c, &b[0]).unwrap_or_else(|| class(&b[0]));
++        EXITS[r][k0].fetch_add(1, Relaxed);
++        let mut set = [k0 as u16, 0xfffe, 0xfffe, 0xfffe, 0xfffe];
++        let mut m = 1;
++        UOPS[r][k0].fetch_add(1, Relaxed);
++        for u in &b[1..n] {
++            let k = class(u);
++            UOPS[r][k].fetch_add(1, Relaxed);
++            if !set[..m.min(4)].contains(&(k as u16)) {
++                if m < 4 {
++                    set[m] = k as u16;
++                } else {
++                    set[4] = 0xffff;
++                }
++                m += 1;
++            }
++        }
++        set[..m.min(4)].sort_unstable();
++        let mut g = COMBO.lock().unwrap();
++        let e = g.get_or_insert_with(HashMap::new).entry((rich as u8, set)).or_default();
++        e.0 += 1;
++        e.1 += n as u64;
++        TOT[0].fetch_add(1, Relaxed);
++        TOT[1].fetch_add(n as u64, Relaxed);
++    }
++
++    /// `hot` returned `status` from copy `rich`, after `steps` retired in it.
++    pub fn ret(rich: bool, status: u32, steps: u64) {
++        RETS[rich as usize][status as usize & 3].fetch_add(1, Relaxed);
++        STEPS[rich as usize].fetch_add(steps, Relaxed);
++    }
++
++    /// What kind of rich block `b` (its prefix) is (`RB`'s index).
++    pub fn rich_block(b: &[Uop]) -> usize {
++        let (mut vimm, mut other) = (0, 0);
++        for u in b {
++            if super::rich_kind(u.k) {
++                if u.kind() == K::VImm {
++                    vimm += 1;
++                } else {
++                    other += 1;
++                }
++            }
++        }
++        if other > 0 || vimm == 0 {
++            2
++        } else if vimm == 1 {
++            0
++        } else {
++            1
++        }
++    }
++
++    /// A change of copy (`CHG`'s index `how`); into rich, the block's kind.
++    pub fn change(how: usize) {
++        CHG[how].fetch_add(1, Relaxed);
++    }
++
++    /// A rich stint ended: it began at a block of kind `kind`, `len` its prefix, `steps` long.
++    pub fn stint(kind: usize, len: u64, steps: u64) {
++        RB[kind].fetch_add(1, Relaxed);
++        RB[3 + kind].fetch_add(steps, Relaxed);
++        if steps == len {
++            RB[6 + kind].fetch_add(1, Relaxed);
++        }
++        let b = match steps {
++            0..=4 => 0,
++            5..=16 => 1,
++            17..=64 => 2,
++            65..=256 => 3,
++            _ => 4,
++        };
++        STINT[b].fetch_add(1, Relaxed);
++    }
++
++    /// Steps interpreted (to put the counts against).
++    pub fn steps(n: u64) {
++        let before = TOT[2].fetch_add(n, Relaxed);
++        TOT[3].fetch_add(1, Relaxed);
++        #[cfg(target_arch = "wasm32")]
++        if (before + n) >> 26 != before >> 26 {
++            let s = report();
++            // SAFETY: the host reads `len` bytes at `ptr`.
++            unsafe { diag_log(s.as_ptr(), s.len()) };
++        }
++        let _ = before;
++    }
++
++    #[cfg(target_arch = "wasm32")]
++    #[link(wasm_import_module = "env")]
++    unsafe extern "C" {
++        fn diag_log(ptr: *const u8, len: usize);
++    }
++
++    fn list(a: &[AtomicU64]) -> String {
++        a.iter().map(|v| v.load(Relaxed).to_string()).collect::<Vec<_>>().join(",")
++    }
++
++    /// One line: totals, then every class with exits or micro-ops, then the combinations.
++    pub fn report() -> String {
++        let mut s = format!(
++            "waarm64-slow waarm64-diag52 exits {} uops {} steps {} interps {} rets {}/{} steps2 {} chg {} rb {} stint {} |",
++            TOT[0].load(Relaxed),
++            TOT[1].load(Relaxed),
++            TOT[2].load(Relaxed),
++            TOT[3].load(Relaxed),
++            list(&RETS[0]),
++            list(&RETS[1]),
++            list(&STEPS),
++            list(&CHG),
++            list(&RB),
++            list(&STINT),
++        );
++        for r in 0..2 {
++            for i in 0..N {
++                let (e, u) = (EXITS[r][i].load(Relaxed), UOPS[r][i].load(Relaxed));
++                if e | u != 0 {
++                    s += &format!(" {r}{}:{e}:{u}", name(i));
++                }
++            }
++        }
++        s += " | combos";
++        if let Some(g) = COMBO.lock().unwrap().as_ref() {
++            let mut v: Vec<_> = g.iter().collect();
++            v.sort_by_key(|e| core::cmp::Reverse(e.1.0));
++            for ((r, set), (e, n)) in v.iter().take(400) {
++                let names: Vec<String> = set
++                    .iter()
++                    .filter(|&&k| k != 0xfffe)
++                    .map(|&k| if k == 0xffff { "+".into() } else { name(k as usize) })
++                    .collect();
++                s += &format!(" {r}{}:{e}:{n}", names.join("&"));
++            }
++        }
++        s
++    }
++}
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 9cdc6872..f341b3eb 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2646,13 +2646,19 @@ fn interpret<B: Regime>(
+     // `hot`'s rich copy for the blocks that have a micro-op only it runs (FP
+     // and AdvSIMD), the lean one for the rest: chosen at each block's start.
+     let mut rich = t.dec.rich(key);
++    use interp::block::diag;
++    diag::change(if rich { 4 } else { 5 });
++    // DIAGNOSTIC: the rich stint going on (its first block's kind and prefix, the steps before it).
++    let mut stint = rich.then(|| (diag::rich_block(r.prefix()), r.prefix().len() as u64, 0u64));
+     let res = loop {
+         let jc = &t.jc;
++        let before_hot = r.retired();
+         let s = if rich {
+             interp::block::hot::<_, true>(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r)
+         } else {
+             interp::block::hot::<_, false>(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r)
+         };
++        diag::ret(rich, s, r.retired() - before_hot);
+         match s {
+             STOP => {
+                 *next_key = r.next;
+@@ -2660,12 +2666,20 @@ fn interpret<B: Regime>(
+             }
+             SWITCH => {
+                 rich = !rich;
++                diag::change(if rich { 0 } else { 1 });
++                if let Some((k, l, b)) = stint.take() {
++                    diag::stint(k, l, r.retired() - b);
++                }
++                if rich {
++                    stint = Some((diag::rich_block(r.prefix()), r.prefix().len() as u64, r.retired()));
++                }
+                 continue;
+             }
+             SLOW => {
+                 let (n, u, last) = r.stretch();
+                 let before = r.retired();
+                 let a = t.dec.arena();
++                diag::exit(rich, cpu, &a[r.at(a)..], n);
+                 let (k, e) = interp::block::run(cpu, m, &a[r.at(a)..], n, r.pc);
+                 if e.is_some() {
+                     break (before + k, e);
+@@ -2703,8 +2717,22 @@ fn interpret<B: Regime>(
+             break (r.done, None);
+         };
+         r.enter(b, k, next);
++        let was = rich;
+         rich = t.dec.rich(k);
++        if rich != was {
++            diag::change(if rich { 2 } else { 3 });
++            if let Some((k, l, b)) = stint.take() {
++                diag::stint(k, l, r.retired() - b);
++            }
++            if rich {
++                stint = Some((diag::rich_block(r.prefix()), r.prefix().len() as u64, r.retired()));
++            }
++        }
+     };
++    if let Some((k, l, b)) = stint.take() {
++        diag::stint(k, l, r.done - b);
++    }
++    diag::steps(res.0);
+     t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
+     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);
+     t.stats.rescues += core::mem::take(&mut t.dec.rescues);
+diff --git a/core/tests/distros.rs b/core/tests/distros.rs
+index 6fe3482a..1fbc7061 100644
+--- a/core/tests/distros.rs
++++ b/core/tests/distros.rs
+@@ -78,6 +78,7 @@ fn alpine_boots_through_the_block_interpreter() {
+         ..Boot::new(&kernel, d.cmdline)
+     });
+     eprintln!("\n[{}]", r.summary);
++    eprintln!("{}", waarm64_core::interp::block::diag::report());
+     assert!(r.console.contains("waarm64: test ok\n"), "test failed");
+     assert_eq!(r.steps, common::steps("alpine"));
+ }
+diff --git a/web/core.ts b/web/core.ts
+index a6ae395a..db6a9527 100644
+--- a/web/core.ts
++++ b/web/core.ts
+@@ -73,7 +73,7 @@ export function coreImports(
+   const now_ms = wrap('clock', () => clock + performance.now());
+   const jit = jitHost(memory, now_ms, compile, spill);
+   return {
+-    env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile },
++    env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile, diag_log: (p: number, l: number) => console.debug(new TextDecoder().decode(new Uint8Array(memory.buffer, p >>> 0, l).slice())) },
+     ram: spillImports(spill),
+     jit,
+   };

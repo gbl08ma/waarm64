@@ -80,7 +80,9 @@ interpreter's speed is the lever for loads and starts. The items below are ranke
 the Mac, loop 1" says (counts first; the block-interpreter guests; the pages session for cold-code changes).
 
 - **What makes `hot` return in a browser** (counted 2026-11-09, `bench/interp/REPORT.md` "The block interpreter on the
-  Mac, loop 1"; Firefox's pages session, 678 M block runs, `hot` entered 266 M times). One cause is the
+  Mac, loop 1"; Firefox's pages session, 678 M block runs, `hot` entered 266 M times). Its exits to the slow path
+  and its switches between copies, counted again in PERF loop 52, are ~1% of the session's busy time, every cause
+  left under ~0.26% ([cpu.md](cpu.md) "What still leaves `hot`"): not worth handlers. One cause is the
   interpreter's own:
   - **Decoding** (`Cache::miss` and its closure 1.64% of busy ticks, loop 3; 19% faster natively since loop 4, no
     allocation a block): what's left is compute, the decoder, `pack_into` and `uop_op`'s matches.

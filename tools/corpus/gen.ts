@@ -637,11 +637,52 @@ function fpForm(name: string, pat: string, count: number, o: { fix?: (r: Rng) =>
   };
 }
 
+/**
+ * FMUL, FDIV, FADD and FSUB of S or D whose result is mostly a zero: x + -x, x - x, a zero factor or
+ * dividend (either sign), sometimes against an infinity, a NaN or a zero divisor; a product or quotient
+ * that underflows to zero beside them. FPCR mostly 0 and FPSR.IXC mostly set: the fast paths' zero
+ * clause (docs/jit.md "Floating point"; PERF loop 52).
+ */
+function dp2zero(count: number): Form {
+  return {
+    name: "dp2zero",
+    count,
+    gen(r) {
+      const o = r.int(4); // FMUL, FDIV, FADD, FSUB
+      const { w, f } = enc(r, "00011110yy1mmmmmoooo10nnnnnddddd", { y: r.int(2), o });
+      if (f.n === f.m) return undefined;
+      const t = fpFmt(f.y);
+      const bits = BigInt(1 + t.e + t.f), signBit = 1n << (bits - 1n);
+      const m = new Map<string, bigint>();
+      setFp(r, m, f.n, t);
+      setFp(r, m, f.m, t);
+      const lane = (l: number) => m.get(`v${l}`)! & ((1n << bits) - 1n);
+      const put = (l: number, v: bigint) => m.set(`v${l}`, (m.get(`v${l}`)! & ~((1n << bits) - 1n)) | v);
+      const x = lane(f.n);
+      switch (r.int(4)) {
+        case 0: put(f.m, o === 2 ? x ^ signBit : x); break; // x + -x, x - x (and x * x, x / x)
+        case 1: put(f.n, r.chance(0.5) ? signBit : 0n); break; // a zero first operand
+        case 2: put(f.m, r.chance(0.5) ? signBit : 0n); break; // a zero second operand
+        default: {
+          // Tiny magnitudes: products and quotients that underflow to zero.
+          const tiny = (e: number) => (r.chance(0.5) ? signBit : 0n) | (BigInt(e) << BigInt(t.f)) | (r.u64() & ((1n << BigInt(t.f)) - 1n));
+          put(f.n, tiny(r.int(3)));
+          put(f.m, o === 1 ? (r.chance(0.5) ? signBit : 0n) | ((1n << BigInt(t.e)) - 2n) << BigInt(t.f) : tiny(r.int(3)));
+        }
+      }
+      if (r.chance(0.2)) fpEnv(r, m);
+      else m.set("fpsr", r.chance(0.85) ? 0x10n : 0n);
+      return { code: [w], in: m };
+    },
+  };
+}
+
 const fty = (r: Rng) => (r.chance(0.95) ? r.int(2) : 2); // S or D; 2 is unallocated
 const DP1 = [1, 2, 3, 8, 9, 10, 11, 12, 14, 15]; // FABS FNEG FSQRT FRINT{N,P,M,Z,A,X,I}
 const fpScalar: Form[] = [
   fpForm("dp2", "00011110yy1mmmmmoooo10nnnnnddddd", 1500, { fix: (r) => ({ y: fty(r), o: r.int(9) }) }),
   fpForm("dp1", "00011110yy1oooooo10000nnnnnddddd", 900, { fix: (r) => ({ y: fty(r), o: r.pick(DP1) }) }),
+  dp2zero(400),
   fpForm("fcvt", "00011110yy10001oo10000nnnnnddddd", 500, {
     // S, D and H in both directions; the same type or type 2 is unallocated,
     // except D to type 2, which is BFCVT (FEAT_BF16's: group bf16).

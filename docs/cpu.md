@@ -612,7 +612,8 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
 - **FP and NEON in a second copy of `hot`, chosen per block** (`hot::<_, true>`, a const generic; `bench/interp/REPORT.md`
   "PERF loop 17" and "PERF loop 19"). Its handlers: MOVI/MVNI/FMOV immediate (`VImm`), FCSEL and FMOV, FCMP/FCMPE (NaNs
   and FZ slow), FADD/FSUB/FMUL/FDIV of S and D on the JIT's fast-path rules (round to nearest, FZ clear, IXC already set,
-  a result normal above the smallest binade), FMOV between general and FP registers, vector AND/BIC/ORR/ORN/EOR and
+  a result normal above the smallest binade, or a zero that's exact as the JIT's zero clause has it: any zero sum, a
+  zero product with a zero factor, a zero quotient with a zero dividend: `exact_zero`), FMOV between general and FP registers, vector AND/BIC/ORR/ORN/EOR and
   ADD, DUP (general), SCVTF/UCVTF, FABS/FNEG, FCVT between S and D, and the literal loads; anything else (a disabled
   FPEN, FPCR's other modes) takes the slow path, where `run` runs these kinds as generic micro-ops. A block with one of
   these kinds (`rich_kind`: a kind after `Msr`) is marked at decode (bit 31 of the map's `Known::at`, a `bool` in its
@@ -621,7 +622,9 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
   whose loop the FP handlers would slow (~10% in the rich copy, V8's registers), and the lean copy never meets an FP
   kind. The FP guest +12-14%, Alpine's boot and the MMU guest even, `dec_mips` −0.5-0.7% (layout), Firefox's pages
   session even (10.8 M switches a session, 1.45 M on Alpine's boot). Literal loads don't choose the rich copy (they
-  ran even when they did); the lean copy's stretches take them.
+  ran even when they did); the lean copy's stretches take them. Exact zero results were 3.1 M of the rich copy's
+  11.3 M exits in Firefox's pages session (the `Farith` slow path's 3.3 M; `bench/interp/REPORT.md` "PERF loop 52"):
+  inline since.
 - **Runs of MOVs** (MOVZ, MOVN, MOV of a bitmask immediate: `MovI`) go in one dispatch: each carries
   the number of MovIs right after it (`mov_runs`, at decode), and `hot` writes them all, never past
   the prefix (`run` ignores the count). +2-5% (`bench/interp/REPORT.md` "M8-INTERP loop 4").
@@ -746,6 +749,24 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
   pages session, above; in the rich copy they would need a block's copy chosen at run time, since a store's alignment
   isn't known at decode), TLB misses (a walk is a call), literal loads (2.6 M; inline in `hot` lost, above), and on
   Alpine STTR/LDTR (0.87 M, below), MRS/MSR the handlers don't know, ISB, ERET and CASP (0.2-0.5 M each).
+- **What still leaves `hot`, counted again** (`bench/interp/REPORT.md` "PERF loop 52", Firefox's pages session on
+  the Mac: 3.49 G interpreted steps, 147 M `jit::interpret` calls, 26.7 M exits from `hot` and 11.3 M switches between
+  its copies; by loop 1's ~40 ns an exit, the exits are ~1% of the session's busy time, so no single cause below is
+  worth a loop of its own; the interpreter's time is its steps and its 133 M stops before compiled blocks):
+  - *Cheaper `SWITCH` re-entry:* 11.3 M switches, a return and a re-entry without the slow path's call, so under
+    ~0.45% at an exit's whole cost; what re-entry could save (the context, the run's state) is a part of that.
+  - *Single-MOVI rich blocks:* 2.0 M rich stints start at a block whose only rich micro-op is one MOVI (1.9 M of
+    them that block alone: ~3.8 M of the switches), under ~0.15%, for a VImm handler in the lean copy, whose size is
+    what loops 4 and 17 lost to.
+  - *Blocks marked rich at run time for hot slow paths:* misaligned stores 6.5 M (5.3 M in the lean copy), at most
+    ~0.26% if they cost nothing inline, and a block so marked would pay a switch in and out at most entries (most rich
+    stints are one block); STTR/LDTR 0.33 M and CASP under 0.01 M in the browser (on Alpine's block-interpreter boot
+    0.9 M and 0.3 M of its 6.4 M exits, ~0.5% of a boot the JIT gates compile: in the lean copy they lost, below).
+  - *More rich handlers:* after the zero results, every family is under ~1.2 M exits a session (permutes TBL, INS,
+    UZP/ZIP, DUP by element, REV32 ~1.2 M; LDR/STR (register, SIMD&FP) ~1.0 M; shifts ~0.7 M; CMxx ~0.5 M;
+    FMINNM/FMAXNM 0.44 M; FCVTZS/U ~0.4 M; FRINTx ~0.4 M; FMADD 0.17 M): under ~0.05% each. They matter to the FP
+    guest (its exits are 21% of its steps: FMLA by element 7.4 M, LDR (register) 10 M a placement), not to a browser.
+  - *Literal loads in the lean copy:* 2.5 M, ~0.1%; inline they lost (above), and choosing the rich copy ran even.
 - **XZR's writes through a sink slot,** as its reads go through `Cpu::zero` (`bench/interp/REPORT.md` "XZR's writes without
   a compare"): nothing past noise on the boots, the flat guest −23%. A shared TLB probe for pairs of LdOs and StOs
   lost it −19.5% the same way: a change to `hot` that reads as smaller can still cross what V8's register allocation holds.

@@ -2503,3 +2503,72 @@ switching, no rich bit at decode, the steps of a block entered at a switch not c
 family (literal loads, VImm, FCSEL, FCMP, FADD/FSUB/FMUL/FDIV, FMOV general, vector logic, vector ADD, DUP, SCVTF/UCVTF,
 FABS/FNEG, FCVT) failed the random-block test or the conversions' directed test. `tests/core-wasm.test.ts` checks the
 four copies of `hot` (lean and rich, flat and MMU) for calls. Steps don't move. `scripts/ci.sh`, `ci-fp.sh` and `ci-jit.sh` passed.
+
+## PERF loop 52: what leaves `hot` counted again; exact zero results inline (2026-11-22)
+
+The Mac host (Apple M4, macOS 26.6.2), Chrome for Testing 158.0.8127.36; base `9895a9bd`; raw
+`results/m9-interp-mac/perf52/` (README). The queue's entry was loop 19's ideas: a cheaper `SWITCH` re-entry, more rich
+handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes), blocks marked rich at run
+time for hot slow paths (misaligned stores, STTR/LDTR, CASP), and the single-MOVI rich blocks. One counting core for
+all of them (`diag.patch`): `hot`'s returns by copy and status, the steps each copy retired, the changes of copy (a
+`SWITCH`, `interpret`'s slow path, its start), each rich stint by the block that started it (one MOVI and nothing else
+rich, MOVIs only, anything else) and its length, and each exit by copy, its first micro-op's class (an `Op`, a handled
+kind, or a load's or store's cause: misaligned, across a page, other, FPEN, the SP) and its stretch's classes together.
+
+**The counts.** Firefox's pages session from the snapshot (`pages-diag.txt`, process-wide, the last of its lines):
+3.49 G interpreted steps in 146.8 M `jit::interpret` calls; `hot` returned 134 M times to stop before a compiled block
+(STOP), 28 M for a next block out of its slot (NEXT), 26.7 M to the slow path (SLOW: 0.76% of the steps, 35.3 M
+micro-ops in their stretches) and 11.3 M to switch copies (SWITCH); 3.4% of the steps ran in the rich copy.
+
+| Idea | Pages session | Alpine's native boot through the block interpreter (`alpine-native-diag.txt`) | The FP guest (`dec_fp_mips-diag.txt`, one placement) |
+|---|---|---|---|
+| `SWITCH` re-entry | 11.3 M switches | 1.45 M (6.4 M exits, 2.65 G steps) | 0.96 M (28 M exits, 134 M steps) |
+| single-MOVI rich blocks | 2.04 M stints start at one, 1.92 M of them that block alone (~3.8 M switches); 0.20 M at MOVIs only | 0.18 M stints, all alone | none |
+| misaligned stores | 6.5 M (StO 3.3, SIMD&FP 2.3, St 0.86, STP 0.10); 5.3 M of them in the lean copy | 0.44 M | — |
+| STTR/LDTR, CASP | 0.33 M; CASP under 0.01 M | 0.91 M; CASP 0.30 M | — |
+| more rich handlers | the `Farith` slow path 3.29 M (below); then permutes ~1.2 M, LDR/STR (register, SIMD&FP) ~1.0 M, shifts ~0.7 M, CMxx ~0.5 M, FMINNM/FMAXNM 0.44 M, FCVTZS/U ~0.4 M, FRINTx ~0.4 M, FCCMP 0.19 M, FMADD 0.17 M | the SHA-256 loop's 1.7 M (crypto) | FMLA by element 7.9 M, LDR (register) 10.1 M, SCVTF (SIMD) 4.0 M, FMADD 1.2 M, FMLA 1.3 M |
+| (literal loads, not an idea) | 2.49 M, in the lean copy | — | — |
+
+The rich copy's `Farith` slow path (FADD/FSUB/FMUL/FDIV) was its largest exit, and a second session with its causes
+(the same core counting why) put **3.11 M of its 3.29 M on exact zero results**: 2.02 M zero products or quotients with
+a zero factor or dividend, 1.09 M zero sums; IXC clear 0.010 M, infinities and NaNs 0.008 M. The JIT takes those
+inline (docs/jit.md "Floating point", its zero clause); the interpreter's handler didn't.
+
+**Bounds**, by loop 1's ~40 ns an exit with its slow path and ~100 s of busy vCPU a session: all 26.7 M exits are ~1%
+of the session's busy time. A switch is a return and a re-entry without the slow path, so the 11.3 M are under ~0.45%,
+and a cheaper re-entry saves a part of that; the single-MOVI blocks' switches under ~0.15%, for a MOVI handler in the
+lean copy; misaligned stores under ~0.26% even if free inline, and a block chosen for the rich copy at run time would
+pay a switch in and out at most of its entries (3.9 M of the 7.7 M rich stints are their first block alone); STTR/LDTR
+and CASP under ~0.015% in the browser (in Alpine's block-interpreter boot ~0.5%, a boot the JIT gates compile; loop 13
+lost LDTR/STTR in the lean copy); each further handler family under ~0.05%; the zero results ~0.12%. Only the zero
+clause is the JIT's rule already, the rich copy's alone and a few instructions, so only it was built.
+
+**The arm** (`zero`): `exact_zero`, the JIT's zero clause in the rich copy's `Farith`, after its normal-result test
+fails: a zero sum, a zero product with a zero factor, a zero quotient with a zero dividend, FZ clear (the fast path's
+guard already). Rich `hot` 15,365 → 15,483 bytes (MMU), 14,893 → 15,011 (flat); the lean copies unchanged (13,244 and
+12,779); no call. MIPS or ms, medians of each round, rounds alternated with the first arm swapped (`p52s<r>-…`):
+
+| | main | zero |
+|---|---|---|
+| `dec_mips` | 516.6 · 515.1 · 514.3 | 512.7 · 514.4 · 515.3 |
+| `vm_dec_mmu_mips` | 519.8 · 517.8 · 516.1 | 518.1 · 513.5 · 516.1 |
+| Alpine's boot through the block interpreter | 259.4 · 254.7 · 254.3 | 255.2 · 255.4 · 254.2 |
+| `dec_fp_mips` | 77.6 · 77.3 · 77.4 | 77.4 · 77.4 · 77.2 |
+| `alpine_jit_total` (ms) | 3667.8 · 3705.6 · 3707.9 | 3678.6 · 3702.3 · 3704.8 |
+| `alpine_user_jit_total` (ms) | 9769.3 · 9859.8 · 9938.5 | 9853.0 · 10152.4 · 9904.4 |
+
+Firefox's pages session (`bench/gpu/ab-mac.sh`, three rounds alternated; `pagesS`, `pages-summary.txt`): main 73.1 ·
+71.6 · 72.4 s, zero 72.6 · 72.4 · 72.9 s; interpreted 3.50-3.57 G in all. Everything even, the rounds overlapping (main's
+first Alpine boot the session's first, an outlier), as the counts bound it. **Kept: zero**, under the floor by the
+counts, small and tested: it takes the 3.1 M exits a session the JIT never had, and the interpreter's FP fast path now
+follows the JIT's rule exactly. No memory (118 bytes of code a regime). **Not built**, findings (docs/cpu.md "What
+still leaves `hot`"): the cheaper `SWITCH`, the single-MOVI blocks, the run-time rich blocks, the further handlers.
+What the interpreter costs a browser is its steps and the 134 M stops before compiled blocks, not its exits.
+
+Correctness: `exact_zero_results_run_as_the_interpreter_runs_them` (FADD, FSUB, FMUL, FDIV of S and D to a zero: sums
+of opposites and of denormals, a zero factor or dividend of either sign, 0 × ∞, an underflow to zero, x / ∞, 0 / 0, with
+FZ, IXC clear or set) checks the result against `interp::steps` and that `hot` takes exactly the exact zeros inline.
+Planted, each caught by it (two also by the random-block test): any zero taken, the dividend clause dropped, the single's
+sign kept in the operands' test, the sum's op bit wrong. The golden corpus has a new `fp_scalar` form, `dp2zero` (400
+tests, 280 with FPCR 0 and IXC set; the M4's results, QEMU agreeing), which the block interpreter on wasm failed with
+"any zero taken" planted. Steps don't move. `scripts/ci.sh` and `ci-fp.sh` passed (the JIT untouched: no `ci-jit.sh`).

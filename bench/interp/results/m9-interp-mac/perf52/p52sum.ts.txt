@@ -1,0 +1,20 @@
+// PERF loop 52's screen: medians per round (p52s<r>-r1-<arm>-<file>.json under bench/results/local/mac/).
+//   node sum.ts <arms,> [prefix=p52s]
+import { existsSync, readFileSync } from 'node:fs';
+const [arms, prefix = 'p52s'] = process.argv.slice(2);
+const rows: [string, string][] = [['dec_mips', 'dec_mips'], ['vm_dec_mmu_mips', 'vm_dec_mmu_mips'], ['boot_alpine_dec', 'boot_alpine_dec_mips'], ['dec_fp_mips', 'dec_fp_mips'], ['boot_alpine_jit', 'alpine_jit_total'], ['alpine_user_jit', 'alpine_user_jit_total']];
+for (const [file, name] of rows) {
+  const out: string[] = [];
+  for (const a of arms.split(',')) {
+    const v: number[] = [];
+    for (let r = 1; r <= 5; r++) {
+      const f = `bench/results/local/mac/${prefix}${r}-r1-${a}-${file}.json`;
+      if (!existsSync(f)) continue;
+      const x = JSON.parse(readFileSync(f, 'utf8')).results.find((x: { name: string }) => x.name === name);
+      if (x) v.push(x.median);
+    }
+    const med = [...v].sort((p, q) => p - q)[v.length >> 1];
+    out.push(`${a} ${v.map((x) => x.toFixed(1)).join(' · ')} (median ${med?.toFixed(1)})`);
+  }
+  console.log(`${name}: ${out.join(' | ')}`);
+}

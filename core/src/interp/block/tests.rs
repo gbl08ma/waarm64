@@ -838,6 +838,85 @@ fn a_result_rounded_up_to_the_smallest_normal_underflows() {
     }
 }
 
+/// FADD, FSUB, FMUL and FDIV of S and D whose result is a zero, run as the
+/// interpreter runs them: the rich copy takes the exact zeros inline, as the
+/// JIT's zero clause does (a zero sum, a zero product with a zero factor, a zero
+/// quotient with a zero dividend), and leaves the rest (an underflow to zero, a
+/// quotient by infinity, FZ, IXC clear) to the slow path.
+#[test]
+fn exact_zero_results_run_as_the_interpreter_runs_them() {
+    let t = TestRam::new(RAM);
+    // (op's word bits 15:12, operands as doubles, whether the rich copy takes it inline)
+    let tiny = f64::from_bits(1);
+    let cases: [(u32, f64, f64, bool); 13] = [
+        (0x2, 1.5, -1.5, true),           // FADD x + -x
+        (0x2, -0.0, -0.0, true),          // FADD -0 + -0
+        (0x2, tiny, -tiny, true),         // FADD of denormals to zero
+        (0x3, 3.25, 3.25, true),          // FSUB x - x
+        (0x0, 0.0, 7.0, true),            // FMUL 0 × x
+        (0x0, -7.0, 0.0, true),           // FMUL x × 0
+        (0x0, 0.0, f64::INFINITY, false), // FMUL 0 × ∞: a NaN
+        (0x0, 1e-200, 1e-200, false),     // FMUL underflowing to zero
+        (0x1, -0.0, 5.0, true),           // FDIV 0 / x
+        (0x1, 5.0, f64::INFINITY, false), // FDIV x / ∞: no zero dividend
+        (0x1, 0.0, 0.0, false),           // FDIV 0 / 0: a NaN
+        (0x1, 1e-300, 1e300, false),      // FDIV underflowing to zero
+        (0x2, 2.0, 3.0, true),            // FADD, a normal result
+    ];
+    let mut fast = 0;
+    for (op, a, b, inline) in cases {
+        for dbl in [true, false] {
+            let w = if dbl { 0x1e62_0820u32 } else { 0x1e22_0820 } | op << 12;
+            let bits = |v: f64| {
+                if dbl {
+                    v.to_bits() as u128
+                } else if v == tiny || v == -tiny {
+                    // The single's smallest denormal, with the double's sign.
+                    (1 | (v.is_sign_negative() as u32) << 31) as u128
+                } else if v.abs() == 1e-200 || v.abs() == 1e-300 {
+                    1e-30f32.to_bits() as u128
+                } else if v.abs() == 1e300 {
+                    1e30f32.to_bits() as u128
+                } else {
+                    (v as f32).to_bits() as u128
+                }
+            };
+            t.mem.write(CODE, 4, w as u64).unwrap();
+            for (fpcr, fpsr) in [(0, 1 << 4), (0, 0), (1 << 24, 1 << 4)] {
+                let mut c0 = Cpu {
+                    pc: CODE,
+                    cpacr_el1: 3 << 20,
+                    fpcr,
+                    fpsr,
+                    ..Cpu::default()
+                };
+                (c0.v[1], c0.v[2], c0.v[0]) = (bits(a), bits(b), u128::MAX);
+                let mut want = c0.clone();
+                interp::steps(&mut want, &t.mem, None, 1);
+                let mut got = c0.clone();
+                run_hot(&mut got, &mut Flat(&t.mem), &pack(&[uop(w)]), 1, CODE);
+                assert_eq!(got, want, "{w:#010x} {a} {b} fpcr {fpcr:#x} fpsr {fpsr:#x}");
+                // Inline (no SLOW from `hot`) exactly where the zero clause (or a normal
+                // result) allows, with FZ clear and IXC set.
+                let mut h = c0.clone();
+                let mut dec = Cache::new(1 << 10);
+                dec.arena = pack(&[uop(w)]);
+                let mut r = Run::new(1);
+                r.enter(&dec.arena[..1], 0, CODE);
+                let s = hot::<_, true>(&mut h, &mut Flat(&t.mem), &mut dec, |_| false, &mut r);
+                let plain = fpcr == 0 && fpsr != 0;
+                assert_eq!(
+                    s != SLOW,
+                    inline && plain,
+                    "{w:#010x} {a} {b} fpcr {fpcr:#x} fpsr {fpsr:#x}"
+                );
+                fast += (s != SLOW) as u32;
+            }
+        }
+    }
+    assert_eq!(fast, 2 * 8);
+}
+
 /// SCVTF/UCVTF of W and X to S and D, and FCVT between S and D, at their edges
 /// (negative and unsigned extremes, values that round, denormals and NaNs, FZ,
 /// the rounding modes, IXC clear or set), run as the interpreter runs them:

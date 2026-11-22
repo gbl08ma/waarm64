@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# PERF loop 52's screen: main and zero alternated, the first arm swapped each round.
+cd "$(dirname "$0")/../../../.."
+A=bench/results/local/perf52/arms
+for r in 1 2 3; do
+  if [ $((r % 2)) = 1 ]; then arms=("main=$A/main.wasm" "zero=$A/zero.wasm"); else arms=("zero=$A/zero.wasm" "main=$A/main.wasm"); fi
+  timeout 3000 bench/interp/ab-mac.sh p52s$r 1 "${arms[@]}" -- dec_mips vm_dec_mmu_mips boot_alpine_dec dec_fp_mips boot_alpine_jit alpine_user_jit
+  timeout 60 bench/gpu/mac-leftovers.sh --kill 2>&1 | tail -1
+done
+echo screen done

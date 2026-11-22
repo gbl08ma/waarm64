@@ -1784,7 +1784,8 @@ pub fn hot<B: Fast, const RICH: bool>(
                         }
                         K::Farith => {
                             // A result normal above the smallest binade is exact or
-                            // inexact, never tiny, infinite or a NaN.
+                            // inexact, never tiny, infinite or a NaN; a zero only where
+                            // it's exact ([`exact_zero`]).
                             if !plain {
                                 break 'run SLOW;
                             }
@@ -1798,7 +1799,9 @@ pub fn hot<B: Fast, const RICH: bool>(
                                     _ => p - q,
                                 }
                                 .to_bits();
-                                if (r >> 52 & 0x7ff).wrapping_sub(2) >= 0x7fd {
+                                if (r >> 52 & 0x7ff).wrapping_sub(2) >= 0x7fd
+                                    && !exact_zero(r << 1, a << 1, b << 1, x)
+                                {
                                     break 'run SLOW;
                                 }
                                 r
@@ -1811,7 +1814,14 @@ pub fn hot<B: Fast, const RICH: bool>(
                                     _ => p - q,
                                 }
                                 .to_bits();
-                                if (r >> 23 & 0xff).wrapping_sub(2) >= 0xfd {
+                                if (r >> 23 & 0xff).wrapping_sub(2) >= 0xfd
+                                    && !exact_zero(
+                                        (r << 1) as u64,
+                                        (a as u32 as u64) << 33,
+                                        (b as u32 as u64) << 33,
+                                        x,
+                                    )
+                                {
                                     break 'run SLOW;
                                 }
                                 r as u64
@@ -2719,6 +2729,18 @@ fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
         wr(c, d, v);
         true
     }
+}
+
+/// Whether a `K::Farith` result that failed the normal-result test is a zero
+/// that's exact, so its fast path may take it (FZ clear), as the JIT's zero
+/// clause (docs/jit.md "Floating point"): a zero sum always is (a nonzero
+/// exact sum rounds to a nonzero result), a zero product with a zero factor,
+/// a zero quotient with a zero dividend. `r`, `a` and `b` are the result's and
+/// the operands' bits shifted left past their sign (zero only for a zero);
+/// `x` the micro-op's byte (bits 2:1 the op: FMUL, FDIV, FADD, FSUB).
+#[inline(always)]
+fn exact_zero(r: u64, a: u64, b: u64, x: u32) -> bool {
+    r == 0 && (x & 4 != 0 || a == 0 || x & 2 == 0 && b == 0)
 }
 
 /// An LDP or STP (`K::Ldp`, `K::Stp`) on [`hot`]'s inline paths; false (and

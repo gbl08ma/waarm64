@@ -1,0 +1,39 @@
+// PERF loop 52's counts: summarizes the last `waarm64-diag52` line of a file (diagnostic core).
+//   node diag52.ts <file> [top]
+import { readFileSync } from 'node:fs';
+const [file, topS = '40'] = process.argv.slice(2);
+const top = Number(topS);
+const lines = readFileSync(file, 'utf8').split('\n').filter((l) => l.includes('waarm64-diag52'));
+const line = lines[lines.length - 1].slice(lines[lines.length - 1].indexOf('waarm64-diag52'));
+const [head, classes, combos] = line.split(' | ');
+const h = head.split(' ');
+const g = (k: string) => h[h.indexOf(k) + 1];
+const steps = Number(g('steps')), exits = Number(g('exits')), uops = Number(g('uops'));
+const M = (v: number) => (v / 1e6).toFixed(3) + ' M';
+const pct = (v: number, of: number) => ((100 * v) / of).toFixed(2) + '%';
+const [ret0, ret1] = g('rets').split('/').map((s) => s.split(',').map(Number));
+const st2 = g('steps2').split(',').map(Number);
+const chg = g('chg').split(',').map(Number);
+const rb = g('rb').split(',').map(Number);
+const stint = g('stint').split(',').map(Number);
+console.log(`steps ${M(steps)} interps ${M(Number(g('interps')))} exits ${M(exits)} (${pct(exits, steps)} of steps) stretch uops ${M(uops)}`);
+console.log(`hot returns lean STOP/SLOW/NEXT/SWITCH ${ret0.map(M).join(' / ')}; rich ${ret1.map(M).join(' / ')}`);
+console.log(`steps in hot: lean ${M(st2[0])} rich ${M(st2[1])} (${pct(st2[1], st2[0] + st2[1])})`);
+console.log(`changes: SWITCH->rich ${M(chg[0])} SWITCH->lean ${M(chg[1])} NEXT->rich ${M(chg[2])} NEXT->lean ${M(chg[3])} start rich ${M(chg[4])} start lean ${M(chg[5])}`);
+const kinds = ['one VImm', 'VImms only', 'other rich'];
+for (let k = 0; k < 3; k++) console.log(`rich stints from a block with ${kinds[k]}: ${M(rb[k])}, ${M(rb[3 + k])} steps, ${M(rb[6 + k])} that block alone`);
+console.log(`rich stints by steps <=4/<=16/<=64/<=256/more: ${stint.map(M).join(' / ')}`);
+const cls = classes.trim().split(' ').map((t) => { const [n, e, u] = t.split(':'); return { copy: n[0], name: n.slice(1), e: Number(e), u: Number(u) }; });
+for (const copy of ['0', '1']) {
+  const c = cls.filter((x) => x.copy === copy).sort((a, b) => b.e - a.e);
+  const te = c.reduce((s, x) => s + x.e, 0), tu = c.reduce((s, x) => s + x.u, 0);
+  console.log(`\n${copy === '0' ? 'lean' : 'rich'} copy: exits ${M(te)}, stretch uops ${M(tu)}; by exits (exits, uops):`);
+  for (const x of c.slice(0, top)) console.log(`  ${x.name.padEnd(28)} ${M(x.e).padStart(11)} ${M(x.u).padStart(11)}`);
+  const byU = [...c].sort((a, b) => b.u - a.u).slice(0, 15).filter((x) => !c.slice(0, top).includes(x));
+  if (byU.length) console.log('  (by uops, not above) ' + byU.map((x) => `${x.name} ${M(x.e)}/${M(x.u)}`).join(', '));
+}
+console.log('\ncombos (copy, classes: exits, uops):');
+for (const t of combos.replace(/^combos ?/, '').trim().split(' ').slice(0, top)) {
+  const i = t.lastIndexOf(':'), j = t.lastIndexOf(':', i - 1);
+  console.log(`  ${t.slice(0, j).padEnd(60)} ${M(Number(t.slice(j + 1, i))).padStart(11)} ${M(Number(t.slice(i + 1))).padStart(11)}`);
+}
