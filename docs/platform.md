@@ -118,7 +118,10 @@ indexes of their instance).
   wake)` can't miss a wake-up.
 - **WFI** returns `IDLE` (value: ns to the vCPU's own deadline) unless an interrupt is signaled
   to it (the worker polls its wake word for 50 µs before `Atomics.wait`: a futex wake-up costs
-  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off); **WFE** is a
+  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off). On macOS that timed wait comes
+  back late by a share of its timeout (the timer leeway: a vCPU's own timer seen in WFI 0.3-1.9 ms late on average in
+  the Mac's Node, PERF loop 53; a wait of ~1 ms is ~130 µs late at the median, one of ~4 ms ~470 µs), which waits of
+  half the time left would cut to a few µs (bench/boot/REPORT.md "PERF loop 53"; docs/backlog.md); **WFE** is a
   yield (it ends the chunk, as QEMU's MTTCG does), and SEV does nothing (no vCPU sleeps in WFE):
   a vCPU can't cheaply see the store that clears another's exclusive monitor, which is what
   wakes Linux's LDXR + WFE waits on hardware. Counted, a sleep isn't worth it (2026-11-10, bench/boot/REPORT.md

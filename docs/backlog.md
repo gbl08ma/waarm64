@@ -93,15 +93,18 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 
 ## JIT
 
-- **Parallel SMP's code without `acc`** (PERF loop 34, bench/boot/REPORT.md; docs/jit.md "Preemption"): `acc`
-  costs ~1-2% of the Mac's parallel gates (a measurement core without it: boots −1.0 to −2.0% to the script, userspace
-  −2.5%; per function −9 to −11% frame memory operands on both hosts). It bounds the chunk and counts the steps, so
-  dropping it needs a setter for each thing it serves: the compile worker storing 0 when modules are ready (PERF loop
-  32's `compile-stops.patch`), the vCPU's own timer deadline (a thread, or the host's timers, storing 0), the
-  worker's event-loop visit and the periodic publications; and the MIPS readout, the run loop's step clocks
-  (`TIMER_STEPS`, `BATCH_TIMEOUT`) and the PC sampler's chunk moved to time. Decision 3's latency bounds must hold
-  (the spin tests); a design note first (host ABI). Measure a timer setter's latency on the Mac before building the
-  rest.
+- **Parallel SMP's code without `acc`, stage 3: build it** (PERF loops 34 and 53, bench/boot/REPORT.md; the design
+  in docs/abi.md "PERF: parallel SMP's code without `acc`", ABI 73): the bound holds on today's code (Firefox's pages
+  session −3.6% in two sessions, the gates −1 to −1.6%) and a ticker worker waiting by halves meets decision 3 on the
+  Mac (4-9 µs late, against today's 31-80). To build, each with its test and planted bug: the ticker
+  (`web/ticker-worker.ts`, its exports `vm_cpu_tick`, `vm_tick_bell`, `vm_tick_period`, its thread in `run_parallel`
+  natively), the run loop's `due` publication and tick bits, the compile worker's stores (`bench/boot/results/perf53/
+  compile-stops.patch`), the emitter without `acc` in polled code (`noacc.patch`, made exact: nothing else reads the
+  constant), `TIMER_STEPS`, `JIT_PUBLISH`, `BATCH_TIMEOUT` and `vm_run_cpu`'s budget by time in that mode, the PC
+  sampler's period, and the status bar's MIPS and JIT share in parallel SMP by time (a page change: words in the
+  catalog, docs/copy.md). The spin tests with 2^30-step chunks catch a missing setter; the polled differential test
+  needs its step accounting reworked (it compares the steps the JIT ran). Then the Mac's gates and pages session, the
+  round-robin gates unchanged, an out-of-context review.
 - **Indirect transfers into a browser's code** (2026-10-16; `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes
   in Firefox"). In Firefox's pages session 26% of a busy vCPU's time stalls at a guest function's first instruction,
   83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail
@@ -1243,6 +1246,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the estimate counts guest RAM whole (12-19% over the renderer's median from a snapshot) and misses a flush's
   garbage at its spikes (one 10 s sample 1.8 GB over, with the flushed epoch counted for 30 s); a calibration with 1 vCPU, a 2D machine and a longer session;
   what a user's crash mark says once one is seen.
+- **WFI's sleep wakes late on macOS** (PERF loop 53, bench/boot/REPORT.md; docs/platform.md "Parallel SMP"): the vCPU
+  worker's `Atomics.wait` to its deadline comes back late by a share of the timeout (the timer leeway), so a vCPU's own
+  timer is seen in WFI 0.3-1.9 ms late on average in the Mac's Node (`preempt-counts.ts`); waits of half the time left
+  and a spin of the last 40 µs were 4-9 µs late in `bench/boot/timer-setters.html`. To do: the same in the worker's
+  idle wait (web/vcpu-worker.ts), measured by the diagnostic core's "in WFI" latency and the pages session on the Mac
+  (an idle guest's wake-ups cost a few µs of spin each). The spin test's ~2 ms cluster below may be the same leeway.
 - **`tests/spin.test.ts`'s IPI round trip over its bound once** (`scripts/ci.sh`, 2026-11-18, the plain JIT's run with
   the default chunk; 1 in 6 ci.sh runs that day, 0 in 20 alone or beside 8 busy cores): median 2,121 µs for a 1,000 µs
   bound. The slow shapes sat at 2,121–2,195 µs while the rest took 4–13 µs (a few 7–12 ms): a cluster, not load's

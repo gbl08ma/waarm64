@@ -486,6 +486,13 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   boot's modules instead (polled code, PERF loop 31): the workers compile them, so the tool reruns itself with every
   thread's `WebAssembly.Module` wrapped (`--import`), each module saved once by its hash; such runs aren't
   reproducible, so compare per-function means of two cores' sets, not the sets.
+- **Timer setters** (PERF loop 53): `node bench/run.ts --page bench/boot/timer-setters.html [--query='ms=3000&gap=1000&cpus=4&only=wait,spin,halve,waitAsync,setTimeout']`
+  (on the Mac: `bench/run-mac.sh <name> --page bench/boot/timer-setters.html "'--query=…'"`, the quotes for the remote
+  shell): how late each way a page has to wake at a deadline stores 0 in a spinning worker's word: `cpus` spinners,
+  one setter keeping a deadline for each `gap` µs ± 50% apart, `ms` per mechanism; per mechanism the wake-up against
+  the deadline and the spinner's ack (µs), and the setter's spin share of a core and waits a deadline. The page's
+  Mac numbers are bench/boot/REPORT.md "PERF loop 53"'s. `preempt-counts.ts` also runs in the Mac's Node, from
+  `~/waarm64-bench` after a `bench/run-mac.sh` (the diagnostic core copied there): today's latencies on that host.
 - **Preemption's counts** (a diagnostic core: the `diag` feature, never in the normal build, whose code section it
   leaves byte-identical): `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag` (its own target
   directory, ~20 s from cold), then `node bench/boot/preempt-counts.ts [--json f] [boot user smp1 smp4 smp-user4]`

@@ -484,7 +484,14 @@ differing only in the address of a core table they embed, the CRC tables).
   script (n1 and n4 past the rounds' spread) and the userspace phases −2.5% (overlapping). So `acc` costs ~1-2% (all the polls,
   for comparison: arm64 −3.5% instructions, x64 −5.4%, with no spills of their own). It stays: it is the chunk's bound (the timer and the installs, PERF loop 32) and the step count
   the MIPS readout, the run loop's step clocks and the sampler use; dropping it needs a setter for each of those, a
-  redesign filed in docs/backlog.md.
+  redesign filed in docs/backlog.md. **Re-measured on PERF loop 53's code** (bench/boot/REPORT.md "PERF loop 53"):
+  the same bound on the gates (boots −0.8 to −2.3%, n4 −1.6% past the rounds' spread; userspace −0.8%), and **−3.6%
+  on Firefox's pages session** in two sessions of runs (the noacc arm's fewer modules, its batch clock counting only
+  interpreted steps, aren't the gain: that alone ran even). The setter its chunk bound needs for the vCPU's own timer
+  exists: a ticker worker whose `Atomics.wait` takes half the time left, again, and spins the last 40 µs is 4-9 µs
+  late on the Mac on average (p99 under 45 µs), where the chunk's steps give 31-80 µs today; a plain wait to the
+  deadline is 158-561 µs late (macOS's timer leeway grows with the timeout), `Atomics.waitAsync` ~630 µs, `setTimeout`
+  ~4.8 ms. The design is docs/abi.md "PERF: parallel SMP's code without `acc`"; it isn't built yet.
 - **No poll point is redundant** (PERF loop 34): each closes cycles no other one does. Polls only on a region's
   back-edge (not on its other edges to a lower VA) drop the polls 19% and hang a spin test: a cycle through other
   functions (the 20-block chain, out of its region and back through chains forward) has its one backward step on such

@@ -7107,3 +7107,83 @@ continuation dispatch (the later members run on in the same interpreted run): th
 code) or the region's members emitted again outside the loop for each entry, with the stale-code checker's hash and
 the polls on every new edge. No arm could show a gain past the ~1% floor: dropped. docs/jit.md "Calls" has the
 finding; the backlog entry is removed. No code changed (results and docs); `scripts/ci-fast.sh` passed.
+
+## PERF loop 53: `acc`'s bound re-measured, and a timer setter on the Mac (2026-11-22)
+
+Stages 1 and 2 of docs/backlog.md "Parallel SMP's code without `acc`" (PERF loop 34's follow-up): what dropping `acc`
+from parallel SMP's polled code would win on today's code, and whether anything in a cross-origin-isolated page can
+end a looping vCPU's chunk at its timer's deadline as promptly as the chunk's steps do now. **The bound holds (the
+gates −1.3 to −1.6% where they resolve, Firefox's pages session −3.6% in two sessions), and a setter meets decision 3:
+a ticker worker waiting by halves.** The design is in docs/abi.md "PERF: parallel SMP's code without `acc`"; nothing
+of it is built (stage 3, docs/backlog.md). Data: `bench/boot/results/perf53/` (its README).
+
+**The bound** (`noacc.patch`, loop 34's, applied unchanged to 2ae98b16: `acc` a constant 0, the polls `0 < word`, so
+chunks end only at exits and setters, steps and MIPS wrong by design; with `compile-stops.patch`, the compile worker
+storing 0 in every stop word when `ready` moves, in its web/ only, so installs stay prompt). M4, macOS, Chrome for
+Testing 158.0.8127.36, 3 rounds alternated (the first arm swapped each round), nothing else on the dev VM; ranges of
+the rounds' medians (ms; `p53-*.json`, `summary.py . p53 base noacc`):
+
+| | base | noacc | |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2663-2764 / 5202-5328 | 2683-2715 / 5205-5250 | −2.3% / −1.6%, overlapping |
+| n2 script / total | 2286-2356 / 4839-4915 | 2309-2321 / 4858-4875 | −1.0% / −0.8%, overlapping |
+| n4 script / total | 2265-2298 / 4852-4901 | 2246-2257 / 4818-4842 | **−1.6% / −1.3%**, no overlap |
+| `smp_user_jit_4` total | 10724-10931 | 10585-10870 | −0.8%, overlapping |
+| compress / Lua / churn / SQLite | 1184-1252 / 2337-2437 / 741-755 / 1704-1806 | 1152-1170 / 2339-2544 / 718-751 / 1658-1895 | **−2.8%** / +0.3% / −2.9% / −7.7% |
+
+Loop 34 had boots −1.0 to −2.0% and userspace −2.5%: the same bound, within the gates' spread. On the browser it is
+larger. Firefox's pages session from `pages.waarm64snap` (`bench/gpu/ab-mac.sh`, 3 rounds alternated; two sessions of
+runs, the second with a third arm; medians, IQR, [ranges]):
+
+| | base | noacc | |
+|---|---|---|---|
+| Firefox's starts + the pages' loads, session 1 (s) | 73.0, IQR 1.05 [72.3-74.4] | 70.4, IQR 0.75 [69.9-71.4] | **−3.6%**, no overlap |
+| the same, session 2 (s) | 72.5, IQR 1.7 [71.0-74.4] | 69.9, IQR 0.8 [68.8-70.4] | **−3.6%**, no overlap |
+| the starts alone, sessions 1 / 2 (s) | 55.2 / 54.6 | 53.2 / 52.6 | −3.6% / −3.7%, no overlap |
+| modules; wasm MB; emit ms | 2784; 116; 1886 | 2597; 114; 1859 | −6.7%; −2%; −1.4% |
+| Gsteps interpreted | 3.55 | 3.55 | |
+| stalls of 20 ms+ (sessions 1 / 2, medians) | 0 / 1 | 2 / 4 | |
+
+The noacc arm makes 6.7% fewer modules: its table's clock (`Table::clock`, `BATCH_TIMEOUT`'s, 64M steps) counts
+only interpreted steps, so lukewarm batches wait longer. The second session's third arm, `batch.patch` (the base with
+only that: polled code's compiled steps left out of the clock), made as few modules (2591) and ran even with the base
+(72.5 s, [71.9-73.5]): the fewer modules are not the gain. The stalls rise because nothing ends a looping chunk at
+its timer in this arm: what the ticker below is for.
+
+**Today's timer latency on the Mac** (the diagnostic core, `preempt-counts.ts` in the Mac's Node 26.10.0;
+`counts-mac-today*.json`): a vCPU's own timer seen late while running, mean 76.0 / 79.8 / 31.5 µs (smp1 / smp4 /
+smp-user4; max 7.8 / 13.0 / 6.0 ms), and in WFI (the host's `Atomics.wait` to the deadline) 1,924 / 291 / 280 µs;
+an IRQ line to the IRQ while running 2.6 / 11.2 / 2.1 µs. That's decision 3's "today" on the ranking host.
+
+**The setters** (`bench/boot/timer-setters.html`, new: 4 spinner workers poll a stop word each in a loop, as compiled
+code does; one setter worker keeps a deadline per spinner, `gap` ± 50% apart, wakes at the earliest by the mechanism
+under test, stores 0 in each word due, and times its own wake against the deadline and the spinner's ack, on one
+clock; 3 s per mechanism; the Mac, Chrome 158; `setters-mac*.json`), µs late:
+
+| mechanism | gap 1 ms: mean / p50 / p99 / max | gap 4 ms | its cost |
+|---|---|---|---|
+| `Atomics.wait` to the deadline | 158 / 132 / 489 / 693 | 561 / 467 / 1,763 / 2,642 (17% over 1 ms) | none |
+| `Atomics.wait` to 200 µs before, then a spin | 10 / 2.8 / 154 / 553 | 342 / 231 / 1,500 / 2,359 | 36% / 2.4% of a core |
+| **waits of half the time left, spinning the last 40 µs** | **4.1 / 2.8 / 35 / 309** | **8.5 / 2.9 / 43 / 4,419** (3 of 2,981 over 1 ms) | **6.3% / 1.5% of a core; 1.3 / 2.2 waits a deadline** |
+| `Atomics.waitAsync` (a worker's event loop) | 628 / 598 / 1,931 / 2,083 (12% over 1 ms) | | |
+| `setTimeout` in a worker | 4,752 / 4,911 / 5,647 / 5,727 | | |
+
+The spinner sees the store within the clock's 5 µs grain (p99 5-15 µs). macOS's timed waits come back late by a
+share of the timeout (its timer leeway: 132 µs at the median of a ~1 ms wait, 467 µs of ~4 ms), so a fixed lead
+fails at longer gaps, and waiting half the time left converges on the deadline in one or two more waits. On the dev
+VM (Linux under Lima) the plain wait is ~180 µs late at the median too (`timer-setters` there, not committed).
+Against decision 3 (IRQ and timer latency no worse than today's, ≤ one chunk, ~1 ms): the halving ticker is 4-9 µs
+late on average where the chunk's steps give 31-80 µs, its p99 under 45 µs; a plain wait, `waitAsync` and
+`setTimeout` don't meet it. The same leeway is why a vCPU in WFI wakes 0.3-1.9 ms late on average now (above): the
+vCPU worker's sleep to its deadline is one plain `Atomics.wait` (docs/backlog.md, new).
+
+**The decision** (docs/abi.md "PERF: parallel SMP's code without `acc`", the track's call on these numbers): build it.
+One ticker worker per machine, halving waits, storing 0 in a vCPU's stop word at its timer's deadline and at a
+periodic tick (1 ms) for what the steps paced (the publications, the xHCI's completions, the worker's event-loop
+visit, the PC sampler); the compile worker storing 0 when modules are ready; the step clocks moved to time; the
+status bar's MIPS and JIT share in parallel SMP replaced by what time can say. Not built in this loop: stage 3 is a
+mechanism with its tests, reviews and a page change of its own (docs/backlog.md).
+
+Memory: none (nothing built; the ticker will be one more worker). x64 static counts: compiled code unchanged (loop
+34's `cs-*-noacc.json` stand: arm64 −9% frame memory operands, x64 −10 to −11%). `scripts/ci-fast.sh` passed (a
+bench page and docs).

@@ -1,0 +1,11 @@
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2539,7 +2539,7 @@
+             s.dispatches += 1;
+             s.steps += ran;
+             s.inline_steps += ran - (vr.jit.helper_steps - helped);
+-            jit.table.clock += k;
++            if !polled { jit.table.clock += k; }
+             done += k;
+             if e.is_some() {
+                 return (done, e);

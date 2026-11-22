@@ -1,0 +1,26 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf53/pages2/noacc-3/pages-all.timeline.json": {
+  "seconds": 195,
+  "mips": 18,
+  "busyMips": 17,
+  "busyShare": 0.27,
+  "stallsAtLeastMs": {
+   "20": 4,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 28,
+  "stalledMsPerSecondPerVcpu": 0.13,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

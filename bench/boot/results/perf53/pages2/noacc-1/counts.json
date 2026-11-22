@@ -1,0 +1,18 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf53/pages2/noacc-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 3.74,
+   "flushes": 0,
+   "modules": 2590,
+   "mib": 110.3,
+   "overdue": 0,
+   "parks": 8752,
+   "locks": 17366351,
+   "interpGsteps": 3.55,
+   "share": 0.049,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

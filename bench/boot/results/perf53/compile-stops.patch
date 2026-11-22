@@ -1,0 +1,85 @@
+diff --git a/web/coordinator.ts b/web/coordinator.ts
+index ef01039a..9fa754f5 100644
+--- a/web/coordinator.ts
++++ b/web/coordinator.ts
+@@ -29,6 +29,7 @@ export function coordinator(c: {
+   parked: number;
+   start: number;
+   raise: (bits: number) => void;
++  stops: number[];
+   clearStop: () => void;
+   quiesce: () => Promise<void>;
+   stall: Stall[];
+@@ -135,7 +136,7 @@ export function coordinator(c: {
+     if (channels.length) {
+       compiler = spawn('compile');
+       const ports = channels.map((ch) => ch.port2);
+-      void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
++      void compiler.then((h) => h.post({ memory: c.memory, ports, stops: c.stops } satisfies CompileInit, ports));
+     }
+     const made = Array.from({ length: c.ncpus }, async (_, cpu) => {
+       const h = await spawn();
+diff --git a/web/jit-compile-worker.ts b/web/jit-compile-worker.ts
+index c7c99cce..5d224115 100644
+--- a/web/jit-compile-worker.ts
++++ b/web/jit-compile-worker.ts
+@@ -8,7 +8,7 @@
+ // Runs in a browser worker or a Node worker thread.
+ 
+ /** What the coordinator sends: the core's memory and a port per vCPU worker. */
+-export type CompileInit = { memory: WebAssembly.Memory; ports: MessagePort[] };
++export type CompileInit = { memory: WebAssembly.Memory; ports: MessagePort[]; stops?: number[] };
+ /** A module from a vCPU (the core's numbers are u32s). */
+ export type CompileJob = { seq: number; epoch: number; ready: number; bytes: ArrayBuffer };
+ /** The compiled module, to every vCPU (no module: it didn't compile). */
+@@ -18,7 +18,7 @@ export type CompiledJob = { seq: number; module?: WebAssembly.Module };
+ const KEEP_MS = 30_000;
+ 
+ /** The compile worker's state: in a function so a test can drive it without a worker. */
+-export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: CompiledJob): void }[] = []) {
++export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: CompiledJob): void }[] = [], stops: number[] = []) {
+   let next = 1; // the lowest number not compiled yet
+   const done = new Set<number>();
+   let epoch = 0;
+@@ -52,7 +52,11 @@ export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: Com
+         next = (next + 1) >>> 0 || 1;
+         moved = true;
+       }
+-      if (moved) Atomics.store(new Uint32Array(memory.buffer, j.ready, 1), 0, (next - 1) >>> 0 || 0xffff_ffff);
++      if (moved) {
++        const u32 = new Uint32Array(memory.buffer);
++        Atomics.store(u32, j.ready / 4, (next - 1) >>> 0 || 0xffff_ffff);
++        for (const s of stops) Atomics.store(u32, s / 4, 0);
++      }
+     },
+     stats: () => ({ compiled, failed, ms, kept: kept.length }),
+   };
+@@ -61,14 +65,14 @@ export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: Com
+ if ('WorkerGlobalScope' in globalThis) {
+   const self = globalThis as unknown as { onmessage: ((e: MessageEvent<CompileInit>) => void) | null };
+   self.onmessage = (e) => {
+-    const c = compiler(e.data.memory, e.data.ports);
++    const c = compiler(e.data.memory, e.data.ports, e.data.stops);
+     for (const p of e.data.ports) p.onmessage = (m: MessageEvent<CompileJob>) => c.job(m.data);
+   };
+ } else {
+   const { parentPort } = await import('node:worker_threads');
+   // (No parent port: imported by a test on Node's main thread.)
+   parentPort?.once('message', (init: CompileInit) => {
+-    const c = compiler(init.memory, init.ports);
++    const c = compiler(init.memory, init.ports, init.stops);
+     for (const p of init.ports)
+       (p as unknown as import('node:worker_threads').MessagePort).on('message', (m: CompileJob) => c.job(m));
+   });
+diff --git a/web/vm.ts b/web/vm.ts
+index 296c2d20..94e7b101 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -712,6 +712,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+         parked: scratch + S_PARKED,
+         start: scratch + S_START,
+         raise,
++        stops,
+         clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP),
+         quiesce: () => devices.quiesce(),
+         stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })),
