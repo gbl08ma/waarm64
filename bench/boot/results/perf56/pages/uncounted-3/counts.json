@@ -1,0 +1,18 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/boot/results/perf56/pages/uncounted-3/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 3.74,
+   "flushes": 1,
+   "modules": 2695,
+   "mib": 107.2,
+   "overdue": 0,
+   "parks": 9102,
+   "locks": 17378304,
+   "interpGsteps": 3.55,
+   "share": 0.049,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

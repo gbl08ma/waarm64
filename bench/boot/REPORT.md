@@ -7310,3 +7310,82 @@ by ~1 GiB between sessions of one arm, so no per-arm RSS here. Tests (`tests/tic
 and uncounted, the polled differential test uncounted with `WAARM64_POLLED=2`, the compile worker's stores, the page's
 presets and step rates) and their planted bugs: docs/testing.md and the loop's commits. `scripts/ci.sh` (742 s),
 `scripts/ci-jit.sh` (319 s) and `scripts/ci-debian.sh --platform` (472 s) passed on the loop's tree.
+
+## PERF loop 56: the ticker review's findings fixed, measured again (2026-11-22)
+
+The out-of-context review of loop 55's ticker and uncounted mode (`review/ticker-count`, eight findings) fixed, each
+fix with its confirming test shown failing first (the commit names them), then the Mac's measurements again. **The
+fixes did what the counters asked (modules −3% against the base where loop 55 had +18.6%; compile time −2% where it
+had +19%; the platform lock's contended acquisitions ×1.2-1.9 where it had ×2.7), and the uncounted mode is still no
+faster: Firefox's pages session 73.1-74.5 s against the base's 72.3-76.2 and the counted 73.2-75.6, the parallel
+gates within ±0.4%, all overlapping.** So, as the user decided for this outcome, the page's "Faster defaults" preset
+and the editor's note that counting slows the machine were taken out (the default bar is unchanged); the mechanism
+stays for now, and whether to revert it is the next decision (docs/backlog.md "Keep or revert parallel SMP's code
+without `acc`", with what a revert removes). Round-robin's code is unchanged (no emitter changed; `tests/steps.txt`
+didn't move), so its gates weren't rerun. Data: `bench/boot/results/perf56/` (its README).
+
+**Per finding:**
+1. *The batch clock counted wall time, idle spells included.* `Jit::unpark` (each run loop's start) forgets the last
+   tick, so only the time between two ticks of one run loop counts, against `BATCH_TIMEOUT_NS` = 140 ms (about 64M
+   steps of a vCPU at ~450 MIPS) instead of 64 ms. Test: `the_batch_clock_by_time_skips_time_out_of_the_core`
+   (fails at "the idle spell doesn't count" without the forget, at "not due yet" at 64 ms). Pages: modules
+   2680-2703 against the base's 2769-2820, `compileNs` 460-462 ms against 465-484.
+2. *Every vCPU stopped at once.* Timer deadlines that pass together fire `STAGGER_MS` = 10 µs apart; the xHCI's due
+   time stores 0 in one vCPU's stop word, the next one's each time (one in WFI wakes for it by itself), and the run
+   loop claims the due time with a compare-exchange before it takes the platform lock; the xHCI's bell rings after
+   the lock's release (`Shared::ring_owed`, `vm::parallel::Plat`). Tests: tests/ticker.test.ts's stagger and xHCI
+   cases (0.2-5 µs apart and both stop words at once before), `the_bell_rings_after_the_platform_lock_is_released`.
+   The claim has no unit test (one thread can't race it natively): the pages session's counters are its check.
+   Contended acquisitions 43.6k-69.8k against the base's 35.7k-37.3k (loop 55: 100k); wait 132-242 ms against
+   131-151. Not split by call site (no diagnostic build): what's left is the next step's, if the mode is kept.
+3. *`WindowWatch.take()` waited for a period.* It stores 0 in each running vCPU's stop word after its bump (the
+   stop words reach the Venus renderer through `venus-init`'s window). Test: tests/window-watch.test.ts, a worker
+   playing a vCPU that acks only at a 0 (the 500 ms timeout and every page before; within the test's bound after).
+4. *An early fire ping-ponged.* A deadline published again after its fire refires no sooner than a gap that doubles
+   from 20 µs (to 1 ms). Test: the ticker 1 ms ahead of the vCPU's clock: 384 early fires before, at most 12 after (the doubling's ~7).
+5. *The bell rang on every move.* Only a deadline or xHCI due time that moves earlier rings; a mode change's
+   withdrawal doesn't. Test: `without_step_counts_the_timer_deadline_is_published_for_the_ticker` (later: no bell).
+6. *A held clock spun the ticker.* While `t0` is u64::MAX the ticker looks at no deadline (the periodic tick goes on,
+   so a restart is seen within a period). Test: 92-93% of a core before, ~0 after.
+7. *The poll's plain loads.* Kept plain (an atomic load costs code size, PERF loop 34: −1.4%/−2.1% instructions):
+   the `poll` docs now give the argument that holds without `acc`: only a wasm `loop`'s back edge (a looped region's,
+   whose polls are atomic) or calls (after which V8 reads memory again) let code run on without end, and inlining
+   merges a bounded amount of code. No test can force V8's inlining reliably; the spin tests run every shape both ways.
+8. *Minor.* The compile worker's view of the memory is made once (a test counts constructions: 20 for 20 modules
+   before); the ticker reads `base`, `t0`, `base` and retries on a change; the status bar's counting follower moved to
+   `statusbar.ts` with an owner, let go when its run ends (a test of the API; a planted no-op fails it);
+   `Status.counted` is `Vm.countedSinceLook()`, false across an off-then-on (tests/spin.test.ts; fails with the old
+   `counting()`). Not fixed: the ticker's 1 kHz on an idle machine (an ABI word for "running" vCPUs; docs/backlog.md
+   "The ticker on an idle machine", kept) and its late start (its loop can't take the clock handshake later;
+   docs/backlog.md "The ticker starts late", new). None of the eight was judged not a defect.
+
+**The gates** (M4, macOS, Chrome for Testing 158.0.8127.36; `gates.sh`, 3 rounds, arms alternated with the first
+rotated; base = 1b0224f8's core and tree from `../waarm64-base`, checked different by `tools/wasm-sizes.ts`; ranges of
+the rounds' medians, ms; `p56-*.json`, `summary.py`):
+
+| | base | counted | uncounted | uncounted against base |
+|---|---|---|---|---|
+| `smp_alpine_jit` n1 total | 5320-5374 | 5353-5363 | 5335-5356 | −0.2%, overlapping |
+| n2 total | 4959-5012 | 4966-4976 | 4963-4989 | −0.2%, overlapping |
+| n4 total | 4962-4977 | 4944-4961 | 4939-4958 | −0.4% (no overlap, under the ~1% floor) |
+| `smp_user_jit_4` total | 10896-11022 | 10886-10947 | 10820-10926 | −0.8%, overlapping |
+
+Counted against uncounted: within ±0.3%, overlapping. The userspace run's modules 559 / 551 / 530.
+
+**Firefox's pages session** (`pages/`, `bench/gpu/ab-mac.sh`, 3 rounds, arms alternated, from `pages.waarm64snap`;
+base from `../waarm64-base`, counted `+count=1`, uncounted `+count=0`; ranges):
+
+| | base | counted | uncounted |
+|---|---|---|---|
+| Firefox's starts + the pages' loads (s) | 72.3-76.2 | 73.2-75.6 | 73.1-74.5 |
+| the starts alone (s) | 54.8-57.3 | 55.1-56.7 | 55.5-56.1 |
+| modules; wasm MB | 2769-2820; 117-118 | 2785-2797; 116-118 | 2680-2703; 112-115 |
+| `compileNs` (ms) | 465-484 | 465-475 | 460-462 |
+| the platform lock: contended; wait (ms) | 35.7k-37.3k; 131-151 | 37.0k-37.6k; 124-159 | 43.6k-69.8k; 132-242 |
+
+Memory: unchanged from loop 55 (the same workers). CI on the fixes' tree: `scripts/ci.sh` (689 s; a first run failed
+four new timing tests under CI's load, made robust in the second commit), `scripts/ci-jit.sh` (306 s),
+`scripts/ci-debian.sh --platform` (399 s), `scripts/ci-usb.sh` (10 s, the xHCI claim); the preset's removal
+`scripts/ci-fast.sh` and `tools/i18n-check.ts`, tests/page-statusbar.test.ts. `scripts/ci-graphics.sh`: Debian's
+graphics passed; the arch-desktop demo's Ctrl+C at its countdown failed, and fails alike with loop 55's page and core
+(rerun alone, three ways; `df -h /` 44 GiB free): not this loop's, filed in docs/backlog.md.

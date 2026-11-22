@@ -431,8 +431,7 @@ differing only in the address of a core table they embed, the CRC tables).
   **uncounted** (`Config::uncounted`), `acc` the constant 0: no edge bumps it, transfers pass 0, a poll reads `0 <u
   word`, a host call's return carries nothing back, and only what the core runs itself counts (interpreted steps,
   exits). The host picks one (`vm_set_count`): the page counts while its status bar shows MIPS or JIT share (the
-  default layout does, so the gain goes to users who take them off or pick the faster preset: frontend.md "The status
-  bar"), the benchmarks count unless asked not to (`bench/run.ts --query=uncounted`), web/vm.ts doesn't by default.
+  default layout does; frontend.md "The status bar"), the benchmarks count unless asked not to (`bench/run.ts --query=uncounted`), web/vm.ts doesn't by default.
   A change flushes the cache into a new epoch (the compile threshold left alone) and every table takes the mode with
   the epoch: its dispatcher ends the chunk at that catch-up, so its run loop stores the stop word as the new code
   reads it before any of it runs. A flush at any point is safe as any flush is (the dispatcher's catch-up is the one
@@ -515,7 +514,9 @@ differing only in the address of a core table they embed, the CRC tables).
   bench/boot/REPORT.md "PERF loop 55"): its code is the measured one (per function arm64 −3.9% instructions, −11.4%
   frame memory operands; x64 −4.7%, −12.9%), but on the Mac the mode doesn't beat the base (Firefox's pages session
   73.2 s against 73.1, overlapping; the parallel gates +0.4 to +0.7%), with 18.6% more modules (+19% `compileNs`: the
-  batch clock by time) and the platform lock contended 2.7× as often; what takes the gain is docs/backlog.md's.
+  batch clock by time) and the platform lock contended 2.7× as often. PERF loop 56 fixed those (modules −3% against
+  the base, contention ×1.2-1.9) and the mode still runs even (pages 73.1-74.5 s against 72.3-76.2, gates ±0.4%):
+  whether to keep it is docs/backlog.md's.
 - **No poll point is redundant** (PERF loop 34): each closes cycles no other one does. Polls only on a region's
   back-edge (not on its other edges to a lower VA) drop the polls 19% and hang a spin test: a cycle through other
   functions (the 20-block chain, out of its region and back through chains forward) has its one backward step on such

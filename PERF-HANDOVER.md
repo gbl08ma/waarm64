@@ -111,23 +111,23 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 (the uncounted mode).
 
-## State (2026-11-22, after loop 55)
+## State (2026-11-22, after loop 56)
 
-Loop 55 built `acc`'s replacement (bench/boot/REPORT.md "PERF loop 55"; docs/abi.md "PERF: parallel SMP's code
-without `acc`", ABI 73): parallel SMP's polled code has a counted and an uncounted mode, the page counting while its
-status bar shows MIPS or JIT share (the default layout does; a "Faster defaults" preset), the benchmarks unless
-`--query=uncounted`; a ticker worker and the compile worker end uncounted chunks. Round-robin's code and gates are
-unchanged. **On the Mac the uncounted mode doesn't beat the base** (pages 73.2 s against 73.1; gates +0.4 to +0.7%),
-where loop 53's bound was −3.6%: more modules (+18.6%, the batch clock by time) and the platform lock contended 2.7×
-are the leads (docs/backlog.md "Where the uncounted mode's gain goes"). **Next: an out-of-context review of the ticker,
-the setters and the mode switch** (`web/ticker-worker.ts`, `vm_set_count`, the run loop's tick bits and `due`, the
-compile worker's stores, the page's `count`), then its fixes, then the gain's hunt. The next loop is 56. Main is clean,
-no run pending; `target/snapbench/pages.waarm64snap` loads into loop 55's core.
+**The user asked the track to pause after loop 56.** Loop 56 fixed the out-of-context review of loop 55's ticker and
+uncounted mode (all eight findings; bench/boot/REPORT.md "PERF loop 56"): the counters it pointed at moved (modules
+−3% against the base, compile time −2%, the platform lock's contention ×1.2-1.9 instead of ×2.7), but **the uncounted
+mode is still no faster on the Mac** (pages 73.1-74.5 s against the base's 72.3-76.2, gates ±0.4%, overlapping). The
+page's "Faster defaults" preset and its note were taken out (the user's call for this outcome); the mechanism (the
+ticker, the exports, ABI 73, the emitters' uncounted branches, the page's `count` plumbing) stays. **Next, when the
+track resumes: decide whether to revert the `acc`-less mechanism** (docs/backlog.md "Keep or revert parallel SMP's code
+without `acc`" lists what a revert removes, ~1,200 lines and an ABI bump), or first look for loop 53's −3.6% (a
+diagnostic build without the ticker's periodic tick on the pages session). The next loop is 57. Main is clean, no run
+pending; `review/ticker-count` deleted on origin; `target/snapbench/pages.waarm64snap` loads into loop 56's core.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-55" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47 and 50) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43 and 48 (50's: comments only). The next is due now, after
-loop 55's mechanism (loops 52-54 added no handler or mechanism). Built but off by default (measured slower): I8MM,
+56" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+36, 42, 47, 50 and 55) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48 and 56 (50's: comments only). The next
+is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM,
 FCMA, FP16, FHM, BF16. Where things stand: regions follow a call only when its callee can't leave them (loops 36-37,
 the gates −2.5%); the core's heap is measured and bounded (loops 38-44: the block map at 900,000 keys and 2^20
 buckets, its table kept across a prune, its prune allocating nothing; 15 minutes of real sites in the desktop guest's
@@ -141,7 +141,7 @@ Refilled by the supervisor after loop 52 from docs/backlog.md's performance entr
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: where the uncounted mode's gain goes (after the review's fixes) | loop 55: pages even with the base, loop 53's bound −3.6%; a diagnostic build taking out the batch clock by time and the simultaneous periodic tick in turn, on the pages session |
+| **Next (after the pause):** JIT: keep or revert the code without `acc` | loops 55-56: pages even with the base after the review's fixes, loop 53's bound −3.6%; decide on the revert, or a diagnostic build without the periodic tick first |
 | Parallel SMP: WFI's sleep wakes late on macOS | loop 53's finding: halving waits in the vCPU worker's idle wait; measure the "in WFI" latency and the pages session |
 | JIT: the core's heap, what a module's install adds outside the bound | count first; reserve before `emit_batch`, skip a tier-up that doesn't fit |
 | JIT: kvm-unit-tests `timer` slower under the JIT than interpreted | re-measure after loop 49; then the short blocks around the polls |
