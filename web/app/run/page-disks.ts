@@ -4,6 +4,7 @@ import { t, text } from '../../i18n.ts';
 import { params } from './knobs.ts';
 import { diskOf, type PageMachine, type Stored } from './page-machine.svelte.ts';
 import type { StartDisk } from '../protocol.ts';
+import type { CurrentSource } from '../areas/current.svelte.ts';
 import { swapLabel } from '../guest-swap.ts';
 import { sizeSeen } from '../disk-size.ts';
 import { newId, serialOf, type DiskRecord } from '../shape.ts';
@@ -14,8 +15,8 @@ import { diskSource, identityOf, refreshOverlay, refreshStored } from '../disks.
 export const NO_OVERLAY_YET = 'overlays/none';
 
 /**
- * A stored machine's boot disk: its first writable attachment that takes an overlay (a changes file dropped on the page,
- * and Suspend's "has a disk", go by it; the Home page has every disk's).
+ * A stored machine's boot disk: its first writable attachment that takes an overlay (a changes file dropped on the page
+ * goes by it; the Home page has every disk's).
  */
 export function bootAttachment(m: PageMachine) {
   const s = m.stored;
@@ -31,6 +32,23 @@ export function overlayName(m: PageMachine) {
   if (m.stored) return a && (a.overlay ? overlayDir(a.overlay) : NO_OVERLAY_YET);
   return m.chosen?.overlay ?? m.spec.overlay;
 }
+/** A transient machine's own disk: the chosen one, or its image with the overlay it names. */
+const ownDisk = (m: PageMachine): { url?: string; file?: File; overlay?: string } | undefined =>
+  m.chosen ?? (m.spec.disk ? { url: m.spec.disk, overlay: m.spec.overlay } : undefined);
+/**
+ * The OPFS directory of the machine's own files (the variable store, a suspended copy; `startDisks`' `home`): every
+ * stored machine's, whatever its disks (an in-place disk is pinned by its own generation, a ramdisk's blocks go in the
+ * copy), and a transient machine's overlay. Without one there is no Suspend.
+ */
+export const homeOf = (m: PageMachine) => (m.stored ? machineDir(m.stored.record.id) : ownDisk(m)?.overlay);
+/** The facts of `current` (web/app/areas/current.svelte.ts) read off the machine and its disks: all but its size. */
+export const diskFacts = (m: PageMachine): Omit<CurrentSource, 'size'> => ({
+  id: () => m.stored?.record.id,
+  title: () => machineTitle(m),
+  transient: () => (!m.stored && !needsDisk(m) ? { label: text(m.spec.title), disk: baseName(m) } : undefined),
+  hasOverlay: () => !!overlayName(m),
+  canSuspend: () => !!homeOf(m),
+});
 /** What the disk is called on the page. */
 export function diskName(m: PageMachine) {
   if (m.stored) return bootDisk(m)?.name;
@@ -118,7 +136,7 @@ async function storedDisks(m: PageMachine, s: Stored): Promise<{ disks: StartDis
       };
     }),
   );
-  return { disks, home: machineDir(s.record.id) };
+  return { disks, home: homeOf(m) };
 }
 
 /**
@@ -128,9 +146,7 @@ async function storedDisks(m: PageMachine, s: Stored): Promise<{ disks: StartDis
 export async function startDisks(m: PageMachine): Promise<{ disks: StartDisk[]; home?: string }> {
   if (m.stored) return storedDisks(m, m.stored);
   const disks: StartDisk[] = [];
-  const spec = m.spec;
-  const own: { url?: string; file?: File; overlay?: string } | undefined =
-    m.chosen ?? (spec.disk ? { url: spec.disk, overlay: spec.overlay } : undefined);
+  const own = ownDisk(m);
   if (own)
     disks.push({
       name: baseName(m),
@@ -144,7 +160,7 @@ export async function startDisks(m: PageMachine): Promise<{ disks: StartDisk[]; 
       name: new URL(disk2, location.href).pathname.split('/').pop() ?? 'disk2',
       source: { url: new URL(disk2, location.href).href },
     }); // the page's, not the worker's (its bundle is under assets/)
-  return { disks, home: own?.overlay };
+  return { disks, home: homeOf(m) };
 }
 
 /** After a stored machine ran: its overlays' and in-place disks' generations and sizes from their files into their records (§3.3). */

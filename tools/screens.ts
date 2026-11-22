@@ -501,7 +501,7 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
 // The page's own (transient) machine on the Home page: `?machine=` with a disk, its Disks and Snapshots tabs.
 await state('machines-transient', async () => {
   const page = await open(WIDE, '#home');
-  await setUi(page, `a.current.transient = { label: 'This page’s machine', disk: 'disk.qcow2' }; a.current.hasOverlay = true; a.machinesNav.choose('page');`); // i18n-ignore: a test's label
+  await setUi(page, `a.current.transient = { label: 'This page’s machine', disk: 'disk.qcow2' }; a.current.hasOverlay = true; a.current.canSuspend = true; a.machinesNav.choose('page');`); // i18n-ignore: a test's label
   await page.locator('section.machine[data-selected="page"]').waitFor();
   await shot(page, 'machines-transient-disks');
   await page.locator('section.machine[data-selected="page"] [data-tab=snapshots]').click();

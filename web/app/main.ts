@@ -48,7 +48,7 @@ import { installBenchHooks } from './run/bench-hooks.ts';
 import { params } from './run/knobs.ts';
 import { MemorySignal } from './run/memory-signal.ts';
 import { Messages, standingNote } from './run/messages.ts';
-import { baseName, machineTitle, needsDisk, overlayName } from './run/page-disks.ts';
+import { diskFacts, machineTitle } from './run/page-disks.ts';
 import { lastMachine, loadStored, PageMachine } from './run/page-machine.svelte.ts';
 import { PowerActions } from './run/power-actions.ts';
 import { Problems } from './run/problems.ts';
@@ -58,7 +58,7 @@ import { Runner } from './run/runner.ts';
 import { SizeActions, sizeOf } from './run/size-actions.ts';
 import { remember } from './settings.ts';
 import { Store } from './store.ts';
-import { describe, text } from '../i18n.ts';
+import { describe } from '../i18n.ts';
 import { pageQuery } from './demos-route.ts';
 
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
@@ -77,14 +77,7 @@ const stored = chosenId
     })
   : undefined;
 const machine = new PageMachine(store, stored, storedError);
-current.follow({
-  id: () => machine.stored?.record.id,
-  title: () => machineTitle(machine),
-  transient: () =>
-    !machine.stored && !needsDisk(machine) ? { label: text(machine.spec.title), disk: baseName(machine) } : undefined,
-  hasOverlay: () => !!overlayName(machine),
-  size: () => sizeOf(machine),
-});
+current.follow({ ...diskFacts(machine), size: () => sizeOf(machine) });
 current.firmware = !!machine.spec.firmware;
 current.hasNetwork = !!machine.spec.network;
 current.hasGpu = machine.hasGpu;
