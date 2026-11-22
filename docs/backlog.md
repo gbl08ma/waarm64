@@ -105,19 +105,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   catalog, docs/copy.md). The spin tests with 2^30-step chunks catch a missing setter; the polled differential test
   needs its step accounting reworked (it compares the steps the JIT ran). Then the Mac's gates and pages session, the
   round-robin gates unchanged, an out-of-context review.
-- **Indirect transfers into a browser's code** (2026-10-16; `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes
-  in Firefox"). In Firefox's pages session 26% of a busy vCPU's time stalls at a guest function's first instruction,
-  83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail
-  calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). Re-profiled
-  2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): entries 22.0% of the samples (27-29% while pages scroll), 80% of them after a
-  `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. On the Mac host (2026-11-09, `bench/boot/REPORT.md` "Where a
-  busy vCPU's time goes on the Mac, and the compile threshold there") entries are 14.1% of the pages session's busy
-  ticks and 13-14% of Godot's editor start: smaller than in the VM, still the largest single cost after the bodies. Returns, 49% of those entries, are host returns now ([jit.md](jit.md) "Calls"); the tails into code
-  compiled later (22%) lost both ways tried, re-emitted and rebound ([jit.md](jit.md) "Tried and not kept"). What
-  remains:
-  - The dispatcher's entries (15% of the entry stalls on 2026-11-04 for 4.7% of the indirect entries: about three
-    times the average stall each) and the signature check's table load (3.0% of the time; a typed table didn't make
-    the transfer cheaper in `chain.mjs`).
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such

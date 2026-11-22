@@ -111,21 +111,20 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-22, after loop 53)
+## State (2026-11-22, after loop 54)
 
-Loop 53 took `acc`'s replacement through its first two stages (bench/boot/REPORT.md "PERF loop 53"): the bound holds
-on today's code (Firefox's pages session −3.6% in two sessions on the Mac, the parallel gates −1 to −1.6%), and a
-ticker worker whose `Atomics.wait` takes half the time left, then spins the last 40 µs, is 4-9 µs late at a deadline
-on the Mac where the chunk's steps give 31-80 µs today (a plain wait 158-561 µs: macOS's timer leeway). The design,
-ABI 73, is in docs/abi.md "PERF: parallel SMP's code without `acc`"; nothing of it is built. Stage 3 (the build) is
-the queue's next row; it adds a mechanism (the ticker and the compile worker's stores), so **an out-of-context review
-is due after it**. New: `bench/boot/timer-setters.html`. Found: a vCPU in WFI wakes 0.3-1.9 ms late on macOS for the
-same leeway (docs/backlog.md "WFI's sleep wakes late on macOS"). The next loop is 54. Main is clean, no run pending.
+Loop 54 closed the backlog's "Indirect transfers into a browser's code" with counts, nothing built (bench/boot/REPORT.md
+"PERF loop 54"): on the Mac entries are 12.7% of the pages session's busy ticks; the dispatcher's 161 M entries follow
+interpreted code (82%) or an exit or chunk end (8%), and the 10% compiled code could have taken itself bound to 0.55%
+of busy time; a typed table transfers no faster than the funcref one. Loop 53 took `acc`'s replacement through its
+first two stages: the design, ABI 73, is in docs/abi.md "PERF: parallel SMP's code without `acc`", nothing of it built.
+Stage 3 is the queue's first row; it adds a mechanism, so **an out-of-context review is due after it**. The next loop
+is 55. Main is clean, no run pending.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-51" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+54" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47 and 50) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43 and 48 (50's: comments only). The next is due after
-`acc`'s replacement's stage 3 (loops 52 and 53 added no handler or mechanism). Built but off by default (measured slower): I8MM,
+`acc`'s replacement's stage 3 (loops 52-54 added no handler or mechanism). Built but off by default (measured slower): I8MM,
 FCMA, FP16, FHM, BF16. Where things stand: regions follow a call only when its callee can't leave them (loops 36-37,
 the gates −2.5%); the core's heap is measured and bounded (loops 38-44: the block map at 900,000 keys and 2^20
 buckets, its table kept across a prune, its prune allocating nothing; 15 minutes of real sites in the desktop guest's
@@ -141,7 +140,6 @@ Refilled by the supervisor after loop 52 from docs/backlog.md's performance entr
 |---|---|
 | **Next:** JIT: parallel SMP's code without `acc`, stage 3 | stages 1-2 done (loop 53: −3.6% pages, −1-1.6% gates; the halving ticker meets decision 3; the design in docs/abi.md, ABI 73); build every setter and the step clocks by time, the status bar's MIPS by time; may take two loops; a review after |
 | Parallel SMP: WFI's sleep wakes late on macOS | loop 53's finding: halving waits in the vCPU worker's idle wait; measure the "in WFI" latency and the pages session |
-| JIT: indirect transfers into a browser's code, what remains | the dispatcher's entries (15% of the entry stalls for 4.7% of the entries) and the signature check's table load; re-count on the Mac first |
 | JIT: the core's heap, what a module's install adds outside the bound | count first; reserve before `emit_batch`, skip a tier-up that doesn't fit |
 | JIT: kvm-unit-tests `timer` slower under the JIT than interpreted | re-measure after loop 49; then the short blocks around the polls |
 | JIT: the unexplained ~10 GB samples in the Go-load runs | V8's own counters before trusting the median |

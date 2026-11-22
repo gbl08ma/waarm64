@@ -1619,6 +1619,14 @@ fast paths send there (`WAARM64_JIT_DIFF_HELPERS=1` on the differential test lis
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **Fewer or cheaper entries from the dispatcher, and no signature check** (PERF loop 54, 2026-11-22;
+  `bench/boot/REPORT.md` "PERF loop 54", `bench/boot/results/perf54/`): on the Mac, entries at a function's first
+  instruction are 12.7% of the pages session's busy ticks. Of the dispatcher's 161 M block calls there (8% of the
+  indirect entries), 82% follow interpreted code (the threshold's call, and the call is the entry itself) and 8% an
+  exit or a chunk's end; the 10% that follow a compiled block whose successor was compiled come to 0.55% of busy time
+  even at a fully cold transfer each (78 ns): not worth code to take them. A table of a final function type, where V8
+  needn't check the signature, transfers no faster than the funcref table (`chain2.mjs`, 78 ns either way at 131,072
+  functions, ~5 ns warm): the check's samples are the dispatch table's load, which the target's needs anyway.
 - **Lazy NZCV at a loop's head** (PERF loop 42, 2026-11-21; `bench/boot/REPORT.md` "Lazy NZCV at loop heads,
   counted" and "PERF loop 42", `bench/boot/results/flagx/` and `results/perf42/`): a head whose flags only cold paths
   (a slow arm, a failure chain, the FP guard) want before its first setter still takes NZCV in memory, so the

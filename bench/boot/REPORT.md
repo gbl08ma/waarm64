@@ -7187,3 +7187,59 @@ mechanism with its tests, reviews and a page change of its own (docs/backlog.md)
 Memory: none (nothing built; the ticker will be one more worker). x64 static counts: compiled code unchanged (loop
 34's `cs-*-noacc.json` stand: arm64 −9% frame memory operands, x64 −10 to −11%). `scripts/ci-fast.sh` passed (a
 bench page and docs).
+
+## PERF loop 54: the dispatcher's entries and the signature check, counted on the Mac (2026-11-22)
+
+docs/backlog.md's "Indirect transfers into a browser's code", what remained: the dispatcher's entries (15% of the entry
+stalls in the dev VM on 2026-11-04 for 4.7% of the indirect entries) and the signature check's table load (3.0% of the
+VM's samples). Counted again on the ranking host before building anything. **Nothing to build: the entries the
+dispatcher could hand to compiled code directly are under 0.6% of busy time even at a fully cold transfer each, and
+eliding the signature check costs the same as keeping it.** M4, macOS, Chrome for Testing 158.0.8127.36, 4fe2f1b3's
+core; Firefox's pages session from `pages.waarm64snap` (`bench/gpu/ab-mac.sh`), one session per measurement. Data:
+`bench/boot/results/perf54/` (its README).
+
+**Where a busy vCPU's time goes today** (V8's `--prof`, 155,025 busy vCPU ticks, `prof/attr.txt`; 2026-11-09's in
+brackets): TurboFan bodies 43.1% (40.8), the block interpreter 17.5% (18.4), **entries at a function's first
+instruction 12.7% (14.1)**, the dispatcher, `Jit::miss` and `xmiss` 4.4% (4.6; `jit::steps` alone 2.2%), Liftoff
+bodies 5.5%, helpers 4.6%, TLB 1.6%, compile 1.3%. `--prof` has no registers, so it can't tell an entry from the
+dispatcher from one after a `return_call_indirect` (both land at the same instruction with the dispatcher's return
+address): the split below is by counts.
+
+**The dispatcher's entries by what came before them** (a diagnostic core, `dispatch-counts.patch`: the `diag` tallies
+grown by 16 words and summed into the page's JIT log; 97.5 G steps, 442 busy MIPS, ~220 busy vCPU-seconds):
+
+| before the block call | calls | share |
+|---|---|---|
+| the block interpreter, stopped before a compiled block | 131.5 M | 81.7% |
+| the block interpreter, otherwise | 1.1 M | 0.7% |
+| an exit (the run loop handled it) | 10.6 M | 6.6% |
+| a chunk's end | 2.0 M | 1.3% |
+| a compiled block that returned with no exit, its successor in the jump cache | 11.5 M | 7.1% |
+| the same, the successor found through `Jit::miss` | 4.1 M | 2.6% |
+| all (`dispatches`) | 160.9 M | |
+
+Compiled code went to interpreted code 134.5 M times (151.4 M interpreted runs, 23 steps each): the session's
+interpreted 3.6% of the steps come and go as that cycle, compiled → dispatcher → interpreter → dispatcher → compiled.
+Inside compiled code the indirect entries were 1,855 M (transfer-cache hits 651 M, jump-cache tails 615 M, by-VA links
+589 M; the miss function 161 M more), the direct and imported chains 3,232 M: the dispatcher's 161 M are 8% of the
+indirect entries (4.7% on 2026-11-05, before host returns took the returns out of the entries).
+
+**The bound.** At a fully cold indirect transfer each (78 ns on the Mac in `chain2.mjs` at 131,072 functions, against
+~5 ns warm), all 161 M would be 12.5 s, 5.7% of busy time; at the VM's ratio (an entry from the dispatcher stalling
+~3.2× the average entry) they're ~22% of the entry ticks, ~2.8% of busy time. Of them 82% follow interpreted code:
+how much code runs interpreted is the compile threshold's call, and halving it lost on the Mac ("Where a busy vCPU's
+time goes on the Mac, and the compile threshold there"); the dispatcher's call is the entry itself, which any path from
+the interpreter to compiled code takes. Exits and chunk ends (8%) are the run loop's by definition (the chunk ends
+are what docs/abi.md "PERF: parallel SMP's code without `acc`" will change: 2.0 M here, 1.3%, so that design and this
+entry don't interact). What compiled code could have taken itself, a block that returned with its successor compiled,
+is 15.6 M calls: at 78 ns each 1.2 s, **0.55% of busy time at most**, under the pages session's ~1% floor before any
+code to take them; dropped.
+
+**The signature check** (`chain2-mac.txt`, the Mac's Node 26.10.0, `--no-liftoff`, ns an entry, two runs): a funcref
+table 78.1-79.5 at 131,072 functions and 4.6-5.4 at 1,000; a table of a final function type, where V8 needn't check
+the signature, 77.6-79.1 and 4.9: the same. The check's samples are the dispatch table's line being fetched, which the
+target's load would wait for without it (an imported tail call, 27 ns, is the only cheaper transfer: what the jump
+cache's tails already are once compiled, "Tried and not kept"). A typed table would also have to be defined by a module
+rather than made by the page and shared: dropped, nothing to gain.
+
+Memory: none (nothing built). Compiled code unchanged (no x64 counts). `scripts/ci-fast.sh` passed (docs and data).
