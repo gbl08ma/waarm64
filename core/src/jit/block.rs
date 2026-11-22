@@ -207,7 +207,7 @@ fn goes_on(op: Op) -> bool {
 }
 
 /// Blocks per region, at most (step 8).
-pub const REGION: usize = 16;
+pub const REGION: usize = 64;
 
 /// A region (step 8): a head and other blocks of its page that static edges
 /// reach from it, in reverse postorder (`blocks[0]` is the head), compiled
@@ -2766,7 +2766,7 @@ mod tests {
         let (_r, m) = mem_with(0x100, &[0xd4000001]); // svc #0
         assert!(forward(&m, 0x100, 0, &|_, k| k).blocks.is_empty());
         // At most REGION blocks: a chain of branches to the next word.
-        let (_r, m) = mem_with(0x100, &[0x14000001; 40]);
+        let (_r, m) = mem_with(0x100, &[0x14000001; 2 * REGION]);
         assert_eq!(forward(&m, 0x100, 0, &|_, k| k).blocks.len(), REGION);
     }
 

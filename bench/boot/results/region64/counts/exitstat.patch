@@ -1,0 +1,251 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 5fda939d..b8db90e7 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -230,6 +230,8 @@ pub struct Region {
+     /// a BL whose callee the walk took through that BL. Their BL is a
+     /// branch to the callee; every other call is a host call.
+     pub follows: Vec<u64>,
++    /// EXITSTAT: why a member's static successor isn't a member: (member key, offset, `tally::WHY_*`).
++    pub why: Vec<(u64, i64, u32)>,
+ }
+ 
+ impl From<Block> for Region {
+@@ -239,6 +241,7 @@ impl From<Block> for Region {
+             tier: None,
+             returns: vec![],
+             follows: vec![],
++            why: vec![],
+         }
+     }
+ }
+@@ -250,6 +253,7 @@ impl Region {
+             tier: None,
+             returns: vec![],
+             follows: vec![],
++            why: vec![],
+         }
+     }
+ 
+@@ -512,6 +516,7 @@ fn walk(
+         post: Vec<Block>,
+         returns: Vec<(u64, u64)>,
+         follows: Vec<u64>,
++        why: Vec<(u64, i64, u32)>,
+     }
+     impl Walk<'_> {
+         /// Takes the block at `va` (`near`: its key, if it's in the page of
+@@ -524,17 +529,25 @@ fn walk(
+             let taken = |s: &[(u64, u64)], k: Option<u64>| {
+                 s.iter().any(|&(sk, v)| v == va || Some(sk) == k)
+             };
+-            if self.seen.len() >= REGION || taken(&self.seen, near) {
++            if self.seen.len() >= REGION {
++                tally::WHY.store(tally::WHY_FULL, core::sync::atomic::Ordering::Relaxed);
+                 return false;
+             }
++            if taken(&self.seen, near) {
++                tally::WHY.store(tally::WHY_HERE, core::sync::atomic::Ordering::Relaxed);
++                return false;
++            }
++            tally::WHY.store(tally::WHY_OTHER, core::sync::atomic::Ordering::Relaxed);
+             let Some(key) = (self.member)(va, near) else {
+                 return false;
+             };
+             if taken(&self.seen, Some(key)) {
++                tally::WHY.store(tally::WHY_HERE, core::sync::atomic::Ordering::Relaxed);
+                 return false;
+             }
+             let words = form(self.mem, key & !3);
+             if words.is_empty() {
++                tally::WHY.store(tally::WHY_OTHER, core::sync::atomic::Ordering::Relaxed);
+                 return false;
+             }
+             self.seen.push((key, va));
+@@ -562,6 +575,9 @@ fn walk(
+                     }
+                 }
+                 Op::BL | Op::BLR => {
++                    if decode(last) == Op::BL {
++                        self.why.push((b.key, offsets(&b.words)[0], tally::WHY_OPEN_CALL));
++                    }
+                     self.edge(&b, after, calls);
+                 }
+                 Op::RET if crate::interp::bits(last, 9, 5) == 30 => {
+@@ -582,7 +598,12 @@ fn walk(
+         fn edge(&mut self, b: &Block, o: i64, calls: &[Call]) -> bool {
+             let k = succ(b.key, o);
+             let near = ((k ^ b.key) >> 12 == 0).then_some(k);
+-            self.take(b.va.wrapping_add(o as u64), near, calls)
++            let t = self.take(b.va.wrapping_add(o as u64), near, calls);
++            if !t {
++                let w = tally::WHY.load(core::sync::atomic::Ordering::Relaxed);
++                self.why.push((b.key, o, w));
++            }
++            t
+         }
+     }
+     let mut w = Walk {
+@@ -593,6 +614,7 @@ fn walk(
+         post: vec![],
+         returns: vec![],
+         follows: vec![],
++        why: vec![],
+     };
+     let words = form(mem, key & !3);
+     if !words.is_empty() {
+@@ -604,6 +626,7 @@ fn walk(
+         tier: None,
+         returns: w.returns,
+         follows: w.follows,
++        why: w.why,
+     }
+ }
+ 
+@@ -784,6 +807,9 @@ struct Env<'a> {
+     nzcv: Option<[u32; emit::NZCV_HELPERS]>,
+     /// `Config::polled`: no `left`, [`emit::poll`] where a cycle can close.
+     polled: bool,
++    /// EXITSTAT: why each exit leaves (the region's `why`), or the region's kind's reason for all of them.
++    why: HashMap<(u64, i64), u32>,
++    why_all: Option<u32>,
+ }
+ 
+ impl Env<'_> {
+@@ -1007,6 +1033,14 @@ pub fn module(
+             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
+             nzcv,
+             polled: cfg.polled,
++            why: r.why.iter().map(|&(k, o, w)| ((k, o), w)).collect(),
++            why_all: if r.tier.is_some() {
++                Some(tally::WHY_ALONE)
++            } else if r.looped() {
++                Some(tally::WHY_LOOP_REGION)
++            } else {
++                None
++            },
+         };
+         // Twice: the first emission finds the registers to read plainly
+         // (`Func::plain`) and what each member's edges carry into it, which
+@@ -1579,6 +1613,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+ /// otherwise the successor is found as an indirect branch's target is, by
+ /// its VA in the transfer cache.
+ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
++    {
++        let w = e
++            .why_all
++            .or_else(|| e.why.get(&(b.key, off)).copied())
++            .unwrap_or(tally::WHY_OTHER);
++        let at = if matches!(x, Xfer::Tail) { tally::XTAIL } else { tally::XCALL };
++        emit::dbump(c, at + w);
++    }
+     let k = succ(b.key, off);
+     let len = b.words.len() as u32;
+     let f = e.funcs.get(&k);
+@@ -2755,6 +2797,7 @@ mod tests {
+             tier: None,
+             returns: vec![],
+             follows: vec![],
++            why: vec![],
+         };
+         // 0x7000 at PA 0x3000, 0x8000 at PA 0x9000, and back in the head's page.
+         let r = mmu([0x3000, 0x9000, 0x3100]);
+@@ -2841,6 +2884,7 @@ mod tests {
+             tier: Some(0x2000),
+             returns: vec![],
+             follows: vec![],
++            why: vec![],
+         };
+         let e = module(
+             &[r],
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 9cdc6872..057dbfb2 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -1292,6 +1292,14 @@ impl Cache {
+                         None if flat => va | key & 3,
+                         None => *at.get(&(va | key & 3))?,
+                     };
++                    let why = |w: u32| crate::tally::WHY.store(w, Ordering::Relaxed);
++                    match batch.get(&k) {
++                        Some(&LOOP) => why(crate::tally::WHY_LOOP),
++                        Some(&TAKEN) => why(crate::tally::WHY_TAKEN),
++                        Some(_) => {}
++                        None if self.map.get(&k).is_some_and(|i| i.idx != 0) => why(crate::tally::WHY_COMPILED),
++                        None => why(crate::tally::WHY_COLD),
++                    }
+                     let free = match batch.get(&k) {
+                         Some(&state) => state == FREE,
+                         // Everything at once (the differential tests): any
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 5dce3f01..0bf8c866 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,7 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 104;
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+@@ -44,6 +44,29 @@ pub const HOST_RET: u32 = 12;
+ pub const POLL: u32 = 13;
+ /// Slots below this are compiled code's (copied from the vCPU's table at each publication).
+ pub const JIT_SLOTS: usize = 16;
++/// EXITSTAT (measurement only): a second range of compiled code's slots, copied as the first.
++pub const JIT2: usize = 80;
++/// A static successor that left its region (`block::chain` reached), by why it isn't a member ([`WHY`]): a tail
++/// transfer at `XTAIL + why`, a host call (a BL's callee) at `XCALL + why`.
++pub const XTAIL: u32 = 80;
++pub const XCALL: u32 = 92;
++/// The reasons: the region had `REGION` blocks; the target is in the region already (an earlier member, or its
++/// VA taken); a loop head of the batch; another region of the batch took it (a head or a member); outside the batch,
++/// compiled before; outside the batch and not compiled (not hot yet); a call whose callee could leave the region
++/// (`open_call`); the exit of a loop region; a loop head compiled alone; anything else (another page's VA not in the
++/// batch, no words, a reason not recorded).
++pub const WHY_FULL: u32 = 0;
++pub const WHY_HERE: u32 = 1;
++pub const WHY_LOOP: u32 = 2;
++pub const WHY_TAKEN: u32 = 3;
++pub const WHY_COMPILED: u32 = 4;
++pub const WHY_COLD: u32 = 5;
++pub const WHY_OPEN_CALL: u32 = 6;
++pub const WHY_LOOP_REGION: u32 = 7;
++pub const WHY_ALONE: u32 = 8;
++pub const WHY_OTHER: u32 = 9;
++/// The reason the last `member` refusal gave (single-threaded measurement runs only).
++pub static WHY: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(WHY_OTHER);
+ 
+ /// How a chunk ended (parallel realtime, or round-robin): `END + kind` counts them, `END_STEPS + kind` sums their steps.
+ pub const END: usize = 16;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 6df017fa..f1bb4757 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1304,7 +1304,8 @@ impl Vm {
+             publish_jit(c, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
++        for i in (0..crate::tally::JIT_SLOTS).chain(crate::tally::JIT2..crate::tally::N) {
++            let a = &c.diag[i];
+             a.store(
+                 self.vcpus.iter().map(|v| v.diag[i]).sum(),
+                 Ordering::Relaxed,
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index c4a6f76d..e2a9a148 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -1180,8 +1180,8 @@ impl Vm {
+             publish_jit(k, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+-            a.store(x, Ordering::Relaxed);
++        for i in (0..crate::tally::JIT_SLOTS).chain(crate::tally::JIT2..crate::tally::N) {
++            k.diag[i].store(v.diag[i], Ordering::Relaxed);
+         }
+     }
+ }

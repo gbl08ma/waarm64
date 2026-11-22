@@ -68,7 +68,10 @@ the interpreter's own code.
 
 - A block starts at a PA and ends after branches and after system instructions that can change
   the regime, before exception-generating and unallocated words, at the page end, and at **32
-  instructions** (`block::CAP`). Hints that are NOPs here (PAC, BTI, CSDB, …) don't end one.
+  instructions** (`block::CAP`). Hints that are NOPs here (PAC, BTI, CSDB, …) don't end one. A longer cap would buy
+  little: blocks the cap ends are 0.03-1% of compiled block entries (Alpine's boot 0.54%, compress 0.97%), and their
+  successor is mostly a member of the same region, an edge that keeps registers in locals (`bench/boot/REPORT.md`
+  "Regions of 64 blocks").
   MRS, DMB/DSB, DC ZVA and the MSRs that can't change what a block assumes
   (`interp::sys::msr_continues`: DAIFSet, DAIFClr, DAIF, DIT, SP_EL0, SPSR/ELR_EL1, the TPIDRs) don't end a
   block either: they're inline, or a helper call that returns from the block mid-way when it doesn't
@@ -112,7 +115,9 @@ the interpreter's own code.
   Fewer, larger modules run faster (chains stay within a module) and cost V8 ~16 KB less each
   ([Memory](#memory)): Alpine's userspace benchmark makes 970 modules (3,860 with the 1M-step
   timeout alone, which emitted half of them with one function).
-- **Regions** (the compile unit, one function each) are of two kinds, of up to 16 blocks (`block::REGION`), in
+- **Regions** (the compile unit, one function each) are of two kinds, of up to **64** blocks (`block::REGION`;
+  against 16 on the Mac, Alpine's boot ~5% faster, its userspace ~4%, the parallel boots 2-3%, Firefox's pages session
+  the same, no more memory: `bench/boot/REPORT.md` "Regions of 64 blocks"), in
   reverse postorder: loop regions within one guest page, forward regions across pages ("Across pages" below):
   - **Forward regions** (`block::forward`, formed when a batch is compiled: `Cache::plan`): a
     block of the batch and the batch's other blocks that static edges reach from it, so each block
@@ -369,8 +374,10 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   call's block does). A member that can run inside a followed call and branches to a block not taken, branches
   indirectly, takes an edge that checks its target's mapping (it may fail, then the edge is a chain), or ends on a
   `ret` not predicted to return after that call makes the innermost call a host call, and the region is walked again
-  (until none is left open; each walk ≤ 16 blocks, `member` asked once per VA a walk reaches, and whether a block
-  outside the batch heads a loop once per batch). Before PERF loop 37 the emitter made any call to a later member or
+  (until none is left open; each walk ≤ `REGION` blocks, `member` asked once per VA a walk reaches, and whether a block
+  outside the batch heads a loop once per batch). The walks aren't bounded: 84-98% of Alpine's regions take one,
+  ~0.5% five or more; a bound of 8 walks and a cache of the blocks a plan forms cut planning 4-7% but not the gates'
+  times (`bench/boot/REPORT.md` "Regions of 64 blocks"). Before PERF loop 37 the emitter made any call to a later member or
   the head a `br`, and the rule saw only where the walk first took each member, so a second call to a callee taken
   (a helper called on both arms of an `if`, the machine outliner's `OUTLINED_FUNCTION`s), a callee that tail-called
   through a block taken outside it, a call back to the head and a checked edge inside a callee each still left with
@@ -1829,7 +1836,8 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   and it runs in the cold code that is most of a boot (guest code +17 to 20% in both V8 tiers).
   Forming the regions when the batch is compiled needs no prologue, no second compile and no
   redirect, and was faster everywhere (`bench/boot/REPORT.md` "M8: forward regions"). Tried with
-  them and flat within noise: 8 or 32 blocks a region instead of 16.
+  them and flat within noise then (in Node): 8 or 32 blocks a region instead of 16; on the Mac with today's JIT, 32 and
+  64 were faster (the regions' size, above).
 - **Rebinding a module's tails once their blocks are compiled** (2026-11-05, `bench/boot/REPORT.md` "Rebinding a
   module's tails once their blocks are compiled: 5% slower"; the patch in `bench/boot/results/m9-rebind/`): a tail to
   a successor not compiled yet imported as a function plus a length global (and by VA a host-address global), bound

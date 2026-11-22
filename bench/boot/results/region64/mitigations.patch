@@ -1,0 +1,304 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 5fda939d..7bfe9c53 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -101,6 +101,36 @@ pub fn form(mem: &Mem, pa: u64) -> Vec<u32> {
+     form_with(mem, pa, |w, _| w)
+ }
+ 
++/// The blocks one plan forms ([`form`]), each read and decoded once: a
++/// forward region's walks again ([`forward`]), the loop regions of a batch's
++/// blocks and its candidates' loop checks reach the same blocks over and
++/// over. It lives for one plan, so it holds what memory held then; the
++/// compiled code is checked against memory as before (docs/jit.md
++/// "Invalidation and the stale-code checker").
++pub struct Forms<'a> {
++    mem: &'a Mem,
++    map: core::cell::RefCell<HashMap<u64, Vec<u32>, super::KeyBuild>>,
++}
++
++impl<'a> Forms<'a> {
++    pub fn new(mem: &'a Mem) -> Self {
++        Forms {
++            mem,
++            map: Default::default(),
++        }
++    }
++
++    /// [`form`]`(mem, pa)`, from the map once it's been formed.
++    pub fn get(&self, pa: u64) -> Vec<u32> {
++        if let Some(w) = self.map.borrow().get(&pa) {
++            return w.clone();
++        }
++        let w = form(self.mem, pa);
++        self.map.borrow_mut().insert(pa, w.clone());
++        w
++    }
++}
++
+ /// [`form`], each word (with its class) mapped through `f`: one decode a word
+ /// (the block interpreter's micro-ops).
+ pub fn form_with<T>(mem: &Mem, pa: u64, f: impl FnMut(u32, Op) -> T) -> Vec<T> {
+@@ -207,7 +237,7 @@ fn goes_on(op: Op) -> bool {
+ }
+ 
+ /// Blocks per region, at most (step 8).
+-pub const REGION: usize = 16;
++pub const REGION: usize = 64;
+ 
+ /// A region (step 8): a head and other blocks of its page that static edges
+ /// reach from it, in reverse postorder (`blocks[0]` is the head), compiled
+@@ -382,8 +412,13 @@ fn succs(key: u64, words: &[u32]) -> Vec<u64> {
+ /// in its page that `hot(key)` admits, up to [`REGION`], that lead back to
+ /// the head; empty if the head would have no words.
+ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region {
++    region_in(&Forms::new(mem), key, va, hot)
++}
++
++/// [`region`], its blocks formed through `forms`.
++pub fn region_in(forms: &Forms, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region {
+     fn visit(
+-        mem: &Mem,
++        forms: &Forms,
+         b: Block,
+         hot: &dyn Fn(u64) -> bool,
+         seen: &mut Vec<u64>,
+@@ -393,20 +428,20 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
+             if (s ^ b.key) >> 12 != 0 || seen.contains(&s) || seen.len() >= REGION || !hot(s) {
+                 continue;
+             }
+-            let words = form(mem, s & !3);
++            let words = forms.get(s & !3);
+             if !words.is_empty() {
+                 seen.push(s);
+                 let va = b.va.wrapping_add(s & !3).wrapping_sub(b.key & !3);
+-                visit(mem, Block { key: s, va, words }, hot, seen, post);
++                visit(forms, Block { key: s, va, words }, hot, seen, post);
+             }
+         }
+         post.push(b);
+     }
+-    let words = form(mem, key & !3);
++    let words = forms.get(key & !3);
+     let mut blocks = vec![];
+     if !words.is_empty() {
+         visit(
+-            mem,
++            forms,
+             Block { key, va, words },
+             hot,
+             &mut vec![key],
+@@ -475,38 +510,59 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
+ /// first time (`Cache::plan`): the edges between its blocks keep registers
+ /// and flags in locals instead of leaving one function for the next. Empty
+ /// if the head would have no words.
++///
++/// **Its walks are bounded** ([`WALKS`]): each open call walks the region
++/// again, so a region of [`REGION`] blocks full of calls could take as many
++/// walks of as many blocks. Past the bound, a last walk follows no call (every
++/// call a host call), which leaves none open.
+ pub fn forward(
+     mem: &Mem,
+     key: u64,
+     va: u64,
+     member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
++) -> Region {
++    forward_in(&Forms::new(mem), key, va, member)
++}
++
++/// The walks of a forward region at most ([`forward`]).
++pub const WALKS: usize = 4;
++
++/// [`forward`], its blocks formed through `forms`.
++pub fn forward_in(
++    forms: &Forms,
++    key: u64,
++    va: u64,
++    member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
+ ) -> Region {
+     let mut not = vec![];
+-    loop {
+-        let r = walk(mem, key, va, member, &not);
++    for _ in 1..WALKS {
++        let r = walk(forms, key, va, member, &not, true);
+         match r.open_call() {
+             Some(k) if !not.contains(&k) => not.push(k),
+             _ => return r,
+         }
+     }
++    walk(forms, key, va, member, &not, false)
+ }
+ 
+ /// [`forward`]'s walk, with the callees of the calls that end the blocks at
+-/// `not` not taken.
++/// `not` not taken, and none taken unless `follow`.
+ fn walk(
+-    mem: &Mem,
++    forms: &Forms,
+     key: u64,
+     va: u64,
+     member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
+     not: &[u64],
++    follow: bool,
+ ) -> Region {
+     /// A return pending: the VA after the call, and its key if it's in the
+     /// call's page.
+     type Call = (u64, Option<u64>);
+     struct Walk<'a> {
+-        mem: &'a Mem,
++        forms: &'a Forms<'a>,
+         member: &'a dyn Fn(u64, Option<u64>) -> Option<u64>,
+         not: &'a [u64],
++        follow: bool,
+         /// The blocks taken so far: (key, VA).
+         seen: Vec<(u64, u64)>,
+         post: Vec<Block>,
+@@ -533,7 +589,7 @@ fn walk(
+             if taken(&self.seen, Some(key)) {
+                 return false;
+             }
+-            let words = form(self.mem, key & !3);
++            let words = self.forms.get(key & !3);
+             if words.is_empty() {
+                 return false;
+             }
+@@ -546,7 +602,7 @@ fn walk(
+             let last = b.words.last().copied().unwrap_or(0);
+             let after = 4 * b.words.len() as i64;
+             match decode(last) {
+-                Op::BL if !self.not.contains(&b.key) => {
++                Op::BL if self.follow && !self.not.contains(&b.key) => {
+                     let k = succ(b.key, after);
+                     let near = ((k ^ b.key) >> 12 == 0).then_some(k);
+                     let mut inner = calls.to_vec();
+@@ -586,15 +642,16 @@ fn walk(
+         }
+     }
+     let mut w = Walk {
+-        mem,
++        forms,
+         member,
+         not,
++        follow,
+         seen: vec![(key, va)],
+         post: vec![],
+         returns: vec![],
+         follows: vec![],
+     };
+-    let words = form(mem, key & !3);
++    let words = forms.get(key & !3);
+     if !words.is_empty() {
+         w.visit(Block { key, va, words }, &[]);
+     }
+@@ -2493,6 +2550,37 @@ mod tests {
+         assert_eq!((keys(&r), r.returns.len()), (vec![0x100, 0x104], 0));
+     }
+ 
++    /// Calls whose callees can leave the region, one after another, each walk
++    /// the region again; past [`WALKS`], a last walk follows none.
++    #[test]
++    fn the_walks_of_a_forward_region_are_bounded() {
++        // 0x100: bl 0x200; 0x104: bl 0x220; 0x108: bl 0x240; 0x10c: bl 0x260;
++        // 0x110: ret. Each callee: b 0x400 (not admitted).
++        let mut words = [0u32; 89];
++        words[..5].copy_from_slice(&[0x94000040, 0x94000047, 0x9400004e, 0x94000055, 0xd65f03c0]);
++        for (at, b) in [
++            (0x200, 0x14000080),
++            (0x220, 0x14000078),
++            (0x240, 0x14000070),
++            (0x260, 0x14000068),
++        ] {
++            words[(at - 0x100) / 4] = b;
++        }
++        let (_r, m) = mem_with(0x100, &words);
++        // A walk that follows a call reaches its callee's branch to 0x400.
++        let leaves = core::cell::Cell::new(0);
++        let r = forward(&m, 0x100, 0x100, &|va, k| {
++            leaves.set(leaves.get() + (va == 0x400) as usize);
++            k.filter(|&k| k != 0x400)
++        });
++        let keys: Vec<u64> = r.blocks.iter().map(|b| b.key).collect();
++        assert_eq!(keys, [0x100, 0x104, 0x108, 0x10c, 0x110]);
++        assert!(r.follows.is_empty() && r.open_call().is_none());
++        // Four calls open would take five walks: the bound took four, the last
++        // following none.
++        assert_eq!(leaves.get(), WALKS - 1);
++    }
++
+     /// A second call to a callee the walk took through a first one is a host
+     /// call, its continuation taken: the callee's `ret` predicts only the
+     /// first call's return.
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 9cdc6872..e022878c 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -1199,7 +1199,7 @@ impl Cache {
+                 t.quiet(word);
+                 continue;
+             }
+-            let r = self.region(key, va, mem);
++            let r = self.region(key, va, &block::Forms::new(mem));
+             if r.blocks.len() < 2 {
+                 continue;
+             }
+@@ -1249,9 +1249,10 @@ impl Cache {
+         let pending = core::mem::take(&mut self.pending);
+         self.pending_steps = 0;
+         let all = self.cfg.threshold == 0 && self.cfg.region_after == 0;
++        let forms = block::Forms::new(mem);
+         let loops: Vec<block::Region> = pending
+             .iter()
+-            .map(|&(key, va)| self.region(key, va, mem))
++            .map(|&(key, va)| self.region(key, va, &forms))
+             .collect();
+         // The batch's keys: a loop head, taken (a head, or a member of an
+         // earlier region), or free to be a member.
+@@ -1284,7 +1285,7 @@ impl Cache {
+                     r.tier = Some(0); // its word once it has a slot
+                 }
+             } else if !r.blocks.is_empty() && !r.looped() {
+-                r = block::forward(mem, key, va, &|va, near| {
++                r = block::forward_in(&forms, key, va, &|va, near| {
+                     // With the MMU off a VA is its PA.
+                     let flat = key & block::KEY_MMU == 0;
+                     let k = match near {
+@@ -1305,7 +1306,7 @@ impl Cache {
+                                 && !*loop_heads
+                                     .borrow_mut()
+                                     .entry(k)
+-                                    .or_insert_with(|| heads_loop(&self.region(k, 0, mem)))
++                                    .or_insert_with(|| heads_loop(&self.region(k, 0, &forms)))
+                         }
+                     };
+                     free.then_some(k)
+@@ -1335,10 +1336,10 @@ impl Cache {
+     /// differential tests), any. Not in JIT-stress: regions of every block in
+     /// reach, compiled on every miss into a 4-block cache, ran its boots 42×
+     /// slower than step 7 (kvm-unit-tests `gic active`: 522 s vs 12.5 s).
+-    fn region(&self, key: u64, va: u64, mem: &Mem) -> block::Region {
++    fn region(&self, key: u64, va: u64, forms: &block::Forms) -> block::Region {
+         let all = self.cfg.threshold == 0 && self.cfg.region_after == 0;
+         let map = &self.map;
+-        block::region(mem, key, va, &|k| all || map.contains_key(&k))
++        block::region_in(forms, key, va, &|k| all || map.contains_key(&k))
+     }
+ 
+     /// A loop head compiled alone got hot in table `t` (`jit_hot`, which runs
+@@ -1375,7 +1376,7 @@ impl Cache {
+             // head counts again in every table that sees it hot, and finds
+             // the region then.
+             if !tiering {
+-                if self.region(key, va, mem).blocks.len() < 2 {
++                if self.region(key, va, &block::Forms::new(mem)).blocks.len() < 2 {
+                     return;
+                 }
+                 self.map.get_mut(&key).expect("a head").tiering = true;
+@@ -1394,7 +1395,7 @@ impl Cache {
+         // Never a flush here: JIT code is running (the head's prologue), and
+         // what it goes on to call must stay in the cache. Without room, the
+         // head stays alone until the next flush drops it.
+-        let r = self.region(key, va, mem);
++        let r = self.region(key, va, &block::Forms::new(mem));
+         if r.blocks.len() < 2 || self.next >= self.cfg.capacity || self.live_bytes >= budget {
+             return;
+         }

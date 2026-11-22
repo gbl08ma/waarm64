@@ -7413,3 +7413,57 @@ check): `scripts/ci-fast.sh` failed once on page-modal's remote-cache test (the 
 then `scripts/ci.sh` (747 s), `scripts/ci-jit.sh` (256 s) and `scripts/ci-debian.sh --platform` (479 s) passed.
 arch-desktop's "Ctrl+C at a desktop's countdown" still ends `counting foot shell noapp` alone on this tree, so the
 mechanism didn't cause it (docs/backlog.md).
+
+## Regions of 64 blocks (2026-11-22)
+
+`block::REGION` 16 → 64 (data and scripts: `results/region64/`, its README). 16 came from M5 step 8.1; M8's forward
+regions found 8 and 32 flat within noise in Node (2026-10-02, no numbers kept). M4, macOS, Chrome for Testing 158;
+each A/B three rounds alternated, the first arm rotated each round; ranges are the rounds' medians.
+
+**Why it could matter** (diagnostic cores in the dev VM's Node, `results/region64/counts/`). Registers and lazy flags
+stay in locals across a region's edges and are written back where code leaves the function. At 16, per 1000 steps,
+Alpine's boot takes 127 edges inside regions and leaves them by 32 static tail transfers, 14 host calls, 14 host
+returns and 4 indirect transfers. By why the successor wasn't a member, the tail exits: a loop region's own exits 8.7,
+the target compiled before 6.5, another region of the batch took it 4.9, a loop head compiled alone 4.5, the region
+full 2.5 (userspace: 9.5, 9.3, 7.0, 3.9 and 1.7 of 42). At 32 the region is full far less (0.3) and the other
+reasons shrink too: the boot's tail exits 32.0 → 23.6 (−26%), the userspace's 42.0 → 35.7 (−15%), compress −33%,
+churn −36%, SQLite −9%, Lua flat.
+
+**16 against 32** (`mac/rg-*`):
+
+| | 16 | 32 | |
+|---|---|---|---|
+| `boot_alpine_jit` total (ms) | 3698-3762 | 3618-3631 | −3.3%, apart |
+| `alpine_user_jit` total | 9880-9975 | 9663-9728 | −3.0%, apart |
+| ... compress / Lua / churn / SQLite | | | −7.5%, +0.5% (overlap), −5.3%, −1.9% |
+| `smp_alpine_jit` n1 / n2 / n4 | | | −1.6%, −0.8%, −1.1%, apart |
+| `smp_user_jit_4` total | 10,889-11,056 | 10,813-11,323 | −0.7%, overlap |
+
+**32 against 64** (`mac/rh-*`): the boot 3602-3640 → 3548-3595 (−2.0%, apart), `smp_alpine_jit` n1 −1.1%, n2
+−0.7%, n4 −1.5% (apart), `alpine_user_jit` −1.3% and `smp_user_jit_4` +0.4% (both overlap; the latter's phases
+±8% in both arms). The 32 arm ran the same in both sessions (the boot 3618-3631 and 3602-3640), so against 16:
+the boot ~5%, the userspace ~4%, the parallel boots 2-3%.
+
+**What it costs** (medians; the JIT's counters and the Mac's RSS): wasm +2-3% from 16 to 32 (the boot 11.1 → 11.4
+MiB) and the same at 64; V8's compile time and the modules the same; emission +2-4%; planning (`planNs`) +20% at 32
+and +35% at 64 (the boot 46 → 55 → 61 ms, `smp_user_jit_4` 73 → 87 → 101 ms; ~0.4% of the boot, in its times
+above). The peak summed RSS of Chrome's processes the same: the boot 1536 / 1541 / 1541-1559 MiB at 16 / 32 / 64,
+the userspace 1830 / 1834 / 1836-1839 (16's first round read 1624, its others 1833 and 1830), `smp_user_jit_4`
+1785-2050 in every arm.
+
+**Firefox's pages session** (`pages/`, 16 against 64): the starts and loads 71.8-73.1 against 71.3-74.2 s, planning
+486-487 against 480-492 ms, wasm 115-116 against 115-117 MB, 60 fps on every page in both; Chrome's RSS peak
+3566-4090 against 3486-4236 MiB (±400 MiB between sessions of one arm). No change.
+
+**Planning's walks, bounded and cached; not kept** (`mitigations.patch`, `counts/walkstat.*`, `mac/rm-*`). A forward
+region is walked again for each call whose callee can leave it, so 64 blocks full of such calls could take ~64 walks.
+Alpine's regions take 1.15-1.19 walks (84-98% one, ~0.5% five or more, churn's 0.7% nine or more). Built: a bound of
+8 walks (the last following no call) and a map of the blocks a plan forms. On the Alpine gates no region reached the
+bound (the same compiled bytes); planning fell 4-7% (the boot 61.0 → 58.5 ms, the userspace 85 → 80) but the totals
+came out 0.4-0.9% slower, overlapping (n2's +0.5% apart), so both were left out.
+
+**The block cap stays at 32** (`counts/capstat.*`): blocks the cap ends are 0.54% of the boot's compiled block
+entries (3.3% of its compiled steps, one fall-through every 974 steps), 0.31% of the userspace's (compress 0.97%, Lua
+0.04%, SQLite 0.03%); 79-100% of their straight runs end within 63 instructions, none past 255. Their successor is
+mostly a member of the same region, an edge, so a longer cap buys a fall-through's per-block costs at most: not
+measured. 58-65% of compiled block entries are blocks of 1-4 instructions.

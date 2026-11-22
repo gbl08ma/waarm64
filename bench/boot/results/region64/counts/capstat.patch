@@ -1,0 +1,136 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 5fda939d..dde6bfc3 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -784,6 +784,57 @@ struct Env<'a> {
+     nzcv: Option<[u32; emit::NZCV_HELPERS]>,
+     /// `Config::polled`: no `left`, [`emit::poll`] where a cycle can close.
+     polled: bool,
++    /// CAPSTAT: each member's tally slots ([`capstat`]).
++    caps: Vec<Vec<u32>>,
++}
++
++/// CAPSTAT (measurement only): the tally slots a block's entry bumps: its length's, and for a block the cap ended,
++/// its straight-line length without the cap (and whether that run reaches the page's end).
++fn capstat(mem: &Mem, b: &Block) -> Vec<u32> {
++    let n = b.words.len();
++    let pa = b.key & !3;
++    let next = pa + 4 * n as u64;
++    let capped = n == CAP && next & 0xfff != 0 && end_op(decode(b.words[n - 1]), b.words[n - 1]) == End::No;
++    let at = tally::LEN_AT;
++    let mut v = vec![match n {
++        0..=4 => at,
++        5..=8 => at + 1,
++        9..=16 => at + 2,
++        17..=31 => at + 3,
++        _ if capped => at + 5,
++        _ => at + 4,
++    }];
++    if capped {
++        // The run on past the cap, to the first instruction that would end a block, or the page's end.
++        let (mut a, mut len, mut page) = (next, n, false);
++        loop {
++            let Ok(w) = mem.read(a, 4) else { break };
++            match end_op(decode(w as u32), w as u32) {
++                End::Before => break,
++                End::After => {
++                    len += 1;
++                    break;
++                }
++                End::No => len += 1,
++            }
++            a += 4;
++            if a & 0xfff == 0 {
++                page = true;
++                break;
++            }
++        }
++        let u = tally::UNCAP_AT;
++        v.push(match len {
++            0..=63 => u,
++            64..=127 => u + 1,
++            128..=255 => u + 2,
++            _ => u + 3,
++        });
++        if page {
++            v.push(u + 4);
++        }
++    }
++    v
+ }
+ 
+ impl Env<'_> {
+@@ -1007,6 +1058,7 @@ pub fn module(
+             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
+             nzcv,
+             polled: cfg.polled,
++            caps: r.blocks.iter().map(|b| capstat(mem, b)).collect(),
+         };
+         // Twice: the first emission finds the registers to read plainly
+         // (`Func::plain`) and what each member's edges carry into it, which
+@@ -1264,6 +1316,9 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+         c.fp16_ok = false;
+         c.new_block(&b.words);
+         c.plan.clone_from(&e.plans[i]);
++        for &k in &e.caps[i] {
++            emit::dbump(&mut c, k);
++        }
+         c.enter_flags(match fin[i] {
+             In::Lazy(k, sf) => Some((k, sf)),
+             _ => None,
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 5dce3f01..e05da86c 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,7 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 96;
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+@@ -44,6 +44,13 @@ pub const HOST_RET: u32 = 12;
+ pub const POLL: u32 = 13;
+ /// Slots below this are compiled code's (copied from the vCPU's table at each publication).
+ pub const JIT_SLOTS: usize = 16;
++/// CAPSTAT (measurement only): a second range of compiled code's slots, copied as the first.
++pub const JIT2: usize = 80;
++/// A compiled block entered, by length: 1-4, 5-8, 9-16, 17-31, 32 not ended by the cap, ended by the cap (`+ 5`).
++pub const LEN_AT: u32 = 80;
++/// A block ended by the cap entered, by its straight-line length without one (to its real end or the page's):
++/// 33-63, 64-127, 128-255, 256 and more (`+ 3`); then (`+ 4`) those whose run ends at the page's end.
++pub const UNCAP_AT: u32 = 86;
+ 
+ /// How a chunk ended (parallel realtime, or round-robin): `END + kind` counts them, `END_STEPS + kind` sums their steps.
+ pub const END: usize = 16;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 6df017fa..f1bb4757 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1304,7 +1304,8 @@ impl Vm {
+             publish_jit(c, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
++        for i in (0..crate::tally::JIT_SLOTS).chain(crate::tally::JIT2..crate::tally::N) {
++            let a = &c.diag[i];
+             a.store(
+                 self.vcpus.iter().map(|v| v.diag[i]).sum(),
+                 Ordering::Relaxed,
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index c4a6f76d..e2a9a148 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -1180,8 +1180,8 @@ impl Vm {
+             publish_jit(k, &j.table.stats());
+         }
+         #[cfg(feature = "diag")]
+-        for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+-            a.store(x, Ordering::Relaxed);
++        for i in (0..crate::tally::JIT_SLOTS).chain(crate::tally::JIT2..crate::tally::N) {
++            k.diag[i].store(v.diag[i], Ordering::Relaxed);
+         }
+     }
+ }
