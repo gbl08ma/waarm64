@@ -759,9 +759,11 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   past the half, as it was until PERF loop 43, let the table double to 2^21 at exactly 458,752 keys (the review after
   loop 42). The table keeps its buckets, and since it was full the dropped keys leave tombstones, so the prune
   rehashes it in place (a reserve of the room past them, while that's at most half the table's). **When that can't
-  be done:** a prune whose retains left the table more room than half of it (erased slots become empty, not
-  tombstones, where a neighbour is empty) can't make hashbrown rehash (std's `HashMap` has no call for it; a reserve
-  past the room doubles it), so its tombstones stay and the next prune can come after as little as the room past
+  be done:** a prune whose retains left the table more room than half of it (an erased slot becomes a tombstone only
+  where the run of full and erased slots around it spans a group of the table's SIMD width, else empty: 8 on wasm32
+  and aarch64, 16 with x86_64's SSE2, so the same erases leave far fewer tombstones there; the unit tests that need
+  tombstones steer by the room left or take keys homed in one stretch of the table, and hold under either width)
+  can't make hashbrown rehash (std's `HashMap` has no call for it; a reserve past the room doubles it), so its tombstones stay and the next prune can come after as little as the room past
   the kept keys (~9,000 keys added at worst). Not seen: the pages session prunes every ~0.8 M keys added, the churn
   every ~2 M. **The clock** is a u16 (it wraps at 2^30 keys added), and a prune brings the ages it keeps to at most
   `WARM_TICKS` old: under IC churn the table can go on rehashing in place without a prune for any number of keys, and

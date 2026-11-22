@@ -4106,23 +4106,33 @@ mod tests {
             c.map.remove(&(old << 4));
             old += 1;
         }
+        // A key dropped gives its room back or leaves a tombstone by the run of full slots around it, counted in
+        // groups of the table's SIMD width (16 with SSE2, 8 on aarch64 and wasm32): so the steps aren't fixed, the
+        // room left steers them (a new key while there's more than one key's, or below half; else an old one dropped).
         loop {
-            c.info(k << 4, || 1);
-            k += 1;
-            if c.map.capacity() == c.map.len() + 1 {
+            let (n, cap) = (c.map.len(), c.map.capacity());
+            if cap == n + 1 && n == half {
                 break;
             }
-            c.map.remove(&(old << 4));
-            old += 1;
+            if cap > n + 1 || n < half {
+                c.info(k << 4, || 1);
+                k += 1;
+            } else {
+                c.map.remove(&(old << 4));
+                old += 1;
+            }
             assert!(k < 100_000_000, "never down to one key's room");
         }
-        assert_eq!(c.map.len(), half);
-        // The dispatcher's key, through `room` (no prune: there's room).
-        c.room(k << 4, s);
-        c.info(k << 4, || 1);
-        assert_eq!((s.prunes, c.map.capacity()), (0, c.map.len()));
+        // The dispatcher's keys, through `room` (no prune: there's room), until one takes the last of it (a key that
+        // lands on a tombstone takes none).
+        while c.map.capacity() > c.map.len() {
+            c.room(k << 4, s);
+            c.info(k << 4, || 1);
+            k += 1;
+        }
+        assert_eq!(s.prunes, 0);
         // Then a member to enter a region at, new to the map.
-        let filed = c.entry((k + 1) << 4, 1).is_some();
+        let filed = c.entry(k << 4, 1).is_some();
         assert!(
             c.map.capacity() <= MAP_BUCKETS / 8 * 7,
             "the table doubled to hold {} keys",
@@ -4130,7 +4140,7 @@ mod tests {
         );
         assert!(!filed, "no room for it");
         // One the map holds already is filed.
-        assert!(c.entry(k << 4, 1).is_some());
+        assert!(c.entry((k - 1) << 4, 1).is_some());
         // And below the bound a member grows the table as a miss would.
         let mut c = Cache::new(Config::DEFAULT);
         assert!(c.entry(0x40, 1).is_some() && c.map.contains_key(&0x40));
@@ -4248,31 +4258,59 @@ mod tests {
         );
     }
 
+    /// A key a page for `pages` pages, each homed in the first quarter of a
+    /// table of `buckets` (the hash's low bits, hashbrown's h1), its word
+    /// `b .+4`: the keys lie in long runs, so a key dropped leaves a tombstone
+    /// whatever the table's SIMD group width (16 with SSE2, 8 on aarch64 and
+    /// wasm32). Keys spread at random leave too few with groups of 16: a drop
+    /// gives its room back unless the run of full slots around it spans a
+    /// group.
+    fn clustered_keys(mem: &Mem, pages: u64, buckets: u64) -> Vec<u64> {
+        use std::hash::BuildHasher;
+        let h = KeyBuild::default();
+        let keys: Vec<u64> = (0..pages)
+            .map(|p| {
+                (0..1024)
+                    .map(|i| p << 12 | i << 2)
+                    .find(|&k| h.hash_one(k) & (buckets - 1) < buckets / 4)
+                    .unwrap()
+            })
+            .collect();
+        for &k in &keys {
+            mem.write(k, 4, 0x1400_0001).unwrap(); // b .+4
+        }
+        keys
+    }
+
     /// A table's known blocks count their table whole after ICs dropped
     /// most of them.
     #[test]
     fn the_known_bytes_count_tombstones() {
-        let mut ram = vec![0u128; (1 << 20) / 16];
+        const PAGES: u64 = 2048;
+        let mut ram = vec![0u128; (PAGES << 12) as usize / 16];
         // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
-        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 1 << 20) };
-        for a in (0..1 << 20).step_by(4) {
-            mem.write(a, 4, 0x1400_0001).unwrap(); // b .+4
-        }
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), PAGES << 12) };
+        // Full at 1,792 keys in 2,048 buckets.
+        let keys = clustered_keys(&mem, PAGES, 2048);
         let mut j = Jit::new(Cache::new(Config::DEFAULT));
         j.table.limit = 1 << 20;
-        let mut n = 0u64;
+        let mut n = 0;
         while n < 1000 || j.table.known.capacity() > j.table.known.len() {
-            let key = n << 12;
+            let key = keys[n];
             j.cache.lock().info(key, || 1).idx = 7 + n as u32;
             assert_eq!(j.miss(key, key, &mem), Ok((7 + n as u32, 1)));
             n += 1;
         }
         let whole = j.table.stats().known_bytes;
-        for q in 16..n {
-            j.invalidate(q << 12);
+        for &k in &keys[16..n] {
+            j.invalidate(k & !0xfff);
         }
         j.fresh(&mem);
-        assert!(j.table.known.capacity() < n as usize / 2, "no tombstones");
+        assert!(
+            j.table.known.capacity() < n / 2,
+            "no tombstones: room for {} keys",
+            j.table.known.capacity()
+        );
         assert_eq!(
             j.table.stats().known_bytes,
             whole,
@@ -4284,23 +4322,27 @@ mod tests {
     /// most of them.
     #[test]
     fn the_decoded_bytes_count_tombstones() {
-        let mut ram = vec![0u128; (1 << 20) / 16];
+        const PAGES: u64 = 512;
+        let mut ram = vec![0u128; (PAGES << 12) as usize / 16];
         // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
-        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 1 << 20) };
-        for a in (0..1 << 20).step_by(4) {
-            mem.write(a, 4, 0x1400_0001).unwrap(); // b .+4
-        }
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), PAGES << 12) };
+        // Full at 224 keys in 256 buckets.
+        let keys = clustered_keys(&mem, PAGES, 256);
         let mut d = interp::block::Cache::new(1 << 20);
-        let mut n = 0u64;
+        let mut n = 0;
         while n < 200 || d.capacity() > d.len() {
-            assert!(d.get(n << 12, &mem).is_some());
+            assert!(d.get(keys[n], &mem).is_some());
             n += 1;
         }
         let whole = d.bytes();
-        for q in 16..n {
-            d.drop_page(q);
+        for &k in &keys[16..n] {
+            d.drop_page(k >> 12);
         }
-        assert!(d.capacity() < n as usize / 2, "no tombstones");
+        assert!(
+            d.capacity() < n / 2,
+            "no tombstones: room for {} keys",
+            d.capacity()
+        );
         assert_eq!(d.bytes(), whole, "the decoded blocks' tables");
     }
 
@@ -4598,14 +4640,23 @@ mod tests {
             d.drop_page(old % PAGES);
             old += 1;
         }
+        // Then to no room at exactly half. A key dropped gives its room back or leaves a tombstone by the run of
+        // full slots around it, counted in groups of the table's SIMD width (16 with SSE2, 8 on aarch64 and wasm32):
+        // so the steps aren't fixed, the room left steers them (a new key while there's room, or below half; else an
+        // old one dropped).
         loop {
-            assert!(d.get(key(new), &mem).is_none());
-            new += 1;
-            if d.capacity() == d.len() {
+            let (n, cap) = (d.len(), d.capacity());
+            if cap == n && n == half {
                 break;
             }
-            d.drop_page(old % PAGES);
-            old += 1;
+            if cap > n || n < half {
+                assert!(d.get(key(new), &mem).is_none());
+                new += 1;
+                assert_eq!(d.clears, 0, "started over at {} keys", d.len());
+            } else {
+                d.drop_page(old % PAGES);
+                old += 1;
+            }
             assert!(
                 new - old < PAGES && new < 10_000_000,
                 "never ran out of room"
