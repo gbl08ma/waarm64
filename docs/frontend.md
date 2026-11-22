@@ -412,10 +412,10 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
   mouse drags through HTML5 drag and drop; a finger or a pen through pointer events, after a long press (350 ms held
   within 8 px: moving first scrolls the page, and the drag's touchmoves are cancelled so the page stays put under
   it). The palette under it adds an element at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
-- **Two presets** beside the editor's bar: [Restore defaults](ui:statusbar:StatusEditor.defaults) (the defaults,
-  MIPS and JIT share among them) and [Faster defaults](ui:statusbar:StatusEditor.faster) (`FAST_ITEMS`: the same
-  without MIPS and JIT share, kept as a list), with a note under them: [Showing MIPS or JIT share slows the machine a
-  little, as every instruction it runs is then counted.](ui:statusbar:StatusEditor.counts)
+- **One preset** beside the editor's bar: [Restore defaults](ui:statusbar:StatusEditor.defaults) (the defaults, MIPS
+  and JIT share among them). A second, the defaults without MIPS and JIT share ("Faster defaults", with a note that
+  counting slows the machine), was taken out in PERF loop 56: the uncounted mode measured no faster on the Mac
+  (bench/boot/REPORT.md "PERF loop 56"), so the page promises no speedup for taking them off.
 - **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' [Show the
   status bar in full screen](ui:machines:PreferencesPane.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (their components' `body:fullscreen` rules).
 - **Per-vCPU bars** are drawn against the run's highest vCPU MIPS so far (`cpuPeak`): a fixed scale wouldn't fit
@@ -423,11 +423,13 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 - **Counting** (PERF loop 55; jit.md "Preemption"): MIPS and JIT share, in any form (summed, each vCPU's bars or
   numbers, one vCPU's: `statusbar.ts` `COUNTING`, `counts`), need every guest instruction counted, which keeps
   `acc` in the JIT's compiled code (bench/boot/REPORT.md "PERF loop 55": the code without it is ~4% fewer
-  instructions, ~11-13% fewer frame operands, but on the Mac the uncounted mode doesn't yet run faster: Firefox's pages
-  session 73.2 s against the counted 73.7, overlapping; the gates within ±0.3%; docs/backlog.md has why to find). The machine counts only while the bar has one: the
+  instructions, ~11-13% fewer frame operands, but on the Mac the uncounted mode doesn't run faster: after loop 56's
+  fixes Firefox's pages session 73.1-74.5 s against the counted 73.2-75.6 and the base's 72.3-76.2, the gates within
+  ±0.4%, all overlapping; whether to keep the mechanism is open, docs/backlog.md). The machine counts only while the bar has one: the
   start message's `count`, then a `count` message whenever one comes or goes in the editor (`areas/status.svelte.ts`
-  `setItems`, the run's `followCounting`), which flushes the JIT's code once. **The default layout counts**, so the
-  speedup goes to users who take those elements off or pick the faster preset. A status says whether it `counted`;
+  `setItems`, the run's `followCounting` in `statusbar.ts`, let go when the run ends), which flushes the JIT's code
+  once. **The default layout counts.** A status says whether it `counted` every step since the last one (an off-then-on
+  between two is not: `Vm.countedSinceLook`);
   the step rates aren't drawn from two statuses that don't both say so (`statusbar-metrics.ts`), so the second of a
   change shows no MIPS rather than a part-counted one.
 - **Costs:** besides the counting above, none to the emulation: the per-vCPU steps are counted with it; the disk, adapter and USB bytes are one add per

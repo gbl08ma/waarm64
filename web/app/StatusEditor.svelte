@@ -6,9 +6,7 @@
   end, a drag puts it where it's dropped. A mouse drags through HTML5 drag and drop; a finger or a pen through pointer
   events, after a long press (a swipe still scrolls the page): status-drag.svelte.ts. The chips draw what the running
   machine shows, or a made-up machine's numbers (statusbar-sample.ts `SAMPLE`) while none runs; one the running machine
-  hasn't (a second disk) is dimmed. Kept in the settings at each change. Two presets: the defaults, and the faster
-  set (the defaults without the elements that count every instruction, which slow the machine a little: statusbar.ts
-  `COUNTING`), which a note says.
+  hasn't (a second disk) is dimmed. Kept in the settings at each change; Restore defaults forgets them.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -19,7 +17,7 @@
   import StatusOptions from './StatusOptions.svelte';
   import StatusPalette from './StatusPalette.svelte';
   import { ChipDrag } from './status-drag.svelte.ts';
-  import { DEFAULT_ITEMS, FAST_ITEMS, lookOf, shows, type Item } from './statusbar.ts';
+  import { DEFAULT_ITEMS, lookOf, shows, type Item } from './statusbar.ts';
   import { render } from './statusbar-render.ts';
   import { SAMPLE } from './statusbar-sample.ts';
   import { t } from '../i18n.ts';
@@ -85,10 +83,6 @@
     remember({ statusBar: undefined });
     chosen = undefined;
   }
-  function faster() {
-    keep(FAST_ITEMS.map((i) => ({ ...i })));
-    chosen = undefined;
-  }
 
   const drag = new ChipDrag({ items: () => items, insert, move, remove: removeAt });
   $effect(() => () => drag.cancel());
@@ -141,17 +135,7 @@
     <Button icon="refresh" iconSize={14} onclick={defaults} data-action="status-defaults">
       {t('statusbar:StatusEditor.defaults')}
     </Button>
-    <Button
-      icon="gauge"
-      iconSize={14}
-      onclick={faster}
-      title={t('statusbar:StatusEditor.faster.title')}
-      data-action="status-faster"
-    >
-      {t('statusbar:StatusEditor.faster')}
-    </Button>
   </div>
-  <Note data-note="status-counts">{t('statusbar:StatusEditor.counts')}</Note>
 
   {#if sel && chosen !== undefined}
     {@const at = chosen}

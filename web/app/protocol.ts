@@ -187,7 +187,7 @@ export type ToWorker =
       plan?: DiskPlan[];
       /**
        * Count every step (web/vm.ts `BootOptions.count`): the status bar shows an element that needs them (MIPS, the
-       * JIT share, the per-vCPU bars: web/app/statusbar.ts `counts`). Without, the machine runs a little faster.
+       * JIT share, the per-vCPU bars: web/app/statusbar.ts `counts`). Without, compiled code's steps go uncounted.
        */
       count: boolean;
     }

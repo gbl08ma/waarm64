@@ -141,7 +141,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await context.close();
 });
 
-test('the status bar\'s presets: the faster one counts no instructions, the defaults count them again', { skip }, async () => {
+test('the status bar\'s counting: MIPS and JIT share taken off count no instructions, the defaults count them again', { skip }, async () => {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
   const errors: string[] = [];
@@ -166,11 +166,12 @@ test('the status bar\'s presets: the faster one counts no instructions, the defa
   await counted(true); // the defaults have MIPS and JIT share
   await openHome(page);
   await page.click('[data-machine=preferences]');
-  assert.equal(await page.locator('[data-note=status-counts]').textContent(), t('statusbar:StatusEditor.counts'));
-  await page.click('[data-action=status-faster]');
+  // Every MIPS and JIT share chip removed (×).
+  const counting = '.status-edit .bar .chip:is([data-kind=mips], [data-kind=jit]) .x';
+  while ((await page.locator(counting).count()) > 0) await page.locator(counting).first().click();
   assert.deepEqual((await kept(page)).map((i: { kind: string }) => i.kind), ['state', 'divider', 'os', 'vcpus', 'ram', 'uptime', 'irqs']);
   await counted(false);
-  if (shots) await page.locator('.status-edit').screenshot({ path: `${shots}/editor-faster.png` });
+  if (shots) await page.locator('.status-edit').screenshot({ path: `${shots}/editor-uncounted.png` });
   // No MIPS in the bar.
   assert.doesNotMatch(await bar(page), new RegExp(pattern('statusbar:statusbar-render.cpu.mips', { value: '\\d+' })));
   await page.click('[data-action=status-defaults]');

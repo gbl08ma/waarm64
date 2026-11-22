@@ -3,7 +3,7 @@
 // The words expected are the catalog's (docs/i18n.md "Tests").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { counts, DEFAULT_ITEMS, FAST_ITEMS, followCounting, nameOf, normalize, palette, shows, tellCounting, unfollowCounting, type Item } from '../web/app/statusbar.ts';
+import { counts, DEFAULT_ITEMS, followCounting, nameOf, normalize, palette, shows, tellCounting, unfollowCounting, type Item } from '../web/app/statusbar.ts';
 import { graphics } from '../web/app/statusbar-graphics.ts';
 import { metrics, type Metrics } from '../web/app/statusbar-metrics.ts';
 import type { Live } from '../web/app/statusbar-piece.ts';
@@ -73,8 +73,8 @@ test('the step rates: none across a change of counting, nor while uncounted; the
     assert.equal(text({ kind: 'irqs' }, m), t('statusbar:statusbar-render.irqs', { irqs: '1,000' }), 'the other rates stay');
   }
   assert.ok(counts(DEFAULT_ITEMS), 'the defaults count');
-  assert.ok(!counts(FAST_ITEMS) && shows(FAST_ITEMS), 'the faster preset: no MIPS nor JIT share');
-  assert.deepEqual(FAST_ITEMS, DEFAULT_ITEMS.filter((i) => i.kind !== 'mips' && i.kind !== 'jit'));
+  const without = DEFAULT_ITEMS.filter((i) => i.kind !== 'mips' && i.kind !== 'jit');
+  assert.ok(!counts(without) && shows(without), 'the defaults without MIPS and JIT share count nothing');
   assert.ok(counts([{ kind: 'jit', scope: 'one', index: 1 }]) && counts([{ kind: 'mips', scope: 'each', numbers: true }]));
   assert.ok(!counts([{ kind: 'irqs' }, { kind: 'vcpus' }]));
 });

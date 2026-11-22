@@ -50,8 +50,6 @@ export function unfollowCounting(owner: object) {
 export function tellCounting(count: boolean) {
   follower?.f(count);
 }
-/** The second preset: the defaults without the elements that count (the machine runs a little faster). */
-export const FAST_ITEMS: readonly Item[] = DEFAULT_ITEMS.filter((i) => !COUNTING.includes(i.kind));
 
 const LOOKS: Look[] = ['text', 'icon', 'both'];
 /** The kept list as the page uses it: unknown kinds and fields dropped (another version's), each field checked. */
