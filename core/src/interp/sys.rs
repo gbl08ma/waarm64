@@ -587,8 +587,10 @@ pub fn plain_write(key: u32, el1: bool) -> Option<PlainWrite> {
 /// change, and one that unmasks IRQs either leaves through its helper's
 /// `Exit::Resync` (mid-block, as any helper's exit does) or, inline, has no
 /// IRQ to take (`jit::Unmask`). Those don't end a block: DAIFSet, DAIFClr, DIT
-/// (it only changes timing), and MSR of DAIF and the registers [`plain_write`]
-/// names.
+/// (it only changes timing), MSR of DAIF and the registers [`plain_write`]
+/// names, and the timers' CTL, CVAL and TVAL (PERF loop 49: inline from the step
+/// clock in counted code, else a helper whose exit leaves mid-block, a trapping
+/// one at EL0 included).
 pub fn msr_continues(i: u32) -> bool {
     if bit(i, 21) {
         return false; // MRS

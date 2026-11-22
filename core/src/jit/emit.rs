@@ -4429,7 +4429,9 @@ fn fallback_arm(c: &mut Func, cx: &Ctx, i: u32, here: i64, written: u64, fast: R
 }
 
 /// MRS of a register [`sys::plain`] reads inline at the block's EL (M6 loop
-/// 1); false for the rest (timers, `ISR_EL1`, traps: helper calls).
+/// 1), and in counted code with a step clock the counters and the timers'
+/// registers at EL1 (PERF loops 47 and 49: [`step_counter`], `timer_mrs`);
+/// false for the rest (`ISR_EL1`, traps, timers without the clock: helper calls).
 fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     use crate::interp::sys::{Plain, is_counter_mrs, plain};
     let (rt, key) = (bits(i, 4, 0), bits(i, 20, 5));
@@ -4549,8 +4551,8 @@ fn counter_el0(c: &mut Func, cx: &Ctx, i: u32) {
 /// 47): deterministic time's reading from the chunk's [`StepClock`](super::StepClock),
 /// `end - (left - k)` (`left` the steps left at the block's entry, `k` the
 /// instructions before this one), what the helper's exit would read; the
-/// helper while `end` is 0 (realtime, the xHCI with an event due) and at EL0
-/// without CNTKCTL_EL1's enable (it traps).
+/// helper while `end` is 0 (realtime, `ticks_per_insn` ≠ 1, the xHCI with an
+/// event due) and at EL0 without CNTKCTL_EL1's enable (it traps).
 fn step_counter(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
     let rt = bits(i, 4, 0);
     let t = 2; // i64 scratch: `end`
@@ -4676,7 +4678,9 @@ fn timer_msr(c: &mut Func, cx: &Ctx, i: u32, k: usize, t: crate::interp::sys::Ti
 }
 
 /// MSR of a register [`sys::plain_write`] names, DAIFSet, DAIFClr and DIT
-/// inline at the block's EL (M6 loop 7, PERF loop 8); false for the rest
+/// inline at the block's EL (M6 loop 7, PERF loop 8), and the timers' CTL, CVAL
+/// and TVAL at EL1 in counted code with a step clock (PERF loop 49, `timer_msr`);
+/// false for the rest
 /// (helper calls, which end the block unless [`sys::msr_continues`]). A DAIF
 /// write that unmasks IRQs stays inline while [`unmask_ok`]; else the helper's
 /// `Exit::Resync` lets the run loop take one.
