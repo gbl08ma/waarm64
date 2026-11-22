@@ -1,0 +1,6 @@
+#!/bin/sh
+# The keyboard shortcuts' sheet (F1, Super+/, the taskbar's Keys): a terminal showing /usr/local/share/waarm64/keys.txt;
+# asked again while it is open, it closes.
+swaymsg -q '[app_id="^waarm64-keys$"] kill' 2>/dev/null && exit 0
+exec foot --app-id waarm64-keys --title 'Keyboard shortcuts' --window-size-chars 66x30 --hold \
+  cat /usr/local/share/waarm64/keys.txt

@@ -1,0 +1,25 @@
+
+  Keyboard shortcuts                      (F1 closes this again)
+
+  Applications menu     Alt+F1 or Alt+F2 (or Super)
+  Terminal              Ctrl+Alt+T
+  Close a window        Alt+F4, or a middle click on its title
+                        bar or its taskbar button
+  Maximize / restore    Alt+F10
+  Minimize              Alt+F9, or click its taskbar button
+  Next window           Alt+Tab  (Alt+Shift+Tab: the one before)
+  Move a window         drag its title bar, or Alt+drag
+  Resize a window       drag its edge, or Alt+right-drag
+
+  Log out, shut down    Ctrl+Alt+Delete, or the taskbar's Power
+  This sheet            F1, or the taskbar's Keys
+
+  The taskbar: a window's button brings it to the front, or
+  minimizes it when it is in front. The volume: click to mute,
+  scroll to change it.
+
+  Where the browser lets Super through, sway's own keys work
+  too (Super+Enter, Super+Up / Down, ...).
+  sway's settings: /etc/sway/config and
+  /etc/sway/config.d/60-waarm64.conf (copy them to
+  ~/.config/sway/config to change them).

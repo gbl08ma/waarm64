@@ -1,0 +1,5 @@
+[Desktop Entry]
+# Left out of the application menu (images/arch/desktop/): a helper or a test tool, not an application to start.
+Type=Application
+Name=qv4l2
+NoDisplay=true

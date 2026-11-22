@@ -1,0 +1,116 @@
+#!/bin/bash
+# The taskbar's blocks: swaybar's status command (/etc/sway/config.d/60-waarm64.conf), in the i3bar protocol with click
+# events. Applications (the menu), a block for each window (the focused one highlighted, the minimized ones dimmed),
+# the workspaces (with more than one), the volume, the clock, Keys (the shortcuts' sheet) and Power (log out, restart,
+# shut down). A window's block: a click brings it to the front, or minimizes it when it is in front, or brings it back
+# when minimized; a middle click closes it. A workspace's: a click goes to it. The volume: a click mutes, the wheel
+# changes it. Drawn again when a window, workspace or output changes (sway's events), when the volume changes
+# (PulseAudio's), after a click and each minute (the clock); nothing runs in between.
+set -u
+
+# One queue of what happened, read below: sway's events, PulseAudio's, the clock's minutes and swaybar's clicks.
+q=$(mktemp -u "${XDG_RUNTIME_DIR:-/tmp}/waarm64-bar.XXXXXX")
+mkfifo "$q"
+exec 3<>"$q"
+rm -f "$q"
+trap 'kill $(jobs -p) 2>/dev/null' EXIT
+
+(while :; do swaymsg -t subscribe -m '["window","workspace","output"]' 2>/dev/null | while read -r _; do echo w; done; sleep 1; done) >&3 &
+(while :; do sleep $((60 - 10#$(date +%S))); echo t; done) >&3 &
+command -v pactl >/dev/null &&
+  (while :; do pactl subscribe 2>/dev/null | grep --line-buffered -E "'change' on (sink|server)" | while read -r _; do echo v; done; sleep 5; done) >&3 &
+# Clicks: a JSON object a line after the opening "[", each but the first with a leading comma.
+# (A background job's stdin is /dev/null unless given another: swaybar's pipe goes as fd 4.)
+exec 4<&0 0</dev/null
+(read -r _; while read -r l; do echo "c ${l#,}"; done) <&4 >&3 &
+exec 4<&-
+
+# The default sink's volume as the bar shows it, or nothing without one (a machine without sound).
+volume() {
+  local v
+  v=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null) || return 0
+  set -- $v # "Volume: 0.40" or "Volume: 0.40 [MUTED]"
+  [ $# -ge 2 ] || return 0
+  if [ "${3:-}" = '[MUTED]' ]; then echo 'Muted'; else echo "Volume $((10#${2/./}))%"; fi
+}
+
+# The blocks, filling the bar's width: Applications at the left end, then the windows (by their id, those in the
+# scratchpad minimized), a gap, and at the right end the workspaces (with more than one), the volume, the clock, Keys
+# and Power. swaybar draws its status from the right end, so the gap is a block as wide as what's left: every block
+# has a width (`min_width`, its text cut to fit; each window's shrinks with their number), and a block takes its width
+# plus its `separator_block_width` (but the rightmost). $W: the output's width; the tree and the workspaces as input.
+BLOCKS='
+def b($name; $text; $width): {name: $name, full_text: " \($text) ", min_width: $width, align: "center",
+  separator: false, separator_block_width: 4, background: "#3a3a3a", color: "#ffffff"};
+def cut($n): if length > $n then .[0:([$n - 1, 1] | max)] + "…" else . end;
+def span: map(.min_width + .separator_block_width) | add // 0;
+.[0] as $tree | .[1] as $wss
+| [ $tree.nodes[] as $o | $o.nodes[] as $ws | $ws | recurse(.nodes[], .floating_nodes[]) | select(.pid != null)
+    | {id, focused, urgent, min: ($ws.name == "__i3_scratch"),
+       title: ((.name // .app_id // .window_properties.class // "Window") | gsub("\\s+"; " "))} ]
+| sort_by(.id) as $w
+| [ b("apps"; "Applications"; 120) + {background: "#3b6ea5", separator_block_width: 12} ] as $left
+| (if ($wss | length) > 1 then [ $wss[] | b("ws"; .name | cut(3); 30) + {instance: (.num | tostring),
+      background: (if .focused then "#3b6ea5" else "#3a3a3a" end)} ] else [] end)
+  + (if $vol == "" then [] else [ b("vol"; $vol; 110) + {background: "#262626"} ] end)
+  + [ b("clock"; $clock; 150) + {background: "#262626"}, b("keys"; "Keys"; 56), b("power"; "Power"; 64) ]
+  | .[-1].separator_block_width = 0
+  | . as $right
+| ($W - ($left | span) - ($right | span) - 12) as $room
+| ($w | length) as $n
+| (if $n > 0 then [[($room / $n | floor) - 4, 200] | min, 36] | max else 0 end) as $each
+| [ $w[] | b("win"; .title | cut(($each / 9 | floor) - 2); $each) + {instance: (.id | tostring), align: "left", urgent,
+      background: (if .focused then "#3b6ea5" else "#3a3a3a" end), color: (if .min then "#8a8a8a" else "#ffffff" end)} ]
+| . as $wins
+| ($W - ($left | span) - ($wins | span) - ($right | span)) as $gap
+| $left + $wins + (if $gap >= 1 then [ {full_text: " ", min_width: $gap, separator: false, separator_block_width: 0} ] else [] end) + $right'
+
+first=1
+render() {
+  local tree wss w line
+  tree=$(swaymsg -t get_tree 2>/dev/null) || return 0
+  wss=$(swaymsg -t get_workspaces 2>/dev/null) || return 0
+  w=$(swaymsg -t get_outputs 2>/dev/null | jq '[.[] | select(.active)][0].rect.width // 1280')
+  line=$(jq -c -s --arg vol "$(volume)" --arg clock "$(date '+%a %-d %b  %H:%M')" --argjson W "$w" "$BLOCKS" <<<"$tree $wss" 2>/dev/null) || return 0
+  if [ $first ]; then printf '%s\n' "$line"; first=; else printf ',%s\n' "$line"; fi
+}
+
+click() {
+  local name inst button state
+  IFS=$'\t' read -r name inst button < <(jq -r '[.name // "-", .instance // "-", .button // 0] | @tsv' <<<"$1")
+  case $name in
+    apps) swaymsg -q exec fuzzel ;;
+    keys) swaymsg -q exec waarm64-keys ;;
+    power) swaymsg -q exec waarm64-power ;;
+    ws) [[ $inst =~ ^-?[0-9]+$ ]] && swaymsg -q "workspace number $inst" ;;
+    vol)
+      case $button in
+        1) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+        4) wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+ ;;
+        5) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- ;;
+      esac ;;
+    win)
+      [[ $inst =~ ^[0-9]+$ ]] || return 0
+      case $button in
+        1)
+          state=$(swaymsg -t get_tree | jq -r --argjson id "$inst" '.nodes[] as $o | $o.nodes[] as $ws | $ws
+            | recurse(.nodes[], .floating_nodes[]) | select(.id == $id)
+            | if $ws.name == "__i3_scratch" then "min" elif .focused then "front" else "back" end')
+          case $state in
+            min) swaymsg -q "[con_id=$inst] scratchpad show" ;;
+            front) swaymsg -q "[con_id=$inst] move scratchpad" ;;
+            back) swaymsg -q "[con_id=$inst] focus" ;;
+          esac ;;
+        2) swaymsg -q "[con_id=$inst] kill" ;;
+      esac ;;
+  esac
+}
+
+printf '{"version":1,"click_events":true}\n[\n'
+render
+while read -r -u 3 kind rest; do
+  [ "$kind" = c ] && click "$rest"
+  # What came meanwhile (a burst of sway's events) is drawn once.
+  while read -r -t 0.05 -u 3 kind rest; do [ "$kind" = c ] && click "$rest"; done
+  render
+done

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Log out, restart or shut down (the taskbar's Power, Ctrl+Alt+Delete, Super+Shift+E): a prompt above the taskbar (on the overlay layer at the bottom edge: at the top, sway would move
+# every window down by its height).
+pkill -x swaynag
+exec swaynag -t warning -e bottom -y overlay -m 'Log out, restart or shut down?' -s Cancel \
+  -Z 'Log out' 'swaymsg exit' -Z 'Restart' 'systemctl reboot' -Z 'Shut down' 'systemctl poweroff'

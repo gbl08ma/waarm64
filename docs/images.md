@@ -115,7 +115,8 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   file capabilities as libarchive xattrs, which GNU tar and Podman's import drop (`newuidmap` lost its caps).
 - **The image** (`images/arch/build.sh [--out f.qcow2] [--root-mib 8192] [--esp-mib 512] [--packages "p1 p2"]
   [--files dir] [--setup script]`, ~2 min; `target/arch/arch-uefi.qcow2`, 687 MiB, 8.5 GiB virtual): in a container
-  of the base, `pacman -Syu` with `base linux e2fsprogs dosfstools sudo` and `--packages` (the mirror's packages of the
+  of the base, `pacman -Syu` with `base linux e2fsprogs dosfstools sudo polkit` (polkit: logind's policy lets the active session
+  power off and restart without sudo) and `--packages` (the mirror's packages of the
   day), the settings below, `--files` (a tree copied onto the root; a user's home made theirs) and `--setup` (a script
   run as root). The initramfs has no `autodetect` and lists `virtio_mmio virtio_blk ext4 vfat`
   (`/etc/mkinitcpio.conf.d/waarm64.conf`, so the guest's own kernel updates build the same). The rootfs goes into an
@@ -149,7 +150,28 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   VP8/Opus, 60 s), `sintel.webm` and `sintel-silent.webm` (the Sintel trailer, Blender Foundation, CC BY 3.0,
   downloaded from download.blender.org with its sha256, as VP9/Opus 480p), `sintel_trailer-480p.mp4` (the trailer's
   original H.264 file: Chromium's H.264 path, graphics.md "Video's findings"), and `avsync.html` (plays `?v=<clip>`);
-  `desktop-setup.sh` is the `--setup`. Result `target/arch/desktop.qcow2`; with `--kde`, `target/arch/desktop-kde.qcow2`
+  `desktop-setup.sh` is the `--setup`. **sway as a conventional desktop** (2026-11-22, the user's call): the tree
+  `images/arch/desktop/` copied onto the root, with `fuzzel` (the application menu) and `jq` (the taskbar's script)
+  installed. `/etc/sway/config.d/60-waarm64.conf`, read after sway's stock config (whose keys it keeps): windows float
+  (`for_window [all] floating enable`) and take the focus by a click; Firefox and Chromium open maximized, a floating
+  window the screen's size (a tiled one stays below every floating window, clicked or not); no wallpaper
+  (`swaybg_command -`); conventional keys on Alt, since a host's desktop keeps many Super keys (KDE's Super+Up moves
+  the host's window), and none an application uses (Firefox's Alt+arrows and Alt+digits): Alt+F1/F2 the menu, Alt+F4,
+  Alt+F9 minimize (to the scratchpad), Alt+F10 maximize or restore (`waarm64-maximize`), Alt+Tab, Alt+drag and
+  right-drag (`floating_modifier Mod1`), Ctrl+Alt+T, Ctrl+Alt+arrows and 1–4, Ctrl+Alt+Delete, F1; sway's Super keys
+  stay too; a 4 px border, the floating windows' resize handle (`default_border` too: the rule floats windows that
+  were made tiled, which keep the tiled border). The taskbar is sway's own bar (`bar-0`, at the bottom), its blocks from
+  `/usr/local/bin/waarm64-bar` (i3bar protocol with click events; no GTK bar such as waybar, whose files a demo's
+  remote disk would read before the desktop shows): Applications at the left end, a block per window (click: to the
+  front, or minimized when in front, or back when minimized; middle click closes), the workspaces with more than one,
+  the volume (`wpctl`: click mutes, the wheel
+  changes it), the clock, Keys (`waarm64-keys`, `/usr/local/share/waarm64/keys.txt` in foot) and Power
+  (`waarm64-power`, swaynag at the bottom edge on the overlay layer: at the top it moved every window down by its
+  height). It draws on sway's window and workspace events, PulseAudio's sink changes, clicks and each minute, nothing
+  in between (no CPU at idle, 2026-11-22; swaybar ~17 MB). swaybar draws its status from the right end, so the script fills the bar: each block
+  has a width (`min_width`, its text cut to fit), a gap block takes what's left, and swaybar's own workspace buttons,
+  binding mode and tray, whose width the script can't know, are off. `/etc/xdg/fuzzel/fuzzel.ini` puts the menu above the
+  taskbar's left end; `/usr/local/share/applications/` hides helpers and test tools from it (`NoDisplay`). Result `target/arch/desktop.qcow2`; with `--kde`, `target/arch/desktop-kde.qcow2`
   (~20 min, 3.3 GB): KDE Plasma too (`plasma-meta`, `konsole`) and plasma-login-manager on the screen at boot
   (`plasmalogin.service`, the graphical target), for reproducing what KDE does (no test uses it); `bench/audio/avsync.ts` measures on it, and
   the page's session scripts (`bench/gpu/guest-session.ts`) log in as `arch` (`WAARM64_GUEST_USER=alarm` for an older

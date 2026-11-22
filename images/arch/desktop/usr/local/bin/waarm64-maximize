@@ -1,0 +1,11 @@
+#!/bin/sh
+# Maximizes the focused window, or restores it when it is maximized (Alt+F10: /etc/sway/config.d/60-waarm64.conf).
+# Maximized is floating at the workspace's size (the screen above the taskbar); restored, 60% by 70% of it, centered.
+w=$(swaymsg -t get_tree | jq '[.. | select(.focused? == true and .pid != null) | .rect.width][0] // empty')
+[ -n "$w" ] || exit 0
+ws=$(swaymsg -t get_workspaces | jq '[.[] | select(.focused) | .rect.width][0] // 0')
+if [ "$w" -ge $((ws - 8)) ]; then
+  exec swaymsg -q 'floating enable, resize set width 60ppt height 70ppt, move position center'
+else
+  exec swaymsg -q 'floating enable, resize set width 100ppt height 100ppt, move position 0 0'
+fi

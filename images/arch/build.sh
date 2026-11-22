@@ -7,7 +7,8 @@
 #                        [--setup script.sh]
 #
 # In a container of localhost/arch-base (images/arch/base.sh, made if missing): `pacman -Syu` with base, linux,
-# e2fsprogs, dosfstools, sudo and --packages from the port's mirror (the packages of the day); the system's settings
+# e2fsprogs, dosfstools, sudo, polkit (logind then lets the user at the screen power off and restart without
+# sudo, as on other distributions) and --packages from the port's mirror (the packages of the day); the system's settings
 # (below); --files copies dir's tree onto the root (as root; what's under home/<user> is then that user's); --setup
 # runs a bash script as root after that, with the files in place (images/arch/desktop-setup.sh). Then the initramfs
 # (no `autodetect`: virtio_mmio, virtio_blk, ext4 and vfat in it; /etc/mkinitcpio.conf.d/waarm64.conf, so the guest's own
@@ -60,7 +61,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 cat > "$WORK/inner.sh" <<'INNER'
 set -eu
-pacman -Syu --noconfirm --noprogressbar --needed base linux e2fsprogs dosfstools sudo $PACKAGES >/tmp/pacman.log 2>&1 ||
+pacman -Syu --noconfirm --noprogressbar --needed base linux e2fsprogs dosfstools sudo polkit $PACKAGES >/tmp/pacman.log 2>&1 ||
   { tail -20 /tmp/pacman.log; echo "pacman failed" >&2; exit 1; }
 pacman -Scc --noconfirm >/dev/null 2>&1
 pacman -Q linux mesa 2>/dev/null | tr '\n' ' '; echo
