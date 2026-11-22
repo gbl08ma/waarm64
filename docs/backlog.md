@@ -93,15 +93,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 
 ## JIT
 
-- **arch-desktop's Ctrl+C at the countdown fails** (found in PERF loop 56's `scripts/ci-graphics.sh`, 2026-11-22):
-  tests/page-demos-guest.test.ts "Ctrl+C at a desktop's countdown" ends `counting foot shell noapp` (the count's
-  script still running after Ctrl+C on the screen) with loop 56's tree, with loop 56's page and loop 55's core, and
-  with loop 55's page and core alike (`target/demos/arch-desktop` as built 02:27 that day), so not loop 56's change.
-  PERF loop 57 ran it alone on its tree (loop 55-56's mechanism reverted: the core's code is 216adb06's, the page
-  loop 54's plus the demo store's loose ends): the same `counting foot shell noapp`, so the uncounted mode didn't
-  break it. On 216adb06's own tree and core the demo never reached `running` in 120 s (the demo's build is newer
-  than that page), so that run tells nothing. To do: look at where the key goes (foot's focus at the click, the
-  keyboard's path), then rebuild the demo if it's the build.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
@@ -362,22 +353,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `bench/gpu/chromium-flicker.ts` saw one frame one step back in two of four runs (~1,000 frames each), none on
   `?gpu=2d`. Not traced: a remaining order between contexts (the decoder's context passes held ones), or the screen's
   scanout.
-- **GTK4 finds no EGL config on Mesa 26.3** (found 2026-11-22 with the desktop image's packages of the day; traced
-  the same day: a Mesa regression on every driver, not virgl's or our caps'): with Mesa 26.3.1 (Arch's port, GTK
-  4.24.1) a GtkGLArea says "No EGL configuration available" and GTK draws in software. Mesa `338afb32f86` ("mesa:
-  don't advertise APIs that are not built", MR 46169, picked into 26.3.1 as `1224ff36188`) stops a build without
-  GLES1 (Arch's `-D gles1=disabled`) from putting `EGL_OPENGL_ES_BIT` in any config's `EGL_RENDERABLE_TYPE`; the EGL
-  spec's default for that attribute in `eglChooseConfig` is `EGL_OPENGL_ES_BIT`, and GDK's
-  `gdk_display_create_egl_config` (GTK 4.24.1 and main) doesn't set it, so nothing matches. Measured in the guest
-  (`bench/results/local/eglconfigs.py`, Python ctypes on the Wayland platform): 26.2.7's RGBA8888 configs have
-  `RENDERABLE_TYPE` 0x4d and GDK's attributes match 15; 26.3.1's have 0x4c and match 0, or 15 with
-  `EGL_RENDERABLE_TYPE=EGL_OPENGL_ES2_BIT` added. Upstream: mesa/mesa#16934 (radeonsi, open, labelled regression);
-  other projects report it on real GPUs (Satty #831). Nothing in our caps or device can bring the bit back. Arch's
-  `extra/mesa` 1:26.3.1-2 (2026-11-20) reverts the commit; the port had 1:26.3.1-1 on 2026-11-22: rebuild the desktop
-  image once it has -2. The `arch-3d` demo
-  (the shader demo on the desktop) is out of `deploy/disks/demos.json` until then; its entry is in git history
-  (before 2026-11-22), with its countdown's `run` and notes. The arch port keeps no old Mesa, so holding 26.2 isn't
-  an option.
 - **GTK4's graphics offload kills a GtkGLArea on virgl** (graphics.md "The guest's 3D: Mesa's virgl"): GTK hands sway the GL area's
   texture as a dmabuf, and Mesa's virgl backs a texture that isn't shared with a 1-byte staging BO (the host copies
   transfers both ways), so the dmabuf is smaller than stride × height and the compositor disconnects the client. A
@@ -1328,7 +1303,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     restore" measured dhcpcd's: 5.6 s after the page's load).
   - Pieces are fetched whole where the host has ranges too (each piece hashed before use); an A/B of the Desktop
     Demo's boot with ranges would say whether that costs anything.
-- **The desktop demos' loose ends** (arch-desktop; arch-3d is out: "GTK4 finds no EGL config on Mesa 26.3" above; remote-disks.md "A desktop"):
+- **The desktop demos' loose ends** (arch-desktop, arch-3d; remote-disks.md "A desktop"):
   - **The desktop image's 944 pieces are in the site twice** (`desktop/`'s own and the shared `pieces/`) until the
     Desktop Demo's `desktop/` is published from the shared `pieces/` (a manifest pointing there, then its old pieces
     dropped): ~1.9 GB and 944 of the site's files.

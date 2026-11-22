@@ -244,7 +244,10 @@ screen than on the simple framebuffer (backlog).
   texture that isn't `PIPE_BIND_SHARED` with a 1-byte BO when the host copies transfers both ways
   (`COPY_TRANSFER_BOTH_DIRECTIONS`), so the dmabuf is smaller than stride × height and sway disconnects the client
   ("invalid buffer stride or height for plane 0"). A guest-side bug (QEMU with virgl has it too); `GDK_DISABLE=offload`
-  avoids it (backlog).
+  avoids it (backlog). **"No EGL configuration available"** in a GtkGLArea (GTK draws in software) was Mesa 26.3.1's
+  regression, not our caps: `338afb32f86` left `EGL_OPENGL_ES_BIT` out of every config of a build without GLES1
+  (Arch's), and GDK's `eglChooseConfig` doesn't set `EGL_RENDERABLE_TYPE`, whose default is that bit (mesa/mesa#16934);
+  Arch's 1:26.3.1-2 reverts it (the desktop image from 2026-11-22 on).
 - **What the guest's side costs:** Mesa's frontend is cheap and its shader compiles take milliseconds (glcomp's two,
   GLSL → NIR → TGSI, well under 10 ms). Sway's frame on virgl costs it 6.6 ms of CPU against pixman's 4.2 and
   llvmpipe's 81 (G2's null renderer, "Measurements"). Over pixman the extra is system time (~2.2 ms a frame: the

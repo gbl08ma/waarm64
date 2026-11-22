@@ -157,7 +157,8 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   window the screen's size (a tiled one stays below every floating window, clicked or not); no wallpaper
   (`swaybg_command -`); conventional keys on Alt, since a host's desktop keeps many Super keys (KDE's Super+Up moves
   the host's window), and none an application uses (Firefox's Alt+arrows and Alt+digits): Alt+F1/F2 the menu, Alt+F4,
-  Alt+F9 minimize (to the scratchpad), Alt+F10 maximize or restore (`waarm64-maximize`), Alt+Tab, Alt+drag and
+  Alt+F9 minimize (to the scratchpad), Alt+F10 maximize or restore (`waarm64-maximize`; a title bar's right click too, its middle click closes: sway has no
+  double click, and a floating window's title bar pressed starts a move whose release the move takes), Alt+Tab, Alt+drag and
   right-drag (`floating_modifier Mod1`), Ctrl+Alt+T, Ctrl+Alt+arrows and 1–4, Ctrl+Alt+Delete, F1; sway's Super keys
   stay too; a 4 px border, the floating windows' resize handle (`default_border` too: the rule floats windows that
   were made tiled, which keep the tiled border). The taskbar is sway's own bar (`bar-0`, at the bottom), its blocks from
@@ -175,8 +176,7 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   (~20 min, 3.3 GB): KDE Plasma too (`plasma-meta`, `konsole`) and plasma-login-manager on the screen at boot
   (`plasmalogin.service`, the graphical target), for reproducing what KDE does (no test uses it); `bench/audio/avsync.ts` measures on it, and
   the page's session scripts (`bench/gpu/guest-session.ts`) log in as `arch` (`WAARM64_GUEST_USER=alarm` for an older
-  Arch Linux ARM disk). `desktop.qcow2` is also the desktop demos' image (`arch-desktop`; `arch-3d` is out for now: backlog.md "GTK4 finds no EGL config on Mesa 26.3"; in
-  deploy/disks/demos.json: their templates resume a session on it, docs/remote-disks.md "Building the demos"): a new
+  Arch Linux ARM disk). `desktop.qcow2` is also the desktop demos' image (`arch-desktop`, `arch-3d`; in deploy/disks/demos.json: their templates resume a session on it, docs/remote-disks.md "Building the demos"): a new
   build of it is a new image (another content id), so those demos need new ids with `replaces`.
 
 ## Debian with a compiler (`images/debian-tools/build.sh`)

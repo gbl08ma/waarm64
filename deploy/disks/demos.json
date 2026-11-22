@@ -83,6 +83,59 @@
     "network": "demo",
     "room": "global"
    }
+  },
+  {
+   "build": "target/demos/arch-3d",
+   "name": "Arch Linux (3D)",
+   "thumbnail": "target/demos/arch-3d/thumb.webp",
+   "recipe": {
+    "image": "target/arch/desktop.qcow2",
+    "machine": {
+     "name": "Arch 3D",
+     "ncpus": 4,
+     "ramMiB": 2048,
+     "keyboard": "browser",
+     "display": "3d",
+     "network": true,
+     "macs": ["52:54:00:b2:db:99", "52:54:00:80:9a:28"],
+     "mouse": true,
+     "touch": true,
+     "clock": true,
+     "clipboard": true
+    },
+    "serial": "e13da3b66b20",
+    "session": {
+     "user": "arch",
+     "screen": "1280x800",
+     "apps": [
+      {
+       "run": "foot",
+       "window": "foot"
+      }
+     ],
+     "settle": 20,
+     "countdown": {
+      "script": "open-shader-demo.sh",
+      "run": "env GDK_DISABLE=offload gtk4-demo --run=shadertoy",
+      "window": "gtk4-demo",
+      "name": "The shader demo",
+      "seconds": 5,
+      "notes": [
+       "The shader demo takes a while to start in this machine: its window can take a minute to appear.",
+       "Alt+F1 or the taskbar's Applications opens the application menu; F1 or Keys shows the keyboard shortcuts.",
+       "Firefox and Chromium are installed too. To open one, type firefox or chromium.",
+       "To install more software, type sudo pacman -S followed by the package's name. The password is arch."
+      ]
+     }
+    }
+   },
+   "demo": {
+    "id": "arch-3d",
+    "summary": "OpenGL on Arch Linux's sway desktop, with a taskbar and an application menu: a few seconds after it starts, a shader demo opens, drawn by the guest's Mesa through virgl onto your browser's WebGL2 (Ctrl+C in the terminal stops it and keeps the terminal). pacman installs more software. Logged in as arch, password arch (root's password is root). Arch Linux for 64-bit ARM from https://arch.bens.haus/.",
+    "view": "screen",
+    "network": "demo",
+    "room": "global"
+   }
   }
  ]
 }

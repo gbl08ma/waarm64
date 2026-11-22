@@ -163,7 +163,7 @@ the publish above (a dry run; `--apply` writes `target/disks/`). Per demo, into 
    kept (the agent drops the guest's caches), flagged as a template and deflated (by the same core), chunked;
    `definition.json` (the page's export); `thumb.webp` (the console's top at the prompt, 480×300, Chromium's WebP).
 
-**A desktop** (`arch-desktop`; `arch-3d`, out since 2026-11-22: backlog.md "GTK4 finds no EGL config on Mesa 26.3"; DEMO loop 12): its recipe's `image` is a qcow2 in the checkout made by hand
+**A desktop** (`arch-desktop`, `arch-3d`; DEMO loop 12): its recipe's `image` is a qcow2 in the checkout made by hand
 (`target/arch/desktop.qcow2`, images/arch/desktop.sh: Arch's packages of the day, so never the same twice), taken as
 it is and never rebuilt (a new one is a new demo id), and its `session` (`user`, `apps`: `{run, window}`, `settle`,
 `screen`, `countdown`, `cmdline`: tools/demo-site.ts `Session`) makes the template a desktop's: root logged in on the

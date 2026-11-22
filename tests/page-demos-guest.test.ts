@@ -180,7 +180,13 @@ for (const NAME of NAMES) {
     await run(page, `clear; for i in $(seq 180); do pgrep -f ${script} >/dev/null && break; sleep 1; done; echo count-$i-on`, /count-\d+-on/, 240_000);
     await page.waitForTimeout(1500); // foot's window drawn and focused
     if (process.env.WAARM64_DEMO_SHOT) await page.locator('#screen').screenshot({ path: join(process.env.WAARM64_DEMO_SHOT, `${NAME}-countdown.png`) });
-    // Ctrl+C on the screen, where foot has the focus.
+    // Ctrl+C on the screen, where foot has the focus, after a click on it (foot floats at the middle). The pointer moves
+    // there from a corner first: the tablet's last place is the screen's middle already (before sway started), and the
+    // kernel drops an absolute value it already has, so a click there alone would come at sway's own first cursor
+    // place, the empty workspace's corner, which would take the focus.
+    const box = (await page.locator('#screen').boundingBox())!;
+    await page.mouse.move(box.x + 4, box.y + 4);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
     await page.locator('#screen').click();
     await page.keyboard.press('Control+c');
     // Past the count's end: no app's window in sway's tree, the script gone, foot still there with a bash under it.

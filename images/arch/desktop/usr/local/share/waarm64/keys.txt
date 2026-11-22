@@ -5,7 +5,8 @@
   Terminal              Ctrl+Alt+T
   Close a window        Alt+F4, or a middle click on its title
                         bar or its taskbar button
-  Maximize / restore    Alt+F10
+  Maximize / restore    Alt+F10, or a right click on its title
+                        bar
   Minimize              Alt+F9, or click its taskbar button
   Next window           Alt+Tab  (Alt+Shift+Tab: the one before)
   Move a window         drag its title bar, or Alt+drag

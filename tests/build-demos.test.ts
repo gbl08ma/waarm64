@@ -66,8 +66,7 @@ test('a recipe checked', () => {
 test("the source's desktops: their recipes check, and each its own MAC and serial", () => {
   const src = readSource(join(ROOT, 'deploy/disks/demos.json'));
   const desks = src.demos.filter((d) => d.recipe?.session);
-  // The 3D demo is out until GTK4's GL works on Mesa 26.3 (docs/backlog.md "GTK4 finds no EGL config on Mesa 26.3's virgl").
-  assert.ok(desks.length >= 1, 'the desktop demo');
+  assert.ok(desks.length >= 2, 'the desktop and the 3D demo');
   for (const d of desks) checkRecipe(d.recipe, d.demo.id);
   const all = src.demos.filter((d) => d.recipe).map((d) => d.recipe!);
   assert.equal(new Set(all.map((r) => r.serial)).size, all.length, 'serials differ');
