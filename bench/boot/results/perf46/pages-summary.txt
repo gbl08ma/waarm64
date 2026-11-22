@@ -1,0 +1,57 @@
+== bench/boot/results/perf46/pages: 20 samples
+t    0 s  mods 370 12.9 MiB fns 7469 unnamed 402  allUnnamed 0 0.0 MiB (free 0 0.0, imported 0 0.0)  partly 197 8.2 MiB dead 0.6 (invalidated 0.0), tiered heads 402  flushes 0
+t   10 s  mods 1083 42.2 MiB fns 23258 unnamed 1348  allUnnamed 0 0.0 MiB (free 0 0.0, imported 0 0.0)  partly 623 27.8 MiB dead 2.2 (invalidated 0.0), tiered heads 1346  flushes 0
+t   20 s  mods 1644 68.4 MiB fns 36820 unnamed 2152  allUnnamed 0 0.0 MiB (free 0 0.0, imported 0 0.0)  partly 946 45.3 MiB dead 3.4 (invalidated 0.0), tiered heads 2133  flushes 0
+t   30 s  mods 1760 73.8 MiB fns 39347 unnamed 2303  allUnnamed 0 0.0 MiB (free 0 0.0, imported 0 0.0)  partly 1005 48.4 MiB dead 3.7 (invalidated 0.1), tiered heads 2280  flushes 0
+t   40 s  mods 1780 75.7 MiB fns 40199 unnamed 2347  allUnnamed 0 0.0 MiB (free 0 0.0, imported 0 0.0)  partly 1016 49.1 MiB dead 3.8 (invalidated 0.1), tiered heads 2316  flushes 0
+t   50 s  mods 1914 78.5 MiB fns 41565 unnamed 2664  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1095 52.5 MiB dead 4.3 (invalidated 0.1), tiered heads 2628  flushes 0
+t   60 s  mods 2068 83.9 MiB fns 44194 unnamed 2977  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1205 57.9 MiB dead 4.9 (invalidated 0.1), tiered heads 2924  flushes 0
+t   70 s  mods 2097 85.3 MiB fns 44577 unnamed 3067  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1237 59.8 MiB dead 5.0 (invalidated 0.2), tiered heads 2976  flushes 0
+t   80 s  mods 2105 85.6 MiB fns 44785 unnamed 3092  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1243 60.9 MiB dead 5.1 (invalidated 0.2), tiered heads 2992  flushes 0
+t   90 s  mods 2220 89.6 MiB fns 46826 unnamed 3231  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1293 63.7 MiB dead 5.4 (invalidated 0.3), tiered heads 3120  flushes 0
+t  100 s  mods 2291 92.3 MiB fns 48006 unnamed 3319  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1328 65.5 MiB dead 5.5 (invalidated 0.3), tiered heads 3196  flushes 0
+t  110 s  mods 2310 93.2 MiB fns 48275 unnamed 3353  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1339 66.2 MiB dead 5.6 (invalidated 0.3), tiered heads 3228  flushes 0
+t  120 s  mods 2340 93.7 MiB fns 48524 unnamed 3399  allUnnamed 1 0.0 MiB (free 1 0.0, imported 0 0.0)  partly 1350 66.8 MiB dead 5.7 (invalidated 0.3), tiered heads 3263  flushes 0
+t  130 s  mods 2568 103.1 MiB fns 52773 unnamed 3680  allUnnamed 2 0.0 MiB (free 1 0.0, imported 1 0.0)  partly 1467 72.8 MiB dead 6.3 (invalidated 0.4), tiered heads 3508  flushes 0
+t  140 s  mods 2594 103.7 MiB fns 53047 unnamed 3710  allUnnamed 2 0.0 MiB (free 1 0.0, imported 1 0.0)  partly 1480 73.4 MiB dead 6.3 (invalidated 0.4), tiered heads 3536  flushes 0
+t  150 s  mods 2611 105.1 MiB fns 53515 unnamed 3740  allUnnamed 2 0.0 MiB (free 1 0.0, imported 1 0.0)  partly 1487 73.9 MiB dead 6.4 (invalidated 0.4), tiered heads 3566  flushes 0
+t  160 s  mods 2638 105.4 MiB fns 53698 unnamed 3771  allUnnamed 2 0.0 MiB (free 1 0.0, imported 1 0.0)  partly 1503 74.9 MiB dead 6.5 (invalidated 0.4), tiered heads 3583  flushes 0
+t  170 s  mods 2750 108.7 MiB fns 55067 unnamed 3880  allUnnamed 3 0.0 MiB (free 2 0.0, imported 1 0.0)  partly 1555 77.0 MiB dead 6.7 (invalidated 0.5), tiered heads 3659  flushes 0
+t  180 s  mods 2766 109.1 MiB fns 55187 unnamed 3906  allUnnamed 3 0.0 MiB (free 2 0.0, imported 1 0.0)  partly 1564 77.4 MiB dead 6.8 (invalidated 0.6), tiered heads 3664  flushes 0
+t  190 s  mods 2768 109.1 MiB fns 55208 unnamed 3907  allUnnamed 3 0.0 MiB (free 2 0.0, imported 1 0.0)  partly 1564 77.4 MiB dead 6.8 (invalidated 0.6), tiered heads 3665  flushes 0
+max: {
+  mods: 2768,
+  bytes: 114391249,
+  fns: 55208,
+  unnamed: 3907,
+  fullMods: 3,
+  fullBytes: 52266,
+  freeMods: 2,
+  freeBytes: 52266,
+  impMods: 1,
+  impBytes: 1262,
+  partMods: 1564,
+  partBytes: 81167904,
+  partDeadBytes: 7080759,
+  samples: 1,
+  tiered: 3665,
+  partInvalBytes: 598557
+}
+flush: {
+  mods: 0,
+  bytes: 0,
+  fns: 0,
+  unnamed: 0,
+  fullMods: 0,
+  fullBytes: 0,
+  freeMods: 0,
+  freeBytes: 0,
+  impMods: 0,
+  impBytes: 0,
+  partMods: 0,
+  partBytes: 0,
+  partDeadBytes: 0,
+  samples: 0,
+  tiered: 0,
+  partInvalBytes: 0
+}

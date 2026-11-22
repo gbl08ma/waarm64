@@ -1,0 +1,247 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index 74f87c22..dc9f81a4 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -200,7 +200,7 @@ export async function openSession(o: SessionOptions) {
+       const pid = rendererPid();
+       const smaps = pid ? smapsClasses(pid) : undefined;
+       const u = process.env.MEMLOG_UASM === '0' ? undefined : await uasm(page).catch((e) => String(e).slice(0, 200));
+-      appendFileSync(`${o.out}/mem.jsonl`, JSON.stringify({ t: Date.now(), smaps, uasm: u, memory: st?.memory, jit: st?.stats.jit }) + '\n');
++      appendFileSync(`${o.out}/mem.jsonl`, JSON.stringify({ t: Date.now(), smaps, uasm: u, memory: st?.memory, jit: st?.stats.jit, diag: (st as { diag?: unknown } | undefined)?.diag }) + '\n');
+     } catch {} finally { memBusy = false; }
+   }, Number(process.env.MEMLOG) * 1000) : undefined;
+ 
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index ed12f0bf..f58ff4ec 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -557,6 +557,14 @@ pub struct Cache {
+     next: u32,
+     /// The bytes of the logged modules not dropped yet ([`HELD_MAX`]).
+     held: u64,
++    /// DIAG (PERF loop 46): this epoch's modules (slot, functions, bytes, the slots they import), installs since the
++    /// last sample, and each metric's maximum over the samples, its value at the last, at the last flush.
++    dmods: Vec<(u32, u32, u64, Vec<u32>)>,
++    dcount: u64,
++    dmax: [u64; DN],
++    dlast: [u64; DN],
++    dflush: [u64; DN],
++    dflushes: u64,
+     /// Keys added to the block map so far (at misses: [`Cache::tick`]).
+     added: u64,
+     /// The most keys the block map's table has held since it was allocated
+@@ -651,6 +659,26 @@ pub const G_KEYS: usize = 5;
+ pub const G_KEY_BYTES: usize = 6;
+ pub const G_HELD: usize = 7;
+ 
++// DIAG (PERF loop 46): the metrics of `Cache::dsample`.
++const DN: usize = 16;
++const D_TIERED: usize = 14;
++const D_PART_INVAL_BYTES: usize = 15;
++const D_MODS: usize = 0;
++const D_BYTES: usize = 1;
++const D_FNS: usize = 2;
++const D_UNNAMED: usize = 3;
++const D_FULL_MODS: usize = 4;
++const D_FULL_BYTES: usize = 5;
++const D_FREE_MODS: usize = 6;
++const D_FREE_BYTES: usize = 7;
++const D_IMP_MODS: usize = 8;
++const D_IMP_BYTES: usize = 9;
++const D_PART_MODS: usize = 10;
++const D_PART_BYTES: usize = 11;
++const D_PART_DEAD_BYTES: usize = 12;
++const D_SAMPLES: usize = 13;
++const DNAMES: [&str; DN] = ["mods", "bytes", "fns", "unnamed", "fullMods", "fullBytes", "freeMods", "freeBytes", "impMods", "impBytes", "partMods", "partBytes", "partDeadBytes", "samples", "tiered", "partInvalBytes"];
++
+ /// A module installed since the last flush.
+ struct Logged {
+     slot: u32,
+@@ -705,6 +733,12 @@ impl Cache {
+             added: 0,
+             map_full: 0,
+             live_bytes: 0,
++            dmods: Vec::new(),
++            dcount: 0,
++            dmax: [0; DN],
++            dlast: [0; DN],
++            dflush: [0; DN],
++            dflushes: 0,
+             threshold: cfg.threshold,
+             floor: cfg.threshold,
+             off: false,
+@@ -925,7 +959,107 @@ impl Cache {
+         self.threshold = self.floor.checked_shl(shift).unwrap_or(max).min(max);
+     }
+ 
++    /// DIAG: the modules of this epoch whose functions the block map no longer names (invalidated or superseded),
++    /// and what keeps them alive: a sibling function the map still names, or a pinned module importing them.
++    fn dsample(&mut self) {
++        let Some(xmiss) = self.xmiss else { return };
++        let mut named = vec![false; self.next as usize + 1];
++        for (_, i) in self.map.iter() {
++            if i.idx != 0 {
++                let s = ((i.idx & IDX_MASK) - xmiss) as usize;
++                if s < named.len() {
++                    named[s] = true;
++                }
++            }
++        }
++        // A loop head compiled alone that tiered up: its function stays a trampoline to the region (its hot word).
++        let mut tiered = vec![false; self.next as usize + 1];
++        for t in self.tiers.values() {
++            if let Some(x) = tiered.get_mut(t.word as usize - 1) {
++                *x = true;
++            }
++        }
++        let m = &self.dmods;
++        let mut by_slot = vec![u32::MAX; self.next as usize + 1];
++        for (k, d) in m.iter().enumerate() {
++            for j in 0..d.1 {
++                by_slot[(d.0 + j) as usize] = k as u32;
++            }
++        }
++        let nam: Vec<u32> = m
++            .iter()
++            .map(|d| (d.0..d.0 + d.1).filter(|&j| named[j as usize]).count() as u32)
++            .collect();
++        // Pinned: a module with a named function, and what pinned modules import, transitively.
++        let mut pinned: Vec<bool> = nam.iter().map(|&n| n > 0).collect();
++        let mut work: Vec<usize> = (0..m.len()).filter(|&k| pinned[k]).collect();
++        while let Some(k) = work.pop() {
++            for &s in &m[k].3 {
++                if let Some(&j) = by_slot.get(s as usize) {
++                    if j != u32::MAX && !pinned[j as usize] {
++                        pinned[j as usize] = true;
++                        work.push(j as usize);
++                    }
++                }
++            }
++        }
++        let mut v = [0u64; DN];
++        for (k, d) in m.iter().enumerate() {
++            let (n, nm, len) = (d.1 as u64, nam[k] as u64, d.2);
++            v[D_MODS] += 1;
++            v[D_BYTES] += len;
++            v[D_FNS] += n;
++            v[D_UNNAMED] += n - nm;
++            let tr = (d.0..d.0 + d.1)
++                .filter(|&j| !named[j as usize] && tiered[j as usize])
++                .count() as u64;
++            v[D_TIERED] += tr;
++            if nm > 0 && nm < n {
++                v[D_PART_INVAL_BYTES] += len * (n - nm - tr) / n;
++            }
++            if nm == 0 {
++                v[D_FULL_MODS] += 1;
++                v[D_FULL_BYTES] += len;
++                if pinned[k] {
++                    v[D_IMP_MODS] += 1;
++                    v[D_IMP_BYTES] += len;
++                } else {
++                    v[D_FREE_MODS] += 1;
++                    v[D_FREE_BYTES] += len;
++                }
++            } else if nm < n {
++                v[D_PART_MODS] += 1;
++                v[D_PART_BYTES] += len;
++                v[D_PART_DEAD_BYTES] += len * (n - nm) / n;
++            }
++        }
++        v[D_SAMPLES] = 1;
++        for k in 0..DN {
++            self.dmax[k] = self.dmax[k].max(v[k]);
++        }
++        self.dlast = v;
++    }
++
++    /// DIAG: the samples' report, as `helper_report` lines.
++    pub fn dreport(&mut self) -> String {
++        self.dsample();
++        let mut o = String::new();
++        for (w, a) in [("max", self.dmax), ("last", self.dlast), ("flush", self.dflush)] {
++            for (k, n) in DNAMES.iter().enumerate() {
++                o += &format!("D:{w}:{n} {}\n", a[k]);
++            }
++        }
++        o += &format!("D:flushes {}\n", self.dflushes);
++        o
++    }
++
+     fn drop_all(&mut self) {
++        self.dsample();
++        if self.dlast[D_MODS] > 0 {
++            self.dflush = self.dlast;
++            self.dflushes += 1;
++        }
++        self.dmods.clear();
+         self.drops.fetch_add(1, Ordering::Relaxed);
+         self.map.clear();
+         self.pages.clear();
+@@ -1454,6 +1588,21 @@ impl Cache {
+         s.cond_computed += counts.cond_computed;
+         s.cond_memory += counts.cond_memory;
+         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
++        {
++            let xm = xmiss;
++            let imports: Vec<u32> = links
++                .iter()
++                .flatten()
++                .filter_map(|t| self.map.get(t))
++                .filter(|i| i.idx != 0)
++                .map(|i| (i.idx & IDX_MASK) - xm)
++                .collect();
++            self.dmods.push((slot, n, len, imports));
++            self.dcount += 1;
++            if self.dcount % 1024 == 0 {
++                self.dsample();
++            }
++        }
+         let heads: Vec<u64> = regions.iter().map(|r| r.blocks[0].key).collect();
+         for (k, (((r, inl), links), ents)) in
+             regions.iter().zip(inl).zip(links).zip(entries).enumerate()
+@@ -1930,6 +2079,16 @@ pub struct Jit {
+ }
+ 
+ impl Jit {
++    /// DIAG: the helper report with the cache's module samples.
++    pub fn diag_report(&mut self) -> *const u8 {
++        let d = self.cache.lock().dreport();
++        self.table.helper_report();
++        self.table.report.pop();
++        self.table.report += &d;
++        self.table.report.push('\0');
++        self.table.report.as_ptr()
++    }
++
+     pub fn new(cache: Cache) -> Jit {
+         let (drops, ivals, ready) = (
+             cache.drops.clone(),
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index bc1048bb..6a43e149 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -520,7 +520,7 @@ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+         .jit
+         .cache
+         .as_deref_mut()
+-        .map_or(core::ptr::null(), |j| j.table.helper_report())
++        .map_or(core::ptr::null(), |j| j.diag_report())
+ }
+ 
+ // The whole-VM ABI (docs/abi.md). Every `vm` argument
+diff --git a/web/app/worker-status.ts b/web/app/worker-status.ts
+index bb5a2e3f..5b8e599f 100644
+--- a/web/app/worker-status.ts
++++ b/web/app/worker-status.ts
+@@ -46,7 +46,9 @@ export function status(
+     usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },
+     cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
+     asleep: vm.suspended(),
+-  };
++    // DIAG (PERF loop 46): the code cache's module samples.
++    diag: Object.fromEntries(vm.helperReport().filter((x) => x.op.startsWith('D:')).map((x) => [x.op.slice(2), x.calls])),
++  } as Status;
+ }
+ 
+ /** The keyboard's driver: the page sends keys typed on the screen to the serial console until it is up (the firmware's menus, GRUB). */

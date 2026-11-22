@@ -6818,3 +6818,42 @@ user accepted; machines of 3071 MiB or less, or with a split set by hand, are un
 - CI: `scripts/ci-fast.sh`, `scripts/ci.sh` (1907 passed), `scripts/ci-debian.sh` (15 of 15), `scripts/ci-machines.sh`
   (14 passed, 1 skipped).
 - `tests/steps.txt` didn't move (the test guests are small).
+
+## PERF loop 46: what an epoch's modules keep alive (2026-11-22)
+
+The backlog's "V8's per-function overhead" left one question: whether superseded or invalidated blocks' modules stay
+alive through sibling functions (V8 frees a module's code only with all its instances), which larger modules make
+likelier. Measured, not built. How it works now: within an epoch the slots are bump-allocated (`Cache::alloc`) and
+never reused, and `web/jit-host.ts` writes every installed function into the table and nulls slots only when a flush
+starts them over; modules import the functions they chain to (`t`). So every function of the epoch stays alive until
+the flush, whatever its siblings: the question is how much of it is dead. A diagnostic core
+(`results/perf46/diag.patch`, README) sampled each epoch's modules: the functions the block map no longer names (a
+head or an entry), of them the loop heads compiled alone that tiered up, and the modules with every function unnamed
+(freeable if no named module imports them, transitively) or some.
+
+| run (functions at the last sample) | modules, wasm | unnamed functions | of them tiered-up heads | invalidated share in live modules | modules all unnamed, freeable |
+|---|---|---|---|---|---|
+| Alpine's boot, 1 vCPU (5,377) | 308, 11.1 MiB | 581 | 383 | 0.32 MiB | 3, < 0.01 MiB |
+| Alpine's userspace, 1 vCPU (7,802) | 534, 15.2 MiB | 553 | 536 | 0.02 MiB | 3, < 0.01 MiB |
+| `smp_alpine_jit`'s boot, 4 vCPUs parallel (5,155) | 293, 9.5 MiB | 457 | 302 | 0.26 MiB | 0 |
+| `smp_user_jit_4` (9,397) | 548, 16.1 MiB | 513 | 513 | 0.02 MiB | 0 |
+| Firefox's pages session on the Mac, 4 vCPUs (55,208) | 2,768, 109.1 MiB | 3,907 | 3,665 | 0.57 MiB (0.5%) | 2, 0.05 MiB |
+
+(The Alpine runs in Node, `results/perf46/alpine.json`; the pages session from `pages.waarm64snap` on the Mac, M4,
+Chrome for Testing, one session with `MEMLOG=10`, 7,706 ICs and no flush, `results/perf46/pages/`; an earlier session
+without the tiered split gave the same counts within 2%, `pages-first/`. The invalidated share is a module's bytes
+times its invalidated functions over its functions.)
+
+- **What's unnamed is nearly all tiered-up heads** (94% in the pages session, 97-100% in the userspace runs), and they
+  aren't dead: the head's prologue tail-calls the region through its hot word, and blocks linked to the head call it
+  directly (docs/jit.md "Compile policy", tier-up). Freeing one would mean relinking its callers, which are compiled
+  code in immutable modules.
+- **The dead (invalidated) code is 0.5% of the pages session's wasm** and 0.1-3% of Alpine's; modules whose every
+  function is dead are ≤ 0.05 MiB. So nulling invalidated slots on the host would free ≤ 0.05 MiB of wasm (~0.5 MiB
+  of V8 memory at its ~10×), and even modules of one function, which cost ~16 KB each besides their functions (docs/jit.md
+  "Memory"), could free at most the 0.57 MiB of invalidated code (~6 MiB) while adding ~16 KB to every module.
+- **The element segment** (the entry's other lever: the table written by the module, no exports object, ~1.7 KB an
+  instance a table: "M8: V8's GC on the vCPU threads") bounds at 2,768 modules × 4 tables × 1.7 KB ≈ 19 MB of the
+  renderer's 5.1-5.4 GiB in this session; not built.
+- **Dropped**: no change. The finding is in docs/jit.md "Memory" ("What an epoch keeps alive"); the backlog entry is
+  removed.

@@ -207,13 +207,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
     tally of the keys `install` adds new, in the pages session and the churn); if any, reserve them before
     `emit_batch` with `room`'s rules (one `try_reserve` of the new members' count, the prune or the rescue there), and
     in `tier_up` skip the tier-up when they don't fit (it comes again at the next hot word).
-- **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
-  ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
-  which every function needs for the table; writing the table from an active element segment
-  instead still makes V8's ~170 B of objects per table entry and saves ~10% of the V8 heap:
-  `bench/boot/REPORT.md` "M8: V8's GC on the vCPU threads"). Left to check: whether superseded or invalidated
-  blocks' modules stay alive through sibling functions (a module's code is freed only with all of
-  its functions' instances), which larger modules make likelier.
 - **Unexplained ~10 GB samples** in the Go-load runs with the flush and the GC nudge (2 of 4 runs,
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s

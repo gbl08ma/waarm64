@@ -669,6 +669,16 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   9.6 GB (median 4.8 GB). After each flush the host allocates (and drops) a 256 MiB ArrayBuffer, whose
   external-memory pressure makes V8 collect: median 3.3 GB, p90 4.0–4.9 GB. Two of four runs still had one
   ~10 GB sample near their end that the sampler could not explain (not reproduced with 8 s sampling).
+- **What an epoch keeps alive:** within an epoch the slots are bump-allocated (`Cache::alloc`) and never reused, and
+  the host's table holds every function installed until a flush starts the slots over, so every module of the epoch
+  lives until then, whatever its siblings. Little of it is dead (PERF loop 46, `bench/boot/REPORT.md` "PERF loop 46",
+  a diagnostic core): of the functions the block map no longer names, 94% (Firefox's pages session, 3,665 of 3,907
+  of 55,208) to all (Alpine's userspace) are loop heads compiled alone that tiered up, which stay live as the
+  trampoline into their region for the blocks linked to them; the invalidated code is 0.5% of the pages session's
+  109 MiB of wasm (0.1-3% in Alpine's runs), and modules with every function dead ≤ 0.05 MiB. So neither nulling dead
+  slots on the host nor smaller modules would free anything worth their cost (a module costs ~16 KB besides its
+  functions, above); writing the table from an active element segment (no exports object) bounds at ~19 MB of the
+  pages session's renderer (~1.7 KB an instance, 2,768 modules on 4 tables), and wasn't built.
 - **Measured** (mixed load, 450 s; `bench/mem/results/summary.json`, made by `bench/mem/summarize.mjs` from raw samples kept in bench/results/local): without the budget
   the renderer is 4.3 / 3.9 GB (median of two runs) and climbing, at 615K regions: 1486 MB
   PartitionAlloc, 1391 MB wasm code, 1283 MB linear memory (guest 1024 + the core's heap ~150), 221 MB
