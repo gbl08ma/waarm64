@@ -31,6 +31,9 @@ export async function tailcatRun(args: string[], input = '', o: CliOptions = {})
   let err = '';
   child.stdout.setEncoding('utf8').on('data', (d: string) => { out += d; });
   child.stderr.setEncoding('utf8').on('data', (d: string) => { err += d; });
+  // A CLI that exits before reading its stdin (genkey with its key already saved) makes this write fail with EPIPE:
+  // the exit code says what happened, so the write's error isn't the test's.
+  child.stdin.on('error', () => {});
   child.stdin.end(input);
   const timer = setTimeout(() => child.kill(), o.timeoutMs ?? 60_000);
   const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
