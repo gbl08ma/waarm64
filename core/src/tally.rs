@@ -4,11 +4,12 @@
 //! of each vCPU's counters block (`vm::Counters::diag`), where the run loops publish them.
 //!
 //! What compiled code takes (counted in `mmu::Vcpu::diag` by the code itself, slots below [`JIT_SLOTS`]), how
-//! parallel realtime chunks end (by the budget, or by an exit of each kind: [`END`] counts, [`END_STEPS`] their
-//! steps), and two latencies of parallel mode (a timer line seen late, an interrupt line's rise to its IRQ).
+//! chunks end (by the budget, or by an exit of each kind: [`END`] counts, [`END_STEPS`] their steps; parallel realtime
+//! and round-robin alike), two latencies of parallel mode (a timer line seen late, an interrupt line's rise to its
+//! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
 
 /// Words in each table.
-pub const N: usize = 64;
+pub const N: usize = 72;
 
 /// A region's loop back-edge taken (a `br` to the head's `loop`).
 pub const BACK_EDGE: u32 = 0;
@@ -44,7 +45,7 @@ pub const POLL: u32 = 13;
 /// Slots below this are compiled code's (copied from the vCPU's table at each publication).
 pub const JIT_SLOTS: usize = 16;
 
-/// How a parallel realtime chunk ended: `END + kind` counts them, `END_STEPS + kind` sums their steps.
+/// How a chunk ended (parallel realtime, or round-robin): `END + kind` counts them, `END_STEPS + kind` sums their steps.
 pub const END: usize = 16;
 pub const END_STEPS: usize = 32;
 /// The kinds: the budget ran out (the steps reached the chunk), the dispatcher returned early with no exit
@@ -81,6 +82,14 @@ pub const IRQ_LATE: usize = 54;
 pub const IRQ_HIST: usize = 60;
 /// The ns of the line's rise not yet taken (0: none): not a count.
 pub const IRQ_STAMP: usize = 63;
+/// Round-robin: writes of the virtual timer's compare value (CNTV_CVAL_EL0, CNTV_TVAL_EL0) that arm it in the
+/// future: count, the ticks ahead summed, their maximum; then (`+ 3`) the IRQs taken.
+pub const TIMER_SET: usize = 64;
+pub const IRQS: usize = 67;
+/// Round-robin's platform exits (`Exit::Platform` but the counter reads) by register: the GIC's CPU interface read
+/// (ICC_IAR1 and kin), written (EOIR1, DIR, PMR, SGI1R, …), the timers' CTL, CVAL and TVAL, the rest (ISR_EL1,
+/// CNTFRQ_EL0, RNDR).
+pub const PLATFORM_BY: usize = 68;
 
 /// The [`END`] kind of a chunk that ended with exit `e` (`None`: no exit; `full`: the chunk's steps all ran).
 #[cfg(feature = "diag")]

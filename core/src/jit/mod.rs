@@ -84,6 +84,24 @@ pub struct State {
     /// finish in place (a `DEVICE` exit, a full TX ring, a fault, an IRQ to
     /// take): its outcome, which the run loop takes instead of running it again.
     pub io: Option<crate::vm::IoOut>,
+    /// The deterministic counter as counted code reads it (`emit::mrs`): set by
+    /// round-robin's run loop before each chunk, zero elsewhere. Last, so the
+    /// fields before it kept their offsets (and the code that reads them its bytes).
+    pub ticks: StepClock,
+}
+
+/// [`State::ticks`]: in deterministic time with a tick a step, a counter
+/// read at a point of a chunk where `left` of its steps are still to retire
+/// (the instruction itself one of them) reads `end - left` (`Vm::now`: the
+/// VM's steps plus the ticks WFI skipped, at the chunk's end). `end` 0: the
+/// helper's exit instead (realtime mode, another `ticks_per_insn`, or the xHCI
+/// with an event due, which the chunk's end fires and the exit would bring
+/// forward). A host signal arriving mid-chunk waits for the chunk's end, as
+/// it does for code that doesn't exit.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct StepClock {
+    pub end: u64,
 }
 
 /// [`State::unmask`]: an MSR that unmasks IRQs stays in the block (no

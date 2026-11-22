@@ -1114,6 +1114,8 @@ impl Vm {
                 take_irq(&mut self.vcpus[c].cpu);
                 self.retire(1);
                 bump(&self.shared.cpus[0].counters.irqs);
+                #[cfg(feature = "diag")]
+                crate::tally::add(&self.shared.cpus[0].counters.diag, crate::tally::IRQS, 1);
                 continue;
             }
             let n = CHUNK.min(left).min(self.until_deadline()).min(self.quantum);
@@ -1136,8 +1138,26 @@ impl Vm {
                 irq: &self.shared.signal as *const AtomicU32 as usize as u32,
                 ..Default::default()
             };
+            // A counter read inline (`jit::StepClock`) where its exit would only read the counter:
+            // deterministic, a tick a step, the xHCI quiet.
+            let inline = !realtime && quiet && self.cfg.ticks_per_insn == 1;
+            self.vcpus[c].jit.ticks = jit::StepClock {
+                end: if inline {
+                    self.steps + n + self.skipped
+                } else {
+                    0
+                },
+            };
             let (k, e) = self.chunk(c, n);
             self.vcpus[c].jit.unmask = jit::Unmask::default();
+            self.vcpus[c].jit.ticks = jit::StepClock::default();
+            #[cfg(feature = "diag")]
+            {
+                let d = &self.shared.cpus[0].counters.diag;
+                let kind = crate::tally::end_kind(e.as_ref(), k >= n);
+                crate::tally::add(d, crate::tally::END + kind, 1);
+                crate::tally::add(d, crate::tally::END_STEPS + kind, k);
+            }
             self.retire(k);
             self.publish();
             if let Some(e) = e
@@ -1391,6 +1411,18 @@ impl Vm {
                 return Some(exit::UNIMPLEMENTED);
             }
             Exit::Platform(i) => {
+                #[cfg(feature = "diag")]
+                if !sys::is_counter_read(i) {
+                    let class = if sys::icc(self.vcpus[c].cpu.features, i >> 5 & 0xffff).is_some() {
+                        if i & 1 << 21 != 0 { 0 } else { 1 }
+                    } else if sys::is_timer_reg(i) {
+                        2
+                    } else {
+                        3
+                    };
+                    let d = &self.shared.cpus[0].counters.diag;
+                    crate::tally::add(d, crate::tally::PLATFORM_BY + class, 1);
+                }
                 let cpu = &mut self.vcpus[c].cpu;
                 if let Some(r) = sys::icc(cpu.features, i >> 5 & 0xffff) {
                     let (rt, read) = (i & 31, i & 1 << 21 != 0);
@@ -1409,6 +1441,14 @@ impl Vm {
                 } else {
                     let (now, irq) = (self.now(), self.plat.get_mut().gic.irq(c));
                     platform(&mut self.vcpus[c].cpu, i, now, self.cfg.cntfrq, irq);
+                    #[cfg(feature = "diag")]
+                    if sys::is_vtimer_set(i) {
+                        let ahead = self.vcpus[c].cpu.cntv_cval_el0.wrapping_sub(now);
+                        if (ahead as i64) > 0 {
+                            let d = &self.shared.cpus[0].counters.diag;
+                            crate::tally::late(d, crate::tally::TIMER_SET, ahead);
+                        }
+                    }
                 }
                 let cpu = &mut self.vcpus[c].cpu;
                 cpu.pc = cpu.pc.wrapping_add(4);

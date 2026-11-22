@@ -111,16 +111,17 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-22, after loop 46)
+## State (2026-11-22, after loop 47)
 
-The user resumed the track on 2026-11-22 (paused 2026-11-21 after loop 44; loop 45 was their own request). Loop 46
-measured what an epoch's modules keep alive and built nothing (bench/boot/REPORT.md "PERF loop 46": the unnamed
-functions are tiered-up heads, live trampolines; invalidated code 0.5% of the pages session's wasm). Main is clean at
-loop 46's commit (it passed `scripts/ci-fast.sh` and `scripts/ci.sh`; no code changed), no branch or run pending. **An out-of-context review is due** (the last one was after loop 42, fixed
-in 43): before or after loop 47.
+Loop 47 compiled the deterministic runs' counter reads from the step clock (bench/boot/REPORT.md "PERF loop 47": the
+gates −2.7% boot, −3.0% userspace on the Mac, steps unchanged) and found the gates' timer rate to be the guest's
+HZ=1000 (seven platform exits a tick; the timer registers' five are the backlog's "The gates' timer register accesses
+inline"). An out-of-context review of the block map and RAM layout (branch `review/heap-ram`) ran alongside loop 47;
+**loop 48 fixes its findings**, each with its confirming test failing first, and deletes the branch on origin. Main
+is clean at loop 47's commit (it passed `scripts/ci.sh` and `scripts/ci-jit.sh`), no run pending.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-46" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+47" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36 and 42) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37 and 43. Built but off by default (measured slower): I8MM,
 FCMA, FP16, FHM, BF16. Where things stand: regions follow a call only when its callee can't leave them (loops 36-37,
 the gates −2.5%); the core's heap is measured and bounded (loops 38-44: the block map at 900,000 keys and 2^20
@@ -133,7 +134,8 @@ was remade from cda6cfa7's core (it loads into loop 46's).
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
+| **Next:** the `review/heap-ram` review's findings (loop 48) | fix each with its test failing first |
+| JIT: the gates' timer register accesses inline (loop 47's follow-up) | gates only; bound ~2% of the userspace gate |
 | JIT: followed calls whose callee completes inside the region (loop 36's follow-up) | bound ~0.5%; exits from inside a followed call as host calls to the pending continuation |
 | JIT: entries for loops through calls (loop 37's review finding 5) | count first: a looped forward region's call continuations run interpreted after an unwind |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |

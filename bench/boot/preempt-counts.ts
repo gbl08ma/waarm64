@@ -1,7 +1,8 @@
 // The diagnostic core's tallies (core/src/tally.rs; docs/benchmarking.md "Preemption's counts"): per guest step, how
 // often compiled code takes a region's back-edge or forward edge, an indirect transfer (a transfer cache hit, the miss
-// function), a static chain backward or forward, a host call and return; how parallel realtime chunks end (the budget
-// or an exit, by kind); and parallel mode's timer and IRQ latencies. Runs the gates' guests in Node (the dev VM):
+// function), a static chain backward or forward, a host call and return; how chunks end (the budget or an exit, by
+// kind); parallel mode's timer and IRQ latencies; round-robin's timer (CNTV_CVAL writes, IRQs, platform exits by
+// register). Runs the gates' guests in Node (the dev VM):
 //   CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag
 //   node bench/boot/preempt-counts.ts [--wasm target/diag/wasm32-unknown-unknown/release/waarm64_core.wasm]
 //     [--json out.json] [--chunk N] [run...]       runs: boot user smp1 smp4 smp-user4 (default: all); --chunk:
@@ -20,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
 /** core/src/tally.rs's slots. */
 const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
 const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
-const N = 64, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60;
+const N = 72, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68;
 
 type Tallies = number[];
 type Phase = { name: string; steps: number; t: Tallies };
@@ -31,7 +32,7 @@ const { values: a, positionals } = parseArgs({
   options: { wasm: { type: 'string', default: 'target/diag/wasm32-unknown-unknown/release/waarm64_core.wasm' }, json: { type: 'string' }, in: { type: 'string' }, chunk: { type: 'string' } },
 });
 
-const sum = (xs: Tallies[]) => Array.from({ length: N }, (_, i) => (i % 3 === 2 && i >= TIMER_LATE && i < IRQ_HIST ? Math.max(...xs.map((x) => x[i])) : xs.reduce((s, x) => s + x[i], 0)));
+const sum = (xs: Tallies[]) => Array.from({ length: N }, (_, i) => ((i % 3 === 2 && i >= TIMER_LATE && i < IRQ_HIST) || i === TIMER_SET + 2 ? Math.max(...xs.map((x) => x[i])) : xs.reduce((s, x) => s + x[i], 0)));
 
 async function run(name: string): Promise<Run> {
   const root = new URL('../../', import.meta.url);
@@ -68,13 +69,26 @@ function print(r: Run) {
   const rows: [string, number, Tallies][] = [['all', r.steps, r.t], ...r.phases.map((p) => [p.name, p.steps, p.t] as [string, number, Tallies])];
   console.log(`${'per 1000 steps'.padEnd(24)} ${rows.map(([n]) => n.slice(0, 9).padStart(9)).join(' ')}`);
   JIT.forEach((n, i) => console.log(`${n.padEnd(24).slice(0, 24)} ${rows.map(([, s, t]) => ((1000 * t[i]) / s).toFixed(3).padStart(9)).join(' ')}`));
-  if (!r.parallel) return;
   const chunks = END.reduce((s, _, k) => s + r.t[END_AT + k], 0);
   console.log(`chunks: ${chunks} (${(r.steps / chunks).toFixed(0)} steps each); by how they ended: count, share, mean steps`);
   END.forEach((n, k) => {
     const c = r.t[END_AT + k];
     if (c) console.log(`  ${n.padEnd(30)} ${String(c).padStart(10)} ${((100 * c) / chunks).toFixed(2).padStart(6)}% ${(r.t[END_STEPS + k] / c).toFixed(0).padStart(7)}`);
   });
+  if (!r.parallel) {
+    // Round-robin's timer: the virtual timer armed ahead, per phase (steps a write, mean ticks ahead), and IRQs taken.
+    console.log(`${'timer (round-robin)'.padEnd(24)} ${rows.map(([n]) => n.slice(0, 9).padStart(9)).join(' ')}`);
+    const line = (label: string, f: (s: number, t: Tallies) => string) => console.log(`${label.padEnd(24)} ${rows.map(([, s, t]) => f(s, t).padStart(9)).join(' ')}`);
+    line('CNTV_CVAL/TVAL armed', (_, t) => String(t[TIMER_SET]));
+    line('  steps a write', (s, t) => (t[TIMER_SET] ? s / t[TIMER_SET] : 0).toFixed(0));
+    line('  mean ticks ahead', (_, t) => (t[TIMER_SET] ? t[TIMER_SET + 1] / t[TIMER_SET] : 0).toFixed(0));
+    line('  max ticks ahead', (s, t) => (s === r.steps ? String(t[TIMER_SET + 2]) : '-'));
+    line('IRQs taken', (_, t) => String(t[IRQS]));
+    ['GIC CPU i/f read', 'GIC CPU i/f written', 'timer CTL/CVAL/TVAL', 'other'].forEach((n, k) => line(`platform: ${n}`, (_, t) => String(t[PLATFORM_BY + k])));
+    line('counter-read exits', (_, t) => String(t[END_AT + 9]));
+    line('  steps a read', (s, t) => (t[END_AT + 9] ? s / t[END_AT + 9] : 0).toFixed(0));
+    return;
+  }
   const b = r.t[BETWEEN];
   if (b) console.log(`  between a chunk ended by its steps and the next: ${b}, mean ${(r.t[BETWEEN_NS] / b).toFixed(0)} ns`);
   const tick = 1e3 / 62.5; // ns a counter tick

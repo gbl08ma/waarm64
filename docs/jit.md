@@ -23,8 +23,9 @@ the interpreter's own code.
   (`State::exit`) and the generated code stores the statically known PC (an offset from the
   entry PC) and returns; the run loop's `handle` completes it exactly as for the interpreter. No
   wasm exception handling. Exits mid-block (MMIO via `vm::Io` after a helper's `Fault(Bus)`,
-  timer registers, WFI, HVC, TX full, `DEVICE`) need nothing special. A counter read's exit costs ~180 ns, under 1%
-  of a busy vCPU in every workload counted, so CNTVCT stays an exit (bench/boot/REPORT.md "counter reads, inline or not").
+  timer registers, WFI, HVC, TX full, `DEVICE`) need nothing special. Counter reads are compiled inline where the
+  exit would only read the counter: from the host clock in parallel SMP's realtime mode, from the step clock in
+  deterministic round-robin (below, "System"); realtime round-robin keeps the exit.
 - **Functions:** `f(vcpu, acc, left, depth) -> acc + retired`, where `vcpu` points at the `Vcpu` (the
   `Cpu` at 0, the crypto constants, `State`, the TLB's scalars, then its arrays and the transfer
   cache), `left` is the step budget (counted code; parallel SMP's polled code passes 0 and reads none: [Preemption](#preemption-parallel-smps-polled-code)), `depth` the host calls under it with an entry number above (below,
@@ -1158,6 +1159,22 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   through `jit_unmask` (and `jit_parallel`, ABI 64), and counts the helper calls each condition sends there (a
   round-robin block's signal byte, a parallel one's IRQ and pending bytes);
   `unmask.c` checks the latency in realtime round-robin.
+- **Counter reads from the step clock** (counted code in deterministic round-robin, PERF loop 47, `emit::step_counter`):
+  a tick a step, so `MRS CNTVCT_EL0`/`CNTPCT_EL0` reads the steps retired before it plus the ticks WFI skipped. The
+  run loop stores the counter as of the chunk's end (`jit::State::ticks`, `Vm::steps` + the chunk's *n* + `skipped`)
+  before each chunk, and the block subtracts the steps still to run: `end - (left - k)`, `left` the budget at the
+  member's entry and *k* the instructions before the read (one load, a subtraction, no call). The helper's exit stays
+  where it would do more than read: `end` 0 in realtime mode, with another `ticks_per_insn`, and while the xHCI has
+  an event due (the exit would fire it earlier and move the steps: planting that out moved the USB guest's JIT run
+  off the interpreter's, 188,563,323 → 193,007,148), and at EL0 without CNTKCTL_EL1's enable (it traps). A host signal
+  arriving mid-chunk waits for the chunk's end, as it does for any code without exits (an inline check of the signal
+  byte, as the unmask's, changed what no test sees and was left out). Polled code keeps the helper (parallel SMP is
+  realtime: the host clock above). Steps don't move (Alpine's boot and userspace benchmark as in tests/steps.txt);
+  the deterministic gates' counter-read exits went from 0.31M (boot) and 1.20M (userspace) to 3.7K each, the reads
+  left in interpreted code. `tests/baremetal/counter.c` reads the counter at a loop's head and further in, in a
+  callee, after a forward edge and at EL0 with and without the enable, and prints a hash of every reading: the
+  deterministic runs compare it between the interpreter and the JIT (planted: *k* dropped changes the hash; the EL0
+  check dropped fails it and timer.c).
   SIMD&FP instructions check `CPACR_EL1.FPEN` once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,
   shifts, moves and immediates, widening/narrowing, reductions, compares against zero, UZP/TRN/ZIP
@@ -1544,8 +1561,9 @@ system instructions, and why each stays a helper:
 - **Unmasking DAIF writes in realtime round-robin** (Node's runners, the I/O and script benchmarks; neither the gates
   nor the page) end the chunk through the helper, as before PERF loop 8: the exit is what takes an IRQ that came due
   under the mask at once (PERF loop 9). Elsewhere they stay inline while `jit::Unmask` allows ("Emission").
-- **MRS of the counter outside parallel SMP's realtime mode** (the gates' deterministic runs: 0.35M in Alpine's
-  boot, 0.37-0.52M in each userspace phase) exits to the run loop, which reads the step clock.
+- **MRS of the counter in realtime round-robin** (Node's I/O and script benchmarks; neither the gates nor the page)
+  exits to the run loop, which reads the host clock. Deterministic round-robin reads the step clock inline ("System"
+  above, PERF loop 47).
 
 Of the integer NEON (after the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,
 URECPE/URSQRTE, and the FP forms the FP

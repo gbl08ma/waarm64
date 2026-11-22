@@ -747,6 +747,23 @@ pub fn is_counter_read(i: u32) -> bool {
     bit(i, 21) && matches!(bits(i, 20, 5), CNTVCT | CNTPCT)
 }
 
+/// Whether the [`Exit::Platform`] access `i` writes the virtual timer's
+/// compare value (CNTV_CVAL_EL0 or CNTV_TVAL_EL0; the diagnostic build's tally).
+#[cfg(feature = "diag")]
+pub fn is_vtimer_set(i: u32) -> bool {
+    !bit(i, 21) && matches!(bits(i, 20, 5), CNTV_CVAL | CNTV_TVAL)
+}
+
+/// Whether the [`Exit::Platform`] access `i` is to a timer's CTL, CVAL or TVAL
+/// (the diagnostic build's tally).
+#[cfg(feature = "diag")]
+pub fn is_timer_reg(i: u32) -> bool {
+    matches!(
+        bits(i, 20, 5),
+        CNTP_TVAL | CNTP_CTL | CNTP_CVAL | CNTV_TVAL | CNTV_CTL | CNTV_CVAL
+    )
+}
+
 /// Whether the word `w` is an MRS of CNTVCT_EL0 or CNTPCT_EL0 (the JIT
 /// compiles those as reads of the host clock in parallel SMP).
 pub fn is_counter_mrs(w: u32) -> bool {

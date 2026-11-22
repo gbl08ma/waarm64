@@ -2346,6 +2346,10 @@ const TLB_E: u32 = (offset_of!(Vcpu, tlb) + offset_of!(Tlb, e)) as u32;
 // Every offset JIT code loads from the `Vcpu` at is one V8 folds into the load
 // (docs/jit.md "Functions").
 const _: () = assert!(TLB_E + 6 * 16 <= 0x800 && JC_PTR < 0x800 && HOT_PTR < 0x800 && STOP < 0x800);
+const _: () = assert!(
+    offset_of!(Vcpu, jit) + size_of::<super::State>() <= 0x800,
+    "State::ticks"
+);
 const _: () = assert!((offset_of!(Vcpu, tlb) + offset_of!(Tlb, xgen) + 16) <= 0x800);
 
 /// Turns the VA (i64) on the stack into the `Vcpu`-relative pointer to its TLB
@@ -4435,6 +4439,10 @@ fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
         counter(c, cx, now, i, k);
         return true;
     }
+    if !c.polled && is_counter_mrs(i) {
+        step_counter(c, cx, i, k);
+        return true;
+    }
     let Some(p) = plain(key, cx.el1) else {
         return false;
     };
@@ -4487,17 +4495,7 @@ fn counter(c: &mut Func, cx: &Ctx, now: u32, i: u32, k: usize) {
     let (t, old, last) = (2, 3, 6);
     c.local_get(VCPU).i32_load(LAST).local_tee(last);
     c.op(EQZ).op(EQZ);
-    if !cx.el1 {
-        // EL0VCTEN (bit 1) for CNTVCT, EL0PCTEN (bit 0) for CNTPCT.
-        let en = if bits(i, 20, 5) == crate::interp::sys::CNTVCT {
-            2
-        } else {
-            1
-        };
-        c.local_get(VCPU)
-            .i64_load(offset_of!(Cpu, cntkctl_el1) as u32);
-        c.i64_const(en).i64_and().op(EQZ + WC).op(EQZ).op(AND);
-    }
+    counter_el0(c, cx, i);
     c.hint(true).if_();
     let before = c.regs;
     c.call(now).local_get(VCPU).memarg(F64_LOAD, 3, T0).op(0xa1); // f64.sub
@@ -4520,6 +4518,52 @@ fn counter(c: &mut Func, cx: &Ctx, now: u32, i: u32, k: usize) {
     c.end().end();
     set(c, true, rt, |c| {
         c.local_get(t);
+    });
+    fallback(c, cx, i, 4 * k as i64, before, xmask(rt));
+}
+
+/// Pushes whether a counter read at the block's EL may retire inline: at EL0
+/// CNTKCTL_EL1's enable (EL0VCTEN, bit 1, for CNTVCT; EL0PCTEN, bit 0, for
+/// CNTPCT), without it the read traps; `ok`, an i32 already pushed.
+fn counter_el0(c: &mut Func, cx: &Ctx, i: u32) {
+    if !cx.el1 {
+        let en = if bits(i, 20, 5) == crate::interp::sys::CNTVCT {
+            2
+        } else {
+            1
+        };
+        c.local_get(VCPU)
+            .i64_load(offset_of!(Cpu, cntkctl_el1) as u32);
+        c.i64_const(en).i64_and().op(EQZ + WC).op(EQZ).op(AND);
+    }
+}
+
+/// MRS of CNTVCT_EL0 or CNTPCT_EL0 in counted code (round-robin; PERF loop
+/// 47): deterministic time's reading from the chunk's [`StepClock`](super::StepClock),
+/// `end - (left - k)` (`left` the steps left at the block's entry, `k` the
+/// instructions before this one), what the helper's exit would read; the
+/// helper while `end` is 0 (realtime, the xHCI with an event due) and at EL0
+/// without CNTKCTL_EL1's enable (it traps).
+fn step_counter(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
+    use super::{State, StepClock};
+    const END: u32 =
+        (offset_of!(Vcpu, jit) + offset_of!(State, ticks) + offset_of!(StepClock, end)) as u32;
+    let rt = bits(i, 4, 0);
+    let t = 2; // i64 scratch: `end`
+    c.local_get(VCPU)
+        .i64_load(END)
+        .local_tee(t)
+        .op(EQZ + WC)
+        .op(EQZ);
+    counter_el0(c, cx, i);
+    c.hint(true).if_();
+    let before = c.regs;
+    set(c, true, rt, |c| {
+        c.local_get(t).local_get(LEFT);
+        if k != 0 {
+            c.i32_const(k as i32).op(SUB);
+        }
+        c.i64_extend_i32_u().op(SUB + W);
     });
     fallback(c, cx, i, 4 * k as i64, before, xmask(rt));
 }
@@ -5487,9 +5531,13 @@ mod tests {
     #[test]
     fn counter_reads_inline_with_the_clock() {
         use crate::jit::wasm::uleb;
-        // MRS X3, CNTVCT_EL0: a helper call without the clock (`emit_in` None).
+        // MRS X3, CNTVCT_EL0: a helper call in polled code without the clock.
         let mrs = 0xd53be043;
-        assert!(emit_in(mrs, 0, &FLAT).is_none());
+        let mut polled = Func {
+            polled: true,
+            ..Func::default()
+        };
+        assert!(!inline(&mut polled, mrs, decode(mrs), 0, &FLAT));
         let par = Ctx {
             clock: Some(9),
             parallel: true,
@@ -5511,6 +5559,42 @@ mod tests {
         ));
     }
 
+    /// Counted code reads the deterministic counter from the chunk's
+    /// `StepClock` (PERF loop 47): `end - (left - k)`, no clock.
+    #[test]
+    fn counter_reads_inline_from_the_step_clock() {
+        use crate::jit::wasm::uleb;
+        use crate::jit::{State, StepClock};
+        let mrs = 0xd53be043; // MRS X3, CNTVCT_EL0
+        let at = |f: usize| {
+            let mut b = vec![0x29, 3]; // i64.load
+            uleb(
+                &mut b,
+                (offset_of!(Vcpu, jit) + offset_of!(State, ticks) + f) as u64,
+            );
+            b
+        };
+        let end = at(offset_of!(StepClock, end));
+        let mut kctl = vec![0x29, 3];
+        uleb(&mut kctl, offset_of!(Cpu, cntkctl_el1) as u64);
+        let el0 = emit_in(mrs, 5, &FLAT).unwrap();
+        assert!(has(&el0, &end), "the step clock");
+        assert!(has(&el0, &kctl), "EL0 checks EL0VCTEN");
+        // end - (left - 5), left extended.
+        assert!(has(&el0, &[0x20, LEFT as u8, 0x41, 5, 0x6b, 0xad, 0x7d]));
+        let el1 = emit_in(mrs, 0, &Ctx { el1: true, ..FLAT }).unwrap();
+        assert!(has(&el1, &end) && !has(&el1, &kctl));
+        assert!(
+            has(&el1, &[0x20, LEFT as u8, 0xad, 0x7d]),
+            "k 0: left alone"
+        );
+        // CNTFRQ_EL0 isn't the counter.
+        assert!(!has(
+            &emit_in(0xd53be003, 0, &FLAT).unwrap_or_default(),
+            &end
+        ));
+    }
+
     #[test]
     fn system_register_reads() {
         const EL1: Ctx = Ctx { el1: true, ..FLAT };
@@ -5521,9 +5605,8 @@ mod tests {
         );
         // At EL0 it's UNDEFINED: the helper raises it.
         assert_eq!(emit(0xd538d081, 0), None);
-        // mrs x1, currentel: a constant; mrs x1, cntvct_el0: the platform.
+        // mrs x1, currentel: a constant (cntvct_el0: counter_reads_inline_from_the_step_clock).
         assert_eq!(emit_in(0xd5384241, 0, &EL1).unwrap(), [0x42, 4, 0x21, 17]);
-        assert_eq!(emit_in(0xd53be041, 0, &EL1), None);
         // mrs x1, sp_el0 at EL1: sp_other (840) under `if pstate & 1`, the helper otherwise.
         let b = emit_in(0xd5384101, 0, &EL1).unwrap();
         assert!(has(&b, &[0x20, 0, 0x29, 3, 0xc0, 6])); // pstate

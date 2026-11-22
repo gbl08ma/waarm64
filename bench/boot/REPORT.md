@@ -6857,3 +6857,62 @@ times its invalidated functions over its functions.)
   renderer's 5.1-5.4 GiB in this session; not built.
 - **Dropped**: no change. The finding is in docs/jit.md "Memory" ("What an epoch keeps alive"); the backlog entry is
   removed.
+
+## PERF loop 47: counter reads from the step clock; the gates' timer rate (2026-11-22)
+
+The backlog's two adjacent entries: the deterministic runs' counter reads, each an exit to the run loop (PERF loop 8),
+and the gates' timer reprogramming rate against the guest's HZ. Raw: `results/perf47/` (the diagnostic counts
+`counts-base.json` and `counts-new.json`, the Mac A/B's JSON, the static counts `codestats.json`).
+
+**Counts** (a diagnostic core: `bench/boot/preempt-counts.ts boot user`, which now tallies round-robin chunk ends too,
+the virtual timer's arming, the IRQs and the platform exits by register; Node on the dev VM, deterministic, 1 vCPU):
+
+| | boot (2.65 G steps) | userspace (10.43 G) | compress / Lua / churn / SQLite |
+|---|---|---|---|
+| counter-read exits | 307,868 (28% of chunk ends) | 1,204,864 (36%) | 232K / 361K / 74K / 247K |
+| steps a counter read | 8,609 | 8,658 | 8,769 / 8,892 / 7,288 / 8,653 |
+| CNTV_CVAL/TVAL armed | 41,555 | 166,020 | 32,556 / 51,424 / 8,687 / 34,215 |
+| steps a write | 63,780 | 62,832 | 62,499 / 62,500 / 62,503 / 62,502 |
+| timer IRQs taken | 42,060 | 166,780 | as the writes |
+| platform exits: ICC read / ICC written / timer CTL, CVAL, TVAL | 42K / 42K / 208K | 167K / 167K / 830K | |
+
+**The timer rate is the guest's HZ.** One arming and one IRQ per 62,500 steps is one per millisecond of guest time at
+62.5 MHz and a tick a step: Alpine's linux-virt ticks at HZ=1000 and the busy CPU takes every tick (NO_HZ_IDLE).
+Each tick costs seven platform exits (ICC_IAR1, ICC_EOIR1, five CTL/CVAL accesses), not the ~10 ISBs (inline since
+loop 8). Fewer ticks per step would need a guest-visible change (CNTFRQ, `ticks_per_insn`), which moves every step
+count: not done. The timer registers' five exits are a backlog follow-up (docs/backlog.md "The gates' timer register
+accesses inline").
+
+**What was built** (docs/jit.md "Counter reads from the step clock"): in counted code an `MRS CNTVCT_EL0/CNTPCT_EL0`
+reads `jit::State::ticks.end - (left - k)`: the run loop stores the counter as of the chunk's end (the VM's steps, the
+chunk's *n*, the ticks WFI skipped) before each chunk, and `left` at the member's entry less the *k* instructions
+before the read is what the chunk still has to run. One load, a test, a subtraction; the helper's exit while `end` is
+0 (realtime, `ticks_per_insn` other than 1, the xHCI with an event due) and at EL0 without CNTKCTL_EL1's enable. 8
+bytes a vCPU; no ABI change (the field is the `State`'s last, so nothing else moved). Steps don't move: Alpine
+2,650,367,147 and the userspace benchmark 10,431,311,691 as in tests/steps.txt. Counter-read exits after: 3,692 (boot)
+and 3,667 (userspace), the reads in code still interpreted. Node (dev VM, diagnostic core, one run each): boot 4.72 →
+4.62 s, userspace 11.78 → 11.50 s.
+
+**The gates** (the Mac host, M4, Chrome for Testing 158.0.8127.36 headless; `bench/interp/ab-mac.sh`, one round a
+call, the order base-new, new-base, base-new; ms, each round's median; base `e62cbb4c`):
+
+| | base | new | |
+|---|---|---|---|
+| `alpine_jit_total` | 3,748 · 3,854 · 3,837; **3,837** | 3,724 · 3,735 · 3,777; **3,735** | **−2.7%**, every round's pair faster (−0.6, −3.1, −1.6%), rounds overlapping (base's first 3,748 against new's 3,777) |
+| `alpine_user_jit_total` | 10,179 · 10,340 · 10,331; **10,331** | 9,970 · 10,025 · 10,084; **10,025** | **−3.0%**, rounds apart |
+| compress / Lua / churn / SQLite (medians) | 1,485 / 2,587 / 751 / 1,886 | 1,430 / 2,496 / 729 / 1,827 | −3.7 / −3.5 / −2.9 / −3.1% |
+
+The userspace run's ~0.3 s against 1.2M exits removed is ~250 ns an exit on the Mac (loop 8 estimated ~130). Compile
+side, base → new: `emitNs` 168-173 → 171-174 ms (boot), 234-237 → 234-239 ms (userspace); `compileNs` 50 → 50 and 75
+→ 75 ms; wasm bytes 11,690,221 → 11,690,440 (boot), 15,904,178 → 15,901,652 (userspace). Static code of the boot's 315
+modules (`bench/jit/codestats.ts`, every function in TurboFan): arm64 instructions +0.1% (7,595,520 → 7,603,150), code
+bytes +0.1%; x64 instructions +0.1% (5,987,201 → 5,994,072), code bytes +0.1%; stack slots and frame operands within
+0.1%. Memory: 8 bytes a vCPU. **Kept.**
+
+Tests: `tests/baremetal/counter.c` (the reads at a loop's head and further in, in a callee, after a forward edge, at
+EL0 with and without the enable; a hash of every reading on the console, which the deterministic runs compare between
+the interpreter and the JIT) and the emitter's `counter_reads_inline_from_the_step_clock`. Planted bugs: *k* dropped
+(the hash differs, and the steps: 1,194,661 → 1,196,002); the EL0 check dropped (counter.c exit 3, timer.c); the
+xHCI's condition dropped (the USB guest's JIT run 188,563,323 → 193,007,148 steps against the interpreter's). An inline
+check of the host signal byte, as the unmask has, was built and dropped: planting it out changed nothing any test sees.
+CI: `scripts/ci.sh` (its second run: the first found `system_register_reads` still expecting the counter read as a helper call) and `scripts/ci-jit.sh` passed.
