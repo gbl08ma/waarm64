@@ -1,6 +1,7 @@
 // The keyboard as the page shows it (docs/frontend.md "Input", "The on-screen keyboard"): the on-screen keyboard and
 // its modifiers' setting, the guest's layout and LEDs, where keys go; and what happened to the keys that the on-screen
 // keyboard follows (`onReleased`, `onTyped`). The run writes it from the machine's input (web/app/run/runner.ts).
+import { untrack } from 'svelte';
 import type { ModifierMode } from '../osk.ts';
 import { settings } from '../settings.ts';
 
@@ -43,5 +44,15 @@ class Keys {
   readonly released = new Event();
   /** A key was typed on the physical keyboard (into the screen or the terminal): it ends the on-screen keyboard's latches. */
   readonly typed = new Event<[code: string]>();
+
+  /** Calls `f` with `osk` now and at each change. */
+  watchOsk(f: (shown: boolean) => void) {
+    $effect.root(() => {
+      $effect(() => {
+        const on = this.osk;
+        untrack(() => f(on));
+      });
+    });
+  }
 }
 export const keys = new Keys();

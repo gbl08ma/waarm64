@@ -53,6 +53,8 @@ export class SerialTerminal {
   #settle?: ReturnType<typeof setTimeout>;
   /** The size last told this run (the guest's tty keeps it). */
   #said?: { cols: number; rows: number };
+  /** The on-screen keyboard is shown: the device's own (a phone's, a tablet's) stays closed (`ownKeyboard`). */
+  #own = false;
 
   /** Opens the terminal in `el`; what's typed in it goes to `send` (xterm.js sends what a terminal would: \r for Enter, escape sequences). */
   open(el: HTMLElement, send: (d: string) => void) {
@@ -71,6 +73,7 @@ export class SerialTerminal {
       this.#told();
     });
     el.dataset.size = `${this.term.cols}x${this.term.rows}`;
+    this.#inputMode();
     // A key typed on the physical keyboard into the terminal ends the on-screen keyboard's latches, as one into the screen does.
     this.term.textarea?.addEventListener('keyup', (e) => {
       keys.typed.emit(e.code);
@@ -168,6 +171,29 @@ export class SerialTerminal {
     this.#lastLine = lines.pop() ?? '';
     const shown = lines.reverse().find((l) => l.trim());
     if (shown !== undefined) bootCard.line = shown.replace(ESCAPES, '').trim();
+  }
+
+  /**
+   * The on-screen keyboard is shown (`on`) or hidden: while it is, xterm.js's textarea is `inputmode="none"`, so
+   * focusing it doesn't open the device's own keyboard (a phone's, a tablet's) over ours; it keeps the focus and a
+   * physical keyboard's keys. A device keyboard already open closes as the textarea is focused again.
+   */
+  ownKeyboard(on: boolean) {
+    if (this.#own === on) return;
+    this.#own = on;
+    this.#inputMode();
+    const ta = this.term.textarea;
+    if (on && ta && ta === document.activeElement) {
+      ta.blur();
+      ta.focus({ preventScroll: true });
+    }
+  }
+
+  #inputMode() {
+    const ta = this.term.textarea;
+    if (!ta) return;
+    if (this.#own) ta.inputMode = 'none';
+    else ta.removeAttribute('inputmode');
   }
 
   /** The terminal has the focus (its view, or both views with it last clicked): the on-screen keyboard types into it. */

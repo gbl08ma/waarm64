@@ -1930,7 +1930,11 @@ are bigger in a window of the same size.
   go doesn't release a Shift latched here, a menu's Ctrl+W doesn't release a latched Ctrl, and a second Hold Esc ends
   the first.
 - **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it, nor do its bar's buttons
-  (its keys' `pointerdown` and a tool window's `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
+  (its keys' `pointerdown` and a tool window's `mousedown` are cancelled), so the screen keeps the physical keyboard.
+  While it's shown, the terminal's textarea (xterm.js's) is `inputmode="none"` (`SerialTerminal.ownKeyboard`, following
+  `keys.osk`): focusing the terminal doesn't open a phone's or tablet's own keyboard over this one, and one already open
+  closes as the terminal is focused again (blurred and refocused when this one is shown). The screen is no text field,
+  so it never opens one. When the page releases the guest's keys (the
   screen or the window loses the focus, or the guest's keyboard driver comes or goes, which moves the keys between
   the virtio keyboard and the built-in USB one or the serial console), `Input`'s `onRelease` tells the keyboard
   (`keys.released`), which lets go of what it held and latched. Its keys, the menu's and Hold Esc wake a suspended
@@ -1948,7 +1952,7 @@ fingers by CDP touches, the focus, a move and a resize remembered, the toggle mo
 keyboard, a finger on the keyboard and one on the screen, the driver's change, the serial console before the driver,
 the LEDs from virtio-input's status events and their switch with the driver, Ctrl+W, Esc, Hold Esc; the compact layout at a
 phone's width: its tabs, a latch and a held key across pages, the forced layout remembered and dropped as the width crosses;
-the terminal's view to the serial console, a held key's repeats there and none to the keyboard; German's legends, ISO's key
+the terminal's view to the serial console, its `inputmode` with the keyboard shown and hidden, a held key's repeats there and none to the keyboard; German's legends, ISO's key
 and AltGr's characters; German's compact letters' page; JIS's input-method keys' keycodes);
 `tests/usb-keyboard.test.ts` the built-in keyboard's `usb-leds`. The wake isn't tested on the page (a suspended guest's status is the worker's).
 
