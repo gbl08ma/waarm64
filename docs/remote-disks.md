@@ -163,7 +163,7 @@ the publish above (a dry run; `--apply` writes `target/disks/`). Per demo, into 
    kept (the agent drops the guest's caches), flagged as a template and deflated (by the same core), chunked;
    `definition.json` (the page's export); `thumb.webp` (the console's top at the prompt, 480×300, Chromium's WebP).
 
-**A desktop** (`arch-desktop`, `arch-3d`: DEMO loop 12): its recipe's `image` is a qcow2 in the checkout made by hand
+**A desktop** (`arch-desktop`; `arch-3d`, out since 2026-11-22: backlog.md "GTK4 finds no EGL config on Mesa 26.3's virgl"; DEMO loop 12): its recipe's `image` is a qcow2 in the checkout made by hand
 (`target/arch/desktop.qcow2`, images/arch/desktop.sh: Arch's packages of the day, so never the same twice), taken as
 it is and never rebuilt (a new one is a new demo id), and its `session` (`user`, `apps`: `{run, window}`, `settle`,
 `screen`, `countdown`, `cmdline`: tools/demo-site.ts `Session`) makes the template a desktop's: root logged in on the
@@ -232,9 +232,8 @@ that changes either needs its demos made again (any build of that commit's core 
    temp-and-rename, so it never writes through a link into the original). The Desktop Demo's `desktop/` and the
    ledger `.publish.json` come with it.
 4. **The images the recipes name:** `alpine-demo` is rebuilt by the build when stale (Podman). The desktops' is
-   made by hand and must be at `target/arch/desktop.qcow2` (images/arch/desktop.sh; the same image as
-   `https://static.gbl08ma.com/diskimages/desktop.qcow2`, which can be fetched instead: its content id is what the
-   ledger has). Link it in as in 3.
+   made by hand and must be at `target/arch/desktop.qcow2` (images/arch/desktop.sh; its content id is what the
+   ledger has: another build is another image). Link it in as in 3.
 5. **The demos:** the templates in `target/demos/` (the checkout's own builds: `node tools/build-demos.ts`, each demo
    with a recipe made again under its id) published with `node tools/publish-demos.ts`, its plan read first (what each
    demo's files and the site's file count become, what a retirement would drop), then `--apply` (writes
@@ -270,8 +269,9 @@ bridge's gateway, `public_addresses` the host's), its config's `server.origins` 
   replaces the whole site, so `target/disks/` holds every image that stays; wrangler uploads only pieces it hasn't
   seen. `deploy.sh` refuses past 20,000 files. **Deploy only when the user asks** (credentials: [frontend.md](frontend.md)
   "Deployed at waarm64.com").
-- **`https://static.gbl08ma.com/diskimages/`** (the user's server, Caddy, with ranges): `desktop.qcow2` (the whole
-  image) and `desktop/` (the same chunked copy). Uploads by an rsync-only key confined to that directory: it can't
+- **`https://static.gbl08ma.com/diskimages/`** (the user's server, Caddy, with ranges): the cloud sessions' dEQP-VK
+  disks ([cloud.md](cloud.md)) only; the desktop images it served are gone (2026-11-22, the user's call: the demos'
+  are on disks.waarm64.com). Uploads by an rsync-only key confined to that directory: it can't
   replace or delete the root-owned files there (upload under another name; the user moves it), and the server allows
   one rsync session at a time.
 

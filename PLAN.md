@@ -73,3 +73,4 @@ The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari (
 | The introduction (INTRO) | In progress since 2026-11-20 | [INTRO-KICKOFF.md](INTRO-KICKOFF.md), [frontend.md](docs/frontend.md) "The introduction" |
 | A page per connection, and its domains (DOMAINS) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "The Home page", [names.md](docs/networking/names.md) "What the user sees", [backlog.md](docs/backlog.md) "DOMAINS" |
 | The move to waarm64.com (DOTCOM) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "Deployed at waarm64.com" |
+| Mesa 26.3 on our virgl: GTK4 finds no EGL config (MESA-UPDATE) | Open since 2026-11-22, not started | [MESA-UPDATE-HANDOVER.md](MESA-UPDATE-HANDOVER.md), [backlog.md](docs/backlog.md) "GTK4 finds no EGL config on Mesa 26.3's virgl" |
