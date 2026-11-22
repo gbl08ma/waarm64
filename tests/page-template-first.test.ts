@@ -152,7 +152,7 @@ test("a 3D template whose 3D can't start in this browser: its first start boots 
   assert.equal(after.overlays.length, 1);
   assert.equal(after.overlays[0].fork, undefined, 'nothing wrote the template into it: no fork of it (a later restore forks anew)');
   assert.deepEqual(after.snapshots.map((s: { machine: string }) => s.machine), [id], 'the template kept as its snapshot');
-  const said = t('snapshots:runner.firstBooted', { machine: after.m.name }).replace(/<\/?name>/g, '');
+  const said = t('snapshots:snapshot-restore.firstBooted', { machine: after.m.name }).replace(/<\/?name>/g, '');
   await page.waitForFunction((said) => document.querySelector('#message')?.textContent?.includes(said), said, { timeout: 10_000, polling: 50 });
   assert.equal(await page.evaluate(() => document.body.dataset.graphics), '2d', 'the boot without 3D');
   assert.deepEqual(errors, []);

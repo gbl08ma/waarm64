@@ -265,7 +265,7 @@ test("started before says whether the machine has changes since the demo started
     return { said: await text(page, '[data-field="changes"]'), is: await page.locator('[data-field="changes"]').getAttribute('data-changes') };
   };
   // The stand-in wrote nothing where the restore would have (its overlay's generation 0, not the fork's 1): moved on.
-  assert.deepEqual(await changes(), { said: t('machines:DemoStart.changes.disk'), is: 'disk' });
+  assert.deepEqual(await changes(), { said: t('machines:DemoChanges.disk'), is: 'disk' });
   const mark = (restoreFirst: string | undefined) => page.evaluate(async ([id, restoreFirst]) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();

@@ -18,10 +18,11 @@
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
   import T from './T.svelte';
+  import DemoChanges from './DemoChanges.svelte';
   import DemoChecks from './DemoChecks.svelte';
   import { Actions } from './actions.svelte.ts';
   import { allMet, canStart, checkDemo, needsOf, readEnv, type Check } from './demo-check.ts';
-  import { changesOf, checkDisks, lastUsed } from './demo-open.ts';
+  import { checkDisks, lastUsed } from './demo-open.ts';
   import { downloadEnded } from './demo-leave.ts';
   import { machinesOf, type StoreDemo } from './demo-store.ts';
   import { isRunning } from './machines.ts';
@@ -56,8 +57,6 @@
 
   let checks = $state.raw<Check[]>();
   let used = $state<Date>();
-  /** What the visitor's machine holds beyond the demo as it started (`changesOf`); unknown until read. */
-  let changes = $state<'none' | 'disk' | 'suspended'>();
   let elsewhere = $state(false);
   let progress = $state<{ done: number; total: number }>();
   const runner = new Actions({ after: () => records.reread() });
@@ -80,16 +79,10 @@
     const m = mine;
     if (!m) return;
     void lastUsed(m).then((when) => (used = new Date(when)));
-    void changesOf(store, m).then((c) => (changes = c));
     void isRunning(m.id).then((on) => (elsewhere = on && m.id !== current.id));
   });
 
   const ready = $derived(!!checks && canStart(checks));
-  const changesWords = {
-    none: 'machines:DemoStart.changes.none',
-    disk: 'machines:DemoStart.changes.disk',
-    suspended: 'machines:DemoStart.changes.suspended',
-  } as const;
 
   /** The machine running on this page (undefined: none), which opening another stops. */
   const live = () => (isLive(power.state) ? current.id : undefined);
@@ -198,9 +191,7 @@
             <T k="machines:DemoStart.mine.undated" params={{ machine: mine.name }} />
           {/if}
         </Note>
-        {#if changes}
-          <Note size="md" data-field="changes" data-changes={changes}>{t(changesWords[changes])}</Note>
-        {/if}
+        <DemoChanges {store} machine={mine} />
         {#if elsewhere}
           <Note tone="warn"><T k="machines:DemoStart.elsewhere" params={{ machine: mine.name }} /></Note>
         {/if}

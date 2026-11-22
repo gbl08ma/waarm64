@@ -1118,10 +1118,10 @@ the query's form serves (decisions.md "Demos").
   before it when the machine running then isn't the one the visitor agreed to stop.
 - **Started before** (a machine whose `fromDemo` is the demo's): the pane says so, with its name and when it was
   last used (when its disks' overlays were last written, `demo-open.ts` `lastUsed`, else its record's change), and
-  whether it has changes since the demo started (`changesOf`, a line under it): [Nothing in it has changed since the demo started.](ui:machines:DemoStart.changes.none)
+  whether it has changes since the demo started (`DemoChanges.svelte`, `changesOf`, a line under it): [Nothing in it has changed since the demo started.](ui:machines:DemoChanges.none)
   (its first start not taken yet, or each overlay still the template's fork at the generation its first restore left),
-  [Its disk has changed since the demo started. A fresh copy starts without those changes.](ui:machines:DemoStart.changes.disk) (an overlay written since, or one that's no fork of the template: another
-  snapshot restored, another overlay chosen) or [It was suspended: opening it resumes it where it was left. A fresh copy starts without its changes.](ui:machines:DemoStart.changes.suspended) (a suspended copy:
+  [Its disk has changed since the demo started. A fresh copy starts without those changes.](ui:machines:DemoChanges.disk) (an overlay written since, or one that's no fork of the template: another
+  snapshot restored, another overlay chosen) or [It was suspended: opening it resumes it where it was left. A fresh copy starts without its changes.](ui:machines:DemoChanges.suspended) (a suspended copy:
   it resumes). In practice a machine that has run says its disk changed (a running guest writes). It offers
   **[Open my machine](ui:machines:DemoStart.openMine)** (the default: the main button, with the focus in one column) and **[Start a fresh copy](ui:machines:DemoStart.fresh)** (another
   machine; `importDefinition` names it with a suffix, `Alpine (2)`); a note when that machine runs in another tab.

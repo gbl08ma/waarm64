@@ -575,8 +575,8 @@ The machine's first start (`PowerActions.startOpened`, or Start after a page tha
 snapshot instead of booting, with no question (`SnapshotRestore.first`): the shape is the definition's (its disks'
 identities and serials), so it matches; the pins, by slot, fork onto the machine's fresh overlays (none yet: new
 ones; a fresh one: that one, §5.2). The mark is cleared before the start; a snapshot that can't be restored (another
-shape: said) boots the machine instead, and so does one that can't load once the start is under way (`Runner.bootInstead`,
-said as [{{machine}} started from power on: its demo's saved state couldn't be restored in this browser.](ui:snapshots:runner.firstBooted)): a 3D or Vulkan template whose 3D fails
+shape: said) boots the machine instead, and so does one that can't load once the start is under way (`SnapshotRestore`'s boot instead,
+said as [{{machine}} started from power on: its demo's saved state couldn't be restored in this browser.](ui:snapshots:snapshot-restore.firstBooted)): a 3D or Vulkan template whose 3D fails
 to start in this browser (the GPU worker's `failed`: the machine runs 2D, another shape, and the snapshot never reaches
 the worker), or the worker refusing it (a `snapshot` problem, which a first start doesn't leave to the user's Start).
 Either way the overlays its plan named that nothing wrote (generation 0) lose their fork mark (`snapshots.ts`

@@ -8,7 +8,7 @@ import type { DiskPlan, SnapshotDisk } from '../../snapshot.ts';
 import { ask } from '../ask.svelte.ts';
 import { shapeDiff } from '../shape-diff.ts';
 import type { Shape } from '../shape.ts';
-import { planRestore } from '../snapshots.ts';
+import { planRestore, unfork } from '../snapshots.ts';
 import { basesIn } from '../snapshot-lost.ts';
 import { snapshotPath } from '../store.ts';
 import type { Core } from '../run/core.ts';
@@ -89,6 +89,7 @@ export class SnapshotRestore {
   constructor(c: Core) {
     this.#c = c;
     c.power.restoreFirst = (id) => this.first(id); // a machine from a template's first start
+    c.runner.firstFailed = (plan, restart) => this.#bootInstead(plan, restart);
   }
 
   /** What a snapshot's disk is called, for messages. */
@@ -251,6 +252,20 @@ export class SnapshotRestore {
     if (!(await clear())) return;
     terminal.term.reset();
     if (disks) runner.start(file, true, disks, true);
+    else runner.start();
+  }
+
+  /**
+   * A first start whose snapshot can't load once under way (3D failed in this browser: another shape; or the worker
+   * refused it): a boot instead, said once it runs. The overlays its `plan` named that nothing wrote are no forks of
+   * it (`unfork`). `restart`: the run has ended (the worker's refusal); else its workers are gone (3D's failure).
+   */
+  async #bootInstead(plan: DiskPlan[], restart: boolean) {
+    const { machine: m, runner, messages } = this.#c;
+    await unfork(m.store, plan).catch((e: unknown) => console.warn('waarm64: unfork:', e));
+    const name = m.stored?.record.name ?? m.spec.title;
+    messages.notifyLater(msg('snapshots:snapshot-restore.firstBooted', { machine: name }));
+    if (restart) await this.#c.power.restart();
     else runner.start();
   }
 

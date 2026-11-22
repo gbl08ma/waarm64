@@ -1,7 +1,7 @@
 // The machine's run (docs/frontend.md "The page's code"): a start makes the run's worker, channels and input, the GPU
 // worker on a 3D machine, and hands the machine worker its start message once the disks are open; a stop ends it.
 // The workers' and ports' messages go to web/app/run/worker-messages.ts's handlers.
-import { msg, MsgError, type Msg } from '../../i18n.ts';
+import { msg, MsgError } from '../../i18n.ts';
 import type { PageAudio } from '../../audio.ts';
 import { attachInput, type EvdevEvent } from '../../input.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
@@ -35,7 +35,6 @@ import type { RunAgent } from '../areas/agent-actions.ts';
 import { displayHandlers, gpuHandlers, ledEvent, workerHandlers } from './worker-messages.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
-import { unfork } from '../snapshots.ts';
 
 /** How long a panicked machine's workers are kept for the rest of its panic's output (the trace after the line), ms. */
 const PANIC_TAIL_MS = 2000;
@@ -69,7 +68,7 @@ export type RunnerDeps = {
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
   /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */
-  later: { problems(): Problems; rebooted(live: () => boolean): Promise<void>; restart(): Promise<void> };
+  later: { problems(): Problems; rebooted(live: () => boolean): Promise<void> };
 };
 
 /** A start's arguments: booted, or (with `snapshot`) the one the file holds; `resume` false drops a suspended machine. */
@@ -89,8 +88,11 @@ export class Runner {
   readonly d: RunnerDeps;
   readonly lock = new MachineLock();
 
-  /** A notice for the next run, given once it runs or stops (worker-messages.ts `state`): the boot that replaced a template's restore. */
-  notice: Msg | undefined;
+  /**
+   * A template's first start whose snapshot can't load once under way (`plan`: its restore's disks; `restart`: its run
+   * has ended): the restore's to handle (web/app/areas/snapshot-restore.ts `bootInstead`).
+   */
+  firstFailed: (plan: DiskPlan[], restart: boolean) => Promise<void> = () => Promise.resolve();
   constructor(d: RunnerDeps) {
     this.d = d;
   }
@@ -220,7 +222,7 @@ export class Runner {
       r.input.detach();
       this.d.machine.run = undefined;
       // A template's snapshot needs the 3D it was taken with (its shape): the machine's first start boots instead.
-      if (args.first && args.snapshot) return void this.bootInstead(args.plan ?? [], false);
+      if (args.first && args.snapshot) return void this.firstFailed(args.plan ?? [], false);
       this.start(args.snapshot, args.resume, args.plan);
     };
     const fromGpu = gpuHandlers(this, r, ready, failed);
@@ -228,20 +230,6 @@ export class Runner {
     gpu.onerror = r.guard((e: ErrorEvent) => {
       this.crash(r, new MsgError('display:runner.gpuWorkerFailed', {}, { cause: new Error(e.message) }));
     });
-  }
-
-  /**
-   * A template's first start whose snapshot can't load here (3D failed, or the worker refused it before touching the
-   * disks): a boot instead, said, the overlays its `plan` named left unforked. `restart`: the run has ended (the
-   * worker's refusal) and a restart starts the next; else the failed run's workers are gone already (3D's failure).
-   */
-  async bootInstead(plan: DiskPlan[], restart: boolean) {
-    const m = this.d.machine;
-    await unfork(m.store, plan).catch((e: unknown) => console.warn('waarm64: unfork:', e));
-    // Said once the boot runs (or stops): each state before then is the bar's.
-    this.notice = msg('snapshots:runner.firstBooted', { machine: m.stored?.record.name ?? m.spec.title });
-    if (restart) await this.d.later.restart();
-    else this.start();
   }
 
   /**
