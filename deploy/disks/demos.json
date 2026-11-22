@@ -16,7 +16,8 @@
      "display": "2d",
      "network": true,
      "macs": ["52:54:00:bf:f6:6b", "52:54:00:73:06:50"],
-     "clock": true
+     "clock": true,
+     "clipboard": true
     },
     "serial": "b3a06b5a0657"
    },
@@ -45,7 +46,8 @@
      "macs": ["52:54:00:44:29:a1", "52:54:00:9f:16:25"],
      "mouse": true,
      "touch": true,
-     "clock": true
+     "clock": true,
+     "clipboard": true
     },
     "serial": "c30a659ecdf9",
     "session": {
@@ -97,7 +99,8 @@
      "macs": ["52:54:00:b2:db:99", "52:54:00:80:9a:28"],
      "mouse": true,
      "touch": true,
-     "clock": true
+     "clock": true,
+     "clipboard": true
     },
     "serial": "e13da3b66b20",
     "session": {
