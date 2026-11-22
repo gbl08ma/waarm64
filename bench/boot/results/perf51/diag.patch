@@ -1,0 +1,184 @@
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index 31b82972..6944d5ef 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -21,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
+ /** core/src/tally.rs's slots. */
+ const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+-const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
++const N = 88, LOOP_CONT = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
+ 
+ type Tallies = number[];
+ type Phase = { name: string; steps: number; t: Tallies };
+@@ -69,6 +69,7 @@ function print(r: Run) {
+   const rows: [string, number, Tallies][] = [['all', r.steps, r.t], ...r.phases.map((p) => [p.name, p.steps, p.t] as [string, number, Tallies])];
+   console.log(`${'per 1000 steps'.padEnd(24)} ${rows.map(([n]) => n.slice(0, 9).padStart(9)).join(' ')}`);
+   JIT.forEach((n, i) => console.log(`${n.padEnd(24).slice(0, 24)} ${rows.map(([, s, t]) => ((1000 * t[i]) / s).toFixed(3).padStart(9)).join(' ')}`));
++  ['interp. loop-call continuation', '  its steps', 'interp. later member of it', '  their steps', 'interp. declined entry', '  its steps', 'interp. any (reported)', '  steps'].forEach((n, k) => console.log(`${n.padEnd(24).slice(0, 24)} ${rows.map(([, , t]) => String(t[LOOP_CONT + k]).padStart(9)).join(' ')}`));
+   const chunks = END.reduce((s, _, k) => s + r.t[END_AT + k], 0);
+   console.log(`chunks: ${chunks} (${(r.steps / chunks).toFixed(0)} steps each); by how they ended: count, share, mean steps`);
+   END.forEach((n, k) => {
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 5fda939d..7f87a280 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -296,6 +296,12 @@ impl Region {
+         if self.looped() {
+             return vec![];
+         }
++        self.conts()
++    }
++
++    /// (diag) The members a call returns to where the head's page has them,
++    /// looped or not.
++    pub fn conts(&self) -> Vec<usize> {
+         let head = &self.blocks[0];
+         // Where the head's page has it: entered by its own VA, the function
+         // then has the head's mapping too, which `checked` relies on.
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 9cdc6872..1c8c12a0 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -643,6 +643,10 @@ pub struct Cache {
+     /// tier-up's check and its install, which tests can't time otherwise).
+     #[cfg(test)]
+     limit_at_plan: Option<u64>,
++    /// (diag) Keys of interest: kind (1 a looped region's call continuation, 2 a later member of such a region, 3 an
++    /// entry `Cache::entry` declined) and length.
++    #[cfg(feature = "diag")]
++    dg_kind: Map<(u8, u32)>,
+ }
+ 
+ /// The cache's state for the host, read without the lock (`vm_jit_gauge`,
+@@ -747,6 +751,8 @@ impl Cache {
+             gauge: Arc::new(Gauge::default()),
+             #[cfg(test)]
+             limit_at_plan: None,
++            #[cfg(feature = "diag")]
++            dg_kind: HashMap::default(),
+         }
+         .gauged()
+     }
+@@ -1547,6 +1553,19 @@ impl Cache {
+             for t in links {
+                 self.link(t, key);
+             }
++            #[cfg(feature = "diag")]
++            if r.looped() {
++                let c = r.conts();
++                if let Some(&first) = c.first() {
++                    for (j, b) in r.blocks.iter().enumerate().skip(first) {
++                        if heads.contains(&b.key) {
++                            continue;
++                        }
++                        let kind = if c.contains(&j) { 1 } else { 2 };
++                        self.dg_kind.insert(b.key, (kind, b.words.len() as u32));
++                    }
++                }
++            }
+             // The members it can be entered at go with it.
+             for (m, e, mlen) in ents {
+                 // (One that heads a region of its own keeps its function.)
+@@ -1554,6 +1573,8 @@ impl Cache {
+                     continue;
+                 }
+                 let Some(i) = self.entry(m, mlen) else {
++                    #[cfg(feature = "diag")]
++                    self.dg_kind.insert(m, (3, mlen));
+                     continue;
+                 };
+                 let at = (idx + k as u32) | e << ENTRY_SHIFT;
+@@ -1654,6 +1675,9 @@ pub struct Table {
+     /// the entries of `Cache::ival_log` they have caught up with.
+     dec: interp::block::Cache,
+     ivals: u64,
++    /// (diag) Interpreted dispatches and their steps of `Cache::dg_kind`'s kinds 1-3, then all reported.
++    #[cfg(feature = "diag")]
++    pub dg: [u64; 8],
+ }
+ 
+ impl Table {
+@@ -1694,6 +1718,8 @@ impl Table {
+             stats: Stats::default(),
+             dec: interp::block::Cache::new(c.cfg.decoded as usize),
+             ivals: c.ival_base + c.ival_log.len() as u64,
++            #[cfg(feature = "diag")]
++            dg: [0; 8],
+         }
+     }
+ 
+@@ -2119,6 +2145,18 @@ impl Jit {
+         // a later miss. What it returns is installed before any block runs.
+         let n = self.table.dec.counted(key) + 1;
+         let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
++        #[cfg(feature = "diag")]
++        {
++            let l = c.map.get(&key).map_or(len.unwrap_or(1), |i| i.len as u32) as u64;
++            let d = &mut self.table.dg;
++            if let Some(&(k, _)) = c.dg_kind.get(&key) {
++                let k = (k - 1) as usize;
++                d[2 * k] += n as u64;
++                d[2 * k + 1] += n as u64 * l;
++            }
++            d[6] += n as u64;
++            d[7] += n as u64 * l;
++        }
+         self.table.dec.quota(key, quota);
+         self.table.catch_up(&mut c, mem);
+         drop(c);
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 5dce3f01..bb9f5c05 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,9 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 88;
++/// (diag, PERF loop 51) The tables' `dg` words, at 80..88.
++pub const LOOP_CONT: usize = 80;
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 6df017fa..a3e3b834 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1302,6 +1302,15 @@ impl Vm {
+         c.tlb_flushes.store(flushes, Ordering::Relaxed);
+         if let Some(j) = &self.vcpus[0].jit.cache {
+             publish_jit(c, &j.table.stats());
++            #[cfg(feature = "diag")]
++            for (a, &x) in c.diag[crate::tally::LOOP_CONT..].iter().zip(&j.table.dg) {
++                a.store(x, Ordering::Relaxed);
++            }
++            // (diag, PERF loop 51) In the page's JIT log: flagsElided..condMemory.
++            #[cfg(feature = "diag")]
++            for (a, &x) in c.jit[12..16].iter().zip(&j.table.dg) {
++                a.store(x, Ordering::Relaxed);
++            }
+         }
+         #[cfg(feature = "diag")]
+         for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index c4a6f76d..9f920bfb 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -1178,6 +1178,15 @@ impl Vm {
+         k.tlb_flushes.store(t.flushes, Ordering::Relaxed);
+         if let Some(j) = &v.jit.cache {
+             publish_jit(k, &j.table.stats());
++            #[cfg(feature = "diag")]
++            for (a, &x) in k.diag[crate::tally::LOOP_CONT..].iter().zip(&j.table.dg) {
++                a.store(x, Ordering::Relaxed);
++            }
++            // (diag, PERF loop 51) In the page's JIT log: flagsElided..condMemory.
++            #[cfg(feature = "diag")]
++            for (a, &x) in k.jit[12..16].iter().zip(&j.table.dg) {
++                a.store(x, Ordering::Relaxed);
++            }
+         }
+         #[cfg(feature = "diag")]
+         for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {

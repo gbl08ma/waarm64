@@ -111,17 +111,16 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-22, after loop 50)
+## State (2026-11-22, after loop 51)
 
-Loop 50 counted the followed calls whose callee completes inside the region and dropped them (bench/boot/REPORT.md
-"PERF loop 50"): following every callee the walk takes would remove 5-11% of the host calls (Lua 4.2M a phase), but a
-host call costs ~2 ns more than a followed one on the Mac, 0.2-0.3% of the userspace gate at most, against +4.6% wasm
-and nested exit paths on every way out of a region. No code changed. The out-of-context review of the step clock's
-timer and counter paths (loops 47 and 49) ran alongside loop 50 and found no defect, only three stale comments, which
-the supervisor fixed (no loop 51 for it). The next loop is 51. Main is clean, no run pending.
+Loop 51 counted a looped region's call continuations run interpreted and dropped giving them entries
+(bench/boot/REPORT.md "PERF loop 51"): they and the members after them run 0.01-0.07% of the steps interpreted in the
+gates, parallel SMP and Firefox's pages session, at most ~0.45% of the boot's time, against a dispatch on every lap of
+every looped region with a call. Loop 48's declined entries: none. No code changed. The next loop is 52. Main is
+clean, no run pending.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-50" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+51" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47 and 50) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43 and 48 (50's: comments only). The next is due
 within ~3 loops. Built but off by default (measured slower): I8MM,
 FCMA, FP16, FHM, BF16. Where things stand: regions follow a call only when its callee can't leave them (loops 36-37,
@@ -135,8 +134,7 @@ was remade from cda6cfa7's core (it loads into loop 46's).
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: entries for loops through calls (loop 37's review finding 5) | count first: a looped forward region's call continuations run interpreted after an unwind |
-| Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
+| **Next:** Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: keep
 ours for now), bug watches (Firefox's first page, the lost Firefox process), parallel `make` (needs a harness), the

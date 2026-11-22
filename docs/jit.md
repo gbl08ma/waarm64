@@ -390,7 +390,11 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
 - **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
   function (`Region::entries`; none in a region with a `loop`, whose members sit inside it: a loop region, and a
   forward region with an edge back to its head, which is what a loop through a call is, `for (…) f(x);`: after anything
-  that unwound inside `f` its continuation runs interpreted until compiled again as a head; docs/backlog.md), because a return also
+  that unwound inside `f` its continuation runs interpreted until compiled again as a head. **Not changed** (PERF loop
+  51): counted, those continuations and the members after them run 0.01-0.07% of the steps interpreted (Alpine's
+  boots and userspace, deterministic and parallel; Firefox's pages session 0.023%), 150-300K dispatches a gate run,
+  under 0.5% of the boot's time at most; an entry inside a wasm `loop` needs a dispatch on every lap or the members
+  emitted again outside it: bench/boot/REPORT.md "PERF loop 51"), because a return also
   reaches it from outside, at depth 0 after anything that unwound the host frames. Only a member where the head's
   page has it is an entry (the head's PA page, at its PA offset from the head): entered by its own VA, the function
   then has the head's mapping too, which the edges `Region::checked` leaves unchecked rely on. A continuation reached

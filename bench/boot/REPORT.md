@@ -7071,3 +7071,39 @@ nested exits would add on every exit path inside a followed call. No arm could s
 and the design touches every way out of a region (the chains, the transfer cache's probe, the by-VA links, the
 checked edges, `ret_up`, the stale-code checker's entries). Dropped: docs/jit.md "Calls" has the finding, the
 backlog entry is removed. No code changed (docs, results and the microbenchmark); `scripts/ci-fast.sh` passed.
+
+## PERF loop 51: a looped region's call continuations, counted (2026-11-22)
+
+The backlog's "Entries for loops through calls" (the review after PERF loop 36): a forward region with an edge back to
+its head (`for (…) f(x);`) is `looped()`, and `Region::entries` gives such a region none, so after anything that
+unwinds inside `f` (a failed poll, an exit, the chunk's end) `f`'s return at depth 0 misses the transfer cache, the
+dispatcher interprets the continuation, and the members after it, until the run reaches the head's compiled code again
+or the continuation is compiled as a head of its own. Counted first; **not built**: the bound is under the floor.
+Raw: `results/perf51/` (README).
+
+**Counted** (a diagnostic core: each key's dispatches as its decoded block reports them to the cache, so a chain in the
+block interpreter counts too; the keys filed at the looped region's install; Node on the dev VM, and one Firefox pages
+session on the Mac). Interpreted dispatches and their steps:
+
+| | boot | userspace (4 phases) | smp1 boot | smp4 boot | smp-user4 | Firefox pages |
+|---|---|---|---|---|---|---|
+| steps | 2,650M | 10,431M | 2,432M | 2,583M | 31,616M | 97,750M |
+| continuations: dispatches / steps | 150K / 0.44M | 181K / 0.57M | 145K / 0.43M | 191K / 0.60M | 297K / 1.05M | 1.91M / 5.84M |
+| later members: dispatches / steps | 249K / 1.08M | 305K / 1.34M | 258K / 1.10M | 295K / 1.29M | 541K / 2.62M | 3.70M / 16.3M |
+| all interpreted steps (reported) | 133M | 179M | 132M | 142M | 232M | 3,552M |
+| **share of the run's steps** | **0.057%** | **0.018%** | **0.063%** | **0.073%** | **0.012%** | **0.023%** |
+
+The later members are an upper bound (a member can be reached interpreted from elsewhere too). PERF loop 48's rule
+(`Cache::entry` declining a member under `room`) declined **none** in any run: the continuations counted are all of
+the looped regions'.
+
+**Bound**: an entry would save each such dispatch's round trip (the miss function back to the dispatcher, the
+interpreted run, the head entered again: ~50-100 ns, a guess from a chunk end's ~0.2 µs, PERF loop 32) and the steps'
+interpretation (~1.5 ns a step more than compiled code at the Mac's ~500 interpreted MIPS), one round trip per
+continuation dispatch (the later members run on in the same interpreted run): the boot 10-17 ms of ~3.8 s
+(0.3-0.45%), the userspace gate 12-21 ms of ~10.3 s (0.1-0.2%), Firefox's session 0.13-0.22 s of ~860 vCPU-seconds
+(under 0.03%). Against it: a wasm `loop` has one way in, so an entry inside one needs a dispatch at the loop's top
+(an entry local and a `br_table` on every lap, in every looped region with a call, including round-robin's counted
+code) or the region's members emitted again outside the loop for each entry, with the stale-code checker's hash and
+the polls on every new edge. No arm could show a gain past the ~1% floor: dropped. docs/jit.md "Calls" has the
+finding; the backlog entry is removed. No code changed (results and docs); `scripts/ci-fast.sh` passed.

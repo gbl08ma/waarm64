@@ -1,0 +1,138 @@
+
+== smp1: 1 vCPU, parallel realtime, 2432M steps, 6.2 s
+per 1000 steps                 all
+back-edge                   21.211
+forward edge               107.901
+transfer cache hit           2.653
+miss function                1.471
+jump cache hit (MMU off)     0.000
+chain back                  12.851
+chain fwd                   22.010
+chain via jc back            0.506
+chain via jc fwd             5.776
+by-VA link back              2.867
+by-VA link fwd               1.069
+host call                   13.810
+host return                 13.160
+poll (polled code)          68.715
+interp. loop-call contin    144811
+  its steps                 425366
+interp. later member of     257552
+  their steps              1098809
+interp. declined entry           0
+  its steps                      0
+interp. any (reported)    25040588
+  steps                  132348716
+chunks: 348122 (6986 steps each); by how they ended: count, share, mean steps
+  budget                              40228  11.56%   32791
+  early (stop word, park)              2035   0.58%     176
+  Resync (ISB/DSB/ERET/unmask)        99964  28.72%    2733
+  Invalidate (IC)                      5029   1.44%     121
+  WFI                                   503   0.14%       0
+  HVC                                    15   0.00%    3887
+  counter read                         3812   1.10%       0
+  platform (timer/GIC regs)           29109   8.36%     624
+  device (MMIO)                        6711   1.93%    1316
+  SVC                                112767  32.39%    5012
+  exception                           47949  13.77%    5137
+  between a chunk ended by its steps and the next: 40075, mean 199 ns
+latency:
+  timer line seen, running                   3831  mean 78.1 µs  max 5665.8 µs
+  timer line seen, in WFI                     105  mean 1449.5 µs  max 10227.1 µs
+  IRQ line up to IRQ taken, running          4023  mean 2.9 µs  max 3228.5 µs
+  IRQ line up to WFI completed                503  mean 0.4 µs  max 5.6 µs
+  IRQs taken running: <10 µs 3954, <100 µs 55, <1 ms 12, >=1 ms 2
+
+== smp4: 4 vCPUs, parallel realtime, 2583M steps, 5.8 s
+per 1000 steps                 all
+back-edge                   21.119
+forward edge               107.493
+transfer cache hit           2.661
+miss function                1.757
+jump cache hit (MMU off)     0.000
+chain back                  13.501
+chain fwd                   23.464
+chain via jc back            0.504
+chain via jc fwd             5.403
+by-VA link back              2.358
+by-VA link fwd               0.778
+host call                   13.788
+host return                 13.034
+poll (polled code)          68.652
+interp. loop-call contin    190525
+  its steps                 595111
+interp. later member of     295104
+  their steps              1291144
+interp. declined entry           0
+  its steps                      0
+interp. any (reported)    26788683
+  steps                  142477738
+chunks: 834950 (3093 steps each); by how they ended: count, share, mean steps
+  budget                              41905   5.02%   32790
+  early (stop word, park)              4669   0.56%     906
+  Resync (ISB/DSB/ERET/unmask)       176398  21.13%    2046
+  Invalidate (IC)                      5044   0.60%       6
+  WFI                                  9797   1.17%    1588
+  WFE                                191550  22.94%       2
+  SEV                                 96215  11.52%      34
+  TLBI IS                             35682   4.27%    1997
+  HVC                                    24   0.00%    3266
+  counter read                         6993   0.84%       1
+  platform (timer/GIC regs)           98197  11.76%     597
+  device (MMIO)                        7104   0.85%    1361
+  SVC                                113210  13.56%    4271
+  exception                           48162   5.77%    4163
+  between a chunk ended by its steps and the next: 41718, mean 198 ns
+latency:
+  timer line seen, running                   5117  mean 85.6 µs  max 13113.8 µs
+  timer line seen, in WFI                    6366  mean 304.4 µs  max 8913.3 µs
+  IRQ line up to IRQ taken, running          6710  mean 14.1 µs  max 14527.3 µs
+  IRQ line up to WFI completed               9793  mean 10.1 µs  max 9187.3 µs
+  IRQs taken running: <10 µs 6365, <100 µs 295, <1 ms 37, >=1 ms 13
+
+== smp-user4: 4 vCPUs, parallel realtime, 31616M steps, 13.1 s
+per 1000 steps                 all  compress       lua     churn    sqlite
+back-edge                   12.284    19.351     1.215    16.891    19.131
+forward edge               111.489    98.172   114.259   118.238   119.822
+transfer cache hit          13.966     3.374    25.360     2.881    12.546
+miss function                0.345     0.062     0.042     1.081     0.467
+jump cache hit (MMU off)     0.000     0.000     0.000     0.000     0.000
+chain back                  14.795     7.493    25.311    14.024     6.507
+chain fwd                   27.351    31.096    24.694    27.627    28.452
+chain via jc back            0.818     0.792     0.173     0.901     1.839
+chain via jc fwd             7.496     6.974     7.762     7.497     8.137
+by-VA link back              7.908     4.027     6.013     1.459    17.320
+by-VA link fwd               2.069     1.692     1.367     1.099     4.119
+host call                   11.771     6.611    10.688    19.687    15.598
+host return                 11.594     6.538    10.626    18.923    15.482
+poll (polled code)          77.518    53.311    85.175    70.990    92.830
+interp. loop-call contin    297365     43605      9165     41729     29404
+  its steps                1051199    201001     22858    163662    114400
+interp. later member of     540649     92622     17027     62826     95594
+  their steps              2619736    597055     87184    275570    533452
+interp. declined entry           0         0         0         0         0
+  its steps                      0         0         0         0         0
+interp. any (reported)    42779775   3505166   2149775   7374182   4506242
+  steps                  232458091  22942157  10587626  42149386  23340417
+chunks: 2597686 (12171 steps each); by how they ended: count, share, mean steps
+  budget                             837639  32.25%   32783
+  early (stop word, park)              8135   0.31%    1520
+  Resync (ISB/DSB/ERET/unmask)       295074  11.36%    3430
+  Invalidate (IC)                      4587   0.18%      10
+  WFI                                 10855   0.42%    2051
+  WFE                                371709  14.31%       2
+  SEV                                187061   7.20%      63
+  TLBI IS                            147845   5.69%    1841
+  HVC                                    24   0.00%    2411
+  counter read                         6269   0.24%       2
+  platform (timer/GIC regs)          295532  11.38%     575
+  device (MMIO)                        7991   0.31%    1012
+  SVC                                206851   7.96%    5633
+  exception                          218114   8.40%    6781
+  between a chunk ended by its steps and the next: 836793, mean 250 ns
+latency:
+  timer line seen, running                  32417  mean 42.3 µs  max 144602.8 µs
+  timer line seen, in WFI                    6378  mean 300.4 µs  max 10717.5 µs
+  IRQ line up to IRQ taken, running         34751  mean 7.6 µs  max 144132.3 µs
+  IRQ line up to WFI completed              10849  mean 11.0 µs  max 8734.4 µs
+  IRQs taken running: <10 µs 33977, <100 µs 682, <1 ms 70, >=1 ms 22
