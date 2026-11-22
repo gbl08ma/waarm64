@@ -1,0 +1,152 @@
+// Attribution of V8 `--prof` ticks (one isolate log per worker) into the categories of
+// bench/boot/results/m9-ffprof/tools/attr: node prof-attr.mjs [--windows S] [--top N] <isolate-*.log...>
+// A log whose resolved ticks include guest code is a vCPU's. Busy ticks: every tick but those in Atomics.wait or idle
+// (vmstate 7, 8) and those of the vCPU's idle path (performance.now spin: host JS/native with no core or guest frame).
+import { readFileSync } from 'node:fs';
+
+const args = process.argv.slice(2);
+let win = 0, top = 0, gtop = 0;
+const gFns = new Map();
+const files = [];
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--windows') win = Number(args[++i]) * 1e6;
+  else if (args[i] === '--top') top = Number(args[++i]);
+  else if (args[i] === '--guest') gtop = Number(args[++i]);
+  else files.push(args[i]);
+}
+
+function cat(name, off, marker, lib) {
+  if (lib) return `native: ${lib.replace(/.*\//, '')}`;
+  if (name === undefined) return 'unresolved';
+  const g = /^0x([0-9a-f]+)_pa0x/.exec(name);
+  if (g) {
+    const el = g[1].length === 16 ? 'kernel' : 'user';
+    if (off === 0) return `guest code: entry (first instruction), ${el}`;
+    return `guest code: body, ${el} ${marker === '*' ? 'turbofan' : 'liftoff'}`;
+  }
+  if (/6interp5block|3jit9interpret/.test(name)) return 'core: block interpreter';
+  if (/3jit(5steps|[0-9A-Za-z_]*Cache(4miss|5enter)|3key)|xmiss|Jit4miss/.test(name)) return 'core: dispatcher, Jit::miss, xmiss';
+  if (/Table4sync|Jit7install|3jit5block|3jit4emit|3jit4wasm|Cache(4emit|5flush|10invalidate|6module|4plan)|jit_hot/.test(name)) return 'core: compile, install, sync';
+  if (/jit_exec_|3jit5count|jit_(ldst|load|store|sys|msr|mrs)/.test(name)) return "core: helpers' entry";
+  if (/3mmu4walk|Mmu4miss|Tlb\d*(fill|flush|drop)|3mmu3Tlb/.test(name)) return 'core: TLB miss, walk';
+  if (/(?:webpc|waarm64)_core/.test(name) && /interp|mmu|mem|fp|crypto|cpu|decode|simd|float/.test(name)) return 'core: interpreter and helper bodies';
+  if (/(?:webpc|waarm64)_core\d*(2vm|virtio|gic|timer)|vm_run|virtio|gic/.test(name)) return 'core: run loop, devices';
+  if (/dlmalloc|hashbrown|alloc|compiler_builtins|memcpy|memset|__\w+ti3/.test(name)) return 'core: allocator, std';
+  if (/(?:webpc|waarm64)_core/.test(name)) return 'core: other';
+  if (/^Builtin:/.test(name)) return `V8 builtins`;
+  return 'host JS, V8 code';
+}
+
+const total = new Map();
+let totalBusy = 0;
+const winCats = new Map(); // window index -> Map
+const topFns = new Map();
+const perLog = [];
+for (const f of files) {
+  const text = readFileSync(f, 'utf8');
+  const libs = [];
+  const code = []; // events in file order: [ts, kind, ...]
+  const ticks = [];
+  for (const l of text.split('\n')) {
+    if (l.startsWith('tick,')) {
+      const p = l.split(',');
+      ticks.push({ pc: Number(p[1]), ts: Number(p[2]), state: Number(p[5]), stack: p.slice(6).map(Number) });
+    } else if (l.startsWith('code-creation,')) {
+      const p = l.split(',');
+      const type = p[1], ts = Number(p[3]), addr = Number(p[4]), size = Number(p[5]);
+      let name = p[6];
+      if (type === 'Builtin' || type === 'BytecodeHandler') name = `Builtin:${name}`;
+      code.push({ ts, op: 'c', addr, size, name, marker: p[8] ?? '' });
+    } else if (l.startsWith('code-move,')) {
+      const p = l.split(',');
+      code.push({ ts: -1, op: 'm', from: Number(p[1]), to: Number(p[2]) });
+    } else if (l.startsWith('code-delete,')) {
+      code.push({ ts: -1, op: 'd', addr: Number(l.split(',')[1]) });
+    } else if (l.startsWith('shared-library,')) {
+      const p = l.split(',');
+      libs.push({ name: p[1], start: Number(p[2]), end: Number(p[3]) });
+    }
+  }
+  // Moves and deletes carry no time: they take their predecessor's.
+  for (let i = 0; i < code.length; i++) if (code[i].ts < 0) code[i].ts = i ? code[i - 1].ts : 0;
+  ticks.sort((a, b) => a.ts - b.ts);
+  // The live code: starts sorted, each {start, end, name, marker}.
+  const live = [];
+  const find = (a) => {
+    let lo = 0, hi = live.length - 1, r = -1;
+    while (lo <= hi) {
+      const m = (lo + hi) >> 1;
+      if (live[m].start <= a) { r = m; lo = m + 1; } else hi = m - 1;
+    }
+    return r >= 0 && a < live[r].end ? r : -1;
+  };
+  const insert = (e) => {
+    let lo = 0, hi = live.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (live[m].start < e.start) lo = m + 1; else hi = m; }
+    let i = lo;
+    if (i > 0 && live[i - 1].end > e.start) i--;
+    let j = i;
+    while (j < live.length && live[j].start < e.end) j++;
+    live.splice(i, j - i, e);
+  };
+  const libOf = (a) => libs.find((s) => a >= s.start && a < s.end);
+  const resolve = (a) => {
+    const k = find(a);
+    if (k >= 0) return { name: live[k].name, off: a - live[k].start, marker: live[k].marker };
+    const s = libOf(a);
+    return s ? { lib: s.name } : {};
+  };
+  const cats = new Map();
+  let busy = 0, guest = 0, idle = 0, waiting = 0;
+  let ci = 0;
+  const t0 = ticks.length ? ticks[0].ts : 0;
+  for (const t of ticks) {
+    while (ci < code.length && code[ci].ts <= t.ts) {
+      const e = code[ci++];
+      if (e.op === 'c') insert({ start: e.addr, end: e.addr + Math.max(e.size, 1), name: e.name, marker: e.marker });
+      else if (e.op === 'm') { const k = find(e.from); if (k >= 0) { const o = live.splice(k, 1)[0]; insert({ ...o, start: e.to, end: e.to + (o.end - o.start) }); } }
+      else { const k = find(e.addr); if (k >= 0 && live[k].start === e.addr) live.splice(k, 1); }
+    }
+    if (t.state === 7 || t.state === 8) { waiting++; continue; }
+    const r = resolve(t.pc);
+    const c = cat(r.name, r.off, r.marker, r.lib);
+    // Busy: the pc or a frame in the core or guest code.
+    let inCore = /^(guest|core)/.test(c);
+    if (!inCore) for (const a of t.stack) { const s = resolve(a); if (s.name && (/(?:webpc|waarm64)_core|_pa0x|vm_run/.test(s.name))) { inCore = true; break; } }
+    if (!inCore) { idle++; continue; }
+    busy++;
+    if (c.startsWith('guest')) guest++;
+    cats.set(c, (cats.get(c) ?? 0) + 1);
+    if (top && r.name) topFns.set(r.name.replace(/^0x[0-9a-f]+_pa0x[0-9a-f]+.*/, '(guest code)'), (topFns.get(r.name.replace(/^0x[0-9a-f]+_pa0x[0-9a-f]+.*/, '(guest code)')) ?? 0) + 1);
+    if (gtop && c.startsWith('guest')) { const va = /^0x([0-9a-f]+)/.exec(r.name)[1]; gFns.set(va, (gFns.get(va) ?? 0) + 1); }
+    if (win) {
+      const w = Math.floor((t.ts - t0) / win);
+      const m = winCats.get(w) ?? winCats.set(w, new Map()).get(w);
+      const key = c.startsWith('guest code: entry') ? 'entry' : c === 'core: block interpreter' ? 'interp' : c.startsWith('guest') ? 'body' : 'other';
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+  }
+  perLog.push({ f, ticks: ticks.length, busy, guest, idle, waiting, code: code.length });
+  if (guest < 100) continue; // not a vCPU
+  totalBusy += busy;
+  for (const [k, v] of cats) total.set(k, (total.get(k) ?? 0) + v);
+}
+for (const p of perLog) console.log(`${p.f.replace(/.*\//, '')}: ticks ${p.ticks} busy ${p.busy} (guest ${p.guest}) idle-path ${p.idle} waiting ${p.waiting} code events ${p.code}`);
+console.log(`\nvCPU busy ticks: ${totalBusy}`);
+for (const [k, v] of [...total].sort((a, b) => b[1] - a[1])) console.log(`${((100 * v) / totalBusy).toFixed(1).padStart(5)}%  ${k}`);
+if (top) {
+  console.log(`\ntop ${top} functions (busy vCPU ticks):`);
+  for (const [k, v] of [...topFns].sort((a, b) => b[1] - a[1]).slice(0, top)) console.log(`${((100 * v) / totalBusy).toFixed(2).padStart(6)}%  ${k.slice(0, 140)}`);
+}
+if (win) {
+  console.log(`\nwindows of ${win / 1e6} s: entry / interp / guest body / other, % of busy`);
+  for (const [w, m] of [...winCats].sort((a, b) => a[0] - b[0])) {
+    const n = [...m.values()].reduce((a, b) => a + b, 0);
+    const p = (k) => ((100 * (m.get(k) ?? 0)) / n).toFixed(1).padStart(5);
+    console.log(`${String(w * win / 1e6).padStart(5)} s  n=${String(n).padStart(6)}  ${p('entry')} ${p('interp')} ${p('body')} ${p('other')}`);
+  }
+}
+if (gtop) {
+  console.log(`\ntop ${gtop} guest functions by entry VA (% of busy vCPU ticks):`);
+  for (const [k, v] of [...gFns].sort((a, b) => b[1] - a[1]).slice(0, gtop)) console.log(`${((100 * v) / totalBusy).toFixed(2).padStart(6)}%  0x${k}`);
+}

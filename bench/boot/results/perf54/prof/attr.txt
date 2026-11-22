@@ -1,0 +1,88 @@
+isolate-0x11400f90000-20094-v8.log: ticks 13 busy 0 (guest 0) idle-path 13 waiting 0 code events 3804
+isolate-0x11400fc0000-20096-v8.log: ticks 2 busy 0 (guest 0) idle-path 2 waiting 0 code events 2564
+isolate-0x12400fb0000-20095-v8.log: ticks 1463 busy 0 (guest 0) idle-path 1463 waiting 0 code events 10698
+isolate-0x12406470000-20095-v8.log: ticks 32 busy 2 (guest 0) idle-path 30 waiting 0 code events 3386
+isolate-0x12406920000-20095-v8.log: ticks 2201 busy 24 (guest 0) idle-path 2177 waiting 0 code events 4796
+isolate-0x12408070000-20095-v8.log: ticks 1 busy 0 (guest 0) idle-path 1 waiting 0 code events 2577
+isolate-0x124080f0000-20095-v8.log: ticks 3193 busy 7 (guest 0) idle-path 3186 waiting 0 code events 3429
+isolate-0x12408410000-20095-v8.log: ticks 25 busy 0 (guest 0) idle-path 2 waiting 23 code events 2966
+isolate-0x12408500000-20095-v8.log: ticks 22 busy 0 (guest 0) idle-path 1 waiting 21 code events 2966
+isolate-0x12408610000-20095-v8.log: ticks 22 busy 1 (guest 0) idle-path 1 waiting 20 code events 2966
+isolate-0x12408fc0000-20095-v8.log: ticks 136300 busy 0 (guest 0) idle-path 976 waiting 135324 code events 2549
+isolate-0x124091b0000-20095-v8.log: ticks 142726 busy 36509 (guest 22577) idle-path 4531 waiting 101686 code events 91670
+isolate-0x124091d0000-20095-v8.log: ticks 407 busy 0 (guest 0) idle-path 407 waiting 0 code events 91105
+isolate-0x12409260000-20095-v8.log: ticks 142545 busy 39768 (guest 24521) idle-path 4176 waiting 98601 code events 91411
+isolate-0x124093a0000-20095-v8.log: ticks 142052 busy 39387 (guest 23708) idle-path 4086 waiting 98579 code events 91866
+isolate-0x12409cd0000-20095-v8.log: ticks 142431 busy 39361 (guest 24400) idle-path 4216 waiting 98854 code events 91691
+isolate-0x12415eb0000-20095-v8.log: ticks 8 busy 0 (guest 0) idle-path 8 waiting 0 code events 2582
+isolate-0x12415f30000-20095-v8.log: ticks 7 busy 0 (guest 0) idle-path 7 waiting 0 code events 2583
+isolate-0x124160e0000-20095-v8.log: ticks 8 busy 0 (guest 0) idle-path 8 waiting 0 code events 2581
+isolate-0x12416180000-20095-v8.log: ticks 13 busy 0 (guest 0) idle-path 13 waiting 0 code events 2582
+isolate-0x13400fb0000-20099-v8.log: ticks 1 busy 0 (guest 0) idle-path 1 waiting 0 code events 2534
+
+vCPU busy ticks: 155025
+ 26.5%  guest code: body, user turbofan
+ 17.5%  core: block interpreter
+ 16.6%  guest code: body, kernel turbofan
+  6.6%  guest code: entry (first instruction), user
+  6.1%  guest code: entry (first instruction), kernel
+  4.4%  core: dispatcher, Jit::miss, xmiss
+  3.9%  guest code: body, user liftoff
+  3.6%  native: Google Chrome for Testing Framework
+  2.8%  core: interpreter and helper bodies
+  1.8%  core: helpers' entry
+  1.7%  native: libsystem_kernel.dylib
+  1.6%  unresolved
+  1.6%  guest code: body, kernel liftoff
+  1.6%  core: TLB miss, walk
+  1.3%  core: compile, install, sync
+  0.9%  core: run loop, devices
+  0.4%  core: other
+  0.4%  core: allocator, std
+  0.2%  host JS, V8 code
+  0.2%  V8 builtins
+  0.2%  native: libsystem_platform.dylib
+  0.0%  native: libsystem_pthread.dylib
+  0.0%  native: libdyld.dylib
+  0.0%  native: libsystem_malloc.dylib
+  0.0%  native: libsystem_c.dylib
+
+top 25 functions (busy vCPU ticks):
+ 61.41%  (guest code)
+ 13.69%  _RINvNtNtCskfrUJRn6BTh_12waarm64_core6interp5block3hotNtNtB6_3mmu3MmuKb0_NCINvNtB6_3jit9interpretBP_Es_0EB6_
+  2.24%  _RNvNtCskfrUJRn6BTh_12waarm64_core3jit5steps
+  1.69%  jit_exec_mmu
+  1.07%  _RNvMs4_NtNtCskfrUJRn6BTh_12waarm64_core6interp5blockNtB5_5Cache4miss
+  0.95%  xmiss_el0
+  0.95%  _RNvMs3_NtCskfrUJRn6BTh_12waarm64_core3jitNtB5_3Jit4miss
+  0.89%  _RINvNtCskfrUJRn6BTh_12waarm64_core3jit9interpretNtNtB4_3mmu3MmuEB4_
+  0.69%  _RNvNtCskfrUJRn6BTh_12waarm64_core3mmu4walk
+  0.62%  _RNvMs4_NtNtCskfrUJRn6BTh_12waarm64_core6interp5blockNtB5_5Cache9count_out
+  0.57%  _RINvNtNtCskfrUJRn6BTh_12waarm64_core6interp4ldst4execNtNtB6_3mmu3MmuEB6_
+  0.47%  _RINvNtNtCskfrUJRn6BTh_12waarm64_core6interp5block3hotNtNtB6_3mmu3MmuKb1_NCINvNtB6_3jit9interpretBP_E0EB6_
+  0.44%  _RNvMs2_NtCskfrUJRn6BTh_12waarm64_core3mmuNtB5_3Mmu4miss
+  0.42%  _RNvMs2_NtNtCskfrUJRn6BTh_12waarm64_core2vm8parallelNtB7_2Vm7run_cpu
+  0.38%  _RNvMs2_NtCskfrUJRn6BTh_12waarm64_core3jitNtB5_5Table4sync
+  0.34%  _RNCNvMs4_NtNtCskfrUJRn6BTh_12waarm64_core6interp5blockNtB7_5Cache4miss0Bb_
+  0.33%  _RNvXs3_NtCskfrUJRn6BTh_12waarm64_core3mmuNtB5_3MmuNtB5_3Bus7read_el
+  0.32%  _RNvMs4_NtCskfrUJRn6BTh_12waarm64_core3jitNtB5_9PageIndex4file
+  0.30%  _RNvXs3_NtCskfrUJRn6BTh_12waarm64_core3mmuNtB5_3MmuNtB5_3Bus8write_el
+  0.24%  xmiss_el1
+  0.22%  _RNvMNtCskfrUJRn6BTh_12waarm64_core3mmuNtB2_3Tlb4fill
+  0.21%  _RNvNtNtCskfrUJRn6BTh_12waarm64_core2vm8parallel9fast_exit
+  0.21%  _RNvMs4_NtNtCskfrUJRn6BTh_12waarm64_core6interp5blockNtB5_5Cache7slot_in
+  0.17%  _RINvNtNtCskfrUJRn6BTh_12waarm64_core6interp4ldst6singleNtNtB6_3mmu3MmuEB6_
+  0.16%  _RNvMs2_NtNtCskfrUJRn6BTh_12waarm64_core2vm8parallelNtB7_2Vm10handle_par
+
+windows of 20 s: entry / interp / guest body / other, % of busy
+    0 s  n= 15960    6.5  29.9  35.7  27.9
+   20 s  n= 21089   10.5  22.4  42.5  24.6
+   40 s  n= 11993   12.7  16.6  50.3  20.3
+   60 s  n= 16414   13.1  16.6  49.6  20.6
+   80 s  n= 11438   13.8  14.0  53.3  18.8
+  100 s  n= 16631   14.0  17.1  49.6  19.2
+  120 s  n= 14539   13.4  15.5  52.5  18.5
+  140 s  n= 18060   14.3  14.3  51.0  20.4
+  160 s  n= 12183   13.7  14.6  53.9  17.9
+  180 s  n= 13022   14.9  12.8  53.2  19.0
+  200 s  n=  3730   19.9   6.7  51.2  22.2

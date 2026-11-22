@@ -1,0 +1,6 @@
+# bench/boot/results/m9-relink/chain2.mjs on the Mac (M4, macOS, Node v26.10.0), `node --no-liftoff chain2.mjs <kind> <N> 40 1 5`,
+# two runs; ns an entry, best of 5 over the chain.
+indirect 1000: 4.57 / 5.41    indirect 131072: 79.53 / 78.14
+typed    1000: 4.85 / 4.91    typed    131072: 77.61 / 79.06
+import   1000: 7.56 / 6.58    import   131072: 27.36 / 27.42
+direct   1000: 3.89 / 4.02    direct   131072: 44.71 / 45.24
