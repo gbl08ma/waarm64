@@ -200,13 +200,13 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   members reachable from the prologue past the `loop` (or the `loop` opened at each entry).
 - **The core's heap, after the bound** ([jit.md](jit.md) "The core's heap"; `bench/boot/REPORT.md` "M8: the core's
   heap bounded"):
-  - **What a module's install adds outside the bound** (the review after PERF loop 42; jit.md "The core's heap", "Not
-    covered"): `Cache::install` files a region's members entered at an entry (`info`, new keys only where the map
-    doesn't hold them), the links (`linkers`), the checker's spans and the heads under a region's other pages without
-    a `try_reserve`, and `Cache::tier_up` reaches it from JIT code, where nothing may flush. Count first (a diagnostic
-    tally of the keys `install` adds new, in the pages session and the churn); if any, reserve them before
-    `emit_batch` with `room`'s rules (one `try_reserve` of the new members' count, the prune or the rescue there), and
-    in `tier_up` skip the tier-up when they don't fit (it comes again at the next hot word).
+  - **What a module's install adds outside the bound** (the reviews after PERF loops 42 and 47; jit.md "The core's
+    heap", "Not covered"): its members entered at an entry are filed only with room (`Cache::entry`, PERF loop 48), but
+    the links (`linkers`, bounded by `Cache::link`'s pass), the checker's spans and the heads under a region's other
+    pages grow without a `try_reserve`, and `Cache::tier_up` reaches it from JIT code, where nothing may flush. Count
+    first (a diagnostic tally of the lists and tables `install` grows, in the pages session and the churn); if any
+    grow often, reserve them before `emit_batch` (the rescue there) and in `tier_up` skip the tier-up when they don't
+    fit (it comes again at the next hot word).
 - **Unexplained ~10 GB samples** in the Go-load runs with the flush and the GC nudge (2 of 4 runs,
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s

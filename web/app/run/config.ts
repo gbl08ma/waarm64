@@ -34,6 +34,10 @@ export function effectiveDisplay(o: {
 export const wants3d = (o: { gpu: boolean; simple: boolean; asked?: Display; record?: Display; setting?: Display }) =>
   o.gpu && !o.simple && (o.asked ?? o.record ?? o.setting ?? '3d') === '3d';
 
+/** A size asked for by hand (the address's), as its slider's nearest stop (0, or none: unset). */
+const stop = (n: number, r: SliderRange) =>
+  n > 0 ? Math.min(r.max, Math.max(r.min, r.min + Math.round((n - r.min) / r.step) * r.step)) : 0;
+
 /** A size kept in the settings, if its slider stops at it (0: none). */
 const kept = (n: number | undefined, r: SliderRange) =>
   n && n >= r.min && n <= r.max && Number.isInteger((n - r.min) / r.step) ? n : 0;
@@ -99,7 +103,8 @@ function resolveSize(
   const asked = (k: string) => Number(q.get(k)) || 0;
   const first = (...n: (number | undefined)[]) => n.find((x) => !!x) ?? 0;
   const ncpus = first(asked('ncpus'), record?.ncpus, kept(s.ncpus, CPU_SLIDER), defaultCpus(env.cores));
-  const ramMiB = first(asked('ram'), record?.ramMiB, kept(s.ramMiB, RAM_SLIDER), env.ramMiB);
+  // A ?ram= the slider can't set comes to its nearest stop: 1 MiB started a machine with its firmware past RAM's end.
+  const ramMiB = first(stop(asked('ram'), RAM_SLIDER), record?.ramMiB, kept(s.ramMiB, RAM_SLIDER), env.ramMiB);
   const jitMiB = first(Math.max(0, Math.round(asked('jitmb'))), record ? record.jitMiB : s.jitMiB);
   // `?split=3072,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own.
   const split = q.get('split')?.split(',').map(Number);

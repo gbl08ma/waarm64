@@ -1019,6 +1019,46 @@ impl Cache {
         info(&mut self.map, &mut self.pages, key, len)
     }
 
+    /// The entry for member `m` of an installed region (`len` micro-ops),
+    /// `None` if it's new and the map has no room for it: an install files
+    /// it outside [`Cache::room`] and may not prune or flush (`tier_up` runs
+    /// inside JIT code), so a key that would double the table past
+    /// [`MAP_BUCKETS`] (`room`'s rule), or that the heap has no room for,
+    /// isn't filed. Its block runs interpreted until it's compiled as a head.
+    fn entry(&mut self, m: u64, len: u32) -> Option<&mut Info> {
+        if !self.map.contains_key(&m) {
+            let (n, half) = (self.map.len(), grows_past(MAP_KEYS));
+            if self.map.capacity() == n && n >= half && self.map_full > half
+                || self.map.try_reserve(1).is_err()
+                || self.pages.reserve(m).is_err()
+            {
+                return None;
+            }
+            self.map_full = self.map_full.max(self.map.capacity());
+        }
+        Some(self.info(m, || len))
+    }
+
+    /// Files compiled block `from` among the linkers of `to`. An IC drops
+    /// the list of each key it drops, not the key from the lists it's in, and
+    /// a block compiled again files itself again: so a list about to grow
+    /// first drops its keys no longer compiled and its repeats, and grows
+    /// only if that leaves it more than half full (each such pass is paid
+    /// for by at least half as many pushes).
+    fn link(&mut self, to: u64, from: u64) {
+        let l = self.linkers.entry(to).or_default();
+        if l.len() == l.capacity() && !l.is_empty() {
+            let map = &self.map;
+            l.retain(|k| map.get(k).is_some_and(|i| i.idx != 0));
+            l.sort_unstable();
+            l.dedup();
+            if l.len() > l.capacity() / 2 {
+                l.reserve(l.capacity());
+            }
+        }
+        l.push(from);
+    }
+
     /// The stale-code checker at a region's entry: all its blocks' words.
     /// False for a stale block in a tolerant cache (counted in `s`); a stale
     /// block in any other panics. A block another vCPU's IC dropped since this
@@ -1500,7 +1540,7 @@ impl Cache {
                     .insert(key, (block::hash(&words), spans.collect()));
             }
             for t in links {
-                self.linkers.entry(t).or_default().push(key);
+                self.link(t, key);
             }
             // The members it can be entered at go with it.
             for (m, e, mlen) in ents {
@@ -1508,7 +1548,9 @@ impl Cache {
                 if heads.contains(&m) {
                     continue;
                 }
-                let i = self.info(m, || mlen);
+                let Some(i) = self.entry(m, mlen) else {
+                    continue;
+                };
                 let at = (idx + k as u32) | e << ENTRY_SHIFT;
                 (i.idx, i.len, i.word, i.queued) = (at, mlen as u8, 0, false);
                 // Entered at m, the function runs the members after it too:
@@ -1521,7 +1563,7 @@ impl Cache {
                 {
                     self.spans.insert(m, s);
                 }
-                self.linkers.entry(key).or_default().push(m);
+                self.link(key, m);
             }
             // A region goes with any of its pages (`invalidate`).
             for b in r.blocks.iter().skip(1) {
@@ -1530,8 +1572,8 @@ impl Cache {
                 }
             }
         }
-        // A member new to the map grew it outside [`Cache::room`] (docs/jit.md
-        // "The core's heap"): its bound goes by the table's size.
+        // A member new to the map was filed outside [`Cache::room`]
+        // ([`Cache::entry`]): its bound goes by the table's size.
         self.map_full = self.map_full.max(self.map.capacity());
         Some(idx)
     }
@@ -3803,6 +3845,103 @@ mod tests {
             c.map.capacity()
         );
         assert_eq!(s.prunes, 1);
+    }
+
+    /// A block that links to a long-lived target, dropped by ICs and
+    /// compiled again, doesn't pile up in the target's linkers (an IC drops
+    /// the list of the key it drops, not the key from the lists it's in: the
+    /// review after PERF loop 47, finding 3).
+    #[test]
+    fn linkers_drop_dead_and_repeated_keys() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        let (b, a, other) = (0x5000u64, 0x1000u64, 0x2000u64);
+        c.info(b, || 1).idx = 7;
+        c.info(other, || 1).idx = 8;
+        c.link(b, other);
+        for n in 0..1000 {
+            c.info(a, || 1).idx = 9 + n;
+            c.link(b, a);
+            c.invalidate(a, s);
+        }
+        let l = &c.linkers[&b];
+        assert!(l.len() <= 4, "{} linkers of one block", l.len());
+        assert!(l.contains(&other), "the live one kept");
+        // Live and repeated: once a growth.
+        for _ in 0..1000 {
+            c.info(a, || 1).idx = 9;
+            c.link(b, a);
+        }
+        let mut l = c.linkers[&b].clone();
+        assert!(l.len() <= 4, "{} linkers of one block", l.len());
+        l.sort_unstable();
+        l.dedup();
+        assert_eq!(l, [a, other]);
+        // A pass that leaves the list more than half full grows it: else the
+        // next push would make another.
+        let mut c = Cache::new(Config::DEFAULT);
+        c.info(b, || 1).idx = 7;
+        for k in 1..9 {
+            c.info(0x1000 * k, || 1).idx = 7 + k as u32;
+            c.link(b, 0x1000 * k);
+        }
+        assert_eq!((c.linkers[&b].len(), c.linkers[&b].capacity()), (8, 8));
+        c.map.remove(&0x8000); // no longer compiled
+        c.link(b, 0x1000);
+        assert_eq!((c.linkers[&b].len(), c.linkers[&b].capacity()), (8, 16));
+    }
+
+    /// A region's entry new to the map, filed by `install` outside
+    /// [`Cache::room`], never doubles the table past [`MAP_BUCKETS`]: with
+    /// the table at them, its tombstones leaving room for one key, `room`
+    /// lets a key in that takes the last of it (the review after PERF loop
+    /// 47, finding 2).
+    #[test]
+    fn an_entry_filed_by_an_install_keeps_the_bound() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        let half = grows_past(MAP_KEYS);
+        let mut k = 0u64;
+        while c.map.len() <= half + 1000 {
+            c.room(k << 4, s);
+            c.info(k << 4, || 1);
+            k += 1;
+        }
+        assert_eq!(c.map_full, MAP_BUCKETS / 8 * 7);
+        // Tombstones until one key's room is left with `half` keys in it.
+        let mut old = 0u64;
+        while c.map.len() >= half {
+            c.map.remove(&(old << 4));
+            old += 1;
+        }
+        loop {
+            c.info(k << 4, || 1);
+            k += 1;
+            if c.map.capacity() == c.map.len() + 1 {
+                break;
+            }
+            c.map.remove(&(old << 4));
+            old += 1;
+            assert!(k < 100_000_000, "never down to one key's room");
+        }
+        assert_eq!(c.map.len(), half);
+        // The dispatcher's key, through `room` (no prune: there's room).
+        c.room(k << 4, s);
+        c.info(k << 4, || 1);
+        assert_eq!((s.prunes, c.map.capacity()), (0, c.map.len()));
+        // Then a member to enter a region at, new to the map.
+        let filed = c.entry((k + 1) << 4, 1).is_some();
+        assert!(
+            c.map.capacity() <= MAP_BUCKETS / 8 * 7,
+            "the table doubled to hold {} keys",
+            c.map.capacity()
+        );
+        assert!(!filed, "no room for it");
+        // One the map holds already is filed.
+        assert!(c.entry(k << 4, 1).is_some());
+        // And below the bound a member grows the table as a miss would.
+        let mut c = Cache::new(Config::DEFAULT);
+        assert!(c.entry(0x40, 1).is_some() && c.map.contains_key(&0x40));
     }
 
     /// A table below [`MAP_BUCKETS`] full at the same count grows to them,

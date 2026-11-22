@@ -42,8 +42,9 @@ WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the
 
 **One shared wasm32 memory holds the core's state first, then guest RAM** (≤ 3 GiB, sized
 against host RAM at VM start; past it, spill memories), then the rest of the core's heap: `bootVm` makes the memory its
-final size, with a 1 GiB heap reserve, unless RAM leaves no room for it ([abi.md](abi.md) "A
-fixed-size memory"); the Rust core targets wasm32. Decided in M0.5
+final size, with a 1 GiB heap reserve ([abi.md](abi.md) "A fixed-size memory": memory 0 holds at most 3 GiB of RAM,
+`MAX_MEMORY0_RAM`, so a machine always has room for it; only a host's own `BootOptions` with more RAM in memory 0, or
+`fixedMemory: false`, keeps a growable memory); the Rust core targets wasm32. Decided in M0.5
 (`bench/spike/memory/REPORT.md`): every >4 GiB-capable layout cost more than the 5% threshold in
 JIT-shaped kernels. On x86_64 Chromium: memory64 (C) +6–20% in JIT code and +11% in the core,
 multi-memory wasm32 RAM (B) +12–14%, a memory64 RAM memory (D) +19–28%. On the M4: C +17–19% (its

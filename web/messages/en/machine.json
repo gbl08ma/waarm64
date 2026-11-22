@@ -742,5 +742,13 @@
   "ram-look.hint": {
     "message": "Point at a square to see what it holds. Click it to see its pages.",
     "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer is on no square, which tells what the RAM holds as a whole. One of its sentences. Its last sentence: how to use the map."
+  },
+  "vm.ramTooSmall": {
+    "message": "The machine's RAM is too small for its boot files",
+    "note": "Error headline in the message bar when a machine is started with less RAM than its firmware, kernel or initial ramdisk need where they are loaded (a size set by hand in the page's address, ?ram=). Its details: vm.ramTooSmall.need."
+  },
+  "vm.ramTooSmall.need": {
+    "message": "They need {{need, bytes}} of RAM, and the machine has {{ram, bytes}}.",
+    "note": "Details under the error headline vm.ramTooSmall (the machine's RAM is too small for its boot files): {{need}} is the RAM its firmware, kernel or initial ramdisk need where they are loaded, {{ram}} the machine's RAM."
   }
 }

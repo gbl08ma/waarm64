@@ -364,6 +364,19 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
 }
 
 async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+  // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB (the firmware at +512 KiB). Past
+  // RAM's end in memory 0 lie fw_cfg's buffer and the core's heap: images that don't fit are refused.
+  const kernelOff = o.kernelOffset ?? (o.firmware ? FIRMWARE_OFFSET : 2 << 20);
+  const initrdOff = 128 << 20;
+  if (!o.restore) {
+    const need = Math.max(kernelOff + o.kernel.length, o.initrd ? initrdOff + o.initrd.length : 0);
+    if (need > o.ramSize)
+      throw new MsgError(
+        'machine:vm.ramTooSmall',
+        {},
+        { cause: msg('machine:vm.ramTooSmall.need', { need, ram: o.ramSize }) },
+      );
+  }
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
   // The memory's final size when it is fixed: RAM and the heap reserve, which holds the scratch page and fw_cfg's files.
   // The host-visible window: a Venus GPU's (web/devices.ts VENUS_WINDOW) unless the caller says. It is in memory 1,
@@ -504,9 +517,6 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   );
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
-  // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB.
-  const kernelOff = o.kernelOffset ?? (fw ? FIRMWARE_OFFSET : 2 << 20);
-  const initrdOff = 128 << 20;
   if (!o.restore) {
     bytes().set(o.kernel, ram + kernelOff);
     if (o.initrd) bytes().set(o.initrd, ram + initrdOff);

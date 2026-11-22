@@ -159,8 +159,12 @@ its bytes, so the extent of touched pages is the heap's high-water mark.
 - The desktop guest's session with Firefox reached ~600 MiB.
 
 A floor under ~768 MiB would leave no margin, and the 256 MiB the backlog once proposed is far too small. What fills
-it is broken down in [jit.md](jit.md) "The core's heap" (2026-10-21): mostly the tables' decoded blocks (~360 MiB on 4
-vCPUs), then the JIT's block map (bounded at ~60 MiB since: unbounded, it ran the desktop guest's heap out).
+it is broken down in [jit.md](jit.md) "The core's heap": those peaks (2026-10-21) were mostly the tables' decoded
+blocks and the JIT's block map, both unbounded then (the block map ran the desktop guest's heap out). Both are bounded
+since (PERF loops 38-48): the decoded blocks' arenas at 128 MiB in all and each table's maps at 2^20 buckets (17 MiB),
+the block map at 2^20 buckets (25 MiB) and its page index. The desktop guest's 15-minute sessions of real sites then
+held 281-293 MiB live, the heap's mark within 2.5 MiB of it: 198 MiB of decoded blocks on 4 vCPUs, 29 of block map
+(bench/boot/REPORT.md "PERF loop 44").
 
 ## The JIT's spill arm
 

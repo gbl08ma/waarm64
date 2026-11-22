@@ -750,7 +750,13 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   come back and 7% fewer steps interpreted, also no faster; and 450,000 keys (2^19 buckets) 16 MiB less again in
   the pages session (22 prunes) and 15 in the churn (51), no slower either, but its half (225,000) is near what a
   busy cache needs kept (a flush past it). So `KEEP_HITS`, `RECENT_TICKS`, `WARM_TICKS` and the half are set by
-  nothing measured: what they change costs less than the noise. So the table never passes 2^20 buckets (25 MiB). A
+  nothing measured: what they change costs less than the noise. A key filed outside a miss, a member a module's
+  install enters a region at that the map doesn't hold (`Cache::entry`), goes in only where the table has room
+  without doubling past its bound by `room`'s rule, and the heap room for it (`try_reserve`), and is otherwise left
+  out: its block runs interpreted until it's compiled as a head (an install can't prune or flush: a tier-up runs it
+  from inside JIT code). Without that, a table at 2^20 buckets whose tombstones left room for one key let a miss's key
+  take it, and the install that came due right after it doubled the table to 2^21 (50 MiB beside the 25 being copied,
+  infallibly; the review after PERF loop 47). So the table never passes 2^20 buckets (25 MiB). A
   pruned key that runs again counts from what a table's decoded block counted since it last reported it (at most a
   report's quota, 255 once it had run `warm` times), not from zero. **Why:** the map held every key since the last flush, and with the 320 MiB budget
   flushes are rare: the desktop guest (4 vCPUs, Firefox's sites, then Chromium's) ran the heap out after 15 minutes
@@ -763,7 +769,9 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   of them, no rescue, nothing slower by the end. Of the live bytes 198 MiB are the decoded blocks (below), 29 the
   block map, 8.5-17 the known blocks, 48 the rest.
 - **A table's decoded blocks** (`interp::block::Cache`): the arena of micro-ops (`BUDGET`: 16M micro-ops of 8 bytes,
-  128 MiB, shared out among the tables, at most 64 MiB one), and its map and page index, which also start over at
+  128 MiB, shared out among the tables, at most 64 MiB one: its capacity doubles up to its share and stops there,
+  `Cache::grow`; grown as `Vec` grows, from its first block's length, it ended anywhere up to twice its share, 56
+  MiB of a 32 MiB share for a first block of 7 micro-ops, PERF loop 48), and its map and page index, which also start over at
   `MAX_KEYS` (900,000: 2^20 buckets, 17 MiB) or a key per `KEY_UOPS` (4) micro-ops of its share, or when its full
   table would double past the one that holds them (no room, half that table's keys, the table at that size: the block
   map's rule) (a block of one micro-op, or none, filled the map long before the arena). On 4 vCPUs a table is ~50 MiB full: its arena 32 MiB,
@@ -788,10 +796,12 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   guest of 4M `b .+4` in a 48 MiB heap through it (12 of the block map's rescues and 12 of the decoded blocks'; in
   64 the block map finds room since its bound is 2^20 buckets); the unit tests run a heap made full
   (`crate::test_heap`, the allocator's test hook) through the page index's. **Not covered:** what a module's install
-  files (`Cache::install`: a member entered at an entry that the map doesn't hold, the links, the checker's spans,
-  the heads filed under a region's other pages) grows those maps without a `try_reserve`, also from a tier-up inside
-  JIT code, which can't flush. Its members are nearly always keys the map holds (a region takes blocks that ran), so
-  it's a few keys a module past the bound at most, outside the forced mode (docs/backlog.md). An allocation that still fails records its size and the heap's live bytes and mark for the
+  files besides its members (`Cache::install`: the links, the checker's spans, the heads filed under a region's other
+  pages) grows those maps and lists without a `try_reserve`, also from a tier-up inside JIT code, which can't flush
+  (docs/backlog.md). The links are bounded: a target's list of the blocks that link to it, about to grow, first
+  drops the keys no longer compiled and the repeats (`Cache::link`; an IC drops the list of each key it drops, not
+  the key from the lists it's in, and a block compiled again files itself again, so a long-lived target's list grew
+  by a key at every IC and recompile of a block that links to it until the next flush, PERF loop 48). An allocation that still fails records its size and the heap's live bytes and mark for the
   host (the allocation error hook, `diag`: `handle_alloc_error` skips the panic hook, so the crash above came with
   no message); `tests/heap.test.ts` runs one out through `heap_probe` (ABI 50) on the exact core and the growable one.
 - **The block map's page index** (`PageIndex`, for `IC IVAU`): a page's own keys by their low 12 bits (offset and

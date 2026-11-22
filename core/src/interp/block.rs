@@ -3320,7 +3320,7 @@ impl Cache {
                 }
                 if self.map.try_reserve(1).is_err()
                     || self.pages.try_reserve(1).is_err()
-                    || self.arena.try_reserve(uops.len()).is_err()
+                    || self.grow(uops.len()).is_err()
                 {
                     self.rescue();
                 }
@@ -3343,6 +3343,19 @@ impl Cache {
             }
         }
         Some(self.slot_in(key))
+    }
+
+    /// Room in the arena for `n` more micro-ops: doubled as `Vec` grows it,
+    /// but never past the budget (amortized from its first block's length,
+    /// its capacity would end anywhere up to twice the budget: the review
+    /// after PERF loop 47).
+    fn grow(&mut self, n: usize) -> Result<(), std::collections::TryReserveError> {
+        let (len, cap) = (self.arena.len(), self.arena.capacity());
+        if cap - len >= n {
+            return Ok(());
+        }
+        let want = (2 * cap).max(len + n).min(self.budget.max(len + n));
+        self.arena.try_reserve_exact(want - len)
     }
 
     /// Puts decoded block `key` in its slot, with the dispatches it counted

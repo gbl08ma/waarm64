@@ -992,3 +992,40 @@ fn blocks_chain_into_the_copy_of_hot_that_runs_them() {
     // Into the FP block and out of it, each time round.
     assert_eq!((switches, slow), (2 * (n / 6), 0));
 }
+
+/// The arena never holds more than the budget: grown amortized from its
+/// first block's length, its capacity would end anywhere up to twice the
+/// budget (the review after PERF loop 47, finding 1).
+#[test]
+fn the_arena_stays_within_the_budget() {
+    let t = TestRam::new(0x10000);
+    // Blocks of five micro-ops (four adds and a ret) at 0x4000..0xc000: a
+    // budget of 1000 fills at 200 of them, before its keys (250).
+    let (from, to) = (0x4000u64, 0xc000u64);
+    for k in (from..to).step_by(4) {
+        let ret = (k - from) % 20 == 16;
+        t.mem
+            .write(k, 4, if ret { 0xd65f_03c0 } else { 0x9100_0400 })
+            .unwrap();
+    }
+    for first in 1..8u64 {
+        // `first` adds and a ret at CODE.
+        for k in 0..first {
+            t.mem.write(CODE + 4 * k, 4, 0x9100_0400).unwrap();
+        }
+        t.mem.write(CODE + 4 * first, 4, 0xd65f_03c0).unwrap();
+        let mut c = Cache::new(1000);
+        let n = c.get(CODE, &t.mem).map_or(0, <[Uop]>::len);
+        assert_eq!(n as u64, first + 1);
+        for k in (from..to - 20).step_by(20) {
+            // (Five but where a page ends inside one.)
+            assert!(c.get(k, &t.mem).is_some());
+            assert!(
+                c.arena.capacity() <= 1000,
+                "a first block of {n}: the arena holds {} micro-ops",
+                c.arena.capacity()
+            );
+        }
+        assert!(c.clears > 1, "it started over");
+    }
+}

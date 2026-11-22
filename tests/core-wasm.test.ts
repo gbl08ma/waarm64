@@ -7,7 +7,8 @@ import { coreImports, memoryLimits, panicMessage, POINTERS, withPanic } from '..
 import { VENUS_RESERVE } from '../web/ram.ts';
 import { callsIn, HOT } from '../tools/wasm-calls.ts';
 
-const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
+// WAARM64_WASM runs another core (a build with `-Zub-checks=yes`: RAM past 2 GiB below).
+const WASM = process.env.WAARM64_WASM ?? new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
 
 test('core instantiates on shared imported memory and uses atomics', () => {
   const mod = new WebAssembly.Module(readFileSync(WASM));
@@ -243,6 +244,35 @@ for (const jit of [0, 4, 2]) {
     assert.deepEqual([x[2], x[3], x[4], x[6], x[8]], [0x1234n, 0x1234n, 0n, 1n, 0x1234n]);
     assert.equal(new BigUint64Array(spill.buffer, 8, 1)[0], 0x2468n);
     assert.ok(new BigUint64Array(spill.buffer, 0x40, 8).every((v) => v === 0n), 'DC ZVA zeroed the block');
+    ex.vm_free(vm);
+  });
+}
+
+// Memory 0's RAM past 2 GiB (up to 3 GiB, MAX_MEMORY0_RAM): its offsets don't fit an isize on wasm32, where a
+// pointer's `add` past it is undefined behaviour (std's check panics in a core built with `-Zub-checks=yes` and debug
+// assertions, which WAARM64_WASM runs: the review after PERF loop 47). A store and a load 2.25 GiB in, under the
+// interpreter, the block interpreter and the JIT.
+for (const jit of [0, 4, 1]) {
+  test(`RAM past 2 GiB in memory 0 (jit ${jit})`, () => {
+    const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
+    const imports = coreImports(mem);
+    const instance = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), imports);
+    imports.jit.bind(instance);
+    const ex = instance.exports as Record<string, (...a: (number | bigint)[]) => number>;
+    const RAM = 2.5 * 2 ** 30;
+    const ram = mem.grow(RAM / 65536) * 65536;
+    // str x1, [x0]; ldr x2, [x0]; b .
+    new Uint32Array(mem.buffer, ram, 3).set([0xf9000001, 0xf9400002, 0x14000000]);
+    const cfg = mem.grow(1) * 65536;
+    new BigUint64Array(mem.buffer, cfg, 32).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 0n, 0n, BigInt(jit)]);
+    const vm = ex.vm_new(ram, BigInt(RAM), cfg);
+    assert.notEqual(vm, 0);
+    const x = new BigUint64Array(mem.buffer, ex.vm_cpu(vm, 0) >>> 0, 32);
+    const off = 2.25 * 2 ** 30;
+    [x[0], x[1]] = [0x4000_0000n + BigInt(off), 0x1234_5678n];
+    ex.vm_run(vm, 20n);
+    assert.equal(x[2], 0x1234_5678n);
+    assert.equal(new BigUint64Array(mem.buffer, ram + off, 1)[0], 0x1234_5678n);
     ex.vm_free(vm);
   });
 }

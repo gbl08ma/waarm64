@@ -40,8 +40,9 @@ export function ramLayout(ramSize: number, spill: number[] = [], window = 0, spi
 /**
  * The least heap reserve a fixed memory gets (docs/spill-memories.md "The heap floor"): the reserve, which holds
  * everything in memory 0 but RAM (the core's static data and stack, the scratch page, fw_cfg's files and the heap), is
- * what 4 GiB leaves after RAM, capped at `HEAP_RESERVE` (web/vm.ts) and never under this. The heap reaches ~540–600 MiB
- * under a heavy 4-vCPU load, so 1 GiB, and the reserve is always 1 GiB.
+ * what 4 GiB leaves after RAM, capped at `HEAP_RESERVE` (web/vm.ts) and never under this. The heap reached ~540–600 MiB
+ * under a heavy 4-vCPU load before the JIT's maps were bounded (281–293 MiB in the desktop guest's sessions since), so
+ * 1 GiB, and the reserve is always 1 GiB.
  */
 export const HEAP_FLOOR = 1 << 30;
 

@@ -76,7 +76,7 @@ worker failure (`no3d`, which a switch clears): as that machine would run once o
 | Field | Address | Record (stored) | Settings (transient) | Default |
 | --- | --- | --- | --- | --- |
 | vCPUs | `?ncpus=N` | `ncpus` | the Machine menu's last (one its slider stops at) | `min(4, cores − 2)` |
-| RAM, its split | `?ram=MiB`, `?split=a,b,…` (over `?ram=`; `?ram=` alone drops the record's split) | `ramMiB`, `ramSplit` | the Machine menu's last (one its slider stops at) | the machine's |
+| RAM, its split | `?ram=MiB` (the Machine menu's slider's nearest stop: 256 to 16384 in steps of 64), `?split=a,b,…` (over `?ram=`; `?ram=` alone drops the record's split) | `ramMiB`, `ramSplit` | the Machine menu's last (one its slider stops at) | the machine's |
 | The JIT's budget | `?jitmb=MiB` | `jitMiB` | `jitMiB` (the memory signal's choice) | the core's |
 | 3D or 2D | `?gpu=virgl`, `?gpu=2d` (`virgl-null`: 2D on the page) | `display` | the Machine menu's Graphics | 3D; 2D without WebGL2 or once the GPU worker failed; none with `?display=simple` |
 | Vulkan | `?gpu=vulkan` (on only; 2D takes it off) | `vulkan` | — | off; only beside 3D |

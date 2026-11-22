@@ -570,8 +570,10 @@ for (let run = 1; run <= RUNS; run++) {
     await shows(p2, /login: /);
     await onSerial(p2, 'root\n');
     await shows(p2, /root@\S+:~# /);
-    await onSerial(p2, 'cat /root/snapmark /root/after /root/third\n');
-    await shows(p2, /cat \/root\/snapmark \/root\/after \/root\/third\s*disk-kept-42\s*after-42\s*third-42/);
+    // The serial login can come before the boot's last status lines, which land in the files' output: wait for the
+    // boot to settle, then a clear screen.
+    await onSerial(p2, 'systemctl is-system-running --wait >/dev/null; clear; cat /root/snapmark /root/after /root/third && echo al""l-three\n');
+    await shows(p2, /disk-kept-42\s*after-42\s*third-42\s*all-three/);
     assert.deepEqual(errors2, []);
     await fresh.close();
     console.log(`# debian page ${run}: done at ${at()}`);

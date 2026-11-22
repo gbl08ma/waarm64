@@ -414,8 +414,11 @@ impl Mem {
     pub fn host0(&self, pa: u64, len: u64) -> Option<*mut u8> {
         let off = pa.wrapping_sub(self.phys);
         match off.checked_add(len) {
-            // SAFETY: off + len <= size, so the result is inside the RAM block.
-            Some(end) if end <= self.size => Some(unsafe { self.base.add(off as usize) }),
+            // Not `add`: memory 0's RAM reaches 3 GiB, and an offset past
+            // isize::MAX (2 GiB on wasm32) is undefined behaviour there
+            // (std's check panics with `-Zub-checks`). off + len <= size, so
+            // the address is inside the RAM block.
+            Some(end) if end <= self.size => Some(self.base.wrapping_add(off as usize)),
             _ => None,
         }
     }

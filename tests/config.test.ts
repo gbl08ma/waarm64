@@ -46,6 +46,12 @@ const TABLE: Row[] = [
   ['stored: its split', '', record({ ramSplit: [768, 256] }), {}, { ramMiB: 1024, ramSplit: [768, 256] }],
   ['stored: ?ram= drops its split', 'ram=2048', record({ ramSplit: [768, 256] }), {}, { ramMiB: 2048, ramSplit: undefined }],
   ['?split= over ?ram=', 'ram=2048&split=3072,1024', OFF, {}, { ramMiB: 4096, ramSplit: [3072, 1024] }],
+  // A ?ram= the slider can't set comes to its nearest stop (the review after PERF loop 47: ?ram=1 started a machine
+  // with 1 MiB, its firmware copied past RAM's end).
+  ['?ram= below the slider: its least', 'ram=1', OFF, {}, { ramMiB: 256 }],
+  ['?ram= past the slider: its most', 'ram=99999', OFF, {}, { ramMiB: 16384 }],
+  ['?ram= between stops: the nearest', 'ram=1000.3', OFF, {}, { ramMiB: 1024 }],
+  ['?ram= not a size: unset', 'ram=-5', OFF, {}, { ramMiB: 1024 }],
   ['a ?split= that can\'t be laid out is ignored', 'split=0,1024', OFF, {}, { ramMiB: 1024, ramSplit: undefined }],
   // The display (before what the browser can do), Vulkan and the keyboard layout.
   ['transient: 3D by default', '', undefined, {}, { three: true, vulkan: false, keyboard: 'browser' }],

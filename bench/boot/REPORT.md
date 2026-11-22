@@ -6916,3 +6916,48 @@ the interpreter and the JIT) and the emitter's `counter_reads_inline_from_the_st
 xHCI's condition dropped (the USB guest's JIT run 188,563,323 → 193,007,148 steps against the interpreter's). An inline
 check of the host signal byte, as the unmask has, was built and dropped: planting it out changed nothing any test sees.
 CI: `scripts/ci.sh` (its second run: the first found `system_register_reads` still expecting the counter read as a helper call) and `scripts/ci-jit.sh` passed.
+
+## PERF loop 48: the review of the block map's bounds and RAM's layout, fixed (2026-11-22)
+
+An out-of-context static review after loop 47 (`review/heap-ram.md` on the deleted `review/heap-ram` branch) ranked
+six findings. Each was checked by a test failing first on 2e202705, then fixed. Raw: `results/perf48/` (the gate
+screen's JSON, the pages sessions' memory logs and summary).
+
+| finding | verdict | test (fails on 2e202705) | fix |
+|---|---|---|---|
+| 1. the decoded blocks' arena grows amortized from its first block's length, to anywhere up to twice its budget | real | `the_arena_stays_within_the_budget` (a budget of 1,000: 1,024 micro-ops for a first block of 2) | `interp::block::Cache::grow`: doubling, capped at the budget (`try_reserve_exact`) |
+| 2. a member `install` files outside `room` can double the block map's table to 2^21 buckets, infallibly | real | `an_entry_filed_by_an_install_keeps_the_bound` (the table at 2^20 with one key's room, a miss's key, then a member: 1,835,008 keys' table) | `jit::Cache::entry`: a new member goes in only with room by `room`'s rule and a `try_reserve`, else it isn't filed (its block runs interpreted until compiled as a head) |
+| 3. `linkers` lists keep dead and repeated keys for the life of their target | real | `linkers_drop_dead_and_repeated_keys` (1,001 linkers after 1,000 ICs and recompiles of one block) | `jit::Cache::link`: a list about to grow first drops the keys no longer compiled and its repeats, and grows only if that leaves it more than half full |
+| 4. `Mem::host0`'s `ptr::add` past `isize::MAX` (2 GiB) on wasm32: undefined behaviour | real (std's precondition panics in a core built with `-Zub-checks=yes` and debug assertions: `panic_nounwind_fmt` from `Mem::write`) | tests/core-wasm.test.ts "RAM past 2 GiB in memory 0" (jit 0, 4, 1) under `WAARM64_WASM` = that core; the release core passes either way | `wrapping_add` (the bounds are checked just above) |
+| 5. the firmware, kernel and initrd copied into memory 0 unchecked; `?ram=` unvalidated | real | tests/heap.test.ts "images that don't fit in RAM are refused" (`vm_boot rejected the Image or layout` for a 2 MiB firmware in 1 MiB); tests/config.test.ts `?ram=1`, `99999`, `1000.3`, `-5` | `bootVm` refuses images past RAM's end (`MsgError` `machine:vm.ramTooSmall`, its details the sizes); the page takes `?ram=` as the Machine menu's slider's nearest stop (256-16384 MiB in steps of 64): **clamped**, not refused, as the address's other sizes fall back rather than stop the page, and what runs is what the menu then shows |
+| 6. docs contradicting the code | real | | spill-memories.md "The heap floor", abi.md, architecture.md, jit.md "The core's heap", web/ram.ts's comment: the bounds as the code sets them and loop 44's measured heap |
+
+**Memory** (finding 1; the Mac M4, Chrome for Testing 158.0.8127.36, Firefox's pages session once an arm from
+`target/snapbench/pages.waarm64snap`, `MEMLOG=5`; 4 vCPUs, 4 tables of a 32 MiB share each): the decoded blocks'
+bytes at most (`decBytes`, arenas and maps) **206.1 → 198.1 MiB**; the heap's mark 288.4 → 280.8 MiB, its live bytes
+at most 287.6 → 279.6; the block map 28.4 either way, 7 prunes, no rescue, no flush. That is one table's arena at 40
+MiB in the base session, as a first block of 5·2^k micro-ops after the restore makes it (8 MiB more, one session
+each); with the fix every arena stops at its 32 MiB share. `pagesS` 74.6 → 70.8 s in the one round each (not a claim).
+
+**The gates** (`bench/interp/ab-mac.sh`, a round a call, base first in rounds 1 and 3; ms, each round's median; arms
+checked by size: `jit::Cache::install` 11,680 → 10,879 bytes, `Jit::miss` 11,708 → 10,953 (`link` and
+`PageIndex::reserve` out of line now), `interp::block::Cache::miss` 5,941 → 5,968, `Mmu::miss` 1,313 → 1,394 and
+`Mmu`'s `read_el`/`write_el` +54 each (`Mem::host` inlined into them since `wrapping_add`); `hot` unchanged):
+
+| | base | fix |
+|---|---|---|
+| `alpine_jit_total` | 3,676.6 · 3,764.2 · 3,784.3; **3,764.2** | 3,727.5 · 3,729.1 · 3,793.1; **3,729.1** (−0.9%, rounds overlapping) |
+| `alpine_user_jit_total` | 9,898.7 · 10,043.3 · 10,113.6; **10,043.3** | 9,995.0 · 10,025.4 · 10,071.8; **10,025.4** (−0.2%, overlapping) |
+
+Neutral: each round's pair differs either way (+1.4, −0.9, +0.2% boot). No step count moved.
+
+**Planted bugs** (each caught, the source restored, the wasm rebuilt): the arena's growth without the cap
+(`the_arena_stays_within_the_budget`); `entry` without `room`'s rule (`an_entry_filed_…`); `link` without its pass
+(`linkers_drop_…`); the pass without its growth (the same test: a list of 7 live keys of 8 would pass again at the
+next push); `host0`'s `add` back (the RAM-past-2-GiB test, under the checked core); `bootVm` without the initrd's
+check (heap.test.ts's "an initrd at 128 MiB"); `?ram=` unclamped (config.test.ts).
+
+CI: `scripts/ci.sh` (its second run: the first found web/vm.ts unformatted), `scripts/ci-jit.sh` and
+`scripts/ci-debian.sh` (its second run: the first's reload check typed `cat` at a serial login that came before the
+boot's last status lines, which overwrote the files' output; tests/page-debian.test.ts now waits for
+`systemctl is-system-running --wait` and clears the screen first) passed.

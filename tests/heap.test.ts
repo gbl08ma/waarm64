@@ -93,3 +93,21 @@ test("3 GiB of RAM is a fixed memory of 4 GiB, with fw_cfg's files or without; a
     vm.close();
   }
 });
+
+// The firmware, the kernel and the initrd go into RAM at their offsets (512 KiB, 2 MiB, 128 MiB): one that doesn't
+// fit isn't copied past RAM's end, over fw_cfg's buffer and the core's heap (the review after PERF loop 47).
+test("images that don't fit in RAM are refused", async () => {
+  const fits = async (o: { ramSize: number; kernel: Uint8Array; initrd?: Uint8Array; firmware?: object }) => {
+    try {
+      (await bootVm(WASM, { cmdline: '', jit: 1, ...o })).close();
+      return 'booted';
+    } catch (e) {
+      return (e as { msg?: { key: string } }).msg?.key ?? String(e);
+    }
+  };
+  const refused = 'machine:vm.ramTooSmall';
+  assert.equal(await fits({ ramSize: MiB, kernel: new Uint8Array(2 * MiB), firmware: {} }), refused, 'a firmware past 1 MiB');
+  assert.equal(await fits({ ramSize: 64 * MiB, kernel: branches(1), initrd: new Uint8Array(4096) }), refused, 'an initrd at 128 MiB');
+  assert.equal(await fits({ ramSize: 3 * MiB, kernel: new Uint8Array(MiB + 4096) }), refused, 'a kernel past 3 MiB');
+  assert.equal(await fits({ ramSize: 3 * MiB, kernel: branches(1) }), 'booted');
+});

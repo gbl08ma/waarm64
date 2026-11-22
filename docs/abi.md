@@ -50,8 +50,9 @@ Design notes for an ABI change go in this file before the code.
   called again. It needs the core's bytes, so a host compiles the core with `compileCore` (a module compiled
   otherwise boots on the growable import); `exactCore: false` keeps that too. Measured neutral on this host
   (bench/boot/REPORT.md "M8: the core with exact memory limits"). Running out of the reserve traps (the core's allocations fail); the
-  heap measured ~27 MB through the userspace benchmark and ~150 MB under a heavy 4-vCPU load
-  ([jit.md](jit.md) "Memory"). `fixedMemory: false`, or a RAM size that leaves no room for the
+  heap reached ~540-600 MiB under heavy 4-vCPU loads before the JIT's maps were bounded, and 281-293 MiB in the
+  desktop guest's sessions of real sites since ([spill-memories.md](spill-memories.md) "The heap floor", [jit.md](jit.md)
+  "The core's heap"). `fixedMemory: false`, or a RAM size that leaves no room for the
   reserve in 4 GiB, keeps the growable memory (0 in `mem_pages`).
 
 ## Whole-VM exports
