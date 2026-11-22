@@ -30,7 +30,8 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 `node bench/remote-disk/boot.ts <label> <url | local:/d47[/r20][/pages]>` boots the Arch desktop guest from a disk
 URL (`?disk=`, `?iostats`: `window.__ioStats()` gives the disks' stage timers, a trace of every base read and the
 block cache's counters) to Firefox's first paint, with a mark per phase; `local:` serves
-`target/images/remote/desktop.qcow2` from `bench/remote-disk/server.ts` with latency (`/d<ms>`), a rate (`/r<MB/s>`)
+`target/images/remote/desktop.qcow2` (a hard link of `target/arch/desktop.qcow2`, made again by hand: the old one
+went 2026-11-22) from `bench/remote-disk/server.ts` with latency (`/d<ms>`), a rate (`/r<MB/s>`)
 or no ranges (`/pages`) added, and logs each request. `summary.ts` sums a run per phase, `simulate.ts` replays its
 trace through a block cache.
 
