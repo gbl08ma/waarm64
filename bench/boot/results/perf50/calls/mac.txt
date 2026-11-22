@@ -1,0 +1,12 @@
+$ node calls.ts 5        # the Mac (M4), Node v26.10.0, the loop's core (5cabcc62)
+follow 7.5 us a round, 56006 steps
+host 15.1 us a round, 49006 steps
+host 15.2 us a round, 49006 steps
+follow 7.5 us a round, 56006 steps
+follow 7.5 us a round, 56006 steps
+host 14.7 us a round, 49006 steps
+host 14.7 us a round, 49006 steps
+follow 7.5 us a round, 56006 steps
+follow 7.5 us a round, 56006 steps
+host 14.7 us a round, 49006 steps
+median ns per round: follow 7511 host 14740 ; per leaf call 1.81 ns

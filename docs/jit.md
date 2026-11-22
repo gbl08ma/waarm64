@@ -381,9 +381,12 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   the miss function's calls there (compress 1.82M, Lua 1.61M, SQLite 1.03M a phase, the boot 1.57M; nearly every
   followed call could leave: of Lua's 8.6M, 3.1M did). With the rule: 5K, 15K, 11K and 74K; host calls +23-28%,
   followed calls −93 to −97%; wasm −3 to −4%; on the Mac Alpine's boot −2.7% and the userspace benchmark −2.5% (bench/boot/REPORT.md
-  "PERF loop 36"). Keeping the callees that complete inside (64% of Lua's followed calls) would need every exit from
-  inside a call to be a host call to the pending continuation, nested per pending call: at most ~0.5% more by the counts,
-  in docs/backlog.md.
+  "PERF loop 36"). **Not kept: callees that complete inside but could leave** (PERF loop 50): following them would need
+  every exit from inside a followed call to be a host call expecting the pending continuation, nested per pending
+  call. Counted, they'd take 5-11% of the host calls away (Lua 4.2M of 38M a phase, SQLite 3.1M, the boot 2.4M), but a
+  host call and its return cost only ~2 ns more than a `br` and a predicted return on the Mac (a leaf microbenchmark),
+  so 0.2-0.3% of the userspace gate at most, against +4.6% wasm in the boot with every callee followed, before the
+  nested exits' code: dropped (bench/boot/REPORT.md "PERF loop 50").
 - **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
   function (`Region::entries`; none in a region with a `loop`, whose members sit inside it: a loop region, and a
   forward region with an edge back to its head, which is what a loop through a call is, `for (…) f(x);`: after anything

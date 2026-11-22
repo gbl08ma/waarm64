@@ -1,0 +1,47 @@
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index 31b82972..55dff3b8 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -19,7 +19,7 @@ import { Counter } from '../../web/counters.ts';
+ import { DISTROS } from '../../web/test-guests.ts';
+ 
+ /** core/src/tally.rs's slots. */
+-const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
++const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)', 'followed call (diag)', 'predicted return (diag)'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+ const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
+ 
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 5fda939d..25fc0992 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -482,6 +482,9 @@ pub fn forward(
+     member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
+ ) -> Region {
+     let mut not = vec![];
++    if option_env!("WAARM64_FOLLOW_ALL").is_some() {
++        return walk(mem, key, va, member, &not);
++    }
+     loop {
+         let r = walk(mem, key, va, member, &not);
+         match r.open_call() {
+@@ -1420,6 +1423,9 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                     tally::FWD_EDGE
+                 },
+             );
++            if depth == 0 && when {
++                emit::dbump(c, 15);
++            }
+             // Around a loop, the stale-code checker runs as at a chained entry.
+             if let (0, Some(chk)) = (j, e.checker) {
+                 c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
+@@ -1429,6 +1435,9 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             c.br(label as u32 + depth + 1).end();
+             (c.regs, c.flags) = (here, fl);
+         };
++        if b.words.last().map(|&w| decode(w)) == Some(Op::BL) && r.follows.contains(&b.key) {
++            emit::dbump(&mut c, 14);
++        }
+         match succs {
+             Next::One(o) => {
+                 if let Some(j) = internal(o) {

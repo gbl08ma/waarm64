@@ -1,0 +1,100 @@
+
+== boot: 1 vCPU, deterministic round-robin, 2650M steps, 4.7 s
+per 1000 steps                 all
+back-edge                   19.478
+forward edge               106.958
+transfer cache hit           4.077
+miss function                2.342
+jump cache hit (MMU off)     0.000
+chain back                  11.726
+chain fwd                   21.877
+chain via jc back            0.486
+chain via jc fwd             6.104
+by-VA link back              2.704
+by-VA link fwd               0.986
+host call                   12.410
+host return                 11.983
+poll (polled code)           0.000
+followed call (diag)         2.803
+predicted return (diag)      1.159
+chunks: 612167 (4329 steps each); by how they ended: count, share, mean steps
+  budget                              68403  11.17%   20887
+  Resync (ISB/DSB/ERET/unmask)       256644  41.92%    3023
+  Invalidate (IC)                      5015   0.82%     407
+  WFI                                    78   0.01%     996
+  HVC                                    15   0.00%    4471
+  counter read                         2657   0.43%    1684
+  platform (timer/GIC regs)           89689  14.65%    1851
+  device (MMIO)                       29894   4.88%     316
+  SVC                                112106  18.31%    1903
+  exception                           47666   7.79%    1042
+timer (round-robin)            all
+CNTV_CVAL/TVAL armed          1083
+  steps a write            2447246
+  mean ticks ahead           59702
+  max ticks ahead            80332
+IRQs taken                   42060
+platform: GIC CPU i/f read     42070
+platform: GIC CPU i/f written     42150
+platform: timer CTL/CVAL/TVAL      5415
+platform: other                 54
+timer: CTL read               2161
+timer: CVAL/TVAL read            0
+timer: CTL written            2171
+timer: CVAL/TVAL written      1083
+timer:   reads with a step clock at EL1      2161
+timer:   writes not firing before the chunk's end      3241
+timer:     of them changing the timer line      1079
+timer:   physical timer's         0
+counter-read exits            2657
+  steps a read              997504
+
+== user: 1 vCPU, deterministic round-robin, 10431M steps, 11.6 s
+per 1000 steps                 all  compress       lua     churn    sqlite
+back-edge                   12.456    18.001     1.278    14.438    17.000
+forward edge               113.688    97.647   117.731   116.208   126.393
+transfer cache hit          12.822     4.515    25.206     4.574    13.461
+miss function                1.302     1.144     0.654     2.817     0.805
+jump cache hit (MMU off)     0.000     0.000     0.000     0.000     0.000
+chain back                  11.395     5.219    18.078    12.086     6.725
+chain fwd                   21.768    28.732    16.205    24.801    22.526
+chain via jc back            0.680     0.686     0.097     0.829     1.719
+chain via jc fwd             6.912     7.134     7.192     7.079     6.987
+by-VA link back              9.275     5.674    14.188     1.579    13.806
+by-VA link fwd               2.041     2.429     1.879     1.210     3.305
+host call                   10.955     6.633     9.221    17.176    13.340
+host return                 10.740     6.518     9.110    16.789    13.183
+poll (polled code)           0.000     0.000     0.000     0.000     0.000
+followed call (diag)         2.650     1.567     2.686     3.711     3.104
+predicted return (diag)      1.199     0.500     1.350     1.555     1.507
+chunks: 1371900 (7604 steps each); by how they ended: count, share, mean steps
+  budget                             314112  22.90%   25334
+  Resync (ISB/DSB/ERET/unmask)       454909  33.16%    2620
+  Invalidate (IC)                      4702   0.34%     467
+  WFI                                    61   0.00%     996
+  HVC                                    15   0.00%    3277
+  counter read                         2819   0.21%    1696
+  platform (timer/GIC regs)          339132  24.72%    2022
+  device (MMIO)                       29861   2.18%     367
+  SVC                                136718   9.97%    2536
+  exception                           89571   6.53%    2573
+timer (round-robin)            all  compress       lua     churn    sqlite
+CNTV_CVAL/TVAL armed          1083         0         0         0         0
+  steps a write            9631867         0         0         0         0
+  mean ticks ahead           59649         0         0         0         0
+  max ticks ahead            69431         -         -         -         -
+IRQs taken                  166780     32561     51437      8948     34221
+platform: GIC CPU i/f read    166790     32561     51437      8948     34221
+platform: GIC CPU i/f written    166861     32561     51437      8948     34221
+platform: timer CTL/CVAL/TVAL      5415         0         0         0         1
+platform: other                 66         4         8         0         0
+timer: CTL read               2161         0         0         0         0
+timer: CVAL/TVAL read            0         0         0         0         0
+timer: CTL written            2171         0         0         0         1
+timer: CVAL/TVAL written      1083         0         0         0         0
+timer:   reads with a step clock at EL1      2161         0         0         0         0
+timer:   writes not firing before the chunk's end      3241         0         0         0         0
+timer:     of them changing the timer line      1079         0         0         0         0
+timer:   physical timer's         0         0         0         0         0
+counter-read exits            2819         5         8         0         1
+  steps a read             3700359 406940668 401749728         0 2138513672

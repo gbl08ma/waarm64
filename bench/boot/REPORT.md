@@ -7030,3 +7030,44 @@ TVAL's write zero-extended (the run hangs). The first version of the test read I
 that re-cut the chunk at the new deadline and hid the dropped condition (unmask.c caught it then); the read moved
 to where the line must be low.
 CI: `scripts/ci.sh`, `scripts/ci-jit.sh` and `scripts/ci-debian.sh` passed (each first run).
+
+## PERF loop 50: followed calls whose callee completes inside the region, counted (2026-11-22)
+
+The backlog's "Followed calls whose callee completes inside the region" (PERF loop 36's follow-up): a region follows
+a call only if its callee can't leave the region, so a callee with any exit is a host call even on the runs that
+return inside. Keeping those would need every exit from inside a followed call (a chain, an indirect transfer, a
+by-VA link, a checked edge's fallback, an unpredicted `ret`) to be a host call expecting the pending continuation,
+nested once per pending call. Counted first; **not built**: the bound is under the gates' floor. Raw:
+`results/perf50/` (README).
+
+**Counted** (a diagnostic core, tallies 14 and 15: a followed call run, a predicted return taken; a second core whose
+`forward` keeps every callee its walk takes, `WAARM64_FOLLOW_ALL`; `bench/boot/preempt-counts.ts`, Node, the dev VM;
+steps the same in both). What would become in-region: the predicted returns that following every callee adds, each
+a host call and return today. Exits from inside a followed call stay one host call each in the design (made at the
+exit instead of at the call), so only these count:
+
+| | boot | compress | Lua | churn | SQLite |
+|---|---|---|---|---|---|
+| host calls today | 39.55M | 16.51M | 38.04M | 11.17M | 35.11M |
+| followed calls today / completed inside | 0.85M / 0.70M | 0.18M / 0.14M | 0.23M / 0.17M | 0.20M / 0.16M | 0.17M / 0.13M |
+| every callee followed / completed inside | 7.43M / 3.07M | 3.19M / 1.02M | 8.63M / 4.34M | 2.02M / 0.84M | 6.64M / 3.22M |
+| **host calls that would go** | **2.37M** (6.0%) | **0.88M** (5.3%) | **4.16M** (10.9%) | **0.69M** (6.2%) | **3.09M** (8.8%) |
+
+Fewer complete inside than loop 36 counted (Lua 5.5M of 8.6M then, 4.3M now): loop 37's rules (a second call to a
+callee taken, checked edges) already take some of them out of following.
+
+**A host call's cost** (`results/perf50/calls/`: f calls four leaves, followed in one guest and host calls in the
+other, the leaves' work the same but for a few instructions; per round, scaled by the steps): on the Mac (M4, Node
+26.10.0, 5 rounds alternated) 7,511 ns a round followed (56,006 steps) against 14,740 ns host-called (49,006 steps):
+**~2.0 ns a call and its return** more than a `br` and a predicted return; on the dev VM the same 2.0 ns (11,567 against
+18,329 ns). Little is live across these calls; a call with more registers in locals flushes and reloads more, so
+say 2-4 ns.
+
+**Bound**: at 2-4 ns a call, Lua 8-17 ms of its ~2.6 s phase (0.3-0.6%), SQLite 6-12 ms (0.3-0.7%), compress and
+churn ~0.1-0.2%; the userspace gate 18-35 ms of ~10.3 s (**0.17-0.34%**), the boot 5-10 ms of ~3.8 s (0.13-0.25%).
+Against it: the callees' code back in their callers' regions, wasm 10.8 → 11.3 MB in the boot (+4.6%) and blocks in
+regions 21,505 → 21,935 (`userprof-diag*.json`), loop 36's 5-11 ms of `emitNs` a run back, before the code the
+nested exits would add on every exit path inside a followed call. No arm could show a net gain past the ~1% floor,
+and the design touches every way out of a region (the chains, the transfer cache's probe, the by-VA links, the
+checked edges, `ret_up`, the stale-code checker's entries). Dropped: docs/jit.md "Calls" has the finding, the
+backlog entry is removed. No code changed (docs, results and the microbenchmark); `scripts/ci-fast.sh` passed.

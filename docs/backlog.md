@@ -184,13 +184,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   worker). With a worker per vCPU, V8 compiles off the vCPU's thread: the JIT's compile worker
   ([jit.md](jit.md) "Sharing"), built for the install stalls a GUI guest showed; the vCPU still
   instantiates each module. Without the worker (round-robin, Node's runs, `?jit=nocw`) it compiles too.
-- **Followed calls whose callee completes inside the region** ([jit.md](jit.md) "Calls"; PERF loop 36): a region now
-  follows a call only if its callee can't leave the region, so a callee with any exit (a cold error path, a page's
-  edge) is a host call even on the runs that return inside: Lua's followed calls went 8.6M → 0.28M a phase, though
-  5.5M of them had completed inside. Keeping them needs every exit from inside a followed call to be a host call
-  expecting the pending continuation (nested, one per pending call), and a `ret` there an indirect transfer at the
-  current depth instead of `ret_up`. Bound: ~5M host calls and returns a phase in Lua and SQLite, ~0.5% of them by the
-  counts; build only with a measured A/B.
 - **Entries for loops through calls** ([jit.md](jit.md) "Continuations are entries"; the review after PERF loop 36): a
   forward region with an edge back to its head (`for (…) f(x);`: the head, the call, the block after it branching back)
   is `looped()`, and `Region::entries` gives a region with a `loop` none, so after anything that unwinds inside `f` (a

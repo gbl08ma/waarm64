@@ -1,0 +1,8 @@
+$ node calls.ts 3        # the dev VM, the loop's core (5cabcc62)
+follow 11.5 us a round, 56006 steps
+host 18.3 us a round, 49006 steps
+host 18.3 us a round, 49006 steps
+follow 11.6 us a round, 56006 steps
+follow 11.6 us a round, 56006 steps
+host 18.4 us a round, 49006 steps
+median ns per round: follow 11567 host 18329 ; per leaf call 1.69 ns

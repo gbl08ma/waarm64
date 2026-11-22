@@ -111,17 +111,18 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, is in docs/backlog.md "Parallel SMP's code without `acc`".
 
-## State (2026-11-22, after loop 49)
+## State (2026-11-22, after loop 50)
 
-Loop 49 compiled the timers' CTL, CVAL and TVAL from the step clock in deterministic round-robin (bench/boot/REPORT.md
-"PERF loop 49"): a write stays in the block while the timer's new state fires nothing before the chunk's end, and the
-run loop drives the vCPU's timer lines into the GIC when the chunk returns; Alpine's tick keeps two of its seven
-exits (the GIC's). The userspace gate −1.0% (rounds apart), the boot's neutral; steps unchanged; the page (parallel
-SMP) unaffected. The next out-of-context review is due within ~2 loops (the timer path is new state: include it).
-Main is clean at loop 49's commit, no run pending.
+Loop 50 counted the followed calls whose callee completes inside the region and dropped them (bench/boot/REPORT.md
+"PERF loop 50"): following every callee the walk takes would remove 5-11% of the host calls (Lua 4.2M a phase), but a
+host call costs ~2 ns more than a followed one on the Mac, 0.2-0.3% of the userspace gate at most, against +4.6% wasm
+and nested exit paths on every way out of a region. No code changed. An out-of-context review of the step clock's
+timer and counter paths (loops 47 and 49; branch `review/step-clock`) ran alongside loop 50: **loop 51 fixes its
+findings**, each with its confirming test failing first, and deletes the branch on origin. Main is clean at loop 50's
+commit, no run pending.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-49" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+50" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42 and 47) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43 and 48. Built but off by default (measured slower): I8MM,
 FCMA, FP16, FHM, BF16. Where things stand: regions follow a call only when its callee can't leave them (loops 36-37,
 the gates −2.5%); the core's heap is measured and bounded (loops 38-44: the block map at 900,000 keys and 2^20
@@ -134,7 +135,7 @@ was remade from cda6cfa7's core (it loads into loop 46's).
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: followed calls whose callee completes inside the region (loop 36's follow-up) | bound ~0.5%; exits from inside a followed call as host calls to the pending continuation |
+| **Next:** the review of the step clock (`review/step-clock`): fix its findings | each with its confirming test failing first; delete the branch on origin |
 | JIT: entries for loops through calls (loop 37's review finding 5) | count first: a looped forward region's call continuations run interpreted after an unwind |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
 
