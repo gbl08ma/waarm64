@@ -25,7 +25,9 @@ the interpreter's own code.
   wasm exception handling. Exits mid-block (MMIO via `vm::Io` after a helper's `Fault(Bus)`,
   timer registers, WFI, HVC, TX full, `DEVICE`) need nothing special. Counter reads are compiled inline where the
   exit would only read the counter: from the host clock in parallel SMP's realtime mode, from the step clock in
-  deterministic round-robin (below, "System"); realtime round-robin keeps the exit.
+  deterministic round-robin (below, "System"); realtime round-robin keeps the exit. Deterministic round-robin also
+  reads and writes the timers' CTL, CVAL and TVAL inline at EL1 while a write fires nothing before the chunk's end
+  ("Timer registers from the step clock" below).
 - **Functions:** `f(vcpu, acc, left, depth) -> acc + retired`, where `vcpu` points at the `Vcpu` (the
   `Cpu` at 0, the crypto constants, `State`, the TLB's scalars, then its arrays and the transfer
   cache), `left` is the step budget (counted code; parallel SMP's polled code passes 0 and reads none: [Preemption](#preemption-parallel-smps-polled-code)), `depth` the host calls under it with an entry number above (below,
@@ -1185,6 +1187,26 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   callee, after a forward edge and at EL0 with and without the enable, and prints a hash of every reading: the
   deterministic runs compare it between the interpreter and the JIT (planted: *k* dropped changes the hash; the EL0
   check dropped fails it and timer.c).
+- **Timer registers from the step clock** (counted code in deterministic round-robin at EL1, PERF loop 49,
+  `emit::timer_mrs`, `emit::timer_msr`): MRS of CNTV_/CNTP_ CTL, CVAL and TVAL computes what `interp::platform`
+  would at the counter `end - (left - k)` (CTL's ISTATUS: enabled and the count at CVAL or past; TVAL: CVAL less the
+  count, 32 bits). An MSR stays in the block when `end` is set and the timer's new state fires nothing before the
+  chunk's end: disabled, masked, or CVAL at `end` or later (`cval >= end`; at `end` it fires at the chunk's end, as
+  the exit's next chunk, cut at that deadline, would have). The run loop cut the chunk at the timers' old deadlines,
+  so no deadline falls inside it either way. What the exit did besides is drive the timer's line into the GIC at the
+  run loop's next look; a write that lowers it (Linux's handler masks the timer that fired) would leave the GIC
+  seeing it high, so the code sets `StepClock::wrote` and the run loop drives the vCPU's two timer lines
+  (`Vm::timer_lines`) when the chunk returns, before its exit runs (an ICC_IAR1 or ISR_EL1 read, a GIC MMIO access)
+  and before the next look for an IRQ. Nothing in a chunk without exits sees the GIC, and the lines then are what the
+  exit's would be (the new state fires nothing before `end`). A write that would fire inside the chunk takes the
+  helper's exit, as at EL0 (CNTKCTL_EL1 may trap it) and while `end` is 0; those MSRs no longer end a block
+  (`sys::msr_continues`), so the exit leaves mid-block as a helper's does. Steps don't move; Alpine's ticks keep two
+  platform exits of their seven (ICC_IAR1, ICC_EOIR1: the GIC's state is the run loop's). `tests/baremetal/timerjit.c`
+  arms the physical timer a few hundred ticks ahead (the chunk's end) and the virtual one 50 and 1 ticks before
+  it, at it and 1 and 50 after it, through CVAL and TVAL, enabled before or after the compare value, hashes the
+  counter at each IRQ and the registers' readings, and masks a fired timer inline before reading ISR_EL1 and
+  ICC_IAR1 (planted: `wrote`'s refresh dropped fails it at once; the condition dropped, or `cval + 1 >= end`, moves
+  the hash and the steps; TVAL's *k* dropped or its write zero-extended moves the hash or hangs it).
   SIMD&FP instructions check `CPACR_EL1.FPEN` once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,
   shifts, moves and immediates, widening/narrowing, reductions, compares against zero, UZP/TRN/ZIP
@@ -1567,7 +1589,8 @@ system instructions, and why each stays a helper:
 - **The regime's MSRs** (TTBR0/1: 0.31M in Firefox's session, at context switches) end the block by
   design (the next block's code depends on them); **FPCR/FPSR** writes 0.18M each there (context switches too), NZCV
   and SPSel writes none worth counting; the timer and GIC registers (CNTV_CTL/CVAL, EOIR, SGI1R: 2.2M there) are the
-  run loop's (`Exit::Platform`).
+  run loop's (`Exit::Platform`): parallel SMP has no step clock (deterministic round-robin's timer registers are
+  inline: "System" above).
 - **Unmasking DAIF writes in realtime round-robin** (Node's runners, the I/O and script benchmarks; neither the gates
   nor the page) end the chunk through the helper, as before PERF loop 8: the exit is what takes an IRQ that came due
   under the mask at once (PERF loop 9). Elsewhere they stay inline while `jit::Unmask` allows ("Emission").

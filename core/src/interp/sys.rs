@@ -600,7 +600,51 @@ pub fn msr_continues(i: u32) -> bool {
     matches!(
         bits(i, 20, 5),
         TPIDR_EL0 | TPIDRRO_EL0 | SPSR_EL1 | ELR_EL1 | TPIDR_EL1 | SP_EL0 | DAIF_R
-    )
+    ) || timer_reg(bits(i, 20, 5)).is_some()
+}
+
+/// Which of a timer's registers a [`TimerReg`] access is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Timer {
+    Ctl,
+    Cval,
+    /// The signed 32-bit view of CVAL less the count.
+    Tval,
+}
+
+/// A timer's CTL, CVAL or TVAL ([`timer_reg`]): the `Cpu` offsets of its
+/// timer's CTL and CVAL, and which register it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TimerReg {
+    pub ctl: usize,
+    pub cval: usize,
+    pub reg: Timer,
+}
+
+/// The timer register system register `key` (bits 20:5 of an MRS or MSR)
+/// names, if it's one of CNTV_CTL/CVAL/TVAL_EL0 or CNTP_CTL/CVAL/TVAL_EL0:
+/// the JIT's counted code reads and writes those inline from the step clock
+/// (`jit::StepClock`, PERF loop 49), and their MSRs don't end a block (one
+/// that can't stay inline leaves through its helper's `Exit::Platform`).
+pub fn timer_reg(key: u32) -> Option<TimerReg> {
+    use core::mem::offset_of;
+    let (ctl, cval) = match key {
+        CNTV_TVAL | CNTV_CTL | CNTV_CVAL => (
+            offset_of!(Cpu, cntv_ctl_el0),
+            offset_of!(Cpu, cntv_cval_el0),
+        ),
+        CNTP_TVAL | CNTP_CTL | CNTP_CVAL => (
+            offset_of!(Cpu, cntp_ctl_el0),
+            offset_of!(Cpu, cntp_cval_el0),
+        ),
+        _ => return None,
+    };
+    let reg = match key {
+        CNTV_CTL | CNTP_CTL => Timer::Ctl,
+        CNTV_CVAL | CNTP_CVAL => Timer::Cval,
+        _ => Timer::Tval,
+    };
+    Some(TimerReg { ctl, cval, reg })
 }
 
 fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {

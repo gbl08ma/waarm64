@@ -276,8 +276,9 @@ Two modes, chosen by `VmConfig.deterministic`:
   ([testing.md](testing.md) "Step counts"). Under the JIT a counter read is compiled from the step clock
   ([jit.md](jit.md) "Counter reads from the step clock"). The guest's tick runs at its HZ in steps: Alpine's
   linux-virt (HZ=1000) arms the virtual timer once per 62,500 steps (a guest millisecond at 62.5 MHz) and takes as
-  many timer IRQs, each with seven platform exits in the gates (ICC_IAR1, ICC_EOIR1 and five of CTL and CVAL;
-  bench/boot/REPORT.md "PERF loop 47"). Fewer would need a guest-visible change (a higher CNTFRQ, or `ticks_per_insn`
+  many timer IRQs, each with two platform exits in the gates (ICC_IAR1, ICC_EOIR1; the five accesses of CTL and CVAL
+  are compiled from the step clock: [jit.md](jit.md) "Timer registers from the step clock", bench/boot/REPORT.md
+  "PERF loop 47" and "PERF loop 49"). Fewer ticks would need a guest-visible change (a higher CNTFRQ, or `ticks_per_insn`
   below 1), which moves every step count.
 - **Realtime** (I/O benchmarks, `openssl speed`, interactive use): the core imports
   `env.now_ms()` (`performance.timeOrigin + performance.now()` of the thread that creates the VM

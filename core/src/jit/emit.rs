@@ -4443,6 +4443,13 @@ fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
         step_counter(c, cx, i, k);
         return true;
     }
+    if !c.polled
+        && cx.el1
+        && let Some(t) = crate::interp::sys::timer_reg(key)
+    {
+        timer_mrs(c, cx, i, k, t);
+        return true;
+    }
     let Some(p) = plain(key, cx.el1) else {
         return false;
     };
@@ -4545,27 +4552,127 @@ fn counter_el0(c: &mut Func, cx: &Ctx, i: u32) {
 /// helper while `end` is 0 (realtime, the xHCI with an event due) and at EL0
 /// without CNTKCTL_EL1's enable (it traps).
 fn step_counter(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
-    use super::{State, StepClock};
-    const END: u32 =
-        (offset_of!(Vcpu, jit) + offset_of!(State, ticks) + offset_of!(StepClock, end)) as u32;
     let rt = bits(i, 4, 0);
     let t = 2; // i64 scratch: `end`
     c.local_get(VCPU)
-        .i64_load(END)
+        .i64_load(STEP_END)
         .local_tee(t)
         .op(EQZ + WC)
         .op(EQZ);
     counter_el0(c, cx, i);
     c.hint(true).if_();
     let before = c.regs;
-    set(c, true, rt, |c| {
-        c.local_get(t).local_get(LEFT);
-        if k != 0 {
-            c.i32_const(k as i32).op(SUB);
+    set(c, true, rt, |c| step_now(c, t, k));
+    fallback(c, cx, i, 4 * k as i64, before, xmask(rt));
+}
+
+/// The step clock's `end` ([`StepClock`](super::StepClock)) in the vCPU.
+const STEP_END: u32 = (offset_of!(Vcpu, jit)
+    + offset_of!(super::State, ticks)
+    + offset_of!(super::StepClock, end)) as u32;
+
+/// Pushes the counter at instruction `k` of the member from the step clock's
+/// `end` in local `t`: `end - (left - k)` ([`step_counter`]).
+fn step_now(c: &mut Func, t: u32, k: usize) {
+    c.local_get(t).local_get(LEFT);
+    if k != 0 {
+        c.i32_const(k as i32).op(SUB);
+    }
+    c.i64_extend_i32_u().op(SUB + W);
+}
+
+/// MRS of a timer's CTL, CVAL or TVAL at EL1 in counted code (round-robin;
+/// PERF loop 49): what `interp::platform` reads at the counter
+/// [`step_now`] gives (CTL's ISTATUS: enabled and the count at CVAL or past;
+/// TVAL: CVAL less the count, 32 bits); the helper's exit while the step
+/// clock's `end` is 0 (realtime, another `ticks_per_insn`, the xHCI with an
+/// event due).
+fn timer_mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize, t: crate::interp::sys::TimerReg) {
+    use crate::interp::sys::Timer;
+    let rt = bits(i, 4, 0);
+    let (ctl, cval) = (t.ctl as u32, t.cval as u32);
+    let end = 2; // i64 scratch
+    c.local_get(VCPU)
+        .i64_load(STEP_END)
+        .local_tee(end)
+        .op(EQZ + WC)
+        .op(EQZ)
+        .hint(true)
+        .if_();
+    let before = c.regs;
+    set(c, true, rt, |c| match t.reg {
+        Timer::Cval => {
+            c.local_get(VCPU).i64_load(cval);
         }
-        c.i64_extend_i32_u().op(SUB + W);
+        Timer::Ctl => {
+            c.local_get(VCPU).i64_load(ctl);
+            step_now(c, end, k);
+            c.local_get(VCPU).i64_load(cval).op(GE_U + WC);
+            c.local_get(VCPU).i64_load(ctl).i32_wrap_i64().op(AND);
+            c.i32_const(1).op(AND).i64_extend_i32_u();
+            c.i64_const(2).op(SHL + W).op(OR + W);
+        }
+        Timer::Tval => {
+            c.local_get(VCPU).i64_load(cval);
+            step_now(c, end, k);
+            c.op(SUB + W).i64_const(0xffff_ffff).i64_and();
+        }
     });
     fallback(c, cx, i, 4 * k as i64, before, xmask(rt));
+}
+
+/// MSR of a timer's CTL, CVAL or TVAL at EL1 in counted code (round-robin;
+/// PERF loop 49): the write stays in the block when the step clock's `end`
+/// is set and the timer's new state doesn't fire before it (disabled,
+/// masked, or CVAL at `end` or later). The run loop cut the chunk at the
+/// timers' deadlines as they were, so nothing fires within it, and the
+/// IRQ lines the write would change (masking a timer that fired) the run
+/// loop drives into the GIC when the chunk returns, before its exit or the
+/// next look at an IRQ (`StepClock::wrote`). Else the helper's exit.
+fn timer_msr(c: &mut Func, cx: &Ctx, i: u32, k: usize, t: crate::interp::sys::TimerReg) {
+    use crate::interp::sys::Timer;
+    const WROTE: u32 = (offset_of!(Vcpu, jit)
+        + offset_of!(super::State, ticks)
+        + offset_of!(super::StepClock, wrote)) as u32;
+    let rt = bits(i, 4, 0);
+    let (ctl, cval) = (t.ctl as u32, t.cval as u32);
+    // i64 scratch: `end`, the register's new value.
+    let (end, new) = (2, 3);
+    c.local_get(VCPU).i64_load(STEP_END).local_set(end);
+    get(c, true, rt);
+    match t.reg {
+        Timer::Ctl => {
+            c.i64_const(3).i64_and().local_set(new);
+        }
+        Timer::Cval => {
+            c.local_set(new);
+        }
+        Timer::Tval => {
+            c.i32_wrap_i64().op(0xac); // i64.extend_i32_s
+            step_now(c, end, k);
+            c.op(ADD + W).local_set(new);
+        }
+    }
+    // `end` set, and the new CTL not enabled-unmasked or the new CVAL at `end` or later.
+    c.local_get(end).op(EQZ + WC).op(EQZ);
+    if t.reg == Timer::Ctl {
+        c.local_get(new);
+    } else {
+        c.local_get(VCPU).i64_load(ctl).i64_const(3).i64_and();
+    }
+    c.i64_const(1).op(NE + WC);
+    if t.reg == Timer::Ctl {
+        c.local_get(VCPU).i64_load(cval);
+    } else {
+        c.local_get(new);
+    }
+    c.local_get(end).op(GE_U + WC).op(OR).op(AND);
+    c.hint(true).if_();
+    let before = c.regs;
+    c.local_get(VCPU).local_get(new);
+    c.i64_store(if t.reg == Timer::Ctl { ctl } else { cval });
+    c.local_get(VCPU).i32_const(1).i32_store(WROTE);
+    fallback(c, cx, i, 4 * k as i64, before, 0);
 }
 
 /// MSR of a register [`sys::plain_write`] names, DAIFSet, DAIFClr and DIT
@@ -4602,6 +4709,13 @@ fn msr(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
             }
             _ => return false,
         }
+        return true;
+    }
+    if !c.polled
+        && cx.el1
+        && let Some(t) = crate::interp::sys::timer_reg(bits(i, 20, 5))
+    {
+        timer_msr(c, cx, i, k, t);
         return true;
     }
     let Some(p) = plain_write(bits(i, 20, 5), cx.el1) else {
@@ -5593,6 +5707,50 @@ mod tests {
             &emit_in(0xd53be003, 0, &FLAT).unwrap_or_default(),
             &end
         ));
+    }
+
+    /// Counted code reads and writes the timers' CTL, CVAL and TVAL at EL1
+    /// from the chunk's `StepClock` (PERF loop 49); the helper at EL0.
+    #[test]
+    fn timer_registers_inline_from_the_step_clock() {
+        use crate::jit::wasm::uleb;
+        use crate::jit::{State, StepClock};
+        const EL1: Ctx = Ctx { el1: true, ..FLAT };
+        let op = |code: u8, align: u8, off: usize| {
+            let mut b = vec![code, align];
+            uleb(&mut b, off as u64);
+            b
+        };
+        let ticks = offset_of!(Vcpu, jit) + offset_of!(State, ticks);
+        let end = op(0x29, 3, ticks + offset_of!(StepClock, end));
+        let wrote = op(0x36, 2, ticks + offset_of!(StepClock, wrote));
+        let (ctl, cval) = (
+            offset_of!(Cpu, cntv_ctl_el0),
+            offset_of!(Cpu, cntv_cval_el0),
+        );
+        let pctl = offset_of!(Cpu, cntp_ctl_el0);
+        // MRS X3, CNTV_CTL_EL0: ISTATUS from `end - (left - 2)` against CVAL.
+        let r = emit_in(0xd53be323, 2, &EL1).unwrap();
+        assert!(has(&r, &end) && has(&r, &op(0x29, 3, ctl)) && has(&r, &op(0x29, 3, cval)));
+        assert!(has(&r, &[0x20, LEFT as u8, 0x41, 2, 0x6b, 0xad, 0x7d]));
+        assert!(!has(&r, &wrote));
+        // MSR CNTV_CVAL_EL0, X3: CVAL stored, CTL only read; the run loop told.
+        let w = emit_in(0xd51be343, 0, &EL1).unwrap();
+        assert!(has(&w, &end) && has(&w, &op(0x37, 3, cval)) && has(&w, &wrote));
+        assert!(!has(&w, &op(0x37, 3, ctl)));
+        // MSR CNTV_CTL_EL0, X3: CTL stored.
+        let w = emit_in(0xd51be323, 0, &EL1).unwrap();
+        assert!(has(&w, &op(0x37, 3, ctl)) && !has(&w, &op(0x37, 3, cval)));
+        // MSR CNTP_TVAL_EL0, X3: the physical timer's CVAL from the counter.
+        let w = emit_in(0xd51be203, 1, &EL1).unwrap();
+        let pcval = op(0x37, 3, offset_of!(Cpu, cntp_cval_el0));
+        assert!(has(&w, &pcval) && has(&w, &op(0x29, 3, pctl)));
+        // At EL0 (CNTKCTL_EL1 may trap them), the helper; and the MSRs don't end a block.
+        assert_eq!(emit_in(0xd53be323, 0, &FLAT), None);
+        assert_eq!(emit_in(0xd51be343, 0, &FLAT), None);
+        for w in [0xd51be323, 0xd51be343, 0xd51be303, 0xd51be203] {
+            assert_eq!(crate::jit::block::end(w), crate::jit::block::End::No);
+        }
     }
 
     #[test]

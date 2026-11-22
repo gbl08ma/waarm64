@@ -211,13 +211,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
   sampling. Measure with V8's own counters before trusting the median.
-- **The gates' timer register accesses inline** (PERF loop 47's counts): Alpine's linux-virt ticks at HZ=1000, once
-  per 62,500 steps in deterministic time, and each tick costs seven `Exit::Platform` exits: ICC_IAR1, ICC_EOIR1 and
-  five accesses of CNTV_CTL/CVAL (0.83M of the userspace benchmark's 1.16M platform exits, 0.21M of the boot's 0.29M).
-  At the ~250 ns an exit cost on the Mac in loop 47 that bounds the timer's five at ~2% of `alpine_user_jit_total`.
-  Reads (CTL's ISTATUS, CVAL) can come from the step clock (`jit::StepClock`); a write may stay in the block only when
-  the timer's new deadline isn't before the chunk's end (`end`), which the run loop cut at the old one; else the exit.
-  The GIC's two stay exits (its state is the run loop's). Only the gates gain.
 - **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds
   checks V8 keeps on Linux arm64. Don't fit the design to it.
 - kvm-unit-tests `timer` runs slower under the JIT than interpreted (short blocks around timer

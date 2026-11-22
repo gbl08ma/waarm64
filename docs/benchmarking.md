@@ -495,7 +495,8 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   and miss-function entries, static chains backward (target PA ≤ source PA) and forward (direct, through the jump
   cache, by VA), host calls and returns, polled code's polls (PERF loop 31); how chunks ended (the budget or an exit, by kind, with their mean steps; for
   round-robin runs too since PERF loop 47, with the virtual timer's arming rate, the IRQs taken, the platform exits by
-  register and the counter-read exits, by phase); for parallel runs two latencies: a vCPU's own timer line seen past its deadline, and an IRQ line's rise
+  register, the timer registers' exits by register with those that could have stayed inline (PERF loop 49), and the
+  counter-read exits, by phase; the arming rate counts only arming writes that exit); for parallel runs two latencies: a vCPU's own timer line seen past its deadline, and an IRQ line's rise
   (`Vm::refresh`) to its IRQ taken or its WFI completed, and the run loop's time from a chunk that ended by its steps
   to the next one's start (PERF loop 32). `--chunk N` runs the parallel guests with N-step chunks (`vm_set_chunk`), as
   `smp_alpine_jit` and `smp_user_jit*` do with `?chunk=N` (`bench/run.ts --query=chunk=N`). The tallies (`core/src/tally.rs`) live in the `Vcpu` and past

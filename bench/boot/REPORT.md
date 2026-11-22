@@ -6961,3 +6961,72 @@ CI: `scripts/ci.sh` (its second run: the first found web/vm.ts unformatted), `sc
 `scripts/ci-debian.sh` (its second run: the first's reload check typed `cat` at a serial login that came before the
 boot's last status lines, which overwrote the files' output; tests/page-debian.test.ts now waits for
 `systemctl is-system-running --wait` and clears the screen first) passed.
+
+## PERF loop 49: the timer registers from the step clock (2026-11-22)
+
+The backlog's follow-up of loop 47: Alpine's tick (HZ=1000, once per 62,500 steps) cost seven `Exit::Platform` exits
+in the deterministic gates, five of them the virtual timer's CTL and CVAL. Raw: `results/perf49/` (the diagnostic
+counts `counts-base.json` and `counts-new.json`, the Mac A/B's JSON, the static counts `codestats.json`).
+
+**Counts** (the diagnostic core, `bench/boot/preempt-counts.ts boot user`, which now splits the timer registers'
+exits by register and counts those that could have stayed inline: a chunk with a step clock, EL1, and for a write a
+new state that fires nothing before the chunk's end; Node on the dev VM, deterministic, 1 vCPU):
+
+| | boot (2.65 G steps) | userspace (10.43 G) |
+|---|---|---|
+| CTL read / CVAL, TVAL read | 83,035 / 0 | 331,983 / 0 |
+| CTL written / CVAL, TVAL written | 83,035 / 41,555 | 331,983 / 166,020 |
+| reads that could read the step clock | 83,035 (all) | 331,983 (all) |
+| writes whose new state fires nothing before the chunk's end | 124,575 (all) | 497,988 (all) |
+| of them, writes that change the timer's line | 41,478 | 165,961 |
+| physical timer's accesses | 0 | 0 |
+
+Per tick: CTL read and written (the handler's IMASK, which lowers the line), CTL read, CVAL written (62,500 ahead,
+past the chunk's end: chunks are at most 32,768 steps) and CTL written (enabled). Every one could stay; the third
+that lowers the line needs the GIC told before anything reads it. At loop 47's ~250 ns an exit on the Mac, the
+bound was ~0.2 s of the userspace gate (~2%) and ~0.05 s of the boot's (~1.4%).
+
+**What was built** (docs/jit.md "Timer registers from the step clock"): in counted code at EL1, MRS of CNTV_/CNTP_
+CTL, CVAL and TVAL computes the platform's answer at the step clock's counter (`end - (left - k)`, loop 47's), and
+an MSR stays in the block when `end` is set and the new state is disabled, masked, or has CVAL ≥ `end`; it sets
+`StepClock::wrote`, and the run loop drives that vCPU's timer lines into the GIC when the chunk returns, before its
+exit (an ICC_IAR1, an EOIR, ISR_EL1, a GIC MMIO access) and its next look for an IRQ. Otherwise the helper's exit as
+before (realtime, `ticks_per_insn` ≠ 1, the xHCI with an event due, EL0, a write that would fire inside the chunk).
+The timer MSRs no longer end a block. 4 bytes a vCPU, in the `State`'s padding (the TLB's 128-byte alignment kept
+every offset: `Vcpu::tlb` stays at 1,664); no ABI change. Steps don't move: Alpine 2,650,367,147 and the userspace
+benchmark 10,431,311,691, as in tests/steps.txt; IRQs taken and GIC exits identical (42,060 and 166,780). Timer
+register exits after: 5,415 in each (the reads and writes in code still interpreted early in the boot); platform
+exits 0.29M → 0.09M (boot), 1.16M → 0.34M (userspace). Node (dev VM, diagnostic core, one run each): boot 4.67 →
+4.51 s, userspace 11.46 → 11.24 s.
+
+**The gates** (the Mac host, M4, Chrome for Testing 158.0.8127.36 headless; `bench/interp/ab-mac.sh`, one round a
+call, the order base-new, new-base, base-new; ms, each round's median; base `b166af24`):
+
+| | base | new | |
+|---|---|---|---|
+| `alpine_jit_total` | 3,671 · 3,759 · 3,748; **3,748** | 3,745 · 3,751 · 3,726; **3,745** | −0.1%, rounds overlapping: neutral |
+| `alpine_user_jit_total` | 10,032 · 10,036 · 10,058; **10,036** | 9,936 · 9,957 · 9,866; **9,936** | **−1.0%**, rounds apart, every pair faster (−1.0, −0.8, −1.9%) |
+| compress / Lua / SQLite (round 3) | 1,441 / 2,509 / 1,845 | 1,405 / 2,466 / 1,794 | −2.5 / −1.7 / −2.7% |
+
+Half the bound on the userspace gate: ~0.1 s against 0.82M exits removed, ~120 ns an exit (loop 47's estimate came
+from the counter reads, whose exits return to a hotter path). The boot's 0.21M exits (~25 ms at that rate) are
+under its noise. Compile side, base → new: `emitNs` 169-173 → 172-175 ms (boot), 237-238 → 236-239 ms (userspace);
+`compileNs` 50 → 50 and 75 → 75 ms; wasm bytes 11,690,440 → 11,691,014 (boot), 15,901,652 → 15,902,225
+(userspace). Static code of the boot's 315 modules (`bench/jit/codestats.ts`, every function in TurboFan): arm64
+instructions 7,603,150 → 7,603,634, code bytes 28,882,744 → 28,884,544; x64 instructions 5,994,072 → 5,994,371, code
+bytes 26,188,880 → 26,190,324; per function all within 0.1%. Memory: none (the flag sits in padding). **Kept.**
+Only the deterministic gates gain: the page runs parallel SMP, whose timer and GIC registers stay exits.
+
+Tests: `tests/baremetal/timerjit.c` (the physical timer armed a few hundred ticks ahead sets the chunk's end; the
+virtual one armed 50 and 1 before it, at it, 1 and 50 after it and already due, through CVAL and TVAL, enabled
+before or after the compare value; the counter at every IRQ and the registers' readings hashed to the console,
+which the deterministic runs compare between the interpreter, the JIT and JIT-stress; a fired timer masked inline
+then ISR_EL1 and ICC_IAR1 read with IRQs masked; passes on QEMU TCG and on the M4 through hvf, where a masked
+timer's IRQ can come again while its line falls, so the oracles check only that each fired) and the emitter's
+`timer_registers_inline_from_the_step_clock`. Planted: the run loop's line refresh dropped (exit 10, the ISR read);
+the deadline condition dropped (the hash and steps differ; the JIT run hangs to its budget); `cval + 1 >= end`
+(an off-by-one, the hash and steps differ under the JIT and JIT-stress); TVAL's *k* dropped (the hash differs);
+TVAL's write zero-extended (the run hangs). The first version of the test read ISR_EL1 right after arming, an exit
+that re-cut the chunk at the new deadline and hid the dropped condition (unmask.c caught it then); the read moved
+to where the line must be low.
+CI: `scripts/ci.sh`, `scripts/ci-jit.sh` and `scripts/ci-debian.sh` passed (each first run).

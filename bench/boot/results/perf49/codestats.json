@@ -1,0 +1,49 @@
+{
+ "date": "2026-11-22T06:06:17.638Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "/tmp/claude-501/l49/mb",
+  "/tmp/claude-501/l49/mn"
+ ],
+ "results": {
+  "arm64": {
+   "/tmp/claude-501/l49/mb": {
+    "functions": 7228,
+    "insns": 7603150,
+    "bytes": 28882744,
+    "slots": 112988,
+    "frame": 1417392
+   },
+   "/tmp/claude-501/l49/mn": {
+    "functions": 7226,
+    "insns": 7603634,
+    "bytes": 28884544,
+    "slots": 112964,
+    "frame": 1417511
+   }
+  },
+  "x64": {
+   "/tmp/claude-501/l49/mb": {
+    "functions": 7228,
+    "insns": 5994072,
+    "bytes": 26188880,
+    "slots": 100016,
+    "frame": 1231593
+   },
+   "/tmp/claude-501/l49/mn": {
+    "functions": 7226,
+    "insns": 5994371,
+    "bytes": 26190324,
+    "slots": 100002,
+    "frame": 1231674
+   }
+  }
+ }
+}

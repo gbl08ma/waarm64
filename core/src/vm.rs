@@ -1141,15 +1141,15 @@ impl Vm {
             // A counter read inline (`jit::StepClock`) where its exit would only read the counter:
             // deterministic, a tick a step, the xHCI quiet.
             let inline = !realtime && quiet && self.cfg.ticks_per_insn == 1;
-            self.vcpus[c].jit.ticks = jit::StepClock {
-                end: if inline {
-                    self.steps + n + self.skipped
-                } else {
-                    0
-                },
+            let end = if inline {
+                self.steps + n + self.skipped
+            } else {
+                0
             };
+            self.vcpus[c].jit.ticks = jit::StepClock { end, wrote: 0 };
             let (k, e) = self.chunk(c, n);
             self.vcpus[c].jit.unmask = jit::Unmask::default();
+            let wrote = self.vcpus[c].jit.ticks.wrote != 0;
             self.vcpus[c].jit.ticks = jit::StepClock::default();
             #[cfg(feature = "diag")]
             {
@@ -1159,6 +1159,15 @@ impl Vm {
                 crate::tally::add(d, crate::tally::END_STEPS + kind, k);
             }
             self.retire(k);
+            if wrote {
+                self.timer_lines(c);
+            }
+            #[cfg(feature = "diag")]
+            if let Some(Exit::Platform(i)) = e
+                && sys::is_timer_reg(i)
+            {
+                self.tally_timer(c, i, end);
+            }
             self.publish();
             if let Some(e) = e
                 && let Some(kind) = self.handle(e)
@@ -1330,6 +1339,18 @@ impl Vm {
         spis(p, &self.shared);
     }
 
+    /// Drives vCPU `c`'s timer lines into the GIC at the counter now: after a
+    /// chunk in which its timer registers were written inline
+    /// (`jit::StepClock::wrote`), as each write's exit would have at the run
+    /// loop's next look. Its new state fires nothing before the chunk's end,
+    /// so the lines are what they'd have been from the write on.
+    fn timer_lines(&mut self, c: usize) {
+        let (vt, pt) = timers(&self.vcpus[c].cpu, self.now());
+        let gic = &mut self.plat.get_mut().gic;
+        gic.set_level(c, IRQ_VTIMER, vt);
+        gic.set_level(c, IRQ_PTIMER, pt);
+    }
+
     /// The earliest compare value of an enabled, unmasked timer of an on vCPU
     /// that hasn't fired yet.
     fn next_deadline(&self) -> Option<u64> {
@@ -1359,6 +1380,41 @@ impl Vm {
         self.next_deadline().map_or(u64::MAX, |t| {
             (t - self.now()).div_ceil(self.cfg.ticks_per_insn)
         })
+    }
+
+    /// The diagnostic build's tally of a timer register exit `i` of vCPU `c` in a chunk whose step clock
+    /// reads `end` at its end (0: none): [`crate::tally::TIMER_ACC`].
+    #[cfg(feature = "diag")]
+    fn tally_timer(&mut self, c: usize, i: u32, end: u64) {
+        use crate::tally::{TIMER_ACC, add};
+        let (read, cvalish) = (i & 1 << 21 != 0, i >> 5 & 7 != 1);
+        let (now, frq) = (self.now(), self.cfg.cntfrq);
+        let d = &self.shared.cpus[0].counters.diag;
+        add(d, TIMER_ACC + (!read as usize) * 2 + cvalish as usize, 1);
+        let cpu = &self.vcpus[c].cpu;
+        // CRm 2: the physical timer's (CNTP_*), 3: the virtual one's.
+        let phys = i >> 8 & 15 == 2;
+        add(d, TIMER_ACC + 7, phys as u64);
+        let inline = end != 0 && cpu.el() == 1;
+        if read {
+            add(d, TIMER_ACC + 4, inline as u64);
+            return;
+        }
+        let mut new = cpu.clone();
+        platform(&mut new, i, now, frq, false);
+        let (ctl, cval) = if phys {
+            (new.cntp_ctl_el0, new.cntp_cval_el0)
+        } else {
+            (new.cntv_ctl_el0, new.cntv_cval_el0)
+        };
+        if inline && (ctl & 3 != 1 || cval >= end) {
+            add(d, TIMER_ACC + 5, 1);
+            add(
+                d,
+                TIMER_ACC + 6,
+                (timers(cpu, now) != timers(&new, now)) as u64,
+            );
+        }
     }
 
     /// Completes an exit of the current vCPU; `Some` ends the run with that kind.

@@ -21,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
 /** core/src/tally.rs's slots. */
 const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
 const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
-const N = 72, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68;
+const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
 
 type Tallies = number[];
 type Phase = { name: string; steps: number; t: Tallies };
@@ -85,6 +85,7 @@ function print(r: Run) {
     line('  max ticks ahead', (s, t) => (s === r.steps ? String(t[TIMER_SET + 2]) : '-'));
     line('IRQs taken', (_, t) => String(t[IRQS]));
     ['GIC CPU i/f read', 'GIC CPU i/f written', 'timer CTL/CVAL/TVAL', 'other'].forEach((n, k) => line(`platform: ${n}`, (_, t) => String(t[PLATFORM_BY + k])));
+    ['CTL read', 'CVAL/TVAL read', 'CTL written', 'CVAL/TVAL written', '  reads with a step clock at EL1', '  writes not firing before the chunk\'s end', '    of them changing the timer line', '  physical timer\'s'].forEach((n, k) => line(`timer: ${n}`, (_, t) => String(t[TIMER_ACC + k])));
     line('counter-read exits', (_, t) => String(t[END_AT + 9]));
     line('  steps a read', (s, t) => (t[END_AT + 9] ? s / t[END_AT + 9] : 0).toFixed(0));
     return;

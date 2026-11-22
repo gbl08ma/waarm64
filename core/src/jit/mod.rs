@@ -102,6 +102,11 @@ pub struct State {
 #[derive(Clone, Copy, Default)]
 pub struct StepClock {
     pub end: u64,
+    /// Set by a timer register write that stayed in the block (`emit::timer_msr`,
+    /// PERF loop 49): the run loop drives the vCPU's timer lines into the GIC
+    /// when the chunk returns, as the write's exit would have before anything
+    /// looked at them.
+    pub wrote: u32,
 }
 
 /// [`State::unmask`]: an MSR that unmasks IRQs stays in the block (no

@@ -9,7 +9,7 @@
 //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
 
 /// Words in each table.
-pub const N: usize = 72;
+pub const N: usize = 80;
 
 /// A region's loop back-edge taken (a `br` to the head's `loop`).
 pub const BACK_EDGE: u32 = 0;
@@ -90,6 +90,11 @@ pub const IRQS: usize = 67;
 /// (ICC_IAR1 and kin), written (EOIR1, DIR, PMR, SGI1R, …), the timers' CTL, CVAL and TVAL, the rest (ISR_EL1,
 /// CNTFRQ_EL0, RNDR).
 pub const PLATFORM_BY: usize = 68;
+/// Round-robin's timer register exits (CTL, CVAL, TVAL of either timer; PERF loop 49): CTL read, CVAL or TVAL
+/// read, CTL written, CVAL or TVAL written; then (`+ 4`) the reads in a chunk with a step clock at EL1 (they
+/// could read it inline), the writes there whose new state doesn't fire before the chunk's end, those of them
+/// that change the vCPU's timer line at the write, and the physical timer's accesses.
+pub const TIMER_ACC: usize = 72;
 
 /// The [`END`] kind of a chunk that ended with exit `e` (`None`: no exit; `full`: the chunk's steps all ran).
 #[cfg(feature = "diag")]
