@@ -1,9 +1,9 @@
 # Mesa 26.3 on our virgl: GTK4 finds no EGL config — handover
 
-A brief for a fresh session: find why GTK4 gets no EGL config from Mesa 26.3's virgl driver on our device, fix it on
-our side (the emulator), and bring the `arch-3d` demo back. Read CLAUDE.md first; then docs/graphics.md (the guest's
-3D, "The caps", GTK4), `web/virgl.ts` (`virglCaps`) and docs/backlog.md "GTK4 finds no EGL config on Mesa 26.3's
-virgl".
+A brief for a fresh session: GTK4 gets no EGL config from Mesa 26.3; the cause is found (below: a Mesa regression);
+what's left is the way out (the user's call) and bringing the `arch-3d` demo back. Read CLAUDE.md first; then docs/graphics.md (the guest's
+3D, "The caps", GTK4), `web/virgl.ts` (`virglCaps`) and docs/backlog.md "GTK4 finds no EGL config on Mesa
+26.3".
 
 ## The problem (found 2026-11-22)
 
@@ -19,32 +19,23 @@ With 26.3.1, every GTK4 program on virgl gets no EGL config: a GtkGLArea shows "
   Firefox (WebRender) still render. So EGL works for them; what GTK asks for doesn't match any config any more.
 - Seen on headless Chromium's SwiftShader (the dev VM). Not yet checked on a real GPU (the Mac: `bench/gpu/sway-mac.sh`).
 
-**The first lead to rule out: Vulkan.** GTK4 tries Vulkan first (Mesa's virtio ICD, `vulkan-virtio`, from the same
-Mesa) and falls back to GL (docs/graphics.md "GTK4"). On 26.3.1, `GDK_DEBUG=opengl` printing nothing at all suggests
-GDK never initialised EGL, rather than finding no config; the 26.3.1 run did print `Vulkan: Loader Message:
-setup_loader_term_phys_devs: Failed to detect any valid GPUs` and a `vkEnumeratePhysicalDevices()` error (whether
-26.2.7 prints the same wasn't recorded). Try `GDK_DISABLE=vulkan` (and `GSK_RENDERER=gl`) on 26.3.1 first, and diff
-the whole `GDK_DEBUG=opengl,vulkan` output between the two Mesas. If that's it, the question becomes what 26.3's virtio
-ICD now does on a device without Venus (our virtio-gpu's capsets: a machine without Vulkan offers none for Venus).
-(Not the same thing as backlog "maintenance8's cases wait for the guest's Mesa 26.3", which is Venus picking up
-maintenance8; but 26.3 is now the port's, so that item is actionable too: rebuild the dEQP-VK guest and move the list.)
+## The cause (found 2026-11-22): a Mesa regression, not ours
 
-**Ruled out on 2026-11-22** (26.3.1, the rebuilt image, virgl on SwiftShader): `GDK_DISABLE=offload,vulkan` changes
-nothing (still "No EGL configuration available"). `EGL_LOG_LEVEL=debug` prints nothing from GTK's process, and
-`GDK_DEBUG=opengl,dmabuf,misc` (211 lines: the globals, shm formats, sway's dmabuf table of 90 entries) has no GL or
-EGL line at all: **GTK never reaches EGL**, so look at what GDK checks before `gdk_display_init_egl` (GTK 4.24's
-`gdk/wayland/gdkdisplay-wayland.c` and `gdk/gdkdisplay.c`: `gdk_display_prepare_gl`, its reasons to skip GL, e.g. a
-software or unsupported device seen through `EGL_EXT_device_query`, epoxy finding libEGL), and only then at Mesa's
-configs. On 26.2.7 the same command prints `EGL API version 1.5 found …` first.
-
-If not, the likely shape (not verified): Mesa's EGL/DRI builds its config list from the driver's formats (the gallium
-screen's `is_format_supported` with display-target/scanout bindings, or a new requirement in 26.3's dri2/kopper
-config code), and our device's caps (`virglCaps`, what virglrenderer's host side reports) no longer give a format
-or binding 26.3 now checks, so the configs GTK wants (window surface, RGBA8888, alpha, ES 3 renderable; GTK uses
-`EGL_EXT_config_select_group`, `EGL_KHR_no_config_context`) disappear. Possibly Wayland-platform only. Mesa is MIT:
-its source can be read and quoted (THIRD_PARTY.json rules for anything ported). Compare 26.2.7 and 26.3.1 in
-`src/gallium/drivers/virgl/`, `src/gallium/winsys/virgl/`, `src/egl/drivers/dri2/` (`dri2_add_config`,
-`platform_wayland.c`) and `src/gallium/frontends/dri/` (the config list).
+- GTK's "No EGL configuration available" comes from `gdk_display_create_egl_config` (GTK 4.24.1 `gdk/gdkdisplay.c`):
+  EGL initialised, but `eglChooseConfig({WINDOW_BIT, RGB_BUFFER, R8 G8 B8 A8})` returned 0. (The "EGL API version"
+  debug line is printed only after a config is chosen: GDK did reach EGL.)
+- Mesa `338afb32f86` ("mesa: don't advertise APIs that are not built", MR 46169; in 26.3.1 as `1224ff36188`):
+  `_mesa_get_version` returns 0 for `API_OPENGLES` when GLES1 isn't built (Arch: `-D gles1=disabled`; the guest has
+  no libGLESv1), so no config gets `EGL_OPENGL_ES_BIT`. `eglChooseConfig`'s default `EGL_RENDERABLE_TYPE` is
+  `EGL_OPENGL_ES_BIT` (the spec's, `eglconfig.c`), and GDK doesn't set it: nothing matches. Every driver, every
+  platform; real GPUs too: mesa/mesa#16934 (radeonsi, open, "regression"), Satty #831, agterm-omarchy #485.
+- Measured (`bench/results/local/eglconfigs.py`: Python ctypes, Wayland platform, in the sway session):
+  26.2.7: RGBA8888 configs `RENDERABLE_TYPE` 0x4d, GDK's attributes match 15. 26.3.1: 105 configs, all 0x4c, GDK's
+  attributes match 0, and 15 with `EGL_RENDERABLE_TYPE=EGL_OPENGL_ES2_BIT` added.
+- Nothing in our caps or device can set the bit (it's compiled out). **The way out is the user's call:** wait for an
+  upstream fix (a Mesa revert or fix, or GTK setting `EGL_RENDERABLE_TYPE`) to reach Arch's port and rebuild the
+  image; or a workaround in the desktop image (e.g. an `LD_PRELOAD` shim adding the attribute to `eglChooseConfig`,
+  which needs a build in Podman).
 
 ## What's at hand
 
@@ -60,16 +51,14 @@ its source can be read and quoted (THIRD_PARTY.json rules for anything ported). 
   before a `key`.
 - **The repro in the guest** (as the user, in sway): `GDK_DEBUG=opengl GDK_DISABLE=offload gtk4-demo --run=shadertoy`
   (`GDK_DISABLE=offload`: another, known bug; docs/backlog.md "GTK4's graphics offload kills a GtkGLArea on virgl").
-- **The guest has no compiler.** Mesa-utils' `eglinfo` no longer lists configs. To see the configs on both versions,
-  build a small static aarch64 program (`eglGetConfigs` plus each config's attributes; `eglChooseConfig` with what
-  GDK asks for) in Podman (images/ rules: rootless Podman, never cross toolchains on the host) and `put` it into the
-  guest; or install `gcc` in a copy of the image with `pacman -S` (the guest needs a network: the page's).
-  `EGL_LOG_LEVEL=debug` and `MESA_DEBUG` are worth a try first.
+- **The guest has no compiler**, but it has Python: `bench/results/local/eglconfigs.py` (git-ignored) lists the
+  configs and GDK's `eglChooseConfig` through ctypes (`put` it, then `user python3 /tmp/eglconfigs.py`). A `quit` in
+  the same command file as other commands overwrites their output: give it its own file.
 
 ## The fix and the checks
 
-- The fix is on our side if it's in our caps or device (`web/virgl.ts`, the renderer). If it's a Mesa bug (a check
-  that real hardware passes only by accident), say so with the evidence and propose the least change on our side.
+- The cause isn't in our caps or device (above), so no 3D CI follows from it. A workaround in the image is an image
+  change (images/arch/desktop/), checked on the page with both Mesas.
 - A change to the caps or the renderer is a 3D change: `scripts/ci-graphics.sh` and `scripts/ci-deqp.sh` (a sample;
   `--full` before the end) besides `scripts/ci.sh`; dEQP's pass lists are the gate. Plant a check that fails without
   the fix (a test at the cheapest layer: the caps' unit tests if the cause is a cap).

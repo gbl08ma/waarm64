@@ -401,15 +401,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `bench/gpu/chromium-flicker.ts` saw one frame one step back in two of four runs (~1,000 frames each), none on
   `?gpu=2d`. Not traced: a remaining order between contexts (the decoder's context passes held ones), or the screen's
   scanout.
-- **GTK4 finds no EGL config on Mesa 26.3's virgl** (found 2026-11-22 with the desktop image's packages of the day):
-  with Mesa 26.3.1 (Arch's port, GTK 4.24.1) a GtkGLArea says "No EGL configuration available" and GTK draws in
-  software; with 26.2.7 and the same GTK, GDK selects an R8G8B8A8 config and a GLES 3.0 context and gtk4-demo's
-  shadertoy draws (`GDK_DEBUG=opengl`). sway, Firefox and `eglinfo` still get GLES 3.0 and GL 2.1 on 26.3.1. Not
-  traced: what Mesa 26.3 now wants from the device for a config (a cap of `virglCaps`, a format's binding), likely
-  ours to fix. Mesa-utils' `eglinfo` no longer lists configs: a small program calling `eglGetConfigs` with each
-  config's attributes on both versions shows the difference. The `arch-3d` demo (the shader demo on the desktop) is out
-  of `deploy/disks/demos.json` until then; its entry is in git history (before 2026-11-22), with its countdown's
-  `run` and notes. The arch port keeps no old Mesa, so holding 26.2 isn't an option.
+- **GTK4 finds no EGL config on Mesa 26.3** (found 2026-11-22 with the desktop image's packages of the day; traced
+  the same day: a Mesa regression on every driver, not virgl's or our caps'): with Mesa 26.3.1 (Arch's port, GTK
+  4.24.1) a GtkGLArea says "No EGL configuration available" and GTK draws in software. Mesa `338afb32f86` ("mesa:
+  don't advertise APIs that are not built", MR 46169, picked into 26.3.1 as `1224ff36188`) stops a build without
+  GLES1 (Arch's `-D gles1=disabled`) from putting `EGL_OPENGL_ES_BIT` in any config's `EGL_RENDERABLE_TYPE`; the EGL
+  spec's default for that attribute in `eglChooseConfig` is `EGL_OPENGL_ES_BIT`, and GDK's
+  `gdk_display_create_egl_config` (GTK 4.24.1 and main) doesn't set it, so nothing matches. Measured in the guest
+  (`bench/results/local/eglconfigs.py`, Python ctypes on the Wayland platform): 26.2.7's RGBA8888 configs have
+  `RENDERABLE_TYPE` 0x4d and GDK's attributes match 15; 26.3.1's have 0x4c and match 0, or 15 with
+  `EGL_RENDERABLE_TYPE=EGL_OPENGL_ES2_BIT` added. Upstream: mesa/mesa#16934 (radeonsi, open, labelled regression);
+  other projects report it on real GPUs (Satty #831). Nothing in our caps or device can bring the bit back. The way
+  out is an upstream fix (Mesa or GTK) reaching Arch's port, or a workaround in the desktop image. The `arch-3d` demo
+  (the shader demo on the desktop) is out of `deploy/disks/demos.json` until then; its entry is in git history
+  (before 2026-11-22), with its countdown's `run` and notes. The arch port keeps no old Mesa, so holding 26.2 isn't
+  an option.
 - **GTK4's graphics offload kills a GtkGLArea on virgl** (graphics.md "The guest's 3D: Mesa's virgl"): GTK hands sway the GL area's
   texture as a dmabuf, and Mesa's virgl backs a texture that isn't shared with a 1-byte staging BO (the host copies
   transfers both ways), so the dmabuf is smaller than stride × height and the compositor disconnects the client. A
@@ -1361,7 +1367,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     restore" measured dhcpcd's: 5.6 s after the page's load).
   - Pieces are fetched whole where the host has ranges too (each piece hashed before use); an A/B of the Desktop
     Demo's boot with ranges would say whether that costs anything.
-- **The desktop demos' loose ends** (arch-desktop; arch-3d is out: "GTK4 finds no EGL config on Mesa 26.3's virgl" above; remote-disks.md "A desktop"):
+- **The desktop demos' loose ends** (arch-desktop; arch-3d is out: "GTK4 finds no EGL config on Mesa 26.3" above; remote-disks.md "A desktop"):
   - **The desktop image's 944 pieces are in the site twice** (`desktop/`'s own and the shared `pieces/`) until the
     Desktop Demo's `desktop/` is published from the shared `pieces/` (a manifest pointing there, then its old pieces
     dropped): ~1.9 GB and 944 of the site's files.
