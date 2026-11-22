@@ -7243,3 +7243,70 @@ cache's tails already are once compiled, "Tried and not kept"). A typed table wo
 rather than made by the page and shared: dropped, nothing to gain.
 
 Memory: none (nothing built). Compiled code unchanged (no x64 counts). `scripts/ci-fast.sh` passed (docs and data).
+
+## PERF loop 55: parallel SMP's polled code without `acc`, built and measured (2026-11-22)
+
+Stage 3 of docs/backlog.md "Parallel SMP's code without `acc`": the design of PERF loop 53 (docs/abi.md "PERF:
+parallel SMP's code without `acc`", ABI 73) built. Polled code has two modes, counted (as before) and uncounted (`acc`
+the constant 0); the page counts while its status bar shows MIPS or JIT share (the default layout does; a "Faster
+defaults" preset drops them), the benchmarks count unless `--query=uncounted`; a ticker worker (`web/ticker-worker.ts`)
+ends uncounted chunks at the vCPU's timer deadline and every 1 ms, the compile worker when modules are ready; a mode
+change flushes the JIT's code. **Built and tested, but on the Mac the uncounted mode doesn't beat the base: Firefox's
+pages session even (73.2 s against 73.1, overlapping), the parallel gates +0.4 to +0.7%. Loop 53's −3.6% went to
+something the mode adds, and the counters point at two things: 18% more modules (+19% compile time) and the platform
+lock's contention ×2.7.** Round-robin's code and gates are unchanged. Data: `bench/boot/results/perf55/` (its README).
+
+**The code** (`codestats.json`: `bench/jit/codestats.ts` on Alpine's parallel boot on 4 vCPUs, dumped by each core in
+the dev VM's Node; per function, against the base): counted arm64 −0.6% instructions, frame memory operands even; x64
+−0.5%, −0.1%. **Uncounted arm64 −3.9% instructions, −11.4% frame memory operands** (−6.5% slots); x64 −4.7% and
+−12.9% (−8.0%). As loop 34's measurement core had it (−9%, −10 to −11%): the code is what the bound was measured on.
+Round-robin's code is the base's byte for byte (Alpine's boot dumped by both cores), and `tests/steps.txt` didn't move.
+
+**The gates** (M4, macOS, Chrome for Testing 158.0.8127.36; `gates.sh`, 3 rounds, the three arms alternated with the
+first rotated each round, nothing on the dev VM; ranges of the rounds' medians, ms; `p55-*.json`, `summary.py`):
+
+| | base | counted | uncounted | uncounted against base |
+|---|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2754-2781 / 5298-5346 | 2788-2825 / 5350-5371 | 2786-2815 / 5335-5370 | +0.6% (no overlap) / +0.4% |
+| n2 script / total | 2383-2391 / 4938-4965 | 2379-2411 / 4940-4986 | 2403-2411 / 4981-4986 | +0.7% / +0.6% (both no overlap) |
+| n4 script / total | 2305-2340 / 4908-4948 | 2343-2352 / 4942-4974 | 2340-2379 / 4937-4999 | +0.8% / +0.6%, overlapping |
+| `smp_user_jit_4` total | 10909-11154 | 10894-11051 | 10743-11382 | +0.5%, overlapping |
+| compress / Lua / churn / SQLite | 1182-1227 / 2479-2560 / 737-760 / 1725-1880 | 1214-1333 / 2339-2444 / 745-793 / 1736-1874 | 1156-1312 / 2333-2438 / 758-769 / 1685-2136 | −2.4 / **−5.7** / +1.3 / +8.5% |
+
+Counted against uncounted: within ±0.3% on every total, overlapping. Counted against the base: +0.5 to +0.7% on the
+boots' totals (n1's past the spread), the userspace total +0.2%. Lua's −6% is both of this loop's arms against the
+base, not the mode. Compile counters (the n4 runs, medians): `emitNs` 155 / 156 / 154 ms (the boot) and 265 / 265 /
+264 (the userspace); `compileNs` 34 / 35 / 36 and 66 / 67 / 70 (**+5% uncounted**); wasm bytes 9.90 / 9.83 / 9.49 MB
+(−4%) and 16.8 / 16.8 / 16.2 MB; modules 293 / 289 / 300 and 561 / 554 / 550. The uncounted runs count 1 flush: the
+mode's, at the first chunk, before anything is compiled.
+
+**Round-robin** (`boot_alpine_jit`, `alpine_user_jit`; `p55rr-*.json`, base and counted, 3 rounds alternated): the
+boot's total 3745-3787 against 3754-3770 (+0.3%), cold 3836-3920 against 3864-3900; the userspace total 9946-9978
+against 9964-9993 (+0.3%), every phase within ±0.3%, all overlapping: unchanged, as the code is.
+
+**Firefox's pages session** (`pages/`, `bench/gpu/ab-mac.sh`, 3 rounds, the arms alternated, from
+`pages.waarm64snap`; medians, [ranges]):
+
+| | base | counted | uncounted |
+|---|---|---|---|
+| Firefox's starts + the pages' loads (s) | 73.1 [71.1-74.4] | 73.7 [73.7-73.9] | 73.2 [72.4-73.7] |
+| the starts alone (s) | 55.2 [53.7-56.2] | 55.7 [55.6-55.7] | 55.1 [54.4-55.5] |
+| modules; wasm MB | 2757; 116 | 2777; 116 | **3271 (+18.6%)**; 112 (−3%) |
+| `emitNs`; `compileNs` (ms) | 1883; 463 | 1878; 462 | 1875; **551 (+19%)** |
+| the platform lock: contended acquisitions; wait (ms) | 37,351; 161 | 37,222; 152 | **100,176 (×2.7); 284 (+76%)** |
+| dispatches (M); stalls of 20 ms+ | 160; 0 | 160; 0 | 159; 0 |
+
+The base's rounds fell from 74.4 to 71.1 s through the session (it ran first in round 1): the three arms overlap and
+**the uncounted mode doesn't beat the base**. Loop 53's noacc arm, the same code without a ticker, was −3.6% in two
+sessions, with 6.7% fewer modules. What the uncounted mode adds beside the code is what to look at, and two counters
+move: the batch clock by time (PERIODIC advances `Table::clock` by ns, so `BATCH_TIMEOUT`'s 64M is 64 ms of host time,
+shorter than 64M steps of a vCPU at ~450 MIPS) makes more, smaller modules; and the ticker's periodic tick ends every
+vCPU's chunk at the same moment, and the platform lock's contended acquisitions nearly triple (which of the run loop's
+takes of it collide is not yet counted). Neither, by its own time (90 ms of compile worker, 120 ms of lock wait over ~210 s), adds up to loop 53's
+~2.6 s: the next step is a diagnostic build that takes each out in turn (docs/backlog.md, new), not a guess.
+
+Memory: one more worker (the ticker, an isolate of a few MiB); the Mac's `vm_stat` is the whole machine's and spreads
+by ~1 GiB between sessions of one arm, so no per-arm RSS here. Tests (`tests/ticker.test.ts`, the spin tests counted
+and uncounted, the polled differential test uncounted with `WAARM64_POLLED=2`, the compile worker's stores, the page's
+presets and step rates) and their planted bugs: docs/testing.md and the loop's commits. `scripts/ci.sh` (742 s),
+`scripts/ci-jit.sh` (319 s) and `scripts/ci-debian.sh --platform` (472 s) passed on the loop's tree.

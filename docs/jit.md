@@ -505,8 +505,11 @@ differing only in the address of a core table they embed, the CRC tables).
   exists: a ticker worker whose `Atomics.wait` takes half the time left, again, and spins the last 40 µs is 4-9 µs
   late on the Mac on average (p99 under 45 µs), where the chunk's steps give 31-80 µs today; a plain wait to the
   deadline is 158-561 µs late (macOS's timer leeway grows with the timeout), `Atomics.waitAsync` ~630 µs, `setTimeout`
-  ~4.8 ms. Built in PERF loop 55 as the uncounted mode (above; abi.md "PERF: parallel SMP's code without `acc`"),
-  its numbers in bench/boot/REPORT.md "PERF loop 55".
+  ~4.8 ms. Built in PERF loop 55 as the uncounted mode (above; abi.md "PERF: parallel SMP's code without `acc`";
+  bench/boot/REPORT.md "PERF loop 55"): its code is the measured one (per function arm64 −3.9% instructions, −11.4%
+  frame memory operands; x64 −4.7%, −12.9%), but on the Mac the mode doesn't beat the base (Firefox's pages session
+  73.2 s against 73.1, overlapping; the parallel gates +0.4 to +0.7%), with 18.6% more modules (+19% `compileNs`: the
+  batch clock by time) and the platform lock contended 2.7× as often; what takes the gain is docs/backlog.md's.
 - **No poll point is redundant** (PERF loop 34): each closes cycles no other one does. Polls only on a region's
   back-edge (not on its other edges to a lower VA) drop the polls 19% and hang a spin test: a cycle through other
   functions (the 20-block chain, out of its region and back through chains forward) has its one backward step on such

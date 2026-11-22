@@ -421,8 +421,10 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 - **Per-vCPU bars** are drawn against the run's highest vCPU MIPS so far (`cpuPeak`): a fixed scale wouldn't fit
   every host and guest, whose rates differ by far more than the bars could show (decided 2026-11-09).
 - **Counting** (PERF loop 55; jit.md "Preemption"): MIPS and JIT share, in any form (summed, each vCPU's bars or
-  numbers, one vCPU's: `statusbar.ts` `COUNTING`, `counts`), need every guest instruction counted, which costs the
-  JIT's compiled code ~1-4% (bench/boot/REPORT.md "PERF loop 55"). The machine counts only while the bar has one: the
+  numbers, one vCPU's: `statusbar.ts` `COUNTING`, `counts`), need every guest instruction counted, which keeps
+  `acc` in the JIT's compiled code (bench/boot/REPORT.md "PERF loop 55": the code without it is ~4% fewer
+  instructions, ~11-13% fewer frame operands, but on the Mac the uncounted mode doesn't yet run faster: Firefox's pages
+  session 73.2 s against the counted 73.7, overlapping; the gates within ±0.3%; docs/backlog.md has why to find). The machine counts only while the bar has one: the
   start message's `count`, then a `count` message whenever one comes or goes in the editor (`areas/status.svelte.ts`
   `setItems`, the run's `followCounting`), which flushes the JIT's code once. **The default layout counts**, so the
   speedup goes to users who take those elements off or pick the faster preset. A status says whether it `counted`;

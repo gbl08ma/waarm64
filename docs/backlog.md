@@ -93,6 +93,14 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 
 ## JIT
 
+- **Where the uncounted mode's gain goes** (PERF loop 55, bench/boot/REPORT.md; docs/jit.md "Preemption"): polled
+  code without `acc` has the measured code (arm64 −11.4% frame operands) but on the Mac doesn't beat the base:
+  Firefox's pages session 73.2 s against 73.1 (loop 53's noacc arm, the same code without the ticker, −3.6%), the
+  parallel gates +0.4 to +0.7%. Two counters move: modules +18.6% and `compileNs` +19% (the batch clock by time:
+  `BATCH_TIMEOUT`'s 64M as ns of host time is shorter than 64M steps), and the platform lock's contended acquisitions
+  ×2.7 (wait +76%: the periodic tick ends every vCPU's chunk at once). To do: a diagnostic build taking each out in
+  turn (the batch clock scaled to steps' pace; the periodic tick staggered per vCPU, or its look at the timers skipped
+  when nothing is due), on the pages session; also the counted arm's +0.5% against the base on the boots.
 - **The ticker on an idle machine** (PERF loop 55, docs/platform.md "Parallel SMP"): while polled code runs without
   `acc`, the ticker's periodic tick wakes it every 1 ms and stores 0 in every stop word, even with every vCPU idle (in
   WFI) or the machine paused: ~1,000 wakes a second for nothing. To try: skip the tick while no vCPU is in RUN (a word
