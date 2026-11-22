@@ -134,10 +134,19 @@ was remade from cda6cfa7's core (it loads into loop 46's).
 
 ## Still open (the queue: the first is next; by expected gain)
 
-Empty: loop 52 took its last entry (the interpreter's counts left no follow-up worth a loop). What's next is the
-supervisor's call from docs/backlog.md.
+Refilled by the supervisor after loop 52 from docs/backlog.md's performance entries the old queue didn't list.
+
+| Entry (docs/backlog.md) | Notes |
+|---|---|
+| **Next:** JIT: parallel SMP's code without `acc` | the page's mode, ~1-2% of the Mac's parallel gates; first a timer setter's latency on the Mac, then the design note in docs/abi.md (host ABI), then build; may take several loops |
+| JIT: indirect transfers into a browser's code, what remains | the dispatcher's entries (15% of the entry stalls for 4.7% of the entries) and the signature check's table load; re-count on the Mac first |
+| JIT: the core's heap, what a module's install adds outside the bound | count first; reserve before `emit_batch`, skip a tier-up that doesn't fit |
+| JIT: kvm-unit-tests `timer` slower under the JIT than interpreted | re-measure after loop 49; then the short blocks around the polls |
+| JIT: the unexplained ~10 GB samples in the Go-load runs | V8's own counters before trusting the median |
+| JIT: a browser session past the 320 MiB budget | a real session long enough to flush; measure the flush's stutter |
+| JIT: transfers that still leave a function | re-profile with `bench/boot/userprof.ts`; turn into a doable to-do or a finding |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: keep
 ours for now), bug watches (Firefox's first page, the lost Firefox process), parallel `make` (needs a harness), the
 default vCPU count (settings, not a measurement), FEAT_FP16's scalar forms in the f32 shadows (only if FP16 is ever
-advertised).
+advertised), CoreMark's gap (don't fit the design to it), Buildroot's warm-boot IQR (a check guest, not a target).
