@@ -475,7 +475,8 @@ is, with each script's measured time updated (ci.sh ~15.5 min, ~12 after this br
    test booting.
 4. **GitHub Actions was a plan** (§6) while the repository was private, so no workflow spent the private repo's
    allowance; the repository is public since 2026-11-22, so §6 can be built, as an extra check beside the dev VM's,
-   never the gate. **No CI image comes from static.gbl08ma.com**: images a workflow needs are built
+   never the gate; its first job, the fast lane on each push to main, runs since 2026-11-22 (docs/testing.md
+   "GitHub Actions"). **No CI image comes from static.gbl08ma.com**: images a workflow needs are built
    in it, or passed between its jobs as artifacts (the smaller ones), or kept across runs in the Actions cache.
 5. **Popular, industry-standard Rust tools and dependencies are fine** (cargo-nextest; sccache if worth it).
 6. **Faster guests for more tests** (the user, 2026-11-18): Buildroot guests built for a purpose where a test needs a

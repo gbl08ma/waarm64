@@ -48,6 +48,15 @@ fd is inherited: a leftover child of a run keeps the lock (`lslocks` names it). 
 fast lane under `systemd-run --user --scope -q -p MemoryMax=6G -p MemorySwapMax=0` (peak 4.2 GiB at 4 files), `ci.sh` and
 the topic scripts at 11G (dEQP-VK 14G).
 
+**GitHub Actions** (`.github/workflows/ci-fast.yml`): the fast lane runs on every push to `main`, for the commits the
+push brought (`--since` the push's `before`; Run workflow takes any base), on GitHub's `ubuntu-24.04-arm` runner (4
+vCPUs, 16 GB; free for a public repository). An extra check beside the dev VM's tiers, never the gate: a red run is a
+signal to look at, and a push still needs its T2. The job installs what docs/cloud.md's container lacks (Node 26, the
+pinned nightly, cargo-nextest, dtc 1.7.2, Playwright's Chromium as `CHROMIUM`) and caches the tools and `target/`.
+**No guest images are built there**, so every test that boots one skips (`SKIPPED: run images/build.sh …`): a test that
+boots a guest checks its image first, like `tests/page-modal.test.ts`'s `kernel`. 2026-11-22: ~14 min uncached (3.5
+of setup, ~10 for 171 files and the ts crate; 1,195 passed, 77 skipped).
+
 **Lanes and agents:** a lane runs the fast lane after every change, in its own worktree; it runs T2 once before
 pushing (queued on the lock: wait on its notification). Commit after the fast lane, push after T2; a handover says
 which tier each commit passed. A T2 failure over a batch of small fixes is bisected with fast lanes.

@@ -206,7 +206,7 @@ export const AREAS: Record<string, Area> = {
   },
   ci: {
     // The CI scripts and their tools: the fast lane runs its static checks; a push, scripts/ci.sh.
-    src: ['scripts/**', 'tests/areas.ts', 'tools/ci-select.ts', 'tools/test-timings.ts', 'tools/harness-imports.ts', 'tools/third-party.ts', 'THIRD_PARTY.json', '.claude/**'],
+    src: ['scripts/**', 'tests/areas.ts', 'tools/ci-select.ts', 'tools/test-timings.ts', 'tools/harness-imports.ts', 'tools/third-party.ts', 'THIRD_PARTY.json', '.claude/**', '.github/**'],
   },
   other: {
     // Benchmarks, the tools no test runs and test helpers no area claims (tsc checks them in T0).

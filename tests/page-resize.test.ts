@@ -14,6 +14,10 @@ import { MAX_RESIZE } from '../web/app/resize.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 import { openHome } from './page-home.ts';
+import { existsSync } from 'node:fs';
+
+// A guest boots on the default kernel: skipped without it (a clone without images, GitHub Actions).
+const kernel = !existsSync(new URL('../target/images/linux/Image', import.meta.url)) && 'SKIPPED: run images/build.sh linux';
 
 const MiB = 2 ** 20;
 const GiB = 2 ** 30;
@@ -182,7 +186,7 @@ test("Resize… in the browser's Disks pane: a stored disk, an overlay's row, a 
   await context.close();
 });
 
-test("Resize… on a machine's Disks tab: its overlay, its stored disk written in place, an overlay made where none is chosen, its ramdisk, none on a read-only disk; the machine on this page powered off from the dialog", async () => {
+test("Resize… on a machine's Disks tab: its overlay, its stored disk written in place, an overlay made where none is chosen, its ramdisk, none on a read-only disk; the machine on this page powered off from the dialog", { skip: kernel }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];

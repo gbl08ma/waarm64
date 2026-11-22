@@ -12,6 +12,10 @@ import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 import { MAX_RESIZE } from '../web/app/resize.ts';
 import { newEmptyMachine, openHome } from './page-home.ts';
+import { existsSync } from 'node:fs';
+
+// A guest boots on the default kernel: skipped without it (a clone without images, GitHub Actions).
+const kernel = !existsSync(new URL('../target/images/linux/Image', import.meta.url)) && 'SKIPPED: run images/build.sh linux';
 
 const DEMO = { format: 'waarm64-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: createHash('sha256').update('0'.repeat(64)).digest('hex') };
 let browser: Browser;
@@ -675,7 +679,7 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
   await context.close();
 });
 
-test('a disk\'s read-only box on a running machine: powered off after asking, then saved; "visualize" after RAM\'s label while it runs; no gap over the Home page', async () => {
+test('a disk\'s read-only box on a running machine: powered off after asking, then saved; "visualize" after RAM\'s label while it runs; no gap over the Home page', { skip: kernel }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -732,7 +736,7 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await context.close();
 });
 
-test("another machine's Start while one runs in this tab: a menu, In this tab or In a new tab (the address's knobs kept); there, Running in another tab", async () => {
+test("another machine's Start while one runs in this tab: a menu, In this tab or In a new tab (the address's knobs kept); there, Running in another tab", { skip: kernel }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];

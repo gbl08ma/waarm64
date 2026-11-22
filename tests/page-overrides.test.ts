@@ -3,7 +3,7 @@
 // (not its record's), restores on the same address, and is orphaned on the machine as its record has it. The guest is
 // the firmware on a disk with nothing to boot: no Debian (it stays `booting`, which a snapshot can be taken of).
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -14,6 +14,9 @@ import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { openHome } from './page-home.ts';
+
+// A guest boots on the default kernel: skipped without it (a clone without images, GitHub Actions).
+const kernel = !existsSync(new URL('../target/images/linux/Image', import.meta.url)) && 'SKIPPED: run images/build.sh linux';
 
 let base: string;
 let close: () => void;
@@ -41,7 +44,7 @@ const inStore = <T>(page: Page, f: string, a: unknown) => page.evaluate(async ({
   }
 }, { f, a }) as Promise<T>;
 
-test('the address over a stored machine: its snapshot has the shape it ran with, restores there, and is orphaned without it', { timeout: 180_000 }, async () => {
+test('the address over a stored machine: its snapshot has the shape it ran with, restores there, and is orphaned without it', { skip: kernel, timeout: 180_000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'waarm64-overrides-'));
   const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   profile = { dir, context };

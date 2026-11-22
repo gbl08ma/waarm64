@@ -1,0 +1,75 @@
+# The fast lane (scripts/ci-fast.sh, T1) on every push to main, for the commits the push brought, on GitHub's arm64
+# runner (free for public repositories, the dev VM's architecture). An extra check beside the dev VM's CI, never the
+# gate (CLAUDE.md "Testing"; docs/testing.md "GitHub Actions"). No guest images are built here: the tests that need one
+# skip, as in a cloud session (docs/cloud.md).
+name: ci-fast
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'The base of the changes (a commit; ci-select.ts --since); empty: the commit before'
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: ci-fast-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  fast:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      - name: System packages
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qemu-user qemu-utils fonts-dejavu-core flex bison > /dev/null
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-nextest
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.rustup/toolchains
+            ~/.cache/ms-playwright
+            ~/.local/dtc
+          key: tools-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'package-lock.json') }}-nextest-0.9.152-dtc-1.7.2
+          restore-keys: tools-${{ runner.arch }}-
+      - name: Toolchains and tools
+        run: |
+          rustup show active-toolchain || rustup toolchain install # rust-toolchain.toml's pinned nightly
+          command -v cargo-nextest > /dev/null || { rustup toolchain install stable --profile minimal && cargo +stable install --locked -q cargo-nextest@0.9.152; }
+          # dtc 1.7.2 (Ubuntu's 1.7.0 prints strings differently from tests/dtb/waarm64.dts's; docs/cloud.md).
+          if [ ! -x ~/.local/dtc/dtc ]; then
+            git clone -q --depth 1 --branch v1.7.2 https://git.kernel.org/pub/scm/utils/dtc/dtc.git "$RUNNER_TEMP/dtc"
+            make -s -C "$RUNNER_TEMP/dtc" -j"$(nproc)" dtc NO_PYTHON=1 NO_YAML=1 > /dev/null
+            mkdir -p ~/.local/dtc && cp "$RUNNER_TEMP/dtc/dtc" ~/.local/dtc/
+          fi
+          echo "$HOME/.local/dtc" >> "$GITHUB_PATH"
+          npm ci --no-fund --no-audit
+          npx playwright-core install --with-deps chromium
+          echo "CHROMIUM=$(node -e "import('playwright-core').then(p => console.log(p.chromium.executablePath()))")" >> "$GITHUB_ENV"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: target-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ github.sha }}
+          restore-keys: target-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+      - name: scripts/ci-fast.sh
+        env:
+          BEFORE: ${{ inputs.since || github.event.before }}
+        run: |
+          since=HEAD~1
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then since=$BEFORE; fi
+          echo "changes since $since"
+          scripts/ci-fast.sh --since "$since"
