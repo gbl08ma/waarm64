@@ -411,8 +411,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`bench/results/local/eglconfigs.py`, Python ctypes on the Wayland platform): 26.2.7's RGBA8888 configs have
   `RENDERABLE_TYPE` 0x4d and GDK's attributes match 15; 26.3.1's have 0x4c and match 0, or 15 with
   `EGL_RENDERABLE_TYPE=EGL_OPENGL_ES2_BIT` added. Upstream: mesa/mesa#16934 (radeonsi, open, labelled regression);
-  other projects report it on real GPUs (Satty #831). Nothing in our caps or device can bring the bit back. The way
-  out is an upstream fix (Mesa or GTK) reaching Arch's port, or a workaround in the desktop image. The `arch-3d` demo
+  other projects report it on real GPUs (Satty #831). Nothing in our caps or device can bring the bit back. Arch's
+  `extra/mesa` 1:26.3.1-2 (2026-11-20) reverts the commit; the port had 1:26.3.1-1 on 2026-11-22: rebuild the desktop
+  image once it has -2. The `arch-3d` demo
   (the shader demo on the desktop) is out of `deploy/disks/demos.json` until then; its entry is in git history
   (before 2026-11-22), with its countdown's `run` and notes. The arch port keeps no old Mesa, so holding 26.2 isn't
   an option.

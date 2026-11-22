@@ -32,10 +32,12 @@ With 26.3.1, every GTK4 program on virgl gets no EGL config: a GtkGLArea shows "
 - Measured (`bench/results/local/eglconfigs.py`: Python ctypes, Wayland platform, in the sway session):
   26.2.7: RGBA8888 configs `RENDERABLE_TYPE` 0x4d, GDK's attributes match 15. 26.3.1: 105 configs, all 0x4c, GDK's
   attributes match 0, and 15 with `EGL_RENDERABLE_TYPE=EGL_OPENGL_ES2_BIT` added.
-- Nothing in our caps or device can set the bit (it's compiled out). **The way out is the user's call:** wait for an
-  upstream fix (a Mesa revert or fix, or GTK setting `EGL_RENDERABLE_TYPE`) to reach Arch's port and rebuild the
-  image; or a workaround in the desktop image (e.g. an `LD_PRELOAD` shim adding the attribute to `eglChooseConfig`,
-  which needs a build in Podman).
+- Nothing in our caps or device can set the bit (it's compiled out). **Fixed in Arch's `extra/mesa` 1:26.3.1-2**
+  (2026-11-20, packaging commit `295d5e19`: a patch reverting `338afb32f86`, for mesa#16934). The port
+  (arch.bens.haus) still had 1:26.3.1-1 on 2026-11-22. **The plan (the user's, 2026-11-22):** wait for the port's
+  `mesa` 1:26.3.1-2 or later, rebuild the desktop image (`images/arch/desktop.sh`), check with `eglconfigs.py` (GDK's
+  attributes match configs) and gtk4-demo's shadertoy, then bring `arch-3d` back (below). A workaround in the image
+  (an `LD_PRELOAD` shim adding `EGL_RENDERABLE_TYPE`) only if the port takes long.
 
 ## What's at hand
 
