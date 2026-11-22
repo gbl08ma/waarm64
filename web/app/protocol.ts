@@ -185,7 +185,14 @@ export type ToWorker =
       };
       /** What a restore does with each writable disk the snapshot pins (web/snapshot.ts `DiskPlan`); none: replace each. */
       plan?: DiskPlan[];
+      /**
+       * Count every step (web/vm.ts `BootOptions.count`): the status bar shows an element that needs them (MIPS, the
+       * JIT share, the per-vCPU bars: web/app/statusbar.ts `counts`). Without, the machine runs a little faster.
+       */
+      count: boolean;
     }
+  /** The status bar's step-counting elements came or went (`start`'s `count`): the running machine follows (a flush of its JIT's code). */
+  | { type: 'count'; on: boolean }
   /**
    * Suspend the running machine: it pauses, its snapshot (without the disk's changes, which stay
    * in the overlay) is written beside the overlay, and it stops: `suspend-done`, then the state `suspended`. On a
@@ -405,8 +412,13 @@ export type Status = {
   ramMiB: number;
   /** ms since the VM started running. */
   uptime: number;
-  /** Guest instructions retired (all vCPUs). */
+  /** Guest instructions retired (all vCPUs): every one only while `counted`. */
   steps: number;
+  /**
+   * Whether the machine counted every step since the last status (`count`): without, compiled code's steps go
+   * uncounted (web/vm.ts `BootOptions.count`), and the status bar's step rates aren't drawn across a change.
+   */
+  counted: boolean;
   /** Blocks compiled since boot (all vCPUs; a flush doesn't reset it), and how often the code cache was flushed (its byte budget, docs/jit.md "Memory"). */
   jitBlocks: number;
   jitFlushes: number;

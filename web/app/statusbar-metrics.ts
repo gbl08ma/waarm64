@@ -61,21 +61,32 @@ function trafficOf(s: Status, p: Status | undefined, rate: Rate): Pick<Metrics, 
   };
 }
 
+/**
+ * The steps' rates, only between two statuses that counted every step (a machine that turned counting on or off
+ * between them counted part of the second): MIPS, the JIT share, each vCPU's, the bars' full height.
+ */
+function stepsOf(s: Status, prev: Sample | undefined, rate: Rate): Pick<Metrics, 'mips' | 'jit' | 'cpus' | 'cpuPeak'> {
+  const q = s.counted && prev?.status.counted ? prev.status : undefined;
+  const cpus = cpusOf(s, q, rate);
+  const mips = rate(s.steps, q?.steps);
+  return {
+    mips: mips === undefined ? undefined : mips / 1e6,
+    jit: share(s.jitSteps, s.steps, q?.jitSteps, q?.steps),
+    cpus,
+    cpuPeak: Math.max(prev?.metrics.cpuPeak ?? 0, ...(cpus ?? []).map((c) => c.mips)),
+  };
+}
+
 /** `s`, received at `at` (ms, monotonic), after `prev` (the run's previous one). */
 export function metrics(s: Status, at: number, prev?: Sample, tabBytes?: number): Metrics {
   const p = prev?.status;
   const dt = prev ? (at - prev.at) / 1000 : 0;
   const rate: Rate = (now, then) => (then !== undefined && dt > 0 ? Math.max(0, now - then) / dt : undefined);
-  const cpus = cpusOf(s, p, rate);
-  const mips = rate(s.steps, p?.steps);
   return {
     ncpus: s.ncpus,
     ramMiB: s.ramMiB,
     uptimeMs: s.uptime,
-    mips: mips === undefined ? undefined : mips / 1e6,
-    jit: share(s.jitSteps, s.steps, p?.jitSteps, p?.steps),
-    cpus,
-    cpuPeak: Math.max(prev?.metrics.cpuPeak ?? 0, ...(cpus ?? []).map((c) => c.mips)),
+    ...stepsOf(s, prev, rate),
     irqs: rate(s.irqs, p?.irqs),
     tlbMisses: rate(s.tlbMisses, p?.tlbMisses),
     tlbFlushes: rate(s.tlbFlushes, p?.tlbFlushes),

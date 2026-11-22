@@ -412,11 +412,23 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
   mouse drags through HTML5 drag and drop; a finger or a pen through pointer events, after a long press (350 ms held
   within 8 px: moving first scrolls the page, and the drag's touchmoves are cancelled so the page stays put under
   it). The palette under it adds an element at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
+- **Two presets** beside the editor's bar: [Restore defaults](ui:statusbar:StatusEditor.defaults) (the defaults,
+  MIPS and JIT share among them) and [Faster defaults](ui:statusbar:StatusEditor.faster) (`FAST_ITEMS`: the same
+  without MIPS and JIT share, kept as a list), with a note under them: [Showing MIPS or JIT share slows the machine a
+  little, as every instruction it runs is then counted.](ui:statusbar:StatusEditor.counts)
 - **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' [Show the
   status bar in full screen](ui:machines:PreferencesPane.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (their components' `body:fullscreen` rules).
 - **Per-vCPU bars** are drawn against the run's highest vCPU MIPS so far (`cpuPeak`): a fixed scale wouldn't fit
   every host and guest, whose rates differ by far more than the bars could show (decided 2026-11-09).
-- **Costs:** none to the emulation: the per-vCPU steps were counted already; the disk, adapter and USB bytes are one add per
+- **Counting** (PERF loop 55; jit.md "Preemption"): MIPS and JIT share, in any form (summed, each vCPU's bars or
+  numbers, one vCPU's: `statusbar.ts` `COUNTING`, `counts`), need every guest instruction counted, which costs the
+  JIT's compiled code ~1-4% (bench/boot/REPORT.md "PERF loop 55"). The machine counts only while the bar has one: the
+  start message's `count`, then a `count` message whenever one comes or goes in the editor (`areas/status.svelte.ts`
+  `setItems`, the run's `followCounting`), which flushes the JIT's code once. **The default layout counts**, so the
+  speedup goes to users who take those elements off or pick the faster preset. A status says whether it `counted`;
+  the step rates aren't drawn from two statuses that don't both say so (`statusbar-metrics.ts`), so the second of a
+  change shows no MIPS rather than a part-counted one.
+- **Costs:** besides the counting above, none to the emulation: the per-vCPU steps are counted with it; the disk, adapter and USB bytes are one add per
   completed request in the device worker, into a shared buffer the machine worker reads once a second (devices.md
   "Threads and determinism"); the GPU's numbers are increments where the work already happens, posted once a second.
 
@@ -1155,7 +1167,7 @@ Page → worker:
   directory of its own files. `config.cpu` is the vCPUs' features as one list (web/cpu-features.ts: the page's
   `?<feature>=0|1`, a snapshot's header, a shape and `bootVm`'s mask all go by its table); `config.dev` the machine
   worker's knobs (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`,
-  `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`,
+  `?growcore`, `?vyield=`, `?count=0|1` (every step counted or not, whatever the status bar shows: benchmarks' A/Bs), `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`,
   `?agentstub`, `?stageroom=`), parsed by the
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU

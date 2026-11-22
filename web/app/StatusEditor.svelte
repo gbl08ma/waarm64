@@ -6,7 +6,9 @@
   end, a drag puts it where it's dropped. A mouse drags through HTML5 drag and drop; a finger or a pen through pointer
   events, after a long press (a swipe still scrolls the page): status-drag.svelte.ts. The chips draw what the running
   machine shows, or a made-up machine's numbers (statusbar-sample.ts `SAMPLE`) while none runs; one the running machine
-  hasn't (a second disk) is dimmed. Kept in the settings at each change.
+  hasn't (a second disk) is dimmed. Kept in the settings at each change. Two presets: the defaults, and the faster
+  set (the defaults without the elements that count every instruction, which slow the machine a little: statusbar.ts
+  `COUNTING`), which a note says.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -17,12 +19,12 @@
   import StatusOptions from './StatusOptions.svelte';
   import StatusPalette from './StatusPalette.svelte';
   import { ChipDrag } from './status-drag.svelte.ts';
-  import { DEFAULT_ITEMS, lookOf, shows, type Item } from './statusbar.ts';
+  import { DEFAULT_ITEMS, FAST_ITEMS, lookOf, shows, type Item } from './statusbar.ts';
   import { render } from './statusbar-render.ts';
   import { SAMPLE } from './statusbar-sample.ts';
   import { t } from '../i18n.ts';
   import { liveNow } from './areas/status-live.ts';
-  import { status } from './areas/status.svelte.ts';
+  import { setItems, status } from './areas/status.svelte.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
@@ -47,7 +49,7 @@
   const metrics = $derived(status.metrics ?? SAMPLE.metrics);
 
   function keep(next: Item[]) {
-    status.items = next;
+    setItems(next);
     remember({ statusBar: next });
   }
   const insert = (item: Item, at = items.length) => {
@@ -81,6 +83,10 @@
   function defaults() {
     keep(DEFAULT_ITEMS.map((i) => ({ ...i })));
     remember({ statusBar: undefined });
+    chosen = undefined;
+  }
+  function faster() {
+    keep(FAST_ITEMS.map((i) => ({ ...i })));
     chosen = undefined;
   }
 
@@ -135,7 +141,17 @@
     <Button icon="refresh" iconSize={14} onclick={defaults} data-action="status-defaults">
       {t('statusbar:StatusEditor.defaults')}
     </Button>
+    <Button
+      icon="gauge"
+      iconSize={14}
+      onclick={faster}
+      title={t('statusbar:StatusEditor.faster.title')}
+      data-action="status-faster"
+    >
+      {t('statusbar:StatusEditor.faster')}
+    </Button>
   </div>
+  <Note data-note="status-counts">{t('statusbar:StatusEditor.counts')}</Note>
 
   {#if sel && chosen !== undefined}
     {@const at = chosen}

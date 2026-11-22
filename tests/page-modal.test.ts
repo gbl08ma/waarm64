@@ -956,7 +956,12 @@ test("remote disks' blocks: in an expiring bucket of their own, cleared while a 
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`${base}/web/app/`);
-  const got = await page.evaluate(async () => {
+  // Each step named (`__step`), the whole bounded: once in ~30 ci.sh runs a step never resolved (PERF loop 55's second
+  // run, 600 s, not seen in 12 runs alone or in the file), the browser's storage call or ours unknown; a hang now
+  // fails in a minute and names it.
+  const run = page.evaluate(async () => {
+    const at = (s: string) => ((globalThis as { __step?: string }).__step = s);
+    at('import');
     const dc = await import('/web/diskcache.ts' as string);
     // A store held open by a worker, as a running machine's device worker holds its disk's.
     const src = `const dc = await import(${JSON.stringify(`${location.origin}/web/diskcache.ts`)});
@@ -972,32 +977,50 @@ test("remote disks' blocks: in an expiring bucket of their own, cleared while a 
       w.onmessage = (e) => (clearTimeout(timer), r(e.data));
       w.onerror = (e) => (clearTimeout(timer), j(new Error(`the worker: ${e.message}`)));
     });
+    at('the worker opens its store');
     const first = await next();
     if (first !== 'ready') throw new Error(`the worker's block store: ${String(first)} (${JSON.stringify(await navigator.storage.estimate())})`);
     const sb = (navigator as unknown as { storageBuckets: { keys(): Promise<string[]>; open(n: string): Promise<{ expires(): Promise<number | null>; persisted(): Promise<boolean> }> } }).storageBuckets;
+    at('the bucket');
     const bucket = await sb.open(dc.CACHE_DIR);
     const days = ((await bucket.expires())! - Date.now()) / 86_400_000;
     const persisted = await bucket.persisted();
+    at('cacheBytes before');
     const before = await dc.cacheBytes();
+    at('clearCaches');
     const freed = await dc.clearCaches();
     w.postMessage(0);
+    at("the worker's store after");
     const store = await next();
+    at('cacheBytes after');
     const after = await dc.cacheBytes();
     w.terminate();
     // A cache last used eight days ago (the clock moved on): gone when the page next looks.
+    at('an old cache written');
     const dir = await (await dc.cacheRoot()).getDirectoryHandle('0ld0ld', { create: true });
     const f = await (await dir.getFileHandle('map', { create: true })).createWritable();
     await f.write(new Uint8Array(4096));
     await f.close();
+    at('cacheBytes fresh');
     const fresh = await dc.cacheBytes();
     const now = Date.now;
     Date.now = () => now() + 8 * 86_400_000;
     const later = await dc.cacheBytes();
     Date.now = now;
+    at('the names');
     const names: string[] = [];
     for await (const n of ((await dc.cacheRoot()) as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(n);
     return { buckets: await sb.keys(), days, persisted, before, freed, store, after, fresh, later, names };
   });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hung = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      void page
+        .evaluate(() => (globalThis as { __step?: string }).__step)
+        .then((step) => reject(new Error(`no answer in 60 s, at: ${step}`)), reject);
+    }, 60_000);
+  });
+  const got = await Promise.race([run, hung]).finally(() => clearTimeout(timer));
   assert.ok(got.buckets.includes('remote-cache'), String(got.buckets));
   assert.ok(got.days > 6.9 && got.days <= 7, `expires in ${got.days} days`);
   assert.equal(got.persisted, false);

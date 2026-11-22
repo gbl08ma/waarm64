@@ -1,5 +1,5 @@
-// The machine worker's answers to the page's asks about the running machine `vm` (web/app/worker.ts `asked`): the
-// profilers, for benchmarks (docs/benchmarking.md: the guest PC sampler and the vCPU timeline), its heap's use, the
+// The machine worker's answers to the page's asks about the running machine `vm` (web/app/worker.ts `asked`), and its
+// counting as the status bar wants it (`count`): the profilers, for benchmarks (docs/benchmarking.md: the guest PC sampler and the vCPU timeline), its heap's use, the
 // disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts), and the questions about its
 // surfaces (web/surface.ts: `inspect`).
 import type { Vm } from '../vm.ts';
@@ -9,9 +9,18 @@ import { answerBuffers, type InspectAnswer, type InspectQuery } from '../surface
 import { post } from './worker-post.ts';
 import { inspectRam } from './worker-ram.ts';
 
-/** Answers `m` if it is one of these asks (a profiler on or off, the heap, the compaction, a surface). */
+/** The page's last `count` (the status bar's counting elements came or went), if one came since the start. */
+let count: boolean | undefined;
+/** `v` just booted, counting as the page last said if it said so while it booted (the start's `count` otherwise). */
+export function following(v: Vm) {
+  if (count !== undefined) v.setCount(count);
+  return v;
+}
+
+/** Answers `m` if it is one of these asks (a profiler on or off, the heap, the compaction, a surface), or follows a `count`. */
 export function asked(vm: Vm | undefined, m: ToWorker) {
-  if (m.type === 'profile') void profile(vm, m.on, m.id);
+  if (m.type === 'count') vm?.setCount((count = m.on));
+  else if (m.type === 'profile') void profile(vm, m.on, m.id);
   else if (m.type === 'timeline') void timeline(vm, m.on, m.id);
   else if (m.type === 'heap') {
     if (vm) post({ type: 'heap', id: m.id, heap: vm.heapUse() });

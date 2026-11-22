@@ -24,6 +24,16 @@ export const DEFAULT_ITEMS: readonly Item[] = [
   { kind: 'irqs' },
 ];
 
+/**
+ * The kinds that need every guest instruction counted (MIPS and the JIT share, summed, each vCPU's bars or numbers,
+ * or one vCPU's): while the bar shows one, the machine counts them, a little slower (web/vm.ts `BootOptions.count`).
+ */
+export const COUNTING: readonly Kind[] = ['mips', 'jit'];
+/** Whether a bar of `items` needs every instruction counted. */
+export const counts = (items: readonly Item[]) => items.some((i) => COUNTING.includes(i.kind));
+/** The second preset: the defaults without the elements that count (the machine runs a little faster). */
+export const FAST_ITEMS: readonly Item[] = DEFAULT_ITEMS.filter((i) => !COUNTING.includes(i.kind));
+
 const LOOKS: Look[] = ['text', 'icon', 'both'];
 /** The kept list as the page uses it: unknown kinds and fields dropped (another version's), each field checked. */
 export function normalize(kept: unknown): Item[] {

@@ -26,6 +26,7 @@ export function status(
     ramMiB,
     uptime,
     steps: s.steps,
+    counted: vm.counting(),
     jitBlocks: s.jit.blocks,
     jitFlushes: s.jit.flushes,
     jitCompileMs: s.jit.compileNs / 1e6,

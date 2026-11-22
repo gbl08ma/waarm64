@@ -891,6 +891,18 @@
     "message": "Restore defaults",
     "note": "Button under the Preferences' status bar editor's bar: puts back the elements a browser starts with."
   },
+  "StatusEditor.faster": {
+    "message": "Faster defaults",
+    "note": "Button under the Preferences' status bar editor's bar, beside Restore defaults: puts back the elements a browser starts with, but MIPS and JIT share, so the running machine no longer counts every instruction and runs a little faster."
+  },
+  "StatusEditor.faster.title": {
+    "message": "Restore the defaults without MIPS and JIT share, which slow the machine a little.",
+    "note": "Tooltip of the Faster defaults button in the Preferences' status bar editor. MIPS and JIT share are the names of two status bar elements (statusbar-kinds.kind.mips, .jit)."
+  },
+  "StatusEditor.counts": {
+    "message": "Showing MIPS or JIT share slows the machine a little, as every instruction it runs is then counted.",
+    "note": "Note under the Preferences' status bar editor's bar, above the palette: a MIPS or JIT share element (in any form: summed, each vCPU's, one vCPU's) on the bar makes the running machine count every instruction. MIPS and JIT share are the elements' names (statusbar-kinds.kind.mips, .jit)."
+  },
   "StatusOptions.look": {
     "message": "Look",
     "note": "Screen-reader name of the group of look choices (Words, Icon, Icon and words) in the settings of a chosen element in the Preferences' status bar editor."

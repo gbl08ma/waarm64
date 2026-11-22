@@ -41,6 +41,7 @@ function oldWorker(query: URLSearchParams) {
     snd: { wake: snd.includes('timer') ? 'timer' : 'worklet', stats: snd.includes('stats') },
     compileWorker: query.get('jit') !== 'nocw', fma: query.get('fma') !== 'emul', exactCore: !query.has('growcore'),
     vcpuYieldMs: query.has('vyield') ? Number(query.get('vyield')) : undefined,
+    count: query.has('count') ? query.get('count') !== '0' : undefined, // added with the knob (bench/boot/REPORT.md "PERF loop 55")
     sharesAsync: (query.get('sharesasync') ?? '').split(','),
     // The page's start message's (`|| undefined` there, true or absent).
     displayStats: query.has('displaystats'), ioStats: query.has('iostats'), noDiskCache: query.get('diskcache') === '0', avProbe: query.has('avprobe'),
@@ -59,7 +60,7 @@ const QUERIES = [
   'gpu=vkycbcr=off', 'gpu=vkycbcr', 'gpu=vkl9=bindgroups,pad', 'gpu=vkl9=all', 'gpu=vkskip=a,vkskip=b', 'gpu=capsno=B8G8R8A8_UNORM+R8_UNORM',
   'gpu=virgl,capsno=A capsno=B', 'gpu=capsyes=1+2,capsyes=3', 'gpu=querypoll=spin', 'displaystats', 'displaystats&gpu=virgl', 'avprobe&snd=',
   'snd=stats', 'snd=stats,timer', 'snd=', 'jit=nocw', 'jit=other', 'fma=emul', 'growcore', 'vyield=0', 'vyield=2', 'sharesasync=Host',
-  'sharesasync=a,b', 'iostats', 'diskcache=0', 'diskcache=1', 'ready=guest', 'ready=serial', 'agentstub', 'gpu=1', 'gpu=verify', 'gpu=vk',
+  'sharesasync=a,b', 'iostats', 'diskcache=0', 'diskcache=1', 'ready=guest', 'ready=serial', 'agentstub', 'gpu=1', 'gpu=verify', 'gpu=vk', 'count=0', 'count=1',
 ];
 
 test('knobs: the GPU worker\'s and the machine worker\'s from every spelling, as before', () => {

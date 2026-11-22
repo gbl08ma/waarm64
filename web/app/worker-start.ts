@@ -299,6 +299,7 @@ export function bootOptions(
     fma: dev.fma,
     exactCore: dev.exactCore,
     vcpuYieldMs: dev.vcpuYieldMs,
+    count: m.count,
     cpu: plan.cpu,
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer,
     serialIn: m.ports.serial,

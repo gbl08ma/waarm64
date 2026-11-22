@@ -25,7 +25,7 @@ import type { ToWorker } from './protocol.ts';
 import type { StartMessage } from './worker-devices.ts';
 import { explain } from './worker-errors.ts';
 import { sessionOf, type Session } from './worker-header.ts';
-import { asked } from './worker-profile.ts';
+import { asked, following } from './worker-profile.ts';
 import { stopRam } from './worker-ram.ts';
 import { post, state } from './worker-post.ts';
 import { limitJit, status, watchKeyboard } from './worker-status.ts';
@@ -253,7 +253,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     session = sessionOf(m, plan);
     booting = bootVm(parts.core, bootOptions(m, machine, plan, parts, devices, restore, warming.take()));
     try {
-      return { devices, v: (vm = await booting) };
+      return { devices, v: (vm = following(await booting)) };
     } catch (err) {
       if (resume && !stopped()) return { instead: err };
       throw err;
