@@ -4020,14 +4020,26 @@ fn a_release_beats_a_renewal_waiting_at_its_parent() {
             bus.advance(Duration::from_secs(3 * 3600));
         };
         let id = b.names.name_id("letgo");
+        // Each server asks the calendar a slot at a time, at a chance of about one over the room's servers as it counts
+        // them, and two servers can count five or nine: some draws ask late. Wait (a day at most) for what the test is
+        // about rather than for the few hours most draws take (it failed ~1 run in 30, renewal or release unfinished).
+        let until = |bus: &mut Bus, what: &str, done: &dyn Fn(&Bus) -> bool| {
+            for _ in 0..4 * 24 {
+                if done(bus) {
+                    return;
+                }
+                bus.advance(Duration::from_secs(15 * 60));
+            }
+            panic!("renewal first {renewal_first}: {what} within a day");
+        };
         if renewal_first {
             mine(&mut bus);
-            let held = bus.s[0].reg.get(&id).unwrap();
-            assert_eq!(
-                held.owner.as_ref().unwrap().ids.len(),
-                2,
-                "the servers finished the renewal"
-            );
+            until(&mut bus, "the servers finished the renewal", &|bus| {
+                (bus.s.iter()).all(|s| {
+                    let held = s.reg.get(&id).unwrap();
+                    held.owner.as_ref().is_some_and(|o| o.ids.len() == 2)
+                })
+            });
         }
         // Let it go: the waiting renewal dropped from the title, a release on the claim stamped and put.
         let claim = o.entries[0].id();
@@ -4038,8 +4050,13 @@ fn a_release_beats_a_renewal_waiting_at_its_parent() {
         let item = b.item("letgo", &o.entries, Some(o.zone.clone()));
         bus.put(1, 0, item);
         mine(&mut bus);
-        let unix = bus.unix();
         let r = o.entries[1].id();
+        until(&mut bus, "the servers finished the release", &|bus| {
+            (bus.s.iter()).all(|s| {
+                (s.reg.get(&id)).is_some_and(|h| h.name.get(&r).is_some_and(|e| e.time().is_some()))
+            })
+        });
+        let unix = bus.unix();
         for (i, s) in bus.s.iter().enumerate() {
             assert_eq!(
                 s.resolve("letgo", "letgo", unix),

@@ -117,8 +117,14 @@ impl Zone {
             fulls.push(full);
         }
         while z.slots.len() < n {
-            let mut slot = [0u8; SLOT_LEN];
-            getrandom::fill(&mut slot).map_err(|_| Invalid::Zone)?;
+            #[cfg(not(test))]
+            let slot = {
+                let mut slot = [0u8; SLOT_LEN];
+                getrandom::fill(&mut slot).map_err(|_| Invalid::Zone)?;
+                slot
+            };
+            #[cfg(test)]
+            let slot: [u8; SLOT_LEN] = super::server::random();
             z.slots.push(slot);
         }
         z.slots.sort();
