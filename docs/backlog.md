@@ -40,6 +40,17 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
   load): the check would sit on the flat bus's fast path, which the MMU-off EL1 and user-mode guests run on, and
   correct firmware doesn't notice; DC ZVA to RAM mapped as Device with the MMU on zeroes it (the M4: an alignment
   fault).
+- **16K and 64K granules** (deferred in [decisions.md](decisions.md)): `ID_AA64MMFR0` says 4K only
+  (`interp/sys.rs`), and `mmu::walk` never reads TCR_EL1.TG0/TG1 (4K's 9 bits a level and 12-bit pages are fixed).
+  They'd matter mainly for RHEL 8-family kernels (64K only) and 16K kernels like Asahi's. RHEL 9 and later default to 4K with
+  an optional `kernel-64k`, by recollection: check before scheduling. About one loop: make the walker's granule a
+  variable (shift 12/14/16, 9/11/13 bits a level, start level, reserved blocks, OA masks), keep the TLB 4K-grained (a
+  bigger leaf is cached as the 4K pages accessed, like blocks now, so the JIT's inline lookups, `index()` and the
+  transfer cache don't change), have a TLBI by VA (and its SMP broadcast) drop the granule's 4 or 16 pages, make
+  `block_shift`/`block_class` granule-aware (level 2 is 32 MiB or 512 MiB; no level 1 blocks without 52-bit VAs), and
+  advertise both in MMFR0 (guest-visible: the steps move). Tests: the random-remap TLB test per granule, walks of
+  each layout, and a Buildroot kernel with `CONFIG_ARM64_64K_PAGES` (and a 16K one). A 64K guest then walks once for each
+  4K piece of a page it touches; fill the neighbours on a miss if that shows.
 - **Reserved AdvSIMD encodings with FPEN 0** take the FP trap (`interp.rs`: `fp_enabled` before the handler's field
   checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED. The
   same order applies to scalar FP's `ftype` 3 without FEAT_FP16 (with it, allocated) and the by-element forms'
