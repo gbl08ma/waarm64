@@ -7389,3 +7389,27 @@ four new timing tests under CI's load, made robust in the second commit), `scrip
 `scripts/ci-fast.sh` and `tools/i18n-check.ts`, tests/page-statusbar.test.ts. `scripts/ci-graphics.sh`: Debian's
 graphics passed; the arch-desktop demo's Ctrl+C at its countdown failed, and fails alike with loop 55's page and core
 (rerun alone, three ways; `df -h /` 44 GiB free): not this loop's, filed in docs/backlog.md.
+
+## PERF loop 57: parallel SMP's polled code without `acc` reverted (2026-11-22)
+
+The user's decision after loop 56: the uncounted mode measured no faster on the Mac (Firefox's pages session even
+with the base, the parallel gates within ±0.4%), and its conditional paths cost tests and reviews. **Reverted whole**
+by a commit on main (not a reset): the code, tests, scripts and bench tooling that loops 55-56 changed went back to
+216adb06 (loop 54's tree), 57 files, +175 −1,917 lines (the core −773, the host and page −410, the tests −521 with
+`web/ticker-worker.ts`'s 191 and `tests/ticker.test.ts`'s 278; the docs −193). Kept: the compile worker's memory
+view made once and re-made only when the buffer changes (before loop 55 it made a `Uint32Array` per installed
+module), with loop 56's test; page-modal's bounded remote-cache test (a flake guard). `ABI_VERSION` 74 (forward: 73
+had the exports), the host's check and the tests' pins with it. The finding is docs/jit.md "Tried and lost: polled
+code without `acc`".
+
+**The core against 216adb06's**, built in the side checkout and here: `tools/wasm-sizes.ts` lists the same 1,233
+functions at the same sizes, and the module's sections other than the custom ones (debug info, whose paths differ)
+are byte for byte the same but one byte of the code section, the ABI constant. So no Mac measurement: the code is
+loop 54's. `tests/steps.txt` didn't move.
+
+**CI** on the merged tree (the revert, `origin/claude/great-dirac-kahwh7`'s demo-store commits, the host's ABI
+check): `scripts/ci-fast.sh` failed once on page-modal's remote-cache test (the guard named the step: `no answer in
+60 s, at: clearCaches`, the rare storage hang loop 55 saw once in ~30 runs; it passed alone in 2.2 s, `/` 71% used);
+then `scripts/ci.sh` (747 s), `scripts/ci-jit.sh` (256 s) and `scripts/ci-debian.sh --platform` (479 s) passed.
+arch-desktop's "Ctrl+C at a desktop's countdown" still ends `counting foot shell noapp` alone on this tree, so the
+mechanism didn't cause it (docs/backlog.md).

@@ -97,8 +97,11 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   tests/page-demos-guest.test.ts "Ctrl+C at a desktop's countdown" ends `counting foot shell noapp` (the count's
   script still running after Ctrl+C on the screen) with loop 56's tree, with loop 56's page and loop 55's core, and
   with loop 55's page and core alike (`target/demos/arch-desktop` as built 02:27 that day), so not loop 56's change.
-  To do: run it on a tree from before PERF loop 55 (216adb06) to see whether loop 55 or the demo's build broke it,
-  then look at where the key goes (foot's focus at the click, the keyboard's path).
+  PERF loop 57 ran it alone on its tree (loop 55-56's mechanism reverted: the core's code is 216adb06's, the page
+  loop 54's plus the demo store's loose ends): the same `counting foot shell noapp`, so the uncounted mode didn't
+  break it. On 216adb06's own tree and core the demo never reached `running` in 120 s (the demo's build is newer
+  than that page), so that run tells nothing. To do: look at where the key goes (foot's focus at the click, the
+  keyboard's path), then rebuild the demo if it's the build.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such

@@ -109,31 +109,24 @@ loops that touch it: deterministic and realtime round-robin keep the counted cod
 `tests/steps.txt` doesn't move (if something moves it, stop and ask); a loop that changes compiled code gives the x64
 static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and the polled differential test
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
-replacement, was built in loop 55 (the uncounted mode).
+replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-22, after loop 56)
+## State (2026-11-22, after loop 57)
 
-**The user asked the track to pause after loop 56.** Loop 56 fixed the out-of-context review of loop 55's ticker and
-uncounted mode (all eight findings; bench/boot/REPORT.md "PERF loop 56"): the counters it pointed at moved (modules
-−3% against the base, compile time −2%, the platform lock's contention ×1.2-1.9 instead of ×2.7), but **the uncounted
-mode is still no faster on the Mac** (pages 73.1-74.5 s against the base's 72.3-76.2, gates ±0.4%, overlapping). The
-page's "Faster defaults" preset and its note were taken out (the user's call for this outcome); the mechanism (the
-ticker, the exports, ABI 73, the emitters' uncounted branches, the page's `count` plumbing) stays. **Next, when the
-track resumes: decide whether to revert the `acc`-less mechanism** (docs/backlog.md "Keep or revert parallel SMP's code
-without `acc`" lists what a revert removes, ~1,200 lines and an ABI bump), or first look for loop 53's −3.6% (a
-diagnostic build without the ticker's periodic tick on the pages session). The next loop is 57. Main is clean, no run
-pending; `review/ticker-count` deleted on origin; `target/snapbench/pages.waarm64snap` loads into loop 56's core.
+**The track is paused at the user's request.** Loop 57 reverted parallel SMP's polled code without `acc` (the
+uncounted mode, its ticker, ABI 73's exports, the page's count plumbing): the user's decision after loop 56 measured
+it no faster on the Mac. The code is loop 54's again (the core's code section equals 216adb06's but for the ABI
+constant, now 74; `tests/steps.txt` unchanged); kept from loops 55-56: the compile worker's memory view made once and
+page-modal's bounded storage test. The finding is in docs/jit.md "Tried and lost: polled code without `acc`", the
+numbers in bench/boot/REPORT.md "PERF loop 55" to "PERF loop 57". The next loop is 58, from the queue's first row.
+Main is clean, no run pending. `target/snapbench/pages.waarm64snap` loads into loop 54's core state layout (the revert
+changed no machine state); remake it with `bench/gpu/warm-snapshots.sh firefox` if a load fails.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-56" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+57" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47, 50 and 55) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48 and 56 (50's: comments only). The next
-is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM,
-FCMA, FP16, FHM, BF16. Where things stand: regions follow a call only when its callee can't leave them (loops 36-37,
-the gates −2.5%); the core's heap is measured and bounded (loops 38-44: the block map at 900,000 keys and 2^20
-buckets, its table kept across a prune, its prune allocating nothing; 15 minutes of real sites in the desktop guest's
-Chromium and Firefox stay at 284-295 MiB with no rescue); lazy NZCV at a loop's head measured nothing on the Mac and
-was dropped (loop 42). The ABI is 73 (loop 55's `vm_set_count` and the ticker's exports); snapshots are unaffected. `target/snapbench/pages.waarm64snap`
-was remade from cda6cfa7's core (it loads into loop 46's).
+is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA, FP16, FHM,
+BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain)
 
@@ -141,8 +134,7 @@ Refilled by the supervisor after loop 52 from docs/backlog.md's performance entr
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next (after the pause):** JIT: keep or revert the code without `acc` | loops 55-56: pages even with the base after the review's fixes, loop 53's bound −3.6%; decide on the revert, or a diagnostic build without the periodic tick first |
-| Parallel SMP: WFI's sleep wakes late on macOS | loop 53's finding: halving waits in the vCPU worker's idle wait; measure the "in WFI" latency and the pages session |
+| **Next (after the pause):** Parallel SMP: WFI's sleep wakes late on macOS | loop 53's finding: halving waits in the vCPU worker's idle wait; measure the "in WFI" latency and the pages session |
 | JIT: the core's heap, what a module's install adds outside the bound | count first; reserve before `emit_batch`, skip a tier-up that doesn't fit |
 | JIT: kvm-unit-tests `timer` slower under the JIT than interpreted | re-measure after loop 49; then the short blocks around the polls |
 | JIT: the unexplained ~10 GB samples in the Go-load runs | V8's own counters before trusting the median |
