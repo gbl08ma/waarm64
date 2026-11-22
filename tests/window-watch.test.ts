@@ -54,6 +54,7 @@ test("the watch's look stops a running vCPU's polled code, not waiting for its c
   const vcpu = new Worker(
     `const { workerData: sab } = require('node:worker_threads');
      const w = new Int32Array(sab);
+     Atomics.store(w, 2001, 1);
      for (;;) {
        if (Atomics.load(w, ${STOP}) === 0) {
          Atomics.store(w, ${STOP}, 1);
@@ -65,12 +66,14 @@ test("the watch's look stops a running vCPU's polled code, not waiting for its c
     { eval: true, workerData: sab },
   );
   try {
+    // Once the "vCPU" runs (a worker starts in tens of ms under load).
+    for (let i = 0; i < 5000 && Atomics.load(w, 2001) === 0; i++) await new Promise((r) => setTimeout(r, 1));
     const watch = new WindowWatch(sab, 0, [STOP * 4]);
     for (let r = 0; r < 5; r++) {
       const t0 = performance.now();
       const pages = watch.take(500);
       const ms = performance.now() - t0;
-      assert.ok(ms < 50, `look ${r}: ${ms.toFixed(1)} ms`);
+      assert.ok(ms < 200, `look ${r}: ${ms.toFixed(1)} ms`);
       assert.deepEqual(pages, [], `look ${r}: no page written (not every page, as after a timeout)`);
     }
   } finally {

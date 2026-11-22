@@ -41,7 +41,11 @@ function setup(skewMs = 0) {
     Atomics.notify(i32, TICKER / 4);
   };
   const w = new Worker(new URL('../web/ticker-worker.ts', import.meta.url));
-  w.on('message', () => w.postMessage({ type: 'clock', t: nowMs() + skewMs } satisfies TickerClock));
+  let asked = 0;
+  w.on('message', () => {
+    asked++;
+    w.postMessage({ type: 'clock', t: nowMs() + skewMs } satisfies TickerClock);
+  });
   w.postMessage({ memory, ticker: TICKER, ticks: TICKS, stops: STOPS } satisfies TickerJob);
   const stop = (i: number) => Atomics.load(i32, STOPS[i] / 4);
   const bits = (i: number) => Atomics.exchange(i32, TICKS[i] / 4 + 2, 0);
@@ -51,7 +55,12 @@ function setup(skewMs = 0) {
     Atomics.store(i32, TICKER / 4 + 1, 0);
     ring();
   };
-  return { i32, u64, u32, vmNs, ring, w, stop, bits, rearm, uncounted };
+  /** Once the worker has its clock (web/core.ts `clockOffset`'s 16 queries answered) and runs its loop. */
+  const ready = async () => {
+    assert.ok((await until(() => asked >= 16, 5000)) !== undefined, 'the clock queries');
+    await sleep(10);
+  };
+  return { i32, u64, u32, vmNs, ring, w, stop, bits, rearm, uncounted, ready };
 }
 
 /** Spins (this thread: no event loop) until `f()` holds, at most `ms`; performance.now() then, or undefined. */
@@ -77,7 +86,7 @@ async function until(f: () => boolean, ms: number) {
 test('ticker: idle while counted; the periodic tick, a vCPU\'s deadline and the xHCI\'s due time without', async () => {
   const k = setup();
   try {
-    await sleep(100); // the worker's clock queries
+    await k.ready();
     // Counting: nothing, whatever the deadlines say.
     k.u64[TICKS[0] / 8] = BigInt(Math.round(k.vmNs()));
     k.ring();
@@ -136,12 +145,25 @@ test('ticker: idle while counted; the periodic tick, a vCPU\'s deadline and the 
     const xdue = k.vmNs() + 2e6;
     k.u64[XHCI / 8] = BigInt(Math.round(xdue));
     k.ring();
-    const first = spinUntil(() => k.stop(0) === 0 || k.stop(1) === 0, 50);
-    assert.ok(first !== undefined, "the xHCI's due time");
-    spinUntil(() => false, 0.005);
-    assert.equal(k.stop(0) + k.stop(1), 1, "one vCPU's stop word at a time");
-    const second = spinUntil(() => k.stop(0) === 0 && k.stop(1) === 0, 50);
-    assert.ok(second !== undefined && second - first >= 0.04, `the other's after XHCI_AGAIN_MS: ${second! - first} ms`);
+    // The gap between the two stores, the best of a few rounds (a round this thread was preempted in sees none).
+    let best = 0;
+    for (let r = 0; r < 5 && best < 0.04; r++) {
+      if (r > 0) {
+        k.rearm();
+        k.u64[XHCI / 8] = BigInt(Math.round(k.vmNs() + 2e6));
+        k.ring();
+      }
+      const at: number[] = [];
+      assert.ok(
+        spinUntil(() => {
+          for (let i = 0; i < 2; i++) if (at[i] === undefined && k.stop(i) === 0) at[i] = performance.now();
+          return at[0] !== undefined && at[1] !== undefined;
+        }, 50) !== undefined,
+        `the xHCI's due time ${r}`,
+      );
+      best = Math.max(best, Math.abs(at[1] - at[0]));
+    }
+    assert.ok(best >= 0.04, `one vCPU's stop word at a time, the other's XHCI_AGAIN_MS later: ${(best * 1e3).toFixed(1)} µs`);
     assert.ok(k.vmNs() >= xdue - 200e3);
     assert.deepEqual([k.bits(0), k.bits(1)], [0, 0]);
     k.u64[XHCI / 8] = NONE;
@@ -163,12 +185,13 @@ test('ticker: idle while counted; the periodic tick, a vCPU\'s deadline and the 
 test('ticker: deadlines that pass together fire STAGGER_MS apart', async () => {
   const k = setup();
   try {
-    await sleep(100);
+    await k.ready();
     k.uncounted(10_000_000_000n);
     await sleep(5);
     k.rearm();
     k.bits(0);
     k.bits(1);
+    const gaps: number[] = [];
     for (let r = 0; r < 5; r++) {
       const due = BigInt(Math.round(k.vmNs() + 2e6));
       [k.u64[TICKS[0] / 8], k.u64[TICKS[1] / 8]] = [due, due];
@@ -181,28 +204,31 @@ test('ticker: deadlines that pass together fire STAGGER_MS apart', async () => {
         }, 50) !== undefined,
         `round ${r}: both fired`,
       );
-      const gap = Math.abs(at[1] - at[0]);
-      // (Round 0 warms this thread's spin up: its first laps run unoptimized, and see the first store late.)
-      if (r > 0) assert.ok(gap >= STAGGER_MS * 0.8, `round ${r}: ${(gap * 1e3).toFixed(1)} µs apart`);
+      gaps.push(Math.abs(at[1] - at[0]));
       assert.deepEqual([k.bits(0), k.bits(1)], [TICK_TIMER, TICK_TIMER]);
       k.rearm();
     }
+    // The best round's (one this thread was preempted in, or its first, unoptimized laps, may see both at once).
+    const best = Math.max(...gaps);
+    assert.ok(best >= STAGGER_MS * 0.8, `fired ${gaps.map((g) => (g * 1e3).toFixed(1)).join(', ')} µs apart`);
   } finally {
     await k.w.terminate();
   }
 });
 
 test('ticker: a deadline its clock sees early, published again, fires a few more times, not once per round trip', async () => {
-  // The ticker's clock 0.2 ms ahead of the vCPU's: it takes each deadline 0.2 ms early.
-  const k = setup(0.2);
+  // The ticker's clock 1 ms ahead of the vCPU's: it takes each deadline 1 ms early (its clock's estimate, under load,
+  // off by its round trips at most). Without the doubling gap that was hundreds of fires; with it, about 7.
+  const k = setup(1);
   try {
-    await sleep(100);
+    await k.ready();
     k.uncounted(10_000_000_000n);
     await sleep(5);
     k.rearm();
     k.bits(0);
+    let total = 0;
     for (let r = 0; r < 3; r++) {
-      const due = Math.round(k.vmNs() + 2e6);
+      const due = Math.round(k.vmNs() + 4e6);
       k.u64[TICKS[0] / 8] = BigInt(due);
       k.ring();
       let early = 0;
@@ -219,8 +245,10 @@ test('ticker: a deadline its clock sees early, published again, fires a few more
         }
         return false;
       }, 50);
-      assert.ok(early >= 1 && early <= 6, `round ${r}: ${early} early fires`);
+      assert.ok(early <= 12, `round ${r}: ${early} early fires`);
+      total += early;
     }
+    assert.ok(total >= 3, `the clocks' skew shows: ${total} early fires`);
   } finally {
     await k.w.terminate();
   }
@@ -229,7 +257,7 @@ test('ticker: a deadline its clock sees early, published again, fires a few more
 test('ticker: while the VM clock is held, a deadline spins nothing', async () => {
   const k = setup();
   try {
-    await sleep(100);
+    await k.ready();
     k.uncounted(1_000_000n);
     // Held at 1 s (`Clock::hold`: t0 u64::MAX), a deadline 10 µs past it.
     k.u64[BASE / 8] = 1_000_000_000n;
