@@ -248,10 +248,10 @@ that changes either needs its demos made again (any build of that commit's core 
    one missing.
 7. **Check from headless Chromium:** `https://waarm64.com/demos` lists every demo; each starts (Alpine to a command
    answered, `apk add python3` through the demo network; a desktop to its screen and the countdown's app); then the
-   numbers with bench/demo (bench/demo/REPORT.md). A demo whose image changed keeps its id only where nobody depends on
-   the old one (the user's call: no visitors yet, 2026-11-19): its directory and ledger entry are dropped from the deploy
-   checkout's copy of the site (never main's: hard links, the ledger replaced, not written through), and it publishes as
-   new.
+   numbers with bench/demo (bench/demo/REPORT.md). **A demo whose image changed is a new id with `replaces`**, always:
+   visitors' machines have overlays on the old image. (Until the deploy of 2026-11-22 evening, the last one before
+   anybody could depend on a demo, the user let such a demo keep its id: its directory and ledger entry dropped from the
+   deploy checkout's copy of the site, never main's. That is over.)
 
 **The demo network's server** (`wss://demonet.waarm64.com/`, the page's default: web/demo-net.ts `DEMO_URL`) is
 [waarm64-demonet](https://github.com/gbl08ma/waarm64-demonet), hosted by the user outside these deploys: its README
