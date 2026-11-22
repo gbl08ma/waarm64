@@ -145,10 +145,12 @@ indexes of their instance).
   shows MIPS or JIT share) has no steps to end a chunk, and the run loop stores 1 in the stop word. One worker per
   machine (`web/ticker-worker.ts`, idle while the code counts) stores 0 there instead: at each vCPU's timer deadline,
   which the run loop publishes (`CpuTick::due`, the VM clock's ns, written when it drives the timers; the bell rings
-  when it moves) and the ticker takes with a TIMER bit; at the xHCI's due time; and every 1 ms with a PERIODIC bit.
-  The run loop swaps the bits after its store of the stop word: TIMER and PERIODIC look at the timers; PERIODIC also
-  publishes the counters, checks the budget (`vm_run_cpu`'s as ns) and advances the JIT's batch clock by time. The
-  compile worker stores 0 in every stop word when compiled modules are ready. The ticker's wait for a deadline takes
+  when it moves earlier) and the ticker takes with a TIMER bit, deadlines that pass together 10 µs apart; at the
+  xHCI's due time, one vCPU's (which claims the due time before it takes the platform's lock); and every 1 ms with a
+  PERIODIC bit. The run loop swaps the bits after its store of the stop word: TIMER and PERIODIC look at the timers;
+  PERIODIC also publishes the counters, checks the budget (`vm_run_cpu`'s as ns) and advances the JIT's batch clock
+  by its time in the run loop. The compile worker stores 0 in every stop word when compiled modules are ready, the
+  window's write-watch in each running vCPU's when it looks. The ticker's wait for a deadline takes
   half the time left, again, and spins the last 40 µs (macOS's timed waits come back late by a share of the timeout:
   4-9 µs late on the Mac where a plain wait is 158-561 µs, bench/boot/REPORT.md "PERF loop 53"); its periodic tick is
   a plain wait. Memory: one more worker (an isolate, a few MiB). The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a

@@ -3,7 +3,7 @@
 // The words expected are the catalog's (docs/i18n.md "Tests").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { counts, DEFAULT_ITEMS, FAST_ITEMS, nameOf, normalize, palette, shows, type Item } from '../web/app/statusbar.ts';
+import { counts, DEFAULT_ITEMS, FAST_ITEMS, followCounting, nameOf, normalize, palette, shows, tellCounting, unfollowCounting, type Item } from '../web/app/statusbar.ts';
 import { graphics } from '../web/app/statusbar-graphics.ts';
 import { metrics, type Metrics } from '../web/app/statusbar-metrics.ts';
 import type { Live } from '../web/app/statusbar-piece.ts';
@@ -178,4 +178,20 @@ test('the TLB: misses and flushes a second, from two statuses; nothing from one'
   assert.deepEqual([m.tlbMisses, m.tlbFlushes], [200_000, 50]);
   assert.equal(text({ kind: 'tlb' }, m), t('statusbar:statusbar-mmu.tlb', { misses: '200,000', flushes: '50', count: 50 }));
   assert.deepEqual(normalize([{ kind: 'tlb', look: 'icon' }]), [{ kind: 'tlb', look: 'icon' }]);
+});
+
+// PERF loop 56: a run's ear for the bar's counting goes when the run ends; an ended run's letting go keeps a later one's.
+test('status bar: the counting follower goes with its run', () => {
+  const [a, b] = [{}, {}];
+  const told: string[] = [];
+  followCounting(a, (on) => told.push(`a ${on}`));
+  tellCounting(false);
+  unfollowCounting(a);
+  tellCounting(true);
+  assert.deepEqual(told, ['a false'], 'nothing to an ended run');
+  followCounting(b, (on) => told.push(`b ${on}`));
+  unfollowCounting(a); // the ended run's late stop
+  tellCounting(true);
+  assert.deepEqual(told, ['a false', 'b true']);
+  unfollowCounting(b);
 });

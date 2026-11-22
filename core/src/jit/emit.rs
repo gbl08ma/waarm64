@@ -2117,8 +2117,23 @@ pub const STOP: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, stop)) a
 /// unrolled laps, or out of it altogether), but it reads memory again in each
 /// invocation and after every call; an atomic load costs an alignment check,
 /// an address add and an acquire besides (PERF loop 34: per function arm64
-/// −1.4% instructions, x64 −2.1%). A read gone stale can only be the chunk's
-/// steps or 0, so the chunk's bound holds whatever V8 merges.
+/// −1.4% instructions, x64 −2.1%).
+///
+/// Why a plain read can't hide a setter's 0 for good, in either mode (PERF
+/// loop 56): with `acc` (counted) a read gone stale is the chunk's steps or 0,
+/// and `acc` grows to it, so the chunk's bound holds whatever V8 merges.
+/// Without `acc` (the constant 0, the word 1 or 0) a stale 1 never ends the
+/// chunk by itself, and the bound is that compiled code can only run on
+/// without end through a wasm `loop`'s back edge or through calls: a loop's
+/// laps are a looped region's (its edges' polls are atomic: a racy read can't
+/// be hoisted out or merged across laps), and polled code's other transfers
+/// are tail calls and calls, after which V8 reads memory again (it assumes a
+/// call may write it; it has no effect analysis of a wasm callee). Inlining
+/// merges a bounded number of invocations (V8's inlining budget: what it
+/// inlines is finite code), so a merged plain read is stale for a bounded stretch
+/// of code at most, never a spin. The spin tests (tests/spin.test.ts) run
+/// every shape both ways; a change that emits a `loop` with a plain poll, or
+/// a V8 that keeps memory across calls, breaks this argument.
 pub fn poll(c: &mut Func, fresh: bool) {
     const I32_ATOMIC_LOAD: u8 = 0x10;
     dbump(c, crate::tally::POLL);

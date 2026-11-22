@@ -36,6 +36,8 @@ export function compiler(
   let compiled = 0,
     failed = 0,
     ms = 0;
+  // The memory's words, the view made again only after it grew.
+  let u32 = new Uint32Array(memory.buffer);
   return {
     job(j: CompileJob) {
       const t0 = performance.now();
@@ -63,7 +65,7 @@ export function compiler(
         moved = true;
       }
       if (moved) {
-        const u32 = new Uint32Array(memory.buffer);
+        if (u32.buffer !== memory.buffer) u32 = new Uint32Array(memory.buffer);
         Atomics.store(u32, j.ready / 4, (next - 1) >>> 0 || 0xffff_ffff);
         // The news, then the stop words (the ticker's `count` 0: no step count ends a chunk).
         if (ticker !== undefined && Atomics.load(u32, ticker / 4 + 1) === 0)

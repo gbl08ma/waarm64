@@ -567,16 +567,27 @@ counted code byte for byte; `tests/steps.txt` didn't move.
   coordinator with the vCPU workers, idle while the code counts): it waits for the earliest of every vCPU's timer
   deadline (`CpuTick::due`), the xHCI's due time and the next period. At a deadline it takes the `due` (a compare-and-
   exchange to u64::MAX), ORs `TICK_TIMER` into the vCPU's tick bits and stores 0 in its stop word; at the xHCI's due
-  time 0 in every stop word (again every 50 µs while it stays due and unhandled); every period (1 ms) `TICK_PERIODIC`
-  in every vCPU's bits and 0 in every stop word. For a deadline its `Atomics.wait` takes half the time left, again,
-  until 40 µs remain, then spins; the periodic tick is one plain wait (no precision needed, nothing spun). Its clock
-  is the creator's, measured as the vCPU workers' is (web/core.ts `clockOffset`), which agrees with theirs to a round
-  trip: the run loop publishes a deadline again after a TIMER it found not due yet, so one seen early comes again.
+  time 0 in one vCPU's stop word, the next one's each time (again every 50 µs while it stays due and unhandled: the
+  run loop that sees it claims it with a compare-and-exchange to u64::MAX before it takes the platform's lock, so one
+  vCPU does the work); every period (1 ms) `TICK_PERIODIC` in every vCPU's bits and 0 in every stop word. Deadlines
+  that pass together fire 10 µs apart (`STAGGER_MS`: Linux's per-vCPU ticks fall due together, and each fire takes the
+  platform's lock and the GIC's). For a deadline its `Atomics.wait` takes half the time left, again, until 40 µs
+  remain, then spins; the periodic tick is one plain wait (no precision needed, nothing spun). Its clock is the
+  creator's, measured as the vCPU workers' is (web/core.ts `clockOffset`), which agrees with theirs to a round trip:
+  the run loop publishes a deadline again after a TIMER it found not due yet, so one seen early comes again, after a
+  gap that doubles from 20 µs each time (a few fires, not one per round trip). While the VM clock is held (a
+  snapshot's save) no deadline comes nearer, and the ticker looks at none. The bell rings only when a deadline or the
+  xHCI's due time moves earlier (a later one: the wait ends at the earlier at worst), the xHCI's after the platform's
+  lock is released (`Shared::ring_owed`, `vm::parallel::Plat`) (PERF loop 56).
 - **The run loop** swaps the bits to 0 after its store of the stop word and its fence, and acts on them: TIMER and
   PERIODIC look at the timers (a clock read and `drive_timers`, which publishes the next deadline in VM clock ns and
   rings the bell when it moved); PERIODIC also publishes the JIT's and TLB's counters (`JIT_PUBLISH`'s steps in the
   counted mode), checks `vm_run_cpu`'s budget as ns (the worker's 100M steps: 100 ms) and advances the batch clock
-  by time (`BATCH_TIMEOUT` read as 64 ms). The xHCI's completions are looked at on every pass, as before.
+  by the time between two ticks of one run loop (`BATCH_TIMEOUT_NS`, 140 ms, about `BATCH_TIMEOUT`'s 64M steps of a
+  busy vCPU; the run loop's start forgets the last tick, so time out of the core doesn't count). The xHCI's
+  completions are looked at on every pass, as before.
+- **The window's write-watch** (web/window.ts) stores 0 in each running vCPU's stop word after its look's bump, so a
+  vCPU in compiled code reaches its run loop's top (where it acks) at its next poll (PERF loop 56).
 - **The compile worker** stores 0 in every stop word after `ready` moves (while the ticker's `count` is 0), so each
   dispatcher installs the new modules at its next poll; it gets the stop words' and the ticker's addresses with its
   ports (`CompileInit`).

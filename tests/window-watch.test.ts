@@ -8,6 +8,8 @@ import { test } from 'node:test';
 import { bootVm } from '../web/vm.ts';
 import { Exit } from '../web/core.ts';
 import { Counter } from '../web/counters.ts';
+import { Worker } from 'node:worker_threads';
+import { WindowWatch } from '../web/window.ts';
 
 const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const kernel = readFileSync(new URL('baremetal/watch.bin', import.meta.url));
@@ -39,3 +41,40 @@ for (const jit of [0, 4, 1] as const) {
     if (jit === 1) assert.ok(jitSteps > 100_000, `JIT steps ${jitSteps}`);
   });
 }
+
+// PERF loop 56: a vCPU in parallel SMP's polled code reaches its run loop's top (where it drops its write entries and
+// acks the look) only when its chunk ends, which without `acc` no step count does: the look stores 0 in its stop word.
+// Here a worker plays the vCPU, acking only once its stop word is 0, as compiled code at its poll would.
+test("the watch's look stops a running vCPU's polled code, not waiting for its chunk to end", async () => {
+  // core/src/mem.rs `Watch`: GEN, NCPUS, WORDS, PAGES, ACK[128], RUNNING[128], the bitmap; the stop word past it.
+  const sab = new SharedArrayBuffer(8192);
+  const w = new Int32Array(sab);
+  const [ACK, RUNNING, STOP] = [4, 132, 1024];
+  [w[1], w[2], w[3], w[RUNNING], w[STOP]] = [1, 1, 32, 1, 1];
+  const vcpu = new Worker(
+    `const { workerData: sab } = require('node:worker_threads');
+     const w = new Int32Array(sab);
+     for (;;) {
+       if (Atomics.load(w, ${STOP}) === 0) {
+         Atomics.store(w, ${STOP}, 1);
+         Atomics.store(w, ${ACK}, Atomics.load(w, 0));
+         Atomics.notify(w, ${ACK});
+       }
+       if (Atomics.load(w, 2000) !== 0) break;
+     }`,
+    { eval: true, workerData: sab },
+  );
+  try {
+    const watch = new WindowWatch(sab, 0, [STOP * 4]);
+    for (let r = 0; r < 5; r++) {
+      const t0 = performance.now();
+      const pages = watch.take(500);
+      const ms = performance.now() - t0;
+      assert.ok(ms < 50, `look ${r}: ${ms.toFixed(1)} ms`);
+      assert.deepEqual(pages, [], `look ${r}: no page written (not every page, as after a timeout)`);
+    }
+  } finally {
+    Atomics.store(w, 2000, 1);
+    await vcpu.terminate();
+  }
+});

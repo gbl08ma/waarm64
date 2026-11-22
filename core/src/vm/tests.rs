@@ -1746,6 +1746,19 @@ fn without_step_counts_the_timer_deadline_is_published_for_the_ticker() {
         "published again: {again}, was {due}"
     );
     assert_eq!(tick.bits.load(Ordering::SeqCst), 0, "the bits taken");
+    // PERF loop 56: the bell only for a deadline that moves earlier (the ticker's wait ends at the earlier one).
+    let bell = |vm: &Vm| tk(vm).0;
+    let b0 = bell(&t.vm);
+    t.vtimer_at(cval + 62_500_000 * 10);
+    // SAFETY: as above.
+    unsafe { t.vm.run_cpu(0, 1000) };
+    assert!(tick.due.load(Ordering::SeqCst) > again, "published later");
+    assert_eq!(bell(&t.vm), b0, "a later deadline: no bell");
+    t.vtimer_at(cval);
+    // SAFETY: as above.
+    unsafe { t.vm.run_cpu(0, 1000) };
+    assert!(tick.due.load(Ordering::SeqCst) < again + 1_000_000);
+    assert!(bell(&t.vm) != b0, "an earlier deadline: the bell");
     t.vm.set_count(true);
     // SAFETY: as above.
     unsafe { t.vm.run_cpu(0, 1000) };
@@ -1754,4 +1767,21 @@ fn without_step_counts_the_timer_deadline_is_published_for_the_ticker() {
         u64::MAX,
         "counted again: withdrawn"
     );
+}
+
+/// PERF loop 56: a ring a change under the platform's lock owes the ticker (`spis`: the xHCI's due time moved
+/// earlier) waits for the lock's release.
+#[test]
+fn the_bell_rings_after_the_platform_lock_is_released() {
+    let t = T::new(&[B_SELF], VmConfig { jit: 4, ..par(2) });
+    let vm = &t.vm;
+    // SAFETY: the VM outlives the read.
+    let bell = || unsafe { &*vm.ticker() }.bell.load(Ordering::SeqCst);
+    let b0 = bell();
+    let pl = vm.plat_of_for_tests(0);
+    vm.shared.ring_owed.store(true, Ordering::Relaxed);
+    assert_eq!(bell(), b0, "not under the lock");
+    drop(pl);
+    assert!(bell() != b0, "rung at the release");
+    assert!(!vm.shared.ring_owed.load(Ordering::Relaxed));
 }

@@ -190,6 +190,43 @@ impl Default for Ticker {
     }
 }
 
+/// `Vm::plat`'s guard in parallel mode ([`Vm::plat_of`]): once the lock is released, rings the ticker's bell if a
+/// change under it owes a ring (`Shared::ring_owed`), so the ring's notify doesn't lengthen the lock's hold.
+pub(super) struct Plat<'a> {
+    g: core::mem::ManuallyDrop<MutexGuard<'a, Platform>>,
+    shared: &'a Shared,
+}
+
+impl<'a> Plat<'a> {
+    fn new(g: MutexGuard<'a, Platform>, shared: &'a Shared) -> Plat<'a> {
+        Plat {
+            g: core::mem::ManuallyDrop::new(g),
+            shared,
+        }
+    }
+}
+
+impl core::ops::Deref for Plat<'_> {
+    type Target = Platform;
+    fn deref(&self) -> &Platform {
+        &self.g
+    }
+}
+
+impl core::ops::DerefMut for Plat<'_> {
+    fn deref_mut(&mut self) -> &mut Platform {
+        &mut self.g
+    }
+}
+
+impl Drop for Plat<'_> {
+    fn drop(&mut self) {
+        // SAFETY: `g` is dropped once, here, and not used after.
+        unsafe { core::mem::ManuallyDrop::drop(&mut self.g) };
+        self.shared.ring_owed();
+    }
+}
+
 impl Ticker {
     /// Rings the bell (after the change it's for).
     pub fn ring(&self) {
@@ -627,8 +664,17 @@ impl Vm {
             }
             // The xHCI's completions once their latency passed. An idle vCPU waits for that too
             // (below): another one may be what keeps the machine busy.
+            // Claimed first (u64::MAX in its place; `refresh` publishes the next): of the vCPUs that see it due at
+            // once (the ticker's periodic tick ends every chunk together), one takes the lock for it.
             let due = self.shared.xhci_due.load(Ordering::Relaxed);
-            if due != u64::MAX && self.ns() >= due {
+            if due != u64::MAX
+                && self.ns() >= due
+                && self
+                    .shared
+                    .xhci_due
+                    .compare_exchange(due, u64::MAX, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+            {
                 let ns = self.ns();
                 let mut pl = self.plat_of(c);
                 let (Some(x), Some(xs)) = (&mut pl.xhci, &self.shared.xhci) else {
@@ -864,7 +910,7 @@ impl Vm {
     }
 
     /// Publishes vCPU `c`'s next timer deadline for the ticker (`CpuTick::due`, VM clock ns) as of counter value
-    /// `now`, ringing the bell when it moved: polled code without `acc` sees its timer when the ticker stores 0 in
+    /// `now`, ringing the bell when it moved earlier: polled code without `acc` sees its timer when the ticker stores 0 in
     /// its stop word there.
     fn publish_due(&self, c: usize, v: &Vcpu, own: &mut Own, now: u64) {
         let at = deadline(&v.cpu, now);
@@ -876,7 +922,8 @@ impl Vm {
             u64::MAX => u64::MAX,
             d => self.ns().saturating_add(d),
         };
-        if self.shared.cpus[c].par.tick.due.swap(due, Ordering::SeqCst) != due {
+        // The bell only for a deadline that moved earlier: the ticker's wait ends at the earlier one at worst.
+        if self.shared.cpus[c].par.tick.due.swap(due, Ordering::SeqCst) > due {
             self.shared.ticker.ring();
         }
     }
@@ -887,11 +934,10 @@ impl Vm {
         own.timer_regs = None;
         own.due_at = None;
         own.publish = true;
+        // Withdrawn without the bell: a later deadline needs none.
         let t = &self.shared.cpus[c].par.tick;
         t.bits.store(0, Ordering::SeqCst);
-        if t.due.swap(u64::MAX, Ordering::SeqCst) != u64::MAX {
-            self.shared.ticker.ring();
-        }
+        t.due.store(u64::MAX, Ordering::SeqCst);
     }
 
     /// Completes an exit of vCPU `c`; `Some` ends the run with that kind.
@@ -1022,16 +1068,21 @@ impl Vm {
 
     /// `Vm::plat`'s lock for vCPU `c`, counting the times it was held
     /// already and how long `c` waited.
-    fn plat_of(&self, c: usize) -> MutexGuard<'_, Platform> {
+    fn plat_of(&self, c: usize) -> Plat<'_> {
         if let Some(g) = self.plat.try_lock() {
-            return g;
+            return Plat::new(g, &self.shared);
         }
         let t0 = self.clock.ns();
         let g = self.plat.lock();
         let k = &self.shared.cpus[c].counters.par;
         bump(&k[PAR_LOCK_CONTENDED]);
         add(&k[PAR_LOCK_WAIT_NS], self.clock.ns() - t0);
-        g
+        Plat::new(g, &self.shared)
+    }
+
+    #[cfg(test)]
+    pub(super) fn plat_of_for_tests(&self, c: usize) -> Plat<'_> {
+        self.plat_of(c)
     }
 
     /// After a change to the platform (under its lock): drives the device
@@ -1272,7 +1323,7 @@ impl Vm {
     pub(super) fn power_par(&self, c: usize, by: Option<usize>) -> Power {
         let pl = match by {
             Some(by) => self.plat_of(by),
-            None => self.plat.lock(),
+            None => Plat::new(self.plat.lock(), &self.shared),
         };
         if self.shared.cpus[c].par.state.load(Ordering::SeqCst) != OFF || pl.start[c].is_some() {
             Power::On
@@ -1381,7 +1432,7 @@ impl Vm {
 
     /// Publishes every vCPU's IRQ line from the GIC's state (after a restore).
     pub(super) fn refresh_all(&mut self) {
-        let mut pl = self.plat.lock();
+        let mut pl = Plat::new(self.plat.lock(), &self.shared);
         self.refresh(&mut pl);
     }
 

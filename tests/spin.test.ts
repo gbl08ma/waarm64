@@ -114,3 +114,26 @@ for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2], ['JIT-check', 3], ['th
     }
   }
 }
+
+// PERF loop 56: the machine's status says whether every step counted since the last one (web/app/protocol.ts
+// `Status.counted`), so counting switched off and on between two statuses isn't read as counted throughout.
+test('spin: counted since the last look, an off-then-on between two looks included', async () => {
+  const { bootVm } = await import('../web/vm.ts');
+  const vm = await bootVm(WASM, opts(1, true));
+  try {
+    assert.equal(vm.countedSinceLook(), true, 'counted from the boot');
+    assert.equal(vm.countedSinceLook(), true);
+    vm.setCount(false);
+    vm.setCount(true);
+    assert.equal(vm.counting(), true);
+    assert.equal(vm.countedSinceLook(), false, 'off and on again since the last look');
+    assert.equal(vm.countedSinceLook(), true, 'counted since');
+    vm.setCount(false);
+    assert.equal(vm.countedSinceLook(), false);
+    vm.setCount(true);
+    assert.equal(vm.countedSinceLook(), false, 'uncounted at the last look');
+    assert.equal(vm.countedSinceLook(), true);
+  } finally {
+    vm.close();
+  }
+});

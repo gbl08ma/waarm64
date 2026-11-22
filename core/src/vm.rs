@@ -455,6 +455,18 @@ pub struct Shared {
     pub suspended: AtomicBool,
     /// Parallel SMP's ticker's words (`vm_ticker`), and its polled code's mode (`vm_set_count`).
     pub ticker: parallel::Ticker,
+    /// A change under the platform's lock moved the xHCI's due time earlier (`spis`): the ticker's bell rings once
+    /// the lock is released (`parallel::Plat`), not while the other vCPUs queue on it.
+    pub ring_owed: AtomicBool,
+}
+
+impl Shared {
+    /// Rings the ticker's bell if a change owes it a ring (`ring_owed`): after the platform's lock is released.
+    pub fn ring_owed(&self) {
+        if self.ring_owed.load(Ordering::Relaxed) && self.ring_owed.swap(false, Ordering::SeqCst) {
+            self.ticker.ring();
+        }
+    }
 }
 
 /// A vCPU's words other threads read or write.
@@ -1339,6 +1351,7 @@ impl Vm {
             p.gic.set_level(i, IRQ_PTIMER, pt);
         }
         spis(p, &self.shared);
+        self.shared.ring_owed();
     }
 
     /// Drives vCPU `c`'s timer lines into the GIC at the counter now: after a
@@ -1758,11 +1771,12 @@ fn spis(p: &mut Platform, shared: &Shared) {
     if let Some(x) = &p.xhci {
         p.gic.set_level(0, xhci::IRQ, x.irq());
         let due = x.due();
-        // The ticker waits for it too while polled code runs without `acc`.
-        if shared.xhci_due.swap(due, Ordering::Relaxed) != due
+        // The ticker waits for it too while polled code runs without `acc`: its bell, once the lock is released,
+        // when the due time moved earlier (a later one needs none: the ticker's wait ends at the earlier, at worst).
+        if shared.xhci_due.swap(due, Ordering::Relaxed) > due
             && shared.ticker.count.load(Ordering::Relaxed) == 0
         {
-            shared.ticker.ring();
+            shared.ring_owed.store(true, Ordering::Relaxed);
         }
     }
 }

@@ -98,7 +98,10 @@ the interpreter's own code.
 - A key is counted per dispatch; past the **threshold** it joins a pending batch, emitted as
   one module at **512 blocks**, once the pending blocks have run **50,000 steps** in the
   interpreter since they joined it (`BATCH_STEPS`: each dispatch of a queued block adds its
-  length), or **64M steps** after the batch's first entry (`BATCH_TIMEOUT`, for lukewarm blocks).
+  length), or **64M steps** after the batch's first entry (`BATCH_TIMEOUT`, for lukewarm blocks; parallel SMP's
+  code without `acc` counts no steps, and its clock is the vCPU's time in its run loop instead, **140 ms**,
+  `BATCH_TIMEOUT_NS`: about as long as a busy vCPU takes for 64M steps; host time, idle spells included, made 18%
+  more modules in PERF loop 55).
   So a block that keeps running is compiled soon, and blocks that rarely run wait for company.
 - **The threshold follows the code cache's pressure** (`Cache::retune`, set where modules are
   installed and at flushes, so a dispatch only compares): the mechanism doubles a floor at each eighth
@@ -480,8 +483,11 @@ differing only in the address of a core table they embed, the CRC tables).
   spin tests'), past which only the setters end one.
 - **The ticker, without `acc`** (PERF loop 55; platform.md "Parallel SMP"): uncounted code's chunk has no steps to
   end it, so `web/ticker-worker.ts` stores 0 in a vCPU's stop word at its timer deadline (published by its run loop),
-  at the xHCI's due time, and every 1 ms (the publications, the budget by time, the batch clock by time, a look at the
-  timers); the compile worker stores 0 when modules are ready. Its waits by halves are what loop 53 measured meets
+  at the xHCI's due time (one vCPU's), and every 1 ms (the publications, the budget by time, the batch clock by the
+  run loop's time, a look at the timers); the compile worker stores 0 when modules are ready, the window's
+  write-watch when it looks. The poll's plain loads stay sound without `acc` (the `poll` docs in
+  core/src/jit/emit.rs, PERF loop 56): only a wasm `loop`'s back edge (a looped region's, its polls atomic) or calls
+  (after which V8 reads memory again) let code run on without end. Its waits by halves are what loop 53 measured meets
   decision 3 on the Mac (4-9 µs late on average).
 - **No ticker for counted code** (PERF loop 32, bench/boot/REPORT.md): a chunk end costs ~0.2 µs of run loop (Node on the dev VM), at
   most ~0.5% of the gates' vCPU time, and 4× as many (8,192-step chunks) didn't move the Mac's gates. Longer chunks

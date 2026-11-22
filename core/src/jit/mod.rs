@@ -537,9 +537,14 @@ const MISS_SLOTS: u32 = 2;
 pub const BATCH_STEPS: u64 = 50_000;
 
 /// Steps after the first block joins a pending batch before it's emitted
-/// anyway, so a lukewarm block doesn't wait forever (ns in polled code
-/// without `acc`, whose steps go uncounted: 64 ms, [`Jit::tick`]).
+/// anyway, so a lukewarm block doesn't wait forever.
 pub const BATCH_TIMEOUT: u64 = 64_000_000;
+
+/// [`BATCH_TIMEOUT`] in polled code without `acc`, whose steps go uncounted:
+/// ns of the vCPU's time in its run loop ([`Jit::tick`]), about as long as
+/// `BATCH_TIMEOUT`'s steps take a busy vCPU (~450 MIPS on the Mac, PERF loop
+/// 55; at 64 ms the batches went out 2-3× sooner, 18% more modules).
+pub const BATCH_TIMEOUT_NS: u64 = 140_000_000;
 
 /// [`Config::DEFAULT`]'s `warm`.
 pub const WARM: u32 = 16;
@@ -1183,8 +1188,13 @@ impl Cache {
         if t.since.0 != self.batch {
             t.since = (self.batch, t.clock);
         }
+        let timeout = if t.cfg.uncounted {
+            BATCH_TIMEOUT_NS
+        } else {
+            BATCH_TIMEOUT
+        };
         self.pending.len() >= self.cfg.batch as usize
-            || t.clock - t.since.1 >= BATCH_TIMEOUT
+            || t.clock - t.since.1 >= timeout
             || self.pending_steps >= BATCH_STEPS
     }
 
@@ -1656,7 +1666,7 @@ pub struct Table {
     /// batch and this clock when this table first saw it pending.
     clock: u64,
     since: (u64, u64),
-    /// The host's ns at the last [`Jit::tick`] (0: none since the mode changed).
+    /// The host's ns at the last [`Jit::tick`] (0: none since the mode changed or the vCPU entered its run loop).
     ticked: u64,
     /// What this table's vCPUs ran and what it compiled, flushed and
     /// invalidated (`vm::Counters` sums the tables').
@@ -2064,7 +2074,9 @@ impl Jit {
     }
 
     /// The batch timeout's clock in polled code without `acc`, which counts no steps: the host's ns `now`, from
-    /// the run loop at its periodic tick.
+    /// the run loop at its periodic tick. Only the time between two ticks of one run loop counts: [`Jit::unpark`]
+    /// (the run loop's start) forgets the last, so a vCPU's time out of the core (idle in WFI, its worker's event
+    /// loop) doesn't make a pending batch due.
     pub fn tick(&mut self, now: u64) {
         let t = &mut self.table;
         if t.ticked != 0 {
@@ -2192,9 +2204,11 @@ impl Jit {
     }
 
     /// The vCPU has been out of the core (its host's event loop may have
-    /// delivered the module the table is parked on): asks the host again.
+    /// delivered the module the table is parked on): asks the host again,
+    /// and the batch clock by time starts again at the next [`Jit::tick`].
     pub fn unpark(&mut self) {
         self.table.parked = 0;
+        self.table.ticked = 0;
     }
 
     /// Whether the table parked on a module since this last said so: the
@@ -3515,6 +3529,42 @@ mod tests {
         a.set_uncounted(false, &mem);
         b.fresh(&mem);
         assert!(!a.uncounted() && !b.uncounted());
+    }
+
+    /// PERF loop 56: without `acc` the batch clock counts the vCPU's time in its run loop, not the host's: a
+    /// pending batch isn't due after an idle spell out of the core, only after `BATCH_TIMEOUT_NS` of ticks.
+    #[test]
+    fn the_batch_clock_by_time_skips_time_out_of_the_core() {
+        let mut ram = vec![0u128; 0x2000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x2000) };
+        let mut a = Jit::new(Cache::new(Config {
+            polled: true,
+            ..Config::DEFAULT
+        }));
+        a.set_uncounted(true, &mem);
+        let due = |a: &mut Jit| {
+            let mut c = a.cache.lock();
+            c.due(&mut a.table)
+        };
+        a.cache.lock().pending.push((0x100, 0x100));
+        a.unpark();
+        a.tick(1_000);
+        a.tick(1_000_000);
+        assert!(!due(&mut a), "a block pending, its batch not due yet");
+        // 200 ms in WFI, then the run loop again.
+        a.unpark();
+        a.tick(201_000_000);
+        assert!(!due(&mut a), "the idle spell doesn't count");
+        assert_eq!(a.table.clock, 999_000);
+        let mut t = 201_000_000;
+        while t < 201_000_000 + BATCH_TIMEOUT_NS - 1_000_000 {
+            t += 1_000_000;
+            a.tick(t);
+            assert!(!due(&mut a), "{t}: not due yet");
+        }
+        a.tick(t + 1_000_000);
+        assert!(due(&mut a), "due after BATCH_TIMEOUT_NS in the run loop");
     }
 
     /// A decoded block counts dispatches locally and reports them, but the

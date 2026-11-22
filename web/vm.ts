@@ -586,6 +586,10 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
       ? { at: ex.vm_ticker(vm), ticks: Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_tick(vm, i)) }
       : undefined;
   if (ticker) ex.vm_set_count(vm, o.count ? 1 : 0);
+  // The ticker's `count` word, and whether the code ran uncounted at some point since the last `countedSinceLook`.
+  const countWord = ticker ? new Uint32Array(memory.buffer, ticker.at + 4, 1) : undefined;
+  const counting = () => !countWord || Atomics.load(countWord, 0) !== 0;
+  let lapsed = !counting();
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
   const xhci = o.usb
@@ -767,7 +771,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     /** Bytes of guest RAM (at `ram`). */
     ramSize: o.ramSize,
     /** The host-visible window's write-watch (`BootOptions.window`; its bytes are memory 1's at `window.at`). */
-    watch: windowBytes ? new WindowWatch(memory, ex.vm_window_watch(vm)) : undefined,
+    watch: windowBytes ? new WindowWatch(memory, ex.vm_window_watch(vm), stops) : undefined,
     /** The window's bytes (`BootOptions.window`), if there is one: `bytes` at `at` in `spill[0]`. */
     window: venusWindow,
     /** Memories 1 and up, memory 1 first: the guest RAM past memory 0 (`spillRam`), and memory 1's renderer arena and window before node 1. */
@@ -1002,10 +1006,21 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
      * its steps uncounted). A change flushes the JIT's code as each vCPU sees it (ABI 73). Nothing elsewhere.
      */
     setCount: (on: boolean) => {
-      if (ticker) ex.vm_set_count(vm, on ? 1 : 0);
+      if (!ticker) return;
+      lapsed ||= !on;
+      ex.vm_set_count(vm, on ? 1 : 0);
     },
     /** Whether every step counts (`setCount`): always outside parallel mode under the JIT. */
-    counting: () => !ticker || Atomics.load(new Uint32Array(memory.buffer), ticker.at / 4 + 1) !== 0,
+    counting,
+    /**
+     * Whether every step counted since the last call (the first: since the boot): an off-then-on between two calls
+     * is false (web/app/protocol.ts `Status.counted`).
+     */
+    countedSinceLook: () => {
+      const r = counting() && !lapsed;
+      lapsed = !counting();
+      return r;
+    },
     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
     stats: () => stats(counter),
     /** The vCPUs run each on its own worker (`VmConfig.parallel`): `cpuStats` is then per vCPU. */

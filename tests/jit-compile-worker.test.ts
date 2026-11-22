@@ -58,3 +58,30 @@ test('compile worker: 0 in every stop word once the ready word moved, only while
   assert.equal(u32[64 / 4], 3);
   assert.deepEqual(words(), [0, 0], 'uncounted: every vCPU stops at its next poll');
 });
+
+// PERF loop 56 (docs/host-code.md: no allocation per event on hot paths): the view of the core's memory that the
+// ready word and the stop words are stored through is made once, and again only after the memory grew.
+test('compile worker: no view of the memory made per module', () => {
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 2, shared: true });
+  const ready = new Uint32Array(memory.buffer, 64, 1);
+  const c = compiler(memory, [], [128], 0);
+  const Real = globalThis.Uint32Array;
+  let made = 0;
+  globalThis.Uint32Array = new Proxy(Real, {
+    construct(t, args) {
+      made++;
+      return Reflect.construct(t, args);
+    },
+  });
+  try {
+    for (let seq = 1; seq <= 20; seq++) c.job({ seq, epoch: 0, ready: 64, bytes: EMPTY.slice(0) });
+    assert.ok(made <= 1, `${made} views for 20 modules`);
+    assert.equal(ready[0], 20);
+    // Grown: a word past the old size is reached through a new view.
+    memory.grow(1);
+    c.job({ seq: 21, epoch: 0, ready: 65536 + 64, bytes: EMPTY.slice(0) });
+    assert.equal(new Real(memory.buffer)[(65536 + 64) / 4], 21);
+  } finally {
+    globalThis.Uint32Array = Real;
+  }
+});

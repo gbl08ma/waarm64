@@ -654,7 +654,7 @@ export class Devices {
                 t: 'venus-init',
                 memory: spill[0],
                 core: memory,
-                window: d.noWatch ? { ...window, watch: 0 } : window,
+                window: d.noWatch ? { ...window, watch: 0 } : { ...window, stops: this.stops },
               });
             b.gpu.host = host;
           }

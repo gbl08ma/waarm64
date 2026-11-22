@@ -16,7 +16,7 @@ import { WindowWatch } from './window.ts';
  * Where the module finds the window: its address in the module's memory (memory 1, past the arena), its bytes, and
  * the write-watch's words' address in `core` (memory 0; default: the module's memory).
  */
-export type VenusWindow = { at: number; bytes: number; watch: number; core?: WebAssembly.Memory };
+export type VenusWindow = { at: number; bytes: number; watch: number; core?: WebAssembly.Memory; stops?: number[] };
 
 export type VenusStats = {
   submits: number;
@@ -356,7 +356,7 @@ export class VenusRenderer {
     // A pointer past 2 GiB (the window, with a large arena) comes from a wasm i32 as a negative number.
     this.ex = { ...ex, venus_alloc: (size: number) => ex.venus_alloc(size) >>> 0 };
     [this.memory, this.window] = [memory, window];
-    this.watch = window.watch ? new WindowWatch(window.core ?? memory, window.watch) : undefined;
+    this.watch = window.watch ? new WindowWatch(window.core ?? memory, window.watch, window.stops) : undefined;
     this.gpu = gpu;
     this.ex._initialize();
     // What the device advertises follows the WebGPU device's features and limits (vk/driver/wg_caps.c).
