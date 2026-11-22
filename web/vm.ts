@@ -53,7 +53,7 @@ import { deviceHost, usbHost } from './device-host.ts';
 import type { WarmWorkers } from './warm-workers.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 72;
+export const ABI = 74;
 const RAM_BASE = 0x4000_0000;
 
 const RING = 4096;
