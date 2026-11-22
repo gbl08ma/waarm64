@@ -32,11 +32,6 @@ export type DevKnobs = {
   exactCore: boolean;
   /** `?vyield=<ms>`: the vCPU workers' yield (web/vm.ts `vcpuYieldMs`); none: the default. */
   vcpuYieldMs?: number;
-  /**
-   * `?count=0|1` (benchmarks' A/Bs: bench/boot/REPORT.md "PERF loop 55"): the machine counts every step, or doesn't,
-   * whatever the status bar shows (web/vm.ts `BootOptions.count`); none: as the status bar wants.
-   */
-  count?: boolean;
   /** `?sharesasync=<name>,…` (tests, measurements): folders in the browser served as a folder on the computer is. */
   sharesAsync: string[];
   /** The display reports its draw latencies (`draw-stats`, kept in `window.__drawStats`; `?displaystats`, bench/gpu). */
@@ -83,7 +78,6 @@ export function parseDevKnobs(q: URLSearchParams): DevKnobs {
     fma: q.get('fma') !== 'emul',
     exactCore: !q.has('growcore'),
     vcpuYieldMs: q.has('vyield') ? Number(q.get('vyield')) : undefined,
-    count: q.has('count') ? q.get('count') !== '0' : undefined,
     sharesAsync: (q.get('sharesasync') ?? '').split(','),
     displayStats: q.has('displaystats'),
     ioStats: q.has('iostats'),

@@ -538,93 +538,6 @@ implemented by this step).
   host's change hasn't been taken), so a snapshot waits like it does for other events; nothing new is
   saved (a restore starts at generation 0, the interrupt state `isr` is saved already).
 
-## PERF: parallel SMP's code without `acc` (ABI 73)
-
-PERF loop 53 measured it and loop 55 built it (bench/boot/REPORT.md "PERF loop 53", "PERF loop 55"; the user's
-decision on the readout, 2026-11-22, [decisions.md](decisions.md) "JIT"): parallel SMP's polled code has **two modes**,
-with `acc` (its steps counted, as before) and without (faster, its compiled steps uncounted). The host chooses; the
-page counts while its status bar shows an element that needs every step (MIPS, JIT share, in any form: frontend.md
-"The status bar"), which the default layout does. Round-robin (deterministic and realtime) and user mode keep the
-counted code byte for byte; `tests/steps.txt` didn't move.
-
-**The modes** (`jit::Config::uncounted`; [jit.md](jit.md) "Preemption"):
-- *Counted* (the core's default; `vm_set_count(vm, 1)`): polled code as ABI 71 made it. The run loop stores the
-  chunk's steps in the stop word, the chunk ends at its first poll past them, the step clocks run on steps.
-- *Uncounted* (`vm_set_count(vm, 0)`; web/vm.ts's default unless `BootOptions.count`): `acc` is the constant 0, no
-  edge bumps it, a transfer passes 0, a poll is `0 <u word`; functions keep the return protocol (`RETURNED`, a count,
-  which is only their own last block's steps). The run loop stores 1 in the stop word, so a chunk ends only at an exit
-  or a setter's 0. The transfer cache's miss functions are the same in both modes (they pass on and return what they
-  were given, 0 here).
-- *A change* (`vm_set_count`, any thread: the mode, then the bell, then 0 in every stop word): each vCPU's run loop
-  reads the mode after its store of the stop word (as any news), and on a change calls `Jit::set_uncounted`: the cache
-  drops every block into a new epoch (a flush that leaves the compile threshold alone) and the table catches up; another
-  table takes the mode with the next epoch it catches up with, and its dispatcher ends the chunk there, so the run loop
-  stores the stop word as that mode reads it before any of its code runs. A run loop that sees the other mode asked
-  for flushes again: the cache converges on the last one asked.
-
-**What uncounted code's chunk bound took over** (the counted mode's steps paced all of it):
-- **The ticker** (`web/ticker-worker.ts`, one per machine, a browser worker or a Node worker thread, started by the
-  coordinator with the vCPU workers, idle while the code counts): it waits for the earliest of every vCPU's timer
-  deadline (`CpuTick::due`), the xHCI's due time and the next period. At a deadline it takes the `due` (a compare-and-
-  exchange to u64::MAX), ORs `TICK_TIMER` into the vCPU's tick bits and stores 0 in its stop word; at the xHCI's due
-  time 0 in one vCPU's stop word, the next one's each time (again every 50 µs while it stays due and unhandled: the
-  run loop that sees it claims it with a compare-and-exchange to u64::MAX before it takes the platform's lock, so one
-  vCPU does the work); every period (1 ms) `TICK_PERIODIC` in every vCPU's bits and 0 in every stop word. Deadlines
-  that pass together fire 10 µs apart (`STAGGER_MS`: Linux's per-vCPU ticks fall due together, and each fire takes the
-  platform's lock and the GIC's). For a deadline its `Atomics.wait` takes half the time left, again, until 40 µs
-  remain, then spins; the periodic tick is one plain wait (no precision needed, nothing spun). Its clock is the
-  creator's, measured as the vCPU workers' is (web/core.ts `clockOffset`), which agrees with theirs to a round trip:
-  the run loop publishes a deadline again after a TIMER it found not due yet, so one seen early comes again, after a
-  gap that doubles from 20 µs each time (a few fires, not one per round trip). While the VM clock is held (a
-  snapshot's save) no deadline comes nearer, and the ticker looks at none. The bell rings only when a deadline or the
-  xHCI's due time moves earlier (a later one: the wait ends at the earlier at worst), the xHCI's after the platform's
-  lock is released (`Shared::ring_owed`, `vm::parallel::Plat`) (PERF loop 56).
-- **The run loop** swaps the bits to 0 after its store of the stop word and its fence, and acts on them: TIMER and
-  PERIODIC look at the timers (a clock read and `drive_timers`, which publishes the next deadline in VM clock ns and
-  rings the bell when it moved); PERIODIC also publishes the JIT's and TLB's counters (`JIT_PUBLISH`'s steps in the
-  counted mode), checks `vm_run_cpu`'s budget as ns (the worker's 100M steps: 100 ms) and advances the batch clock
-  by the time between two ticks of one run loop (`BATCH_TIMEOUT_NS`, 140 ms, about `BATCH_TIMEOUT`'s 64M steps of a
-  busy vCPU; the run loop's start forgets the last tick, so time out of the core doesn't count). The xHCI's
-  completions are looked at on every pass, as before.
-- **The window's write-watch** (web/window.ts) stores 0 in each running vCPU's stop word after its look's bump, so a
-  vCPU in compiled code reaches its run loop's top (where it acks) at its next poll (PERF loop 56).
-- **The compile worker** stores 0 in every stop word after `ready` moves (while the ticker's `count` is 0), so each
-  dispatcher installs the new modules at its next poll; it gets the stop words' and the ticker's addresses with its
-  ports (`CompileInit`).
-- **The PC sampler's chunk:** `vm_set_chunk`'s steps read as the tick's period in ns (at least 20 µs, at most 2^30;
-  0: 1 ms). The spin tests' 2^30 then make a period of a second, so the setters' latency shows.
-- **The host's early return** for a compiled module (`Jit::park_exit`) is now said by `ExitInfo.value` 1 on a BUDGET
-  exit (it was the steps short of the budget, which uncounted code can't say).
-
-**Exports, new:**
-- `vm_cpu_tick(vm, i) -> *const CpuTick`: `#[repr(C)] {due: AtomicU64, bits: AtomicU32, _: u32}`, vCPU *i*'s; null
-  past the last and in round-robin.
-- `vm_ticker(vm) -> *const Ticker`: on wasm32 `{bell: u32, count: u32, period: u64, t0: u32, base: u32, xhci_due:
-  u32}` (`vm::parallel::Ticker`): the bell (bumped and notified when a `due`, the xHCI's due time, `count` or `period`
-  changes), the mode (1: counted, the default), the period in ns, and the addresses the ticker reads, filled in by the
-  call: the VM clock's start and base (`Clock::t0`, f64 bits of `now_ms` or u64::MAX while held, and `Clock::base`:
-  its ns are `base + (now_ms - t0) * 1e6`) and `Shared::xhci_due` (VM clock ns). Null in round-robin.
-- `vm_set_count(vm, on)`: the mode (above); nothing in round-robin.
-- `jit_uncounted(v, mem, on)`: a `jit_new` vCPU of the polled test core without `acc`, for the differential test
-  (docs/testing.md "Polled code against the interpreter"): a `jit_run_exit` is then one dispatch to the first poll.
-- `ExitInfo.retired` and the counters' `retired` count, in the uncounted mode, only what the core still counts: the
-  interpreted steps, the exits, and each function's last block where it returned.
-
-**Alternatives, measured or argued (loop 53):**
-- *Keep `acc`*: the counted mode, still there for what needs the steps.
-- *A plain `Atomics.wait` to the deadline*: 158 µs late on average at 1 ms, 561 µs at 4 ms (17% past 1 ms): macOS's
-  timer leeway grows with the timeout. *A fixed lead then a spin* (200 µs): 10 µs at 1 ms for 36% of a core, 342 µs
-  at 4 ms. Both fail decision 3 at long gaps.
-- *`Atomics.waitAsync` in a worker's event loop* (the coordinator's, the device worker's): 628 µs on average, 12% past
-  1 ms. *`setTimeout`*: 4.75 ms (clamped). Neither meets it, and both would share a thread with other work.
-- *The ticker in the core* (a Rust loop in a worker with its own core instance): the same waits, plus an instance and
-  its stack for a loop of a few loads; the JavaScript worker reads the published words directly.
-- *Compiled code reading a clock*: a host call at a poll, far dearer than `acc`.
-- *Steps counted in memory instead* (a store per edge): the spills `acc` costs are memory operands already, so it
-  would save little; the status bar's MIPS is what it would keep.
-- *The status bar's MIPS by time instead of steps* (each vCPU's busy share): the user chose the two modes instead
-  (2026-11-22), so the readout keeps its meaning wherever it is shown.
-
 ## PERF: the stop word (design note for ABI 71)
 
 PERF loop 31 (the user's decision, [decisions.md](decisions.md) "JIT": parallel SMP only, the stop word and its
@@ -763,7 +676,8 @@ tests.
 | 70 | `inflate_raw(src, len, dst, cap)` and `deflate_raw(src, len, dst, cap, level)`: qcow2's clusters through miniz_oxide ("SNAPZ: qcow2's clusters through miniz_oxide") |
 | 71 | `vm_cpu_stop(vm, i)`: parallel SMP's stop words, which a host that sets a signal bit clears too; `vm_set_chunk` past 32768 in parallel mode under the JIT ("PERF: the stop word") |
 | 72 | counter word 121: the JIT block map's rescues alone (a flush with its maps freed whole), of word 115's, which also counts a table's decoded and known blocks starting over without a flush (tests/heap.test.ts) |
-| 73 | parallel SMP's polled code with or without `acc`: `vm_set_count`, `vm_ticker`, `vm_cpu_tick` (the ticker's words), `ExitInfo.value` 1 on a BUDGET exit for a compiled module, `vm_set_chunk` read as the tick's ns without `acc`; `jit_uncounted` (the test core's) ("PERF: parallel SMP's code without `acc`") |
+| 73 | parallel SMP's polled code with or without `acc` (`vm_set_count`, `vm_ticker`, `vm_cpu_tick`, `jit_uncounted`; PERF loop 55); reverted in 74 |
+| 74 | ABI 73's exports removed again, `vm_set_chunk` and the BUDGET exit as in 72 (PERF loop 57; jit.md "Tried and lost: polled code without `acc`") |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

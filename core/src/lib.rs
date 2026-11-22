@@ -35,7 +35,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 73;
+pub const ABI_VERSION: u32 = 74;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -383,7 +383,6 @@ pub extern "C" fn jit_new(
         fma: false,
         // The polled test core's (Cargo feature `polled`): parallel SMP's code, against the interpreter.
         polled: cfg!(feature = "polled"),
-        uncounted: false,
     }))));
     Box::into_raw(v)
 }
@@ -399,22 +398,6 @@ pub unsafe extern "C" fn jit_fma(v: *mut mmu::Vcpu, on: u32) {
     let v = unsafe { &mut *v };
     if let Some(j) = v.jit.cache.as_mut() {
         j.set_fma(on != 0);
-    }
-}
-
-/// A [`jit_new`] vCPU of the polled test core (Cargo feature `polled`): its polled code without `acc` (`on`,
-/// ABI 73; `jit::Config::uncounted`) or with it, from now on (a flush). A run ([`jit_run_exit`]) is then one
-/// dispatch, to the first poll, whose compiled steps go uncounted (docs/testing.md "Polled code against the
-/// interpreter"). Nothing for another core.
-///
-/// # Safety
-/// `v` comes from [`jit_new`], `mem` from [`mem_new`]; nothing else uses them meanwhile.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn jit_uncounted(v: *mut mmu::Vcpu, mem: *const mem::Mem, on: u32) {
-    // SAFETY: the caller's contract.
-    let (v, mem) = unsafe { (&mut *v, &*mem) };
-    if let Some(j) = v.jit.cache.as_mut().filter(|j| j.polled()) {
-        j.set_uncounted(on != 0, mem);
     }
 }
 
@@ -798,17 +781,14 @@ pub unsafe extern "C" fn vm_console(vm: *const vm::Vm) -> *const pl011::Rings {
 /// Parallel mode's steps between two publications of a vCPU's PC (ABI 34): short while the guest PC sampler runs
 /// (web/profiler.ts), so a sample is at most that many instructions old; 0 restores the default (32768). Under the
 /// JIT it may also be longer, up to 2^30 (ABI 71: the spin tests', where only the stop word's setters end a chunk
-/// early; docs/abi.md "PERF: the stop word"). Polled code without `acc` (ABI 73, `vm_set_count`) reads them as the
-/// ticker's period in ns (20 µs to 2^30 ns; 0: 1 ms). Round-robin is unaffected. Any thread.
+/// early; docs/abi.md "PERF: the stop word"). Round-robin is unaffected. Any thread.
 ///
 /// # Safety
 /// See the note above [`vm_new`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn vm_set_chunk(vm: *const vm::Vm, steps: u64) {
     // SAFETY: guaranteed by the caller.
-    let vm = unsafe { &*vm };
-    vm.shared.chunk.store(steps, Ordering::Relaxed);
-    vm.set_tick_period(steps);
+    unsafe { &*vm }.shared.chunk.store(steps, Ordering::Relaxed);
 }
 
 /// The signal word (`vm::SIGNAL_STOP`, `vm::SIGNAL_RX`, `vm::SIGNAL_DEVICE`), set from any thread.
@@ -848,45 +828,6 @@ pub unsafe extern "C" fn vm_cpu_signal(vm: *const vm::Vm, i: u32) -> *const Atom
 pub unsafe extern "C" fn vm_cpu_stop(vm: *const vm::Vm, i: u32) -> *const AtomicU32 {
     // SAFETY: guaranteed by the caller.
     unsafe { &*vm }.cpu_stop(i as usize)
-}
-
-/// vCPU `i`'s words for the ticker in parallel mode (ABI 73; docs/abi.md "PERF: parallel SMP's code without
-/// `acc`"): `{due: u64, bits: u32, _: u32}` (`vm::parallel::CpuTick`). Null past the last vCPU and in round-robin.
-///
-/// # Safety
-/// See the note above [`vm_new`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn vm_cpu_tick(vm: *const vm::Vm, i: u32) -> *const vm::parallel::CpuTick {
-    // SAFETY: guaranteed by the caller.
-    unsafe { &*vm }.cpu_tick(i as usize)
-}
-
-/// The ticker's words in parallel mode (ABI 73): `{bell: u32, count: u32, period: u64, t0: u32, base: u32,
-/// xhci_due: u32}` on wasm32 (`vm::parallel::Ticker`), the three addresses filled in by this call. Null in
-/// round-robin.
-///
-/// # Safety
-/// See the note above [`vm_new`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn vm_ticker(vm: *const vm::Vm) -> *const vm::parallel::Ticker {
-    // SAFETY: guaranteed by the caller.
-    unsafe { &*vm }.ticker()
-}
-
-/// Parallel SMP's polled code with `acc` (`on` 1: the default, every step counted: `ExitInfo.retired`, the
-/// counters' `retired`, the JIT's steps) or without (0: faster, compiled code's steps uncounted; a ticker must
-/// then run, web/ticker-worker.ts), ABI 73. A change flushes the JIT's code as each vCPU's run loop sees it. Any
-/// thread; nothing in round-robin.
-///
-/// # Safety
-/// See the note above [`vm_new`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn vm_set_count(vm: *const vm::Vm, on: u32) {
-    // SAFETY: guaranteed by the caller.
-    let vm = unsafe { &*vm };
-    if vm.parallel() {
-        vm.set_count(on != 0);
-    }
 }
 
 /// Virtio transport `i`'s shared block (`virtio::DevShared`: events, status,

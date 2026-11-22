@@ -43,14 +43,8 @@ const test = ((name: string, ...rest: unknown[]) => {
 // scripts/ci-jit.sh), with `WAARM64_POLLED=1`: its JIT vCPUs compile parallel SMP's polled code, which runs on to its
 // first poll past the steps asked for (docs/testing.md "Polled code against the interpreter"), so each run compares
 // with the interpreter run for the steps the JIT ran (one more when it exited: the interpreter stops at the same exit).
-// `WAARM64_POLLED=2`: the polled code without `acc` (`jit_uncounted`, PERF loop 55), whose compiled steps go uncounted:
-// a run is one dispatch to its first poll, and the interpreter steps one instruction at a time until its `Cpu` is the
-// JIT's (or, when the JIT exited, until it exits too), so the steps aren't compared, everything else is.
 const WASM = new URL(`../${process.env.WAARM64_CORE ?? 'target/wasm32-unknown-unknown/release/waarm64_core.wasm'}`, import.meta.url);
-const POLLED = process.env.WAARM64_POLLED === '1' || process.env.WAARM64_POLLED === '2';
-const UNCOUNTED = process.env.WAARM64_POLLED === '2';
-/** The most steps the interpreter takes to reach an uncounted run's state (a run to the first poll is far shorter). */
-const UNCOUNTED_MAX = 1n << 16n;
+const POLLED = process.env.WAARM64_POLLED === '1';
 const WORDS = Number(process.env.WAARM64_JIT_DIFF ?? 4096);
 const STATES = 8;
 const CPU_BYTES = 1168;
@@ -65,7 +59,6 @@ type Exports = {
   jit_unmask(v: number, ok: number, irq: number, pending: number): void;
   jit_parallel(v: number, on: number): void;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
-  jit_uncounted(v: number, mem: number, on: number): void;
   jit_stats(v: number): number;
   jit_helper_report(v: number): number;
   jit_flush(v: number): void;
@@ -350,7 +343,6 @@ function setup(code: number, fma = FUSED) {
   const [ma, mb] = [ex.mem_new(ra, BigInt(RAM)), ex.mem_new(rb, BigInt(RAM))];
   const interp = ex.vcpu_new();
   const jit = ex.jit_new(0, 1, 16384, 0, 0);
-  if (UNCOUNTED) ex.jit_uncounted(jit, mb, 1);
   ex.jit_fma(jit, fma ? 1 : 0);
   const [ei, ej] = [ex.vcpu_new(), ex.vcpu_new()]; // exit words
   const [a8, b8] = [new Uint8Array(memory.buffer, ra, RAM), new Uint8Array(memory.buffer, rb, RAM)];
@@ -369,20 +361,7 @@ function setup(code: number, fma = FUSED) {
     const [xa, xb] = [new BigUint64Array(memory.buffer, ei, 2), new BigUint64Array(memory.buffer, ej, 2)];
     let da: bigint, db: bigint;
     const before = POLLED ? a8.slice(0, code) : undefined;
-    if (UNCOUNTED) {
-      db = ex.jit_run_exit(jit, mb, n, ej);
-      const cb = new Uint8Array(memory.buffer, jit, CPU_BYTES);
-      [xa[0], xa[1]] = [0n, 0n];
-      da = 0n;
-      // To the JIT's state, or to the interpreter's own exit when the JIT exited.
-      // (A loop's laps can repeat the registers with other stores, the code area's too: all of RAM.)
-      const there = () => Buffer.compare(new Uint8Array(memory.buffer, interp, CPU_BYTES), cb) === 0 && Buffer.compare(a8, b8) === 0;
-      while (da < UNCOUNTED_MAX && !(xb[0] ? xa[0] : there())) {
-        da += ex.interp_run_exit(interp, ma, 1n, ei);
-        if (xa[0] && !xb[0]) break;
-      }
-      db = da; // uncounted: not compared
-    } else if (POLLED) {
+    if (POLLED) {
       db = ex.jit_run_exit(jit, mb, n, ej);
       da = ex.interp_run_exit(interp, ma, db + (xb[0] ? 1n : 0n), ei);
     } else [da, db] = [ex.interp_run_exit(interp, ma, n, ei), ex.jit_run_exit(jit, mb, n, ej)];
@@ -404,7 +383,7 @@ function setup(code: number, fma = FUSED) {
       return own ? null : `a store into the code area (byte ${at}), by the JIT's side only`;
     }
     // Polled code stops only at an exit or past the steps asked for.
-    const short = POLLED && !UNCOUNTED && !xb[0] && db < n;
+    const short = POLLED && !xb[0] && db < n;
     if (d < 0 && m < 0 && xa[0] === xb[0] && xa[1] === xb[1] && da === db && !short) return null;
     b8.set(a8);
     return d >= 0 ? `Cpu byte ${d} (x${d >> 3})` : m >= 0 ? `RAM byte ${m}` : da !== db || short ? `the steps (${da} vs ${db} of ${n})` : `the exit (${xa[0]}, 0x${xa[1].toString(16)} vs ${xb[0]}, 0x${xb[1].toString(16)})`;

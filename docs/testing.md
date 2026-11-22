@@ -522,12 +522,7 @@ at 0x40a0_0000; with no host the guest moves on after 10 ms of the counter). The
 runs on the oracles and the deterministic runners too); `tests/spin.test.ts` runs it in parallel under the JIT, and
 JIT-stress and JIT-check (`scripts/ci-jit.sh`), each with the default chunk and with 2^30-step chunks (`vm_set_chunk`), where only a
 setter ends a chunk early: the medians over the 32 shape runs (12 shapes at 3 ELs and MMU settings, the aliases MMU-on only) must be under 1 ms (the worst under 50 ms; typical: a few
-to ~100 µs), the timer's under the JIT with the default chunk, the pauses' median under 5 ms (typical ~0.1 ms). Since
-PERF loop 55 every one of those runs twice, counted (`BootOptions.count`: polled code with `acc`, as above) and
-without `acc` (the default), where the ticker ends the chunks (web/ticker-worker.ts: at the spinner's timer deadline,
-and every period, 1 ms or with 2^30-step chunks 2^30 ns): there the timer's bound holds for every JIT mode but
-JIT-check, long chunks too, and is the ticker's setter alone (typically tens of µs; the debug interpreter's shape
-~150-300 µs). A run
+to ~100 µs), the timer's under the JIT with the default chunk, the pauses' median under 5 ms (typical ~0.1 ms). A run
 that misses a bound runs once more: a loaded host (`scripts/ci.sh`'s files side by side) once put every shape's round
 trip near 2 ms, while a missing poll misses in every run.
 The copies' blocks and f1's run 16 times a lap, so CPU 0 waits 200 and 400 laps (compiled by then; the loop calling
@@ -671,12 +666,7 @@ start one target must get ALREADY_ON or ON_PENDING).
   each caught on the polled core: a region edge's `acc` bump one too many (18 tests), a host call's return stopping
   without its block's length, a jump-cache chain's poll ORed in instead of ANDed (42 tests); the bump left out leaves
   a one-block loop that never stops: the run hangs at its bound. The MMU-on paths (the transfer cache, by-VA links,
-  the miss function) aren't here: the jit_new vCPUs' tests run flat. **Without `acc`** (PERF loop 55, `WAARM64_POLLED=2`:
-  the differential test alone, `jit_uncounted` on each JIT vCPU): the code's steps go uncounted, so a JIT run is one
-  dispatch to its first poll (`jit_run` stores 0 in the stop word), and the interpreter then steps one instruction at a
-  time until its `Cpu` and all of RAM are the JIT's (or, when the JIT exited, until it exits too; at most 2^16 steps):
-  everything but the steps is compared. RAM is in the match, the code area too: a loop's laps can repeat the
-  registers with other stores (a `DC ZVA` into the code, found).
+  the miss function) aren't here: the jit_new vCPUs' tests run flat.
 - **Lockstep:** `WAARM64_LOCKSTEP_STEPS=300000000` for the long run, done at the end of every loop
   that touches semantics (stress runs a tenth).
 - **JIT-stress** (threshold 0, batch 1, a 4-region cache, tier-up after one entry, the stale-code

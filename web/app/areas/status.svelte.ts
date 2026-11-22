@@ -1,6 +1,6 @@
 // The status bar (web/app/StatusBar.svelte; docs/frontend.md "The status bar"): its elements (Preferences, remembered
 // as the settings' `statusBar`), and the running machine's last status, as the run gets it (web/app/run/worker-messages.ts).
-import { counts, normalize, tellCounting, type Item } from '../statusbar.ts';
+import { normalize } from '../statusbar.ts';
 import type { Graphics } from '../statusbar-graphics.ts';
 import type { Metrics } from '../statusbar-metrics.ts';
 import { settings } from '../settings.ts';
@@ -22,10 +22,3 @@ export const status = $state({
   /** Full screen takes the status bar along (off: the machine alone, edge to edge). */
   fullscreen: settings().statusFullscreen === true,
 });
-
-/** The elements shown, changed (the Preferences' editor): the running machine counts every instruction while one needs it. */
-export function setItems(next: Item[]) {
-  const was = counts(status.items);
-  status.items = next;
-  if (counts(next) !== was) tellCounting(!was);
-}

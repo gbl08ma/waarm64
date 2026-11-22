@@ -48,7 +48,7 @@ use crate::virtio::{self, DevShared, DeviceEntry, Transport};
 use crate::xhci::{self, Xhci, XhciShared};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
-pub mod parallel;
+mod parallel;
 mod state;
 pub use parallel::{notify, wait};
 
@@ -453,20 +453,6 @@ pub struct Shared {
     pub xhci_due: AtomicU64,
     /// The guest is in PSCI SYSTEM_SUSPEND (`Platform::suspended`), for the host to read at any time.
     pub suspended: AtomicBool,
-    /// Parallel SMP's ticker's words (`vm_ticker`), and its polled code's mode (`vm_set_count`).
-    pub ticker: parallel::Ticker,
-    /// A change under the platform's lock moved the xHCI's due time earlier (`spis`): the ticker's bell rings once
-    /// the lock is released (`parallel::Plat`), not while the other vCPUs queue on it.
-    pub ring_owed: AtomicBool,
-}
-
-impl Shared {
-    /// Rings the ticker's bell if a change owes it a ring (`ring_owed`): after the platform's lock is released.
-    pub fn ring_owed(&self) {
-        if self.ring_owed.load(Ordering::Relaxed) && self.ring_owed.swap(false, Ordering::SeqCst) {
-            self.ticker.ring();
-        }
-    }
 }
 
 /// A vCPU's words other threads read or write.
@@ -1351,7 +1337,6 @@ impl Vm {
             p.gic.set_level(i, IRQ_PTIMER, pt);
         }
         spis(p, &self.shared);
-        self.shared.ring_owed();
     }
 
     /// Drives vCPU `c`'s timer lines into the GIC at the counter now: after a
@@ -1770,14 +1755,7 @@ fn spis(p: &mut Platform, shared: &Shared) {
     }
     if let Some(x) = &p.xhci {
         p.gic.set_level(0, xhci::IRQ, x.irq());
-        let due = x.due();
-        // The ticker waits for it too while polled code runs without `acc`: its bell, once the lock is released,
-        // when the due time moved earlier (a later one needs none: the ticker's wait ends at the earlier, at worst).
-        if shared.xhci_due.swap(due, Ordering::Relaxed) > due
-            && shared.ticker.count.load(Ordering::Relaxed) == 0
-        {
-            shared.ring_owed.store(true, Ordering::Relaxed);
-        }
+        shared.xhci_due.store(x.due(), Ordering::Relaxed);
     }
 }
 

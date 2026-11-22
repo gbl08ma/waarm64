@@ -45,7 +45,7 @@ test('warm workers: each kind made ahead, taken in turn, then made anew', () =>
     const warm = warmWorkers(3, true)!;
     assert.deepEqual(
       FakeWorker.made.map((w) => [w.file, w.options.type]),
-      [['device-worker.ts', 'module'], ['vcpu-worker.ts', 'module'], ['vcpu-worker.ts', 'module'], ['vcpu-worker.ts', 'module'], ['jit-compile-worker.ts', 'module'], ['ticker-worker.ts', 'module']],
+      [['device-worker.ts', 'module'], ['vcpu-worker.ts', 'module'], ['vcpu-worker.ts', 'module'], ['vcpu-worker.ts', 'module'], ['jit-compile-worker.ts', 'module']],
     );
     const ahead = [...FakeWorker.made];
     assert.equal(warm.take('device'), ahead[0]);
@@ -54,7 +54,6 @@ test('warm workers: each kind made ahead, taken in turn, then made anew', () =>
     assert.equal(more.file, 'vcpu-worker.ts');
     assert.ok(!ahead.includes(more));
     assert.equal(warm.take('compile'), ahead[4]);
-    assert.equal(warm.take('ticker'), ahead[5]);
     // Taken workers are the machine's: `end` leaves them, and their error handler is theirs to set.
     warm.end();
     assert.ok(FakeWorker.made.every((w) => !w.terminated));

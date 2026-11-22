@@ -17,3 +17,5 @@ checkout (`../waarm64-base`). M4, macOS, Chrome for Testing (the version is in e
   `node bench/gpu/ab-summary.ts pages` sums them up (its `platMs` is the platform lock's wait,
   `par.lockWaitNs`; `busyMips` and `share` mean nothing in the uncounted arm, whose compiled steps aren't counted).
   `mac.vmstat` is the whole Mac's: no per-process memory there (macOS has no smaps).
+
+The mechanism these runs measured (the uncounted mode, its ticker, `+count=`, `--query=uncounted`) was reverted in PERF loop 57: the scripts named here no longer take those arms (bench/boot/REPORT.md "PERF loop 57").

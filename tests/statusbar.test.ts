@@ -3,7 +3,7 @@
 // The words expected are the catalog's (docs/i18n.md "Tests").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { counts, DEFAULT_ITEMS, followCounting, nameOf, normalize, palette, shows, tellCounting, unfollowCounting, type Item } from '../web/app/statusbar.ts';
+import { DEFAULT_ITEMS, nameOf, normalize, palette, shows, type Item } from '../web/app/statusbar.ts';
 import { graphics } from '../web/app/statusbar-graphics.ts';
 import { metrics, type Metrics } from '../web/app/statusbar-metrics.ts';
 import type { Live } from '../web/app/statusbar-piece.ts';
@@ -14,7 +14,7 @@ import { msg, t } from '../web/i18n.ts';
 const MiB = 2 ** 20;
 const RUNNING = t('machine:messages.state.running');
 const status = (o: Partial<Status> = {}): Status => ({
-  ncpus: 2, ramMiB: 1024, uptime: 10_000, steps: 0, counted: true, jitBlocks: 1234, jitFlushes: 0, jitCompileMs: 2500, jitSteps: 0, jitBytes: 0, irqs: 0, tlbMisses: 0, tlbFlushes: 0,
+  ncpus: 2, ramMiB: 1024, uptime: 10_000, steps: 0, jitBlocks: 1234, jitFlushes: 0, jitCompileMs: 2500, jitSteps: 0, jitBytes: 0, irqs: 0, tlbMisses: 0, tlbFlushes: 0,
   loopMaxMs: 0, loopAgeMs: 0, vcpus: [], stats: {} as Status['stats'],
   memory: { ramBytes: 0, heapLive: 0, heapPeak: 0, jitLiveBytes: 10 * MiB, jitModules: 0, jitBudget: 320 * MiB, jitEpochs: 0, jitLimit: 0, jitKeys: 0, jitKeyBytes: 0, jitHeld: 0 }, estimateBytes: 0, peakBytes: 0,
   disks: [{ read: 0, written: 0 }], nets: [{ rx: 0, tx: 0 }, { rx: 0, tx: 0 }], cpus: [{ steps: 0, jitSteps: 0 }, { steps: 0, jitSteps: 0 }],
@@ -60,23 +60,6 @@ test('rates need two statuses, and none across a new run', () => {
   assert.equal(text({ kind: 'vcpus' }, m), t('statusbar:statusbar-render.vcpus', { count: 2 }));
   assert.equal(text({ kind: 'state' }, undefined), RUNNING, 'the state needs no status');
   assert.equal(text({ kind: 'vcpus' }, undefined), '');
-});
-
-test('the step rates: none across a change of counting, nor while uncounted; the two presets and what counts', () => {
-  const a = status();
-  const b = status({ uptime: 11_000, steps: 600e6, jitSteps: 500e6, irqs: 1000, cpus: [{ steps: 400e6, jitSteps: 400e6 }, { steps: 200e6, jitSteps: 100e6 }] });
-  for (const [x, y] of [[false, true], [true, false], [false, false]]) {
-    const m = metrics({ ...b, counted: y }, 1000, { status: { ...a, counted: x }, at: 0, metrics: metrics({ ...a, counted: x }, 0) });
-    assert.equal(text({ kind: 'mips' }, m), '', `no MIPS from ${x} to ${y}`);
-    assert.equal(text({ kind: 'jit' }, m), '');
-    assert.equal(text({ kind: 'mips', scope: 'each' }, m), '');
-    assert.equal(text({ kind: 'irqs' }, m), t('statusbar:statusbar-render.irqs', { irqs: '1,000' }), 'the other rates stay');
-  }
-  assert.ok(counts(DEFAULT_ITEMS), 'the defaults count');
-  const without = DEFAULT_ITEMS.filter((i) => i.kind !== 'mips' && i.kind !== 'jit');
-  assert.ok(!counts(without) && shows(without), 'the defaults without MIPS and JIT share count nothing');
-  assert.ok(counts([{ kind: 'jit', scope: 'one', index: 1 }]) && counts([{ kind: 'mips', scope: 'each', numbers: true }]));
-  assert.ok(!counts([{ kind: 'irqs' }, { kind: 'vcpus' }]));
 });
 
 test('per vCPU: each as bars or numbers, one by its number, gone without per-vCPU counters', () => {
@@ -178,20 +161,4 @@ test('the TLB: misses and flushes a second, from two statuses; nothing from one'
   assert.deepEqual([m.tlbMisses, m.tlbFlushes], [200_000, 50]);
   assert.equal(text({ kind: 'tlb' }, m), t('statusbar:statusbar-mmu.tlb', { misses: '200,000', flushes: '50', count: 50 }));
   assert.deepEqual(normalize([{ kind: 'tlb', look: 'icon' }]), [{ kind: 'tlb', look: 'icon' }]);
-});
-
-// PERF loop 56: a run's ear for the bar's counting goes when the run ends; an ended run's letting go keeps a later one's.
-test('status bar: the counting follower goes with its run', () => {
-  const [a, b] = [{}, {}];
-  const told: string[] = [];
-  followCounting(a, (on) => told.push(`a ${on}`));
-  tellCounting(false);
-  unfollowCounting(a);
-  tellCounting(true);
-  assert.deepEqual(told, ['a false'], 'nothing to an ended run');
-  followCounting(b, (on) => told.push(`b ${on}`));
-  unfollowCounting(a); // the ended run's late stop
-  tellCounting(true);
-  assert.deepEqual(told, ['a false', 'b true']);
-  unfollowCounting(b);
 });

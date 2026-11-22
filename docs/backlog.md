@@ -93,34 +93,12 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 
 ## JIT
 
-- **Keep or revert parallel SMP's code without `acc`** (PERF loops 55-56, bench/boot/REPORT.md; docs/jit.md
-  "Preemption"): the uncounted mode has the measured code (arm64 −11.4% frame operands) but on the Mac doesn't beat
-  the base, even after loop 56 fixed the review's findings (more modules −3% now, compile time −2%, the platform
-  lock's contention ×1.2-1.9 instead of ×2.7): Firefox's pages session 73.1-74.5 s against the base's 72.3-76.2, the
-  parallel gates within ±0.4%, all overlapping; loop 53's noacc arm (the same code without the ticker) was −3.6%. The
-  page's "Faster defaults" preset was taken out (loop 56). To decide when the track resumes: revert the mechanism
-  (it removes `web/ticker-worker.ts` ~190 lines and `tests/ticker.test.ts` ~280; in the core ~600 lines: the
-  `Ticker`/`CpuTick` words, `vm_set_count`, `vm_ticker`, `vm_cpu_tick`, `jit_uncounted`, the run loop's tick bits,
-  `publish_due`, `Plat`'s deferred bell, `Config::uncounted` and its emitter branches in emit.rs/block.rs/mod.rs,
-  `BATCH_TIMEOUT_NS`; the coordinator's and warm workers' ticker start ~40; the page's count plumbing ~120:
-  `COUNTING`/`counts`, `followCounting`, the `count` message, `Status.counted`, `?count=`; the spin tests' uncounted
-  runs, the differential test's `WAARM64_POLLED=2`; an ABI bump to 74), or first find where loop 53's −3.6% went (a
-  diagnostic build without the ticker's periodic tick, on the pages session).
 - **arch-desktop's Ctrl+C at the countdown fails** (found in PERF loop 56's `scripts/ci-graphics.sh`, 2026-11-22):
   tests/page-demos-guest.test.ts "Ctrl+C at a desktop's countdown" ends `counting foot shell noapp` (the count's
   script still running after Ctrl+C on the screen) with loop 56's tree, with loop 56's page and loop 55's core, and
   with loop 55's page and core alike (`target/demos/arch-desktop` as built 02:27 that day), so not loop 56's change.
   To do: run it on a tree from before PERF loop 55 (216adb06) to see whether loop 55 or the demo's build broke it,
   then look at where the key goes (foot's focus at the click, the keyboard's path).
-- **The ticker starts late** (PERF loop 56's review): the ticker begins ticking only after its own 16-round-trip
-  `clockOffset` handshake with the coordinator, which runs alongside the vCPU workers' start; until then a busy
-  uncounted vCPU gets no timer stops, only other setters'. Its loop never returns to its event loop, so it can't take
-  the clock later: to do, have the coordinator start it (and its handshake) before the vCPU workers, or measure the
-  window on the Mac first (the first timer IRQ's lateness after a boot or a restore).
-- **The ticker on an idle machine** (PERF loop 55, docs/platform.md "Parallel SMP"): while polled code runs without
-  `acc`, the ticker's periodic tick wakes it every 1 ms and stores 0 in every stop word, even with every vCPU idle (in
-  WFI) or the machine paused: ~1,000 wakes a second for nothing. To try: skip the tick while no vCPU is in RUN (a word
-  the run loops keep, or `CpuPar::state` exposed), measured by an idle guest's host CPU on the Mac.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such

@@ -39,32 +39,12 @@ test('compile worker: each compiled module goes to every vCPU before the ready w
   assert.equal(ready[0], 2);
 });
 
-test('compile worker: 0 in every stop word once the ready word moved, only while polled code runs without `acc`', () => {
-  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
-  const u32 = new Uint32Array(memory.buffer);
-  // The ticker's words at 128 (`count` the second u32), two stop words at 256 and 260.
-  const [TICKER, STOPS] = [128, [256, 260]];
-  const words = () => STOPS.map((s) => u32[s / 4]);
-  const arm = () => STOPS.forEach((s) => (u32[s / 4] = 1));
-  const c = compiler(memory, [], STOPS, TICKER);
-  u32[TICKER / 4 + 1] = 1; // counted: the chunks' steps end them
-  arm();
-  c.job({ seq: 1, epoch: 0, ready: 64, bytes: EMPTY.slice(0) });
-  assert.deepEqual(words(), [1, 1], 'counted: untouched');
-  u32[TICKER / 4 + 1] = 0;
-  c.job({ seq: 3, epoch: 0, ready: 64, bytes: EMPTY.slice(0) });
-  assert.deepEqual(words(), [1, 1], "the ready word didn't move (2 isn't compiled)");
-  c.job({ seq: 2, epoch: 0, ready: 64, bytes: EMPTY.slice(0) });
-  assert.equal(u32[64 / 4], 3);
-  assert.deepEqual(words(), [0, 0], 'uncounted: every vCPU stops at its next poll');
-});
-
 // PERF loop 56 (docs/host-code.md: no allocation per event on hot paths): the view of the core's memory that the
-// ready word and the stop words are stored through is made once, and again only after the memory grew.
+// ready word is stored through is made once, and again only after the memory grew.
 test('compile worker: no view of the memory made per module', () => {
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 2, shared: true });
   const ready = new Uint32Array(memory.buffer, 64, 1);
-  const c = compiler(memory, [], [128], 0);
+  const c = compiler(memory, []);
   const Real = globalThis.Uint32Array;
   let made = 0;
   globalThis.Uint32Array = new Proxy(Real, {

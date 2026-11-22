@@ -53,7 +53,7 @@ import { deviceHost, usbHost } from './device-host.ts';
 import type { WarmWorkers } from './warm-workers.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 73;
+export const ABI = 72;
 const RAM_BASE = 0x4000_0000;
 
 const RING = 4096;
@@ -73,9 +73,6 @@ type Exports = {
   jit_helper_report(v: number): number;
   vm_signal(vm: number): number;
   vm_cpu_stop(vm: number, i: number): number;
-  vm_cpu_tick(vm: number, i: number): number;
-  vm_ticker(vm: number): number;
-  vm_set_count(vm: number, on: number): void;
   vm_set_chunk(vm: number, steps: bigint): void;
   vm_window_watch(vm: number): number;
   vm_device(vm: number, i: number): number;
@@ -218,13 +215,6 @@ export type BootOptions = {
    * On unless false.
    */
   compileWorker?: boolean;
-  /**
-   * Parallel mode under the JIT: count every step (ABI 73, `vm_set_count`): the MIPS, the JIT share and the per-vCPU
-   * steps exact, as the status bar's step-counting elements and the benchmarks want them. Off by default: compiled
-   * code runs without `acc` (faster, its steps uncounted; docs/jit.md "Preemption"), ended by the ticker
-   * (web/ticker-worker.ts). `Vm.setCount` changes it on a running machine (a flush of the JIT's code).
-   */
-  count?: boolean;
   /**
    * The browser's workers started ahead of `bootVm` ({@link warmWorkers}): taken where it would start its own, the
    * rest ended once the machine's are all started (or `bootVm` fails).
@@ -580,16 +570,6 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const wakes = Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_signal(vm, i));
   // Parallel SMP's stop words (ABI 71): 0 after a signal bit, so compiled code stops at its next poll.
   const stops = parallel ? Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_stop(vm, i)) : [];
-  // Its ticker's words (ABI 73), under the JIT: the code counts its steps only when asked (`BootOptions.count`).
-  const ticker =
-    parallel && (o.jit ?? 0) !== 0
-      ? { at: ex.vm_ticker(vm), ticks: Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_tick(vm, i)) }
-      : undefined;
-  if (ticker) ex.vm_set_count(vm, o.count ? 1 : 0);
-  // The ticker's `count` word, and whether the code ran uncounted at some point since the last `countedSinceLook`.
-  const countWord = ticker ? new Uint32Array(memory.buffer, ticker.at + 4, 1) : undefined;
-  const counting = () => !countWord || Atomics.load(countWord, 0) !== 0;
-  let lapsed = !counting();
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
   const xhci = o.usb
@@ -732,8 +712,6 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
         parked: scratch + S_PARKED,
         start: scratch + S_START,
         raise,
-        stops,
-        ticker,
         clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP),
         quiesce: () => devices.quiesce(),
         stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })),
@@ -771,7 +749,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     /** Bytes of guest RAM (at `ram`). */
     ramSize: o.ramSize,
     /** The host-visible window's write-watch (`BootOptions.window`; its bytes are memory 1's at `window.at`). */
-    watch: windowBytes ? new WindowWatch(memory, ex.vm_window_watch(vm), stops) : undefined,
+    watch: windowBytes ? new WindowWatch(memory, ex.vm_window_watch(vm)) : undefined,
     /** The window's bytes (`BootOptions.window`), if there is one: `bytes` at `at` in `spill[0]`. */
     window: venusWindow,
     /** Memories 1 and up, memory 1 first: the guest RAM past memory 0 (`spillRam`), and memory 1's renderer arena and window before node 1. */
@@ -1001,26 +979,6 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     signal: raise,
     /** Parallel mode's steps between two publications of a vCPU's PC (0: the default); the PC sampler shortens it. */
     setChunk: (steps: number) => ex.vm_set_chunk(vm, BigInt(steps)),
-    /**
-     * Parallel mode under the JIT: count every step (`BootOptions.count`), or let compiled code run without (faster;
-     * its steps uncounted). A change flushes the JIT's code as each vCPU sees it (ABI 73). Nothing elsewhere.
-     */
-    setCount: (on: boolean) => {
-      if (!ticker) return;
-      lapsed ||= !on;
-      ex.vm_set_count(vm, on ? 1 : 0);
-    },
-    /** Whether every step counts (`setCount`): always outside parallel mode under the JIT. */
-    counting,
-    /**
-     * Whether every step counted since the last call (the first: since the boot): an off-then-on between two calls
-     * is false (web/app/protocol.ts `Status.counted`).
-     */
-    countedSinceLook: () => {
-      const r = counting() && !lapsed;
-      lapsed = !counting();
-      return r;
-    },
     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
     stats: () => stats(counter),
     /** The vCPUs run each on its own worker (`VmConfig.parallel`): `cpuStats` is then per vCPU. */

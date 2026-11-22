@@ -71,8 +71,7 @@ export type VenusCall =
       t: 'venus-init';
       memory: WebAssembly.Memory;
       core: WebAssembly.Memory;
-      /** `stops`: parallel SMP's stop words in `core` (`vm_cpu_stop`), which the watch's look sets to 0. */
-      window: { at: number; bytes: number; watch: number; stops?: number[] };
+      window: { at: number; bytes: number; watch: number };
     };
 
 /** What a host's `save` answers: the renderer's state, or why it can't be saved now. */

@@ -343,25 +343,6 @@ for (const n of [2, 4]) {
     assert.ok(workerInstalls >= modules && overdue === 0, `${workerInstalls} installs from the worker, ${overdue} overdue, ${modules} modules`);
   }));
 }
-// Polled code's two modes (PERF loop 55; docs/jit.md "Preemption"): counting switched on and off every few ms while
-// it boots, each switch a flush of the JIT's code that every vCPU's run loop takes in turn, at any point of its run
-// (mid-chunk, idle, mid-compile); the boot goes on and powers off, its step counts sane.
-test('parallel: Buildroot on 4 vCPUs, counting switched on and off as it runs (JIT)', { skip: linux }, async () => {
-  let switches = 0;
-  let timer: ReturnType<typeof setInterval> | undefined;
-  const r = await runToPowerOff(WASM, { ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: 4, parallel: true, idleLimitMs: 30_000, jit: 1 }, 1e12, (vm) => {
-    assert.equal(vm.counting(), false, 'uncounted by default');
-    timer = setInterval(() => {
-      vm.setCount(!vm.counting());
-      switches++;
-    }, 7);
-  }, undefined, 300_000).finally(() => clearInterval(timer));
-  poweredOff(r);
-  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok/);
-  assert.ok(switches >= 10 && r.stats.jit.flushes >= 2, `${switches} switches, ${r.stats.jit.flushes} flushes`);
-  // What the core still counts, uncounted (the interpreted steps, the exits): no more than every step, and sane.
-  assert.ok(r.steps > 1e6 && r.steps < 2 ** 40 && r.stats.jit.steps < 2 ** 40, `${r.steps} steps, ${r.stats.jit.steps} in JIT code`);
-});
 // The vCPU workers returning to their event loop at every exit 1 ms apart (web/vcpu-worker.ts `yieldMs`; 100 by
 // default): idle sleeps through Atomics.waitAsync, busy chunks through a wait that times out, thousands a boot.
 test('parallel: Buildroot on 4 vCPUs, the workers yielding every 1 ms (JIT)', { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: 4, vcpuYieldMs: 1 }, 1, (r) => {

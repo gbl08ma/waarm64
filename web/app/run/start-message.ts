@@ -8,8 +8,6 @@ import type { KeyboardLayout } from '../keyboard.ts';
 import type { MachineConfig, MachinePorts, StartDisk, ToWorker } from '../protocol.ts';
 import { MACHINES, type Machine } from '../machine.ts';
 import type { PageMachine } from './page-machine.svelte.ts';
-import { counts } from '../statusbar.ts';
-import { status } from '../areas/status.svelte.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
 
@@ -128,7 +126,6 @@ export function startMessage(
     resume: w.resume,
     about: w.about,
     plan: w.plan,
-    count: config.dev.count ?? counts(status.items),
   };
   const ends = [ch.usb, ch.shares, ch.mouse, ch.touch, ch.agentStub ? undefined : ch.agent, ch.notify].flatMap((c) =>
     c ? [c.port2] : [],

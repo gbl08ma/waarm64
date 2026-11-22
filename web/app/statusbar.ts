@@ -24,33 +24,6 @@ export const DEFAULT_ITEMS: readonly Item[] = [
   { kind: 'irqs' },
 ];
 
-/**
- * The kinds that need every guest instruction counted (MIPS and the JIT share, summed, each vCPU's bars or numbers,
- * or one vCPU's): while the bar shows one, the machine counts them, a little slower (web/vm.ts `BootOptions.count`).
- */
-export const COUNTING: readonly Kind[] = ['mips', 'jit'];
-/** Whether a bar of `items` needs every instruction counted. */
-export const counts = (items: readonly Item[]) => items.some((i) => COUNTING.includes(i.kind));
-
-/**
- * The running machine's ear for the bar's counting (web/app/run/runner.ts: its worker's `count` message): one
- * listener, `owner` its run, which lets go of it when it ends (`unfollowCounting`), so an edit with no machine running
- * posts to no worker and keeps no ended run's worker reachable.
- */
-let follower: { owner: object; f: (count: boolean) => void } | undefined;
-/** Has `f` told whenever the bar's elements that count every instruction come or go (`tellCounting`), for `owner`. */
-export function followCounting(owner: object, f: (count: boolean) => void) {
-  follower = { owner, f };
-}
-/** `owner`'s listener goes, if it's still the one (a later run's stays). */
-export function unfollowCounting(owner: object) {
-  if (follower?.owner === owner) follower = undefined;
-}
-/** The bar's counting elements came (`count`) or went. */
-export function tellCounting(count: boolean) {
-  follower?.f(count);
-}
-
 const LOOKS: Look[] = ['text', 'icon', 'both'];
 /** The kept list as the page uses it: unknown kinds and fields dropped (another version's), each field checked. */
 export function normalize(kept: unknown): Item[] {

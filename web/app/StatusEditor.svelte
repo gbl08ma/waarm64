@@ -6,7 +6,7 @@
   end, a drag puts it where it's dropped. A mouse drags through HTML5 drag and drop; a finger or a pen through pointer
   events, after a long press (a swipe still scrolls the page): status-drag.svelte.ts. The chips draw what the running
   machine shows, or a made-up machine's numbers (statusbar-sample.ts `SAMPLE`) while none runs; one the running machine
-  hasn't (a second disk) is dimmed. Kept in the settings at each change; Restore defaults forgets them.
+  hasn't (a second disk) is dimmed. Kept in the settings at each change.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -22,7 +22,7 @@
   import { SAMPLE } from './statusbar-sample.ts';
   import { t } from '../i18n.ts';
   import { liveNow } from './areas/status-live.ts';
-  import { setItems, status } from './areas/status.svelte.ts';
+  import { status } from './areas/status.svelte.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
@@ -47,7 +47,7 @@
   const metrics = $derived(status.metrics ?? SAMPLE.metrics);
 
   function keep(next: Item[]) {
-    setItems(next);
+    status.items = next;
     remember({ statusBar: next });
   }
   const insert = (item: Item, at = items.length) => {

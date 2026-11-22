@@ -12,7 +12,6 @@ import { keys } from '../areas/keys.svelte.ts';
 import { mouse } from '../areas/mouse.svelte.ts';
 import { shares } from '../areas/shares.svelte.ts';
 import { status } from '../areas/status.svelte.ts';
-import { followCounting, unfollowCounting } from '../statusbar.ts';
 import type { ScreenView } from '../areas/screen-view.ts';
 import type { SerialTerminal } from '../areas/serial-terminal.ts';
 import type { PageFolders } from '../folders-live.ts';
@@ -116,11 +115,6 @@ export class Runner {
     const ch = channels(config, audio.attach(), nets);
     current.hasNetwork = ch.nets.length > 0;
     const r = this.#newRun(canvas, ch);
-    // The status bar's counting elements, as they come and go (the start message has them as they are then), unless
-    // the page's address says (`?count=`).
-    followCounting(r, (on) => {
-      if (config.dev.count === undefined) r.worker.postMessage({ type: 'count', on } satisfies ToWorker);
-    });
     this.#loading(snapshot);
     const args = { snapshot, resume, plan, config };
     if (config.display === '3d') this.#gpu(r, ch, offscreen, args, size);
@@ -315,7 +309,6 @@ export class Runner {
    * memory (its RAM, the framebuffer's animation frames, the status timer).
    */
   ended(r: Run, m: { problem?: Problem }) {
-    unfollowCounting(r);
     if (m.problem === 'panic') setTimeout(() => void r.close(), PANIC_TAIL_MS);
     else void r.close();
     this.d.alive.clear();
@@ -352,7 +345,6 @@ export class Runner {
 
   async #stopRun(r: Run) {
     const m = this.d.machine;
-    unfollowCounting(r);
     this.d.alive.clear();
     r.input.detach();
     this.d.audio.detach();

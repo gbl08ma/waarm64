@@ -7,10 +7,6 @@
 // chunk (the timer's bound is the chunk's steps, as before the stop word), and with chunks of 2^30 steps
 // (`vm_set_chunk`), where only the stop word's setters end one early, so a missing setter shows as milliseconds (a
 // `vm_run_cpu` call's 100M steps) instead of microseconds. A missing poll hangs the shape: the run fails at `MAX_MS`.
-// Each of those runs twice more (PERF loop 55): counted (`count`: polled code with `acc`, the status bar's MIPS on)
-// and without `acc` (the default), where the ticker (web/ticker-worker.ts) ends the chunks: at the spinner's timer
-// deadline and every period (1 ms; with `vm_set_chunk`'s 2^30, 2^30 ns), so with long chunks the timer's bound is the
-// ticker's deadline alone.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -36,13 +32,13 @@ const MAX_MS = Number(process.env.WAARM64_SPIN_MAX_MS ?? 60_000);
 
 type Line = { env: string; form: string; rtt: number; tlbi: number; timer: number; inside: number };
 
-const opts = (jit: 1 | 2 | 3 | 4, count: boolean): BootOptions => ({ ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', ncpus: 2, parallel: true, idleLimitMs: 30_000, jit, count });
+const opts = (jit: 1 | 2 | 3 | 4): BootOptions => ({ ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', ncpus: 2, parallel: true, idleLimitMs: 30_000, jit });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
-async function run(jit: 1 | 2 | 3 | 4, long: boolean, count: boolean) {
+async function run(jit: 1 | 2 | 3 | 4, long: boolean) {
   let host!: Promise<number[]>;
-  const r = await runToPowerOff(WASM, opts(jit, count), 1e12, (vm) => {
+  const r = await runToPowerOff(WASM, opts(jit), 1e12, (vm) => {
     if (long) vm.setChunk(2 ** 30);
     const words = () => new BigUint64Array(vm.memory.buffer, vm.ram + HOST, 3);
     // The host's side of the stop phase: say hello, time the pauses while CPU 1 spins, release it.
@@ -79,7 +75,7 @@ function bounded(what: string, xs: number[], all: string) {
 }
 
 /** The bounds on one run's numbers. */
-function check({ lines, pauses }: { lines: Line[]; pauses: number[] }, jit: 1 | 2 | 3 | 4, long: boolean, count: boolean) {
+function check({ lines, pauses }: { lines: Line[]; pauses: number[] }, jit: 1 | 2 | 3 | 4, long: boolean) {
   const all = lines.map((l) => `${l.env} ${l.form}: rtt ${l.rtt} tlbi ${l.tlbi} timer ${l.timer} inside ${l.inside}`).join('\n') + `\npauses (ms): ${pauses.map((p) => p.toFixed(2)).join(' ')}`;
   if (process.env.WAARM64_SPIN_PRINT) console.log(all);
   bounded('IPI round trip', lines.map((l) => l.rtt), all);
@@ -88,52 +84,26 @@ function check({ lines, pauses }: { lines: Line[]; pauses: number[] }, jit: 1 | 
   // checks (a forward by-VA link, a callee's return, a region's edge to a lower PA in the next VA page, that didn't
   // poll).
   for (const l of lines.filter((l) => l.form === 'alias' || l.form === 'calls' || l.form === 'xpage')) assert.ok(l.inside >= ROUNDS / 2, `${l.env} ${l.form}: ${l.inside} of ${ROUNDS} pings taken inside the shape\n${all}`);
-  // Counted, the timer has no setter: its bound is the chunk's steps (with long chunks, spin.c's ping after 50 ms), whose
-  // time JIT-check's checker (a hash at every transfer) stretches to milliseconds. Without `acc` its setter is the
-  // ticker's store at the deadline, whatever the chunk.
-  if ((!long && jit === 1) || (!count && jit !== 3)) bounded("the spinner's own timer, late", lines.map((l) => l.timer), all);
+  // The timer has no setter: its bound is the chunk's steps (with long chunks, spin.c's ping after 50 ms), whose
+  // time JIT-check's checker (a hash at every transfer) stretches to milliseconds.
+  if (!long && jit === 1) bounded("the spinner's own timer, late", lines.map((l) => l.timer), all);
   assert.ok(median(pauses) <= PAUSE_MS, `pause: median ${median(pauses).toFixed(2)} ms (bound ${PAUSE_MS})\n${all}`);
 }
 
 // The block interpreter alone (`VmConfig.jit` 4: the dispatcher never compiles) in scripts/ci-jit.sh too: interpreted
 // code reads no stop word, so the dispatcher interprets at most a default chunk's steps between its looks at it.
 for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2], ['JIT-check', 3], ['the block interpreter', 4]] as const) {
-  for (const count of [true, false]) {
-    for (const long of [false, true]) {
-      test(`spin: a looping vCPU takes its IRQs, answers TLBI IS and pauses (${mode}${count ? ', counted' : ''}${long ? ', 2^30-step chunks' : ''})`, { skip: jit !== 1 && jitVariantSkip }, async (t) => {
-        // Once more when it misses a bound: a loaded host (scripts/ci.sh's files side by side) once put the IPI round trips'
-        // median at 2 ms, every shape alike; a missing poll misses them in every run.
-        try {
-          check(await run(jit, long, count), jit, long, count);
-        } catch (e) {
-          if (!(e instanceof assert.AssertionError)) throw e;
-          t.diagnostic(`missed a bound, run again: ${e.message.split('\n')[0]}`);
-          check(await run(jit, long, count), jit, long, count);
-        }
-      });
-    }
+  for (const long of [false, true]) {
+    test(`spin: a looping vCPU takes its IRQs, answers TLBI IS and pauses (${mode}${long ? ', 2^30-step chunks' : ''})`, { skip: jit !== 1 && jitVariantSkip }, async (t) => {
+      // Once more when it misses a bound: a loaded host (scripts/ci.sh's files side by side) once put the IPI round trips'
+      // median at 2 ms, every shape alike; a missing poll misses them in every run.
+      try {
+        check(await run(jit, long), jit, long);
+      } catch (e) {
+        if (!(e instanceof assert.AssertionError)) throw e;
+        t.diagnostic(`missed a bound, run again: ${e.message.split('\n')[0]}`);
+        check(await run(jit, long), jit, long);
+      }
+    });
   }
 }
-
-// PERF loop 56: the machine's status says whether every step counted since the last one (web/app/protocol.ts
-// `Status.counted`), so counting switched off and on between two statuses isn't read as counted throughout.
-test('spin: counted since the last look, an off-then-on between two looks included', async () => {
-  const { bootVm } = await import('../web/vm.ts');
-  const vm = await bootVm(WASM, opts(1, true));
-  try {
-    assert.equal(vm.countedSinceLook(), true, 'counted from the boot');
-    assert.equal(vm.countedSinceLook(), true);
-    vm.setCount(false);
-    vm.setCount(true);
-    assert.equal(vm.counting(), true);
-    assert.equal(vm.countedSinceLook(), false, 'off and on again since the last look');
-    assert.equal(vm.countedSinceLook(), true, 'counted since');
-    vm.setCount(false);
-    assert.equal(vm.countedSinceLook(), false);
-    vm.setCount(true);
-    assert.equal(vm.countedSinceLook(), false, 'uncounted at the last look');
-    assert.equal(vm.countedSinceLook(), true);
-  } finally {
-    vm.close();
-  }
-});

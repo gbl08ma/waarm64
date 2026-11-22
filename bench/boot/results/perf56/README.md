@@ -10,3 +10,5 @@ checkout (`../waarm64-base`). M4, macOS, Chrome for Testing (the version is in e
   `base` from the base's tree, `counted` and `uncounted` this loop's core with `+count=1` and `+count=0`);
   `node bench/gpu/ab-summary.ts pages` sums them up; the platform lock's contended acquisitions are `par.lockContended`
   in each `results.json`.
+
+The mechanism these runs measured (the uncounted mode, its ticker, `+count=`, `--query=uncounted`) was reverted in PERF loop 57: the scripts named here no longer take those arms (bench/boot/REPORT.md "PERF loop 57").

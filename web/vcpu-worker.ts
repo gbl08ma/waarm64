@@ -62,7 +62,7 @@ type Ex = {
   vm_cpu_signal(vm: number, i: number): number;
 };
 
-/** Steps per `vm_run_cpu` call (ns while polled code runs without `acc`, ABI 73): it returns early on anything the worker handles. */
+/** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
 const BUDGET = 100_000_000n;
 const NONE = 0xffff_ffff_ffff_ffffn;
 /**
@@ -120,9 +120,9 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
     switch (kind) {
       case Exit.BUDGET:
         live?.handled();
-        // Value 1: the core wants the event loop now, where a module the JIT's compile worker compiled arrives
-        // (ABI 37 and 73, `jit::Jit::park_exit`).
-        if (due() || e[2] !== 0n) await pass(never, 0, 0.001);
+        // Short of the budget: the core wants the event loop now, where a module the JIT's compile worker
+        // compiled arrives (ABI 37, `jit::Jit::park_exit`).
+        if (due() || e[1] < BUDGET) await pass(never, 0, 0.001);
         continue;
       case Exit.IDLE: {
         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT

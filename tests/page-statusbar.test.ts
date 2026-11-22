@@ -141,47 +141,6 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await context.close();
 });
 
-test('the status bar\'s counting: MIPS and JIT share taken off count no instructions, the defaults count them again', { skip }, async () => {
-  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2`);
-  await page.waitForSelector('#state[data-state=running]', { state: 'attached', timeout: 60_000 });
-  /** Waits for a status that counted (or not) every instruction, twice in a row (a change shows in the next). */
-  const counted = (on: boolean) =>
-    page.waitForFunction(
-      (on) => {
-        const w = window as unknown as { seen?: string[] };
-        const d = document.getElementById('status')?.dataset.status;
-        if (!d) return false;
-        const last = (w.seen ??= []);
-        if (last.at(-1) !== d) last.push(d);
-        return last.slice(-2).length === 2 && last.slice(-2).every((x) => JSON.parse(x).counted === on);
-      },
-      on,
-      { timeout: 20_000, polling: 100 },
-    );
-  await counted(true); // the defaults have MIPS and JIT share
-  await openHome(page);
-  await page.click('[data-machine=preferences]');
-  // Every MIPS and JIT share chip removed (×).
-  const counting = '.status-edit .bar .chip:is([data-kind=mips], [data-kind=jit]) .x';
-  while ((await page.locator(counting).count()) > 0) await page.locator(counting).first().click();
-  assert.deepEqual((await kept(page)).map((i: { kind: string }) => i.kind), ['state', 'divider', 'os', 'vcpus', 'ram', 'uptime', 'irqs']);
-  await counted(false);
-  if (shots) await page.locator('.status-edit').screenshot({ path: `${shots}/editor-uncounted.png` });
-  // No MIPS in the bar.
-  assert.doesNotMatch(await bar(page), new RegExp(pattern('statusbar:statusbar-render.cpu.mips', { value: '\\d+' })));
-  await page.click('[data-action=status-defaults]');
-  await counted(true);
-  if (shots) await page.locator('.status-edit').screenshot({ path: `${shots}/editor-defaults.png` });
-  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), pattern('statusbar:statusbar-render.cpu.mips', { value: '\\d+' }), { timeout: 10_000, polling: 200 });
-  assert.deepEqual(errors, []);
-  await context.close();
-});
-
 test('the status bar\'s editor on a touchscreen: a long press drags a chip or a palette item, a swipe doesn\'t', async () => {
   const context = await browser.newContext({ viewport: { width: 900, height: 2000 }, hasTouch: true });
   const page = await context.newPage();
