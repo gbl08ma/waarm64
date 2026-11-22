@@ -473,8 +473,9 @@ is, with each script's measured time updated (ci.sh ~15.5 min, ~12 after this br
    whole run; they don't speed anything up by themselves).
 3. **More tests may depend on the snapshot path**: a booted-Debian snapshot fixture for the Debian tests that don't
    test booting.
-4. **GitHub Actions stays a plan** (§6) while the repository is private: no workflow runs on the private repo's
-   allowance. It goes public later. **No CI image comes from static.gbl08ma.com**: images a workflow needs are built
+4. **GitHub Actions was a plan** (§6) while the repository was private, so no workflow spent the private repo's
+   allowance; the repository is public since 2026-11-22, so §6 can be built, as an extra check beside the dev VM's,
+   never the gate. **No CI image comes from static.gbl08ma.com**: images a workflow needs are built
    in it, or passed between its jobs as artifacts (the smaller ones), or kept across runs in the Actions cache.
 5. **Popular, industry-standard Rust tools and dependencies are fine** (cargo-nextest; sccache if worth it).
 6. **Faster guests for more tests** (the user, 2026-11-18): Buildroot guests built for a purpose where a test needs a

@@ -137,10 +137,10 @@ decisions in §11).
 
 1. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
    runs without fixed steps; page-ram and start onto a small guest (above).
-2. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from
+2. **The Actions shards** (plan §6; the repo is public since 2026-11-22, so they can be built): from
    `window-files.jsonl`'s times and peaks.
-3. **The end:** T3 measured, docs/testing.md authoritative, the plan's outcome moved there; GitHub Actions stays the
-   plan's §6 until the repo is public.
+3. **The end:** T3 measured, docs/testing.md authoritative, the plan's outcome moved there; GitHub Actions built from
+   the plan's §6 or left there as a plan.
 
 ## Open questions
 
