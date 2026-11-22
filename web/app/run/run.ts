@@ -8,6 +8,7 @@ import type { Sample } from '../statusbar-metrics.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';
 import { MsgError, type Msg } from '../../msg.ts';
 import type { Channels } from './start-message.ts';
+import type { DiskPlan } from '../../snapshot.ts';
 
 /** A save in progress (a snapshot, a suspend): the worker's messages for it, by its id (web/app/run/worker-messages.ts). */
 export type SnapshotJob = {
@@ -42,6 +43,11 @@ export class Run {
   usbStarted = false;
   /** The page's end of each network card's link (`{type: 'flap'}`: web/app/areas/lease-actions.ts). */
   readonly netLinks: MessagePort[];
+  /**
+   * A template's first start (`restoreFirst`): its restore's disk plan, for the boot instead when its snapshot can't
+   * load (web/app/run/runner.ts `bootInstead`).
+   */
+  first?: DiskPlan[];
   /** The guest has suspended itself (`Status.asleep`): a key or a click wakes it. */
   asleep = false;
   /** The run's last status (the status bar's rates are since it). */

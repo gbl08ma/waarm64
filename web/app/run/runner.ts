@@ -1,7 +1,7 @@
 // The machine's run (docs/frontend.md "The page's code"): a start makes the run's worker, channels and input, the GPU
 // worker on a 3D machine, and hands the machine worker its start message once the disks are open; a stop ends it.
 // The workers' and ports' messages go to web/app/run/worker-messages.ts's handlers.
-import { msg, MsgError } from '../../i18n.ts';
+import { msg, MsgError, type Msg } from '../../i18n.ts';
 import type { PageAudio } from '../../audio.ts';
 import { attachInput, type EvdevEvent } from '../../input.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
@@ -21,6 +21,7 @@ import type { PageNetwork } from '../net-live.ts';
 import type { FromWorker, MachineConfig, Problem, Status, ToWorker } from '../protocol.ts';
 import { onReady } from '../../vsock-device.ts';
 import type { UsbPorts } from '../usb-live.ts';
+import { checkDisks, isGone } from '../demo-open.ts';
 import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
 import type { Messages } from './messages.ts';
@@ -34,6 +35,7 @@ import type { RunAgent } from '../areas/agent-actions.ts';
 import { displayHandlers, gpuHandlers, ledEvent, workerHandlers } from './worker-messages.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
+import { unfork } from '../snapshots.ts';
 
 /** How long a panicked machine's workers are kept for the rest of its panic's output (the trace after the line), ms. */
 const PANIC_TAIL_MS = 2000;
@@ -67,11 +69,12 @@ export type RunnerDeps = {
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
   /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */
-  later: { problems(): Problems; rebooted(live: () => boolean): Promise<void> };
+  later: { problems(): Problems; rebooted(live: () => boolean): Promise<void>; restart(): Promise<void> };
 };
 
 /** A start's arguments: booted, or (with `snapshot`) the one the file holds; `resume` false drops a suspended machine. */
-type StartArgs = { snapshot?: File; resume: boolean; plan?: DiskPlan[]; config: MachineConfig };
+/** `first`: a template's first start (`restoreFirst`), which boots instead when its snapshot can't load here. */
+type StartArgs = { snapshot?: File; resume: boolean; plan?: DiskPlan[]; first?: boolean; config: MachineConfig };
 
 /** A file disk whose file the page can't read without the user: no handle (picked again), or a handle without permission (granted again by a click). */
 export class NeedsUser extends Error {
@@ -86,6 +89,8 @@ export class Runner {
   readonly d: RunnerDeps;
   readonly lock = new MachineLock();
 
+  /** A notice for the next run, given once it runs or stops (worker-messages.ts `state`): the boot that replaced a template's restore. */
+  notice: Msg | undefined;
   constructor(d: RunnerDeps) {
     this.d = d;
   }
@@ -101,9 +106,10 @@ export class Runner {
 
   /**
    * Starts a machine: booted, or (with `snapshot`) the one the file holds. A machine suspended on
-   * this disk is resumed instead of booting, unless `resume` is false (it is then dropped).
+   * this disk is resumed instead of booting, unless `resume` is false (it is then dropped). `first`: the snapshot is a
+   * template's at the machine's first start (`restoreFirst`): one that 3D's failure leaves unloadable boots instead.
    */
-  start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
+  start(snapshot?: File, resume = true, plan?: DiskPlan[], first = false) {
     const { machine: m, screen, net, audio } = this.d;
     const size = m.hasGpu ? screen.wantedSize() : m.spec.framebuffer;
     screen.sent = m.hasGpu ? size : undefined;
@@ -115,13 +121,14 @@ export class Runner {
     const ch = channels(config, audio.attach(), nets);
     current.hasNetwork = ch.nets.length > 0;
     const r = this.#newRun(canvas, ch);
+    if (first && snapshot) r.first = plan ?? [];
     // The status bar's counting elements, as they come and go (the start message has them as they are then), unless
     // the page's address says (`?count=`).
     followCounting((on) => {
       if (config.dev.count === undefined) r.worker.postMessage({ type: 'count', on } satisfies ToWorker);
     });
     this.#loading(snapshot);
-    const args = { snapshot, resume, plan, config };
+    const args = { snapshot, resume, plan, first, config };
     if (config.display === '3d') this.#gpu(r, ch, offscreen, args, size);
     else void this.#begin(r, ch, { ...args, screen: offscreen, size });
     if (ch.nets.length) void net.autoconnect();
@@ -212,6 +219,8 @@ export class Runner {
       r.worker.terminate();
       r.input.detach();
       this.d.machine.run = undefined;
+      // A template's snapshot needs the 3D it was taken with (its shape): the machine's first start boots instead.
+      if (args.first && args.snapshot) return void this.bootInstead(args.plan ?? [], false);
       this.start(args.snapshot, args.resume, args.plan);
     };
     const fromGpu = gpuHandlers(this, r, ready, failed);
@@ -219,6 +228,20 @@ export class Runner {
     gpu.onerror = r.guard((e: ErrorEvent) => {
       this.crash(r, new MsgError('display:runner.gpuWorkerFailed', {}, { cause: new Error(e.message) }));
     });
+  }
+
+  /**
+   * A template's first start whose snapshot can't load here (3D failed, or the worker refused it before touching the
+   * disks): a boot instead, said, the overlays its `plan` named left unforked. `restart`: the run has ended (the
+   * worker's refusal) and a restart starts the next; else the failed run's workers are gone already (3D's failure).
+   */
+  async bootInstead(plan: DiskPlan[], restart: boolean) {
+    const m = this.d.machine;
+    await unfork(m.store, plan).catch((e: unknown) => console.warn('waarm64: unfork:', e));
+    // Said once the boot runs (or stops): each state before then is the bar's.
+    this.notice = msg('snapshots:runner.firstBooted', { machine: m.stored?.record.name ?? m.spec.title });
+    if (restart) await this.d.later.restart();
+    else this.start();
   }
 
   /**
@@ -289,6 +312,8 @@ export class Runner {
     try {
       const needs = m.stored ? await filesNeedingUser(m, m.stored) : [];
       if (needs.length) throw new NeedsUser(needs);
+      // A demo's machine (from Home as from the store's page): its files gone from the server is said as that.
+      if (m.stored?.record.fromDemo) await checkDisks(m.store, m.stored.record, { goneOnly: true });
       const { disks, home } = await startDisks(m);
       status.disks = disks.map((d) => d.name);
       const about = await m.about(config);
@@ -298,6 +323,7 @@ export class Runner {
       if (!r.live()) return undefined;
       this.lock.drop();
       if (e instanceof NeedsUser) this.d.later.problems().needsUser(e.disks);
+      else if (isGone(e)) this.d.messages.setState('failed', e as Error, [this.d.later.problems().retry]);
       else
         this.d.messages.setState('failed', new MsgError('disks:runner.notOpened', {}, { cause: e }), [
           this.d.later.problems().retry,

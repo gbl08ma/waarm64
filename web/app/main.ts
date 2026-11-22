@@ -195,6 +195,7 @@ const runner = new Runner({
   later: {
     problems: () => problems,
     rebooted: (live) => powerActions.rebooted(live),
+    restart: () => powerActions.restart(),
   },
 });
 const pageWindow: PageWindow = new PageWindow({

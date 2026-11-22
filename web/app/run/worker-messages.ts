@@ -9,7 +9,7 @@ import type { EvdevEvent } from '../../input.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { keys } from '../areas/keys.svelte.ts';
 import { messageBar } from '../areas/message-bar.svelte.ts';
-import { power } from '../areas/power.svelte.ts';
+import { isStopped, power } from '../areas/power.svelte.ts';
 import { status } from '../areas/status.svelte.ts';
 import { graphics, type Graphics } from '../statusbar-graphics.ts';
 import { metrics } from '../statusbar-metrics.ts';
@@ -98,6 +98,12 @@ function state(x: Runner, r: Run, m: StateMessage) {
   x.d.messages.setState(m.state, done ? undefined : (m.error ?? m.note), actions, error ? 'error' : 'warn');
   if (done) x.d.messages.notify(done);
   stateChanged(x, r, m);
+  if (x.notice && (m.state === 'running' || isStopped(m.state))) {
+    x.d.messages.notify(x.notice, 'warn');
+    x.notice = undefined;
+  }
+  // A template's first start whose snapshot the worker refused: it boots instead (the restart replaces the failure).
+  if (m.problem === 'snapshot' && r.first) void x.bootInstead(r.first, true);
 }
 
 /** A download's progress, on the boot card and in the state's words. */

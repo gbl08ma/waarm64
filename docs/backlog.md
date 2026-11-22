@@ -1321,10 +1321,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   whole import in `writing` isn't the fix as is: a shared lock asked again inside it waits behind an exclusive sweep
   queued meanwhile (Web Locks queue in order), a deadlock; the import's own nested `writing` calls would need to go.
   A room connection left by a tab closed mid-import (`forMachine` naming no machine) would be the sweep's too.
-- **The demo store's loose ends** (DEMO loop 6, frontend.md "The demo store"): a demo machine started from Home (not
-  the store) whose disk's files are gone fails as a start does, not with "this demo's files are gone" (only the store's
-  Open my machine checks the manifests first); the store's URL is set only by `?store=` (no Preferences field); a 3D or
-  Vulkan demo's card doesn't fall back to a cold boot when its snapshot can't be restored; "started before" doesn't say whether the machine has changes.
 - **The Alpine demo's loose ends** (bench/demo/REPORT.md "DEMO loop 3"), ranked:
   - **The resume's disk reads, prefetched with the snapshot:** 2–3 dependent 2 MiB misses before the first command (a
     trace from the resume, as loop 1 ranked it: ~0.3 s each at 100/20).

@@ -250,7 +250,7 @@ export class SnapshotRestore {
     }
     if (!(await clear())) return;
     terminal.term.reset();
-    if (disks) runner.start(file, true, disks);
+    if (disks) runner.start(file, true, disks, true);
     else runner.start();
   }
 

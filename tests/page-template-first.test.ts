@@ -4,12 +4,15 @@
 // fresh profile the page's hook makes the machine from both and opens it, and its first start restores the snapshot
 // without asking: a fork onto the machine's overlay, the mark cleared, the snapshot kept. The same from a store's demo
 // (web/app/demo-store.ts; DEMO loop 4): the store's file with the definition inline, its URLs relative to the store, the
-// machine marked with the demo it came from. (The whole of it with a guest, timed: bench/demo/run.ts waarm64-template.)
+// machine marked with the demo it came from. A 3D template whose 3D can't start here (the GPU worker fails) boots
+// instead at its first start, said, its overlay no fork of the template. (The whole of it with a guest, timed:
+// bench/demo/run.ts waarm64-template.)
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { t } from '../web/i18n.ts';
 import { makeTemplate as make, standIn, type Start } from './demo-fixture.ts';
 
 let browser: Browser;
@@ -86,6 +89,7 @@ test("a machine from a store's demo: the definition inline, its URLs relative to
     if (path.endsWith('/alpine/snapshot.json'))
       return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: SNAP } });
     if (path.endsWith(`/pieces/${PIECE}.bin`)) return r.fulfill({ body: Buffer.from(piece) });
+    if (path.endsWith('/alpine/manifest.json')) return r.fulfill({ json: {} }); // there: a demo machine's start checks it
     return r.fulfill({ status: 404 });
   });
   await page.goto(`${base}/web/app/`);
@@ -112,6 +116,45 @@ test("a machine from a store's demo: the definition inline, its URLs relative to
   assert.equal(after.m.restoreFirst, undefined, 'the mark cleared');
   assert.deepEqual(after.snapshots.map((s: { machine: string; shapeHash: string }) => [s.machine, s.shapeHash]), [[id, made.hash]]);
   assert.equal(after.disk.url, `${base}/site/alpine/manifest.json`, "its disk's URL resolved against the store's");
+  assert.deepEqual(errors, []);
+  await visitor.close();
+});
+
+test("a 3D template whose 3D can't start in this browser: its first start boots instead, said; its overlay no fork of the template; the template kept", async () => {
+  const made = await make(browser, base, '3d');
+  const visitor = await browser.newContext();
+  const page = await visitor.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => { errors.push(`asked: ${d.message()}`); void d.dismiss(); });
+  await standIn(page, false, true);
+  const PIECE = createHash('sha256').update(new Uint8Array(made.snapshot)).digest('hex');
+  await page.route('**/site/**', (r) => {
+    const path = new URL(r.request().url()).pathname;
+    if (path.endsWith('/definition.json')) return r.fulfill({ json: { ...made.def, disks: made.def.disks.map((x: object) => ({ ...x, url: 'manifest.json' })) } });
+    const piece = new Uint8Array(made.snapshot);
+    if (path.endsWith('/snapshot.json'))
+      return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
+    return r.fulfill({ body: Buffer.from(piece) });
+  });
+  await page.goto(`${base}/web/app/?hooks`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
+  const id = await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length >= 1, null, { timeout: 30_000, polling: 50 });
+  const starts = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
+  assert.deepEqual(starts.map((s) => s.snapshot), [false], 'one start, a boot: the 3D snapshot never reaches a 2D machine');
+  const after = await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    return { m: await store.get('machines', id), snapshots: await store.all('snapshots'), overlays: await store.all('overlays') };
+  }, id);
+  assert.equal(after.m.restoreFirst, undefined, 'the mark cleared');
+  assert.equal(after.overlays.length, 1);
+  assert.equal(after.overlays[0].fork, undefined, 'nothing wrote the template into it: no fork of it (a later restore forks anew)');
+  assert.deepEqual(after.snapshots.map((s: { machine: string }) => s.machine), [id], 'the template kept as its snapshot');
+  const said = t('snapshots:runner.firstBooted', { machine: after.m.name }).replace(/<\/?name>/g, '');
+  await page.waitForFunction((said) => document.querySelector('#message')?.textContent?.includes(said), said, { timeout: 10_000, polling: 50 });
+  assert.equal(await page.evaluate(() => document.body.dataset.graphics), '2d', 'the boot without 3D');
   assert.deepEqual(errors, []);
   await visitor.close();
 });

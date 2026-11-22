@@ -7,22 +7,29 @@ export type Start = { disks: { overlay?: string }[]; plan?: { slot: number; acti
 
 /**
  * The machine worker as a stand-in: each start recorded (`window.__starts`) and answered "off" (`live`: "running", a
- * machine that runs on); a stop, "stopped".
+ * machine that runs on); a stop, "stopped". `gpuFails`: the GPU worker too, which answers its `init` with `failed`
+ * (3D can't start in this browser).
  */
-export const standIn = (page: Page, live = false) => page.addInitScript((live) => {
+export const standIn = (page: Page, live = false, gpuFails = false) => page.addInitScript(([live, gpuFails]) => {
   const Real = window.Worker;
   const starts: unknown[] = [];
   (window as unknown as { __starts: unknown[] }).__starts = starts;
   window.Worker = class extends Real {
     #fake: boolean;
+    #gpu: boolean;
     constructor(url: string | URL, options?: WorkerOptions) {
       super(url, options);
       this.#fake = /\/app\/worker\.ts/.test(String(url));
+      this.#gpu = gpuFails && /\/gpu-worker\.ts/.test(String(url));
     }
     postMessage(m: unknown, t?: unknown) {
+      const answer = (data: unknown) => setTimeout(() => this.onmessage?.(new MessageEvent('message', { data })));
+      if (this.#gpu) {
+        if ((m as { type?: string }).type === 'init') answer({ type: 'failed', reason: 'the test says no' });
+        return;
+      }
       if (!this.#fake) return super.postMessage(m as never, t as never);
       const msg = m as { type?: string; disks?: { overlay?: string }[]; plan?: unknown; snapshot?: unknown };
-      const answer = (data: unknown) => setTimeout(() => this.onmessage?.(new MessageEvent('message', { data })));
       if (msg.type === 'start') {
         starts.push({ disks: (msg.disks ?? []).map((d) => ({ overlay: d.overlay })), plan: msg.plan, snapshot: !!msg.snapshot });
         answer({ type: 'state', state: live ? 'running' : 'off' });
@@ -30,24 +37,24 @@ export const standIn = (page: Page, live = false) => page.addInitScript((live) =
       if (msg.type === 'stop') answer({ type: 'stopped' });
     }
   };
-}, live);
+}, [live, gpuFails] as const);
 
-/** A template's machine made in a fresh profile: its definition, a snapshot file of it, the snapshot's shape hash. */
-export async function makeTemplate(browser: Browser, base: string): Promise<{ def: { disks: object[] } & Record<string, unknown>; snapshot: number[]; hash: string }> {
+/** A template's machine made in a fresh profile (`display`: its graphics): its definition, a snapshot file of it, the snapshot's shape hash. */
+export async function makeTemplate(browser: Browser, base: string, display: '2d' | '3d' = '2d'): Promise<{ def: { disks: object[] } & Record<string, unknown>; snapshot: number[]; hash: string }> {
   // Where the template is made: its machine, its definition, a snapshot pinning its overlay at a later generation.
   const maker = await browser.newContext();
   const a = await maker.newPage();
   await standIn(a);
   await a.goto(`${base}/web/app/`);
   await a.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 }); // the page's actions provided
-  const made = await a.evaluate(async () => {
+  const made = await a.evaluate(async (display) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
     const { exportDefinition } = await import('/web/app/definitions.ts' as string);
     const { page: p } = await import('/web/app/page.ts' as string);
     const { SnapshotWriter, crc32, SNAPSHOT_VERSION } = await import('/web/snapshot-file.ts' as string);
     const store = await Store.open();
-    const m = await createMachine(store, { name: 'Alpine', ncpus: 1, ramMiB: 256, display: '2d', usb: false, mouse: false, touch: false, shares: false });
+    const m = await createMachine(store, { name: 'Alpine', ncpus: 1, ramMiB: 256, display, usb: false, mouse: false, touch: false, shares: false });
     const d = await createDisk(store, { kind: 'url', url: 'http://localhost:9/alpine/manifest.json', size: 1 << 20, bytes: 1 << 20, chunked: 'ab'.repeat(32) });
     await attach(store, m, d);
     const rec = await store.get('machines', m.id);
@@ -60,7 +67,7 @@ export async function makeTemplate(browser: Browser, base: string): Promise<{ de
     await new SnapshotWriter((b: Uint8Array) => { parts.push(b.slice()); }, header, { codec: stored }).end();
     const file = new Uint8Array(await new Blob(parts as BlobPart[]).arrayBuffer());
     return { def: await exportDefinition(store, m.id), snapshot: [...file], hash: hash as string };
-  });
+  }, display);
   await maker.close();
   return made;
 

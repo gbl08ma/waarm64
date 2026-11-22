@@ -4,7 +4,7 @@
   with how to start it at the pane's head (ui/Pane.svelte, as a machine's pane on Home), then its screenshot and
   summary (the store's data, plain text), its download, what it needs of the browser (DemoChecks.svelte: checked here,
   before any download), and what the project is. Started before (a machine of the visitor's from it): **Open my
-  machine** (the default) or **Start a fresh copy**, with when theirs was last used. Start makes the machine from the
+  machine** (the default) or **Start a fresh copy**, with when theirs was last used and whether it has changes. Start makes the machine from the
   definition (web/app/template.ts `machineFromDemo`: the template snapshot downloaded first, with its progress), opens
   it in the demo's view, and its first start restores the template. A failure (the files gone, the server down, the
   download cut off, the storage full) is said here. A start belongs to its pane: one at a time on the page
@@ -21,7 +21,7 @@
   import DemoChecks from './DemoChecks.svelte';
   import { Actions } from './actions.svelte.ts';
   import { allMet, canStart, checkDemo, needsOf, readEnv, type Check } from './demo-check.ts';
-  import { checkDisks, lastUsed } from './demo-open.ts';
+  import { changesOf, checkDisks, lastUsed } from './demo-open.ts';
   import { downloadEnded } from './demo-leave.ts';
   import { machinesOf, type StoreDemo } from './demo-store.ts';
   import { isRunning } from './machines.ts';
@@ -56,6 +56,8 @@
 
   let checks = $state.raw<Check[]>();
   let used = $state<Date>();
+  /** What the visitor's machine holds beyond the demo as it started (`changesOf`); unknown until read. */
+  let changes = $state<'none' | 'disk' | 'suspended'>();
   let elsewhere = $state(false);
   let progress = $state<{ done: number; total: number }>();
   const runner = new Actions({ after: () => records.reread() });
@@ -78,10 +80,16 @@
     const m = mine;
     if (!m) return;
     void lastUsed(m).then((when) => (used = new Date(when)));
+    void changesOf(store, m).then((c) => (changes = c));
     void isRunning(m.id).then((on) => (elsewhere = on && m.id !== current.id));
   });
 
   const ready = $derived(!!checks && canStart(checks));
+  const changesWords = {
+    none: 'machines:DemoStart.changes.none',
+    disk: 'machines:DemoStart.changes.disk',
+    suspended: 'machines:DemoStart.changes.suspended',
+  } as const;
 
   /** The machine running on this page (undefined: none), which opening another stops. */
   const live = () => (isLive(power.state) ? current.id : undefined);
@@ -190,6 +198,9 @@
             <T k="machines:DemoStart.mine.undated" params={{ machine: mine.name }} />
           {/if}
         </Note>
+        {#if changes}
+          <Note size="md" data-field="changes" data-changes={changes}>{t(changesWords[changes])}</Note>
+        {/if}
         {#if elsewhere}
           <Note tone="warn"><T k="machines:DemoStart.elsewhere" params={{ machine: mine.name }} /></Note>
         {/if}

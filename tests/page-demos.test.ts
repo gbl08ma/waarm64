@@ -54,8 +54,8 @@ after(async () => {
   close?.();
 });
 
-type Site = { down?: boolean; gone?: boolean; cut?: boolean; requests: string[]; held?: Promise<void>; storeHeld?: Promise<boolean> };
-/** A store at `origin` with the demo (`down`: unreachable; `gone`: its snapshot 404s; `cut`: its piece's download fails). */
+type Site = { down?: boolean; gone?: boolean; diskGone?: boolean; cut?: boolean; requests: string[]; held?: Promise<void>; storeHeld?: Promise<boolean> };
+/** A store at `origin` with the demo (`down`: unreachable; `gone`: its snapshot 404s; `diskGone`: its disk's manifest 404s; `cut`: its piece's download fails). */
 const site = (origin: string, s: Site) => async (r: Route) => {
   const url = r.request().url();
   s.requests.push(url);
@@ -64,7 +64,7 @@ const site = (origin: string, s: Site) => async (r: Route) => {
   if (path === '/store.json' && s.storeHeld && !(await s.storeHeld)) return r.abort('connectionrefused').catch(() => undefined);
   if (path === `/pieces/${piece}.bin` && s.held) await s.held;
   if (path === '/store.json') return r.fulfill({ headers: CORS, json: { type: 'waarm64-store', version: 1, name: 'Another', demos: [def, second] } });
-  if (path === '/alpine/manifest.json') return r.fulfill({ headers: CORS, json: {} }); // there (Open my machine checks it)
+  if (path === '/alpine/manifest.json' && !s.diskGone) return r.fulfill({ headers: CORS, json: {} }); // there (Open my machine and a start check it)
   if (path === '/alpine/thumb.png') return r.fulfill({ headers: CORS, contentType: 'image/png', body: PNG });
   if (path === '/alpine/snapshot.json' && !s.gone)
     return r.fulfill({ headers: CORS, json: { format: 'waarm64-chunked-1', size: snapshot.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [piece], id: SNAP } });
@@ -248,6 +248,51 @@ test("failures in words: the store's server down (Try again), the demo's files g
   await page.waitForFunction((w) => document.querySelector('.start [role="alert"]')?.textContent?.includes(w), t('machines:template.cutOff'), { timeout: 30_000, polling: 50 });
   assert.equal((await machines(page)).length, 0, 'no machine from a failed download');
   assert.equal(await onPage(page), 'demos');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("started before says whether the machine has changes since the demo started; a start outside the store (its address, Home) of a demo machine whose files are gone says so", async () => {
+  const ours: Site = { requests: [] };
+  const { ctx, page, errors } = await visitor(ours);
+  await page.goto(`${base}/demos?id=alpine-term`);
+  await page.locator('[data-action="start-demo"]:not([disabled])').click({ timeout: 30_000 });
+  await page.waitForFunction(() => document.body.dataset.page === 'machine', null, { timeout: 30_000, polling: 50 });
+  const [m] = await machines(page);
+  const changes = async () => {
+    await page.goto(`${base}/demos?id=alpine-term`);
+    await page.locator('[data-field="changes"]').waitFor({ timeout: 30_000 });
+    return { said: await text(page, '[data-field="changes"]'), is: await page.locator('[data-field="changes"]').getAttribute('data-changes') };
+  };
+  // The stand-in wrote nothing where the restore would have (its overlay's generation 0, not the fork's 1): moved on.
+  assert.deepEqual(await changes(), { said: t('machines:DemoStart.changes.disk'), is: 'disk' });
+  const mark = (restoreFirst: string | undefined) => page.evaluate(async ([id, restoreFirst]) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    await store.put('machines', { ...(await store.get('machines', id)), restoreFirst });
+  }, [m.id, restoreFirst] as const);
+  await mark('not-started'); // made, its first start not taken: the demo as it is
+  assert.equal((await changes()).is, 'none');
+  await mark(undefined);
+  const suspend = (on: boolean) => page.evaluate(async ([id, on]) => {
+    const dir = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('machines', { create: true })).getDirectoryHandle(id, { create: true });
+    if (!on) return dir.removeEntry('suspend');
+    const w = await (await dir.getFileHandle('suspend', { create: true })).createWritable();
+    await w.write(new Uint8Array([1, 2, 3]));
+    await w.close();
+  }, [m.id, on] as const);
+  await suspend(true);
+  assert.equal((await changes()).is, 'suspended');
+  await suspend(false);
+
+  ours.diskGone = true; // the demo retired: its disk's files gone from the server
+  await page.goto(`${base}/web/app/?m=${m.id}`); // the machine's own address: its start, as Home's Start
+  await page.waitForFunction((w) => document.querySelector('#message')?.textContent?.includes(w), t('machines:template.gone'), { timeout: 30_000, polling: 50 });
+  assert.equal(await page.evaluate(() => document.body.dataset.state), 'failed');
+  assert.equal((await starts(page)).length, 0, "no start reached the worker (this load's)");
+  ours.diskGone = false;
+  await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
+  await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
   assert.deepEqual(errors, []);
   await ctx.close();
 });
