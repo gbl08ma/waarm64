@@ -12,10 +12,12 @@ to the session's branch. `scripts/ci-net.sh` and the end's whole CI set are owed
 
 ## State
 
-Loop 1 done; loop 2 next.
+Loop 2 done, its (b) stopped for the user's call (names.md "Findings": servers finish only the lowest pending
+anchor); loop 3 next.
 
 ## Loops
 
 | Loop | Commit | Tier passed | Report |
 |---|---|---|---|
-| 1 | this loop's | `ci-fast.sh` | A pending proof asked at an hour, every 10 minutes to 3 hours, then 20, 40, hourly (`collectWait`): N0b's stamps collected by 2 hours 67 of 80 (every one served by then; doubling: 4), 13 asks a calendar in 3 hours (was 6). ~90% isn't reachable on N0b's batch: 13 of 80 proofs came after 2 hours. |
+| 1 | `66e4fba` | `ci-fast.sh` | A pending proof asked at an hour, every 10 minutes to 3 hours, then 20, 40, hourly (`collectWait`): N0b's stamps collected by 2 hours 67 of 80 (every one served by then; doubling: 4), 13 asks a calendar in 3 hours (was 6). ~90% isn't reachable on N0b's batch: 13 of 80 proofs came after 2 hours. |
+| 2 | this loop's | `ci-fast.sh` | (a) A claim no calendar served a day after its stamp is made again (`CLAIM_AGAIN_MS`), the one before kept and asked for, two waiting at most, one never anchored dropped a week on once another was made or anchored. (b) Not fixed, needs the user's call: an item carries one pending anchor an entry (the lowest, `alice`'s) and servers keep the lower, so with `alice` losing stamps the 60-day promise is NXDOMAIN days 25 to 28 (`visits_keep_a_name_with_the_lowest_calendar_losing_its_stamps`, `#[ignore]`d); keeping more needs a change to how a pending anchor travels in a put and is stored. |

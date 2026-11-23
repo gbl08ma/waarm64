@@ -49,8 +49,13 @@ export function collectWait(tries: number): number {
 /** A zone's slots, narrow and wide (net/ts room/names/zone.rs): a name with more points than the first is sealed in the
  * second, and has at most that many (web/app/names-view.ts `MAX_POINTS`). */
 const ZONE_NARROW = 4;
-/** An entry unanchored past its window is kept and asked for this long more (seconds). */
+/** An entry unanchored past its window is kept and asked for this long more (seconds); so is a claim never anchored
+ * once another claim of the title was made after it or anchored. */
 const STALE_KEEP_S = 7 * 24 * 60 * 60;
+/** A claim no calendar has served a proof of this long after its stamp is made again (the calendars lost it: a claim
+ * never goes stale, so it would stay Reserved for good); the one before is kept, and asked for, since an anchor that
+ * does come still counts (names.md "The names agent"). */
+export const CLAIM_AGAIN_MS = 24 * 60 * 60 * 1000;
 /** Proof of work tries a call (production: ~0.5 ms each in a tab), so the worker answers between slices. */
 const MINE_SLICE = 256;
 /** A server takes a new zone for a name at most this often (net/ts room/names/store.rs `ZONE_EVERY`), and a minute. */
@@ -529,10 +534,19 @@ export class NamesAgent {
   }
 
   /** A pending proof's next ask (`collectWait`): the first from its stamp (`prev` none), else after one more ask found it
-   * pending. */
-  private ask(prev: { tries: number } | undefined): { next: number; tries: number } {
+   * pending; `since`, the stamp's time, carried. */
+  private ask(prev: { tries: number; since?: number } | undefined): { next: number; tries: number; since: number } {
     const tries = prev ? prev.tries + 1 : 0;
-    return { next: Date.now() + (collectWait(tries) * this.retryMs) / RETRY_MS, tries };
+    return {
+      next: Date.now() + (collectWait(tries) * this.retryMs) / RETRY_MS,
+      tries,
+      since: prev?.since ?? Date.now(),
+    };
+  }
+
+  /** When unanchored entry `id` of title `t` was stamped (ms): a record from before `since` was kept, the title's. */
+  private since(t: TitleRecord, id: string): number {
+    return (id in t.collect ? t.collect[id].since : undefined) ?? t.stampedAt ?? t.made;
   }
 
   private backoff(prev: { tries: number } | undefined): { next: number; tries: number } {
@@ -574,15 +588,44 @@ export class NamesAgent {
       st = await this.status(t);
       changed = true;
     }
+    // A claim never anchored, once another claim was made after it or anchored: asked for a week from its stamp, then
+    // dropped (it would be asked for hourly for good).
+    const claims = (st?.entries ?? []).filter((e) => e.kind === 'claim');
+    const old = claims.filter(
+      (e) =>
+        e.time === null &&
+        Date.now() > this.since(t, e.id) + STALE_KEEP_S * 1000 &&
+        claims.some((c) => c.time !== null || this.since(t, c.id) > this.since(t, e.id)),
+    );
+    if (old.length) {
+      this.log(`${t.name}: ${old.length} claim(s) never anchored a week on, another made since; dropped`);
+      await this.dropEntries(
+        t,
+        old.map((e) => e.id),
+      );
+      st = await this.status(t);
+      changed = true;
+    }
     if (t.lost || (t.remake && t.remake.next > Date.now())) return changed;
     const live = (e: EntryStatus) => e.time === null && !e.stale;
     if (!st?.best) {
-      // No anchored entry yet: a claim, unless one waits for its anchor.
-      if (!t.released && !st?.entries.some((e) => live(e) && e.kind === 'claim')) {
-        await this.makeEntry(t, 'claim');
-        changed = true;
+      if (t.released) return changed;
+      // No anchored entry yet: a claim, unless one waits for its anchor, stamped less than a day ago. One no calendar
+      // served a day on, the calendars lost: made again, the one before kept (an anchor that comes still counts), the
+      // others before it dropped, so two wait at most.
+      const waitingClaims = st?.entries.filter((e) => live(e) && e.kind === 'claim') ?? [];
+      if (waitingClaims.length && Date.now() < (t.stampedAt ?? t.made) + CLAIM_AGAIN_MS) return changed;
+      if (waitingClaims.length) {
+        const [, ...before] = waitingClaims.sort((a, b) => this.since(t, b.id) - this.since(t, a.id));
+        this.log(`${t.name}: no calendar served the claim in a day; made again`);
+        if (before.length)
+          await this.dropEntries(
+            t,
+            before.map((e) => e.id),
+          );
       }
-      return changed;
+      await this.makeEntry(t, 'claim');
+      return true;
     }
     const o = st.owner;
     // Let go, but the release wasn't stamped (or never came): made again.

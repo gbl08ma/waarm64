@@ -838,6 +838,54 @@ test('Let it go before the claim is public: the title says let go, not Reserved 
   assert.deepEqual(await agent.held(c.identityKey), [], 'not held: deleting the connection loses nothing');
 });
 
+test('a claim its calendars lost is made again a day after its stamp, the one before kept, so it doesn\'t stay Reserved for good (NAMES2 loop 2)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });
+  const c = conn('conn-lost-claim');
+  await agent.register(c, 'lostclaim', point());
+  cal.forget(); // every calendar lost it: its proof stays pending for good
+  const real = Date.now;
+  const at = async (hours: number) => {
+    Date.now = () => real() + hours * 3600_000;
+    try {
+      await agent.pass(c.identityKey);
+      const [t] = await store.titles(c.identityKey);
+      const st = await statusOf(backend, t);
+      const [v] = await agent.titles(c.identityKey);
+      return { t, claims: st.entries.filter((e) => e.kind === 'claim'), v, now: Date.now() };
+    } finally {
+      Date.now = real;
+    }
+  };
+  let r = await at(3);
+  assert.equal(r.claims.length, 1, 'not made again within the day');
+  const [first] = r.claims;
+  assert.equal(r.v.state, 'reserved');
+  assert.ok(r.v.publicAbout! <= r.now, 'past the usual wait: the card says so (names-view.reservedLate)');
+  r = await at(25);
+  assert.equal(r.claims.length, 2, `made again a day on: ${log.join('\n')}`);
+  assert.ok(r.claims.some((e) => e.id === first.id), 'the one before kept (an anchor that comes still counts)');
+  assert.equal(r.t.stamps[first.id]?.length, 3, 'with its pending anchors');
+  const second = r.claims.find((e) => e.id !== first.id)!;
+  assert.equal(r.v.state, 'reserved');
+  assert.ok(Math.abs(r.v.publicAbout! - (r.now + PUBLIC_IN_MS)) < 60_000, 'the new claim counts its wait again');
+  cal.forget();
+  r = await at(30);
+  assert.equal(r.claims.length, 2, 'once a day at most');
+  r = await at(50);
+  assert.equal(r.claims.length, 2, 'two wait at most: the oldest goes when a third is made');
+  assert.ok(!r.claims.some((e) => e.id === first.id) && r.claims.some((e) => e.id === second.id));
+  assert.equal(r.t.stamps[first.id], undefined);
+  // This one the calendars keep: anchored, public.
+  cal.mine(6);
+  r = await at(51);
+  assert.equal(r.v.state, 'active', log.join('\n'));
+  // The claim still waiting is asked for a week from its stamp, then dropped (the title has an anchored claim).
+  r = await at(51 + 7 * 24);
+  assert.equal(r.claims.filter((e) => e.time === null).length, 0, 'the claim never anchored dropped a week on');
+  assert.equal(r.v.state, 'active');
+});
+
 // "About 2 hours" (PUBLIC_IN_MS) against N0b's 80 real stamps (bench/net/REPORT.md "NAMES loop 0b"): a stamp's proof is
 // served from its calendar's block's sixth confirmation, the first of the three calendars' is when the agent can collect
 // it, and the agent's asks (`collectWait`, the real schedule) collect it at the first ask at or after then. Pure: no

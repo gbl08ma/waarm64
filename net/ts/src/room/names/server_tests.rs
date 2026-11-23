@@ -2728,7 +2728,7 @@ fn a_title_that_doesnt_hold_isnt_taken_as_this_nodes_own() {
 
 use super::{
     Params,
-    anchor::{Calendar, EXPLORERS},
+    anchor::{Calendar, EXPLORERS, Pending},
     chain::Name,
     member::Answer,
     testkit::LATE,
@@ -2754,6 +2754,10 @@ struct Owner {
     ahead: Option<Stamped>,
     /// Visits at which proof of work had to be done (a renewal due with none made ahead).
     slow_visits: usize,
+    /// The calendars it stamps at (`alice` alone, or all three as the agent does), and each stamp's pending anchor, signed:
+    /// the entry carries the lowest (as the agent's item does), any finished one is collected.
+    calendars: Vec<Calendar>,
+    stamps: Vec<([u8; 32], Pending)>,
 }
 
 impl Owner {
@@ -2777,6 +2781,8 @@ impl Owner {
             entries: vec![claim],
             ahead: None,
             slow_visits: 0,
+            calendars: vec![Calendar::Alice],
+            stamps: Vec::new(),
         };
         o.stamp(b, svc, 0);
         svc.mine(1, at);
@@ -2789,17 +2795,23 @@ impl Owner {
 
     fn stamp(&mut self, b: &Bitcoin, svc: &mut Services, k: usize) {
         let id = self.entries[k].id();
-        let mut p = svc.stamp(&id, Calendar::Alice);
-        super::entry::sign_pending(&self.key, &b.names, &id, &mut p);
-        assert!(self.entries[k].offer_pending(p));
+        for c in self.calendars.clone() {
+            let mut p = svc.stamp(&id, c);
+            super::entry::sign_pending(&self.key, &b.names, &id, &mut p);
+            self.entries[k].offer_pending(p.clone());
+            self.stamps.push((id, p));
+        }
+        assert!(self.entries[k].pending().is_some());
     }
 
-    /// Finished anchors collected (the agent's visit does, as servers do).
+    /// Finished anchors collected at any calendar that stamped them (the agent's visit does, as servers do).
     fn collect(&mut self, b: &Bitcoin, svc: &Services) {
         for e in &mut self.entries {
+            let id = e.id();
             if e.time().is_none()
-                && let Some(p) = e.pending().cloned()
-                && let Some((a, h)) = svc.anchor_of(&e.id(), &p)
+                && let Some((a, h)) = (self.stamps.iter())
+                    .filter(|(s, _)| *s == id)
+                    .find_map(|(_, p)| svc.anchor_of(&id, p))
             {
                 e.offer_anchor(a, h, &b.params, LATE).unwrap();
             }
@@ -2885,6 +2897,21 @@ fn compiled_only(bus: &Bus) {
 /// (30 days). Two servers, their own names kept the same way.
 #[test]
 fn visits_14_days_apart_and_seconds_long_keep_a_name_resolving_and_owned() {
+    visits_keep_a_name(None);
+}
+
+/// The promise with one calendar that loses what it stamps (NAMES2 loop 2): the owner stamps at all three, as the agent
+/// does, and the item it hands the servers carries one pending anchor, the lowest (`alice`'s), the one they finish.
+/// FAILS: with `alice` losing it, no server finishes the renewal, and the name stops resolving when the entry before
+/// it ends (day 25 here), until the next visit collects it at another calendar (day 28). Keeping more than one pending
+/// anchor an entry needs a change to how one travels in an item and is stored: the user's call (names.md "Findings").
+#[test]
+#[ignore = "fails: the servers finish only the lowest pending anchor (NAMES2 loop 2, names.md \"Findings\")"]
+fn visits_keep_a_name_with_the_lowest_calendar_losing_its_stamps() {
+    visits_keep_a_name(Some(Calendar::Alice));
+}
+
+fn visits_keep_a_name(lost: Option<Calendar>) {
     let params = Params::TEST_PACED;
     let mut b = Bitcoin::new(ROOM, 70);
     let mut svc = Services::new(70);
@@ -2894,6 +2921,10 @@ fn visits_14_days_apart_and_seconds_long_keep_a_name_resolving_and_owned() {
         Owner::claimed(&mut b, &mut svc, 2, "bravo", t(20), [2; 32]),
         Owner::claimed(&mut b, &mut svc, 3, "promise", t(5), node),
     ];
+    if let Some(c) = lost {
+        owners[2].calendars = Calendar::ALL.to_vec();
+        svc.lost.push(c);
+    }
     // The servers' own names renewed once already (at day -4), as a server's agent would have.
     for o in owners.iter_mut().take(2) {
         let it = o.visit(&mut b, &mut svc, t(5) as u64);

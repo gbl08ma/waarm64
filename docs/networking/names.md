@@ -521,10 +521,16 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   13 asks a calendar in a pending proof's first 3 hours, where doubling made 6; counted by asks, so a page opened
   late asks at once and then from the hour's 10 minutes), each with its block's header from an explorer; renew when
   the owning chain's last entry is `TERM / 2` old and no renewal waits; make the claim of a title that has none. An entry
-  no calendar stamped is made again. Nothing else drops one: every anchor counts whenever it comes, a calendar's answer
+  no calendar stamped is made again. Nothing else drops one but what follows: every anchor counts whenever it comes, a calendar's answer
   that isn't a proof moves on to the next, a header one explorer serves that the module refuses goes to the other. A
   renewal unanchored past its link end is kept and asked for a week more (it may have an anchor timed before then). A
-  claim never goes stale.
+  claim never goes stale, so **a claim no calendar has served a day after its stamp is made again** (`CLAIM_AGAIN_MS`:
+  the calendars lost it, and it would stay Reserved for good; a day is past the worst a year's samples showed for
+  the first of three, 5.3 hours, and for `finney` alone, 15); the one before is kept with its pending anchors and asked for, since an
+  anchor that does come still counts, so two claims wait at most (a third made drops the oldest), and a claim never
+  anchored is dropped a week after its stamp once another was made after it or anchored. Meanwhile the card says
+  Reserved, public once this web app has been open a while (`names-view.reservedLate`) from 2 hours on, then, from
+  the new claim's stamp, public in about 2 hours again (`stampedAt`: a claim made again counts its wait again).
 - **The next renewal is made ahead**: once a pass has published, the agent makes the renewal that will follow the
   title's newest entry (proof of work and signature) and keeps it unstamped (`TitleRecord.ahead`). A visit that finds
   a renewal due stamps it (seconds) and hands it to the servers with its signed pending anchor; they finish it. So **a
@@ -777,7 +783,7 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
   runs on which parameters, the `self` event's name, the records in IndexedDB in Chromium), `tests/names-agent.test.ts`
   (the agent on the tests' module and the pretend services: claims held back, anchors whenever they come, the Web
   Lock, lost titles, forks and pasted exports, the dialog's check, Let it go, only compiled services fetched, the asks
-  for a pending proof against N0b's 80 stamps),
+  for a pending proof against N0b's 80 stamps, a claim its calendars lost made again),
   `tests/names-room.test.ts` (opt-in `WAARM64_TAILCAT=1`: real servers through the rig's derper, a renewal finished
   with the page closed, a fork settled, a lost name), `tests/names-browser.test.ts` (Chromium: the worker, IndexedDB,
   routes, an export into another profile), `tests/names-page.test.ts` (the words, the dialog's outcomes, and the
@@ -886,6 +892,13 @@ Negentropy) is the repair primitive: no parameter to guess, a few round trips.
   proof's hour since (`collectWait`, tests/names-agent.test.ts). On N0b's evening of slow blocks 13 of 80 proofs came
   after 2 hours, so no schedule shows the late line for fewer than 13 of them; the calendars' recent record puts the
   first proof's p90 at 1.7 hours.
+- **Servers finish only the lowest of a renewal's pending anchors** (NAMES2 loop 2): the agent stamps at three
+  calendars, but an item carries one pending anchor an entry (`WireEntry::pending`, the lowest: `alice`'s whenever it
+  gave a receipt) and a server keeps the lower of two offered. A calendar that takes stamps and never finishes them
+  leaves every renewal stamped at a short visit unfinished until the owner's next visit collects it at another: on the
+  60-day promise with `alice` losing its stamps the name is NXDOMAIN from day 25 to day 28
+  (`visits_keep_a_name_with_the_lowest_calendar_losing_its_stamps`, ignored until fixed). Keeping more than one needs
+  a change to how a pending anchor travels in a put and is stored, which is the user's call.
 - **A GPU's lead at Argon2id of 1 MiB is ~110x to ~220x**, not the ~10x first assumed: a memory-hard function narrows
   the gap only past what fits on the card's chips, and memory a server can afford to check stays small. 256 KiB leaves
   the card most of its lead; 4 MiB keeps the ratio at four times the check.

@@ -20,8 +20,9 @@ export type TitleRecord = {
   item: string;
   /** Each unanchored entry's pending anchors (hex, signed), one per calendar that gave a receipt. */
   stamps: Record<string, string[]>;
-  /** When an entry's proof is asked for again. */
-  collect: Record<string, { next: number; tries: number }>;
+  /** When an entry's proof is asked for again, how many asks found it pending, and when it was stamped (ms; none in a
+   * record from before it was kept). */
+  collect: Record<string, { next: number; tries: number; since?: number }>;
   /** When an entry may be made again (one that no calendar stamped). */
   remake?: { next: number; tries: number };
   /** The next renewal made ahead (names.md "Decisions"): its proof of work and signature done, after entry `prev`
