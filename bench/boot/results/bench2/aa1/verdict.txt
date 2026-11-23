@@ -1,0 +1,14 @@
+user: 20 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           +0.21% [+0.02%, +0.39%] HIGHER       +0.16% [+0.02%, +0.30%] HIGHER       -0.00% [-0.02%, +0.01%] same         +0.15% [+0.01%, +0.28%] HIGHER      
+  a2           +0.13% [-0.06%, +0.33%] same         +0.14% [-0.01%, +0.28%] same         -0.00% [-0.02%, +0.01%] same         +0.10% [-0.04%, +0.25%] same        
+  a3           +0.04% [-0.13%, +0.21%] same         +0.04% [-0.11%, +0.20%] same         -0.00% [-0.01%, +0.01%] same         +0.02% [-0.11%, +0.16%] same        
+  ended: every stop measure decided
+  WARNING: the A/A arm differs from the base in wall, cycles, cpu: this session's differences are suspect
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9328       0.9905         1793        238.6         74.6        15.50          530    194642775
+  aa                   9347       0.9906         1791        238.8         75.4        15.50          530    194642775
+  a2                   9341       0.9906         1804        239.8         75.3        15.50          530    194642775
+  a3                   9335       0.9906         1803        240.1         75.1        15.50          530    194642775
+arms: base 9786743 bytes; aa 9786743 bytes; a2 9786743 bytes; a3 9786743 bytes
+rule: pairs 20-20, band ±0.5%, stop on cycles and wall, each interval's tail 1.00e-2 (0.01 over all its looks); Chromium 158.0.8127.36

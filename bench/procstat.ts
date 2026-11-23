@@ -9,7 +9,8 @@ import { createServer, type Server } from 'node:http';
 
 /** `all`: every process of the tree; `renderer`: its renderers (the page, its workers, the JIT's code). */
 export type Counters = { instructions: number; cycles: number; cpuNs: number; pInstructions: number; pCycles: number; pCpuNs: number; energyNj: number };
-export type ProcStat = { all: Counters; renderer: Counters; pids: number };
+/** `footprint`: the renderers' memory now, bytes (macOS's physical footprint; on Linux their resident sets). */
+export type ProcStat = { all: Counters; renderer: Counters; pids: number; footprint: number };
 
 const zero = (): Counters => ({ instructions: 0, cycles: 0, cpuNs: 0, pInstructions: 0, pCycles: 0, pCpuNs: 0, energyNj: 0 });
 const helper = () => process.env.PROCSTAT ?? './procstat';
@@ -20,7 +21,7 @@ export const hasCounters = () => process.platform === 'darwin' && existsSync(hel
 export function procStat(root: number): ProcStat {
   const kids = new Map<number, number[]>();
   const args = new Map<number, string>();
-  for (const l of execFileSync('ps', ['-Axo', 'pid=,ppid=,args='], { encoding: 'utf8', maxBuffer: 16 << 20 }).split('\n')) {
+  for (const l of execFileSync('ps', ['-Ao', 'pid=,ppid=,args='], { encoding: 'utf8', maxBuffer: 16 << 20 }).split('\n')) {
     const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(l);
     if (!m) continue;
     args.set(Number(m[1]), m[3]);
@@ -33,9 +34,10 @@ export function procStat(root: number): ProcStat {
     tree.push(p);
     q.push(...(kids.get(p) ?? []));
   }
-  const out: ProcStat = { all: zero(), renderer: zero(), pids: tree.length };
+  const out: ProcStat = { all: zero(), renderer: zero(), pids: tree.length, footprint: 0 };
+  const isRenderer = (pid: number) => args.get(pid)!.includes('--type=renderer');
   const add = (pid: number, c: Counters) => {
-    for (const to of args.get(pid)!.includes('--type=renderer') ? [out.all, out.renderer] : [out.all]) {
+    for (const to of isRenderer(pid) ? [out.all, out.renderer] : [out.all]) {
       for (const k of Object.keys(c) as (keyof Counters)[]) to[k] += c[k];
     }
   };
@@ -45,6 +47,7 @@ export function procStat(root: number): ProcStat {
       const f = l.split(' ').map(Number);
       if (f.length < 10) continue;
       add(f[0], { instructions: f[1], cycles: f[2], cpuNs: f[3] + f[4], pInstructions: f[5], pCycles: f[6], pCpuNs: f[7] + f[8], energyNj: f[9] });
+      if (isRenderer(f[0])) out.footprint += f[10] || 0;
     }
   } else if (process.platform === 'linux') {
     for (const pid of tree) {
@@ -52,6 +55,7 @@ export function procStat(root: number): ProcStat {
       try { stat = readFileSync(`/proc/${pid}/stat`, 'utf8'); } catch { continue; }
       const f = stat.slice(stat.lastIndexOf(')') + 2).split(' '); // utime and stime: fields 14 and 15, in 10 ms ticks
       add(pid, { ...zero(), cpuNs: (Number(f[11]) + Number(f[12])) * 1e7 });
+      if (isRenderer(pid)) out.footprint += Number(f[21]) * 4096; // rss, in pages
     }
   }
   return out;

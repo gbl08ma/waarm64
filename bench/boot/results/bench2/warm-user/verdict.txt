@@ -1,0 +1,13 @@
+user: 14 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           +0.06% [-0.14%, +0.27%] same         +0.06% [-0.11%, +0.23%] same         -0.00% [-0.04%, +0.04%] same         +0.05% [-0.12%, +0.23%] same        
+  a2           +0.26% [-0.09%, +0.62%] open         +0.21% [-0.11%, +0.53%] open         +0.00% [-0.04%, +0.04%] same         +0.21% [-0.12%, +0.55%] open        
+  a3           +0.26% [+0.05%, +0.47%] HIGHER       +0.19% [+0.02%, +0.36%] HIGHER       +0.01% [-0.03%, +0.05%] same         +0.18% [+0.02%, +0.34%] HIGHER      
+  ended: the cap of 14 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9396       0.9902         1331        242.1         73.3        15.50          530    194642775
+  aa                   9405       0.9902         1227        242.1         73.2        15.50          530    194642775
+  a2                   9419       0.9903         1329        242.1         73.1        15.50          530    194642775
+  a3                   9425       0.9903         1431        242.3         73.0        15.50          530    194642775
+arms: base 9786743 bytes; aa 9786743 bytes; a2 9786743 bytes; a3 9786743 bytes
+rule: a pair a fresh browser (warm-up user, 1 round), pairs 14-14, band ±0.5%, stop on cycles and wall, each interval's tail 1.00e-2 (0.01 over all its looks); Chromium 158.0.8127.36

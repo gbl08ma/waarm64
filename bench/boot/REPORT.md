@@ -7832,3 +7832,84 @@ moves those shows in cycles and time alone. Which measure ranks which kind of ch
 loop 4's question; until then a verdict isn't read from instructions alone.
 
 Nothing in the core changed (ABI 74). On Linux `bench/procstat.ts` gives CPU time only (/proc).
+
+## BENCH loop 2: the paired A/B with a stopping rule (2026-11-23)
+
+The BENCH track's second loop: one command for a Mac A/B, `bench/ab-mac.sh <outdir> <base>=<core.wasm>
+<arm>=<core.wasm>[@<tree>][?<query>]...` (driver `bench/ab.ts`, an arm's page `bench/boot/pair.ts`, the statistics in
+`bench/stats.ts`, tests/ab-stats.test.ts; docs/benchmarking.md "The paired A/B" says what exists). M4 Mac mini, Chrome
+for Testing 158.0.8127.36; every session's samples and verdict are in `results/bench2/<session>/`, with the scripts
+that read them (`noise.ts`, `place.mjs`, `replay.ts`). The core is the same in every A/A arm (ABI 74, 9,786,743 bytes).
+
+**Arms alternated inside one browser** (`aa1`: four pages of one core kept alive, 20 rounds of the userspace workload,
+the first draft of the driver): single samples of the clock spread 0.32% (loop 1, arms in runs of their own: 1.57%),
+cycles 0.33%, instructions 0.05%; a pair's ratio 0.29% and 0.23%. The P-core share stops mattering there: it spreads
+0.03%, the pairs' time against its difference has r 0.37 and the residual is the spread (0.272 against 0.293);
+rejecting pairs by it changes nothing. Loop 1's −0.97 was between runs. Not used.
+
+**A page keeps its own speed.** In `aa1` the three other arms were +0.21%, +0.13% and +0.04% against the base in time
+(t 3.2, 1.9, 0.7) and the same in cycles, with instructions equal within 0.003%: the A/A arm was called a difference.
+More rounds on the same pages only tighten a wrong answer, so a pair is now a freshly launched browser.
+
+**The warm-up** (`warm-none`, `warm-boot`, `warm-user`: four identical arms, 14 fresh-browser pairs each):
+
+| Warm-up before the sample | a pair's ratio: time | cycles | instructions | samples a pair and arm |
+|---|---|---|---|---|
+| none | 0.40-0.45% | 0.46-0.59% | 0.19-0.22% | 1 |
+| a boot (3.5 s) | 0.36-0.57% | 0.53-0.60% | 0.20-0.21% | 1.4 |
+| the workload itself | 0.25-0.44% | 0.21-0.40% | 0.05% | 2 |
+
+The workload as its own warm-up costs twice a cold sample and is the tightest by enough to pay for it in cycles and
+instructions (and even in time); the boot as a warm-up buys nothing.
+
+**The base was the fastest arm** in all four of those sessions: 0.10-0.15% under its round's mean in time (`place.mjs`),
+whichever place it ran in. A fifth session with the names moved (`names`: the reference called `a0`, an arm called
+`base`, two blocks of ten rounds) showed no arm ahead by name or by slot (−0.04%, −0.02%, −0.02%, +0.08%), so the
+cause wasn't found. The driver now leaves it nothing to act through: in every pair the arms draw the name their core
+is served under, the order their pages open in and the order they run in. Since then (96 A/A pairs of the userspace
+workload) the A/A arm's time is +0.06% ± 0.04 against the base.
+
+**A known difference** (`r16`: `block::REGION` 16 against the 64 it has been since 0793f714, which measured the gates
+4-5% faster; the defaults, both workloads, 8 min 13 s with the copying):
+
+| | pairs | time | cycles a step | instructions a step | A/A arm's time |
+|---|---|---|---|---|---|
+| `user` | 5 | +4.19% [+3.23, +5.15] | +1.02% [+0.26, +1.77] | +0.59% [+0.27, +0.92] | −0.03% [−1.48, +1.44] |
+| `boot` | 8 | +5.64% [+5.25, +6.04] | −0.18% [−0.44, +0.08] | −0.72% [−0.73, −0.70] | +0.04% [−0.81, +0.90] |
+
+**The renderer's cycles miss it.** They are the sum over the renderer's threads: a `user` sample is 9.4 s of wall and
+12.9 s of CPU (V8's compile threads, the collector), and what regions of 16 cost the vCPU's thread (dispatches +5.5%
+and +6.4%) is diluted by the rest and partly paid back by less compiling. Time is the measure that saw it, so the
+stop needs it; instructions and cycles decide alone only for changes to how much work the same code is. A per-thread
+reading (the vCPU's) would be the tight measure for this kind of change: open.
+
+**The stopping rule on A/A runs.** Three sessions of the base alone (`aa-s1` to `aa-s3`: its A/A arm holds the stop),
+both workloads, the defaults (4-24 pairs, band ±0.5%, 1% over all looks: each interval's tail 0.12%):
+
+| | `user`: pairs, time | `boot`: pairs, time |
+|---|---|---|
+| 1 | 16, +0.03% [−0.40, +0.46] same | 12, −0.14% [−0.50, +0.23] same |
+| 2 | 17, −0.13% [−0.49, +0.24] same | 12, −0.04% [−0.49, +0.41] same |
+| 3 | 16, −0.02% [−0.35, +0.30] same | 9, −0.16% [−0.49, +0.17] same |
+
+Six of six ended `same` (cycles too), a session of both in ~13 min. The kickoff asked for 20 such runs; the user
+questioned the number and it was cut: the rule holds a null's false calls at 1% by construction, which 20 runs can't
+measure, and a gross failure shows in a few. Instead the rule was replayed over the measured A/A pairs (`replay.ts`,
+`replay.txt`: 96 of `user`, 41 of `boot`, drawn with replacement, shifted by a true difference; 20,000 runs a row):
+
+| True difference | `user` time: ends | pairs, median (90%) | `boot` time: ends | pairs |
+|---|---|---|---|---|
+| 0 | same 97.6%, a difference 0.7%, open 1.7% | 12 (19) | same 99.5%, a difference 0.4% | 11 (16) |
+| 0.25% | higher 37%, same 43%, open 20% | 17 (24) | higher 54%, same 38%, open 8% | 15 (24) |
+| 0.5% | higher 99.1% | 10 (16) | higher 99.8% | 9 (15) |
+| 1% | higher 100% | 6 (8) | higher 100% | 6 (8) |
+| 2% | higher 100% | 4 (6) | higher 100% | 4 (5) |
+
+A pair's ratio spreads 0.38% in time and 0.36% in cycles on `user`, 0.33% and 0.22% on `boot`, 0.12% and 0.03% in
+instructions. A pair of the base, `aa` and one arm takes ~60 s on `user` and ~23 s on `boot`: a 2% difference in 4-5
+min, 1% in ~6, a null in ~12 (`boot`: ~4), a close call at the cap in ~24, against the 25-70 min of three alternated
+rounds of runs before. Every later A/B carries its A/A arm, so the count of A/A runs grows by itself.
+
+Also: `bench/procstat.ts` ran `ps -Axo`, which Linux's `ps` refuses, so `bench/run.ts` failed on the dev VM since loop
+1 (`-Ao` now); the helper prints the renderers' memory (the verdict's column). `@<tree>` is written and not yet run
+against a tree of another ABI. Nothing in the core changed.

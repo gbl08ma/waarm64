@@ -1,0 +1,37 @@
+pairs 4-24, band ±0.5%, each look's tail 1.18e-3; 20000 replayed runs a row
+user wall: 96 A/A pairs, mean 0.062%, sd 0.377%
+  true  0.00%: higher   0.2%  lower   0.5%  same  97.6%  open at the cap   1.7%   pairs: median 12, 90% within 19
+  true  0.25%: higher  37.1%  lower   0.0%  same  42.7%  open at the cap  20.2%   pairs: median 17, 90% within 24
+  true  0.50%: higher  99.1%  lower   0.0%  same   0.4%  open at the cap   0.6%   pairs: median 10, 90% within 16
+  true  0.75%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 7, 90% within 11
+  true  1.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 6, 90% within 8
+  true  2.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 6
+  true  4.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 4
+user cycles: 96 A/A pairs, mean 0.080%, sd 0.357%
+  true  0.00%: higher   0.5%  lower   0.3%  same  99.1%  open at the cap   0.2%   pairs: median 13, 90% within 17
+  true  0.25%: higher  45.0%  lower   0.0%  same  39.2%  open at the cap  15.8%   pairs: median 17, 90% within 24
+  true  0.50%: higher  99.6%  lower   0.0%  same   0.2%  open at the cap   0.1%   pairs: median 10, 90% within 16
+  true  0.75%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 7, 90% within 10
+  true  1.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 6, 90% within 8
+  true  2.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 5
+  true  4.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 4
+user instr: 96 A/A pairs, mean 0.014%, sd 0.115%
+user cpu: 96 A/A pairs, mean 0.093%, sd 0.395%
+boot wall: 41 A/A pairs, mean -0.078%, sd 0.332%
+  true  0.00%: higher   0.3%  lower   0.1%  same  99.5%  open at the cap   0.1%   pairs: median 11, 90% within 16
+  true  0.25%: higher  54.0%  lower   0.0%  same  37.8%  open at the cap   8.2%   pairs: median 15, 90% within 24
+  true  0.50%: higher  99.8%  lower   0.0%  same   0.1%  open at the cap   0.1%   pairs: median 9, 90% within 15
+  true  0.75%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 7, 90% within 10
+  true  1.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 6, 90% within 8
+  true  2.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 5
+  true  4.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 4
+boot cycles: 41 A/A pairs, mean -0.013%, sd 0.224%
+  true  0.00%: higher   0.3%  lower   0.1%  same  99.7%  open at the cap   0.0%   pairs: median 7, 90% within 10
+  true  0.25%: higher  57.7%  lower   0.0%  same  42.3%  open at the cap   0.0%   pairs: median 10, 90% within 15
+  true  0.50%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 7, 90% within 10
+  true  0.75%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 5, 90% within 7
+  true  1.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 5, 90% within 6
+  true  2.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 5
+  true  4.00%: higher 100.0%  lower   0.0%  same   0.0%  open at the cap   0.0%   pairs: median 4, 90% within 4
+boot instr: 41 A/A pairs, mean 0.005%, sd 0.027%
+boot cpu: 41 A/A pairs, mean -0.029%, sd 0.224%

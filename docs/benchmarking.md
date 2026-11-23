@@ -232,6 +232,55 @@ and a Suspend, then the page opened
   measured before then carry it. Finer than the phases: `bench/boot/results/snapz-7/marks.py` puts timestamps in the
   page and its workers (`UNDO=1` takes them out), into `data-load`'s `marks` and the console.
 
+## The paired A/B
+
+`bench/ab-mac.sh <outdir> <base>=<core.wasm> <arm>=<core.wasm>[@<tree>][?<query>]...` is the one command for a JIT or
+core change's screen on the Mac (`bench/ab.ts` is its driver, which also runs on the dev VM's Chromium, without cycles
+and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and stops by itself.
+
+- **Arms.** The first is the base; the others are compared with it, any number. `aa` is added: the base a second time,
+  whose intervals say what this session calls a difference (a warning when it "differs"; a base given alone is an A/A
+  run). `@<tree>` takes the arm's host code and bench pages from another checkout (a core of another ABI:
+  `../waarm64-base`), `?<query>` adds to that arm's page query (`nocw`, `fma=emul`: what `bench/boot/suite.ts`'s
+  `boot` reads).
+- **A pair** is a freshly launched browser with one page an arm (`bench/boot/pair.ts`: the arm's core compiled once),
+  a warm-up sample of each arm and one measured sample of each, one after the other; an arm's sample over the base's
+  is the pair's ratio. In every pair the arms draw at random the name their core is served under, the order their
+  pages open in and the order they run in. All of it earns its place: arms alternated inside one session have a
+  third of the noise of arms in sessions of their own (the clock's single samples 0.32% against 1.57% on the
+  userspace workload); a page keeps a speed of its own for as long as it lives (identical cores on two pages stayed
+  0.2% apart over 20 rounds, in time and cycles, with equal instructions), so more rounds on the same pages make a
+  bias look certain; and with fixed names and a rotating order the base was the fastest of four identical arms in
+  four sessions out of four. The warm-up is the workload itself: without one, or after a boot, a pair's ratio spreads
+  0.43-0.48% against 0.32% in sessions of 14 pairs, and instructions 0.20% against 0.05%.
+- **Workloads** (`WORKLOADS`, default `user`): `user`, Alpine's userspace phases (the gate `alpine_user_jit`, ~9.4 s a
+  sample, a minute a pair with three arms); `boot`, Alpine's boot (`boot_alpine_jit`, 3.5 s). Deterministic, one
+  vCPU, to power-off.
+- **Measures**, lower is better in each: `wall` (ms), `cycles` and `instr` (the renderers', a guest step), `cpu`.
+  The verdict's second table has each arm's memory (the renderers' footprint at a sample's end), `emitNs`,
+  `compileNs`, the JIT's wasm bytes, its modules and the interpreted steps, and the last line the cores' sizes.
+- **The stopping rule.** After every pair from `MIN` (4) on, each measure's ratios give a t interval; the workload
+  ends when every arm's `STOP` measures (`cycles,wall`) are each decided, `LOWER` or `HIGHER` (the interval excludes
+  zero) or `same` (it lies inside ±`BAND`, 0.5%), or at `CAP` (24 pairs) or `BUDGET` (1500 s), where what is still
+  `open` is reported as such with its interval. Looking after every pair is paid for: each interval is read at the
+  tail that keeps a true null's chance of being called a difference at any look at `OVERALL` (1%; `lookAlpha` in
+  `bench/stats.ts`, 0.12% a look for 4-24 pairs), so an interval after four pairs is wide (±2.3% of time on `user`,
+  whose pairs' ratios spread 0.38%) and narrows to ±0.7% by 8 pairs, ±0.47% by 12 and ±0.28% by 24.
+- **How long a verdict takes** (the rule replayed over 96 measured A/A pairs of `user` and 41 of `boot`,
+  `bench/boot/results/bench2/replay.txt`; a pair with the base, `aa` and one arm is ~60 s on `user` and ~23 s on
+  `boot`, 20 s of set-up a run): a difference of 2% or more in 4 pairs (4-5 min on `user`, under 2 on `boot`), 1%
+  in 6, 0.5% in 10 (16 at the 90th percentile), no difference called `same` in 12 (19: 12-20 min on `user`, 4-6 on
+  `boot`). A true 0.25% is inside the band's reach: it ends `HIGHER`, `same` or `open` at the cap, 17-24 pairs. No
+  difference is called one in 0.4-0.8% of runs; six stopped A/A runs on the Mac all ended `same`.
+- **Read the clock first.** The cycles and instructions are the renderer's, all its threads: V8's compile threads and
+  the collector beside the vCPU (12.9 s of CPU in a 9.4 s sample). Regions of 16 blocks against 64 cost 4.2% of
+  `user`'s time and 5.6% of `boot`'s, and 1.0% and −0.2% of their cycles. Instructions decide at once when the change
+  is to how many instructions the same work takes, and say nothing of what a change does to waiting, caches or tiers.
+- **Running it:** in the background, alone: it takes the CI lock exclusive (the dev VM shares the Mac's cores), is
+  bounded on the Mac and here, and ends with `bench/gpu/mac-leftovers.sh --kill`. `<outdir>/ab.json` has every
+  sample in the order run (`node bench/ab.ts --analyze <outdir>` prints the verdict again), `log.txt` each pair as it
+  ran. Build each arm into a file of its own first (`cp` the wasm aside; restore the source and rebuild after).
+
 ## Screening an A/B
 
 The pages session at 320 MiB no longer flushes, so it doesn't exercise the cache a JIT lane tunes, and its counts
@@ -367,7 +416,8 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
 
 - **The gates** (`bench/run.ts`, bench/boot's suite): each `<name>_total` has `_cpu_ms`, `_ginstr`, `_gcycles`,
   `_instr_step` and `_cycles_step` (per guest step), `_pshare` (the cycles' share on performance cores) and `_joules`,
-  read around each boot (`?proc=<port>`: a local server of the runner's).
+  read around each boot (`?proc=<port>`: a local server of the runner's). They are the sum over the renderer's threads,
+  V8's compile threads included: "The paired A/B" says what that hides.
 - **A guest session** (`bench/gpu/firefox-load.ts`): `results.json`'s `proc`, from the set-up to the last phase's
   end, with the guest's steps over it; `bench/gpu/ab-summary.ts` shows `cpuS`, `ginstr`, `gcycles`, `instrStep`,
   `cyclesStep`, `pshare`.
