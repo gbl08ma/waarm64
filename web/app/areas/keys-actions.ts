@@ -25,6 +25,8 @@ export class KeysActions {
 
   constructor(d: { machine: PageMachine; runner: Runner; screen: ScreenView; terminal: SerialTerminal }) {
     [this.#m, this.#runner, this.#screen, this.#terminal] = [d.machine, d.runner, d.screen, d.terminal];
+    // While the on-screen keyboard is shown, the terminal's typing is its: a phone or tablet doesn't open its own.
+    keys.watchOsk((on) => this.#terminal.ownKeyboard(on));
   }
 
   /** The screen takes the focus, and a sleeping guest wakes. */

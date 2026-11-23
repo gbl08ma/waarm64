@@ -383,15 +383,19 @@ async function serialIn(page: Page, n: number) {
   return page.evaluate(() => (window as unknown as { __serial: string[] }).__serial.splice(0).join(''));
 }
 const terminalFocused = (page: Page) => page.evaluate(() => document.activeElement === document.querySelector('#terminal textarea'));
+/** The terminal's textarea's `inputmode` (`none` while the on-screen keyboard is shown: the device's own stays closed). */
+const terminalInputMode = (page: Page) => page.locator('#terminal textarea').getAttribute('inputmode');
 
-test('the terminal\'s view: the keys go to the serial console as its typing does, the terminal keeps the focus; a held key repeats there', { skip, timeout: 120_000 }, async () => {
+test('the terminal\'s view: the keys go to the serial console as its typing does, the terminal keeps the focus, the device\'s keyboard stays closed; a held key repeats there', { skip, timeout: 120_000 }, async () => {
   const { context, page, errors } = await open();
   await page.locator('[data-view-button=terminal]').click();
   assert.ok(await terminalFocused(page));
+  assert.equal(await terminalInputMode(page), null);
   await page.locator('#keys summary').click();
   await page.locator('#osk-toggle').click();
   await page.locator('#osk').waitFor();
   assert.ok(await terminalFocused(page), 'the terminal keeps the focus');
+  assert.equal(await terminalInputMode(page), 'none', 'the device\'s keyboard stays closed');
   await key(page, 'ShiftLeft').click();
   await key(page, 'KeyA').click();
   await key(page, 'KeyB').click();
@@ -416,6 +420,11 @@ test('the terminal\'s view: the keys go to the serial console as its typing does
   await key(page, 'KeyA').click();
   await settle(page, 2);
   assert.deepEqual(await keys(page), ev([K.A, true], [K.A, false]));
+  // Hidden: the terminal's typing opens the device's keyboard again.
+  await page.locator('#keys summary').click();
+  await page.locator('#osk-toggle').click();
+  await page.locator('#osk').waitFor({ state: 'detached' });
+  assert.equal(await terminalInputMode(page), null);
   assert.deepEqual(errors, []);
   await context.close();
 });
