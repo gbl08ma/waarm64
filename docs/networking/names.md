@@ -82,6 +82,14 @@ The user's, 2026-11-15 to 2026-11-18; they bind.
 - **Names in a room with nobody serving.** Where no owner is online, only key names resolve.
 - **A registry of any size**: comfortable to a few thousand names held for months, too much for a tab at 20,000
   ("Size, and where it stops").
+- **A renewal finished from a short visit when the calendar its servers finish loses the stamp.** The agent stamps
+  every entry at all three calendars and collects at any of them, but an item carries one pending anchor an entry (the
+  lowest: `alice`'s whenever it gave a receipt) and a server keeps the lower of two offered. A calendar that gave a
+  receipt and then lost the commitment (never seen: every stamp measured finished, bench/net/REPORT.md "NAMES loop 0",
+  "NAMES loop 0b") would leave a renewal stamped at a short visit to the owner's next visit, which collects it at
+  another calendar; on a visit every 2 weeks the name could stop resolving for days in between. Accepted with no work
+  planned (the user, 2026-11-23): stamping at three calendars is the mitigation, and the remedies (servers keeping
+  each calendar's pending anchor, or two renewals made ahead) cost a protocol change or a fork every term.
 
 ## Terms
 
@@ -919,13 +927,6 @@ Negentropy) is the repair primitive: no parameter to guess, a few round trips.
   proof's hour since (`collectWait`, tests/names-agent.test.ts). On N0b's evening of slow blocks 13 of 80 proofs came
   after 2 hours, so no schedule shows the late line for fewer than 13 of them; the calendars' recent record puts the
   first proof's p90 at 1.7 hours.
-- **Servers finish only the lowest of a renewal's pending anchors** (NAMES2 loop 2): the agent stamps at three
-  calendars, but an item carries one pending anchor an entry (`WireEntry::pending`, the lowest: `alice`'s whenever it
-  gave a receipt) and a server keeps the lower of two offered. A calendar that takes stamps and never finishes them
-  leaves every renewal stamped at a short visit unfinished until the owner's next visit collects it at another: on the
-  60-day promise with `alice` losing its stamps the name is NXDOMAIN from day 25 to day 28
-  (`visits_keep_a_name_with_the_lowest_calendar_losing_its_stamps`, ignored until fixed). Keeping more than one needs
-  a change to how a pending anchor travels in a put and is stored, which is the user's call.
 - **A GPU's lead at Argon2id of 1 MiB is ~110x to ~220x**, not the ~10x first assumed: a memory-hard function narrows
   the gap only past what fits on the card's chips, and memory a server can afford to check stays small. 256 KiB leaves
   the card most of its lead; 4 MiB keeps the ratio at four times the check.

@@ -188,8 +188,6 @@ pub struct Services {
     pub denied: [BTreeSet<[u8; 32]>; 2],
     /// Explorers that can't be reached (no answer).
     pub explorers_down: [bool; 2],
-    /// Calendars that lose what is stamped at them: its proof stays pending for good.
-    pub lost: Vec<Calendar>,
     /// Every URL asked, in order; those of no compiled service.
     pub asked: Vec<String>,
     pub foreign: Vec<String>,
@@ -229,7 +227,6 @@ impl Services {
             depth: 6,
             denied: Default::default(),
             explorers_down: [false; 2],
-            lost: Vec::new(),
             asked: Vec::new(),
             foreign: Vec::new(),
         };
@@ -242,9 +239,7 @@ impl Services {
         let ops = vec![Op::Append(self.rng.bytes::<16>().to_vec()), Op::Sha256];
         let c = apply(&ops, id).unwrap();
         self.commits.insert(c.clone(), None);
-        if !self.lost.contains(&calendar) {
-            self.waiting.push(c);
-        }
+        self.waiting.push(c);
         Pending {
             calendar,
             ops,
