@@ -119,7 +119,9 @@ Loop 63 ran real long browser sessions on the Mac (`bench/gpu/firefox-load.ts` `
 checked end to end) cost 45 s of a lower compiled share and no stall or frame gap beyond the session's own. Nothing
 built; the backlog entry is gone (bench/boot/REPORT.md "PERF loop 63", results in `bench/boot/results/perf63/`). Core
 unchanged (ABI 74, `tests/steps.txt` unchanged). **The track is paused at the user's request after loop 63
-(2026-11-23)**; the next loop is 64, from the queue's first row.
+(2026-11-23)**; the next loop is 64, from the queue's first row, **after the BENCH track** (BENCH-KICKOFF.md: faster,
+quieter A/Bs on the Mac; the user, 2026-11-23: ahead of row 1), whose command and workloads replace the tiers below
+when it ends.
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
 ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 63's commit passed `scripts/ci-fast.sh` (bench tools
 only).
