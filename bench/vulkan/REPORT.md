@@ -793,6 +793,17 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WAARM64_DEQP_VK_JOBS` o
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T24's end: maintenance8's 2,246 cases join the list — the guest's own Mesa 26.3 passes it on
+
+**2026-11-22**, dev VM, Chromium 155.0.8059.84, SwiftShader. Arch's port has Mesa 1:26.3.1-2, so dEQP-VK's guest was
+rebuilt (`images/deqp/build.sh vk --guest-only`: linux 7.3.5.arch1-1, mesa 1:26.3.1-2; it was 26.2.5). Through the
+guest's own Venus (no `DISK2`, no `GUEST_ENV`), `tests/deqp/vk-maintenance8.txt` passes whole: 2,246 of 2,246, 82 s at
+JOBS 2 (`results/vk4/m8-mesa263/m8-swiftshader.json`), so the list moved into `tests/deqp/vk.txt` (81,734 → 83,980
+cases) and the side list is gone. `scripts/ci-deqp-vk.sh --full` on the new guest: the whole list passes (83,980 of
+83,980, 3,696 s on two machines), YCbCr's list too, the replays and vkcube; the script 4,025 s. (A first run without
+`CHROMIUM_ARGS=--enable-unsafe-webgpu` had no adapter and failed 2,050: deqp-run.ts by hand needs the flag that
+page-deqp-vk.test.ts passes.)
+
 ## VK4 full run: the whole pass list, 81,734 of 81,734 pass on SwiftShader
 
 **2026-11-09.** `scripts/ci-deqp-vk.sh --full --phases 3 bench/vulkan/results/vk4/full` at `4368584b` (the wasm core

@@ -1084,14 +1084,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `maxBufferSize`) reads a shadow of the block's size since VK4 T37, so its scope pays a copy (`has_big_uniform`
     scans a dispatch for it). A set with inline blocks has a GPUBuffer of 64 KiB more than them, for what its shaders may
     declare.
-  - [B] **maintenance8's cases wait for the guest's Mesa 26.3** (VK4 T24; waiting on Arch, 26.2.6 on 2026-11-09): the device advertises `maintenance8` (offsets
-    that aren't constants from fetches, depth and stencil copied with colour images, blits between layers and slices),
-    but Mesa 26.2's Venus, the tests' guest's (Arch's 26.2.5; 26.2.6 the port's newest on 2026-11-05), leaves it out,
-    so its cases are NotSupported in CI. Through 26.3.0-rc3's Venus (`images/deqp/venus-icd.sh`, `DISK2`, `GUEST_ENV`)
-    they pass: `tests/deqp/vk-maintenance8.txt`, run by hand. Once the port has 26.3, rebuild the guest
-    (`images/deqp/build.sh vk`) and move that list into `tests/deqp/vk.txt`. A sample with such an offset costs the
-    fetches' filter (eight `textureLoad`s a trilinear sample) where WGSL's own would do: unmeasured, no program here
-    has one (vkd3d's D3D12 layering is what asks).
+  - [B] **maintenance8's offsets that aren't constants cost unmeasured** (VK4 T24; vk/README.md "Offsets that aren't
+    constants"): such a sample costs the fetches' filter (eight `textureLoad`s a trilinear sample) where WGSL's own would
+    do. No program here has one (vkd3d's D3D12 layering is what asks).
   - [B] **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): A8_UNORM is offered since VK4 T38 (an
     `r8unorm` texture, vk/README.md "Formats a texture holds otherwise"; blended since VK4's backlog easy wins) without
     blits (the worker's blit draws know no swizzle) or storage, and only with `texture-component-swizzle`; a pipeline

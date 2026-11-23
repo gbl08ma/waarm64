@@ -192,8 +192,8 @@ Layered, cheapest first:
   SwiftShader's take of Vulkan's extension costs ~17 s of compile for a 16 KiB array (VK4 T2). Another Mesa's Venus in the
   guest: `images/deqp/venus-icd.sh` puts Mesa 26.3's on a copy of the disk (`target/deqp/deqp-vk-venus.ext4`), and
   `DISK2=` with `GUEST_ENV=VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json` runs deqp-vk through it (also through
-  `sway-mac.sh`); `tests/deqp/vk-maintenance8.txt` passes so, by hand, until the guest's own Mesa passes
-  `maintenance8` on (VK4 T24; docs/backlog.md).
+  `sway-mac.sh`), for a feature a newer Venus passes on before the guest's Mesa has it (maintenance8's cases ran so
+  until Arch had Mesa 26.3: VK4 T24).
 - **`scripts/ci-jit.sh`** (~2 min, alone: the litmus run takes 4 vCPUs) runs the JIT's amplifying variants, which a plain
   `npm test` and `ci.sh` skip (`WAARM64_JIT_VARIANTS=1`, `tests/jit-variants.ts`): JIT-stress on the bare-metal tests,
   kvm-unit-tests' `cache` and `debug`, the golden corpus and lockstep, and JIT-check on the parallel bare-metal tests and

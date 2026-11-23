@@ -1,0 +1,76 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 2,
+ "jobsBlock": 0,
+ "adapter": "google swiftshader",
+ "info": "7.3.5-arch1-1mesa 1:26.3.1-2 vk vk-main.txt",
+ "cases": 2246,
+ "seconds": 83.37368263900001,
+ "pipelines": {
+  "pipelines": 1689,
+  "ready": 1688,
+  "readyMs": 10136.030002832413,
+  "deferred": 3795,
+  "deferredMs": 21540.289995908737,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 1689,
+  "translateMs": 637.1799999999913,
+  "cacheHits": 5965,
+  "cacheMisses": 791,
+  "cacheStores": 791,
+  "cacheBytes": 682369,
+  "cacheHeld": 682369,
+  "cacheEntries": 791,
+  "cacheInflateMs": 203.400004863739
+ },
+ "counts": {
+  "Pass": 2246
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_fragment Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.sampler3d_fixed_vertex Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.sampler2d_vec3_bias_fixed_fragment Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.isampler2d_vec3_fragment Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.mirrored_repeat.usampler2d_vec3_bias_fragment Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.mirrored_repeat.sampler2dshadow_bias_fragment Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.mirrored_repeat.sampler1d_vec2_fixed_vertex Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.mirrored_repeat.isampler1d_vec2_vertex Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.mirrored.usampler1d_vec2_fragment Pass 1",
+  "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.mirrored.sampler2d_vec4_bias_fixed_fragment Pass 1"
+ ],
+ "last": "dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_bias_fragment Pass 0dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_fragment Pass 1dEQP-VK.glsl.texture_functions.textureprojoffset_pcoffset.repeat.usampler3d_vertex Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!",
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    0.176030] psci-cpuidle-domain psci: CLIDR_EL1.LoC == 0, treating as coherent",
+  "[    0.178210] uart-pl011 9000000.pl011: CLIDR_EL1.LoC == 0, treating as coherent",
+  "[    1.087047] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.087083] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.087097] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.087123] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.087152] psci_checker: Could not start suspend tests on any CPU",
+  "[   11.898604] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   27.257280] coredump: 430(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.7,
+  "touchedMiB": 182.4,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 14.9,
+  "arenaHighMiB": 49.7
+ },
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ }
+}

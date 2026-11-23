@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# A Venus guest driver from another Mesa than the dEQP-VK guest's (VK4 T24: Mesa 26.2's Venus leaves out
-# VK_KHR_maintenance8, 26.3's passes it on), for dEQP-VK runs until the guest's own Mesa has it (docs/images.md "dEQP
-# for the Arch image"). Builds libvulkan_virtio.so in a container of localhost/arch-base (images/arch/base.sh: the
+# A Venus guest driver from another Mesa than the dEQP-VK guest's, for dEQP-VK runs of a feature the guest's own Mesa
+# doesn't pass on yet (VK4 T24: VK_KHR_maintenance8, before the guest had Mesa 26.3; docs/images.md "dEQP for the Arch
+# image"). Builds libvulkan_virtio.so in a container of localhost/arch-base (images/arch/base.sh: the
 # guest's distribution, so its libraries match) and puts it, with an ICD manifest naming it, in /venus of a copy of
 # dEQP-VK's disk (debugfs: no root, no mount).
 #   images/deqp/venus-icd.sh [mesa tag, default mesa-26.3.0-rc3]   -> target/deqp/deqp-vk-venus.ext4

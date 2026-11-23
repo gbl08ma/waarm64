@@ -345,7 +345,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   listed), as Venus on a native host passes its GPU's on, named `waarm64 WebGPU`. Vulkan 1.4's `maintenance5` and
 `maintenance6` and `maintenance8` (VK4 T24: mostly the runtime's and host-side; their A1B5G5R5 a packed format since
 VK4 T30, A8_UNORM an `r8unorm` texture since VK4 T38, "Formats a texture holds otherwise" below; `maintenance8` reaches
-a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB;
+a guest through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB;
   host-visible, coherent, cached and device-local, 1 GiB: the least GFXReconstruct, VMA and DXVK take as general memory
   rather than a discrete GPU's BAR window), whose budget reports what's allocated from each (VK4 T2). Host-visible
   memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19). An allocation past
