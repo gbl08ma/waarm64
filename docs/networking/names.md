@@ -923,6 +923,10 @@ Negentropy) is the repair primitive: no parameter to guess, a few round trips.
 
 ### Findings (don't re-discover)
 
+- **A relay's EOSE to a connection's first REQ isn't proof it works**: relay.degmods.com answered each new connection's
+  REQ and then nothing (no EOSE to the renewal), so the backoff it reset started over at 2 s and two nodes opened it
+  142 times in 1.8 hours (N6b). Only an event, an accepted `OK` or a renewal's EOSE resets it now, to 10 minutes at
+  most ([rooms.md](rooms.md) "What a room needs from a Nostr relay").
 - **A calendar's pending proof is a 404 without CORS**: the page sees a failed fetch, not a status. Both explorers'
   404s for an unknown block do carry CORS, so a refusal is visible.
 - **A calendar's history can't be listed by address**: it pays from several coins, each transaction spending an

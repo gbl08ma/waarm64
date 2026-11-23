@@ -387,6 +387,17 @@ tag is one node's), again after 1 s and 3 s only while no call back comes, at mo
 thousand members: 17 REQs a second steady, 2.8 KB/s in; each new pair a second, one event (bench/net/REPORT.md "Rooms
 at scale"). The relays' own terms (rate limits, proof of work, payment) decide how far public relays carry a room.
 
+**A relay that doesn't answer** is tried less and less: a lost connection (closed, or a REQ unanswered in 15 s) is
+opened again after 2 s, twice as long at each loss, **to 10 minutes at most** (`NOSTR_BACKOFF_MAX`), and only a
+connection that carried something starts it afresh at 2 s: an event for our subscription, an accepted `OK` to an event
+we published, or the EOSE to a renewal (a connection that held a minute). The EOSE to a connection's first REQ alone
+resets nothing: it is what a relay that then stalls gives too (relay.degmods.com, answering each new connection and
+then nothing, was opened 142 times in 1.8 hours by two nodes while that reset the backoff: bench/net/REPORT.md "NAMES
+loop 6b"), and a healthy relay in a quiet room, where no event comes, answers the renewal a minute on. A relay that
+never answers costs a member ~6 connections an hour (it cost ~48 at the earlier 60 s cap). It is the same for every
+`Client`, a node's own and its names client's (each its own count: a member's names client, made anew at a query
+after 10 idle minutes, starts at 2 s).
+
 **Registered names** ([names.md](names.md)) ask more of a relay, still nothing stored. A node whose names client runs
 (a server's always, a member's from its guest's first query for a name that isn't a key until 10 minutes after the
 last) holds a second connection a relay. All of a room's servers subscribe to one names tag, so a question (123 bytes
@@ -421,7 +432,9 @@ and misdirected lookups, the trial rate, incoming off and its flows, two regions
 minutes off, a forged lookup that doesn't move a live peer and one that names another region, outsiders' initiations without the
 room's proof and their junk lookups (neither charged to a budget), a reloaded peer
 called back, a peer made again on one side, both dialing at once, a lost call back, junk handshakes, a lookup's
-copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
+copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, the backoff
+for a relay that never answers or answers only a connection's first REQ, and its reset by an event, an `OK` or an
+answered renewal, a failed map with an inline home, the channel cap and the idle close, the R0
 cases; BIP-340's first vector; and the registry of room names ([names.md](names.md) "Tests and benches"): servers' names clients finding each other,
 syncing two and twenty, a reset, a flood of "who serves?" beside the node's own lookups, nothing under the node's key,
 a member's first lookup asking the room through the relays (no DERP packet), a contested one fetching through sessions
