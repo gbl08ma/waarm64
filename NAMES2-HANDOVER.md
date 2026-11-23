@@ -12,9 +12,30 @@ to the session's branch. `scripts/ci-net.sh` and the end's whole CI set are owed
 
 ## State
 
-Loops 1-7 done (7: review fixes A and B); the supervisor's triage next. Loop 2's (b) is closed by the user's decision (2026-11-23): a calendar that loses a
-stamp is a hypothetical (never seen) that stamping at three calendars already mitigates, so it is a known limitation
-in names.md "What it doesn't give", not a backlog item, and its ignored test was taken out.
+Loops 1-7 are done, all but the track's closing, which waits for the dev VM: **`scripts/ci-net.sh` and the end's
+whole CI set are still owed there** (this cloud session has no dev VM; its `scripts/ci.sh` skips the image-based
+tests, docs/cloud.md). Then PLAN.md's row goes to done and this file and the kickoff are deleted (the kickoff's "The
+end"). PLAN.md's row stays in progress until then. In the dev VM, `ci-net.sh` also checks loop 5's change to
+tests/page-room.test.ts's no-server case (SERVFAIL, then NXDOMAIN), which hasn't run anywhere yet.
+
+Loop 2's (b) is closed by the user's decision (2026-11-23): a calendar that loses a stamp is a hypothetical (never
+seen) that stamping at three calendars already mitigates, so it is a known limitation in names.md "What it doesn't
+give", not a backlog item, and its ignored test was taken out (`fd57155`).
+
+Loop 7: the out-of-context review (a fresh agent, the range b9569b1..5c383ba, a neutral brief) found six defects; all
+six were fixed, none went to the backlog. Review fix A took 1 (after an outage the relays stayed unused for up to 10
+minutes), 2 (a relay that closes idle connections at a minute was backed off to 10) and 6 (any second EOSE reset the
+backoff, not a held connection). Review fix B took 3 (New name's choice for the domains was lost on a reload or an
+error, and Settings showed the old key meanwhile), 4 (New name off a shared key left the room's records behind) and 5
+(New name's question listed other rooms' domains). The docs (names.md, rooms.md, frontend.md, adapters.md) changed
+with each loop. The backlog's entry no longer points at the track, and holds what the loops left: records from
+deletes before loop 4, the 20 of 500 joiners still NXDOMAIN at a second silence (the user's call), and the page's
+`online` not reaching the room client.
+
+**Tiers**: in this cloud session, `scripts/ci.sh` passed before each push, with the image-based tests skipped (CI OK
+1057 s on `fd57155`, covering loops 1-4; 931 s on `5c383ba`, loops 5-6; 931 s on `5254c0b`, review fixes A and B and
+the backlog). Each loop's own commit passed `scripts/ci-fast.sh`, as its row says. None has passed `scripts/ci-net.sh`
+or the whole set.
 
 ## Loops
 
