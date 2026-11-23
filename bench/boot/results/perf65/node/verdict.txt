@@ -1,0 +1,13 @@
+node: 21 pairs against b50k
+  arm          wall                                 cycles                               instr                                cpu                                 
+  b25k         -0.07% [-0.47%, +0.33%] same         -0.12% [-0.45%, +0.22%] same         -1.05% [-1.17%, -0.93%] LOWER        -0.20% [-0.53%, +0.14%] open        
+  b100k        +0.18% [-0.15%, +0.50%] same         -0.70% [-1.01%, -0.40%] LOWER        +0.18% [+0.06%, +0.30%] HIGHER       -0.72% [-1.01%, -0.43%] LOWER       
+  b200k        +1.39% [+1.20%, +1.59%] HIGHER       -1.82% [-1.96%, -1.69%] LOWER        +0.24% [+0.18%, +0.29%] HIGHER       -1.87% [-2.02%, -1.72%] LOWER       
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  b50k                 8925       0.9802         1723        723.1        219.2        47.42         1443    501877767
+  b25k                 8920       0.9809         1712        727.7        245.4        47.45         1816    484072114
+  b100k                8942       0.9799         1704        708.4        196.8        46.73         1142    527514012
+  b200k                9044       0.9787         1688        696.3        177.1        46.11          934    570765700
+arms: b50k 9786743 bytes; b25k 9786743 bytes; b100k 9786743 bytes; b200k 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-24, band ±0.5%, stop on cycles and wall, each interval's tail 1.18e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.36

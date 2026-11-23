@@ -1,0 +1,18 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf65/pages/b50k-2/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 39.74,
+   "flushes": 0,
+   "modules": 1520,
+   "mib": 88.2,
+   "overdue": 0,
+   "parks": 5129,
+   "locks": 9477564,
+   "interpGsteps": 2.07,
+   "share": 0.948,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

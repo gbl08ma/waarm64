@@ -1,0 +1,43 @@
+smp_alpine_jit_n1_script         b50k 2586-2619  b100k 2612-2621  +0.2% overlap
+smp_alpine_jit_n1_total          b50k 5086-5127  b100k 5129-5142  +0.2% no overlap
+smp_alpine_jit_n2_script         b50k 2222-2235  b100k 2239-2245  +0.7% no overlap
+smp_alpine_jit_n2_total          b50k 4748-4762  b100k 4775-4784  +0.7% no overlap
+smp_alpine_jit_n4_script         b50k 2193-2213  b100k 2204-2216  +0.8% overlap
+smp_alpine_jit_n4_total          b50k 4756-4769  b100k 4761-4777  +0.1% overlap
+smp_alpine_jit_n1_total_cpu_ms   b50k 5278-5355  b100k 5352-5370  +0.5% overlap
+smp_alpine_jit_n1_total_cpu_ns_step b50k 2-2  b100k 2-2  +0.5% no overlap
+smp_alpine_jit_n1_total_ginstr   b50k 66-66  b100k 66-66  +0.1% overlap
+smp_alpine_jit_n1_total_gcycles  b50k 21-21  b100k 21-21  +0.4% no overlap
+smp_alpine_jit_n1_total_instr_step b50k 27-27  b100k 27-27  +0.1% overlap
+smp_alpine_jit_n1_total_cycles_step b50k 9-9  b100k 9-9  +0.4% no overlap
+smp_alpine_jit_n1_total_pshare   b50k 1-1  b100k 1-1  -0.1% no overlap
+smp_alpine_jit_n1_total_joules   b50k 25-26  b100k 25-25  +0.2% overlap
+smp_alpine_jit_n2_total_cpu_ms   b50k 6149-6223  b100k 6192-6223  +0.4% overlap
+smp_alpine_jit_n2_total_cpu_ns_step b50k 3-3  b100k 3-3  +0.6% overlap
+smp_alpine_jit_n2_total_ginstr   b50k 73-74  b100k 73-74  -0.2% overlap
+smp_alpine_jit_n2_total_gcycles  b50k 24-24  b100k 24-24  +0.7% overlap
+smp_alpine_jit_n2_total_instr_step b50k 30-30  b100k 30-30  +0.2% overlap
+smp_alpine_jit_n2_total_cycles_step b50k 10-10  b100k 10-10  +0.3% overlap
+smp_alpine_jit_n2_total_pshare   b50k 1-1  b100k 1-1  -0.1% overlap
+smp_alpine_jit_n2_total_joules   b50k 28-29  b100k 28-28  +0.5% overlap
+smp_alpine_jit_n4_total_cpu_ms   b50k 7486-7526  b100k 7470-7532  +0.4% overlap
+smp_alpine_jit_n4_total_cpu_ns_step b50k 3-3  b100k 3-3  +0.3% overlap
+smp_alpine_jit_n4_total_ginstr   b50k 84-84  b100k 84-84  +0.3% overlap
+smp_alpine_jit_n4_total_gcycles  b50k 28-28  b100k 28-28  +0.3% overlap
+smp_alpine_jit_n4_total_instr_step b50k 33-33  b100k 33-33  +0.3% overlap
+smp_alpine_jit_n4_total_cycles_step b50k 11-11  b100k 11-11  +0.3% overlap
+smp_alpine_jit_n4_total_pshare   b50k 1-1  b100k 1-1  +0.4% overlap
+smp_alpine_jit_n4_total_joules   b50k 30-31  b100k 30-30  +0.1% overlap
+smp_user_jit_n4_compress         b50k 1112-1144  b100k 1104-1152  -1.2% overlap
+smp_user_jit_n4_lua              b50k 2310-2405  b100k 2400-2469  +2.4% overlap
+smp_user_jit_n4_churn            b50k 699-708  b100k 707-731  +1.2% overlap
+smp_user_jit_n4_sqlite           b50k 1673-1864  b100k 1691-1883  +0.6% overlap
+smp_user_jit_n4_total            b50k 10444-10669  b100k 10503-10851  +0.7% overlap
+smp_user_jit_n4_total_cpu_ms     b50k 32670-32949  b100k 32957-33707  +0.8% no overlap
+smp_user_jit_n4_total_cpu_ns_step b50k 1-1  b100k 1-1  +0.7% overlap
+smp_user_jit_n4_total_ginstr     b50k 456-461  b100k 458-467  +0.5% overlap
+smp_user_jit_n4_total_gcycles    b50k 124-125  b100k 125-128  +0.9% overlap
+smp_user_jit_n4_total_instr_step b50k 14-15  b100k 15-15  +0.4% overlap
+smp_user_jit_n4_total_cycles_step b50k 4-4  b100k 4-4  +0.8% overlap
+smp_user_jit_n4_total_pshare     b50k 1-1  b100k 1-1  +0.1% overlap
+smp_user_jit_n4_total_joules     b50k 138-140  b100k 139-142  +0.5% overlap

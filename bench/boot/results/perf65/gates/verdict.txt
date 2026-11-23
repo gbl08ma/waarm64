@@ -1,0 +1,20 @@
+user: 18 pairs against b50k
+  arm          wall                                 cycles                               instr                                cpu                                 
+  b25k         +0.19% [-0.11%, +0.49%] same         +0.36% [+0.10%, +0.63%] HIGHER       +0.01% [-0.04%, +0.06%] same         +0.40% [+0.12%, +0.68%] HIGHER      
+  b100k        -0.36% [-0.72%, -0.01%] LOWER        -0.41% [-0.71%, -0.10%] LOWER        +0.32% [+0.28%, +0.36%] HIGHER       -0.31% [-0.65%, +0.04%] open        
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  b50k                 9372       0.9903         1100        241.8         74.0        15.50          530    194642775
+  b25k                 9382       0.9883         1197        243.5         81.9        15.49          649    188849556
+  b100k                9338       0.9892         1189        238.9         65.9        15.46          421    203206212
+boot: 22 pairs against b50k
+  arm          wall                                 cycles                               instr                                cpu                                 
+  b25k         +0.16% [-0.15%, +0.48%] same         +0.13% [-0.07%, +0.34%] same         -0.31% [-0.32%, -0.30%] LOWER        -0.02% [-0.22%, +0.19%] same        
+  b100k        -0.67% [-0.96%, -0.39%] LOWER        -0.94% [-1.13%, -0.76%] LOWER        +0.10% [+0.09%, +0.11%] HIGHER       -0.97% [-1.17%, -0.78%] LOWER       
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  b50k                 3476       0.9848         1243        177.4         47.8        11.36          310    149207117
+  b25k                 3479       0.9870         1246        179.1         53.5        11.35          387    146084024
+  b100k                3452       0.9871         1241        176.7         42.3        11.35          236    154200136
+arms: b50k 9786743 bytes; b25k 9786743 bytes; b100k 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-24, band ±0.5%, stop on cycles and wall, each interval's tail 1.18e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.36

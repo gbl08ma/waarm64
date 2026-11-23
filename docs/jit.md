@@ -103,6 +103,12 @@ the interpreter's own code.
   interpreter since they joined it (`BATCH_STEPS`: each dispatch of a queued block adds its
   length), or **64M steps** after the batch's first entry (`BATCH_TIMEOUT`, for lukewarm blocks).
   So a block that keeps running is compiled soon, and blocks that rarely run wait for company.
+  **50,000 is the Mac's choice too** (`bench/boot/REPORT.md` "PERF loop 65": 25K, 100K, 200K): on `node` 25K and
+  100K ran the same (modules +26% and −21%) and 200K 1.4% slower (14% more steps interpreted, modules −35%); 100K's
+  0.4-0.7% on the one-vCPU gates (V8 compiling 11-12% less) went the other way on the parallel boots (+0.2-0.7%), and
+  Firefox's pages session compiled the same at 100K as at 50K (modules, wasm, interpreted steps and lock acquisitions
+  within 1.5%): with four vCPUs on a browser's code, `BATCH_STEPS` isn't what makes its batches due. The batches hold
+  14-27 regions a module, so the 512-block cap (`Config::batch`) doesn't bind.
 - **The threshold follows the code cache's pressure** (`Cache::retune`, set where modules are
   installed and at flushes, so a dispatch only compares): the mechanism doubles a floor at each eighth
   of the byte budget past two (80 MiB) up to `threshold_max`: the floor is **1000** and the maximum **2000**, so
@@ -1910,12 +1916,13 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   stale once the helper retired the setter): the failure-chain class of bug. Register offsets (5.6% of accesses) have
   no static span. The one larger lever, if probes ever cost time: across blocks, 46% of probes land on the page of
   one of the function's last two probes, which no group reaches.
-- **Larger batches in a browser** (2026-11-03; `bench/boot/REPORT.md` "The wasm code GC today, and larger batches in
-  a browser"): `BATCH_STEPS` 200K and 800K against 50K, two sessions each of Firefox's pages session and the churn
-  screen. Modules fell 45% and 67% (pages) and 31% and 57% (churn) for the same wasm on the pages session, but
-  nothing a user would notice moved: busy MIPS and page loads within the sessions' spread, the churn page's work even
-  at 200K (16% more steps interpreted, 50% more lock acquisitions) and 4% lower at 800K, memory 1-6% lower, and 800K
-  had the most stalls of 20 ms or more in both. Not built: **rebuilding the live regions into 512-region modules
+- **Larger batches** (`bench/boot/REPORT.md` "PERF loop 65" on the Mac, 2026-11-23; "The wasm code GC today, and
+  larger batches in a browser" in the VM, 2026-11-03): `BATCH_STEPS` 25K-200K on the Mac and 200K and 800K in the VM.
+  The Mac's verdicts are in [Compile policy](#compile-policy): the deterministic workloads' modules follow the
+  constant, but nothing the browser runs gained; the parallel boots leaned 0.2-0.7% slower at 100K, and Firefox's
+  cut pages session compiled the same at 100K as at 50K. In the VM's whole pages session, 200K and 800K cut modules
+  45% and 67% for the same wasm, with busy MIPS and loads within the sessions' spread, and 800K had the most stalls of
+  20 ms or more. Not built: **rebuilding the live regions into 512-region modules
   while the guest idles**. The wasm code GC frees Liftoff code that TurboFan replaced, not dead modules' code (a
   module's code goes with the module), so rebuilt functions starting in Liftoff again would add to it, for a module
   saving that measured flat.

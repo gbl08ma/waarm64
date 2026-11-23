@@ -8102,3 +8102,67 @@ weren't run: what the arms change is too small to measure on any of them.
 the same region already ("Regions of 64 blocks"), and the cap also shapes the interpreter's blocks (`form` is
 shared; its constant stack is `2 * CAP`), where a block's end decides where a chunk can stop, so its step counts
 would likely move: a guest-visible change for a gain bounded below the floor.
+
+## PERF loop 65: `BATCH_STEPS` on the Mac (2026-11-23)
+
+PERF-HANDOVER.md's queue row (no docs/backlog.md entry): `jit::BATCH_STEPS` (the interpreted steps of a pending
+batch's blocks at which it is emitted) at 25K, 100K and 200K against 50K, last set in the dev VM (2026-10-08) and
+measured since only in the VM ("The wasm code GC today, and larger batches in a browser", 2026-11-03). **Not kept:
+50K stays.** No code changed (the core is d1fcaf2a's, ABI 74, `tests/steps.txt` unchanged). Data:
+`bench/boot/results/perf65/` (README). M4, macOS, Chrome for Testing 158.0.8127.36 (the pages session 158.0.8127.88).
+
+**What the constants govern** (read): a block joins the shared cache's pending batch at the compile threshold; each
+later report of a queued block adds its length times its dispatches to `pending_steps`, and a tier-up waiting for
+the batch adds `TIER_STEPS` (1,562); the batch is emitted, as one module, at `BATCH_STEPS`, at `Config::batch`
+(512) blocks, or `BATCH_TIMEOUT` (64M steps by the table's clock) after a table first saw it. One cache for every
+vCPU, so in parallel SMP all of them add to one batch, and the vCPU that makes it due emits it and hands it to the
+compile worker. A larger value: fewer, larger modules, the batch's blocks longer interpreted (and their reports
+taking the lock), forward regions with more of the batch to take. `Config::batch` wasn't an arm: the batches hold
+14-27 regions of 64-130 blocks a module here (`blocks`, `regionBlocks` over `modules`), far from 512. Each arm's core carries its constant (an `i64.const` of N and N−1 in
+`Cache::due`, the cores the same size).
+
+**`node`, the four arms in one paired run** (21 pairs, every stop measure decided; time against 50K):
+
+| | wall | cycles | instructions | modules | JIT wasm | interpreted | lock acquisitions | V8 compile | footprint |
+|---|---|---|---|---|---|---|---|---|---|
+| 50K | 8925 ms | | | 1443 | 47.42 MiB | 502 M | 1.60 M | 219 ms | 1723 MiB |
+| 25K | −0.07% [−0.47, +0.33] `same` | −0.12% `same` | −1.05% `LOWER` | +26% | +0.05% | −3.6% | −15% | +12% | 1712 |
+| 100K | +0.18% [−0.15, +0.50] `same` | −0.70% `LOWER` | +0.18% `HIGHER` | −21% | −1.5% | +5.1% | +22% | −10% | 1704 |
+| 200K | **+1.39% [+1.20, +1.59] `HIGHER`** | −1.82% `LOWER` | +0.24% `HIGHER` | −35% | −2.8% | +13.7% | +59% | −19% | 1688 |
+
+The counters move (the first three pairs already showed them), so the arms change what is compiled; the blocks
+compiled in regions fall 0.4-2% and emission 2-4% at the larger values. 200K's lower cycles are V8 compiling less on
+other cores; the vCPU's clock pays for the 14% more steps interpreted. The footprints include the other arms' pages.
+
+**The gates** (`WORKLOADS=user,boot`, 25K and 100K; 200K out):
+
+| | `user` (18 pairs) | `boot` (22 pairs) |
+|---|---|---|
+| 25K | +0.19% [−0.11, +0.49] `same`; modules +22%, interpreted −3.0% | +0.16% [−0.15, +0.48] `same`; modules +25%, interpreted −2.1% |
+| 100K | **−0.36% [−0.72, −0.01] `LOWER`**, cycles −0.41% `LOWER`; modules −21%, interpreted +4.4%, V8 compile −11% | **−0.67% [−0.96, −0.39] `LOWER`**, cycles −0.94% `LOWER`; modules −24%, interpreted +3.4%, V8 compile −12% |
+
+The wasm within 0.25% in every arm; the footprints even.
+
+**The parallel boots, 50K against 100K** (`bench/run-mac.sh`, 3 rounds alternated, `perf65/gates.sh`): 100K is
+the same or slower. `smp_alpine_jit`'s totals +0.2% (n1), +0.7% (n2), both without overlap, +0.1% (n4, overlap);
+`smp_user_jit_4`'s total +0.7% (overlap; Lua +2.4%, compress −1.2%, all overlapping). Everything is under the ~1%
+floor, but it points the other way from the gates. Peak RSS the same (1544-1554 MiB against 1552-1672 on
+`smp_alpine_jit`, 2037-2039 against 2032-2036 on `smp_user_jit_4`).
+
+**Firefox's pages session, cut to two pages** (`PAGES=wiki,mdn`, 2 sessions each, alternated): run for the counters
+the row names under four vCPUs, which the deterministic workloads can't show. **There the constant doesn't change
+what is compiled:** modules 1505 · 1520 at 50K against 1530 · 1528 at 100K, wasm 92.5 MB in both, interpreted steps
+2.06-2.07 G in both, lock acquisitions 9.48 · 9.53 M against 9.56 · 9.40 M, tier-ups 2869 · 2841 against 2838 ·
+2854. Busy MIPS 429.5 against 429, the starts and loads 24.6 + 32.45 s against 24.4 + 32.2 s, no stall of 20 ms or
+more in any session. The 2026-11-03 VM run (the whole session, 200K) had 45% fewer modules; the cut session on the
+Mac today has 27 regions a module in either arm. Which trigger makes those batches due instead (the steps of a few
+hot blocks, the tier-ups, the timeout) wasn't isolated: the tier-ups add ~4.5 M steps of the ~75 M the 1505 batches
+needed at 50K, and the timeout (64 M steps of one vCPU, ~0.6 s) is longer than the session's ~65 ms between modules.
+
+**Why nothing is kept.** `node`, the ranking workload, calls 25K and 100K `same` and 200K `HIGHER` (+1.4%). 100K's
+gains are on the one-vCPU gates (−0.4%, −0.7%, with modules −21-24% and V8 compiling 11-12% less under them), and
+the parallel boots, which share the batch among four vCPUs as the page does, lean 0.2-0.7% the other way. The
+browser's session compiles the same at 100K as at 50K, so it has nothing to gain. A constant that would help the
+gates and not the page isn't worth the move. Memory: the same in every arm within the levels' noise (`node`'s
+footprints −11 to −35 MiB from 25K to 200K, the arms' pages together). **50K stays, and it is the base rows 3-4
+build on.**
