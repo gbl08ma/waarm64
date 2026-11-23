@@ -7536,3 +7536,51 @@ back 0-50% late: within 5 µs of the deadline, a bounded number of waits, a wake
 3 ms sleep); planted bugs, each caught: one wait to the deadline (12 of 24 fail), no tail spin (16), a wake-up ignored
 (2), a share of 0.8 against the 50% leeway case (8). `tests/spin.test.ts`'s IPI round trip (docs/backlog.md) isn't
 this: its wake-ups are notifies, which the change leaves as they were.
+
+## PERF loop 59: what a module's install grows outside the heap's bound, counted (2026-11-23)
+
+docs/backlog.md's "The core's heap, after the bound", "What a module's install adds outside the bound": past its
+members (filed only with room since PERF loop 48), `Cache::install` files the links (`linkers`: each target's list of
+the blocks that chain to it), the page index's region heads under a region's other pages, the module log, and its
+callers the tiers (`tiers`, the loop regions compiled for heads compiled alone), all without a `try_reserve`; and
+`Cache::tier_up` reaches it from JIT code, where nothing may flush. **Counted, not built: those allocations are small
+and bounded, at most 1.6 MiB at once and ~6 MB over a session, against ~730 MiB the heap's reserve leaves past its
+mark.** No code changed (the core is 96ca41ae's, ABI 74, `tests/steps.txt` unchanged). Data:
+`bench/boot/results/perf59/` (its README).
+
+**The counts** (a diagnostic core, `diag.patch`: each install's allocations by structure, as the bytes of the table
+or list it grew to; Mac M4, Chrome for Testing 158.0.8127.36, 4 vCPUs, from `target/snapbench/pages.waarm64snap`,
+once each; `alpine_user_jit`'s guest in the dev VM's Node, 1 vCPU, for scale):
+
+| | pages session (200 s) | run-once churn (715 s) | Alpine userspace (Node) |
+|---|---|---|---|
+| installs / from a tier-up | 2,728 / 839 | 2,353 / 533 | 531 / 164 |
+| installs that allocated | 2,565 (94%) | 2,080 (88%) | 472 (89%) |
+| bytes they allocated, all | 5.71 MB | 3.68 MB | 0.78 MB |
+| the largest install's / a tier-up's | 1.64 MB / 0.82 MB | 0.82 MB / 0.41 MB | 205 KB / 17 KB |
+| links' table: doublings, at most | 15, 1.56 MiB (2^16 buckets) | 14, 0.78 MiB | 12, 200 KiB |
+| links' keys at most (block map's keys) | 34,547 (668,720) | 22,849 (769,972) | 5,176 (133,584) |
+| links' lists: reallocations, bytes | 38,531, 1.48 MB (of 74,167 links) | 27,932, 1.37 MB | 6,025, 238 KB |
+| region heads: table doublings, at most; lists | 10, 50 KiB; 1,606, 51 KB | 10, 50 KiB; 1,105, 36 KB | 8, 12.5 KiB; 253, 9 KB |
+| tiers' table: doublings, at most | 12, 264 KiB | 11, 132 KiB | 9, 33 KiB |
+| module log: reallocations, at most | 11, 128 KiB | 11, 128 KiB | 8, 16 KiB |
+| the heap's live bytes / mark at most | 279.3 / 279.4 MiB | 274.9 / 276.8 MiB | 29.4 / 32.4 MiB |
+
+Nearly every install allocates, but almost all of it is a links list's doubling (~40 bytes each); the tables double a
+dozen times an epoch, and the largest single allocation was the links' table at 2^16 buckets (1.6 MiB). No head was
+new to the block map at its install (a head is always a key the map holds), and neither session flushed or rescued.
+
+**The bounds** (wasm32 sizes): the links' keys are compiled keys (heads and members entered at an entry, each dropped
+from the links with its key), so at most the block map's (`MAP_KEYS`, a prune past ~917,000): a table of 2^20 buckets
+at most, 25 MiB, its last doubling allocating that beside the 12.5 it frees; the tiers' keys and the log's entries
+at most an epoch's slots (`Config::capacity`, 262,144): 2^19 buckets of 33 bytes, 16.5 MiB, and 8 MiB; the region
+heads' pages fewer than the heads. In the sessions the links held 3-5% of the map's keys and the tiers' and log's 1-3%
+of those bounds. **What it would take:** a links' list or table that couldn't grow can't be left out the way a member
+is (an IC must find every block that chains to the code it drops), so the reserve would go between the emit and the
+module's log, sized from the emit's `links` and `entries`, with an install that discards its module when it fails
+(its slots, its pending blocks' flags) and a tier-up that skips it. That is a mechanism on every install for
+allocations two orders of magnitude under the heap's headroom (the reserve is 1 GiB, `HEAP_FLOOR`; the heaviest
+sessions measured hold 275-293 MiB: PERF loop 44): not built. The finding is in docs/jit.md "The core's heap"; the
+backlog entry is removed.
+
+CI: no code changed (docs and the results directory); `scripts/ci-fast.sh` passed.

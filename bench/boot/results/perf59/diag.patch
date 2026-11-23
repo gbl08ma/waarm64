@@ -1,0 +1,249 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 5cc06333..c72abccd 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -643,6 +643,12 @@ pub struct Cache {
+     /// tier-up's check and its install, which tests can't time otherwise).
+     #[cfg(test)]
+     limit_at_plan: Option<u64>,
++    /// DIAG (PERF loop 59): the most linkers'/tiers' tables have held, the
++    /// growth of the install running, whether inside a tier-up.
++    dg_lk_full: usize,
++    dg_tr_full: usize,
++    dg_acc: u64,
++    dg_tier: bool,
+ }
+ 
+ /// The cache's state for the host, read without the lock (`vm_jit_gauge`,
+@@ -652,7 +658,7 @@ pub struct Cache {
+ #[repr(C)]
+ #[derive(Default)]
+ pub struct Gauge(pub [AtomicU64; GAUGE_WORDS]);
+-pub const GAUGE_WORDS: usize = 8;
++pub const GAUGE_WORDS: usize = 32;
+ /// The wasm bytes and the modules installed since the last flush: what V8
+ /// holds code and metadata for (until its GC collects a flushed epoch's).
+ pub const G_LIVE_BYTES: usize = 0;
+@@ -747,6 +753,10 @@ impl Cache {
+             gauge: Arc::new(Gauge::default()),
+             #[cfg(test)]
+             limit_at_plan: None,
++            dg_lk_full: 0,
++            dg_tr_full: 0,
++            dg_acc: 0,
++            dg_tier: false,
+         }
+         .gauged()
+     }
+@@ -761,6 +771,43 @@ impl Cache {
+     }
+ 
+     /// Publishes the cache's state to its [`Gauge`].
++    /// DIAG: word `w` += `n`; word `w` = max(`v`).
++    fn dg(&self, w: usize, n: u64) {
++        self.gauge.0[w].fetch_add(n, Ordering::Relaxed);
++    }
++    fn dg_max(&self, w: usize, v: u64) {
++        self.gauge.0[w].fetch_max(v, Ordering::Relaxed);
++    }
++    /// DIAG: a growth of `b` bytes (one allocation) in the install running.
++    fn dg_grow(&mut self, b: u64) {
++        self.dg_acc += b;
++        self.dg_max(31, b);
++    }
++    /// DIAG: the linkers' table checked for a growth.
++    fn dg_lk(&mut self) {
++        let cap = self.linkers.capacity();
++        if cap > self.dg_lk_full {
++            self.dg_lk_full = cap;
++            let b = tbytes::<Vec<u64>>(cap);
++            self.dg(14, 1);
++            self.dg_max(15, b);
++            self.dg_grow(b);
++        }
++        self.dg_max(29, self.linkers.len() as u64);
++    }
++    /// DIAG: the tiers' table checked for a growth.
++    fn dg_tr(&mut self) {
++        let cap = self.tiers.capacity();
++        if cap > self.dg_tr_full {
++            self.dg_tr_full = cap;
++            let b = tbytes::<Tier>(cap);
++            self.dg(22, 1);
++            self.dg_max(23, b);
++            self.dg(11, b);
++            self.dg_max(31, b);
++        }
++    }
++
+     fn publish(&self) {
+         let g = &self.gauge.0;
+         g[G_LIVE_BYTES].store(self.live_bytes, Ordering::Relaxed);
+@@ -885,6 +932,7 @@ impl Cache {
+         self.spans = Map::default();
+         self.tiers = Map::default();
+         self.log = Vec::new();
++        (self.dg_lk_full, self.dg_tr_full) = (0, 0);
+         s.rescues += 1;
+         s.map_rescues += 1;
+         self.publish();
+@@ -1051,6 +1099,18 @@ impl Cache {
+     /// only if that leaves it more than half full (each such pass is paid
+     /// for by at least half as many pushes).
+     fn link(&mut self, to: u64, from: u64) {
++        self.dg(26, 1);
++        let cap0 = self.linkers.get(&to).map_or(0, |l| l.capacity());
++        self.link_(to, from);
++        self.dg_lk();
++        let cap = self.linkers[&to].capacity();
++        if cap > cap0 {
++            self.dg(16, 1);
++            self.dg(17, 8 * cap as u64);
++            self.dg_grow(8 * cap as u64);
++        }
++    }
++    fn link_(&mut self, to: u64, from: u64) {
+         let l = self.linkers.entry(to).or_default();
+         if l.len() == l.capacity() && !l.is_empty() {
+             let map = &self.map;
+@@ -1227,6 +1287,7 @@ impl Cache {
+             quiet.iter().for_each(|&w| t.quiet(w));
+             t.redirect(word, idx, key);
+             self.tiers.insert(key, Tier { idx, word, quiet });
++            self.dg_tr();
+             t.stats.tier_ups += 1;
+         }
+     }
+@@ -1348,6 +1409,11 @@ impl Cache {
+     /// ([`Cache::emit_batch`], which points the word at it then), or (batch
+     /// 1: JIT-stress, JIT-check, the forced mode) compiles it now.
+     fn tier_up(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) {
++        self.dg_tier = true;
++        self.tier_up_(t, key, va, mem);
++        self.dg_tier = false;
++    }
++    fn tier_up_(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) {
+         // Read once: the room checked below is the room `alloc` finds,
+         // whatever limit the host stores meanwhile.
+         let budget = self.budget();
+@@ -1423,6 +1489,7 @@ impl Cache {
+         };
+         t.redirect(word, idx, key);
+         self.tiers.insert(key, Tier { idx, word, quiet });
++        self.dg_tr();
+         t.stats.tier_ups += 1;
+     }
+ 
+@@ -1497,6 +1564,8 @@ impl Cache {
+         } else {
+             0
+         };
++        self.dg_acc = 0;
++        let lc = self.log.capacity();
+         self.log.push(Logged {
+             slot,
+             n,
+@@ -1504,6 +1573,12 @@ impl Cache {
+             bytes: bytes.into(),
+             tiers,
+         });
++        if self.log.capacity() > lc {
++            let b = (self.log.capacity() * core::mem::size_of::<Logged>()) as u64;
++            self.dg(24, 1);
++            self.dg_max(25, b);
++            self.dg_grow(b);
++        }
+         self.held += len;
+         self.shed();
+         let idx = xmiss + slot;
+@@ -1537,6 +1612,9 @@ impl Cache {
+             } else {
+                 0
+             };
++            if !self.map.contains_key(&key) {
++                self.dg(28, 1);
++            }
+             let i = self.info(key, || 0);
+             (i.idx, i.len, i.word) = (idx + k as u32, len as u8, word);
+             if self.cfg.check {
+@@ -1573,13 +1651,41 @@ impl Cache {
+             // A region goes with any of its pages (`invalidate`).
+             for b in r.blocks.iter().skip(1) {
+                 if (b.key ^ key) >> 12 != 0 {
+-                    self.pages.file_head(b.key >> 12, key);
++                    let page = b.key >> 12;
++                    let lc = self.pages.heads.get(&page).map_or(0, |l| l.capacity());
++                    let hf = self.pages.heads_full;
++                    self.pages.file_head(page, key);
++                    self.dg(27, 1);
++                    if self.pages.heads_full > hf {
++                        let b = tbytes::<Vec<u64>>(self.pages.heads_full);
++                        self.dg(18, 1);
++                        self.dg_max(19, b);
++                        self.dg_grow(b);
++                    }
++                    let c = self.pages.heads[&page].capacity();
++                    if c > lc {
++                        self.dg(20, 1);
++                        self.dg(21, 8 * c as u64);
++                        self.dg_grow(8 * c as u64);
++                    }
+                 }
+             }
+         }
+         // A member new to the map was filed outside [`Cache::room`]
+         // ([`Cache::entry`]): its bound goes by the table's size.
+         self.map_full = self.map_full.max(self.map.capacity());
++        let acc = self.dg_acc;
++        self.dg(8, 1);
++        self.dg(11, acc);
++        self.dg_max(12, acc);
++        if acc > 0 {
++            self.dg(10, 1);
++        }
++        if self.dg_tier {
++            self.dg(9, 1);
++            self.dg(30, acc);
++            self.dg_max(13, acc);
++        }
+         Some(idx)
+     }
+ }
+@@ -2237,6 +2343,16 @@ impl Jit {
+ 
+ type Map<V> = HashMap<u64, V, BuildHasherDefault<KeyHasher>>;
+ 
++/// DIAG: the bytes of a `Map<V>`'s table at capacity `cap` (its buckets and
++/// their control bytes).
++fn tbytes<V>(cap: usize) -> u64 {
++    if cap == 0 {
++        return 0;
++    }
++    let b = if cap < 8 { cap + 1 } else { (cap * 8 / 7).next_power_of_two() };
++    (b * (core::mem::size_of::<(u64, V)>() + 1)) as u64
++}
++
+ /// The cache's lock, counted in `s` (and the wait, when another table holds it).
+ fn lock<'a>(c: &'a Lock<Cache>, s: &mut Stats) -> MutexGuard<'a, Cache> {
+     s.locks += 1;
+diff --git a/web/vm.ts b/web/vm.ts
+index 597a2556..1e2b7903 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -333,7 +333,7 @@ const S_CMDLINE = 4096;
+ export type Vm = Awaited<ReturnType<typeof bootVm>>;
+ 
+ /** The JIT cache's gauge words (`jit::GAUGE_WORDS`, `vm_jit_gauge`). */
+-const GAUGE_WORDS = 8;
++const GAUGE_WORDS = 32;
+ 
+ /**
+  * The core's heap in a fixed-size memory, its static data and stack included: the JIT's maps and
+@@ -906,6 +906,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+         jitKeys: g(5),
+         jitKeyBytes: g(6),
+         jitHeld: g(7),
++        pr: Array.from({ length: 24 }, (_, i) => g(8 + i)),
+       };
+     },
+     /** Caps the JIT's budget at `bytes` (the gauge's limit word, ABI 45; at least 16 MiB; 0: the machine's budget): the page's memory signal. */

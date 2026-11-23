@@ -111,19 +111,18 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-23, after loop 58)
+## State (2026-11-23, after loop 59)
 
-The track was reopened on 2026-11-23. Loop 58 kept waits of 2/3 of the time left and a 40 µs spin for an idle vCPU's
-sleep to its deadline (web/idle-wait.ts; docs/platform.md "Parallel SMP"): a vCPU's own timer seen in WFI 11-29 µs late
-on the Mac instead of 0.3-2.4 ms, for ~0.7% of a host core in an idle 4-vCPU guest; the gates and the pages session
-don't move (bench/boot/REPORT.md "PERF loop 58"). The core is unchanged (ABI 74, `tests/steps.txt` unchanged); loop
-57's revert stands (docs/jit.md "Tried and lost: polled code without `acc`"). The next loop is 59, from the queue's
+Loop 59 counted what a module's install allocates outside the heap's bound (the links, the region heads, the tiers,
+the module log): ≤ 1.6 MiB at once, ~6 MB a session, bounded by the block map's keys and an epoch's slots, against
+~730 MiB of headroom; not built (bench/boot/REPORT.md "PERF loop 59"; docs/jit.md "The core's heap"). No code changed
+since loop 58 (ABI 74, `tests/steps.txt` unchanged); loop 57's revert stands. The next loop is 60, from the queue's
 first row. Main is clean, no run pending. `target/snapbench/pages.waarm64snap` loads into the current state layout;
-`target/archarm/desktop.qcow2` (ab-mac.sh's default disk) was copied back from the Mac's `~/waarm64-gpu-bench` in loop
-58. `../waarm64-base` is at 5d8f29ef. Loop 58's commit passed `scripts/ci.sh`, `ci-jit.sh` and `ci-debian.sh`.
+`target/archarm/desktop.qcow2` is ab-mac.sh's default disk. `../waarm64-base` is at 5d8f29ef. Loop 58's commit passed
+`scripts/ci.sh`, `ci-jit.sh` and `ci-debian.sh`; loop 59's (docs and results) `scripts/ci-fast.sh`.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-58" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+59" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47, 50 and 55) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48 and 56 (50's: comments only). The next
 is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA, FP16, FHM,
 BF16. The ABI is 74.
@@ -134,8 +133,7 @@ Refilled by the supervisor after loop 52 from docs/backlog.md's performance entr
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: the core's heap, what a module's install adds outside the bound | count first; reserve before `emit_batch`, skip a tier-up that doesn't fit |
-| JIT: kvm-unit-tests `timer` slower under the JIT than interpreted | re-measure after loop 49; then the short blocks around the polls |
+| **Next:** JIT: kvm-unit-tests `timer` slower under the JIT than interpreted | re-measure after loop 49; then the short blocks around the polls |
 | JIT: the unexplained ~10 GB samples in the Go-load runs | V8's own counters before trusting the median |
 | JIT: a browser session past the 320 MiB budget | a real session long enough to flush; measure the flush's stutter |
 | JIT: transfers that still leave a function | re-profile with `bench/boot/userprof.ts`; turn into a doable to-do or a finding |

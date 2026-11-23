@@ -828,10 +828,19 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   (counter word 115), the block map's alone also as `mapRescues` (word 121, ABI 72). `tests/heap.test.ts` runs a
   guest of 4M `b .+4` in a 48 MiB heap through it (12 of the block map's rescues and 12 of the decoded blocks'; in
   64 the block map finds room since its bound is 2^20 buckets); the unit tests run a heap made full
-  (`crate::test_heap`, the allocator's test hook) through the page index's. **Not covered:** what a module's install
-  files besides its members (`Cache::install`: the links, the checker's spans, the heads filed under a region's other
-  pages) grows those maps and lists without a `try_reserve`, also from a tier-up inside JIT code, which can't flush
-  (docs/backlog.md). The links are bounded: a target's list of the blocks that link to it, about to grow, first
+  (`crate::test_heap`, the allocator's test hook) through the page index's. **Not covered, by
+  measurement:** what a module's install files besides its members (`Cache::install`: the links, the heads filed under
+  a region's other pages, the module log; the tiers its callers file; the checker's spans only in JIT-check and
+  JIT-stress) grows those maps and lists without a `try_reserve`, also from a tier-up inside JIT code, which can't
+  flush. It is small and bounded (bench/boot/REPORT.md "PERF loop 59"): in Firefox's pages session 94% of installs
+  allocate, nearly all of it a links list's doubling, 5.7 MB in all over 200 s, the largest install 1.6 MB (a tier-up's
+  0.8), the largest one allocation the links' table at 2^16 buckets (1.6 MiB; the run-once churn's: 3.7 MB, 0.8 MiB).
+  By construction the links' keys are compiled keys, at most the block map's (a table of 2^20 buckets at most, 25
+  MiB), and the tiers' and the log's at most an epoch's 262,144 slots (16.5 and 8 MiB); the sessions held 3-5% and 1-3%
+  of those. Against the ~730 MiB the 1 GiB reserve leaves past the heaviest sessions' 275-293 MiB, a reserve on every
+  install (it would have to sit between the emit and the module's log: a link can't be left out as a member can, since
+  an IC must find every block that chains to the code it drops, so a failure would discard the module) isn't built.
+  The links are bounded: a target's list of the blocks that link to it, about to grow, first
   drops the keys no longer compiled and the repeats (`Cache::link`; an IC drops the list of each key it drops, not
   the key from the lists it's in, and a block compiled again files itself again, so a long-lived target's list grew
   by a key at every IC and recompile of a block that links to it until the next flush, PERF loop 48). An allocation that still fails records its size and the heap's live bytes and mark for the
