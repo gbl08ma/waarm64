@@ -170,8 +170,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   sampling. Measure with V8's own counters before trusting the median.
 - **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds
   checks V8 keeps on Linux arm64. Don't fit the design to it.
-- kvm-unit-tests `timer` runs slower under the JIT than interpreted (short blocks around timer
-  polls).
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering
   hundreds of modules at different points, presumably).
 

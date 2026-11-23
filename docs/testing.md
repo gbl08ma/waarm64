@@ -629,6 +629,8 @@ run and 21 more packed toward its end, where the tests arm; in Node the three wi
 under the JIT and JIT-stress too). Skipped: `gicv2-*` (no GICv2), `its-*`, `pmu-*`, `pci-test`,
 `micro-bench`, `fpu-context` (KVM only), `mte-*`; `sieve` (not in `unittests.cfg`; too slow
 interpreted).
+`timer` runs 106,198,491 steps: in Node (deterministic, the M4 dev VM) 2.08 s interpreted and 0.13 s under the JIT
+(bench/boot/REPORT.md "PERF loop 61"; the JIT was slower here at M5 step 5, 3.3 s against 2.6).
 
 **The SMP set on QEMU TCG** (11.1, `-M virt,gic-version=3 -cpu max -smp S`), the oracle for M7:
 `selftest-setup` (smp 2), `selftest-smp` (4 and 8), `gicv3-ipi` (4, 8), `gicv3-active` and `psci`

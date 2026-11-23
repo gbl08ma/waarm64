@@ -7665,3 +7665,24 @@ a first wait of 0.9 of the time left (32, all six past-50% cases among them).
 
 CI: `scripts/ci.sh` (722 s), `scripts/ci-jit.sh`, `scripts/ci-debian.sh` and `scripts/ci-usb.sh` (testusb through
 the DEVICE exit's new yield) passed, each alone.
+
+## PERF loop 61: kvm-unit-tests `timer` under the JIT, re-measured (2026-11-23)
+
+The backlog's "kvm-unit-tests `timer` runs slower under the JIT than interpreted (short blocks around timer polls)",
+from M5 step 5 (2026-09-26, bench/interp/REPORT.md: 3.3 s under the JIT against 2.6 s interpreted in Node, x86_64,
+106M steps, a dispatch per short block around the timer polls and WFI). Re-measured in the same harness the Node
+tests use (`runToPowerOff`, deterministic, 1 vCPU, 256 MiB, `timer.flat` with no arguments; the arms alternated,
+which runs first swapped every round; `results/perf61/kut-timer.ts`), Node 26.7.0 on the dev VM (M4):
+
+| | interpreter | JIT | JIT / interpreter |
+|---|---|---|---|
+| HEAD `949b742b`, 5 rounds | 2,200 · 2,060 · 2,081 · 2,138 · 2,081 ms; **2,081** | 170 · 132 · 133 · 133 · 136 ms; **133** | **0.064 (15.6× faster)** |
+| loop 49's base `b166af24`, 3 rounds | 2,203 · 2,026 · 2,027 ms; **2,027** | 193 · 154 · 154 ms; **154** | 0.076 (13.2×) |
+
+Steps 106,198,491 in every run, every run `EXIT: STATUS=1`. **The gap is gone, and was gone before loop 49**: the
+JIT had already closed it by the time loop 49 started (which of the JIT's changes since M5 step 5 did it, linking and
+regions among them, wasn't bisected: nothing hangs on it); loop 49's timer registers from the step clock took the JIT's run a further
+−14% (154 → 133 ms: the test's CTL/CVAL/TVAL accesses no longer exit). Nothing to build; the backlog entry is
+removed. No code change, so no gate A/B, no counted code and no step count moved. Raw: `results/perf61/`
+(`node-949b742b.json`, `node-b166af24.json`). The watched idle-limit hang (loop 60) wasn't run into: this loop ran
+no parallel guests besides CI's.

@@ -1,0 +1,48 @@
+{
+ "node": "v26.7.0",
+ "rounds": 3,
+ "res": [
+  {
+   "mode": "interp",
+   "round": 0,
+   "ms": 2202.764642,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 0,
+   "ms": 193.0510079999999,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 1,
+   "ms": 154.21555399999988,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "interp",
+   "round": 1,
+   "ms": 2025.9469819999995,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "interp",
+   "round": 2,
+   "ms": 2027.3239040000008,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 2,
+   "ms": 154.06635499999993,
+   "steps": 106198491,
+   "status": true
+  }
+ ]
+}

@@ -1,0 +1,76 @@
+{
+ "node": "v26.7.0",
+ "rounds": 5,
+ "res": [
+  {
+   "mode": "interp",
+   "round": 0,
+   "ms": 2199.981973,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 0,
+   "ms": 170.3438530000003,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 1,
+   "ms": 131.86012000000028,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "interp",
+   "round": 1,
+   "ms": 2060.4093009999997,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "interp",
+   "round": 2,
+   "ms": 2081.2938680000007,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 2,
+   "ms": 133.05617100000018,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 3,
+   "ms": 132.6582669999998,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "interp",
+   "round": 3,
+   "ms": 2137.8740420000004,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "interp",
+   "round": 4,
+   "ms": 2081.0787949999994,
+   "steps": 106198491,
+   "status": true
+  },
+  {
+   "mode": "jit",
+   "round": 4,
+   "ms": 135.82754199999908,
+   "steps": 106198491,
+   "status": true
+  }
+ ]
+}
