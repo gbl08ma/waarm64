@@ -147,10 +147,15 @@ const INIT_AGAIN: Duration = Duration::from_millis(500);
 const NOSTR_CHECK: Duration = Duration::from_secs(60);
 const NOSTR_ANSWER: Duration = Duration::from_secs(15);
 const NOSTR_RESUBSCRIBE: Duration = Duration::from_secs(10);
-/// A lost Nostr relay is opened again after 2 s, doubling at each loss up to this; only a connection that carried
-/// something starts it afresh: an event for our subscription, an accepted `OK` to one we published, or the EOSE to a
-/// renewal (a connection that held a minute; the first REQ's EOSE alone is what a relay that then stalls gives too).
+/// A lost Nostr relay is opened again after 2 s, doubling at each loss: up to this when our client dropped it for not
+/// answering a REQ, up to [`NOSTR_CLOSED_MAX`] when the connection closed (an open that failed: offline, refused, the
+/// name not found; or the relay's side closed it). It starts afresh when a connection carried something: an event
+/// for our subscription, an accepted `OK` to one we published, or an answer (an EOSE) on a connection open
+/// [`NOSTR_HELD`]; and when the relay's side closes a connection that answered and held that long (an idle timeout).
+/// A first REQ's EOSE, or a second one seconds on, is what a relay that then stalls gives too.
 const NOSTR_BACKOFF_MAX: Duration = Duration::from_secs(600);
+const NOSTR_CLOSED_MAX: Duration = Duration::from_secs(60);
+const NOSTR_HELD: Duration = Duration::from_secs(30);
 /// A lookup from a key we have a peer for doesn't re-route it (a member could forge one): it
 /// probes the session with a signalling ping, and only a peer that answers nothing in this long
 /// (its page reloaded, say) is forgotten and called back afresh, in the lookup's region.
@@ -702,8 +707,9 @@ struct Nostr {
     check_at: Option<Instant>,
     /// The relay must answer our last REQ (EOSE) by then.
     answer_by: Option<Instant>,
-    /// The REQs this connection answered.
-    answered: u32,
+    /// When this connection was opened, and whether it answered a REQ.
+    opened: Instant,
+    answered: bool,
 }
 
 /// A lookup the guest's packets wait on.
@@ -936,7 +942,8 @@ impl Client {
                 reconnect_at: None,
                 check_at: None,
                 answer_by: None,
-                answered: 0,
+                opened: now,
+                answered: false,
             })
             .collect();
         let known = cfg
@@ -1383,12 +1390,13 @@ impl Client {
             self.relays[r].conn = None;
             self.relay_lost(r, now, "the connection closed".into());
         } else if let Some(i) = self.nostr.iter().position(|n| n.conn == Some(conn)) {
-            self.nostr_lost(i, now);
+            self.nostr_lost(i, false, now);
         }
     }
 
-    /// Nostr relay `i`'s connection is gone: again after a backoff ([`NOSTR_BACKOFF_MAX`]).
-    fn nostr_lost(&mut self, i: usize, now: Instant) {
+    /// Nostr relay `i`'s connection is gone (`unanswered`: our client dropped it for not answering a REQ; else it
+    /// closed): again after a backoff ([`NOSTR_BACKOFF_MAX`]).
+    fn nostr_lost(&mut self, i: usize, unanswered: bool, now: Instant) {
         {
             let n = &mut self.nostr[i];
             if let Some(conn) = n.conn.take() {
@@ -1397,8 +1405,15 @@ impl Client {
             n.sub = None;
             n.check_at = None;
             n.answer_by = None;
+            if !unanswered && n.answered && now.saturating_duration_since(n.opened) >= NOSTR_HELD {
+                n.failures = 0; // a connection that held, closed by the relay's side (an idle timeout)
+            }
             n.failures += 1;
-            let wait = Duration::from_secs(1u64 << n.failures.min(10)).min(NOSTR_BACKOFF_MAX);
+            let (most, cap) = match unanswered {
+                true => (10, NOSTR_BACKOFF_MAX),
+                false => (6, NOSTR_CLOSED_MAX),
+            };
+            let wait = Duration::from_secs(1u64 << n.failures.min(most)).min(cap);
             n.reconnect_at = Some(now + wait);
             let url = n.url.clone();
             self.log(format!(
@@ -1461,10 +1476,10 @@ impl Client {
                 }
                 nostr::FromRelay::Accepted => self.nostr[i].failures = 0,
                 nostr::FromRelay::Eose(sub) if self.nostr[i].sub.as_ref() == Some(&sub) => {
-                    // It answers: alive; a renewal's answer (a connection that held) starts the backoff afresh.
+                    // It answers: alive; on a connection that held, the backoff starts afresh.
                     let n = &mut self.nostr[i];
-                    n.answered += 1;
-                    if n.answered > 1 {
+                    n.answered = true;
+                    if now.saturating_duration_since(n.opened) >= NOSTR_HELD {
                         n.failures = 0;
                     }
                     n.answer_by = None;
@@ -1601,7 +1616,8 @@ impl Client {
         let n = &mut self.nostr[i];
         n.conn = Some(conn);
         n.reconnect_at = None;
-        n.answered = 0;
+        n.opened = now;
+        n.answered = false;
         let url = n.url.clone();
         self.actions.push_back(Action::WsOpen {
             conn,
@@ -3039,7 +3055,7 @@ impl Client {
             } else if n.answer_by.is_some_and(|t| t <= now) {
                 let url = n.url.clone();
                 self.log(format!("Nostr: {url} didn't answer"));
-                self.nostr_lost(i, now);
+                self.nostr_lost(i, true, now);
             } else if n.conn.is_some() && n.check_at.is_some_and(|t| t <= now) {
                 self.nostr_subscribe(i, now);
             }

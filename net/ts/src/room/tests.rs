@@ -67,6 +67,11 @@ struct Faults {
     /// The Nostr relay answers a connection's first REQ (an EOSE) and nothing after: no EOSE to a renewal, no
     /// event forwarded, no OK (relay.degmods.com in bench/net/REPORT.md "NAMES loop 6b").
     nostr_answers_once: bool,
+    /// The Nostr relay ends each connection's first subscription at once (a CLOSED after its EOSE) and answers that
+    /// connection's next REQ, the one ten seconds on, and nothing after.
+    nostr_answers_twice: bool,
+    /// Opening a Nostr relay fails at once (the browser offline, the name not found, refused).
+    nostr_offline: bool,
     /// The first DERP connection node `.0` opens to URL `.1` gets its server's hello only when
     /// `Net::release` says (a region far away, or down).
     hold_first: Vec<(usize, String)>,
@@ -110,6 +115,8 @@ struct Net {
     nostr_opens: Vec<(usize, u32, Instant)>,
     /// The Nostr connections (node, connection) a REQ was answered on.
     nostr_answered: std::collections::BTreeSet<(usize, u32)>,
+    /// The Nostr connections a second REQ was answered on ([`Faults::nostr_answers_twice`]).
+    nostr_answered_twice: std::collections::BTreeSet<(usize, u32)>,
 }
 
 fn key(seed: u8) -> [u8; 32] {
@@ -198,6 +205,7 @@ impl Net {
             by_keys: BTreeMap::new(),
             nostr_opens: Vec::new(),
             nostr_answered: Default::default(),
+            nostr_answered_twice: Default::default(),
         };
         n.run();
         n
@@ -241,6 +249,12 @@ impl Net {
         if self.faults.nostr_answers_once && !self.nostr_answered.insert((i, conn)) {
             return;
         }
+        // The connection's first REQ: answered and ended; its second answered.
+        let first = self.faults.nostr_answers_twice && self.nostr_answered.insert((i, conn));
+        if self.faults.nostr_answers_twice && !first && !self.nostr_answered_twice.insert((i, conn))
+        {
+            return;
+        }
         let m: Value = serde_json::from_slice(text).unwrap();
         match m[0].as_str().unwrap() {
             "REQ" => {
@@ -269,6 +283,12 @@ impl Net {
                 let eose = json!(["EOSE", m[1]]).to_string();
                 let now = self.now;
                 self.nodes[i].c.ws_message(conn, eose.as_bytes(), now);
+                if first {
+                    self.subs
+                        .retain(|s| !(s.node == i && s.conn == conn && s.id == m[1]));
+                    let closed = json!(["CLOSED", m[1], "error: test"]).to_string();
+                    self.nodes[i].c.ws_message(conn, closed.as_bytes(), now);
+                }
             }
             "CLOSE" => self
                 .subs
@@ -338,6 +358,9 @@ impl Net {
                 if url.starts_with("wss://nostr") {
                     assert_eq!(protocol, "");
                     self.nostr_opens.push((i, conn, now));
+                    if self.faults.nostr_offline {
+                        return self.nodes[i].c.ws_closed(conn, now);
+                    }
                     self.nodes[i].conns.insert(conn, Conn::Nostr(url));
                     return;
                 }
@@ -1965,6 +1988,62 @@ fn a_relay_that_answers_only_a_connections_first_req_is_tried_less_and_less() {
     let opens = opens_in_third_hour(&mut n);
     let most = 3600 / (NOSTR_BACKOFF_MAX + NOSTR_ANSWER).as_secs() as usize + 1;
     assert!(opens <= most, "{opens} connections in the third hour");
+}
+
+#[test]
+fn a_relay_that_answers_a_second_req_seconds_on_and_then_stalls_is_tried_less_and_less() {
+    // A second EOSE seconds after connecting (a subscription renewed after a CLOSED; a names client's Subscribe or
+    // Replies toggled) isn't a connection that held.
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.nostr_answers_twice = true;
+    n.nostr_answered
+        .extend((0..2).flat_map(|i| n.nodes[i].conns.keys().map(move |c| (i, *c))));
+    n.nostr_answered_twice
+        .extend((0..2).flat_map(|i| n.nodes[i].conns.keys().map(move |c| (i, *c))));
+    let opens = opens_in_third_hour(&mut n);
+    let most = 3600 / (NOSTR_BACKOFF_MAX + NOSTR_ANSWER).as_secs() as usize + 1;
+    assert!(opens <= most, "{opens} connections in the third hour");
+}
+
+impl Net {
+    /// Whether node `i`'s own client has a Nostr connection open.
+    fn nostr_up(&self, i: usize) -> bool {
+        (self.nodes[i].conns.iter()).any(|(c, x)| matches!(x, Conn::Nostr(_)) && *c < NAMES_CONN)
+    }
+}
+
+#[test]
+fn after_an_outage_a_relay_is_opened_again_within_a_minute() {
+    // Ten minutes offline: every open fails at once, and that backoff stays at about a minute.
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.nostr_offline = true;
+    n.nostr_drop(1);
+    n.advance(Duration::from_secs(600));
+    assert!(!n.nostr_up(1));
+    n.faults.nostr_offline = false;
+    n.advance(Duration::from_secs(61));
+    assert!(
+        n.nostr_up(1),
+        "not open a minute after the outage: {:?}",
+        n.logs(1)
+    );
+}
+
+#[test]
+fn a_relay_that_closes_idle_connections_after_a_minute_is_opened_again_at_once() {
+    // A relay (or its proxy: nginx's proxy_read_timeout is 60 s) closes a connection idle for a minute, before the
+    // renewal's EOSE: a connection that answered and held, opened again after 2 s each time.
+    let mut n = Net::new(configs(&[1, 2]));
+    for k in 0..12 {
+        n.advance(Duration::from_secs(57));
+        n.nostr_drop(1);
+        n.advance(Duration::from_secs(3));
+        assert!(
+            n.nostr_up(1),
+            "drop {k}: not open again in 3 s: {:?}",
+            n.logs(1)
+        );
+    }
 }
 
 #[test]
