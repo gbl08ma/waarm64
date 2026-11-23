@@ -12,9 +12,10 @@ to the session's branch. `scripts/ci-net.sh` and the end's whole CI set are owed
 
 ## State
 
-Opened; loop 1 next.
+Loop 1 done; loop 2 next.
 
 ## Loops
 
 | Loop | Commit | Tier passed | Report |
 |---|---|---|---|
+| 1 | this loop's | `ci-fast.sh` | A pending proof asked at an hour, every 10 minutes to 3 hours, then 20, 40, hourly (`collectWait`): N0b's stamps collected by 2 hours 67 of 80 (every one served by then; doubling: 4), 13 asks a calendar in 3 hours (was 6). ~90% isn't reachable on N0b's batch: 13 of 80 proofs came after 2 hours. |

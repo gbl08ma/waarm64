@@ -4,13 +4,14 @@
 // counted whenever it comes, and a renewal that can no longer link dropped; one Web Lock a title (two tabs make one entry);
 // a lost title not renewed; a zone's `seq` never shared by two copies of a title; nothing asked of any service but the
 // compiled ones; the dialog's check (as typed, by the page alone; at Register, its servers asked for one first byte, never the id) and the last week's notice;
-// a room connection's key, name and domains without running it (`member`). A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
+// a room connection's key, name and domains without running it (`member`); the asks for a pending proof against N0b's real
+// stamps. A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { CALENDARS, EXPLORERS, serviceFetch, SERVICES } from '../web/names-fetch.ts';
 import { exportNames, importNames } from '../web/names-export.ts';
-import { inLastWeek, LAST_WEEK_S, NamesAgent, roomOf, type TitleView } from '../web/names.ts';
+import { collectWait, inLastWeek, LAST_WEEK_S, NamesAgent, PASS_MS, PUBLIC_IN_MS, RETRY_MS, roomOf, type TitleView } from '../web/names.ts';
 import { memoryNamesStore } from '../web/names-store.ts';
 import { localBackend, mergeIds, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
 import { TsClient, type NamesIds, type TsEvent } from '../web/ts-client.ts';
@@ -835,4 +836,43 @@ test('Let it go before the claim is public: the title says let go, not Reserved 
   assert.equal((await agent.release(c, 'early')).state, 'released');
   assert.deepEqual((await agent.titles(c.identityKey)).map((v) => v.state), ['released']);
   assert.deepEqual(await agent.held(c.identityKey), [], 'not held: deleting the connection loses nothing');
+});
+
+// "About 2 hours" (PUBLIC_IN_MS) against N0b's 80 real stamps (bench/net/REPORT.md "NAMES loop 0b"): a stamp's proof is
+// served from its calendar's block's sixth confirmation, the first of the three calendars' is when the agent can collect
+// it, and the agent's asks (`collectWait`, the real schedule) collect it at the first ask at or after then. Pure: no
+// module, no services.
+test('the asks for a pending proof collect N0b\'s stamps by "about 2 hours" whenever the calendars serve them by then', () => {
+  const anchors = JSON.parse(readFileSync(new URL('../bench/net/results/names0/anchors.json', import.meta.url), 'utf8')) as {
+    stamps: { digest: string; toSixDeepH: number }[];
+  };
+  const first = new Map<string, number>();
+  for (const s of anchors.stamps) first.set(s.digest, Math.min(first.get(s.digest) ?? Infinity, s.toSixDeepH * 3600_000));
+  const served = [...first.values()];
+  assert.equal(served.length, 80);
+  // The ages of a claim's asks while its proof stays pending, to `until`.
+  const asks = (wait: (tries: number) => number, until: number) => {
+    const at: number[] = [];
+    for (let age = wait(0), tries = 1; age <= until; age += wait(tries++)) at.push(age);
+    return at;
+  };
+  const collected = (wait: (tries: number) => number) => {
+    const at = asks(wait, 24 * 3600_000);
+    return served.map((t) => at.find((a) => a >= t) ?? Infinity);
+  };
+  const byPublic = (c: number[]) => c.filter((a) => a <= PUBLIC_IN_MS).length;
+  const old = (tries: number) => (tries === 0 ? RETRY_MS : Math.min(RETRY_MS * 2 ** (tries - 1), PASS_MS));
+  // The proofs the calendars served by then: no schedule collects more (that evening's blocks were slow: 13 came later).
+  const possible = served.filter((t) => t <= PUBLIC_IN_MS).length;
+  assert.equal(possible, 67);
+  // The doubling (5, 10, 20, 40, 80, 140, 200 minutes) collected 4 of them by then; the late line for 76.
+  assert.equal(byPublic(collected(old)), 4);
+  // The schedule: every one served by then, and none collected more than 10 minutes after the calendars served it.
+  const now = collected(collectWait);
+  assert.equal(byPublic(now), possible, `${byPublic(now)} of ${possible} collected by PUBLIC_IN_MS`);
+  for (const [i, t] of served.entries()) assert.ok(now[i] - t <= 10 * 60_000, `served at ${t / 60_000} min, collected at ${now[i] / 60_000}`);
+  // Its cost: the asks a claim makes of each calendar over 3 hours with its proof pending all along.
+  const three = 3 * 3600_000;
+  assert.equal(asks(old, three).length, 6);
+  assert.equal(asks(collectWait, three).length, 13);
 });

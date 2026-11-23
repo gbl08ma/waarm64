@@ -35,8 +35,17 @@ import {
 
 /** How often titles are looked after while the page is open (and at every load). */
 export const PASS_MS = 60 * 60 * 1000;
-/** The first wait before asking again (a pending proof, an entry to make again), doubling to PASS_MS. */
+/** The first wait before asking again (an entry to make again, a pass that failed), doubling to PASS_MS. */
 export const RETRY_MS = 5 * 60 * 1000;
+/** The wait before asking the calendars again for a pending proof that `tries` asks have found pending (0: from the
+ * stamp to the first ask), at `retryMs` RETRY_MS: spaced around the expected proof (served from the calendar's block's
+ * sixth confirmation, about an hour after the stamp), so the first ask at an hour, then every 10 minutes to 3 hours,
+ * then 20 and 40 minutes and hourly (names.md "The names agent"). */
+export function collectWait(tries: number): number {
+  if (tries === 0) return PASS_MS;
+  if (tries <= 12) return 10 * 60 * 1000;
+  return Math.min(20 * 60 * 1000 * 2 ** (tries - 13), PASS_MS);
+}
 /** A zone's slots, narrow and wide (net/ts room/names/zone.rs): a name with more points than the first is sealed in the
  * second, and has at most that many (web/app/names-view.ts `MAX_POINTS`). */
 const ZONE_NARROW = 4;
@@ -191,7 +200,8 @@ export type AgentOptions = {
   /** A room connection's node key under `identityKey`, made the first time (default: web/room.ts `roomIdentity`, in
    * `waarm64-room`, where the room's worker reads it; the tests' in memory). */
   identity?: (identityKey: string) => Promise<RoomIdentity>;
-  /** The first wait before asking again (default RETRY_MS; the tests' is 0). */
+  /** The first wait before asking again (default RETRY_MS; the tests' is 0), and a pending proof's `collectWait` scaled
+   * by it over RETRY_MS. */
   retryMs?: number;
   log?: (s: string) => void;
 };
@@ -518,6 +528,13 @@ export class NamesAgent {
     return t.item ? this.b.op<TitleStatus>('status', { item: t.item, now: nowS() }) : Promise.resolve(undefined);
   }
 
+  /** A pending proof's next ask (`collectWait`): the first from its stamp (`prev` none), else after one more ask found it
+   * pending. */
+  private ask(prev: { tries: number } | undefined): { next: number; tries: number } {
+    const tries = prev ? prev.tries + 1 : 0;
+    return { next: Date.now() + (collectWait(tries) * this.retryMs) / RETRY_MS, tries };
+  }
+
   private backoff(prev: { tries: number } | undefined): { next: number; tries: number } {
     const tries = (prev?.tries ?? 0) + 1;
     return { next: Date.now() + Math.min(this.retryMs * 2 ** (tries - 1), PASS_MS), tries };
@@ -541,7 +558,7 @@ export class NamesAgent {
         delete t.stamps[e.id];
         delete t.collect[e.id];
         this.log(`${t.name}: an anchor for ${e.kind} ${e.id.slice(0, 8)}`);
-      } else t.collect[e.id] = this.backoff(t.collect[e.id]);
+      } else t.collect[e.id] = this.ask(t.collect[e.id]);
       changed = true;
     }
     st = await this.status(t);
@@ -687,7 +704,7 @@ export class NamesAgent {
     }
     t.item = item;
     t.stamps[id] = stamps;
-    t.collect[id] = { next: Date.now() + this.retryMs, tries: 0 };
+    t.collect[id] = this.ask(undefined);
     // From the claim's own stamp: a claim made again counts its wait again (review 2).
     if (kind === 'claim' || t.stampedAt === undefined) t.stampedAt = Date.now();
     delete t.remake;

@@ -515,8 +515,12 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   such as a store's error, is tried again 5 minutes later; one still running when the agent stops arms nothing; its
   worker's failure or close refuses what waits on it), for each title, under
   **one Web Lock a title** (`waarm64-names:<identityKey>:<room hash>:<name>`, taken if free): collect finished anchors
-  (a pending proof asked 5 minutes doubling to an hour), each with its block's header from an explorer; renew when the
-  owning chain's last entry is `TERM / 2` old and no renewal waits; make the claim of a title that has none. An entry
+  (a pending proof asked around when it is expected, `collectWait`: an hour after the stamp, then every 10 minutes to
+  3 hours, then 20 and 40 minutes and hourly; against N0b's 80 real stamps it collects by "about 2 hours" every one
+  the calendars served by then, 67, each within 10 minutes of being served, where doubling from 5 minutes collected 4;
+  13 asks a calendar in a pending proof's first 3 hours, where doubling made 6; counted by asks, so a page opened
+  late asks at once and then from the hour's 10 minutes), each with its block's header from an explorer; renew when
+  the owning chain's last entry is `TERM / 2` old and no renewal waits; make the claim of a title that has none. An entry
   no calendar stamped is made again. Nothing else drops one: every anchor counts whenever it comes, a calendar's answer
   that isn't a proof moves on to the next, a header one explorer serves that the module refuses goes to the other. A
   renewal unanchored past its link end is kept and asked for a week more (it may have an anchor timed before then). A
@@ -772,7 +776,8 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
 - **Node** (each named to `node --test`): `tests/room-names.test.ts` (the pretend calendars and explorer, which module
   runs on which parameters, the `self` event's name, the records in IndexedDB in Chromium), `tests/names-agent.test.ts`
   (the agent on the tests' module and the pretend services: claims held back, anchors whenever they come, the Web
-  Lock, lost titles, forks and pasted exports, the dialog's check, Let it go, only compiled services fetched),
+  Lock, lost titles, forks and pasted exports, the dialog's check, Let it go, only compiled services fetched, the asks
+  for a pending proof against N0b's 80 stamps),
   `tests/names-room.test.ts` (opt-in `WAARM64_TAILCAT=1`: real servers through the rig's derper, a renewal finished
   with the page closed, a fork settled, a lost name), `tests/names-browser.test.ts` (Chromium: the worker, IndexedDB,
   routes, an export into another profile), `tests/names-page.test.ts` (the words, the dialog's outcomes, and the
@@ -875,8 +880,12 @@ Negentropy) is the repair primitive: no parameter to guess, a few round trips.
   earlier one's change on its own coin; a year is ~16,000 requests. It was sampled (bench/net/REPORT.md "NAMES loop 0").
 - **A stamp made within ~10 minutes of its calendar's block misses that transaction**, and a calendar serves a proof
   from the sixth confirmation (its status page counts transactions under 6 as waiting).
-- **The agent's backoff collects a claim later than "about 2 hours"** (asks at 80, then 140 minutes): 76 of 80 real
-  stamps would have shown the late line; the long run's proof collected at 1.38 hours a block 13 minutes old.
+- **Asking for a pending proof 5 minutes doubling to an hour collected a claim later than "about 2 hours"** (asks at
+  80, then 140 minutes): 76 of N0b's 80 real stamps would have shown the late line, where the calendars had served 67
+  of them by then; the long run's proof collected at 1.38 hours a block 13 minutes old. The asks are spaced around the
+  proof's hour since (`collectWait`, tests/names-agent.test.ts). On N0b's evening of slow blocks 13 of 80 proofs came
+  after 2 hours, so no schedule shows the late line for fewer than 13 of them; the calendars' recent record puts the
+  first proof's p90 at 1.7 hours.
 - **A GPU's lead at Argon2id of 1 MiB is ~110x to ~220x**, not the ~10x first assumed: a memory-hard function narrows
   the gap only past what fits on the card's chips, and memory a server can afford to check stays small. 256 KiB leaves
   the card most of its lead; 4 MiB keeps the ratio at four times the check.
