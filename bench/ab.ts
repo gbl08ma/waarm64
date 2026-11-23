@@ -202,6 +202,10 @@ if (import.meta.main) {
           await round(w, {});
           console.error(`${w} pair ${block}: ${run.rows.slice(-arms.length).map((r) => `${r.arm} ${r.s.ms.toFixed(0)}`).join(', ')} ms (${left().toFixed(0)} s left)`);
         }
+        // A workload's check line (bench/boot/pair.ts) is one for every arm and every sample: a core that computes
+        // something else isn't a faster one.
+        const checks = new Set(run.rows.filter((r) => r.workload === w && r.s.check !== undefined).map((r) => r.s.check));
+        if (checks.size > 1) throw new Error(`${w}: the guest's check line differs between samples: ${[...checks].join(' | ')}`);
         const a = analyze(run, w);
         const end = a.done ? 'every stop measure decided' : block >= opts.cap ? `the cap of ${opts.cap} pairs` : left() < 0 ? `the budget of ${opts.budget} s` : '';
         if (block >= opts.min || end) console.error(table(run, w).slice(1).join('\n'));

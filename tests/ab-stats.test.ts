@@ -1,7 +1,9 @@
 // The paired A/B's statistics and its verdict in Node (bench/stats.ts, bench/ab.ts; docs/benchmarking.md "The paired
 // A/B"): Student's t against its table, the tail a stopping rule's looks pay, an interval's call against the band,
-// a round's random order, and a run's analysis: the warm-up left out, the A/A arm never holding the stop.
+// a round's random order, a run's analysis (the warm-up left out, the A/A arm holding the stop only when alone),
+// and the node workload's script (images/alpine/node/jitjit.js), whose check line is fixed.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { analyze, shuffled, verdict, type Run } from '../bench/ab.ts';
 import type { PairSample } from '../bench/boot/pair.ts';
@@ -101,4 +103,10 @@ test("a run's analysis: the warm-up left out, the stop held by the arms and not 
   // An A/A arm that differs is the session's warning.
   const off = { ...run, rows: run.rows.map((r) => (r.arm === 'aa' && !r.warm ? { ...r, s: s(1.03, 0.001) } : r)) };
   assert.match(verdict(off).join('\n'), /WARNING: the A\/A arm differs from the base in wall, cycles, instr/);
+});
+
+test("the node workload's script: its check line, the same every run", () => {
+  const run = () => execFileSync(process.execPath, [new URL('../images/alpine/node/jitjit.js', import.meta.url).pathname, '10'], { encoding: 'utf8' }).trim();
+  assert.equal(run(), 'jitjit: 4cd8076e 132');
+  assert.equal(run(), 'jitjit: 4cd8076e 132');
 });

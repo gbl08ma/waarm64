@@ -253,9 +253,23 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   bias look certain; and with fixed names and a rotating order the base was the fastest of four identical arms in
   four sessions out of four. The warm-up is the workload itself: without one, or after a boot, a pair's ratio spreads
   0.43-0.48% against 0.32% in sessions of 14 pairs, and instructions 0.20% against 0.05%.
-- **Workloads** (`WORKLOADS`, default `user`): `user`, Alpine's userspace phases (the gate `alpine_user_jit`, ~9.4 s a
-  sample, a minute a pair with three arms); `boot`, Alpine's boot (`boot_alpine_jit`, 3.5 s). Deterministic, one
-  vCPU, to power-off.
+- **Workloads** (`WORKLOADS`, default `user`; several with commas, one after the other), deterministic, one vCPU:
+
+  | | a sample | per G step: JIT wasm, dispatches a 1000 steps, interpreted | a pair's time ratio spreads | regions of 16 against 64 |
+  |---|---|---|---|---|
+  | `boot`: Alpine's boot to power-off (`boot_alpine_jit`) | 3.5 s | 4.3 MiB, 1.8, 5.6% | 0.33% | +5.6% |
+  | `user`: Alpine's userspace phases with their boot (`alpine_user_jit`) | 9.4 s | 1.5 MiB, 0.7, 1.9% | 0.38% | +4.2% |
+  | `node`: Node running `images/alpine/node/jitjit.js` (image `alpine-node`), timed between its lines | 9.0 s (12.5 with its boot) | 5.6 MiB, 2.3, 5.9% | 0.33% | +1.7% |
+  | Firefox's pages session, cut to two pages / whole (not a workload of this command: below) | 106 s / 222 s | 2.3 / 1.2 MiB, 2.0 / 1.6, 5.2% / 3.6% | ~1% (sessions) | no change (whole) |
+
+  `node` is the JIT inside the JIT: `jitjit.js` keeps V8 writing, patching and dropping machine code (functions made
+  from a template and run through V8's tiers, deoptimizations, one call site over many shapes, regular expressions,
+  JSON and the collector between them), 47.5 MiB of JIT wasm in 1452 modules in 9 s, and its check line must be the
+  same in every sample of every arm (the run fails otherwise). By its counts and by the one arm with a known answer
+  it stands closer to Firefox than the gates do; the BENCH track's calibration says how far that holds.
+  The pages session itself stays the confirmation: `PAGES=wiki,mdn bench/gpu/ab-mac.sh` halves it (106 s a session,
+  77% of the whole session's code compiled, its starts and loads within 0.65% over four A/A sessions, as the whole
+  session's), but sessions in browsers of their own spread a pair ~1%, so ±0.5% would take dozens of pairs.
 - **Measures**, lower is better in each: `wall` (ms), `cycles` and `instr` (the renderers', a guest step), `cpu`.
   The verdict's second table has each arm's memory (the renderers' footprint at a sample's end), `emitNs`,
   `compileNs`, the JIT's wasm bytes, its modules and the interpreted steps, and the last line the cores' sizes.
@@ -267,8 +281,8 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   `bench/stats.ts`, 0.12% a look for 4-24 pairs), so an interval after four pairs is wide (±2.3% of time on `user`,
   whose pairs' ratios spread 0.38%) and narrows to ±0.7% by 8 pairs, ±0.47% by 12 and ±0.28% by 24.
 - **How long a verdict takes** (the rule replayed over 96 measured A/A pairs of `user` and 41 of `boot`,
-  `bench/boot/results/bench2/replay.txt`; a pair with the base, `aa` and one arm is ~60 s on `user` and ~23 s on
-  `boot`, 20 s of set-up a run): a difference of 2% or more in 4 pairs (4-5 min on `user`, under 2 on `boot`), 1%
+  `bench/boot/results/bench2/replay.txt`; a pair with the base, `aa` and one arm is ~60 s on `user`, ~77 s on `node`
+  and ~23 s on `boot`, 20 s of set-up a run; `node` takes the pairs `boot` does: `bench3/replay.txt`): a difference of 2% or more in 4 pairs (4-5 min on `user`, under 2 on `boot`), 1%
   in 6, 0.5% in 10 (16 at the 90th percentile), no difference called `same` in 12 (19: 12-20 min on `user`, 4-6 on
   `boot`). A true 0.25% is inside the band's reach: it ends `HIGHER`, `same` or `open` at the cap, 17-24 pairs. No
   difference is called one in 0.4-0.8% of runs; six stopped A/A runs on the Mac all ended `same`.

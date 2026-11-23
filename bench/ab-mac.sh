@@ -4,7 +4,7 @@
 #   bench/ab-mac.sh <outdir> <base>=<core.wasm> <arm>=<core.wasm>[@<tree>][?<query>]...
 # The first arm is the base; an A/A arm (`aa`, the base again) is added. `@<tree>`: the arm's host code from another
 # checkout (a core of another ABI, e.g. `../waarm64-base`; its target/ must be this one's, a symlink). Options, as
-# variables: WORKLOADS (default `user`; `user,boot`), MIN, CAP (pairs: 4, 24), BAND (0.5, percent), OVERALL (0.01),
+# variables: WORKLOADS (default `user`; `node`, `boot`, several with commas), MIN, CAP (pairs: 4, 24), BAND (0.5, percent), OVERALL (0.01),
 # STOP (`cycles,wall`), WARM (`same`), ROUNDS (1), BUDGET (1500: seconds, after which the workload ends at its pair).
 # Into <outdir>/: ab.json (every sample), verdict.txt (printed too), log.txt. Bounded on the Mac (the budget and
 # 400 s) and here; takes the machine's CI lock exclusive (the dev VM shares the Mac's cores: never beside
@@ -32,7 +32,7 @@ sync_tree() { # <tree> <dest>
   rsync -a bench/boot/pair.html bench/boot/pair-page.ts bench/boot/pair.ts "$HOST:$dest/bench/boot/"
   local link=()
   [[ $dest == "$DEST" ]] || link=(--link-dest="$home/$DEST/target/images/")
-  rsync -a "${link[@]}" target/images/alpine target/images/alpine-user "$HOST:$dest/target/images/"
+  rsync -a "${link[@]}" target/images/alpine target/images/alpine-user target/images/alpine-node "$HOST:$dest/target/images/"
   rsync -a "${link[@]}" --exclude '*defconfig' --exclude 'System.map' target/images/linux target/images/buildroot "$HOST:$dest/target/images/"
 }
 

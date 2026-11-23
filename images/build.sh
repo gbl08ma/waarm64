@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, intro, edk2, alpine-uefi, alpine-demo, agent, venus (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-node, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, intro, edk2, alpine-uefi, alpine-demo, agent, venus (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Buildroot's
@@ -22,6 +22,9 @@
 #   natively on arm64 and as that container's root: apk needs neither qemu-user
 #   nor unshare, neither of which works in the x86_64 images container (kept for
 #   Buildroot's x86_64 toolchains) under emulation.
+# alpine-node: the JIT-in-a-JIT benchmark's root (images/alpine/node; docs/benchmarking.md "The paired A/B"):
+#   alpine's rootfs.ext4 plus Node (Alpine's package, the live repository's) and jitjit.js, with its local.d script
+#   instead of the boot test's, as rootfs-node.ext4 (it boots alpine's Image and initramfs-virt). Built as alpine-user.
 # alpine-gl: the llvmpipe benchmark's root (images/alpine/gl): alpine's rootfs.ext4 plus
 #   Mesa (EGL, GLES, the Gallium drivers: llvmpipe), glcomp, a compositor's GLES load, and glquery (occlusion queries waited on)
 #   compiled in the same container, with its local.d script instead of the boot test's, as
@@ -110,6 +113,7 @@ ALPINE_KERNEL=6.18.52-0-virt # the ISO's
 ALPINE_PKGS="openrc=0.63.2-r0" # from the ISO's repository
 USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0" # openssl from the ISO's
 USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0" # the ISO's
+NODE_PKGS="nodejs=24.22.3-r0"
 GL_PKGS="mesa-egl=26.1.6-r0 mesa-gles=26.1.6-r0 mesa-dri-gallium=26.1.6-r0"
 GL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 mesa-dev=26.1.6-r0"
 MESA=26.1.6
@@ -151,7 +155,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest intro edk2 alpine-uefi alpine-demo agent venus)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-node alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest intro edk2 alpine-uefi alpine-demo agent venus)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -319,6 +323,30 @@ build_alpine-user() {
       -U 57413634-0000-4000-8000-000000000013 -E hash_seed=57413634-0000-4000-8000-000000000014,no_copy_xattrs \
       "$1/alpine-user/rootfs-user.ext4" 256M
   ' - "$out" "$USERLAND_PKGS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
+}
+
+build_alpine-node() {
+  local dst=$out/alpine-node
+  [ -f "$out/alpine/rootfs.ext4" ] || { echo "alpine-node needs the alpine image: images/build.sh alpine" >&2; exit 1; }
+  rm -rf "$dst"
+  mkdir -p "$dst"
+  alpine_release
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache -X "$4/apks" $3
+    r=/tmp/r
+    mkdir $r
+    debugfs -R "rdump / $r" "$1/alpine/rootfs.ext4" 2>/dev/null
+    cp /etc/resolv.conf "$r/etc/"
+    chroot "$r" apk --no-progress --no-cache -q add $2
+    rm "$r/etc/resolv.conf" "$r/var/log/apk.log" "$r/etc/local.d/waarm64.start"
+    install -m 755 images/alpine/node/waarm64-node.start "$r/etc/local.d/"
+    mkdir -p "$r/usr/local/share/waarm64"
+    install -m 644 images/alpine/node/jitjit.js "$r/usr/local/share/waarm64/"
+    find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-node \
+      -U 57413634-0000-4000-8000-000000000031 -E hash_seed=57413634-0000-4000-8000-000000000032,no_copy_xattrs \
+      "$1/alpine-node/rootfs-node.ext4" 384M
+  ' - "$out" "$NODE_PKGS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
 }
 
 build_alpine-gl() {
@@ -861,6 +889,7 @@ inputs() {
   [ "$1" = alpine ] && files+=(images/alpine/waarm64.start) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
+  [ "$1" = alpine-node ] && files+=($(find images/alpine/node -type f | sort) "$out/alpine/.inputs") && pins='^(NODE_|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = alpine-gl ] && files+=($(find images/alpine/gl -type f | sort) "$out/alpine/.inputs") && pins='^(GL_|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = alpine-virgl ] && files+=($(find images/alpine/gl -type f | sort) "$out/alpine-gl/.inputs") && pins='^(MESA|VIRGL_TOOLS|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
@@ -887,6 +916,7 @@ outputs() {
     linux) echo linux/Image linux/Image-defconfig ;;
     alpine) echo alpine/Image alpine/initramfs-virt alpine/rootfs.ext4 ;;
     alpine-user) echo alpine-user/rootfs-user.ext4 ;;
+    alpine-node) echo alpine-node/rootfs-node.ext4 ;;
     alpine-gl) echo alpine-gl/rootfs-gl.ext4 ;;
     alpine-virgl) echo alpine-virgl/rootfs-virgl.ext4 ;;
     linux-crypto) echo linux-crypto/Image linux-crypto/initramfs.cpio ;;
@@ -956,10 +986,10 @@ build() {
 }
 
 if [ -z "${WAARM64_IN_CONTAINER:-}" ]; then
-  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= intro= kernel= debian= edk2= alpine_uefi= alpine_demo= agent= venus=
+  rest=() br=() alpine= user= node= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= intro= kernel= debian= edk2= alpine_uefi= alpine_demo= agent= venus=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = intro ]; then intro=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = alpine-demo ]; then alpine_demo=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = venus ]; then venus=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-node ]; then node=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = intro ]; then intro=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = alpine-demo ]; then alpine_demo=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = venus ]; then venus=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
   done
   # The Buildroot images, natively in the host's architecture.
   if [ ${#br[@]} -gt 0 ]; then
@@ -984,6 +1014,7 @@ if [ -z "${WAARM64_IN_CONTAINER:-}" ]; then
   if [ -n "$alpine_demo" ]; then build alpine-demo; fi # after alpine-uefi
   if [ -n "$alpine" ]; then build alpine; fi
   if [ -n "$user" ]; then build alpine-user; fi
+  if [ -n "$node" ]; then build alpine-node; fi
   if [ -n "$gl" ]; then build alpine-gl; fi
   if [ -n "$virgl" ]; then build alpine-virgl; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi

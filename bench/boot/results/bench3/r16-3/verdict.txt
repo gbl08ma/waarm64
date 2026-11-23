@@ -1,0 +1,29 @@
+node: 9 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           +0.03% [-0.43%, +0.49%] same         +0.19% [-0.22%, +0.61%] open         +0.10% [-0.08%, +0.27%] same         +0.18% [-0.27%, +0.64%] open        
+  r16          +1.65% [+0.06%, +3.27%] HIGHER       -4.86% [-6.13%, -3.56%] LOWER        -6.10% [-6.34%, -5.86%] LOWER        -4.97% [-6.20%, -3.72%] LOWER       
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 8978       0.9804         1778        726.6        219.3        47.50         1452    502928284
+  aa                   8985       0.9800         1464        727.2        218.8        47.50         1452    502928284
+  r16                  9141       0.9797         1438        688.3        223.9        44.47         1582    527449989
+user: 6 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           +0.02% [-1.07%, +1.12%] open         +0.00% [-1.23%, +1.25%] open         -0.01% [-0.43%, +0.40%] same         -0.03% [-1.24%, +1.20%] open        
+  r16          +3.52% [+2.10%, +4.96%] HIGHER       +1.55% [+0.25%, +2.87%] HIGHER       +1.21% [+1.02%, +1.41%] HIGHER       +1.43% [+0.28%, +2.60%] HIGHER      
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 6155       0.9923         1200        242.6         72.8        15.50          530    194642775
+  aa                   6150       0.9924         1290        242.7         73.2        15.50          530    194642775
+  r16                  6365       0.9932         1478        236.3         73.5        15.17          532    200449297
+boot: 11 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           -0.01% [-0.32%, +0.30%] same         -0.04% [-0.23%, +0.16%] same         -0.00% [-0.02%, +0.01%] same         -0.03% [-0.21%, +0.16%] same        
+  r16          +5.64% [+5.25%, +6.04%] HIGHER       -0.15% [-0.49%, +0.20%] same         -0.70% [-0.77%, -0.62%] LOWER        -0.51% [-0.83%, -0.20%] LOWER       
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 3491       0.9848         1241        177.8         47.6        11.36          310    149207117
+  aa                   3490       0.9848         1238        178.0         47.3        11.36          310    149207117
+  r16                  3688       0.9881         1246        173.8         48.0        11.15          308    153479854
+arms: base 9786743 bytes; aa 9786743 bytes; r16 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-24, band ±0.5%, stop on cycles and wall, each interval's tail 1.18e-3 (0.01 over all its looks); Chromium 158.0.8127.36

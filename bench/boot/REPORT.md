@@ -7913,3 +7913,68 @@ rounds of runs before. Every later A/B carries its A/A arm, so the count of A/A 
 Also: `bench/procstat.ts` ran `ps -Axo`, which Linux's `ps` refuses, so `bench/run.ts` failed on the dev VM since loop
 1 (`-Ao` now); the helper prints the renderers' memory (the verdict's column). `@<tree>` is written and not yet run
 against a tree of another ABI. Nothing in the core changed.
+
+## BENCH loop 3: a JIT inside the JIT as a paired workload; the pages session cut (2026-11-23)
+
+The BENCH track's third loop: short workloads that stand for a browser. M4 Mac mini, Chrome for Testing
+158.0.8127.36, the core of loop 2 (ABI 74); data in `results/bench3/` (`replay.txt`: loop 2's `replay.ts` over this
+loop's A/A pairs).
+
+**`node`, a workload of the paired command** (`WORKLOADS=node`): the new image `alpine-node` (alpine's root with
+Alpine's Node 24.22.3 and `images/alpine/node/jitjit.js`) boots like the userspace image and runs fixed work whose
+cost is machine code V8 writes as it goes: 1320 functions made from text (a template's operators, constants, branches
+and loops varied; objects' methods; functions fed integers, then doubles, another shape and a string), each run past
+V8's tiers, one call site over 24 targets replaced each round, 200 regular expressions, and JSON, sorts, Maps and
+typed arrays between them. Its check line (`jitjit: 48846038 1320`) is the same natively and in the guest, and the
+driver fails a run whose samples' lines differ. A sample is the time between "node start" and "node end" (9.0 s on
+the Mac; the boot before it isn't counted), deterministic on one vCPU: every sample interprets 502,928,284 steps.
+
+**What each workload exercises** (one sample's whole run; the pages sessions from the set-up to the end):
+
+| | G steps | JIT wasm MiB (a G step) | modules | dispatches a 1000 steps | interpreted | invalidations | emit / V8 compile ms |
+|---|---|---|---|---|---|---|---|
+| `boot` | 2.7 | 11.4 (4.3) | 310 | 1.82 | 5.6% | 204 | 177 / 47 |
+| `user` | 10.4 | 15.5 (1.5) | 530 | 0.69 | 1.9% | 121 | 243 / 76 |
+| `node` | 8.5 | 47.5 (5.6) | 1452 | 2.26 | 5.9% | 481 | 735 / 226 |
+| pages, `wiki,mdn` | 39.1 | 89.5 (2.3) | 2071 | 1.99 | 5.2% | 2940 | 1557 / 332 |
+| pages, all five | 96.4 | 115.7 (1.2) | 2744 | 1.58 | 3.6% | 7769 | 1979 / 447 |
+
+`node` compiles in 9 s half of what the two-page session does in 95, with the session's share of interpreted steps
+and its rate of dispatches; `user` has a third of both. None of the three flushes the cache or runs four vCPUs:
+the pages session alone has those.
+
+**Regions of 16 against 64 again** (`r16-3`, the defaults, three workloads, 20.6 min):
+
+| | pairs | time | cycles a step | instructions a step |
+|---|---|---|---|---|
+| `node` | 9 | +1.65% [+0.06, +3.27] | −4.86% [−6.13, −3.56] | −6.10% [−6.34, −5.86] |
+| `user`, its phases alone | 6 | +3.52% [+2.10, +4.96] | +1.55% [+0.25, +2.87] | +1.21% [+1.02, +1.41] |
+| `boot` | 11 | +5.64% [+5.25, +6.04] | −0.15% [−0.49, +0.20] | −0.70% [−0.77, −0.62] |
+
+On Firefox's pages session regions of 64 were "no change" ("Regions of 64 blocks": the starts and loads 71.8-73.1
+against 71.3-74.2 s). `node`'s +1.7% is the nearest of the three to that; the boot's +5.6% would have ranked the
+change as one of PERF's largest. One arm: loop 4 is the calibration. And the counters point the wrong way here:
+regions of 16 take 6% fewer of the renderer's instructions on `node` and more time (loop 2's caveat, stronger).
+
+**A/A** (`aa-node`: the base alone, the defaults): `node` ended `same` after 15 pairs (−0.11% [−0.48, +0.27]), the
+userspace phases after 22 (−0.02% [−0.48, +0.43]). With `r16-3`'s A/A arm, 24 pairs of `node`: a pair's ratio
+spreads 0.33% in time, 0.27% in cycles, 0.10% in instructions; replayed, no difference is called `same` in a median
+of 10 pairs (16 at the 90th percentile), 1% decided in 5, 0.5% in 8. A pair of the base, `aa` and one arm is ~77 s:
+a null in ~13 min, 1% in ~6.5.
+
+**The userspace phases alone: not kept.** `user` timed between "compress start" and "sqlite end" (its boot and
+power-off left out) spreads 0.53% a pair (28 pairs) against the whole run's 0.38%: the same noise over two thirds of
+the time. A null then takes a median of 21 pairs instead of 12, which is what the sharper signal (regions of 16:
++3.5% against +4.2% over the whole run, where the boot's own +5.6% is mixed in) would have to pay for. `user` is
+the whole run again. No snapshot under either workload: `node`'s boot (3.5 s of a 12.5 s sample) is outside its
+window, and a restore in the bench page would be its own piece of work for at most that.
+
+**The pages session cut to its first two pages** (`pages-cut`: `PAGES=wiki,mdn bench/gpu/ab-mac.sh`, an A/A of four
+sessions): 106 s a session against 222, 89.5 of the whole session's 115.7 MiB compiled (77%), Firefox's starts and
+loads 32.1-32.6 s, spreading 0.65% (the whole session's `pagesS`: 0.69%; in loop 1's four sessions the first two
+pages' sum spread 0.70% too). So the cut confirms at half the cost and the same precision, and neither is a screen
+for ±0.5%: sessions in browsers of their own spread a pair ~1%, dozens of pairs. Bringing a desktop session into
+one browser as the paired command does its arms is the step that would change that; not built.
+
+`bench/ab-mac.sh` copies `alpine-node` to the Mac; tests/ab-stats.test.ts pins `jitjit.js`'s check line at a small
+scale. Nothing in the core changed.
