@@ -7,7 +7,7 @@
 // column's count; a subdomain added and saved, then every point at this connection; the second explainer collapsed;
 // the backup (with domains, and an ephemeral connection's without); Let it go; the cards' other states and the upkeep
 // line's warning from titles set in the area (the agent's own states are tests/names-agent.test.ts's); an ephemeral
-// connection's pane.
+// connection's pane; New name on a connection that holds domains (pointed at the new key, or let go).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -18,7 +18,7 @@ import type { TitleView } from '../web/names.ts';
 import { CALENDARS, EXPLORERS } from '../web/names-fetch.ts';
 import { CALENDARS as PRETEND, startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 import { TEST_WASM } from './net/names-agent.ts';
-import { answerAsks } from './page-ask.ts';
+import { ALT, answerAsks, type Question } from './page-ask.ts';
 import { words } from './words.ts';
 
 const skip = !existsSync(TEST_WASM) ? 'net/ts/build.sh --test-params' : !existsSync(process.env.CHROMIUM ?? '/usr/bin/chromium') ? 'no Chromium' : false;
@@ -292,6 +292,72 @@ test("New name, then Save or a rename from the card: the new key stays (the page
   await page.locator(`[data-connection="${eph}"] [data-action=connection-details]`).click();
   await page.locator('[data-context-connection] h3').filter({ hasText: 'renamed' }).waitFor({ timeout: 5_000 });
   assert.equal(await backup(page), now, 'the rename kept the new key');
+  await ctx.close();
+});
+
+test("New name on a connection that holds domains asks what becomes of them: pointed at the new key, or let go (NAMES2 loop 3)", { skip, timeout: 180_000 }, async () => {
+  const ctx = await profile();
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`# page error: ${e}`));
+  const asked: Question[] = [];
+  let reply: boolean | string = true;
+  await answerAsks(page, (q) => { asked.push(q); return reply; });
+  await page.goto(`${base}/web/app/?autostart=1`);
+  await page.waitForFunction(() => !!document.getElementById('machines-open'));
+  const id = await page.evaluate(async ([m, link]) => {
+    const { page: p } = await import(m) as typeof import('../web/app/page.ts');
+    return (await p.netCreate({ kind: 'room', name: 'gabriel-lan', room: { link, incoming: true, relayOnly: false } })).id;
+  }, ['/web/app/page.ts', LINK] as const);
+  // Two domains at this connection, one with a subdomain at another member.
+  const OTHER = 'ab'.repeat(32);
+  const keyOf = () => page.evaluate(async ([c]) => {
+    const all = await (await import('/web/app/store.ts' as string) as typeof import('../web/app/store.ts')).Store.open().then((s) => s.all('connections'));
+    const r = (all as { id: string; room?: { identityKey: string; link: string } }[]).find((x) => x.id === c)!.room!;
+    const n = await import('/web/names.ts' as string) as typeof import('../web/names.ts');
+    return { identityKey: r.identityKey, key: (await n.namesAgent().member({ identityKey: r.identityKey, link: r.link })).key };
+  }, [id] as const);
+  const before = await keyOf();
+  await page.evaluate(async ([c, link, key, other]) => {
+    const n = await import('/web/names.ts' as string) as typeof import('../web/names.ts');
+    const conn = { identityKey: c, link };
+    await n.namesAgent().register(conn, 'mybox', [{ label: null, key }]);
+    await n.namesAgent().register(conn, 'other', [{ label: null, key }, { label: 'git', key: other }]);
+  }, [before.identityKey, LINK, before.key, OTHER] as const);
+  const newName = async () => {
+    await page.evaluate((h) => (location.hash = h), `#home/connections/${id}/settings`);
+    await page.locator('section[data-selected=connection-settings]').waitFor({ timeout: 30_000 });
+    if (!(await page.locator('#settings-room-advanced').evaluate((d) => (d as HTMLDetailsElement).open))) await page.click('#settings-room-advanced summary');
+    await page.waitForFunction(() => !(document.getElementById('settings-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+    const n = asked.length;
+    await page.click('#settings-room-new-name');
+    for (let k = 0; k < 100 && asked.length === n; k++) await page.waitForTimeout(100);
+    await page.waitForFunction(() => document.querySelector('.machines')?.getAttribute('data-busy') !== 'true' && !(document.getElementById('ask') as HTMLDialogElement | null)?.open, null, { timeout: 30_000 });
+    return asked.slice(n);
+  };
+  const pointsOf = async (name: string) => (await titles(page)).find((v) => v.name === name)?.points.map((p) => `${p.label ?? ''}>${p.key}`).join(' ');
+
+  // Pointed at the new key: what pointed at the old one points there now, a subdomain at another member stays.
+  let q = await newName();
+  assert.equal(q.length, 1, 'one question');
+  assert.match(q[0].text, words('network:network-actions.newName.confirm.domains', { name: 'gabriel-lan', names: ['mybox', 'other'], count: 2 }));
+  const after = await keyOf();
+  assert.notEqual(after.key, before.key, 'a new key');
+  for (let k = 0; k < 100 && (await pointsOf('other')) !== `>${after.key} git>${OTHER}`; k++) await page.waitForTimeout(100);
+  assert.equal(await pointsOf('mybox'), `>${after.key}`, 'the domain points at the new key');
+  assert.equal(await pointsOf('other'), `>${after.key} git>${OTHER}`, 'a subdomain at another member stays there');
+
+  // Abandoned: both let go, and the key changed all the same.
+  reply = ALT;
+  q = await newName();
+  assert.match(q[0].text, words('network:network-actions.newName.confirm.domains', { name: 'gabriel-lan', names: ['mybox', 'other'], count: 2 }));
+  assert.notEqual((await keyOf()).key, after.key, 'a new key');
+  for (let k = 0; k < 100 && (await titles(page)).some((v) => v.state !== 'released'); k++) await page.waitForTimeout(100);
+  assert.deepEqual((await titles(page)).map((v) => v.state), ['released', 'released'], 'both let go');
+
+  // None held: New name asks as before, nothing about domains.
+  reply = true;
+  q = await newName();
+  assert.match(q[0].text.replace(/\s+/g, ' ').trim(), words('network:network-actions.newName.confirm', { name: 'gabriel-lan' }, { whole: true }));
   await ctx.close();
 });
 

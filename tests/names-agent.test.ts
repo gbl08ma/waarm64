@@ -502,6 +502,28 @@ test('Let it go wins over a renewal the room finished: one browser renews, the o
   // What any server holding both computes: nobody owns the name.
   const j = await a.backend.op<{ verdict: string }>('judge', { room: roomOf(LINK), item: tb.item, other: ta.item, now: nowS() });
   assert.equal(j.verdict, 'none', 'the renewed copy shown the release: nobody owns it');
+  // The copy that renewed is shown the release by the room (judged `none`): taken in, so it says let go and makes no
+  // more renewals of the ended branch (NAMES2 loop 3).
+  const told = await testAgent({ store: b.store, publish: fakePublish(() => [{ id: '', server: 's1', result: 'better', item: ta.item }]), log });
+  await told.agent.pass(cb.identityKey);
+  assert.equal((await told.agent.titles(cb.identityKey))[0].state, 'released', log.join('\n'));
+  let [tb2] = await b.store.titles(cb.identityKey);
+  let sb = await statusOf(b.backend, tb2);
+  assert.ok(sb.entries.some((e) => e.kind === 'release' && e.time !== null), 'the release taken into the title');
+  assert.equal(sb.owner, null);
+  assert.equal(tb2.ahead, undefined, 'no renewal made ahead for an ended branch');
+  assert.deepEqual(await told.agent.held(cb.identityKey), [], 'not held: deleting the connection loses nothing');
+  // Its renewal would be due 15 days on: none is made.
+  const real = Date.now;
+  Date.now = () => real() + 16 * DAY * 1000;
+  try {
+    await told.agent.pass(cb.identityKey);
+  } finally {
+    Date.now = real;
+  }
+  [tb2] = await b.store.titles(cb.identityKey);
+  sb = await statusOf(b.backend, tb2);
+  assert.ok(!sb.entries.some((e) => e.time === null), `no renewal made: ${log.join('\n')}`);
 });
 
 test('a name registered again counts its zones past the earlier tenure\'s, which the same owner key signed (the final review, finding 9)', { skip, timeout: 90_000 }, async () => {
@@ -829,13 +851,35 @@ test('a room connection\'s key, name and domains without running it: as its runn
   assert.notEqual(e.name, m.name);
 });
 
-test('Let it go before the claim is public: the title says let go, not Reserved (DOMAINS loop 4: the pane\'s card kept Let it go)', { skip, timeout: 60_000 }, async () => {
-  const { agent } = await testAgent({ publish: fakePublish() });
+test('Let it go before the claim is public: the title says let go, not Reserved, and the claim is never public without its release (DOMAINS loop 4; NAMES2 loop 3)', { skip, timeout: 60_000 }, async () => {
+  const log: string[] = [];
+  const pub = fakePublish();
+  const { agent, store, backend } = await testAgent({ publish: pub, log });
   const c = conn('conn-early');
   assert.equal((await agent.register(c, 'early', point())).state, 'reserved');
   assert.equal((await agent.release(c, 'early')).state, 'released');
   assert.deepEqual((await agent.titles(c.identityKey)).map((v) => v.state), ['released']);
   assert.deepEqual(await agent.held(c.identityKey), [], 'not held: deleting the connection loses nothing');
+  // The claim anchored later: the release is made on it then, and nothing is put while the release waits for its
+  // anchor (the claim alone would resolve in the room until then).
+  cal.mine(6);
+  await agent.pass(c.identityKey);
+  let [t] = await store.titles(c.identityKey);
+  let st = await statusOf(backend, t);
+  assert.ok(st.entries.some((e) => e.kind === 'claim' && e.time !== null), log.join('\n'));
+  assert.ok(st.entries.some((e) => e.kind === 'release' && e.time === null && t.stamps[e.id]?.length), 'the release made and stamped');
+  assert.equal(pub.puts.length, 0, 'not public while the release waits for its anchor');
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'released');
+  // The release anchored: put with it, and nobody owns the name.
+  cal.mine(7);
+  await agent.pass(c.identityKey);
+  [t] = await store.titles(c.identityKey);
+  st = await statusOf(backend, t);
+  assert.ok(st.best?.released && !st.owner, log.join('\n'));
+  assert.equal(pub.puts.length, 1, 'put once, the release with it');
+  const put = await backend.op<{ owner: unknown; best: { released: boolean } | null }>('status', { item: pub.puts[0], now: nowS() });
+  assert.ok(put.best?.released && !put.owner, 'what the room is given ends in the release');
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'released');
 });
 
 test('a claim its calendars lost is made again a day after its stamp, the one before kept, so it doesn\'t stay Reserved for good (NAMES2 loop 2)', { skip, timeout: 90_000 }, async () => {

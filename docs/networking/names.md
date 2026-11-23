@@ -543,13 +543,17 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   other way is seen within the hour).
 - **A server's better item** is checked whole and judged with the title's entries: the title's own chain (`ours`);
   **another branch of the title's key** (a title forked between browsers: taken in, the next renewal from the room's
-  branch; a zone a server didn't take counted past, put again 11 minutes on); or **another key's chain: lost**, renewal
-  stops and the page says so. Not while the title's own chain has an entry waiting for its anchor, nor when another
+  branch; a zone a server didn't take counted past, put again 11 minutes on); **nobody's** (`none`: the entries of the
+  title's key taken in all the same, so a copy that renewed, shown another copy's release, ends with it: Let go, nothing
+  renewed or made ahead after); or **another key's chain: lost**, renewal stops and the page says so. Not while the title's own chain has an entry waiting for its anchor, nor when another
   server of the same pass took it, nor until an explorer knows the better chain's first block (a forged header can't
   stop the owner's renewals). A lost title is still put hourly, and judged again.
 - **[Let it go](ui:network:DomainCard.release)** drops the renewals waiting for their anchors and the one made ahead,
   and makes the release on the owning chain's last entry (made again if no calendar stamped it). A renewal servers
-  already finished is ended by the release once both are anchored.
+  already finished is ended by the release once both are anchored. A claim let go before it was public has its
+  release made once the claim is anchored, and **nothing is put until the release is anchored too**: the room is
+  given the claim and its release together, so the name never resolves (put alone, the claim resolved until servers
+  finished the release, ~2 hours).
 - **A running room** is given the connection's titles (`room.names.titles`, the owner key and item each) and again as
   they change (BroadcastChannel `waarm64-names`, `ts_room_names_titles`): a member given titles becomes a server. Each
   is checked whole **before it counts as the node's own**: a title with no entries, one not the title key's for its
@@ -668,6 +672,17 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
   browser.](ui:network:DomainsPane.ephemeral) and nothing else, and it has no status link anywhere (`names-view.ts`
   `hasDomainsLink`, the menu's, the tab's and the cards' one rule: an ephemeral connection on a stored connection's key
   has one).
+- **New name on a connection that holds domains** ([New name](ui:network:ConnectionRoomSettings.newName) in its
+  Settings, under Advanced; a domain held is one not let go, lapsed or lost) asks what becomes of them (the user's
+  decision, 2026-11-23: New name is how a user gets away from members who learned their address, and a domain pointed
+  at the new key by itself would lead them there): [Point at the new name](ui:network:network-actions.newName.point)
+  (each point at the old key moves to the new one, another member's stays: `names-view.ts` `repointed`, a new zone
+  each), or [Let them go](ui:network:network-actions.newName.release_other) (each released, as Let it go does). The
+  question says what each means: [Give {{name}} a new name in its room? Members who have the machine's current name
+  won't be able to reach it any more. It holds the domains {{names}}. If you point them at the new name, whoever knows
+  a domain will find the new address. If you let them go, anyone can register them once the release is
+  public.](ui:network:network-actions.newName.confirm.domains_other)
+  A connection with none, or whose key another connection shares (the domains stay with that one), is asked as before.
 - **Elsewhere**: deleting a room connection that holds names asks in a question of its own, with the export to copy,
   then forgets them. A pasted export (the wizard's key to paste) brings its names. Words: `web/messages/en/network.json`
   (the Home page's column and Details' own lines in `machines.json`).
@@ -782,12 +797,14 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
 - **Node** (each named to `node --test`): `tests/room-names.test.ts` (the pretend calendars and explorer, which module
   runs on which parameters, the `self` event's name, the records in IndexedDB in Chromium), `tests/names-agent.test.ts`
   (the agent on the tests' module and the pretend services: claims held back, anchors whenever they come, the Web
-  Lock, lost titles, forks and pasted exports, the dialog's check, Let it go, only compiled services fetched, the asks
-  for a pending proof against N0b's 80 stamps, a claim its calendars lost made again),
+  Lock, lost titles, forks and pasted exports, the dialog's check, Let it go (before the claim is public too, and
+  another copy's taken in), only compiled services fetched, the asks for a pending proof against N0b's 80 stamps, a
+  claim its calendars lost made again),
   `tests/names-room.test.ts` (opt-in `WAARM64_TAILCAT=1`: real servers through the rig's derper, a renewal finished
   with the page closed, a fork settled, a lost name), `tests/names-browser.test.ts` (Chromium: the worker, IndexedDB,
-  routes, an export into another profile), `tests/names-page.test.ts` (the words, the dialog's outcomes, and the
-  `wording:` cases that pin the two notices), `tests/connections.test.ts` (export, import, names forgotten with the key).
+  routes, an export into another profile), `tests/names-page.test.ts` (the words, the dialog's outcomes, a domain
+  pointed at New name's key, and the `wording:` cases that pin the two notices), `tests/page-domains.test.ts`
+  (Chromium: the Domains pane, New name's question on a connection that holds domains), `tests/connections.test.ts` (export, import, names forgotten with the key).
 - **Debian** (`scripts/ci-net.sh`): `tests/page-room.test.ts` grown by names (two guests in one Chromium, the tests'
   module served in `ts.wasm`'s place): no server, a server that appears while a guest keeps asking, full and short
   names, a label, reserved names, a zone change, what Debian asks unprompted, the dialog from typing to a name another

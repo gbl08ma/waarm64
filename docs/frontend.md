@@ -674,7 +674,8 @@ line says why: it isn't connected in this tab (`ConnectionDetails.notHere`), or 
 exit address, whether it serves, its relay and who is let in, the local helper's link, the demo network's server, and
 a room's two switches with, under Advanced, its key to copy (followed by its domains; a stored connection's is made
 when its page first shows it, by `member`) and
-[New name](ui:network:ConnectionRoomSettings.newName), a new key at once (after asking). Save and Revert are a
+[New name](ui:network:ConnectionRoomSettings.newName), a new key at once (after asking; one that holds domains asks
+what becomes of them: networking/names.md "What the user sees"). Save and Revert are a
 machine's (`SaveRow.svelte`): Save checks what was typed with the wizard's own messages (the Home page's banner says
 what's wrong), writes the connection through `page.netEdit` (an adapter here that runs it connects again with it, so
 the change applies at once) or renames it alone through `page.netRename`, from the record as it is then (a new key
@@ -2510,7 +2511,7 @@ and the guest's default way out (below).
   one's without its suffix); the Home page says [a peer-to-peer room](ui:machines:connection-kind.room).
   The connection's Settings (on its page) change the two switches (the adapter running it connects again), and under
   Advanced [New name](ui:network:ConnectionRoomSettings.newName) gives the connection a new key after asking, so its
-  old name stops working, and [The connection's key](ui:network:ConnectionRoomSettings.key) is a hidden field to copy (shown, selected, where
+  old name stops working (its domains pointed at the new key or let go, as the question offers), and [The connection's key](ui:network:ConnectionRoomSettings.key) is a hidden field to copy (shown, selected, where
   the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
   computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/networking/tailnet.md
   "Rooms").
@@ -2619,7 +2620,7 @@ tests/page-home-levels.test.ts (Home's levels, a connection's Details and Settin
 machine's draft kept through a level, Back and Esc once per move, a link out of a level an entry, the origin from what
 Home shows, a connection gone under its page, machines linked by id),
 tests/page-domains.test.ts (the Domains pane with no machine: its explainers, register, a card's states, the backup, the
-links; the new key kept after New name, `member` failing and read again, an overtaken read dropped), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
+links; the new key kept after New name, New name's question on a connection that holds domains (pointed at the new key, or let go), `member` failing and read again, an overtaken read dropped), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
   control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 

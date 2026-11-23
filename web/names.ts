@@ -874,7 +874,9 @@ export class NamesAgent {
   /**
    * Publishes title `t` (under no lock) when its claim is public (anchored) and it changed since it was last taken, or
    * wasn't put this visit or this hour: a `put` to the servers a publisher finds. A server's better chain is judged: the title's
-   * own (nothing to do), another branch of it (taken into the title), another key's (the title is lost).
+   * own (nothing to do), another branch of it (taken into the title), another key's (the title is lost), none (the
+   * entries of the title's key taken in: another copy's release ends this one's chain too). A title let go before it
+   * was put stays private until its release is anchored.
    */
   private async publish(t: TitleRecord): Promise<void> {
     // A lost title is put too, so that it is judged again: its own renewal, collected late, may have revived its chain
@@ -882,6 +884,9 @@ export class NamesAgent {
     if (!t.item) return;
     const st = await this.status(t);
     if (!st?.best) return; // a claim stays private until anchored
+    // Let go before it was ever put: private until the release is anchored too, then put with it (the claim put alone
+    // would resolve in the room until servers finished the release: NAMES2 loop 3).
+    if (t.released && t.publishedAt === undefined && !st.best.released) return;
     const k = titleKey(t);
     // Unchanged, put this visit and within the hour: not again (the next hour's pass puts it again, so another branch
     // the room settled on, or a reset room, is seen within the hour).
@@ -892,6 +897,8 @@ export class NamesAgent {
     let lost: string | undefined;
     let lostBlock: { block?: string | null; header?: string | null } = {};
     const branches: string[] = [];
+    /** Chains of the title's key that nobody owns now (another copy's release ending ours), to take in. */
+    const ended: string[] = [];
     // A server that holds the title's chain but didn't take its zone (review 2): within its 10 minutes of the last
     // (put again after them), or a zone of the room's at or past ours (another copy's: counted past it).
     let zoneAgain = false;
@@ -912,6 +919,7 @@ export class NamesAgent {
         }
         if (j.verdict === 'ours') shown = true;
         else if (j.verdict === 'branch') branches.push(a.item);
+        else if (j.verdict === 'none' && j.item !== item) ended.push(a.item);
         else if (j.verdict === 'lost') {
           lost = j.by;
           lostBlock = j;
@@ -950,7 +958,7 @@ export class NamesAgent {
         await this.save(now);
       });
     }
-    if (!shown && !lost && !branches.length) {
+    if (!shown && !lost && !branches.length && !ended.length) {
       this.log(`${t.name}: not published (${answers.map((a) => a.result).join(', ') || 'no answer'}); next pass`);
       return;
     }
@@ -963,7 +971,7 @@ export class NamesAgent {
         `${t.name}: another key's chain owns it while an entry of ours waits for its anchor; judged again later`,
       );
       lost = undefined;
-      if (!shown && !branches.length) return;
+      if (!shown && !branches.length && !ended.length) return;
     }
     await this.locked(t, true, async () => {
       const now = await this.mustGet(t.identityKey, t.room, t.name);
@@ -982,6 +990,22 @@ export class NamesAgent {
         } catch (err) {
           this.log(`${t.name}: ${String(err)}`);
         }
+      }
+      // Nobody owns it with the room's entries of the title's key: taken in (another copy's release, which beats this
+      // copy's renewals beside it). Ended by a release, the title is let go here too: nothing renewed or made ahead.
+      for (const other of ended) {
+        try {
+          const j = await this.b.op<Judged>('judge', { room: now.room, item: now.item, other, now: nowS() });
+          if (j.verdict === 'none') now.item = j.item;
+        } catch (err) {
+          this.log(`${t.name}: ${String(err)}`);
+        }
+      }
+      const after = ended.length ? await this.status(now) : undefined;
+      if (after && !after.owner && after.best?.released && !now.released) {
+        now.released = true;
+        delete now.ahead;
+        this.log(`${t.name}: another copy of the title let it go: taken in`);
       }
       if (shown && now.item === item) {
         now.published = item;

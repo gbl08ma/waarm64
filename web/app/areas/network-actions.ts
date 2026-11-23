@@ -7,6 +7,7 @@ import { keptProfiles } from '../../tailscale-state.ts';
 import { ask } from '../ask.svelte.ts';
 import { connectionLock, migrateLegacy, type Connection } from '../connections.ts';
 import { heldRoomNames } from '../room-export.ts';
+import { pageNames } from './names.svelte.ts';
 import { detachEverywhere, isRunning, setAdapterConnection } from '../machines.ts';
 import { HeldError } from '../net-claims.ts';
 import type { PageNetwork } from '../net-live.ts';
@@ -213,15 +214,45 @@ export class NetworkActions {
     );
   }
 
-  /** A room connection's new key, after asking (so a new address and name in its room); a key it shared with another stays that one's. */
+  /**
+   * A room connection's new key, after asking (so a new address and name in its room); a key it shared with another
+   * stays that one's. One that holds domains under its own key asks what becomes of them (the user's decision,
+   * 2026-11-23): pointed at the new key, or let go. Undefined if cancelled, else what to do with its domains once the
+   * key changed (`newDomains`).
+   */
   async #newRoomKey(c: Connection & { room: NonNullable<Connection['room']> }) {
     const net = this.#net;
     const r = c.room;
-    const ok = t('network:network-actions.newName.ok');
-    if (!(await ask.confirm(msg('network:network-actions.newName.confirm', { name: c.name }), { ok, danger: true })))
-      return false;
+    const names = !c.ephemeral && !(await net.conns.sharesKey(c)) ? await heldRoomNames(r.identityKey) : [];
+    let how: 'point' | 'release' | 'none' = 'none';
+    if (names.length) {
+      const asked = msg('network:network-actions.newName.confirm.domains', {
+        name: c.name,
+        names,
+        count: names.length,
+      });
+      const ok = t('network:network-actions.newName.point');
+      const alt = t('network:network-actions.newName.release', { count: names.length });
+      const choice = await ask.choose(asked, { ok, alt, danger: true });
+      if (!choice) return undefined;
+      how = choice === 'alt' ? 'release' : 'point';
+    } else {
+      const ok = t('network:network-actions.newName.ok');
+      if (!(await ask.confirm(msg('network:network-actions.newName.confirm', { name: c.name }), { ok, danger: true })))
+        return undefined;
+    }
+    // The key the domains point at now, read before it goes.
+    const from = how === 'point' ? await pageNames.key(r) : '';
     await net.conns.newRoomKey({ ...c, room: r });
-    return true;
+    return { how, from };
+  }
+
+  /** Room connection `c`'s domains after its New name (`#newRoomKey`'s answer): pointed at its new key, or let go. */
+  async #newDomains(c: Connection | undefined, o: { how: 'point' | 'release' | 'none'; from: string }) {
+    const r = c?.room;
+    if (!r || o.how === 'none') return;
+    const conn = { identityKey: r.identityKey, link: r.link };
+    await pageNames.newKey(conn, o.from, o.how === 'point' ? await pageNames.key(r) : '', o.how);
   }
 
   /**
@@ -231,8 +262,10 @@ export class NetworkActions {
   async newAddress(c: Connection): Promise<Connection | undefined> {
     const net = this.#net;
     const room = c.room;
+    let domains: { how: 'point' | 'release' | 'none'; from: string } | undefined;
     if (room) {
-      if (!(await this.#newRoomKey({ ...c, room }))) return undefined;
+      domains = await this.#newRoomKey({ ...c, room });
+      if (!domains) return undefined;
     } else {
       const tc = c.tailcat;
       if (!tc) return undefined;
@@ -251,6 +284,7 @@ export class NetworkActions {
     // cards' rename) has the new record, so none writes the old key back (an adapter here that runs it reconnects).
     if (now && at >= 0) await net.edit(now);
     else await net.refresh();
+    if (domains) await this.#newDomains(now, domains);
     return now;
   }
 

@@ -419,7 +419,7 @@ pub fn status(item: &Item, params: &Params, now: u64) -> Value {
 /// proof of work, anchor), against the title. `ours`: the owner now is the title's own chain as held;
 /// `branch`: another branch of the title's own key owns it (a title forked between two browsers): its entries are
 /// taken into the title, as is a newer zone of the title's key; `lost`: another key's chain owns it; `none`: no chain
-/// covers now. A forged answer is an error (the server lies: nothing is taken).
+/// covers now (the title's key's entries taken in all the same: another copy's release ends this copy's chain). A forged answer is an error (the server lies: nothing is taken).
 pub fn judge(
     names: &RoomNames,
     title: &Item,
@@ -470,9 +470,27 @@ pub fn judge(
         return Err(code(Invalid::Zone));
     }
     let held_pending = shown.iter().any(|s| s.pending().is_some());
+    // The title with the entries of its own key shown and a newer zone of that key: what `branch` and `none` hand back.
+    let taken = |mine: Name, shown: Vec<Stamped>| {
+        let mut merged = mine;
+        for s in shown.into_iter().filter(|s| s.entry.owner == owner_key) {
+            merged.insert(s);
+        }
+        let mut zone = title.zone.clone();
+        if let Some(z) = &other.zone
+            && z.owner == owner_key
+            && zone.as_ref().is_none_or(|t| z.beats(t))
+        {
+            zone = Some(z.clone());
+        }
+        item_of(&merged, zone)
+    };
     let Some(o) = all.owner(params, now) else {
+        // Nobody owns it: the title's own key's entries are taken in all the same, so a copy of the title shown another
+        // copy's release ends its chain too (NAMES2 loop 3: it showed the name active and renewed an ended branch).
+        let item = taken(mine, shown);
         return Ok(
-            json!({ "verdict": "none", "item": hex(&title.encode()), "pending": held_pending }),
+            json!({ "verdict": "none", "item": hex(&item.encode()), "pending": held_pending }),
         );
     };
     if o.owner != owner_key {
@@ -488,18 +506,7 @@ pub fn judge(
     }
     let have: BTreeSet<[u8; 32]> = mine.entries().map(Stamped::id).collect();
     let branch = o.ids.iter().any(|id| !have.contains(id));
-    let mut merged = mine;
-    for s in shown.into_iter().filter(|s| s.entry.owner == owner_key) {
-        merged.insert(s);
-    }
-    let mut zone = title.zone.clone();
-    if let Some(z) = &other.zone
-        && z.owner == owner_key
-        && zone.as_ref().is_none_or(|t| z.beats(t))
-    {
-        zone = Some(z.clone());
-    }
-    let item = item_of(&merged, zone);
+    let item = taken(mine, shown);
     Ok(json!({
         "verdict": if branch { "branch" } else { "ours" },
         "item": hex(&item.encode()),

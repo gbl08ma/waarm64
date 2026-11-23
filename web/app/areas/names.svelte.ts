@@ -11,7 +11,7 @@ import type { Action } from './message-bar.svelte.ts';
 import type { Member, MemberConn, NameCheck, NamesConn, TitleView } from '../../names.ts';
 import { roomOf } from '../../room.ts';
 import type { ZonePoint } from '../../names-store.ts';
-import { titlesOf } from '../names-view.ts';
+import { isLive, repointed, titlesOf } from '../names-view.ts';
 import type { From } from '../home-route.ts';
 import { machinesNav } from './machines-nav.svelte.ts';
 
@@ -172,6 +172,32 @@ class PageNames {
   async release(c: NamesConn, name: string) {
     await (await names()).namesAgent().release(c, name);
     await this.refresh();
+  }
+
+  /** Room connection `c`'s node key as its room sees it (the agent's `member`; made under its entry if it has none). */
+  async key(c: MemberConn): Promise<string> {
+    return (await (await names()).namesAgent().member(memberOf(c))).key;
+  }
+
+  /**
+   * After New name on room connection `c` (its key was `from`, now `to`), its domains in the room still held: pointed
+   * at the new key (`point`: what pointed at the old one; another member's points stay) or let go (`release`).
+   */
+  async newKey(c: NamesConn, from: string, to: string, how: 'point' | 'release') {
+    const agent = (await names()).namesAgent();
+    const room = roomOf(c.link);
+    const held = (await agent.titles(c.identityKey)).filter((v) => v.room === room && isLive(v));
+    try {
+      for (const v of held) {
+        if (how === 'release') await agent.release(c, v.name);
+        else {
+          const points = repointed(v.points, from, to);
+          if (points) await agent.setZone(c, v.name, points);
+        }
+      }
+    } finally {
+      await this.refresh();
+    }
   }
 
   /**
