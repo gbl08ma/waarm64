@@ -1,0 +1,49 @@
+user pair 1: ra1000 9428, ra250 9434 ms (1459 s left)
+user pair 2: ra1000 9463, ra250 9337 ms (1419 s left)
+user pair 3: ra250 9325, ra1000 9367 ms (1378 s left)
+user pair 4: ra1000 9364, ra250 9313 ms (1338 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            4 -0.56% [-3.47%, +2.43%] open         -0.18% [-2.63%, +2.33%] open         -0.20% [-0.57%, +0.17%] open         -0.06% [-2.50%, +2.44%] open        
+user pair 5: ra250 9293, ra1000 9333 ms (1298 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            5 -0.54% [-2.14%, +1.09%] open         -0.21% [-1.56%, +1.16%] open         -0.22% [-0.47%, +0.03%] same         -0.09% [-1.45%, +1.28%] open        
+user pair 6: ra250 9303, ra1000 9368 ms (1257 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            6 -0.56% [-1.65%, +0.54%] open         -0.25% [-1.19%, +0.70%] open         -0.23% [-0.42%, -0.05%] LOWER        -0.14% [-1.09%, +0.82%] open        
+user pair 7: ra1000 9359, ra250 9295 ms (1217 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            7 -0.58% [-1.40%, +0.24%] open         -0.23% [-0.94%, +0.49%] open         -0.22% [-0.37%, -0.07%] LOWER        -0.11% [-0.84%, +0.63%] open        
+user pair 8: ra1000 9311, ra250 9286 ms (1177 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            8 -0.54% [-1.22%, +0.14%] open         -0.16% [-0.82%, +0.51%] open         -0.20% [-0.35%, -0.06%] LOWER        -0.03% [-0.72%, +0.65%] open        
+user pair 9: ra1000 9363, ra250 9301 ms (1137 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            9 -0.56% [-1.12%, +0.01%] open         -0.14% [-0.70%, +0.41%] open         -0.19% [-0.32%, -0.07%] LOWER        -0.02% [-0.59%, +0.55%] open        
+user pair 10: ra1000 9366, ra250 9270 ms (1096 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250           10 -0.60% [-1.13%, -0.08%] LOWER        -0.15% [-0.62%, +0.32%] open         -0.19% [-0.30%, -0.07%] LOWER        -0.04% [-0.52%, +0.45%] open        
+user pair 11: ra1000 9322, ra250 9293 ms (1056 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250           11 -0.58% [-1.05%, -0.10%] LOWER        -0.11% [-0.56%, +0.33%] open         -0.18% [-0.28%, -0.08%] LOWER        -0.01% [-0.45%, +0.44%] same        
+user pair 12: ra250 9278, ra1000 9319 ms (1016 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250           12 -0.57% [-0.98%, -0.15%] LOWER        -0.14% [-0.54%, +0.27%] open         -0.19% [-0.30%, -0.09%] LOWER        -0.03% [-0.44%, +0.38%] same        
+boot pair 1: ra250 3441, ra1000 3449 ms (1000 s left)
+boot pair 2: ra250 3449, ra1000 3456 ms (983 s left)
+boot pair 3: ra250 3442, ra1000 3458 ms (967 s left)
+boot pair 4: ra1000 3464, ra250 3449 ms (951 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            4 -0.32% [-1.03%, +0.39%] open         +0.36% [-0.44%, +1.16%] open         +0.27% [+0.23%, +0.30%] HIGHER       +0.42% [-0.41%, +1.27%] open        
+boot pair 5: ra1000 3473, ra250 3451 ms (934 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            5 -0.39% [-0.99%, +0.22%] open         +0.29% [-0.35%, +0.93%] open         +0.26% [+0.23%, +0.29%] HIGHER       +0.37% [-0.22%, +0.97%] open        
+boot pair 6: ra250 3475, ra1000 3493 ms (918 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            6 -0.41% [-0.83%, +0.02%] open         +0.28% [-0.16%, +0.71%] open         +0.26% [+0.24%, +0.28%] HIGHER       +0.35% [-0.08%, +0.77%] open        
+boot pair 7: ra250 3444, ra1000 3451 ms (902 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            7 -0.38% [-0.73%, -0.02%] LOWER        +0.31% [-0.06%, +0.69%] open         +0.26% [+0.23%, +0.28%] HIGHER       +0.38% [+0.02%, +0.73%] HIGHER      
+boot pair 8: ra1000 3467, ra250 3460 ms (885 s left)
+boot: decided, no longer run: ra250
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            8 -0.35% [-0.66%, -0.04%] LOWER        +0.33% [+0.02%, +0.64%] HIGHER       +0.26% [+0.24%, +0.28%] HIGHER       +0.39% [+0.10%, +0.67%] HIGHER      

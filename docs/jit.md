@@ -200,6 +200,12 @@ the interpreter's own code.
     `go build` loop 1,110 → 1,141 MIPS, the renderer 3,229 → 2,876 MiB (`bench/boot/REPORT.md` "M8: tier-ups
     folded into the batches"). Without the quieting the churn compiled 11% more wasm; a quarter of the wait
     (`TIER_STEPS` 6,250: 8 times hot) left 25,400 modules there.
+  - **1000 on the Mac too** (`bench/boot/REPORT.md` "PERF loop 66": 250 and 0). About a fifth of the heads compiled
+    alone tier up (tier-ups are 7-8% of the regions), and the links made before a tier-up keep entering the head's
+    function, which redirects: 1.5-2.2 times per 1000 steps (14 M on `node`, 62 M in the cut pages session). 250
+    takes a fifth to two fifths of those away for 15-19% more tier-ups and ~1-2% more wasm: the one-vCPU gates
+    0.35-0.57% faster, `node`, the parallel boots and Firefox's pages session the same. The redirects bound the gain
+    under ~0.2% of a browser's session even at an indirect call's cold cost. 0 (no tier-up) is below.
 - **The code cache holds 262,144 regions** (4 bytes per slot up front) **and a byte budget**
   (`Config::max_bytes`: **320 MiB** of wasm for a VM by default, whose vCPUs share it: [Sharing](#sharing); a machine
   sets its own with `VmConfig.jit_bytes`, the page's `?jitmb=` and a stored machine's JIT cache setting). When
@@ -1836,7 +1842,10 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
 - **Regions of every seen successor** (M5, loops; forward regions since M8 hold each block of a
   batch once, which is what this lacked) duplicated each block into ~5 regions and cost Buildroot
   25–40%; **regions at the first threshold** (no tier-up) cost the boots 10–14% (~930 lukewarm
-  loops compiled in Buildroot); **regions from any block in reach** under JIT-stress made it 42×
+  loops compiled in Buildroot); at 64-block regions and a threshold of 1000 on the Mac (`region_after` 0, PERF loop 66)
+  `node` compiled twice the wasm (64% of its blocks copies: nested and overlapping loops each take the blocks that lead
+  back to their head) and ran 11% slower, and keeping a loop's members out of the batch's forward regions changed
+  nothing (the copies are loop regions overlapping one another and earlier batches' blocks); **regions from any block in reach** under JIT-stress made it 42×
   slower. Hence: loops only, from seen blocks, after 1000 entries.
 - **An atomic load of the signal word on back-edges** (as first planned, beside `left`): added nothing the run
   loop would act on sooner, since `left` bounded a region to the chunk. Parallel SMP's polled code now polls a

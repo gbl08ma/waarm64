@@ -1,0 +1,33 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 5cc06333..68325af9 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -297,7 +297,7 @@ pub const MAX_BYTES: u64 = 320 << 20;
+ pub const PRESSURE_KNEE: u64 = 2;
+ 
+ /// [`Config::DEFAULT`]'s `region_after`.
+-pub const REGION_AFTER: u32 = 1000;
++pub const REGION_AFTER: u32 = 0;
+ 
+ /// What the JIT did (`vm::Counters` publishes them).
+ #[repr(C)]
+@@ -1263,6 +1263,19 @@ impl Cache {
+             .zip(&loops)
+             .map(|(p, r)| (p.0, if heads_loop(r) { LOOP } else { FREE }))
+             .collect();
++        // EXPERIMENT (PERF loop 66): with loop regions at once, a loop's members (but inner loops' heads) are taken.
++        if self.cfg.region_after == 0 && !all {
++            for r in loops.iter().filter(|r| r.blocks.len() > 1) {
++                for m in r.inner_free() {
++                    if let Some(st) = batch.get_mut(&m).filter(|st| **st == FREE) {
++                        *st = TAKEN;
++                        if let Some(i) = self.map.get_mut(&m) {
++                            (i.queued, i.hits) = (false, 0);
++                        }
++                    }
++                }
++            }
++        }
+         // The batch's blocks by the VA they were seen at (and their regime
+         // bits): how a region finds a successor in another page, whose key
+         // isn't its own plus an offset. Another address space may have

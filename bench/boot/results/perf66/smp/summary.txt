@@ -1,0 +1,43 @@
+smp_alpine_jit_n1_script         ra1000 2582-2631  ra250 2590-2603  -1.3% overlap
+smp_alpine_jit_n1_total          ra1000 5085-5158  ra250 5101-5127  -0.6% overlap
+smp_alpine_jit_n2_script         ra1000 2225-2262  ra250 2237-2250  -0.5% overlap
+smp_alpine_jit_n2_total          ra1000 4749-4789  ra250 4760-4776  -0.3% overlap
+smp_alpine_jit_n4_script         ra1000 2197-2248  ra250 2201-2234  -0.6% overlap
+smp_alpine_jit_n4_total          ra1000 4758-4812  ra250 4759-4809  -0.5% overlap
+smp_alpine_jit_n1_total_cpu_ms   ra1000 5285-5400  ra250 5356-5407  +0.1% overlap
+smp_alpine_jit_n1_total_cpu_ns_step ra1000 2-2  ra250 2-2  +0.0% overlap
+smp_alpine_jit_n1_total_ginstr   ra1000 66-66  ra250 66-66  +0.2% overlap
+smp_alpine_jit_n1_total_gcycles  ra1000 21-21  ra250 21-21  +0.2% overlap
+smp_alpine_jit_n1_total_instr_step ra1000 27-27  ra250 27-27  +0.2% overlap
+smp_alpine_jit_n1_total_cycles_step ra1000 9-9  ra250 9-9  +0.3% overlap
+smp_alpine_jit_n1_total_pshare   ra1000 1-1  ra250 1-1  -0.1% overlap
+smp_alpine_jit_n1_total_joules   ra1000 25-26  ra250 25-25  +0.3% overlap
+smp_alpine_jit_n2_total_cpu_ms   ra1000 6137-6234  ra250 6185-6249  -0.6% overlap
+smp_alpine_jit_n2_total_cpu_ns_step ra1000 3-3  ra250 3-3  -0.5% overlap
+smp_alpine_jit_n2_total_ginstr   ra1000 73-73  ra250 73-74  +0.1% no overlap
+smp_alpine_jit_n2_total_gcycles  ra1000 24-24  ra250 24-24  -0.1% overlap
+smp_alpine_jit_n2_total_instr_step ra1000 30-30  ra250 30-30  +0.1% overlap
+smp_alpine_jit_n2_total_cycles_step ra1000 10-10  ra250 10-10  +0.1% overlap
+smp_alpine_jit_n2_total_pshare   ra1000 1-1  ra250 1-1  +0.1% no overlap
+smp_alpine_jit_n2_total_joules   ra1000 28-28  ra250 28-28  +0.5% overlap
+smp_alpine_jit_n4_total_cpu_ms   ra1000 7455-7561  ra250 7465-7573  +0.2% overlap
+smp_alpine_jit_n4_total_cpu_ns_step ra1000 3-3  ra250 3-3  +0.5% overlap
+smp_alpine_jit_n4_total_ginstr   ra1000 84-84  ra250 83-84  -0.5% no overlap
+smp_alpine_jit_n4_total_gcycles  ra1000 28-28  ra250 28-28  +0.0% overlap
+smp_alpine_jit_n4_total_instr_step ra1000 33-34  ra250 33-33  +0.3% overlap
+smp_alpine_jit_n4_total_cycles_step ra1000 11-11  ra250 11-11  +0.4% overlap
+smp_alpine_jit_n4_total_pshare   ra1000 1-1  ra250 1-1  -0.3% overlap
+smp_alpine_jit_n4_total_joules   ra1000 30-31  ra250 30-30  -0.0% overlap
+smp_user_jit_n4_compress         ra1000 1113-1254  ra250 1096-1253  +0.7% overlap
+smp_user_jit_n4_lua              ra1000 2380-2413  ra250 2343-2388  -0.9% overlap
+smp_user_jit_n4_churn            ra1000 705-736  ra250 698-712  -0.7% overlap
+smp_user_jit_n4_sqlite           ra1000 1672-1783  ra250 1694-1816  -2.3% overlap
+smp_user_jit_n4_total            ra1000 10531-10816  ra250 10538-10637  +0.3% overlap
+smp_user_jit_n4_total_cpu_ms     ra1000 33156-33758  ra250 32795-33223  -0.0% overlap
+smp_user_jit_n4_total_cpu_ns_step ra1000 1-1  ra250 1-1  -0.0% overlap
+smp_user_jit_n4_total_ginstr     ra1000 456-464  ra250 457-459  +0.3% overlap
+smp_user_jit_n4_total_gcycles    ra1000 126-128  ra250 124-126  -0.1% overlap
+smp_user_jit_n4_total_instr_step ra1000 14-15  ra250 14-15  +0.3% overlap
+smp_user_jit_n4_total_cycles_step ra1000 4-4  ra250 4-4  -0.1% overlap
+smp_user_jit_n4_total_pshare     ra1000 1-1  ra250 1-1  -0.0% overlap
+smp_user_jit_n4_total_joules     ra1000 139-142  ra250 139-140  -0.4% overlap

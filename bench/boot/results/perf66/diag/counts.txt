@@ -1,0 +1,72 @@
+workload boot {'ra1000': 2, 'ra250': 2, 'ra0': 2}
+                                  ra1000       ra250         ra0
+steps (G)                          2.650       2.650       2.650
+redirects (M)                       5.84        3.16        0.00
+  per 1000 steps                   2.202       1.191       0.000
+head entries counting (M)           1.47        0.56        0.00
+dispatches per 1000 steps          1.824       1.810       1.793
+heads compiled alone                1674        1584           0
+tier-ups                             421         502           0
+regions                             5564        5546        4783
+  tier-ups/regions %                 7.6         9.1         0.0
+modules                              310         313         209
+blocks in regions                  25809       26472       33093
+blocks of tier-up regions           3084        3886           0
+blocks compiled again               4135        4639       11319
+  in tier-up regions                2136        2575           0
+  again/blocks %                    16.0        17.5        34.2
+wasm MiB                           12.45       12.70       15.19
+interpreted (M)                      149         149         150
+emit ms                              182         187         228
+plan ms                               60          60          52
+V8 compile ms                         49          49          43
+wall ms                             3612        3610        3575
+
+workload node {'ra1000': 2, 'ra250': 2, 'ra0': 2}
+                                  ra1000       ra250         ra0
+steps (G)                          8.468       8.468       8.468
+redirects (M)                      14.38       10.40        0.00
+  per 1000 steps                   1.698       1.228       0.000
+head entries counting (M)           7.69        2.69        0.00
+dispatches per 1000 steps          2.257       2.226       2.181
+heads compiled alone                9334        8658           0
+tier-ups                            1671        1928           0
+regions                            21435       21011       17837
+  tier-ups/regions %                 7.8         9.2         0.0
+modules                             1443        1455        1020
+blocks in regions                  99249      100286      217688
+blocks of tier-up regions          19963       21561           0
+blocks compiled again              21437       22145      139098
+  in tier-up regions               13754       14312           0
+  again/blocks %                    21.6        22.1        63.9
+wasm MiB                           51.52       51.95      105.72
+interpreted (M)                      502         500         500
+emit ms                              749         748        1550
+plan ms                              388         372         315
+V8 compile ms                        233         223         247
+wall ms                             9539        9306       10850
+
+workload user {'ra1000': 2, 'ra250': 2, 'ra0': 2}
+                                  ra1000       ra250         ra0
+steps (G)                         10.431      10.431      10.431
+redirects (M)                      23.16       18.78        0.00
+  per 1000 steps                   2.220       1.800       0.000
+head entries counting (M)           1.95        0.74        0.00
+dispatches per 1000 steps          0.685       0.679       0.677
+heads compiled alone                2200        2057           0
+tier-ups                             545         629           0
+regions                             7653        7609        6721
+  tier-ups/regions %                 7.1         8.3         0.0
+modules                              530         539         401
+blocks in regions                  34126       34757       45615
+blocks of tier-up regions           4219        4992           0
+blocks compiled again               6264        6728       17365
+  in tier-up regions                3028        3419           0
+  again/blocks %                    18.4        19.4        38.1
+wasm MiB                           16.91       17.15       21.50
+interpreted (M)                      195         194         196
+emit ms                              248         253         320
+plan ms                               83          82          73
+V8 compile ms                         75          75          69
+wall ms                             9826        9784        9731
+

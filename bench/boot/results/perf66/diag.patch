@@ -1,0 +1,208 @@
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index fd3ab502..62465f65 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -2296,6 +2296,7 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
+     c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
+     c.i32_load(off).local_tee(V);
+     c.i32_const(0).op(LT_S).if_();
++    dbump(c, crate::tally::REDIRECT);
+     c.local_get(VCPU).local_get(ACC);
+     if c.polled {
+         c.i32_const(0);
+@@ -2306,6 +2307,7 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
+     c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
+     c.return_call_indirect(ty).end();
+     c.local_get(V).if_();
++    dbump(c, crate::tally::HEAD_COUNT);
+     c.local_get(H).local_get(V).i32_const(1).op(SUB);
+     c.memarg(0x36, 2, off); // i32.store
+     c.local_get(V).i32_const(1).op(EQ).if_();
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 5cc06333..d88c5a21 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -570,6 +570,14 @@ pub struct Cache {
+     /// (key, VA) of loop heads compiled alone that got hot, whose regions
+     /// wait for the next batch ([`Cache::tier_up`]).
+     tierq: Vec<(u64, u64)>,
++    /// DIAGNOSTIC (PERF loop 66): every block key compiled since the last flush, by page; and how many of the next
++    /// install's leading regions are tier-ups.
++    #[cfg(feature = "diag")]
++    seen: Map<()>,
++    #[cfg(feature = "diag")]
++    seen_pages: Map<Vec<u64>>,
++    #[cfg(feature = "diag")]
++    tiering: usize,
+     /// Steps the pending blocks have been dispatched for since they joined it
+     /// ([`BATCH_STEPS`]).
+     pending_steps: u64,
+@@ -721,6 +729,12 @@ impl Cache {
+             tiers: HashMap::default(),
+             pending: Vec::new(),
+             tierq: Vec::new(),
++            #[cfg(feature = "diag")]
++            seen: Map::default(),
++            #[cfg(feature = "diag")]
++            seen_pages: Map::default(),
++            #[cfg(feature = "diag")]
++            tiering: 0,
+             pending_steps: 0,
+             batch: 0,
+             next: MISS_SLOTS,
+@@ -957,6 +971,11 @@ impl Cache {
+         self.tiers.clear();
+         self.pending.clear();
+         self.tierq.clear();
++        #[cfg(feature = "diag")]
++        {
++            self.seen.clear();
++            self.seen_pages.clear();
++        }
+         self.pending_steps = 0;
+         self.batch += 1;
+         self.next = MISS_SLOTS;
+@@ -991,7 +1010,13 @@ impl Cache {
+             // With the blocks that chain to them, transitively: their code
+             // calls the dropped functions directly.
+             let mut gone = Vec::with_capacity(keys.len());
++            #[cfg(feature = "diag")]
++            for k in self.seen_pages.remove(&(pa >> 12)).unwrap_or_default() {
++                self.seen.remove(&k);
++            }
+             while let Some(k) = keys.pop() {
++                #[cfg(feature = "diag")]
++                self.seen.remove(&k);
+                 self.map.remove(&k);
+                 self.spans.remove(&k);
+                 self.tiers.remove(&k);
+@@ -1216,6 +1241,10 @@ impl Cache {
+             tiers.push((key, word, quiet));
+             regions.push(r);
+         }
++        #[cfg(feature = "diag")]
++        {
++            self.tiering = tiers.len();
++        }
+         regions.extend(self.plan(mem));
+         t.stats.plan_ns += now_ns().saturating_sub(ns);
+         self.batch += 1;
+@@ -1410,6 +1439,10 @@ impl Cache {
+         // The pending batch goes along (a module fewer, V8's per-module cost:
+         // docs/jit.md "Memory"), the region first so `idx` is its index.
+         let mut regions = vec![r];
++        #[cfg(feature = "diag")]
++        {
++            self.tiering = 1;
++        }
+         if !self.pending.is_empty()
+             && self.next + 1 + self.pending.len() as u32 <= self.cfg.capacity
+         {
+@@ -1511,11 +1544,40 @@ impl Cache {
+         self.retune();
+         self.publish();
+         let s = &mut t.stats;
+-        s.flags_stored += counts.flags_stored;
+-        s.flags_elided += counts.flags_elided;
+-        s.cond_direct += counts.cond_direct;
+-        s.cond_computed += counts.cond_computed;
+-        s.cond_memory += counts.cond_memory;
++        #[cfg(not(feature = "diag"))]
++        {
++            s.flags_stored += counts.flags_stored;
++            s.flags_elided += counts.flags_elided;
++            s.cond_direct += counts.cond_direct;
++            s.cond_computed += counts.cond_computed;
++            s.cond_memory += counts.cond_memory;
++        }
++        // DIAGNOSTIC (PERF loop 66): cond_direct the heads compiled alone, cond_computed the blocks compiled again
++        // (compiled before since the last flush, or twice in this module), cond_memory those of them in tier-up
++        // regions, back_edges the blocks of tier-up regions; flags_* are the redirects' tallies (published).
++        #[cfg(feature = "diag")]
++        {
++            let _ = counts;
++            let tiering = core::mem::take(&mut self.tiering);
++            for (k, r) in regions.iter().enumerate() {
++                if r.tier.is_some() {
++                    s.cond_direct += 1;
++                }
++                for b in &r.blocks {
++                    if self.seen.insert(b.key, ()).is_some() {
++                        s.cond_computed += 1;
++                        if k < tiering {
++                            s.cond_memory += 1;
++                        }
++                    } else {
++                        self.seen_pages.entry(b.key >> 12).or_default().push(b.key);
++                    }
++                    if k < tiering {
++                        s.back_edges += 1;
++                    }
++                }
++            }
++        }
+         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
+         let heads: Vec<u64> = regions.iter().map(|r| r.blocks[0].key).collect();
+         for (k, (((r, inl), links), ents)) in
+@@ -1525,7 +1587,10 @@ impl Cache {
+             let s = &mut t.stats;
+             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
+             s.region_blocks += r.blocks.len() as u64;
+-            s.back_edges += r.back_edges() as u64;
++            #[cfg(not(feature = "diag"))]
++            {
++                s.back_edges += r.back_edges() as u64;
++            }
+             let (key, len) = (r.blocks[0].key, r.blocks[0].words.len() as u32);
+             let words: Vec<u32> = r
+                 .blocks
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 5dce3f01..ce5fbeca 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -42,6 +42,10 @@ pub const HOST_CALL: u32 = 11;
+ pub const HOST_RET: u32 = 12;
+ /// Polled code (parallel SMP): a poll of the stop word (`jit::emit::poll`) run, whether or not it stopped.
+ pub const POLL: u32 = 13;
++/// DIAGNOSTIC (PERF loop 66): an entry into a loop head compiled alone whose hot word redirects to its region.
++pub const REDIRECT: u32 = 14;
++/// The same, counting down (not redirected yet).
++pub const HEAD_COUNT: u32 = 15;
+ /// Slots below this are compiled code's (copied from the vCPU's table at each publication).
+ pub const JIT_SLOTS: usize = 16;
+ 
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 6df017fa..f7d286af 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1302,6 +1302,14 @@ impl Vm {
+         c.tlb_flushes.store(flushes, Ordering::Relaxed);
+         if let Some(j) = &self.vcpus[0].jit.cache {
+             publish_jit(c, &j.table.stats());
++            // DIAGNOSTIC (PERF loop 66): the redirects' tallies in flags_stored, flags_elided.
++            #[cfg(feature = "diag")]
++            for (w, i) in [(11, crate::tally::REDIRECT), (12, crate::tally::HEAD_COUNT)] {
++                c.jit[w].store(
++                    self.vcpus.iter().map(|v| v.diag[i as usize]).sum(),
++                    Ordering::Relaxed,
++                );
++            }
+         }
+         #[cfg(feature = "diag")]
+         for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index c4a6f76d..6eedc1da 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -1178,6 +1178,11 @@ impl Vm {
+         k.tlb_flushes.store(t.flushes, Ordering::Relaxed);
+         if let Some(j) = &v.jit.cache {
+             publish_jit(k, &j.table.stats());
++            // DIAGNOSTIC (PERF loop 66): the redirects' tallies in flags_stored, flags_elided.
++            #[cfg(feature = "diag")]
++            for (w, i) in [(11, crate::tally::REDIRECT), (12, crate::tally::HEAD_COUNT)] {
++                k.jit[w].store(v.diag[i as usize], Ordering::Relaxed);
++            }
+         }
+         #[cfg(feature = "diag")]
+         for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {

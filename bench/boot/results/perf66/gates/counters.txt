@@ -1,0 +1,34 @@
+workload boot
+n {'ra1000': 8, 'ra250': 8}
+                    ra1000         ra250
+blocks                5564        -0.32%
+modules                310        +0.97%
+bytes             11915604        +2.06%
+regionBlocks         25809        +2.57%
+tierUps                421       +19.24%
+decSteps         149207117        -0.18%
+locks               423724        -0.60%
+emitNs           176905344        +2.36%
+planNs            60506624        -0.44%
+compileNs         47710592        -0.36%
+dispatches         4833871        -0.78%
+footMiB                849           850
+instructions   72869556813        +0.25%
+cycles         23344061572        +0.37%
+workload user
+n {'ra1000': 12, 'ra250': 12}
+                    ra1000         ra250
+blocks                7653        -0.57%
+modules                530        +1.70%
+bytes             16249222        +1.44%
+regionBlocks         34126        +1.85%
+tierUps                545       +15.41%
+decSteps         194642775        -0.19%
+locks               556709        -0.22%
+emitNs           240759168        +1.58%
+planNs            83671808        -0.07%
+compileNs         72820224        +0.39%
+dispatches         7150212        -0.88%
+footMiB                958           961
+instructions  182274804794        -0.16%
+cycles         51491325317        -0.16%

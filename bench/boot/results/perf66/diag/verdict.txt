@@ -1,0 +1,29 @@
+node: 2 pairs against ra1000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            2 -2.42% [-75.49%, +288.45%] open      -0.85% [-59.21%, +141.01%] open      +0.18% [-4.46%, +5.04%] open         -0.90% [-64.16%, +173.99%] open     
+  ra0              2 +13.70% [-43.22%, +127.68%] open     +25.61% [-20.11%, +97.50%] open      +25.40% [+23.99%, +26.82%] HIGHER    +27.17% [-21.62%, +106.33%] open    
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  ra1000               9539       0.9797         1650        748.9        233.4        51.52         1443    501877767
+  ra250                9306       0.9801         1484        748.1        223.0        51.95         1455    499548570
+  ra0                 10850       0.9617         1861       1550.1        246.6       105.72         1020    500298168
+user: 2 pairs against ra1000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            2 -0.43% [-12.56%, +13.38%] open       -0.36% [-2.53%, +1.86%] open         -0.26% [-1.40%, +0.90%] open         -0.22% [-8.06%, +8.29%] open        
+  ra0              2 -0.96% [-7.94%, +6.55%] open         +1.60% [-1.66%, +4.96%] open         +1.05% [+0.88%, +1.23%] HIGHER       +2.04% [+0.80%, +3.30%] HIGHER      
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  ra1000               9826       0.9891          997        248.2         75.4        16.91          530    194642775
+  ra250                9784       0.9893         1206        253.3         75.4        17.15          539    194272182
+  ra0                  9731       0.9845         1024        320.4         69.3        21.50          401    195856934
+boot: 2 pairs against ra1000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250            2 -0.06% [-26.47%, +35.83%] open       +0.42% [-21.11%, +27.82%] open       +0.28% [+0.00%, +0.55%] HIGHER       +0.54% [-20.66%, +27.42%] open      
+  ra0              2 -1.03% [-30.37%, +40.66%] open       +2.02% [-15.10%, +22.59%] open       +2.62% [+2.20%, +3.04%] HIGHER       +2.58% [-15.82%, +25.00%] open      
+  ended: the cap of 2 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  ra1000               3612       0.9858         1246        182.4         48.7        12.45          310    149207117
+  ra250                3610       0.9846         1245        186.6         49.0        12.70          313    148939309
+  ra0                  3575       0.9791         1328        228.0         43.2        15.19          209    149759256
+arms: ra1000 9798468 bytes; ra250 9798468 bytes; ra0 9798452 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 2-2, band ±0.5%, stop on cycles and wall, each interval's tail 1.00e-2 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

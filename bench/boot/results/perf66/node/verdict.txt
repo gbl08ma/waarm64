@@ -1,0 +1,13 @@
+node: 12 pairs against ra1000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  ra250           12 -0.44% [-1.42%, +0.55%] open         +0.03% [-0.69%, +0.75%] open         -0.11% [-0.30%, +0.08%] same         +0.09% [-0.58%, +0.77%] open        
+  ra0              4 +11.39% [+2.59%, +20.94%] HIGHER     +23.43% [+15.77%, +31.59%] HIGHER    +25.40% [+23.69%, +27.13%] HIGHER    +24.97% [+18.34%, +31.98%] HIGHER   
+  ra0t             4 +12.61% [+9.28%, +16.03%] HIGHER     +24.12% [+20.99%, +27.34%] HIGHER    +26.50% [+25.22%, +27.80%] HIGHER    +25.57% [+23.53%, +27.64%] HIGHER   
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  ra1000               8876       0.9799         1489        722.2        217.6        47.42         1443    501877767
+  ra250                8851       0.9790         1500        728.4        215.8        47.85         1455    499548570
+  ra0                  9953       0.9598         1929       1488.1        230.2        98.06         1020    500298168
+  ra0t                10023       0.9605         1955       1481.5        228.7        98.06         1020    500289293
+arms: ra1000 9786743 bytes; ra250 9786743 bytes; ra0 9786727 bytes; ra0t 9791812 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

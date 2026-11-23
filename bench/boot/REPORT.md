@@ -8166,3 +8166,89 @@ browser's session compiles the same at 100K as at 50K, so it has nothing to gain
 gates and not the page isn't worth the move. Memory: the same in every arm within the levels' noise (`node`'s
 footprints −11 to −35 MiB from 25K to 200K, the arms' pages together). **50K stays, and it is the base rows 3-4
 build on.**
+
+## PERF loop 66: loop heads compiled alone, then as a region (`REGION_AFTER`) (2026-11-23)
+
+PERF-HANDOVER.md's queue row (no docs/backlog.md entry): `jit::REGION_AFTER`, the entries of a loop head compiled
+alone before its loop region is compiled, at 250 and 0 against 1000, last swept at M6 in Node. **Not kept: 1000
+stays.** 0 doubles the compiled code and costs `node` 11%; a second arm that keeps a loop's members out of forward
+regions changes nothing; 250 is 0.35-0.57% faster on the one-vCPU gates and the same on `node`, the parallel boots and
+Firefox's pages session. No code changed (the core is 8505db4a's, ABI 74, `tests/steps.txt` unchanged). Data:
+`bench/boot/results/perf66/` (README). M4, macOS, Chrome for Testing 158.0.8127.88.
+
+**What the constant governs** (read): a batch's block that heads a loop (`Cache::plan`: its loop region has more
+than one block) is compiled alone with a hot word counting `region_after` entries down (`emit::tier_up`); the entry
+that reaches 0 queues the loop region for the next batch (`Cache::tier_up`), and once that region is installed the
+word holds `REDIRECT | index`. From then on the dispatcher's jump cache points at the region, but every link compiled
+earlier still enters the head's own function, which loads the word and transfers again (`return_call_indirect`). At
+0 the loop region is compiled at the threshold, with every block the dispatcher has seen that leads back to the head,
+and no word. The arms carry their constant (`cmp` shows the immediates; at 0 `Vm::with_devices` is 3 bytes shorter,
+and `ra0t`'s `Cache::plan` 5,035 → 5,899 bytes in `tools/wasm-sizes.ts`).
+
+**The counts** (a diagnostic core, `diag.patch`: the redirects through a head's word, its entries while it counts
+down, the heads compiled alone, the blocks of tier-up regions, the blocks compiled again since the last flush; 2 pairs
+of `bench/ab-mac.sh` and one cut pages session each; medians):
+
+| at 1000 (250) | `node` | `user` | `boot` | pages session (4 vCPUs, 40 G steps) |
+|---|---|---|---|---|
+| redirects | 14.4 M (10.4), 1.70 per 1000 steps (1.23) | 23.2 M (18.8), 2.22 (1.80) | 5.8 M (3.2), 2.20 (1.19) | 61.9 M (48.8), 1.54 (1.21) |
+| entries while counting down | 7.7 M (2.7) | 1.9 M (0.7) | 1.5 M (0.6) | 23.8 M (7.2) |
+| heads compiled alone / tier-ups | 9,334 / 1,671 (8,658 / 1,928) | 2,200 / 545 (2,057 / 629) | 1,674 / 421 (1,584 / 502) | 11,836 / 2,871 (10,833 / 3,304) |
+| tier-ups among the regions | 7.8% (9.2) | 7.1% (8.3) | 7.6% (9.1) | 7.0% (8.1) |
+| blocks compiled again / in regions | 21.6% (22.1) | 18.4% (19.4) | 16.0% (17.5) | 16.1% (16.4) |
+| of them in tier-up regions | 13,754 of 21,437 | 3,028 of 6,264 | 2,136 of 4,135 | 13,928 of 31,868 |
+
+So a fifth of the heads compiled alone tier up, and those regions hold about half of what is compiled twice. The
+redirects bound the gain: each is two loads, a compare and an indirect tail call, ~1.5-2.2 per 1000 steps; 250 takes
+a fifth to two fifths of them away (and two thirds of the counting entries) for 15-19% more tier-ups. Even at the
+indirect call's cold cost (~60 ns in a browser's footprint: "Relinking a region once its successors are compiled")
+the 13 M fewer redirects of the pages session are ~0.8 s of its ~380 vCPU-seconds, ~0.2%; at a warm few ns, nothing.
+
+**`node`, the four arms in one paired run** (time against 1000, the interval, pairs, the counters' medians):
+
+| | wall | instructions | JIT wasm | regions / blocks in them | tier-ups | modules | emission | footprint |
+|---|---|---|---|---|---|---|---|---|
+| 1000 | 8876 ms | | 47.42 MiB | 21,435 / 99,249 | 1,671 | 1443 | 722 ms | 1489 MiB |
+| 250 | −0.44% [−1.42, +0.55] `open` (12, the cap) | −0.11% `same` | +0.9% | −2.0% / +1.0% | +15% | +0.8% | +0.9% | 1500 |
+| 0 | **+11.4% [+2.6, +20.9] `HIGHER`** (4) | +25.4% `HIGHER` | +107% | −16.8% / +119% | 0 | −29% | +106% | 1929 |
+| 0, members taken | **+12.6% [+9.3, +16.0] `HIGHER`** (4) | +26.5% `HIGHER` | +107% | the same as 0 | 0 | −29% | +105% | 1955 |
+
+**Why 0 loses** (the counts at 0: blocks compiled again 139 K of 218 K on `node`, 64%; 34-38% on the gates): a loop
+region takes every seen block that leads back to its head, so nested loops and loops sharing blocks compile the same
+blocks into each other's regions, and at the threshold that is every lukewarm loop (9,334 heads on `node`, of which
+1,671 would have tiered up). The distinct blocks compiled are the same in both (78 K); 0 compiles 139 K copies of them,
+1000 21 K. The M5 verdict ("regions at the first threshold cost the boots 10-14%") holds at 64-block regions and a
+threshold of 1000 on the Mac: the gates there didn't move in time (the diagnostic pairs: `user` −1.0%, `boot` −1.0%,
+`open` at 2 pairs) but compiled 27% and 22% more wasm, and `node` doubled it.
+**The second arm** (`taken.patch`: at 0, a loop region's members other than inner loops' heads taken in the batch, so
+no forward region compiles them too) compiled the same wasm within 0.01%: the copies are loop regions overlapping one
+another and blocks compiled in earlier batches, not forward regions of the same batch. Not measured further, and not
+built for `region_after` > 0 either: there it would leave a loop's body interpreted until its head tiers up (the 7.7 M
+entries counting down on `node`, each a lap of the loop in the interpreter, against 502 M steps interpreted now).
+
+**250 on the gates** (`WORKLOADS=user,boot`):
+
+| | wall | cycles | instructions | wasm | tier-ups | modules |
+|---|---|---|---|---|---|---|
+| `user` (12 pairs) | **−0.57% [−0.98, −0.15] `LOWER`** | −0.14% `open` | −0.19% `LOWER` | +1.4% | +15% | +1.7% |
+| `boot` (8 pairs) | **−0.35% [−0.66, −0.04] `LOWER`** | +0.33% `HIGHER` | +0.26% `HIGHER` | +2.1% | +19% | +1.0% |
+
+Emission +1.6% and +2.4%; footprints 958 → 961 and 849 → 850 MiB.
+
+**The parallel boots, 1000 against 250** (`bench/run-mac.sh`, 3 rounds alternated, `perf66/gates.sh`): every total
+within its rounds' overlap. `smp_alpine_jit` −0.6% (n1), −0.3% (n2), −0.5% (n4); `smp_user_jit_4` +0.3% (Lua −0.9%,
+SQLite −2.3%, compress +0.7%, all overlapping). Peak RSS the same (1548-1568 against 1554-1665 MiB on
+`smp_alpine_jit`, 2035-2050 against 2035-2054 on `smp_user_jit_4`).
+
+**Firefox's pages session, cut to two pages** (`PAGES=wiki,mdn`, 3 sessions each, alternated, no flush): **the
+same**. Busy MIPS 425 · 428 · 428 at 1000 against 427 · 426 · 431 at 250, the starts 25.1 · 24.6 · 24.6 against 25.2 ·
+24.6 · 24.7 s, the loads 33.2 · 32.3 · 32.5 against 33.3 · 32.5 · 32.3 s, the renderer's CPU 138.5 against 137.9 s
+(medians), no stall of 20 ms or more but one at 250. The code moved as on `node`: tier-ups 2,880-2,889 against
+3,311-3,343 (+15%), modules +1.7%, wasm 93.8-94.5 against 94.6-95.4 MB (+0.9%), interpreted 2.02-2.04 against
+2.00-2.03 G steps, emission 1.54 against 1.56 s.
+
+**Why nothing is kept.** `node`, the ranking workload, leaves 250 `open` at the cap within ±0.5% of 1000 on the same
+instructions, and the pages session and the parallel boots run it the same; its gains are the one-vCPU gates'
+(−0.4%, −0.6%), for ~1-2% more wasm. As in PERF loop 65, a constant that helps only the gates isn't worth the move.
+The redirects it removes bound any gain under ~0.2% of a browser's session. **The winner is 1000 (250 ties it for the
+browser)**, the base for the next rows (Liftoff's lazy compiles; the compile threshold's re-check after it).

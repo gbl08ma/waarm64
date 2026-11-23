@@ -1,0 +1,1683 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "158.0.8127.88",
+ "prefs": "",
+ "from": {
+  "file": "bench/results/local/pages.waarm64snap",
+  "bytes": 664542411,
+  "loadMs": 1208,
+  "created": "2026-11-21T04:54:18.247Z",
+  "coreVersion": 6,
+  "abi": 71,
+  "core": "b25d4497845202ae",
+  "sameCore": false
+ },
+ "info": "7.2.10-1-aarch64-ARCHMem:            2449         564         965          53        1050        1884",
+ "mesa": "583 firefox 6;",
+ "page-wiki": {
+  "started": 15.2,
+  "loadMs": 5194,
+  "fps": [
+   {
+    "frames": 60,
+    "maxms": 18
+   }
+  ],
+  "medianFps": 60,
+  "readyAt": 1795473424338,
+  "fpsAll": [
+   [
+    1,
+    22,
+    84
+   ],
+   [
+    2,
+    51,
+    91
+   ],
+   [
+    3,
+    25,
+    366
+   ],
+   [
+    4,
+    47,
+    67
+   ],
+   [
+    5,
+    60,
+    18
+   ],
+   [
+    6,
+    58,
+    77.2
+   ],
+   [
+    7,
+    59,
+    18
+   ],
+   [
+    8,
+    34,
+    470.1
+   ],
+   [
+    9,
+    59,
+    25
+   ],
+   [
+    10,
+    61,
+    19
+   ],
+   [
+    11,
+    60,
+    31
+   ],
+   [
+    12,
+    58,
+    53
+   ],
+   [
+    13,
+    60,
+    19
+   ],
+   [
+    14,
+    60,
+    18
+   ],
+   [
+    15,
+    60,
+    17
+   ],
+   [
+    16,
+    60,
+    17
+   ],
+   [
+    17,
+    60,
+    25
+   ],
+   [
+    18,
+    60,
+    18
+   ],
+   [
+    19,
+    60,
+    17
+   ],
+   [
+    20,
+    60,
+    18
+   ],
+   [
+    21,
+    60,
+    17
+   ]
+  ],
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 22,
+    "user": 9,
+    "sys": 13,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 24,
+    "user": 11,
+    "sys": 12,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 21,
+    "user": 7,
+    "sys": 14,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 22,
+    "user": 10,
+    "sys": 12,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 21,
+    "user": 7,
+    "sys": 13,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "firefox",
+    "cpu": 920,
+    "user": 410,
+    "sys": 510,
+    "threads": 100,
+    "runs": 2080,
+    "wait": 203
+   },
+   {
+    "process": "file://_Content",
+    "cpu": 370,
+    "user": 270,
+    "sys": 100,
+    "threads": 23,
+    "runs": 391,
+    "wait": 43
+   },
+   {
+    "process": "sway",
+    "cpu": 120,
+    "user": 0,
+    "sys": 120,
+    "threads": 4,
+    "runs": 240,
+    "wait": 8
+   },
+   {
+    "process": "kworker/0:3-events",
+    "cpu": 20,
+    "user": 0,
+    "sys": 20,
+    "threads": 1,
+    "runs": 289,
+    "wait": 32
+   },
+   {
+    "process": "systemd-journal",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 8,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 5,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 70,
+    "wait": 1
+   },
+   {
+    "process": "kworker/u16:4-events_unbound",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 154,
+    "wait": 1
+   }
+  ],
+  "threads": [
+   {
+    "thread": "firefox/WRRende~ckend#0",
+    "cpu": 255,
+    "user": 240,
+    "sys": 50,
+    "runs": 248,
+    "wait": 25
+   },
+   {
+    "thread": "file://_Content/file://_Content",
+    "cpu": 244,
+    "user": 230,
+    "sys": 50,
+    "runs": 164,
+    "wait": 12
+   },
+   {
+    "thread": "firefox/Renderer",
+    "cpu": 214,
+    "user": 40,
+    "sys": 210,
+    "runs": 108,
+    "wait": 3
+   },
+   {
+    "thread": "firefox/firefox",
+    "cpu": 123,
+    "user": 90,
+    "sys": 80,
+    "runs": 222,
+    "wait": 5
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 109,
+    "user": 10,
+    "sys": 110,
+    "runs": 240,
+    "wait": 8
+   },
+   {
+    "thread": "firefox/Compositor",
+    "cpu": 59,
+    "user": 0,
+    "sys": 60,
+    "runs": 376,
+    "wait": 44
+   },
+   {
+    "thread": "firefox/glean.dispatche",
+    "cpu": 39,
+    "user": 0,
+    "sys": 50,
+    "runs": 669,
+    "wait": 90
+   },
+   {
+    "thread": "firefox/WaylandProxy",
+    "cpu": 37,
+    "user": 0,
+    "sys": 40,
+    "runs": 342,
+    "wait": 19
+   },
+   {
+    "thread": "file://_Content/IPC_I/O_Child",
+    "cpu": 37,
+    "user": 0,
+    "sys": 40,
+    "runs": 189,
+    "wait": 29
+   },
+   {
+    "thread": "file://_Content/TaskCon~ller_#0",
+    "cpu": 36,
+    "user": 30,
+    "sys": 10,
+    "runs": 11,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/WRScene~ilder#0",
+    "cpu": 18,
+    "user": 20,
+    "sys": 10,
+    "runs": 44,
+    "wait": 6
+   },
+   {
+    "thread": "kworker/0:3-events/kworker/0:3-events",
+    "cpu": 14,
+    "user": 0,
+    "sys": 20,
+    "runs": 289,
+    "wait": 32
+   },
+   {
+    "thread": "kworker/u16:4-events_unbound/kworker/u16:4+events_unbound",
+    "cpu": 12,
+    "user": 0,
+    "sys": 20,
+    "runs": 154,
+    "wait": 1
+   },
+   {
+    "thread": "firefox/WrGlyph~terizer",
+    "cpu": 8,
+    "user": 10,
+    "sys": 0,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "systemd-journal/systemd-journal",
+    "cpu": 6,
+    "user": 0,
+    "sys": 10,
+    "runs": 8,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 6,
+    "user": 0,
+    "sys": 10,
+    "runs": 5,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/IPC_I/O_Parent",
+    "cpu": 5,
+    "user": 0,
+    "sys": 10,
+    "runs": 22,
+    "wait": 2
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 2,
+    "user": 0,
+    "sys": 10,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 2,
+    "user": 0,
+    "sys": 10,
+    "runs": 70,
+    "wait": 1
+   },
+   {
+    "thread": "file://_Content/Timer",
+    "cpu": 2,
+    "user": 0,
+    "sys": 0,
+    "runs": 19,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 2,
+   "requests": 339.5,
+   "commands": {
+    "RESOURCE_UNREF": 26,
+    "SET_SCANOUT": 40.5,
+    "RESOURCE_FLUSH": 59,
+    "ATTACH_BACKING": 32.5,
+    "CTX_ATTACH_RESOURCE": 33.5,
+    "CTX_DETACH_RESOURCE": 27,
+    "RESOURCE_CREATE_3D": 32.5,
+    "SUBMIT_3D": 88.5
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 1782.5600008964539,
+    "behindMs": 1332.6175003051758,
+    "fullMs": 79.19500017166138,
+    "heldMax": 16,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 59,
+   "submits": 1.5,
+   "submitKB": 6.224609375,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 9.142500400543213,
+   "draws": 40.5,
+   "vm": {
+    "seconds": 1.9994900000095368,
+    "Msteps": 496.909341,
+    "irqs": 4091,
+    "exceptions": {
+     "0x0": 5,
+     "0x15": 15420,
+     "0x20": 197,
+     "0x24": 1548,
+     "0x25": 50
+    },
+    "tlbMisses": 437949,
+    "tlbFlushes": 5019,
+    "jitFlushes": 0,
+    "jitInvalidations": 10,
+    "jitCompileMs": 4.763583
+   }
+  }
+ },
+ "page-mdn": {
+  "started": 9.5,
+  "loadMs": 2440,
+  "fps": [
+   {
+    "frames": 60,
+    "maxms": 18
+   }
+  ],
+  "medianFps": 60,
+  "readyAt": 1795473462100,
+  "fpsAll": [
+   [
+    1,
+    40,
+    182.1
+   ],
+   [
+    2,
+    50,
+    126.5
+   ],
+   [
+    3,
+    37,
+    239
+   ],
+   [
+    4,
+    60,
+    19
+   ],
+   [
+    5,
+    60,
+    20
+   ],
+   [
+    6,
+    58,
+    71.6
+   ],
+   [
+    7,
+    60,
+    20
+   ],
+   [
+    8,
+    58,
+    40
+   ],
+   [
+    9,
+    60,
+    20
+   ],
+   [
+    10,
+    60,
+    20
+   ],
+   [
+    11,
+    60,
+    20
+   ],
+   [
+    12,
+    58,
+    43
+   ],
+   [
+    13,
+    31,
+    498.4
+   ],
+   [
+    14,
+    60,
+    19
+   ],
+   [
+    15,
+    60,
+    18
+   ],
+   [
+    16,
+    60,
+    17
+   ],
+   [
+    17,
+    60,
+    18
+   ],
+   [
+    18,
+    60,
+    18
+   ],
+   [
+    19,
+    60,
+    18
+   ],
+   [
+    20,
+    60,
+    18
+   ],
+   [
+    21,
+    60,
+    18
+   ],
+   [
+    22,
+    60,
+    18
+   ],
+   [
+    23,
+    60,
+    17
+   ]
+  ],
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 29,
+    "user": 16,
+    "sys": 12,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 19,
+    "user": 5,
+    "sys": 13,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 54,
+    "user": 38,
+    "sys": 15,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 24,
+    "user": 14,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 19,
+    "user": 7,
+    "sys": 12,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "firefox",
+    "cpu": 1160,
+    "user": 750,
+    "sys": 410,
+    "threads": 101,
+    "runs": 1706,
+    "wait": 241
+   },
+   {
+    "process": "file://_Content",
+    "cpu": 170,
+    "user": 110,
+    "sys": 60,
+    "threads": 25,
+    "runs": 216,
+    "wait": 32
+   },
+   {
+    "process": "sway",
+    "cpu": 70,
+    "user": 10,
+    "sys": 60,
+    "threads": 4,
+    "runs": 144,
+    "wait": 8
+   },
+   {
+    "process": "WebExtensions",
+    "cpu": 40,
+    "user": 30,
+    "sys": 10,
+    "threads": 22,
+    "runs": 125,
+    "wait": 4
+   },
+   {
+    "process": "pipewire",
+    "cpu": 20,
+    "user": 10,
+    "sys": 10,
+    "threads": 3,
+    "runs": 14,
+    "wait": 0
+   },
+   {
+    "process": "wireplumber",
+    "cpu": 10,
+    "user": 10,
+    "sys": 0,
+    "threads": 9,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 5,
+    "wait": 0
+   },
+   {
+    "process": "pipewire-pulse",
+    "cpu": 10,
+    "user": 10,
+    "sys": 0,
+    "threads": 3,
+    "runs": 24,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:5-pm",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 30,
+    "wait": 0
+   },
+   {
+    "process": "kworker/0:1-events",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "threads": 1,
+    "runs": 162,
+    "wait": 12
+   }
+  ],
+  "threads": [
+   {
+    "thread": "firefox/firefox",
+    "cpu": 526,
+    "user": 480,
+    "sys": 100,
+    "runs": 154,
+    "wait": 5
+   },
+   {
+    "thread": "file://_Content/file://_Content",
+    "cpu": 142,
+    "user": 110,
+    "sys": 40,
+    "runs": 91,
+    "wait": 19
+   },
+   {
+    "thread": "firefox/WRRende~ckend#0",
+    "cpu": 137,
+    "user": 90,
+    "sys": 30,
+    "runs": 138,
+    "wait": 34
+   },
+   {
+    "thread": "firefox/Renderer",
+    "cpu": 119,
+    "user": 20,
+    "sys": 100,
+    "runs": 72,
+    "wait": 4
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 65,
+    "user": 10,
+    "sys": 60,
+    "runs": 144,
+    "wait": 8
+   },
+   {
+    "thread": "firefox/Compositor",
+    "cpu": 51,
+    "user": 10,
+    "sys": 40,
+    "runs": 230,
+    "wait": 37
+   },
+   {
+    "thread": "firefox/CanvasRenderer",
+    "cpu": 30,
+    "user": 10,
+    "sys": 10,
+    "runs": 17,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/WrGlyph~terizer",
+    "cpu": 29,
+    "user": 30,
+    "sys": 0,
+    "runs": 11,
+    "wait": 1
+   },
+   {
+    "thread": "WebExtensions/WebExtensions",
+    "cpu": 28,
+    "user": 20,
+    "sys": 10,
+    "runs": 49,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/glean.dispatche",
+    "cpu": 27,
+    "user": 0,
+    "sys": 20,
+    "runs": 422,
+    "wait": 58
+   },
+   {
+    "thread": "file://_Content/IPC_I/O_Child",
+    "cpu": 24,
+    "user": 0,
+    "sys": 20,
+    "runs": 108,
+    "wait": 11
+   },
+   {
+    "thread": "firefox/sqldb:p~lite_#5",
+    "cpu": 20,
+    "user": 10,
+    "sys": 10,
+    "runs": 37,
+    "wait": 3
+   },
+   {
+    "thread": "firefox/WaylandProxy",
+    "cpu": 20,
+    "user": 0,
+    "sys": 20,
+    "runs": 198,
+    "wait": 14
+   },
+   {
+    "thread": "firefox/WRScene~ilder#0",
+    "cpu": 13,
+    "user": 10,
+    "sys": 0,
+    "runs": 36,
+    "wait": 7
+   },
+   {
+    "thread": "firefox/StreamTrans_#6",
+    "cpu": 13,
+    "user": 0,
+    "sys": 10,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "thread": "wireplumber/wireplumber",
+    "cpu": 12,
+    "user": 0,
+    "sys": 10,
+    "runs": 3,
+    "wait": 0
+   },
+   {
+    "thread": "pipewire-pulse/pipewire-pulse",
+    "cpu": 12,
+    "user": 10,
+    "sys": 0,
+    "runs": 24,
+    "wait": 0
+   },
+   {
+    "thread": "WebExtensions/TaskCon~ller_#0",
+    "cpu": 10,
+    "user": 0,
+    "sys": 10,
+    "runs": 26,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/TaskCon~ller_#0",
+    "cpu": 9,
+    "user": 50,
+    "sys": 10,
+    "runs": 4,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/AudioIP~ver_RPC",
+    "cpu": 9,
+    "user": 0,
+    "sys": 0,
+    "runs": 26,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/TaskCon~ller_#1",
+    "cpu": 8,
+    "user": 10,
+    "sys": 10,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 7,
+    "user": 0,
+    "sys": 10,
+    "runs": 5,
+    "wait": 0
+   },
+   {
+    "thread": "pipewire/pipewire",
+    "cpu": 7,
+    "user": 0,
+    "sys": 0,
+    "runs": 14,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:1-events/kworker/0:1-events",
+    "cpu": 7,
+    "user": 0,
+    "sys": 10,
+    "runs": 162,
+    "wait": 12
+   },
+   {
+    "thread": "kworker/u16:2+events_unbound/kworker/u16:2+events_unbound",
+    "cpu": 5,
+    "user": 0,
+    "sys": 0,
+    "runs": 60,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/WRWorkerLP#0",
+    "cpu": 4,
+    "user": 0,
+    "sys": 0,
+    "runs": 106,
+    "wait": 9
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "cpu": 3,
+    "user": 0,
+    "sys": 0,
+    "runs": 92,
+    "wait": 2
+   },
+   {
+    "thread": "kworker/u16:5-pm/kworker/u16:5-pm",
+    "cpu": 3,
+    "user": 0,
+    "sys": 10,
+    "runs": 30,
+    "wait": 0
+   },
+   {
+    "thread": "firefox/IPC_I/O_Parent",
+    "cpu": 3,
+    "user": 0,
+    "sys": 10,
+    "runs": 24,
+    "wait": 6
+   },
+   {
+    "thread": "firefox/IPDL_Background",
+    "cpu": 2,
+    "user": 0,
+    "sys": 0,
+    "runs": 18,
+    "wait": 2
+   }
+  ],
+  "display": {
+   "seconds": 2,
+   "requests": 296.5,
+   "commands": {
+    "RESOURCE_UNREF": 13.5,
+    "SET_SCANOUT": 37.5,
+    "RESOURCE_FLUSH": 45,
+    "ATTACH_BACKING": 36,
+    "CTX_ATTACH_RESOURCE": 36,
+    "CTX_DETACH_RESOURCE": 14,
+    "RESOURCE_CREATE_3D": 36,
+    "SUBMIT_3D": 78.5
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 508.4550005197525,
+    "behindMs": 142.1075005531311,
+    "fullMs": 1.5175000429153442,
+    "heldMax": 16,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 45,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 9.125000357627869,
+   "draws": 37.5,
+   "vm": {
+    "seconds": 1.9994049999713899,
+    "Msteps": 883.329803,
+    "irqs": 4200,
+    "exceptions": {
+     "0x0": 10,
+     "0x15": 21481,
+     "0x20": 378,
+     "0x24": 3127,
+     "0x25": 219
+    },
+    "tlbMisses": 501422,
+    "tlbFlushes": 20091,
+    "jitFlushes": 0,
+    "jitInvalidations": 48,
+    "jitCompileMs": 1.869996
+   }
+  }
+ },
+ "timelineAll": {
+  "seconds": 82.8,
+  "rows": 6342,
+  "cpus": [
+   {
+    "cpu": 0,
+    "mips": 104.4,
+    "binMips": {
+     "p10": 223.7,
+     "p50": 460,
+     "p90": 1088.4
+    },
+    "outMs": 724.3,
+    "compileMs": 0.9,
+    "syscalls": 1487,
+    "stallMs": 0,
+    "worstStall": {
+     "ms": 0,
+     "compileMs": 0,
+     "atMs": 0
+    },
+    "longCalls": [
+     {
+      "atMs": 8998,
+      "ms": 63,
+      "Msteps": 40.1,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 9190,
+      "ms": 63,
+      "Msteps": 19.9,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 9280,
+      "ms": 59,
+      "Msteps": 22.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 9458,
+      "ms": 53,
+      "Msteps": 30.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 9500,
+      "ms": 108,
+      "Msteps": 64.9,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 9604,
+      "ms": 110,
+      "Msteps": 73.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 9702,
+      "ms": 63,
+      "Msteps": 29.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 9811,
+      "ms": 56,
+      "Msteps": 24.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 10324,
+      "ms": 58,
+      "Msteps": 24.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 10375,
+      "ms": 64,
+      "Msteps": 65,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 10870,
+      "ms": 57,
+      "Msteps": 17.8,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 12223,
+      "ms": 54,
+      "Msteps": 48.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 12275,
+      "ms": 76,
+      "Msteps": 58.4,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 12380,
+      "ms": 64,
+      "Msteps": 39.3,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 12435,
+      "ms": 92,
+      "Msteps": 55.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 12522,
+      "ms": 102,
+      "Msteps": 67.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 12618,
+      "ms": 96,
+      "Msteps": 58.6,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 12755,
+      "ms": 53,
+      "Msteps": 8.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 12834,
+      "ms": 55,
+      "Msteps": 35.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 12882,
+      "ms": 74,
+      "Msteps": 56.7,
+      "compileMs": 0.1
+     }
+    ]
+   },
+   {
+    "cpu": 1,
+    "mips": 138.6,
+    "binMips": {
+     "p10": 258.1,
+     "p50": 641.5,
+     "p90": 1397.5
+    },
+    "outMs": 692.9,
+    "compileMs": 0.9,
+    "syscalls": 2051,
+    "stallMs": 0.1,
+    "worstStall": {
+     "ms": 11,
+     "compileMs": 0,
+     "atMs": 67744
+    },
+    "longCalls": [
+     {
+      "atMs": 5268,
+      "ms": 67,
+      "Msteps": 32,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 5336,
+      "ms": 55,
+      "Msteps": 32.7,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 5386,
+      "ms": 63,
+      "Msteps": 48.1,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 5976,
+      "ms": 51,
+      "Msteps": 25.1,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6025,
+      "ms": 63,
+      "Msteps": 52.3,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 6174,
+      "ms": 65,
+      "Msteps": 42.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6283,
+      "ms": 53,
+      "Msteps": 34,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 7141,
+      "ms": 50,
+      "Msteps": 33,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 7203,
+      "ms": 79,
+      "Msteps": 69.7,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 7309,
+      "ms": 56,
+      "Msteps": 40.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 7394,
+      "ms": 56,
+      "Msteps": 39.8,
+      "compileMs": 0
+     },
+     {
+      "atMs": 7543,
+      "ms": 79,
+      "Msteps": 68.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 8074,
+      "ms": 102,
+      "Msteps": 86,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 8162,
+      "ms": 81,
+      "Msteps": 75.1,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 8255,
+      "ms": 79,
+      "Msteps": 77.7,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 8357,
+      "ms": 79,
+      "Msteps": 76.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 14464,
+      "ms": 51,
+      "Msteps": 18.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 46451,
+      "ms": 81,
+      "Msteps": 102.9,
+      "compileMs": 0
+     },
+     {
+      "atMs": 46642,
+      "ms": 58,
+      "Msteps": 79,
+      "compileMs": 0
+     },
+     {
+      "atMs": 48136,
+      "ms": 52,
+      "Msteps": 79.5,
+      "compileMs": 0.1
+     }
+    ]
+   },
+   {
+    "cpu": 2,
+    "mips": 101.9,
+    "binMips": {
+     "p10": 214.7,
+     "p50": 519.5,
+     "p90": 1351.6
+    },
+    "outMs": 757,
+    "compileMs": 0.9,
+    "syscalls": 2116,
+    "stallMs": 0,
+    "worstStall": {
+     "ms": 0,
+     "compileMs": 0,
+     "atMs": 0
+    },
+    "longCalls": [
+     {
+      "atMs": 6283,
+      "ms": 53,
+      "Msteps": 70.4,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 12223,
+      "ms": 54,
+      "Msteps": 78.5,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 12275,
+      "ms": 76,
+      "Msteps": 67.1,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 14171,
+      "ms": 97,
+      "Msteps": 32.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 14318,
+      "ms": 57,
+      "Msteps": 17.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 15501,
+      "ms": 52,
+      "Msteps": 21.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 18281,
+      "ms": 52,
+      "Msteps": 18,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 19235,
+      "ms": 51,
+      "Msteps": 41,
+      "compileMs": 0
+     },
+     {
+      "atMs": 30655,
+      "ms": 57,
+      "Msteps": 97.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 44837,
+      "ms": 58,
+      "Msteps": 27.9,
+      "compileMs": 0
+     },
+     {
+      "atMs": 46748,
+      "ms": 104,
+      "Msteps": 109.7,
+      "compileMs": 0
+     },
+     {
+      "atMs": 46859,
+      "ms": 109,
+      "Msteps": 118,
+      "compileMs": 0
+     },
+     {
+      "atMs": 46977,
+      "ms": 61,
+      "Msteps": 94,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 47034,
+      "ms": 77,
+      "Msteps": 120.2,
+      "compileMs": 0
+     },
+     {
+      "atMs": 47105,
+      "ms": 82,
+      "Msteps": 112,
+      "compileMs": 0
+     },
+     {
+      "atMs": 47318,
+      "ms": 69,
+      "Msteps": 59.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 47436,
+      "ms": 64,
+      "Msteps": 33.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 47493,
+      "ms": 84,
+      "Msteps": 70.6,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 47574,
+      "ms": 98,
+      "Msteps": 93.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 47665,
+      "ms": 77,
+      "Msteps": 80.6,
+      "compileMs": 0.1
+     }
+    ]
+   },
+   {
+    "cpu": 3,
+    "mips": 122.5,
+    "binMips": {
+     "p10": 203,
+     "p50": 607.8,
+     "p90": 1366.9
+    },
+    "outMs": 740.3,
+    "compileMs": 0.9,
+    "syscalls": 2070,
+    "stallMs": 0,
+    "worstStall": {
+     "ms": 0,
+     "compileMs": 0,
+     "atMs": 0
+    },
+    "longCalls": [
+     {
+      "atMs": 1608,
+      "ms": 69,
+      "Msteps": 29.1,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3597,
+      "ms": 59,
+      "Msteps": 65.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3666,
+      "ms": 57,
+      "Msteps": 75.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3784,
+      "ms": 59,
+      "Msteps": 70.1,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3841,
+      "ms": 58,
+      "Msteps": 83,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3895,
+      "ms": 56,
+      "Msteps": 86.6,
+      "compileMs": 0
+     },
+     {
+      "atMs": 3951,
+      "ms": 63,
+      "Msteps": 92.1,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 11446,
+      "ms": 114,
+      "Msteps": 66.6,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 11555,
+      "ms": 71,
+      "Msteps": 28.5,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 12834,
+      "ms": 55,
+      "Msteps": 86.5,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 12881,
+      "ms": 75,
+      "Msteps": 40.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 16493,
+      "ms": 62,
+      "Msteps": 21.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 23218,
+      "ms": 60,
+      "Msteps": 70.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 28901,
+      "ms": 50,
+      "Msteps": 11.4,
+      "compileMs": 0
+     },
+     {
+      "atMs": 46295,
+      "ms": 63,
+      "Msteps": 87.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 48949,
+      "ms": 58,
+      "Msteps": 42.9,
+      "compileMs": 0
+     },
+     {
+      "atMs": 51659,
+      "ms": 82,
+      "Msteps": 75.7,
+      "compileMs": 0
+     },
+     {
+      "atMs": 51733,
+      "ms": 105,
+      "Msteps": 117.9,
+      "compileMs": 0
+     },
+     {
+      "atMs": 52095,
+      "ms": 63,
+      "Msteps": 23.2,
+      "compileMs": 0
+     },
+     {
+      "atMs": 52158,
+      "ms": 56,
+      "Msteps": 21.3,
+      "compileMs": 0
+     }
+    ]
+   }
+  ]
+ },
+ "jit": {
+  "blocks": 41057,
+  "modules": 2117,
+  "bytes": 95304822,
+  "compileNs": 324036864,
+  "steps": 37219047231,
+  "dispatches": 76575356,
+  "invalidations": 2962,
+  "flushes": 0,
+  "inline": 961954,
+  "helpers": 157,
+  "inlineSteps": 37154288037,
+  "flagsStored": 145398,
+  "flagsElided": 5143,
+  "condDirect": 83282,
+  "condComputed": 683,
+  "condMemory": 3399,
+  "regionBlocks": 200791,
+  "backEdges": 6882,
+  "tierUps": 3336,
+  "stale": 0,
+  "decSteps": 1985026998,
+  "decoded": 5498606,
+  "decClears": 4,
+  "workerInstalls": 8468,
+  "overdue": 0,
+  "parks": 6842,
+  "parkExits": 6803,
+  "locks": 8987383,
+  "lockContended": 47822,
+  "lockWaitNs": 648545280,
+  "emitNs": 1564264448,
+  "emitLockedNs": 1564264448,
+  "planNs": 533632768,
+  "prunes": 3,
+  "rescues": 0,
+  "lagFlushes": 0,
+  "decBytes": 207749120,
+  "knownBytes": 4456448,
+  "lockSkipped": 3405724,
+  "pruneNs": 64045056,
+  "mapRescues": 0
+ },
+ "par": {
+  "dsbWaits": 13186,
+  "dsbWaitNs": 70168462,
+  "tlbiIs": 163390,
+  "ic": 210789,
+  "drains": 95684,
+  "idles": 163066,
+  "lockContended": 27119,
+  "lockWaitNs": 91302164,
+  "wfes": 743542,
+  "outNs": 258877687112
+ },
+ "proc": {
+  "instructions": 1154706804746,
+  "cycles": 474792378367,
+  "cpuNs": 137893318459,
+  "pInstructions": 1087243472906,
+  "pCycles": 423873753542,
+  "pCpuNs": 118971141500,
+  "energyNj": 407488586749,
+  "steps": 39102031387
+ },
+ "log": [
+  "54",
+  "45   Stack:",
+  "44 console.error: services.settings:",
+  "41   Message: TypeError: NetworkError: Network request failed",
+  "41     fetch/</request.onerror@resource://services-settings/Utils.sys.mjs:264:26",
+  "15 Exiting due to channel error.",
+  "6 JavaScript warning: resource://gre/modules/Troubleshoot.sys.mjs, line 748: WebGL context was lost.",
+  "4 getRecipesFromCollection@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:816:13",
+  "4 console.error: RSLoader:",
+  "4   Message: Error: Could not sync nimbus-desktop-experiments: get-exception",
+  "4   Failed to retrieve recipes from Remote Settings",
+  "4     RemoteSettingsSyncError@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:1562:5",
+  "3 void main() {}",
+  "3 console.warn: TopSitesFeed: Failed to fetch data from MARS server: NetworkError when attempting to fetch resource.",
+  "3 GetShaderSource() ->",
+  "3 GetShaderInfoLog() ->",
+  "3 0:2(12): error: extension `GL_EXT_shader_texture_lod' unsupported in fragment shader",
+  "3 #extension GL_EXT_shader_texture_lod: require",
+  "3   Remote Settings startup changesets bundle could not be extracted (TypeError: NetworkError: Network request failed)",
+  "2 JavaScript error: moz-src:///browser/components/sidebar/SidebarState.sys.mjs, line 545: TypeError: this[#launcherEl].requestUpdate is not a function",
+  "1 1795236840636 addons.xpi      ERROR   System addon update list error Error: Failed downloading XML, status: 0, channelStatus: 2152398878, errorCode: 2, reason: error"
+ ],
+ "times": {
+  "start": 1795473397791,
+  "running": 1795473400947,
+  "setUp": 1795473401766,
+  "saved": 1795473496976
+ },
+ "warnings": {},
+ "slow": []
+}
