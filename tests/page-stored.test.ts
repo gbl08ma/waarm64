@@ -1,6 +1,6 @@
 // A disk stored in the browser (docs/machines.md §3), on Debian: imported into the block store, its
 // overlays as variants, merged into it, grown (the guest's agent grows its root at the next boot: GROW, GROWN, the
-// notice, df), written in place, under an overlay again; each a boot of the stored
+// notice, df), written in place (suspended and resumed so), under an overlay again; each a boot of the stored
 // machine on the page. Its own file so that scripts/ci-machines.sh runs it beside tests/page-machines.test.ts
 // (whose helpers these are). Opt-in with WAARM64_DISTROS=debian; a Debian page boot is ~40 s in the dev VM,
 // ~2.5 min in a cloud session.
@@ -16,6 +16,7 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -78,10 +79,12 @@ async function login(page: Page) {
   await shows(page, /(?:root@\S+|\S+):~# /); // Debian's prompt, Alpine's
 }
 
+/** The page of stored machine `id`, on its serial terminal. */
+const pageOf = (id: string) => `${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`;
 /** Boots stored machine `id` on a fresh page load, logs root in on the serial terminal; says how long it took. */
 async function boot(page: Page, id: string, what = '') {
   const t = Date.now();
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`);
+  await page.goto(pageOf(id));
   await running(page);
   await login(page);
   console.log(`# ${what} booted in ${((Date.now() - t) / 1000).toFixed(0)} s`);
@@ -223,6 +226,18 @@ test('a disk stored in the browser (2): an overlay merged into it, grown, then w
   assert.ok(storedRun.rootBefore && root - storedRun.rootBefore > GROWN_BY - (64 << 20), `root ${storedRun.rootBefore} -> ${root}`);
   assert.equal(await ok(page, 'cat /root/one /root/two'), 'one two');
   await ok(page, 'echo three > /root/three && sync');
+  // Suspended while written in place (docs/frontend.md "Suspend": a stored machine has a home for the copy whatever
+  // its disks; the disk is pinned by its own generation), then resumed by the next load: the shell's variable is back.
+  await type(page, 'SUSPENDED=yes\n'); // in the shell itself: `ok` runs its command in a subshell
+  assert.equal(await ok(page, 'echo $SUSPENDED'), 'yes');
+  await page.locator('#suspend').click({ timeout: 10_000 });
+  await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 })
+    .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent ?? ''}`)}`); });
+  assert.ok((await inStore(page, async ({ store, a }: any) => store.files.list(`machines/${a}`), id)).includes('suspend'), 'the suspended copy is in the machine\'s home');
+  await page.goto(pageOf(id));
+  await running(page);
+  assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? ''), words('machine:worker.resumed'));
+  assert.equal(await ok(page, 'echo $SUSPENDED; cat /root/three'), 'yes three');
   await powerOff(page);
   const inPlace = await inStore(page, async ({ store, a }: any) => {
     const m = await store.get('machines', a);
@@ -231,7 +246,7 @@ test('a disk stored in the browser (2): an overlay merged into it, grown, then w
     await store.put('machines', m);
     return { generation: d.generation, overlays: (await store.overlaysOf(d.id)).length };
   }, id);
-  assert.equal(inPlace.generation, merged.after + 1, 'writing in place moved the disk on');
+  assert.equal(inPlace.generation, merged.after + 2, 'writing in place moved the disk on: once per opening (the boot, the resume)');
   assert.equal(inPlace.overlays, 0, 'in place, no overlay');
 
   // 4. Over an overlay again: the disk has what was written in place.

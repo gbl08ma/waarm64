@@ -198,7 +198,7 @@
     variant="tool"
     icon="zzz"
     id="suspend"
-    hidden={!current.hasOverlay || power.cantRun}
+    hidden={!current.canSuspend || power.cantRun}
     disabled={!canSnapshot}
     aria-label={t('toolbar:Toolbar.suspend')}
     title={t('toolbar:Toolbar.suspend.title')}

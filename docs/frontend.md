@@ -1514,11 +1514,11 @@ first, when a disk is written in place, whether the whole disk goes in, §4.4).
   (its new chunks are handed to the device: `BlkSpec.ramInit`). The page passes the worker the plan
   (`start.plan`); transient machines (the tests') have none, and a restore replaces their overlays as before.
 
-**[Suspend](ui:toolbar:Toolbar.suspend)** (the toolbar, for a machine with an overlay; enabled while `running` or `booting`): the
+**[Suspend](ui:toolbar:Toolbar.suspend)** (the toolbar, for a machine with a home for the copy, `homeOf`: every stored machine whatever its disks, a transient one with an overlay; enabled while `running` or `booting`): the
 machine stops and its memory stays in this browser; opening the page again, or Start, resumes it
 where it was. Nothing is asked: nothing is lost. The worker pauses the VM, writes its snapshot
-**without the disk's blocks** (`writeSnapshot`'s `suspend`: they are in the overlay already) to
-the file `suspend` in the overlay's OPFS directory (`suspendWriter` in web/overlay.ts), closes the
+**without the disk's blocks** (`writeSnapshot`'s `suspend`: they are in the overlay, or the disk written in place,
+already) to the file `suspend` in the machine's home (`suspendWriter` in web/overlay.ts), closes the
 VM without another step, and posts the state `suspended` (its message says the size; the actions
 are Start and Boot instead). A failure before that leaves the machine running.
 - **A start resumes.** The worker looks for a suspended machine beside the disk before it
@@ -1526,8 +1526,8 @@ are Start and Boot instead). A failure before that leaves the machine running.
   overlay is kept (`readSnapshot`'s `resume`): `loading` ("[Resuming the suspended machine](ui:machine:worker-start.phase.resuming)"), then
   `running` with the note "[Resumed the suspended machine.](ui:machine:worker.resumed)" If it can't be resumed (another core
   version, a damaged file), it is dropped and the machine boots, with a note saying so.
-- **It resumes only onto its disks as it left them:** the file pins each overlay's path and generation, and the
-  worker compares them (`overlayMeta`) before resuming: a switched overlay, a reset, a merge or a boot since moved
+- **It resumes only onto its disks as it left them:** the file pins each overlay's (and each disk written in place's) path and
+  generation, and the worker compares them (`overlayMeta`) before resuming: a switched overlay, a reset, a merge or a boot since moved
   them on, and the copy is dropped with a note ("[Its disk has changed since it was suspended.](ui:machine:worker-start.diskChanged)"). The worker also still
   drops it (`dropSuspend`) right after a resume's `bootVm` and before a boot the page asked for (`start.resume`
   false: Boot instead). A ramdisk's blocks are in the file (they are nowhere else). A stored machine's copy is

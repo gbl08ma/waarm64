@@ -25,6 +25,7 @@ export type CurrentSource = {
   title(): string;
   transient(): { label: string; disk: string } | undefined;
   hasOverlay(): boolean;
+  canSuspend(): boolean;
   size(): MachineSize;
 };
 
@@ -48,8 +49,10 @@ class Current {
   transient = $derived(this.#source?.transient());
   /** A machine is on the page (a stored one, or a transient one with its disk), not a page waiting for a disk. */
   loaded = $derived(this.id !== undefined || this.transient !== undefined);
-  /** Its boot disk keeps its changes in this browser: Suspend, the disk's actions. */
+  /** Its boot disk keeps its changes in an overlay in this browser: the disk's actions. */
   hasOverlay = $derived(this.#source?.hasOverlay() ?? false);
+  /** It has a place in this browser for a suspended copy (web/app/run/page-disks.ts `homeOf`): Suspend. */
+  canSuspend = $derived(this.#source?.canSuspend() ?? false);
   /** A transient machine's size, chosen in the Machine menu (a stored machine's is in its Settings). */
   size = $derived(this.#source?.size() ?? NO_SIZE);
   /** It boots through UEFI and can take a disk file (Open disk…, a dropped file). */
