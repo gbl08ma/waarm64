@@ -668,9 +668,9 @@ fn a_renewal_and_a_zone_change_show_one_query_late() {
     assert_eq!(bus.m.stats.histories, 0, "a continuation needs no history");
 }
 
-/// Nobody serves: the query waits 2.5 s (silence through the last round), then SERVFAIL, the room never heard (NAMES2
-/// loop 5); asked again, 2.5 s more, then NXDOMAIN; remembered 30 s, doubling; a server that appears is found at the
-/// next lookup after the memory.
+/// Nobody serves: the query waits 2.5 s (silence through the last round), then SERVFAIL, and "who serves?" is asked
+/// (NAMES2 loops 5, 5b); asked again at once, the query waits for it, and nobody answers within 2.5 s: NXDOMAIN;
+/// remembered 30 s, doubling; a server that appears is found at the next lookup after the memory.
 #[test]
 fn with_nobody_serving_nxdomain_is_remembered_and_doubles_until_a_server_appears() {
     let mut b = Bitcoin::new(ROOM, 9);
@@ -695,9 +695,12 @@ fn with_nobody_serving_nxdomain_is_remembered_and_doubles_until_a_server_appears
         "remembered"
     );
     assert_eq!(bus.asks.len(), 6, "nothing asked meanwhile");
+    // Asked again after 30 s: the silence SERVFAIL, "who serves?" asked again, and nobody (NAMES2 loop 5b).
     bus.advance(Duration::from_secs(10));
+    assert_eq!(bus.resolve("alpha").0, Answer::ServFail);
     assert_eq!(bus.resolve("alpha").0, Answer::Nx);
     assert_eq!(bus.m.stats.nobody, 2, "asked again after 30 s");
+    assert_eq!(bus.m.stats.questions, 2, "one question each time");
     bus.advance(Duration::from_secs(40));
     assert_eq!(
         bus.resolve("alpha"),
@@ -2121,6 +2124,41 @@ fn a_guest_asking_many_names_at_once() {
     }
 }
 
+/// Two asks for `id` from other members' keys of their own (counted by `n`), mode `share` at spread 0, to every
+/// server: called every 10 ms, they take every reply a server may send (2 a second).
+fn spend_replies(bus: &mut Bus, n: &mut u64, id: [u8; 32]) {
+    for _ in 0..2 {
+        *n += 1;
+        let mut key = [0x55; 32];
+        key[..8].copy_from_slice(&n.to_le_bytes());
+        let mut nonce = [0x66; 16];
+        nonce[..8].copy_from_slice(&n.to_le_bytes());
+        let (now, unix) = (bus.now, bus.unix());
+        let ask = NameAsk {
+            key,
+            region: 0,
+            time: unix,
+            nonce,
+            id,
+            mode: AskMode::Share,
+            spread: 0,
+            shown: [0; 8],
+        };
+        for (j, s) in bus.s.iter_mut().enumerate() {
+            let via = [j as u8; 16];
+            s.input(
+                Input::Ask {
+                    ask,
+                    region: Some(0),
+                    via,
+                },
+                now,
+                unix,
+            );
+        }
+    }
+}
+
 /// NAMES2 loop 5 (N6a's joiners, bench/net/REPORT.md "NAMES loop 6a"): a member that never heard the room, whose first
 /// lookup's rounds all go unanswered because the room's reply budgets are spent by others (2 replies a second a
 /// server), took the silence for "nobody serves" and answered NXDOMAIN for 30 s. A first silence from a room never
@@ -2132,36 +2170,7 @@ fn a_first_silence_from_a_room_never_heard_is_servfail_not_nobody_serves() {
     let mut bus = Bus::new(vec![serving(&mut b, 1, &[&alpha])], member());
     // Other members' asks, a few every 10 ms from keys of their own, take every reply the server may send.
     let mut n = 0u64;
-    let mut flood = |bus: &mut Bus| {
-        for _ in 0..2 {
-            n += 1;
-            let mut key = [0x55; 32];
-            key[..8].copy_from_slice(&n.to_le_bytes());
-            let mut nonce = [0x66; 16];
-            nonce[..8].copy_from_slice(&n.to_le_bytes());
-            let (now, unix) = (bus.now, bus.unix());
-            let ask = NameAsk {
-                key,
-                region: 0,
-                time: unix,
-                nonce,
-                id: alpha.id,
-                mode: AskMode::Share,
-                spread: 0,
-                shown: [0; 8],
-            };
-            let via = [0; 16];
-            bus.s[0].input(
-                Input::Ask {
-                    ask,
-                    region: Some(0),
-                    via,
-                },
-                now,
-                unix,
-            );
-        }
-    };
+    let mut flood = |bus: &mut Bus| spend_replies(bus, &mut n, alpha.id);
     for _ in 0..100 {
         flood(&mut bus);
         bus.advance(Duration::from_millis(10));
@@ -2189,6 +2198,64 @@ fn a_first_silence_from_a_room_never_heard_is_servfail_not_nobody_serves() {
     // The load passes; the guest's resolver asks again at once: found.
     let (a, took) = bus.resolve("alpha");
     assert_eq!(a, Answer::Node([0xa1; 32]), "asked again: {took:?}");
+}
+
+/// NAMES2 loop 5b (N6a's 20 of 500 joiners still NXDOMAIN after loop 5): the room's replies stay spent past the guest's
+/// first retry, so its second lookup meets silence too. The room has a server (it answers "who serves?", a budget of
+/// its own): every silence is SERVFAIL, never "nobody serves", and once the load passes the name is found.
+#[test]
+fn a_room_whose_replies_stay_spent_past_a_first_retry_isnt_taken_for_nobody_serves() {
+    let mut b = Bitcoin::new(ROOM, 84);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let mut bus = Bus::new(vec![serving(&mut b, 1, &[&alpha])], member());
+    let mut n = 0u64;
+    for _ in 0..100 {
+        spend_replies(&mut bus, &mut n, alpha.id);
+        bus.advance(Duration::from_millis(10));
+    }
+    bus.advance(Duration::from_millis(5));
+    // The load lasts 10 s from the guest's first query; the guest asks again at once after each SERVFAIL (a query
+    // waiting 4 s is the resolver's SERVFAIL), as a resolver does, for 20 s.
+    let start = bus.now;
+    let mut answers = Vec::new();
+    let (now, unix) = (bus.now, bus.unix());
+    let mut asked = now;
+    let mut a = bus.m.query("alpha", now, unix, true);
+    while bus.now - start < Duration::from_secs(20) {
+        if a == Answer::Wait && bus.now - asked >= Duration::from_secs(4) {
+            a = Answer::ServFail;
+        }
+        if a != Answer::Wait {
+            answers.push((a, bus.now - start));
+            if a != Answer::ServFail {
+                break;
+            }
+        }
+        bus.advance(Duration::from_millis(5));
+        if bus.now - start < Duration::from_secs(10) {
+            spend_replies(&mut bus, &mut n, alpha.id);
+        }
+        bus.advance(Duration::from_millis(5));
+        let (now, unix) = (bus.now, bus.unix());
+        if a != Answer::Wait {
+            asked = now;
+        }
+        a = bus.m.query("alpha", now, unix, a != Answer::Wait);
+    }
+    eprintln!("the guest's answers: {answers:?}");
+    let servfails = answers.iter().filter(|a| a.0 == Answer::ServFail).count();
+    assert!(servfails >= 2, "silent past the first retry: {answers:?}");
+    assert!(
+        !answers.iter().any(|a| a.0 == Answer::Nx),
+        "taken for nobody serves: {answers:?}"
+    );
+    assert_eq!(bus.m.stats.nobody, 0, "not taken for nobody serves");
+    let (last, at) = *answers.last().unwrap();
+    assert_eq!(last, Answer::Node([0xa1; 32]), "found once the load passed");
+    assert!(
+        at < Duration::from_secs(14),
+        "found {at:?} after the first query"
+    );
 }
 
 /// NAMES2 loop 5: a name in its grace resolved first while its renewal is pending (the servers hold only the chain in

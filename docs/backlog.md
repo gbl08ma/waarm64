@@ -1748,10 +1748,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A guest asking 40 names at once against 2 servers has 20 within a minute and no more (each server's 16 replies
       a minute to one reply tag; SERVFAILs meanwhile, never NXDOMAIN): the limit stays, the load isn't realistic
       (the user, 2026-11-23).
-    - A member that never heard the room and met a first silence asks again at the guest's next query (SERVFAIL at
-      once, NAMES2 loop 5); under a minute of load that lasts, its second silence is still "nobody serves": 20 of 500
-      joiners in N6a's rig (bench/net/REPORT.md "NAMES2 loop 5", 62 before). A later or wider second ask would find
-      more, and changes what the guest sees (the user's call).
+    - A first lookup's silence from a room not heard lately asks "who serves?" (NAMES2 loop 5b): in N6a's rig 1 of 500
+      joiners' questions went unanswered within 2.5 s under the joins' load, NXDOMAIN for 30 s (bench/net/REPORT.md
+      "NAMES2 loop 5b"; 35 before). Worth a look only if it shows in use.
     - The page's `online` and Network Information `change` don't reach the room client (NAMES2's review): after an
       outage its Nostr relays are opened again within a minute (`NOSTR_CLOSED_MAX`), not at once; an open that hangs
       past 15 s counts as a relay that doesn't answer and backs off to 10 minutes (rooms.md "What a room needs from a

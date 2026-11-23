@@ -410,9 +410,10 @@ async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: stri
   });
   const lookup = (p: Page, name: string) => timed(p, `getent ahosts ${name} | head -1`);
 
-  // A room with no server: its first silence (2.5 s) is SERVFAIL (a room never heard), its second NXDOMAIN, then
-  // NXDOMAIN at once while "nobody serves" is remembered. Whether the guest's resolver asks again after the SERVFAIL
-  // itself (resolved may) or the next lookup does, the third is at once.
+  // A room with no server: its first silence (2.5 s) is SERVFAIL and the member asks "who serves?" (a room not heard),
+  // the next query waits for it and gets NXDOMAIN when nobody answers (2.5 s more), then NXDOMAIN at once while
+  // "nobody serves" is remembered. Whether the guest's resolver asks again after the SERVFAIL itself (resolved may) or
+  // the next lookup does, the third is at once.
   const none = await lookup(b, full('test123'));
   console.log(`# names: with no server, ${full('test123')} took ${none.ms} ms: ${none.out || '(not found)'}`);
   assert.equal(none.out, '', 'not found');

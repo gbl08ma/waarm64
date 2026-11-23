@@ -67,6 +67,10 @@ The user's, 2026-11-15 to 2026-11-18; they bind.
   records, `ts_names_*`, the outside fetches. Wire and storage changes that stop older pages serving or syncing names
   are fine while rooms are pre-release; one that stops them meeting in a room is asked.
 - **An ephemeral connection with a key of its own can't hold a name** (its title would outlive the key by weeks).
+- **How a member's lookups answer the guest may change** (the user, 2026-11-23: "it's fine to change what the guest
+  sees when it comes to this part of the system"): SERVFAIL or NXDOMAIN, when each comes, what is asked again and how
+  long the resolver waits, without asking. It doesn't cover the records' format, the wire, or servers' budgets
+  ("Bounds and budgets").
 - Not decided: which suffixes names may use beyond the room's own domains ("Names").
 
 ## What it doesn't give
@@ -313,7 +317,8 @@ doesn't take new transfers for old ones.
 ### Finding a server
 
 "Who serves the registry?" is for what must not name an id: the refresh of names a member keeps, the dialog's check,
-a publisher's `put`s, and servers' sync partners (a first lookup asks the room instead: below). An ephemeral event like
+a publisher's `put`s, and servers' sync partners (a first lookup asks the room instead: below), and whether anybody
+serves at all when a first lookup met silence from a room not heard lately. An ephemeral event like
 a lookup (the same kind, MAC and seal with the room's lookup key) under the room's names tag, `BLAKE2s(tag salt,
 "names", hour)` (`Room::names_tag`), its body a lookup's (the names client's key, region, time, nonce) and `spread`:
 123 bytes. Servers subscribe to it and drop questions as they drop lookups (MAC first, copies through other relays, the
@@ -340,10 +345,11 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   the room has two. Registrations buy places in this draw; what it's used for is what that can't hurt much (a refresh
   can be shown a stale zone or a release hidden, never another owner). A member holds its servers while it asks and 3
   minutes after, and **redraws them 15 minutes after they were drawn**; one that fails is let go.
-- **Nobody answered** 1.5 s after the third round: the waiting queries get NXDOMAIN, and the fact is remembered 30 s,
+- **Nobody answered** 1.5 s after the third round (a member's question: for a refresh, the dialog's check, a put, or a
+  first lookup's silence, "A member resolving a name"): the waiting queries get NXDOMAIN, and the fact is remembered 30 s,
   twice as long each time after, to 10 minutes (names not kept get NXDOMAIN at once meanwhile; kept ones answer); the
   next query after it asks again, so a member finds a room's first server with no reconnection. A room with no names
-  costs a member three events every 10 minutes at most, only while its guest asks. A server nobody answered counts as
+  costs a member six events every 10 minutes at most (a first lookup's three rounds, the question's three), only while its guest asks. A server nobody answered counts as
   synced and asks again after the same wait (5 minutes at most, plus a fifth at random). **A server that refused a
   question meanwhile for not being synced asks again in 1.5 to 3 s** (`ASK_SOON`), and **a server asks only once its
   names client's home region is up**: two servers started together then hold each other's name 1.5 to 6.5 s after the
@@ -381,13 +387,17 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
      `since` (32 a key), `fetch` to the earliest, 8 at once, handshakes let in from those names keys only, each run
      checked as a `history` is; it ends when nothing is in flight and the best run is older than every `since` left, or
      at 10 s (`CONTEST_FOR`), and names an owner only if every key shown is settled, else no answer (the next query asks
-     again), never another owner; **silence** 1.5 s after the last ask left, nobody serves (30 s doubling to 10
-     minutes), unless a reply counted in the last minute (the reply budgets were spent: SERVFAIL, asked again), or
-     **the room was never heard and this is its first silence**: SERVFAIL at once, and the lookups already in flight
-     then too (the guest's resolver asks again); nobody serves only at the silence of a lookup started after it. So a
-     room whose own load spent its budgets isn't taken for one nobody serves (N6a: 30 of 500 joiners were, NXDOMAIN for
-     30 s), and a room with no server answers NXDOMAIN one lookup (~2.5 s) later. A key whose last entry a release
-     replied ends is taken by nobody.
+     again), never another owner; **silence** 1.5 s after the last ask left is SERVFAIL, and only "who serves?" says
+     nobody serves. When a reply counted, or "who serves?" found servers, in the last minute (`HEARD_FOR`), the reply
+     budgets were spent: the query gets the resolver's SERVFAIL (at 4 s) and the next asks again. Otherwise
+     **SERVFAIL at once** (`Answer::ServFail`; the guest's resolver asks again) **and the member asks "who serves?"**
+     ("Finding a server": it names no name, and servers answer it from a budget of their own): servers that answer
+     keep the next minute's silences SERVFAIL; nobody within 2.5 s is nobody serves (30 s doubling to 10 minutes; the
+     queries waiting get NXDOMAIN then). So a room whose own load spent its reply budgets, for as long as it lasts, isn't
+     taken for one nobody serves (N6a's 500 joiners: 30 were, NXDOMAIN for 30 s; 20 while a second silence still was,
+     NAMES2 loop 5; none since, bench/net/REPORT.md "NAMES2 loop 5b"), and a room with no server answers NXDOMAIN
+     ~5 s after the guest's first query (SERVFAIL at 2.5 s; its resolver's next query waits for "who serves?"), again
+     each time the memory runs out. A key whose last entry a release replied ends is taken by nobody.
   5. A reply up to 3 s after the decision is still checked (another key starts a contest; a name decided none takes a
      late owner). **Replies spent by others**: past 8 replies a minute under its tag to nonces it never sent
      (`STRAYS_MAX`, `STRAY_FOR`), a first lookup decides nothing, never an impostor's answer.
@@ -508,7 +518,8 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   learnt by the module;
 - **otherwise the query waits** while the names client asks: answered when the answer comes, SERVFAIL at 4 s
   (`DNS_WAIT`; 64 wait at most, past that SERVFAIL at once; a contest goes on and the next query has it), or at once
-  when the lookup met a first silence from a room never heard (`Answer::ServFail`: "A member resolving a name");
+  when the lookup met silence from a room not heard lately (`Answer::ServFail`, and the member asks "who serves?": "A
+  member resolving a name");
 - **NXDOMAIN at once** for a reserved or ill-formed name, a name replies said none for (60 s doubling to 10 minutes),
   and any name not kept while the member remembers nobody serves.
 
@@ -738,7 +749,7 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
 | strays under a member's tag | 8 a minute, then no decision | replies spent by others |
 | `ids` | twice a session, 4 a minute a server | listing the registry |
 | the resolver's wait | 4 s, 64 queries | a guest's resolver retries |
-| negative answers | NXDOMAIN 60 s to 10 min; nobody serves 30 s to 10 min | a room with no names costs three events every 10 min |
+| negative answers | NXDOMAIN 60 s to 10 min; nobody serves 30 s to 10 min | a room with no names costs six events every 10 min |
 | a kept name confirmed again | after 5 minutes; 1 minute in its grace | in its grace it is NXDOMAIN while fresh, and a renewal ends that |
 | a member's kept names | 1,024, under 2 KB each | |
 | a history | 1,024 entries, a slice a turn | ~0.7 s of the worker in one turn otherwise |
@@ -823,8 +834,8 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
   `blake2` and `sha2` in test builds): `room/names/tests.rs` (records and rules: alice's real proof of block 976,177 as
   the vector, merge order over 60 scenarios with forks, releases, stale copies and partial anchors, the floor, zones),
   `server_tests.rs` and `member_tests.rs` (the registry's logic on a bus in simulated time: answer counts at 1, 20 and
-  500 servers, 128 and 1,280 junk registrations, contests, the release replayed, strays, a first silence from a room
-  never heard (its own load spent its replies), a renewal reaching a name kept in its grace, the 60-day promise, the
+  500 servers, 128 and 1,280 junk registrations, contests, the release replayed, strays, a room whose own load spent its
+  replies, at a first lookup and past the guest's first retry, a renewal reaching a name kept in its grace, the 60-day promise, the
   calendar's rates, the bound), `room/tests/names.rs` (through room.rs's fake DERP and relay: two and twenty servers
   converge, a reset, a flood of questions beside the node's own lookups, nothing under the node's key, no WebRTC, a
   first lookup with no DERP packet, a contest through sessions, names under the room's name), `agent.rs`'s ops, and

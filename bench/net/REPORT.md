@@ -1317,3 +1317,45 @@ node bench/net/room-scale.ts names members --out results/names2l5/members-after.
 cargo test -p waarm64_ts --lib -- --nocapture a_first_silence_from_a_room_never_heard a_kept_name_in_its_grace
 ```
 (`members-before.json` is the same run on the module built from `fd57155`.)
+
+## NAMES2 loop 5b (cloud session), 2026-11-23
+
+"NAMES2 loop 5"'s 20 of 500 joiners, which met a second silence while the room's own load lasted, under the user's
+decision of the day (what a member's lookups answer the guest may change: docs/networking/names.md "Decisions"). The
+same session's host and configuration as loop 5 (N6a's whole: 20 servers of 250 names, 1,000 members), from loop 5's
+`make` and `converge` (the records under `bench/results/local/names6a/`), `members` once on the tests' module at
+`b628dee` (before) and once with the fix (after). JSON under `results/names2l5b/` (`bus.json`: the bus tests).
+
+**A silence that nothing heard explains is SERVFAIL at once, and "who serves?" decides whether anybody serves**: it
+names no name, servers answer it from a budget of their own (4 a second, which first lookups' asks don't spend), and
+servers that answer keep the next minute's silences SERVFAIL (the query waits the resolver's 4 s, as after a reply
+heard); nobody within 2.5 s is nobody serves, as for a refresh. Failing first:
+`a_room_whose_replies_stay_spent_past_a_first_retry_isnt_taken_for_nobody_serves` (the room's one server's replies
+spent by other members' asks for 10 s from the guest's first query; the guest asks again at each SERVFAIL): SERVFAIL at
+2.5 s, NXDOMAIN at 5.0 s before; SERVFAIL at 2.5, 6.5 and 10.5 s, then found at 11.8 s after.
+
+| 500 members joining in a minute, each asking a name as it runs | found | NXDOMAIN | p50 / p90 / p99 / max found | tries p99 / max |
+|---|---|---|---|---|
+| NAMES2 loop 5's after (this host, earlier) | 480 | 20 | 1.12 / 3.61 / 3.82 / 3.84 s | 2 / 2 |
+| before (`b628dee`, this session) | 465 | 35 (35 "nobody serves", 119 first silences) | 1.31 / 3.81 / 3.84 / 3.85 s | 2 / 2 |
+| after | **499** | **1** ("who serves?" unanswered in 2.5 s) | 1.12 / 3.62 / 7.63 / 15.8 s | 3 / 5 |
+
+- One run each arm. After: 59 silences from a room not heard (each a SERVFAIL and a question), 11 more after servers
+  answered (SERVFAIL at the resolver's 4 s); the slowest joiners are found after up to five tries, 15.8 s in, where
+  they were NXDOMAIN for 30 s. One question went unanswered inside its 2.5 s: that member is NXDOMAIN for 30 s (the
+  question's own budget, not the replies', is what would have to be spent).
+- A room with no server: NXDOMAIN ~5 s after the guest's first query, as since loop 5 (SERVFAIL at 2.5 s, the next
+  query waits for the question: 2.5 s; `with_no_server_…` through the fake DERP and relay), and the same each time the
+  memory runs out (2.5 s before: a second silence was nobody). Never a wrong answer: the question's answers decide only
+  SERVFAIL against NXDOMAIN, and a `serve` is checked whole (its title live, signed by its owner key).
+- The cold (100 of 100, p50 1.11 s) and second lookups (100 of 100, p50 0.71 s) are unchanged; the relay's load during
+  the joins the same (60 events/s in, 593 forwards/s, against 62 and 615).
+
+### Reproduce
+```sh
+cargo build -q -p waarm64_ts --features test-params --example names-title && net/ts/build.sh --test-params
+node bench/net/room-scale.ts names make && node bench/net/room-scale.ts names converge --wait 470   # as loop 5
+node bench/net/room-scale.ts names members --out results/names2l5b/members-after.json             # ~4 min
+cargo test -p waarm64_ts --lib -- --nocapture a_room_whose_replies_stay_spent with_no_server_nxdomain
+```
+(`members-before.json` is the same run on the module built from `b628dee`.)

@@ -635,7 +635,8 @@ fn with_no_server_nxdomain_then_a_server_that_appears_is_found_while_the_guest_k
     let mut b = Bitcoin::new(ROOM, 7);
     let alpha = title_to(&mut b, 1, "alpha", public(2), public(1));
     let mut n = Net::new(vec![config(1), config(2)]);
-    // A first silence from a room never heard is SERVFAIL at once (NAMES2 loop 5), the second "nobody serves".
+    // A first silence from a room not heard is SERVFAIL at once, and "who serves?" is asked (NAMES2 loops 5, 5b):
+    // the guest's second query waits for it, and nobody within 2.5 s is "nobody serves".
     let (a, took) = n.ask(1, "alpha", dns::AAAA);
     eprintln!("a first silence: SERVFAIL in {took:?}");
     assert_eq!(a.rcode, dns::SERVFAIL);
