@@ -97,7 +97,7 @@ test("a run's analysis: the warm-up left out, the stop held by the arms and not 
   assert.equal(analyze(noisy('new'), 'user').done, false);
   const text = verdict(run).join('\n');
   assert.match(text, /user: 4 pairs against base/);
-  assert.match(text, /new +-[23]\.\d\d% \[.*\] LOWER/);
+  assert.match(text, /new +4 +-[23]\.\d\d% \[.*\] LOWER/);
   assert.match(text, /ended: every stop measure decided/);
   assert.doesNotMatch(text, /WARNING/);
   // An A/A arm that differs is the session's warning.
@@ -105,7 +105,7 @@ test("a run's analysis: the warm-up left out, the stop held by the arms and not 
   assert.match(verdict(off).join('\n'), /WARNING: the A\/A arm differs from the base in wall, cycles, instr/);
 });
 
-test("a run's analysis: what a stop measure can't decide isn't decided, a broken sample costs its pair, a half-run pair counts for no arm", () => {
+test("a run's analysis: what a stop measure can't decide isn't decided, a broken sample costs its pair, a half-run pair counts for the arms that ran", () => {
   const u = rng(11);
   const arm = (name: string) => ({ name, core: `${name}.wasm`, tree: '.', query: '', coreBytes: 1 });
   const s = (f: number, proc = true): PairSample => {
@@ -132,13 +132,39 @@ test("a run's analysis: what a stop measure can't decide isn't decided, a broken
   assert.equal(a.arms.new.cycles.call, '<');
   assert.ok(Number.isFinite(a.arms.new.cycles.pct));
   assert.equal(a.arms.other.cycles.n, 6);
-  // A pair the run ended inside (the base and one arm sampled, the other not) counts for no arm.
+  // A pair the run ended inside (the base and one arm sampled, the other not) counts for the arm that ran, the other's
+  // pairs are its own.
   const half = make(['wall'], true);
   half.rows = half.rows.filter((r) => !(r.block === 6 && r.arm === 'other'));
   const h = analyze(half, 'node');
-  assert.equal(h.pairs, 5);
-  assert.equal(h.arms.new.wall.n, 5);
+  assert.equal(h.pairs, 6);
+  assert.equal(h.arms.new.wall.n, 6);
   assert.equal(h.arms.other.wall.n, 5);
+  assert.deepEqual(h.counts, { new: 6, other: 5 });
+  // A pair without the base counts for no arm.
+  const nobase = make(['wall'], true);
+  nobase.rows = nobase.rows.filter((r) => !(r.block === 6 && r.arm === 'base'));
+  assert.equal(analyze(nobase, 'node').arms.new.wall.n, 5);
+});
+
+test("a run's analysis: an arm decided is reported as decided, and the pairs after it, run without it, are the others'", () => {
+  const u = rng(5);
+  const arm = (name: string) => ({ name, core: `${name}.wasm`, tree: '.', query: '', coreBytes: 1 });
+  const s = (f: number, noise: number): PairSample => ({ ms: 9000 * f * (1 + noise * normal(u)), steps: 1e9, marks: {}, stats: { jit: {} } as PairSample['stats'] });
+  const run: Run = { schema: 1, date: '', host: {}, browser: '', arms: [arm('base'), arm('fast'), arm('close')], opts: { min: 4, cap: 12, band: 0.5, overall: 0.01, stop: ['wall'], budget: 1, workloads: ['node'], rounds: 1, warm: 'same' }, alpha: 0.002, rows: [] };
+  const add = (block: number, names: string[]) => { for (const n of names) run.rows.push({ workload: 'node', block, at: 0, slot: 0, arm: n, s: s(n === 'fast' ? 0.95 : n === 'close' ? 1.003 : 1, n === 'close' ? 0.01 : 0.001) }); };
+  for (let block = 1; block <= 4; block++) add(block, ['base', 'fast', 'close']);
+  const first = analyze(run, 'node');
+  assert.deepEqual(first.decided, ['fast'], 'the clear arm is decided at the least pairs, the noisy one not');
+  assert.equal(first.done, false);
+  // The driver then runs the base and `close` alone.
+  for (let block = 5; block <= 8; block++) add(block, ['base', 'close']);
+  const later = analyze(run, 'node');
+  assert.deepEqual(later.counts, { fast: 4, close: 8 });
+  assert.equal(later.arms.fast.wall.n, 4);
+  assert.equal(later.arms.fast.wall.call, '<');
+  assert.ok(later.decided.includes('fast'));
+  assert.match(verdict(run).join('\n'), /fast +4 /);
 });
 
 test("the node workload's script: its check line, the same every run", () => {

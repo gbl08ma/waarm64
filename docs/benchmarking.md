@@ -280,18 +280,25 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   `compileNs`, the JIT's wasm bytes, its modules and the interpreted steps, and the last line the cores' sizes.
 - **The stopping rule.** After every pair from `MIN` (4) on, each measure's ratios give a t interval; the workload
   ends when every arm's `STOP` measures (`cycles,wall`) are each decided, `LOWER` or `HIGHER` (the interval excludes
-  zero) or `same` (it lies inside ±`BAND`, 0.5%), or at `CAP` (24 pairs) or `BUDGET` (1500 s for the whole run: a
+  zero) or `same` (it lies inside ±`BAND`, 0.5%), or at `CAP` (12 pairs) or `BUDGET` (1500 s for the whole run: a
   workload it leaves no time for isn't run, and the verdict says so), where what is still
-  `open` is reported as such with its interval. A stop measure the host doesn't count (cycles on the dev VM) doesn't
+  `open` is reported as such with its interval. An arm decided before the others stops running: its verdict is
+  the one it had, and the later pairs are the base and the arms still open (the A/A arm runs while any does); the
+  table's `pairs` column is each arm's. `CAP` was 24 until PERF loop 65: four arms on `node` took ~42 minutes to
+  reach it, held there by the one arm left open; at 12 an interval is ±0.38-0.44% (its tail, 0.2% a look for
+  4-12 pairs, is wider than 4-24's), so an arm open at the cap is within about ±0.5% of the base: under the
+  floor. `CAP=24` when a row needs the narrower interval, said in its report. (The check run of the change, `bench/boot/results/perf65/cap12-check/`: on
+  `boot`, 200K batches against 50K decided at pair 6 and stopped running; 25K ran on alone to the cap, `open`.) A stop measure the host doesn't count (cycles on the dev VM) doesn't
   hold the stop; a mistyped one is refused. Looking after every pair is paid for: each interval is read at the
   tail that keeps a true null's chance of being called a difference at any look at `OVERALL` (1% an interval, so
-  several arms and measures each take that chance; `lookAlpha` in `bench/stats.ts`, 0.12% a look for 4-24 pairs), so an interval after four pairs is wide (±2.3% of time on `user`,
-  whose pairs' ratios spread 0.38%) and narrows to ±0.7% by 8 pairs, ±0.47% by 12 and ±0.28% by 24.
+  several arms and measures each take that chance; `lookAlpha` in `bench/stats.ts`, 0.2% a look for 4-12 pairs), so an interval after four pairs is wide (±2.3% of time on `user`,
+  whose pairs' ratios spread 0.38%) and narrows to ±0.64% by 8 pairs and ±0.44% by 12 (with `CAP=24`: ±0.47% by
+  12 and ±0.28% by 24).
 - **How long a verdict takes** (the rule replayed over 96 measured A/A pairs of `user` and 41 of `boot`,
   `bench/boot/results/bench2/replay.txt`; a pair of the base and one arm is ~40 s on `user`, ~52 s on `node`
   and ~15 s on `boot`, half as much again with `aa` or a second arm, 20 s of set-up a run; `node` takes the pairs `boot` does: `bench3/replay.txt`): a difference of 2% or more in 4 pairs (3 min on `user`, just over 1 on `boot`), 1%
   in 6 (4 min), 0.5% in 10 (16 at the 90th percentile), no difference called `same` in 12 (19: 8-13 min on `user`
-  and `node`, 3-4 on `boot`). A true 0.25% is inside the band's reach: it ends `HIGHER`, `same` or `open` at the cap, 17-24 pairs. No
+  and `node`, 3-4 on `boot`); these were replayed at a cap of 24; at today's 12, what took longer ends `open`. A true 0.25% is inside the band's reach: it ends `HIGHER`, `same` or `open` at the cap. No
   difference is called one in 0.4-0.8% of runs; eight stopped A/A runs on the Mac all ended `same`.
 - **Which workload screens what** (bench/boot/REPORT.md "BENCH loop 4": arms whose result on Firefox's pages session
   the reports have, time against the base):
@@ -387,12 +394,14 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   `LOWER` or `HIGHER` in time (the interval of the pairs' ratios excludes zero), no difference what it calls `same`
   (inside ±0.5%), and `open` is neither. Report the interval, the pairs and the workload; the renderer's cycles and
   instructions beside it, never for it.
-- **A time verdict with nothing under it is noise, and decides the arm:** when an arm's JIT wasm, instructions and
-  cycles are the base's within ~0.1% and only time moves (`LOWER`/`HIGHER` by ~0.5%), the code didn't change enough
-  to move it; the page's own speed did. Stop there: no A/A run, no gates, no pages session (PERF loop 64: regions
-  past 64 blocks, −0.5% `LOWER` at 96 on the same wasm, instructions and cycles). For a constant's sweep, look at the
-  first pairs' compile counters (`regionBlocks`, the wasm, modules in `ab.json`): an arm that barely changes them
-  ends the sweep without waiting for the cap.
+- **Time that moves while the code doesn't:** when an arm's JIT wasm, instructions and cycles are the base's within
+  ~0.1% and only time moves by ~0.5%, the difference can still be real (CPU caches, memory bandwidth, code
+  placement), but more pairs of the same workload won't settle it. Give that workload a few more pairs at most
+  (within its cap), then try other workloads that may exercise the change differently (the gates, the parallel
+  boots, the pages session when it's warranted); a difference none of them confirms is reported as within noise
+  (PERF loop 64: regions past 64 blocks, −0.5% `LOWER` at 96 on the same wasm, instructions and cycles, run to 24
+  pairs of `node` alone). For a constant's sweep, look at the first pairs' compile counters (`regionBlocks`, the
+  wasm, modules in `ab.json`): they show whether an arm changes the code at all.
 - **The noise floor of alternated sessions** (the dev VM, the pages session, anything the paired command doesn't
   run): compare builds **A/B in one session, alternating**, three
   rounds or more (`bench/interp/ab.sh`). A difference counts when every round of one arm beats every

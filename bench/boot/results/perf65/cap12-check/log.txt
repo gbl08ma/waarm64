@@ -1,0 +1,40 @@
+boot pair 1: b200k 3505, b25k 3518, base 3551 ms (875 s left)
+boot pair 2: b200k 3508, b25k 3557, base 3552 ms (849 s left)
+boot pair 3: b200k 3532, base 3550, b25k 3555 ms (824 s left)
+boot pair 4: b25k 3482, base 3475, b200k 3442 ms (800 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            4 -1.00% [-2.87%, +0.91%] open         -1.15% [-2.52%, +0.23%] open         +0.46% [+0.41%, +0.52%] HIGHER       -1.08% [-2.73%, +0.60%] open        
+  b25k             4 -0.11% [-2.83%, +2.69%] open         -0.08% [-2.06%, +1.94%] open         -0.31% [-0.35%, -0.26%] LOWER        -0.19% [-2.06%, +1.71%] open        
+boot pair 5: b25k 3485, b200k 3429, base 3468 ms (775 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            5 -1.03% [-2.06%, +0.02%] open         -1.15% [-1.90%, -0.40%] LOWER        +0.46% [+0.43%, +0.49%] HIGHER       -1.08% [-1.98%, -0.17%] LOWER       
+  b25k             5 +0.01% [-1.70%, +1.76%] open         +0.02% [-1.28%, +1.33%] open         -0.30% [-0.34%, -0.27%] LOWER        -0.11% [-1.27%, +1.06%] open        
+boot pair 6: b25k 3479, b200k 3424, base 3464 ms (750 s left)
+boot: decided, no longer run: b200k
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k             6 +0.08% [-1.14%, +1.31%] open         +0.08% [-0.87%, +1.04%] open         -0.30% [-0.33%, -0.28%] LOWER        -0.07% [-0.89%, +0.76%] open        
+boot pair 7: b25k 3491, base 3470 ms (734 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k             7 +0.16% [-0.84%, +1.16%] open         +0.11% [-0.61%, +0.84%] open         -0.30% [-0.32%, -0.29%] LOWER        -0.02% [-0.68%, +0.65%] open        
+boot pair 8: b25k 3471, base 3451 ms (717 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k             8 +0.21% [-0.62%, +1.05%] open         +0.15% [-0.46%, +0.77%] open         -0.30% [-0.32%, -0.29%] LOWER        +0.02% [-0.54%, +0.58%] open        
+boot pair 9: b25k 3487, base 3465 ms (701 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k             9 +0.26% [-0.47%, +0.99%] open         +0.18% [-0.34%, +0.71%] open         -0.31% [-0.32%, -0.29%] LOWER        +0.04% [-0.43%, +0.52%] open        
+boot pair 10: b25k 3488, base 3463 ms (684 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k            10 +0.31% [-0.35%, +0.97%] open         +0.22% [-0.26%, +0.71%] open         -0.30% [-0.32%, -0.29%] LOWER        +0.08% [-0.36%, +0.51%] open        
+boot pair 11: base 3456, b25k 3470 ms (667 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k            11 +0.32% [-0.26%, +0.89%] open         +0.23% [-0.19%, +0.65%] open         -0.31% [-0.32%, -0.29%] LOWER        +0.09% [-0.30%, +0.47%] same        
+boot pair 12: b25k 3476, base 3466 ms (651 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k            12 +0.31% [-0.20%, +0.82%] open         +0.21% [-0.17%, +0.60%] open         -0.31% [-0.32%, -0.29%] LOWER        +0.07% [-0.27%, +0.42%] same        

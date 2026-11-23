@@ -5,7 +5,7 @@
 # The first arm is the base. AA=1 adds an A/A arm (`aa`, the base again: what the same core against itself gives at
 # this moment, to hold a result against; with the base alone, an A/A run). `@<tree>`: the arm's host code from another
 # checkout (a core of another ABI, e.g. `../waarm64-base`; its target/ must be this one's, a symlink). Options, as
-# variables: WORKLOADS (default `node`; `user`, `boot`, several with commas), MIN, CAP (pairs: 4, 24), BAND (0.5, percent), OVERALL (0.01),
+# variables: WORKLOADS (default `node`; `user`, `boot`, several with commas), MIN, CAP (pairs: 4, 12), BAND (0.5, percent), OVERALL (0.01),
 # STOP (`cycles,wall`), WARM (`same`), ROUNDS (1), BUDGET (1500: seconds for the whole run, after which a workload
 # ends at its pair and the ones after it aren't run).
 # Into <outdir>/: ab.json (every sample), verdict.txt (printed too), log.txt. Bounded on the Mac (the budget and
@@ -69,7 +69,7 @@ code=0
 timeout $((budget + 500)) ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 && \
   export CHROMIUM=\"$MAC_CHROME\" && rm -rf bench/results/local/ab-run && \
   perl -e 'alarm shift; exec @ARGV' $((budget + 400)) node --disable-warning=ExperimentalWarning bench/ab.ts --out bench/results/local/ab-run \
-    --workloads ${WORKLOADS:-node} --min ${MIN:-4} --cap ${CAP:-24} --band ${BAND:-0.5} --overall ${OVERALL:-0.01} --stop ${STOP:-cycles,wall} --budget $budget --warm ${WARM:-same} --rounds ${ROUNDS:-1} $aa \
+    --workloads ${WORKLOADS:-node} --min ${MIN:-4} --cap ${CAP:-12} --band ${BAND:-0.5} --overall ${OVERALL:-0.01} --stop ${STOP:-cycles,wall} --budget $budget --warm ${WARM:-same} --rounds ${ROUNDS:-1} $aa \
     $(printf "'%s' " "${args[@]}")" > /dev/null 2> "$out/log.txt" || code=$?
 # The results first, then the verdict from its file: whoever reads this script's output may be gone by now.
 rsync -a "$HOST:$DEST/bench/results/local/ab-run/" "$out/" || true

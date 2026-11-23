@@ -1,0 +1,11 @@
+boot: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  b200k            6 -1.05% [-1.76%, -0.33%] LOWER        -1.17% [-1.67%, -0.66%] LOWER        +0.46% [+0.44%, +0.48%] HIGHER       -1.10% [-1.70%, -0.48%] LOWER       
+  b25k            12 +0.31% [-0.20%, +0.82%] open         +0.21% [-0.17%, +0.60%] open         -0.31% [-0.32%, -0.29%] LOWER        +0.07% [-0.27%, +0.42%] same        
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 3467       0.9849         1045        177.3         48.0        11.36          310    149207117
+  b200k                3473       0.9847         1239        175.4         37.4        11.32          178    160080230
+  b25k                 3486       0.9872         1120        179.1         52.9        11.35          387    146084024
+arms: base 9786743 bytes; b200k 9786743 bytes; b25k 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88
