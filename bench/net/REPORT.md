@@ -1273,3 +1273,47 @@ node bench/net/room-scale.ts names make && node bench/net/room-scale.ts names co
 node bench/net/names-long.ts run --dir bench/results/local/names6b-proof --days 1 --every 5 --drop 15  # the proof's first part, under timeout 2400
 node bench/net/names-long.ts summary bench/results/local/names6b-proof/log.jsonl --out results/names6b/long-proof.json
 ```
+
+## NAMES2 loop 5 (cloud session), 2026-11-23
+
+The kickoff's loop 5, "an honest room's lookups under its own load", against N6a's numbers ("NAMES loop 6a" above). A
+Claude Code cloud session (x86_64, 4 vCPUs, 15 GiB; Node 26.13.1), nothing else running: N6a's configuration whole (20
+servers of 250 names, 1,000 members), `make`, `converge` and `members` as N6a ran them, on the tests' module before the
+fix (the tree at `fd57155`) and after. JSON under `results/names2l5/` (`bus.json`: the two bus tests' before and after).
+
+**A first silence from a room never heard is SERVFAIL, at once; "nobody serves" only at the second** (the user's
+decision; `a_first_silence_from_a_room_never_heard_is_servfail_not_nobody_serves`, failing first: NXDOMAIN at 2.5 s and
+"nobody serves" for 30 s with the room's one server holding the name, its replies all spent by other members' asks).
+The lookups in flight at that silence are SERVFAIL too; a lookup started after it that meets silence is "nobody serves".
+
+| 500 members joining in a minute, each asking a name as it runs | found | NXDOMAIN | SERVFAIL then asked again | p50 / p90 / p99 found |
+|---|---|---|---|---|
+| N6a (dev VM, after its fixes) | 467 | 33 (30 "nobody serves") | | 1.12 / 1.32 / 1.32 s |
+| before (this session) | 438 | 62 (62 "nobody serves") | | 1.12 / 1.32 / 1.35 s |
+| after | **480** | **20** (all "nobody serves" at a second silence) | 71 (51 found at the next ask) | 1.12 / 3.61 / 3.82 s |
+
+- One run each arm: this host's before (62) is twice N6a's (30), so the counts move with the host; the after keeps
+  71 first silences, of which 51 are found when the resolver asks again (~2.5 s on: the p90's 3.6 s) and 20 meet a
+  second silence, still inside the minute's load, and are NXDOMAIN for 30 s as before. Asking again at once (the
+  guest's resolver does) is what the decision gives; a later second ask, or more rounds, would find more of them and
+  is a change of what the guest sees: not made (docs/backlog.md).
+- The cold first lookups (100 of 100, p50 1.11 s) and the second ones (100 of 100, p50 0.72 s) are unchanged; the
+  relay's load during the joins the same (57 events/s in, 563 forwards/s, against 55 and 511 before).
+
+**A kept name in its grace is confirmed after a minute, not five** (`KEPT_GRACE_REFRESH`;
+`a_kept_name_in_its_grace_finds_its_renewal_within_a_minute`, failing first): a name in its grace resolved first while
+its renewal was pending is kept and NXDOMAIN while fresh; once both servers hold the renewal, a guest asking every 2 s
+found it 297 s later before, 57 s after. A minute is the shortest negative answer the member already gives (NXDOMAIN
+60 s for a name replies said none for), and costs a guest that keeps asking a refresh (two `get`s) a minute while the
+name is in its grace, against one in five; a live name's freshness stays 5 minutes. N6a's rig has no name in its grace,
+so the bus test is its measurement.
+
+### Reproduce
+```sh
+cargo build -q -p waarm64_ts --features test-params --example names-title && net/ts/build.sh --test-params
+node bench/net/room-scale.ts names make                                                       # ~18 s
+node bench/net/room-scale.ts names converge --wait 470 --out results/names2l5/converge.json   # ~2.6 min here
+node bench/net/room-scale.ts names members --out results/names2l5/members-after.json          # ~4 min
+cargo test -p waarm64_ts --lib -- --nocapture a_first_silence_from_a_room_never_heard a_kept_name_in_its_grace
+```
+(`members-before.json` is the same run on the module built from `fd57155`.)

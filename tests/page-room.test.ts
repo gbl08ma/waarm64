@@ -410,14 +410,19 @@ async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: stri
   });
   const lookup = (p: Page, name: string) => timed(p, `getent ahosts ${name} | head -1`);
 
-  // A room with no server: NXDOMAIN once nobody answered "who serves?" (2.5 s), then at once while that's remembered.
+  // A room with no server: its first silence (2.5 s) is SERVFAIL (a room never heard), its second NXDOMAIN, then
+  // NXDOMAIN at once while "nobody serves" is remembered. Whether the guest's resolver asks again after the SERVFAIL
+  // itself (resolved may) or the next lookup does, the third is at once.
   const none = await lookup(b, full('test123'));
   console.log(`# names: with no server, ${full('test123')} took ${none.ms} ms: ${none.out || '(not found)'}`);
   assert.equal(none.out, '', 'not found');
   const again = await lookup(b, full('test123'));
   console.log(`# names: asked again: ${again.ms} ms`);
   assert.equal(again.out, '');
-  assert.ok(again.ms < none.ms, `remembered: ${again.ms} ms after ${none.ms}`);
+  const third = await lookup(b, full('test123'));
+  console.log(`# names: and again: ${third.ms} ms`);
+  assert.equal(third.out, '');
+  assert.ok(third.ms < none.ms, `remembered: ${third.ms} ms after ${none.ms}`);
 
   // Reserved and ill-formed names: NXDOMAIN at once, nothing asked.
   for (const r of ['wpad', 'com', 'localhost', 'isatap', 'a.b.test123']) {

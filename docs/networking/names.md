@@ -382,18 +382,22 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
      checked as a `history` is; it ends when nothing is in flight and the best run is older than every `since` left, or
      at 10 s (`CONTEST_FOR`), and names an owner only if every key shown is settled, else no answer (the next query asks
      again), never another owner; **silence** 1.5 s after the last ask left, nobody serves (30 s doubling to 10
-     minutes), unless a reply counted in the last minute (the reply budgets were spent: SERVFAIL, asked again). A key
-     whose last entry a release replied ends is taken by nobody.
+     minutes), unless a reply counted in the last minute (the reply budgets were spent: SERVFAIL, asked again), or
+     **the room was never heard and this is its first silence**: SERVFAIL at once, and the lookups already in flight
+     then too (the guest's resolver asks again); nobody serves only at the silence of a lookup started after it. So a
+     room whose own load spent its budgets isn't taken for one nobody serves (N6a: 30 of 500 joiners were, NXDOMAIN for
+     30 s), and a room with no server answers NXDOMAIN one lookup (~2.5 s) later. A key whose last entry a release
+     replied ends is taken by nobody.
   5. A reply up to 3 s after the decision is still checked (another key starts a contest; a name decided none takes a
      late owner). **Replies spent by others**: past 8 replies a minute under its tag to nonces it never sent
      (`STRAYS_MAX`, `STRAY_FOR`), a first lookup decides nothing, never an impostor's answer.
-- **A refresh** (a kept name confirmed more than 5 minutes ago, or in its grace) **never sends an `ask`** (that would
-  tell the room how long a name stays in use): it goes to the two servers "who serves?" drew, `get` in owner mode (the
-  name id and what it keeps); each answers with what it lacks of the owning chain's last entry and the zone, or none. It
-  checks the last entry (signature, work, header, anchor, alive) and the zone. **When the servers disagree or contest
-  what it keeps** (`Kept::offer` would refuse it), it asks each for `history` (the owning chain's whole run, up to
-  1,024 entries, checked a slice a turn, each entry once; the first that fails refuses that run) and picks by the rule.
-  Last entries alone can't be compared (a renewal's time isn't its chain's seniority).
+- **A refresh** (a kept name confirmed more than 5 minutes ago, a minute in its grace) **never sends an `ask`** (that
+  would tell the room how long a name stays in use): it goes to the two servers "who serves?" drew, `get` in owner mode
+  (the name id and what it keeps); each answers with what it lacks of the owning chain's last entry and the zone, or
+  none. It checks the last entry (signature, work, header, anchor, alive) and the zone. **When the servers disagree or
+  contest what it keeps** (`Kept::offer` would refuse it), it asks each for `history` (the owning chain's whole run, up
+  to 1,024 entries, checked a slice a turn, each entry once; the first that fails refuses that run) and picks by the
+  rule. Last entries alone can't be compared (a renewal's time isn't its chain's seniority).
 - **What a member keeps**: each name it resolved, with its chain's last entry, the earliest entry time it verified for
   that chain and whether it was the claim's, the zone and when servers last confirmed it (a record a name, under 2 KB;
   1,024 names at most, the least asked for going first). While that chain covers now, another replaces it only by
@@ -401,8 +405,9 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   only a last entry), another key's run never replaces it on seniority alone. So a member that knew a name refuses an
   impersonator after a reset, with no rule of its own. A kept name **answers at once** while its chain resolves,
   refreshed in the background when older than 5 minutes (so a zone change shows one query late); in its grace it is
-  NXDOMAIN while confirmed in the last 5 minutes. Both servers saying none doesn't drop a kept chain; **a release
-  does**: a server whose tombstone holds the member's last entry answers with the release and what leads to it (8
+  NXDOMAIN while confirmed in the last minute (`KEPT_GRACE_REFRESH`), so a renewal its servers come to hold shows a
+  minute late at most (it was 5 minutes, as a live name's). Both servers saying none doesn't drop a kept chain; **a
+  release does**: a server whose tombstone holds the member's last entry answers with the release and what leads to it (8
   entries at most), and the member ends what it keeps and asks again as a first lookup.
 - **The dialog's check** must not tell a server which id is about to be claimed: Register asks for `ids` (every id held
   under one first byte, each with when its owner's hold ends rounded up to a week, 0 for nobody), through a checker made
@@ -501,7 +506,8 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
 - **on a member's**, a kept name, its chain alive: AAAA from the slot the name opens (none: NXDOMAIN), TTL 60, the key
   learnt by the module;
 - **otherwise the query waits** while the names client asks: answered when the answer comes, SERVFAIL at 4 s
-  (`DNS_WAIT`; 64 wait at most, past that SERVFAIL at once; a contest goes on and the next query has it);
+  (`DNS_WAIT`; 64 wait at most, past that SERVFAIL at once; a contest goes on and the next query has it), or at once
+  when the lookup met a first silence from a room never heard (`Answer::ServFail`: "A member resolving a name");
 - **NXDOMAIN at once** for a reserved or ill-formed name, a name replies said none for (60 s doubling to 10 minutes),
   and any name not kept while the member remembers nobody serves.
 
@@ -723,6 +729,7 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
 | `ids` | twice a session, 4 a minute a server | listing the registry |
 | the resolver's wait | 4 s, 64 queries | a guest's resolver retries |
 | negative answers | NXDOMAIN 60 s to 10 min; nobody serves 30 s to 10 min | a room with no names costs three events every 10 min |
+| a kept name confirmed again | after 5 minutes; 1 minute in its grace | in its grace it is NXDOMAIN while fresh, and a renewal ends that |
 | a member's kept names | 1,024, under 2 KB each | |
 | a history | 1,024 entries, a slice a turn | ~0.7 s of the worker in one turn otherwise |
 | verification | 24 units a turn (~6 entries, ~4 ms) | the worker stays responsive |
@@ -806,7 +813,8 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
   `blake2` and `sha2` in test builds): `room/names/tests.rs` (records and rules: alice's real proof of block 976,177 as
   the vector, merge order over 60 scenarios with forks, releases, stale copies and partial anchors, the floor, zones),
   `server_tests.rs` and `member_tests.rs` (the registry's logic on a bus in simulated time: answer counts at 1, 20 and
-  500 servers, 128 and 1,280 junk registrations, contests, the release replayed, strays, the 60-day promise, the
+  500 servers, 128 and 1,280 junk registrations, contests, the release replayed, strays, a first silence from a room
+  never heard (its own load spent its replies), a renewal reaching a name kept in its grace, the 60-day promise, the
   calendar's rates, the bound), `room/tests/names.rs` (through room.rs's fake DERP and relay: two and twenty servers
   converge, a reset, a flood of questions beside the node's own lookups, nothing under the node's key, no WebRTC, a
   first lookup with no DERP packet, a contest through sessions, names under the room's name), `agent.rs`'s ops, and

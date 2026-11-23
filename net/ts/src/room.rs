@@ -2886,7 +2886,7 @@ impl Client {
             }
             Answer::Own => (dns::NOERROR, vec![IpAddr::V6(self.addr.into())]),
             Answer::Nx => (dns::NXDOMAIN, Vec::new()),
-            Answer::Wait => (dns::SERVFAIL, Vec::new()),
+            Answer::Wait | Answer::ServFail => (dns::SERVFAIL, Vec::new()),
         };
         let answer = dns::fit(&dns::answer(m, &q, rcode, &addrs, ttl), q.udp_size);
         let r = ip::udp(

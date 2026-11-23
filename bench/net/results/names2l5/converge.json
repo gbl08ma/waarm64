@@ -1,0 +1,181 @@
+{
+ "date": "2026-11-23T20:42:44.726Z",
+ "host": "linux x64",
+ "cpus": 4,
+ "node": "v26.13.1",
+ "phase": "converge",
+ "converge": {
+  "full": true,
+  "seconds": 155.4,
+  "runningMs": {
+   "n": 20,
+   "p50": 1303,
+   "p90": 1882,
+   "p99": 2063,
+   "max": 2063
+  },
+  "servingS": {
+   "n": 20,
+   "p50": 2.3,
+   "p90": 2.6,
+   "p99": 2.6,
+   "max": 2.6
+  },
+  "fullS": {
+   "n": 20,
+   "p50": 109.2,
+   "p90": 136.4,
+   "p99": 153,
+   "max": 153
+  },
+  "names": {
+   "n": 20,
+   "p50": 5000,
+   "p90": 5000,
+   "p99": 5000,
+   "max": 5000
+  },
+  "serving": 20,
+  "wasmMB": {
+   "n": 20,
+   "p50": 42.6,
+   "p90": 43,
+   "p99": 43.5,
+   "max": 43.5
+  },
+  "fetches": {
+   "blockstream": 26920
+  },
+  "fetchesPerServer": {
+   "n": 20,
+   "p50": 1346,
+   "p90": 1346,
+   "p99": 1346,
+   "max": 1346
+  },
+  "stored": 121920,
+  "deleted": 0,
+  "logs": {
+   "a names client, nodekey:H": 20,
+   "nobody answered, but someone asked meanwhile; asking again in N ms": 20,
+   "nobody serves the registry; asking again in N s": 2,
+   "N items of a get answer dropped: the queue is full": 2521,
+   "a server's request refused: no live name shown": 176
+  },
+  "over": {
+   "seconds": 154.5,
+   "relayPerSecond": {
+    "reqs": 0.8,
+    "eventsIn": 1,
+    "forwards": 18.9,
+    "kbIn": 0.7,
+    "kbOut": 10.9
+   },
+   "cores": {
+    "relay": 0,
+    "derper": 0.2,
+    "services": 0,
+    "server": 1.4
+   },
+   "rssMB": {
+    "relay": 79.2,
+    "derper": 28.8,
+    "services": 172.1,
+    "server": 3000
+   }
+  },
+  "calendarRequests": {
+   "explorer": 26920
+  },
+  "progress": [
+   [
+    5.3,
+    250,
+    250,
+    250
+   ],
+   [
+    20.3,
+    250,
+    1737,
+    2409
+   ],
+   [
+    35.3,
+    250,
+    3312,
+    3754
+   ],
+   [
+    50.3,
+    493,
+    3518,
+    3992
+   ],
+   [
+    65.3,
+    639,
+    4082,
+    4773
+   ],
+   [
+    80.3,
+    2097,
+    4788,
+    4829
+   ],
+   [
+    95.3,
+    4457,
+    4814,
+    5000
+   ],
+   [
+    110.3,
+    4528,
+    5000,
+    5000
+   ],
+   [
+    125.3,
+    4528,
+    5000,
+    5000
+   ],
+   [
+    140.3,
+    4950,
+    5000,
+    5000
+   ],
+   [
+    155.3,
+    5000,
+    5000,
+    5000
+   ]
+  ]
+ },
+ "idle": {
+  "seconds": 19,
+  "relayPerSecond": {
+   "reqs": 0,
+   "eventsIn": 0.2,
+   "forwards": 4.2,
+   "kbIn": 0.1,
+   "kbOut": 2.4
+  },
+  "cores": {
+   "relay": 0,
+   "derper": 0,
+   "services": 0,
+   "server": 0
+  },
+  "rssMB": {
+   "relay": 79,
+   "derper": 28.8,
+   "services": 172.1,
+   "server": 2936.3
+  }
+ }
+}

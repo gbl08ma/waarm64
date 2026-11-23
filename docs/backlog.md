@@ -1748,6 +1748,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A guest asking 40 names at once against 2 servers has 20 within a minute and no more (each server's 16 replies
       a minute to one reply tag; SERVFAILs meanwhile, never NXDOMAIN): the limit stays, the load isn't realistic
       (the user, 2026-11-23).
+    - A member that never heard the room and met a first silence asks again at the guest's next query (SERVFAIL at
+      once, NAMES2 loop 5); under a minute of load that lasts, its second silence is still "nobody serves": 20 of 500
+      joiners in N6a's rig (bench/net/REPORT.md "NAMES2 loop 5", 62 before). A later or wider second ask would find
+      more, and changes what the guest sees (the user's call).
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

@@ -1,0 +1,14 @@
+{
+ "date": "2026-11-23",
+ "host": "linux x64 (Claude Code cloud session, 4 vCPUs)",
+ "tests": {
+  "a_first_silence_from_a_room_never_heard_is_servfail_not_nobody_serves": {
+   "before": { "answer": "Nx", "ms": 2500, "nobodyServes": 1 },
+   "after": { "answer": "ServFail", "ms": 2500, "nobodyServes": 0, "askedAgain": "Node" }
+  },
+  "a_kept_name_in_its_grace_finds_its_renewal_within_a_minute": {
+   "before": { "foundAfterServersHeldItS": 297 },
+   "after": { "foundAfterServersHeldItS": 57.3 }
+  }
+ }
+}
