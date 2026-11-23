@@ -8,7 +8,7 @@
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './virtio.ts';
 import { livenessWriter } from './liveness.ts';
-import { sleepUntil } from './idle-wait.ts';
+import { idle, turns, txFull, yieldTurn } from './idle-wait.ts';
 import {
   clockOffset,
   Exit,
@@ -66,13 +66,6 @@ type Ex = {
 /** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
 const BUDGET = 100_000_000n;
 const NONE = 0xffff_ffff_ffff_ffffn;
-/**
- * How long an idle vCPU polls its wake word before sleeping on it (M7 loop 8:
- * the stress's pingpong, a futex hand-off per round, went from 34 to 10 µs a
- * round in Node; 20 µs polled as well; the boots and userspace phases didn't
- * move).
- */
-const SPIN_MS = 0.05;
 
 async function run(j: VcpuJob, clock: number): Promise<VcpuEnd> {
   const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall, j.compile, j.spill).exports;
@@ -102,20 +95,15 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
   const info = ex.vm_exit_cpu(j.vm, j.cpu);
   const idleStalls = j.stall?.map((s) => stallHook(mem, s)('idle', () => {}));
   const live = j.live && livenessWriter(j.live, j.cpu);
-  // The yield: a wait on a word nothing writes, resolved by a task once it times out (no timer clamping).
-  const never = new Int32Array(new SharedArrayBuffer(4));
-  let yielded = performance.now();
-  const due = () => j.yieldMs! > 0 && performance.now() - yielded >= j.yieldMs!;
-  const pass = async (word: Int32Array, value: number, ms: number) => {
-    const w = Atomics.waitAsync(word, 0, value, ms);
-    if (w.async) await w.value;
-    yielded = performance.now();
-  };
+  const turn = turns(j.yieldMs ?? 0);
   // The exit's record: kind, steps, value, x0-x3, cpu, wake (a new view once the memory grew: its buffer is new).
   let e = new BigUint64Array(mem.buffer, info, 9);
   for (;;) {
     live?.enter();
     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
+    // An idle's deadline counts from here: what the worker does next (the liveness block, the record's BigInts, which
+    // allocate) isn't added to it (web/idle-wait.ts `idle`).
+    const back = performance.now();
     live?.leave();
     if (e.buffer !== mem.buffer) e = new BigUint64Array(mem.buffer, info, 9);
     switch (kind) {
@@ -123,42 +111,23 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
         live?.handled();
         // Short of the budget: the core wants the event loop now, where a module the JIT's compile worker
         // compiled arrives (ABI 37, `jit::Jit::park_exit`).
-        if (due() || e[1] < BUDGET) await pass(never, 0, 0.001);
+        if (turn.due() || e[1] < BUDGET) await yieldTurn(turn, wake);
         continue;
       case Exit.IDLE: {
         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT
         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
-        const off = e[2] === NONE;
-        const ms = off ? 1000 : Number(e[2]) / 1e6;
-        const word = Number(e[8]) | 0;
-        // Polls first: a wake-up through Atomics.wait takes ~17 µs in the dev VM.
-        const t0 = performance.now();
-        const end = t0 + ms;
-        const spin = Math.min(ms, SPIN_MS);
-        while (Atomics.load(wake, 0) === word && performance.now() - t0 < spin);
-        // Asleep in the event loop when a yield is due: its tasks run while the vCPU waits. To a deadline, by waits of
-        // half the time left (web/idle-wait.ts): the event loop's is the first, `sleepUntil` returns at once if it
-        // ended in a wake-up.
-        if (off) {
-          if (due()) await pass(wake, word, end - performance.now());
-          else Atomics.wait(wake, 0, word, end - performance.now());
-        } else {
-          if (due()) await pass(wake, word, (end - performance.now()) / 2);
-          sleepUntil(wake, word, end);
-        }
+        const asleep = idle(wake, Number(e[8]) | 0, e[2] === NONE ? undefined : Number(e[2]) / 1e6, back, turn);
+        if (asleep) await asleep;
         continue;
       }
       case Exit.TX_FULL:
-        Atomics.add(ctl, 0, 1);
-        Atomics.notify(ctl, 0);
-        Atomics.wait(wake, 0, Atomics.load(wake, 0), 1);
-        live?.handled();
+        txFull(ctl, wake, live);
         continue;
       case Exit.DEVICE:
         // A config-space write waits: the driver reads the answer next (virtio-input's select/subsel).
         ring(bell, (Number(e[2] >> 8n) & EV_CONFIG) !== 0);
         live?.handled();
-        if (due()) await pass(never, 0, 0.001);
+        if (turn.due()) await yieldTurn(turn, wake);
         continue;
       case Exit.STOP: {
         // A pause (odd pause word): park here, out of the core, keeping the instance and its code. Not

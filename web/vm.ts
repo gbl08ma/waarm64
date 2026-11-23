@@ -1072,7 +1072,12 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
           if (txUsed() > 0) return done(Exit.BUDGET, steps);
           if (o.idleLimitMs !== undefined && performance.now() - par.progress(counter(Counter.STEPS)) > o.idleLimitMs) {
             raise(STOP);
-            throw new Error(`no vCPU retired a step in ${o.idleLimitMs} ms (pcs ${par.pcs().join(' ')})`);
+            // Where each one is: in the core (`runningMs`) or out of it, its worker waiting (`sinceReturnMs`).
+            const where = par
+              .liveness()
+              .map((l) => `${l.chunks} chunks, in ${l.runningMs.toFixed(0)} ms, out ${l.sinceReturnMs.toFixed(0)} ms`)
+              .join('; ');
+            throw new Error(`no vCPU retired a step in ${o.idleLimitMs} ms (pcs ${par.pcs().join(' ')}; ${where})`);
           }
         }
       } catch (e) {

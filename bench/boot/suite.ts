@@ -10,6 +10,9 @@
 // `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1);
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
 // `--query=growcore`: the core imports the memory growable (web/core.ts `exactCore`), for an A/B.
+// `--query=vyield=N`: the vCPU workers' event-loop visits every N ms (`VmOptions.vcpuYieldMs`; 0 never).
+// `--query=tallies` with the diagnostic core (`--features diag`) on `smp_*`: also each boot's timer line seen late in
+// WFI and running (bench/boot/preempt-counts.ts's latencies, in the browser), µs mean and max.
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
 // `--only alpine_user_spill_jit` the same with 192 MiB in memory 0 and the rest in a spill memory;
 // `--only alpine_crypto_jit`: `openssl speed` in the same image (waarm64.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
@@ -30,6 +33,7 @@ import type { Options, Sample } from '../spike/benchmarks.ts';
 import type { DeviceSpec } from '../../web/devices.ts';
 import { bootVm } from '../../web/vm.ts';
 import { compileCore, Exit, PSCI_SYSTEM_OFF } from '../../web/core.ts';
+import { Counter } from '../../web/counters.ts';
 import { DISTROS, GUEST_CMDLINE as CMDLINE, guestDevices, testDevices } from '../../web/test-guests.ts';
 
 const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a chunk
@@ -347,8 +351,18 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
   const out = new Map<string, Sample>();
   // `?chunk=N`: the vCPUs' chunk (`vm_set_chunk`; PERF loop 32's ceiling of longer chunks).
   const chunk = pageQuery().has('chunk') ? Number(pageQuery().get('chunk')) : undefined;
-  const onVm = chunk ? (vm: Awaited<ReturnType<typeof bootVm>>) => vm.setChunk(chunk) : undefined;
+  let vm: Awaited<ReturnType<typeof bootVm>> | undefined;
+  const onVm = (v: Awaited<ReturnType<typeof bootVm>>) => { vm = v; if (chunk) v.setChunk(chunk); };
   const one = (n: number) => boot(module, img, onVm, { cmdline: what === 'user' ? `${d.cmdline} waarm64.threads=${n}` : d.cmdline, ncpus: n, parallel: true });
+  // `?tallies`: core/src/tally.rs's timer latencies past each vCPU's counters (count, sum, max; 16 ns ticks): the
+  // timer line seen running (48) and in WFI (51), summed over the vCPUs.
+  const tallies = pageQuery().has('tallies');
+  const late = (at: number) => {
+    const t = vm!.counterBlocks.map((b) => Array.from(new BigUint64Array(vm!.memory.buffer, b + Counter.LEN * 8 + at * 8, 3), Number));
+    const c = t.reduce((s, x) => s + x[0], 0);
+    if (!t.some((x) => x[0])) throw new Error('?tallies: no tallies (not a diagnostic core: build it with --features diag)');
+    return { count: c, meanUs: (t.reduce((s, x) => s + x[1], 0) * 0.016) / c, maxUs: Math.max(...t.map((x) => x[2])) * 0.016 };
+  };
   for (const n of ns) await one(n);
   for (let i = 0; i < (o.quick ? 1 : rounds); i++) {
     for (const n of ns) {
@@ -357,6 +371,15 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
       const ms: Record<string, number> = { total: r.total };
       for (const p of USER_PHASES) if (what === 'user') ms[p] = between(r, p);
       if (what !== 'user') ms.script = Object.entries(r.marks).find(([m]) => m.startsWith(what))![1];
+      if (tallies) {
+        const [run, wfi] = [late(48), late(51)];
+        for (const [k, v] of Object.entries({ wfi_late_us: wfi.meanUs, wfi_late_max_us: wfi.maxUs, wfi_wakes: wfi.count, run_late_us: run.meanUs, run_late_max_us: run.maxUs })) {
+          const name = `smp_${what}_jit_n${n}_${k}`;
+          if (!out.has(name)) out.set(name, { name, unit: k.endsWith('us') ? 'µs' : 'count', params: { ncpus: n, vcpuYieldMs: pageQuery().get('vyield') ?? undefined }, samples: [] });
+          out.get(name)!.samples.push(v);
+        }
+        o.log?.(`smp_${what} n=${n}: timer in WFI ${wfi.count} late ${wfi.meanUs.toFixed(1)} µs (max ${wfi.maxUs.toFixed(0)}), running ${run.meanUs.toFixed(1)} µs`);
+      }
       for (const p of phases) {
         const name = `smp_${what}_jit_n${n}_${p}`;
         if (!out.has(name)) out.set(name, { name, unit: 'ms', params: {}, samples: [] });

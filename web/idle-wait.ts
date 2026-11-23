@@ -12,12 +12,30 @@ export const TAIL_MS = 0.04;
  * Mac, 2/3 was 12-29 µs late on average for an idle guest's host CPU +0.7% of a core, 1/2 6-7 µs for +3%, 3/4 ~95 µs.
  */
 export const SHARE = 2 / 3;
+/**
+ * How long an idle vCPU polls its wake word before sleeping on it (M7 loop 8: the stress's pingpong, a futex hand-off
+ * per round, went from 34 to 10 µs a round in Node; 20 µs polled as well; the boots and userspace phases didn't move).
+ */
+export const SPIN_MS = 0.05;
 
 export type Clock = () => number;
 export type Wait = (word: Int32Array, index: number, value: number, ms: number) => string;
+export type WaitAsync = (
+  word: Int32Array,
+  index: number,
+  value: number,
+  ms: number,
+) => { async: false; value: string } | { async: true; value: Promise<string> };
+/** The worker's clock and waits, injected by the tests. */
+export type Host = { now: Clock; wait: Wait; waitAsync: WaitAsync };
 
 const NOW: Clock = () => performance.now();
 const WAIT: Wait = (word, index, value, ms) => Atomics.wait(word, index, value, ms);
+export const HOST: Host = {
+  now: NOW,
+  wait: WAIT,
+  waitAsync: (word, index, value, ms) => Atomics.waitAsync(word, index, value, ms),
+};
 
 /**
  * Sleeps until `word[0]` leaves `value` (a wake-up: a notify or a store seen) or the clock reaches `end` (ms, on
@@ -32,4 +50,86 @@ export function sleepUntil(word: Int32Array, value: number, end: number, now: Cl
   }
   while (Atomics.load(word, 0) === value && now() < end);
   return waits;
+}
+
+/**
+ * An event-loop wait ends at least this long before the deadline. Its timeout is a delayed task on the worker's event
+ * loop, late by a time of its own rather than a share of the timeout: in Chrome on the Mac 0.6 ms on average, 1.9 ms at
+ * the p99, 2.1 at most at 1 ms gaps (bench/boot/REPORT.md "PERF loop 53"; PERF loop 60 for the vCPU worker's).
+ */
+export const LEAD_MS = 2.5;
+/** A return due this long and still not taken (every idle too short for it) is taken in the next idle anyway. */
+export const OVERDUE_MS = 100;
+
+/**
+ * The worker's returns to its event loop (`VcpuJob.yieldMs`, 0 never). Only a wait that went to the event loop counts:
+ * `Atomics.waitAsync` returns at once, with no task, when the word already moved or the timeout is 0.
+ */
+export function turns(yieldMs: number, h: Host = HOST) {
+  let last = h.now();
+  const since = () => h.now() - last;
+  return {
+    /** A return is due: `yieldMs` passed since the last. */
+    due: () => yieldMs > 0 && since() >= yieldMs,
+    /** Due for `OVERDUE_MS` more. */
+    overdue: () => yieldMs > 0 && since() >= yieldMs + OVERDUE_MS,
+    /** A wait in the event loop on `word` while it holds `value`, for at most `ms`; true when it was one. */
+    pass: async (word: Int32Array, value: number, ms: number) => {
+      const w = h.waitAsync(word, 0, value, ms);
+      if (!w.async) return false;
+      await w.value;
+      last = h.now();
+      return true;
+    },
+  };
+}
+export type Turns = ReturnType<typeof turns>;
+
+/** The yield of a BUDGET or DEVICE exit: a µs's wait on the wake word, ended by its task or a wake-up. */
+export function yieldTurn(t: Turns, wake: Int32Array) {
+  return t.pass(wake, Atomics.load(wake, 0), 0.001);
+}
+
+/**
+ * An `IDLE` exit's wait: until `t0 + ms` (an off vCPU, `ms` undefined: a second) or a wake-up (`wake[0]` leaves
+ * `value`). `t0` is the exit's time (`vm_run_cpu`'s return): what the worker did since isn't added. Polls first (a
+ * wake-up through `Atomics.wait` takes ~17 µs in the dev VM), then sleeps by `sleepUntil`. When a return to the event
+ * loop is due, the first wait is there if it can end `LEAD_MS` before the deadline (of an off vCPU: always); else the
+ * return stays due for a later exit, until it is overdue. Returns a promise when it waits in the event loop, else
+ * nothing (it's done).
+ */
+export function idle(
+  wake: Int32Array,
+  value: number,
+  ms: number | undefined,
+  t0: number,
+  t: Turns,
+  h: Host = HOST,
+): Promise<unknown> | undefined {
+  const off = ms === undefined;
+  const end = t0 + (off ? 1000 : ms);
+  const spin = Math.min(end - t0, SPIN_MS);
+  while (Atomics.load(wake, 0) === value && h.now() - t0 < spin);
+  if (off) {
+    if (t.due() && Atomics.load(wake, 0) === value) return t.pass(wake, value, end - h.now());
+    h.wait(wake, 0, value, end - h.now());
+    return;
+  }
+  if (t.due() && Atomics.load(wake, 0) === value) {
+    const left = end - h.now();
+    const ms = left > LEAD_MS ? Math.min(left / 2, left - LEAD_MS) : t.overdue() ? Math.max(left / 2, 0.001) : 0;
+    if (ms > 0) return t.pass(wake, value, ms).then(() => void sleepUntil(wake, value, end, h.now, h.wait));
+  }
+  sleepUntil(wake, value, end, h.now, h.wait);
+}
+
+/**
+ * A TX_FULL exit: the coordinator drains the console (its word bumped) while the vCPU waits a ms or a wake-up. The
+ * liveness block's `handled` before the wait: the wait isn't host work.
+ */
+export function txFull(ctl: Int32Array, wake: Int32Array, live: { handled(): void } | undefined, h: Host = HOST) {
+  Atomics.add(ctl, 0, 1);
+  Atomics.notify(ctl, 0);
+  live?.handled();
+  h.wait(wake, 0, Atomics.load(wake, 0), 1);
 }

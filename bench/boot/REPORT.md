@@ -7584,3 +7584,84 @@ sessions measured hold 275-293 MiB: PERF loop 44): not built. The finding is in 
 backlog entry is removed.
 
 CI: no code changed (docs and the results directory); `scripts/ci-fast.sh` passed.
+
+## PERF loop 60: the vCPU worker's idle and wake paths, the review's findings fixed (2026-11-23)
+
+The out-of-context review after PERF loop 58 (`review/vcpu-idle.md`, static, of 96ca41ae) found six things in the
+vCPU worker's idle and wake paths. Each was checked against the code; five are real and fixed, one (4) is real but
+only its worker-side part is worth fixing. **Kept: in Chromium on the Mac a vCPU now sees its own timer in WFI 49 µs
+late on average on one vCPU (was 205), 10-13 µs on 2-4 (was 17-19), with no cost to the gates, Firefox's pages
+session or an idle guest's host CPU.** The core, compiled code and `tests/steps.txt` are 1fe6dec0's: only web/ changed
+(the worker's waits factored into `web/idle-wait.ts` so the tests drive them with a fake clock). M4, macOS, Chrome for
+Testing 158.0.8127.36, Node 26.10.0 there; nothing else on the dev VM. The base arm is `../waarm64-base` at 1fe6dec0.
+Data: `bench/boot/results/perf60/` (its README).
+
+**The findings:**
+
+| | the review | checked | done |
+|---|---|---|---|
+| 1 | the event-loop wait (half the time left) ends past short deadlines: its timeout is a delayed task, ~0.6 ms late on average in Chrome on the Mac | real | taken only when it can end `LEAD_MS` (2.5 ms) before the deadline, at most the time left less that; else left due, taken anyway once due 100 ms more (`OVERDUE_MS`) |
+| 2 | a `waitAsync` that returned at once (word moved, timeout 0) counted as a return | real (an IDLE woken in its poll, one shorter than the poll) | counted only when it went async |
+| 3 | the BUDGET and DEVICE yields wait on a word nothing writes: a wake-up waits for the timer | real | they wait on the wake word with its current value |
+| 4 | the deadline counts from after the exit: host delays there are added | real, small | counted from `vm_run_cpu`'s return (before the liveness write, the record's BigInts and the test hook); the core's own path from its clock reading to its return stays (below) |
+| 5 | no test bounds the tail spin, the IDLE case, a leeway past 50% | real | tests for each (below) |
+| 6 | a comment says "half"; TX_FULL's 1 ms wait counted as host work in the liveness block | real | the comment went with the code; `handled` before the wait |
+
+Finding 4's rest: what's left between the core's clock reading (`run_loop`, `parallel.rs`) and the worker's is the
+core's timers, the xHCI's due check and the return, the platform lock only when a timer line changes (its contended
+waits average ~1.6 µs in `smp_user_jit_4`); a host stall there delays a timer by the stall plus the idle instead of
+the stall alone, in a window of a few µs per idle exit (~400 a second in an idle 4-vCPU guest). An absolute deadline in the
+exit record would close it, an ABI change not worth that: not built, no backlog entry.
+
+**The latency in Chromium** (the diagnostic core, `bench/boot/index.html` with `--query=tallies`, new: the timer line
+seen late in WFI, µs, the mean of a boot, median of the boots [range]; 2 rounds of 4 arms rotated, 5 boots of each N a
+run and 2 of `smp_user_jit_4`; `vyield=1`: every exit that may takes the event loop, the review's way to put every
+idle on the yield path; `python3 tallies.py`):
+
+| | base | fix | base, `vyield=1` | fix, `vyield=1` |
+|---|---|---|---|---|
+| `smp_alpine_jit` n1 | 205 [148-218] | **49 [26-57]** | 404 [336-440] | 44 [43-48] |
+| n2 | 18.9 [16.0-20.2] | **9.6 [8.3-10.7]** | 177 [161-190] | 10.0 [9.1-12.0] |
+| n4 | 17.0 [15.2-18.7] | **12.8 [10.2-19.5]** | 223 [217-232] | 13.2 [10.7-13.5] |
+| `smp_user_jit_4` | 16.6 [15.1-16.8] | **11.4 [9.8-12.1]** | 212 [209-214] | 12.9 [10.6-13.1] |
+| n1, the boot's max | 1,480 | 165 | 1,565 | 180 |
+
+The one-vCPU boot has ~110 WFI wake-ups with long idles between, so its 100 ms yield lands in an idle most times: the
+base's half-time wait made it 205 µs late on average (the Mac's Node, PERF loop 58: 29 µs, where libuv's timer is
+the delayed task). The timer seen late while running doesn't move (77-89 µs, 32-33 in userspace). One run of the
+fix with `vyield=1` failed at its first boot: "no vCPU retired a step in 30000 ms", the vCPU on `cpu_do_idle`'s
+WFI. It didn't show again in ~180 more boots of the fix with `vyield=1` (8 quick runs on the Mac, 8 alternated with
+the base's, 5 in the dev VM's Chromium) or ~120 of the base, nor in the default yield's runs below; a stress of
+`Atomics.waitAsync` racing `notify` at a µs timeout in Chrome on the Mac (4 pairs of workers, 90 s: 9.7M waits, 1.4M
+ended by a notify) lost none. Not attributed: the idle limit's error now says where each vCPU was (docs/backlog.md).
+
+**The gates** (`smp_alpine_jit`, `smp_user_jit_4` in Chromium, `bench/run-mac.sh`, the first arm swapped each round,
+3 rounds; ranges of the rounds' medians, ms; `python3 ../perf53/summary.py gates p60 base fix`):
+
+| | base | fix | |
+|---|---|---|---|
+| n1 / n2 / n4 total | 5044-5132 / 4711-4795 / 4731-4805 | 5103-5156 / 4738-4792 / 4766-4805 | −0.1 / −0.4 / +0.2%, overlapping |
+| `smp_user_jit_4` total | 10601-10973 | 10527-10747 | −1.8%, overlapping |
+
+**Firefox's pages session** (`bench/gpu/ab-mac.sh` from `pages.waarm64snap`, 3 rounds, the base first in rounds 1
+and 3): the starts and the pages' loads 68.6 s [67.8-69.1] base, 67.9 s [67.1-69.1] fix (−1.0%, overlapping); busy
+MIPS 474 / 480; modules 2719 / 2737; stalls of 20 ms+ 1 / 1, of 50 ms+ 0 / 0.
+
+**An idle guest's host CPU** (`bench/boot/idle-cpu.ts 4 5 20` in the Mac's Node, 3 rounds alternated, ~401 idle exits
+a second): base 8.40-8.60% of a core (median 8.58), fix 8.03-8.53% (median 8.06). Memory: none (a few closures at
+start).
+
+Tests: `tests/idle-wait.test.ts` covers the worker's waits on a fake host (a clock moving 0.5 µs a read, timed waits
+late by a share of their timeout, event-loop waits late by a fixed 0.6 or 2 ms, a wake-up at a set time): an idle with
+the return due ends within 5 µs of its deadline (0.2 ms-1 s), long ones take the return, one woken in its poll or
+shorter than it leaves the return due, an off vCPU's, short idles alone take it once overdue, a delay after the exit
+isn't added, the BUDGET/DEVICE yield ends on a wake-up and isn't counted when it returned at once, TX_FULL's `handled`
+precedes its wait; the sleep's tail spin stays under 45 µs (not `TAIL_MS`, so raising it fails); leeways of 80% and
+100% overshoot by the first wait's excess only. On 1fe6dec0's behavior (factored, unchanged) 13 cases failed: 7 of
+finding 1, 4 of 2, 1 of 3, 1 of 6. Planted bugs, each caught: the half-time wait without the lead (2 fail), the lead
+ignored for short idles (1), a returned-at-once wait counted (1), the yield on a word nothing writes (1), a 2 ms tail
+(16), no overdue fallback (1), `handled` after TX_FULL's wait (1), the deadline from the wait instead of the exit (1),
+a first wait of 0.9 of the time left (32, all six past-50% cases among them).
+
+CI: `scripts/ci.sh` (722 s), `scripts/ci-jit.sh`, `scripts/ci-debian.sh` and `scripts/ci-usb.sh` (testusb through
+the DEVICE exit's new yield) passed, each alone.

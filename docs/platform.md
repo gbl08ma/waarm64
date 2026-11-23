@@ -127,7 +127,10 @@ indexes of their instance).
   of one host core on the Mac (medians 8.1 → 8.9%), ~2% in the dev VM (11.6 → 13-14%); the gates and Firefox's pages session
   don't move. Tried: a share of 1/2, 6-7 µs late for +3% of a core
   (more waits); 3/5, 8 µs for +2%; 3/4, ~95 µs (its waits overshoot); a sleep instead of the tail's spin, ~15 µs for
-  no less CPU (bench/boot/REPORT.md "PERF loop 58"). An off vCPU (no deadline) waits a second at a time. **WFE** is a
+  no less CPU (bench/boot/REPORT.md "PERF loop 58"). The deadline counts from `vm_run_cpu`'s return (what the worker
+  does after it isn't added); the core's own path from its clock reading to the return isn't covered (an absolute
+  deadline in the exit record would be an ABI change, not worth it for that: PERF loop 60). An off vCPU (no deadline)
+  waits a second at a time. **WFE** is a
   yield (it ends the chunk, as QEMU's MTTCG does), and SEV does nothing (no vCPU sleeps in WFE):
   a vCPU can't cheaply see the store that clears another's exclusive monitor, which is what
   wakes Linux's LDXR + WFE waits on hardware. Counted, a sleep isn't worth it (2026-11-10, bench/boot/REPORT.md
@@ -151,10 +154,19 @@ indexes of their instance).
   Firefox's starts and the pages' loads −4.7%, busy MIPS +3.4%, and the time issuers' DSBs waited for TLBI IS −83%
   (639 → 107 ms a session: a target stops at its next poll instead of its chunk's end).
 - **The worker's event loop:** at the first exit 100 ms after its last return (`VmOptions.vcpuYieldMs`, 0
-  never), a vCPU worker returns to its event loop: a sleep (IDLE) waits with `Atomics.waitAsync` instead, a
-  BUDGET or DEVICE exit waits a µs on a word nothing writes. The tasks V8 and Blink post to the thread run then
-  (Oilpan's sweeping); never returning left them to V8's next major GC, which did them all at once on the vCPU
-  ([v8.md](v8.md) "Threads that never return to their event loop").
+  never), a vCPU worker returns to its event loop (`web/idle-wait.ts` `turns`): a sleep (IDLE) waits there with
+  `Atomics.waitAsync` instead, a BUDGET or DEVICE exit waits a µs on its wake word (so a wake-up ends it). The tasks V8
+  and Blink post to the thread run then (Oilpan's sweeping); never returning left them to V8's next major GC, which
+  did them all at once on the vCPU ([v8.md](v8.md) "Threads that never return to their event loop"). A return counts
+  only when the wait went to the event loop (`waitAsync` returns at once, with no task, on a word already moved or a
+  timeout of 0: an IDLE woken within its poll would otherwise use up the return). The event-loop wait's timeout is a
+  delayed task, late by a time of its own rather than a share of the timeout (Chrome on the Mac: ~0.6 ms on average,
+  ~2 ms at the p99), so an IDLE spends the return there only when the wait can end 2.5 ms before the deadline
+  (`LEAD_MS`: half the time left, at most the time left less 2.5 ms; `sleepUntil` does the rest); shorter idles leave
+  it due for a later exit, and once it has been due 100 ms more (`OVERDUE_MS`: a vCPU whose idles are all short) the
+  next idle takes it anyway. Before, the half-time wait ended past short deadlines: in Chromium on the Mac a vCPU saw
+  its timer in WFI 205 µs late on average on one vCPU (17-19 µs on 2-4), 49 µs (10-13) since (bench/boot/REPORT.md
+  "PERF loop 60").
 - **CPU_ON:** the caller records the request under the lock and wakes the target; the target's
   own thread applies it (no thread writes another's registers), marking itself on under the same
   lock (between taking the request and marking itself on, a second CPU_ON once saw it off: the

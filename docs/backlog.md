@@ -1198,6 +1198,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   through `waitAsync`); the log: `bench/results/local/ci/jsdef-3-ci.log`. Next time it shows, the same shapes' numbers
   say whether it's the same cluster. Since PERF loop 58 an idle vCPU sleeps to its deadline in waits of 2/3 of the time
   left (web/idle-wait.ts), which doesn't change how a notify wakes it: a cluster that remains isn't the WFI wait's leeway.
+  Since PERF loop 60 a BUDGET or DEVICE exit's yield waits on the wake word, so a wake-up ends it; before, it waited on
+  a word nothing writes, until its timer task ran (a candidate for the cluster: a cluster that remains isn't that).
+- **A parallel boot's only vCPU slept in WFI 30 s once** (PERF loop 60, bench/boot/REPORT.md): Chromium on the Mac,
+  `smp_alpine_jit` with `--query=vyield=1` (every exit that may returns to the event loop), the fix's first boot of
+  its first run: "no vCPU retired a step in 30000 ms", its PC on `cpu_do_idle`'s WFI. 1 in ~180 boots of the fix with
+  `vyield=1` (Mac and dev VM), 0 in ~120 of the base, 0 in the default yield's gates and pages sessions, and no lost
+  `Atomics.waitAsync` in a stress of 9.7M waits racing 1.4M notifies (`bench/boot/results/perf60/race-mac.json`): not
+  attributed. The idle limit's error now gives each vCPU's chunks and time in and out of the core (web/vm.ts
+  `runAsync`, from the liveness block): next time it shows, it says whether the worker sat in its wait (out) or the
+  core did (in); from there, the worker's wait (`web/idle-wait.ts` `idle`) or the wake-up that didn't come.
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 

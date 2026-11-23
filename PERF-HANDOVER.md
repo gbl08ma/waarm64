@@ -111,21 +111,23 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-23, after loop 59)
+## State (2026-11-23, after loop 60)
 
-Loop 59 counted what a module's install allocates outside the heap's bound (the links, the region heads, the tiers,
-the module log): ≤ 1.6 MiB at once, ~6 MB a session, bounded by the block map's keys and an epoch's slots, against
-~730 MiB of headroom; not built (bench/boot/REPORT.md "PERF loop 59"; docs/jit.md "The core's heap"). No code changed
-since loop 58 (ABI 74, `tests/steps.txt` unchanged); loop 57's revert stands. The next loop is 60, from the queue's
-first row. Main is clean, no run pending. `target/snapbench/pages.waarm64snap` loads into the current state layout;
-`target/archarm/desktop.qcow2` is ab-mac.sh's default disk. `../waarm64-base` is at 5d8f29ef. Loop 58's commit passed
-`scripts/ci.sh`, `ci-jit.sh` and `ci-debian.sh`; loop 59's (docs and results) `scripts/ci-fast.sh`.
+Loop 60 fixed the out-of-context review after loop 58 (the vCPU worker's idle and wake paths): the worker's waits are
+in `web/idle-wait.ts` with tests on a fake host; the IDLE's event-loop wait ends 2.5 ms before the deadline, a return
+counts only when it reached the event loop, the BUDGET/DEVICE yield ends on a wake-up; in Chromium on the Mac a vCPU
+sees its timer in WFI 49 µs late on one vCPU (was 205), 10-13 on 2-4 (17-19); gates, pages and idle CPU don't move
+(bench/boot/REPORT.md "PERF loop 60"). One unexplained idle-limit hang with `vyield=1` is a backlog watch
+(docs/backlog.md "Parallel SMP"). Core unchanged (ABI 74, `tests/steps.txt` unchanged); loop 57's revert stands. The
+next loop is 61, from the queue's first row. `target/snapbench/pages.waarm64snap` loads into the current state
+layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 60's commit passed `scripts/ci.sh`,
+`ci-jit.sh`, `ci-debian.sh` and `ci-usb.sh`.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-59" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50 and 55) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48 and 56 (50's: comments only). The next
-is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA, FP16, FHM,
-BF16. The ABI is 74.
+60" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+36, 42, 47, 50, 55 and 58) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56 and 60 (50's: comments only).
+The next is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA,
+FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain)
 

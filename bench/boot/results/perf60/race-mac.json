@@ -1,0 +1,45 @@
+{
+ "schema": 1,
+ "page": "bench/boot/p60-race.html",
+ "date": "2026-11-23T05:54:03.494Z",
+ "commit": null,
+ "dirty": false,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "query": "ms=90000&pairs=4",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "158.0.8127.36",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/158.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "hangs",
+   "unit": "count",
+   "samples": [
+    0
+   ],
+   "median": 0,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "waits",
+   "unit": "count",
+   "samples": [
+    9676896
+   ],
+   "median": 9676896,
+   "iqr": 0,
+   "n": 1
+  }
+ ]
+}
