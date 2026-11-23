@@ -682,6 +682,16 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   loop's renderer 3.4-3.8 GiB against 2.4-3.2. **Why 320:** the pages session no longer flushes (busy MIPS +16%,
   its heavy pages load a third faster), the gates and the `go build` loop are even, and it is about what the slots
   hold at Firefox's ~1.3 KB a region; the price is ~0.5 GiB of renderer memory while the cache is full.
+- **A real browser session doesn't reach 320 MiB in an hour** (`bench/boot/REPORT.md` "PERF loop 63", the Mac, the
+  desktop guest from the pages snapshot, `bench/gpu/firefox-load.ts` `PHASES=browse`): the five saved sites in one
+  Firefox tab, 30 s each and scrolled, for an hour compiled 46 → 184 MB (live 175 MiB at the end, 0.8 MB a minute in
+  the second half), and with Firefox closed and started again every 150 s 47 → 173 MB (live 165 MiB, 0.8 MB a minute):
+  no flush, ~3 h more at that rate (longer as it slows). Reached at a 128 MiB budget (`?jitmb=128`, after 28 min),
+  a flush emptied the cache to ~20 MiB, the compiled share fell to 71% for 5 s and was back within 2 points in 45 s,
+  with no vCPU stall of 50 ms or more and Firefox's worst frame gap (594 ms) inside the session's own range (its
+  p90 435 ms, maximum 665: the restarts' gaps); the refill compiled ~100 MB in the next 12 minutes. The counter was
+  checked end to end on that run (it moved from 0 to 1 as the live bytes crossed the budget) and in the stress
+  lockstep test. So the floor's doubling at a flush has no session to pay for at 320 MiB; nothing was built.
 - **Why a whole-cache flush, not aging or LRU:** compiled code has no per-block use counts (a block
   runs inside V8 without telling the core), so aging would need a counter update per block entry, the
   cost the design avoids everywhere; and links between blocks (`linkers`, direct calls by table index)

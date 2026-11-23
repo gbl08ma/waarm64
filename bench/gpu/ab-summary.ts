@@ -33,7 +33,7 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
     const fps = (k: string) => res[k]?.medianFps;
     const t = res.times ?? {};
     // The workload's start and end (epoch ms), and the JIT's counters over it.
-    const w = res.churn ?? res.sites;
+    const w = res.churn ?? res.sites ?? res.browse;
     const from = w?.readyAt ?? t.setUp, to = w ? w.readyAt + w.seconds * 1000 : t.saved;
     type S = { t: number; steps: number; jit: Record<string, number> };
     const raw = existsSync(`${d}/jit.jsonl.gz`) ? gunzipSync(readFileSync(`${d}/jit.jsonl.gz`)).toString() : existsSync(`${d}/jit.jsonl`) ? readFileSync(`${d}/jit.jsonl`, 'utf8') : '';

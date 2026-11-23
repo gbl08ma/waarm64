@@ -7732,3 +7732,44 @@ kernel's `VmRSS` read just before and after the smaps read, `/proc/vmstat`'s THP
   apart (VmRSS around the read, reservations, THP, V8's GC lines). No core change; no step count moved. Test:
   `tests/mem-smaps.test.ts` (the smaps parser and classes; planted: Size summed as Rss, AnonHugePages unread, both
   caught). The watched "no vCPU retired a step" wasn't seen.
+
+## PERF loop 63: a long browser session against the 320 MiB budget (2026-11-23)
+
+The backlog's "a browser session past the 320 MiB budget": does a real, long session on the desktop guest reach the
+JIT's budget and flush, and what does a flush cost? The Mac mini (M4, macOS 26.6.2, Chrome for Testing 158.0.8127.36,
+its GPU), the desktop guest from `target/snapbench/pages.waarm64snap` (Arch Linux ARM, 2.5 GiB, 4 vCPUs, 3D), the core
+at 50de1ca9 (ABI 74). A new phase of `bench/gpu/firefox-load.ts`, `PHASES=browse`: the pages disk's five saved sites
+(wiki, mdn, github, bbc, hn) opened in one Firefox tab by `firefox/sites.html`, 30 s each round and round, the mouse's
+wheel scrolling all along; `RESTART_S` closes and starts Firefox again that often, on the next site. Firefox's output
+is stamped by the guest's clock (bash's `EPOCHREALTIME`), so every page's frames a second line up with the JIT's
+counters once a second and the vCPU timeline (in 500 s chunks); `bench/gpu/mac-rss.sh` samples Chrome's RSS on the
+Mac; `bench/gpu/flush-cost.ts` gives, per flush, MIPS and the compiled share in 5 s bins, the vCPU stalls and
+Firefox's worst frame gap in the 30 s from it, against the session's other 30 s windows. Results:
+`results/perf63/` (`flush-cost.json`; per session `results.json`, `jit.jsonl.gz`, `mem.jsonl.gz` with the page's JIT
+gauge, `mac.rss`, `stalls.json`).
+
+| session (60 min unless said) | wasm compiled: start, 10, 30, 60 min (MB) | live at the end | rate, second half | flushes | busy MIPS | renderer RSS median / max |
+|---|---|---|---|---|---|---|
+| one Firefox | 46, 140, 161, 184 | 175 MiB | 0.8 MB/min | 0 | 277-294 | 2,972 / 3,962 MiB |
+| restarted every 150 s (23 restarts) | 47, 131, 148, 173 | 165 MiB | 0.8 MB/min | 0 | 282-318 | 2,885 / 3,847 MiB |
+| restarted every 150 s, `?jitmb=128`, 40 min | 48, 115, 194, 238 (40 min) | 98 MiB | 5.6 MB/min (the refill) | 1, at 28 min | 296-314 | 2,777 / 3,979 MiB |
+
+- **At 320 MiB a real session doesn't flush within an hour.** Most of the code comes in the first ten minutes
+  (Firefox's own, then each site's); after that ~1 MB a minute, slowing: at the second half's rate the budget is
+  ~3 hours away, more as it slows. Restarting Firefox adds little (its code is keyed by physical address: the
+  libraries' pages are shared across starts). Five sites are fewer than a user visits; new sites add code, which the
+  churn page bounds (two flushes in ~140 s at 320 MiB, `M8: benchmarks started from a snapshot`).
+- **The metering is right:** in the 128 MiB session the page's gauge read a budget of 134,217,728 bytes and the flush
+  count moved 0 → 1 as the live bytes crossed it (131.2 MB, then 136.3 MB compiled with the epoch at 1, the live bytes
+  21.5 MB); `tests/jit-lockstep.test.ts`'s stress variant checks the same counter through `vm.stats()`.
+- **What the flush cost** (128 MiB, on hn's page): the compiled share fell to 71% in the worst 5 s and was back within
+  2 points of its 98.8% in 45 s; the guest's MIPS didn't drop (it was mostly idle, 293 before, 249 over the 30 s
+  after); no vCPU stall of 50 ms or more (none in any session); Firefox's worst frame gap in the 30 s after was 594 ms
+  with 2 seconds over 100 ms, against the session's other windows' p90 of 435 ms and maximum 665 ms (the restarts'
+  gaps) and p90 of 2 slow seconds. Not distinguishable from the session's own stutter. The refill compiled ~100 MB in
+  12 minutes at the doubled floor (2000), reaching 98 MiB live by the end.
+- **Nothing built.** The floor's doubling (and anything else about a flush) would only matter past the budget, which
+  a real session reaches after hours at the default; at 128 MiB its one flush was hidden in the session's own frame
+  gaps. The backlog entry is removed; the harness stays for the next question about a flush.
+
+No core change; `tests/steps.txt` unchanged. The watched "no vCPU retired a step" wasn't seen.

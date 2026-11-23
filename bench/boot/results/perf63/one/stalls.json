@@ -1,0 +1,194 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-0.timeline.json": {
+  "seconds": 500,
+  "mips": 253,
+  "busyMips": 294,
+  "busyShare": 0.22,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-1.timeline.json": {
+  "seconds": 497,
+  "mips": 227,
+  "busyMips": 286,
+  "busyShare": 0.2,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-2.timeline.json": {
+  "seconds": 497,
+  "mips": 225,
+  "busyMips": 284,
+  "busyShare": 0.2,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-3.timeline.json": {
+  "seconds": 497,
+  "mips": 226,
+  "busyMips": 291,
+  "busyShare": 0.19,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-4.timeline.json": {
+  "seconds": 497,
+  "mips": 222,
+  "busyMips": 283,
+  "busyShare": 0.2,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-5.timeline.json": {
+  "seconds": 497,
+  "mips": 228,
+  "busyMips": 288,
+  "busyShare": 0.2,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-6.timeline.json": {
+  "seconds": 497,
+  "mips": 232,
+  "busyMips": 294,
+  "busyShare": 0.2,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/one/main-1/browse-7.timeline.json": {
+  "seconds": 97,
+  "mips": 221,
+  "busyMips": 277,
+  "busyShare": 0.2,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

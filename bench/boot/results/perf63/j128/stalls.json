@@ -1,0 +1,122 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/j128/main-1/browse-0.timeline.json": {
+  "seconds": 500,
+  "mips": 235,
+  "busyMips": 310,
+  "busyShare": 0.19,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/j128/main-1/browse-1.timeline.json": {
+  "seconds": 497,
+  "mips": 210,
+  "busyMips": 307,
+  "busyShare": 0.17,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/j128/main-1/browse-2.timeline.json": {
+  "seconds": 510,
+  "mips": 211,
+  "busyMips": 314,
+  "busyShare": 0.17,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/j128/main-1/browse-3.timeline.json": {
+  "seconds": 483,
+  "mips": 229,
+  "busyMips": 301,
+  "busyShare": 0.19,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf63/j128/main-1/browse-4.timeline.json": {
+  "seconds": 397,
+  "mips": 208,
+  "busyMips": 296,
+  "busyShare": 0.18,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

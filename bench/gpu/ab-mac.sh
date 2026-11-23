@@ -10,7 +10,8 @@
 # snapshot's disk opens at the same path. Each round starts with the next arm (a session's first run is an outlier
 # either way). Into <outdir>/<arm>-<round>/: results.json, log.txt, wall.txt, stalls.json (bench/gpu/stalls.ts),
 # counts.json, jit.jsonl.gz (as bench/gpu/ab.sh), the Mac's vmstat; the timelines are deleted. bench/gpu/mac-leftovers.sh
-# --kill after every session. Then `node bench/gpu/ab-summary.ts <outdir>` (`pagesS`: Firefox's starts and the pages'
+# --kill after every session. PHASES=browse (with BROWSE_S, DWELL_S, CHUNK_S, RSSLOG=1) runs the long session instead
+# (bench/gpu/firefox-load.ts), KEEP_TIMELINES=1 keeps the timelines gzipped (bench/gpu/flush-cost.ts reads them). Then `node bench/gpu/ab-summary.ts <outdir>` (`pagesS`: Firefox's starts and the pages'
 # loads, summed). Each session is bounded on the Mac (MAC_TIMEOUT, default 600 s) and here (SESSION_S, 800): run it
 # alone, in the background, nothing on the dev VM or the Mac beside it.
 set -u
@@ -29,7 +30,7 @@ for r in $(seq 1 "$rounds"); do
     tag=abmac-$name-$r o=$out/$name-$r
     rm -rf "$o" "$tree/bench/results/local/$tag" "$tree/bench/results/local/$tag".*; mkdir -p "$o"
     t0=$(date +%s.%N)
-    WASM=$core SCRIPT=firefox-load.ts FROM_SNAPSHOT=$from PHASES=pages PHASE_S=${PHASE_S:-1} JITLOG=1 TIMELINE_ALL=1 \
+    WASM=$core SCRIPT=firefox-load.ts FROM_SNAPSHOT=$from PHASES=${PHASES:-pages} PHASE_S=${PHASE_S:-1} JITLOG=1 TIMELINE_ALL=1 \
       WAARM64_GUEST_USER=${WAARM64_GUEST_USER:-alarm} MAC_TIMEOUT=${MAC_TIMEOUT:-600} \
       timeout "${SESSION_S:-800}" "$tree/bench/gpu/sway-mac.sh" virgl "${IMAGE:-target/archarm/desktop.qcow2}" "$tag" > "$o/log.txt" 2>&1
     code=$?
@@ -41,7 +42,7 @@ for r in $(seq 1 "$rounds"); do
     tl=$(ls "$o"/*.timeline.json 2>/dev/null)
     [ -n "$tl" ] && cap 4G 120 node bench/gpu/stalls.ts --json $tl > "$o/stalls.json" 2>/dev/null
     [ -f "$o/jit.jsonl" ] && cap 4G 120 node bench/boot/results/m8-replay/counts.ts report --json "$o/jit.jsonl" > "$o/counts.json" 2>/dev/null && gzip -f "$o/jit.jsonl"
-    rm -f $tl
+    if [ -n "${KEEP_TIMELINES:-}" ]; then [ -n "$tl" ] && gzip -f $tl; else rm -f $tl; fi
     echo "$name-$r $(cat "$o/wall.txt") $(timeout 60 bench/gpu/mac-leftovers.sh --kill 2>&1 | tail -1)"
   done
 done

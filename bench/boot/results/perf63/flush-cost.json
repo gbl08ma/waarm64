@@ -1,0 +1,216 @@
+[
+ {
+  "session": "one",
+  "seconds": 3600,
+  "visits": 120,
+  "frameSeconds": 2875,
+  "wasmMB": {
+   "start": 46,
+   "10min": 140,
+   "20min": 154,
+   "30min": 161,
+   "40min": 178,
+   "50min": 182,
+   "60min": 184,
+   "end": 184
+  },
+  "rateMBperMinLastHalf": 0.8,
+  "flushesAtS": [],
+  "liveMiB": {
+   "first": 56,
+   "max": 175,
+   "last": 175
+  },
+  "jit": {
+   "flushes": 0,
+   "modules": 4686,
+   "compileS": 1,
+   "emitS": 3.1
+  },
+  "mips": 57,
+  "share": 0.998,
+  "renderer": {
+   "median": 2972,
+   "max": 3962
+  },
+  "gpu": {
+   "median": 113,
+   "max": 140
+  },
+  "baseline": {
+   "windows": 708,
+   "worstFrameMs": {
+    "median": 43,
+    "p90": 116,
+    "max": 235
+   },
+   "slowSeconds": {
+    "median": 0,
+    "p90": 1
+   },
+   "stalls50": {
+    "median": 0,
+    "p90": 0
+   },
+   "longestStall": {
+    "median": 0,
+    "p90": 0
+   },
+   "allStalls50": {
+    "median": 0,
+    "p90": 0
+   }
+  },
+  "flushes": []
+ },
+ {
+  "session": "restart",
+  "seconds": 3600,
+  "visits": 114,
+  "frameSeconds": 3063,
+  "wasmMB": {
+   "start": 47,
+   "10min": 131,
+   "20min": 140,
+   "30min": 148,
+   "40min": 156,
+   "50min": 164,
+   "60min": 173,
+   "end": 173
+  },
+  "rateMBperMinLastHalf": 0.8,
+  "flushesAtS": [],
+  "liveMiB": {
+   "first": 53,
+   "max": 165,
+   "last": 165
+  },
+  "jit": {
+   "flushes": 0,
+   "modules": 5545,
+   "compileS": 0.9,
+   "emitS": 2.9
+  },
+  "mips": 60,
+  "share": 0.993,
+  "renderer": {
+   "median": 2885,
+   "max": 3847
+  },
+  "gpu": {
+   "median": 111,
+   "max": 138
+  },
+  "baseline": {
+   "windows": 708,
+   "worstFrameMs": {
+    "median": 68,
+    "p90": 439,
+    "max": 553
+   },
+   "slowSeconds": {
+    "median": 0,
+    "p90": 1
+   },
+   "stalls50": {
+    "median": 0,
+    "p90": 0
+   },
+   "longestStall": {
+    "median": 0,
+    "p90": 0
+   },
+   "allStalls50": {
+    "median": 0,
+    "p90": 0
+   }
+  },
+  "flushes": []
+ },
+ {
+  "session": "j128",
+  "seconds": 2400,
+  "visits": 75,
+  "frameSeconds": 2060,
+  "wasmMB": {
+   "start": 48,
+   "10min": 115,
+   "20min": 125,
+   "30min": 194,
+   "40min": 238,
+   "end": 238
+  },
+  "rateMBperMinLastHalf": 5.6,
+  "flushesAtS": [
+   1666
+  ],
+  "liveMiB": {
+   "first": 52,
+   "max": 127,
+   "last": 98
+  },
+  "jit": {
+   "flushes": 1,
+   "modules": 6608,
+   "compileS": 1.1,
+   "emitS": 4
+  },
+  "mips": 57,
+  "share": 0.989,
+  "renderer": {
+   "median": 2777,
+   "max": 3979
+  },
+  "gpu": {
+   "median": 110,
+   "max": 143
+  },
+  "baseline": {
+   "windows": 426,
+   "worstFrameMs": {
+    "median": 55,
+    "p90": 435,
+    "max": 665
+   },
+   "slowSeconds": {
+    "median": 0,
+    "p90": 2
+   },
+   "stalls50": {
+    "median": 0,
+    "p90": 0
+   },
+   "longestStall": {
+    "median": 0,
+    "p90": 0
+   },
+   "allStalls50": {
+    "median": 0,
+    "p90": 0
+   }
+  },
+  "flushes": [
+   {
+    "n": 1,
+    "atS": 1666,
+    "page": "news.ycombinator.com/index.html",
+    "mipsBefore": 293,
+    "mipsLowest5s": 51,
+    "mipsBackS": 0,
+    "shareBefore": 0.988,
+    "shareLowest5s": 0.707,
+    "shareBackS": 45,
+    "mipsFirst30s": 249,
+    "stalls50": 0,
+    "stalls100": 0,
+    "longestStall": 0,
+    "allStalls50": 0,
+    "longestAll": 0,
+    "worstFrameMs": 594,
+    "slowSeconds": 2,
+    "fps": 56.8,
+    "timeline": true
+   }
+  ]
+ }
+]

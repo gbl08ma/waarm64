@@ -124,12 +124,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the FP checks (below), and sway
   itself on the page again (the user's manual check). Not on graphics' path any more: 3D goes through
   virgl (graphics.md "Decisions"); llvmpipe stays what guests without 3D fall back to.
-- **A browser session past the 320 MiB budget** (`bench/boot/REPORT.md` "M8: the carry timed, and a larger code
-  cache", "M8: a machine's JIT budget and the page's memory signal"): Firefox's pages session compiles ~260 MiB and
-  doesn't flush (from the snapshot, 2026-11-04: 132 MB, no flush); a longer one will, and each flush doubles the threshold's floor (the long stutters at later flushes
-  were the doubled floor). The churn page flushes at 320 MiB (twice in ~140 s with `hot=1500`); not measured: a real
-  session long enough to flush there. Carrying the hot set across the flush and an adaptive budget didn't pay (jit.md
-  "Tried and not kept"); a machine can set its own budget (the JIT cache setting).
 - **Transfers that still leave a function** (the userspace benchmark's remaining lever:
   `bench/boot/REPORT.md` from "M8: where the userspace benchmark's time goes"; re-profile with
   `bench/boot/userprof.ts` before and after). Per 1000 instructions in Lua and SQLite: 27 to 37

@@ -163,6 +163,12 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
   `bench/gpu/sway-mac.sh`, `PHASE_S=1` (a second of each page's frames: Firefox's starts and the pages' loads are the
   measure), each round starting with the next arm, into the same layout as `ab.sh` (so `ab-summary.ts` reads it:
   `pagesS` is the starts and loads summed, `startsS` the starts), with `mac-leftovers.sh --kill` after each session.
+  `PHASES=browse` (with `BROWSE_S`, `DWELL_S`, `RESTART_S`, `CHUNK_S`, `RSSLOG=1`, `KEEP_TIMELINES=1`) runs a long
+  session instead: the pages disk's sites in one Firefox tab by bot (`firefox/sites.html`), scrolled, Firefox's output
+  stamped by the guest's clock so its frames line up with the JIT's counters and the vCPU timeline (in chunks: the
+  timeline holds 600 s), Chrome's RSS on the Mac (`bench/gpu/mac-rss.sh`); `bench/gpu/flush-cost.ts <session>` gives
+  the compiled MB over time and, per flush, MIPS, the compiled share, stalls and frame gaps against the session's
+  other windows (bench/boot/REPORT.md "PERF loop 63").
   `@<tree>` runs an arm from another checkout's web/ (a core of an older ABI: `../waarm64-base` at its commit,
   sharing this `target/`). ~4 min a session (bench/boot/REPORT.md "PERF loop 35"). `MEMLOG` (and `MEMLOG_UASM=0`)
   pass through to the Mac: `mem.jsonl` then has the page's accounting and the JIT's counters, no smaps (macOS has no

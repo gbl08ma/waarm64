@@ -111,20 +111,21 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-23, after loop 62)
+## State (2026-11-23, after loop 63)
 
-Loop 62 re-ran the Go load whose ~10 GB samples the backlog called unexplained: six runs on the dev VM (Chromium 155),
-four at the 16 MiB floor that brings back the old flush churn; every sample at most 3.44 GB, smaps matching the
-kernel's VmRSS, no huge pages in the code. Not reproducible, so the entry is gone; `bench/mem/memsample.ts` now
-records what would tell a recurrence apart (bench/boot/REPORT.md "PERF loop 62", results in
-`bench/mem/results/perf62.json`; there is no bench/mem/REPORT.md). Loop 60's idle-limit hang with `vyield=1` stays a
-backlog watch (docs/backlog.md "Parallel SMP"); not seen. Core unchanged (ABI 74, `tests/steps.txt` unchanged).
-The next loop is 63, from the queue's first row. `target/snapbench/pages.waarm64snap` loads into the current state
-layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 62's
-commit passed `scripts/ci.sh` (bench tools and a unit test; no core or page change).
+Loop 63 ran real long browser sessions on the Mac (`bench/gpu/firefox-load.ts` `PHASES=browse`, analysed by
+`bench/gpu/flush-cost.ts`): an hour in one Firefox compiled 184 MB, an hour with Firefox restarted every 150 s 173 MB,
+~0.8 MB a minute by then: no flush at 320 MiB (hours away). At `?jitmb=128` its one flush (28 min in, the counter
+checked end to end) cost 45 s of a lower compiled share and no stall or frame gap beyond the session's own. Nothing
+built; the backlog entry is gone (bench/boot/REPORT.md "PERF loop 63", results in `bench/boot/results/perf63/`). Core
+unchanged (ABI 74, `tests/steps.txt` unchanged). **The track is paused at the user's request after loop 63
+(2026-11-23)**; the next loop is 64, from the queue's first row.
+`target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
+ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 63's commit passed `scripts/ci-fast.sh` (bench tools
+only).
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-62" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+63" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47, 50, 55 and 58) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56 and 60 (50's: comments only).
 The next is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
@@ -135,8 +136,7 @@ Refilled by the supervisor after loop 52 from docs/backlog.md's performance entr
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: a browser session past the 320 MiB budget | a real session long enough to flush; measure the flush's stutter |
-| JIT: transfers that still leave a function | re-profile with `bench/boot/userprof.ts`; turn into a doable to-do or a finding |
+| **Next:** JIT: transfers that still leave a function | re-profile with `bench/boot/userprof.ts`; turn into a doable to-do or a finding |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: keep
 ours for now), bug watches (Firefox's first page, the lost Firefox process), parallel `make` (needs a harness), the

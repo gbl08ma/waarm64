@@ -24,6 +24,8 @@
 // one instead of booting and goes straight to the phases (no login, no files, no sway: they're in the file); `webgl`
 // from webgl.waarm64snap measures the Firefox already on it (WARM_S after the restore: the JIT starts cold).
 // PHASES=churn: code churn for the JIT's cache (firefox/churn.html; CHURN its query, CHURN_S its time).
+// PHASES=browse: a long session in one Firefox, the pages disk's sites in one tab round and round (BROWSE_S, DWELL_S,
+// CHUNK_S; below), for the JIT's flushes and what they cost (bench/gpu/flush-cost.ts).
 // TAILCAT=<address> (opt-in, benchmarks only: tests/net/tailcat.sh up prints it) puts the guest online through that
 // exit node: the adapter connected, then IPv4 only in the guest (the dev VM has no IPv6 out: no IPv6 default route,
 // DNS at 1.1.1.1, IPv4 preferred, Firefox's network.dns.disableIPv6), checked with a curl. PHASES=sites (needs it):
@@ -313,6 +315,98 @@ if (PHASES.includes('sites')) {
   results.sites = { urls, dwell, cycles, startAt, readyAt, seconds: Math.round((doneAt - readyAt) / 1000), started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), visits, at: new Date(readyAt).toISOString() };
   await takeStats();
   log('sites', JSON.stringify({ visits: visits.length, jit: results.jit }));
+  save();
+}
+if (PHASES.includes('browse')) {
+  // A long session in one Firefox (PERF loop 63: does the JIT reach its budget, and what a flush costs): the pages of
+  // bench/gpu/firefox-pages.sh's disk in one tab, by bot (firefox/sites.html with their file URLs), DWELL_S seconds each
+  // (30), round and round for BROWSE_S (3600), the mouse's wheel scrolling all along (down, then up, 8 s each way);
+  // RESTART_S closes and starts Firefox again that often.
+  // Firefox's stdout gets the guest's epoch time on each line (bash's EPOCHREALTIME: no fork a line), the guest clock's offset from the host's taken at
+  // the start and the end, so every page's frames a second (`FFBENCH page t= frames= maxms=`) lines up with the JIT's
+  // counters (JITLOG=1) and the vCPU timeline (TIMELINE_ALL=1: in chunks of CHUNK_S, 500 s, the timeline's room
+  // being 600 s; <out>/browse-<k>.timeline.json). bench/gpu/flush-cost.ts reads it.
+  const secs = Number(process.env.BROWSE_S ?? 3600), dwell = Number(process.env.DWELL_S ?? 30), chunkS = Number(process.env.CHUNK_S ?? 500);
+  const list = (await runLines('mkdir -p /mnt/ffpages; mount -o ro /dev/vdb /mnt/ffpages 2>/dev/null; cat /mnt/ffpages/pages.txt')).filter(Boolean);
+  const urls = list.map((l) => `file:///mnt/ffpages/${l.split(' ')[1]}`);
+  const cycles = Math.ceil(secs / (dwell * urls.length));
+  // RESTART_S (0: never): Firefox closed and started again that often, as a user does, each time on the next page.
+  const restartS = Number(process.env.RESTART_S ?? 0);
+  await pasteSerial(`cat > ${HOME}/ffbench/sites.html <<'EOF'\n${readFileSync(new URL('firefox/sites.html', import.meta.url), 'utf8')}EOF`);
+  // The driver's window.open allowed (without, Firefox blocks it as a popup and no page opens); appended once.
+  await pasteSerial(`grep -q popup_maximum ${HOME}/ffbench/profile/user.js || cat >> ${HOME}/ffbench/profile/user.js <<'EOF'\nuser_pref("dom.disable_open_during_load", false);\nuser_pref("dom.popup_maximum", -1);\nEOF`);
+  await run(`chown -R ${GUEST_USER}:${GUEST_USER} ${HOME}/ffbench`);
+  await run('. /root/ff.sh; ffkill', 120_000);
+  /** The guest's clock less the host's (ms), from a `date` between two host readings. */
+  const offset = async () => { const a = Date.now(); const g = Number(await run('date +%s.%N')) * 1000; return g - (a + Date.now()) / 2; };
+  const offsetStart = await offset();
+  // ffrun's launch (`ffbrowse.sh <url> <tag>`), with each line of Firefox's output stamped by the guest's clock (a
+  // script: no quotes to nest).
+  await pasteSerial(`cat > /tmp/ffbrowse.sh <<'EOF'\nFFBENCH_SUPPORT=/tmp/ff-$2.support firefox --profile ${HOME}/ffbench/profile --kiosk "$1" 2>&1 | while IFS= read -r l; do printf '%s %s\\n' "$EPOCHREALTIME" "$l"; done > /tmp/ff-$2.log\nEOF`);
+  await run('chmod 755 /tmp/ffbrowse.sh; rm -f /tmp/ff-browse*');
+  let launches = 0;
+  const launch = async () => {
+    const tag = `browse${launches}`, from = (launches * Math.max(1, Math.round(restartS / dwell))) % urls.length;
+    const order = [...urls.slice(from), ...urls.slice(0, from)];
+    const url = `file://${HOME}/ffbench/sites.html?q=${encodeURIComponent(new URLSearchParams({ dwell: String(dwell), cycles: String(cycles), urls: order.join(',') }).toString())}`;
+    launches++;
+    await run(`date +%s.%N > /tmp/ff-${tag}.t0; ${s.asUser(`swaymsg exec 'bash /tmp/ffbrowse.sh \\"${url}\\" ${tag}' >/dev/null`)}`);
+    return run(`. /root/ff.sh; ffwait ${tag}`, 330_000);
+  };
+  const started = await launch();
+  const readyAt = Date.now();
+  log('browse', started, `${urls.length} pages, ${dwell} s each, ${cycles} cycles, restarts every ${restartS || '-'} s`);
+  const box = (await page.locator('#screen').boundingBox())!;
+  let wheeling = true;
+  const wheel = async () => {
+    for (let k = 0; wheeling; k++) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, Math.floor(k / 80) % 2 ? -120 : 120);
+      await page.waitForTimeout(100);
+    }
+  };
+  const wheeled = wheel();
+  const chunks: unknown[] = [];
+  const restarts: { at: number; started: string }[] = [];
+  const v0 = await s.vmStats();
+  const end = readyAt + secs * 1000;
+  let k = 0, nextChunk = readyAt + chunkS * 1000, nextRestart = restartS ? readyAt + restartS * 1000 : Infinity;
+  if (process.env.TIMELINE_ALL) await s.timeline.start();
+  while (Date.now() < end) {
+    await page.waitForTimeout(Math.max(0, Math.min(nextChunk, nextRestart, end) - Date.now()));
+    if (Date.now() >= nextRestart && Date.now() < end) {
+      const at = Date.now();
+      await run('. /root/ff.sh; ffkill', 120_000);
+      restarts.push({ at, started: await launch() });
+      nextRestart += restartS * 1000;
+    }
+    if (Date.now() >= nextChunk || Date.now() >= end) {
+      if (process.env.TIMELINE_ALL) {
+        await s.timeline.stop();
+        chunks.push(await s.timelineSummary(`browse-${k}`));
+        if (Date.now() < end) await s.timeline.start();
+      }
+      k++;
+      nextChunk += chunkS * 1000;
+      log('browse', `${Math.round((Date.now() - readyAt) / 1000)} s`, JSON.stringify((await s.vmStats())?.stats?.jit ?? {}).slice(0, 200));
+    }
+  }
+  wheeling = false;
+  await wheeled;
+  const v1 = await s.vmStats();
+  const offsetEnd = await offset();
+  // The log, packed: the visits, then every frames line as `<guest epoch s> <maxms> <frames>`, 6 to a line (runLines reads 6 lines a screenful: a
+  // line that wraps over several rows loses others).
+  const visits = (await runLines('cat /tmp/ff-browse*.log | grep "FFBENCH site "', 120_000)).map((l) => { const m = /^([\d.]+) FFBENCH site (\d+) (\S+) t=(\d+)/.exec(l); return m ? { n: +m[2], url: m[3], guestS: +m[1] } : { line: l }; });
+  const packed = await runLines(String.raw`cat /tmp/ff-browse*.log | grep "FFBENCH page t=" | sort -n | sed -nE 's/^([0-9]+\.[0-9])[0-9]* .*frames=([0-9]+) maxms=([0-9]+)[.0-9]*.*/\1 \3 \2/p' | paste -d' ' - - - - - -`, 300_000);
+  const kinds = await runLines(String.raw`cat /tmp/ff-browse*.log | grep FFBENCH | sed -E 's/^[0-9.]+ FFBENCH ([a-z]+).*/\1/' | sort | uniq -c | head -20`);
+  log('browse', 'lines', kinds.join('; '));
+  const nums = packed.join(' ').split(/\s+/).filter(Boolean).map(Number);
+  const frames: number[][] = [];
+  for (let i = 0; i + 2 < nums.length; i += 3) frames.push([nums[i], nums[i + 1], nums[i + 2]]);
+  results.browse = { urls, dwell, cycles, seconds: secs, readyAt, started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), offsetStartMs: Math.round(offsetStart), offsetEndMs: Math.round(offsetEnd), visits, frames, restartS, restarts, kinds, vm: s.vmDelta(v0, v1), chunks };
+  await takeStats();
+  log('browse', JSON.stringify({ visits: visits.length, frames: frames.length, jit: results.jit }));
   save();
 }
 if (PHASES.includes('menu')) {
