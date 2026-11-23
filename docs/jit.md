@@ -117,7 +117,10 @@ the interpreter's own code.
   timeout alone, which emitted half of them with one function).
 - **Regions** (the compile unit, one function each) are of two kinds, of up to **64** blocks (`block::REGION`;
   against 16 on the Mac, Alpine's boot ~5% faster, its userspace ~4%, the parallel boots 2-3%, Firefox's pages session
-  the same, no more memory: `bench/boot/REPORT.md` "Regions of 64 blocks"), in
+  the same, no more memory: `bench/boot/REPORT.md` "Regions of 64 blocks"; past 64 they barely change: at 96, 128
+  and 256 `node` compiled the same wasm within 0.1% with 0.05-0.2% more blocks in regions, the same instructions and
+  cycles, planning +1%: "PERF loop 64". Nothing else bounds a region's size but the entry number's 8 bits, at most
+  255 entries, which a region of up to 256 blocks fits), in
   reverse postorder: loop regions within one guest page, forward regions across pages ("Across pages" below):
   - **Forward regions** (`block::forward`, formed when a batch is compiled: `Cache::plan`): a
     block of the batch and the batch's other blocks that static edges reach from it, so each block

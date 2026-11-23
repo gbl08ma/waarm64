@@ -117,23 +117,19 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-23, after loop 63)
+## State (2026-11-23, after loop 64)
 
-Loop 63 ran real long browser sessions on the Mac (`bench/gpu/firefox-load.ts` `PHASES=browse`, analysed by
-`bench/gpu/flush-cost.ts`): an hour in one Firefox compiled 184 MB, an hour with Firefox restarted every 150 s 173 MB,
-~0.8 MB a minute by then: no flush at 320 MiB (hours away). At `?jitmb=128` its one flush (28 min in, the counter
-checked end to end) cost 45 s of a lower compiled share and no stall or frame gap beyond the session's own. Nothing
-built; the backlog entry is gone (bench/boot/REPORT.md "PERF loop 63", results in `bench/boot/results/perf63/`). Core
-unchanged (ABI 74, `tests/steps.txt` unchanged). **The track is paused at the user's request after loop 63
-(2026-11-23)**; the next loop is 64, from the queue's first row. The BENCH track that went ahead of it ended the
-same day: its paired command and its `node` workload are tier 2 below (bench/boot/REPORT.md "BENCH loop 2" to "the
-end").
+Loop 64 swept `block::REGION` 64 against 96, 128 and 256 on `node` (one paired run, 24 pairs): the regions barely
+change past 64 (blocks in regions +0.05-0.2%, the wasm within 0.1%, instructions and cycles the same), so the −0.5%
+`LOWER` at 96 and 128 is noise; **64 stays, and it is the base rows 2-4 build on.** Nothing built (bench/boot/REPORT.md
+"PERF loop 64", results in `bench/boot/results/perf64/`); the rule it gave is in docs/benchmarking.md "Rules" (a time
+verdict with the same wasm, instructions and cycles is noise: stop there). Core unchanged (ABI 74, `tests/steps.txt`
+unchanged). The next loop is 65, from the queue's first row.
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
-ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 63's commit passed `scripts/ci-fast.sh` (bench tools
-only).
+ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 64's commit changed docs only (no CI run).
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-63" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+64" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47, 50, 55 and 58) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56 and 60 (50's: comments only).
 The next is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
@@ -153,13 +149,12 @@ every row:
 - The rows are the surveys' reading of the code, nothing run: each row's figures are a bound to check, its count
   comes first, and a count that leaves a row under the floor closes it as a finding (the REPORT, the docs).
 - A row from the backlog names its entry; the others have none (their finish writes the docs and the REPORT only).
-- Rows 2-4 change which blocks a region gets: run them one at a time, each on the last one's winner, and re-check the
+- Rows 2-4 change which blocks a region gets (on regions of 64 blocks: loop 64): run them one at a time, each on the last one's winner, and re-check the
   compile threshold (1000/2000 against 500/1000, tied on 2026-11-09 at 16 blocks) once after them.
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 1 | **Next:** JIT: regions past 64 blocks (`block::REGION`, core/src/jit/block.rs:210) | sweep | 32 → 64 was still −2.0% on the boot and −1.1 to −1.5% on the parallel boots; 96, 128 and 256 are untried. Watch planning (+35% at 64; the bound on walks that wasn't kept is `region64/` `mitigations.patch`). `block::CAP` 64 as an arm only if cheap (cap-ended blocks 0.03-1% of entries; `Info::len` is a u8, the interpreter's stack array is `2*CAP`) |
-| 2 | JIT: `BATCH_STEPS` on the Mac (core/src/jit/mod.rs:530, 50,000; `Config::batch` 512) | sweep, stale verdict | 25K, 50K, 100K, 200K. Set 2026-10-08 in the VM ("The Mac host wasn't measured"); "Larger batches in a browser" (jit.md "Tried and not kept", 2026-11-03) is the VM's, two sessions an arm, never the gates. Forward regions take only their batch's blocks: "Regions of 64 blocks" counts 6.5-9.3 tail exits per 1000 steps to a target compiled before and 4.9-7.0 to one another region of the batch took. Watch interpreted steps, lock acquisitions, stalls ≥ 20 ms |
+| 2 | **Next:** JIT: `BATCH_STEPS` on the Mac (core/src/jit/mod.rs:530, 50,000; `Config::batch` 512) | sweep, stale verdict | 25K, 50K, 100K, 200K. Set 2026-10-08 in the VM ("The Mac host wasn't measured"); "Larger batches in a browser" (jit.md "Tried and not kept", 2026-11-03) is the VM's, two sessions an arm, never the gates. Forward regions take only their batch's blocks: "Regions of 64 blocks" counts 6.5-9.3 tail exits per 1000 steps to a target compiled before and 4.9-7.0 to one another region of the batch took. Watch interpreted steps, lock acquisitions, stalls ≥ 20 ms |
 | 3 | JIT: loop heads compiled alone, then again as a region (`REGION_AFTER` 1000, mod.rs:300; `Cache::plan` mod.rs:1281) | sweep, count | `region_after` 0, 250, 1000 (0 is the forced mode's value: one constant). Last swept at M6 in Node with a threshold of 50; the "regions at the first threshold cost the boots 10-14%" verdict is M5's. After a tier-up every earlier link still enters the head's function, which loads the hot word and transfers again: 145 M redirects a pages session (2026-11-05), 839 of 2,728 installs tier-ups (loop 59), 4.5 exits per 1000 steps into a head compiled alone at 64 blocks. Tally the redirects first; a second arm marks a loop's members taken so they aren't compiled as forward regions too. Watch the wasm (loops compiled twice today) |
 | 4 | JIT: Liftoff's lazy compiles on the vCPU's thread | bound first | the compile worker's `new WebAssembly.Module` only validates; V8 compiles each function at its first call, on the vCPU (Liftoff ~22-25 µs/KB against emission's ~12.7: jit.md, bench/interp/REPORT.md). The bound needs no code: an A/B with `CHROMIUM_JS_FLAGS=--no-wasm-lazy-compilation` on the parallel boots and the pages session (the round-robin gates have no worker). If it clears the floor: the worker calls each export once behind an entry guard (measure the guard alone), or V8's compilation hints. Unverified: that a worker's lazy compile reaches the shared module. Sharpens the backlog's "Cold, kernel-heavy phases" |
 | 5 | JIT: `WARM` (mod.rs:537, 16) with the interpreter's `REPORT` (interp/block.rs:3154, 16) | sweep, stale verdict | 4, 8, 16, 32 (`REPORT` 8 with `WARM` 8). 1 and 4 lost on 2026-10-16 in the VM on +33-41% wasm and a third flush at 160 MiB; the budget is 320 MiB now, a session doesn't flush in an hour (loop 63) and size costs nothing on the Mac. State the wasm and V8's code memory with the result |
@@ -185,7 +180,7 @@ every row:
 | 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
 Swept or measured on the Mac recently, not to redo: the compile threshold (2026-11-09, but see the note above the
-table), region sizes 16/32/64, the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
+table), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
 41), the parallel chunk (loop 32), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
 function's size as such (2026-11-05, loop 13), the dispatcher's entries and the signature check (loop 54), lazy NZCV
 at a loop's head (loop 42), and the features off by default (I8MM, FCMA, FP16, FHM, BF16: host-op counts, which

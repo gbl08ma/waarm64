@@ -1,0 +1,13 @@
+node: 24 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  r96          -0.51% [-0.73%, -0.29%] LOWER        -0.01% [-0.17%, +0.14%] same         +0.02% [-0.03%, +0.06%] same         -0.02% [-0.18%, +0.14%] same        
+  r128         -0.46% [-0.80%, -0.11%] LOWER        +0.17% [-0.10%, +0.44%] same         +0.15% [+0.09%, +0.21%] HIGHER       +0.15% [-0.09%, +0.40%] same        
+  r256         -0.34% [-0.78%, +0.09%] open         +0.28% [-0.09%, +0.66%] open         +0.16% [+0.09%, +0.23%] HIGHER       +0.27% [-0.05%, +0.58%] open        
+  ended: the cap of 24 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 8886       0.9805         1711        721.6        217.6        47.42         1443    501877767
+  r96                  8842       0.9805         1720        718.7        216.6        47.42         1421    499990416
+  r128                 8847       0.9803         1720        719.5        215.9        47.47         1418    499402553
+  r256                 8851       0.9802         1721        719.5        216.6        47.47         1418    499401075
+arms: base 9786743 bytes; r96 9786745 bytes; r128 9786745 bytes; r256 9786745 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-24, band ±0.5%, stop on cycles and wall, each interval's tail 1.18e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.36

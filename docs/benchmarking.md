@@ -387,6 +387,12 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   `LOWER` or `HIGHER` in time (the interval of the pairs' ratios excludes zero), no difference what it calls `same`
   (inside ±0.5%), and `open` is neither. Report the interval, the pairs and the workload; the renderer's cycles and
   instructions beside it, never for it.
+- **A time verdict with nothing under it is noise, and decides the arm:** when an arm's JIT wasm, instructions and
+  cycles are the base's within ~0.1% and only time moves (`LOWER`/`HIGHER` by ~0.5%), the code didn't change enough
+  to move it; the page's own speed did. Stop there: no A/A run, no gates, no pages session (PERF loop 64: regions
+  past 64 blocks, −0.5% `LOWER` at 96 on the same wasm, instructions and cycles). For a constant's sweep, look at the
+  first pairs' compile counters (`regionBlocks`, the wasm, modules in `ab.json`): an arm that barely changes them
+  ends the sweep without waiting for the cap.
 - **The noise floor of alternated sessions** (the dev VM, the pages session, anything the paired command doesn't
   run): compare builds **A/B in one session, alternating**, three
   rounds or more (`bench/interp/ab.sh`). A difference counts when every round of one arm beats every

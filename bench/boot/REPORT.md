@@ -8063,3 +8063,42 @@ workload that ranks for the browser; the pages session, whole or cut to two page
 measure of parallel SMP, the run loop and flushes. Open, in docs/backlog.md "The paired A/B's reach": a paired
 workload under parallel SMP, a desktop session inside one browser beside its other arm, the vCPU thread's own
 counters, an interpreter-only arm for the calibration.
+
+## PERF loop 64: regions past 64 blocks (2026-11-23)
+
+PERF-HANDOVER.md's queue row 1 (no docs/backlog.md entry): `block::REGION` 64 against 96, 128 and 256. **Not kept:
+past 64 the regions barely change, and the paired command saw no difference in what runs, so the time it called
+`LOWER` is noise; 64 stays.** No code changed (the core is f4390e99's, ABI 74, `tests/steps.txt` unchanged). Data:
+`bench/boot/results/perf64/` (`ab.json`, `verdict.txt`, `log.txt` of `bench/ab-mac.sh`). M4, macOS, Chromium
+158.0.8127.36 (Chrome for Testing).
+
+**What bounds a region's size besides `REGION`** (read, not run): nothing at or near 64. `block::region` and
+`block::forward`'s walks stop at `REGION`; members are `Vec`s; a member's label is a nested wasm `block` and the
+branch to it a LEB depth; the one fixed width is a region's entry number (a call's continuation), 8 bits above
+`ENTRY_SHIFT` (24) in a table index, so at most 255 entries: a region of `REGION` blocks has at most `REGION - 1`, which
+fits up to 256 exactly (past 256 it would need a wider field). The cores differ in `block::region::visit` (the bound's
+immediate, +1 byte; `tools/wasm-sizes.ts`).
+
+**`node`, the four arms in one paired run** (24 pairs, the cap; time against 64, the interval, the verdict):
+
+| | wall | cycles | instructions | JIT wasm | planning | modules |
+|---|---|---|---|---|---|---|
+| 64 | 8886 ms | | | 47.42 MiB | 385.4 ms | 1443 |
+| 96 | −0.51% [−0.73, −0.29] `LOWER` | −0.01% `same` | +0.02% `same` | 47.42 MiB | 389.3 ms | 1421 |
+| 128 | −0.46% [−0.80, −0.11] `LOWER` | +0.17% `same` | +0.15% `HIGHER` | 47.47 MiB | 390.3 ms | 1418 |
+| 256 | −0.34% [−0.78, +0.09] `open` | +0.28% `open` | +0.16% `HIGHER` | 47.47 MiB | 390.2 ms | 1418 |
+
+Emission (718.7-721.6 ms) and V8's compile (215.9-217.6 ms) the same; memory 1711 against 1720-1721 MiB (the level
+includes the other arms' pages); interpreted steps −0.4%. The blocks compiled in regions 99,249 → 99,301 (96) and
+99,448-99,455 (128, 256): +0.05-0.2%, so the regions a 64-block bound cut short are a few loops (tier-ups 1671 →
+1643, regions 21,435 → 21,131-21,153), and 128 already holds every region 256 does. **Why the `LOWER` is
+noise:** at 96 the compiled wasm, the instructions and the cycles are the base's within 0.02%: no change in the work
+can move the time 0.5%, and a page's own speed (docs/benchmarking.md "The paired A/B": two pages of one core stay
+~0.2% apart) and the arms' four pages a pair take a share that size. An A/A run was started and stopped (the user:
+the same code and counts already decide it). The gates (`user`, `boot`), the parallel boots and the pages session
+weren't run: what the arms change is too small to measure on any of them.
+
+**`block::CAP` 64: left out.** The cap ends 0.03-1% of compiled block entries, whose successor is mostly a member of
+the same region already ("Regions of 64 blocks"), and the cap also shapes the interpreter's blocks (`form` is
+shared; its constant stack is `2 * CAP`), where a block's end decides where a chunk can stop, so its step counts
+would likely move: a guest-visible change for a gain bounded below the floor.
