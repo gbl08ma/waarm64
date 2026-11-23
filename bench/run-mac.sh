@@ -13,7 +13,9 @@ HOST=${MAC_HOST:-macmini.lan}
 DEST=waarm64-bench
 CORE=target/wasm32-unknown-unknown/release
 ssh "$HOST" "mkdir -p $DEST/bench $DEST/tools $DEST/$CORE $DEST/target/images $DEST/target/bench"
-rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/vulkan bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
+rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/vulkan bench/mac bench/run.ts bench/stats.ts bench/procstat.ts "$HOST:$DEST/bench/"
+# The counters' helper (bench/procstat.ts: instructions, cycles and CPU time of the browser's processes), built there.
+ssh "$HOST" "cd $DEST && { [ procstat -nt bench/mac/procstat.c ] || cc -O2 -Wall -o procstat bench/mac/procstat.c; }"
 # The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
 . bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
 . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there

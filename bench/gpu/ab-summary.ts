@@ -52,6 +52,9 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
       session: s, arm: s.replace(/-\d+$/, ''), exit: wall ? +wall[2] : NaN,
       flushes: res.jit?.flushes ?? NaN, modules: res.jit?.modules ?? NaN, wasmMB: res.jit ? Math.round(res.jit.bytes / 1e6) : NaN,
       share: counts?.share ?? NaN, interpG: counts?.interpGsteps ?? NaN, gsteps: counts?.gsteps ?? NaN,
+      // The renderer's counters over the phases (bench/procstat.ts): CPU seconds, G instructions and G cycles, per guest step, the cycles' share on P cores.
+      cpuS: res.proc ? +(res.proc.cpuNs / 1e9).toFixed(2) : NaN, ginstr: res.proc?.cycles ? +(res.proc.instructions / 1e9).toFixed(2) : NaN, gcycles: res.proc?.cycles ? +(res.proc.cycles / 1e9).toFixed(2) : NaN,
+      instrStep: res.proc?.cycles && res.proc.steps ? +(res.proc.instructions / res.proc.steps).toFixed(4) : NaN, cyclesStep: res.proc?.cycles && res.proc.steps ? +(res.proc.cycles / res.proc.steps).toFixed(4) : NaN, pshare: res.proc?.cycles ? +(res.proc.pCycles / res.proc.cycles).toFixed(4) : NaN,
       busyMips: st?.busyMips ?? NaN, stalls20: st?.stallsAtLeastMs?.[20] ?? NaN, stalls50: st?.stallsAtLeastMs?.[50] ?? NaN,
       // Firefox's start on each page and its load, summed (s): the pages session's measure (bench/gpu/ab-mac.sh).
       startsS: pages.length ? +pages.reduce((a, k) => a + res[k].started, 0).toFixed(1) : NaN,
@@ -83,7 +86,7 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
     rows.push(row);
   }
 }
-const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'skipped', 'dsbMs', 'platMs', 'ics', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'startsS', 'pagesS', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
+const KEYS = ['cpuS', 'ginstr', 'gcycles', 'instrStep', 'cyclesStep', 'pshare', 'flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'skipped', 'dsbMs', 'platMs', 'ics', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'startsS', 'pagesS', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
 const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); const i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
 const arms: Record<string, Record<string, { median: number; iqr: number; n: number; all: number[] }>> = {};
 for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {

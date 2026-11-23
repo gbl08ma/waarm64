@@ -7,6 +7,7 @@ import os from 'node:os';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { ROOT, startServer } from '../tools/serve.ts';
+import { procServer } from './procstat.ts';
 import { summarize } from './stats.ts';
 
 const CONFIGS: Record<string, string> = {
@@ -37,6 +38,8 @@ const git = (cmd: string) => { try { return execSync(`git ${cmd}`, { cwd: ROOT, 
 
 const server = await startServer();
 const port = (server.address() as { port: number }).port;
+// The browser's CPU counters for the page's samples (bench/procstat.ts; `?proc=<port>`: bench/boot/suite.ts).
+const proc = await procServer(process.pid);
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
   args: [...(jsFlags ? [`--js-flags=${jsFlags}`] : []), ...args['chromium-args']!.split(' ').filter(Boolean)],
@@ -47,6 +50,7 @@ try {
   const qs = new URLSearchParams();
   if (args.quick) qs.set('quick', '');
   if (args.only) qs.set('only', args.only);
+  qs.set('proc', String((proc.address() as { port: number }).port));
   for (const [k, v] of new URLSearchParams(args.query ?? '')) qs.set(k, v);
   await page.goto(`http://127.0.0.1:${port}/${args.page}?${qs}`);
   if (args.input) await page.setInputFiles('#bench-file', args.input);
@@ -87,4 +91,5 @@ try {
 } finally {
   await browser.close();
   server.close();
+  proc.close();
 }

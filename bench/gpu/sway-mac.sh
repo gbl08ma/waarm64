@@ -17,6 +17,7 @@ DEST=waarm64-gpu-bench
 MODE=$1 IMAGE=$2 NAME=$3
 ssh "$HOST" "mkdir -p $DEST/bench/results/local $DEST/target/images/debian $DEST/target/wasm32-unknown-unknown/release"
 rsync -a --delete --exclude results bench/gpu bench/audio bench/video bench/vulkan bench/mem "$HOST:$DEST/bench/"
+ssh "$HOST" "mkdir -p $DEST/bench" && rsync -a bench/procstat.ts bench/mac "$HOST:$DEST/bench/" && ssh "$HOST" "cd $DEST && { [ procstat -nt bench/mac/procstat.c ] || cc -O2 -Wall -o procstat bench/mac/procstat.c; }"   # the counters' helper (bench/procstat.ts)
 rsync -a bench/snapshot-start.ts "$HOST:$DEST/bench/"   # guest-session.ts imports it and bench/mem/probe.ts
 rsync -a --delete web "$HOST:$DEST/"
 ssh "$HOST" "mkdir -p $DEST/tests" && rsync -a tests/page-ask.ts "$HOST:$DEST/tests/"   # guest-session.ts answers the page's dialogs with it

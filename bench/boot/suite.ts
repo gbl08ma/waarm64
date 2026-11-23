@@ -34,6 +34,7 @@ import type { DeviceSpec } from '../../web/devices.ts';
 import { bootVm } from '../../web/vm.ts';
 import { compileCore, Exit, PSCI_SYSTEM_OFF } from '../../web/core.ts';
 import { Counter } from '../../web/counters.ts';
+import type { Counters, ProcStat } from '../procstat.ts';
 import { DISTROS, GUEST_CMDLINE as CMDLINE, guestDevices, testDevices } from '../../web/test-guests.ts';
 
 const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a chunk
@@ -61,6 +62,27 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
   return { wasm, kernel, disk: new URL('../../target/images/buildroot/rootfs.ext4', import.meta.url).href, cmdline: CMDLINE, ramSize: 256 << 20 };
 }
 
+/** The browser's CPU counters now (bench/procstat.ts, through bench/run.ts's `?proc=<port>`); none without it. */
+const procNow = async (): Promise<ProcStat | undefined> => {
+  const port = pageQuery().get('proc');
+  return port ? ((await (await fetch(`http://127.0.0.1:${port}/`)).json()) as ProcStat) : undefined;
+};
+const procDelta = (a: ProcStat, b: ProcStat): Counters => Object.fromEntries(Object.keys(b.renderer).map((k) => [k, b.renderer[k as keyof Counters] - a.renderer[k as keyof Counters]])) as Counters;
+
+/**
+ * A run's samples from the renderer's counters over each boot (docs/benchmarking.md "Counters"): CPU time, and
+ * where the host counts them (macOS) instructions and cycles, each also per guest step, and the cycles' share on
+ * performance cores.
+ */
+function procSamples(name: string, params: Record<string, unknown>, procs: (Counters | undefined)[], steps: number[]): Sample[] {
+  const p = procs.filter((x) => x !== undefined);
+  if (!p.length || p.length !== steps.length) return [];
+  const s = (suffix: string, unit: string, f: (c: Counters, i: number) => number) => ({ name: `${name}_${suffix}`, unit, params, samples: p.map(f) });
+  const out = [s('cpu_ms', 'ms', (c) => c.cpuNs / 1e6), s('cpu_ns_step', 'ns/step', (c, i) => c.cpuNs / steps[i])];
+  if (!p[0].cycles) return out;
+  return [...out, s('ginstr', 'G instructions', (c) => c.instructions / 1e9), s('gcycles', 'G cycles', (c) => c.cycles / 1e9), s('instr_step', 'instructions/step', (c, i) => c.instructions / steps[i]), s('cycles_step', 'cycles/step', (c, i) => c.cycles / steps[i]), s('pshare', 'share of cycles on P cores', (c) => c.pCycles / c.cycles), s('joules', 'J', (c) => c.energyNj / 1e9)];
+}
+
 /**
  * One boot to power-off: ms to each "waarm64: …" console line (`marks`, keyed
  * by the text after "waarm64: ") and to the end, and the counters. `test`: the
@@ -71,6 +93,7 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
   const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), fma: pageQuery().get('fma') !== 'emul', exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined });
   await onVm?.(vm);
+  const proc0 = await procNow();
   let console = '';
   let scanned = 0;
   const marks: Record<string, number> = {};
@@ -91,13 +114,14 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     if (r.kind === Exit.DEVICE) await vm.settle(); // backends inline (Node)
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) continue;
     const total = performance.now() - t0;
+    const proc1 = await procNow();
     const closed = vm.close();
     // The guest's counter read 0 at boot (a vCPU worker's clock behind the VM's; web/core.ts `clockOffset`).
     if (/Missing cycle counter/.test(console)) throw new Error(`the counter didn't run at boot:\n${console}`);
     if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/waarm64: test (exit 0|ok)/.test(console)) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);
     }
-    return { init: marks['init'], total, marks, closed, console, stats: vm.stats(), cpus: vm.cpuStats(), helpers: vm.helperReport().slice(0, 30) };
+    return { init: marks['init'], total, marks, closed, console, proc: proc0 && proc1 && procDelta(proc0, proc1), stats: vm.stats(), cpus: vm.cpuStats(), helpers: vm.helperReport().slice(0, 30) };
   }
 }
 
@@ -122,6 +146,7 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
   const cold = { init: [] as number[], total: [] as number[] };
   const warm = { init: [] as number[], total: [] as number[] };
   let stats, helpers: { op: string; calls: number }[] | undefined;
+  const procs: (Counters | undefined)[] = [], steps: number[] = [];
   for (let i = 0; i < n.cold; i++) {
     fresh();
     const t = performance.now();
@@ -138,6 +163,8 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
     const r = await boot(module, img);
     warm.init.push(r.marks[first]);
     warm.total.push(r.total);
+    procs.push(r.proc);
+    steps.push(r.stats.steps);
     stats = r.stats;
     helpers = r.helpers;
   }
@@ -148,6 +175,7 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
     { name: 'boot_total_cold', unit: 'ms', params, samples: cold.total },
     { name: 'boot_init', unit: 'ms', params, samples: warm.init },
     { name: 'boot_total', unit: 'ms', params, samples: warm.total },
+    ...procSamples('boot_total', params, procs, steps),
   ];
 }
 
@@ -195,6 +223,7 @@ async function bootMips(o: Options, distro: 'buildroot' | 'alpine', jit: 1 | 4):
   const module = await compileCore(img.wasm);
   const n = o.quick ? 2 : distro === 'alpine' ? 3 : 7;
   const mips: number[] = [], ms: number[] = [];
+  const procs: (Counters | undefined)[] = [];
   let stats;
   for (let i = 0; i <= n; i++) {
     fresh();
@@ -205,10 +234,11 @@ async function bootMips(o: Options, distro: 'buildroot' | 'alpine', jit: 1 | 4):
     if (i === 0) continue;
     ms.push(r.total);
     mips.push(r.stats.steps / r.total / 1000);
+    procs.push(r.proc);
   }
   const name = `${distro === 'alpine' ? 'boot_alpine' : 'boot'}_${jit === 4 ? 'dec' : 'jit'}`;
   const params = { distro, jit, steps: stats!.steps, counters: stats };
-  return [{ name: `${name}_mips`, unit: 'MIPS', params, samples: mips }, { name: `${name}_total`, unit: 'ms', params, samples: ms }];
+  return [{ name: `${name}_mips`, unit: 'MIPS', params, samples: mips }, { name: `${name}_total`, unit: 'ms', params, samples: ms }, ...procSamples(`${name}_total`, params, procs, procs.map(() => stats!.steps))];
 }
 
 /** The userspace phases after Alpine's boot, under the JIT (M6's end; docs/benchmarking.md). */
@@ -230,17 +260,19 @@ async function alpineUser(o: Options, spill = false): Promise<Sample[]> {
   const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ...ram, jit: 1 as const };
   const module = await compileCore(img.wasm);
   const phases: Record<string, number[]> = Object.fromEntries([...USER_PHASES, 'total'].map((p) => [p, []]));
+  const procs: (Counters | undefined)[] = [];
   let stats;
   for (let i = 0; i < (o.quick ? 1 : 3); i++) {
     fresh();
     const r = await boot(module, img);
     for (const p of USER_PHASES) phases[p].push(between(r, p));
     phases.total.push(r.total);
+    procs.push(r.proc);
     stats = r.stats;
     o.log?.(`${name}: ${USER_PHASES.map((p) => `${p} ${between(r, p).toFixed(0)}`).join(', ')}, total ${r.total.toFixed(0)} ms`);
   }
   const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline: a.cmdline, ramMiB: 1024, spillMiB: spill ? [832] : undefined, jit: 1, steps: stats!.steps, counters: stats };
-  return Object.entries(phases).map(([p, samples]) => ({ name: `${name}_${p}`, unit: 'ms', params, samples }));
+  return [...Object.entries(phases).map(([p, samples]) => ({ name: `${name}_${p}`, unit: 'ms', params, samples })), ...procSamples(`${name}_total`, params, procs, procs.map(() => stats!.steps))];
 }
 
 /**
@@ -363,6 +395,7 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
     if (!t.some((x) => x[0])) throw new Error('?tallies: no tallies (not a diagnostic core: build it with --features diag)');
     return { count: c, meanUs: (t.reduce((s, x) => s + x[1], 0) * 0.016) / c, maxUs: Math.max(...t.map((x) => x[2])) * 0.016 };
   };
+  const procs = new Map<number, { proc: Counters | undefined; steps: number }[]>();
   for (const n of ns) await one(n);
   for (let i = 0; i < (o.quick ? 1 : rounds); i++) {
     for (const n of ns) {
@@ -387,11 +420,12 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
         s.samples.push(ms[p]);
         s.params = { distro: 'alpine', cmdline: d.cmdline, threads: what === 'user' ? n : undefined, ncpus: n, parallel: true, jit: 1, chunk, steps: r.stats.steps, counters: r.stats, cpus: r.cpus };
       }
+      procs.set(n, [...(procs.get(n) ?? []), { proc: r.proc, steps: r.stats.steps }]);
       const cpus = r.cpus.map((c) => `${(c.steps / 1e6).toFixed(0)}M/${c.jit.blocks}b/${(c.jit.compileNs / 1e6).toFixed(0)}ms`).join(' ');
       o.log?.(`smp_${what} n=${n}: ${phases.map((p) => `${p} ${ms[p].toFixed(0)}`).join(', ')} ms; per vCPU steps/regions/compile: ${cpus}`);
     }
   }
-  return [...out.values()];
+  return [...out.values(), ...[...procs].flatMap(([n, p]) => procSamples(`smp_${what}_jit_n${n}_total`, { ncpus: n }, p.map((x) => x.proc), p.map((x) => x.steps)))];
 }
 
 /** A newc cpio archive of `[path, mode, data?, [major, minor]?]` entries. */

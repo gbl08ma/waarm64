@@ -34,6 +34,7 @@
 // GUEST_BROWSER=chromium opens them in the guest's Chromium instead (the desktop image's, images/arch/desktop.sh; kiosk,
 // popups allowed, no background throttling of the driver's timers, its console on stderr).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { type Counters, procStat } from '../procstat.ts';
 import { GUEST_USER, openSession } from './guest-session.ts';
 import { saveSnapshotFile } from '../snapshot-start.ts';
 
@@ -59,10 +60,16 @@ times.running = Date.now();
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '', ...(s.restored ? { from: s.restored } : {}), ...(s.coreSha ? { core: s.coreSha } : {}) };
 // The JIT's counters and parallel SMP's (DSB waits, the platform lock), for ab-summary.
 async function takeStats() {
-  const st = (await s.vmStats())?.stats as { jit?: unknown; par?: unknown } | undefined;
+  const st = (await s.vmStats())?.stats as { jit?: unknown; par?: unknown; steps?: number } | undefined;
   results.jit = st?.jit;
   results.par = st?.par;
+  // The renderer's CPU counters and the guest's steps since the set-up (bench/procstat.ts; ab-summary's cycles a step).
+  if (proc0) {
+    const now = procStat(process.pid).renderer, was = proc0;
+    results.proc = { ...Object.fromEntries(Object.keys(now).map((k) => [k, now[k as keyof Counters] - was.proc[k as keyof Counters]])), steps: (st?.steps ?? NaN) - was.steps };
+  }
 }
+let proc0: { proc: Counters; steps: number } | undefined;
 /** PROFILE's kernel groups (guest-session.ts `symbolGroups`): the 3D driver's paths in the guest's kernel. */
 const KERNEL_GROUPS = { virtio_gpu: 'virtio_gpu', virtqueue: 'virtqueue|vring', drm: '^(__)?drm_|\\[drm', shmem: 'shmem', dma: 'dma_resv|dma_fence|dma_buf' };
 type During = { start(): Promise<void>; stop(): Promise<void> };
@@ -87,6 +94,12 @@ if (TAILCAT) {
   if (!/http [23]\d\d/.test(check)) throw new Error(`the guest isn't online through tailcat: ${addr} ${check}`);
 }
 times.setUp = Date.now();
+{
+  // A restored machine's first status can lag its start: wait for one with the steps.
+  let steps: number | undefined;
+  for (let i = 0; i < 25 && steps === undefined; i++) { steps = ((await s.vmStats())?.stats as { steps?: number } | undefined)?.steps; if (steps === undefined) await page.waitForTimeout(200); }
+  proc0 = { proc: procStat(process.pid).renderer, steps: steps ?? NaN };
+}
 /** The root shell, the pages, the profile and Firefox's helpers in the guest, then sway: what a snapshot already has. */
 async function setUp() {
   await rootShell();

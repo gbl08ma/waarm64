@@ -358,6 +358,28 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
 | SMP (M7) | parallel `make` (not in the image yet) |
 | I/O | a write benchmark (a scratch disk behind an overlay); re-run 9p and net under the JIT |
 
+## Counters
+
+A benchmark run on the Mac records the browser's CPU counters beside its times (bench/boot/REPORT.md "BENCH loop 1"):
+macOS's `proc_pid_rusage` gives a process's instructions retired, cycles, CPU time, their part on performance cores
+and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench/gpu/sway-mac.sh`), and
+`bench/procstat.ts` sums them over the renderers of the harness's Chromium. On Linux it gives CPU time only.
+
+- **The gates** (`bench/run.ts`, bench/boot's suite): each `<name>_total` has `_cpu_ms`, `_ginstr`, `_gcycles`,
+  `_instr_step` and `_cycles_step` (per guest step), `_pshare` (the cycles' share on performance cores) and `_joules`,
+  read around each boot (`?proc=<port>`: a local server of the runner's).
+- **A guest session** (`bench/gpu/firefox-load.ts`): `results.json`'s `proc`, from the set-up to the last phase's
+  end, with the guest's steps over it; `bench/gpu/ab-summary.ts` shows `cpuS`, `ginstr`, `gcycles`, `instrStep`,
+  `cyclesStep`, `pshare`.
+- **How tight they are** (an A/A on the M4, single samples' coefficient of variation): on the deterministic gates
+  instructions a step 0.06-0.07% against the clock's 0.7-1.6%, cycles a step 0.5-0.7%; on the pages session
+  instructions 0.28% against `pagesS`'s 0.69% (four sessions), cycles no tighter than the clock. Parallel boots'
+  work differs run to run: only their runs' medians are tight.
+- **What they don't replace:** instructions miss cache misses, mispredictions and dependency chains. Read them
+  beside time and cycles, not for them (the BENCH track's calibration will say which measure screens which kind of
+  change). A run whose P-core share is low ran partly on efficiency cores: on the userspace gate that share
+  explains nearly all of the clock's noise.
+
 ## Instrumentation and profiling
 
 - **Counters** in shared memory ([abi.md](abi.md) "Counters"): steps, exceptions by EC, IRQs, TLB

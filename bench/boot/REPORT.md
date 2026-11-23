@@ -7773,3 +7773,62 @@ gauge, `mac.rss`, `stalls.json`).
   gaps. The backlog entry is removed; the harness stays for the next question about a flush.
 
 No core change; `tests/steps.txt` unchanged. The watched "no vCPU retired a step" wasn't seen.
+
+## BENCH loop 1: the browser's CPU counters as a benchmark's measures (2026-11-23)
+
+The BENCH track's first loop (BENCH-KICKOFF.md): what repeats more tightly than wall time on the Mac. macOS gives a
+process's instructions retired, cycles, CPU time, their part on performance cores and energy through
+`proc_pid_rusage` (`RUSAGE_INFO_V6`), with no privilege for one's own processes: `bench/mac/procstat.c` prints them,
+`bench/procstat.ts` sums them over the harness's process tree and its renderers, `bench/run.ts` serves them to the
+page (`?proc=<port>`), and `bench/boot/suite.ts` reads them around each boot: a gate's results gain
+`<name>_total_cpu_ms`, `_ginstr`, `_gcycles`, `_instr_step`, `_cycles_step` (per guest step), `_pshare` (the cycles'
+share on performance cores) and `_joules`, of the renderer. `bench/gpu/firefox-load.ts` reads them from the set-up to
+each phase's end (`results.json` `proc`), and `bench/gpu/ab-summary.ts` shows `cpuS`, `ginstr`, `gcycles`,
+`instrStep`, `cyclesStep`, `pshare`. A shell loop of fixed work, three times: instructions within 0.002%, cycles
+within ~2% (half a second each).
+
+**The gates' A/A** (one core as both arms, `bench/interp/ab-mac.sh`, three rounds; M4 Mac mini, macOS 26.6.2, Chrome
+for Testing 158.0.8127.36; `results/bench1/gates/`, `node bench/boot/results/bench1/aa.mjs`). The coefficient of
+variation of single samples (of the six runs' medians), the userspace gate's first boot of a run left out:
+
+| Gate (samples) | wall | cycles a step | instructions a step | P-core share |
+|---|---|---|---|---|
+| `alpine_user_jit_total` (12) | 1.57% (1.62%) | 0.66% (0.63%) | 0.061% (0.025%) | 0.07% |
+| `alpine_jit_total` (30) | 0.71% (0.62%) | 0.49% (0.30%) | 0.073% (0.048%) | 0.09% |
+| `smp_alpine_jit_n1_total` (30) | 0.35% (0.19%) | 0.72% (0.69%) | 0.14% (0.08%) | 0.32% |
+| `smp_alpine_jit_n2_total` (30) | 0.66% (0.09%) | 1.19% (0.52%) | 0.69% (0.21%) | 0.43% |
+| `smp_alpine_jit_n4_total` (30) | 0.91% (0.40%) | 1.53% (0.72%) | 1.04% (0.17%) | 0.54% |
+| `smp_user_jit_n4_total` (12) | 2.82% (1.82%) | 1.12% (0.57%) | 1.94% (1.16%) | 0.21% |
+
+- **Deterministic gates:** instructions a step repeat 10-25 times more tightly than wall time. The session's first
+  run (the known outlier) was 4.0% slower by the clock and 0.07% apart in instructions. Cycles are 1.5-2.5 times
+  tighter than the clock.
+- **Where the clock's noise comes from, on the userspace gate:** over its 12 samples wall time correlates −0.97 with
+  the P-core share (98.6-99.0% of the renderer's cycles) and 0.96 with cycles; the share explains the cycles too
+  (−0.90). The boot gate shows no such tie (0.44; cycles and the share −0.50). So part of a run's noise is how much
+  of the renderer's work the scheduler put on efficiency cores, and the share is a covariate loop 2 can adjust by.
+  No two modes ~6% apart (docs/benchmarking.md) appeared in these 24 runs.
+- **Parallel boots:** a realtime guest's work differs run to run (its steps too), so a sample's instructions are no
+  tighter than its time; the runs' medians are (0.2% at 2 and 4 vCPUs). `smp_user_jit_4` stays over 1% by any
+  measure: a poor gate for small differences.
+
+**The pages session's A/A** (`bench/gpu/ab-mac.sh`, two rounds, four sessions of ~221 s, `results/bench1/pages-aa/`):
+
+| | `pagesS` | busy MIPS | G steps | CPU s | G instructions | G cycles | P-core share |
+|---|---|---|---|---|---|---|---|
+| a-1 | 69.5 | 474 | 97.16 | 283.4 | 2321.4 | 962.6 | 0.9005 |
+| a-2 | 68.7 | 477 | 97.03 | 281.9 | 2314.1 | 956.4 | 0.8998 |
+| b-1 | 69.7 | 468 | 96.98 | 285.0 | 2313.5 | 974.1 | 0.9017 |
+| b-2 | 68.9 | 477 | 97.08 | 282.0 | 2305.3 | 955.7 | 0.8989 |
+| CV | 0.69% | 0.90% | 0.08% | 0.51% | 0.28% | 0.88% | 0.13% |
+
+The session's work is steadier than assumed (its steps within 0.08%), and its instructions 2.5 times tighter than
+`pagesS`; its cycles are no tighter than the clock. Four sessions: a first look, not a floor. Three of the four
+lacked the steps at the set-up (a restored machine's first status lagged; the harness now waits for it), so cycles
+and instructions a step are missing there.
+
+**What instructions don't see:** cache misses, mispredicted branches and dependency chains, so a change that only
+moves those shows in cycles and time alone. Which measure ranks which kind of change as the full session does is
+loop 4's question; until then a verdict isn't read from instructions alone.
+
+Nothing in the core changed (ABI 74). On Linux `bench/procstat.ts` gives CPU time only (/proc).
