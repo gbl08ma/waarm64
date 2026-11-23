@@ -132,7 +132,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
   await running(page);
   assert.equal(await page.locator('#save-snapshot').isEnabled(), true);
 
@@ -202,7 +202,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
       return (send as (...a: unknown[]) => void).call(this, m, ...rest);
     };
   });
-  await p2.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
+  await p2.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await running(p2);
   const t0 = performance.now();
   await p2.evaluate(() => { (window as unknown as { escapes: string[] }).escapes.length = 0; });
@@ -304,7 +304,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
   await running(page);
   const suspendFile = async () => (await opfs(page))['waarm64-buildroot']?.suspend;
   /** The shell's `SUSVAR`, asked under a fresh marker. */
@@ -320,7 +320,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
     await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 60_000 });
     assert.match((await message(page))!, words('machine:worker-snapshot.suspended', {}, { start: true }));
     assert.ok((await suspendFile())! > 100_000, 'the suspended machine is beside the overlay');
-    assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
+    assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.resume'));
     checkSave(JSON.parse((await page.evaluate(() => document.getElementById('message')?.dataset.snapshot)) ?? '{}'), 'suspend');
   };
   assert.equal(await page.locator('#suspend').isEnabled(), true);
@@ -351,7 +351,8 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await onSerial(page, 'SUSVAR=three\n');
   assert.equal(await susvar(), 'three');
   await suspend();
-  await page.locator('#restart').click();
+  // Resume on the plaque over the suspended machine's screen or terminal (whichever shows), as the toolbar's.
+  await page.locator('[data-action=resume]:visible').click();
   await running(page);
   assert.equal(await susvar(), 'three');
   await suspend();

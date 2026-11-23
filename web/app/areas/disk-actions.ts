@@ -5,6 +5,8 @@
 import { msg, MsgError, t } from '../../i18n.ts';
 import { removeOverlay, overlayBytes } from '../../overlay.ts';
 import { ask } from '../ask.svelte.ts';
+import { current } from './current.svelte.ts';
+import { records } from './records.svelte.ts';
 import { hashFile } from '../definitions.ts';
 import { deleteOverlay } from '../disks.ts';
 import { fetchManifest, isManifestUrl } from '../../chunked.ts';
@@ -44,6 +46,8 @@ export type DiskDeps = Core & {
   changesHeader(file: File): Promise<unknown>;
   loadChanges(file: File): Promise<void>;
   openMachines(tab?: 'disks', id?: string): void;
+  /** The toolbar's Suspend (web/app/areas/snapshot-actions.ts). */
+  suspend(): Promise<void>;
 };
 
 export class DiskActions {
@@ -136,19 +140,43 @@ export class DiskActions {
   }
 
   /**
-   * Whether opening machine `id` (undefined: one not made yet, a demo's) may stop the one running on this page: true
-   * when none runs, or it is that one, or the user says so.
+   * Whether opening machine `id` (undefined: one not made yet, a demo's, named `name`) may stop the one running on this
+   * page: true when none runs, or it is that one, or the user says so.
    */
-  async askSwitch(id?: string) {
-    if (!isLive(power.state) || (id !== undefined && this.#d.machine.stored?.record.id === id)) return true;
+  async askSwitch(id?: string, name?: string) {
+    const m = this.#d.machine;
+    if (!isLive(power.state) || (id !== undefined && m.stored?.record.id === id)) return true;
+    // Both by name: the one to open (`name`, or its record's) and the one running here.
+    const words = {
+      machine: name ?? records.machines.find((x) => x.id === id)?.name ?? '',
+      running: m.stored?.record.name ?? m.spec.title,
+    };
+    const o = {
+      title: msg('machine:disk-actions.switch.title', { machine: words.machine }),
+      ok: t('machine:disk-actions.switch.ok'),
+      danger: true,
+    };
+    // A machine that can be suspended: that offered too, so it can be come back to as it is.
+    if (current.canSuspend) {
+      const text = power.canSoft
+        ? msg('machine:disk-actions.switch.confirm.soft.suspend', words)
+        : msg('machine:disk-actions.switch.confirm.suspend', words);
+      const how = await ask.choose(text, { ...o, alt: t('machine:disk-actions.switch.suspend') });
+      return how === 'alt' ? this.#suspended() : how;
+    }
     return ask.confirm(
-      t(power.canSoft ? 'machine:disk-actions.switch.confirm.soft' : 'machine:disk-actions.switch.confirm'),
-      {
-        title: t('machine:disk-actions.switch.title'),
-        ok: t('machine:disk-actions.switch.ok'),
-        danger: true,
-      },
+      power.canSoft
+        ? msg('machine:disk-actions.switch.confirm.soft', words)
+        : msg('machine:disk-actions.switch.confirm', words),
+      o,
     );
+  }
+  /** Suspends the machine running here, for another to open. False: it wasn't (said in the message bar), and it runs on. */
+  async #suspended() {
+    await this.#d.suspend();
+    // A suspend that started is the save in progress until the machine's `suspended` state, or its failure.
+    while (power.saving) await new Promise((r) => setTimeout(r, 50));
+    return power.state === 'suspended';
   }
 
   /**
@@ -158,7 +186,7 @@ export class DiskActions {
   async switchMachine(id: string, asked = false) {
     const { machine: m, runner, power: pw } = this.#d;
     if (m.name !== 'uefi' || params.has('machine')) {
-      location.search = `?m=${id}`;
+      location.search = this.#addressOf(id, true);
       return;
     }
     if (!asked && !(await this.askSwitch(id))) return;
@@ -179,18 +207,25 @@ export class DiskActions {
 
   /** Opens stored machine `id` in a new tab, where it starts; the machine on this page runs on. */
   openInNewTab(id: string) {
-    window.open(this.#addressOf(id), '_blank', 'noopener');
+    window.open(this.#addressOf(id, true), '_blank', 'noopener');
   }
 
   /**
    * The address that opens stored machine `id`: this page's knobs without the size's and the switches' keys, which
-   * were for the machine it opened (that one runs as its record says); from a transient machine's page, `?m=` alone.
+   * were for the machine it opened (that one runs as its record says); from a transient machine's page, `?m=` alone
+   * (and the tests' `?autostart=`). `start`: a Start asked for it, so the tab it opens starts it (`?start`,
+   * web/app/run/knobs.ts `takeStartAsked`).
    */
-  #addressOf(id: string) {
-    if (this.#d.machine.name !== 'uefi' || params.has('machine')) return `?m=${id}`;
-    const q = new URLSearchParams(location.search);
-    for (const k of ['m', 'disk', ...MACHINE_PARAMS]) q.delete(k);
+  #addressOf(id: string, start = false) {
+    const from = new URLSearchParams(location.search);
+    let q = new URLSearchParams(from);
+    if (this.#d.machine.name !== 'uefi' || params.has('machine')) {
+      q = new URLSearchParams();
+      for (const v of from.getAll('autostart')) q.append('autostart', v);
+    }
+    for (const k of ['m', 'disk', 'start', ...MACHINE_PARAMS]) q.delete(k);
     q.set('m', id);
+    if (start) q.set('start', '1');
     return `?${q}`;
   }
 

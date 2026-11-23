@@ -45,7 +45,7 @@ export async function makeTemplate(browser: Browser, base: string, display: '2d'
   const maker = await browser.newContext();
   const a = await maker.newPage();
   await standIn(a);
-  await a.goto(`${base}/web/app/`);
+  await a.goto(`${base}/web/app/?autostart=1`);
   await a.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 }); // the page's actions provided
   const made = await a.evaluate(async (display) => {
     const { Store } = await import('/web/app/store.ts' as string);

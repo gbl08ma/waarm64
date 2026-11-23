@@ -149,7 +149,10 @@ for (const NAME of NAMES) {
       return void (await ctx.close());
     }
 
+    // Its tab opened again: the machine waits, off, for the Start on its plaque (frontend.md "The veil": the first start).
     await page.reload();
+    await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 200 });
+    await page.locator('[data-action=start]:visible').click();
     await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 180_000, polling: 200 });
     assert.equal(await page.evaluate(() => document.body.dataset.page), 'machine', 'the machine, not the store');
     await run(page, 'cat /root/demo-file', /demo-42/, 180_000);

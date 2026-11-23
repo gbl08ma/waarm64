@@ -76,7 +76,7 @@ async function restore(file: string, query: string) {
   const context = await browser.newContext();
   const page = await context.newPage();
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}${query}`);
   await page.setInputFiles('#load-snapshot-input', file);
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000 });
   await running(page, 180_000);
@@ -94,7 +94,7 @@ test("a template's restore has the agent renew the guest's identity; the same sn
     const page = await context.newPage();
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
     await answerAsks(page);
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}${query}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     await running(page);
     await shows(page, /login: /);

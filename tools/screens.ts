@@ -114,7 +114,7 @@ const setUi = (page: Page, f: string) => page.evaluate(async (f) => {
   const area = (name: string) => import(`/web/app/areas/${name}.svelte.ts`);
   const a = {
     ...(await area('power')), ...(await area('message-bar')), ...(await area('current')), ...(await area('usb')),
-    ...(await area('clipboard')), ...(await area('machines-nav')),
+    ...(await area('clipboard')), ...(await area('machines-nav')), ...(await area('screen')), ...(await area('boot-card')),
   };
   new Function('a', 'folders', f)(a, (window as unknown as { __folders?: unknown }).__folders);
 }, f);
@@ -252,6 +252,37 @@ let seeded: Seed;
       await page.locator(`details#${id} > summary`).click();
     });
   }
+  await page.close();
+}
+
+// A machine that doesn't run (frontend.md "The veil"), over a console's lines drawn on the canvas: its states' veils
+// and plaques, and the boot card.
+{
+  const page = await open();
+  await setUi(page, `a.messageBar.text = ''; a.screen.size = { width: 1280, height: 720 };`);
+  await page.locator('#screen').evaluate((c: HTMLCanvasElement) => {
+    const g = c.getContext('2d')!;
+    g.font = '16px monospace';
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = i % 7 === 3 ? '#5f5' : '#ccc';
+      g.fillText(`[  OK  ] Reached target ${i}`, 4, 18 + i * 18); // i18n-ignore: a guest's console line
+    }
+  });
+  for (const s of ['idle', 'suspended', 'off', 'crashed', 'failed']) {
+    await state(`screen-${s}`, async () => {
+      await setUi(page, `a.power.paused = false; a.power.state = '${s}';`);
+      await shot(page, `screen-${s}`);
+    });
+  }
+  await state('screen-paused', async () => {
+    await setUi(page, `a.power.state = 'running'; a.power.paused = true;`);
+    await page.waitForTimeout(500); // the veil waits a moment into a pause
+    await shot(page, 'screen-paused');
+  });
+  await state('screen-boot', async () => {
+    await setUi(page, `a.power.paused = false; a.power.state = 'booting'; a.bootCard.title = 'Booting'; a.bootCard.line = 'EFI stub'; a.bootCard.serial = true; a.bootCard.shown = true;`); // i18n-ignore: stand-ins for the boot card's lines
+    await shot(page, 'screen-boot');
+  });
   await page.close();
 }
 
@@ -518,7 +549,7 @@ await browser.close();
 server.close();
 // What a guest or hardware shows, which this tool doesn't reach.
 const unreached = [
-  'the boot card and a running machine\'s screen (a guest)',
+  'a running machine\'s screen (a guest)',
   'the on-screen keyboard over a running machine (a guest)',
   'the Network menu connected, the USB menu with devices attached, the Folders menu with folders shared (a guest; hardware)',
   'the Clipboard menu\'s sharing states (a guest\'s agent)',

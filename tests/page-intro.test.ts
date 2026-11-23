@@ -42,7 +42,7 @@ const hash = (page: Page) => new URL(page.url()).hash;
 
 test('a first visit opens the introduction over the whole window; Skip leads to the store, Back returns; a reload keeps it', async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/?firstvisit=1`);
+  await page.goto(`${base}/web/app/?autostart=1&firstvisit=1`);
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   assert.equal(await onPage(page), 'intro');
   assert.equal(hash(page), '#intro', 'the address names it');
@@ -77,17 +77,17 @@ test('a first visit opens the introduction over the whole window; Skip leads to 
 
 test("with a machine kept: a bare address isn't the introduction; `#intro` and About's button open it; Skip leads Home", async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   await page.locator('nav [data-machine]:not([data-machine=preferences], [data-machine=demos], [data-machine=about])').first().waitFor({ timeout: 10_000 });
 
-  await page.goto(`${base}/web/app/?firstvisit=1`);
+  await page.goto(`${base}/web/app/?autostart=1&firstvisit=1`);
   await page.locator('header.toolbar').waitFor({ state: 'visible', timeout: 30_000 });
   await page.waitForFunction(() => document.body.dataset.state !== undefined, null, { timeout: 30_000 });
   assert.notEqual(await onPage(page), 'intro', 'not a first visit');
 
-  await page.goto(`${base}/web/app/#intro`);
+  await page.goto(`${base}/web/app/?autostart=1#intro`);
   await page.reload(); // a fragment's change alone doesn't load the page again
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   const skip = page.locator('[data-action="skip-intro"]');
@@ -123,7 +123,7 @@ test('the introduction\'s path, /intro, opens it at the page\'s own address with
 
 test('the sections: the bar\'s links scroll to them; the comparison names each project, ours lit, and the speed figures of the measurement', async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/#intro`);
+  await page.goto(`${base}/web/app/?autostart=1#intro`);
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   const top = (id: string) => page.locator(`[data-section="${id}"]`).evaluate((e) => Math.round(e.getBoundingClientRect().top));
   const bar = await page.locator('[data-intro] > header').evaluate((e) => e.getBoundingClientRect().height);
@@ -158,7 +158,7 @@ test('the sections: the bar\'s links scroll to them; the comparison names each p
 
 test('how it works: five paths that step and stop on a click; the processor\'s captured code lights one instruction in every pane, the visitor\'s own host first; memory\'s split follows its slider', async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/#intro`);
+  await page.goto(`${base}/web/app/?autostart=1#intro`);
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   await page.locator('[data-action="intro-how"]').click();
   const how = page.locator('[data-section="intro-how"]');
@@ -238,7 +238,7 @@ test('how it works: five paths that step and stop on a click; the processor\'s c
 
 test('wording: the introduction', async () => {
   const { ctx, page } = await visitor();
-  await page.goto(`${base}/web/app/#intro`);
+  await page.goto(`${base}/web/app/?autostart=1#intro`);
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   assert.equal(await page.locator('[data-intro] h1').innerText(), 'A whole 64-bit ARM computer in a browser tab');
   assert.equal((await page.locator('[data-action="skip-intro"]').innerText()).trim(), 'Skip to the demos');
@@ -251,7 +251,7 @@ test("the comparison's day is the one written, in words, west of UTC and in anot
   const ctx = await browser.newContext({ timezoneId: 'America/Los_Angeles', locale: 'pt-PT' }); // another language's browser: the day stays English
   const page = await ctx.newPage();
   await ctx.route(OUR_STORE, (r) => r.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: { type: 'waarm64-store', version: 1, demos: [] } }));
-  await page.goto(`${base}/web/app/#intro`);
+  await page.goto(`${base}/web/app/?autostart=1#intro`);
   const lede = await page.locator('[data-section="intro-compare"] p').first().innerText();
   const [y, m, d] = CHECKED.split('-').map(Number);
   // Written out in the catalog's language, whatever the browser's (`{{when, day}}`: "November 20, 2026").
@@ -265,7 +265,7 @@ test("a visit that opens the introduction, Home or the store first doesn't start
   await standIn(page);
   const started = () => page.evaluate(() => (window as unknown as { __starts: unknown[] }).__starts.length);
   const settled = () => page.waitForFunction(() => ['off', 'idle', 'failed'].includes(document.body.dataset.state ?? ''), null, { timeout: 30_000, polling: 50 });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
   // A machine with a disk, opened on the page: it starts (the stand-in answers "off").
   await page.evaluate(async () => {
@@ -288,7 +288,7 @@ test("a visit that opens the introduction, Home or the store first doesn't start
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'off', `${address}: the machine waits, stopped`);
   }
   // Its own address (no page asked for): it starts, as before.
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.reload();
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
   assert.deepEqual(errors, []);
@@ -297,7 +297,7 @@ test("a visit that opens the introduction, Home or the store first doesn't start
 
 test("How it was made: the author's account, the reasons, and the way to the credits in About", async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/#intro`);
+  await page.goto(`${base}/web/app/?autostart=1#intro`);
   const made = page.locator('[data-section="intro-made"]');
   await made.waitFor({ timeout: 30_000 });
   assert.equal((await made.locator('h2').innerText()).trim(), t('intro:IntroMade.title'));

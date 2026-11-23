@@ -63,7 +63,7 @@ test('the address over a stored machine: its snapshot has the shape it ran with,
     store.close();
     return m.id as string;
   });
-  const overridden = `${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&mouse=1&ncpus=2`;
+  const overridden = `${base}/web/app/?autostart=1&${PAGE_QUERY}m=${id}&view=terminal&mouse=1&ncpus=2`;
   await page.goto(overridden);
   await stateIs(page, 'booting', 'running');
   const status = async () => JSON.parse((await page.locator('[data-status]').getAttribute('data-status', { timeout: 30_000 })) ?? '{}') as { ncpus?: number };
@@ -91,7 +91,7 @@ test('the address over a stored machine: its snapshot has the shape it ran with,
   assert.equal((await status()).ncpus, 2);
 
   // As its record has it (no `?mouse=1`, one vCPU): the snapshot is of another shape, shown disabled.
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}m=${id}&view=terminal`);
   await stateIs(page, 'booting', 'running');
   await page.locator('#load-snapshot').click();
   const item = page.locator(`#load-snapshot [data-snapshot="${snaps[0].id}"], [data-snapshot="${snaps[0].id}"]`).first();

@@ -42,6 +42,8 @@
     overlays: OverlayRecord[];
     /** The machine's state in words: running, suspended or off. */
     state: Msg;
+    /** It has a suspended copy: its Start says Resume. */
+    suspended: boolean;
     act: Act;
     offFirst: (m: MachineRecord) => Promise<boolean>;
     onchoose: (id: string) => void;
@@ -55,6 +57,7 @@
     disks,
     overlays,
     state: stateWords,
+    suspended,
     act,
     offFirst,
     onchoose,
@@ -170,7 +173,7 @@
         icon="player-play"
         variant="bordered"
         align="left"
-        label={t('machines:MachinePane.startMenu')}
+        label={suspended ? t('machines:MachinePane.resume') : t('machines:MachinePane.startMenu')}
         title={t('machines:MachinePane.startMenu.title')}
         bind:open={startOpen}
         data-action="start-menu"
@@ -184,7 +187,7 @@
       </Menu>
     {:else if m.id !== current.id}
       <Button icon="player-play" onclick={startHere} data-action="open">
-        {t('machines:MachinePane.open')}
+        {suspended ? t('machines:MachinePane.resume') : t('machines:MachinePane.open')}
       </Button>
     {:else if busyHere}
       <Button data-action="open" disabled title={t('machines:MachinePane.runningHere.title')}>
@@ -196,9 +199,9 @@
         variant="primary"
         onclick={start}
         data-action="start"
-        title={t('machines:MachinePane.start.title')}
+        title={suspended ? t('machines:MachinePane.resume.title') : t('machines:MachinePane.start.title')}
       >
-        {t('machines:MachinePane.start')}
+        {suspended ? t('machines:MachinePane.resume') : t('machines:MachinePane.start')}
       </Button>
     {/if}
     <Button icon="copy" onclick={duplicate} title={t('machines:MachinePane.duplicate.title')}>

@@ -61,7 +61,7 @@ async function open(query = '', booting = false, devices = 'mouse=1&touch=1') {
       return post.call(this, m, transfer as unknown as StructuredSerializeOptions);
     } as typeof Worker.prototype.postMessage;
   });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=${booting ? 1 : 2}&view=screen&${devices}&${unattendedQuery()}${query}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}ncpus=${booting ? 1 : 2}&view=screen&${devices}&${unattendedQuery()}${query}`);
   await page.waitForFunction(() => (window as unknown as { __workers: Worker[] }).__workers.length > 0, null, { timeout: 30_000 });
   if (booting) await page.waitForSelector('#state[data-state=booting], #state[data-state=running]', { state: 'attached', timeout: 30_000 });
   await page.evaluate(() => {

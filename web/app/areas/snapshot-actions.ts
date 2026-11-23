@@ -79,10 +79,11 @@ export class SnapshotActions {
   }
   /**
    * Right before a save: the guest's input is held until it ends (`#over`; web/input.ts `hold`): input during the pause
-   * would only complete into a guest that can't run.
+   * would only complete into a guest that can't run. `power.paused` with it, until the guest runs again or has stopped.
    */
   #holdInput(r: Run) {
     r.input.hold(true);
+    power.paused = true; // the screen and the terminal say so (web/app/StateVeil.svelte)
   }
   /** Right before a save (input held): the guest's caches dropped, under Preferences' switch, said as the save's first phase. */
   async #dropCaches() {
@@ -144,6 +145,7 @@ export class SnapshotActions {
   #resumed(r: Run, unplugged: Unplugged, once: { done: boolean }) {
     if (once.done) return;
     once.done = true;
+    power.paused = false;
     r.input.hold(false);
     if (r.live()) this.#d.agent.syncClock();
     void this.#d.plugBack(r, unplugged);
@@ -349,7 +351,7 @@ export class SnapshotActions {
     this.#holdInput(r);
     await this.#dropCaches();
     if (!r.live()) {
-      power.saving = false;
+      power.saving = power.paused = false;
       return;
     }
     r.save(
@@ -366,7 +368,7 @@ export class SnapshotActions {
         },
         // It runs on.
         error: (e) => {
-          power.saving = false;
+          power.saving = power.paused = false;
           r.input.hold(false);
           if (r.live()) {
             messages.setState(power.state);

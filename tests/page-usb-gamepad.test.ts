@@ -88,10 +88,10 @@ test('a host game pad through the Gamepad API: listed once pressed, attached fro
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page, (q) => !replacesFixture(q));
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
     const usb = STORED.usb();
     await putStored(page, usb);
-    await page.goto(`${base}/web/app/?${STORED_QUERY}&m=${usb.machine.id}`);
+    await page.goto(`${base}/web/app/?autostart=1&${STORED_QUERY}&m=${usb.machine.id}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 420_000, polling: 250 });
     await shows(page, /login: /);

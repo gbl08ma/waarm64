@@ -6,6 +6,11 @@ import { isLive, power } from '../areas/power.svelte.ts';
 import type { SerialTerminal } from '../areas/serial-terminal.ts';
 import type { Messages } from './messages.ts';
 import { needsDisk } from './page-disks.ts';
+import { takeStartAsked } from './knobs.ts';
+import { autoStart } from '../settings.ts';
+import { machineDir } from '../store.ts';
+import { suspended } from '../../overlay.ts';
+import type { Action } from '../areas/message-bar.svelte.ts';
 import { loadStored, type PageMachine } from './page-machine.svelte.ts';
 import type { Runner } from './runner.ts';
 import { SoftPower } from './soft-power.ts';
@@ -18,7 +23,12 @@ export type PowerDeps = {
   messages: Messages;
   terminal: SerialTerminal;
   /** The Home page (its Disks tab) and Open disk…. */
-  later: { openMachines(tab?: 'disks', id?: string): void; openDisk(): Promise<void> };
+  later: {
+    openMachines(tab?: 'disks', id?: string): void;
+    openDisk(): Promise<void>;
+    /** A suspended machine's buttons in the message bar (web/app/run/problems.ts `suspended`). */
+    suspended(): Action[];
+  };
   /** The memory signal's checks (web/app/run/memory-signal.ts): a crash before, too little memory (true: said, not started). */
   signal: { crashedBefore(): boolean; fits(): boolean };
   /** The run's agent (web/app/areas/agent-actions.ts): Power off and Restart ask the guest first where it can. */
@@ -230,12 +240,32 @@ export class PowerActions {
   }
 
   /**
+   * A machine that waits stopped for its Start: off, or suspended where it has a suspended copy (read after: its Start
+   * says Resume, and the message bar offers to boot instead, as after a Suspend in this tab).
+   */
+  #waitStopped() {
+    const { machine: m, messages, later } = this.#d;
+    messages.setState('off');
+    const s = m.stored;
+    if (!s) return;
+    void suspended(machineDir(s.record.id)).then(
+      (copy) => {
+        if (copy && power.state === 'off' && !power.busy && m.stored === s)
+          messages.setState('suspended', undefined, later.suspended(), 'warn');
+      },
+      () => undefined, // unreadable: it stays off, and its Start says what a start finds
+    );
+  }
+
+  /**
    * The first start: unless what the page can tell won't work (no isolation, the stored machine, and `startOpened`'s),
    * or the visit opened another page first (`elsewhere`: the introduction, Home, the demo store): the machine opened
-   * last then waits stopped, for its Start, behind a page the visitor came for.
+   * last then waits stopped, for its Start, behind a page the visitor came for. A stored machine waits the same way
+   * unless the Preferences say it starts with its tab (web/app/settings.ts `autoStart`) or a Start opened the tab
+   * (`takeStartAsked`): its settings can be changed before it runs. A machine the address or a file gives starts.
    */
   boot(elsewhere = false) {
-    const { machine: m, messages } = this.#d;
+    const { machine: m, messages, signal } = this.#d;
     // SharedArrayBuffer (the guest's memory, shared by the vCPU workers) needs cross-origin isolation.
     if (!crossOriginIsolated) {
       messages.setState(
@@ -251,8 +281,11 @@ export class PowerActions {
     }
     if (m.storedError !== undefined)
       return messages.setState('failed', new MsgError('machine:power-actions.cantOpen', {}, { cause: m.storedError }));
-    if (!elsewhere) return this.startOpened();
-    if (needsDisk(m)) this.waitForDisk();
-    else messages.setState('off');
+    const asked = takeStartAsked();
+    if (!elsewhere && (!m.stored || asked || autoStart())) return this.startOpened();
+    if (needsDisk(m)) return this.waitForDisk();
+    // The machine's own view says what a start would (its tab went away with it running), as a start does.
+    if (!elsewhere && signal.crashedBefore()) return;
+    this.#waitStopped();
   }
 }

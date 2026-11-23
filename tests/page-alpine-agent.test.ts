@@ -176,7 +176,7 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   const maker = await browser.newContext({ acceptDownloads: true });
   const a = await maker.newPage();
   await answerAsks(a);
-  await a.goto(`${base}/web/app/`);
+  await a.goto(`${base}/web/app/?autostart=1`);
   const id = await a.evaluate(async ([image, seed]) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
@@ -194,7 +194,7 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   }, [`${base}/${IMAGE}`, `${base}/${SEED}`]);
   await attachHelper(a, id);
   // Only the guest's own signs say it's up (`?ready=guest`): on OpenRC, the agent's HELLO.
-  await a.goto(`${base}/web/app/?m=${id}&clocksync=0&ready=guest&view=both`);
+  await a.goto(`${base}/web/app/?autostart=1&m=${id}&clocksync=0&ready=guest&view=both`);
   await shows(a, /login: \s*$/, 300_000);
   await a.waitForTimeout(1000);
   assert.equal(await state(a), 'booting', 'no agent yet: the login prompt alone says nothing');
@@ -268,7 +268,7 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   const visitor = await browser.newContext();
   const b = await visitor.newPage();
   await answerAsks(b);
-  await b.goto(`${base}/web/app/`);
+  await b.goto(`${base}/web/app/?autostart=1`);
   const id2 = await b.evaluate(async ([def, snap]) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { machineFromTemplate } = await import('/web/app/template.ts' as string);
@@ -278,7 +278,7 @@ test('the agent on Alpine: installed from fw_cfg, the machine up at its HELLO; a
   }, [def, `${base}/${SNAP}`] as const);
   await attachHelper(b, id2);
   const t0 = Date.now();
-  await b.goto(`${base}/web/app/?m=${id2}&view=both`);
+  await b.goto(`${base}/web/app/?autostart=1&m=${id2}&view=both`);
   await agentUp(b);
   console.log(`# the restored guest's agent connected ${((Date.now() - t0) / 1000).toFixed(1)} s after the page's load`);
   await onSerial(b, '\n');

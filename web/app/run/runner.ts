@@ -10,6 +10,7 @@ import { bootCard } from '../areas/boot-card.svelte.ts';
 import { current } from '../areas/current.svelte.ts';
 import { keys } from '../areas/keys.svelte.ts';
 import { mouse } from '../areas/mouse.svelte.ts';
+import { power } from '../areas/power.svelte.ts';
 import { shares } from '../areas/shares.svelte.ts';
 import { status } from '../areas/status.svelte.ts';
 import type { ScreenView } from '../areas/screen-view.ts';
@@ -187,6 +188,7 @@ export class Runner {
   /** The boot card and the state for a run that loads. */
   #loading(snapshot: File | undefined) {
     keys.live = false;
+    power.paused = false;
     this.d.terminal.clear();
     bootCard.done = false;
     bootCard.line = '';

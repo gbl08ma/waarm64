@@ -74,7 +74,7 @@ test("Debian's OS in the status bar, its clean restart and power-off from the to
     // Every question cancelled (a hard power-off never happens here) but Load snapshot's, while the fixture loads.
     let loading = false;
     await answerAsks(page, (q) => { if (loading) return true; asked.push(q); return false; });
-    await page.goto(`${base}/web/app/?${query}`);
+    await page.goto(`${base}/web/app/?autostart=1&${query}`);
     if (restore) {
       loading = true;
       await loadSnapshotFile(page, restore);

@@ -78,11 +78,11 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(String(e)));
       await answerAsks(page, (q) => !replacesFixture(q));
-      await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+      await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
       if (process.env.WAARM64_INCOGNITO_QUOTA) await (await context.newCDPSession(page)).send('Storage.overrideQuotaForOrigin', { origin: base, quotaSize: Number(process.env.WAARM64_INCOGNITO_QUOTA) << 20 });
       const r = STORED.net();
       await putStored(page, r);
-      const url = `${base}/web/app/?${STORED_QUERY}&m=${r.machine.id}`;
+      const url = `${base}/web/app/?autostart=1&${STORED_QUERY}&m=${r.machine.id}`;
       await page.goto(url);
       if (fixture) await loadSnapshotFile(page, fixture);
       await stateIs(page, 'running');

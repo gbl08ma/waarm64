@@ -30,6 +30,7 @@ export type Settings = {
   mouseLock?: boolean;
   mouseLockMode?: LockMode;
   leaveWarning?: boolean;
+  autoStart?: boolean;
   clockSync?: boolean;
   dropCaches?: boolean;
   statusBar?: Item[];
@@ -68,6 +69,15 @@ export const clockSync = () => {
 export const dropCaches = () => {
   const q = new URLSearchParams(location.search).getAll('dropcaches').at(-1);
   return q !== undefined ? q !== '0' : settings().dropCaches !== false;
+};
+/**
+ * Preferences: a stored machine starts (or resumes) as soon as a tab opens it (off unless turned on; `?autostart=1` or
+ * `0` decides for the page, the last one if there are several: the tests'). Off, it waits stopped for its Start, so
+ * its settings can be changed first (docs/frontend.md "The first start").
+ */
+export const autoStart = () => {
+  const q = new URLSearchParams(location.search).getAll('autostart').at(-1);
+  return q !== undefined ? q !== '0' : settings().autoStart === true;
 };
 const SETTINGS = 'waarm64.settings';
 export const settings = (): Settings => {

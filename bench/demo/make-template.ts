@@ -350,7 +350,7 @@ try {
     await page.evaluate(([key, screen]) => localStorage.setItem(key, JSON.stringify({ ...JSON.parse(localStorage.getItem(key) ?? '{}'), screen })), ['waarm64.settings', session.screen]);
   // A desktop's snapshot holds its 3D state: past 64 MiB the page asks first (frontend.md "Snapshots"): yes.
   if (session) await answerAsks(page);
-  await page.goto(`${base}/web/app/?clocksync=0&ready=guest&dropcaches=1&m=${id}&view=both`);
+  await page.goto(`${base}/web/app/?autostart=1&clocksync=0&ready=guest&dropcaches=1&m=${id}&view=both`);
   // Root is logged in (no login prompt to see); with the agent, the machine is `running` once it says hello. Without
   // it, the page's state stays `booting`: the prompt is the sign.
   const t0 = Date.now();

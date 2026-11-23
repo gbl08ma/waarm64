@@ -308,7 +308,7 @@ export class PageWindow {
   /** The store's page's part of `page`: `switchTo` opens a stored machine (asked first by `askSwitch`). */
   demoActions(d: {
     switchTo: (id: string) => Promise<void>;
-    askSwitch: (id?: string) => Promise<boolean>;
+    askSwitch: (id?: string, name?: string) => Promise<boolean>;
   }): Pick<Page, 'openDemos' | 'closeDemos' | 'chooseDemo' | 'askSwitch' | 'openDemo' | 'openIntro' | 'closeIntro'> {
     return {
       openIntro: () => this.openIntro(),

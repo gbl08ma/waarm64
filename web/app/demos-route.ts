@@ -68,6 +68,18 @@ export function pageQuery(search: string): string {
   return s ? `?${s}` : '';
 }
 
+/** The query's names that open nothing: whether a stored machine starts with its tab (`?autostart=`, `?start`). */
+const START_PARAMS = ['autostart', 'start'] as const;
+/**
+ * What the page's query asks to open (`pageQuery` without the names that open nothing); empty: a plain visit, which
+ * opens the machine used last, or the introduction at a first visit.
+ */
+export function openQuery(search: string): URLSearchParams {
+  const q = new URLSearchParams(pageQuery(search));
+  for (const k of START_PARAMS) q.delete(k);
+  return q;
+}
+
 /**
  * The page's address once the store's page closes: its path back to the page's (`/demos` → `./`, which is where
  * `index.html` is), the store's parameters dropped, no fragment.
@@ -107,7 +119,7 @@ export function demosAddress(w: Where, r: { store?: string; id?: string }): stri
  * fresh profiles), unless the query asks for it (`?firstvisit=1`).
  */
 export function firstVisit(w: Pick<URL, 'search' | 'hash'>, machines: number, automated: boolean): boolean {
-  const q = new URLSearchParams(pageQuery(w.search));
+  const q = openQuery(w.search);
   const asked = q.get('firstvisit') === '1';
   q.delete('firstvisit');
   return machines === 0 && q.size === 0 && !w.hash && (!automated || asked);

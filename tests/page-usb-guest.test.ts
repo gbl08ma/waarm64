@@ -68,11 +68,11 @@ test('Gadget Zero on a stored Debian machine: attached from the menu, seen by th
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page, (q) => { if (replacesFixture(q)) return false; asked.push(q); });
     const usb = STORED.usb();
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
     await putStored(page, usb);
     // The status bar (docs/frontend.md "The status bar"): the screen's renderer and frame rate, the USB devices' total.
     await page.evaluate(() => localStorage.setItem('waarm64.settings', JSON.stringify({ ...JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}'), statusBar: [{ kind: 'gpu' }, { kind: 'fps' }, { kind: 'usbtotal' }] })));
-    await page.goto(`${base}/web/app/?${STORED_QUERY}&usbzero=1&m=${usb.machine.id}`);
+    await page.goto(`${base}/web/app/?autostart=1&${STORED_QUERY}&usbzero=1&m=${usb.machine.id}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 420_000, polling: 250 });
     await shows(page, /login: /);

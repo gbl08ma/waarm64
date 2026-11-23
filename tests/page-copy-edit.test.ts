@@ -46,7 +46,7 @@ test('the copy editor: words changed where they are shown, kept, dumped and forg
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await button(page, t(KEY)).waitFor();
   // Off by default: no editor, no marks.
   assert.equal(await page.locator('#copy-edit').count(), 0);

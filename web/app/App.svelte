@@ -1,7 +1,7 @@
 <!--
   The page (docs/frontend.md): the toolbar, the message bar, the machine (its screen and serial terminal) or the
   Home page or the demo store's page in its place, or the introduction over all of it, a disk's surface window over either, the status line, and the page's questions. The machine's run draws on the canvas and the
-  terminal here (given to its areas: `view`), and writes what the rest shows into the areas' state (web/app/areas/). The body's
+  terminal (TerminalView.svelte; both given to its areas: `view`), and writes what the rest shows into the areas' state (web/app/areas/). The body's
   `data-*` (the tests' and the page's styles' hooks) follow that state here.
 -->
 <script lang="ts">
@@ -19,7 +19,9 @@
   import NameDialog from './NameDialog.svelte';
   import Osk from './Osk.svelte';
   import RamWindow from './RamWindow.svelte';
+  import StateVeil from './StateVeil.svelte';
   import StatusBar from './StatusBar.svelte';
+  import TerminalView from './TerminalView.svelte';
   import SurfaceWindow from './SurfaceWindow.svelte';
   import Toolbar from './Toolbar.svelte';
   import type { PageAudio } from '../audio.ts';
@@ -31,7 +33,7 @@
   import { demos } from './areas/demos.svelte.ts';
   import { intro } from './areas/intro.svelte.ts';
   import { current } from './areas/current.svelte.ts';
-  import { power } from './areas/power.svelte.ts';
+  import { power, type Veil } from './areas/power.svelte.ts';
   import { keys } from './areas/keys.svelte.ts';
   import { mouse } from './areas/mouse.svelte.ts';
   import { screen } from './areas/screen.svelte.ts';
@@ -58,13 +60,16 @@
       shift: `translate(${screen.fitted.shift.x}px, ${screen.fitted.shift.y}px)`,
     },
   );
-  let terminal = $state<HTMLElement>();
+  /**
+   * How the picture under the veil is drawn (StateVeil.svelte): `through` while the machine left one worth seeing (held
+   * still, suspended, crashed: dimmed, without its colors), `cover` otherwise (off, or never started: none). The serial
+   * terminal's text stays in every state.
+   */
+  const COVERED: readonly Veil[] = ['off', 'failed', 'idle'];
+  const veiled = $derived(power.veil && (COVERED.includes(power.veil) ? 'cover' : 'through'));
   let main = $state<HTMLElement>();
   $effect(() => {
     if (canvas && box && lockCursor) view.screen({ canvas, box, lockCursor });
-  });
-  $effect(() => {
-    if (terminal) view.terminal(terminal);
   });
   $effect(() => {
     if (main) view.main(main);
@@ -103,7 +108,7 @@
   style:--split-stacked={screen.split.stacked}
 >
   <div id="screen-view" bind:this={box}>
-    <div id="screen-frame" style:transform={fitted?.shift}>
+    <div id="screen-frame" data-veiled={veiled} data-veil={power.veil} style:transform={fitted?.shift}>
       {#key screen.generation}
         <canvas
           id="screen"
@@ -123,10 +128,11 @@
         <canvas id="screen-cursor" bind:this={lockCursor} width="64" height="64" hidden></canvas>
       </div>
       <BootCard />
+      {#if power.veil}<StateVeil veil={power.veil} cover={veiled === 'cover'} />{/if}
     </div>
   </div>
   {#if screen.view === 'both'}<ViewDivider {main} />{/if}
-  <div id="terminal-view"><div id="terminal" bind:this={terminal}></div></div>
+  <TerminalView onmount={(el: HTMLElement) => view.terminal(el)} />
   {#if keys.osk}<Osk
       send={(code: string, down: boolean, mods: Mods, repeat?: boolean) => page.oskKey(code, down, mods, repeat)}
       keyLayout={keys.layout}
@@ -189,6 +195,26 @@
   #screen:focus {
     box-shadow: var(--shadow-focus);
   }
+  /* A machine that doesn't run (StateVeil.svelte over it): the picture it left dimmed and without its colors (the
+     terminal's text too: TerminalView.svelte); held still for a snapshot, only once that has lasted a moment (as the veil). */
+  #screen,
+  #screen-cursor-clip {
+    transition: filter var(--motion-fast) var(--ease);
+  }
+  #screen-frame[data-veiled='through'] #screen,
+  #screen-frame[data-veiled='through'] #screen-cursor-clip {
+    filter: var(--veil-dim);
+  }
+  /* Covered (off, never started): no picture. The canvas is blacked out itself, as the cover's edge and the canvas's,
+     on fractions of a pixel, would let a line of it through. */
+  #screen-frame[data-veiled='cover'] #screen,
+  #screen-frame[data-veiled='cover'] #screen-cursor-clip {
+    filter: brightness(0);
+  }
+  #screen-frame[data-veil='paused'] #screen,
+  #screen-frame[data-veil='paused'] #screen-cursor-clip {
+    transition-delay: var(--motion);
+  }
   #screen-hint {
     position: absolute;
     bottom: var(--space-5);
@@ -217,44 +243,8 @@
     left: 0;
     top: 0;
   }
-  #terminal-view {
-    min-height: 0;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    overflow: auto;
-  }
-  #terminal {
-    padding: var(--space-3);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-  }
-  /* Fitting its box (an agent that sets the guest's size: web/app/areas/serial-terminal.ts `follow`, which sets
-     `data-fit`: global, as the template doesn't have it): it takes the view's room, and xterm.js the cells that fit in
-     it. The padding moves onto xterm.js's element, which the fit subtracts (it measures this box whole). */
-  #terminal-view:global(:has(> #terminal[data-fit])) {
-    align-items: stretch;
-  }
-  #terminal:global([data-fit]) {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    padding: 0;
-  }
-  #terminal:global([data-fit] > .xterm) {
-    height: 100%;
-    padding: var(--space-3);
-  }
-  #terminal:focus-within {
-    border-color: var(--accent);
-  }
-  :global(body[data-view='screen']) #terminal-view,
   :global(body[data-view='terminal']) #screen-view {
     display: none;
-  }
-  :global(body[data-view='terminal']) #terminal-view {
-    flex: 1;
   }
   :global(body[data-view='screen']) main {
     padding: 0;
@@ -265,24 +255,13 @@
   :global(body[data-view='screen']) #screen {
     box-shadow: none;
   }
-  /* Both: the divider (ViewDivider.svelte) takes the gap; once moved, the terminal's share is where it put it. */
+  /* Both: the divider (ViewDivider.svelte) takes the gap; once moved, the terminal's share is where it put it
+     (TerminalView.svelte reads `--split-across` and `--split-stacked`). */
   :global(body[data-view='both']) main {
     gap: 0;
   }
-  :global(body[data-view='both']) main[data-split-across] #terminal-view {
-    flex: 0 0 calc((100% - var(--space-4)) * var(--split-across));
-    min-width: 0;
-  }
-  /* The terminal alone, as the screen alone: no frame around it (the page's padding, its border and its own). */
+  /* The terminal alone, as the screen alone: no padding around it. */
   :global(body[data-view='terminal']) main {
-    padding: 0;
-  }
-  :global(body[data-view='terminal']) #terminal {
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-  }
-  :global(body[data-view='terminal']) #terminal:global([data-fit] > .xterm) {
     padding: 0;
   }
   /* The Home page and the demo store's take the machine's place, and the introduction the window; the machine runs on
@@ -293,13 +272,6 @@
   @media (max-width: 1100px) {
     :global(body[data-view='both']) main {
       flex-direction: column;
-    }
-    :global(body[data-view='both']) main[data-split-across] #terminal-view {
-      flex: 0 1 auto;
-    }
-    :global(body[data-view='both']) main[data-split-stacked] #terminal-view {
-      flex: 0 0 calc((100% - var(--space-4)) * var(--split-stacked));
-      min-height: 0;
     }
   }
 </style>

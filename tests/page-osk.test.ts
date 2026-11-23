@@ -65,7 +65,7 @@ async function open(live = true, viewport = { width: 1400, height: 900 }, query 
 
 /** Loads (or reloads) the page, stops its worker and says the guest's keyboard driver is up. */
 async function load(page: Page, live = true, query = '') {
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=screen${query}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=1&view=screen${query}`);
   await page.waitForFunction(() => (window as unknown as { __workers: Worker[] }).__workers.length > 0, null, { timeout: 30_000 });
   await page.evaluate((live) => {
     const [worker] = (window as unknown as { __workers: Worker[] }).__workers;

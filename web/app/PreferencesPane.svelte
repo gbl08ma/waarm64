@@ -23,6 +23,7 @@
   let { net }: Props = $props();
 
   let warnOnLeave = $state(leaveWarning());
+  let autoStart = $state(settings().autoStart === true);
   let setClock = $state(settings().clockSync !== false);
   let dropCaches = $state(settings().dropCaches !== false);
   let shaderMiB = $state(settings().shaderMiB ?? CACHE_BUDGET / 2 ** 20);
@@ -58,6 +59,14 @@
       note={t('machines:PreferencesPane.leaveWarning.note')}
     >
       {t('machines:PreferencesPane.leaveWarning')}
+    </Check>
+    <Check
+      bind:checked={autoStart}
+      onchange={() => remember({ autoStart })}
+      field="auto-start"
+      note={t('machines:PreferencesPane.autoStart.note')}
+    >
+      {t('machines:PreferencesPane.autoStart')}
     </Check>
     <Check
       bind:checked={dropCaches}

@@ -104,11 +104,11 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   const asked: string[] = [];
   pageA.on('pageerror', (e) => errors.push(`A: ${e}`));
   await answerAsks(pageA, (q) => { asked.push(`A: ${q.text}`); });
-  await pageA.goto(`${base}/web/app/`);
+  await pageA.goto(`${base}/web/app/?autostart=1`);
   const { a, b } = await seed(pageA);
 
   // Alpha: no connections yet, so Connect… goes straight to the kind; one wizard attaches and connects.
-  await pageA.goto(`${base}/web/app/?m=${a}`);
+  await pageA.goto(`${base}/web/app/?autostart=1&m=${a}`);
   await started(pageA);
   await menu(pageA);
   assert.ok((await text(pageA, '#net-conn')).includes(NO_CONNECTION), 'the menu says no connection is attached');
@@ -154,7 +154,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   const pageB = await context.newPage();
   pageB.on('pageerror', (e) => errors.push(`B: ${e}`));
   await answerAsks(pageB, (q) => { asked.push(`B: ${q.text}`); });
-  await pageB.goto(`${base}/web/app/?m=${b}`);
+  await pageB.goto(`${base}/web/app/?autostart=1&m=${b}`);
   await started(pageB);
   await menu(pageB);
   await pageB.click('#net-setup');
@@ -229,7 +229,7 @@ test('power off lets a connection go; a running machine follows what another tab
   const errors: string[] = [];
   pageA.on('pageerror', (e) => errors.push(`A: ${e}`));
   await answerAsks(pageA, () => {});
-  await pageA.goto(`${base}/web/app/`);
+  await pageA.goto(`${base}/web/app/?autostart=1`);
   const { a, b } = await seed(pageA);
   const locks = () => pageA.evaluate(async () => ((await navigator.locks.query()).held ?? []).map((l) => l.name!).filter((n) => n.startsWith('waarm64-net:')));
   /** The locks once they are `want` (or after 5 s): a lock is let go just after its client stops, and freed asynchronously. */
@@ -243,7 +243,7 @@ test('power off lets a connection go; a running machine follows what another tab
   };
 
   // Alpha connects, and powered off lets go: nothing to Connect to, and Change connection… still there.
-  await pageA.goto(`${base}/web/app/?m=${a}`);
+  await pageA.goto(`${base}/web/app/?autostart=1&m=${a}`);
   await started(pageA);
   await newTailnet(pageA, { hostname: 'alpha', pick: false });
   const [t] = await records(pageA, 'connections');
@@ -269,7 +269,7 @@ test('power off lets a connection go; a running machine follows what another tab
   // Bravo runs in another tab; from Alpha's tab, attaching to it connects it there at once.
   const pageB = await context.newPage();
   pageB.on('pageerror', (e) => errors.push(`B: ${e}`));
-  await pageB.goto(`${base}/web/app/?m=${b}`);
+  await pageB.goto(`${base}/web/app/?autostart=1&m=${b}`);
   await started(pageB);
   assert.equal(await phase(pageB), 'off');
   await openHome(pageA);
@@ -335,7 +335,7 @@ test('a room connection to the global public room: the room\'s first choice, str
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`${e}`));
   await answerAsks(page, () => {});
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await page.click('[data-machine="connections"]');
   await page.click('[data-action="new-connection"]');

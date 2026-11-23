@@ -97,10 +97,10 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   try {
-    await page.goto(`${base}/web/app/`);
+    await page.goto(`${base}/web/app/?autostart=1`);
     const id = await seed(page);
     const ws = `ws://127.0.0.1:${port}/${token}`;
-    await page.goto(`${base}/web/app/?m=${id}#net=${ws}`);
+    await page.goto(`${base}/web/app/?autostart=1&m=${id}#net=${ws}`);
     // The dialog is made when the page mounts, after its start's awaits (the store, the network's migration): `goto`
     // can return before that, and a predicate that throws ends the wait.
     await page.waitForFunction(() => (document.getElementById('net-wizard') as HTMLDialogElement | null)?.open === true, null, { timeout: 15_000 });
@@ -147,9 +147,9 @@ test('a pairing link opened in a tab that already shows the page: the fragment c
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
   try {
-    await page.goto(`${base}/web/app/`);
+    await page.goto(`${base}/web/app/?autostart=1`);
     const id = await seed(page);
-    await page.goto(`${base}/web/app/?m=${id}`);
+    await page.goto(`${base}/web/app/?autostart=1&m=${id}`);
     await page.waitForFunction(() => !!document.getElementById('net-wizard'), null, { timeout: 15_000 });
     const ws = `ws://127.0.0.1:${port}/${token}`;
     await page.evaluate((h) => { location.hash = h; }, `#net=${ws}`); // no reload: a fragment's change only
@@ -163,9 +163,9 @@ test('a pairing link opened in a tab that already shows the page: the fragment c
 
 /** Through the helper's pairing link: a stored machine whose first adapter is attached to a new `local` connection. */
 async function pairAndAttach(page: Page) {
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const id = await seed(page);
-  await page.goto(`${base}/web/app/?m=${id}#net=ws://127.0.0.1:${port}/${token}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${id}#net=ws://127.0.0.1:${port}/${token}`);
   await page.waitForFunction(() => (document.getElementById('net-wizard') as HTMLDialogElement | null)?.open === true, null, { timeout: 15_000 });
   await page.click('#net-connect');
   await page.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 10_000 });
@@ -182,7 +182,7 @@ test('from a public origin: granted, the adapter connects; refused, the menu say
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     try {
-      await page.goto(`${base}/web/app/`);
+      await page.goto(`${base}/web/app/?autostart=1`);
       assert.equal(await page.evaluate(async () => (await navigator.permissions.query({ name: 'loopback-network' as PermissionName })).state), 'prompt', 'the page is gated');
       if (granted) {
         const cdp = await context.newCDPSession(page);

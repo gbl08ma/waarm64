@@ -57,9 +57,9 @@ test('the Network buttons: one per adapter where they fit, one for all where the
   const page = await browser.newPage({ viewport: { width: 1800, height: 900 } });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const id = await seed(page);
-  await page.goto(`${base}/web/app/?m=${id}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${id}`);
   await page.waitForFunction(() => ['booting', 'running'].includes(document.getElementById('state')?.dataset.state ?? ''), null, { timeout: 60_000 });
 
   // Wide: a button each, numbered, adapter 1's `#network`; each menu has its own adapter alone.
@@ -114,9 +114,9 @@ test('no Network button before the machine first starts: its adapters are not kn
   const page = await browser.newPage({ viewport: { width: 1800, height: 900 } });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const id = await seed(page, false);
-  await page.goto(`${base}/web/app/?m=${id}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${id}`);
   await page.waitForFunction(() => document.getElementById('state')?.dataset.state === 'idle', null, { timeout: 30_000 });
   assert.equal(await page.locator('header.toolbar > [data-net-menu]').count(), 0, 'no Network button');
   assert.deepEqual(errors, []);

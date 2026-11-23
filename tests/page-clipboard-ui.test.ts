@@ -102,7 +102,7 @@ const menu = async (page: Page, open: boolean) => {
   if ((await page.evaluate(() => (document.getElementById('clipboard-menu') as HTMLDetailsElement).open)) !== open) await page.click('#clipboard-menu > summary');
 };
 async function boot(page: Page, query: string) {
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&agentstub&${query}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&view=both&agentstub&${query}`);
   await page.waitForFunction(() => document.body.dataset.state === 'running' && /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
   await stub(page);
 }
@@ -297,7 +297,7 @@ test("a demo's machine starts each run paused: PAUSE at the agent's opening, no 
     c.read = function (...a) { w.__reads++; return read.apply(this, a); };
   });
   const reads = () => page.evaluate(() => (window as unknown as { __reads: number }).__reads);
-  await page.goto(`${base}/web/app/#home`);
+  await page.goto(`${base}/web/app/?autostart=1#home`);
   await page.locator('.machines').waitFor();
   // A disk the firmware won't boot (Buildroot's root file system): the page starts no machine without one.
   const path = '/target/images/buildroot/rootfs.ext4';
@@ -314,7 +314,7 @@ test("a demo's machine starts each run paused: PAUSE at the agent's opening, no 
   }, { disk, machines: [demo, plainOne] });
   /** The machine `id` started (the firmware, finding nothing to boot: only the agent's end, the test's, matters). */
   const start = async (id: string) => {
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=both&agentstub&m=${id}`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=both&agentstub&m=${id}`);
     await page.waitForFunction(() => !!(window as unknown as { __agentStub?: MessagePort }).__agentStub, null, { timeout: 30_000, polling: 100 })
       .catch(async (e) => assert.fail(`${e}; the page: ${await page.evaluate(() => JSON.stringify({ url: location.href, state: document.body.dataset.state, message: document.getElementById('message-text')?.textContent, ask: document.querySelector('dialog[open]')?.textContent?.slice(0, 300) }))}`));
     await stub(page);
@@ -388,7 +388,7 @@ test("the agent's HELLO says the machine is up: with the serial marker off (`?re
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&agentstub&clipboard=1&ready=guest`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&view=both&agentstub&clipboard=1&ready=guest`);
   // Buildroot's shell prompt (its marker) is up, but not watched for: the machine is still booting.
   await page.waitForFunction(() => /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
   await stub(page);
@@ -465,7 +465,7 @@ test("the Home page's agent and clipboard switches: the agent on by default, the
   page.on('pageerror', (e) => errors.push(String(e)));
   const asked: Question[] = [];
   await answerAsks(page, (q) => { asked.push(q); });
-  await page.goto(`${base}/web/app/#home`);
+  await page.goto(`${base}/web/app/?autostart=1#home`);
   await page.locator('.machines').waitFor();
   await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);

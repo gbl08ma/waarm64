@@ -134,7 +134,7 @@ test('the demo network on the page: the lease and /status, a refusal counted, a 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const ws = `ws://127.0.0.1:${port}/`;
   const id = await page.evaluate(async ([image, seed, ws]) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -153,7 +153,7 @@ test('the demo network on the page: the lease and /status, a refusal counted, a 
     await attachDemoNetwork(store, m.id, 0, ws);
     return m.id as string;
   }, [`${base}/${IMAGE}`, `${base}/${SEED}`, ws] as const);
-  await page.goto(`${base}/web/app/?m=${id}&view=both`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${id}&view=both`);
   await page.waitForFunction(() => document.getElementById('network')?.dataset.phase === 'connected', null, { timeout: 60_000 });
   await menu(page);
   assert.match(await status(page), words('network:demo-view.connected', {}, { start: true }));

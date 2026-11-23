@@ -79,7 +79,7 @@ test('the storage full under a running guest: its writes fail, and the page says
     await page.goto(`${base}/tests/browser/core.html`);
     const cdp = await context.newCDPSession(page);
     await cdp.send('Storage.overrideQuotaForOrigin', { origin: base, quotaSize: QUOTA });
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal&display=simple&diskcache=0&${unattendedQuery()}`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal&display=simple&diskcache=0&${unattendedQuery()}`);
     await page.waitForFunction(() => ['running', 'failed', 'crashed'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 });
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
     await shows(page, /login: /, BOOT_MS);

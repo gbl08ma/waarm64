@@ -80,7 +80,7 @@ async function login(page: Page) {
 }
 
 /** The page of stored machine `id`, on its serial terminal. */
-const pageOf = (id: string) => `${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`;
+const pageOf = (id: string) => `${base}/web/app/?autostart=1&${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`;
 /** Boots stored machine `id` on a fresh page load, logs root in on the serial terminal; says how long it took. */
 async function boot(page: Page, id: string, what = '') {
   const t = Date.now();
@@ -128,7 +128,7 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
   storedRun = { profile, context, page, id: '', errors };
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
   // The import: Debian's qcow2 (95% compressed clusters) inflated into the block store.
   const t0 = Date.now();
   const imported = await inStore(page, async ({ store, disks }: any) => {

@@ -44,6 +44,8 @@ test('a first visit: no machines and nothing asked; under automation only when a
   assert.equal(firstVisit(w(''), 0, false), true);
   assert.equal(firstVisit(w(''), 1, false), false, 'a machine kept: not a first visit');
   assert.equal(firstVisit(w('?disk=x'), 0, false), false, 'a disk asked for');
+  assert.equal(firstVisit(w('?autostart=1'), 0, false), true, 'whether a machine starts with its tab opens nothing');
+  assert.equal(firstVisit(w('?autostart=1&firstvisit=1'), 0, true), true);
   assert.equal(firstVisit(w('', '#home'), 0, false), false);
   assert.equal(firstVisit(w(''), 0, true), false, 'the tests open the page bare');
   assert.equal(firstVisit(w('?firstvisit=1'), 0, true), true);

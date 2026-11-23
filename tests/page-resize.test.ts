@@ -59,7 +59,7 @@ test("Resize… in the browser's Disks pane: a stored disk, an overlay's row, a 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // A URL disk U (overlays O1, chosen by A, and O2), a stored disk S (192 KiB, on A and B), a ramdisk R (4 MiB, on B);
   // a snapshot of A kept at the sizes now.
   const ids = await page.evaluate(async () => {
@@ -193,7 +193,7 @@ test("Resize… on a machine's Disks tab: its overlay, its stored disk written i
   const asked: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, (q) => { asked.push(q.text); });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // M: a URL disk through overlay W, the same image read-only, a ramdisk.
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);

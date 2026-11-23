@@ -44,7 +44,7 @@ async function openPage(context: BrowserContext, view = 'both') {
     (window as unknown as { __workers: Worker[] }).__workers = workers;
     window.Worker = class extends RealWorker { constructor(...a: ConstructorParameters<typeof Worker>) { super(...a); workers.push(this); } };
   });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=${view}&${unattendedQuery()}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}ncpus=2&view=${view}&${unattendedQuery()}`);
   await page.waitForFunction(() => (window as unknown as { __channels: MessageChannel[] }).__channels.some((c) => /dispatch\(display\b/.test(String(c.port1.onmessage))), null, { timeout: 30_000 });
   // The machine boots in the background and its own resets would send cursor messages too: stop it, the page keeps its state.
   await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers.forEach((w) => w.terminate()));

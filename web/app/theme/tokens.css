@@ -23,6 +23,9 @@
   /* The machine's screen and what's drawn over it. */
   --screen-bg: #000;
   --screen-overlay: #000c;
+  /* A machine that doesn't run (StateVeil.svelte): its picture's filter, and the hatch over it. */
+  --veil-dim: grayscale(1) brightness(0.55);
+  --veil-hatch: #ffffff24;
   --backdrop: rgb(0 0 0 / 0.55);
   /* A seam: darker than every surface, so a raised thing parts from its ground by its own face and lit edge. */
   --border: #060606;

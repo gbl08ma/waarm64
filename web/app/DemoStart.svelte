@@ -99,7 +99,7 @@
     return runner.run(t('machines:DemoStart.busy.download'), async () => {
       try {
         const agreed = live();
-        if (!(await page.askSwitch()) || gone()) return;
+        if (!(await page.askSwitch(undefined, def.machine.name)) || gone()) return;
         progress = undefined;
         const { machine } = await machineFromDemo(
           store,

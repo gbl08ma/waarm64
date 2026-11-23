@@ -59,7 +59,7 @@ test('a question taken down by its caller leaves the dialog, shown or queued', {
 
 test("a question whose words are an error draws them as the page draws errors: a message's names, a developer's words as code", { timeout: 30_000 }, async () => {
   const page = await browser.newPage();
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.locator('#message-text').waitFor();
   const r = await page.evaluate(async () => {
     const { ask } = await import('/web/app/ask.svelte.ts' as string);

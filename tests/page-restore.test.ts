@@ -88,7 +88,7 @@ test("finding 1: the Snapshots tab's Restore (machine off) commits on the record
   page.on('pageerror', (e) => errors.push(String(e)));
   await standIn(page);
   await answerAsks(page); // Restore: yes; keep the overlay (so the restore forks): yes
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
@@ -102,7 +102,7 @@ test("finding 1: the Snapshots tab's Restore (machine off) commits on the record
     store.close();
     return { m: m.id as string, o: o.id as string };
   });
-  await page.goto(`${base}/web/app/?m=${ids.m}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
   await stateIs(page, 'off');
   // The snapshot pinned the overlay at a generation it has moved past: the restore forks.
   const sid = await keepSnapshot(page, ids.m, { overlay: `overlays/${ids.o}`, generation: 7, blocks: 0 });
@@ -140,7 +140,7 @@ test('finding 9: a ramdisk grown in another tab makes a kept snapshot another sh
   const asked: Question[] = [];
   await standIn(page);
   await answerAsks(page, (q) => { asked.push(q); });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
@@ -151,7 +151,7 @@ test('finding 9: a ramdisk grown in another tab makes a kept snapshot another sh
     store.close();
     return { m: m.id as string, r: r.id as string };
   });
-  await page.goto(`${base}/web/app/?m=${ids.m}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
   await stateIs(page, 'off');
   const sid = await keepSnapshot(page, ids.m, { blocks: 0, ram: true });
   // Tab B grows the ramdisk (its record: what the next start opens).

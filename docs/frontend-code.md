@@ -28,7 +28,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    lime accent both read as other generated pages do, and a blue accent, however bright, as today's browser defaults.
 3. **Semantic tokens, not raw palette.** A token is named by its role, so a re-theme changes one file:
    - surfaces `--surface` (the page; a field, a row in a dialog), `--surface-raised` (panes' rows, menus, dialogs, the
-     machines' list), `--surface-bar` (the toolbar, the status bar), `--screen-bg`, `--screen-overlay`, `--backdrop`;
+     machines' list), `--surface-bar` (the toolbar, the status bar), `--screen-bg`, `--screen-overlay`, `--backdrop`; a machine that
+     doesn't run `--veil-dim` (its picture's filter), `--veil-hatch` (the hatch over it);
      `--border`;
    - text `--text`, `--text-dim`, `--accent` (`--accent-ink` the words on it, `--accent-glow`, `--lit-text`,
      `--lit-lamp` its light);
@@ -106,6 +107,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      `error`/`warn`/`info`, a `title`, its buttons under its words): a pane's failed action, another store's warning, the
      USB menu's offer. ErrorBanner's tones, without its close button or movement.
    - `StatusDot`: a state's light.
+   - `Plaque`: the small raised panel in the middle of the screen or the terminal, an icon and a title with the
+     parent's lines under them (the boot card; a stopped machine's state: frontend.md "The veil").
    - `Count`: how many a tab or a list's button leads to, a number in a small sunk pill after its words (a machine's
      Disks tab, the Home page's Connections); the button's `aria-label` says the count in words.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).

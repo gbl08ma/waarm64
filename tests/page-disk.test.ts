@@ -115,7 +115,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
 
   // The page's own machine (no `machine=`) has no disk: it starts nothing, says how to bring one, and names no distribution.
   // The serial terminal only (the keys test's GRUB menu is on it); Debian's credentials, for its unattended first boot.
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=terminal&display=simple&${credentialsQuery()}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}ncpus=2&view=terminal&display=simple&${credentialsQuery()}`);
   await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('machine:power-actions.openDisk.prompt').source, { timeout: 10_000 });
   assert.equal(await page.locator('#machine').textContent(), t('machine:page-disks.title.noDisk', { machine: t('machines:machine.uefi') }));
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /debian/i);
@@ -276,7 +276,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   const errors2: string[] = [];
   await answerAsks(page2, (q) => { dialogs.push(q.text); });
   page2.on('pageerror', (e) => errors2.push(String(e)));
-  await page2.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
+  await page2.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
   await page2.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 });
   await page2.setInputFiles('#load-changes-input', downloaded);
   await page2.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 100 }); // stopped for the load

@@ -13,7 +13,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/theme/tokens.css`, `web/app/theme/base.css` | the design tokens (colors, space, text, radii, shadows, control heights, by role) and the element defaults (the reset, form controls, `.sr`): the page's only global styles ([frontend-code.md](frontend-code.md) §1) |
 | `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Step`/`Steps`, `Disclosure`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
-| `web/app/App.svelte`, `MessageBar.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu` (its Details…, `FoldersMount.svelte`), `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
+| `web/app/App.svelte`, `MessageBar.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu` (its Details…, `FoldersMount.svelte`), `ClipboardMenu`), `TerminalView.svelte`, `BootCard.svelte`, `StateVeil.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the veil over a machine that doesn't run ("The veil"), the status line, the questions |
 | `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-shape.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
@@ -40,7 +40,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `tools/debian.ts` | Debian's download and preparation (the tests' guest), for `images/build.sh debian` |
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot|snd` (the
-default is `debian`), `?ncpus=N`, `?ram=MiB` (both over a stored machine's record and the Machine menu's last choice), `?view=screen|terminal|both` (over the remembered view),
+default is `debian`), `?autostart=1|0` (a stored machine starts with its tab or waits, over the Preferences: "The veil"), `?ncpus=N`, `?ram=MiB` (both over a stored machine's record and the Machine menu's last choice), `?view=screen|terminal|both` (over the remembered view),
 `?params=…` (extra kernel parameters for a direct-boot machine, placed before a `--`: e.g.
 `init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
 line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credential over fw_cfg for a
@@ -260,7 +260,7 @@ from the working directory).
 for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with
 overlays, kept snapshots, three connections, a folder), then captures each state that needs no guest as
 `bench/results/local/screens/<name>/<state>.png` at 1280×800: the toolbar and each of its menus (with every menu a
-machine can have shown through its areas' state), the message bar (warn, error, info), the Home page's panes and a machine's tabs
+machine can have shown through its areas' state), the message bar (warn, error, info), the screen of a machine that doesn't run (each state's veil and the boot card, `screen-…`: "The veil"), the Home page's panes and a machine's tabs
 (also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
 page's questions. Then, in profiles of its own with the stores answered by the tool (`tools/screens-demos.ts`: three demos
 shaped like the published ones, their thumbnails drawn stand-ins), the demo store's page, wide and 720 px (`demos-…`):
@@ -281,7 +281,7 @@ the focus is on it) that goes back to the machine from either page (`data-action
 opens Home from the machine (`data-action="home"`: [Open the Home page.](ui:toolbar:Wordmark.home)). The wordmark is a shortcut: all it does, Home
 does in a click or two. (Tests open Home with `tests/page-home.ts` `openHome`, which clicks the toggle only while Home isn't
 open.) Then the machine's name,
-**Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs;
+**Start/Restart/Retry** ([Resume](ui:toolbar:Toolbar.resume) while the machine is suspended in this tab) and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs;
 where the guest's agent can, both ask the guest first and show [Shutting down…](ui:toolbar:Toolbar.soft.off) meanwhile:
 devices.md "Power off and restart from the guest"), **[Suspend](ui:toolbar:Toolbar.suspend)**,
 **[Snapshot](ui:toolbar:Toolbar.snapshot)** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
@@ -445,7 +445,8 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 first in a modal `<dialog id="ask">` (a title, the text, OK and Cancel with the action's own words; one that loses
 data has its OK drawn as a warning; Esc is Cancel). `ask.wait` is a wait its caller ends (`close`), with one button
 drawn as a warning (`skipped`): the guest's clean shutdown before a change (devices.md "Power off and restart from the
-guest"); `ask.closableConfirm` is a confirm its caller can take down too. A question taken down leaves the dialog
+guest"); `ask.closableConfirm` is a confirm its caller can take down too; `ask.choose` is a confirm with another
+way to go on, a button between Cancel and OK (answered `'alt'`: the switch to another machine's [Suspend and open](ui:machine:disk-actions.switch.suspend)). A question taken down leaves the dialog
 whether shown or queued; which one is shown is known by the question itself, not by `asking.current`, which holds
 Svelte's proxy of it and never equals it (compared with it, a closed wait stayed on screen: `tests/page-ask.test.ts`).
 Clicking OK is a user activation, so a file picker or a permission
@@ -514,10 +515,11 @@ machine from the definition that boots cold, the user's own; the store's loading
 machine made is chosen. The chosen one:
 **[Start](ui:machines:MachinePane.open)**, which opens it in this tab, where it starts (while another machine runs in this
 tab, a menu, **[Start](ui:machines:MachinePane.startMenu)**: **[In this tab](ui:machines:MachinePane.startMenu.here)**,
-in that one's place, asked first, or **[In a new tab](ui:machines:MachinePane.startMenu.newTab)**, the address with
+in that one's place, asked first (where the running one can be suspended, the question has a third button,
+**[Suspend and open](ui:machine:disk-actions.switch.suspend)**: it is suspended rather than powered off, and the other opens once its `suspended` state came; a suspend refused or failed is said in the message bar and nothing opens: `disk-actions.ts` `askSwitch`), or **[In a new tab](ui:machines:MachinePane.startMenu.newTab)**, the address with
 `?m=<id>` in place of `m`, `disk` and the size's and the switches' keys, `disk-actions.ts` `openInNewTab`; while it
 runs in another tab, a disabled "[Running in another tab](ui:machines:MachinePane.runningElsewhere)", the machines'
-locks being read again as the tab comes back into view or focus) (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off, "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
+locks being read again as the tab comes back into view or focus) (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off; a machine with a suspended copy says [Resume](ui:machines:MachinePane.resume) on its start button or menu; "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
 Duplicate, Export the definition, Delete; then tabs, each of those that hold something (disks, network adapters, USB
 devices, shared folders, snapshots) with how many in a pill (`ui/Count.svelte`) when there are some, none at zero (the
 left column's Disks, Shared folders and Connections the same):
@@ -2139,6 +2141,45 @@ web/overlay.ts: under the overlay's Web Lock, `removeEntry(name, {recursive: tru
 root) and starts a new
 machine, which boots from the image as published. If the removal fails (another tab holds the
 files), the page says so and offers the reset again.
+
+
+### The veil
+
+A machine that doesn't run says so on its screen and its serial terminal (web/app/StateVeil.svelte over each, from
+`power.veil`, web/app/areas/power.svelte.ts; `[data-state-veil]`, the tests' hook):
+
+- **Suspended, crashed, or held still for a snapshot** (`through`): the picture it left stays, dimmed and without its
+  colors (`--veil-dim`, a filter on the canvas), under a diagonal hatch (`--veil-hatch`): the hatch is what tells a
+  text console apart from a live one, where taking the colors out changes nothing. Text stays readable between its
+  lines.
+- **Off, couldn't start, or not started** (`cover`): no picture, as a machine that is off shows none (the canvas kept
+  its last frame after some power-offs and went black after others: it is blacked out either way).
+- **The serial terminal** keeps its text in every one of these states, dimmed and hatched: it is a log, and what a
+  guest said before it stopped is often what the user wants to read (and can still select).
+- **The state on a plaque** in the middle (`ui/Plaque.svelte`: an icon and the state's words, the status bar's), in
+  the warning color for a crash or a failed start; a suspended machine's has **[Resume](ui:machine:StateVeil.resume)**
+  under its words (`[data-action=resume]`: the toolbar's start, which says [Resume](ui:toolbar:Toolbar.resume) then too, as the message bar's button and
+  the Home page's do), and one that is off has **[Start](ui:machine:StateVeil.start)** (`[data-action=start]`). The screen has it; the terminal does when it shows alone (in Both
+  one plaque says it). The **boot card** (`BootCard.svelte`, while a machine loads and boots, before any video output)
+  is the same plaque over no picture, with its progress, the boot's last line and the way to the serial console.
+- **Held still for a snapshot** (`power.paused`: from the moment a save holds the guest's input until the guest runs
+  again, web/app/areas/snapshot-actions.ts) there is no plaque, as the message bar and the status bar say what goes
+  on, and the hatch and the dimming come only once the pause has lasted `--motion` (300 ms), over `--motion-fast`: a
+  short save doesn't flash. A suspend goes from there to the suspended state's plaque.
+
+**The first start.** A stored machine opened by its tab (the one used last, `?m=<id>`, a reload) doesn't start by
+itself: it waits off, or suspended where it has a suspended copy (web/app/run/power-actions.ts `boot`), with its
+Start or Resume on the plaque, so its settings can be changed before it runs. It starts with its tab where the
+Preferences' **[Start the machine when this web app opens](ui:machines:PreferencesPane.autoStart)** is ticked (off by default; `settings().autoStart`), where
+the address says `?autostart=1` (the tests' and the benchmarks'; `0` the other way), or where a Start opened the tab
+(Home's Start for a machine from a page that must reload, or [In a new tab](ui:machines:MachinePane.startMenu.newTab): `?start`, taken out of the address once
+read, so a reload waits again). A machine the address or a file gives (`?machine=`, `?disk=`, a disk opened or
+dropped) starts as before: it has no settings to change first. Chosen over showing Home instead: the machine's own
+view says its state and holds its Start, and Home is a click away. `tests/page-modal.test.ts` tests it.
+
+The veil takes no pointer events: the screen and the terminal under it are focused, scrolled and selected as before.
+`tests/page-layout.test.ts` tests it without a guest (each state's veil, plaque and filters, the pause's delay, the
+boot card's look).
 
 ## Debian through UEFI
 

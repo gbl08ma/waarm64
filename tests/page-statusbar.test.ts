@@ -45,7 +45,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=2`);
   const mips = pattern('statusbar:statusbar-render.cpu.mips', { value: '\\d+' });
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), mips, { timeout: 60_000, polling: 200 });
   // And past the boot (a loaded host shows MIPS while the state still says booting).
@@ -146,7 +146,7 @@ test('the status bar\'s editor on a touchscreen: a long press drags a chip or a 
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await page.click('[data-machine=preferences]');
   const chips = '.status-edit .bar .chip';

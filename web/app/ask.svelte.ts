@@ -22,9 +22,13 @@ export type Question = {
   danger: boolean;
   /** A prompt's first text. */
   value: string;
+  /** A confirm's other way to go on, a button between Cancel and OK (`ask.choose`: answered `'alt'`). */
+  alt?: string;
   resolve(answer: boolean | string | undefined): void;
 };
 type Options = { title?: Title; ok?: string; cancel?: string; danger?: boolean };
+/** OK's answer, Cancel's, or the other button's (`ask.choose`). */
+export type Choice = boolean | 'alt';
 
 export const asking = $state({ current: undefined as Question | undefined, serial: 0 });
 const queue: Question[] = [];
@@ -44,8 +48,11 @@ function next() {
   asking.current = shownRaw;
   asking.serial++;
 }
-/** Answers the question shown (Ask.svelte): OK (`true`, or a prompt's `text`) or Cancel (`false`, a prompt's `undefined`). */
-export function answer(ok: boolean, text = '') {
+/**
+ * Answers the question shown (Ask.svelte): OK (`true`, or a prompt's `text`), Cancel (`false`, a prompt's
+ * `undefined`), or a confirm's other button (`'alt'`).
+ */
+export function answer(ok: Choice, text = '') {
   const q = shownRaw;
   if (!q) return;
   q.resolve(q.kind === 'prompt' ? (ok ? text : undefined) : ok);
@@ -75,6 +82,18 @@ export const ask = {
       danger: o.danger ?? false,
       value: '',
     }) as Promise<boolean>,
+  /** OK, Cancel, or another way to go on (`alt`, its button's words; answered `'alt'`). */
+  choose: (text: Words, o: Options & { alt: string }) =>
+    show({
+      kind: 'confirm',
+      title: o.title ?? t('common:ask.confirmTitle'),
+      text,
+      ok: o.ok ?? t('common:ask.ok'),
+      cancel: o.cancel ?? t('common:ask.cancel'),
+      danger: o.danger ?? false,
+      value: '',
+      alt: o.alt,
+    }) as Promise<Choice>,
   /** OK or Cancel, which the caller can also take down (`close`: as a Cancel, `answer` false). */
   closableConfirm(text: Words, o: Options = {}): { answer: Promise<boolean>; close(): void } {
     let q: Question | undefined;

@@ -74,10 +74,10 @@ const stored = (page: Page) =>
 /** A fresh page with the machines and connections seeded, Alpha on it (`?m=`), on `hash`. */
 async function seeded(hash = '') {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => !!document.getElementById('machines-open'));
   const s = await seed(page);
-  await page.goto(`${base}/web/app/?m=${s.alpha}${hash}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${s.alpha}${hash}`);
   await page.waitForFunction(() => !!document.getElementById('machines-open'));
   return { page, s };
 }
@@ -86,12 +86,12 @@ const homeOpen = async (page: Page) => (await page.locator('#machines-open').get
 
 test("Home's levels: a connection's page by its address, Back and Esc to each origin, the column's swap", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => !!document.getElementById('machines-open'));
   const s = await seed(page);
 
   // A reload on a room connection's address: its page, entered from Connections.
-  await page.goto(`${base}/web/app/?m=${s.alpha}#home/connections/${s.room}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${s.alpha}#home/connections/${s.room}`);
   await page.locator('[data-context-connection]').waitFor({ timeout: 30_000 });
   assert.equal(await level(page), `connection:${s.room}`);
   assert.equal(await hash(page), `#home/connections/${s.room}`);
@@ -166,7 +166,7 @@ test("Home's levels: a connection's page by its address, Back and Esc to each or
   assert.equal(await level(page), 'root');
 
   // An unknown id opens Connections.
-  await page.goto(`${base}/web/app/?m=${s.alpha}#home/connections/gone`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${s.alpha}#home/connections/gone`);
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 30_000 });
   assert.equal(await level(page), 'root');
   assert.equal(await hash(page), '#home');
@@ -487,7 +487,7 @@ test("a connection gone under its page: Home leaves the level for Connections; a
   assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'H3', "Connections' title has the focus");
 
   // An address with an id unknown at load: Connections; the connection appearing later doesn't open its page.
-  await page.goto(`${base}/web/app/?m=${s.alpha}#home/connections/later`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${s.alpha}#home/connections/later`);
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 30_000 });
   await page.evaluate(async (c) => {
     const { page: p } = await import('/web/app/page.ts' as string) as typeof import('../web/app/page.ts');
@@ -510,7 +510,7 @@ test("a connection gone under its page: Home leaves the level for Connections; a
     store.close();
     return id;
   }, [['/web/app/store.ts', '/web/app/machines.ts'], s.room] as const);
-  await page.goto(`${base}/web/app/?m=${s.alpha}#home/connections/${s.room}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${s.alpha}#home/connections/${s.room}`);
   await page.locator('#connection-details-machines [data-machine-tab]').first().waitFor({ timeout: 30_000 });
   assert.equal(await text(page, '#connection-details-machines'), t('machines:ConnectionDetails.machines', { machines: ['Bravo', 'Bravo'] }));
   const tabs = await page.locator('#connection-details-machines [data-machine-tab]').evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.machineTab));

@@ -252,6 +252,7 @@
       {disks}
       {overlays}
       state={stateText(edit.draft.id)}
+      suspended={suspended.has(edit.draft.id) && !running.has(edit.draft.id)}
       {act}
       {offFirst}
       onchoose={choose}

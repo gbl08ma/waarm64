@@ -17,7 +17,7 @@
   },
   "messages.state.idle": {
     "message": "Not started",
-    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when no machine has started yet (a disk to open, a question first)."
+    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) and on the plaque in the middle of the screen and the serial terminal when no machine has started yet (a disk to open, a question first)."
   },
   "messages.state.loading": {
     "message": "Loading",
@@ -33,11 +33,11 @@
   },
   "messages.state.off": {
     "message": "Powered off",
-    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine was powered off."
+    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) and on the plaque in the middle of the screen and the serial terminal when the machine was powered off."
   },
   "messages.state.suspended": {
     "message": "Suspended",
-    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine was suspended (its memory kept in this browser)."
+    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) and on the plaque in the middle of the screen and the serial terminal when the machine was suspended (its memory kept in this browser)."
   },
   "messages.state.rebooting": {
     "message": "Rebooting",
@@ -45,11 +45,19 @@
   },
   "messages.state.crashed": {
     "message": "Crashed",
-    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the guest or the emulator stopped with an error."
+    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) and on the plaque in the middle of the screen and the serial terminal when the guest or the emulator stopped with an error."
   },
   "messages.state.failed": {
     "message": "Couldn't start",
-    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine couldn't start."
+    "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) and on the plaque in the middle of the screen and the serial terminal when the machine couldn't start."
+  },
+  "StateVeil.resume": {
+    "message": "Resume",
+    "note": "Button on the plaque in the middle of the screen (and of the serial terminal, when it shows alone) while the machine is suspended, under the word Suspended: it starts the machine again where it was left."
+  },
+  "StateVeil.start": {
+    "message": "Start",
+    "note": "Button on the plaque in the middle of the screen (and of the serial terminal, when it shows alone) while the machine is powered off, under the words Powered off: it starts the machine."
   },
   "worker-messages.state.loadingPercent": {
     "message": "Loading {{percent}}%",
@@ -84,7 +92,7 @@
     "note": "Button in the message bar (under the toolbar) after the guest's kernel panicked or the emulator failed: it downloads the serial console's output as a file."
   },
   "problems.resume": {
-    "message": "Start",
+    "message": "Resume",
     "note": "Button in the message bar (under the toolbar) after the machine was suspended: it starts the machine again, resuming it where it was."
   },
   "problems.bootInstead": {
@@ -264,16 +272,28 @@
     "note": "Button in the message bar (under the toolbar) on a first visit (the page's machine has no disk yet): it opens the browser's file picker for a disk image."
   },
   "disk-actions.switch.confirm": {
-    "message": "Open the other machine? This will power off this one immediately, like pulling the plug, and unsaved work in its guest will be lost.",
-    "note": "Text of the question asked when another machine is opened (the Home page's Open, a disk file opened or dropped) while the one on the page runs."
+    "message": "Open <name>{{machine}}</name>? This will power off <name>{{running}}</name> immediately, like pulling the plug, and unsaved work in its guest will be lost.",
+    "note": "Text of the question asked when another machine is opened (the Home page's Open, a disk file opened or dropped) while the one on the page runs. {{machine}} is the name of the machine to open, {{running}} is the name of the machine running in this tab."
   },
   "disk-actions.switch.title": {
-    "message": "Open the machine",
-    "note": "Title of the question asked when another machine is opened while the one on the page runs."
+    "message": "Open <name>{{machine}}</name>",
+    "note": "Title of the question asked when another machine is opened while the one on the page runs. {{machine}} is the name of the machine to open."
   },
   "disk-actions.switch.ok": {
     "message": "Open",
     "note": "The confirm button (drawn as a warning) of the question asked when another machine is opened while the one on the page runs."
+  },
+  "disk-actions.switch.suspend": {
+    "message": "Suspend and open",
+    "note": "A button between Cancel and Open in the question asked when another machine is opened while the one on the page runs and can be suspended: this machine is suspended (its memory kept in this browser) rather than powered off, then the other opens."
+  },
+  "disk-actions.switch.confirm.suspend": {
+    "message": "Open <name>{{machine}}</name>? This will power off <name>{{running}}</name> immediately, like pulling the plug, and unsaved work in its guest will be lost. To continue <name>{{running}}</name> later where you left off, suspend it instead.",
+    "note": "Text of the question asked when another machine is opened while the one on the page runs and can be suspended; its buttons are Cancel, Suspend and open, Open. {{machine}} is the name of the machine to open, {{running}} is the name of the machine running in this tab."
+  },
+  "disk-actions.switch.confirm.soft.suspend": {
+    "message": "Open <name>{{machine}}</name>? The guest of <name>{{running}}</name> will be asked to shut down first; you will be able to power it off forcibly, if needed. To continue <name>{{running}}</name> later where you left off, suspend it instead.",
+    "note": "Text of the question asked before opening another machine while this one runs and can be suspended, when its guest's agent (the page's program in the guest) can shut it down cleanly; its buttons are Cancel, Suspend and open, Open. {{machine}} is the name of the machine to open, {{running}} is the name of the machine running in this tab."
   },
   "snapshot-actions.runsOn": {
     "message": "The machine is still running.",
@@ -600,8 +620,8 @@
     "note": "The one button (drawn as a warning) of the dialog shown while the guest shuts down: it powers the machine off at once, like pulling the plug, without waiting for the guest."
   },
   "disk-actions.switch.confirm.soft": {
-    "message": "Open the other machine? This one's guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
-    "note": "Text of the question asked before opening another machine while this one runs, when its guest's agent (the page's program in the guest) can shut it down cleanly."
+    "message": "Open <name>{{machine}}</name>? The guest of <name>{{running}}</name> will be asked to shut down first; you will be able to power it off forcibly, if needed.",
+    "note": "Text of the question asked before opening another machine while this one runs, when its guest's agent (the page's program in the guest) can shut it down cleanly. {{machine}} is the name of the machine to open, {{running}} is the name of the machine running in this tab."
   },
   "size-actions.settings.confirm.soft": {
     "message": "Restart <name>{{name}}</name> with its new settings? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",

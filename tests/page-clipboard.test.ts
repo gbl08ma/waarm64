@@ -233,7 +233,7 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page);
-    await page.goto(`${base}/web/app/?${query}`);
+    await page.goto(`${base}/web/app/?autostart=1&${query}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));

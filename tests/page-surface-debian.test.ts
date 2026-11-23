@@ -90,7 +90,7 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
   const image = readFileSync(IMAGE);
   const size = Number(image.readBigUInt64BE(24)); // the qcow2's virtual size
   const ids = await page.evaluate(async ({ size, bytes }) => {
@@ -106,7 +106,7 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
     store.close();
     return { id, attachment };
   }, { size, bytes: image.length });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${ids.id}&view=terminal&display=simple&${credentialsQuery()}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}m=${ids.id}&view=terminal&display=simple&${credentialsQuery()}`);
   await page.waitForFunction(() => ['loading', 'booting', 'running', 'failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 50 });
 
   // Opened from the machine's Disks tab (its overlay, made at the start) as the boot begins: live. What the disk's

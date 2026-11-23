@@ -193,7 +193,7 @@ async function machine(contexts: BrowserContext[], restore: string): Promise<Pag
     asked.push(q);
     return cancelling ? false : true;
   });
-  await page.goto(`${base}/web/app/?${QUERY}`);
+  await page.goto(`${base}/web/app/?autostart=1&${QUERY}`);
   if (restore) await loadSnapshotFile(page, restore);
   return page;
 }
@@ -616,7 +616,7 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   // On load, a name in its last week is said (this browser's clock 24 days on: kept until 30 days after the claim).
   const later = await a.context().newPage();
   await later.clock.install({ time: Date.now() + 24 * 86400_000 });
-  await later.goto(`${base}/web/app/`);
+  await later.goto(`${base}/web/app/?autostart=1`);
   await later.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('network:names.lastWeek_one', { names: 'mybox' }).source, { timeout: 60_000, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; the bar says ${await later.evaluate(() => document.getElementById('message-text')?.textContent)}`); });
   // Its Domains action: the pane of the connection that holds it.

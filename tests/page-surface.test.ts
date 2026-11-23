@@ -108,7 +108,7 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&view=terminal`);
   const ids = await setUp(page);
   await page.reload();
   await openHome(page);
@@ -254,7 +254,7 @@ test('the disk surface window over a file disk without a handle to read: not exa
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&view=terminal`);
   const size = 12 * MiB;
   const id = await page.evaluate(async (size) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -318,7 +318,7 @@ test("the window's reading of the files isn't a machine's: delete, resize and me
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&view=terminal`);
   const ids = await setUpOverlays(page);
   await page.reload();
   await openHome(page);
@@ -414,7 +414,7 @@ test("the pointed square's words: spoken when the square changes, not when its n
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&view=terminal`);
   const ids = await setUpOverlays(page);
   await page.reload();
   await openHome(page);

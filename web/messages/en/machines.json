@@ -1143,6 +1143,14 @@
     "message": "Ask before leaving this web app while a machine runs",
     "note": "Home page, Preferences: the label of a box."
   },
+  "PreferencesPane.autoStart": {
+    "message": "Start the machine when this web app opens",
+    "note": "Home page, Preferences: the label of a box (off by default)."
+  },
+  "PreferencesPane.autoStart.note": {
+    "message": "With this on, the machine you used last starts immediately when you reopen this web app, or resumes if it was suspended. With this off, it waits until you start it, so you can change its settings first.",
+    "note": "Home page, Preferences: the note under Start the machine when this web app opens."
+  },
   "PreferencesPane.dropCaches": {
     "message": "Drop the guest's disk caches before a snapshot",
     "note": "Home page, Preferences: the label of a box. Disk caches: the copies of files the guest's kernel keeps in its memory."
@@ -1358,6 +1366,14 @@
   "MachinePane.start": {
     "message": "Start",
     "note": "Home page: button at the top of the pane of this page's machine, while it is off: closes the page and starts it."
+  },
+  "MachinePane.resume": {
+    "message": "Resume",
+    "note": "Home page: what a machine's Start button (or Start menu) at the top of its pane says while the machine is suspended: it starts again where it was left."
+  },
+  "MachinePane.resume.title": {
+    "message": "Resume the machine in this tab, where it was suspended.",
+    "note": "Home page: tooltip of Resume, for this page's machine while it is suspended."
   },
   "MachinePane.busy.copying": {
     "message": "Copying",

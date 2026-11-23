@@ -88,7 +88,7 @@ test("the serial terminal: 80×25 without an agent that sets the guest's size; w
   const page = await ctx.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=terminal&agentstub`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&view=terminal&agentstub`);
   await page.waitForFunction(() => document.body.dataset.state === 'running' && /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
   await stub(page);
   assert.deepEqual(await shown(page), { rows: 25, size: '80x25', fit: false }, 'no agent: 80×25');
@@ -160,7 +160,7 @@ test("Both's divider: the terminal keeps 80 columns beside the screen until the 
   const page = await ctx.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&agentstub`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&view=both&agentstub`);
   await page.waitForFunction(() => document.body.dataset.state === 'running' && /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
   await stub(page);
   await openPort(page);

@@ -40,14 +40,16 @@
   let { audio, net, folders }: { audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
   const running = $derived(isLive(power.state));
-  /** What Start says: start an idle machine, retry a failed one, else restart. */
+  /** What Start says: start an idle machine, resume a suspended one, retry a failed one, else restart. */
   function startAsOf() {
-    if (power.state === 'off' || power.state === 'idle' || power.state === 'suspended') return 'start';
+    if (power.state === 'suspended') return 'resume';
+    if (power.state === 'off' || power.state === 'idle') return 'start';
     return power.state === 'failed' ? 'retry' : 'restart';
   }
   const startAs = $derived(startAsOf());
   const START = {
     start: { label: 'toolbar:Toolbar.start', title: 'toolbar:Toolbar.start.title' },
+    resume: { label: 'toolbar:Toolbar.resume', title: 'toolbar:Toolbar.resume.title' },
     retry: { label: 'toolbar:Toolbar.retry', title: 'toolbar:Toolbar.retry.title' },
     restart: { label: 'toolbar:Toolbar.restart', title: 'toolbar:Toolbar.restart.title' },
   } as const;

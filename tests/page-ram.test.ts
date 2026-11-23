@@ -83,7 +83,7 @@ test("the RAM map, live on Debian: data and changes counted, a guest's 64 MiB wr
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}${unattendedQuery()}&ncpus=2&ram=1024&view=terminal&display=simple`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}${unattendedQuery()}&ncpus=2&ram=1024&view=terminal&display=simple`);
   assert.equal(await page.locator('[data-action=ram-open]').count(), 0, 'RAM is no link before the machine runs');
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await terminal(page));

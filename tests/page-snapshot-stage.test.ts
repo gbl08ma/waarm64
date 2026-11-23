@@ -100,7 +100,7 @@ test('a file save staged through OPFS: a download and a picked file; no room, a 
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page);
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
-    const url = `${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`;
+    const url = `${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`;
     await page.goto(url);
     await running(page);
     await onSerial(page, 'echo sa""ved-$((6*7))\n');

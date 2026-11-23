@@ -161,7 +161,7 @@ test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page);
-    await page.goto(`${base}/web/app/?${query}`);
+    await page.goto(`${base}/web/app/?autostart=1&${query}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));

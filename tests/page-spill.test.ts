@@ -58,7 +58,7 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
     // Headless Chromium's save picker would wait for a dialog nobody answers: the page downloads instead.
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
     await answerAsks(page);
-    await page.goto(`${base}/web/app/?${query}`);
+    await page.goto(`${base}/web/app/?autostart=1&${query}`);
     // The Machine menu: the running split's note, the automatic one's for another size, none for a size memory 0 holds.
     await page.locator('#machine-menu summary').click();
     assert.match(await page.locator('#machine-numa').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 3072, rest: 1536 }, { whole: true }));
@@ -130,7 +130,7 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
       const errors2: string[] = [];
       p2.on('pageerror', (e) => errors2.push(String(e)));
       await answerAsks(p2);
-      await p2.goto(`${base}/web/app/?${query}`);
+      await p2.goto(`${base}/web/app/?autostart=1&${query}`);
       await p2.setInputFiles('#load-snapshot-input', file);
       await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
       await p2.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), undefined, { timeout: 300_000, polling: 250 })

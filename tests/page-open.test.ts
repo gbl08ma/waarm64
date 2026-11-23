@@ -54,7 +54,7 @@ test('a machine running in another tab: a second tab says so at once, and starts
 
     const page = await context.newPage();
     // Timed from the page's load: what's measured is the start's answer, not Vite compiling the page (seconds under load).
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}m=${id}`);
     const t0 = Date.now();
     await page.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => document.body.dataset.state)}: ${await message(page)}`); });
@@ -103,7 +103,7 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page); // "Open the other machine? This one stops…"
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}`);
     await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('machine:power-actions.openDisk.prompt').source, { timeout: 30_000 });
     const openDisk = page.locator('#message-actions button', { hasText: t('machine:power-actions.openDisk') });
 

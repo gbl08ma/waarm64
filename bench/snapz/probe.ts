@@ -313,7 +313,7 @@ if (MODE === 'transient') {
   }
 } else {
   const m = await storedMachine();
-  const url = `${base}/web/app/?m=${m}&${g.query}`;
+  const url = `${base}/web/app/?autostart=1&m=${m}&${g.query}`;
   const file = await storedCopy(m, url);
   console.log('stored machine', m, 'file', file);
   for (let k = 0; k < ROUNDS; k++) {

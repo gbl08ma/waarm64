@@ -87,7 +87,7 @@ export type Page = {
   closeDemos(back?: boolean): void;
   chooseDemo(id?: string): void;
   /** Whether opening machine `id` (undefined: one not made yet) may stop the one running here: asks if it must. */
-  askSwitch(id?: string): Promise<boolean>;
+  askSwitch(id?: string, name?: string): Promise<boolean>;
   /** Opens a demo's machine `id` (the store's page closes) in the demo's view; the switch was asked (`askSwitch`). */
   openDemo(id: string, view: 'serial' | 'screen'): Promise<void>;
   /** The introduction (web/app/IntroPage.svelte) opened over the page. */

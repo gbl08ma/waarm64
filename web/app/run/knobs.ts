@@ -14,6 +14,18 @@ export const params = new URLSearchParams(location.search);
 /** The address's query as it is now (a switch to another machine drops the last one's size and switches from it). */
 export const query = () => new URLSearchParams(location.search);
 
+/**
+ * `?start`: a Start opened this tab (Home's "In a new tab", a switch from a machine given by the address), so its
+ * machine starts whatever the Preferences say. Once: it is taken out of the address, and a reload follows them.
+ */
+export function takeStartAsked() {
+  if (!params.has('start')) return false;
+  const q = query();
+  q.delete('start');
+  history.replaceState(history.state, '', `${location.pathname}${q.size ? `?${q}` : ''}${location.hash}`);
+  return true;
+}
+
 /** `?credential=name:value` (repeatable): a systemd credential for a firmware machine, for development and tests. */
 export const credentials = params
   .getAll('credential')

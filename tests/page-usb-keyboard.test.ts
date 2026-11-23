@@ -70,7 +70,7 @@ test("the built-in USB keyboard drives GRUB on a stored Debian machine (keys and
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, () => {});
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
   const image = readFileSync(IMAGE);
   const size = Number(image.readBigUInt64BE(24));
   const id = await page.evaluate(async ({ size, bytes }) => {
@@ -85,7 +85,7 @@ test("the built-in USB keyboard drives GRUB on a stored Debian machine (keys and
     store.close();
     return id;
   }, { size, bytes: image.length });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=both&${credentialsQuery()}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}m=${id}&view=both&${credentialsQuery()}`);
 
   // GRUB's menu counts 5 s: `c` on the screen (to the USB keyboard) until its command line is up.
   await shows(page, /BdsDxe: starting/, 240_000);

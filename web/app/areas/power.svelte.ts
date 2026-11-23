@@ -12,6 +12,19 @@ export const isLive = (s: PageState) => s === 'running' || s === 'booting';
 export const isStopped = (s: PageState) =>
   s === 'off' || s === 'suspended' || s === 'crashed' || s === 'failed' || s === 'idle';
 
+/**
+ * How the screen and the serial terminal show a machine that doesn't run (web/app/StateVeil.svelte): held still for a
+ * snapshot (`paused`), or stopped in one of `isStopped`'s states.
+ */
+export type Veil = 'paused' | 'suspended' | 'off' | 'crashed' | 'failed' | 'idle';
+const STOPPED_VEIL: Partial<Record<PageState, Veil>> = {
+  suspended: 'suspended',
+  off: 'off',
+  crashed: 'crashed',
+  failed: 'failed',
+  idle: 'idle',
+};
+
 class Power {
   state = $state<PageState>('loading');
   /** The state's words (a phase or a progress while loading or saving). */
@@ -20,6 +33,10 @@ class Power {
   switching = $state(false);
   /** A snapshot being written. */
   saving = $state(false);
+  /** The guest is held still for a save (its input held, then its cores paused), until it runs again or has stopped. */
+  paused = $state(false);
+  /** The veil over the screen and the terminal: none while the machine loads, boots or runs unheld. */
+  readonly veil = $derived(this.paused && isLive(this.state) ? 'paused' : STOPPED_VEIL[this.state]);
   /** One of them runs: the actions that would overlap it wait. */
   readonly busy = $derived(this.switching || this.saving);
   /** The page can't run here (no cross-origin isolation): no Start. */

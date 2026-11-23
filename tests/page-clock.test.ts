@@ -96,7 +96,7 @@ test('the guest agent sets the clock after a snapshot, a resume and a load; a gu
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page);
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}${query}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     await running(page);
     await shows(page, /login: /);
@@ -144,7 +144,7 @@ test('the guest agent sets the clock after a snapshot, a resume and a load; a gu
     const fresh = await browser.newContext();
     const p2 = await fresh.newPage();
     await answerAsks(p2);
-    await p2.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    await p2.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}${query}`);
     await p2.setInputFiles('#load-snapshot-input', file);
     await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000 });
     await running(p2, 180_000);

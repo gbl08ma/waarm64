@@ -79,7 +79,7 @@ test('a definition exported from one profile and imported into another: the same
   const errors: string[] = [];
   await answerAsks(pb, (q) => { dialogs.push(q.text); });
   pb.on('pageerror', (e) => errors.push(String(e)));
-  await pb.goto(`${base}/web/app/`);
+  await pb.goto(`${base}/web/app/?autostart=1`);
   await openHome(pb);
   await pb.setInputFiles('.machines [data-field=import-definition]', defFile);
   await pb.locator('.machines .pick', { hasText: 'Portable' }).waitFor();

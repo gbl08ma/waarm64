@@ -35,7 +35,7 @@ async function intro(options: BrowserContextOptions = {}, setup?: (page: Page) =
   page.on('pageerror', (e) => errors.push(String(e)));
   await ctx.route(OUR_STORE, (r) => r.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: { type: 'waarm64-store', version: 1, demos: [] } }));
   await setup?.(page);
-  await page.goto(`${base}/web/app/#intro`);
+  await page.goto(`${base}/web/app/?autostart=1#intro`);
   await page.locator('[data-intro] h1').waitFor({ timeout: 30_000 });
   return { ctx, page, errors };
 }

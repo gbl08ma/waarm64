@@ -125,7 +125,7 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
       if (seen.at(-1) !== t) seen.push(t);
     }).observe(document, { subtree: true, childList: true, characterData: true });
   });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&clipboard=1&${unattendedQuery()}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}ncpus=2&view=both&clipboard=1&${unattendedQuery()}`);
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
 

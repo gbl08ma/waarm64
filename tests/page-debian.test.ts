@@ -269,7 +269,7 @@ for (let run = 1; run <= RUNS; run++) {
     await answerAsks(page, (q) => { dialogs.push(q.text); });
     const t0 = performance.now();
     const at = () => `${((performance.now() - t0) / 1000).toFixed(1)} s`;
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}${query}`);
 
     // A snapshot of another machine is refused at once, before anything stops (written by Buildroot's page: only the header matters).
     await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.waarm64snap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
@@ -483,7 +483,7 @@ for (let run = 1; run <= RUNS; run++) {
     const errors2: string[] = [];
     p2.on('pageerror', (e) => errors2.push(String(e)));
     await answerAsks(p2);
-    await p2.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
+    await p2.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}${query}`);
     const t1 = performance.now();
     await p2.setInputFiles('#load-snapshot-input', saved.path);
     await loadingSnapshot(p2);

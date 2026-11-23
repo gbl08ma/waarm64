@@ -108,7 +108,7 @@ test('the snd guest plays a tone on the page in real time: its length in its own
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=4&snd=stats`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=snd&view=terminal&params=snd_seconds=4&snd=stats`);
   await page.mouse.click(5, 5);
   await until(page, /snd: hw params/);
   await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 10_000 });
@@ -145,7 +145,7 @@ test('with its context not running, the page says sound waits for a click; the g
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=4&snd=stats`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=snd&view=terminal&params=snd_seconds=4&snd=stats`);
   await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 60_000 });
   await page.evaluate(() => (window as unknown as W).__audio.context().suspend());
   await page.waitForFunction((said) => (window as unknown as W).__audio?.waiting() && document.getElementById('sound-summary')!.textContent === said, t('sound:Sound.summary.waiting'), { timeout: 5_000 });
@@ -172,7 +172,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // the download path
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
-    await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=12&snd=stats&clocksync=0`); // as the page tests' PAGE_QUERY
+    await page.goto(`${base}/web/app/?autostart=1&machine=snd&view=terminal&params=snd_seconds=12&snd=stats&clocksync=0`); // as the page tests' PAGE_QUERY
     await page.mouse.click(5, 5);
     await until(page, /snd: hw params/);
     await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 10_000 });
@@ -201,7 +201,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     const logs2: string[] = [];
     p2.on('console', (m) => logs2.push(m.text()));
     await answerAsks(p2);
-    await p2.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=60&snd=stats`);
+    await p2.goto(`${base}/web/app/?autostart=1&machine=snd&view=terminal&params=snd_seconds=60&snd=stats`);
     await p2.mouse.click(5, 5);
     await until(p2, /snd: hw params/);
     await p2.setInputFiles('#load-snapshot-input', path);
@@ -254,7 +254,7 @@ async function micPage(stored: Record<string, unknown>, rec?: number, init?: () 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   const params = encodeURIComponent(`snd_seconds=0.2${rec ? ` snd_rec_seconds=${rec}` : ''}`);
-  await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=${params}&snd=stats`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=snd&view=terminal&params=${params}&snd=stats`);
   await page.mouse.click(5, 5);
   return { context, page, errors };
 }

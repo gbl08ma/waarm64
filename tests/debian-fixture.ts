@@ -193,9 +193,9 @@ export async function storedFixture(browser: Browser, base: string, r: StoredRec
     const ctx = await browser.newContext({ acceptDownloads: true });
     try {
       const page = await ctx.newPage();
-      await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+      await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
       await putStored(page, r);
-      await page.goto(`${base}/web/app/?${query}&m=${r.machine.id}`);
+      await page.goto(`${base}/web/app/?autostart=1&${query}&m=${r.machine.id}`);
       await page.waitForFunction(() => /\S+ login: /.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 300_000, polling: 250 });
       await page.locator('#save-snapshot').click();
       await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.kept', {}, { start: true }).source, { timeout: 120_000, polling: 250 });
@@ -272,7 +272,7 @@ export async function pageFixture(browser: Browser, base: string, query: string)
     try {
       const page = await ctx.newPage();
       await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // a download
-      await page.goto(`${base}/web/app/?${query}`);
+      await page.goto(`${base}/web/app/?autostart=1&${query}`);
       await page.waitForFunction(() => /\S+ login: /.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 300_000, polling: 250 });
       const download = page.waitForEvent('download', { timeout: 120_000 });
       await page.locator('#save-snapshot').click();

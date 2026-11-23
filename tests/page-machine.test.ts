@@ -37,7 +37,7 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=1`);
   await statusShows(page, sized(1, 256));
 
   // The menu starts at what runs; applying the same size does nothing.
@@ -50,9 +50,9 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   await statusShows(page, sized(2, 512));
 
   // Remembered: a reload without the query starts the same size; the query wins over it.
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot`);
   await statusShows(page, sized(2, 512));
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&ram=1024`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=1&ram=1024`);
   await statusShows(page, sized(1, 1024));
   assert.deepEqual(errors, []);
   await context.close();
@@ -70,7 +70,7 @@ test('the Machine menu chooses 3D or 2D graphics, remembered, with the query ove
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   const graphics = (want: string) => page.waitForFunction((g) => document.body.dataset.graphics === g, want, { timeout: 60_000, polling: 100 });
-  await page.goto(`${base}/web/app/?machine=debian`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=debian`);
   await graphics('3d');
   assert.equal(await page.locator('#machine-gpu').inputValue(), '3d');
   assert.equal(await page.locator('#machine-gpu-label').isVisible(), false); // in the closed menu
@@ -81,7 +81,7 @@ test('the Machine menu chooses 3D or 2D graphics, remembered, with the query ove
   await page.reload();
   await graphics('2d');
   assert.equal(await page.locator('#machine-gpu').inputValue(), '2d');
-  await page.goto(`${base}/web/app/?machine=debian&gpu=virgl`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=debian&gpu=virgl`);
   await graphics('3d');
   assert.equal(await page.locator('#machine-gpu').isDisabled(), true);
   assert.deepEqual(errors, []);

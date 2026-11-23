@@ -413,7 +413,7 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=2&view=both`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=2&view=both`);
   const state = (s: string, ms = 60_000) => page.waitForFunction((s) => document.body.dataset.state === s || document.body.dataset.state === 'crashed', s, { timeout: ms, polling: 100 })
     .then(async () => assert.equal(await page.evaluate(() => document.body.dataset.state), s, await page.locator('#message').textContent() ?? ''));
   const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
@@ -539,7 +539,7 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
 test('the page restarts over and over while the guest writes to its disk, also during a boot', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
   const page = await browser.newPage();
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=2&view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=2&view=terminal`);
   await page.evaluate(() => {
     const w = window as unknown as { states: string[] };
     w.states = [];
@@ -589,7 +589,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   const open = async (route?: (page: Page) => Promise<unknown>) => {
     const page = await ctx.newPage();
     await route?.(page);
-    await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1`);
+    await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1`);
     return page;
   };
   // Served without COOP/COEP: no worker is started.
@@ -689,7 +689,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
     .catch(async (e) => { throw new Error(`${e}; the terminal shows: ${await terminal(page)}`); });
   // A guest panic (Buildroot resets at once, panic=-1): the page keeps it on show, with the log to copy and save.
   let page = await ctx.newPage();
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=screen&params=init=/nonexistent`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1&view=screen&params=init=/nonexistent`);
   let r = await settled(page);
   assert.equal(r.state, 'crashed');
   assert.match(r.text!, words('machine:worker.panic', {}, { start: true }));
@@ -710,7 +710,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await page.close();
   // The view chosen last is remembered (the panic's "Show serial log" doesn't count); ?view= overrides it.
   page = await ctx.newPage();
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1`);
   assert.equal(await viewOf(page), 'screen');
   await page.locator('[data-view-button=terminal]').click();
   assert.equal((await settled(page)).state, 'running');
@@ -719,7 +719,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await page.keyboard.type('mount -o remount,rw / && echo waarm64-mark >/mark && mount -o remount,ro / && echo wr""itten\n');
   await shows(page, /written/);
   const second = await ctx.newPage(); // another tab: the disk is the first one's
-  await second.goto(`${base}/web/app/?machine=buildroot&ncpus=1`);
+  await second.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1`);
   assert.equal(await viewOf(second), 'terminal');
   r = await settled(second);
   assert.equal(r.state, 'failed', r.text!);

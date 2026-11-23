@@ -45,7 +45,7 @@ test("a machine from a template, made in a fresh profile, restores the template 
       return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
     return r.fulfill({ body: Buffer.from(piece) });
   });
-  await page.goto(`${base}/web/app/?hooks`);
+  await page.goto(`${base}/web/app/?autostart=1&hooks`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
   const id = await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
@@ -92,7 +92,7 @@ test("a machine from a store's demo: the definition inline, its URLs relative to
     if (path.endsWith('/alpine/manifest.json')) return r.fulfill({ json: {} }); // there: a demo machine's start checks it
     return r.fulfill({ status: 404 });
   });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
   const id = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -102,7 +102,7 @@ test("a machine from a store's demo: the definition inline, its URLs relative to
     const { machine } = await machineFromDemo(await Store.open(), findDemo(s, 'alpine-term'));
     return machine.id as string;
   });
-  await page.goto(`${base}/web/app/?m=${id}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${id}`);
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length === 1, null, { timeout: 30_000, polling: 50 });
   const [start] = await page.evaluate(() => (window as unknown as { __starts: Start[] }).__starts);
   const after = await page.evaluate(async (id) => {
@@ -137,7 +137,7 @@ test("a 3D template whose 3D can't start in this browser: its first start boots 
       return r.fulfill({ json: { format: 'waarm64-chunked-1', size: piece.length, piece: 2 << 20, pieces: '../pieces/{hash}.bin', hashes: [PIECE], id: createHash('sha256').update(PIECE).digest('hex') } });
     return r.fulfill({ body: Buffer.from(piece) });
   });
-  await page.goto(`${base}/web/app/?hooks`);
+  await page.goto(`${base}/web/app/?autostart=1&hooks`);
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000, polling: 50 });
   const id = await page.evaluate(() => window.__waarm64FromTemplate!('/site/alpine/definition.json', 'snapshot.json'));
   await page.waitForFunction(() => (window as unknown as { __starts: unknown[] }).__starts.length >= 1, null, { timeout: 30_000, polling: 50 });

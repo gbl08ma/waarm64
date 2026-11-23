@@ -67,7 +67,7 @@ test("a room connection's Domains pane, never connected and no machine running: 
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => !!document.getElementById('machines-open'));
   const id = await page.evaluate(async ([m, link]) => {
     const { page: p } = await import(m) as typeof import('../web/app/page.ts');
@@ -75,7 +75,7 @@ test("a room connection's Domains pane, never connected and no machine running: 
   }, ['/web/app/page.ts', LINK] as const);
 
   // The address of its Domains: the first explainer in the cards' place, with the connection's own name in the room.
-  await page.goto(`${base}/web/app/#home/connections/${id}/domains`);
+  await page.goto(`${base}/web/app/?autostart=1#home/connections/${id}/domains`);
   await page.locator('#domains-intro').waitFor({ timeout: 30_000 });
   const meta = await text(page, 'section[data-selected=connection-domains] .meta');
   assert.equal(meta, t('network:DomainsPane.meta', { name: 'gabriel-lan', room: 'gabriel-lan', domain: 'gabriel-lan.p2p.internal' }));
@@ -170,7 +170,7 @@ test("the Domains pane: each state's light and words, the upkeep line, an epheme
   const ctx = await profile();
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => !!document.getElementById('machines-open'));
   const [id, eph] = await page.evaluate(async ([m, link]) => {
     const { page: p } = await import(m) as typeof import('../web/app/page.ts');
@@ -262,7 +262,7 @@ test("New name, then Save or a rename from the card: the new key stays (the page
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => !!document.getElementById('machines-open'));
   const eph = await page.evaluate(async ([m, link]) => {
     const { page: p } = await import(m) as typeof import('../web/app/page.ts');
@@ -299,7 +299,7 @@ test("a connection's name in its room that can't be read: said in the pane, the 
   const ctx = await profile();
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.waitForFunction(() => !!document.getElementById('machines-open'));
   const id = await page.evaluate(async ([m, link]) => {
     const { page: p } = await import(m) as typeof import('../web/app/page.ts');

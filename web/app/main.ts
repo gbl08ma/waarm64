@@ -59,7 +59,7 @@ import { SizeActions, sizeOf } from './run/size-actions.ts';
 import { remember } from './settings.ts';
 import { Store } from './store.ts';
 import { describe } from '../i18n.ts';
-import { pageQuery } from './demos-route.ts';
+import { openQuery } from './demos-route.ts';
 
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
 const build = document.querySelector('meta[name="waarm64-build"]')?.getAttribute('content');
@@ -68,7 +68,7 @@ if (build) console.info(`waarm64: built from ${build}`);
 // A machine kept in this browser (docs/machines.md), by id: `?m=<id>`, else the one last opened on a page without a
 // query. Without one the machine is transient, made from the query (the tests' `?machine=`).
 const store = await Store.open();
-const chosenId = params.get('m') ?? (pageQuery(location.search) ? undefined : lastMachine());
+const chosenId = params.get('m') ?? (openQuery(location.search).size ? undefined : lastMachine());
 let storedError: unknown;
 const stored = chosenId
   ? await loadStored(store, chosenId).catch((e: unknown) => {
@@ -209,7 +209,11 @@ const powerActions: PowerActions = new PowerActions({
   runner,
   messages,
   terminal,
-  later: { openMachines: (tab, id) => pageWindow.openMachines(tab, id), openDisk: () => disks.open() },
+  later: {
+    openMachines: (tab, id) => pageWindow.openMachines(tab, id),
+    openDisk: () => disks.open(),
+    suspended: () => problems.suspended,
+  },
   signal,
   agent: agentActions,
 });
@@ -223,6 +227,7 @@ const disks: DiskActions = new DiskActions({
   changesHeader,
   loadChanges: (file) => changes.load(file),
   openMachines: (tab, id) => pageWindow.openMachines(tab, id),
+  suspend: () => snapshots.suspend(),
 });
 const problems = new Problems({
   messages,
@@ -264,7 +269,7 @@ const page: Page = {
   openMachineInNewTab: (id) => disks.openInNewTab(id),
   ...pageWindow.demoActions({
     switchTo: (id) => disks.switchMachine(id, true),
-    askSwitch: (id) => disks.askSwitch(id),
+    askSwitch: (id, name) => disks.askSwitch(id, name),
   }),
   powerOff: () => powerActions.powerOff({ cleanly: true }),
   powerOffAsked: () => powerActions.powerOffAsked(),

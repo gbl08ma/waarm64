@@ -87,7 +87,7 @@ test('a machine with five disks: Debian from a URL, a blank disk formatted and k
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page, (q) => !replacesFixture(q));
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`); // the page's origin, waiting for a disk
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`); // the page's origin, waiting for a disk
     const firmware = readFileSync(FIRMWARE);
     const r = STORED.five();
     const size = r.disks[0].size as number; // the qcow2's virtual size
@@ -95,7 +95,7 @@ test('a machine with five disks: Debian from a URL, a blank disk formatted and k
     const id = r.machine.id;
     const serials = r.machine.attachments.map((a) => `waarm64-${a.id}`);
     const [, blank, ram, ro, swap] = serials.map((s) => `/dev/disk/by-id/virtio-${s}`);
-    await page.goto(`${base}/web/app/?${STORED_QUERY}&m=${id}`);
+    await page.goto(`${base}/web/app/?autostart=1&${STORED_QUERY}&m=${id}`);
     assert.equal(await page.locator('#machine').textContent(), 'Test machine');
     if (fixture) await loadSnapshotFile(page, fixture);
     await running(page);

@@ -50,7 +50,7 @@ test('finding 3: an uncaught error in the machine worker says crashed and ends t
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await recordWorkers(page);
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1&view=terminal`);
   assert.equal((await settled(page)).state, 'running');
   await page.evaluate(() => {
     const w = (window as unknown as { __workers: Workers }).__workers.find((x) => /\/app\/worker\.ts/.test(x.url))!;
@@ -59,7 +59,7 @@ test('finding 3: an uncaught error in the machine worker says crashed and ends t
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'crashed');
   await page.waitForFunction(() => (window as unknown as { __workers: Workers }).__workers.filter((x) => /\/app\/worker\.ts/.test(x.url)).every((x) => x.terminated), null, { timeout: 10_000, polling: 100 });
   const second = await ctx.newPage(); // the disk was the first tab's: free now
-  await second.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal`);
+  await second.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1&view=terminal`);
   const r = await settled(second, 60_000);
   assert.equal(r.state, 'running', r.text);
   await ctx.close();
@@ -83,7 +83,7 @@ test("finding 4: a machine opened from the Home page whose last tab was killed d
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?clocksync=0&view=terminal`); // the page's machine, waiting for a disk
+  await page.goto(`${base}/web/app/?autostart=1&clocksync=0&view=terminal`); // the page's machine, waiting for a disk
   const id = await makeMachine(page, 'Killed');
   await page.evaluate(async (id) => {
     const { markAlive } = await import('/web/app/memory.ts' as string);
@@ -297,7 +297,7 @@ test('finding 12: a run stopped while its start waits for the keyboard layout po
       }
     };
   });
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal&keyboard=browser`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1&view=terminal&keyboard=browser`);
   const machines = () => page.evaluate(() => (window as unknown as { __workers: { url: string; posted: string[] }[] }).__workers.filter((w) => /\/app\/worker\.ts/.test(w.url)).map((w) => w.posted));
   await page.waitForFunction(() => (window as unknown as { __workers: { url: string }[] }).__workers.some((w) => /\/app\/worker\.ts/.test(w.url)), null, { timeout: 30_000 });
   await page.waitForTimeout(1000); // the first run waits for the layout
@@ -344,12 +344,12 @@ test("QA: a machine its guest powered off, or suspended, lets go of its workers 
   const state = (s: string) => page.waitForFunction((s) => document.body.dataset.state === s, s, { timeout: 60_000, polling: 50 });
 
   // No machine: the page neither listens for the pads nor reads them.
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await state('idle');
   await page.waitForTimeout(500);
   assert.deepEqual(await pads(), { listeners: 0, reads: 0 });
 
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal&usb=1`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1&view=terminal&usb=1`);
   assert.equal((await settled(page, 120_000)).state, 'running');
   await listening();
 
@@ -387,7 +387,7 @@ test("QA: a panicked machine lets go of its workers too (it can't come back by i
   const page = await ctx.newPage();
   await recordWorkers(page);
   // Buildroot resets at once after its panic (panic=-1): the worker keeps the crash on show, and its RAM, unless closed.
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal&params=init=/nonexistent`);
+  await page.goto(`${base}/web/app/?autostart=1&machine=buildroot&ncpus=1&view=terminal&params=init=/nonexistent`);
   assert.equal((await settled(page, 60_000)).state, 'crashed');
   await page.waitForFunction(() => (window as unknown as { __workers: Workers }).__workers.filter((x) => /\/app\/worker\.ts/.test(x.url)).every((x) => x.terminated), null, { timeout: 15_000, polling: 100 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'crashed', 'still said crashed');

@@ -48,7 +48,7 @@ test("Merge into the disk on a blank disk's overlays: one nothing was written to
   page.on('pageerror', (e) => errors.push(String(e)));
   const asked: Question[] = [];
   await answerAsks(page, (q) => void asked.push(q));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // A blank disk of 8 MiB on machine A, resized there to 16 MiB (an overlay "Changes" made at that size).
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -116,7 +116,7 @@ test('a kept snapshot of a disk written in place that moved on shows as orphaned
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { attach, createMachine } = await import('/web/app/machines.ts' as string);
@@ -189,7 +189,7 @@ test('a kept snapshot of a disk written in place shows as unrestorable while a m
   page.on('pageerror', (e) => errors.push(String(e)));
   await standIn(page);
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { attach, createMachine } = await import('/web/app/machines.ts' as string);
@@ -205,7 +205,7 @@ test('a kept snapshot of a disk written in place shows as unrestorable while a m
     store.close();
     return { m: m.id as string, s: s.id as string, generation: s.generation as number, identity: identityOf(s) as string, size: s.size as number };
   });
-  await page.goto(`${base}/web/app/?m=${ids.m}`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${ids.m}`);
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000, polling: 50 });
   // Kept at the machine's shape now, pinning the disk in place at its generation (a kept snapshot hasn't the whole disk).
   const sid = await page.evaluate(async ({ m, s, generation }) => {

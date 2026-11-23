@@ -42,7 +42,7 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   await answerAsks(page, (q) => { dialogs.push(q.text); }); // "Stop the machine to save its disk?"
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000 });
   // The disk's actions are on the Home page: this page's machine, its Disks tab.
   await openHome(page);

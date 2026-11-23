@@ -1,6 +1,7 @@
 // The page's frames in Chromium, without a guest: every pane of the Home page (web/app/ui/Pane.svelte) puts its title
 // at the same place, and its body at the same place under a head of one line, whether or not the head has buttons; the
-// message's text (#message) is centered on its buttons while it is one line.
+// message's text (#message) is centered on its buttons while it is one line; and the veil over the screen and the
+// terminal of a machine that doesn't run (web/app/StateVeil.svelte).
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
@@ -24,7 +25,7 @@ test("the Home page's panes: the title and the body at one place, with buttons i
   const page = await browser.newPage({ viewport: { width: 2400, height: 900 } });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
@@ -57,7 +58,7 @@ test("the Home page's panes: the title and the body at one place, with buttons i
 test('the message: one line of text centered on its buttons', async () => {
   // The first message (open a disk image) is one line this wide.
   const page = await browser.newPage({ viewport: { width: 2560, height: 600 } });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.locator('#message:not([hidden]) #message-actions button').waitFor();
   // Where it lands: its slide down from above the page (ui/crossfade.ts) done.
   await page.locator('#message .banner').evaluate((e) => Promise.all(e.getAnimations().map((a) => a.finished)));
@@ -79,7 +80,7 @@ const TALL_FONT = `@font-face { font-family: Tall; src: local('DejaVu Sans'), lo
 
 test('the references in words: no pill overflows the message or makes its line taller, at any of the text sizes', async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.locator('#message:not([hidden]) #message-actions button').waitFor();
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
   await page.addStyleTag({ content: TALL_FONT });
@@ -130,7 +131,7 @@ test('the references in words: no pill overflows the message or makes its line t
 
 test("the primitives: a form's buttons are one height (ui/Button.svelte), and the page's styles are the tokens'", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
@@ -149,7 +150,7 @@ test("the primitives: a form's buttons are one height (ui/Button.svelte), and th
 
 test("the Home page's outline: its heading, then the machines' list and each pane under it; the nav named for the page", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await page.locator('.machines nav').waitFor();
   const r = await page.evaluate(() => {
@@ -169,7 +170,7 @@ test("the Home page's outline: its heading, then the machines' list and each pan
 /** A page with the first message (open a disk image) landed, its slide down done. */
 async function withMessage(o: { reducedMotion?: 'reduce' } = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, ...o });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await page.locator('#message:not([hidden]) #message-actions button').waitFor();
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
   return page;
@@ -222,5 +223,85 @@ test("a notice's countdown goes on where it was when the bar moves to the Home p
   assert.equal(r.after.length, 1, JSON.stringify(r));
   // Relative, not absolute: timers run late under load. A restarted ring would be below where it was.
   assert.ok(r.before[0] >= 1000 && r.after[0] >= r.before[0] + 200, JSON.stringify(r));
+  await page.close();
+});
+
+test("a machine that doesn't run: the veil over the screen and the terminal, its state on a plaque as the boot card's", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto(`${base}/web/app/?autostart=1`);
+  await page.locator('#screen-frame [data-state-veil]').waitFor();
+  /** The page's areas' state, changed by `f` (the dev server gives the page and these imports one module each). */
+  const setUi = (f: string) => page.evaluate(async (f) => {
+    const area = (name: string) => import(`/web/app/areas/${name}.svelte.ts`);
+    new Function('a', f)({ ...(await area('power')), ...(await area('screen')), ...(await area('boot-card')) });
+  }, f);
+  /** What shows: the veils (the screen's, the terminal's), the plaques' words, and the picture's and the text's filters once settled. */
+  const shown = async () => {
+    await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+    return page.evaluate(() => {
+      const veil = (sel: string) => document.querySelector<HTMLElement>(`${sel} [data-state-veil]`);
+      const of = (v: HTMLElement | null) => v && { veil: v.dataset.stateVeil, cover: v.dataset.cover !== undefined, words: v.querySelector('[data-veil-title]')?.textContent, opacity: getComputedStyle(v).opacity };
+      const filter = (sel: string) => getComputedStyle(document.querySelector(sel)!).filter;
+      return { screen: of(veil('#screen-frame')), terminal: of(veil('#terminal')), picture: filter('#screen'), text: filter('#terminal .xterm') };
+    });
+  };
+  const words = (s: string) => t(`machine:messages.state.${s}`);
+
+  // No machine yet: nothing to see of one, and the state in the screen's middle.
+  let s = await shown();
+  assert.deepEqual(s.screen, { veil: 'idle', cover: true, words: words('idle'), opacity: '1' });
+  assert.equal(s.picture, 'brightness(0)');
+  // Suspended: the picture and the terminal's text stay, dimmed and without their colors; the plaque is the screen's
+  // while both show, and the terminal's when it shows alone.
+  await setUi(`a.power.state = 'suspended'; a.screen.view = 'both';`);
+  s = await shown();
+  assert.deepEqual(s.screen, { veil: 'suspended', cover: false, words: words('suspended'), opacity: '1' });
+  assert.deepEqual(s.terminal, { veil: 'suspended', cover: false, words: undefined, opacity: '1' });
+  assert.match(s.picture, /grayscale\(1\) brightness\(0\.\d+\)/);
+  assert.equal(s.text, s.picture);
+  // Resume on the plaque, which takes the pointer (the veil lets it through), and in the toolbar.
+  const resume = page.locator('#screen-frame [data-action=resume]');
+  assert.equal((await resume.textContent())?.trim(), t('machine:StateVeil.resume'));
+  assert.equal(await resume.evaluate((b) => { const r = b.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('button') === b; }), true, 'the button takes the pointer');
+  assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.resume'));
+  await setUi(`a.screen.view = 'terminal';`);
+  assert.equal((await shown()).terminal?.words, words('suspended'));
+  // Off: no picture (the screen's last frame is covered), the terminal's text as a suspended machine's.
+  await setUi(`a.power.state = 'off'; a.screen.view = 'both';`);
+  s = await shown();
+  assert.deepEqual(s.screen, { veil: 'off', cover: true, words: words('off'), opacity: '1' });
+  assert.equal(s.picture, 'brightness(0)');
+  assert.deepEqual(s.terminal, { veil: 'off', cover: false, words: undefined, opacity: '1' });
+  assert.match(s.text, /grayscale/);
+  assert.equal(await page.locator('[data-action=resume]').count(), 0, 'Resume is a suspended machine\'s');
+  assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
+  // Running: neither.
+  await setUi(`a.power.state = 'running'; a.screen.view = 'screen';`);
+  s = await shown();
+  assert.deepEqual([s.screen, s.terminal, s.picture, s.text], [null, null, 'none', 'none']);
+  // Held still for a snapshot: the hatch alone, no plaque, and not at once (a short save doesn't flash).
+  await setUi(`a.power.paused = true;`);
+  const early = await page.evaluate(() => ({ opacity: getComputedStyle(document.querySelector('#screen-frame [data-state-veil]')!).opacity, picture: getComputedStyle(document.querySelector('#screen')!).filter }));
+  assert.equal(early.opacity, '0', 'no hatch yet at the start of the pause');
+  assert.match(early.picture, /^(none|grayscale\(0\) brightness\(1\))$/, 'the picture as it was at the start of the pause');
+  s = await shown();
+  assert.deepEqual(s.screen, { veil: 'paused', cover: false, words: undefined, opacity: '1' });
+  assert.match(s.picture, /grayscale/);
+  await setUi(`a.power.paused = false;`);
+  assert.equal((await shown()).screen, null);
+  // Starting: the boot card's words on the same plaque, over no picture.
+  await setUi(`a.power.state = 'booting'; a.bootCard.shown = true; a.bootCard.title = 'x';`);
+  const [boot, plaque] = await page.evaluate(() => {
+    const look = (e: Element) => { const c = getComputedStyle(e); return `${c.backgroundColor} ${c.borderRadius} ${c.boxShadow}`; };
+    const card = document.querySelector('#boot > .plaque');
+    return [card && !document.getElementById('boot')!.hidden && card.contains(document.getElementById('boot-title')) && look(card), ''];
+  });
+  await setUi(`a.bootCard.shown = false; a.power.state = 'off';`);
+  const stopped = await page.evaluate(() => { const c = getComputedStyle(document.querySelector('#screen-frame [data-state-veil] > .plaque')!); return `${c.backgroundColor} ${c.borderRadius} ${c.boxShadow}`; });
+  assert.ok(boot, 'the boot card is a plaque');
+  assert.equal(boot, stopped + plaque, 'one look for both');
+  assert.deepEqual(errors, []);
   await page.close();
 });

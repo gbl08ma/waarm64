@@ -101,11 +101,11 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   const asked: string[] = [];
   a.on('pageerror', (e) => errors.push(`A: ${e}`));
   await answerAsks(a, (q) => { asked.push(q.text); });
-  await a.goto(`${base}/web/app/`);
+  await a.goto(`${base}/web/app/?autostart=1`);
   const data = await makeFolder(a, 'Data', { 'hello.txt': 'hello' });
   const [alpha, bravo] = [await makeMachine(a, { name: 'Alpha', folders: [{ id: data, readOnly: false }] }), await makeMachine(a, { name: 'Bravo', folders: [{ id: data, readOnly: false }] })];
 
-  await a.goto(`${base}/web/app/?m=${alpha}`);
+  await a.goto(`${base}/web/app/?autostart=1&m=${alpha}`);
   await started(a);
   await menu(a);
   assert.ok((await itemState(a, data) ?? '').includes(`Data ${t('folders:FoldersMenu.state.readWrite')}`));
@@ -132,7 +132,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   const b = await context.newPage();
   b.on('pageerror', (e) => errors.push(`B: ${e}`));
   await answerAsks(b, (q) => { asked.push(q.text); });
-  await b.goto(`${base}/web/app/?m=${bravo}`);
+  await b.goto(`${base}/web/app/?autostart=1&m=${bravo}`);
   await started(b);
   await menu(b);
   await b.waitForFunction(([id, want]) => (document.querySelector(`#folders [data-folder="${id}"]`)?.textContent ?? '').includes(want), [data, t('folders:FoldersMenu.state.heldBy', { holder: 'Alpha' })], { timeout: 10_000 });
@@ -179,7 +179,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
 
 test("a folder in the browser's files: added, listed, copied, emptied", { skip }, async () => {
   const page = await browser.newPage();
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   const r = await page.evaluate(async () => {
     const { addFiles, copyTree, emptyFolder, folderSize, topLevel } = await import('/web/app/folder-files.ts' as string);
     const top = await (await navigator.storage.getDirectory()).getDirectoryHandle('files-test', { create: true });
@@ -257,13 +257,13 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
   const work = await makeFolder(page, 'Work', { 'from-the-page.txt': 'written by the page' });
   const docs = await makeFolder(page, 'Docs', { 'read-me.txt': 'read only' }, true);
   const other = await makeFolder(page, 'Other');
   const host = await makeFolder(page, 'Host');
   const id = await debianMachine(page, [{ id: work, readOnly: false }, { id: docs, readOnly: false }, { id: other, readOnly: false }, { id: host, readOnly: false }]);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&sharesasync=Host&${credentialsQuery()}`);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}m=${id}&view=terminal&display=simple&sharesasync=Host&${credentialsQuery()}`);
   await running(page);
   await login(page);
 
@@ -377,11 +377,11 @@ test('snapshots: restored with a file open for writing, and into a folder detach
     page.on('pageerror', (e) => errors.push(String(e)));
     let loading = !!fixture;
     await answerAsks(page, (q) => !(loading && replacesFixture(q)));
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
     const [work, host, gone] = [await makeFolder(page, 'Work'), await makeFolder(page, 'Host'), await makeFolder(page, 'Gone', { 'kept.txt': 'kept' })];
     const r = STORED.shares();
     await putStored(page, { ...r, machine: { ...r.machine, folders: [{ id: work, readOnly: false }, { id: host, readOnly: false }, { id: gone, readOnly: false }] } });
-    await page.goto(`${base}/web/app/?${FOLDERS_QUERY}&m=${r.machine.id}`);
+    await page.goto(`${base}/web/app/?autostart=1&${FOLDERS_QUERY}&m=${r.machine.id}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     loading = false;
     await running(page);
@@ -430,11 +430,11 @@ test('a real workload: make, gcc and git in a share, both backends', { skip: ski
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page, (q) => !replacesFixture(q));
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
     const [work, host] = [await makeFolder(page, 'Work'), await makeFolder(page, 'Host')];
     const r = STORED.shares(TOOLS_PATH);
     await putStored(page, { ...r, machine: { ...r.machine, folders: [{ id: work, readOnly: false }, { id: host, readOnly: false }] } });
-    await page.goto(`${base}/web/app/?${FOLDERS_QUERY}&m=${r.machine.id}`);
+    await page.goto(`${base}/web/app/?autostart=1&${FOLDERS_QUERY}&m=${r.machine.id}`);
     if (fixture) await loadSnapshotFile(page, fixture);
     await running(page);
     await login(page);

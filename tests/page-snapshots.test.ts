@@ -93,11 +93,11 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
     page.on('pageerror', (e) => errors.push(String(e)));
     let loading = !!fixture;
     await answerAsks(page, (q) => { if (loading) return !replacesFixture(q); dialogs.push(q.text); return q.kind === 'prompt' ? keepAs : true; });
-    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}view=terminal`);
     const r = STORED.ramdisk();
     await putStored(page, r);
     const id = r.machine.id;
-    const url = `${base}/web/app/?${STORED_QUERY}&m=${id}`;
+    const url = `${base}/web/app/?autostart=1&${STORED_QUERY}&m=${id}`;
     await page.goto(url);
     if (fixture) await loadSnapshotFile(page, fixture);
     loading = false;

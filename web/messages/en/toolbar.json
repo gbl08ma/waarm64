@@ -1,11 +1,19 @@
 {
   "Toolbar.start": {
     "message": "Start",
-    "note": "Label of the toolbar's start button (left, after the machine's name) while the machine is off, not started or suspended."
+    "note": "Label of the toolbar's start button (left, after the machine's name) while the machine is off or not started."
   },
   "Toolbar.start.title": {
     "message": "Start the machine, or resume it if it's suspended.",
-    "note": "Tooltip of the toolbar's Start button (the machine is off, not started or suspended)."
+    "note": "Tooltip of the toolbar's Start button (the machine is off or not started; one opened from the Home page and not started yet may have a suspended copy, which Start resumes)."
+  },
+  "Toolbar.resume": {
+    "message": "Resume",
+    "note": "Label of the toolbar's start button (left, after the machine's name) while the machine is suspended in this tab: it starts again where it was left."
+  },
+  "Toolbar.resume.title": {
+    "message": "Resume the machine where it was suspended.",
+    "note": "Tooltip of the toolbar's Resume button (the machine is suspended)."
   },
   "Toolbar.retry": {
     "message": "Retry",

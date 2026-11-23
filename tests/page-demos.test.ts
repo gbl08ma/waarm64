@@ -95,7 +95,7 @@ const text = (page: Page, sel: string) => page.locator(sel).innerText();
 
 test("a first visit's introduction leads to the store; a card's Start makes the machine, opened in its view, restored at its first start; a reload keeps it; started before asks", async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/?firstvisit=1`);
+  await page.goto(`${base}/web/app/?autostart=1&firstvisit=1`);
   await page.locator('[data-action="skip-intro"]').click({ timeout: 30_000 }); // the introduction first (tests/page-intro.test.ts)
   await page.locator('.cards [data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
   assert.equal(await onPage(page), 'demos', "the first visit's introduction ends on the store");
@@ -138,7 +138,7 @@ test("a first visit's introduction leads to the store; a card's Start makes the 
   assert.deepEqual(names, ['Alpine', 'Alpine (2)'], 'the fresh copy named with a suffix');
 
   await page.setViewportSize(NARROW); // one column: the pane replaces the list, and its default button takes the focus
-  await page.goto(`${base}/web/app/#demos?id=alpine-term`);
+  await page.goto(`${base}/web/app/?autostart=1#demos?id=alpine-term`);
   await page.locator('[data-action="open-mine"]').waitFor({ timeout: 30_000 });
   await page.waitForFunction(() => document.activeElement?.getAttribute('data-action') === 'open-mine', null, { timeout: 5_000, polling: 50 }).catch(() => undefined);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-action')), 'open-mine', 'Open my machine has the focus (Enter opens it)');
@@ -158,7 +158,7 @@ test('?id= opens a demo, an unknown one says so where its pane would be; Home\'s
   assert.equal(await page.locator('[data-field="no-demo"] [data-field="unknown-id"]').count(), 1, "said where the demo's pane would be");
   assert.equal(await page.locator('.cards [data-demo="alpine-term"]').count(), 1, 'the list beside it');
   assert.equal(await page.locator('article[data-demo]').count(), 0, 'no demo shown in its place');
-  await page.goto(`${base}/web/app/#home`);
+  await page.goto(`${base}/web/app/?autostart=1#home`);
   await ready(page);
   await page.locator('[data-machine="demos"]').click();
   await page.locator('.cards [data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
@@ -182,7 +182,7 @@ test('?id= opens a demo, an unknown one says so where its pane would be; Home\'s
 test("New machine: a store's template makes a machine with its settings that boots (no snapshot, not the demo's); the store down, the empty machine still works", async () => {
   const s: Site = { requests: [] };
   const { ctx, page, errors } = await visitor(s);
-  await page.goto(`${base}/web/app/#home`);
+  await page.goto(`${base}/web/app/?autostart=1#home`);
   await ready(page);
   await page.locator('[data-action="new-machine"]').click();
   await page.locator('#new-machine [data-template="alpine-term"]').click({ timeout: 30_000 });
@@ -203,7 +203,7 @@ test("New machine: a store's template makes a machine with its settings that boo
   await ctx.close();
 
   const down = await visitor({ down: true, requests: [] });
-  await down.page.goto(`${base}/web/app/#home`);
+  await down.page.goto(`${base}/web/app/?autostart=1#home`);
   await ready(down.page);
   await down.page.locator('[data-action="new-machine"]').click();
   await down.page.locator('[data-field="templates-error"]').waitFor({ timeout: 30_000 });
@@ -286,7 +286,7 @@ test("started before says whether the machine has changes since the demo started
   await suspend(false);
 
   ours.diskGone = true; // the demo retired: its disk's files gone from the server
-  await page.goto(`${base}/web/app/?m=${m.id}`); // the machine's own address: its start, as Home's Start
+  await page.goto(`${base}/web/app/?autostart=1&m=${m.id}`); // the machine's own address: its start, as Home's Start
   await page.waitForFunction((w) => document.querySelector('#message')?.textContent?.includes(w), t('machines:template.gone'), { timeout: 30_000, polling: 50 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'failed');
   assert.equal((await starts(page)).length, 0, "no start reached the worker (this load's)");
@@ -307,7 +307,7 @@ test("#1: a demo's start belongs to its pane: left mid-download (another demo's 
     const { ctx, page, errors } = await visitor(s, undefined, false, viewport);
     const failed: string[] = [];
     page.on('requestfailed', (r) => failed.push(r.url()));
-    await page.goto(`${base}/web/app/#home`);
+    await page.goto(`${base}/web/app/?autostart=1#home`);
     await ready(page);
     await page.locator('[data-machine="demos"]').click();
     await page.locator('.cards [data-demo="alpine-term"]').click({ timeout: 30_000 });
@@ -337,7 +337,7 @@ test("#1: a demo's start belongs to its pane: left mid-download (another demo's 
 
 test("#2, #9, #15: Open my machine for the machine running here opens it, not Home; a demo's view isn't saved as the visitor's; focus and names", async () => {
   const { ctx, page, errors } = await visitor(undefined, undefined, true);
-  await page.goto(`${base}/web/app/#demos?id=alpine-term`);
+  await page.goto(`${base}/web/app/?autostart=1#demos?id=alpine-term`);
   await page.locator('[data-action="start-demo"]:not([disabled])').waitFor({ timeout: 30_000 });
   await page.locator('[data-action="start-demo"]').click();
   await page.waitForFunction(() => document.body.dataset.page === 'machine' && document.body.dataset.state === 'running', null, { timeout: 30_000, polling: 50 });
@@ -358,7 +358,7 @@ test("#15, one column: a row opens the demo's pane alone, which takes the focus;
   let release!: () => void;
   const s: Site = { requests: [], held: new Promise((r) => (release = r)) };
   const { ctx, page } = await visitor(s, undefined, false, NARROW);
-  await page.goto(`${base}/web/app/#demos`);
+  await page.goto(`${base}/web/app/?autostart=1#demos`);
   await page.locator('.cards [data-demo="alpine-term"]').click({ timeout: 30_000 });
   await page.locator('article[data-demo="alpine-term"]').waitFor();
   assert.equal(await page.locator('.cards').count(), 0, "the list left for the demo's pane");
@@ -379,7 +379,7 @@ test("#7: a store's read that's no longer the one shown doesn't show its failure
   let answer!: (ok: boolean) => void;
   const other: Site = { requests: [], storeHeld: new Promise((r) => (answer = r)) };
   const { ctx, page, errors } = await visitor(undefined, other);
-  await page.goto(`${base}/web/app/#demos?store=${encodeURIComponent(`${OTHER}/store.json`)}`);
+  await page.goto(`${base}/web/app/?autostart=1#demos?store=${encodeURIComponent(`${OTHER}/store.json`)}`);
   await page.locator('.demos [role="status"]').waitFor({ timeout: 30_000 });
   for (let i = 0; i < 200 && !other.requests.length; i++) await page.waitForTimeout(50);
   await page.evaluate(() => (location.hash = '#demos')); // our store instead, while theirs still loads
@@ -395,7 +395,7 @@ test("#7: a store's read that's no longer the one shown doesn't show its failure
 
 test("#8, one column: the browser's Back retraces the store: a demo's pane to the list, the list to Home; Forward again", async () => {
   const { ctx, page, errors } = await visitor(undefined, undefined, false, NARROW);
-  await page.goto(`${base}/web/app/#home`);
+  await page.goto(`${base}/web/app/?autostart=1#home`);
   await ready(page);
   await page.locator('[data-machine="demos"]').click();
   await page.locator('.cards [data-demo="alpine-term"]').click({ timeout: 30_000 });
@@ -419,7 +419,7 @@ test("#8, one column: the browser's Back retraces the store: a demo's pane to th
 
 test("the list beside the chosen demo's pane: the first shown with none named, another a click on its row, no way back needed; one column when narrow", async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/#demos`);
+  await page.goto(`${base}/web/app/?autostart=1#demos`);
   await page.locator('article[data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
   assert.match(page.url(), /#demos$/, "the address names no demo: the store's first shows by default");
   assert.equal(await page.locator('.cards [data-demo="alpine-term"]').getAttribute('aria-current'), 'true', 'its row is the chosen one');
@@ -452,7 +452,7 @@ test("the list beside the chosen demo's pane: the first shown with none named, a
 
 test("Things to try: our store's list ends with a row that is no demo; its pane lists ideas and starts nothing; its address; one column; not on another store", async () => {
   const { ctx, page, errors } = await visitor();
-  await page.goto(`${base}/web/app/#demos`);
+  await page.goto(`${base}/web/app/?autostart=1#demos`);
   await page.locator('article[data-demo="alpine-term"]').waitFor({ timeout: 30_000 });
   const row = page.locator('nav [data-action="things-to-try"]');
   assert.equal((await row.locator('.name').innerText()).trim(), t('machines:DemoIdeas.title'));
@@ -481,7 +481,7 @@ test("Things to try: our store's list ends with a row that is no demo; its pane 
   await ctx.close();
   // Another store's list is its demos alone.
   const other = await visitor();
-  await other.page.goto(`${base}/web/app/#demos?store=${encodeURIComponent(`${OTHER}/store.json`)}`);
+  await other.page.goto(`${base}/web/app/?autostart=1#demos?store=${encodeURIComponent(`${OTHER}/store.json`)}`);
   await other.page.locator('[data-action="accept-store"]').click();
   await other.page.locator('.cards [data-demo]').first().waitFor({ timeout: 30_000 });
   assert.equal(await other.page.locator('[data-action="things-to-try"]').count(), 0);

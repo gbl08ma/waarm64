@@ -82,7 +82,7 @@ test('a machine opened by `?disk=` on a chunked image is called what its manifes
   const context = await browser.newContext();
   const page = await context.newPage();
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?disk=${encodeURIComponent(`${otherBase}/c/demo.json`)}`);
+  await page.goto(`${base}/web/app/?autostart=1&disk=${encodeURIComponent(`${otherBase}/c/demo.json`)}`);
   await page.waitForFunction(() => document.getElementById('machine')?.textContent === 'Desktop Demo', undefined, { timeout: 30_000 });
   await context.close();
 });
@@ -111,7 +111,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -241,7 +241,7 @@ test('a machine edited on the Home page while it is off on this page starts as i
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -269,7 +269,7 @@ test('Home: a tab counts only what it holds; Back to the machine and Esc lead ba
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // Ctrl+click on a menu's button flips its switch and leaves the menu closed: the sound, the mouse lock, the
   // on-screen keyboard.
   const quick = async (menu: string) => {
@@ -336,7 +336,7 @@ test("Add a disk's size (ui/SizeField.svelte): a number and its unit, the same s
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -382,7 +382,7 @@ test("a 3D machine's Vulkan box: beside 3D only, its shape note, saved and kept 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -437,7 +437,7 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   // Two machines: each click's machine is made and listed (chosen) before the next click; the list is read once both are.
   const picks = modal(page).locator('li > button.pick[data-machine]');
@@ -475,7 +475,7 @@ test("a machine's RAM past memory 0: the note, and a custom split's fields (a no
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -548,7 +548,7 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
   const asked: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, (q) => { asked.push(q.text); });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -603,7 +603,7 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, (q) => (q.kind === 'prompt' ? 'Renamed' : true));
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // Two machines: A with no disks, B with the most a machine can have; a detached blank disk X with two overlays.
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -686,7 +686,7 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   const asked: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page, (q) => { asked.push(q.text); });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -742,7 +742,7 @@ test("another machine's Start while one runs in this tab: a menu, In this tab or
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?view=terminal`);
+  await page.goto(`${base}/web/app/?autostart=1&view=terminal`);
   await openHome(page);
   await newEmptyMachine(page);
   const m = modal(page).locator('section.machine[data-selected]');
@@ -781,6 +781,120 @@ test("another machine's Start while one runs in this tab: a menu, In this tab or
   await context.close();
 });
 
+test("a stored machine opened by its tab waits for its Start, on the plaque as in the toolbar, unless the Preferences say it starts; a tab a Start opened starts it", { skip: kernel }, async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  // Not `loading`: the page's state before it knows whether its machine starts.
+  const live = (p: Page) => p.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
+  const off = (p: Page) => p.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 30_000 });
+  // No `?autostart=`: the Preferences decide, and they say no by default.
+  await page.goto(`${base}/web/app/?view=terminal`);
+  await openHome(page);
+  await newEmptyMachine(page);
+  const m = modal(page).locator('section.machine[data-selected]');
+  await m.locator('[data-tab=disks]').click();
+  await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` });
+  await disk(page, 0);
+  const id = await m.getAttribute('data-selected');
+  // Home's Start is a Start: it runs.
+  await m.locator('[data-action=open]').click();
+  await live(page);
+  assert.equal(new URL(page.url()).searchParams.get('m'), id);
+  // Its tab opened again: it waits, off, with Start on the plaque (the terminal's: it shows alone) and in the toolbar.
+  await page.reload();
+  await off(page);
+  const start = page.locator('[data-action=start]:visible');
+  assert.equal((await start.textContent())?.trim(), t('machine:StateVeil.start'));
+  assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
+  await page.waitForTimeout(1000);
+  assert.equal(await page.evaluate(() => document.body.dataset.state), 'off', 'it still waits');
+  await start.click();
+  await live(page);
+  assert.equal(await page.locator('[data-state-veil]').count(), 0, 'no veil over a machine that runs');
+  // The Preferences' box (off by default): on, the tab's machine starts with it.
+  await openHome(page);
+  await modal(page).locator('nav [data-machine="preferences"]').click();
+  const box = modal(page).locator('[data-field=auto-start]');
+  assert.equal(await box.isChecked(), false, 'off by default');
+  await box.check();
+  await page.locator('#machines-open').click(); // back to the machine: a tab opened on Home starts nothing
+  await page.reload();
+  await live(page);
+  await openHome(page);
+  await modal(page).locator('nav [data-machine="preferences"]').click();
+  await modal(page).locator('[data-field=auto-start]').uncheck();
+  // A tab a Start opened (Home's In a new tab: `?start`) starts its machine whatever they say, once: the address
+  // loses it, so a reload waits again.
+  await page.goto(`${base}/web/app/?m=${id}&start=1&view=terminal`);
+  await live(page);
+  assert.equal(new URL(page.url()).searchParams.has('start'), false, 'taken out of the address');
+  await page.reload();
+  await off(page);
+  // `?autostart=1` (the tests' and the benchmarks'): it starts.
+  await page.goto(`${base}/web/app/?m=${id}&autostart=1&view=terminal`);
+  await live(page);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("another machine's Start in this tab while one runs: Suspend and open suspends the one running, which then says Resume", { skip: kernel }, async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  // The switch's question is answered here by hand (its third button); the rest with OK.
+  const asked: string[] = [];
+  const mine = words('machine:disk-actions.switch.confirm.suspend');
+  await answerAsks(page, ((q: { text: string }) => { asked.push(q.text); return mine.test(q.text) ? new Promise(() => undefined) : true; }) as unknown as () => boolean);
+  await page.goto(`${base}/web/app/?autostart=1&view=terminal`);
+  const m = modal(page).locator('section.machine[data-selected]');
+  const made: string[] = [];
+  const names: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    await openHome(page);
+    await newEmptyMachine(page);
+    await modal(page).locator(`section.machine[data-selected]${made.map((id) => `:not([data-selected="${id}"])`).join('')}`).waitFor();
+    made.push((await m.getAttribute('data-selected'))!);
+    names.push((await m.locator('h3').textContent())!.trim());
+    await m.locator('[data-tab=disks]').click();
+    await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` });
+    await disk(page, 0);
+    if (i === 0) {
+      await m.locator('[data-action=open]').click();
+      await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
+    }
+  }
+  const [first, other] = made;
+  const menu = m.locator('[data-action=start-menu]');
+  await menu.locator('summary').click();
+  await menu.locator('[data-action=open]').click();
+  const alt = page.locator('#ask [data-answer=alt]');
+  assert.equal(await alt.textContent(), t('machine:disk-actions.switch.suspend'));
+  // The question names both machines: the one to open and the one running here.
+  assert.equal(asked.at(-1), t('machine:disk-actions.switch.confirm.suspend', { machine: names[1], running: names[0] }));
+  assert.equal(await page.locator('#ask-title').textContent(), t('machine:disk-actions.switch.title', { machine: names[1] }));
+  await alt.click();
+  // The first is suspended, then the other opens here and starts.
+  await page.waitForFunction((id) => new URLSearchParams(location.search).get('m') === id && ['booting', 'running'].includes(document.body.dataset.state!), other, { timeout: 60_000 });
+  const kept = await page.evaluate(async (id) => {
+    const { suspended } = await import('/web/overlay.ts' as string);
+    const { machineDir } = await import('/web/app/store.ts' as string);
+    return ((await suspended(machineDir(id))) as Blob | undefined)?.size ?? 0;
+  }, first);
+  assert.ok(kept > 0, 'the first machine has a suspended copy');
+  // On Home, the first says Resume (a menu: another runs in this tab).
+  await openHome(page);
+  await modal(page).locator(`nav [data-machine="${first}"]`).click();
+  const resume = modal(page).locator(`section.machine[data-selected="${first}"] [data-action=start-menu] summary`);
+  await page.waitForFunction(([sel, words]) => document.querySelector(sel)?.textContent?.trim() === words, [`.machines section.machine[data-selected="${first}"] [data-action=start-menu] summary`, t('machines:MachinePane.resume')] as const, { timeout: 10_000 });
+  assert.equal((await resume.textContent())?.trim(), t('machines:MachinePane.resume'));
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test("the storage bar's details: the browser's numbers when they agree, the three apart when its count is short", async () => {
   for (const behind of [false, true]) {
     const context = await browser.newContext();
@@ -795,7 +909,7 @@ test("the storage bar's details: the browser's numbers when they agree, the thre
           usage: 1 << 20,
         });
       });
-    await page.goto(`${base}/web/app/`);
+    await page.goto(`${base}/web/app/?autostart=1`);
     // A stored disk's files: 40 MiB of data.
     await page.evaluate(async () => {
       const { Store } = await import("/web/app/store.ts" as string);
@@ -894,7 +1008,7 @@ test("the storage footer shows remote disks' kept blocks and clears them", async
   const context = await browser.newContext();
   const page = await context.newPage();
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // A remote disk's kept blocks, as web/diskcache.ts leaves them: <its root>/<key>/{data,map}.
   await page.evaluate(async () => {
     const { cacheRoot } = await import('/web/diskcache.ts' as string);
@@ -926,7 +1040,7 @@ test("the storage footer shows Vulkan's shader store and clears it; Preferences 
   const context = await browser.newContext();
   const page = await context.newPage();
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // Entries as the GPU worker leaves them (web/venus-cache.ts): flushed through IndexedDB, deflated.
   const stored = await page.evaluate(async () => {
     const { idbBackend, ShaderCache } = await import('/web/venus-cache.ts' as string);
@@ -959,7 +1073,7 @@ test("the storage footer shows Vulkan's shader store and clears it; Preferences 
 test("remote disks' blocks: in an expiring bucket of their own, cleared while a machine reads them, gone after a week unused", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   // Each step named (`__step`), the whole bounded: once in ~30 ci.sh runs a step never resolved (PERF loop 55's second
   // run, 600 s, not seen in 12 runs alone or in the file), the browser's storage call or ours unknown; a hang now
   // fails in a minute and names it.

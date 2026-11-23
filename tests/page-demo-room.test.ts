@@ -142,7 +142,7 @@ async function visitor(storeUrl: string, ws: string, link: string, errors: strin
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => /room|error/i.test(m.text()) && log('[page]', m.text().slice(0, 300)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?autostart=1`);
   log('the page open');
   const id = await page.evaluate(async ([storeUrl, ws, link]) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -157,7 +157,7 @@ async function visitor(storeUrl: string, ws: string, link: string, errors: strin
     return machine.id as string;
   }, [storeUrl, ws, link]);
   log('machine made', id);
-  await page.goto(`${base}/web/app/?m=${id}&clocksync=0&view=both`);
+  await page.goto(`${base}/web/app/?autostart=1&m=${id}&clocksync=0&view=both`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 120_000, polling: 200 })
     .catch(async (e: unknown) => { throw new Error(`${String(e)}; state ${await page.evaluate(() => document.body.dataset.state)}; the message bar: ${await page.evaluate(() => document.getElementById('message')?.textContent)}`); });
   log('running');
