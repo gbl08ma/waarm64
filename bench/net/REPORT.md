@@ -1198,7 +1198,7 @@ behind; N6a's logs bucketed lines differently, so whether the 8 gets made more o
 
 ### The days-long run (`bench/net/names-long.ts`)
 
-Built, not run here for days: the user launches it (docs/backlog.md "The days-long run on public services"). **Two Node processes, not two pages**,
+Built, not run here for days: the user launches it (`bench/net/names-long.ts`'s header has the command and the relay budget). **Two Node processes, not two pages**,
 each running the page's own code: the shipped module (`target/net/ts.wasm`: production's proof of work and headers
 floor), the names agent (`web/names.ts` `NamesAgent`) on `web/names-ops.ts` `localBackend` (the ops the names worker
 runs, in the process's thread: Node has no page Worker), its publisher, and a room node wired as the room's worker
@@ -1254,7 +1254,7 @@ each relay (A's "who serves?" alone in its room, three events every 5 minutes, t
 not answering; the calendars and explorers a few dozen over the run (one claim; no renewal is due within a term's
 half, 15 days). The script's caps (2,000 events and 300 connections a relay a day; past one the run ends) are past
 the kickoff's "a few hundred" for events and would end the run within hours on relay.degmods.com's reconnects: the
-launch is the user's call (docs/backlog.md "The days-long run on public services").
+launch is the user's call (`bench/net/names-long.ts`'s header has the command and the relay budget).
 
 ### Reproduce
 ```sh
