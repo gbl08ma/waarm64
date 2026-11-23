@@ -1,39 +1,61 @@
-// Memory attribution of the real page (web/app, Debian, 4 vCPUs, JIT) under a code-churning guest load.
-// usage: timeout 580 node bench/mem/memsample.ts [seconds] [out.json] [extra query, e.g. "&ip=..."]
-// Samples every 10 s: renderer RSS by mapping class (/proc/<pid>/smaps), each target's Performance.getMetrics (JS heap),
-// the workers' JITSTAT console lines (web/vm.ts temp instrumentation), the page's status, and
-// performance.measureUserAgentSpecificMemory().
+// Memory attribution of the real page (web/app, Debian, 4 vCPUs, JIT) under a code-churning guest load (dev-only, /proc).
+// usage: timeout 580 node bench/mem/memsample.ts [seconds] [out.json] [extra query, e.g. "&jitmb=160"]
+//   GO=1        the load is `go build` of /work/web in a loop from a second disk (images/stress/build-goroot.sh)
+//   EVERY=<ms>  the sampling period (20000)
+//   V8TRACE=1   V8's wasm code GC as it reports it: the renderer runs with --trace-wasm-code-gc, its stdout goes to
+//               <out>.v8.log (Chromium through a wrapper that redirects it), and each sample records the log's length
+//               (bench/mem/summarize.mjs reads the two). (--trace-wasm-native-heap, V8's code-space commits, prints nothing
+//               in a release build.)
+// Each sample: the renderer's smaps by mapping class (Rss, Size and AnonHugePages: probe.ts), the kernel's THP
+// counters (/proc/vmstat), every target's Runtime.getHeapUsage (JS heap, external and backing stores) and the page's
+// status (`__status`: the JIT's counters, the page's own memory estimate). `measureUserAgentSpecificMemory` is left
+// out: it charges the shared wasm memories once per realm and counts only JS heaps (docs/jit.md "The page's memory signal").
 import { chromium } from 'playwright-core';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { startServer } from '../../tools/serve.ts';
 import { unattendedQuery } from '../../tests/debian-unattended.ts';
+import { answerAsks } from '../../tests/page-ask.ts';
+import { smapsDetail, thpCounters } from './probe.ts';
 
 const secs = Number(process.argv[2] ?? 300);
-const out = process.argv[3] ?? 'bench/mem/memsample.json';
+const out = process.argv[3] ?? 'bench/results/local/memsample.json';
 const extra = process.argv[4] ?? '';
+const v8log = process.env.V8TRACE ? `${out}.v8.log` : undefined;
+let exe = process.env.CHROMIUM ?? '/usr/bin/chromium';
+if (v8log) {
+  const wrap = `${out}.chromium.sh`;
+  writeFileSync(wrap, `#!/bin/sh\nexec ${exe} "$@" >${JSON.stringify(v8log)}\n`);
+  chmodSync(wrap, 0o755);
+  exe = wrap;
+}
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const PORT = 9300 + Math.floor(Math.random() * 500);
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', args: [`--remote-debugging-port=${PORT}`] });
+const args = [`--remote-debugging-port=${PORT}`];
+if (v8log) args.push('--js-flags=--trace-wasm-code-gc');
+const browser = await chromium.launch({ executablePath: exe, args });
 console.log('# chromium', browser.version());
 const page = await browser.newPage();
-page.on('console', (m) => { if (!/JITSTAT/.test(m.text())) console.log('# console:', m.text().slice(0, 300)); });
+await answerAsks(page);
+page.on('console', (m) => { if (/panic|error|unreachable|vCPU retired/i.test(m.text())) console.log('# console:', m.text().slice(0, 600)); });
 page.on('pageerror', (e) => console.log('# pageerror:', String(e).slice(0, 300)));
+page.on('crash', () => console.log('# the renderer crashed'));
 
-// --- raw CDP over the browser websocket (flattened sessions, recursive auto-attach to workers)
-const ver = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json() as { webSocketDebuggerUrl: string };
+// Raw CDP over the browser's websocket (flattened sessions, recursive auto-attach to workers).
+const ver = (await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json()) as { webSocketDebuggerUrl: string };
 const ws = new WebSocket(ver.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener('open', r, { once: true }));
 let id = 0;
-const pend = new Map<number, (m: any) => void>();
-type Tgt = { sid: string; type: string; url: string; metrics?: Record<string, number>; jit?: any; jit2?: any };
+const pend = new Map<number, (m: { result?: unknown }) => void>();
+type Tgt = { sid: string; type: string; url: string };
 const targets = new Map<string, Tgt>();
-const send = (method: string, params: object = {}, sessionId?: string, ms = 4000) => new Promise<any>((res) => {
-  const i = ++id;
-  const t = setTimeout(() => { pend.delete(i); res(undefined); }, ms);
-  pend.set(i, (m) => { clearTimeout(t); res(m.result); });
-  ws.send(JSON.stringify({ id: i, method, params, sessionId }));
-});
+const send = (method: string, params: object = {}, sessionId?: string, ms = 4000) =>
+  new Promise<any>((res) => {
+    const i = ++id;
+    const t = setTimeout(() => { pend.delete(i); res(undefined); }, ms);
+    pend.set(i, (m) => { clearTimeout(t); res(m.result); });
+    ws.send(JSON.stringify({ id: i, method, params, sessionId }));
+  });
 ws.addEventListener('message', (e) => {
   const m = JSON.parse(String(e.data));
   if (m.id && pend.has(m.id)) { pend.get(m.id)!(m); pend.delete(m.id); return; }
@@ -42,55 +64,18 @@ ws.addEventListener('message', (e) => {
     const ti = m.params.targetInfo;
     targets.set(sid, { sid, type: ti.type, url: ti.url });
     void send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sid);
-    if (ti.type !== 'browser') { void send('Runtime.enable', {}, sid); void send('Performance.enable', {}, sid); }
     void send('Runtime.runIfWaitingForDebugger', {}, sid);
-  } else if (m.method === 'Runtime.consoleAPICalled' && m.sessionId) {
-    const t = targets.get(m.sessionId);
-    const txt = m.params.args?.[0]?.value as string | undefined;
-    if (t && txt?.startsWith('JITSTAT ')) t.jit = JSON.parse(txt.slice(8));
-    if (t && txt?.startsWith('JITSTAT2 ')) t.jit2 = JSON.parse(txt.slice(9));
-  }
+  } else if (m.method === 'Target.detachedFromTarget') targets.delete(m.params.sessionId);
 });
 await send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
 
 const rendererPids = async () => {
   const r = await send('SystemInfo.getProcessInfo');
-  return (r?.processInfo ?? []).map((p: any) => ({ id: p.id, type: p.type, cpu: p.cpuTime })).filter((p: any) => p.type === 'renderer');
-};
-const tops: string[] = [];
-let byName: Record<string, number> = {};
-const smaps = (pid: number) => {
-  const cls: Record<string, number> = {};
-  const all: [number, string][] = [];
-  byName = {};
-  let cur: { perm: string; kb: number; name: string; rss: number; size: number } | undefined;
-  const add = () => {
-    if (!cur) return;
-    const nm = cur.name.replace(/^\/usr\/lib64\/chromium\//, '').replace(/\(deleted\)/, '').trim() || '(unnamed)';
-    const key = `${cur.perm} ${nm}`;
-    byName[key] = (byName[key] ?? 0) + cur.rss;
-    const k = cur.size > 3e6 && /s/.test(cur.perm) ? 'shared-big(guest mem)' : /x/.test(cur.perm) ? 'exec-' + (cur.name.includes('chrome') ? 'chrome' : 'anon(wasm code)') : /^rw-s/.test(cur.perm) ? 'shared-other' : cur.name.includes('chrome') || cur.name.includes('.so') ? 'lib-data' : 'anon-rw(heap etc)';
-    cls[k] = (cls[k] ?? 0) + cur.rss;
-    all.push([cur.rss, `${cur.perm} size ${(cur.size / 1048576).toFixed(0)}M rss ${(cur.rss / 1024).toFixed(0)}M ${cur.name}`]);
-  };
-  let txt: string;
-  try { txt = readFileSync(`/proc/${pid}/smaps`, 'utf8'); } catch { return cls; }
-  for (const line of txt.split('\n')) {
-    const h = /^([0-9a-f]+)-([0-9a-f]+) (\S{4}) \S+ \S+ \S+\s*(.*)$/.exec(line);
-    if (h) { add(); cur = { perm: h[3], kb: 0, name: h[4], rss: 0, size: parseInt(h[2], 16) - parseInt(h[1], 16) }; }
-    else if (cur && line.startsWith('Rss:')) cur.rss = Number(line.split(/\s+/)[1]);
-  }
-  add();
-  all.sort((a, b) => b[0] - a[0]);
-  tops.length = 0; tops.push(...all.slice(0, 12).map((x) => x[1]));
-  if (process.env.TOPS && (cls['exec-anon(wasm code)'] ?? 0) > 3e6) console.log('# TOP', pid, JSON.stringify(tops), 'free:', readFileSync('/proc/meminfo', 'utf8').split('\n').slice(0, 3).join(' | '));
-  cls['names'] = byName as any;
-  return cls;
+  return ((r?.processInfo ?? []) as { id: number; type: string }[]).filter((p) => p.type === 'renderer').map((p) => p.id);
 };
 
-// GO=1: the Go compiler on a second disk as the load (images/stress/build-goroot.sh, docs/images.md).
-// The tests' credentials: no first-boot questions, root without a password (tests/debian-unattended.ts).
-await page.goto(`${base}/web/app/?machine=debian&ncpus=4&view=terminal&${unattendedQuery()}${process.env.GO ? `&disk2=${encodeURIComponent('/target/images/stress/goroot.ext4')}` : ''}${extra}`);
+const q = `${unattendedQuery()}&ncpus=4&view=terminal&hooks${process.env.GO ? `&disk2=${encodeURIComponent('/target/images/stress/goroot.ext4')}` : ''}${extra}`;
+await page.goto(`${base}/web/app/?${q}`);
 const state = () => page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')?.textContent] as const);
 const term = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
 const t0 = Date.now();
@@ -105,34 +90,34 @@ const until = async (re: RegExp, ms: number) => {
 };
 const type = async (t: string) => { await page.locator('.xterm').click(); await page.keyboard.type(t, { delay: 3 }); };
 
-const samples: any[] = [];
+const samples: unknown[] = [];
+const save = () => writeFileSync(out, JSON.stringify({ chromium: browser.version(), query: q, every: Number(process.env.EVERY ?? 20000), v8log, samples }));
 const sample = async (label: string) => {
-  // MemoryMax on a user scope isn't enforced here: stop before the VM runs out of memory.
-  if (Number(/MemAvailable:\s+(\d+)/.exec(readFileSync('/proc/meminfo', 'utf8'))![1]) < 2.5e6) { console.log('# MemAvailable < 2.5 GB: stopping'); writeFileSync(out, JSON.stringify({ chromium: browser.version(), samples }, null, 1)); await browser.close(); process.exit(3); }
-  const rp = await rendererPids();
-  const procs = rp.map((p: any) => ({ pid: p.id, cls: smaps(p.id) }));
-  const tg: any[] = [];
-  for (const t of targets.values()) {
-    if (t.type === 'browser') continue;
-    const r = await send('Runtime.getHeapUsage', {}, t.sid, 1500);
-    const m = { JSHeapUsedSize: r?.usedSize, JSHeapTotalSize: r?.totalSize };
-    tg.push({ type: t.type, url: t.url.replace(/^.*\//, '').slice(0, 30), heapUsedMB: m.JSHeapUsedSize / 1048576, heapTotalMB: m.JSHeapTotalSize / 1048576, jit: t.jit, jit2: t.jit2 });
+  // Stop before the VM runs out of memory (the run's scope cap kills the whole run).
+  if (Number(/MemAvailable:\s+(\d+)/.exec(readFileSync('/proc/meminfo', 'utf8'))![1]) < 2.5e6) { console.log('# MemAvailable < 2.5 GB: stopping'); save(); await browser.close(); process.exit(3); }
+  const t = (Date.now() - t0) / 1000;
+  const v8at = v8log ? statSync(v8log).size : undefined;
+  const procs = (await rendererPids()).flatMap((pid) => { const d = smapsDetail(pid); return d ? [{ pid, ...d }] : []; });
+  const thp = thpCounters();
+  const heaps: unknown[] = [];
+  for (const g of targets.values()) {
+    if (g.type === 'browser') continue;
+    const r = await send('Runtime.getHeapUsage', {}, g.sid, 1500);
+    if (r) heaps.push({ type: g.type, url: g.url.replace(/^.*\//, '').replace(/\?.*/, '').slice(0, 40), ...r });
   }
-  let uam: any;
-  if (0) try { uam = await page.evaluate(async () => { const r = await (performance as any).measureUserAgentSpecificMemory(); return { total: r.bytes / 1048576, breakdown: r.breakdown.map((b: any) => [b.types.join(','), b.bytes / 1048576]) }; }); } catch (e) { uam = String(e).slice(0, 100); }
-  const s = { label, t: (Date.now() - t0) / 1000, procs, targets: tg, uam };
+  const status = await page.evaluate(() => { const s = window.__status as unknown as Record<string, unknown> | undefined; if (!s) return undefined; const { vcpus: _, ...rest } = s; return rest; }).catch(() => undefined);
+  const s = { label, t, v8at, procs, thp, heaps, status };
   samples.push(s);
-  const tot = procs.reduce((a: number, p: any) => a + Object.values(p.cls as Record<string, number>).filter((x) => typeof x === 'number').reduce((x, y) => x + y, 0), 0) / 1024;
-  console.log(`# ${label} t=${s.t.toFixed(0)}s renderer RSS ${tot.toFixed(0)} MB:`, procs.map((p: any) => Object.entries(p.cls as Record<string, number>).filter(([k]) => k !== 'names').map(([k, v]) => `${k}=${(v / 1024).toFixed(0)}`).join(' ')).join(' | '));
-  
-  for (const t of tg) if (t.type === 'worker' || t.jit) console.log(`#    ${t.type} ${t.url} heap ${t.heapUsedMB?.toFixed(0)}/${t.heapTotalMB?.toFixed(0)} MB jit ${t.jit ? `mods ${t.jit.modules} fns ${t.jit.fns} bytes ${(t.jit.bytes / 1e6).toFixed(1)}M table ${t.jit.table} pages ${t.jit.pages} jsheap ${t.jit.heapUsed?.toFixed(0)}/${t.jit.heapTotal?.toFixed(0)}` : '-'}` + (t.jit2 ? ` stats ${JSON.stringify(t.jit2)}` : ''));
-  if (typeof uam === 'object') console.log(`#    uam total ${uam.total?.toFixed(0)} MB`, JSON.stringify(uam.breakdown));
+  const big = procs.reduce((a, b) => (b.total.rss > a.total.rss ? b : a), procs[0]);
+  const mb = (b: number) => (b / 2 ** 20).toFixed(0);
+  if (big) console.log(`# ${label} t=${t.toFixed(0)}s renderer RSS ${mb(big.total.rss)} MB (VmRSS ${mb(big.before?.VmRSS ?? 0)}/${mb(big.after?.VmRSS ?? 0)}, read ${big.readMs} ms), code rss ${mb(big.cls.code.rss)} thp ${mb(big.cls.code.thp)} size ${mb(big.cls.code.size)} (${big.cls.code.n} maps), anon ${mb(big.cls.anon.rss)} thp ${mb(big.cls.anon.thp)}; flushes ${(status as { jitFlushes?: number } | undefined)?.jitFlushes}`);
 };
 
 let boot = false;
 const bootTimer = setInterval(() => { if (!boot) void sample('boot').catch(() => {}); }, 30000);
 if (!(await until(/login: /, 240_000))) { console.log('no login', await state(), await page.evaluate(() => document.body.innerText.slice(0, 600))); process.exit(1); }
-boot = true; clearInterval(bootTimer);
+boot = true;
+clearInterval(bootTimer);
 await sample('login');
 await type('root\n');
 await until(/root@\S+:~# /, 60_000);
@@ -151,19 +136,9 @@ for (const end = Date.now() + secs * 1000; Date.now() < end;) {
   if (s !== 'running') { console.log(`STATE ${s}: ${m}`); break; }
   await page.waitForTimeout(Number(process.env.EVERY ?? 20000));
   await sample('load').catch((e) => console.log('# sample failed', String(e).slice(0, 100)));
-  writeFileSync(out, JSON.stringify({ chromium: browser.version(), samples }, null, 1));
+  save();
 }
-if (process.env.CRASH) {
-  await type('echo 1 > /proc/sys/kernel/sysrq; echo c > /proc/sysrq-trigger\n');
-  for (let i = 0; i < 3; i++) { await page.waitForTimeout(10000); await sample('crashed'); console.log('# state', await state()); }
-  await page.reload();
-  for (let i = 0; i < 6; i++) { await page.waitForTimeout(10000); await sample('reloaded'); console.log('# state', await state()); }
-  await until(/login: /, 200_000);
-  await sample('relogin');
-  await page.waitForTimeout(30000);
-  await sample('relogin+30');
-}
-writeFileSync(out, JSON.stringify({ chromium: browser.version(), samples }, null, 1));
+save();
 console.log('# end', await state());
 await browser.close();
 server.close();

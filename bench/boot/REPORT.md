@@ -7686,3 +7686,49 @@ regions among them, wasn't bisected: nothing hangs on it); loop 49's timer regis
 removed. No code change, so no gate A/B, no counted code and no step count moved. Raw: `results/perf61/`
 (`node-949b742b.json`, `node-b166af24.json`). The watched idle-limit hang (loop 60) wasn't run into: this loop ran
 no parallel guests besides CI's.
+
+## PERF loop 62: the Go load's ~10 GB samples, re-measured (2026-11-23)
+
+The backlog's "unexplained ~10 GB samples in the Go-load runs with the flush and the GC nudge" (2026-09-30,
+`go-cap-nudge*` in `bench/mem/results/summary.json`: Chromium 153 on the dev VM, Debian on 4 vCPUs, the `go build`
+loop of `/work/web`, per-vCPU caches of 40 MiB, 54-69 flushes and 2.4-3.0 GB of wasm in ~450 s; two of the runs had
+one sample near 10 GB, the `rwxp [anon:v8]` mappings up ~6 GB within 20 s). Its raw samples weren't kept, so the
+loop re-ran the workload on the same host (the dev VM, Chromium 155.0.8059.84, `bench/mem/memsample.ts` brought up to
+today's page, `GO=1 V8TRACE=1 EVERY=10000`, 450 s of load each, alone on the machine).
+
+**Could the old samples be the sampler's?** It summed each mapping's `Rss:` (resident), not `Size:`, so the code
+space's reservations (today ~1.7× its resident bytes) weren't counted; a GC mid-sample only unmaps, it can't add.
+What wasn't checked then: that smaps, read in pieces while the renderer maps and unmaps, sums to one moment's RSS,
+and transparent huge pages (the VM runs THP `always`, `max_ptes_none` 511, which could fault or collapse a sparse
+code range into 2 MiB pages). The sampler now records, per class, resident, reserved and `AnonHugePages` bytes, the
+kernel's `VmRSS` read just before and after the smaps read, `/proc/vmstat`'s THP counters, every realm's
+`Runtime.getHeapUsage`, the page's status (JIT counters, its memory estimate) and V8's own wasm code GC lines
+(`--trace-wasm-code-gc` from the renderer's stdout). V8 has no other counter of its wasm code in a release build:
+`--trace-wasm-native-heap` prints nothing, Chromium's memory-infra dump has only the main isolate's JS heap spaces,
+`Browser.getHistograms` has no `Wasm` histograms (docs/v8.md); `measureUserAgentSpecificMemory` counts JS heaps only.
+
+**Six runs** (`results` below: `bench/mem/results/perf62.json`, by `bench/mem/summarize.mjs`; MB are MiB):
+
+| run | budget | flushes | wasm compiled | modules | renderer RSS median / p90 / max | VmRSS max | code median / max | largest code rise in 10 s | V8's dead code counted, max |
+|---|---|---|---|---|---|---|---|---|---|
+| b160-1 | 160 MiB | 0 | 129 MB | 4,848 | 3,077 / 3,171 / 3,186 | 3,186 | 371 / 411 | 107 (boot) | 38 |
+| b320-1 | 320 (default) | 0 | 130 MB | 4,133 | 3,157 / 3,184 / 3,194 | 3,194 | 404 / 421 | 111 (boot) | 42 |
+| b16-1 | 16 MiB | 130 | 2,205 MB | 40,366 | 2,874 / 3,268 / 3,305 | 3,308 | 311 / 520 | 208 | 56 |
+| b16-2 | 16 | 131 | 2,222 | 40,547 | 2,930 / 3,252 / 3,375 | 3,377 | 290 / 547 | 216 | 51 |
+| b16-3 | 16 | 132 | 2,241 | 40,994 | 2,913 / 3,301 / 3,437 | 3,437 | 303 / 561 | 216 | 51 |
+| b16-4 | 16 | 130 | 2,199 | 40,288 | 2,828 / 3,225 / 3,303 | 3,307 | 277 / 535 | 217 | 53 |
+
+- **Today's JIT doesn't flush in this load at 160 or 320 MiB**: one shared cache (docs/jit.md "Sharing") and the
+  step-weighted batches compile ~130 MB of wasm in 450 s, against the old runs' 2.4-3.0 GB over four per-vCPU copies.
+  The 16 MiB floor brings the old churn back (130 flushes, ~2.2 GB, ~40K modules).
+- **No spike in 146 samples after 120 s** (the four churn runs; 218 in all six): the renderer at most 3.44 GB, the code
+  a sawtooth of 25-561 MB with a flush every ~3.5 s, V8's code GC freeing each epoch's code within a sample or two (its
+  dead bytes counted never past 56 MB). The smaps sum matched `VmRSS` within 71 MB in every sample (3 MB without
+  flushes); no huge pages in the code (0 MB in every sample; the THP fault and collapse counters didn't move during
+  the runs). JS heaps 81-148 MB over all realms; the page's estimate 2.6 GB at 16 MiB, 3.2 at the defaults.
+- **Not reproducible, entry removed.** What made the old samples can't be told now (no raw files); what has changed
+  since is the per-vCPU copies (four isolates each holding flushed code until its own GC) and the module count
+  (190K against 40K). The sampler isn't at fault in today's numbers, and now records what would tell a recurrence
+  apart (VmRSS around the read, reservations, THP, V8's GC lines). No core change; no step count moved. Test:
+  `tests/mem-smaps.test.ts` (the smaps parser and classes; planted: Size summed as Rss, AnonHugePages unread, both
+  caught). The watched "no vCPU retired a step" wasn't seen.

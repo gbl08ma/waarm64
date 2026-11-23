@@ -164,10 +164,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   worker). With a worker per vCPU, V8 compiles off the vCPU's thread: the JIT's compile worker
   ([jit.md](jit.md) "Sharing"), built for the install stalls a GUI guest showed; the vCPU still
   instantiates each module. Without the worker (round-robin, Node's runs, `?jit=nocw`) it compiles too.
-- **Unexplained ~10 GB samples** in the Go-load runs with the flush and the GC nudge (2 of 4 runs,
-  one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
-  mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
-  sampling. Measure with V8's own counters before trusting the median.
 - **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds
   checks V8 keeps on Linux arm64. Don't fit the design to it.
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering

@@ -1,0 +1,8833 @@
+{
+ "b160-1": {
+  "chromium": "155.0.8059.84",
+  "query": "machine=debian&ncpus=4&view=terminal&hooks&disk2=%2Ftarget%2Fimages%2Fstress%2Fgoroot.ext4&jitmb=160",
+  "every": 10000,
+  "samples": 47,
+  "rssAfter120s": {
+   "medianMB": 3077,
+   "p90MB": 3171,
+   "maxMB": 3186
+  },
+  "vmRssAfter120s": {
+   "medianMB": 3077,
+   "p90MB": 3171,
+   "maxMB": 3186
+  },
+  "codeAfter120s": {
+   "medianMB": 371,
+   "p90MB": 405,
+   "maxMB": 411
+  },
+  "codeJump": {
+   "mb": 107,
+   "t": 38,
+   "s": 10.1
+  },
+  "series": [
+   {
+    "t": 25,
+    "label": "login",
+    "rssMB": 1796,
+    "vmRssMB": [
+     1796,
+     1796
+    ],
+    "readMs": 47,
+    "codeMB": 111,
+    "codeSizeMB": 389,
+    "codeThpMB": 0,
+    "codeMaps": 2542,
+    "anonMB": 963,
+    "anonThpMB": 0,
+    "wasmMemMB": 548,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 403,
+    "flushes": 0,
+    "jitMB": 34,
+    "modules": 1094,
+    "compileS": 0.2,
+    "estimateMB": 2480,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 30,
+     "freed": 7290,
+     "deadMB": 11.6
+    }
+   },
+   {
+    "t": 28,
+    "label": "load-start",
+    "rssMB": 1849,
+    "vmRssMB": [
+     1849,
+     1849
+    ],
+    "readMs": 21,
+    "codeMB": 120,
+    "codeSizeMB": 399,
+    "codeThpMB": 0,
+    "codeMaps": 2542,
+    "anonMB": 993,
+    "anonThpMB": 0,
+    "wasmMemMB": 562,
+    "jsHeapsMB": 80,
+    "backingStoresMB": 421,
+    "flushes": 0,
+    "jitMB": 36,
+    "modules": 1142,
+    "compileS": 0.2,
+    "estimateMB": 2489,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 38,
+    "label": "load",
+    "rssMB": 2291,
+    "vmRssMB": [
+     2290,
+     2291
+    ],
+    "readMs": 28,
+    "codeMB": 227,
+    "codeSizeMB": 527,
+    "codeThpMB": 0,
+    "codeMaps": 4589,
+    "anonMB": 1099,
+    "anonThpMB": 0,
+    "wasmMemMB": 794,
+    "jsHeapsMB": 95,
+    "backingStoresMB": 465,
+    "flushes": 0,
+    "jitMB": 68,
+    "modules": 1672,
+    "compileS": 0.4,
+    "estimateMB": 2723,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 5159,
+     "deadMB": 21.3
+    }
+   },
+   {
+    "t": 48,
+    "label": "load",
+    "rssMB": 2426,
+    "vmRssMB": [
+     2425,
+     2425
+    ],
+    "readMs": 43,
+    "codeMB": 242,
+    "codeSizeMB": 547,
+    "codeThpMB": 0,
+    "codeMaps": 5574,
+    "anonMB": 1052,
+    "anonThpMB": 0,
+    "wasmMemMB": 960,
+    "jsHeapsMB": 98,
+    "backingStoresMB": 399,
+    "flushes": 0,
+    "jitMB": 77,
+    "modules": 1828,
+    "compileS": 0.4,
+    "estimateMB": 2762,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 4149,
+     "deadMB": 24.5
+    }
+   },
+   {
+    "t": 58,
+    "label": "load",
+    "rssMB": 2656,
+    "vmRssMB": [
+     2656,
+     2656
+    ],
+    "readMs": 42,
+    "codeMB": 259,
+    "codeSizeMB": 567,
+    "codeThpMB": 0,
+    "codeMaps": 6120,
+    "anonMB": 1089,
+    "anonThpMB": 0,
+    "wasmMemMB": 1136,
+    "jsHeapsMB": 109,
+    "backingStoresMB": 407,
+    "flushes": 0,
+    "jitMB": 84,
+    "modules": 1979,
+    "compileS": 0.5,
+    "estimateMB": 2802,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 2799,
+     "deadMB": 26.6
+    }
+   },
+   {
+    "t": 68,
+    "label": "load",
+    "rssMB": 2764,
+    "vmRssMB": [
+     2764,
+     2764
+    ],
+    "readMs": 34,
+    "codeMB": 290,
+    "codeSizeMB": 600,
+    "codeThpMB": 0,
+    "codeMaps": 6120,
+    "anonMB": 1098,
+    "anonThpMB": 0,
+    "wasmMemMB": 1204,
+    "jsHeapsMB": 111,
+    "backingStoresMB": 412,
+    "flushes": 0,
+    "jitMB": 90,
+    "modules": 2088,
+    "compileS": 0.5,
+    "estimateMB": 2841,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 78,
+    "label": "load",
+    "rssMB": 2768,
+    "vmRssMB": [
+     2768,
+     2768
+    ],
+    "readMs": 43,
+    "codeMB": 281,
+    "codeSizeMB": 593,
+    "codeThpMB": 0,
+    "codeMaps": 6696,
+    "anonMB": 1106,
+    "anonThpMB": 0,
+    "wasmMemMB": 1209,
+    "jsHeapsMB": 114,
+    "backingStoresMB": 414,
+    "flushes": 0,
+    "jitMB": 93,
+    "modules": 2193,
+    "compileS": 0.5,
+    "estimateMB": 2859,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 2802,
+     "deadMB": 29.1
+    }
+   },
+   {
+    "t": 88,
+    "label": "load",
+    "rssMB": 2792,
+    "vmRssMB": [
+     2792,
+     2792
+    ],
+    "readMs": 42,
+    "codeMB": 292,
+    "codeSizeMB": 605,
+    "codeThpMB": 0,
+    "codeMaps": 6696,
+    "anonMB": 1117,
+    "anonThpMB": 0,
+    "wasmMemMB": 1211,
+    "jsHeapsMB": 116,
+    "backingStoresMB": 416,
+    "flushes": 0,
+    "jitMB": 95,
+    "modules": 2273,
+    "compileS": 0.6,
+    "estimateMB": 2887,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 98,
+    "label": "load",
+    "rssMB": 2884,
+    "vmRssMB": [
+     2883,
+     2884
+    ],
+    "readMs": 69,
+    "codeMB": 301,
+    "codeSizeMB": 618,
+    "codeThpMB": 0,
+    "codeMaps": 7400,
+    "anonMB": 1163,
+    "anonThpMB": 0,
+    "wasmMemMB": 1248,
+    "jsHeapsMB": 116,
+    "backingStoresMB": 434,
+    "flushes": 0,
+    "jitMB": 101,
+    "modules": 2593,
+    "compileS": 0.6,
+    "estimateMB": 2953,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 3231,
+     "deadMB": 31.6
+    }
+   },
+   {
+    "t": 108,
+    "label": "load",
+    "rssMB": 2899,
+    "vmRssMB": [
+     2899,
+     2898
+    ],
+    "readMs": 55,
+    "codeMB": 312,
+    "codeSizeMB": 630,
+    "codeThpMB": 0,
+    "codeMaps": 7400,
+    "anonMB": 1166,
+    "anonThpMB": 0,
+    "wasmMemMB": 1248,
+    "jsHeapsMB": 118,
+    "backingStoresMB": 436,
+    "flushes": 0,
+    "jitMB": 103,
+    "modules": 2670,
+    "compileS": 0.6,
+    "estimateMB": 2963,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 119,
+    "label": "load",
+    "rssMB": 2916,
+    "vmRssMB": [
+     2916,
+     2916
+    ],
+    "readMs": 55,
+    "codeMB": 324,
+    "codeSizeMB": 642,
+    "codeThpMB": 0,
+    "codeMaps": 7400,
+    "anonMB": 1171,
+    "anonThpMB": 0,
+    "wasmMemMB": 1249,
+    "jsHeapsMB": 120,
+    "backingStoresMB": 436,
+    "flushes": 0,
+    "jitMB": 104,
+    "modules": 2762,
+    "compileS": 0.7,
+    "estimateMB": 2974,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 129,
+    "label": "load",
+    "rssMB": 2939,
+    "vmRssMB": [
+     2939,
+     2939
+    ],
+    "readMs": 41,
+    "codeMB": 335,
+    "codeSizeMB": 655,
+    "codeThpMB": 0,
+    "codeMaps": 7400,
+    "anonMB": 1184,
+    "anonThpMB": 0,
+    "wasmMemMB": 1249,
+    "jsHeapsMB": 122,
+    "backingStoresMB": 438,
+    "flushes": 0,
+    "jitMB": 106,
+    "modules": 2842,
+    "compileS": 0.7,
+    "estimateMB": 2984,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 139,
+    "label": "load",
+    "rssMB": 2972,
+    "vmRssMB": [
+     2972,
+     2972
+    ],
+    "readMs": 55,
+    "codeMB": 343,
+    "codeSizeMB": 664,
+    "codeThpMB": 0,
+    "codeMaps": 7400,
+    "anonMB": 1192,
+    "anonThpMB": 0,
+    "wasmMemMB": 1265,
+    "jsHeapsMB": 123,
+    "backingStoresMB": 440,
+    "flushes": 0,
+    "jitMB": 108,
+    "modules": 2925,
+    "compileS": 0.7,
+    "estimateMB": 3009,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 149,
+    "label": "load",
+    "rssMB": 2965,
+    "vmRssMB": [
+     2965,
+     2965
+    ],
+    "readMs": 67,
+    "codeMB": 321,
+    "codeSizeMB": 643,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1204,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 126,
+    "backingStoresMB": 442,
+    "flushes": 0,
+    "jitMB": 109,
+    "modules": 3005,
+    "compileS": 0.7,
+    "estimateMB": 3019,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 3539,
+     "deadMB": 34.6
+    }
+   },
+   {
+    "t": 159,
+    "label": "load",
+    "rssMB": 2973,
+    "vmRssMB": [
+     2973,
+     2973
+    ],
+    "readMs": 52,
+    "codeMB": 327,
+    "codeSizeMB": 651,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1208,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 128,
+    "backingStoresMB": 443,
+    "flushes": 0,
+    "jitMB": 110,
+    "modules": 3069,
+    "compileS": 0.7,
+    "estimateMB": 3026,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 169,
+    "label": "load",
+    "rssMB": 2987,
+    "vmRssMB": [
+     2987,
+     2987
+    ],
+    "readMs": 46,
+    "codeMB": 336,
+    "codeSizeMB": 660,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1214,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 125,
+    "backingStoresMB": 443,
+    "flushes": 0,
+    "jitMB": 112,
+    "modules": 3148,
+    "compileS": 0.8,
+    "estimateMB": 3035,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 179,
+    "label": "load",
+    "rssMB": 3000,
+    "vmRssMB": [
+     3000,
+     3000
+    ],
+    "readMs": 43,
+    "codeMB": 343,
+    "codeSizeMB": 668,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1220,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 126,
+    "backingStoresMB": 444,
+    "flushes": 0,
+    "jitMB": 113,
+    "modules": 3226,
+    "compileS": 0.8,
+    "estimateMB": 3042,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 190,
+    "label": "load",
+    "rssMB": 3011,
+    "vmRssMB": [
+     3011,
+     3011
+    ],
+    "readMs": 52,
+    "codeMB": 349,
+    "codeSizeMB": 674,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1224,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 128,
+    "backingStoresMB": 445,
+    "flushes": 0,
+    "jitMB": 114,
+    "modules": 3297,
+    "compileS": 0.8,
+    "estimateMB": 3047,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 200,
+    "label": "load",
+    "rssMB": 3017,
+    "vmRssMB": [
+     3018,
+     3018
+    ],
+    "readMs": 41,
+    "codeMB": 352,
+    "codeSizeMB": 678,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1227,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 128,
+    "backingStoresMB": 447,
+    "flushes": 0,
+    "jitMB": 114,
+    "modules": 3361,
+    "compileS": 0.8,
+    "estimateMB": 3052,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 210,
+    "label": "load",
+    "rssMB": 3041,
+    "vmRssMB": [
+     3038,
+     3038
+    ],
+    "readMs": 45,
+    "codeMB": 360,
+    "codeSizeMB": 688,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1242,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 131,
+    "backingStoresMB": 448,
+    "flushes": 0,
+    "jitMB": 116,
+    "modules": 3426,
+    "compileS": 0.8,
+    "estimateMB": 3077,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 220,
+    "label": "load",
+    "rssMB": 3046,
+    "vmRssMB": [
+     3046,
+     3046
+    ],
+    "readMs": 49,
+    "codeMB": 364,
+    "codeSizeMB": 691,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1244,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 132,
+    "backingStoresMB": 448,
+    "flushes": 0,
+    "jitMB": 116,
+    "modules": 3476,
+    "compileS": 0.9,
+    "estimateMB": 3080,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 230,
+    "label": "load",
+    "rssMB": 3059,
+    "vmRssMB": [
+     3056,
+     3057
+    ],
+    "readMs": 71,
+    "codeMB": 369,
+    "codeSizeMB": 697,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1252,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 132,
+    "backingStoresMB": 449,
+    "flushes": 0,
+    "jitMB": 117,
+    "modules": 3545,
+    "compileS": 0.9,
+    "estimateMB": 3086,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 240,
+    "label": "load",
+    "rssMB": 3068,
+    "vmRssMB": [
+     3069,
+     3067
+    ],
+    "readMs": 46,
+    "codeMB": 375,
+    "codeSizeMB": 703,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1255,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 134,
+    "backingStoresMB": 450,
+    "flushes": 0,
+    "jitMB": 118,
+    "modules": 3611,
+    "compileS": 0.9,
+    "estimateMB": 3092,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 250,
+    "label": "load",
+    "rssMB": 3075,
+    "vmRssMB": [
+     3075,
+     3075
+    ],
+    "readMs": 42,
+    "codeMB": 379,
+    "codeSizeMB": 706,
+    "codeThpMB": 0,
+    "codeMaps": 8071,
+    "anonMB": 1258,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 135,
+    "backingStoresMB": 451,
+    "flushes": 0,
+    "jitMB": 118,
+    "modules": 3671,
+    "compileS": 0.9,
+    "estimateMB": 3095,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 261,
+    "label": "load",
+    "rssMB": 3053,
+    "vmRssMB": [
+     3053,
+     3053
+    ],
+    "readMs": 59,
+    "codeMB": 348,
+    "codeSizeMB": 677,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1263,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 137,
+    "backingStoresMB": 451,
+    "flushes": 0,
+    "jitMB": 119,
+    "modules": 3735,
+    "compileS": 0.9,
+    "estimateMB": 3100,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 3816,
+     "deadMB": 37.8
+    }
+   },
+   {
+    "t": 271,
+    "label": "load",
+    "rssMB": 3055,
+    "vmRssMB": [
+     3055,
+     3055
+    ],
+    "readMs": 56,
+    "codeMB": 351,
+    "codeSizeMB": 680,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1265,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 137,
+    "backingStoresMB": 452,
+    "flushes": 0,
+    "jitMB": 119,
+    "modules": 3779,
+    "compileS": 0.9,
+    "estimateMB": 3103,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 281,
+    "label": "load",
+    "rssMB": 3062,
+    "vmRssMB": [
+     3062,
+     3062
+    ],
+    "readMs": 48,
+    "codeMB": 355,
+    "codeSizeMB": 684,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1268,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 138,
+    "backingStoresMB": 452,
+    "flushes": 0,
+    "jitMB": 120,
+    "modules": 3843,
+    "compileS": 1,
+    "estimateMB": 3107,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 291,
+    "label": "load",
+    "rssMB": 3067,
+    "vmRssMB": [
+     3068,
+     3067
+    ],
+    "readMs": 49,
+    "codeMB": 359,
+    "codeSizeMB": 688,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1270,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 135,
+    "backingStoresMB": 453,
+    "flushes": 0,
+    "jitMB": 120,
+    "modules": 3902,
+    "compileS": 1,
+    "estimateMB": 3111,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 301,
+    "label": "load",
+    "rssMB": 3074,
+    "vmRssMB": [
+     3074,
+     3074
+    ],
+    "readMs": 51,
+    "codeMB": 362,
+    "codeSizeMB": 691,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1274,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 138,
+    "backingStoresMB": 453,
+    "flushes": 0,
+    "jitMB": 121,
+    "modules": 3959,
+    "compileS": 1,
+    "estimateMB": 3114,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 311,
+    "label": "load",
+    "rssMB": 3077,
+    "vmRssMB": [
+     3077,
+     3077
+    ],
+    "readMs": 74,
+    "codeMB": 363,
+    "codeSizeMB": 694,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1275,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 137,
+    "backingStoresMB": 453,
+    "flushes": 0,
+    "jitMB": 121,
+    "modules": 4005,
+    "compileS": 1,
+    "estimateMB": 3117,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 321,
+    "label": "load",
+    "rssMB": 3089,
+    "vmRssMB": [
+     3090,
+     3089
+    ],
+    "readMs": 44,
+    "codeMB": 368,
+    "codeSizeMB": 699,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1282,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 137,
+    "backingStoresMB": 454,
+    "flushes": 0,
+    "jitMB": 122,
+    "modules": 4073,
+    "compileS": 1,
+    "estimateMB": 3122,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 332,
+    "label": "load",
+    "rssMB": 3098,
+    "vmRssMB": [
+     3098,
+     3098
+    ],
+    "readMs": 46,
+    "codeMB": 371,
+    "codeSizeMB": 703,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1287,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 140,
+    "backingStoresMB": 455,
+    "flushes": 0,
+    "jitMB": 122,
+    "modules": 4123,
+    "compileS": 1,
+    "estimateMB": 3125,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 342,
+    "label": "load",
+    "rssMB": 3102,
+    "vmRssMB": [
+     3103,
+     3102
+    ],
+    "readMs": 43,
+    "codeMB": 375,
+    "codeSizeMB": 706,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1288,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 140,
+    "backingStoresMB": 455,
+    "flushes": 0,
+    "jitMB": 123,
+    "modules": 4181,
+    "compileS": 1,
+    "estimateMB": 3129,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 352,
+    "label": "load",
+    "rssMB": 3108,
+    "vmRssMB": [
+     3108,
+     3108
+    ],
+    "readMs": 77,
+    "codeMB": 378,
+    "codeSizeMB": 709,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1290,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 142,
+    "backingStoresMB": 455,
+    "flushes": 0,
+    "jitMB": 123,
+    "modules": 4232,
+    "compileS": 1.1,
+    "estimateMB": 3131,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 362,
+    "label": "load",
+    "rssMB": 3112,
+    "vmRssMB": [
+     3112,
+     3112
+    ],
+    "readMs": 44,
+    "codeMB": 379,
+    "codeSizeMB": 711,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1292,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 143,
+    "backingStoresMB": 456,
+    "flushes": 0,
+    "jitMB": 124,
+    "modules": 4280,
+    "compileS": 1.1,
+    "estimateMB": 3134,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 372,
+    "label": "load",
+    "rssMB": 3126,
+    "vmRssMB": [
+     3126,
+     3126
+    ],
+    "readMs": 44,
+    "codeMB": 384,
+    "codeSizeMB": 716,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1300,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 143,
+    "backingStoresMB": 456,
+    "flushes": 0,
+    "jitMB": 124,
+    "modules": 4334,
+    "compileS": 1.1,
+    "estimateMB": 3139,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 382,
+    "label": "load",
+    "rssMB": 3129,
+    "vmRssMB": [
+     3129,
+     3129
+    ],
+    "readMs": 45,
+    "codeMB": 385,
+    "codeSizeMB": 718,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1304,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 143,
+    "backingStoresMB": 456,
+    "flushes": 0,
+    "jitMB": 124,
+    "modules": 4375,
+    "compileS": 1.1,
+    "estimateMB": 3140,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 392,
+    "label": "load",
+    "rssMB": 3135,
+    "vmRssMB": [
+     3135,
+     3135
+    ],
+    "readMs": 46,
+    "codeMB": 389,
+    "codeSizeMB": 721,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1306,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 457,
+    "flushes": 0,
+    "jitMB": 125,
+    "modules": 4434,
+    "compileS": 1.1,
+    "estimateMB": 3145,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 403,
+    "label": "load",
+    "rssMB": 3141,
+    "vmRssMB": [
+     3141,
+     3141
+    ],
+    "readMs": 43,
+    "codeMB": 392,
+    "codeSizeMB": 725,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1309,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 146,
+    "backingStoresMB": 458,
+    "flushes": 0,
+    "jitMB": 126,
+    "modules": 4485,
+    "compileS": 1.1,
+    "estimateMB": 3149,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 413,
+    "label": "load",
+    "rssMB": 3147,
+    "vmRssMB": [
+     3147,
+     3147
+    ],
+    "readMs": 58,
+    "codeMB": 394,
+    "codeSizeMB": 728,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1312,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 141,
+    "backingStoresMB": 457,
+    "flushes": 0,
+    "jitMB": 126,
+    "modules": 4530,
+    "compileS": 1.1,
+    "estimateMB": 3151,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 423,
+    "label": "load",
+    "rssMB": 3157,
+    "vmRssMB": [
+     3157,
+     3157
+    ],
+    "readMs": 45,
+    "codeMB": 397,
+    "codeSizeMB": 731,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1317,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 143,
+    "backingStoresMB": 458,
+    "flushes": 0,
+    "jitMB": 126,
+    "modules": 4575,
+    "compileS": 1.2,
+    "estimateMB": 3153,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 433,
+    "label": "load",
+    "rssMB": 3159,
+    "vmRssMB": [
+     3159,
+     3159
+    ],
+    "readMs": 57,
+    "codeMB": 399,
+    "codeSizeMB": 734,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1319,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 459,
+    "flushes": 0,
+    "jitMB": 127,
+    "modules": 4620,
+    "compileS": 1.2,
+    "estimateMB": 3157,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 443,
+    "label": "load",
+    "rssMB": 3161,
+    "vmRssMB": [
+     3161,
+     3161
+    ],
+    "readMs": 50,
+    "codeMB": 401,
+    "codeSizeMB": 736,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1319,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 458,
+    "flushes": 0,
+    "jitMB": 127,
+    "modules": 4667,
+    "compileS": 1.2,
+    "estimateMB": 3161,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 453,
+    "label": "load",
+    "rssMB": 3171,
+    "vmRssMB": [
+     3171,
+     3171
+    ],
+    "readMs": 42,
+    "codeMB": 405,
+    "codeSizeMB": 740,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1325,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 146,
+    "backingStoresMB": 459,
+    "flushes": 0,
+    "jitMB": 128,
+    "modules": 4717,
+    "compileS": 1.2,
+    "estimateMB": 3164,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 463,
+    "label": "load",
+    "rssMB": 3175,
+    "vmRssMB": [
+     3175,
+     3175
+    ],
+    "readMs": 45,
+    "codeMB": 407,
+    "codeSizeMB": 742,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1327,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 148,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 128,
+    "modules": 4767,
+    "compileS": 1.2,
+    "estimateMB": 3166,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 473,
+    "label": "load",
+    "rssMB": 3177,
+    "vmRssMB": [
+     3177,
+     3176
+    ],
+    "readMs": 42,
+    "codeMB": 408,
+    "codeSizeMB": 743,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1328,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 459,
+    "flushes": 0,
+    "jitMB": 128,
+    "modules": 4800,
+    "compileS": 1.2,
+    "estimateMB": 3167,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 484,
+    "label": "load",
+    "rssMB": 3186,
+    "vmRssMB": [
+     3186,
+     3186
+    ],
+    "readMs": 38,
+    "codeMB": 411,
+    "codeSizeMB": 747,
+    "codeThpMB": 0,
+    "codeMaps": 9048,
+    "anonMB": 1334,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 4848,
+    "compileS": 1.2,
+    "estimateMB": 3185,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   }
+  ]
+ },
+ "b320-1": {
+  "chromium": "155.0.8059.84",
+  "query": "machine=debian&ncpus=4&view=terminal&hooks&disk2=%2Ftarget%2Fimages%2Fstress%2Fgoroot.ext4",
+  "every": 10000,
+  "samples": 47,
+  "rssAfter120s": {
+   "medianMB": 3157,
+   "p90MB": 3184,
+   "maxMB": 3194
+  },
+  "vmRssAfter120s": {
+   "medianMB": 3157,
+   "p90MB": 3184,
+   "maxMB": 3194
+  },
+  "codeAfter120s": {
+   "medianMB": 404,
+   "p90MB": 418,
+   "maxMB": 421
+  },
+  "codeJump": {
+   "mb": 111,
+   "t": 38,
+   "s": 10.1
+  },
+  "series": [
+   {
+    "t": 25,
+    "label": "login",
+    "rssMB": 1812,
+    "vmRssMB": [
+     1812,
+     1812
+    ],
+    "readMs": 105,
+    "codeMB": 120,
+    "codeSizeMB": 399,
+    "codeThpMB": 0,
+    "codeMaps": 2914,
+    "anonMB": 983,
+    "anonThpMB": 0,
+    "wasmMemMB": 535,
+    "jsHeapsMB": 75,
+    "backingStoresMB": 407,
+    "flushes": 0,
+    "jitMB": 34,
+    "modules": 1104,
+    "compileS": 0.2,
+    "estimateMB": 2476,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 29,
+     "freed": 6892,
+     "deadMB": 11.1
+    }
+   },
+   {
+    "t": 28,
+    "label": "load-start",
+    "rssMB": 1836,
+    "vmRssMB": [
+     1836,
+     1836
+    ],
+    "readMs": 26,
+    "codeMB": 118,
+    "codeSizeMB": 398,
+    "codeThpMB": 0,
+    "codeMaps": 3240,
+    "anonMB": 1006,
+    "anonThpMB": 0,
+    "wasmMemMB": 538,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 416,
+    "flushes": 0,
+    "jitMB": 36,
+    "modules": 1153,
+    "compileS": 0.2,
+    "estimateMB": 2486,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 749,
+     "deadMB": 12.6
+    }
+   },
+   {
+    "t": 38,
+    "label": "load",
+    "rssMB": 2309,
+    "vmRssMB": [
+     2309,
+     2309
+    ],
+    "readMs": 82,
+    "codeMB": 229,
+    "codeSizeMB": 530,
+    "codeThpMB": 0,
+    "codeMaps": 5556,
+    "anonMB": 1121,
+    "anonThpMB": 0,
+    "wasmMemMB": 787,
+    "jsHeapsMB": 92,
+    "backingStoresMB": 422,
+    "flushes": 0,
+    "jitMB": 72,
+    "modules": 1674,
+    "compileS": 0.4,
+    "estimateMB": 2744,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 6076,
+     "deadMB": 23.6
+    }
+   },
+   {
+    "t": 49,
+    "label": "load",
+    "rssMB": 2464,
+    "vmRssMB": [
+     2464,
+     2464
+    ],
+    "readMs": 29,
+    "codeMB": 265,
+    "codeSizeMB": 570,
+    "codeThpMB": 0,
+    "codeMaps": 6199,
+    "anonMB": 1085,
+    "anonThpMB": 0,
+    "wasmMemMB": 943,
+    "jsHeapsMB": 107,
+    "backingStoresMB": 403,
+    "flushes": 0,
+    "jitMB": 81,
+    "modules": 1818,
+    "compileS": 0.4,
+    "estimateMB": 2791,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 1941,
+     "deadMB": 25.7
+    }
+   },
+   {
+    "t": 59,
+    "label": "load",
+    "rssMB": 2728,
+    "vmRssMB": [
+     2727,
+     2728
+    ],
+    "readMs": 37,
+    "codeMB": 295,
+    "codeSizeMB": 604,
+    "codeThpMB": 0,
+    "codeMaps": 6849,
+    "anonMB": 1120,
+    "anonThpMB": 0,
+    "wasmMemMB": 1142,
+    "jsHeapsMB": 112,
+    "backingStoresMB": 412,
+    "flushes": 0,
+    "jitMB": 91,
+    "modules": 1972,
+    "compileS": 0.5,
+    "estimateMB": 2847,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 3037,
+     "deadMB": 28.3
+    }
+   },
+   {
+    "t": 69,
+    "label": "load",
+    "rssMB": 2825,
+    "vmRssMB": [
+     2825,
+     2825
+    ],
+    "readMs": 38,
+    "codeMB": 299,
+    "codeSizeMB": 610,
+    "codeThpMB": 0,
+    "codeMaps": 7527,
+    "anonMB": 1131,
+    "anonThpMB": 0,
+    "wasmMemMB": 1223,
+    "jsHeapsMB": 113,
+    "backingStoresMB": 418,
+    "flushes": 0,
+    "jitMB": 96,
+    "modules": 2077,
+    "compileS": 0.5,
+    "estimateMB": 2878,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 3002,
+     "deadMB": 31.4
+    }
+   },
+   {
+    "t": 79,
+    "label": "load",
+    "rssMB": 2855,
+    "vmRssMB": [
+     2854,
+     2854
+    ],
+    "readMs": 39,
+    "codeMB": 319,
+    "codeSizeMB": 633,
+    "codeThpMB": 0,
+    "codeMaps": 7527,
+    "anonMB": 1139,
+    "anonThpMB": 0,
+    "wasmMemMB": 1225,
+    "jsHeapsMB": 117,
+    "backingStoresMB": 421,
+    "flushes": 0,
+    "jitMB": 100,
+    "modules": 2170,
+    "compileS": 0.6,
+    "estimateMB": 2898,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 89,
+    "label": "load",
+    "rssMB": 2878,
+    "vmRssMB": [
+     2878,
+     2878
+    ],
+    "readMs": 67,
+    "codeMB": 330,
+    "codeSizeMB": 646,
+    "codeThpMB": 0,
+    "codeMaps": 7527,
+    "anonMB": 1147,
+    "anonThpMB": 0,
+    "wasmMemMB": 1229,
+    "jsHeapsMB": 118,
+    "backingStoresMB": 423,
+    "flushes": 0,
+    "jitMB": 102,
+    "modules": 2263,
+    "compileS": 0.6,
+    "estimateMB": 2928,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 99,
+    "label": "load",
+    "rssMB": 2967,
+    "vmRssMB": [
+     2964,
+     2964
+    ],
+    "readMs": 35,
+    "codeMB": 343,
+    "codeSizeMB": 663,
+    "codeThpMB": 0,
+    "codeMaps": 8401,
+    "anonMB": 1203,
+    "anonThpMB": 0,
+    "wasmMemMB": 1250,
+    "jsHeapsMB": 123,
+    "backingStoresMB": 441,
+    "flushes": 0,
+    "jitMB": 109,
+    "modules": 2592,
+    "compileS": 0.7,
+    "estimateMB": 2982,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 3898,
+     "deadMB": 34.8
+    }
+   },
+   {
+    "t": 109,
+    "label": "load",
+    "rssMB": 3002,
+    "vmRssMB": [
+     3002,
+     3003
+    ],
+    "readMs": 46,
+    "codeMB": 353,
+    "codeSizeMB": 673,
+    "codeThpMB": 0,
+    "codeMaps": 8403,
+    "anonMB": 1209,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 124,
+    "backingStoresMB": 443,
+    "flushes": 0,
+    "jitMB": 111,
+    "modules": 2664,
+    "compileS": 0.7,
+    "estimateMB": 3007,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 119,
+    "label": "load",
+    "rssMB": 3028,
+    "vmRssMB": [
+     3028,
+     3028
+    ],
+    "readMs": 71,
+    "codeMB": 368,
+    "codeSizeMB": 689,
+    "codeThpMB": 0,
+    "codeMaps": 8403,
+    "anonMB": 1220,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 127,
+    "backingStoresMB": 445,
+    "flushes": 0,
+    "jitMB": 113,
+    "modules": 2756,
+    "compileS": 0.7,
+    "estimateMB": 3037,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 130,
+    "label": "load",
+    "rssMB": 3050,
+    "vmRssMB": [
+     3050,
+     3050
+    ],
+    "readMs": 75,
+    "codeMB": 380,
+    "codeSizeMB": 702,
+    "codeThpMB": 0,
+    "codeMaps": 8403,
+    "anonMB": 1230,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 129,
+    "backingStoresMB": 447,
+    "flushes": 0,
+    "jitMB": 115,
+    "modules": 2837,
+    "compileS": 0.7,
+    "estimateMB": 3049,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 140,
+    "label": "load",
+    "rssMB": 3028,
+    "vmRssMB": [
+     3028,
+     3028
+    ],
+    "readMs": 55,
+    "codeMB": 353,
+    "codeSizeMB": 675,
+    "codeThpMB": 0,
+    "codeMaps": 9324,
+    "anonMB": 1235,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 131,
+    "backingStoresMB": 449,
+    "flushes": 0,
+    "jitMB": 116,
+    "modules": 2912,
+    "compileS": 0.7,
+    "estimateMB": 3056,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 3671,
+     "deadMB": 38.2
+    }
+   },
+   {
+    "t": 150,
+    "label": "load",
+    "rssMB": 3046,
+    "vmRssMB": [
+     3046,
+     3046
+    ],
+    "readMs": 47,
+    "codeMB": 360,
+    "codeSizeMB": 683,
+    "codeThpMB": 0,
+    "codeMaps": 9325,
+    "anonMB": 1242,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 132,
+    "backingStoresMB": 449,
+    "flushes": 0,
+    "jitMB": 117,
+    "modules": 2979,
+    "compileS": 0.8,
+    "estimateMB": 3079,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 160,
+    "label": "load",
+    "rssMB": 3060,
+    "vmRssMB": [
+     3059,
+     3060
+    ],
+    "readMs": 72,
+    "codeMB": 368,
+    "codeSizeMB": 692,
+    "codeThpMB": 0,
+    "codeMaps": 9326,
+    "anonMB": 1251,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 136,
+    "backingStoresMB": 451,
+    "flushes": 0,
+    "jitMB": 119,
+    "modules": 3057,
+    "compileS": 0.8,
+    "estimateMB": 3089,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 170,
+    "label": "load",
+    "rssMB": 3075,
+    "vmRssMB": [
+     3075,
+     3075
+    ],
+    "readMs": 53,
+    "codeMB": 375,
+    "codeSizeMB": 700,
+    "codeThpMB": 0,
+    "codeMaps": 9326,
+    "anonMB": 1258,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 132,
+    "backingStoresMB": 452,
+    "flushes": 0,
+    "jitMB": 120,
+    "modules": 3130,
+    "compileS": 0.8,
+    "estimateMB": 3097,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 180,
+    "label": "load",
+    "rssMB": 3087,
+    "vmRssMB": [
+     3087,
+     3087
+    ],
+    "readMs": 68,
+    "codeMB": 382,
+    "codeSizeMB": 707,
+    "codeThpMB": 0,
+    "codeMaps": 9326,
+    "anonMB": 1263,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 135,
+    "backingStoresMB": 453,
+    "flushes": 0,
+    "jitMB": 121,
+    "modules": 3198,
+    "compileS": 0.8,
+    "estimateMB": 3103,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 190,
+    "label": "load",
+    "rssMB": 3095,
+    "vmRssMB": [
+     3095,
+     3095
+    ],
+    "readMs": 62,
+    "codeMB": 387,
+    "codeSizeMB": 713,
+    "codeThpMB": 0,
+    "codeMaps": 9326,
+    "anonMB": 1266,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 134,
+    "backingStoresMB": 454,
+    "flushes": 0,
+    "jitMB": 122,
+    "modules": 3268,
+    "compileS": 0.9,
+    "estimateMB": 3108,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 201,
+    "label": "load",
+    "rssMB": 3102,
+    "vmRssMB": [
+     3102,
+     3102
+    ],
+    "readMs": 46,
+    "codeMB": 391,
+    "codeSizeMB": 717,
+    "codeThpMB": 0,
+    "codeMaps": 9326,
+    "anonMB": 1269,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 135,
+    "backingStoresMB": 454,
+    "flushes": 0,
+    "jitMB": 122,
+    "modules": 3329,
+    "compileS": 0.9,
+    "estimateMB": 3112,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 211,
+    "label": "load",
+    "rssMB": 3126,
+    "vmRssMB": [
+     3126,
+     3126
+    ],
+    "readMs": 43,
+    "codeMB": 399,
+    "codeSizeMB": 727,
+    "codeThpMB": 0,
+    "codeMaps": 9327,
+    "anonMB": 1285,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 137,
+    "backingStoresMB": 456,
+    "flushes": 0,
+    "jitMB": 124,
+    "modules": 3400,
+    "compileS": 0.9,
+    "estimateMB": 3123,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 221,
+    "label": "load",
+    "rssMB": 3136,
+    "vmRssMB": [
+     3136,
+     3136
+    ],
+    "readMs": 74,
+    "codeMB": 404,
+    "codeSizeMB": 732,
+    "codeThpMB": 0,
+    "codeMaps": 9329,
+    "anonMB": 1290,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 137,
+    "backingStoresMB": 457,
+    "flushes": 0,
+    "jitMB": 125,
+    "modules": 3465,
+    "compileS": 0.9,
+    "estimateMB": 3129,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 231,
+    "label": "load",
+    "rssMB": 3146,
+    "vmRssMB": [
+     3146,
+     3146
+    ],
+    "readMs": 64,
+    "codeMB": 411,
+    "codeSizeMB": 739,
+    "codeThpMB": 0,
+    "codeMaps": 9329,
+    "anonMB": 1292,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 137,
+    "backingStoresMB": 458,
+    "flushes": 0,
+    "jitMB": 126,
+    "modules": 3535,
+    "compileS": 0.9,
+    "estimateMB": 3136,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 241,
+    "label": "load",
+    "rssMB": 3157,
+    "vmRssMB": [
+     3157,
+     3157
+    ],
+    "readMs": 47,
+    "codeMB": 418,
+    "codeSizeMB": 746,
+    "codeThpMB": 0,
+    "codeMaps": 9329,
+    "anonMB": 1297,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 138,
+    "backingStoresMB": 458,
+    "flushes": 0,
+    "jitMB": 127,
+    "modules": 3604,
+    "compileS": 0.9,
+    "estimateMB": 3141,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 251,
+    "label": "load",
+    "rssMB": 3165,
+    "vmRssMB": [
+     3165,
+     3165
+    ],
+    "readMs": 44,
+    "codeMB": 421,
+    "codeSizeMB": 749,
+    "codeThpMB": 0,
+    "codeMaps": 9329,
+    "anonMB": 1301,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 140,
+    "backingStoresMB": 459,
+    "flushes": 0,
+    "jitMB": 127,
+    "modules": 3654,
+    "compileS": 1,
+    "estimateMB": 3144,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 261,
+    "label": "load",
+    "rssMB": 3140,
+    "vmRssMB": [
+     3140,
+     3140
+    ],
+    "readMs": 63,
+    "codeMB": 387,
+    "codeSizeMB": 716,
+    "codeThpMB": 0,
+    "codeMaps": 10410,
+    "anonMB": 1308,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 141,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 128,
+    "modules": 3708,
+    "compileS": 1,
+    "estimateMB": 3149,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 4775,
+     "deadMB": 42.1
+    }
+   },
+   {
+    "t": 272,
+    "label": "load",
+    "rssMB": 3139,
+    "vmRssMB": [
+     3139,
+     3139
+    ],
+    "readMs": 64,
+    "codeMB": 389,
+    "codeSizeMB": 719,
+    "codeThpMB": 0,
+    "codeMaps": 10411,
+    "anonMB": 1307,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 141,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 128,
+    "modules": 3759,
+    "compileS": 1,
+    "estimateMB": 3153,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 282,
+    "label": "load",
+    "rssMB": 3146,
+    "vmRssMB": [
+     3146,
+     3146
+    ],
+    "readMs": 50,
+    "codeMB": 394,
+    "codeSizeMB": 723,
+    "codeThpMB": 0,
+    "codeMaps": 10412,
+    "anonMB": 1309,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 143,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3779,
+    "compileS": 1,
+    "estimateMB": 3155,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 292,
+    "label": "load",
+    "rssMB": 3147,
+    "vmRssMB": [
+     3147,
+     3147
+    ],
+    "readMs": 55,
+    "codeMB": 396,
+    "codeSizeMB": 725,
+    "codeThpMB": 0,
+    "codeMaps": 10412,
+    "anonMB": 1309,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 140,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3794,
+    "compileS": 1,
+    "estimateMB": 3156,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 302,
+    "label": "load",
+    "rssMB": 3149,
+    "vmRssMB": [
+     3149,
+     3149
+    ],
+    "readMs": 45,
+    "codeMB": 398,
+    "codeSizeMB": 727,
+    "codeThpMB": 0,
+    "codeMaps": 10413,
+    "anonMB": 1307,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 141,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3806,
+    "compileS": 1,
+    "estimateMB": 3156,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 312,
+    "label": "load",
+    "rssMB": 3150,
+    "vmRssMB": [
+     3150,
+     3150
+    ],
+    "readMs": 62,
+    "codeMB": 400,
+    "codeSizeMB": 728,
+    "codeThpMB": 0,
+    "codeMaps": 10413,
+    "anonMB": 1307,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 141,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3812,
+    "compileS": 1,
+    "estimateMB": 3156,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 322,
+    "label": "load",
+    "rssMB": 3154,
+    "vmRssMB": [
+     3154,
+     3154
+    ],
+    "readMs": 45,
+    "codeMB": 402,
+    "codeSizeMB": 730,
+    "codeThpMB": 0,
+    "codeMaps": 10415,
+    "anonMB": 1309,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 141,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3827,
+    "compileS": 1,
+    "estimateMB": 3157,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 332,
+    "label": "load",
+    "rssMB": 3158,
+    "vmRssMB": [
+     3158,
+     3158
+    ],
+    "readMs": 50,
+    "codeMB": 403,
+    "codeSizeMB": 732,
+    "codeThpMB": 0,
+    "codeMaps": 10415,
+    "anonMB": 1312,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 142,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3832,
+    "compileS": 1,
+    "estimateMB": 3157,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 343,
+    "label": "load",
+    "rssMB": 3159,
+    "vmRssMB": [
+     3159,
+     3159
+    ],
+    "readMs": 74,
+    "codeMB": 404,
+    "codeSizeMB": 733,
+    "codeThpMB": 0,
+    "codeMaps": 10416,
+    "anonMB": 1311,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 142,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3842,
+    "compileS": 1,
+    "estimateMB": 3157,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 353,
+    "label": "load",
+    "rssMB": 3160,
+    "vmRssMB": [
+     3160,
+     3160
+    ],
+    "readMs": 72,
+    "codeMB": 405,
+    "codeSizeMB": 734,
+    "codeThpMB": 0,
+    "codeMaps": 10416,
+    "anonMB": 1311,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 143,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3853,
+    "compileS": 1,
+    "estimateMB": 3157,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 363,
+    "label": "load",
+    "rssMB": 3162,
+    "vmRssMB": [
+     3162,
+     3162
+    ],
+    "readMs": 43,
+    "codeMB": 406,
+    "codeSizeMB": 735,
+    "codeThpMB": 0,
+    "codeMaps": 10416,
+    "anonMB": 1312,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 143,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3860,
+    "compileS": 1,
+    "estimateMB": 3158,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 373,
+    "label": "load",
+    "rssMB": 3167,
+    "vmRssMB": [
+     3167,
+     3167
+    ],
+    "readMs": 41,
+    "codeMB": 408,
+    "codeSizeMB": 737,
+    "codeThpMB": 0,
+    "codeMaps": 10417,
+    "anonMB": 1315,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3872,
+    "compileS": 1,
+    "estimateMB": 3158,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 383,
+    "label": "load",
+    "rssMB": 3170,
+    "vmRssMB": [
+     3170,
+     3170
+    ],
+    "readMs": 75,
+    "codeMB": 409,
+    "codeSizeMB": 738,
+    "codeThpMB": 0,
+    "codeMaps": 10417,
+    "anonMB": 1317,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3884,
+    "compileS": 1,
+    "estimateMB": 3158,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 393,
+    "label": "load",
+    "rssMB": 3171,
+    "vmRssMB": [
+     3171,
+     3172
+    ],
+    "readMs": 64,
+    "codeMB": 410,
+    "codeSizeMB": 739,
+    "codeThpMB": 0,
+    "codeMaps": 10418,
+    "anonMB": 1318,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 146,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3904,
+    "compileS": 1,
+    "estimateMB": 3159,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 404,
+    "label": "load",
+    "rssMB": 3171,
+    "vmRssMB": [
+     3171,
+     3172
+    ],
+    "readMs": 55,
+    "codeMB": 411,
+    "codeSizeMB": 740,
+    "codeThpMB": 0,
+    "codeMaps": 10419,
+    "anonMB": 1316,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 147,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3924,
+    "compileS": 1,
+    "estimateMB": 3160,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 414,
+    "label": "load",
+    "rssMB": 3172,
+    "vmRssMB": [
+     3173,
+     3172
+    ],
+    "readMs": 46,
+    "codeMB": 412,
+    "codeSizeMB": 741,
+    "codeThpMB": 0,
+    "codeMaps": 10419,
+    "anonMB": 1317,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 146,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3942,
+    "compileS": 1,
+    "estimateMB": 3160,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 424,
+    "label": "load",
+    "rssMB": 3179,
+    "vmRssMB": [
+     3179,
+     3179
+    ],
+    "readMs": 66,
+    "codeMB": 413,
+    "codeSizeMB": 742,
+    "codeThpMB": 0,
+    "codeMaps": 10420,
+    "anonMB": 1319,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 144,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3965,
+    "compileS": 1,
+    "estimateMB": 3161,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 434,
+    "label": "load",
+    "rssMB": 3179,
+    "vmRssMB": [
+     3179,
+     3179
+    ],
+    "readMs": 47,
+    "codeMB": 414,
+    "codeSizeMB": 743,
+    "codeThpMB": 0,
+    "codeMaps": 10420,
+    "anonMB": 1321,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 144,
+    "backingStoresMB": 460,
+    "flushes": 0,
+    "jitMB": 129,
+    "modules": 3981,
+    "compileS": 1.1,
+    "estimateMB": 3162,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 444,
+    "label": "load",
+    "rssMB": 3179,
+    "vmRssMB": [
+     3179,
+     3180
+    ],
+    "readMs": 72,
+    "codeMB": 415,
+    "codeSizeMB": 744,
+    "codeThpMB": 0,
+    "codeMaps": 10420,
+    "anonMB": 1320,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 130,
+    "modules": 4012,
+    "compileS": 1.1,
+    "estimateMB": 3163,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 454,
+    "label": "load",
+    "rssMB": 3184,
+    "vmRssMB": [
+     3184,
+     3184
+    ],
+    "readMs": 58,
+    "codeMB": 417,
+    "codeSizeMB": 746,
+    "codeThpMB": 0,
+    "codeMaps": 10421,
+    "anonMB": 1323,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 146,
+    "backingStoresMB": 461,
+    "flushes": 0,
+    "jitMB": 130,
+    "modules": 4040,
+    "compileS": 1.1,
+    "estimateMB": 3165,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 465,
+    "label": "load",
+    "rssMB": 3186,
+    "vmRssMB": [
+     3186,
+     3186
+    ],
+    "readMs": 48,
+    "codeMB": 418,
+    "codeSizeMB": 747,
+    "codeThpMB": 0,
+    "codeMaps": 10421,
+    "anonMB": 1324,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 144,
+    "backingStoresMB": 462,
+    "flushes": 0,
+    "jitMB": 130,
+    "modules": 4070,
+    "compileS": 1.1,
+    "estimateMB": 3166,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 475,
+    "label": "load",
+    "rssMB": 3189,
+    "vmRssMB": [
+     3188,
+     3189
+    ],
+    "readMs": 67,
+    "codeMB": 419,
+    "codeSizeMB": 748,
+    "codeThpMB": 0,
+    "codeMaps": 10421,
+    "anonMB": 1325,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 145,
+    "backingStoresMB": 462,
+    "flushes": 0,
+    "jitMB": 130,
+    "modules": 4098,
+    "compileS": 1.1,
+    "estimateMB": 3167,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 485,
+    "label": "load",
+    "rssMB": 3194,
+    "vmRssMB": [
+     3194,
+     3194
+    ],
+    "readMs": 44,
+    "codeMB": 421,
+    "codeSizeMB": 750,
+    "codeThpMB": 0,
+    "codeMaps": 10422,
+    "anonMB": 1329,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 146,
+    "backingStoresMB": 462,
+    "flushes": 0,
+    "jitMB": 130,
+    "modules": 4133,
+    "compileS": 1.1,
+    "estimateMB": 3169,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   }
+  ]
+ },
+ "b16-1": {
+  "chromium": "155.0.8059.84",
+  "query": "machine=debian&ncpus=4&view=terminal&hooks&disk2=%2Ftarget%2Fimages%2Fstress%2Fgoroot.ext4&jitmb=16",
+  "every": 10000,
+  "samples": 47,
+  "rssAfter120s": {
+   "medianMB": 2874,
+   "p90MB": 3268,
+   "maxMB": 3305
+  },
+  "vmRssAfter120s": {
+   "medianMB": 2877,
+   "p90MB": 3254,
+   "maxMB": 3308
+  },
+  "codeAfter120s": {
+   "medianMB": 311,
+   "p90MB": 495,
+   "maxMB": 520
+  },
+  "codeJump": {
+   "mb": 208,
+   "t": 333,
+   "s": 10.1
+  },
+  "series": [
+   {
+    "t": 25,
+    "label": "login",
+    "rssMB": 1804,
+    "vmRssMB": [
+     1804,
+     1805
+    ],
+    "readMs": 75,
+    "codeMB": 122,
+    "codeSizeMB": 402,
+    "codeThpMB": 0,
+    "codeMaps": 3344,
+    "anonMB": 960,
+    "anonThpMB": 0,
+    "wasmMemMB": 549,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 405,
+    "flushes": 1,
+    "jitMB": 36,
+    "modules": 1295,
+    "compileS": 0.2,
+    "estimateMB": 2463,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 30,
+     "freed": 8605,
+     "deadMB": 12.1
+    }
+   },
+   {
+    "t": 29,
+    "label": "load-start",
+    "rssMB": 1873,
+    "vmRssMB": [
+     1873,
+     1872
+    ],
+    "readMs": 35,
+    "codeMB": 131,
+    "codeSizeMB": 413,
+    "codeThpMB": 0,
+    "codeMaps": 3792,
+    "anonMB": 1000,
+    "anonThpMB": 0,
+    "wasmMemMB": 568,
+    "jsHeapsMB": 55,
+    "backingStoresMB": 424,
+    "flushes": 2,
+    "jitMB": 39,
+    "modules": 1414,
+    "compileS": 0.2,
+    "estimateMB": 2402,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 1390,
+     "deadMB": 13.9
+    }
+   },
+   {
+    "t": 39,
+    "label": "load",
+    "rssMB": 2409,
+    "vmRssMB": [
+     2409,
+     2410
+    ],
+    "readMs": 41,
+    "codeMB": 324,
+    "codeSizeMB": 640,
+    "codeThpMB": 0,
+    "codeMaps": 7134,
+    "anonMB": 1121,
+    "anonThpMB": 0,
+    "wasmMemMB": 794,
+    "jsHeapsMB": 57,
+    "backingStoresMB": 442,
+    "flushes": 5,
+    "jitMB": 89,
+    "modules": 2332,
+    "compileS": 0.5,
+    "estimateMB": 2401,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 8614,
+     "deadMB": 28.4
+    }
+   },
+   {
+    "t": 49,
+    "label": "load",
+    "rssMB": 2552,
+    "vmRssMB": [
+     2551,
+     2554
+    ],
+    "readMs": 76,
+    "codeMB": 371,
+    "codeSizeMB": 701,
+    "codeThpMB": 0,
+    "codeMaps": 9384,
+    "anonMB": 1137,
+    "anonThpMB": 0,
+    "wasmMemMB": 872,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 432,
+    "flushes": 6,
+    "jitMB": 108,
+    "modules": 2853,
+    "compileS": 0.6,
+    "estimateMB": 2420,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 6773,
+     "deadMB": 37
+    }
+   },
+   {
+    "t": 59,
+    "label": "load",
+    "rssMB": 2471,
+    "vmRssMB": [
+     2492,
+     2442
+    ],
+    "readMs": 50,
+    "codeMB": 192,
+    "codeSizeMB": 484,
+    "codeThpMB": 0,
+    "codeMaps": 5520,
+    "anonMB": 1082,
+    "anonThpMB": 0,
+    "wasmMemMB": 1025,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 329,
+    "flushes": 8,
+    "jitMB": 152,
+    "modules": 3558,
+    "compileS": 0.8,
+    "estimateMB": 2495,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 12147,
+     "deadMB": 35.1
+    }
+   },
+   {
+    "t": 69,
+    "label": "load",
+    "rssMB": 2632,
+    "vmRssMB": [
+     2634,
+     2635
+    ],
+    "readMs": 31,
+    "codeMB": 261,
+    "codeSizeMB": 562,
+    "codeThpMB": 0,
+    "codeMaps": 5833,
+    "anonMB": 1049,
+    "anonThpMB": 0,
+    "wasmMemMB": 1150,
+    "jsHeapsMB": 63,
+    "backingStoresMB": 387,
+    "flushes": 12,
+    "jitMB": 211,
+    "modules": 4554,
+    "compileS": 1.2,
+    "estimateMB": 2464,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 11904,
+     "deadMB": 24
+    }
+   },
+   {
+    "t": 79,
+    "label": "load",
+    "rssMB": 3089,
+    "vmRssMB": [
+     3087,
+     3091
+    ],
+    "readMs": 104,
+    "codeMB": 457,
+    "codeSizeMB": 793,
+    "codeThpMB": 0,
+    "codeMaps": 10566,
+    "anonMB": 1235,
+    "anonThpMB": 0,
+    "wasmMemMB": 1225,
+    "jsHeapsMB": 77,
+    "backingStoresMB": 442,
+    "flushes": 15,
+    "jitMB": 269,
+    "modules": 5575,
+    "compileS": 1.5,
+    "estimateMB": 2501,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 13926,
+     "deadMB": 43.8
+    }
+   },
+   {
+    "t": 90,
+    "label": "load",
+    "rssMB": 2557,
+    "vmRssMB": [
+     2558,
+     2556
+    ],
+    "readMs": 38,
+    "codeMB": 146,
+    "codeSizeMB": 426,
+    "codeThpMB": 0,
+    "codeMaps": 3188,
+    "anonMB": 997,
+    "anonThpMB": 0,
+    "wasmMemMB": 1242,
+    "jsHeapsMB": 63,
+    "backingStoresMB": 353,
+    "flushes": 19,
+    "jitMB": 327,
+    "modules": 6495,
+    "compileS": 1.9,
+    "estimateMB": 2488,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 15959,
+     "deadMB": 13.7
+    }
+   },
+   {
+    "t": 100,
+    "label": "load",
+    "rssMB": 2585,
+    "vmRssMB": [
+     2587,
+     2586
+    ],
+    "readMs": 41,
+    "codeMB": 176,
+    "codeSizeMB": 463,
+    "codeThpMB": 0,
+    "codeMaps": 3997,
+    "anonMB": 983,
+    "anonThpMB": 0,
+    "wasmMemMB": 1255,
+    "jsHeapsMB": 75,
+    "backingStoresMB": 362,
+    "flushes": 22,
+    "jitMB": 386,
+    "modules": 7428,
+    "compileS": 2.2,
+    "estimateMB": 2545,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 13,
+     "freed": 13626,
+     "deadMB": 16.6
+    }
+   },
+   {
+    "t": 110,
+    "label": "load",
+    "rssMB": 2962,
+    "vmRssMB": [
+     2963,
+     2971
+    ],
+    "readMs": 53,
+    "codeMB": 377,
+    "codeSizeMB": 699,
+    "codeThpMB": 0,
+    "codeMaps": 8209,
+    "anonMB": 1156,
+    "anonThpMB": 0,
+    "wasmMemMB": 1257,
+    "jsHeapsMB": 62,
+    "backingStoresMB": 417,
+    "flushes": 25,
+    "jitMB": 440,
+    "modules": 8322,
+    "compileS": 2.5,
+    "estimateMB": 2567,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 12148,
+     "deadMB": 34.3
+    }
+   },
+   {
+    "t": 120,
+    "label": "load",
+    "rssMB": 2477,
+    "vmRssMB": [
+     2497,
+     2462
+    ],
+    "readMs": 29,
+    "codeMB": 55,
+    "codeSizeMB": 321,
+    "codeThpMB": 0,
+    "codeMaps": 1257,
+    "anonMB": 992,
+    "anonThpMB": 0,
+    "wasmMemMB": 1259,
+    "jsHeapsMB": 76,
+    "backingStoresMB": 329,
+    "flushes": 29,
+    "jitMB": 505,
+    "modules": 9419,
+    "compileS": 2.9,
+    "estimateMB": 2556,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 16456,
+     "deadMB": 36.2
+    }
+   },
+   {
+    "t": 130,
+    "label": "load",
+    "rssMB": 2682,
+    "vmRssMB": [
+     2681,
+     2682
+    ],
+    "readMs": 31,
+    "codeMB": 201,
+    "codeSizeMB": 491,
+    "codeThpMB": 0,
+    "codeMaps": 4433,
+    "anonMB": 1050,
+    "anonThpMB": 0,
+    "wasmMemMB": 1259,
+    "jsHeapsMB": 63,
+    "backingStoresMB": 369,
+    "flushes": 32,
+    "jitMB": 546,
+    "modules": 10263,
+    "compileS": 3.1,
+    "estimateMB": 2522,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 9556,
+     "deadMB": 17.7
+    }
+   },
+   {
+    "t": 140,
+    "label": "load",
+    "rssMB": 2874,
+    "vmRssMB": [
+     2867,
+     2875
+    ],
+    "readMs": 130,
+    "codeMB": 311,
+    "codeSizeMB": 620,
+    "codeThpMB": 0,
+    "codeMaps": 6856,
+    "anonMB": 1132,
+    "anonThpMB": 0,
+    "wasmMemMB": 1259,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 399,
+    "flushes": 34,
+    "jitMB": 576,
+    "modules": 10969,
+    "compileS": 3.3,
+    "estimateMB": 2493,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 6439,
+     "deadMB": 27.4
+    }
+   },
+   {
+    "t": 150,
+    "label": "load",
+    "rssMB": 3171,
+    "vmRssMB": [
+     3172,
+     3171
+    ],
+    "readMs": 115,
+    "codeMB": 464,
+    "codeSizeMB": 798,
+    "codeThpMB": 0,
+    "codeMaps": 10446,
+    "anonMB": 1271,
+    "anonThpMB": 0,
+    "wasmMemMB": 1262,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 454,
+    "flushes": 36,
+    "jitMB": 620,
+    "modules": 11901,
+    "compileS": 3.5,
+    "estimateMB": 2574,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 10721,
+     "deadMB": 41.1
+    }
+   },
+   {
+    "t": 161,
+    "label": "load",
+    "rssMB": 2461,
+    "vmRssMB": [
+     2461,
+     2461
+    ],
+    "readMs": 21,
+    "codeMB": 48,
+    "codeSizeMB": 311,
+    "codeThpMB": 0,
+    "codeMaps": 1394,
+    "anonMB": 979,
+    "anonThpMB": 0,
+    "wasmMemMB": 1263,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 343,
+    "flushes": 38,
+    "jitMB": 654,
+    "modules": 12631,
+    "compileS": 3.7,
+    "estimateMB": 2555,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11479,
+     "deadMB": 4.7
+    }
+   },
+   {
+    "t": 171,
+    "label": "load",
+    "rssMB": 2605,
+    "vmRssMB": [
+     2606,
+     2606
+    ],
+    "readMs": 46,
+    "codeMB": 156,
+    "codeSizeMB": 438,
+    "codeThpMB": 0,
+    "codeMaps": 4267,
+    "anonMB": 1014,
+    "anonThpMB": 0,
+    "wasmMemMB": 1263,
+    "jsHeapsMB": 63,
+    "backingStoresMB": 375,
+    "flushes": 40,
+    "jitMB": 686,
+    "modules": 13086,
+    "compileS": 3.9,
+    "estimateMB": 2557,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 9491,
+     "deadMB": 16.4
+    }
+   },
+   {
+    "t": 181,
+    "label": "load",
+    "rssMB": 2924,
+    "vmRssMB": [
+     2925,
+     2926
+    ],
+    "readMs": 84,
+    "codeMB": 339,
+    "codeSizeMB": 652,
+    "codeThpMB": 0,
+    "codeMaps": 7581,
+    "anonMB": 1150,
+    "anonThpMB": 0,
+    "wasmMemMB": 1264,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 422,
+    "flushes": 43,
+    "jitMB": 738,
+    "modules": 14064,
+    "compileS": 4.2,
+    "estimateMB": 2567,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 9403,
+     "deadMB": 29.5
+    }
+   },
+   {
+    "t": 191,
+    "label": "load",
+    "rssMB": 3268,
+    "vmRssMB": [
+     3267,
+     3269
+    ],
+    "readMs": 120,
+    "codeMB": 498,
+    "codeSizeMB": 842,
+    "codeThpMB": 0,
+    "codeMaps": 13492,
+    "anonMB": 1334,
+    "anonThpMB": 0,
+    "wasmMemMB": 1264,
+    "jsHeapsMB": 50,
+    "backingStoresMB": 476,
+    "flushes": 46,
+    "jitMB": 793,
+    "modules": 15021,
+    "compileS": 4.6,
+    "estimateMB": 2603,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 16989,
+     "deadMB": 53.6
+    }
+   },
+   {
+    "t": 201,
+    "label": "load",
+    "rssMB": 2729,
+    "vmRssMB": [
+     2728,
+     2729
+    ],
+    "readMs": 32,
+    "codeMB": 208,
+    "codeSizeMB": 499,
+    "codeThpMB": 0,
+    "codeMaps": 4534,
+    "anonMB": 1084,
+    "anonThpMB": 0,
+    "wasmMemMB": 1265,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 389,
+    "flushes": 50,
+    "jitMB": 850,
+    "modules": 16063,
+    "compileS": 4.9,
+    "estimateMB": 2537,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 13130,
+     "deadMB": 18.6
+    }
+   },
+   {
+    "t": 211,
+    "label": "load",
+    "rssMB": 3061,
+    "vmRssMB": [
+     3061,
+     3064
+    ],
+    "readMs": 116,
+    "codeMB": 393,
+    "codeSizeMB": 719,
+    "codeThpMB": 0,
+    "codeMaps": 9735,
+    "anonMB": 1231,
+    "anonThpMB": 0,
+    "wasmMemMB": 1265,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 445,
+    "flushes": 53,
+    "jitMB": 908,
+    "modules": 17045,
+    "compileS": 5.3,
+    "estimateMB": 2562,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 14338,
+     "deadMB": 40.5
+    }
+   },
+   {
+    "t": 222,
+    "label": "load",
+    "rssMB": 2545,
+    "vmRssMB": [
+     2545,
+     2544
+    ],
+    "readMs": 41,
+    "codeMB": 87,
+    "codeSizeMB": 357,
+    "codeThpMB": 0,
+    "codeMaps": 2198,
+    "anonMB": 1021,
+    "anonThpMB": 0,
+    "wasmMemMB": 1265,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 359,
+    "flushes": 57,
+    "jitMB": 965,
+    "modules": 17955,
+    "compileS": 5.6,
+    "estimateMB": 2514,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 15023,
+     "deadMB": 9.1
+    }
+   },
+   {
+    "t": 232,
+    "label": "load",
+    "rssMB": 2872,
+    "vmRssMB": [
+     2874,
+     2877
+    ],
+    "readMs": 106,
+    "codeMB": 284,
+    "codeSizeMB": 586,
+    "codeThpMB": 0,
+    "codeMaps": 5975,
+    "anonMB": 1150,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 411,
+    "flushes": 60,
+    "jitMB": 1025,
+    "modules": 18954,
+    "compileS": 6,
+    "estimateMB": 2560,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 11518,
+     "deadMB": 25
+    }
+   },
+   {
+    "t": 242,
+    "label": "load",
+    "rssMB": 3150,
+    "vmRssMB": [
+     3150,
+     3150
+    ],
+    "readMs": 48,
+    "codeMB": 444,
+    "codeSizeMB": 773,
+    "codeThpMB": 0,
+    "codeMaps": 9391,
+    "anonMB": 1267,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 62,
+    "backingStoresMB": 454,
+    "flushes": 63,
+    "jitMB": 1070,
+    "modules": 19750,
+    "compileS": 6.2,
+    "estimateMB": 2538,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 10244,
+     "deadMB": 39.5
+    }
+   },
+   {
+    "t": 252,
+    "label": "load",
+    "rssMB": 2444,
+    "vmRssMB": [
+     2444,
+     2444
+    ],
+    "readMs": 21,
+    "codeMB": 35,
+    "codeSizeMB": 296,
+    "codeThpMB": 0,
+    "codeMaps": 932,
+    "anonMB": 971,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 344,
+    "flushes": 65,
+    "jitMB": 1105,
+    "modules": 20536,
+    "compileS": 6.4,
+    "estimateMB": 2548,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 11744,
+     "deadMB": 2.9
+    }
+   },
+   {
+    "t": 262,
+    "label": "load",
+    "rssMB": 2671,
+    "vmRssMB": [
+     2671,
+     2672
+    ],
+    "readMs": 50,
+    "codeMB": 171,
+    "codeSizeMB": 456,
+    "codeThpMB": 0,
+    "codeMaps": 4270,
+    "anonMB": 1059,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 84,
+    "backingStoresMB": 382,
+    "flushes": 67,
+    "jitMB": 1144,
+    "modules": 21303,
+    "compileS": 6.6,
+    "estimateMB": 2589,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 10021,
+     "deadMB": 16.3
+    }
+   },
+   {
+    "t": 272,
+    "label": "load",
+    "rssMB": 2970,
+    "vmRssMB": [
+     2970,
+     2969
+    ],
+    "readMs": 51,
+    "codeMB": 338,
+    "codeSizeMB": 652,
+    "codeThpMB": 0,
+    "codeMaps": 7924,
+    "anonMB": 1192,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 77,
+    "backingStoresMB": 428,
+    "flushes": 70,
+    "jitMB": 1192,
+    "modules": 22239,
+    "compileS": 6.9,
+    "estimateMB": 2563,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 10175,
+     "deadMB": 31.3
+    }
+   },
+   {
+    "t": 282,
+    "label": "load",
+    "rssMB": 3062,
+    "vmRssMB": [
+     3061,
+     3066
+    ],
+    "readMs": 64,
+    "codeMB": 403,
+    "codeSizeMB": 730,
+    "codeThpMB": 0,
+    "codeMaps": 10473,
+    "anonMB": 1220,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 60,
+    "backingStoresMB": 451,
+    "flushes": 71,
+    "jitMB": 1214,
+    "modules": 22650,
+    "compileS": 7,
+    "estimateMB": 2601,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 8068,
+     "deadMB": 41.5
+    }
+   },
+   {
+    "t": 292,
+    "label": "load",
+    "rssMB": 2447,
+    "vmRssMB": [
+     2446,
+     2444
+    ],
+    "readMs": 44,
+    "codeMB": 46,
+    "codeSizeMB": 309,
+    "codeThpMB": 0,
+    "codeMaps": 1062,
+    "anonMB": 961,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 70,
+    "backingStoresMB": 349,
+    "flushes": 74,
+    "jitMB": 1255,
+    "modules": 23444,
+    "compileS": 7.3,
+    "estimateMB": 2533,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 10600,
+     "deadMB": 4.4
+    }
+   },
+   {
+    "t": 302,
+    "label": "load",
+    "rssMB": 2793,
+    "vmRssMB": [
+     2792,
+     2795
+    ],
+    "readMs": 128,
+    "codeMB": 246,
+    "codeSizeMB": 543,
+    "codeThpMB": 0,
+    "codeMaps": 5736,
+    "anonMB": 1107,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 56,
+    "backingStoresMB": 406,
+    "flushes": 78,
+    "jitMB": 1318,
+    "modules": 24513,
+    "compileS": 7.6,
+    "estimateMB": 2509,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 13023,
+     "deadMB": 23.6
+    }
+   },
+   {
+    "t": 313,
+    "label": "load",
+    "rssMB": 3165,
+    "vmRssMB": [
+     3165,
+     3165
+    ],
+    "readMs": 66,
+    "codeMB": 443,
+    "codeSizeMB": 775,
+    "codeThpMB": 0,
+    "codeMaps": 10453,
+    "anonMB": 1281,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 70,
+    "backingStoresMB": 461,
+    "flushes": 81,
+    "jitMB": 1375,
+    "modules": 25567,
+    "compileS": 8,
+    "estimateMB": 2548,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 13010,
+     "deadMB": 42.9
+    }
+   },
+   {
+    "t": 323,
+    "label": "load",
+    "rssMB": 2684,
+    "vmRssMB": [
+     2684,
+     2686
+    ],
+    "readMs": 34,
+    "codeMB": 167,
+    "codeSizeMB": 454,
+    "codeThpMB": 0,
+    "codeMaps": 4321,
+    "anonMB": 1077,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 1396,
+    "flushes": 84,
+    "jitMB": 1432,
+    "modules": 26396,
+    "compileS": 8.3,
+    "estimateMB": 2585,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 16225,
+     "deadMB": 17.9
+    }
+   },
+   {
+    "t": 333,
+    "label": "load",
+    "rssMB": 3038,
+    "vmRssMB": [
+     3037,
+     3040
+    ],
+    "readMs": 65,
+    "codeMB": 375,
+    "codeSizeMB": 698,
+    "codeThpMB": 0,
+    "codeMaps": 9254,
+    "anonMB": 1222,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 431,
+    "flushes": 88,
+    "jitMB": 1492,
+    "modules": 27429,
+    "compileS": 8.7,
+    "estimateMB": 2533,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 13981,
+     "deadMB": 38.6
+    }
+   },
+   {
+    "t": 343,
+    "label": "load",
+    "rssMB": 3265,
+    "vmRssMB": [
+     3283,
+     3254
+    ],
+    "readMs": 54,
+    "codeMB": 489,
+    "codeSizeMB": 824,
+    "codeThpMB": 0,
+    "codeMaps": 9540,
+    "anonMB": 1334,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 82,
+    "backingStoresMB": 483,
+    "flushes": 92,
+    "jitMB": 1552,
+    "modules": 28370,
+    "compileS": 9,
+    "estimateMB": 2491,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 9315,
+     "deadMB": 55.6
+    }
+   },
+   {
+    "t": 354,
+    "label": "load",
+    "rssMB": 2830,
+    "vmRssMB": [
+     2828,
+     2826
+    ],
+    "readMs": 43,
+    "codeMB": 249,
+    "codeSizeMB": 552,
+    "codeThpMB": 0,
+    "codeMaps": 6423,
+    "anonMB": 1139,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 397,
+    "flushes": 95,
+    "jitMB": 1610,
+    "modules": 29380,
+    "compileS": 9.4,
+    "estimateMB": 2533,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 19025,
+     "deadMB": 26.2
+    }
+   },
+   {
+    "t": 364,
+    "label": "load",
+    "rssMB": 3064,
+    "vmRssMB": [
+     3064,
+     3065
+    ],
+    "readMs": 76,
+    "codeMB": 378,
+    "codeSizeMB": 706,
+    "codeThpMB": 0,
+    "codeMaps": 9870,
+    "anonMB": 1244,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 434,
+    "flushes": 97,
+    "jitMB": 1649,
+    "modules": 30200,
+    "compileS": 9.6,
+    "estimateMB": 2581,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 10104,
+     "deadMB": 40.1
+    }
+   },
+   {
+    "t": 374,
+    "label": "load",
+    "rssMB": 3305,
+    "vmRssMB": [
+     3306,
+     3308
+    ],
+    "readMs": 58,
+    "codeMB": 520,
+    "codeSizeMB": 867,
+    "codeThpMB": 0,
+    "codeMaps": 11559,
+    "anonMB": 1343,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 466,
+    "flushes": 99,
+    "jitMB": 1682,
+    "modules": 30809,
+    "compileS": 9.7,
+    "estimateMB": 2560,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 4567,
+     "deadMB": 46.6
+    }
+   },
+   {
+    "t": 384,
+    "label": "load",
+    "rssMB": 2695,
+    "vmRssMB": [
+     2698,
+     2696
+    ],
+    "readMs": 32,
+    "codeMB": 168,
+    "codeSizeMB": 454,
+    "codeThpMB": 0,
+    "codeMaps": 4034,
+    "anonMB": 1085,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 372,
+    "flushes": 102,
+    "jitMB": 1730,
+    "modules": 31826,
+    "compileS": 10,
+    "estimateMB": 2550,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 15620,
+     "deadMB": 15.9
+    }
+   },
+   {
+    "t": 394,
+    "label": "load",
+    "rssMB": 2742,
+    "vmRssMB": [
+     2742,
+     2742
+    ],
+    "readMs": 76,
+    "codeMB": 238,
+    "codeSizeMB": 534,
+    "codeThpMB": 0,
+    "codeMaps": 5482,
+    "anonMB": 1061,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 390,
+    "flushes": 103,
+    "jitMB": 1751,
+    "modules": 32378,
+    "compileS": 10.2,
+    "estimateMB": 2585,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 4338,
+     "deadMB": 21.6
+    }
+   },
+   {
+    "t": 404,
+    "label": "load",
+    "rssMB": 2981,
+    "vmRssMB": [
+     2982,
+     2979
+    ],
+    "readMs": 47,
+    "codeMB": 345,
+    "codeSizeMB": 663,
+    "codeThpMB": 0,
+    "codeMaps": 9459,
+    "anonMB": 1193,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 61,
+    "backingStoresMB": 427,
+    "flushes": 106,
+    "jitMB": 1790,
+    "modules": 32978,
+    "compileS": 10.4,
+    "estimateMB": 2524,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 12216,
+     "deadMB": 37
+    }
+   },
+   {
+    "t": 414,
+    "label": "load",
+    "rssMB": 3278,
+    "vmRssMB": [
+     3326,
+     3250
+    ],
+    "readMs": 117,
+    "codeMB": 498,
+    "codeSizeMB": 836,
+    "codeThpMB": 0,
+    "codeMaps": 10619,
+    "anonMB": 1337,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 482,
+    "flushes": 109,
+    "jitMB": 1848,
+    "modules": 34000,
+    "compileS": 10.7,
+    "estimateMB": 2559,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 9747,
+     "deadMB": 50.8
+    }
+   },
+   {
+    "t": 425,
+    "label": "load",
+    "rssMB": 2806,
+    "vmRssMB": [
+     2805,
+     2805
+    ],
+    "readMs": 40,
+    "codeMB": 241,
+    "codeSizeMB": 537,
+    "codeThpMB": 0,
+    "codeMaps": 5651,
+    "anonMB": 1122,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 60,
+    "backingStoresMB": 396,
+    "flushes": 112,
+    "jitMB": 1903,
+    "modules": 34976,
+    "compileS": 11.1,
+    "estimateMB": 2582,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 18030,
+     "deadMB": 23
+    }
+   },
+   {
+    "t": 435,
+    "label": "load",
+    "rssMB": 3172,
+    "vmRssMB": [
+     3176,
+     3172
+    ],
+    "readMs": 100,
+    "codeMB": 443,
+    "codeSizeMB": 774,
+    "codeThpMB": 0,
+    "codeMaps": 10246,
+    "anonMB": 1286,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 453,
+    "flushes": 116,
+    "jitMB": 1966,
+    "modules": 36015,
+    "compileS": 11.4,
+    "estimateMB": 2558,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 13146,
+     "deadMB": 41.8
+    }
+   },
+   {
+    "t": 445,
+    "label": "load",
+    "rssMB": 2606,
+    "vmRssMB": [
+     2606,
+     2605
+    ],
+    "readMs": 32,
+    "codeMB": 123,
+    "codeSizeMB": 398,
+    "codeThpMB": 0,
+    "codeMaps": 2703,
+    "anonMB": 1040,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 53,
+    "backingStoresMB": 365,
+    "flushes": 119,
+    "jitMB": 2023,
+    "modules": 36900,
+    "compileS": 11.8,
+    "estimateMB": 2581,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 11927,
+     "deadMB": 11.6
+    }
+   },
+   {
+    "t": 456,
+    "label": "load",
+    "rssMB": 2949,
+    "vmRssMB": [
+     2970,
+     2946
+    ],
+    "readMs": 53,
+    "codeMB": 319,
+    "codeSizeMB": 628,
+    "codeThpMB": 0,
+    "codeMaps": 7530,
+    "anonMB": 1186,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 70,
+    "backingStoresMB": 421,
+    "flushes": 123,
+    "jitMB": 2081,
+    "modules": 37914,
+    "compileS": 12.1,
+    "estimateMB": 2535,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 11757,
+     "deadMB": 28.7
+    }
+   },
+   {
+    "t": 466,
+    "label": "load",
+    "rssMB": 3290,
+    "vmRssMB": [
+     3286,
+     3293
+    ],
+    "readMs": 113,
+    "codeMB": 495,
+    "codeSizeMB": 838,
+    "codeThpMB": 0,
+    "codeMaps": 12348,
+    "anonMB": 1351,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 473,
+    "flushes": 126,
+    "jitMB": 2135,
+    "modules": 38832,
+    "compileS": 12.4,
+    "estimateMB": 2573,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 16044,
+     "deadMB": 51.8
+    }
+   },
+   {
+    "t": 476,
+    "label": "load",
+    "rssMB": 2640,
+    "vmRssMB": [
+     2638,
+     2645
+    ],
+    "readMs": 29,
+    "codeMB": 140,
+    "codeSizeMB": 420,
+    "codeThpMB": 0,
+    "codeMaps": 3058,
+    "anonMB": 1056,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 62,
+    "backingStoresMB": 369,
+    "flushes": 128,
+    "jitMB": 2174,
+    "modules": 39597,
+    "compileS": 12.6,
+    "estimateMB": 2602,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 10676,
+     "deadMB": 12.3
+    }
+   },
+   {
+    "t": 486,
+    "label": "load",
+    "rssMB": 2817,
+    "vmRssMB": [
+     2817,
+     2819
+    ],
+    "readMs": 41,
+    "codeMB": 246,
+    "codeSizeMB": 545,
+    "codeThpMB": 0,
+    "codeMaps": 5540,
+    "anonMB": 1127,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 57,
+    "backingStoresMB": 398,
+    "flushes": 130,
+    "jitMB": 2205,
+    "modules": 40366,
+    "compileS": 12.8,
+    "estimateMB": 2577,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 7012,
+     "deadMB": 22
+    }
+   }
+  ]
+ },
+ "b16-2": {
+  "chromium": "155.0.8059.84",
+  "query": "machine=debian&ncpus=4&view=terminal&hooks&disk2=%2Ftarget%2Fimages%2Fstress%2Fgoroot.ext4&jitmb=16",
+  "every": 10000,
+  "samples": 47,
+  "rssAfter120s": {
+   "medianMB": 2930,
+   "p90MB": 3252,
+   "maxMB": 3375
+  },
+  "vmRssAfter120s": {
+   "medianMB": 2929,
+   "p90MB": 3250,
+   "maxMB": 3377
+  },
+  "codeAfter120s": {
+   "medianMB": 290,
+   "p90MB": 455,
+   "maxMB": 547
+  },
+  "codeJump": {
+   "mb": 216,
+   "t": 303,
+   "s": 10.2
+  },
+  "series": [
+   {
+    "t": 26,
+    "label": "login",
+    "rssMB": 1777,
+    "vmRssMB": [
+     1777,
+     1777
+    ],
+    "readMs": 30,
+    "codeMB": 114,
+    "codeSizeMB": 391,
+    "codeThpMB": 0,
+    "codeMaps": 3112,
+    "anonMB": 959,
+    "anonThpMB": 0,
+    "wasmMemMB": 529,
+    "jsHeapsMB": 70,
+    "backingStoresMB": 389,
+    "flushes": 1,
+    "jitMB": 35,
+    "modules": 1273,
+    "compileS": 0.2,
+    "estimateMB": 2452,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 31,
+     "freed": 9002,
+     "deadMB": 11.3
+    }
+   },
+   {
+    "t": 29,
+    "label": "load-start",
+    "rssMB": 1862,
+    "vmRssMB": [
+     1861,
+     1853
+    ],
+    "readMs": 56,
+    "codeMB": 133,
+    "codeSizeMB": 413,
+    "codeThpMB": 0,
+    "codeMaps": 3112,
+    "anonMB": 1010,
+    "anonThpMB": 0,
+    "wasmMemMB": 543,
+    "jsHeapsMB": 62,
+    "backingStoresMB": 410,
+    "flushes": 2,
+    "jitMB": 40,
+    "modules": 1416,
+    "compileS": 0.2,
+    "estimateMB": 2402,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 39,
+    "label": "load",
+    "rssMB": 2349,
+    "vmRssMB": [
+     2349,
+     2349
+    ],
+    "readMs": 71,
+    "codeMB": 298,
+    "codeSizeMB": 612,
+    "codeThpMB": 0,
+    "codeMaps": 7794,
+    "anonMB": 1097,
+    "anonThpMB": 0,
+    "wasmMemMB": 783,
+    "jsHeapsMB": 59,
+    "backingStoresMB": 432,
+    "flushes": 5,
+    "jitMB": 94,
+    "modules": 2408,
+    "compileS": 0.5,
+    "estimateMB": 2421,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 11466,
+     "deadMB": 30.8
+    }
+   },
+   {
+    "t": 49,
+    "label": "load",
+    "rssMB": 2542,
+    "vmRssMB": [
+     2540,
+     2544
+    ],
+    "readMs": 84,
+    "codeMB": 377,
+    "codeSizeMB": 703,
+    "codeThpMB": 0,
+    "codeMaps": 8981,
+    "anonMB": 1126,
+    "anonThpMB": 0,
+    "wasmMemMB": 868,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 421,
+    "flushes": 6,
+    "jitMB": 112,
+    "modules": 2904,
+    "compileS": 0.6,
+    "estimateMB": 2466,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 4059,
+     "deadMB": 34.6
+    }
+   },
+   {
+    "t": 60,
+    "label": "load",
+    "rssMB": 2937,
+    "vmRssMB": [
+     2936,
+     2937
+    ],
+    "readMs": 92,
+    "codeMB": 483,
+    "codeSizeMB": 831,
+    "codeThpMB": 0,
+    "codeMaps": 13098,
+    "anonMB": 1285,
+    "anonThpMB": 0,
+    "wasmMemMB": 998,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 461,
+    "flushes": 8,
+    "jitMB": 151,
+    "modules": 3567,
+    "compileS": 0.8,
+    "estimateMB": 2492,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 12118,
+     "deadMB": 51.3
+    }
+   },
+   {
+    "t": 70,
+    "label": "load",
+    "rssMB": 2541,
+    "vmRssMB": [
+     2541,
+     2542
+    ],
+    "readMs": 36,
+    "codeMB": 209,
+    "codeSizeMB": 500,
+    "codeThpMB": 0,
+    "codeMaps": 4768,
+    "anonMB": 1011,
+    "anonThpMB": 0,
+    "wasmMemMB": 1150,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 375,
+    "flushes": 12,
+    "jitMB": 209,
+    "modules": 4543,
+    "compileS": 1.2,
+    "estimateMB": 2458,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 13448,
+     "deadMB": 19.8
+    }
+   },
+   {
+    "t": 80,
+    "label": "load",
+    "rssMB": 2958,
+    "vmRssMB": [
+     2957,
+     2959
+    ],
+    "readMs": 54,
+    "codeMB": 384,
+    "codeSizeMB": 711,
+    "codeThpMB": 0,
+    "codeMaps": 10052,
+    "anonMB": 1188,
+    "anonThpMB": 0,
+    "wasmMemMB": 1214,
+    "jsHeapsMB": 77,
+    "backingStoresMB": 429,
+    "flushes": 15,
+    "jitMB": 267,
+    "modules": 5625,
+    "compileS": 1.5,
+    "estimateMB": 2505,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 14861,
+     "deadMB": 41.4
+    }
+   },
+   {
+    "t": 90,
+    "label": "load",
+    "rssMB": 2466,
+    "vmRssMB": [
+     2466,
+     2468
+    ],
+    "readMs": 36,
+    "codeMB": 91,
+    "codeSizeMB": 362,
+    "codeThpMB": 0,
+    "codeMaps": 2060,
+    "anonMB": 970,
+    "anonThpMB": 0,
+    "wasmMemMB": 1233,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 343,
+    "flushes": 19,
+    "jitMB": 330,
+    "modules": 6616,
+    "compileS": 1.9,
+    "estimateMB": 2498,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 13945,
+     "deadMB": 8.8
+    }
+   },
+   {
+    "t": 100,
+    "label": "load",
+    "rssMB": 2803,
+    "vmRssMB": [
+     2802,
+     2806
+    ],
+    "readMs": 81,
+    "codeMB": 285,
+    "codeSizeMB": 593,
+    "codeThpMB": 0,
+    "codeMaps": 6940,
+    "anonMB": 1105,
+    "anonThpMB": 0,
+    "wasmMemMB": 1240,
+    "jsHeapsMB": 52,
+    "backingStoresMB": 400,
+    "flushes": 22,
+    "jitMB": 389,
+    "modules": 7542,
+    "compileS": 2.2,
+    "estimateMB": 2557,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 12958,
+     "deadMB": 29.1
+    }
+   },
+   {
+    "t": 110,
+    "label": "load",
+    "rssMB": 3215,
+    "vmRssMB": [
+     3215,
+     3223
+    ],
+    "readMs": 62,
+    "codeMB": 500,
+    "codeSizeMB": 842,
+    "codeThpMB": 0,
+    "codeMaps": 10667,
+    "anonMB": 1284,
+    "anonThpMB": 0,
+    "wasmMemMB": 1259,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 455,
+    "flushes": 26,
+    "jitMB": 445,
+    "modules": 8498,
+    "compileS": 2.6,
+    "estimateMB": 2512,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 11330,
+     "deadMB": 44.6
+    }
+   },
+   {
+    "t": 121,
+    "label": "load",
+    "rssMB": 2650,
+    "vmRssMB": [
+     2653,
+     2655
+    ],
+    "readMs": 33,
+    "codeMB": 169,
+    "codeSizeMB": 455,
+    "codeThpMB": 0,
+    "codeMaps": 4047,
+    "anonMB": 1029,
+    "anonThpMB": 0,
+    "wasmMemMB": 1280,
+    "jsHeapsMB": 77,
+    "backingStoresMB": 365,
+    "flushes": 29,
+    "jitMB": 503,
+    "modules": 9491,
+    "compileS": 2.9,
+    "estimateMB": 2570,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 17783,
+     "deadMB": 16.8
+    }
+   },
+   {
+    "t": 131,
+    "label": "load",
+    "rssMB": 2930,
+    "vmRssMB": [
+     2929,
+     2929
+    ],
+    "readMs": 44,
+    "codeMB": 324,
+    "codeSizeMB": 638,
+    "codeThpMB": 0,
+    "codeMaps": 7272,
+    "anonMB": 1136,
+    "anonThpMB": 0,
+    "wasmMemMB": 1298,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 406,
+    "flushes": 32,
+    "jitMB": 544,
+    "modules": 10302,
+    "compileS": 3.1,
+    "estimateMB": 2516,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 9371,
+     "deadMB": 29.6
+    }
+   },
+   {
+    "t": 141,
+    "label": "load",
+    "rssMB": 3118,
+    "vmRssMB": [
+     3116,
+     3124
+    ],
+    "readMs": 97,
+    "codeMB": 425,
+    "codeSizeMB": 757,
+    "codeThpMB": 0,
+    "codeMaps": 9823,
+    "anonMB": 1223,
+    "anonThpMB": 0,
+    "wasmMemMB": 1298,
+    "jsHeapsMB": 60,
+    "backingStoresMB": 436,
+    "flushes": 34,
+    "jitMB": 580,
+    "modules": 11069,
+    "compileS": 3.3,
+    "estimateMB": 2534,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 6864,
+     "deadMB": 39.7
+    }
+   },
+   {
+    "t": 151,
+    "label": "load",
+    "rssMB": 2500,
+    "vmRssMB": [
+     2500,
+     2504
+    ],
+    "readMs": 27,
+    "codeMB": 52,
+    "codeSizeMB": 316,
+    "codeThpMB": 0,
+    "codeMaps": 1248,
+    "anonMB": 972,
+    "anonThpMB": 0,
+    "wasmMemMB": 1301,
+    "jsHeapsMB": 73,
+    "backingStoresMB": 347,
+    "flushes": 36,
+    "jitMB": 622,
+    "modules": 11991,
+    "compileS": 3.6,
+    "estimateMB": 2567,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 13626,
+     "deadMB": 5.2
+    }
+   },
+   {
+    "t": 161,
+    "label": "load",
+    "rssMB": 2665,
+    "vmRssMB": [
+     2665,
+     2665
+    ],
+    "readMs": 28,
+    "codeMB": 156,
+    "codeSizeMB": 439,
+    "codeThpMB": 0,
+    "codeMaps": 4172,
+    "anonMB": 1035,
+    "anonThpMB": 0,
+    "wasmMemMB": 1302,
+    "jsHeapsMB": 76,
+    "backingStoresMB": 377,
+    "flushes": 38,
+    "jitMB": 654,
+    "modules": 12685,
+    "compileS": 3.7,
+    "estimateMB": 2561,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 8763,
+     "deadMB": 16.7
+    }
+   },
+   {
+    "t": 171,
+    "label": "load",
+    "rssMB": 2839,
+    "vmRssMB": [
+     2839,
+     2839
+    ],
+    "readMs": 42,
+    "codeMB": 267,
+    "codeSizeMB": 570,
+    "codeThpMB": 0,
+    "codeMaps": 7126,
+    "anonMB": 1098,
+    "anonThpMB": 0,
+    "wasmMemMB": 1302,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 410,
+    "flushes": 40,
+    "jitMB": 688,
+    "modules": 13153,
+    "compileS": 3.9,
+    "estimateMB": 2567,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 8054,
+     "deadMB": 28.6
+    }
+   },
+   {
+    "t": 181,
+    "label": "load",
+    "rssMB": 3174,
+    "vmRssMB": [
+     3174,
+     3174
+    ],
+    "readMs": 108,
+    "codeMB": 443,
+    "codeSizeMB": 780,
+    "codeThpMB": 0,
+    "codeMaps": 11219,
+    "anonMB": 1256,
+    "anonThpMB": 0,
+    "wasmMemMB": 1303,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 459,
+    "flushes": 43,
+    "jitMB": 738,
+    "modules": 14116,
+    "compileS": 4.2,
+    "estimateMB": 2564,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 12467,
+     "deadMB": 45.5
+    }
+   },
+   {
+    "t": 192,
+    "label": "load",
+    "rssMB": 2629,
+    "vmRssMB": [
+     2630,
+     2629
+    ],
+    "readMs": 30,
+    "codeMB": 134,
+    "codeSizeMB": 411,
+    "codeThpMB": 0,
+    "codeMaps": 3027,
+    "anonMB": 1020,
+    "anonThpMB": 0,
+    "wasmMemMB": 1304,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 369,
+    "flushes": 46,
+    "jitMB": 793,
+    "modules": 15111,
+    "compileS": 4.6,
+    "estimateMB": 2601,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 14180,
+     "deadMB": 12.4
+    }
+   },
+   {
+    "t": 202,
+    "label": "load",
+    "rssMB": 2994,
+    "vmRssMB": [
+     2994,
+     3000
+    ],
+    "readMs": 44,
+    "codeMB": 342,
+    "codeSizeMB": 655,
+    "codeThpMB": 0,
+    "codeMaps": 7477,
+    "anonMB": 1175,
+    "anonThpMB": 0,
+    "wasmMemMB": 1304,
+    "jsHeapsMB": 72,
+    "backingStoresMB": 425,
+    "flushes": 50,
+    "jitMB": 852,
+    "modules": 16179,
+    "compileS": 4.9,
+    "estimateMB": 2535,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 12398,
+     "deadMB": 30.5
+    }
+   },
+   {
+    "t": 212,
+    "label": "load",
+    "rssMB": 3375,
+    "vmRssMB": [
+     3374,
+     3377
+    ],
+    "readMs": 55,
+    "codeMB": 547,
+    "codeSizeMB": 896,
+    "codeThpMB": 0,
+    "codeMaps": 11696,
+    "anonMB": 1351,
+    "anonThpMB": 0,
+    "wasmMemMB": 1305,
+    "jsHeapsMB": 59,
+    "backingStoresMB": 481,
+    "flushes": 54,
+    "jitMB": 914,
+    "modules": 17184,
+    "compileS": 5.3,
+    "estimateMB": 2512,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 11863,
+     "deadMB": 47.7
+    }
+   },
+   {
+    "t": 222,
+    "label": "load",
+    "rssMB": 2779,
+    "vmRssMB": [
+     2778,
+     2783
+    ],
+    "readMs": 44,
+    "codeMB": 216,
+    "codeSizeMB": 508,
+    "codeThpMB": 0,
+    "codeMaps": 5025,
+    "anonMB": 1086,
+    "anonThpMB": 0,
+    "wasmMemMB": 1305,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 394,
+    "flushes": 57,
+    "jitMB": 972,
+    "modules": 18111,
+    "compileS": 5.6,
+    "estimateMB": 2559,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 14,
+     "freed": 13230,
+     "deadMB": 20.9
+    }
+   },
+   {
+    "t": 232,
+    "label": "load",
+    "rssMB": 3133,
+    "vmRssMB": [
+     3133,
+     3137
+    ],
+    "readMs": 55,
+    "codeMB": 414,
+    "codeSizeMB": 737,
+    "codeThpMB": 0,
+    "codeMaps": 9001,
+    "anonMB": 1242,
+    "anonThpMB": 0,
+    "wasmMemMB": 1305,
+    "jsHeapsMB": 81,
+    "backingStoresMB": 447,
+    "flushes": 60,
+    "jitMB": 1027,
+    "modules": 18981,
+    "compileS": 6,
+    "estimateMB": 2583,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 11884,
+     "deadMB": 38.2
+    }
+   },
+   {
+    "t": 242,
+    "label": "load",
+    "rssMB": 2519,
+    "vmRssMB": [
+     2519,
+     2520
+    ],
+    "readMs": 22,
+    "codeMB": 52,
+    "codeSizeMB": 319,
+    "codeThpMB": 0,
+    "codeMaps": 1462,
+    "anonMB": 989,
+    "anonThpMB": 0,
+    "wasmMemMB": 1306,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 348,
+    "flushes": 63,
+    "jitMB": 1077,
+    "modules": 19920,
+    "compileS": 6.3,
+    "estimateMB": 2589,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 15526,
+     "deadMB": 5.2
+    }
+   },
+   {
+    "t": 252,
+    "label": "load",
+    "rssMB": 2697,
+    "vmRssMB": [
+     2697,
+     2697
+    ],
+    "readMs": 28,
+    "codeMB": 166,
+    "codeSizeMB": 452,
+    "codeThpMB": 0,
+    "codeMaps": 3775,
+    "anonMB": 1054,
+    "anonThpMB": 0,
+    "wasmMemMB": 1306,
+    "jsHeapsMB": 75,
+    "backingStoresMB": 378,
+    "flushes": 65,
+    "jitMB": 1109,
+    "modules": 20618,
+    "compileS": 6.4,
+    "estimateMB": 2578,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 6606,
+     "deadMB": 14.6
+    }
+   },
+   {
+    "t": 262,
+    "label": "load",
+    "rssMB": 2947,
+    "vmRssMB": [
+     2946,
+     2944
+    ],
+    "readMs": 49,
+    "codeMB": 301,
+    "codeSizeMB": 611,
+    "codeThpMB": 0,
+    "codeMaps": 7387,
+    "anonMB": 1164,
+    "anonThpMB": 0,
+    "wasmMemMB": 1307,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 419,
+    "flushes": 68,
+    "jitMB": 1148,
+    "modules": 21281,
+    "compileS": 6.7,
+    "estimateMB": 2497,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11093,
+     "deadMB": 28.8
+    }
+   },
+   {
+    "t": 272,
+    "label": "load",
+    "rssMB": 3197,
+    "vmRssMB": [
+     3197,
+     3197
+    ],
+    "readMs": 50,
+    "codeMB": 443,
+    "codeSizeMB": 780,
+    "codeThpMB": 0,
+    "codeMaps": 11840,
+    "anonMB": 1274,
+    "anonThpMB": 0,
+    "wasmMemMB": 1307,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 975,
+    "flushes": 70,
+    "jitMB": 1196,
+    "modules": 22191,
+    "compileS": 6.9,
+    "estimateMB": 2580,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 12413,
+     "deadMB": 47.4
+    }
+   },
+   {
+    "t": 283,
+    "label": "load",
+    "rssMB": 2504,
+    "vmRssMB": [
+     2501,
+     2500
+    ],
+    "readMs": 23,
+    "codeMB": 46,
+    "codeSizeMB": 310,
+    "codeThpMB": 0,
+    "codeMaps": 1087,
+    "anonMB": 978,
+    "anonThpMB": 0,
+    "wasmMemMB": 1307,
+    "jsHeapsMB": 72,
+    "backingStoresMB": 348,
+    "flushes": 72,
+    "jitMB": 1223,
+    "modules": 22730,
+    "compileS": 7.1,
+    "estimateMB": 2550,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 7910,
+     "deadMB": 4.7
+    }
+   },
+   {
+    "t": 293,
+    "label": "load",
+    "rssMB": 2747,
+    "vmRssMB": [
+     2747,
+     2748
+    ],
+    "readMs": 33,
+    "codeMB": 197,
+    "codeSizeMB": 487,
+    "codeThpMB": 0,
+    "codeMaps": 4909,
+    "anonMB": 1071,
+    "anonThpMB": 0,
+    "wasmMemMB": 1308,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 391,
+    "flushes": 75,
+    "jitMB": 1271,
+    "modules": 23573,
+    "compileS": 7.3,
+    "estimateMB": 2541,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 11264,
+     "deadMB": 20
+    }
+   },
+   {
+    "t": 303,
+    "label": "load",
+    "rssMB": 3132,
+    "vmRssMB": [
+     3133,
+     3131
+    ],
+    "readMs": 64,
+    "codeMB": 413,
+    "codeSizeMB": 737,
+    "codeThpMB": 0,
+    "codeMaps": 8933,
+    "anonMB": 1240,
+    "anonThpMB": 0,
+    "wasmMemMB": 1308,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 446,
+    "flushes": 78,
+    "jitMB": 1329,
+    "modules": 24591,
+    "compileS": 7.7,
+    "estimateMB": 2566,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 11473,
+     "deadMB": 36.6
+    }
+   },
+   {
+    "t": 313,
+    "label": "load",
+    "rssMB": 2561,
+    "vmRssMB": [
+     2561,
+     2556
+    ],
+    "readMs": 24,
+    "codeMB": 80,
+    "codeSizeMB": 349,
+    "codeThpMB": 0,
+    "codeMaps": 1687,
+    "anonMB": 1001,
+    "anonThpMB": 0,
+    "wasmMemMB": 1308,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 357,
+    "flushes": 82,
+    "jitMB": 1383,
+    "modules": 25612,
+    "compileS": 8,
+    "estimateMB": 2494,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 14415,
+     "deadMB": 6.6
+    }
+   },
+   {
+    "t": 323,
+    "label": "load",
+    "rssMB": 2891,
+    "vmRssMB": [
+     2891,
+     2891
+    ],
+    "readMs": 48,
+    "codeMB": 271,
+    "codeSizeMB": 576,
+    "codeThpMB": 0,
+    "codeMaps": 6335,
+    "anonMB": 1140,
+    "anonThpMB": 0,
+    "wasmMemMB": 1308,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 411,
+    "flushes": 85,
+    "jitMB": 1441,
+    "modules": 26530,
+    "compileS": 8.4,
+    "estimateMB": 2537,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 13091,
+     "deadMB": 26.6
+    }
+   },
+   {
+    "t": 333,
+    "label": "load",
+    "rssMB": 3254,
+    "vmRssMB": [
+     3252,
+     3262
+    ],
+    "readMs": 69,
+    "codeMB": 461,
+    "codeSizeMB": 800,
+    "codeThpMB": 0,
+    "codeMaps": 11488,
+    "anonMB": 1312,
+    "anonThpMB": 0,
+    "wasmMemMB": 1309,
+    "jsHeapsMB": 61,
+    "backingStoresMB": 470,
+    "flushes": 88,
+    "jitMB": 1500,
+    "modules": 27489,
+    "compileS": 8.7,
+    "estimateMB": 2590,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 14805,
+     "deadMB": 48.5
+    }
+   },
+   {
+    "t": 343,
+    "label": "load",
+    "rssMB": 2685,
+    "vmRssMB": [
+     2685,
+     2684
+    ],
+    "readMs": 33,
+    "codeMB": 153,
+    "codeSizeMB": 436,
+    "codeThpMB": 0,
+    "codeMaps": 3528,
+    "anonMB": 1051,
+    "anonThpMB": 0,
+    "wasmMemMB": 1309,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 379,
+    "flushes": 92,
+    "jitMB": 1555,
+    "modules": 28344,
+    "compileS": 9.1,
+    "estimateMB": 2525,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 16,
+     "freed": 9204,
+     "deadMB": 14.8
+    }
+   },
+   {
+    "t": 354,
+    "label": "load",
+    "rssMB": 3046,
+    "vmRssMB": [
+     3046,
+     3046
+    ],
+    "readMs": 36,
+    "codeMB": 359,
+    "codeSizeMB": 676,
+    "codeThpMB": 0,
+    "codeMaps": 7419,
+    "anonMB": 1205,
+    "anonThpMB": 0,
+    "wasmMemMB": 1309,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 433,
+    "flushes": 95,
+    "jitMB": 1617,
+    "modules": 29356,
+    "compileS": 9.4,
+    "estimateMB": 2591,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11599,
+     "deadMB": 30.9
+    }
+   },
+   {
+    "t": 364,
+    "label": "load",
+    "rssMB": 3252,
+    "vmRssMB": [
+     3252,
+     3250
+    ],
+    "readMs": 54,
+    "codeMB": 455,
+    "codeSizeMB": 795,
+    "codeThpMB": 0,
+    "codeMaps": 11587,
+    "anonMB": 1315,
+    "anonThpMB": 0,
+    "wasmMemMB": 1309,
+    "jsHeapsMB": 57,
+    "backingStoresMB": 468,
+    "flushes": 98,
+    "jitMB": 1653,
+    "modules": 30205,
+    "compileS": 9.6,
+    "estimateMB": 2515,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 12319,
+     "deadMB": 47.6
+    }
+   },
+   {
+    "t": 374,
+    "label": "load",
+    "rssMB": 2650,
+    "vmRssMB": [
+     2650,
+     2652
+    ],
+    "readMs": 40,
+    "codeMB": 120,
+    "codeSizeMB": 397,
+    "codeThpMB": 0,
+    "codeMaps": 2949,
+    "anonMB": 1049,
+    "anonThpMB": 0,
+    "wasmMemMB": 1309,
+    "jsHeapsMB": 60,
+    "backingStoresMB": 867,
+    "flushes": 99,
+    "jitMB": 1684,
+    "modules": 30751,
+    "compileS": 9.8,
+    "estimateMB": 2594,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 7862,
+     "deadMB": 11.3
+    }
+   },
+   {
+    "t": 384,
+    "label": "load",
+    "rssMB": 2984,
+    "vmRssMB": [
+     2984,
+     2987
+    ],
+    "readMs": 50,
+    "codeMB": 322,
+    "codeSizeMB": 633,
+    "codeThpMB": 0,
+    "codeMaps": 7065,
+    "anonMB": 1180,
+    "anonThpMB": 0,
+    "wasmMemMB": 1310,
+    "jsHeapsMB": 67,
+    "backingStoresMB": 409,
+    "flushes": 103,
+    "jitMB": 1739,
+    "modules": 31817,
+    "compileS": 10.1,
+    "estimateMB": 2511,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 12015,
+     "deadMB": 27.9
+    }
+   },
+   {
+    "t": 394,
+    "label": "load",
+    "rssMB": 3069,
+    "vmRssMB": [
+     3069,
+     3069
+    ],
+    "readMs": 40,
+    "codeMB": 364,
+    "codeSizeMB": 687,
+    "codeThpMB": 0,
+    "codeMaps": 9524,
+    "anonMB": 1223,
+    "anonThpMB": 0,
+    "wasmMemMB": 1310,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 426,
+    "flushes": 104,
+    "jitMB": 1759,
+    "modules": 32334,
+    "compileS": 10.2,
+    "estimateMB": 2547,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 7716,
+     "deadMB": 37.5
+    }
+   },
+   {
+    "t": 404,
+    "label": "load",
+    "rssMB": 3361,
+    "vmRssMB": [
+     3361,
+     3361
+    ],
+    "readMs": 94,
+    "codeMB": 523,
+    "codeSizeMB": 872,
+    "codeThpMB": 0,
+    "codeMaps": 12579,
+    "anonMB": 1356,
+    "anonThpMB": 0,
+    "wasmMemMB": 1310,
+    "jsHeapsMB": 56,
+    "backingStoresMB": 724,
+    "flushes": 106,
+    "jitMB": 1801,
+    "modules": 32924,
+    "compileS": 10.5,
+    "estimateMB": 2581,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 9402,
+     "deadMB": 50.5
+    }
+   },
+   {
+    "t": 414,
+    "label": "load",
+    "rssMB": 2774,
+    "vmRssMB": [
+     2773,
+     2770
+    ],
+    "readMs": 42,
+    "codeMB": 199,
+    "codeSizeMB": 492,
+    "codeThpMB": 0,
+    "codeMaps": 4487,
+    "anonMB": 1093,
+    "anonThpMB": 0,
+    "wasmMemMB": 1310,
+    "jsHeapsMB": 68,
+    "backingStoresMB": 380,
+    "flushes": 110,
+    "jitMB": 1854,
+    "modules": 33883,
+    "compileS": 10.7,
+    "estimateMB": 2484,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 14999,
+     "deadMB": 17.5
+    }
+   },
+   {
+    "t": 424,
+    "label": "load",
+    "rssMB": 3108,
+    "vmRssMB": [
+     3107,
+     3120
+    ],
+    "readMs": 59,
+    "codeMB": 387,
+    "codeSizeMB": 713,
+    "codeThpMB": 0,
+    "codeMaps": 9397,
+    "anonMB": 1238,
+    "anonThpMB": 0,
+    "wasmMemMB": 1311,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 435,
+    "flushes": 113,
+    "jitMB": 1917,
+    "modules": 35063,
+    "compileS": 11.1,
+    "estimateMB": 2577,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 14079,
+     "deadMB": 37.6
+    }
+   },
+   {
+    "t": 435,
+    "label": "load",
+    "rssMB": 2561,
+    "vmRssMB": [
+     2562,
+     2562
+    ],
+    "readMs": 30,
+    "codeMB": 60,
+    "codeSizeMB": 335,
+    "codeThpMB": 0,
+    "codeMaps": 1548,
+    "anonMB": 1017,
+    "anonThpMB": 0,
+    "wasmMemMB": 1311,
+    "jsHeapsMB": 56,
+    "backingStoresMB": 346,
+    "flushes": 117,
+    "jitMB": 1973,
+    "modules": 36036,
+    "compileS": 11.4,
+    "estimateMB": 2494,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 12870,
+     "deadMB": 6.5
+    }
+   },
+   {
+    "t": 445,
+    "label": "load",
+    "rssMB": 2894,
+    "vmRssMB": [
+     2894,
+     2896
+    ],
+    "readMs": 37,
+    "codeMB": 263,
+    "codeSizeMB": 574,
+    "codeThpMB": 0,
+    "codeMaps": 6394,
+    "anonMB": 1147,
+    "anonThpMB": 0,
+    "wasmMemMB": 1311,
+    "jsHeapsMB": 75,
+    "backingStoresMB": 403,
+    "flushes": 120,
+    "jitMB": 2033,
+    "modules": 37055,
+    "compileS": 11.8,
+    "estimateMB": 2554,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 13487,
+     "deadMB": 25.6
+    }
+   },
+   {
+    "t": 455,
+    "label": "load",
+    "rssMB": 3228,
+    "vmRssMB": [
+     3227,
+     3231
+    ],
+    "readMs": 68,
+    "codeMB": 438,
+    "codeSizeMB": 782,
+    "codeThpMB": 0,
+    "codeMaps": 11348,
+    "anonMB": 1306,
+    "anonThpMB": 0,
+    "wasmMemMB": 1311,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 457,
+    "flushes": 123,
+    "jitMB": 2089,
+    "modules": 37927,
+    "compileS": 12.2,
+    "estimateMB": 2593,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 14293,
+     "deadMB": 46.8
+    }
+   },
+   {
+    "t": 465,
+    "label": "load",
+    "rssMB": 2726,
+    "vmRssMB": [
+     2726,
+     2718
+    ],
+    "readMs": 42,
+    "codeMB": 154,
+    "codeSizeMB": 434,
+    "codeThpMB": 0,
+    "codeMaps": 3238,
+    "anonMB": 1087,
+    "anonThpMB": 0,
+    "wasmMemMB": 1311,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 368,
+    "flushes": 127,
+    "jitMB": 2144,
+    "modules": 38938,
+    "compileS": 12.5,
+    "estimateMB": 2521,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 13239,
+     "deadMB": 13.1
+    }
+   },
+   {
+    "t": 475,
+    "label": "load",
+    "rssMB": 2947,
+    "vmRssMB": [
+     2944,
+     2947
+    ],
+    "readMs": 44,
+    "codeMB": 290,
+    "codeSizeMB": 595,
+    "codeThpMB": 0,
+    "codeMaps": 6745,
+    "anonMB": 1173,
+    "anonThpMB": 0,
+    "wasmMemMB": 1311,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 407,
+    "flushes": 129,
+    "jitMB": 2186,
+    "modules": 39728,
+    "compileS": 12.7,
+    "estimateMB": 2576,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 10174,
+     "deadMB": 27.7
+    }
+   },
+   {
+    "t": 485,
+    "label": "load",
+    "rssMB": 3150,
+    "vmRssMB": [
+     3151,
+     3155
+    ],
+    "readMs": 66,
+    "codeMB": 407,
+    "codeSizeMB": 732,
+    "codeThpMB": 0,
+    "codeMaps": 9002,
+    "anonMB": 1259,
+    "anonThpMB": 0,
+    "wasmMemMB": 1312,
+    "jsHeapsMB": 76,
+    "backingStoresMB": 438,
+    "flushes": 131,
+    "jitMB": 2222,
+    "modules": 40547,
+    "compileS": 12.9,
+    "estimateMB": 2581,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 6240,
+     "deadMB": 36.8
+    }
+   }
+  ]
+ },
+ "b16-3": {
+  "chromium": "155.0.8059.84",
+  "query": "machine=debian&ncpus=4&view=terminal&hooks&disk2=%2Ftarget%2Fimages%2Fstress%2Fgoroot.ext4&jitmb=16",
+  "every": 10000,
+  "samples": 47,
+  "rssAfter120s": {
+   "medianMB": 2913,
+   "p90MB": 3301,
+   "maxMB": 3437
+  },
+  "vmRssAfter120s": {
+   "medianMB": 2917,
+   "p90MB": 3308,
+   "maxMB": 3437
+  },
+  "codeAfter120s": {
+   "medianMB": 303,
+   "p90MB": 489,
+   "maxMB": 561
+  },
+  "codeJump": {
+   "mb": 216,
+   "t": 455,
+   "s": 10.2
+  },
+  "series": [
+   {
+    "t": 26,
+    "label": "login",
+    "rssMB": 1775,
+    "vmRssMB": [
+     1774,
+     1775
+    ],
+    "readMs": 45,
+    "codeMB": 117,
+    "codeSizeMB": 397,
+    "codeThpMB": 0,
+    "codeMaps": 2901,
+    "anonMB": 955,
+    "anonThpMB": 0,
+    "wasmMemMB": 528,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 401,
+    "flushes": 1,
+    "jitMB": 36,
+    "modules": 1292,
+    "compileS": 0.2,
+    "estimateMB": 2464,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 32,
+     "freed": 9101,
+     "deadMB": 12.3
+    }
+   },
+   {
+    "t": 29,
+    "label": "load-start",
+    "rssMB": 1858,
+    "vmRssMB": [
+     1856,
+     1863
+    ],
+    "readMs": 39,
+    "codeMB": 138,
+    "codeSizeMB": 420,
+    "codeThpMB": 0,
+    "codeMaps": 2901,
+    "anonMB": 1005,
+    "anonThpMB": 0,
+    "wasmMemMB": 542,
+    "jsHeapsMB": 61,
+    "backingStoresMB": 417,
+    "flushes": 2,
+    "jitMB": 40,
+    "modules": 1424,
+    "compileS": 0.2,
+    "estimateMB": 2409,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 0,
+     "freed": 0
+    }
+   },
+   {
+    "t": 39,
+    "label": "load",
+    "rssMB": 2360,
+    "vmRssMB": [
+     2360,
+     2360
+    ],
+    "readMs": 39,
+    "codeMB": 317,
+    "codeSizeMB": 634,
+    "codeThpMB": 0,
+    "codeMaps": 6609,
+    "anonMB": 1118,
+    "anonThpMB": 0,
+    "wasmMemMB": 754,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 443,
+    "flushes": 5,
+    "jitMB": 93,
+    "modules": 2404,
+    "compileS": 0.5,
+    "estimateMB": 2439,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 10129,
+     "deadMB": 28.7
+    }
+   },
+   {
+    "t": 49,
+    "label": "load",
+    "rssMB": 2542,
+    "vmRssMB": [
+     2517,
+     2520
+    ],
+    "readMs": 69,
+    "codeMB": 388,
+    "codeSizeMB": 722,
+    "codeThpMB": 0,
+    "codeMaps": 8719,
+    "anonMB": 1145,
+    "anonThpMB": 0,
+    "wasmMemMB": 838,
+    "jsHeapsMB": 59,
+    "backingStoresMB": 432,
+    "flushes": 6,
+    "jitMB": 112,
+    "modules": 2904,
+    "compileS": 0.6,
+    "estimateMB": 2463,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 6422,
+     "deadMB": 37.6
+    }
+   },
+   {
+    "t": 60,
+    "label": "load",
+    "rssMB": 2139,
+    "vmRssMB": [
+     2143,
+     2141
+    ],
+    "readMs": 35,
+    "codeMB": 60,
+    "codeSizeMB": 326,
+    "codeThpMB": 0,
+    "codeMaps": 1161,
+    "anonMB": 930,
+    "anonThpMB": 0,
+    "wasmMemMB": 977,
+    "jsHeapsMB": 65,
+    "backingStoresMB": 330,
+    "flushes": 8,
+    "jitMB": 152,
+    "modules": 3544,
+    "compileS": 0.8,
+    "estimateMB": 2513,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 11036,
+     "deadMB": 30.2
+    }
+   },
+   {
+    "t": 70,
+    "label": "load",
+    "rssMB": 2618,
+    "vmRssMB": [
+     2619,
+     2618
+    ],
+    "readMs": 102,
+    "codeMB": 271,
+    "codeSizeMB": 576,
+    "codeThpMB": 0,
+    "codeMaps": 5461,
+    "anonMB": 1060,
+    "anonThpMB": 0,
+    "wasmMemMB": 1116,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 389,
+    "flushes": 12,
+    "jitMB": 212,
+    "modules": 4578,
+    "compileS": 1.2,
+    "estimateMB": 2492,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 13373,
+     "deadMB": 24.5
+    }
+   },
+   {
+    "t": 80,
+    "label": "load",
+    "rssMB": 3082,
+    "vmRssMB": [
+     3088,
+     3083
+    ],
+    "readMs": 60,
+    "codeMB": 457,
+    "codeSizeMB": 797,
+    "codeThpMB": 0,
+    "codeMaps": 10118,
+    "anonMB": 1244,
+    "anonThpMB": 0,
+    "wasmMemMB": 1208,
+    "jsHeapsMB": 51,
+    "backingStoresMB": 444,
+    "flushes": 15,
+    "jitMB": 268,
+    "modules": 5630,
+    "compileS": 1.5,
+    "estimateMB": 2509,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 13430,
+     "deadMB": 43.8
+    }
+   },
+   {
+    "t": 90,
+    "label": "load",
+    "rssMB": 2567,
+    "vmRssMB": [
+     2570,
+     2568
+    ],
+    "readMs": 32,
+    "codeMB": 146,
+    "codeSizeMB": 436,
+    "codeThpMB": 0,
+    "codeMaps": 3272,
+    "anonMB": 1005,
+    "anonThpMB": 0,
+    "wasmMemMB": 1244,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 357,
+    "flushes": 19,
+    "jitMB": 333,
+    "modules": 6688,
+    "compileS": 1.9,
+    "estimateMB": 2529,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 15101,
+     "deadMB": 14
+    }
+   },
+   {
+    "t": 100,
+    "label": "load",
+    "rssMB": 2656,
+    "vmRssMB": [
+     2621,
+     2624
+    ],
+    "readMs": 33,
+    "codeMB": 231,
+    "codeSizeMB": 527,
+    "codeThpMB": 0,
+    "codeMaps": 3791,
+    "anonMB": 1004,
+    "anonThpMB": 0,
+    "wasmMemMB": 1250,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 366,
+    "flushes": 23,
+    "jitMB": 392,
+    "modules": 7733,
+    "compileS": 2.3,
+    "estimateMB": 2469,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 13172,
+     "deadMB": 16.6
+    }
+   },
+   {
+    "t": 110,
+    "label": "load",
+    "rssMB": 2999,
+    "vmRssMB": [
+     2996,
+     3005
+    ],
+    "readMs": 50,
+    "codeMB": 396,
+    "codeSizeMB": 720,
+    "codeThpMB": 0,
+    "codeMaps": 7896,
+    "anonMB": 1178,
+    "anonThpMB": 0,
+    "wasmMemMB": 1254,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 422,
+    "flushes": 26,
+    "jitMB": 450,
+    "modules": 8620,
+    "compileS": 2.6,
+    "estimateMB": 2512,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11911,
+     "deadMB": 34.1
+    }
+   },
+   {
+    "t": 121,
+    "label": "load",
+    "rssMB": 2482,
+    "vmRssMB": [
+     2481,
+     2477
+    ],
+    "readMs": 33,
+    "codeMB": 68,
+    "codeSizeMB": 336,
+    "codeThpMB": 0,
+    "codeMaps": 1359,
+    "anonMB": 987,
+    "anonThpMB": 0,
+    "wasmMemMB": 1255,
+    "jsHeapsMB": 56,
+    "backingStoresMB": 334,
+    "flushes": 29,
+    "jitMB": 507,
+    "modules": 9618,
+    "compileS": 2.9,
+    "estimateMB": 2571,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 17877,
+     "deadMB": 6
+    }
+   },
+   {
+    "t": 131,
+    "label": "load",
+    "rssMB": 2717,
+    "vmRssMB": [
+     2717,
+     2718
+    ],
+    "readMs": 29,
+    "codeMB": 220,
+    "codeSizeMB": 515,
+    "codeThpMB": 0,
+    "codeMaps": 4451,
+    "anonMB": 1069,
+    "anonThpMB": 0,
+    "wasmMemMB": 1256,
+    "jsHeapsMB": 72,
+    "backingStoresMB": 375,
+    "flushes": 32,
+    "jitMB": 551,
+    "modules": 10423,
+    "compileS": 3.2,
+    "estimateMB": 2526,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 8787,
+     "deadMB": 19.5
+    }
+   },
+   {
+    "t": 141,
+    "label": "load",
+    "rssMB": 2910,
+    "vmRssMB": [
+     2910,
+     2917
+    ],
+    "readMs": 37,
+    "codeMB": 332,
+    "codeSizeMB": 649,
+    "codeThpMB": 0,
+    "codeMaps": 6709,
+    "anonMB": 1149,
+    "anonThpMB": 0,
+    "wasmMemMB": 1256,
+    "jsHeapsMB": 72,
+    "backingStoresMB": 406,
+    "flushes": 34,
+    "jitMB": 583,
+    "modules": 11155,
+    "compileS": 3.4,
+    "estimateMB": 2504,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 7270,
+     "deadMB": 29
+    }
+   },
+   {
+    "t": 151,
+    "label": "load",
+    "rssMB": 3240,
+    "vmRssMB": [
+     3241,
+     3247
+    ],
+    "readMs": 55,
+    "codeMB": 486,
+    "codeSizeMB": 833,
+    "codeThpMB": 0,
+    "codeMaps": 10365,
+    "anonMB": 1304,
+    "anonThpMB": 0,
+    "wasmMemMB": 1276,
+    "jsHeapsMB": 68,
+    "backingStoresMB": 464,
+    "flushes": 37,
+    "jitMB": 627,
+    "modules": 12194,
+    "compileS": 3.6,
+    "estimateMB": 2478,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 11201,
+     "deadMB": 44.5
+    }
+   },
+   {
+    "t": 161,
+    "label": "load",
+    "rssMB": 2533,
+    "vmRssMB": [
+     2532,
+     2535
+    ],
+    "readMs": 22,
+    "codeMB": 78,
+    "codeSizeMB": 348,
+    "codeThpMB": 0,
+    "codeMaps": 1595,
+    "anonMB": 1007,
+    "anonThpMB": 0,
+    "wasmMemMB": 1277,
+    "jsHeapsMB": 61,
+    "backingStoresMB": 352,
+    "flushes": 39,
+    "jitMB": 664,
+    "modules": 12970,
+    "compileS": 3.8,
+    "estimateMB": 2518,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 10748,
+     "deadMB": 6.7
+    }
+   },
+   {
+    "t": 171,
+    "label": "load",
+    "rssMB": 2731,
+    "vmRssMB": [
+     2730,
+     2731
+    ],
+    "readMs": 35,
+    "codeMB": 196,
+    "codeSizeMB": 488,
+    "codeThpMB": 0,
+    "codeMaps": 4765,
+    "anonMB": 1086,
+    "anonThpMB": 0,
+    "wasmMemMB": 1277,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 388,
+    "flushes": 41,
+    "jitMB": 701,
+    "modules": 13509,
+    "compileS": 4,
+    "estimateMB": 2528,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 10588,
+     "deadMB": 20.5
+    }
+   },
+   {
+    "t": 181,
+    "label": "load",
+    "rssMB": 3041,
+    "vmRssMB": [
+     3040,
+     3043
+    ],
+    "readMs": 47,
+    "codeMB": 374,
+    "codeSizeMB": 696,
+    "codeThpMB": 0,
+    "codeMaps": 8523,
+    "anonMB": 1218,
+    "anonThpMB": 0,
+    "wasmMemMB": 1278,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 438,
+    "flushes": 44,
+    "jitMB": 752,
+    "modules": 14474,
+    "compileS": 4.3,
+    "estimateMB": 2525,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 10682,
+     "deadMB": 36.7
+    }
+   },
+   {
+    "t": 191,
+    "label": "load",
+    "rssMB": 2505,
+    "vmRssMB": [
+     2503,
+     2506
+    ],
+    "readMs": 38,
+    "codeMB": 59,
+    "codeSizeMB": 325,
+    "codeThpMB": 0,
+    "codeMaps": 1234,
+    "anonMB": 995,
+    "anonThpMB": 0,
+    "wasmMemMB": 1279,
+    "jsHeapsMB": 82,
+    "backingStoresMB": 347,
+    "flushes": 47,
+    "jitMB": 809,
+    "modules": 15416,
+    "compileS": 4.6,
+    "estimateMB": 2582,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 15105,
+     "deadMB": 5.7
+    }
+   },
+   {
+    "t": 201,
+    "label": "load",
+    "rssMB": 2818,
+    "vmRssMB": [
+     2814,
+     2820
+    ],
+    "readMs": 41,
+    "codeMB": 245,
+    "codeSizeMB": 546,
+    "codeThpMB": 0,
+    "codeMaps": 6062,
+    "anonMB": 1122,
+    "anonThpMB": 0,
+    "wasmMemMB": 1279,
+    "jsHeapsMB": 63,
+    "backingStoresMB": 402,
+    "flushes": 51,
+    "jitMB": 864,
+    "modules": 16470,
+    "compileS": 5,
+    "estimateMB": 2511,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 13775,
+     "deadMB": 25.7
+    }
+   },
+   {
+    "t": 211,
+    "label": "load",
+    "rssMB": 3211,
+    "vmRssMB": [
+     3211,
+     3214
+    ],
+    "readMs": 60,
+    "codeMB": 438,
+    "codeSizeMB": 773,
+    "codeThpMB": 0,
+    "codeMaps": 11037,
+    "anonMB": 1319,
+    "anonThpMB": 0,
+    "wasmMemMB": 1282,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 486,
+    "flushes": 54,
+    "jitMB": 923,
+    "modules": 17468,
+    "compileS": 5.3,
+    "estimateMB": 2569,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 14031,
+     "deadMB": 46.4
+    }
+   },
+   {
+    "t": 222,
+    "label": "load",
+    "rssMB": 2697,
+    "vmRssMB": [
+     2697,
+     2701
+    ],
+    "readMs": 30,
+    "codeMB": 145,
+    "codeSizeMB": 427,
+    "codeThpMB": 0,
+    "codeMaps": 3749,
+    "anonMB": 1097,
+    "anonThpMB": 0,
+    "wasmMemMB": 1284,
+    "jsHeapsMB": 68,
+    "backingStoresMB": 408,
+    "flushes": 58,
+    "jitMB": 983,
+    "modules": 18459,
+    "compileS": 5.7,
+    "estimateMB": 2519,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 14440,
+     "deadMB": 15.2
+    }
+   },
+   {
+    "t": 232,
+    "label": "load",
+    "rssMB": 3029,
+    "vmRssMB": [
+     3029,
+     3039
+    ],
+    "readMs": 59,
+    "codeMB": 346,
+    "codeSizeMB": 661,
+    "codeThpMB": 0,
+    "codeMaps": 7795,
+    "anonMB": 1227,
+    "anonThpMB": 0,
+    "wasmMemMB": 1284,
+    "jsHeapsMB": 77,
+    "backingStoresMB": 461,
+    "flushes": 61,
+    "jitMB": 1043,
+    "modules": 19396,
+    "compileS": 6,
+    "estimateMB": 2573,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11224,
+     "deadMB": 32.4
+    }
+   },
+   {
+    "t": 242,
+    "label": "load",
+    "rssMB": 3409,
+    "vmRssMB": [
+     3410,
+     3412
+    ],
+    "readMs": 77,
+    "codeMB": 547,
+    "codeSizeMB": 898,
+    "codeThpMB": 0,
+    "codeMaps": 12171,
+    "anonMB": 1405,
+    "anonThpMB": 0,
+    "wasmMemMB": 1285,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 517,
+    "flushes": 65,
+    "jitMB": 1100,
+    "modules": 20392,
+    "compileS": 6.4,
+    "estimateMB": 2515,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 12998,
+     "deadMB": 50.7
+    }
+   },
+   {
+    "t": 252,
+    "label": "load",
+    "rssMB": 2700,
+    "vmRssMB": [
+     2700,
+     2700
+    ],
+    "readMs": 33,
+    "codeMB": 150,
+    "codeSizeMB": 435,
+    "codeThpMB": 0,
+    "codeMaps": 3797,
+    "anonMB": 1093,
+    "anonThpMB": 0,
+    "wasmMemMB": 1285,
+    "jsHeapsMB": 72,
+    "backingStoresMB": 409,
+    "flushes": 67,
+    "jitMB": 1140,
+    "modules": 21195,
+    "compileS": 6.6,
+    "estimateMB": 2550,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 13330,
+     "deadMB": 14.4
+    }
+   },
+   {
+    "t": 262,
+    "label": "load",
+    "rssMB": 2888,
+    "vmRssMB": [
+     2889,
+     2891
+    ],
+    "readMs": 43,
+    "codeMB": 258,
+    "codeSizeMB": 562,
+    "codeThpMB": 0,
+    "codeMaps": 6616,
+    "anonMB": 1173,
+    "anonThpMB": 0,
+    "wasmMemMB": 1285,
+    "jsHeapsMB": 70,
+    "backingStoresMB": 440,
+    "flushes": 69,
+    "jitMB": 1171,
+    "modules": 21876,
+    "compileS": 6.8,
+    "estimateMB": 2545,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 7619,
+     "deadMB": 25.8
+    }
+   },
+   {
+    "t": 272,
+    "label": "load",
+    "rssMB": 3200,
+    "vmRssMB": [
+     3200,
+     3204
+    ],
+    "readMs": 61,
+    "codeMB": 432,
+    "codeSizeMB": 762,
+    "codeThpMB": 0,
+    "codeMaps": 10257,
+    "anonMB": 1310,
+    "anonThpMB": 0,
+    "wasmMemMB": 1286,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 487,
+    "flushes": 72,
+    "jitMB": 1217,
+    "modules": 22743,
+    "compileS": 7,
+    "estimateMB": 2503,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 10705,
+     "deadMB": 40
+    }
+   },
+   {
+    "t": 283,
+    "label": "load",
+    "rssMB": 3292,
+    "vmRssMB": [
+     3292,
+     3292
+    ],
+    "readMs": 46,
+    "codeMB": 510,
+    "codeSizeMB": 853,
+    "codeThpMB": 0,
+    "codeMaps": 11822,
+    "anonMB": 1324,
+    "anonThpMB": 0,
+    "wasmMemMB": 1286,
+    "jsHeapsMB": 63,
+    "backingStoresMB": 506,
+    "flushes": 73,
+    "jitMB": 1243,
+    "modules": 23379,
+    "compileS": 7.2,
+    "estimateMB": 2563,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 4395,
+     "deadMB": 46.5
+    }
+   },
+   {
+    "t": 293,
+    "label": "load",
+    "rssMB": 2624,
+    "vmRssMB": [
+     2624,
+     2624
+    ],
+    "readMs": 25,
+    "codeMB": 119,
+    "codeSizeMB": 393,
+    "codeThpMB": 0,
+    "codeMaps": 2692,
+    "anonMB": 1046,
+    "anonThpMB": 0,
+    "wasmMemMB": 1286,
+    "jsHeapsMB": 72,
+    "backingStoresMB": 402,
+    "flushes": 75,
+    "jitMB": 1281,
+    "modules": 23908,
+    "compileS": 7.4,
+    "estimateMB": 2593,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 14,
+     "freed": 13587,
+     "deadMB": 10.9
+    }
+   },
+   {
+    "t": 303,
+    "label": "load",
+    "rssMB": 2939,
+    "vmRssMB": [
+     2937,
+     2940
+    ],
+    "readMs": 37,
+    "codeMB": 303,
+    "codeSizeMB": 610,
+    "codeThpMB": 0,
+    "codeMaps": 6611,
+    "anonMB": 1176,
+    "anonThpMB": 0,
+    "wasmMemMB": 1287,
+    "jsHeapsMB": 55,
+    "backingStoresMB": 453,
+    "flushes": 78,
+    "jitMB": 1333,
+    "modules": 24844,
+    "compileS": 7.7,
+    "estimateMB": 2579,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 11585,
+     "deadMB": 27.3
+    }
+   },
+   {
+    "t": 313,
+    "label": "load",
+    "rssMB": 3301,
+    "vmRssMB": [
+     3303,
+     3308
+    ],
+    "readMs": 64,
+    "codeMB": 487,
+    "codeSizeMB": 828,
+    "codeThpMB": 0,
+    "codeMaps": 12006,
+    "anonMB": 1355,
+    "anonThpMB": 0,
+    "wasmMemMB": 1287,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 508,
+    "flushes": 82,
+    "jitMB": 1390,
+    "modules": 25932,
+    "compileS": 8,
+    "estimateMB": 2545,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 15476,
+     "deadMB": 48.9
+    }
+   },
+   {
+    "t": 323,
+    "label": "load",
+    "rssMB": 2725,
+    "vmRssMB": [
+     2722,
+     2722
+    ],
+    "readMs": 36,
+    "codeMB": 166,
+    "codeSizeMB": 451,
+    "codeThpMB": 0,
+    "codeMaps": 4086,
+    "anonMB": 1100,
+    "anonThpMB": 0,
+    "wasmMemMB": 1288,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 419,
+    "flushes": 85,
+    "jitMB": 1446,
+    "modules": 26852,
+    "compileS": 8.4,
+    "estimateMB": 2577,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 16,
+     "freed": 14762,
+     "deadMB": 17.1
+    }
+   },
+   {
+    "t": 333,
+    "label": "load",
+    "rssMB": 3087,
+    "vmRssMB": [
+     3086,
+     3087
+    ],
+    "readMs": 41,
+    "codeMB": 367,
+    "codeSizeMB": 688,
+    "codeThpMB": 0,
+    "codeMaps": 8689,
+    "anonMB": 1260,
+    "anonThpMB": 0,
+    "wasmMemMB": 1288,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 476,
+    "flushes": 89,
+    "jitMB": 1503,
+    "modules": 27814,
+    "compileS": 8.7,
+    "estimateMB": 2503,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 13403,
+     "deadMB": 36.7
+    }
+   },
+   {
+    "t": 343,
+    "label": "load",
+    "rssMB": 2538,
+    "vmRssMB": [
+     2538,
+     2538
+    ],
+    "readMs": 24,
+    "codeMB": 55,
+    "codeSizeMB": 320,
+    "codeThpMB": 0,
+    "codeMaps": 1230,
+    "anonMB": 1022,
+    "anonThpMB": 0,
+    "wasmMemMB": 1288,
+    "jsHeapsMB": 85,
+    "backingStoresMB": 386,
+    "flushes": 92,
+    "jitMB": 1563,
+    "modules": 28802,
+    "compileS": 9.1,
+    "estimateMB": 2568,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 12310,
+     "deadMB": 5.1
+    }
+   },
+   {
+    "t": 353,
+    "label": "load",
+    "rssMB": 2869,
+    "vmRssMB": [
+     2869,
+     2870
+    ],
+    "readMs": 40,
+    "codeMB": 247,
+    "codeSizeMB": 544,
+    "codeThpMB": 0,
+    "codeMaps": 5672,
+    "anonMB": 1161,
+    "anonThpMB": 0,
+    "wasmMemMB": 1289,
+    "jsHeapsMB": 62,
+    "backingStoresMB": 441,
+    "flushes": 96,
+    "jitMB": 1624,
+    "modules": 29795,
+    "compileS": 9.5,
+    "estimateMB": 2526,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 13183,
+     "deadMB": 24.2
+    }
+   },
+   {
+    "t": 364,
+    "label": "load",
+    "rssMB": 3128,
+    "vmRssMB": [
+     3130,
+     3129
+    ],
+    "readMs": 41,
+    "codeMB": 389,
+    "codeSizeMB": 710,
+    "codeThpMB": 0,
+    "codeMaps": 9071,
+    "anonMB": 1278,
+    "anonThpMB": 0,
+    "wasmMemMB": 1289,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 480,
+    "flushes": 98,
+    "jitMB": 1665,
+    "modules": 30681,
+    "compileS": 9.7,
+    "estimateMB": 2553,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 9396,
+     "deadMB": 38.5
+    }
+   },
+   {
+    "t": 374,
+    "label": "load",
+    "rssMB": 3329,
+    "vmRssMB": [
+     3329,
+     3329
+    ],
+    "readMs": 53,
+    "codeMB": 489,
+    "codeSizeMB": 829,
+    "codeThpMB": 0,
+    "codeMaps": 12419,
+    "anonMB": 1379,
+    "anonThpMB": 0,
+    "wasmMemMB": 1289,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 511,
+    "flushes": 100,
+    "jitMB": 1697,
+    "modules": 31401,
+    "compileS": 9.9,
+    "estimateMB": 2570,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 9021,
+     "deadMB": 51.4
+    }
+   },
+   {
+    "t": 384,
+    "label": "load",
+    "rssMB": 2768,
+    "vmRssMB": [
+     2769,
+     2769
+    ],
+    "readMs": 31,
+    "codeMB": 181,
+    "codeSizeMB": 475,
+    "codeThpMB": 0,
+    "codeMaps": 4418,
+    "anonMB": 1122,
+    "anonThpMB": 0,
+    "wasmMemMB": 1290,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 412,
+    "flushes": 103,
+    "jitMB": 1738,
+    "modules": 32090,
+    "compileS": 10.1,
+    "estimateMB": 2497,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 11437,
+     "deadMB": 17.2
+    }
+   },
+   {
+    "t": 394,
+    "label": "load",
+    "rssMB": 3034,
+    "vmRssMB": [
+     3034,
+     3034
+    ],
+    "readMs": 47,
+    "codeMB": 337,
+    "codeSizeMB": 658,
+    "codeThpMB": 0,
+    "codeMaps": 8302,
+    "anonMB": 1234,
+    "anonThpMB": 0,
+    "wasmMemMB": 1290,
+    "jsHeapsMB": 85,
+    "backingStoresMB": 455,
+    "flushes": 105,
+    "jitMB": 1786,
+    "modules": 32989,
+    "compileS": 10.3,
+    "estimateMB": 2576,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 10700,
+     "deadMB": 33.8
+    }
+   },
+   {
+    "t": 404,
+    "label": "load",
+    "rssMB": 3201,
+    "vmRssMB": [
+     3205,
+     3202
+    ],
+    "readMs": 95,
+    "codeMB": 421,
+    "codeSizeMB": 760,
+    "codeThpMB": 0,
+    "codeMaps": 11051,
+    "anonMB": 1317,
+    "anonThpMB": 0,
+    "wasmMemMB": 1290,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 482,
+    "flushes": 107,
+    "jitMB": 1812,
+    "modules": 33495,
+    "compileS": 10.5,
+    "estimateMB": 2536,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 8345,
+     "deadMB": 44.3
+    }
+   },
+   {
+    "t": 414,
+    "label": "load",
+    "rssMB": 2594,
+    "vmRssMB": [
+     2592,
+     2584
+    ],
+    "readMs": 33,
+    "codeMB": 81,
+    "codeSizeMB": 350,
+    "codeThpMB": 0,
+    "codeMaps": 1737,
+    "anonMB": 1050,
+    "anonThpMB": 0,
+    "wasmMemMB": 1291,
+    "jsHeapsMB": 65,
+    "backingStoresMB": 383,
+    "flushes": 109,
+    "jitMB": 1854,
+    "modules": 34231,
+    "compileS": 10.7,
+    "estimateMB": 2583,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 10473,
+     "deadMB": 6.6
+    }
+   },
+   {
+    "t": 424,
+    "label": "load",
+    "rssMB": 2913,
+    "vmRssMB": [
+     2909,
+     2908
+    ],
+    "readMs": 53,
+    "codeMB": 270,
+    "codeSizeMB": 574,
+    "codeThpMB": 0,
+    "codeMaps": 6657,
+    "anonMB": 1179,
+    "anonThpMB": 0,
+    "wasmMemMB": 1291,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 439,
+    "flushes": 113,
+    "jitMB": 1918,
+    "modules": 35354,
+    "compileS": 11.1,
+    "estimateMB": 2575,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 13540,
+     "deadMB": 27.3
+    }
+   },
+   {
+    "t": 435,
+    "label": "load",
+    "rssMB": 3283,
+    "vmRssMB": [
+     3283,
+     3287
+    ],
+    "readMs": 60,
+    "codeMB": 479,
+    "codeSizeMB": 815,
+    "codeThpMB": 0,
+    "codeMaps": 10265,
+    "anonMB": 1341,
+    "anonThpMB": 0,
+    "wasmMemMB": 1291,
+    "jsHeapsMB": 54,
+    "backingStoresMB": 492,
+    "flushes": 116,
+    "jitMB": 1972,
+    "modules": 36335,
+    "compileS": 11.4,
+    "estimateMB": 2595,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 10573,
+     "deadMB": 41.8
+    }
+   },
+   {
+    "t": 445,
+    "label": "load",
+    "rssMB": 2717,
+    "vmRssMB": [
+     2713,
+     2725
+    ],
+    "readMs": 140,
+    "codeMB": 144,
+    "codeSizeMB": 426,
+    "codeThpMB": 0,
+    "codeMaps": 3503,
+    "anonMB": 1109,
+    "anonThpMB": 0,
+    "wasmMemMB": 1291,
+    "jsHeapsMB": 68,
+    "backingStoresMB": 404,
+    "flushes": 120,
+    "jitMB": 2028,
+    "modules": 37243,
+    "compileS": 11.8,
+    "estimateMB": 2530,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 18367,
+     "deadMB": 14.7
+    }
+   },
+   {
+    "t": 455,
+    "label": "load",
+    "rssMB": 3065,
+    "vmRssMB": [
+     3065,
+     3066
+    ],
+    "readMs": 59,
+    "codeMB": 360,
+    "codeSizeMB": 675,
+    "codeThpMB": 0,
+    "codeMaps": 7500,
+    "anonMB": 1241,
+    "anonThpMB": 0,
+    "wasmMemMB": 1292,
+    "jsHeapsMB": 82,
+    "backingStoresMB": 460,
+    "flushes": 123,
+    "jitMB": 2087,
+    "modules": 38274,
+    "compileS": 12.1,
+    "estimateMB": 2582,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11307,
+     "deadMB": 31.9
+    }
+   },
+   {
+    "t": 465,
+    "label": "load",
+    "rssMB": 3437,
+    "vmRssMB": [
+     3436,
+     3437
+    ],
+    "readMs": 63,
+    "codeMB": 561,
+    "codeSizeMB": 909,
+    "codeThpMB": 0,
+    "codeMaps": 11682,
+    "anonMB": 1412,
+    "anonThpMB": 0,
+    "wasmMemMB": 1292,
+    "jsHeapsMB": 68,
+    "backingStoresMB": 515,
+    "flushes": 127,
+    "jitMB": 2148,
+    "modules": 39254,
+    "compileS": 12.5,
+    "estimateMB": 2546,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 11950,
+     "deadMB": 49.5
+    }
+   },
+   {
+    "t": 475,
+    "label": "load",
+    "rssMB": 2843,
+    "vmRssMB": [
+     2841,
+     2840
+    ],
+    "readMs": 34,
+    "codeMB": 221,
+    "codeSizeMB": 511,
+    "codeThpMB": 0,
+    "codeMaps": 4760,
+    "anonMB": 1157,
+    "anonThpMB": 0,
+    "wasmMemMB": 1292,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 424,
+    "flushes": 130,
+    "jitMB": 2203,
+    "modules": 40186,
+    "compileS": 12.8,
+    "estimateMB": 2568,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 17158,
+     "deadMB": 20
+    }
+   },
+   {
+    "t": 485,
+    "label": "load",
+    "rssMB": 3049,
+    "vmRssMB": [
+     3048,
+     3050
+    ],
+    "readMs": 54,
+    "codeMB": 332,
+    "codeSizeMB": 645,
+    "codeThpMB": 0,
+    "codeMaps": 8494,
+    "anonMB": 1252,
+    "anonThpMB": 0,
+    "wasmMemMB": 1292,
+    "jsHeapsMB": 83,
+    "backingStoresMB": 460,
+    "flushes": 132,
+    "jitMB": 2241,
+    "modules": 40994,
+    "compileS": 13,
+    "estimateMB": 2575,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 10939,
+     "deadMB": 34.8
+    }
+   }
+  ]
+ },
+ "b16-4": {
+  "chromium": "155.0.8059.84",
+  "query": "machine=debian&ncpus=4&view=terminal&hooks&disk2=%2Ftarget%2Fimages%2Fstress%2Fgoroot.ext4&jitmb=16",
+  "every": 10000,
+  "samples": 47,
+  "rssAfter120s": {
+   "medianMB": 2828,
+   "p90MB": 3225,
+   "maxMB": 3303
+  },
+  "vmRssAfter120s": {
+   "medianMB": 2829,
+   "p90MB": 3210,
+   "maxMB": 3307
+  },
+  "codeAfter120s": {
+   "medianMB": 277,
+   "p90MB": 496,
+   "maxMB": 535
+  },
+  "codeJump": {
+   "mb": 217,
+   "t": 191,
+   "s": 10.2
+  },
+  "series": [
+   {
+    "t": 25,
+    "label": "login",
+    "rssMB": 1784,
+    "vmRssMB": [
+     1791,
+     1784
+    ],
+    "readMs": 31,
+    "codeMB": 125,
+    "codeSizeMB": 405,
+    "codeThpMB": 0,
+    "codeMaps": 2635,
+    "anonMB": 952,
+    "anonThpMB": 0,
+    "wasmMemMB": 533,
+    "jsHeapsMB": 70,
+    "backingStoresMB": 394,
+    "flushes": 1,
+    "jitMB": 36,
+    "modules": 1280,
+    "compileS": 0.2,
+    "estimateMB": 2462,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 31,
+     "freed": 8045,
+     "deadMB": 10.9
+    }
+   },
+   {
+    "t": 29,
+    "label": "load-start",
+    "rssMB": 1869,
+    "vmRssMB": [
+     1850,
+     1858
+    ],
+    "readMs": 84,
+    "codeMB": 152,
+    "codeSizeMB": 436,
+    "codeThpMB": 0,
+    "codeMaps": 2973,
+    "anonMB": 1004,
+    "anonThpMB": 0,
+    "wasmMemMB": 539,
+    "jsHeapsMB": 62,
+    "backingStoresMB": 420,
+    "flushes": 2,
+    "jitMB": 39,
+    "modules": 1404,
+    "compileS": 0.2,
+    "estimateMB": 2397,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 1217,
+     "deadMB": 12.6
+    }
+   },
+   {
+    "t": 39,
+    "label": "load",
+    "rssMB": 2375,
+    "vmRssMB": [
+     2375,
+     2375
+    ],
+    "readMs": 50,
+    "codeMB": 313,
+    "codeSizeMB": 628,
+    "codeThpMB": 0,
+    "codeMaps": 6793,
+    "anonMB": 1117,
+    "anonThpMB": 0,
+    "wasmMemMB": 774,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 443,
+    "flushes": 5,
+    "jitMB": 90,
+    "modules": 2348,
+    "compileS": 0.5,
+    "estimateMB": 2424,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 9986,
+     "deadMB": 29.2
+    }
+   },
+   {
+    "t": 49,
+    "label": "load",
+    "rssMB": 2510,
+    "vmRssMB": [
+     2509,
+     2516
+    ],
+    "readMs": 47,
+    "codeMB": 357,
+    "codeSizeMB": 686,
+    "codeThpMB": 0,
+    "codeMaps": 8853,
+    "anonMB": 1142,
+    "anonThpMB": 0,
+    "wasmMemMB": 839,
+    "jsHeapsMB": 57,
+    "backingStoresMB": 431,
+    "flushes": 6,
+    "jitMB": 109,
+    "modules": 2873,
+    "compileS": 0.6,
+    "estimateMB": 2445,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 6982,
+     "deadMB": 38.2
+    }
+   },
+   {
+    "t": 59,
+    "label": "load",
+    "rssMB": 2142,
+    "vmRssMB": [
+     2139,
+     2147
+    ],
+    "readMs": 27,
+    "codeMB": 51,
+    "codeSizeMB": 319,
+    "codeThpMB": 0,
+    "codeMaps": 1137,
+    "anonMB": 923,
+    "anonThpMB": 0,
+    "wasmMemMB": 996,
+    "jsHeapsMB": 65,
+    "backingStoresMB": 330,
+    "flushes": 8,
+    "jitMB": 147,
+    "modules": 3508,
+    "compileS": 0.8,
+    "estimateMB": 2504,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 10817,
+     "deadMB": 19.3
+    }
+   },
+   {
+    "t": 69,
+    "label": "load",
+    "rssMB": 2590,
+    "vmRssMB": [
+     2593,
+     2593
+    ],
+    "readMs": 52,
+    "codeMB": 260,
+    "codeSizeMB": 564,
+    "codeThpMB": 0,
+    "codeMaps": 5543,
+    "anonMB": 1044,
+    "anonThpMB": 0,
+    "wasmMemMB": 1114,
+    "jsHeapsMB": 65,
+    "backingStoresMB": 388,
+    "flushes": 12,
+    "jitMB": 213,
+    "modules": 4588,
+    "compileS": 1.2,
+    "estimateMB": 2471,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 12427,
+     "deadMB": 24.4
+    }
+   },
+   {
+    "t": 79,
+    "label": "load",
+    "rssMB": 3065,
+    "vmRssMB": [
+     3069,
+     3067
+    ],
+    "readMs": 53,
+    "codeMB": 449,
+    "codeSizeMB": 788,
+    "codeThpMB": 0,
+    "codeMaps": 10104,
+    "anonMB": 1233,
+    "anonThpMB": 0,
+    "wasmMemMB": 1211,
+    "jsHeapsMB": 75,
+    "backingStoresMB": 442,
+    "flushes": 15,
+    "jitMB": 269,
+    "modules": 5637,
+    "compileS": 1.6,
+    "estimateMB": 2522,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 14015,
+     "deadMB": 43.4
+    }
+   },
+   {
+    "t": 90,
+    "label": "load",
+    "rssMB": 2501,
+    "vmRssMB": [
+     2498,
+     2499
+    ],
+    "readMs": 37,
+    "codeMB": 127,
+    "codeSizeMB": 412,
+    "codeThpMB": 0,
+    "codeMaps": 2776,
+    "anonMB": 988,
+    "anonThpMB": 0,
+    "wasmMemMB": 1214,
+    "jsHeapsMB": 59,
+    "backingStoresMB": 351,
+    "flushes": 19,
+    "jitMB": 325,
+    "modules": 6492,
+    "compileS": 1.9,
+    "estimateMB": 2456,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 12986,
+     "deadMB": 11.8
+    }
+   },
+   {
+    "t": 100,
+    "label": "load",
+    "rssMB": 2545,
+    "vmRssMB": [
+     2540,
+     2546
+    ],
+    "readMs": 35,
+    "codeMB": 158,
+    "codeSizeMB": 442,
+    "codeThpMB": 0,
+    "codeMaps": 3510,
+    "anonMB": 981,
+    "anonThpMB": 0,
+    "wasmMemMB": 1234,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 359,
+    "flushes": 22,
+    "jitMB": 382,
+    "modules": 7413,
+    "compileS": 2.2,
+    "estimateMB": 2504,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 14,
+     "freed": 13302,
+     "deadMB": 15.4
+    }
+   },
+   {
+    "t": 110,
+    "label": "load",
+    "rssMB": 2892,
+    "vmRssMB": [
+     2892,
+     2891
+    ],
+    "readMs": 48,
+    "codeMB": 349,
+    "codeSizeMB": 664,
+    "codeThpMB": 0,
+    "codeMaps": 7276,
+    "anonMB": 1135,
+    "anonThpMB": 0,
+    "wasmMemMB": 1237,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 411,
+    "flushes": 25,
+    "jitMB": 437,
+    "modules": 8300,
+    "compileS": 2.6,
+    "estimateMB": 2530,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11642,
+     "deadMB": 31.7
+    }
+   },
+   {
+    "t": 120,
+    "label": "load",
+    "rssMB": 3312,
+    "vmRssMB": [
+     3313,
+     3317
+    ],
+    "readMs": 58,
+    "codeMB": 559,
+    "codeSizeMB": 909,
+    "codeThpMB": 0,
+    "codeMaps": 11260,
+    "anonMB": 1341,
+    "anonThpMB": 0,
+    "wasmMemMB": 1240,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 468,
+    "flushes": 29,
+    "jitMB": 494,
+    "modules": 9321,
+    "compileS": 2.9,
+    "estimateMB": 2475,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 11652,
+     "deadMB": 49.1
+    }
+   },
+   {
+    "t": 130,
+    "label": "load",
+    "rssMB": 2599,
+    "vmRssMB": [
+     2598,
+     2598
+    ],
+    "readMs": 34,
+    "codeMB": 160,
+    "codeSizeMB": 447,
+    "codeThpMB": 0,
+    "codeMaps": 3900,
+    "anonMB": 1027,
+    "anonThpMB": 0,
+    "wasmMemMB": 1241,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 362,
+    "flushes": 31,
+    "jitMB": 539,
+    "modules": 10138,
+    "compileS": 3.2,
+    "estimateMB": 2548,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 15270,
+     "deadMB": 16.6
+    }
+   },
+   {
+    "t": 140,
+    "label": "load",
+    "rssMB": 2760,
+    "vmRssMB": [
+     2764,
+     2762
+    ],
+    "readMs": 37,
+    "codeMB": 263,
+    "codeSizeMB": 568,
+    "codeThpMB": 0,
+    "codeMaps": 6034,
+    "anonMB": 1085,
+    "anonThpMB": 0,
+    "wasmMemMB": 1241,
+    "jsHeapsMB": 65,
+    "backingStoresMB": 391,
+    "flushes": 33,
+    "jitMB": 568,
+    "modules": 10784,
+    "compileS": 3.3,
+    "estimateMB": 2514,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 6423,
+     "deadMB": 25.7
+    }
+   },
+   {
+    "t": 150,
+    "label": "load",
+    "rssMB": 3080,
+    "vmRssMB": [
+     3080,
+     3079
+    ],
+    "readMs": 45,
+    "codeMB": 417,
+    "codeSizeMB": 749,
+    "codeThpMB": 0,
+    "codeMaps": 8944,
+    "anonMB": 1228,
+    "anonThpMB": 0,
+    "wasmMemMB": 1261,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 446,
+    "flushes": 36,
+    "jitMB": 612,
+    "modules": 11789,
+    "compileS": 3.6,
+    "estimateMB": 2503,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 9809,
+     "deadMB": 38.1
+    }
+   },
+   {
+    "t": 160,
+    "label": "load",
+    "rssMB": 2427,
+    "vmRssMB": [
+     2427,
+     2427
+    ],
+    "readMs": 20,
+    "codeMB": 31,
+    "codeSizeMB": 292,
+    "codeThpMB": 0,
+    "codeMaps": 712,
+    "anonMB": 962,
+    "anonThpMB": 0,
+    "wasmMemMB": 1261,
+    "jsHeapsMB": 67,
+    "backingStoresMB": 340,
+    "flushes": 38,
+    "jitMB": 650,
+    "modules": 12581,
+    "compileS": 3.8,
+    "estimateMB": 2545,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 12777,
+     "deadMB": 27
+    }
+   },
+   {
+    "t": 170,
+    "label": "load",
+    "rssMB": 2561,
+    "vmRssMB": [
+     2561,
+     2559
+    ],
+    "readMs": 38,
+    "codeMB": 134,
+    "codeSizeMB": 412,
+    "codeThpMB": 0,
+    "codeMaps": 2776,
+    "anonMB": 993,
+    "anonThpMB": 0,
+    "wasmMemMB": 1262,
+    "jsHeapsMB": 59,
+    "backingStoresMB": 369,
+    "flushes": 40,
+    "jitMB": 676,
+    "modules": 13012,
+    "compileS": 4,
+    "estimateMB": 2498,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 10,
+     "freed": 6972,
+     "deadMB": 12
+    }
+   },
+   {
+    "t": 181,
+    "label": "load",
+    "rssMB": 2828,
+    "vmRssMB": [
+     2829,
+     2829
+    ],
+    "readMs": 52,
+    "codeMB": 279,
+    "codeSizeMB": 583,
+    "codeThpMB": 0,
+    "codeMaps": 6574,
+    "anonMB": 1115,
+    "anonThpMB": 0,
+    "wasmMemMB": 1262,
+    "jsHeapsMB": 50,
+    "backingStoresMB": 669,
+    "flushes": 42,
+    "jitMB": 724,
+    "modules": 13850,
+    "compileS": 4.3,
+    "estimateMB": 2571,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 11988,
+     "deadMB": 28.4
+    }
+   },
+   {
+    "t": 191,
+    "label": "load",
+    "rssMB": 3225,
+    "vmRssMB": [
+     3226,
+     3225
+    ],
+    "readMs": 54,
+    "codeMB": 496,
+    "codeSizeMB": 837,
+    "codeThpMB": 0,
+    "codeMaps": 10327,
+    "anonMB": 1294,
+    "anonThpMB": 0,
+    "wasmMemMB": 1263,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 469,
+    "flushes": 46,
+    "jitMB": 780,
+    "modules": 14870,
+    "compileS": 4.6,
+    "estimateMB": 2517,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 10835,
+     "deadMB": 44.3
+    }
+   },
+   {
+    "t": 201,
+    "label": "load",
+    "rssMB": 2644,
+    "vmRssMB": [
+     2641,
+     2641
+    ],
+    "readMs": 39,
+    "codeMB": 163,
+    "codeSizeMB": 449,
+    "codeThpMB": 0,
+    "codeMaps": 3620,
+    "anonMB": 1045,
+    "anonThpMB": 0,
+    "wasmMemMB": 1264,
+    "jsHeapsMB": 74,
+    "backingStoresMB": 379,
+    "flushes": 49,
+    "jitMB": 841,
+    "modules": 15927,
+    "compileS": 5,
+    "estimateMB": 2570,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 13,
+     "freed": 16667,
+     "deadMB": 15.8
+    }
+   },
+   {
+    "t": 211,
+    "label": "load",
+    "rssMB": 2991,
+    "vmRssMB": [
+     2993,
+     2993
+    ],
+    "readMs": 47,
+    "codeMB": 360,
+    "codeSizeMB": 680,
+    "codeThpMB": 0,
+    "codeMaps": 7515,
+    "anonMB": 1194,
+    "anonThpMB": 0,
+    "wasmMemMB": 1264,
+    "jsHeapsMB": 56,
+    "backingStoresMB": 434,
+    "flushes": 53,
+    "jitMB": 896,
+    "modules": 16848,
+    "compileS": 5.3,
+    "estimateMB": 2502,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 11605,
+     "deadMB": 32.9
+    }
+   },
+   {
+    "t": 221,
+    "label": "load",
+    "rssMB": 2480,
+    "vmRssMB": [
+     2480,
+     2484
+    ],
+    "readMs": 22,
+    "codeMB": 52,
+    "codeSizeMB": 316,
+    "codeThpMB": 0,
+    "codeMaps": 816,
+    "anonMB": 991,
+    "anonThpMB": 0,
+    "wasmMemMB": 1265,
+    "jsHeapsMB": 76,
+    "backingStoresMB": 347,
+    "flushes": 56,
+    "jitMB": 957,
+    "modules": 17853,
+    "compileS": 5.7,
+    "estimateMB": 2571,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 14982,
+     "deadMB": 3.7
+    }
+   },
+   {
+    "t": 231,
+    "label": "load",
+    "rssMB": 2769,
+    "vmRssMB": [
+     2770,
+     2771
+    ],
+    "readMs": 37,
+    "codeMB": 235,
+    "codeSizeMB": 529,
+    "codeThpMB": 0,
+    "codeMaps": 4674,
+    "anonMB": 1097,
+    "anonThpMB": 0,
+    "wasmMemMB": 1265,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 398,
+    "flushes": 59,
+    "jitMB": 1010,
+    "modules": 18661,
+    "compileS": 6,
+    "estimateMB": 2572,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 11458,
+     "deadMB": 20.9
+    }
+   },
+   {
+    "t": 241,
+    "label": "load",
+    "rssMB": 3106,
+    "vmRssMB": [
+     3108,
+     3106
+    ],
+    "readMs": 46,
+    "codeMB": 407,
+    "codeSizeMB": 739,
+    "codeThpMB": 0,
+    "codeMaps": 9942,
+    "anonMB": 1261,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 453,
+    "flushes": 63,
+    "jitMB": 1067,
+    "modules": 19638,
+    "compileS": 6.4,
+    "estimateMB": 2516,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 15073,
+     "deadMB": 43.7
+    }
+   },
+   {
+    "t": 251,
+    "label": "load",
+    "rssMB": 2430,
+    "vmRssMB": [
+     2429,
+     2429
+    ],
+    "readMs": 25,
+    "codeMB": 25,
+    "codeSizeMB": 288,
+    "codeThpMB": 0,
+    "codeMaps": 524,
+    "anonMB": 966,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 68,
+    "backingStoresMB": 342,
+    "flushes": 65,
+    "jitMB": 1102,
+    "modules": 20407,
+    "compileS": 6.6,
+    "estimateMB": 2526,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 7031,
+     "deadMB": 2.4
+    }
+   },
+   {
+    "t": 261,
+    "label": "load",
+    "rssMB": 2626,
+    "vmRssMB": [
+     2629,
+     2608
+    ],
+    "readMs": 37,
+    "codeMB": 147,
+    "codeSizeMB": 429,
+    "codeThpMB": 0,
+    "codeMaps": 2871,
+    "anonMB": 1040,
+    "anonThpMB": 0,
+    "wasmMemMB": 1266,
+    "jsHeapsMB": 61,
+    "backingStoresMB": 375,
+    "flushes": 67,
+    "jitMB": 1131,
+    "modules": 20921,
+    "compileS": 6.7,
+    "estimateMB": 2503,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 12,
+     "freed": 7896,
+     "deadMB": 12.9
+    }
+   },
+   {
+    "t": 272,
+    "label": "load",
+    "rssMB": 2924,
+    "vmRssMB": [
+     2923,
+     2927
+    ],
+    "readMs": 42,
+    "codeMB": 317,
+    "codeSizeMB": 631,
+    "codeThpMB": 0,
+    "codeMaps": 7245,
+    "anonMB": 1167,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 68,
+    "backingStoresMB": 426,
+    "flushes": 70,
+    "jitMB": 1186,
+    "modules": 21938,
+    "compileS": 7,
+    "estimateMB": 2532,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 6,
+     "freed": 13191,
+     "deadMB": 32.1
+    }
+   },
+   {
+    "t": 282,
+    "label": "load",
+    "rssMB": 3037,
+    "vmRssMB": [
+     3043,
+     3040
+    ],
+    "readMs": 59,
+    "codeMB": 379,
+    "codeSizeMB": 703,
+    "codeThpMB": 0,
+    "codeMaps": 8474,
+    "anonMB": 1218,
+    "anonThpMB": 0,
+    "wasmMemMB": 1267,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 443,
+    "flushes": 71,
+    "jitMB": 1208,
+    "modules": 22505,
+    "compileS": 7.2,
+    "estimateMB": 2566,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 1,
+     "freed": 4279,
+     "deadMB": 36.7
+    }
+   },
+   {
+    "t": 292,
+    "label": "load",
+    "rssMB": 2982,
+    "vmRssMB": [
+     2996,
+     2943
+    ],
+    "readMs": 40,
+    "codeMB": 339,
+    "codeSizeMB": 649,
+    "codeThpMB": 0,
+    "codeMaps": 6301,
+    "anonMB": 1203,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 59,
+    "backingStoresMB": 340,
+    "flushes": 74,
+    "jitMB": 1250,
+    "modules": 23153,
+    "compileS": 7.4,
+    "estimateMB": 2507,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 9085,
+     "deadMB": 43.3
+    }
+   },
+   {
+    "t": 302,
+    "label": "load",
+    "rssMB": 2715,
+    "vmRssMB": [
+     2717,
+     2717
+    ],
+    "readMs": 37,
+    "codeMB": 212,
+    "codeSizeMB": 504,
+    "codeThpMB": 0,
+    "codeMaps": 4186,
+    "anonMB": 1064,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 67,
+    "backingStoresMB": 395,
+    "flushes": 77,
+    "jitMB": 1304,
+    "modules": 24142,
+    "compileS": 7.7,
+    "estimateMB": 2540,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 18,
+     "freed": 15809,
+     "deadMB": 18.5
+    }
+   },
+   {
+    "t": 312,
+    "label": "load",
+    "rssMB": 3070,
+    "vmRssMB": [
+     3068,
+     3071
+    ],
+    "readMs": 53,
+    "codeMB": 392,
+    "codeSizeMB": 718,
+    "codeThpMB": 0,
+    "codeMaps": 9108,
+    "anonMB": 1237,
+    "anonThpMB": 0,
+    "wasmMemMB": 1268,
+    "jsHeapsMB": 77,
+    "backingStoresMB": 449,
+    "flushes": 80,
+    "jitMB": 1361,
+    "modules": 25104,
+    "compileS": 8.1,
+    "estimateMB": 2574,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 14440,
+     "deadMB": 39.2
+    }
+   },
+   {
+    "t": 322,
+    "label": "load",
+    "rssMB": 2651,
+    "vmRssMB": [
+     2629,
+     2623
+    ],
+    "readMs": 42,
+    "codeMB": 166,
+    "codeSizeMB": 451,
+    "codeThpMB": 0,
+    "codeMaps": 2708,
+    "anonMB": 1044,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 60,
+    "backingStoresMB": 361,
+    "flushes": 83,
+    "jitMB": 1416,
+    "modules": 26088,
+    "compileS": 8.4,
+    "estimateMB": 2599,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 14480,
+     "deadMB": 11.6
+    }
+   },
+   {
+    "t": 332,
+    "label": "load",
+    "rssMB": 2945,
+    "vmRssMB": [
+     2945,
+     2949
+    ],
+    "readMs": 47,
+    "codeMB": 320,
+    "codeSizeMB": 635,
+    "codeThpMB": 0,
+    "codeMaps": 7896,
+    "anonMB": 1184,
+    "anonThpMB": 0,
+    "wasmMemMB": 1269,
+    "jsHeapsMB": 76,
+    "backingStoresMB": 418,
+    "flushes": 87,
+    "jitMB": 1476,
+    "modules": 27132,
+    "compileS": 8.8,
+    "estimateMB": 2540,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 15246,
+     "deadMB": 34.4
+    }
+   },
+   {
+    "t": 343,
+    "label": "load",
+    "rssMB": 3303,
+    "vmRssMB": [
+     3310,
+     3307
+    ],
+    "readMs": 64,
+    "codeMB": 512,
+    "codeSizeMB": 864,
+    "codeThpMB": 0,
+    "codeMaps": 12290,
+    "anonMB": 1349,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 61,
+    "backingStoresMB": 473,
+    "flushes": 91,
+    "jitMB": 1538,
+    "modules": 28141,
+    "compileS": 9.2,
+    "estimateMB": 2514,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 3,
+     "freed": 13243,
+     "deadMB": 53.3
+    }
+   },
+   {
+    "t": 353,
+    "label": "load",
+    "rssMB": 2752,
+    "vmRssMB": [
+     2771,
+     2748
+    ],
+    "readMs": 44,
+    "codeMB": 199,
+    "codeSizeMB": 495,
+    "codeThpMB": 0,
+    "codeMaps": 4816,
+    "anonMB": 1111,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 71,
+    "backingStoresMB": 384,
+    "flushes": 94,
+    "jitMB": 1594,
+    "modules": 29127,
+    "compileS": 9.5,
+    "estimateMB": 2541,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 13447,
+     "deadMB": 17.8
+    }
+   },
+   {
+    "t": 363,
+    "label": "load",
+    "rssMB": 3011,
+    "vmRssMB": [
+     3013,
+     3016
+    ],
+    "readMs": 39,
+    "codeMB": 354,
+    "codeSizeMB": 678,
+    "codeThpMB": 0,
+    "codeMaps": 7584,
+    "anonMB": 1214,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 60,
+    "backingStoresMB": 425,
+    "flushes": 96,
+    "jitMB": 1635,
+    "modules": 29887,
+    "compileS": 9.7,
+    "estimateMB": 2599,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 9797,
+     "deadMB": 32.1
+    }
+   },
+   {
+    "t": 373,
+    "label": "load",
+    "rssMB": 3281,
+    "vmRssMB": [
+     3208,
+     3210
+    ],
+    "readMs": 45,
+    "codeMB": 535,
+    "codeSizeMB": 889,
+    "codeThpMB": 0,
+    "codeMaps": 10041,
+    "anonMB": 1303,
+    "anonThpMB": 0,
+    "wasmMemMB": 1270,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 456,
+    "flushes": 98,
+    "jitMB": 1667,
+    "modules": 30671,
+    "compileS": 9.9,
+    "estimateMB": 2583,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 7475,
+     "deadMB": 42.4
+    }
+   },
+   {
+    "t": 383,
+    "label": "load",
+    "rssMB": 2600,
+    "vmRssMB": [
+     2599,
+     2599
+    ],
+    "readMs": 26,
+    "codeMB": 109,
+    "codeSizeMB": 386,
+    "codeThpMB": 0,
+    "codeMaps": 2614,
+    "anonMB": 1044,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 82,
+    "backingStoresMB": 359,
+    "flushes": 101,
+    "jitMB": 1714,
+    "modules": 31587,
+    "compileS": 10.2,
+    "estimateMB": 2571,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 15616,
+     "deadMB": 11.1
+    }
+   },
+   {
+    "t": 393,
+    "label": "load",
+    "rssMB": 2777,
+    "vmRssMB": [
+     2777,
+     2778
+    ],
+    "readMs": 29,
+    "codeMB": 224,
+    "codeSizeMB": 520,
+    "codeThpMB": 0,
+    "codeMaps": 4762,
+    "anonMB": 1110,
+    "anonThpMB": 0,
+    "wasmMemMB": 1271,
+    "jsHeapsMB": 79,
+    "backingStoresMB": 389,
+    "flushes": 103,
+    "jitMB": 1749,
+    "modules": 32302,
+    "compileS": 10.4,
+    "estimateMB": 2578,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 6547,
+     "deadMB": 20.5
+    }
+   },
+   {
+    "t": 403,
+    "label": "load",
+    "rssMB": 2928,
+    "vmRssMB": [
+     2928,
+     2928
+    ],
+    "readMs": 49,
+    "codeMB": 317,
+    "codeSizeMB": 633,
+    "codeThpMB": 0,
+    "codeMaps": 8007,
+    "anonMB": 1168,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 70,
+    "backingStoresMB": 420,
+    "flushes": 105,
+    "jitMB": 1784,
+    "modules": 32794,
+    "compileS": 10.6,
+    "estimateMB": 2581,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 10959,
+     "deadMB": 34.2
+    }
+   },
+   {
+    "t": 414,
+    "label": "load",
+    "rssMB": 3288,
+    "vmRssMB": [
+     3284,
+     3291
+    ],
+    "readMs": 47,
+    "codeMB": 515,
+    "codeSizeMB": 863,
+    "codeThpMB": 0,
+    "codeMaps": 10837,
+    "anonMB": 1328,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 78,
+    "backingStoresMB": 469,
+    "flushes": 108,
+    "jitMB": 1834,
+    "modules": 33753,
+    "compileS": 10.9,
+    "estimateMB": 2557,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 2,
+     "freed": 9221,
+     "deadMB": 46
+    }
+   },
+   {
+    "t": 424,
+    "label": "load",
+    "rssMB": 2733,
+    "vmRssMB": [
+     2728,
+     2733
+    ],
+    "readMs": 38,
+    "codeMB": 193,
+    "codeSizeMB": 481,
+    "codeThpMB": 0,
+    "codeMaps": 3849,
+    "anonMB": 1096,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 64,
+    "backingStoresMB": 382,
+    "flushes": 112,
+    "jitMB": 1889,
+    "modules": 34718,
+    "compileS": 11.2,
+    "estimateMB": 2491,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 11,
+     "freed": 16529,
+     "deadMB": 16.6
+    }
+   },
+   {
+    "t": 434,
+    "label": "load",
+    "rssMB": 3079,
+    "vmRssMB": [
+     3075,
+     3078
+    ],
+    "readMs": 44,
+    "codeMB": 390,
+    "codeSizeMB": 715,
+    "codeThpMB": 0,
+    "codeMaps": 8203,
+    "anonMB": 1244,
+    "anonThpMB": 0,
+    "wasmMemMB": 1272,
+    "jsHeapsMB": 72,
+    "backingStoresMB": 437,
+    "flushes": 115,
+    "jitMB": 1947,
+    "modules": 35809,
+    "compileS": 11.6,
+    "estimateMB": 2534,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 13072,
+     "deadMB": 34.8
+    }
+   },
+   {
+    "t": 444,
+    "label": "load",
+    "rssMB": 2534,
+    "vmRssMB": [
+     2536,
+     2544
+    ],
+    "readMs": 36,
+    "codeMB": 69,
+    "codeSizeMB": 337,
+    "codeThpMB": 0,
+    "codeMaps": 1384,
+    "anonMB": 1020,
+    "anonThpMB": 0,
+    "wasmMemMB": 1273,
+    "jsHeapsMB": 58,
+    "backingStoresMB": 349,
+    "flushes": 118,
+    "jitMB": 2004,
+    "modules": 36753,
+    "compileS": 11.9,
+    "estimateMB": 2579,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 7,
+     "freed": 16761,
+     "deadMB": 6.4
+    }
+   },
+   {
+    "t": 454,
+    "label": "load",
+    "rssMB": 2875,
+    "vmRssMB": [
+     2878,
+     2876
+    ],
+    "readMs": 41,
+    "codeMB": 277,
+    "codeSizeMB": 582,
+    "codeThpMB": 0,
+    "codeMaps": 5635,
+    "anonMB": 1153,
+    "anonThpMB": 0,
+    "wasmMemMB": 1273,
+    "jsHeapsMB": 73,
+    "backingStoresMB": 406,
+    "flushes": 122,
+    "jitMB": 2063,
+    "modules": 37714,
+    "compileS": 12.3,
+    "estimateMB": 2544,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 9,
+     "freed": 12009,
+     "deadMB": 25
+    }
+   },
+   {
+    "t": 464,
+    "label": "load",
+    "rssMB": 3207,
+    "vmRssMB": [
+     3200,
+     3201
+    ],
+    "readMs": 57,
+    "codeMB": 452,
+    "codeSizeMB": 791,
+    "codeThpMB": 0,
+    "codeMaps": 10188,
+    "anonMB": 1310,
+    "anonThpMB": 0,
+    "wasmMemMB": 1273,
+    "jsHeapsMB": 83,
+    "backingStoresMB": 460,
+    "flushes": 125,
+    "jitMB": 2123,
+    "modules": 38696,
+    "compileS": 12.6,
+    "estimateMB": 2596,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 4,
+     "freed": 13834,
+     "deadMB": 44.7
+    }
+   },
+   {
+    "t": 474,
+    "label": "load",
+    "rssMB": 2578,
+    "vmRssMB": [
+     2574,
+     2580
+    ],
+    "readMs": 33,
+    "codeMB": 92,
+    "codeSizeMB": 363,
+    "codeThpMB": 0,
+    "codeMaps": 1949,
+    "anonMB": 1041,
+    "anonThpMB": 0,
+    "wasmMemMB": 1273,
+    "jsHeapsMB": 69,
+    "backingStoresMB": 358,
+    "flushes": 128,
+    "jitMB": 2166,
+    "modules": 39579,
+    "compileS": 12.9,
+    "estimateMB": 2550,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 8,
+     "freed": 12964,
+     "deadMB": 9.2
+    }
+   },
+   {
+    "t": 485,
+    "label": "load",
+    "rssMB": 2763,
+    "vmRssMB": [
+     2763,
+     2763
+    ],
+    "readMs": 28,
+    "codeMB": 210,
+    "codeSizeMB": 501,
+    "codeThpMB": 0,
+    "codeMaps": 4146,
+    "anonMB": 1107,
+    "anonThpMB": 0,
+    "wasmMemMB": 1274,
+    "jsHeapsMB": 66,
+    "backingStoresMB": 388,
+    "flushes": 130,
+    "jitMB": 2199,
+    "modules": 40288,
+    "compileS": 13,
+    "estimateMB": 2552,
+    "thpFaults": 23975604,
+    "thpCollapses": 114616,
+    "v8gc": {
+     "gcs": 5,
+     "freed": 6958,
+     "deadMB": 18.4
+    }
+   }
+  ]
+ }
+}

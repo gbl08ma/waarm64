@@ -111,18 +111,20 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-23, after loop 61)
+## State (2026-11-23, after loop 62)
 
-Loop 61 re-measured kvm-unit-tests `timer` (the backlog's "slower under the JIT"): in Node, 2,081 ms interpreted
-against 133 ms under the JIT (5 rounds alternated; 2,027 / 154 at loop 49's base), so the entry is gone, no code
-changed (bench/boot/REPORT.md "PERF loop 61"). Loop 60's idle-limit hang with `vyield=1` stays a backlog watch
-(docs/backlog.md "Parallel SMP"); not seen in loop 61. Core unchanged (ABI 74, `tests/steps.txt` unchanged); loop 57's
-revert stands. The next loop is 62, from the queue's first row. `target/snapbench/pages.waarm64snap` loads into the
-current state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0.
-Loop 61's commit passed `scripts/ci-fast.sh` (docs and results only).
+Loop 62 re-ran the Go load whose ~10 GB samples the backlog called unexplained: six runs on the dev VM (Chromium 155),
+four at the 16 MiB floor that brings back the old flush churn; every sample at most 3.44 GB, smaps matching the
+kernel's VmRSS, no huge pages in the code. Not reproducible, so the entry is gone; `bench/mem/memsample.ts` now
+records what would tell a recurrence apart (bench/boot/REPORT.md "PERF loop 62", results in
+`bench/mem/results/perf62.json`; there is no bench/mem/REPORT.md). Loop 60's idle-limit hang with `vyield=1` stays a
+backlog watch (docs/backlog.md "Parallel SMP"); not seen. Core unchanged (ABI 74, `tests/steps.txt` unchanged).
+The next loop is 63, from the queue's first row. `target/snapbench/pages.waarm64snap` loads into the current state
+layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 62's
+commit passed `scripts/ci.sh` (bench tools and a unit test; no core or page change).
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-61" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+62" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47, 50, 55 and 58) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56 and 60 (50's: comments only).
 The next is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
@@ -133,8 +135,7 @@ Refilled by the supervisor after loop 52 from docs/backlog.md's performance entr
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: the unexplained ~10 GB samples in the Go-load runs | V8's own counters before trusting the median |
-| JIT: a browser session past the 320 MiB budget | a real session long enough to flush; measure the flush's stutter |
+| **Next:** JIT: a browser session past the 320 MiB budget | a real session long enough to flush; measure the flush's stutter |
 | JIT: transfers that still leave a function | re-profile with `bench/boot/userprof.ts`; turn into a doable to-do or a finding |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: keep

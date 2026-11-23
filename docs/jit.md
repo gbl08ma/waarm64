@@ -699,8 +699,13 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   leaves unused. V8 frees the dead code only when its JS GC collects the instances, and a worker's JS
   heap stays small, so that GC can lag by minutes: with the flush alone a Go build's tab peaked at
   9.6 GB (median 4.8 GB). After each flush the host allocates (and drops) a 256 MiB ArrayBuffer, whose
-  external-memory pressure makes V8 collect: median 3.3 GB, p90 4.0–4.9 GB. Two of four runs still had one
-  ~10 GB sample near their end that the sampler could not explain (not reproduced with 8 s sampling).
+  external-memory pressure makes V8 collect: median 3.3 GB, p90 4.0–4.9 GB (2026-09-30, per-vCPU caches). Two of
+  those runs had one ~10 GB sample near their end; **today it doesn't recur** (`bench/boot/REPORT.md` "PERF loop 62":
+  six runs, four of them at the 16 MiB floor, which flushes ~130 times in 450 s and compiles the old runs' 2.2 GB of
+  wasm): every 10 s sample at most 3.44 GB, the code's largest rise between two samples 217 MB, and V8's code GC freeing
+  each flushed epoch within a sample or two (at most 56 MB of dead code counted). The sampler's sum of smaps matches
+  the kernel's `VmRSS` within ~70 MB and counts resident bytes, not the code space's reservations (~1.7× its RSS); no
+  code is in huge pages. At 160 or 320 MiB today's `go build` loop doesn't flush at all (~130 MB of wasm in 450 s).
 - **What an epoch keeps alive:** within an epoch the slots are bump-allocated (`Cache::alloc`) and never reused, and
   the host's table holds every function installed until a flush starts the slots over, so every module of the epoch
   lives until then, whatever its siblings. Little of it is dead (PERF loop 46, `bench/boot/REPORT.md` "PERF loop 46",
