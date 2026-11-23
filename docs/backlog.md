@@ -1643,9 +1643,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
   a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.
 - **Room names' loose ends** (NAMES track, [networking/names.md](networking/names.md); the records and rules in
-  `net/ts/src/room/names/`). What is worth doing soon is the NAMES2 track's ([NAMES2-KICKOFF.md](../NAMES2-KICKOFF.md):
-  what the pane promises, titles that can't get stuck, honest lookups under load, the relays); what is left here is
-  by kind, the weightier first. What an attacker can still do and what stops it is names.md "What an attacker can do":
+  `net/ts/src/room/names/`). The NAMES2 track (2026-11-23) took what the pane promises, titles that can't get stuck,
+  honest lookups under load and the relays (names.md, rooms.md say what exists); what is left here is by kind, the
+  weightier first. What an attacker can still do and what stops it is names.md "What an attacker can do":
   a row there with no remedy to build isn't repeated here.
   - **Needs a design, and the user's call** (a dishonest participant, or plain growth, spoils names for everyone):
     - **Past the bound: servers that hold a share of the id space each** (names.md "Size, and where it stops").
@@ -1752,6 +1752,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       once, NAMES2 loop 5); under a minute of load that lasts, its second silence is still "nobody serves": 20 of 500
       joiners in N6a's rig (bench/net/REPORT.md "NAMES2 loop 5", 62 before). A later or wider second ask would find
       more, and changes what the guest sees (the user's call).
+    - The page's `online` and Network Information `change` don't reach the room client (NAMES2's review): after an
+      outage its Nostr relays are opened again within a minute (`NOSTR_CLOSED_MAX`), not at once; an open that hangs
+      past 15 s counts as a relay that doesn't answer and backs off to 10 minutes (rooms.md "What a room needs from a
+      Nostr relay"). Passing the events on is a worker message; worth it only if a minute shows in use.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer
