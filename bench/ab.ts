@@ -5,11 +5,11 @@
 // workload itself; another workload; `none`) and `--rounds` rounds, each in a random order; an arm's samples of a
 // block over the base's. Each measure's pairs give an interval
 // (bench/stats.ts `paired`, the tail of `lookAlpha`: looking after every pair is paid for), and the workload stops
-// once every arm's stop measures are each a difference or inside the band, or at the cap or the budget. The base
-// runs twice, as itself and as `aa`: an A/A arm that says what this session calls a difference (it holds the stop
-// only when it is the one arm: a base given alone is an A/A run).
-//   node bench/ab.ts --out <dir> [--workloads user,boot] [--min 4] [--cap 24] [--band 0.5] [--overall 0.01]
-//     [--stop cycles,wall] [--budget <s>] [--warm same] [--rounds 1] <base>=<core.wasm> <arm>=<core.wasm>[@<tree>][?<query>]...
+// once every arm's stop measures are each a difference or inside the band, or at the cap or the budget. `--aa` runs
+// the base a second time as the arm `aa`: what the same core against itself gives at this moment, to hold a result
+// against (it holds the stop only when it is the one arm: `--aa` with the base alone is an A/A run).
+//   node bench/ab.ts --out <dir> [--workloads node,user,boot] [--min 4] [--cap 24] [--band 0.5] [--overall 0.01]
+//     [--stop cycles,wall] [--budget <s>] [--warm same] [--rounds 1] [--aa] <base>=<core.wasm> <arm>=<core.wasm>[@<tree>][?<query>]...
 // `@<tree>`: the arm's page, host code and dev server come from another checkout (a core of another ABI), with this
 // tree's bench/boot/pair* copied over it; `?<query>`: more of that arm's page query (`nocw`, `fma=emul`: what
 // bench/boot/suite.ts's `boot` reads). Measures (lower is better in all): `wall` ms, `cycles` and `instr` a guest
@@ -118,13 +118,13 @@ export function shuffled(n: number, u: () => number): number[] {
 if (import.meta.main) {
   const { values: v, positionals } = parseArgs({
     allowPositionals: true,
-    options: { out: { type: 'string' }, workloads: { type: 'string', default: 'user' }, min: { type: 'string', default: '4' }, cap: { type: 'string', default: '24' }, band: { type: 'string', default: '0.5' }, overall: { type: 'string', default: '0.01' }, stop: { type: 'string', default: 'cycles,wall' }, budget: { type: 'string', default: '3000' }, rounds: { type: 'string', default: '1' }, warm: { type: 'string', default: 'same' }, analyze: { type: 'string' } },
+    options: { out: { type: 'string' }, workloads: { type: 'string', default: 'node' }, min: { type: 'string', default: '4' }, cap: { type: 'string', default: '24' }, band: { type: 'string', default: '0.5' }, overall: { type: 'string', default: '0.01' }, stop: { type: 'string', default: 'cycles,wall' }, budget: { type: 'string', default: '3000' }, rounds: { type: 'string', default: '1' }, aa: { type: 'boolean', default: false }, warm: { type: 'string', default: 'same' }, analyze: { type: 'string' } },
   });
   if (v.analyze) {
     console.log(verdict(JSON.parse(readFileSync(`${v.analyze}/ab.json`, 'utf8')) as Run).join('\n'));
     process.exit(0);
   }
-  if (!v.out || positionals.length < 1) throw new Error('usage: node bench/ab.ts --out <dir> <base>=<core.wasm> [<arm>=<core.wasm>[@<tree>][?<query>]...]');
+  if (!v.out || positionals.length < 1) throw new Error('usage: node bench/ab.ts --out <dir> [--aa] <base>=<core.wasm> [<arm>=<core.wasm>[@<tree>][?<query>]...]');
   const here = resolve(import.meta.dirname, '..');
   const arms: Arm[] = positionals.map((p) => {
     const m = /^([A-Za-z0-9_.-]+)=([^@?]+)(?:@([^?]+))?(?:\?(.*))?$/.exec(p);
@@ -132,7 +132,8 @@ if (import.meta.main) {
     return { name: m[1], core: resolve(m[2]), tree: m[3] ? resolve(m[3]) : here, query: m[4] ?? '' };
   });
   if (new Set(arms.map((a) => a.name)).size !== arms.length || arms.some((a) => a.name === 'aa')) throw new Error("arms' names must differ, and `aa` is the A/A arm's");
-  arms.splice(1, 0, { ...arms[0], name: 'aa' });
+  if (v.aa) arms.splice(1, 0, { ...arms[0], name: 'aa' });
+  if (arms.length < 2) throw new Error('one arm: nothing to compare (--aa compares the base with itself)');
   const opts: Opts = { min: Number(v.min), cap: Number(v.cap), band: Number(v.band), overall: Number(v.overall), stop: v.stop!.split(','), budget: Number(v.budget), workloads: v.workloads!.split(','), rounds: Number(v.rounds), warm: v.warm! };
   if (!(opts.min >= 2 && opts.cap >= opts.min)) throw new Error('--min at least 2, --cap at least --min');
   mkdirSync(v.out, { recursive: true });

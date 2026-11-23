@@ -35,6 +35,10 @@ a screen, not the screen.
   and the user's OK first.
 - A proxy workload earns its place by calibration (loop 4), not by argument: one that ranks past changes otherwise
   than the full pages session is dropped, and the track says so.
+- The paired command's A/A arm is opt-in (the user, 2026-11-23, after loop 3; loop 2's text below says "always"):
+  for when an agent wants to hold a result against what the same cores give at that moment.
+- A calibration takes the pages session's results from the reports where they exist (the user, 2026-11-23): no
+  new full sessions for an arm history already has.
 - docs/benchmarking.md's rules change only at the track's end, from what the loops measured (the floor, the rounds,
   what counts as a difference); until then the ~1% rule stands.
 

@@ -2,9 +2,10 @@
 # A paired A/B of core builds on the Mac host's Chrome, with a stopping rule and a verdict (bench/ab.ts;
 # docs/benchmarking.md "The paired A/B"): the one command for a JIT or core change's screen.
 #   bench/ab-mac.sh <outdir> <base>=<core.wasm> <arm>=<core.wasm>[@<tree>][?<query>]...
-# The first arm is the base; an A/A arm (`aa`, the base again) is added. `@<tree>`: the arm's host code from another
+# The first arm is the base. AA=1 adds an A/A arm (`aa`, the base again: what the same core against itself gives at
+# this moment, to hold a result against; with the base alone, an A/A run). `@<tree>`: the arm's host code from another
 # checkout (a core of another ABI, e.g. `../waarm64-base`; its target/ must be this one's, a symlink). Options, as
-# variables: WORKLOADS (default `user`; `node`, `boot`, several with commas), MIN, CAP (pairs: 4, 24), BAND (0.5, percent), OVERALL (0.01),
+# variables: WORKLOADS (default `node`; `user`, `boot`, several with commas), MIN, CAP (pairs: 4, 24), BAND (0.5, percent), OVERALL (0.01),
 # STOP (`cycles,wall`), WARM (`same`), ROUNDS (1), BUDGET (1500: seconds, after which the workload ends at its pair).
 # Into <outdir>/: ab.json (every sample), verdict.txt (printed too), log.txt. Bounded on the Mac (the budget and
 # 400 s) and here; takes the machine's CI lock exclusive (the dev VM shares the Mac's cores: never beside
@@ -13,8 +14,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$PWD
 out=$(realpath -m "$1"); shift
-[[ $# -ge 1 ]] || { echo "usage: $0 <outdir> <base>=<core.wasm> [<arm>=<core.wasm>[@<tree>][?<query>]...]" >&2; exit 2; }
+[[ $# -ge 1 ]] || { echo "usage: [AA=1] $0 <outdir> <base>=<core.wasm> [<arm>=<core.wasm>[@<tree>][?<query>]...]" >&2; exit 2; }
 source scripts/ci-lock.sh; ci_lock exclusive
+trap '' PIPE HUP # a reader that went away doesn't end the run or lose its results
 HOST=${MAC_HOST:-macmini.lan}
 DEST=waarm64-bench
 CORE=target/wasm32-unknown-unknown/release
@@ -58,9 +60,10 @@ code=0
 timeout $((budget + 500)) ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 && \
   export CHROMIUM=\"$MAC_CHROME\" && rm -rf bench/results/local/ab-run && \
   perl -e 'alarm shift; exec @ARGV' $((budget + 400)) node --disable-warning=ExperimentalWarning bench/ab.ts --out bench/results/local/ab-run \
-    --workloads ${WORKLOADS:-user} --min ${MIN:-4} --cap ${CAP:-24} --band ${BAND:-0.5} --overall ${OVERALL:-0.01} --stop ${STOP:-cycles,wall} --budget $budget --warm ${WARM:-same} --rounds ${ROUNDS:-1} \
-    $(printf "'%s' " "${args[@]}")" 2> "$out/log.txt" || code=$?
+    --workloads ${WORKLOADS:-node} --min ${MIN:-4} --cap ${CAP:-24} --band ${BAND:-0.5} --overall ${OVERALL:-0.01} --stop ${STOP:-cycles,wall} --budget $budget --warm ${WARM:-same} --rounds ${ROUNDS:-1} ${AA:+--aa} \
+    $(printf "'%s' " "${args[@]}")" > /dev/null 2> "$out/log.txt" || code=$?
+# The results first, then the verdict from its file: whoever reads this script's output may be gone by now.
 rsync -a "$HOST:$DEST/bench/results/local/ab-run/" "$out/" || true
-[[ $code -eq 0 ]] || { echo "the run failed (exit $code); the end of $out/log.txt:"; tail -5 "$out/log.txt"; }
+if [[ $code -eq 0 ]]; then cat "$out/verdict.txt"; else echo "the run failed (exit $code); the end of $out/log.txt:"; tail -5 "$out/log.txt"; fi
 timeout 60 bench/gpu/mac-leftovers.sh --kill 2>&1 | tail -1
 exit $code

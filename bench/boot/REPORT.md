@@ -7978,3 +7978,47 @@ one browser as the paired command does its arms is the step that would change th
 
 `bench/ab-mac.sh` copies `alpine-node` to the Mac; tests/ab-stats.test.ts pins `jitjit.js`'s check line at a small
 scale. Nothing in the core changed.
+
+## BENCH loop 4: the paired workloads against the browser's answers (2026-11-23)
+
+The BENCH track's fourth loop: which short workload ranks a change as Firefox's pages session does. Arms whose
+pages-session result the reports already have, built from the current source with one constant changed (ABI 74), run
+by `bench/ab-mac.sh` with its A/A arm on `node`, `user` and `boot` (`results/bench4/cal`, 12 pairs a workload, 54 min
+for four arms and the A/A; regions of 16 from loops 2 and 3). The user asked that the pages sessions not be run
+again where history has them, so none were: the browser's column is "Regions of 64 blocks" (2026-11-22) and "the
+compile threshold there" (2026-11-09, an older core: its direction is what is used). M4, Chrome for Testing
+158.0.8127.36. Time against the base, the interval the run's own:
+
+| Arm | Firefox's pages session (history) | `node` | `user` | `boot` |
+|---|---|---|---|---|
+| regions of 16 for 64 | no change (71.8-73.1 against 71.3-74.2 s) | +1.65% [+0.06, +3.27] | +4.19% [+3.23, +5.15] | +5.64% [+5.25, +6.04] |
+| regions of 32 for 64 | not run (between 16 and 64: no change) | +0.03% [−0.66, +0.72] | +1.21% [+0.85, +1.56] | +2.19% [+1.75, +2.63] |
+| threshold 500/1000 for 1000/2000 | +0.9%, rounds overlapping | +2.34% [+1.33, +3.36] | −0.09% [−0.45, +0.26] | −0.56% [−0.98, −0.13] |
+| threshold 250/500 | +3.6%, rounds apart | +7.30% [+6.76, +7.85] | +0.30% [−0.05, +0.65] | +2.10% [+1.81, +2.39] |
+| the A/A arm | | −0.11% [−0.79, +0.56] | +0.09% [−0.23, +0.41] | +0.09% [−0.30, +0.48] |
+
+- **`node` orders the four as the browser did**: nothing for regions of 32, little for 16, a small loss at 500/1000, a
+  clear one at 250/500, the threshold's about twice the browser's size (it compiles 5.6 MiB a G step against the
+  session's 1.2-2.3). It becomes the command's default workload.
+- **The gates don't**: `user` and `boot` put regions of 16 at 4-6% (the browser: none), and `user` sees no cost in
+  either threshold (history's `alpine_user_jit` had 250/500 at +1.4% on 2026-11-09's core). They stay what they are,
+  gates for a kernel's boot and hot userspace loops; a change is ranked for the browser by `node` and confirmed on the
+  pages session.
+- **The counters by arm** (the renderer's, all threads): for the thresholds they are two to twelve times the time's
+  move (`node` 250/500: cycles +12.8%, instructions +5.5%; `user`: cycles +3.7% for +0.3% of time), V8 compiling 44%
+  more wasm (68.5 against 47.5 MiB) on other cores; for regions they have the wrong sign on `node` (32: −1.5% cycles,
+  −2.5% instructions for no change in time). Time decides; cycles say what the change costs in cores.
+- **Memory shows**: the renderers' footprint at a sample's end is 1970 MiB on `node`'s base and 2387 at 250/500.
+- **What no paired workload sees**: parallel SMP and the run loop (one deterministic vCPU runs budgeted code, not the
+  page's polled code: "PERF loop 35" had the gates at 1-2% and the browser at −4.7% for the preemption block), cache
+  flushes, four vCPUs. Not rebuilt here (its base is another ABI). The interpreter alone had no arm; the nulls of
+  PERF loops 42 and 54 were counts and an experiment's patch, not arms to rebuild: the null here is regions of 32 on
+  `node` and the A/A arms.
+
+**The A/A arm is opt-in** (`AA=1`; the user, after loop 3): a third of a two-arm run's time back. A pair of the base
+and one arm is ~52 s on `node`: 2% in ~4 min, 1% in ~5, a null in ~9 (14 at the 90th percentile).
+
+The run's results didn't come back by themselves: the pages sessions queued behind it were cancelled by ending
+their shell, which was also the reader of this run's output, and the script ended before its copy (which signal ended
+it wasn't established). Fetched by hand from the Mac; `bench/ab-mac.sh` now ignores a closed pipe and a hang-up,
+copies the results first and prints the verdict from its file.

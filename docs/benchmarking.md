@@ -238,9 +238,11 @@ and a Suspend, then the page opened
 core change's screen on the Mac (`bench/ab.ts` is its driver, which also runs on the dev VM's Chromium, without cycles
 and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and stops by itself.
 
-- **Arms.** The first is the base; the others are compared with it, any number. `aa` is added: the base a second time,
-  whose intervals say what this session calls a difference (a warning when it "differs"; a base given alone is an A/A
-  run). `@<tree>` takes the arm's host code and bench pages from another checkout (a core of another ABI:
+- **Arms.** The first is the base; the others are compared with it, any number. `AA=1` adds `aa`, the base a second
+  time: what the same core against itself gives at that moment (the Mac's speed drifts with its temperature, slowly),
+  for when a result looks like noise and needs holding against it; the verdict warns when `aa` "differs", and
+  `AA=1` with the base alone is an A/A run. It costs an arm's time, so it is off by default (the user, 2026-11-23:
+  eight stopped A/A runs all ended `same`). `@<tree>` takes the arm's host code and bench pages from another checkout (a core of another ABI:
   `../waarm64-base`), `?<query>` adds to that arm's page query (`nocw`, `fma=emul`: what `bench/boot/suite.ts`'s
   `boot` reads).
 - **A pair** is a freshly launched browser with one page an arm (`bench/boot/pair.ts`: the arm's core compiled once),
@@ -253,7 +255,7 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   bias look certain; and with fixed names and a rotating order the base was the fastest of four identical arms in
   four sessions out of four. The warm-up is the workload itself: without one, or after a boot, a pair's ratio spreads
   0.43-0.48% against 0.32% in sessions of 14 pairs, and instructions 0.20% against 0.05%.
-- **Workloads** (`WORKLOADS`, default `user`; several with commas, one after the other), deterministic, one vCPU:
+- **Workloads** (`WORKLOADS`, default `node`; several with commas, one after the other), deterministic, one vCPU:
 
   | | a sample | per G step: JIT wasm, dispatches a 1000 steps, interpreted | a pair's time ratio spreads | regions of 16 against 64 |
   |---|---|---|---|---|
@@ -266,7 +268,7 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   from a template and run through V8's tiers, deoptimizations, one call site over many shapes, regular expressions,
   JSON and the collector between them), 47.5 MiB of JIT wasm in 1452 modules in 9 s, and its check line must be the
   same in every sample of every arm (the run fails otherwise). By its counts and by the one arm with a known answer
-  it stands closer to Firefox than the gates do; the BENCH track's calibration says how far that holds.
+  it stands closer to Firefox than the gates do (the calibration below).
   The pages session itself stays the confirmation: `PAGES=wiki,mdn bench/gpu/ab-mac.sh` halves it (106 s a session,
   77% of the whole session's code compiled, its starts and loads within 0.65% over four A/A sessions, as the whole
   session's), but sessions in browsers of their own spread a pair ~1%, so ±0.5% would take dozens of pairs.
@@ -281,15 +283,37 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   `bench/stats.ts`, 0.12% a look for 4-24 pairs), so an interval after four pairs is wide (±2.3% of time on `user`,
   whose pairs' ratios spread 0.38%) and narrows to ±0.7% by 8 pairs, ±0.47% by 12 and ±0.28% by 24.
 - **How long a verdict takes** (the rule replayed over 96 measured A/A pairs of `user` and 41 of `boot`,
-  `bench/boot/results/bench2/replay.txt`; a pair with the base, `aa` and one arm is ~60 s on `user`, ~77 s on `node`
-  and ~23 s on `boot`, 20 s of set-up a run; `node` takes the pairs `boot` does: `bench3/replay.txt`): a difference of 2% or more in 4 pairs (4-5 min on `user`, under 2 on `boot`), 1%
-  in 6, 0.5% in 10 (16 at the 90th percentile), no difference called `same` in 12 (19: 12-20 min on `user`, 4-6 on
-  `boot`). A true 0.25% is inside the band's reach: it ends `HIGHER`, `same` or `open` at the cap, 17-24 pairs. No
-  difference is called one in 0.4-0.8% of runs; six stopped A/A runs on the Mac all ended `same`.
+  `bench/boot/results/bench2/replay.txt`; a pair of the base and one arm is ~40 s on `user`, ~52 s on `node`
+  and ~15 s on `boot`, half as much again with `aa` or a second arm, 20 s of set-up a run; `node` takes the pairs `boot` does: `bench3/replay.txt`): a difference of 2% or more in 4 pairs (3 min on `user`, just over 1 on `boot`), 1%
+  in 6 (4 min), 0.5% in 10 (16 at the 90th percentile), no difference called `same` in 12 (19: 8-13 min on `user`
+  and `node`, 3-4 on `boot`). A true 0.25% is inside the band's reach: it ends `HIGHER`, `same` or `open` at the cap, 17-24 pairs. No
+  difference is called one in 0.4-0.8% of runs; eight stopped A/A runs on the Mac all ended `same`.
+- **Which workload screens what** (bench/boot/REPORT.md "BENCH loop 4": arms whose result on Firefox's pages session
+  the reports have, time against the base):
+
+  | Arm | Firefox's pages session | `node` | `user` | `boot` |
+  |---|---|---|---|---|
+  | regions of 16 blocks for 64 | no change | +1.7% | +4.2% | +5.6% |
+  | regions of 32 for 64 | (between: no change) | +0.0% ±0.7 | +1.2% | +2.2% |
+  | compile threshold 500/1000 for 1000/2000 | +0.9%, within its noise | +2.3% | −0.1%, same | −0.6% |
+  | compile threshold 250/500 | +3.6% | +7.3% | +0.3%, open | +2.1% |
+
+  `node` orders the four as the browser did, about twice as strongly for the threshold, so it is the default and the
+  first screen for the JIT's policy (what is compiled, when, how much) and the shape of compiled code. `user` and
+  `boot` overstate what longer regions buy a browser by 2-5% and miss most of a lower threshold's cost: they are
+  gates for their own guests (a kernel's boot, hot userspace loops), run to see nothing regressed, not to rank a
+  change for the browser. Nothing here sees a change to parallel SMP or the run loop (one vCPU, deterministic: the
+  compiled code carries a step budget, not the page's polls): preemption without the budget moved the gates 1-2% and
+  the browser 4.7%. That, cache flushes and anything about four vCPUs go to the pages session. A change to the
+  interpreter alone wasn't among the arms: `node` interprets the browser's share of its steps (5.9% against 3.6-5.2%),
+  which is a reason to expect it to rank one, not a measurement.
 - **Read the clock first.** The cycles and instructions are the renderer's, all its threads: V8's compile threads and
   the collector beside the vCPU (12.9 s of CPU in a 9.4 s sample). Regions of 16 blocks against 64 cost 4.2% of
-  `user`'s time and 5.6% of `boot`'s, and 1.0% and −0.2% of their cycles. Instructions decide at once when the change
-  is to how many instructions the same work takes, and say nothing of what a change does to waiting, caches or tiers.
+  `user`'s time and 5.6% of `boot`'s, and 1.0% and −0.2% of their cycles. On `node` they point
+  the wrong way for regions (16: −6.1% instructions, −4.9% cycles, +1.7% time) and triple a threshold's cost (250/500:
+  +12.8% cycles for +7.3% time; on `user` +3.7% for +0.3%): the extra is V8 compiling 44% more wasm on other cores,
+  a real cost in cores and energy that the clock of one vCPU doesn't pay. Instructions decide at once when the
+  change is to how many instructions the same work takes, and say nothing of waiting, caches or tiers.
 - **Running it:** in the background, alone: it takes the CI lock exclusive (the dev VM shares the Mac's cores), is
   bounded on the Mac and here, and ends with `bench/gpu/mac-leftovers.sh --kill`. `<outdir>/ab.json` has every
   sample in the order run (`node bench/ab.ts --analyze <outdir>` prints the verdict again), `log.txt` each pair as it

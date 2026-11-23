@@ -1,0 +1,41 @@
+node: 12 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           -0.11% [-0.79%, +0.56%] open         -0.07% [-0.54%, +0.39%] open         -0.00% [-0.05%, +0.05%] same         -0.07% [-0.60%, +0.45%] open        
+  r32          +0.03% [-0.66%, +0.72%] open         -1.48% [-1.98%, -0.97%] LOWER        -2.53% [-2.69%, -2.38%] LOWER        -1.42% [-1.98%, -0.86%] LOWER       
+  t500         +2.34% [+1.33%, +3.36%] HIGHER       +6.06% [+5.36%, +6.77%] HIGHER       +2.08% [+1.97%, +2.19%] HIGHER       +6.19% [+5.46%, +6.92%] HIGHER      
+  t250         +7.30% [+6.76%, +7.85%] HIGHER       +12.77% [+12.32%, +13.21%] HIGHER    +5.51% [+5.37%, +5.65%] HIGHER       +13.05% [+12.58%, +13.51%] HIGHER   
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 8987       0.9802         1970        726.6        220.8        47.50         1452    502928284
+  aa                   8994       0.9802         1983        727.3        219.5        47.50         1452    502928284
+  r32                  8992       0.9789         1986        721.4        223.8        46.87         1541    515211349
+  t500                 9209       0.9788         2042        858.1        243.9        56.78         1411    333636588
+  t250                 9647       0.9738         2387       1019.7        274.5        68.46         1417    225429393
+user: 12 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           +0.09% [-0.23%, +0.41%] same         +0.09% [-0.20%, +0.38%] same         -0.00% [-0.08%, +0.07%] same         +0.11% [-0.18%, +0.39%] same        
+  r32          +1.21% [+0.85%, +1.56%] HIGHER       +0.54% [+0.24%, +0.85%] HIGHER       +0.21% [+0.15%, +0.27%] HIGHER       +0.48% [+0.20%, +0.77%] HIGHER      
+  t500         -0.09% [-0.45%, +0.26%] same         +2.37% [+2.05%, +2.69%] HIGHER       +0.79% [+0.72%, +0.87%] HIGHER       +2.50% [+2.20%, +2.80%] HIGHER      
+  t250         +0.30% [-0.05%, +0.65%] open         +3.67% [+3.26%, +4.07%] HIGHER       +1.05% [+0.98%, +1.13%] HIGHER       +3.89% [+3.52%, +4.26%] HIGHER      
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9375       0.9903         1461        241.9         73.2        15.50          530    194642775
+  aa                   9387       0.9902         1463        241.8         73.3        15.50          530    194642775
+  r32                  9486       0.9902         1464        242.2         73.4        15.53          535    196477782
+  t500                 9371       0.9880         1484        291.9         81.3        18.92          506    123960814
+  t250                 9407       0.9862         1696        329.5         87.4        21.60          506     80737211
+boot: 12 pairs against base
+  arm          wall                                 cycles                               instr                                cpu                                 
+  aa           +0.09% [-0.30%, +0.48%] same         -0.05% [-0.91%, +0.81%] open         -0.05% [-0.51%, +0.42%] open         -0.07% [-1.12%, +0.99%] open        
+  r32          +2.19% [+1.75%, +2.63%] HIGHER       +0.20% [-0.51%, +0.90%] open         +0.22% [-0.18%, +0.62%] open         +0.08% [-0.79%, +0.97%] open        
+  t500         -0.56% [-0.98%, -0.13%] LOWER        +3.74% [+2.68%, +4.80%] HIGHER       +1.59% [+1.08%, +2.11%] HIGHER       +3.98% [+2.70%, +5.26%] HIGHER      
+  t250         +2.10% [+1.81%, +2.39%] HIGHER       +8.21% [+7.17%, +9.25%] HIGHER       +4.37% [+3.79%, +4.96%] HIGHER       +8.28% [+7.02%, +9.55%] HIGHER      
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 3490       0.9846         2029        178.2         47.5        11.36          310    149207117
+  aa                   3492       0.9847         2029        177.9         47.6        11.36          310    149207117
+  r32                  3569       0.9852         2038        176.6         47.8        11.36          311    150555437
+  t500                 3468       0.9812         2047        220.4         53.8        14.26          297     98333751
+  t250                 3564       0.9844         1960        264.8         61.5        17.41          296     64750970
+arms: base 9786743 bytes; aa 9786743 bytes; r32 9786743 bytes; t500 9786743 bytes; t250 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks); Chromium 158.0.8127.36
