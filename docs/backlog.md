@@ -11,11 +11,6 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
 
 ## CPU and ISA
 
-- **An unaligned access to Device memory with the MMU off doesn't fault** (found by `tests/baremetal/spin.c`, PERF loop
-  31): clang merged two 4-byte stores of its code writer into an 8-byte store at a 4-byte boundary, which QEMU TCG
-  faulted (alignment, DFSC 0x21: with `SCTLR_EL1.M` clear, data is Device-nGnRnE) and waarm64 ran. Check the
-  architecture's rule for every Device access (MMU on with a Device attribute too), then fault as it says, with a
-  bare-metal test against the oracles.
 - **DotProd and JSCVT on x86-64:** measured on the M4 only (bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT,
   measured"). SDOT's order was picked there; `extmul_high` is several instructions on x86, so it may lose to
   widening with `i32x4.dot_i16x8_s`, by an estimate of 14 ops to 12, or to even and odd bytes at about 10. Run
@@ -36,10 +31,20 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
 - **Spectre-BHB reporting:** Linux says `spectre_v2` "Mitigation: CSV2, but not BHB" (and installs no
   BHB mitigation: MIDR 0 has no loop count). Only `ID_AA64PFR0_EL1.CSV2` = 3 clears it, which needs
   `SCXTNUM_EL0`/`EL1` (plain registers, `SCTLR_EL1.TSCXT` trap, JIT sysreg path, snapshot state).
-- **MMU:** no Device-memory alignment faults with the MMU off, where every access is Device (on the M4 an unaligned load and DC ZVA fault, QEMU's TCG only the
-  load): the check would sit on the flat bus's fast path, which the MMU-off EL1 and user-mode guests run on, and
-  correct firmware doesn't notice; DC ZVA to RAM mapped as Device with the MMU on zeroes it (the M4: an alignment
-  fault).
+- **MMU: Device-memory alignment faults that are missing** (low priority: only incorrect guest code notices). With
+  the MMU off every data access is Device-nGnRnE, so an unaligned one should take an alignment fault (DFSC 0x21), and
+  so should DC ZVA (on the M4 both fault, QEMU's TCG only the load); waarm64 does neither. With the MMU on, unaligned
+  Device accesses already fault (`Mmu::miss`), but DC ZVA to RAM mapped Device zeroes it (the M4: an alignment fault).
+  Our own `tests/baremetal/spin.c` ran into the first case (PERF loop 31): clang merged two 4-byte stores into one
+  unaligned 8-byte store, which QEMU faulted on. The test was the one at fault, and `volatile` fixed it. The DC ZVA
+  cases cost nothing to fix: with the MMU on, a Device page's entries already miss every fast path, so `miss()`
+  needs only a flag from DC ZVA; with the MMU off, the check goes in DC ZVA's handler and emitter. Unaligned loads
+  and stores with the MMU off can't be fixed for free. User-mode hosts also run on the flat bus, so the check has
+  to be compiled only for system vCPUs: in the JIT, one `i64.rotr` per access folds the check into the flat
+  path's bounds compare; in the interpreter, a third copy (a checking `Flat`) carries it, which moves the code
+  layout that the interpreter's speed is sensitive to (bench/interp/REPORT.md). The alternative is no new code:
+  MMU-off system code runs in the interpreter, as with `SCTLR_EL1.A`, at the cost of firmware's and early boot's
+  speed. Each fix is guest-visible and needs a bare-metal test checked against QEMU and the M4.
 - **16K and 64K granules** (deferred in [decisions.md](decisions.md)): `ID_AA64MMFR0` says 4K only
   (`interp/sys.rs`), and `mmu::walk` never reads TCR_EL1.TG0/TG1 (4K's 9 bits a level and 12-bit pages are fixed).
   They'd matter mainly for RHEL 8-family kernels (64K only) and 16K kernels like Asahi's. RHEL 9 and later default to 4K with
