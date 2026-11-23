@@ -1,6 +1,6 @@
 # NAMES2: room names' loose ends worth closing — kickoff
 
-**A draft: it awaits the user's OK to start** (the questions it had are answered: "Decisions taken").
+**In progress since 2026-11-23** (confirmed by the user; the questions it had are answered: "Decisions taken"). Progress: [NAMES2-HANDOVER.md](NAMES2-HANDOVER.md).
 
 The user's brief (2026-11-23), in their words, on the backlog's "Room names' loose ends":
 

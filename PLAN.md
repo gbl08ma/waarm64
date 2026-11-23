@@ -63,6 +63,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | Growing a disk (RESIZE) | Done 2026-11-15 | [machines.md](docs/machines.md) §4.5, [devices.md](docs/devices.md) "A disk grown" |
 | Faster snapshots (SNAPZ) | Done 2026-11-16 | [platform.md](docs/platform.md) "The snapshot file", [frontend.md](docs/frontend.md) "Snapshots", `bench/boot/REPORT.md` "SNAPZ: the track's end" |
 | Registered names in rooms (NAMES) | Done 2026-11-18 | [networking/names.md](docs/networking/names.md), [bench/net/REPORT.md](bench/net/REPORT.md) "NAMES loop …" |
+| Room names' loose ends worth closing (NAMES2) | In progress since 2026-11-23 | [NAMES2-KICKOFF.md](NAMES2-KICKOFF.md), [NAMES2-HANDOVER.md](NAMES2-HANDOVER.md) |
 | The user's QA findings (QA) | Done 2026-11-18 | [frontend.md](docs/frontend.md) (Home, the message bar, a machine that stops by itself), [machines.md](docs/machines.md) §4.4, §5.1 "Unrestorable", [i18n.md](docs/i18n.md) "Markers" |
 | CI in tiers and faster lanes (CI) | In progress since 2026-11-18 | [CI-KICKOFF.md](CI-KICKOFF.md), [CI-HANDOVER.md](CI-HANDOVER.md), [plans/ci-tiers.md](docs/plans/ci-tiers.md) |
 | The first demo (DEMO) | Done 2026-11-20 | [machines.md](docs/machines.md) §6, [remote-disks.md](docs/remote-disks.md) "Publishing the demos", [demo-network.md](docs/networking/demo-network.md), [comparison.md](docs/comparison.md), `bench/demo/REPORT.md` |
@@ -70,8 +71,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 
 ## Proposed, not started
 
-The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([backlog.md](docs/backlog.md)); room names' loose ends
-worth closing (NAMES2: [NAMES2-KICKOFF.md](NAMES2-KICKOFF.md), drafted 2026-11-23, its questions answered, awaits the user's OK to start).
+The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([backlog.md](docs/backlog.md)).
 | The introduction (INTRO) | Done 2026-11-22 | [frontend.md](docs/frontend.md) "The introduction" |
 | A page per connection, and its domains (DOMAINS) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "The Home page", [names.md](docs/networking/names.md) "What the user sees", [backlog.md](docs/backlog.md) "DOMAINS" |
 | The move to waarm64.com (DOTCOM) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "Deployed at waarm64.com" |
