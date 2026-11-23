@@ -38,14 +38,20 @@ theory of the answer):
 **Measurement** (docs/benchmarking.md; bench/interp/REPORT.md "The block interpreter on the Mac, loops 1-5"):
 - Rank on the **Mac** (the VM distorts code size and bounds checks). Tiers, so no one decision takes 70 minutes:
   1. counts from a diagnostic build, wherever they can decide;
-  2. a ~15-20 min screen, 3 rounds alternated: `bench/run-mac.sh` / `bench/interp/ab-mac.sh` for the JIT gates
-     (`alpine_jit_total`, `alpine_user_jit_total`), plus `jit_fp_mips` when FP is touched;
+  2. `bench/ab-mac.sh <outdir> base=<core.wasm> new=<core.wasm>` (docs/benchmarking.md "The paired A/B"; in the
+     background, alone; it stops by itself with a verdict to ±0.5%): on `node`, its default, to rank the change for
+     the browser (4-10 min), then `WORKLOADS=user,boot` to see the gates didn't regress (~10 min); several arms in
+     one run when a row has variants; `AA=1` when a result looks like noise; plus `jit_fp_mips`
+     (`bench/interp/ab-mac.sh`) when FP is touched. Read time: the renderer's cycles and instructions are all its
+     threads' and have pointed the wrong way;
   3. Firefox's pages session on the Mac (`bench/gpu/ab-mac.sh`, docs/benchmarking.md "Starting from a snapshot";
-     ~4 min a session, from `target/snapbench/pages.waarm64snap`, which `bench/gpu/warm-snapshots.sh firefox` makes
-     again when the machine's state layout changes) for changes to cold browser code or a block's end; `@<tree>` for
-     a base of another ABI.
-- A difference counts past ~1% when the arms' rounds don't overlap. **Alternate which arm runs first**: the session's
-  first boot is an outlier either way (loop 25).
+     ~4 min a session, `PAGES=wiki,mdn` under 2; from `target/snapbench/pages.waarm64snap`, which
+     `bench/gpu/warm-snapshots.sh firefox` makes again when the machine's state layout changes) to confirm what
+     passed tier 2, and for what tier 2 can't see: parallel SMP, the run loop, cache flushes; `@<tree>` for a base
+     of another ABI.
+- The paired command's verdict is the rule for tier 2 (`LOWER`/`HIGHER`: a difference; `same`: within ±0.5%). On
+  the pages session a difference counts past ~1% when the arms' rounds don't overlap; **alternate which arm runs
+  first** there: the session's first boot is an outlier either way (loop 25).
 - Track the compile-side counters too (`emitNs`, `compileNs`, wasm bytes): an emitter's bookkeeping can cost the
   gates without changing the code (loop 24's eager table, +12 ms `emitNs`).
 - `bench/gpu/mac-leftovers.sh` after every Mac run (`--kill` allowed); a killed run can leave its node harness behind:
@@ -119,9 +125,9 @@ Loop 63 ran real long browser sessions on the Mac (`bench/gpu/firefox-load.ts` `
 checked end to end) cost 45 s of a lower compiled share and no stall or frame gap beyond the session's own. Nothing
 built; the backlog entry is gone (bench/boot/REPORT.md "PERF loop 63", results in `bench/boot/results/perf63/`). Core
 unchanged (ABI 74, `tests/steps.txt` unchanged). **The track is paused at the user's request after loop 63
-(2026-11-23)**; the next loop is 64, from the queue's first row, **after the BENCH track** (BENCH-KICKOFF.md: faster,
-quieter A/Bs on the Mac; the user, 2026-11-23: ahead of row 1), whose command and workloads replace the tiers below
-when it ends.
+(2026-11-23)**; the next loop is 64, from the queue's first row. The BENCH track that went ahead of it ended the
+same day: its paired command and its `node` workload are tier 2 below (bench/boot/REPORT.md "BENCH loop 2" to "the
+end").
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
 ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0. Loop 63's commit passed `scripts/ci-fast.sh` (bench tools
 only).

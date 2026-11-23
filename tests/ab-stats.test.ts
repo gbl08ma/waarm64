@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { analyze, shuffled, verdict, type Run } from '../bench/ab.ts';
+import { analyze, checkStop, shuffled, verdict, type Run } from '../bench/ab.ts';
 import type { PairSample } from '../bench/boot/pair.ts';
 import { lookAlpha, paired, rng, tCrit, tTail2 } from '../bench/stats.ts';
 
@@ -105,8 +105,44 @@ test("a run's analysis: the warm-up left out, the stop held by the arms and not 
   assert.match(verdict(off).join('\n'), /WARNING: the A\/A arm differs from the base in wall, cycles, instr/);
 });
 
+test("a run's analysis: what a stop measure can't decide isn't decided, a broken sample costs its pair, a half-run pair counts for no arm", () => {
+  const u = rng(11);
+  const arm = (name: string) => ({ name, core: `${name}.wasm`, tree: '.', query: '', coreBytes: 1 });
+  const s = (f: number, proc = true): PairSample => {
+    const ms = 9000 * f * (1 + 0.001 * normal(u));
+    return { ms, steps: 1e9, marks: {}, proc: proc ? { instructions: 17e9 * f, cycles: 5e9 * f * (1 + 0.001 * normal(u)), cpuNs: ms * 1e6, pInstructions: 0, pCycles: 4.9e9, pCpuNs: 0, energyNj: 0 } : undefined, stats: { jit: {} } as PairSample['stats'] };
+  };
+  const make = (stop: string[], proc: boolean, blocks = 6): Run => {
+    const run: Run = { schema: 1, date: '', host: {}, browser: '', arms: [arm('base'), arm('new'), arm('other')], opts: { min: 4, cap: 24, band: 0.5, overall: 0.01, stop, budget: 1, workloads: ['node'], rounds: 1, warm: 'same' }, alpha: 0.0012, rows: [] };
+    for (let block = 1; block <= blocks; block++) for (const a of run.arms) run.rows.push({ workload: 'node', block, at: 0, slot: 0, arm: a.name, s: s(a.name === 'new' ? 0.95 : 1, proc) });
+    return run;
+  };
+  // Time alone decides here; cycles, the one stop measure, has no data (no counters on this host): not done.
+  assert.equal(analyze(make(['wall'], false), 'node').done, true);
+  assert.equal(analyze(make(['cycles'], false), 'node').done, false);
+  assert.equal(analyze(make(['cycles', 'wall'], false), 'node').done, true, 'the one it has decides');
+  assert.throws(() => checkStop(['wall', 'cycle']), /cycle/);
+  checkStop(['cycles', 'wall']);
+  // A sample whose counters went backwards (a renderer that ended inside it) costs that pair for that measure only.
+  const broken = make(['cycles', 'wall'], true);
+  broken.rows.find((r) => r.block === 3 && r.arm === 'new')!.s.proc!.cycles = -1e9;
+  const a = analyze(broken, 'node');
+  assert.equal(a.arms.new.cycles.n, 5);
+  assert.equal(a.arms.new.wall.n, 6);
+  assert.equal(a.arms.new.cycles.call, '<');
+  assert.ok(Number.isFinite(a.arms.new.cycles.pct));
+  assert.equal(a.arms.other.cycles.n, 6);
+  // A pair the run ended inside (the base and one arm sampled, the other not) counts for no arm.
+  const half = make(['wall'], true);
+  half.rows = half.rows.filter((r) => !(r.block === 6 && r.arm === 'other'));
+  const h = analyze(half, 'node');
+  assert.equal(h.pairs, 5);
+  assert.equal(h.arms.new.wall.n, 5);
+  assert.equal(h.arms.other.wall.n, 5);
+});
+
 test("the node workload's script: its check line, the same every run", () => {
   const run = () => execFileSync(process.execPath, [new URL('../images/alpine/node/jitjit.js', import.meta.url).pathname, '10'], { encoding: 'utf8' }).trim();
-  assert.equal(run(), 'jitjit: 4cd8076e 132');
-  assert.equal(run(), 'jitjit: 4cd8076e 132');
+  assert.equal(run(), 'jitjit: 2f42acde 132');
+  assert.equal(run(), 'jitjit: 2f42acde 132');
 });

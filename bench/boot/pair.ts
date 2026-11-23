@@ -3,8 +3,11 @@
 // workload to power-off under the JIT on this arm's core (`?core=<path from the tree's root>`, compiled once),
 // through this tree's own `boot` (bench/boot/suite.ts, which reads the rest of the query: `nocw`, `fma=emul`, …):
 // its time, its steps and counters, and the renderers' CPU counters over it (`?proc=<port>`: bench/procstat.ts),
-// read here so that an arm from an older tree is measured the same way: around the boot, or for a workload with a
-// window between two of the guest's "waarm64: …" lines (its boot and power-off left out). A full GC before each
+// read here so that an arm from an older tree is measured the same way: around the boot (from the machine made to
+// after its close: a little wider than the time's), or for a workload with a window between two of the guest's
+// "waarm64: …" lines (its boot and power-off left out). The counters and the memory are every renderer's of the
+// browser, the other arms' idle pages too: the driver leaves a pause between samples so that an arm's leftovers
+// (its collector, freed code) don't land in the next one's. A full GC before each
 // sample (the suite's reason) and after it (an arm's dead modules and memory don't wait beside the next arm's run).
 // Workloads: `boot`, Alpine's boot to power-off (the gate `boot_alpine_jit`); `user`, Alpine's userspace phases
 // with their boot (`alpine_user_jit`); `node`, Node running images/alpine/node/jitjit.js (V8 writing, patching and

@@ -273,14 +273,19 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   77% of the whole session's code compiled, its starts and loads within 0.65% over four A/A sessions, as the whole
   session's), but sessions in browsers of their own spread a pair ~1%, so ±0.5% would take dozens of pairs.
 - **Measures**, lower is better in each: `wall` (ms), `cycles` and `instr` (the renderers', a guest step), `cpu`.
-  The verdict's second table has each arm's memory (the renderers' footprint at a sample's end), `emitNs`,
+  The counters are every renderer's of the browser (the arm running, the others' idle pages; the driver pauses
+  0.3 s between samples so one arm's leftovers stay out of the next's sample).
+  The verdict's second table has each arm's memory (all the renderers' footprint at a sample's end: compare arms,
+  the level includes the other arms' pages), `emitNs`,
   `compileNs`, the JIT's wasm bytes, its modules and the interpreted steps, and the last line the cores' sizes.
 - **The stopping rule.** After every pair from `MIN` (4) on, each measure's ratios give a t interval; the workload
   ends when every arm's `STOP` measures (`cycles,wall`) are each decided, `LOWER` or `HIGHER` (the interval excludes
-  zero) or `same` (it lies inside ±`BAND`, 0.5%), or at `CAP` (24 pairs) or `BUDGET` (1500 s), where what is still
-  `open` is reported as such with its interval. Looking after every pair is paid for: each interval is read at the
-  tail that keeps a true null's chance of being called a difference at any look at `OVERALL` (1%; `lookAlpha` in
-  `bench/stats.ts`, 0.12% a look for 4-24 pairs), so an interval after four pairs is wide (±2.3% of time on `user`,
+  zero) or `same` (it lies inside ±`BAND`, 0.5%), or at `CAP` (24 pairs) or `BUDGET` (1500 s for the whole run: a
+  workload it leaves no time for isn't run, and the verdict says so), where what is still
+  `open` is reported as such with its interval. A stop measure the host doesn't count (cycles on the dev VM) doesn't
+  hold the stop; a mistyped one is refused. Looking after every pair is paid for: each interval is read at the
+  tail that keeps a true null's chance of being called a difference at any look at `OVERALL` (1% an interval, so
+  several arms and measures each take that chance; `lookAlpha` in `bench/stats.ts`, 0.12% a look for 4-24 pairs), so an interval after four pairs is wide (±2.3% of time on `user`,
   whose pairs' ratios spread 0.38%) and narrows to ±0.7% by 8 pairs, ±0.47% by 12 and ±0.28% by 24.
 - **How long a verdict takes** (the rule replayed over 96 measured A/A pairs of `user` and 41 of `boot`,
   `bench/boot/results/bench2/replay.txt`; a pair of the base and one arm is ~40 s on `user`, ~52 s on `node`
@@ -320,6 +325,20 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   ran. Build each arm into a file of its own first (`cp` the wasm aside; restore the source and rebuild after).
 
 ## Screening an A/B
+
+**The tiers for a JIT or core change** (the BENCH track, 2026-11-23), cheapest first, on the Mac:
+
+1. **Counts** from a diagnostic build, wherever they can decide (minutes, any host).
+2. **`bench/ab-mac.sh <outdir> base=<core> new=<core>`** on `node`, its default ("The paired A/B"): 4-10 min for one
+   arm, a verdict to ±0.5%. `node` ranks a change for the browser.
+3. **The same on `WORKLOADS=user,boot`** before a change is kept, as a check that the kernel's boot and hot userspace
+   loops didn't regress (and the measure itself, for a change aimed at them): ~10 min.
+4. **Firefox's pages session** (`bench/gpu/ab-mac.sh`, "Starting from a snapshot"), `PAGES=wiki,mdn` first (106 s a
+   session) and whole (222 s) for a result that will be quoted: the confirmation of what passed 2, and the only
+   measure of what 2 can't see (parallel SMP, the run loop, cache flushes, four vCPUs). Its pairs spread ~1%:
+   three rounds settle 2% or more, nothing under 1%.
+
+What follows screens the code cache's policies, which need a cache that fills.
 
 The pages session at 320 MiB no longer flushes, so it doesn't exercise the cache a JIT lane tunes, and its counts
 decide within its first two pages (`m8-snapbench/cut.txt`: at 120 s from the snapshot the compiled share was 97.5-97.7%
@@ -364,7 +383,12 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   medians and IQR (take `iqr` from the JSON, never by hand), the host and the Chromium version.
 - **Commit the result JSON behind any written report** (`bench/*/results/<milestone>-<loop>/`);
   ad-hoc runs stay in `bench/results/local/`.
-- **The noise floor, in one session:** compare builds **A/B in one session, alternating**, three
+- **On the Mac, a core's A/B is `bench/ab-mac.sh`** ("The paired A/B"): a difference is what its verdict calls
+  `LOWER` or `HIGHER` in time (the interval of the pairs' ratios excludes zero), no difference what it calls `same`
+  (inside ±0.5%), and `open` is neither. Report the interval, the pairs and the workload; the renderer's cycles and
+  instructions beside it, never for it.
+- **The noise floor of alternated sessions** (the dev VM, the pages session, anything the paired command doesn't
+  run): compare builds **A/B in one session, alternating**, three
   rounds or more (`bench/interp/ab.sh`). A difference counts when every round of one arm beats every
   round of the other and it's past ~1%; Buildroot's boot, whose rounds spread 2-3%, needs ~3%. On
   the idle dev VM a build's per-round medians of the yardstick stay within ~0.5% (Alpine's boot
@@ -374,7 +398,11 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   state.
 - **The small guests run at eight guest-RAM placements** (the placement effect, [v8.md](v8.md)):
   never rank builds on one placement.
-- **Rank tuning by the long, real workloads** (Alpine boot, Alpine userspace) first. Debian has no benchmark since M8 phase B (its direct-boot ones timed only a boot and power-off; the page's boot times are in the page tests' logs).
+- **Rank a JIT or core change for the browser by `node`** (the paired command's default: a JIT inside the JIT, which
+  ordered four known changes as Firefox's pages session did), then the pages session; Alpine's boot and userspace
+  are gates for their own guests, which rank longer regions 2-6% above what a browser gets and miss a compile
+  threshold's cost ("The paired A/B", "Which workload screens what").
+- **Among the gates, rank by the long, real workloads** (Alpine boot, Alpine userspace) first. Debian has no benchmark since M8 phase B (its direct-boot ones timed only a boot and power-off; the page's boot times are in the page tests' logs).
   **Don't optimize for very short runs:** the Buildroot boot (< 1 s) is a check, not a target; a
   change that makes it even ~50% slower but speeds a distro boot up by 5–10% is worth keeping, and
   the synthetic small guests may lose a few percent for such gains. Report the losses with
@@ -464,9 +492,10 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
   instructions 0.28% against `pagesS`'s 0.69% (four sessions), cycles no tighter than the clock. Parallel boots'
   work differs run to run: only their runs' medians are tight.
 - **What they don't replace:** instructions miss cache misses, mispredictions and dependency chains. Read them
-  beside time and cycles, not for them (the BENCH track's calibration will say which measure screens which kind of
-  change). A run whose P-core share is low ran partly on efficiency cores: on the userspace gate that share
-  explains nearly all of the clock's noise.
+  beside time, not for it: they are all the renderer's threads', and for regions and compile thresholds they
+  pointed the wrong way or several times too far ("The paired A/B", "Read the clock first"). Between runs in
+  browsers of their own, one whose P-core share is low ran partly on efficiency cores (on the userspace gate that
+  share explained nearly all of the clock's noise); between arms alternated in one browser it explains nothing.
 
 ## Instrumentation and profiling
 

@@ -134,14 +134,19 @@ CI run (`tools/i18n-check.ts` if it changes a `(ui:` quote).
   oracle or as the gate: a workflow there is an extra check beside the dev VM's (the fast lane on each push to main: docs/testing.md "GitHub Actions").
 
 **Performance** ([docs/benchmarking.md](docs/benchmarking.md))
-- Don't claim a speedup or regression without numbers from `bench/run.ts` in Chromium: medians and
-  IQR (from the JSON), host and Chromium version; in one session's alternated A/B (≥3 rounds), a
-  difference counts when the arms' rounds don't overlap and it's past ~1% (Buildroot's boot ~3%);
+- Don't claim a speedup or regression without numbers from Chromium. **A JIT or core change is A/B'd on the Mac
+  with `bench/ab-mac.sh <outdir> base=<core.wasm> new=<core.wasm>`** (docs/benchmarking.md "The paired A/B": it
+  stops by itself, 4-10 min for one arm; in the background, alone): a difference is what its verdict calls `LOWER`
+  or `HIGHER` in time, `same` is within ±0.5%; report the interval and the pairs. Elsewhere (`bench/run.ts`, the dev
+  VM, guest sessions): medians and IQR (from the JSON), host and Chromium version; in one session's alternated A/B
+  (≥3 rounds), a difference counts when the arms' rounds don't overlap and it's past ~1% (Buildroot's boot ~3%);
   across sessions the host moves runs by up to ~8% (docs/benchmarking.md "Rules").
 - Commit the result JSON behind any written report; ad-hoc runs go to `bench/results/local/`.
 - Compare A/B in one session, alternating; small guests at eight placements.
-- Rank changes by the long, real workloads (Alpine, Alpine userspace); don't optimize for
-  very short runs (the Buildroot boot is a check, not a target) or fit the design to CoreMark.
+- Rank a change for the browser by the paired command's `node` workload, then Firefox's pages session; Alpine's
+  boot and userspace (`WORKLOADS=user,boot`) are gates that must not regress, and the measure for changes aimed at
+  them (docs/benchmarking.md "Screening an A/B"). Don't optimize for very short runs (the Buildroot boot is a
+  check, not a target) or fit the design to CoreMark.
 - Peer comparisons (QEMU, native) are rare, one-off tables; **qemu-wasm is dropped for good**.
 
 **Guest images**: only in rootless Podman through `images/`; never cross toolchains or build

@@ -8022,3 +8022,44 @@ The run's results didn't come back by themselves: the pages sessions queued behi
 their shell, which was also the reader of this run's output, and the script ended before its copy (which signal ended
 it wasn't established). Fetched by hand from the Mac; `bench/ab-mac.sh` now ignores a closed pipe and a hang-up,
 copies the results first and prints the verdict from its file.
+
+## BENCH: the end (2026-11-23)
+
+**Loop 5, a measurement queue: nothing built.** `bench/ab-mac.sh` takes the machine's CI lock exclusive, so runs
+queue behind each other and behind `scripts/ci*.sh` by themselves, and each leaves `<outdir>/verdict.txt`; with a run
+at 4-15 min there is no wait long enough for a queue's runner to pay.
+
+**The out-of-context review** (`review/bench-ab`, deleted with this commit; a static read of the tools at f05dac3e):
+twelve findings. Fixed, the first four with tests/ab-stats.test.ts's new case failing first:
+- a stop measure the host doesn't count, or a mistyped one, counted as decided and ended a workload at four pairs
+  (now: an arm with no stop measure to read is never decided; unknown names are refused);
+- a sample whose counters went backwards (a renderer ending inside it) made its measure `NaN` to the cap (now: that
+  pair is left out of that measure);
+- a pair the run ended inside counted for the arms that had run (now: for none);
+- `jitjit.js`'s check line didn't cover its deoptimization part: the string call's result is not a number and
+  turned that part's sum into 0 every time (now: `jitjit: 59d7b7a8 1320` at the default scale, where loop 3 had
+  `48846038`; the image's hash moved; `node` on the fixed script: 8.8 s a sample, 47.4 MiB of wasm, regions of 16
+  still fewer instructions and more time in the two pairs of the check run);
+- a failed run wrote no verdict and an older `verdict.txt` could stand beside the new log (now: the verdict of what
+  it had, `FAILED: <why>`, exit 1; the wrapper clears the three files first);
+- the wrapper's last lines could end it before its clean-up or change a good run's exit (`mac-leftovers.sh` exits 1
+  when it found something; a closed pipe under the ignored SIGPIPE), `AA=0` turned the arm on, paths were taken
+  from the repository instead of where the command ran, its copies had no bound while the CI lock was held, a tree
+  without `bench/mac` failed the copy, names weren't checked and an arm called `slot0` would have been overwritten;
+- a later workload's first pair ran in the previous workload's browser (now: every pair a new one);
+- one arm's leftovers (its collector, freed code) could land in the next arm's counters, which are every renderer's
+  (now: 0.3 s between samples; the docs say whose the counters and the memory are);
+- the budget is one clock for the whole run where the docs said a workload's (the docs; a workload with no time
+  left isn't run and the verdict says so); the seed is recorded; the header's "rotates" was the first draft's.
+Left as it is, and said in the docs: the 1% is an interval's, so several arms and measures each take that chance;
+the counters' span around a boot is a little wider than the clock's; `alpine-node` takes Node from Alpine's live
+repository, as `alpine-user` takes its packages (docs/images.md). Checked on the Mac after the fixes: a two-workload
+run started from another directory with `AA=0` (exit 0, results copied), and a run with a core that isn't wasm
+(`FAILED` in `verdict.txt`, exit 1, the clean-up run).
+
+**What the track leaves** (docs/benchmarking.md "The paired A/B", "Screening an A/B", "Rules"): one command with a
+verdict to ±0.5% in 4-10 min for one arm where three alternated rounds took 25-70 with a ~1% floor; `node` as the
+workload that ranks for the browser; the pages session, whole or cut to two pages, as the confirmation and the only
+measure of parallel SMP, the run loop and flushes. Open, in docs/backlog.md "The paired A/B's reach": a paired
+workload under parallel SMP, a desktop session inside one browser beside its other arm, the vCPU thread's own
+counters, an interpreter-only arm for the calibration.

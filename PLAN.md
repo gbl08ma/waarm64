@@ -55,7 +55,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | Clipboard sharing (CLIP) | Done 2026-11-07 | [clipboard.md](docs/clipboard.md) |
 | The block interpreter on the Mac host | In progress since 2026-11-09 | `bench/interp/REPORT.md` "The block interpreter on the Mac" |
 | The performance backlog (PERF) | Paused 2026-11-23 (after loop 63, the user's request) | [PERF-HANDOVER.md](PERF-HANDOVER.md) |
-| Faster, quieter A/Bs (BENCH) | In progress since 2026-11-23; ahead of PERF's queue | [BENCH-KICKOFF.md](BENCH-KICKOFF.md) |
+| Faster, quieter A/Bs (BENCH) | Done 2026-11-23 | [docs/benchmarking.md](docs/benchmarking.md) "The paired A/B"; bench/boot/REPORT.md "BENCH loop 1" on |
 | Peer-to-peer rooms (P2P) | Done 2026-11-12 | [networking/rooms.md](docs/networking/rooms.md); left open: [plans/networking-p2p.md](docs/plans/networking-p2p.md) |
 | The guest agent (AGENT) | Done 2026-11-13 | [devices.md](docs/devices.md) "The guest's agent" |
 | More jobs for the guest agent (BETTERAGENT) | Done 2026-11-14 | [devices.md](docs/devices.md) "The guest's agent" |

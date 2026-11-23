@@ -53,7 +53,8 @@ function deopt(count) {
     const dbl = { v: 0.5 + k }, other = { w: 1, v: 2 }, str = { v: 'x' };
     for (let i = 0; i < 4000; i++) s += f(dbl, more); // doubles: thrown away, compiled again
     for (let i = 0; i < 4000; i++) s += f(other, dbl); // another shape
-    s += f(str, more).length; // a string: once more
+    const t = f(str, more); // a string: once more (its result is not a number)
+    s += t !== t ? 7 : 1;
     for (let i = 0; i < 2000; i++) s += f(ints, other);
     mix(Math.round(s) | 0);
   }

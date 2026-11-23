@@ -1,11 +1,12 @@
 // A paired A/B of core builds with a stopping rule (docs/benchmarking.md "The paired A/B"; on the Mac through
 // bench/ab-mac.sh): every arm is a page of one Chromium (bench/boot/pair.ts: its core compiled once), and a round
-// runs one sample of the workload on each arm, one after the other, in an order that rotates and reverses. A pair
+// runs one sample of the workload on each arm, one after the other, in an order drawn at random. A pair
 // is a block: a freshly launched browser, the arms' pages, a warm-up sample of each (`--warm`: `same`, the
 // workload itself; another workload; `none`) and `--rounds` rounds, each in a random order; an arm's samples of a
 // block over the base's. Each measure's pairs give an interval
 // (bench/stats.ts `paired`, the tail of `lookAlpha`: looking after every pair is paid for), and the workload stops
-// once every arm's stop measures are each a difference or inside the band, or at the cap or the budget. `--aa` runs
+// once every arm's stop measures are each a difference or inside the band, or at the cap or the budget (one clock
+// for the whole run: a workload it leaves no time for isn't run). `--aa` runs
 // the base a second time as the arm `aa`: what the same core against itself gives at this moment, to hold a result
 // against (it holds the stop only when it is the one arm: `--aa` with the base alone is an A/A run).
 //   node bench/ab.ts --out <dir> [--workloads node,user,boot] [--min 4] [--cap 24] [--band 0.5] [--overall 0.01]
@@ -14,7 +15,8 @@
 // tree's bench/boot/pair* copied over it; `?<query>`: more of that arm's page query (`nocw`, `fma=emul`: what
 // bench/boot/suite.ts's `boot` reads). Measures (lower is better in all): `wall` ms, `cycles` and `instr` a guest
 // step (where the host counts them: macOS), `cpu` ns a step. `--analyze <dir>` prints a finished run's verdict again.
-// Writes <dir>/ab.json after every pair (every sample, in the order run) and <dir>/verdict.txt at the end.
+// Writes <dir>/ab.json after every pair (every sample, in the order run) and <dir>/verdict.txt at the end, of a run
+// that failed too (what it had, and why it ended: its exit is then 1).
 import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { resolve } from 'node:path';
@@ -27,16 +29,23 @@ import { lookAlpha, paired, quantile, rng, type Paired } from './stats.ts';
 export type Arm = { name: string; core: string; tree: string; query: string; coreBytes?: number };
 /** One sample as run: `at` its place in the round. */
 export type Row = { workload: string; block: number; warm?: true; at: number; slot: number; arm: string; s: PairSample };
-export type Run = { schema: 1; date: string; host: object; browser: string; arms: Arm[]; opts: Opts; alpha: number; rows: Row[]; ended?: Record<string, string> };
+export type Run = { schema: 1; date: string; host: object; browser: string; arms: Arm[]; opts: Opts; alpha: number; seed?: number; rows: Row[]; ended?: Record<string, string>; failed?: string };
 type Opts = { min: number; cap: number; band: number; overall: number; stop: string[]; budget: number; workloads: string[]; rounds: number; warm: string };
 
+/** A measure's value, or none: not counted on this host, or counters that went backwards (a renderer ended inside the sample). */
+const pos = (x: number) => (x > 0 && Number.isFinite(x) ? x : undefined);
 /** The measures a verdict is read from; undefined where the host doesn't count it. */
 export const MEASURES: Record<string, (s: PairSample) => number | undefined> = {
-  wall: (s) => s.ms,
-  cycles: (s) => (s.proc?.cycles ? s.proc.cycles / s.steps : undefined),
-  instr: (s) => (s.proc?.instructions ? s.proc.instructions / s.steps : undefined),
-  cpu: (s) => (s.proc ? s.proc.cpuNs / s.steps : undefined),
+  wall: (s) => pos(s.ms),
+  cycles: (s) => pos((s.proc?.cycles ?? 0) / s.steps),
+  instr: (s) => pos((s.proc?.instructions ?? 0) / s.steps),
+  cpu: (s) => pos((s.proc?.cpuNs ?? 0) / s.steps),
 };
+
+/** The stop measures' names, checked: a mistyped one would otherwise never hold the stop. */
+export function checkStop(stop: string[]): void {
+  for (const m of stop) if (!(m in MEASURES)) throw new Error(`--stop: no measure "${m}"; one of ${Object.keys(MEASURES).join(', ')}`);
+}
 
 /**
  * A workload's blocks so far (warm-ups left out): each arm's measure against the base's. A pair is a block: the
@@ -51,23 +60,29 @@ export function analyze(run: Run, workload: string): { pairs: number; arms: Reco
     return m;
   };
   const b = by(base);
+  // A pair counts when every arm ran all its rounds: one the run ended inside counts for no arm.
+  const whole = [...b.keys()].filter((r) => run.arms.every((a) => rows.filter((x) => x.arm === a.name && x.block === r).length === run.opts.rounds));
   const arms: Record<string, Record<string, Paired>> = {};
-  let done = true, rounds = 0;
+  let done = true;
   for (const a of run.arms.slice(1)) {
     const mine = by(a.name);
-    const both = [...mine.keys()].filter((r) => b.get(r)?.length === mine.get(r)!.length);
-    rounds = Math.max(rounds, both.length);
     arms[a.name] = {};
+    let decides = 0;
     for (const [m, f] of Object.entries(MEASURES)) {
       const gm = (ss: PairSample[]) => (ss.some((s) => f(s) === undefined) ? undefined : Math.exp(ss.reduce((t, s) => t + Math.log(f(s)!), 0) / ss.length));
-      const x = both.map((r) => gm(b.get(r)!)), y = both.map((r) => gm(mine.get(r)!));
-      if (!both.length || x.some((v) => v === undefined) || y.some((v) => v === undefined)) continue;
-      const p = paired(x as number[], y as number[], run.alpha, run.opts.band);
+      // A pair without the measure in either arm is left out of that measure alone.
+      const xy = whole.map((r) => [gm(b.get(r)!), gm(mine.get(r)!)]).filter((p): p is [number, number] => p[0] !== undefined && p[1] !== undefined);
+      if (!xy.length) continue;
+      const p = paired(xy.map((v) => v[0]), xy.map((v) => v[1]), run.alpha, run.opts.band);
       arms[a.name][m] = p;
-      if ((a.name !== 'aa' || run.arms.length === 2) && run.opts.stop.includes(m) && p.call === '?') done = false;
+      if (!run.opts.stop.includes(m)) continue;
+      decides++;
+      if ((a.name !== 'aa' || run.arms.length === 2) && p.call === '?') done = false;
     }
+    // An arm none of whose stop measures exists here (no counters, and the clock not among them) is never decided.
+    if (!decides && (a.name !== 'aa' || run.arms.length === 2)) done = false;
   }
-  return { pairs: rounds, arms, done: done && rounds >= run.opts.min };
+  return { pairs: whole.length, arms, done: done && whole.length >= run.opts.min };
 }
 
 const WORD: Record<string, string> = { '=': 'same', '<': 'LOWER', '>': 'HIGHER', '?': 'open' };
@@ -87,7 +102,7 @@ export function verdict(run: Run): string[] {
   const med = (xs: number[]) => (xs.length ? quantile(xs, 0.5) : NaN);
   for (const w of run.opts.workloads) {
     const rows = run.rows.filter((r) => r.workload === w && !r.warm);
-    if (!rows.length) continue;
+    if (!rows.length) { if (run.ended?.[w]) out.push(`${w}: ${run.ended[w]}`); continue; }
     const a = analyze(run, w);
     out.push(...table(run, w), `  ended: ${run.ended?.[w] ?? 'not finished'}`);
     const aa = Object.entries(a.arms.aa ?? {}).filter(([, p]) => p.call === '<' || p.call === '>').map(([m]) => m);
@@ -101,7 +116,7 @@ export function verdict(run: Run): string[] {
     }
   }
   out.push(`arms: ${run.arms.map((a) => `${a.name} ${a.coreBytes ?? '?'} bytes${a.query && ` ?${a.query}`}`).join('; ')}`);
-  out.push(`rule: a pair a fresh browser (warm-up ${run.opts.warm}, ${run.opts.rounds} round${run.opts.rounds > 1 ? 's' : ''}), pairs ${run.opts.min}-${run.opts.cap}, band ±${run.opts.band}%, stop on ${run.opts.stop.join(' and ')}, each interval's tail ${run.alpha.toExponential(2)} (${run.opts.overall} over all its looks); ${run.browser}`);
+  out.push(`rule: a pair a fresh browser (warm-up ${run.opts.warm}, ${run.opts.rounds} round${run.opts.rounds > 1 ? 's' : ''}), pairs ${run.opts.min}-${run.opts.cap}, band ±${run.opts.band}%, stop on ${run.opts.stop.join(' and ')}${run.rows.some((r) => !r.s.proc?.cycles) ? ' (no cycles or instructions on this host)' : ''}, each interval's tail ${run.alpha.toExponential(2)} (${run.opts.overall} over all its looks, an interval: several arms and measures each take that chance); ${run.browser}`);
   return out;
 }
 
@@ -131,11 +146,12 @@ if (import.meta.main) {
     if (!m) throw new Error(`arm "${p}": <name>=<core.wasm>[@<tree>][?<query>]`);
     return { name: m[1], core: resolve(m[2]), tree: m[3] ? resolve(m[3]) : here, query: m[4] ?? '' };
   });
-  if (new Set(arms.map((a) => a.name)).size !== arms.length || arms.some((a) => a.name === 'aa')) throw new Error("arms' names must differ, and `aa` is the A/A arm's");
+  if (new Set(arms.map((a) => a.name)).size !== arms.length || arms.some((a) => a.name === 'aa' || /^slot\d+$/.test(a.name))) throw new Error("arms' names must differ, `aa` is the A/A arm's and `slot<n>` the served cores'");
   if (v.aa) arms.splice(1, 0, { ...arms[0], name: 'aa' });
   if (arms.length < 2) throw new Error('one arm: nothing to compare (--aa compares the base with itself)');
   const opts: Opts = { min: Number(v.min), cap: Number(v.cap), band: Number(v.band), overall: Number(v.overall), stop: v.stop!.split(','), budget: Number(v.budget), workloads: v.workloads!.split(','), rounds: Number(v.rounds), warm: v.warm! };
   if (!(opts.min >= 2 && opts.cap >= opts.min)) throw new Error('--min at least 2, --cap at least --min');
+  checkStop(opts.stop);
   mkdirSync(v.out, { recursive: true });
 
   // Each arm's tree gets this tree's page for an arm (its core is copied in pair by pair, below).
@@ -161,7 +177,8 @@ if (import.meta.main) {
   // Nothing but its core and its query may tell an arm from another: in every pair the arms draw their slots (the
   // name its core is served under, so its page's address) and the order their pages open in, and each round its
   // order (four A/A sessions with the arms' names and a rotating order all had the base fastest, by 0.1-0.15%).
-  const u = rng(Date.now() >>> 0);
+  run.seed = Date.now() >>> 0;
+  const u = rng(run.seed);
   /** The arms' pages in a browser: arm `i` in slot `slots[i]`, opened in a random order. */
   const open = async (slots: number[]) => {
     const pages: import('playwright-core').Page[] = [];
@@ -186,17 +203,25 @@ if (import.meta.main) {
     };
   };
   try {
+    let used = false; // the browser has run a pair: the next gets a new one, a later workload's first too
     for (const w of opts.workloads) {
+      if (left() < 0) { run.ended![w] = `not run: the budget of ${opts.budget} s was spent`; continue; }
       // A block is a pair: a fresh browser and fresh pages (a page keeps a speed of its own for as long as it lives:
       // identical cores on two pages stayed 0.2% apart over 20 rounds), a warm-up sample of each arm, then the rounds.
       const warm = opts.warm === 'same' ? w : opts.warm;
       for (let block = 1; ; block++) {
-        if (block > 1) { await browser.close(); browser = await launch(); }
+        if (used) { await browser.close(); browser = await launch(); }
+        used = true;
         const slots = shuffled(arms.length, u);
         const sample = await open(slots);
         const round = async (what: string, more: { warm?: true }) => {
           const o = shuffled(arms.length, u);
-          for (let at = 0; at < o.length; at++) run.rows.push({ workload: w, block, ...more, at, slot: slots[o[at]], arm: arms[o[at]].name, s: await sample(o[at], what) });
+          for (let at = 0; at < o.length; at++) {
+            // The counters are every renderer's: a moment for the arm before to finish what it left (its collector,
+            // V8 freeing its code) outside this arm's sample.
+            await new Promise((ok) => setTimeout(ok, 300));
+            run.rows.push({ workload: w, block, ...more, at, slot: slots[o[at]], arm: arms[o[at]].name, s: await sample(o[at], what) });
+          }
         };
         if (warm !== 'none') await round(warm, { warm: true });
         for (let r = 0; r < opts.rounds; r++) {
@@ -215,13 +240,16 @@ if (import.meta.main) {
         if (end) break;
       }
     }
+  } catch (e) {
+    run.failed = String((e as Error).message ?? e);
   } finally {
     save();
-    await browser.close();
+    await browser.close().catch(() => {});
     for (const s of servers.values()) s.close();
     proc.close();
   }
-  const text = verdict(run).join('\n');
+  const text = [...verdict(run), ...(run.failed ? [`FAILED: ${run.failed}`] : [])].join('\n');
   writeFileSync(`${v.out}/verdict.txt`, text + '\n');
   console.log(text);
+  if (run.failed) process.exit(1);
 }

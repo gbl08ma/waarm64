@@ -2204,6 +2204,23 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 
 ## Tests and tools
 
+- **The paired A/B's reach** (`bench/ab-mac.sh`, docs/benchmarking.md "The paired A/B"; bench/boot/REPORT.md "BENCH
+  loop 2" to "4"), by what it would buy:
+  - *A paired workload under parallel SMP.* Every paired workload is one deterministic vCPU running budgeted code;
+    the page runs polled code on four. `bench/boot/pair.ts`'s `boot` takes `ncpus` and `parallel`: `node` on 2-4
+    vCPUs in realtime, its noise measured first (loop 1's parallel boots spread 0.35-0.9% a sample), then
+    calibrated on the preemption block (a base of another ABI through `@<tree>`, which has not yet been run).
+  - *A desktop session inside one browser beside its other arm.* The pages session's pairs spread ~1% because each
+    session is a browser of its own; arms alternated inside one browser spread a third of that on the gates. Two
+    pages of web/app from one snapshot in one Chromium, one running while the other is paused, would make the
+    browser's own workload a ±0.5% screen.
+  - *The vCPU thread's counters.* The renderer's cycles and instructions are all its threads' and pointed the wrong
+    way for regions and thresholds. macOS gives per-thread CPU time through `proc_pidinfo`; cycles and instructions
+    of another process's thread may need its task port. With them, a measure tighter than the clock for
+    compile-policy changes.
+  - *An interpreter-only arm in the calibration* (none of loop 4's arms changed the interpreter alone), and why the
+    base arm ran 0.10-0.15% fast under fixed names and a rotating order (randomized away, not explained).
+
 - **The remote disks' cache test hangs at `cacheBytes before`** (`tests/page-modal.test.ts` "remote disks' blocks: in
   an expiring bucket…", its 60 s bound naming the step): once in `scripts/ci-fast.sh` in a cloud session
   (2026-11-22, a commit that touched no `web/`), then 1 of 10 runs alone with four busy loops beside it (4.6–9.7 s
@@ -2297,8 +2314,7 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused
   hot set (a `hot=<n>` query that keeps calling the last n functions would); the real sites at 320 MiB in a run long
   enough to flush (six at 20 s didn't: more cycles or longer dwells), and whether their flushes look like the
-  churn's; the churn screen ran one round (main, 160 MiB, the A/A), so its noise band is from one pair; a pages
-  session cut to its first pages (`PAGES=wiki,mdn`) as a screen was read off full sessions' counts, never run.
+  churn's; the churn screen ran one round (main, 160 MiB, the A/A), so its noise band is from one pair.
   The real sites mode drops the guest's IPv6 by hand, which the client's IPv6 probe has made unnecessary ("IPv6
   out's loose ends", above).
 
