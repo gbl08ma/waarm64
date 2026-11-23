@@ -1200,18 +1200,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the estimate counts guest RAM whole (12-19% over the renderer's median from a snapshot) and misses a flush's
   garbage at its spikes (one 10 s sample 1.8 GB over, with the flushed epoch counted for 30 s); a calibration with 1 vCPU, a 2D machine and a longer session;
   what a user's crash mark says once one is seen.
-- **WFI's sleep wakes late on macOS** (PERF loop 53, bench/boot/REPORT.md; docs/platform.md "Parallel SMP"): the vCPU
-  worker's `Atomics.wait` to its deadline comes back late by a share of the timeout (the timer leeway), so a vCPU's own
-  timer is seen in WFI 0.3-1.9 ms late on average in the Mac's Node (`preempt-counts.ts`); waits of half the time left
-  and a spin of the last 40 µs were 4-9 µs late in `bench/boot/timer-setters.html`. To do: the same in the worker's
-  idle wait (web/vcpu-worker.ts), measured by the diagnostic core's "in WFI" latency and the pages session on the Mac
-  (an idle guest's wake-ups cost a few µs of spin each). The spin test's ~2 ms cluster below may be the same leeway.
 - **`tests/spin.test.ts`'s IPI round trip over its bound once** (`scripts/ci.sh`, 2026-11-18, the plain JIT's run with
   the default chunk; 1 in 6 ci.sh runs that day, 0 in 20 alone or beside 8 busy cores): median 2,121 µs for a 1,000 µs
   bound. The slow shapes sat at 2,121–2,195 µs while the rest took 4–13 µs (a few 7–12 ms): a cluster, not load's
   spread, as if a wake-up waited for a ~2 ms timer. Unknown which wait (the vCPU's idle `Atomics.wait`, its yield
   through `waitAsync`); the log: `bench/results/local/ci/jsdef-3-ci.log`. Next time it shows, the same shapes' numbers
-  say whether it's the same cluster.
+  say whether it's the same cluster. Since PERF loop 58 an idle vCPU sleeps to its deadline in waits of 2/3 of the time
+  left (web/idle-wait.ts), which doesn't change how a notify wakes it: a cluster that remains isn't the WFI wait's leeway.
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 

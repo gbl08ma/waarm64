@@ -118,10 +118,16 @@ indexes of their instance).
   wake)` can't miss a wake-up.
 - **WFI** returns `IDLE` (value: ns to the vCPU's own deadline) unless an interrupt is signaled
   to it (the worker polls its wake word for 50 µs before `Atomics.wait`: a futex wake-up costs
-  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off). On macOS that timed wait comes
-  back late by a share of its timeout (the timer leeway: a vCPU's own timer seen in WFI 0.3-1.9 ms late on average in
-  the Mac's Node, PERF loop 53; a wait of ~1 ms is ~130 µs late at the median, one of ~4 ms ~470 µs), which waits of
-  half the time left would cut to a few µs (bench/boot/REPORT.md "PERF loop 53"; docs/backlog.md); **WFE** is a
+  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off), then sleeps to its deadline by
+  waits of 2/3 of the time left and a spin of the last 40 µs (`web/idle-wait.ts`, PERF loop 58): a timed wait comes
+  back late by a share of its timeout (macOS's timer leeway: in Chromium ~130 µs at the median of a ~1 ms wait, ~470 µs
+  of ~4 ms, up to ~50% at the p99; in Node's workers there nearer 50%; Lima's Linux ~180 µs), so one wait to the
+  deadline had a vCPU see its own timer in WFI 0.3-2.4 ms late on average in the Mac's Node, and the shares bring that
+  to 11-29 µs (the dev VM's 290 µs to 90 µs). Its cost: an idle 4-vCPU guest (~400 idles a second) takes ~0.7% more
+  of one host core on the Mac (medians 8.1 → 8.9%), ~2% in the dev VM (11.6 → 13-14%); the gates and Firefox's pages session
+  don't move. Tried: a share of 1/2, 6-7 µs late for +3% of a core
+  (more waits); 3/5, 8 µs for +2%; 3/4, ~95 µs (its waits overshoot); a sleep instead of the tail's spin, ~15 µs for
+  no less CPU (bench/boot/REPORT.md "PERF loop 58"). An off vCPU (no deadline) waits a second at a time. **WFE** is a
   yield (it ends the chunk, as QEMU's MTTCG does), and SEV does nothing (no vCPU sleeps in WFE):
   a vCPU can't cheaply see the store that clears another's exclusive monitor, which is what
   wakes Linux's LDXR + WFE waits on hardware. Counted, a sleep isn't worth it (2026-11-10, bench/boot/REPORT.md

@@ -1,0 +1,10 @@
+# The variant screen's idle runs (idle-cpu.ts 4 5 15, after each variant's counts), in run order; then the kept code's (4 5 20).
+t40f50 {"ncpus":4,"wallS":15.02,"cpuPct":12.05,"userPct":10.07,"sysPct":1.98,"idlesPerS":402,"mipsGuest":1.27}
+t20f50 {"ncpus":4,"wallS":15.03,"cpuPct":11.3,"userPct":9.25,"sysPct":2.06,"idlesPerS":401,"mipsGuest":1.32}
+t40f75 {"ncpus":4,"wallS":15.02,"cpuPct":9.6,"userPct":8.77,"sysPct":0.83,"idlesPerS":401,"mipsGuest":1.07}
+t40nospin {"ncpus":4,"wallS":15.03,"cpuPct":10.93,"userPct":8.85,"sysPct":2.08,"idlesPerS":402,"mipsGuest":1.26}
+f50 {"ncpus":4,"wallS":19.98,"cpuPct":10.92,"userPct":8.94,"sysPct":1.98,"idlesPerS":401,"mipsGuest":1.28}
+f67 {"ncpus":4,"wallS":19.99,"cpuPct":8.3,"userPct":7.51,"sysPct":0.79,"idlesPerS":401,"mipsGuest":1.26}
+f60 {"ncpus":4,"wallS":19.98,"cpuPct":9.61,"userPct":8.1,"sysPct":1.51,"idlesPerS":405,"mipsGuest":1.32}
+f50b {"ncpus":4,"wallS":20.02,"cpuPct":12.11,"userPct":9.91,"sysPct":2.2,"idlesPerS":401,"mipsGuest":1.32}
+final {"ncpus":4,"wallS":19.99,"cpuPct":8.85,"userPct":7.95,"sysPct":0.91,"idlesPerS":401,"mipsGuest":1.22}

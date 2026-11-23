@@ -7467,3 +7467,72 @@ entries (3.3% of its compiled steps, one fall-through every 974 steps), 0.31% of
 0.04%, SQLite 0.03%); 79-100% of their straight runs end within 63 instructions, none past 255. Their successor is
 mostly a member of the same region, an edge, so a longer cap buys a fall-through's per-block costs at most: not
 measured. 58-65% of compiled block entries are blocks of 1-4 instructions.
+
+## PERF loop 58: WFI's sleep to its deadline on macOS (2026-11-23)
+
+docs/backlog.md's "WFI's sleep wakes late on macOS" (PERF loop 53's finding): the vCPU worker slept to its deadline
+in one `Atomics.wait`, which macOS's timer leeway brings back late by a share of the timeout. **Kept: waits of 2/3 of
+the time left and a spin of the last 40 µs (web/idle-wait.ts), a vCPU's own timer seen in WFI 11-29 µs late on average
+in the Mac's Node instead of 276-2,376 µs, for ~0.7% more of one host core in an idle 4-vCPU guest; the gates and Firefox's
+pages session don't move.** Only the worker's idle path changed (the core, compiled code and `tests/steps.txt` are
+5d8f29ef's). M4, macOS, Node 26.10.0 and Chrome for Testing 158; nothing else on the dev VM. Data:
+`bench/boot/results/perf58/` (its README).
+
+**The latency** (`preempt-counts.ts`, the diagnostic core, the Mac's Node; "timer line seen, in WFI", mean µs, two
+runs each):
+
+| | smp1 | smp4 | smp-user4 |
+|---|---|---|---|
+| one wait to the deadline | 1,956 / 2,376 (max 10.1 ms) | 301 / 298 | 276 / 277 |
+| waits of 1/2, 40 µs spun | 8.2 / 10.6 / 7.4 (max 62-280 µs) | 7.6 / 8.4 / 6.5 | 5.7 / 7.6 / 6.2 |
+| **waits of 2/3, 40 µs spun (kept)** | **29.4 / 28.5 (max 69-88 µs)** | **12.4 / 14.1** | **12.5 / 11.4** |
+
+The ~5,000 WFI wake-ups of smp4 and smp-user4 kept a few maxima of 3-9 ms in every arm (a vCPU held elsewhere, not the
+wait). In the dev VM's Node the plain wait is 291-294 µs late (Lima's Linux), 1/2 55-59 µs, 2/3 90 µs. The bound this
+gives: the plain wait's lateness is time a waiting guest loses, ~0.2 s of smp1's 5.2 s boot at most; the boots
+didn't move (below), so the guests' timers aren't on their critical path there.
+
+**The screen of variants** (smp4 / smp-user4 mean µs late; an idle 4-vCPU guest's host CPU, `bench/boot/idle-cpu.ts`:
+Buildroot with `/bin/sleep` as init, ~400 idle exits a second, the Node process's CPU as a share of one core):
+
+| | late (µs) | idle host CPU (%), per run | |
+|---|---|---|---|
+| one wait to the deadline | 298-301 / 276-277 | 7.7-8.8 (8 runs, median 8.1) | |
+| 1/2, 40 µs spun | 6.5-8.4 / 5.5-7.6 | 10.4-12.1 (11 runs, median 10.9) | the waits: the system share 0.7 → 2.0% |
+| 1/2, 20 µs spun | 7.6 / 5.3 | 11.3 (1) | |
+| 1/2, a wait instead of the spin | 17.1 / 14.2 | 10.3-10.9 (3) | the spin isn't the cost |
+| 3/5, 40 µs spun | 8.6 / 8.0 | 9.6-10.7 (4) | |
+| **2/3, 40 µs spun** | **12-17 / 11-17** | **8.3-9.1 (5, median 8.9)** | |
+| 3/4, 40 µs spun | 97.5 / 90.5 | 9.6 (1) | its waits overshoot |
+
+In Node's workers on the Mac the leeway is near half the timeout (3/4's waits overshoot; 2/3's first wait often lands
+in the tail), more than Chromium's ~13% at the median in `timer-setters.html` (PERF loop 53; its p99 ~50%), so 2/3 is
+where Node's waits still converge and Chromium's converge in fewer of them than 1/2's. In the dev VM the idle guest
+went 11.6 → 13.0-13.8% (2/3; 14.6% at 1/2).
+
+**The gates** (`smp_alpine_jit`, `smp_user_jit_4` in Chromium, `bench/run-mac.sh`, the first arm swapped each round;
+ranges of the rounds' medians, ms):
+
+| | base | 1/2 (3 rounds; 6 for userspace) | base | 2/3 (3 rounds) |
+|---|---|---|---|---|
+| n1 / n2 / n4 total | 5088-5126 / 4730-4795 / 4762-4810 | 5020-5118 / 4717-4790 / 4755-4792 | 5093-5132 / 4750-4786 / 4757-4785 | 5016-5118 / 4714-4778 / 4740-4764 |
+| `smp_user_jit_4` total | 10553-10945 | 10558-10863 (+1.9%, overlapping) | 10644-10849 | 10556-10611 (−2.4%, no overlap) |
+
+All boots overlap (within ±0.7%). The userspace moved +1.9% and −2.4% in two sessions of the same kind of change
+(Spotlight indexed on the Mac during the first): its spread, not the change.
+
+**Firefox's pages session** (`bench/gpu/ab-mac.sh` from `pages.waarm64snap`, 3 rounds alternated; the starts and the
+pages' loads, s, median [range]):
+
+| | base | arm | |
+|---|---|---|---|
+| session 1, 1/2 (its first session first) | 67.2 [66.6-68.9] | 68.4 [67.7-71.0] | +1.8%, overlapping |
+| session 2, 2/3 (the base first) | 67.5 [67.5-69.1] | 67.6 [67.3-68.7] | +0.1%, overlapping |
+| busy MIPS, modules, stalls of 20 ms+ (session 2) | 481, 2722, 0 | 479, 2714, 0 | |
+
+Memory: none (a few closures at start). Host CPU: +0.6-0.8% of a core for an idle 4-vCPU guest on the Mac (~15-20 µs an
+idle exit), ~2% in the dev VM; busy guests don't wait. Tests: `tests/idle-wait.test.ts` (a fake clock whose waits come
+back 0-50% late: within 5 µs of the deadline, a bounded number of waits, a wake-up ends the sleep; and one real
+3 ms sleep); planted bugs, each caught: one wait to the deadline (12 of 24 fail), no tail spin (16), a wake-up ignored
+(2), a share of 0.8 against the 50% leeway case (8). `tests/spin.test.ts`'s IPI round trip (docs/backlog.md) isn't
+this: its wake-ups are notifies, which the change leaves as they were.

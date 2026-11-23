@@ -494,6 +494,11 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   the deadline and the spinner's ack (µs), and the setter's spin share of a core and waits a deadline. The page's
   Mac numbers are bench/boot/REPORT.md "PERF loop 53"'s. `preempt-counts.ts` also runs in the Mac's Node, from
   `~/waarm64-bench` after a `bench/run-mac.sh` (the diagnostic core copied there): today's latencies on that host.
+- **An idle guest's host CPU** (PERF loop 58): `node bench/boot/idle-cpu.ts [ncpus=4] [settle s=6] [measure s=20]`
+  boots Buildroot's kernel with `/bin/sleep` as init, parallel on N vCPUs under the JIT, and prints the Node process's
+  CPU over the measured span as a share of one core, the idle exits a second and the guest's MIPS (~400 idles a second
+  at 4 vCPUs; the Mac's Node 8-9%, the dev VM's ~12%). On the Mac from `~/waarm64-bench` after a `bench/run-mac.sh`
+  (which copies it there); runs move by ~±0.5 points, so alternate arms over three rounds.
 - **Preemption's counts** (a diagnostic core: the `diag` feature, never in the normal build, whose code section it
   leaves byte-identical): `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag` (its own target
   directory, ~20 s from cold), then `node bench/boot/preempt-counts.ts [--json f] [boot user smp1 smp4 smp-user4]`

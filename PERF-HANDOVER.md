@@ -111,19 +111,19 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-22, after loop 57)
+## State (2026-11-23, after loop 58)
 
-**The track is paused at the user's request.** Loop 57 reverted parallel SMP's polled code without `acc` (the
-uncounted mode, its ticker, ABI 73's exports, the page's count plumbing): the user's decision after loop 56 measured
-it no faster on the Mac. The code is loop 54's again (the core's code section equals 216adb06's but for the ABI
-constant, now 74; `tests/steps.txt` unchanged); kept from loops 55-56: the compile worker's memory view made once and
-page-modal's bounded storage test. The finding is in docs/jit.md "Tried and lost: polled code without `acc`", the
-numbers in bench/boot/REPORT.md "PERF loop 55" to "PERF loop 57". The next loop is 58, from the queue's first row.
-Main is clean, no run pending. `target/snapbench/pages.waarm64snap` loads into loop 54's core state layout (the revert
-changed no machine state); remake it with `bench/gpu/warm-snapshots.sh firefox` if a load fails.
+The track was reopened on 2026-11-23. Loop 58 kept waits of 2/3 of the time left and a 40 µs spin for an idle vCPU's
+sleep to its deadline (web/idle-wait.ts; docs/platform.md "Parallel SMP"): a vCPU's own timer seen in WFI 11-29 µs late
+on the Mac instead of 0.3-2.4 ms, for ~0.7% of a host core in an idle 4-vCPU guest; the gates and the pages session
+don't move (bench/boot/REPORT.md "PERF loop 58"). The core is unchanged (ABI 74, `tests/steps.txt` unchanged); loop
+57's revert stands (docs/jit.md "Tried and lost: polled code without `acc`"). The next loop is 59, from the queue's
+first row. Main is clean, no run pending. `target/snapbench/pages.waarm64snap` loads into the current state layout;
+`target/archarm/desktop.qcow2` (ab-mac.sh's default disk) was copied back from the Mac's `~/waarm64-gpu-bench` in loop
+58. `../waarm64-base` is at 5d8f29ef. Loop 58's commit passed `scripts/ci.sh`, `ci-jit.sh` and `ci-debian.sh`.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
-57" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
+58" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47, 50 and 55) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48 and 56 (50's: comments only). The next
 is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA, FP16, FHM,
 BF16. The ABI is 74.
@@ -134,8 +134,7 @@ Refilled by the supervisor after loop 52 from docs/backlog.md's performance entr
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next (after the pause):** Parallel SMP: WFI's sleep wakes late on macOS | loop 53's finding: halving waits in the vCPU worker's idle wait; measure the "in WFI" latency and the pages session |
-| JIT: the core's heap, what a module's install adds outside the bound | count first; reserve before `emit_batch`, skip a tier-up that doesn't fit |
+| **Next:** JIT: the core's heap, what a module's install adds outside the bound | count first; reserve before `emit_batch`, skip a tier-up that doesn't fit |
 | JIT: kvm-unit-tests `timer` slower under the JIT than interpreted | re-measure after loop 49; then the short blocks around the polls |
 | JIT: the unexplained ~10 GB samples in the Go-load runs | V8's own counters before trusting the median |
 | JIT: a browser session past the 320 MiB budget | a real session long enough to flush; measure the flush's stutter |

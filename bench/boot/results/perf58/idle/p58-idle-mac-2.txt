@@ -1,0 +1,6 @@
+base r1 {"ncpus":4,"wallS":20.02,"cpuPct":7.69,"userPct":7.04,"sysPct":0.65,"idlesPerS":401,"mipsGuest":1.05}
+halve r1 {"ncpus":4,"wallS":20.02,"cpuPct":10.82,"userPct":8.91,"sysPct":1.91,"idlesPerS":401,"mipsGuest":1.37}
+nospin r1 {"ncpus":4,"wallS":20.01,"cpuPct":10.34,"userPct":8.3,"sysPct":2.04,"idlesPerS":401,"mipsGuest":1.35}
+nospin r2 {"ncpus":4,"wallS":20.02,"cpuPct":10.26,"userPct":8.25,"sysPct":2.01,"idlesPerS":401,"mipsGuest":1.3}
+halve r2 {"ncpus":4,"wallS":19.97,"cpuPct":10.76,"userPct":8.85,"sysPct":1.91,"idlesPerS":401,"mipsGuest":1.28}
+base r2 {"ncpus":4,"wallS":20.04,"cpuPct":8.44,"userPct":7.76,"sysPct":0.68,"idlesPerS":401,"mipsGuest":1.2}

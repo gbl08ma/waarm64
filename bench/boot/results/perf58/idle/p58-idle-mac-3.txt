@@ -1,0 +1,12 @@
+base {"ncpus":4,"wallS":19.97,"cpuPct":8.53,"userPct":7.66,"sysPct":0.88,"idlesPerS":401,"mipsGuest":1.2}
+f50 {"ncpus":4,"wallS":19.98,"cpuPct":11.39,"userPct":9.32,"sysPct":2.07,"idlesPerS":401,"mipsGuest":1.28}
+f67 {"ncpus":4,"wallS":20,"cpuPct":9.09,"userPct":8.08,"sysPct":1.01,"idlesPerS":401,"mipsGuest":1.24}
+f60 {"ncpus":4,"wallS":19.98,"cpuPct":10.7,"userPct":8.94,"sysPct":1.76,"idlesPerS":401,"mipsGuest":1.32}
+f60 {"ncpus":4,"wallS":20.04,"cpuPct":10.16,"userPct":8.43,"sysPct":1.73,"idlesPerS":401,"mipsGuest":1.21}
+f67 {"ncpus":4,"wallS":20.03,"cpuPct":9.09,"userPct":8.03,"sysPct":1.06,"idlesPerS":401,"mipsGuest":1.29}
+f50 {"ncpus":4,"wallS":20.01,"cpuPct":11.67,"userPct":9.58,"sysPct":2.09,"idlesPerS":401,"mipsGuest":1.3}
+base {"ncpus":4,"wallS":20.01,"cpuPct":8.77,"userPct":7.91,"sysPct":0.86,"idlesPerS":401,"mipsGuest":1.15}
+f67 {"ncpus":4,"wallS":20.04,"cpuPct":8.6,"userPct":7.78,"sysPct":0.83,"idlesPerS":401,"mipsGuest":1.36}
+base {"ncpus":4,"wallS":19.99,"cpuPct":7.98,"userPct":7.34,"sysPct":0.65,"idlesPerS":401,"mipsGuest":1.2}
+f60 {"ncpus":4,"wallS":20.03,"cpuPct":10.58,"userPct":8.95,"sysPct":1.63,"idlesPerS":401,"mipsGuest":1.4}
+f50 {"ncpus":4,"wallS":20.02,"cpuPct":11.46,"userPct":9.4,"sysPct":2.06,"idlesPerS":402,"mipsGuest":1.32}

@@ -8,6 +8,7 @@
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './virtio.ts';
 import { livenessWriter } from './liveness.ts';
+import { sleepUntil } from './idle-wait.ts';
 import {
   clockOffset,
   Exit,
@@ -127,15 +128,24 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
       case Exit.IDLE: {
         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT
         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
-        const ms = e[2] === NONE ? 1000 : Number(e[2]) / 1e6;
+        const off = e[2] === NONE;
+        const ms = off ? 1000 : Number(e[2]) / 1e6;
         const word = Number(e[8]) | 0;
         // Polls first: a wake-up through Atomics.wait takes ~17 µs in the dev VM.
         const t0 = performance.now();
+        const end = t0 + ms;
         const spin = Math.min(ms, SPIN_MS);
         while (Atomics.load(wake, 0) === word && performance.now() - t0 < spin);
-        // Asleep in the event loop when a yield is due: its tasks run while the vCPU waits.
-        if (due()) await pass(wake, word, ms - (performance.now() - t0));
-        else Atomics.wait(wake, 0, word, ms - (performance.now() - t0));
+        // Asleep in the event loop when a yield is due: its tasks run while the vCPU waits. To a deadline, by waits of
+        // half the time left (web/idle-wait.ts): the event loop's is the first, `sleepUntil` returns at once if it
+        // ended in a wake-up.
+        if (off) {
+          if (due()) await pass(wake, word, end - performance.now());
+          else Atomics.wait(wake, 0, word, end - performance.now());
+        } else {
+          if (due()) await pass(wake, word, (end - performance.now()) / 2);
+          sleepUntil(wake, word, end);
+        }
         continue;
       }
       case Exit.TX_FULL:
