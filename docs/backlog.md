@@ -1741,6 +1741,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       alive (a term and a grace, 37 days). No release step does it, and nothing has to while difficulty doesn't fall
       sixteen-fold.
     - The 20-server and 60-day tests (server_tests.rs) take ~1.5 minutes of `cargo test` each.
+    - A guest asking 40 names at once against 2 servers has 20 within a minute and no more (each server's 16 replies
+      a minute to one reply tag; SERVFAILs meanwhile, never NXDOMAIN): the limit stays, the load isn't realistic
+      (the user, 2026-11-23).
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

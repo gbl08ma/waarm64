@@ -1,6 +1,6 @@
 # NAMES2: room names' loose ends worth closing — kickoff
 
-**A draft: it awaits the user's OK** (the loops, their order and the two questions under "What needs the user's OK").
+**A draft: it awaits the user's OK to start** (the questions it had are answered: "Decisions taken").
 
 The user's brief (2026-11-23), in their words, on the backlog's "Room names' loose ends":
 
@@ -33,6 +33,14 @@ the NAMES track left stays in [docs/backlog.md](docs/backlog.md) "Room names' lo
 - No change to the records' format or the wire protocol. A loop that finds it needs one stops and asks.
 - What needs a design of its own is not here: servers holding a share of the id space, the reply flood in a room of
   hundreds of servers, the forged header at a member (backlog, "Needs a design, and the user's call").
+- **New name asks what becomes of the connection's domains** (the user, 2026-11-23): New name is how a user gets away
+  from members who learned their address, to one nobody knows, and a domain repointed by itself would lead them
+  straight to the new one. So on a connection that holds domains, New name offers the choice: point them at the new
+  key, or abandon them (let go, as [Let it go](ui:network:DomainCard.release) does).
+- **A first silence from a room never heard is SERVFAIL**, "nobody serves" only at the second (the user, 2026-11-23):
+  a room with no server answers NXDOMAIN ~2.5 s later than now.
+- **A server's 16 replies a minute to one reply tag stay** (the user, 2026-11-23): one member asking 40 names at once
+  isn't a realistic load, and it gets SERVFAILs, never a wrong answer.
 - The pane was redesigned by DOMAINS after most of these items were written: each UX item starts by checking it still
   stands on today's pane (a screenshot), and one that doesn't is closed with a line saying so.
 
@@ -60,8 +68,9 @@ One slice, one commit and a short report each; an item that no longer stands is 
    title on `none`. (b) A domain let go before its claim was public shows Let go, but what the agent publishes once
    the claim is anchored later (the claim with no release after it?) wasn't looked into (from the backlog's DOMAINS
    entry). (c) New name on a room connection that holds domains leaves them pointing at the old key until each
-   card's [Point all at this connection](ui:network:DomainCard.pointHere) is pressed: New name repoints them, or
-   asks.
+   card's [Point all at this connection](ui:network:DomainCard.pointHere) is pressed. New name's question offers
+   the choice (decided above): point them at the new key, said with what that means (whoever knows a domain finds
+   the new address), or abandon them.
 4. **What a deleted connection leaves, and what a member logs.** The `names` store in `waarm64-room` is kept by
    room and connection: deleting a connection leaves its records for good (a member's few KB, a server's registry,
    up to 128 MiB). Sweep them at Delete. A member's resolver logs every query for a name that isn't a key to the
@@ -70,13 +79,10 @@ One slice, one commit and a short report each; an item that no longer stands is 
 5. **An honest room's lookups under its own load** (measured by N6a on the bus, bench/net/REPORT.md "NAMES loop
    6a"; each fix re-measured there with `bench/net/room-scale.ts names`):
    - 500 members joining in a minute, each asking one name (20 servers): 33 got NXDOMAIN, 30 of them silence taken
-     for "nobody serves" (30 s). A first silence from a room never heard as SERVFAIL (asked again), "nobody serves"
-     only at the second, costs a room with no server its NXDOMAIN ~2.5 s later.
-   - A guest asking 40 names at once against 2 servers has 20 within a minute and no more (each server's 16 replies
-     a minute to one reply tag); 10 names are fine.
+     for "nobody serves" (30 s). A first silence from a room never heard becomes SERVFAIL (asked again), "nobody
+     serves" only the second (decided above).
    - A name in its grace resolved first while its renewal is pending is kept, and NXDOMAIN, for 5 minutes: a shorter
      freshness for a kept name in its grace ends it sooner.
-   The loop's first slice is the numbers and the options for the first two, for the user (below); the third is built.
 6. **A relay that doesn't answer.** Every room node retries a dead default relay every few seconds for good (N6b:
    relay.degmods.com connected 142 times in 1.8 hours by two nodes; the backoff of 2, 4, 8, 16 s starts over after
    each connection that opens). A backoff that keeps growing while a relay keeps not answering, reset only by a
@@ -87,10 +93,7 @@ One slice, one commit and a short report each; an item that no longer stands is 
 
 ## What needs the user's OK
 
-- **Loop 5's first two fixes** change what a guest sees (SERVFAIL where it got NXDOMAIN, a room with no server
-  answering later) or budgets the user set (a server's replies a minute to one tag). The loop brings the numbers;
-  the user chooses.
-- **Loop 3c**: whether New name repoints a connection's domains itself or asks first.
+- Anything guest-visible past loop 5's decided change, and any budget in names.md "Bounds and budgets".
 - New words on the page beyond the catalog's entries for these loops; any dependency; any change to the records or
   the wire (none planned).
 

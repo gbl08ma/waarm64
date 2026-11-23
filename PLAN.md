@@ -71,7 +71,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 ## Proposed, not started
 
 The stable embedding API ([machines.md](docs/machines.md)); Firefox and Safari ([backlog.md](docs/backlog.md)); room names' loose ends
-worth closing (NAMES2: [NAMES2-KICKOFF.md](NAMES2-KICKOFF.md), drafted 2026-11-23, awaits the user's OK).
+worth closing (NAMES2: [NAMES2-KICKOFF.md](NAMES2-KICKOFF.md), drafted 2026-11-23, its questions answered, awaits the user's OK to start).
 | The introduction (INTRO) | Done 2026-11-22 | [frontend.md](docs/frontend.md) "The introduction" |
 | A page per connection, and its domains (DOMAINS) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "The Home page", [names.md](docs/networking/names.md) "What the user sees", [backlog.md](docs/backlog.md) "DOMAINS" |
 | The move to waarm64.com (DOTCOM) | Done 2026-11-21 | [frontend.md](docs/frontend.md) "Deployed at waarm64.com" |
