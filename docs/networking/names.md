@@ -460,8 +460,12 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   for being asked for only once that moved an hour. A member's records likewise (what it keeps). The page keeps them in
   IndexedDB `waarm64-room`'s store `names` (web/room.ts `roomNamesStore`) under 16 bytes of SHA-256 over the room's ID
   and the connection's `identityKey` (a private room's ID is a secret), written in batches of a second and before the
-  worker goes, streamed in at the start; one the module doesn't take is deleted. Stored connections only. The node's
-  own names aren't stored there: their titles are the agent's.
+  worker goes, streamed in at the start; one the module doesn't take is deleted. Stored connections' only (and an
+  ephemeral connection's on a stored one's key, which are that one's): an ephemeral connection's own key keeps none
+  (web/room-worker.ts), so a closed page leaves nothing under an id nothing names again. Delete sweeps a connection's
+  records in its room once its client has stopped (`Connections.delete`, web/room.ts `forgetRoomRecords`), unless
+  another connection in that room has its `identityKey` (or another tab's ephemeral connection uses the entry: which
+  room it is in isn't told). The node's own names aren't stored there: their titles are the agent's.
 - **Outside the room** (`outside.rs`; servers ask, members never). The module builds a GET only from the compiled
   calendars (`Calendar::url`) and explorers (`EXPLORERS`), never from a record; the room's worker fetches it through
   web/names-fetch.ts `serviceFetch`, which refuses any other URL (action 12, `ts_room_names_fetched`; status 0: no answer).
@@ -493,8 +497,12 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
 - **NXDOMAIN at once** for a reserved or ill-formed name, a name replies said none for (60 s doubling to 10 minutes),
   and any name not kept while the member remembers nobody serves.
 
-Every type is answered alike (AAAA has the address, the rest an empty answer). Each query for a name that isn't a key
-is logged to the worker's console (`resolver: <name> (type <n>): <answer>`). Measured: a first lookup 1.3 s through the
+Every type is answered alike (AAAA has the address, the rest an empty answer). The worker's console gets how many
+names that aren't keys the guest asked for, never which: `resolver: names asked: <n> (in <s> s)` at the first, then at
+the first query a minute or more after the last count (`DNS_COUNT_EVERY`), and `resolver: a name: no answer in 4 s`
+for a SERVFAIL. Only the page tests' build (`test-params`, "Tests' parameters") logs each one in words
+(`resolver: <name> (type <n>): <answer>`, `<name>: no answer in 4 s`), which tests/page-room.test.ts reads for what
+the guests asked on their own. Measured: a first lookup 1.3 s through the
 fake DERP and relay in a room of two, 0.3 s once the spread is known; on the public relays a fresh member's first name
 1.52 to 1.59 s, a second 0.90 to 0.95, one that doesn't exist 0.64 to 1.0 to NXDOMAIN, a kept one 1 ms.
 
@@ -780,6 +788,7 @@ Production's parameters need real Bitcoin work, so a test can't make a title the
 seconds; a Rust test of the asks' rates runs `Params::TEST_PACED`). `net/ts/build.sh --test-params` builds it to
 `target/net/ts-test.wasm` (`scripts/ci.sh` builds both), which the page tests serve in `ts.wasm`'s place; `npm run
 dist` ships `ts.wasm` only, and nothing on a page can choose the other. A room's `self` event says which (`params`).
+The same feature has the resolver log each name the guest asks for in words ("The resolver"); production's counts them.
 Titles for the page tests come from `net/ts/examples/names-title.rs`; the agent's tests have the agent make its own on
 the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a block 6 deep in the past).
 
@@ -795,7 +804,8 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
   first lookup with no DERP packet, a contest through sessions, names under the room's name), `agent.rs`'s ops, and
   `the_module_runs_on_production_parameters`.
 - **Node** (each named to `node --test`): `tests/room-names.test.ts` (the pretend calendars and explorer, which module
-  runs on which parameters, the `self` event's name, the records in IndexedDB in Chromium), `tests/names-agent.test.ts`
+  runs on which parameters, the `self` event's name, the records in IndexedDB in Chromium, swept by room and connection,
+  none for an ephemeral connection's own key), `tests/names-agent.test.ts`
   (the agent on the tests' module and the pretend services: claims held back, anchors whenever they come, the Web
   Lock, lost titles, forks and pasted exports, the dialog's check, Let it go (before the claim is public too, and
   another copy's taken in), only compiled services fetched, the asks for a pending proof against N0b's 80 stamps, a

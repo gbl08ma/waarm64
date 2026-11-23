@@ -408,6 +408,13 @@ export async function roomNamesKey(id: string, identityKey: string): Promise<str
   return hex(new Uint8Array(h).subarray(0, 16));
 }
 
+/** Forgets the records of the stored connection `identityKey` in the room with ID `id` (its connection deleted; no worker
+ * of it writes any more). */
+export async function forgetRoomRecords(id: string, identityKey: string): Promise<void> {
+  const room = await roomNamesKey(id, identityKey);
+  await idb('readwrite', (s) => s.delete(IDBKeyRange.bound([room], [room, []])), 'names');
+}
+
 /** How long writes wait to go in one transaction (a server's sync changes many names at once). */
 export const NAMES_WRITE_MS = 1000;
 /** How long a closed room's worker may take to write what waits before it is terminated. */

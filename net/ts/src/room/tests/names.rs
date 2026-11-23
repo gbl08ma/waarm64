@@ -677,6 +677,39 @@ fn a_query_that_gets_no_answer_in_four_seconds_is_servfail() {
     n.restart(0, config(1));
     let (a, took) = n.ask(1, "bravo", dns::AAAA);
     assert_eq!((a.rcode, took), (dns::SERVFAIL, DNS_WAIT));
+    // NAMES2 loop 4: the member's log says how many names its guest asked, never which (only the page tests' build,
+    // `test-params`, logs them in words): the worker's console is no place for what the guest looks up.
+    let logs = n.logs(1);
+    assert!(
+        !logs
+            .iter()
+            .any(|l| l.contains("alpha") || l.contains("bravo")),
+        "no name in words: {logs:?}"
+    );
+    assert!(
+        logs.iter()
+            .any(|l| l == "resolver: names asked: 1 (in 0 s)"),
+        "a count, at the first: {logs:?}"
+    );
+    assert!(
+        logs.iter()
+            .any(|l| l == "resolver: a name: no answer in 4 s"),
+        "{logs:?}"
+    );
+    // Counted until a minute has passed, then logged at the next.
+    for _ in 0..3 {
+        n.ask(1, "alpha", dns::AAAA);
+    }
+    n.advance(Duration::from_secs(60));
+    n.ask(1, "alpha", dns::AAAA);
+    let counts: Vec<String> = (n.logs(1).into_iter())
+        .filter(|l| l.starts_with("resolver: names asked"))
+        .collect();
+    assert_eq!(counts.len(), 2, "{counts:?}");
+    assert!(
+        counts[1].starts_with("resolver: names asked: 5 (in 6"),
+        "{counts:?}"
+    );
 }
 
 #[test]

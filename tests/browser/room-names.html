@@ -6,7 +6,7 @@
   // `waarm64-room` at version 1 (an identity kept before the names store) is opened at version 2 with the identity kept;
   // records are written in batches, read back by room, deleted; a room's worker streams its stored records into the
   // module before the first tick and deletes those the module doesn't take.
-  import { NAMES_WRITE_MS, readRoomIdentity, roomNamesKey, roomNamesStore, startRoom } from '../../web/room.ts';
+  import { forgetRoomRecords, NAMES_WRITE_MS, readRoomIdentity, roomNamesKey, roomNamesStore, startRoom } from '../../web/room.ts';
   const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   window.harness = {
@@ -45,8 +45,11 @@
       const second = (await a.load()).map((r) => [r.id, Array.from(r.record)]);
       const other = (await b.load()).map((r) => [r.id, Array.from(r.record)]);
       const otherConn = (await a2.load()).map((r) => [r.id, Array.from(r.record)]);
+      // Its connection deleted: its records in room a go, the same connection's in room b and another's in room a stay.
+      await forgetRoomRecords('room a', 'conn 1');
+      const swept = [(await a.load()).length, (await b.load()).length, (await a2.load()).length];
       return {
-        identity, before, first, second, other, otherConn,
+        identity, before, first, second, other, otherConn, swept,
         key: await roomNamesKey('room a', 'conn 1'), keyB: await roomNamesKey('room b', 'conn 1'), keyConn: await roomNamesKey('room a', 'conn 2'),
       };
     },
@@ -64,6 +67,20 @@
       const left = (await s.load()).length;
       room.close();
       return { stored, left, self: events.find((e) => e.type === 'self') };
+    },
+    /** An ephemeral connection's room (its key in memory, its id as `identityKey`): its worker neither reads nor writes
+     * the store, so the record the module would refuse stays. */
+    async ephemeral(wasm) {
+      const id = 'room e';
+      const s = await roomNamesStore(id, 'eph-test');
+      s.write(new Uint8Array(32).fill(7), new Uint8Array([9, 9, 9]));
+      await s.flush();
+      const events = [];
+      const room = startRoom({ room: { link: `waarm64-room:${encodeURIComponent(id)}?nostr=${encodeURIComponent('ws://127.0.0.1:9')}&derp=127.0.0.1%3A9` }, identityKey: 'eph-test', identity: { key: 'cd'.repeat(32) }, wasm }, (e) => events.push(e));
+      for (let k = 0; k < 100 && !events.some((e) => e.type === 'self'); k++) await sleep(50);
+      await sleep(NAMES_WRITE_MS + 500);
+      room.close();
+      return { left: (await s.load()).length, self: !!events.find((e) => e.type === 'self') };
     },
     /** The same, closed as soon as it runs: the delete waiting for its batch is written before the worker goes. */
     async closed(wasm) {

@@ -27,14 +27,17 @@ const fakeState = () => {
   const namesForgot: string[] = [];
   /** `waarm64-room`'s entries: what a room connection's first start keeps, and pasted keys. */
   const rooms = new Map<string, { key: string }>();
+  /** The registry records swept, as `<room ID> <identityKey>` (web/room.ts `forgetRoomRecords`). */
+  const recordsForgot: string[] = [];
   return {
-    forgot, rooms, namesForgot,
+    forgot, rooms, namesForgot, recordsForgot,
     state: {
       forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); },
       forgetRoom: async (k: string) => { forgot.push(`room:${k}`); rooms.delete(k); },
       readRoom: async (k: string) => rooms.get(k), keepRoom: async (k: string, i: { key: string }) => { rooms.set(k, i); },
       roomIdentity: async (k: string) => { if (!rooms.has(k)) rooms.set(k, newRoomIdentity()); return rooms.get(k)!; },
       forgetNames: async (k: string) => { namesForgot.push(k); },
+      forgetRoomRecords: async (id: string, k: string) => { recordsForgot.push(`${id} ${k}`); },
     },
   };
 };
@@ -114,6 +117,37 @@ test('rooms: named by the room, a key of their own or another connection\'s, for
   assert.deepEqual(forgot, [`room:${pub.id}`, `room:${priv.id}`], 'a key of its own is forgotten; an ephemeral one\'s own is in memory');
   // The names kept under a key go with it, at the same time (the delete said so first: web/app/areas/network-actions.ts).
   assert.deepEqual(namesForgot, [pub.id, priv.id, eph.id], 'names: with the last one that uses their key');
+});
+
+test('rooms: a deleted connection\'s registry records are swept, unless another connection keeps them (its key, in its room)', async () => {
+  // The `names` store is keyed by the room and the connection's `identityKey` (web/room.ts `roomNamesKey`): two
+  // connections on one key in one room share their records; on one key in two rooms, they don't.
+  const s = store();
+  const { recordsForgot, state } = fakeState();
+  const [tab1, tab2] = [new Connections(s, state), new Connections(s, state)];
+  const link = 'waarm64-room:lobby?derp=7';
+  const a = await tab1.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  const sameRoom = await tab1.create({ kind: 'room', room: { link: 'waarm64-room:lobby', incoming: false, relayOnly: true, keyOf: a.id } });
+  const otherRoom = await tab1.create({ kind: 'room', room: { link: 'waarm64-room:other', incoming: true, relayOnly: false, keyOf: a.id } });
+  const eph = await tab1.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false } });
+  await tab1.delete(otherRoom.id);
+  assert.deepEqual(recordsForgot, [`other ${a.id}`], 'its room\'s records: no other connection in it has the key');
+  await tab1.delete(a.id);
+  assert.deepEqual(recordsForgot, [`other ${a.id}`], 'another connection in its room on its key keeps them');
+  await tab1.delete(sameRoom.id);
+  assert.deepEqual(recordsForgot, [`other ${a.id}`, `lobby ${a.id}`], 'the last one in the room sweeps them');
+  await tab1.delete(eph.id);
+  assert.equal(recordsForgot.length, 2, 'an ephemeral one on a key of its own keeps none (web/room-worker.ts)');
+  // Another tab's ephemeral connection on the key, in the room, keeps them too; its own Delete sweeps them.
+  const b = await tab1.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  const ephB = await tab2.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false, keyOf: b.id } });
+  await tab1.delete(b.id);
+  assert.equal(recordsForgot.length, 2, 'in use by tab 2: kept');
+  await tab2.delete(ephB.id);
+  assert.deepEqual(recordsForgot.at(-1), `lobby ${b.id}`);
+  // Not a room's: nothing to sweep.
+  await tab1.delete((await tab1.create({ kind: 'local', local: { url: 'ws://127.0.0.1:8740/tok' } })).id);
+  assert.equal(recordsForgot.length, 3);
 });
 
 test("rooms: another tab's ephemeral connection on a stored one's key keeps it through Delete and New name", async () => {

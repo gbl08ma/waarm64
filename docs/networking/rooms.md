@@ -432,7 +432,7 @@ NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, i
 RFC 6455 server, no dependency; a message past 1 MiB closes the connection, `events` keeps the last 65,536); `tests/room-browser.test.ts` (Chromium, `WAARM64_TAILCAT=1`: pages joining one room
 by its link on the rig's derper and that relay, by address and by name, relay only, incoming off); `tests/room-link.test.ts` (the page's link and
 key checks against link.rs's); `tests/room-keys.test.ts` (tests/net/room-keys.ts's address, name and room label against
-the module's) and `tests/room-names.test.ts`'s case on the `self` event's name in rooms of each kind; `tests/connections.test.ts`'s (another tab's ephemeral connection on a stored one's key) and `tests/network.test.ts`'s room cases;
+the module's) and `tests/room-names.test.ts`'s case on the `self` event's name in rooms of each kind; `tests/connections.test.ts`'s (another tab's ephemeral connection on a stored one's key; a deleted connection's records swept unless another in its room keeps them) and `tests/network.test.ts`'s room cases;
 `tests/net-live.test.ts` (the key's lock); `tests/page-connections.test.ts` (the global room in the wizard); and, in
 `scripts/ci-net.sh`, `tests/page-room.test.ts` (two Debian guests in one Chromium: Create, Join by link, the wizard's
 refusals, the resolver asked directly and through resolved, pings both ways by name; ~2 min) and

@@ -1,7 +1,9 @@
 // A room connection's export (docs/networking/adapters.md §2.1): its node key and, after a dot, its names: the names
 // agent's owners' secret and titles kept under the connection's `identityKey` (web/names-export.ts `exportNames`), so a name
-// travels with the key. A connection made from a pasted export takes the names as its own (`importNames`).
-import type { Connection, ConnectionState, NewConnection } from './connections.ts';
+// travels with the key. A connection made from a pasted export takes the names as its own (`importNames`). And what a
+// deleted room connection's names leave: its titles, and its registry records in its room (`sweepRoomRecords`).
+import { parseRoomLink } from '../room.ts';
+import type { Connection, ConnectionState, NewConnection, RoomConnection } from './connections.ts';
 
 /** The page's names (web/names-store.ts, `waarm64-room`'s `owner` and `titles`), loaded when an export needs them. */
 const pageNames = {
@@ -42,4 +44,28 @@ export const heldRoomNames = (identityKey: string): Promise<string[]> => pageNam
 /** Forgets the owners' secret and titles kept under `identityKey` (its connection deleted). */
 export function forgetRoomNames(state: ConnectionState, identityKey: string): Promise<void> {
   return (state.forgetNames ?? pageNames.forget)(identityKey);
+}
+
+/** A room connection's room ID, from its link (undefined if it isn't one). */
+function roomIdOf(link: string): string | undefined {
+  const p = parseRoomLink(link);
+  return 'room' in p ? p.room.id : undefined;
+}
+
+/**
+ * Deleted room connection `id`'s (settings `r`) registry records in its room, forgotten unless another connection in
+ * `all` in that room has its `identityKey`, or another tab's uses the entry (`elsewhere`). An ephemeral connection's own
+ * key (`identity`) keeps none (web/room-worker.ts).
+ */
+export async function sweepRoomRecords(
+  state: ConnectionState,
+  id: string,
+  r: RoomConnection,
+  all: Connection[],
+  elsewhere: (identityKey: string) => Promise<boolean>,
+) {
+  const [k, room] = [r.identityKey, roomIdOf(r.link)];
+  if (room === undefined || r.identity) return;
+  const kept = all.some((x) => x.id !== id && x.room?.identityKey === k && roomIdOf(x.room.link) === room);
+  if (!kept && !(await elsewhere(k))) await state.forgetRoomRecords(room, k);
 }

@@ -1682,6 +1682,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       private for the ~2 hours its proof takes.
     - A card's points take a member's name or key pasted; nothing lists the room's members to choose from (they are
       known only while the connection is connected).
+    - **Records left before Delete swept them** (NAMES2 loop 4): a connection deleted earlier left its registry
+      records in `waarm64-room`'s `names`, and nothing sweeps them now (a member's few KB, a server's up to 128 MiB).
+      A sweep at the page's start of every key that no stored connection's room and `identityKey` hash to would take
+      them (an ephemeral connection's own key keeps none any more; one on a stored key is that one's).
   - **One scalability test, some day** (low priority; it replaces every "not measured" this entry had). A room of
     hundreds of servers and thousands of names on the bus for hours of simulated time (`bench/net/room-scale.ts names`
     and server_tests.rs are the rigs), and the public arm, `bench/net/names-long.ts` for a few days (built and proved

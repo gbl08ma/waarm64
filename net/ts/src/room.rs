@@ -212,6 +212,9 @@ const NAMES_RETRY: Duration = Duration::from_secs(60);
 pub const DNS_WAIT: Duration = Duration::from_secs(4);
 /// Queries waiting at once; past it, SERVFAIL at once.
 const MAX_DNS_WAITING: usize = 64;
+/// How often the resolver logs how many registered names the guest asked for (names.md "The resolver"): the names
+/// themselves only in the page tests' build (`test-params`), which reads them.
+const DNS_COUNT_EVERY: Duration = Duration::from_secs(60);
 /// A registered name's answer's TTL: a zone change or a lost name shows within a minute of the member's knowing.
 const NAME_TTL: u32 = 60;
 /// tailcat's ULA /48, which no room's may be (the guest may be on tailcat beside it).
@@ -788,6 +791,8 @@ pub struct Client {
     /// The names line last told the page (`names` event): serving, names resolved or held, servers held.
     names_told: Option<(bool, usize, usize)>,
     dns_waiting: Vec<DnsWait>,
+    /// The registered names the guest asked for since the count was last logged, and when that was.
+    dns_asked: (u32, Option<Instant>),
     flows: BTreeMap<Flow, Instant>,
     next_conn: u32,
     state: State,
@@ -988,6 +993,7 @@ impl Client {
             publisher: None,
             names_told: None,
             dns_waiting: Vec::new(),
+            dns_asked: (0, None),
             flows: BTreeMap::new(),
             next_conn: 1,
             state: State::Connecting,
@@ -2806,7 +2812,7 @@ impl Client {
             (Some(k), _) => self.dns_answer(&m, info.sport, Answer::Node(k), 3600),
             (None, Some(rel)) => {
                 let a = self.resolve_name(&rel, now, true);
-                self.log(format!("resolver: {rel} (type {}): {a:?}", q.qtype));
+                self.log_asked(&rel, q.qtype, &a, now);
                 if a != Answer::Wait {
                     self.dns_answer(&m, info.sport, a, NAME_TTL);
                 } else if self.dns_waiting.len() >= MAX_DNS_WAITING {
@@ -2821,6 +2827,26 @@ impl Client {
                 }
             }
             (None, None) => self.dns_answer(&m, info.sport, Answer::Nx, 0),
+        }
+    }
+
+    /// The guest asked for registered name `rel`: in the page tests' build (`test-params`), the name, its type and the
+    /// answer, which they read; else a count, logged at the first and then at most once a minute (the worker's console
+    /// is no place for what the guest looks up).
+    fn log_asked(&mut self, rel: &str, qtype: u16, a: &Answer, now: Instant) {
+        if cfg!(feature = "test-params") {
+            return self.log(format!("resolver: {rel} (type {qtype}): {a:?}"));
+        }
+        let (n, since) = self.dns_asked;
+        let waited = since.map_or(Duration::ZERO, |t| now.saturating_duration_since(t));
+        self.dns_asked.0 = n + 1;
+        if since.is_none() || waited >= DNS_COUNT_EVERY {
+            self.dns_asked = (0, Some(now));
+            self.log(format!(
+                "resolver: names asked: {} (in {} s)",
+                n + 1,
+                waited.as_secs()
+            ));
         }
     }
 
@@ -2883,9 +2909,13 @@ impl Client {
                 continue;
             }
             if a == Answer::Wait {
+                let rel = if cfg!(feature = "test-params") {
+                    w.rel.as_str()
+                } else {
+                    "a name"
+                };
                 self.log(format!(
-                    "resolver: {}: no answer in {} s",
-                    w.rel,
+                    "resolver: {rel}: no answer in {} s",
                     DNS_WAIT.as_secs()
                 ));
             }
