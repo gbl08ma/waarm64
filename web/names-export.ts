@@ -31,6 +31,7 @@ export async function exportNames(store: NamesStore, identityKey: string): Promi
   for (const t of await store.titles(identityKey)) {
     const copy: Partial<TitleRecord> = { ...t };
     delete copy.identityKey;
+    delete copy.repoint; // this browser's New name, for its connection's key
     titles.push(copy as Bundle['titles'][number]);
   }
   return b64url(new TextEncoder().encode(JSON.stringify({ v: 2, secret, titles } satisfies Bundle)));

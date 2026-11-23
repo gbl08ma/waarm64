@@ -674,8 +674,9 @@ line says why: it isn't connected in this tab (`ConnectionDetails.notHere`), or 
 exit address, whether it serves, its relay and who is let in, the local helper's link, the demo network's server, and
 a room's two switches with, under Advanced, its key to copy (followed by its domains; a stored connection's is made
 when its page first shows it, by `member`) and
-[New name](ui:network:ConnectionRoomSettings.newName), a new key at once (after asking; one that holds domains asks
-what becomes of them: networking/names.md "What the user sees"). Save and Revert are a
+[New name](ui:network:ConnectionRoomSettings.newName), a new key at once (after asking; one that holds domains in its
+room asks what becomes of them, kept with them before the key changes and done by the names agent in the background,
+the new key shown at once: networking/names.md "What the user sees"). Save and Revert are a
 machine's (`SaveRow.svelte`): Save checks what was typed with the wizard's own messages (the Home page's banner says
 what's wrong), writes the connection through `page.netEdit` (an adapter here that runs it connects again with it, so
 the change applies at once) or renames it alone through `page.netRename`, from the record as it is then (a new key

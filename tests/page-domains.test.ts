@@ -42,8 +42,9 @@ after(async () => {
   await cal?.close();
 });
 
-/** A browser profile with the services routed (names-browser.test.ts's): anything else outside the page is refused. */
-async function profile(): Promise<BrowserContext> {
+/** A browser profile with the services routed (names-browser.test.ts's): anything else outside the page is refused;
+ * a calendar's stamp waits while `hold.stamps` is set (a release's work that takes long). */
+async function profile(hold: { stamps?: Promise<void> } = {}): Promise<BrowserContext> {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const map: [string, string][] = [...CALENDARS.map((c, i): [string, string] => [c, cal.calendars[PRETEND[i]]]), ...EXPLORERS.map((e): [string, string] => [e, cal.explorer])];
   await ctx.route('**/target/net/ts.wasm', (r) => r.fulfill({ path: TEST_WASM, contentType: 'application/wasm' }));
@@ -51,6 +52,7 @@ async function profile(): Promise<BrowserContext> {
     const url = r.request().url();
     const to = map.find(([from]) => url.startsWith(`${from}/`));
     if (!to) return r.abort();
+    if (url.endsWith('/digest')) await hold.stamps;
     await r.fulfill({ response: await r.fetch({ url: to[1] + url.slice(to[0].length) }) });
   });
   return ctx;
@@ -295,8 +297,9 @@ test("New name, then Save or a rename from the card: the new key stays (the page
   await ctx.close();
 });
 
-test("New name on a connection that holds domains asks what becomes of them: pointed at the new key, or let go (NAMES2 loop 3)", { skip, timeout: 180_000 }, async () => {
-  const ctx = await profile();
+test("New name on a connection that holds domains asks what becomes of them: pointed at the new key, or let go (NAMES2 loop 3); its room's only, the new key shown while they are let go (review fix B)", { skip, timeout: 180_000 }, async () => {
+  const hold: { stamps?: Promise<void> } = {};
+  const ctx = await profile(hold);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
   const asked: Question[] = [];
@@ -310,6 +313,7 @@ test("New name on a connection that holds domains asks what becomes of them: poi
   }, ['/web/app/page.ts', LINK] as const);
   // Two domains at this connection, one with a subdomain at another member.
   const OTHER = 'ab'.repeat(32);
+  const FAR = 'waarm64-room:elsewhere?nostr=ws%3A%2F%2F127.0.0.1%3A9&derp=127.0.0.1%3A9'; // i18n-ignore: a link
   const keyOf = () => page.evaluate(async ([c]) => {
     const all = await (await import('/web/app/store.ts' as string) as typeof import('../web/app/store.ts')).Store.open().then((s) => s.all('connections'));
     const r = (all as { id: string; room?: { identityKey: string; link: string } }[]).find((x) => x.id === c)!.room!;
@@ -317,12 +321,14 @@ test("New name on a connection that holds domains asks what becomes of them: poi
     return { identityKey: r.identityKey, key: (await n.namesAgent().member({ identityKey: r.identityKey, link: r.link })).key };
   }, [id] as const);
   const before = await keyOf();
-  await page.evaluate(async ([c, link, key, other]) => {
+  await page.evaluate(async ([c, link, key, other, far]) => {
     const n = await import('/web/names.ts' as string) as typeof import('../web/names.ts');
     const conn = { identityKey: c, link };
     await n.namesAgent().register(conn, 'mybox', [{ label: null, key }]);
     await n.namesAgent().register(conn, 'other', [{ label: null, key }, { label: 'git', key: other }]);
-  }, [before.identityKey, LINK, before.key, OTHER] as const);
+    // One in another room under the same key's entry (an export made there, pasted here): New name leaves it.
+    await n.namesAgent().register({ identityKey: c, link: far }, 'far', [{ label: null, key }]);
+  }, [before.identityKey, LINK, before.key, OTHER, FAR] as const);
   const newName = async () => {
     await page.evaluate((h) => (location.hash = h), `#home/connections/${id}/settings`);
     await page.locator('section[data-selected=connection-settings]').waitFor({ timeout: 30_000 });
@@ -346,13 +352,45 @@ test("New name on a connection that holds domains asks what becomes of them: poi
   assert.equal(await pointsOf('mybox'), `>${after.key}`, 'the domain points at the new key');
   assert.equal(await pointsOf('other'), `>${after.key} git>${OTHER}`, 'a subdomain at another member stays there');
 
-  // Abandoned: both let go, and the key changed all the same.
+  // Abandoned: both let go, and the key changed all the same, shown at once while the releases wait for their
+  // stamps (a release's proof of work takes a while), which the agent then makes.
+  // Their claims anchored first: a release is made on an owned chain only.
+  cal.mine(6);
+  await page.evaluate(async () => {
+    // Asked for now (the page's agent asks a pending proof again minutes on).
+    const store = (await import('/web/names-store.ts' as string) as typeof import('../web/names-store.ts')).idbNamesStore();
+    for (const t of await store.titles()) {
+      for (const c of Object.values(t.collect)) c.next = 0;
+      await store.put(t);
+    }
+    await (await import('/web/names.ts' as string) as typeof import('../web/names.ts')).namesAgent().pass();
+  });
+  assert.deepEqual((await titles(page)).map((v) => v.state), ['active', 'active', 'active']);
   reply = ALT;
+  let stamp = () => {};
+  hold.stamps = new Promise<void>((r) => (stamp = r));
   q = await newName();
   assert.match(q[0].text, words('network:network-actions.newName.confirm.domains', { name: 'gabriel-lan', names: ['mybox', 'other'], count: 2 }));
-  assert.notEqual((await keyOf()).key, after.key, 'a new key');
-  for (let k = 0; k < 100 && (await titles(page)).some((v) => v.state !== 'released'); k++) await page.waitForTimeout(100);
-  assert.deepEqual((await titles(page)).map((v) => v.state), ['released', 'released'], 'both let go');
+  const third = await keyOf();
+  assert.notEqual(third.key, after.key, 'a new key');
+  const states = async () => (await titles(page)).filter((v) => v.room !== 'elsewhere').map((v) => v.state);
+  assert.deepEqual(await states(), ['released', 'released'], 'both let go before their releases are made');
+  // The export shown starts with the key kept under the entry (the secret one, not the room's name for it).
+  const kept = await page.evaluate(async (k) => (await (await import('/web/room.ts' as string) as typeof import('../web/room.ts')).readRoomIdentity(k))?.key ?? '', third.identityKey);
+  assert.match(kept, /^[0-9a-f]{64}$/);
+  for (let k = 0; k < 100 && !(await page.locator('#settings-room-key-value').inputValue()).startsWith(kept); k++) await page.waitForTimeout(100);
+  assert.ok((await page.locator('#settings-room-key-value').inputValue()).startsWith(kept), 'the new key shown');
+  stamp();
+  hold.stamps = undefined;
+  // The stamps given: each release made (the one entry stamped and waiting: the claims are anchored).
+  const made = () => page.evaluate(async () => {
+    const all = await (await import('/web/names-store.ts' as string) as typeof import('../web/names-store.ts')).idbNamesStore().titles();
+    return all.filter((t) => t.room !== 'elsewhere' && Object.keys(t.stamps).length === 1).length;
+  });
+  for (let k = 0; k < 600 && (await made()) < 2; k++) await page.waitForTimeout(100); // each publish waits on the refused relays
+  assert.equal(await made(), 2, 'both releases made once the calendars answer');
+  const far = (await titles(page)).find((v) => v.name === 'far');
+  assert.deepEqual([far?.state, far?.points.map((p) => p.key)], ['active', [before.key]], 'another room\'s domain is left as it was');
 
   // None held: New name asks as before, nothing about domains.
   reply = true;

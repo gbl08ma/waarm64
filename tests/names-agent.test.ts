@@ -882,6 +882,73 @@ test('Let it go before the claim is public: the title says let go, not Reserved,
   assert.equal((await agent.titles(c.identityKey))[0].state, 'released');
 });
 
+test('Let it go cut short (an error or a reload in its proof of work) is finished by the next pass: the intent is kept first (NAMES2 review fix B)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });
+  const c = conn('conn-cut');
+  await aged(cal, agent, c, 'cut', nowS() - 2 * DAY);
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'active', log.join('\n'));
+  // The proof of work fails half-way (the worker gone with the tab, an error): the release isn't made...
+  const op = backend.op;
+  backend.op = (o, input) => (o === 'mine' ? Promise.reject(new Error('the tab closed')) : op(o, input));
+  try {
+    await assert.rejects(agent.release(c, 'cut'), /the tab closed/);
+  } finally {
+    backend.op = op;
+  }
+  // ...but the choice is kept: let go, and the next visit's agent makes the release.
+  assert.deepEqual((await agent.titles(c.identityKey)).map((v) => v.state), ['released'], 'let go is kept before the work');
+  const again = await testAgent({ store, publish: fakePublish(), log });
+  await again.agent.pass(c.identityKey);
+  const [t] = await store.titles(c.identityKey);
+  const r = (await statusOf(backend, t)).entries.find((e) => e.kind === 'release');
+  assert.ok(r && t.stamps[r.id]?.length, `the release made by the next pass: ${log.join('\n')}`);
+});
+
+test('New name\'s choice for the domains is kept before the key changes and finished by the passes, a reload between; only this room\'s domains (NAMES2 review fix B)', { skip, timeout: 120_000 }, async () => {
+  const log: string[] = [];
+  const store = memoryNamesStore();
+  const keys = new Map<string, string>([['conn-nk', 'aa'.repeat(32)]]);
+  const identity = (k: string) => Promise.resolve({ key: keys.get(k)! });
+  const { agent } = await testAgent({ store, publish: fakePublish(), log, identity });
+  const c = conn('conn-nk');
+  // A node key as its room sees it (`member`: the public one of the key kept under the entry).
+  const old = (await agent.member(c)).key;
+  const other = 'ab'.repeat(32);
+  const elsewhere = { identityKey: c.identityKey, link: 'waarm64-room:elsewhere?nostr=ws%3A%2F%2F127.0.0.1%3A9&derp=127.0.0.1%3A9' };
+  await aged(cal, agent, c, 'one', nowS() - 2 * DAY, [{ label: null, key: old }, { label: 'git', key: other }]);
+  await aged(cal, agent, c, 'two', nowS() - 2 * DAY, point(old));
+  await aged(cal, agent, elsewhere, 'far', nowS() - 2 * DAY, point(old));
+  // The question lists this room's domains only: the ones New name acts on.
+  assert.deepEqual(await agent.held(c.identityKey, roomOf(c.link)), ['one', 'two']);
+  assert.deepEqual(await agent.held(c.identityKey), ['far', 'one', 'two'], 'Delete loses them all');
+  // Point at the new name: recorded while the key is the old one (nothing to do yet)...
+  await agent.newKey(c, 'point', old);
+  await agent.pass(c.identityKey);
+  const pointsOf = async (name: string) => (await store.titles(c.identityKey)).find((t) => t.name === name)!.points.map((p) => `${p.label ?? ''}>${p.key}`).join(' ');
+  assert.equal(await pointsOf('one'), `>${old} git>${other}`, 'the key is still the old one');
+  // ...the key changes, the page reloads before anything else: the next visit's agent moves the points.
+  keys.set(c.identityKey, 'cc'.repeat(32));
+  const reloaded = await testAgent({ store, publish: fakePublish(), log, identity });
+  const now = (await reloaded.agent.member(c)).key;
+  assert.notEqual(now, old);
+  await reloaded.agent.pass();
+  assert.equal(await pointsOf('one'), `>${now} git>${other}`, `what was at the old key moves, another member's stays: ${log.join('\n')}`);
+  assert.equal(await pointsOf('two'), `>${now}`);
+  assert.equal(await pointsOf('far'), `>${old}`, 'another room\'s domain is left as it is');
+  assert.ok((await store.titles(c.identityKey)).every((t) => t.repoint === undefined), 'done: nothing left to do');
+  // Let them go: let go at once (before any proof of work), the releases made by the passes.
+  await reloaded.agent.newKey(c, 'release', '');
+  const states = async () => Object.fromEntries((await reloaded.agent.titles(c.identityKey)).map((v) => [v.name, v.state]));
+  assert.deepEqual(await states(), { far: 'active', one: 'released', two: 'released' });
+  const third = await testAgent({ store, publish: fakePublish(), log, identity });
+  await third.agent.pass(c.identityKey);
+  for (const t of await store.titles(c.identityKey)) {
+    const r = (await statusOf(third.backend, t)).entries.find((e) => e.kind === 'release');
+    assert.equal(!!(r && t.stamps[r.id]?.length), t.name !== 'far', `${t.name}: ${log.join('\n')}`);
+  }
+});
+
 test('a claim its calendars lost is made again a day after its stamp, the one before kept, so it doesn\'t stay Reserved for good (NAMES2 loop 2)', { skip, timeout: 90_000 }, async () => {
   const log: string[] = [];
   const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });

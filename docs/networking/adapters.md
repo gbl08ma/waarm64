@@ -85,7 +85,8 @@ dot, its names (`Connections.exportKey`, web/app/room-export.ts), and a connecti
   break each other on a shared region: a derper delivers the key's packets to one of them). A page notes a key it is
   taking before it waits for the lock, so two connects on one key at once there don't both pass. A stored connection
   made with an ephemeral one's key (pasted, or chosen) keeps a copy in its own entry, never the key in its record. Delete forgets the key only when no other connection uses it, and New name gives the
-  connection a key of its own (a new `identityKey` when it was shared). An ephemeral connection that uses a stored
+  connection a key of its own (a new `identityKey` when it was shared; the registry records the old entry kept in its
+  room are then swept as Delete's are, `Connections.sweepRoom`). An ephemeral connection that uses a stored
   one's entry holds a shared Web Lock named by it (`waarm64-room-entry:<identityKey>`, web/app/connections.ts) while it
   lives, so another tab's Delete and New name see it (`sharesKey`: more holders than that page's own) and keep the
   entry; the last one using it forgets it, whichever tab. Each room has its own /48, so rooms on several

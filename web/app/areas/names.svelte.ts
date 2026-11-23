@@ -11,7 +11,7 @@ import type { Action } from './message-bar.svelte.ts';
 import type { Member, MemberConn, NameCheck, NamesConn, TitleView } from '../../names.ts';
 import { roomOf } from '../../room.ts';
 import type { ZonePoint } from '../../names-store.ts';
-import { isLive, repointed, titlesOf } from '../names-view.ts';
+import { titlesOf } from '../names-view.ts';
 import type { From } from '../home-route.ts';
 import { machinesNav } from './machines-nav.svelte.ts';
 
@@ -180,24 +180,25 @@ class PageNames {
   }
 
   /**
-   * After New name on room connection `c` (its key was `from`, now `to`), its domains in the room still held: pointed
-   * at the new key (`point`: what pointed at the old one; another member's points stay) or let go (`release`).
+   * New name on room connection `c` (its key now `from`): what becomes of its domains held in its room, kept before
+   * the key changes (web/names.ts `NamesAgent.newKey`: pointed at the new key, `point`, or let go, `release`); the
+   * work is the agent's passes' (`afterNewKey`, and each load's), so a reload or an error doesn't lose it.
    */
-  async newKey(c: NamesConn, from: string, to: string, how: 'point' | 'release') {
-    const agent = (await names()).namesAgent();
-    const room = roomOf(c.link);
-    const held = (await agent.titles(c.identityKey)).filter((v) => v.room === room && isLive(v));
+  async newKey(c: NamesConn, from: string, how: 'point' | 'release') {
     try {
-      for (const v of held) {
-        if (how === 'release') await agent.release(c, v.name);
-        else {
-          const points = repointed(v.points, from, to);
-          if (points) await agent.setZone(c, v.name, points);
-        }
-      }
+      await (await names()).namesAgent().newKey(c, how, from);
     } finally {
       await this.refresh();
     }
+  }
+
+  /** Room connection `c`'s key changed (New name): a pass of its titles now does what `newKey` kept (in the
+   * background: a release's proof of work takes a while). */
+  afterNewKey(c: NamesConn) {
+    void names()
+      .then((n) => n.namesAgent().pass(c.identityKey))
+      .catch((e: unknown) => console.warn('names: after New name:', e))
+      .finally(() => void this.refresh());
   }
 
   /**

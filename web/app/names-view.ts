@@ -298,14 +298,7 @@ export function zonePoints(rows: { label: string | null; target: string }[]): Zo
   return out;
 }
 
-/**
- * A domain's points after its connection's New name (`pageNames.newKey`): those at node key `from` (the old key) at `to`
- * (the new one), the others (another member's) where they were; undefined when none was at `from`.
- */
-export function repointed(points: ZonePoint[], from: string, to: string): ZonePoint[] | undefined {
-  if (!points.some((p) => p.key === from)) return undefined;
-  return points.map((p) => (p.key === from ? { ...p, key: to } : p));
-}
+export { repointed } from '../names-store.ts';
 
 const B32 = 'abcdefghijklmnopqrstuvwxyz234567';
 

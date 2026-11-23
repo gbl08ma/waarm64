@@ -476,9 +476,10 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   worker goes, streamed in at the start; one the module doesn't take is deleted. Stored connections' only (and an
   ephemeral connection's on a stored one's key, which are that one's): an ephemeral connection's own key keeps none
   (web/room-worker.ts), so a closed page leaves nothing under an id nothing names again. Delete sweeps a connection's
-  records in its room once its client has stopped (`Connections.delete`, web/room.ts `forgetRoomRecords`), unless
-  another connection in that room has its `identityKey` (or another tab's ephemeral connection uses the entry: which
-  room it is in isn't told). The node's own names aren't stored there: their titles are the agent's.
+  records in its room once its client has stopped (`Connections.delete`, `sweepRoom`, web/room.ts `forgetRoomRecords`),
+  unless another connection in that room has its `identityKey` (or another tab's ephemeral connection uses the entry:
+  which room it is in isn't told); so does New name for the entry a connection left (a shared one's, or a stored
+  one's that an ephemeral connection used), once its old client has stopped. The node's own names aren't stored there: their titles are the agent's.
 - **Outside the room** (`outside.rs`; servers ask, members never). The module builds a GET only from the compiled
   calendars (`Calendar::url`) and explorers (`EXPLORERS`), never from a record; the room's worker fetches it through
   web/names-fetch.ts `serviceFetch`, which refuses any other URL (action 12, `ts_room_names_fetched`; status 0: no answer).
@@ -526,7 +527,8 @@ fake DERP and relay in a room of two, 0.3 s once the spread is known; on the pub
 owns the owners' secret and the titles, the only place a name is kept in words: IndexedDB `waarm64-room` (version 3),
 store `owner` (32 random bytes under the connection's `identityKey`, made at the first registration) and `titles` (a
 record under [identityKey, a hash of the room's ID, the name]: the room's ID and link, the item, the calendars' pending
-anchors, the zone's points and counter, the backoffs, lost or released, the renewal made ahead). **A title is the only
+anchors, the zone's points and counter, the backoffs, lost or released, the renewal made ahead, New name's repoint to
+do). **A title is the only
 copy of ownership**: registering asks for persistent storage, and deleting the connection shows its export. The module
 does the work (`ts_names_*`, JSON in and out: make, mine in slices of 256 tries, sign and check an entry; pending
 anchors; the commitment to ask; a finished proof's anchor with its header; a zone; a title's status; a server's better
@@ -571,7 +573,8 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   server of the same pass took it, nor until an explorer knows the better chain's first block (a forged header can't
   stop the owner's renewals). A lost title is still put hourly, and judged again.
 - **[Let it go](ui:network:DomainCard.release)** drops the renewals waiting for their anchors and the one made ahead,
-  and makes the release on the owning chain's last entry (made again if no calendar stamped it). A renewal servers
+  keeps the title let go (`released`), and then makes the release on the owning chain's last entry (proof of work); a
+  pass makes one that wasn't made (cut short by an error or the tab closing) or that no calendar stamped. A renewal servers
   already finished is ended by the release once both are anchored. A claim let go before it was public has its
   release made once the claim is anchored, and **nothing is put until the release is anchored too**: the room is
   given the claim and its release together, so the name never resolves (put alone, the claim resolved until servers
@@ -698,8 +701,15 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
   Settings, under Advanced; a domain held is one not let go, lapsed or lost) asks what becomes of them (the user's
   decision, 2026-11-23: New name is how a user gets away from members who learned their address, and a domain pointed
   at the new key by itself would lead them there): [Point at the new name](ui:network:network-actions.newName.point)
-  (each point at the old key moves to the new one, another member's stays: `names-view.ts` `repointed`, a new zone
-  each), or [Let them go](ui:network:network-actions.newName.release_other) (each released, as Let it go does). The
+  (each point at the old key moves to the new one, another member's stays: `repointed`, a new zone each), or
+  [Let them go](ui:network:network-actions.newName.release_other) (each released, as Let it go does). The question names, and
+  New name acts on, the domains held in the connection's room only (`held(identityKey, room)`: a title under the same
+  entry in another room, from an export made there, is left). **The choice is kept with each title before the key
+  changes** (`NamesAgent.newKey`: let go at once, or `repoint`, the old key, in its record), and the agent's passes do
+  the work: the points move once the key under the entry is another one (`member`'s), a release is made as Let it go's
+  is. The page runs a pass of the connection's titles in the background once the key changed (a release's proof of
+  work takes a while), so Settings shows the new key at once; a reload or an error meanwhile leaves the rest to the
+  next pass. The
   question says what each means: [Give {{name}} a new name in its room? Members who have the machine's current name
   won't be able to reach it any more. It holds the domains {{names}}. If you point them at the new name, whoever knows
   a domain will find the new address. If you let them go, anyone can register them once the release is
@@ -824,13 +834,16 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
   none for an ephemeral connection's own key), `tests/names-agent.test.ts`
   (the agent on the tests' module and the pretend services: claims held back, anchors whenever they come, the Web
   Lock, lost titles, forks and pasted exports, the dialog's check, Let it go (before the claim is public too, and
-  another copy's taken in), only compiled services fetched, the asks for a pending proof against N0b's 80 stamps, a
+  another copy's taken in; cut short, finished by the next pass), New name's choice kept and finished across a reload,
+only compiled services fetched, the asks for a pending proof against N0b's 80 stamps, a
   claim its calendars lost made again),
   `tests/names-room.test.ts` (opt-in `WAARM64_TAILCAT=1`: real servers through the rig's derper, a renewal finished
   with the page closed, a fork settled, a lost name), `tests/names-browser.test.ts` (Chromium: the worker, IndexedDB,
   routes, an export into another profile), `tests/names-page.test.ts` (the words, the dialog's outcomes, a domain
   pointed at New name's key, and the `wording:` cases that pin the two notices), `tests/page-domains.test.ts`
-  (Chromium: the Domains pane, New name's question on a connection that holds domains), `tests/connections.test.ts` (export, import, names forgotten with the key).
+  (Chromium: the Domains pane, New name's question on a connection that holds domains, its room's only, the new key
+  shown while the releases wait), `tests/connections.test.ts` (export, import, names forgotten with the key, records
+  swept by Delete and by New name off a shared entry).
 - **Debian** (`scripts/ci-net.sh`): `tests/page-room.test.ts` grown by names (two guests in one Chromium, the tests'
   module served in `ts.wasm`'s place): no server, a server that appears while a guest keeps asking, full and short
   names, a label, reserved names, a zone change, what Debian asks unprompted, the dialog from typing to a name another

@@ -27,6 +27,7 @@ import { exportNames, importNames, newBranch } from './names-export.ts';
 import {
   idbNamesStore,
   NAMES_CHANNEL,
+  repointed,
   roomHash,
   type NamesStore,
   type TitleRecord,
@@ -212,6 +213,8 @@ export type AgentOptions = {
 };
 
 const nowS = () => Math.floor(Date.now() / 1000);
+/** A title's states while it is held (not let go, lost or lapsed). */
+const HELD: TitleState[] = ['preparing', 'reserved', 'active', 'grace'];
 
 export class NamesAgent {
   private readonly store: NamesStore;
@@ -324,26 +327,47 @@ export class NamesAgent {
     }
   }
 
-  /** Lets `name` go: a release made on its chain and stamped; published once anchored, like any entry. */
+  /**
+   * Lets `name` go: let go kept first, then a release made on its chain (proof of work) and stamped; published once
+   * anchored, like any entry. Cut short (an error, the tab closed), the passes make the release.
+   */
   async release(c: NamesConn, name: string): Promise<TitleView> {
     const room = roomOf(c.link);
     await this.relink(c);
-    await this.locked({ identityKey: c.identityKey, room, name }, true, async () => {
+    const at = { identityKey: c.identityKey, room, name };
+    await this.locked(at, true, async () => {
       const t = await this.mustGet(c.identityKey, room, name);
-      // Renewals waiting for their anchors go: one collected later would be a branch whose cover outlasts the
-      // release's, and the name would stay (review 2).
-      const waiting =
-        (await this.status(t))?.entries.filter((e) => e.kind === 'renew' && e.time === null).map((e) => e.id) ?? [];
-      if (waiting.length) await this.dropEntries(t, waiting);
-      const st = await this.status(t);
-      if (st?.owner && !t.lost && !st.owner.released) await this.makeEntry(t, 'release', st.owner.ids.at(-1));
-      t.released = true;
-      delete t.ahead;
+      await this.letGo(t);
       await this.save(t);
+    });
+    await this.locked(at, true, async () => {
+      const t = await this.mustGet(c.identityKey, room, name);
+      if (await this.releaseDue(t, await this.status(t))) await this.save(t);
     });
     const t = await this.mustGet(c.identityKey, room, name);
     await this.publish(t);
     return this.view(t);
+  }
+
+  /**
+   * After New name on room connection `c` (the user's choice; its key was `from`), its domains in its room that are
+   * held: pointed at the new key (`point`: what pointed at `from` moves once the key under the connection's entry is
+   * another; another member's points stay) or let go (`release`). Only kept, before the key changes: the passes do the
+   * work (`work`), whenever a page is open, so a reload or an error doesn't lose it.
+   */
+  async newKey(c: NamesConn, how: 'point' | 'release', from: string): Promise<void> {
+    const room = roomOf(c.link);
+    await this.relink(c);
+    for (const v of await this.titles(c.identityKey)) {
+      if (v.room !== room || !HELD.includes(v.state)) continue;
+      await this.locked(v, true, async () => {
+        const t = await this.store.get(v.identityKey, v.room, v.name);
+        if (!t) return;
+        if (how === 'release') await this.letGo(t);
+        else t.repoint = from;
+        await this.save(t);
+      });
+    }
   }
 
   /**
@@ -393,9 +417,12 @@ export class NamesAgent {
     return { state: 'disputed', until: Math.max(...held) };
   }
 
-  /** The names connection `identityKey` holds now (not let go, lost or lapsed), by name: what deleting it would lose. */
-  async held(identityKey: string): Promise<string[]> {
-    const live = (await this.titles(identityKey)).filter((v) => !['released', 'lost', 'lapsed'].includes(v.state));
+  /** The names connection `identityKey` holds now (not let go, lost or lapsed), by name: what deleting it would lose;
+   * in room ID `room` only, when given (what New name acts on). */
+  async held(identityKey: string, room?: string): Promise<string[]> {
+    const live = (await this.titles(identityKey)).filter(
+      (v) => HELD.includes(v.state) && (room === undefined || v.room === room),
+    );
     return [...new Set(live.map((v) => v.name))].sort();
   }
 
@@ -554,9 +581,48 @@ export class NamesAgent {
     return { next: Date.now() + Math.min(this.retryMs * 2 ** (tries - 1), PASS_MS), tries };
   }
 
-  /** One title's turn under its lock: collect, drop what can't count, make what is due. Whether it changed. */
+  /** Title `t` let go (under its lock, not saved): renewals waiting for their anchors go (one collected later would be
+   * a branch whose cover outlasts the release's, and the name would stay: review 2), and so does what was to come. */
+  private async letGo(t: TitleRecord) {
+    const waiting =
+      (await this.status(t))?.entries.filter((e) => e.kind === 'renew' && e.time === null).map((e) => e.id) ?? [];
+    if (waiting.length) await this.dropEntries(t, waiting);
+    t.released = true;
+    delete t.ahead;
+    delete t.repoint;
+  }
+
+  /** Title `t` (status `st`) let go and its release not made, or not stamped: made now (proof of work). Whether it was
+   * tried (`t` changed). */
+  private async releaseDue(t: TitleRecord, st: TitleStatus | undefined): Promise<boolean> {
+    const o = st?.owner;
+    if (!t.released || t.lost || !o || o.released || st.entries.some((e) => e.kind === 'release' && !e.stale))
+      return false;
+    await this.makeEntry(t, 'release', o.ids.at(-1));
+    return true;
+  }
+
+  /** New name's Point at the new name (`newKey`), once the connection's key is another: the points at the old one
+   * moved, the zone sealed (published by the pass). Whether `t` changed. */
+  private async repoint(t: TitleRecord): Promise<boolean> {
+    const from = t.repoint;
+    if (from === undefined) return false;
+    const to = (await this.member({ identityKey: t.identityKey, link: t.link })).key;
+    if (to === from) return false; // the key hasn't changed yet
+    delete t.repoint;
+    const points = repointed(t.points, from, to);
+    if (points) {
+      t.points = points;
+      if (t.item) await this.seal(t);
+      this.log(`${t.name}: pointed at the connection's new key`);
+    }
+    return true;
+  }
+
+  /** One title's turn under its lock: New name's repoint, collect, drop what can't count, make what is due. Whether
+   * it changed. */
   private async work(t: TitleRecord): Promise<boolean> {
-    let changed = false;
+    let changed = await this.repoint(t);
     let st = await this.status(t);
     // Finished anchors for the entries that wait for one.
     for (const e of st?.entries ?? []) {
@@ -628,11 +694,8 @@ export class NamesAgent {
       return true;
     }
     const o = st.owner;
-    // Let go, but the release wasn't stamped (or never came): made again.
-    if (t.released && o && !o.released && !st.entries.some((e) => e.kind === 'release' && !e.stale)) {
-      await this.makeEntry(t, 'release', o.ids.at(-1));
-      return true;
-    }
+    // Let go, but the release wasn't made (cut short), stamped (or never came): made now.
+    if (await this.releaseDue(t, st)) return true;
     if (!o || t.released || o.released) return changed;
     // The title's own key, from its secret: a chain of another key's (a secret that doesn't sign this title) isn't
     // renewed with it.

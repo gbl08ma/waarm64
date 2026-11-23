@@ -355,9 +355,17 @@ export class Connections {
    * another connection shares it. Another tab's connection on the key keeps both (which room it is in isn't told).
    */
   async #forgetRoom(c: Connection, r: RoomConnection) {
-    await sweepRoomRecords(this.state, c.id, r, await this.list(), (k) => this.entries.elsewhere(k));
+    await this.sweepRoom(r);
     if (!(await this.sharesKey(c))) await this.#forgetKey(r);
   }
+
+  /**
+   * The registry records kept under room settings `r`'s entry in its room, forgotten unless a connection in that room
+   * still has the entry (`sweepRoomRecords`): after Delete, and after New name moved a connection off a shared entry
+   * (the caller's, once the old client has stopped: its worker writes them until then).
+   */
+  sweepRoom = async (r: RoomConnection) =>
+    sweepRoomRecords(this.state, r, await this.list(), (k) => this.entries.elsewhere(k));
 
   /** A room key no connection uses any more: its entry (a stored one's) and its names (the delete said so). */
   async #forgetKey(r: RoomConnection) {

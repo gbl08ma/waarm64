@@ -150,6 +150,46 @@ test('rooms: a deleted connection\'s registry records are swept, unless another 
   assert.equal(recordsForgot.length, 3);
 });
 
+test('rooms: New name off a shared key sweeps what Delete would of the old entry in the room, once the client stopped (NAMES2 review fix B)', async () => {
+  const s = store();
+  const { recordsForgot, state } = fakeState();
+  const conns = new Connections(s, state);
+  const lobby = 'waarm64-room:lobby';
+  type Room = Connection & { room: NonNullable<Connection['room']> };
+  /** New name on connection `id`, then the sweep of the entry it had (the caller's, once the old client stopped). */
+  const newName = async (id: string) => {
+    const c = (await conns.get(id)) as Room;
+    await conns.newRoomKey(c);
+    assert.equal(recordsForgot.length, swept, 'not before the old client stopped');
+    await conns.sweepRoom(c.room);
+  };
+  let swept = 0;
+  const a = await conns.create({ kind: 'room', room: { link: lobby, incoming: true, relayOnly: false } });
+  const b = await conns.create({ kind: 'room', room: { link: 'waarm64-room:other', incoming: true, relayOnly: false, keyOf: a.id } });
+  // A's key is shared with B in another room: A moves to an entry of its own, and its records under the old one in
+  // the lobby belong to no one.
+  await newName(a.id);
+  assert.deepEqual(recordsForgot, [`lobby ${a.id}`]);
+  swept = 1;
+  // Another connection in the room on the entry keeps them; a key of its own keeps its entry (and its records).
+  const c = await conns.create({ kind: 'room', room: { link: lobby, incoming: true, relayOnly: false, keyOf: b.id } });
+  const d = await conns.create({ kind: 'room', room: { link: lobby, incoming: false, relayOnly: true, keyOf: b.id } });
+  await newName(c.id);
+  assert.equal(recordsForgot.length, 1, 'd in the lobby has the entry');
+  await newName(c.id);
+  assert.equal(recordsForgot.length, 1, 'its own entry: its records stay its');
+  // An ephemeral one on a stored entry in another room: its own key now, the entry's records in its room swept.
+  await conns.delete(d.id);
+  recordsForgot.length = swept = 0;
+  const eph = await conns.create({ kind: 'room', ephemeral: true, room: { link: 'waarm64-room:third', incoming: true, relayOnly: false, keyOf: b.id } });
+  await newName(eph.id);
+  assert.deepEqual(recordsForgot, [`third ${b.room!.identityKey}`]);
+  swept = 1;
+  // And with its own key, New name again sweeps nothing (it keeps none).
+  await newName(eph.id);
+  assert.equal(recordsForgot.length, 1);
+});
+
 test("rooms: another tab's ephemeral connection on a stored one's key keeps it through Delete and New name", async () => {
   // Two Connections on one store: two tabs (Node's Web Locks are the process's, as a browser's are the origin's).
   const s = store();
