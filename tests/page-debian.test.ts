@@ -471,8 +471,9 @@ for (let run = 1; run <= RUNS; run++) {
     await running(page);
     console.log(`# debian page ${run}: reloaded, running at ${at()}`);
     await serialLogin(page);
+    // The boot's last systemd lines can land on the serial console between the command and its output.
     await onSerial(page, 'cat /root/waarm64-mark\n');
-    await shows(page, /cat \/root\/waarm64-mark\s*waarm64-kept-42/);
+    await shows(page, /cat \/root\/waarm64-mark[^]*?waarm64-kept-42/);
     assert.deepEqual(errors, []);
     await context.close();
 

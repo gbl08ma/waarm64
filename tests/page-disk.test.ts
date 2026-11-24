@@ -240,7 +240,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   await onSerial(page, 'cat /root/own-mark\n');
-  await shows(page, /cat \/root\/own-mark\s*waarm64-own-42/);
+  await shows(page, /cat \/root\/own-mark[^]*?waarm64-own-42/);
 
   // Saving over the running disk: the suggested name is never the disk's own, and a dialog that emptied it (Chromium
   // truncates the file it hands over; here the symlink is pointed elsewhere, which changes the file the same way for the
@@ -286,7 +286,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await onSerial(page2, 'root\n');
   await shows(page2, /root@\S+:~# /);
   await onSerial(page2, 'cat /root/own-mark\n');
-  await shows(page2, /cat \/root\/own-mark\s*waarm64-own-42/);
+  await shows(page2, /cat \/root\/own-mark[^]*?waarm64-own-42/);
   assert.deepEqual(errors2, []);
   await fresh.close();
 }));

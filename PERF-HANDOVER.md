@@ -119,6 +119,24 @@ replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried an
 
 ## State (2026-11-23, after loop 66)
 
+**The user is away for the rest of 2026-11-24 (said at the start of their absence): work autonomously, no decision
+prompts or questions (nobody will answer them); settle choices by measurement and by the decision rules below, and
+report at the end.** Loop 67 (the compile worker's warm-up: bench/boot/REPORT.md "PERF loop 67" on its branch) is
+committed on the local branch `perf67-warmup` (c5157fb3, on top of e629de4a), **not on main**: the user's by-eye
+report after it is worse desktop responsiveness and a lower compiled share under JIT churn (opening a large program,
+a new site). Its review is `review/jit-warmup` on origin (no correctness defect; five risks and gaps). The order now:
+(1) docs/benchmarking.md "Screening an A/B": `node` and a multi-vCPU workload first, the pages session to confirm,
+the one-vCPU gates last and only for an arm about to be kept; (2) a tooling loop: a multi-vCPU paired workload in
+`bench/ab.ts` (parallel SMP, 4 vCPUs), its A/A spread, calibration arms with known answers (the warm-up among them),
+and per sample the compiled share, emission-to-`ready` delay, overdue modules, the longest gap in a vCPU's progress,
+the compile worker's busy time; (3) the stutter investigation: before PERF loop 58 (96ca41ae^) against
+`perf67-warmup` first, then, on a regression, the idle waits (loops 58 and 60, one arm) against the warm-up; latency
+measured directly (audio underruns, frame gaps, a key's echo, stalls, the compiled share around opening Firefox and
+new sites) and the warm-up's host-CPU competition; variants of when and how it warms (no second worker). The user's
+rule: if stutter is confirmed worse and no variant removes it while keeping its gains (the parallel boots, page
+loads), don't land most of loop 67, keep the idea out of the backlog and file it under docs/jit.md "Tried and not
+kept". Not a candidate: regions of 64 blocks (the user tested them before). Row 4 below stays open until this is settled; then the compile threshold's re-check the notes above the table call for.
+
 Loop 66 swept `REGION_AFTER` (a loop head's entries alone before its loop region) 250 and 0 against 1000 on the Mac:
 0 doubles the wasm and costs `node` 11% (`HIGHER`), with or without a loop's members kept out of forward regions
 (the same wasm); 250 is `LOWER` on the one-vCPU gates (−0.57%, −0.35%), `open` on `node` (−0.44% [−1.42, +0.55]), the
