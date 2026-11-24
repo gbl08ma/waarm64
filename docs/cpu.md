@@ -357,13 +357,22 @@ The table is `core/src/interp/sys.rs`.
   split. The host address is `va + addend` (QEMU-style). MMIO and unmapped pages always miss. 16,384 entries,
   2.4 MiB a vCPU, since 2026-11-03: at 4,096 most misses were conflicts among the kernel's linear-map pages, and the
   larger table cut misses 14-30% and the process-heavy phases 1-3% (`bench/boot/REPORT.md` "The TLB at 16,384
-  entries"); per-ASID stashes of nG entries and victim buffers measured out there.
+  entries"); per-ASID stashes of nG entries and victim buffers measured out there. Counted in a Firefox pages
+  session on the Mac (PERF loop 72; 51.4 M misses, 529 per million steps): 83% of the misses find their slot empty
+  (flushes: 122 K drops of the nG entries took 28 M slots), 17% another page's entry, so 32,768 or 65,536 entries
+  could save at most 0.7% and 0.9% of busy time (4.96 M and 6.96 M of the evictions are of pages apart there); a
+  cache of last-level tables would serve 82% of the walks three of their four loads (at most 0.7%, with every table
+  write to track), and 4.9% of the misses are next to the last one's page. None is worth building. What is: a walk
+  fills one array, and 21% of the fills (10.6 M) are for a page the same EL's other data array already holds
+  (docs/backlog.md "The TLB's sibling fill").
 - **ASIDs:** entries hold no ASID. An ASID change or `TLBI ASIDE1` drops only the non-global
   (nG) entries, tracked in `Tlb::ng` (up to 1024 slots); past that the slots' nG marks in `Tlb::blk` are scanned
   (128 KiB read, eight slots a word), so the global entries survive a busy process too (a full flush there was ~7 a
   second in Firefox on 4 vCPUs, 2026-11-04); a change of
   `SCTLR_EL1.M` flushes everything. (Keeping global entries cut Alpine's boot misses 3.61M →
   1.07M.) Per-ASID stashes of nG entries would serve under a sixth of the nG refills (measured out: "The TLB" above).
+  The list overflows in 4.9% of the drops in Firefox's pages session (5,929 of 121,978: ~0.02% of busy time in
+  scans), so 1024 slots stay.
 - **Blocks:** a 2 MiB or 1 GiB leaf is cached as entries for the pages it was used through, and
   a TLBI by VA drops every one of them, not only its own page's: Linux unmaps a transparent huge
   page with one TLBI for the 2 MiB. `Tlb::blk` marks the slots filled from blocks by class (VA

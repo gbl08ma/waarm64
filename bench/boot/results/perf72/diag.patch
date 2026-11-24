@@ -1,0 +1,905 @@
+diff --git a/bench/boot/preempt-counts.ts b/bench/boot/preempt-counts.ts
+index 31b82972..46aab4fa 100644
+--- a/bench/boot/preempt-counts.ts
++++ b/bench/boot/preempt-counts.ts
+@@ -21,7 +21,7 @@ import { DISTROS } from '../../web/test-guests.ts';
+ /** core/src/tally.rs's slots. */
+ const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
+ const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+-const N = 80, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
++const N = 1280, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60, TIMER_SET = 64, IRQS = 67, PLATFORM_BY = 68, TIMER_ACC = 72;
+ 
+ type Tallies = number[];
+ type Phase = { name: string; steps: number; t: Tallies };
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 533ad3a3..740ed65f 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -482,6 +482,10 @@ pub fn forward(
+     member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
+ ) -> Region {
+     let mut not = vec![];
++    // DIAG (PERF loop 50's): every callee the walk takes is followed.
++    if option_env!("WAARM64_FOLLOW_ALL").is_some() {
++        return walk(mem, key, va, member, &not);
++    }
+     loop {
+         let r = walk(mem, key, va, member, &not);
+         match r.open_call() {
+@@ -1046,6 +1050,8 @@ pub fn module(
+         };
+         let (mut entry, mut flags) = settle(&first);
+         let mut last = Some((0, none, mem, first));
++        #[cfg(feature = "diag")]
++        tally::EMIT[if n > 1 { 0 } else { 3 }].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+         let emit = |last: &mut Option<Last>, plain, entry: &[_], flags: &[_]| {
+             if let Some((p, e, f, x)) = last.take()
+                 && (p, &e[..], &f[..]) == (plain, entry, flags)
+@@ -1073,6 +1079,8 @@ pub fn module(
+                 }
+                 (entry, flags) = next;
+             }
++            #[cfg(feature = "diag")]
++            tally::EMIT[1].fetch_add(!settled as u64, core::sync::atomic::Ordering::Relaxed);
+             if !settled {
+                 // Edges may not have what an entry holds dirty in a shadow
+                 // alone: made clean, a form every edge conforms to.
+@@ -1080,6 +1088,8 @@ pub fn module(
+             }
+         }
+         let mut x = emit(&mut last, plain, &entry, &flags);
++        #[cfg(feature = "diag")]
++        tally::EMIT[2].fetch_add(x.bad as u64, core::sync::atomic::Ordering::Relaxed);
+         if x.bad {
+             // The lazy states didn't settle: flags in memory on every edge.
+             let dead = |j: usize| if dead[j] { In::Dead } else { In::Mem };
+@@ -1460,6 +1470,10 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                     tally::FWD_EDGE
+                 },
+             );
++            // DIAG (PERF loop 50's): a predicted return taken.
++            if depth == 0 && when {
++                emit::dbump(c, 15);
++            }
+             // Around a loop, the stale-code checker runs as at a chained entry.
+             if let (0, Some(chk)) = (j, e.checker) {
+                 c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
+@@ -1469,6 +1483,10 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             c.br(label as u32 + depth + 1).end();
+             (c.regs, c.flags) = (here, fl);
+         };
++        // DIAG (PERF loop 50's): a followed call run.
++        if b.words.last().map(|&w| decode(w)) == Some(Op::BL) && r.follows.contains(&b.key) {
++            emit::dbump(&mut c, 14);
++        }
+         match succs {
+             Next::One(o) => {
+                 if let Some(j) = internal(o) {
+@@ -1584,15 +1602,18 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                     let (regime, bt, chk) = (b.key & 3, e.bt, e.checker);
+                     if op == Some(Op::BLR) {
+                         let mut probe = |c: &mut emit::Func| {
++                            emit::dop(c, 2);
+                             emit::indirect(c, regime, miss, len, bt, chk, Xfer::Call(0), true)
+                         };
+                         call(e, &mut c, b, &mut probe, &mut cont);
+                     } else {
++                        emit::dop(&mut c, if op == Some(Op::RET) { 1 } else { 3 });
+                         emit::indirect(&mut c, regime, miss, len, bt, chk, Xfer::Tail, true);
+                     }
+                 }
+             }
+         }
++        emit::dstop(&mut c);
+         c.ret(len);
+     }
+     if looped {
+@@ -1643,6 +1664,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
+         // whatever the VA maps now, so a run forward through VAs that alias
+         // pages already run reaches the same compiled blocks again with no
+         // static transfer backward (docs/jit.md "Preemption").
++        emit::dop(c, 4);
+         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x, true);
+     };
+     // Straight to the miss function (it reads the PC from the `Cpu`), the
+@@ -1650,6 +1672,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
+     // returns to the caller's continuation (docs/jit.md "Calls").
+     let to_miss = |c: &mut emit::Func| {
+         let miss = emit::To::Func(e.miss(b.key), 0);
++        emit::dbump(c, tally::X as u32 + 8);
+         emit::transfer(c, x, len, e.bt, miss, 0);
+     };
+     let Some(&(f, tlen, entry)) = f else {
+@@ -1740,8 +1763,10 @@ fn call(
+     cont(c);
+     if e.jc && b.key & KEY_MMU != 0 {
+         let miss = emit::To::Func(e.miss(b.key), 0);
++        emit::dbump(c, tally::X as u32 + 9);
+         emit::transfer(c, Xfer::Tail, len, e.bt, miss, 0);
+     }
++    emit::dstop(c);
+     c.ret(len);
+     emit::unreturned(c);
+     c.end();
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index fd3ab502..7d42b113 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -357,6 +357,9 @@ pub struct Func {
+     /// own ([`dslot`]).
+     #[cfg(feature = "diag")]
+     dslot: Option<u32>,
++    /// DIAG: what the next [`indirect`] is for (1 RET, 2 BLR, 3 BR, 4 a by-VA link; 0 unsaid).
++    #[cfg(feature = "diag")]
++    pub dop: u32,
+ }
+ 
+ /// The diagnostic build only (`crate::tally`): code that bumps the vCPU's tally `i`. Nothing in a normal build.
+@@ -375,6 +378,51 @@ pub fn dbump(c: &mut Func, i: u32) {
+     let _ = (c, i);
+ }
+ 
++/// DIAG: says what the next [`indirect`] is for ([`Func::dop`]).
++pub fn dop(c: &mut Func, k: u32) {
++    #[cfg(feature = "diag")]
++    {
++        c.dop = k;
++    }
++    #[cfg(not(feature = "diag"))]
++    let _ = (c, k);
++}
++
++/// DIAG: a block that returns to its caller with no exit and no transfer (its successor isn't compiled or isn't
++/// in the caches, the budget or a poll stopped it): all, at a depth above 0, the depths summed; then the same
++/// three for those the budget or the stop word didn't cause (counted code: `left` covers any block; polled:
++/// `acc` under the stop word).
++pub fn dstop(c: &mut Func) {
++    #[cfg(feature = "diag")]
++    {
++        let x = crate::tally::X as u32;
++        let depth = |c: &mut Func, at: u32| {
++            let o = (offset_of!(Vcpu, diag) + 8 * (at as usize + 2)) as u32;
++            dbump(c, at);
++            c.local_get(DEPTH).i32_const((1 << ENTRY_BIT) - 1).op(AND);
++            c.if_();
++            dbump(c, at + 1);
++            c.local_get(VCPU).local_get(VCPU).i64_load(o);
++            c.local_get(DEPTH).i32_const((1 << ENTRY_BIT) - 1).op(AND);
++            c.op(0xad); // i64.extend_i32_u
++            c.i64_add().i64_store(o);
++            c.end();
++        };
++        depth(c, x + 17);
++        if c.polled {
++            c.acc();
++            c.local_get(VCPU).i32_load(STOP).op(LT_U);
++        } else {
++            c.local_get(LEFT).i32_const(2048).op(GE_U);
++        }
++        c.if_();
++        depth(c, x + 20);
++        c.end();
++    }
++    #[cfg(not(feature = "diag"))]
++    let _ = c;
++}
++
+ /// The diagnostic build only: the tally the next cache hit ([`via_xc`], [`via_jc`]) bumps instead of its own.
+ pub fn dslot(c: &mut Func, i: u32) {
+     #[cfg(feature = "diag")]
+@@ -1863,7 +1911,15 @@ pub fn indirect(
+     }
+     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
+     if let Some(miss) = miss {
++        #[cfg(feature = "diag")]
++        let k = core::mem::take(&mut c.dop);
++        #[cfg(feature = "diag")]
++        if (1..=3).contains(&k) {
++            c.dslot = Some(crate::tally::X as u32 + k - 1);
++        }
+         via_xc(c, regime, len, ty, check, x, poll);
++        #[cfg(feature = "diag")]
++        dbump(c, crate::tally::X as u32 + 3 + k);
+         // A miss is a tail call even in a call (rare once the cache is warm).
+         transfer(c, Xfer::Tail, len, ty, To::Func(miss, 0), 0);
+         return;
+@@ -1963,6 +2019,8 @@ pub fn transfer(c: &mut Func, x: Xfer, len: u32, ty: u32, to: To, inner: u32) {
+             _ => c.call_indirect(ty),
+         };
+         c.local_set(RESULT).br(label + inner + 1).end();
++        // DIAG: a guest call at the depth's limit, a tail call.
++        dbump(c, crate::tally::X as u32 + 24);
+     }
+     args(c, len, false, to);
+     match to {
+@@ -2036,6 +2094,8 @@ pub fn returned(c: &mut Func, len: u32, off: i64) {
+ /// caller does.
+ pub fn unreturned(c: &mut Func) {
+     c.end();
++    // DIAG: a host frame left with its guest call not returned.
++    dbump(c, crate::tally::X as u32 + 23);
+     c.local_get(RESULT).return_();
+ }
+ 
+@@ -2155,6 +2215,33 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>, pol
+     };
+     let (arr, base, phys) = tlb;
+     dbump(&mut c, crate::tally::XC_MISS);
++    #[cfg(feature = "diag")]
++    {
++        // Why it missed: the entry's tag and generation (PERF loop 28's).
++        let x = crate::tally::X as u32;
++        c.local_get(VCPU).i64_load(PC).local_set(ADDR);
++        xc_entry(&mut c);
++        c.i64_load(XC_LO).local_set(KEY);
++        c.local_get(KEY).op(EQZ + WC).if_();
++        dbump(&mut c, x + 10); // zeroed
++        c.else_();
++        c.local_get(KEY).local_get(ADDR).i64_const(regime as i64).op(OR + W).op(EQ + WC).if_();
++        c.local_get(TLBE).i64_load(XC_LO + 8).i64_const(48).op(SHR_U + W);
++        c.local_get(VCPU).i64_load(xgen(regime)).op(EQ + WC).if_();
++        dbump(&mut c, x + 14); // the tag and the generation are right
++        c.else_();
++        dbump(&mut c, x + 13); // an older generation
++        c.end();
++        c.else_();
++        dbump(&mut c, x + 11); // another tag
++        // Its VA would share the slot among 65,536 too (VA bits 17:16 the same).
++        c.local_get(KEY).local_get(ADDR).op(0x85).i64_const(16).op(SHR_U + W);
++        c.i64_const(3).op(AND + W).op(EQZ + WC).if_();
++        dbump(&mut c, x + 12);
++        c.end();
++        c.end();
++        c.end();
++    }
+     c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
+     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
+     c.local_get(ADDR);
+@@ -2188,6 +2275,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>, pol
+     }
+     c.op(AND);
+     c.hint(true).if_();
++    dbump(&mut c, crate::tally::X as u32 + 16);
+     // The entry: tag, then idx | len << 32 | gen << 48.
+     xc_entry(&mut c);
+     c.local_get(ADDR)
+@@ -2207,6 +2295,8 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>, pol
+     }
+     transfer(&mut c, Xfer::Tail, 0, ty, To::Load(JCE, 8), 1);
+     c.end();
++    dbump(&mut c, crate::tally::X as u32 + 15);
++    dstop(&mut c);
+     c.local_get(ACC).end();
+     c
+ }
+@@ -2273,6 +2363,8 @@ pub fn via_jc(
+     }
+     transfer(c, x, len, ty, To::Load(JCE, 8), 1);
+     c.end();
++    // DIAG: the probe failed (a static successor's, or a branch to a register's with the MMU off).
++    dbump(c, crate::tally::X as u32 + 25 + key.is_none() as u32);
+ }
+ 
+ /// Pushes an i32 that is non-zero iff X30 is the entry PC + `off`: a return
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 5cc06333..9c346296 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -550,6 +550,9 @@ const REARM: u32 = 64;
+ /// Behind a lock ([`Jit`]); a module's bytes are the same in every table, so
+ /// V8 compiles it once and the tables share its code.
+ pub struct Cache {
++    /// DIAG: the keys installed as a region's member (not its head) since the last flush.
++    #[cfg(feature = "diag")]
++    members: std::collections::HashSet<u64>,
+     pub cfg: Config,
+     /// The vCPUs' `Cpu::features`, which the emitted code may assume (a VM
+     /// sets it from its config; user-mode vCPUs have them all).
+@@ -744,6 +747,8 @@ impl Cache {
+             ready: Arc::new(AtomicU32::new(0)),
+             tables: Vec::new(),
+             xmiss: None,
++            #[cfg(feature = "diag")]
++            members: Default::default(),
+             gauge: Arc::new(Gauge::default()),
+             #[cfg(test)]
+             limit_at_plan: None,
+@@ -949,6 +954,8 @@ impl Cache {
+     }
+ 
+     fn drop_all(&mut self) {
++        #[cfg(feature = "diag")]
++        self.members.clear();
+         self.drops.fetch_add(1, Ordering::Relaxed);
+         self.map.clear();
+         self.pages.clear();
+@@ -1116,6 +1123,16 @@ impl Cache {
+             len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
+         });
+         info.age = tick;
++        #[cfg(feature = "diag")]
++        if info.idx == 0 && !self.off && info.len > 0 {
++            // Interpreted steps reported at a key with no function: all, and at a region's member.
++            let steps = info.len as u64 * n as u64;
++            t.dg[3] += steps;
++            if self.members.contains(&key) {
++                t.dg[4] += steps;
++                t.dg[5] += 1;
++            }
++        }
+         if info.idx == 0 && !self.off && info.len > 0 {
+             info.hits = info.hits.saturating_add(n.min(u16::MAX as u32) as u16);
+             if info.hits as u32 > self.threshold && !info.queued {
+@@ -1527,6 +1544,16 @@ impl Cache {
+             s.region_blocks += r.blocks.len() as u64;
+             s.back_edges += r.back_edges() as u64;
+             let (key, len) = (r.blocks[0].key, r.blocks[0].words.len() as u32);
++            #[cfg(feature = "diag")]
++            {
++                t.dg[6] += 1;
++                t.dg[7] += self.members.contains(&key) as u64;
++                for b in r.blocks.iter().skip(1) {
++                    t.dg[8] += 1;
++                    t.dg[9] += self.map.get(&b.key).is_some_and(|i| i.idx != 0) as u64;
++                    self.members.insert(b.key);
++                }
++            }
+             let words: Vec<u32> = r
+                 .blocks
+                 .iter()
+@@ -1643,6 +1670,9 @@ pub struct Table {
+     /// the last report of them ([`Table::helper_report`]).
+     helper_ops: Vec<u64>,
+     report: String,
++    /// DIAG: the tallies at `tally::M`.
++    #[cfg(feature = "diag")]
++    pub dg: [u64; 16],
+     /// Steps dispatched so far (the batch timeout's clock), and the cache's
+     /// pending batch and this clock when this table first saw it pending.
+     clock: u64,
+@@ -1688,6 +1718,8 @@ impl Table {
+             redirects: Vec::new(),
+             waiting: 0,
+             helper_ops: vec![0; crate::decode::Op::ALL.len()],
++            #[cfg(feature = "diag")]
++            dg: [0; 16],
+             report: String::new(),
+             clock: 0,
+             since: (u64::MAX, 0),
+@@ -1909,7 +1941,25 @@ impl Table {
+     }
+ 
+     /// Puts a compiled block in the jump cache.
++    /// DIAG: this table's words at `tally::M` and `tally::H`.
++    #[cfg(feature = "diag")]
++    pub fn dwords(&self, f: &mut dyn FnMut(usize, u64)) {
++        for (i, &x) in self.dg.iter().enumerate() {
++            f(crate::tally::M + i, x);
++        }
++        for (i, &x) in self.helper_ops.iter().enumerate() {
++            f(crate::tally::H + i, x);
++        }
++    }
++
+     fn fill(&mut self, key: u64, idx: u32, len: u32) {
++        #[cfg(feature = "diag")]
++        {
++            // A jump cache fill, and one over another key's entry.
++            let old = self.jc[jc_index(key)].key;
++            self.dg[0] += 1;
++            self.dg[1] += (old != u64::MAX && old != key) as u64;
++        }
+         self.jc[jc_index(key)] = Jc { key, idx, len };
+         if self.jc_used.len() < JC / 16 {
+             self.jc_used.push(jc_index(key) as u32);
+@@ -2099,6 +2149,10 @@ impl Jit {
+         {
+             self.table.dec.counted(key);
+             self.table.dec.quota(key, 0);
++            #[cfg(feature = "diag")]
++            {
++                self.table.dg[2] += 1; // compiled and installed, out of the jump cache
++            }
+             self.table.fill(key, idx, n);
+             return Ok((idx, n));
+         }
+@@ -2463,9 +2517,20 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+     let mut done = 0;
+     // The next block's key when the interpreter found it compiled (`interpret`), else 0.
+     let mut next = 0;
++    // DIAG (PERF loop 54's): what came before the next block call: 0 an exit, 1 a chunk's end (the previous call's),
++    // 2 the interpreter stopped before a compiled block, 3 the interpreter otherwise, 4 a compiled block.
++    #[cfg(feature = "diag")]
++    let mut prev = unsafe { (*v).diag[crate::tally::DISP + 15] } as usize;
+     while done < n {
+         // SAFETY: `stop` is in the vCPU, valid for the call; it's only accessed atomically.
+         if polled && unsafe { &*stop }.load(Ordering::Acquire) as u64 <= done {
++            #[cfg(feature = "diag")]
++            {
++                let d = unsafe { &mut (*v).diag };
++                d[crate::tally::DISP + 15] = 1;
++                d[crate::tally::DISP + 13] += 1; // stops by the word at the dispatcher
++                d[crate::tally::DISP + 14] += (prev == 4) as u64; // of those, after a compiled block
++            }
+             return (done, None);
+         }
+         let left = n - done;
+@@ -2491,6 +2556,8 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+         let pc = vr.cpu.pc;
+         let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
+         jit.fresh(mem);
++        #[cfg(feature = "diag")]
++        let jch = key.is_some_and(|k| jit.table.jc[jc_index(k)].key == k);
+         let r = key.map_or(Err(1), |k| jit.enter(k, pc, mem));
+         if vr.tlb.xdrops != jit.table.drops {
+             vr.tlb.xdrops = jit.table.drops;
+@@ -2521,6 +2588,14 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             } else {
+                 (0, left.min(i32::MAX as u64) as u32)
+             };
++            #[cfg(feature = "diag")]
++            {
++                // 0-3 by `prev`, 4 after a compiled block with a jump-cache hit, 5 with a miss; 6 a jump-cache hit at all.
++                let d = unsafe { &mut (*v).diag };
++                let c = if prev == 4 { 4 + !jch as usize } else { prev };
++                d[crate::tally::DISP + c] += 1;
++                d[crate::tally::DISP + 6] += jch as u64;
++            }
+             let k = unsafe { block(f)(v, acc, left, entry) } as u64;
+             // Not at depth 0 (`emit::DEPTH`): a depth that reached a function
+             // with entry bits still set would count ~2^31 steps and end the
+@@ -2541,6 +2616,15 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             s.inline_steps += ran - (vr.jit.helper_steps - helped);
+             jit.table.clock += k;
+             done += k;
++            #[cfg(feature = "diag")]
++            {
++                prev = 4;
++                let d = unsafe { &mut (*v).diag };
++                if e.is_some() {
++                    d[crate::tally::DISP + 15] = 0;
++                    d[crate::tally::DISP + 9] += 1; // exits after a compiled block
++                }
++            }
+             if e.is_some() {
+                 return (done, e);
+             }
+@@ -2575,11 +2659,31 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             let (k, e) = r.unwrap_or_else(|| interp::steps(cpu, mem, Some(tlb), m.min(left)));
+             t.clock += k;
+             done += k;
++            #[cfg(feature = "diag")]
++            {
++                let d = unsafe { &mut (*v).diag };
++                if prev == 4 {
++                    d[crate::tally::DISP + 7] += 1; // a compiled block, then interpreted code
++                }
++                prev = if next != 0 { 2 } else { 3 };
++                d[crate::tally::DISP + 8] += 1; // interpreted runs
++                d[crate::tally::DISP + 12] += k; // their steps
++                if e.is_some() {
++                    d[crate::tally::DISP + 15] = 0;
++                    d[crate::tally::DISP + 10] += 1; // exits after interpreted code
++                }
++            }
+             if e.is_some() {
+                 return (done, e);
+             }
+         }
+     }
++    #[cfg(feature = "diag")]
++    {
++        let d = unsafe { &mut (*v).diag };
++        d[crate::tally::DISP + 15] = 1;
++        d[crate::tally::DISP + 11] += 1; // chunk ends
++    }
+     (if polled { done } else { n }, None)
+ }
+ 
+diff --git a/core/src/mmu.rs b/core/src/mmu.rs
+index 94561e37..7bc350b7 100644
+--- a/core/src/mmu.rs
++++ b/core/src/mmu.rs
+@@ -180,6 +180,11 @@ pub struct Tlb {
+     nwatched: u32,
+     /// The watch's generation this TLB last caught up with (`Tlb::catch_up`).
+     pub watch_gen: u32,
++    /// DIAG: the tallies at `tally::T`, and their state (the last miss's page, a cache of last-level tables).
++    #[cfg(feature = "diag")]
++    pub dg: [u64; 64],
++    #[cfg(feature = "diag")]
++    dgs: [u64; 66],
+ }
+ 
+ /// Bits in each of `Tlb::xpages`' maps.
+@@ -253,6 +258,11 @@ impl Tlb {
+ 
+     /// Drops EL `el`'s transfer cache entries.
+     fn bump_el(&mut self, el: usize) {
++        #[cfg(feature = "diag")]
++        {
++            self.dg[45] += 1;
++            self.dg[46] += (self.xgen[el] >= 0xffff) as u64;
++        }
+         self.xblk[el] = self.xblkn[el].map(|n| n != 0);
+         self.xgen[el] += 1;
+         if self.xgen[el] > 0xffff {
+@@ -272,7 +282,66 @@ impl Tlb {
+         };
+     }
+ 
++    /// DIAG: the valid entries, and the global ones among them.
++    #[cfg(feature = "diag")]
++    pub fn census(&self) -> (u64, u64) {
++        let (mut v, mut g) = (0, 0);
++        for (i, s) in self.e.iter().enumerate() {
++            for a in 0..6 {
++                if s.0[a].tag != 0 {
++                    v += 1;
++                    g += (self.blk[i * TLB_SLOTS + a] & NG == 0) as u64;
++                }
++            }
++        }
++        (v, g)
++    }
++
++    /// DIAG: a miss of array `a` (`el`, `u`) at `va`. Returns bits: 1 another array holds the page, 2 the same
++    /// EL's other data array does, 4 the other EL's array of this use does.
++    #[cfg(feature = "diag")]
++    fn dmiss(&mut self, va: u64, el: u64, u: Use) -> u32 {
++        let a = 3 * el as usize + u as usize;
++        let s = self.e[index(va)].0;
++        let has = |k: usize| s[k].tag != 0 && (s[k].tag ^ va) & VA_PAGE == 0;
++        let any = (0..6).any(|k| k != a && has(k));
++        let e3 = 3 * el as usize;
++        let data = match u {
++            Use::Read => has(e3 + 1),
++            Use::Write => has(e3),
++            Use::Exec => false,
++        };
++        let other = has(3 * (1 - el as usize) + u as usize);
++        let d = &mut self.dg;
++        d[a] += 1;
++        d[6] += any as u64;
++        d[7] += (u == Use::Read && data) as u64;
++        d[8] += (u == Use::Write && data) as u64;
++        d[9] += (u == Use::Exec && (has(e3) || has(e3 + 1))) as u64;
++        d[10] += (u != Use::Exec && has(e3 + 2)) as u64;
++        d[11] += other as u64;
++        d[12] += (s[a].tag == 0) as u64;
++        d[13] += (s[a].tag != 0) as u64;
++        let p = (va & VA_PAGE) >> 12;
++        let last = self.dgs[0];
++        d[14] += (p.wrapping_sub(last) == 1 || last.wrapping_sub(p) == 1) as u64;
++        d[15] += (p >> 9 == last >> 9) as u64;
++        self.dgs[0] = p;
++        let t3 = p >> 9;
++        let i = 2 + (t3 as usize & 63);
++        if self.dgs[i] == t3 + 1 {
++            d[16] += 1;
++        } else {
++            self.dgs[i] = t3 + 1;
++        }
++        any as u32 | (data as u32) << 1 | (other as u32) << 2
++    }
++
+     pub(crate) fn flush_all(&mut self) {
++        #[cfg(feature = "diag")]
++        {
++            self.dg[36] += 1;
++        }
+         self.stats.flushes += 1;
+         self.bump();
+         self.e.fill(Slots::default());
+@@ -310,6 +379,12 @@ impl Tlb {
+     pub(crate) fn flush_ng(&mut self) {
+         let n = self.ng_len as usize;
+         self.stats.flushes += 1;
++        #[cfg(feature = "diag")]
++        {
++            self.dg[39] += 1;
++            self.dg[40] += (n > NG_SLOTS) as u64;
++            self.dg[41] += n.min(NG_SLOTS) as u64;
++        }
+         for el in 0..2 {
+             if core::mem::take(&mut self.xng[el]) {
+                 self.bump_el(el);
+@@ -356,6 +431,18 @@ impl Tlb {
+     /// 3: a page of a block). A `device` page's entry has [`DEVICE`] in its tag.
+     fn fill(&mut self, array: usize, va: u64, host: Host, ng: bool, level: u8, device: bool) {
+         let s = index(va) * TLB_SLOTS + array;
++        #[cfg(feature = "diag")]
++        {
++            let old = self.e[index(va)].0[array].tag;
++            self.dg[32] += 1;
++            if old != 0 && (old ^ va) & VA_PAGE != 0 {
++                // Another page's entry evicted; the pages share the index's 14 bits.
++                let x = (old ^ va) >> 12 >> 14;
++                self.dg[33] += 1;
++                self.dg[34] += (x & 1 != 0) as u64; // apart with 32,768 entries
++                self.dg[35] += (x & 3 != 0) as u64; // apart with 65,536
++            }
++        }
+         self.drop_slot(s);
+         self.e[index(va)].0[array] = Entry {
+             tag: (va | 0xfff) ^ (host.mem() as u64) << 3 ^ if device { DEVICE } else { 0 },
+@@ -442,6 +529,13 @@ impl Tlb {
+     /// Drops the page holding `va` from every array, whatever its top byte (TBI).
+     pub(crate) fn flush_va(&mut self, va: u64) {
+         self.stats.flushes += 1;
++        #[cfg(feature = "diag")]
++        {
++            self.dg[42] += 1;
++            self.dg[43] += self.xpage(va) as u64;
++            let hi = (va >> 55 & 1) as usize;
++            self.dg[44] += self.xblk[0][hi] as u64 + self.xblk[1][hi] as u64;
++        }
+         // The page's VAs fill 1024 consecutive transfer cache slots, which
+         // hold none of its entries unless instruction fetches translated it
+         // (most of Linux's flushes are for data pages).
+@@ -997,6 +1091,8 @@ impl<'a> Mmu<'a> {
+         // and cache maintenance have no such check).
+         let device_check = u != Use::Exec && access != Access::Maint;
+         let misaligned = split || !va.is_multiple_of(len);
++        #[cfg(feature = "diag")]
++        let mut sib = 0;
+         if let Some(t) = &mut self.tlb {
+             // A spill memory's entry, or a Device page's: only bits 11:3 differ.
+             let e = t.e[index(va)].0[3 * el as usize + u as usize];
+@@ -1012,11 +1108,24 @@ impl<'a> Mmu<'a> {
+                 return Ok(Host(va.wrapping_add(e.addend)));
+             }
+             t.stats.misses += 1;
++            #[cfg(feature = "diag")]
++            {
++                sib = t.dmiss(va, el, u);
++            }
+         }
+         if el == 0 && e0pd(c, va) {
+             return Err(fault(FaultKind::Translation(0)));
+         }
+-        let w = walk(c, self.mem, va).map_err(fault)?;
++        let w = walk(c, self.mem, va);
++        #[cfg(feature = "diag")]
++        if let Some(t) = &mut self.tlb {
++            match &w {
++                Err(_) => t.dg[24] += 1,
++                Ok(w) if !w.allows(el, u) => t.dg[25] += 1,
++                Ok(w) => t.dg[20 + (w.level as usize & 3)] += 1,
++            }
++        }
++        let w = w.map_err(fault)?;
+         if !w.allows(el, u) {
+             return Err(fault(FaultKind::Permission(w.level)));
+         }
+@@ -1098,6 +1207,17 @@ impl<'a> Mmu<'a> {
+             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
+         {
+             let array = 3 * el as usize + u as usize;
++            #[cfg(feature = "diag")]
++            {
++                // A walk that filled RAM's entry: with a sibling of its page there already.
++                t.dg[27] += 1;
++                t.dg[26] += (sib & 1 != 0) as u64;
++                t.dg[28] += (sib & 2 != 0 && u == Use::Read) as u64;
++                t.dg[29] += (sib & 2 != 0 && u == Use::Write) as u64;
++                t.dg[30] += (sib & 4 != 0) as u64;
++                t.dg[31] += (sib & 6 == 4) as u64;
++                t.dg[47] += (u == Use::Write && self.mem.watched(w.pa)) as u64;
++            }
+             if u == Use::Write && self.mem.watched(w.pa) {
+                 t.fill_watched(self.mem, array, va, page, &w);
+             } else {
+diff --git a/core/src/tally.rs b/core/src/tally.rs
+index 5dce3f01..024ad107 100644
+--- a/core/src/tally.rs
++++ b/core/src/tally.rs
+@@ -9,7 +9,41 @@
+ //! IRQ), and round-robin's timer reprogramming ([`TIMER_SET`]).
+ 
+ /// Words in each table.
+-pub const N: usize = 80;
++pub const N: usize = 1280;
++// DIAG (PERF loop 72): the ranges past the tree's 80 words.
++/// The dispatcher's block calls by what came before (PERF loop 54's), 16 words.
++pub const DISP: usize = 80;
++/// Compiled code's (`Vcpu::diag`).
++pub const X: usize = 96;
++/// The TLB's (`Tlb::dg`).
++pub const T: usize = 128;
++/// Parallel SMP's TLBI queues (straight into the counters block).
++pub const Q: usize = 192;
++/// The table's and the cache's (`Table::dg`).
++pub const M: usize = 224;
++/// Emission's statics ([`EMIT`]), published by vCPU 0.
++pub const G: usize = 240;
++/// Helper calls by `Op` (`Table::helper_ops`).
++pub const H: usize = 256;
++const _: () = assert!(H + crate::decode::Op::ALL.len() <= N);
++/// Regions of several blocks emitted, those whose states never settled, `bad` fallbacks, single blocks, kept emissions.
++#[cfg(feature = "diag")]
++pub static EMIT: [core::sync::atomic::AtomicU64; 8] = [const { core::sync::atomic::AtomicU64::new(0) }; 8];
++
++/// Every per-vCPU word past the tree's (not [`Q`]'s, not [`G`]'s).
++#[cfg(feature = "diag")]
++pub fn words(v: &crate::mmu::Vcpu, f: &mut dyn FnMut(usize, u64)) {
++    for i in DISP..T {
++        f(i, v.diag[i]);
++    }
++    for (i, &x) in v.tlb.dg.iter().enumerate() {
++        f(T + i, x);
++    }
++    if let Some(j) = &v.jit.cache {
++        j.table.dwords(f);
++    }
++}
++
+ 
+ /// A region's loop back-edge taken (a `br` to the head's `loop`).
+ pub const BACK_EDGE: u32 = 0;
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 6df017fa..e96addc8 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1310,6 +1310,19 @@ impl Vm {
+                 Ordering::Relaxed,
+             );
+         }
++        #[cfg(feature = "diag")]
++        {
++            let mut acc = [0u64; crate::tally::N];
++            for v in &self.vcpus {
++                crate::tally::words(v, &mut |i, x| acc[i] += x);
++            }
++            for (i, x) in crate::tally::EMIT.iter().enumerate() {
++                acc[crate::tally::G + i] = x.load(Ordering::Relaxed);
++            }
++            for i in (crate::tally::DISP..crate::tally::Q).chain(crate::tally::M..crate::tally::N) {
++                c.diag[i].store(acc[i], Ordering::Relaxed);
++            }
++        }
+     }
+ 
+     /// Drains every backend's completions; true if that posted new requests
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index c4a6f76d..968b5963 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -195,6 +195,9 @@ struct Queue {
+     /// rest by VA (as round-robin's `Exit::TlbiIs`).
+     tlb: Vec<(u32, u64)>,
+     tlb_all: bool,
++    /// DIAG: an operation since the last drain was for everything or for a kernel-half VA.
++    #[cfg(feature = "diag")]
++    kern: bool,
+     /// Operations ever queued (its `applied` catches up at each drain).
+     queued: u64,
+ }
+@@ -879,11 +882,41 @@ impl Vm {
+         // Orders the guest's page-table stores before the ASID reads below
+         // (the target publishes its ASID, then fences, then walks).
+         fence(Ordering::SeqCst);
++        #[cfg(feature = "diag")]
++        let (dq, dkern) = {
++            use crate::tally::{Q, add};
++            let d = &self.shared.cpus[c].counters.diag;
++            let Op::Tlb(kind, va, _) = op;
++            let slot = match kind {
++                0 => 0,
++                2 => 1,
++                _ => 2 + (va >> 55 & 1) as usize,
++            };
++            add(d, Q + slot, 1);
++            (d, slot == 0 || slot == 3)
++        };
+         for (t, s) in self.shared.cpus.iter().enumerate() {
+             if t == c {
+                 continue;
+             }
+             let mut q = s.par.queue.lock().unwrap_or_else(PoisonError::into_inner);
++            #[cfg(feature = "diag")]
++            {
++                use crate::tally::{Q, add};
++                q.kern |= dkern;
++                let k = if q.tlb_all {
++                    6
++                } else if q.tlb.len() == QUEUE {
++                    5
++                } else {
++                    4
++                };
++                add(dq, Q + k, 1);
++                let Op::Tlb(_, _, asid) = op;
++                let theirs = s.par.asid.load(Ordering::SeqCst);
++                let waited = asid == ANY || theirs == ANY || theirs == asid;
++                add(dq, Q + 20 + !waited as usize, 1);
++            }
+             match op {
+                 Op::Tlb(..) if q.tlb_all => {}
+                 Op::Tlb(..) if q.tlb.len() == QUEUE => {
+@@ -928,6 +961,36 @@ impl Vm {
+                 ..Queue::default()
+             },
+         );
++        #[cfg(feature = "diag")]
++        {
++            use crate::tally::{Q, add};
++            let d = &self.shared.cpus[c].counters.diag;
++            add(d, Q + 7, 1);
++            if q.tlb_all {
++                let n = d[Q + 8].fetch_add(1, Ordering::Relaxed);
++                add(d, Q + 9, !q.kern as u64);
++                // One in sixteen: what the flush drops.
++                if n % 16 == 0 {
++                    let (valid, global) = v.tlb.census();
++                    add(d, Q + 17, valid);
++                    add(d, Q + 18, global);
++                    add(d, Q + 19, 1);
++                }
++            } else {
++                let n = q.tlb.len();
++                add(d, Q + 10, n as u64);
++                d[Q + 11].fetch_max(n as u64, Ordering::Relaxed);
++                let k = match n {
++                    0..=1 => 12,
++                    2..=7 => 13,
++                    8..=63 => 14,
++                    _ => 15,
++                };
++                add(d, Q + k, 1);
++                add(d, Q + 16, q.tlb.iter().any(|x| x.0 == 0) as u64);
++                add(d, Q + 22, q.tlb.iter().filter(|x| x.0 == 2).count() as u64);
++            }
++        }
+         if q.tlb_all {
+             v.tlb.flush_all();
+         } else {
+@@ -1183,5 +1246,14 @@ impl Vm {
+         for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+             a.store(x, Ordering::Relaxed);
+         }
++        #[cfg(feature = "diag")]
++        {
++            crate::tally::words(v, &mut |i, x| k.diag[i].store(x, Ordering::Relaxed));
++            if c == 0 {
++                for (i, x) in crate::tally::EMIT.iter().enumerate() {
++                    k.diag[crate::tally::G + i].store(x.load(Ordering::Relaxed), Ordering::Relaxed);
++                }
++            }
++        }
+     }
+ }
+diff --git a/web/counters.ts b/web/counters.ts
+index b5a8fd0e..08e34c9a 100644
+--- a/web/counters.ts
++++ b/web/counters.ts
+@@ -185,6 +185,7 @@ export function stats(n: (i: number) => number) {
+       lockSkipped: n(Counter.JIT_LOCK_SKIPPED),
+       pruneNs: n(Counter.JIT_PRUNE_NS),
+       mapRescues: n(Counter.JIT_MAP_RESCUES),
++      diag: Array.from({ length: 1280 }, (_, k) => n(Counter.LEN + k)),
+     },
+     par: {
+       dsbWaits: n(Counter.PAR_DSB_WAITS),
+diff --git a/web/vm.ts b/web/vm.ts
+index 001cad00..bd1baae7 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -690,7 +690,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+   const counters = blocks[0];
+   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
+   const counter = (i: number) =>
+-    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
++    blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 1280), i)), 0);
+   const fbPa = Number(ex.vm_framebuffer(vm));
+   /** The round-robin exit's record (`run`), a view made again once the memory grew (its buffer is a new one). */
+   let exitAt: number | undefined;
+@@ -993,7 +993,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+     deviceIo: () => io,
+     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
+     cpuStats: () =>
+-      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
++      blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN + 1280), i)))),
+     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
+     helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
+     /**

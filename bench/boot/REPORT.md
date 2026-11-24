@@ -8649,3 +8649,175 @@ workers; the stop path is the same): 21 of 22 loads clean (6 + 8 + 8: the last t
 (docs/backlog.md). The final form, two runs of 8: one thread stranded in each (at the second and the fifth load,
 +270-280 MiB, one thread where the pair was two), and none after it: the renderer stays at that level (~750-780 MiB
 anonymous) where the base grew ~290 MiB with every load. The desktop guest on the dev VM isn't measured yet.
+
+## PERF loop 72: one counting pass for six queue rows, and loop 71's review (2026-11-24)
+
+Queue rows 8, 9, 10, 11, 13 and 18 each began with a count on the same workloads, so they were counted in one pass with
+one diagnostic core, and nothing was built: this entry decides what is worth building. **Three rows close as findings
+(the transfer cache's size and generations, host frames lost at a stop, the helper histogram), and four builds stay
+open, the largest a TLB fill for the sibling array (≤ 1.3-1.4% of the page's busy time).** Data:
+`bench/boot/results/perf72/` (README: the patch, the raw tallies, `summary.txt`).
+
+**What ran** (one run each; counts of guest events need no rounds). The diagnostic core is `diag.patch` on the loop's
+tree (the `diag` feature's tallies grown from 80 to 1,280 words; nothing of it is in the tree):
+- Alpine's boot, its userspace benchmark and `smp_user_jit_4`'s guest, in Node on the dev VM
+  (`bench/boot/preempt-counts.ts`, 34 s for the three). They count what the guest and the JIT do, which doesn't depend
+  on the host: the one-vCPU runs are deterministic (the boot's 2,650,367,147 steps), and the parallel run differs from
+  run to run on any host.
+- One Firefox pages session on the Mac from `target/snapbench/pages.waarm64snap` (`bench/gpu/ab-mac.sh`, 226 s; M4,
+  macOS 26.6.2, Chrome for Testing 158.0.8127.88): the workload only runs in a browser, and its mix (four vCPUs, the
+  compile worker, Firefox's processes) is the ranking one. 97.2 G steps, 443 busy MIPS (the normal core's 442 in PERF
+  loop 54), so ~219 busy vCPU-seconds.
+- A second diagnostic core with `WAARM64_FOLLOW_ALL` (PERF loop 50's switch) for the followed calls, the dev VM again.
+
+**How a count becomes a bound.** No time was measured here. A count is turned into time with unit costs already in
+this file, all the Mac's, from PERF loop 54's profile of the same session (155,025 busy ticks) unless said: an
+interpreted step 9.9 ns (17.5% of busy time over 3.85 G steps) against 1.4 ns compiled; a dispatch 30 ns
+(`jit::steps`' 2.2% over 163 M); a TLB miss and its walk 68 ns (1.6% over 51.4 M); an instruction run by a helper 60 ns
+(4.6% over 168 M); an indirect entry 5 ns warm and 78 ns cold (`chain2.mjs`); a host call and return 2-4 ns over a
+followed one (PERF loop 50). Each bound assumes every counted event goes away at its full unit cost and that the
+build adds nothing: an upper bound, to compare with the pages session's ~1% floor. The unit costs are averages over
+classes (a helper's 60 ns mixes ISB's ~20 ns with a group's loads), so a bound within a factor of two of the floor
+decides nothing by itself.
+
+| row | what was counted (pages session unless said) | bound, of the page's busy time | verdict |
+|---|---|---|---|
+| 8 | interpreted steps at a region's member: 8.3% of those reported (boot 8.8%, userspace 12.2%); 11.4 M round trips | ≤ 1.9% (1.2% the steps, 0.7% the trips) | **open**, M: entries at members |
+| 8 | every callee followed: 10-14% of the host calls would go (boot 10.1%, userspace 11.6%) | 0.2-0.45% | closed again (PERF loop 50's verdict holds at 64 blocks) |
+| 9 | the miss function: 167.4 M calls, 124.2 M of them find nothing compiled; 43.3 M refill | conflicts ≤ 0.2%, generations ≤ 0.3% | **closed**: neither 65,536 entries nor a per-ASID generation |
+| 9 | the jump cache: 4.50 M fills, 4.36 M over another key's entry, 4.13 M refills of a block already installed | 0.55-0.75% | **open**, S: a sweep of `JC` |
+| 10 | 51.4 M misses; 10.6 M fills had the page in the same EL's other data array | ≤ 1.3-1.4% | **open**, S-M: fill the sibling |
+| 10 | 17.2% of misses on a slot holding another page; 82.8% on an empty one | ≤ 0.7% at 32,768, ≤ 0.9% at 65,536 | **closed**: `TLB_ENTRIES` |
+| 10 | a miss's last-level table in a 64-entry cache 81.7%; next to the last miss 4.9%; nG list overflowed in 4.9% of `flush_ng` | ≤ 0.7%, ≤ 0.3%, 0.02% | **closed**: a table cache, a neighbour fill, `NG_SLOTS` |
+| 11 | 2,398 queues collapsed into a flush of everything, 2,392 of them holding only user-half VAs and ASIDs; ~2,030 global entries dropped each | ≤ 1.0% | **open**, S-M: collapse to `flush_ng` |
+| 13 | 73.8 M host frames left unreturned (52.8 M at stops for an uncompiled block) | 0.2-0.8% | **closed**: an L build for under the floor |
+| 18 | 167.6 M instructions in helpers: 73% loads and stores, 18% system, 6% integer instructions of groups' spans; FlagM none | nothing inline-worthy (≤ 0.05% a class) | **closed**; the second decode ≤ 0.4%, S |
+
+**Row 8, transfers that leave a function.** Per 1000 steps (`summary.txt`; edges stay inside a function):
+
+| | edges | direct chains | through the jump cache | by-VA links | transfer cache RET / BLR / BR | miss function | host calls | interpreted |
+|---|---|---|---|---|---|---|---|---|
+| boot | 141.9 | 23.7 | 3.4 | 4.0 | 1.9 / 1.1 / 1.1 | 1.42 | 15.0 | 5.6% |
+| compress | 128.5 | 27.3 | 3.5 | 8.2 | 0.3 / 0.7 / 2.6 | 0.16 | 8.1 | 0.7% |
+| Lua | 120.1 | 34.4 | 6.6 | 17.4 | 0.3 / 1.3 / 22.5 | 0.07 | 11.8 | 0.2% |
+| churn | 144.9 | 29.0 | 4.2 | 3.8 | 1.6 / 1.8 / 0.3 | 1.19 | 20.6 | 2.6% |
+| SQLite | 148.4 | 26.2 | 6.8 | 19.1 | 0.4 / 4.0 / 7.7 | 0.18 | 16.4 | 0.8% |
+| Firefox pages | 152.7 | 30.3 | 3.9 | 6.1 | 1.9 / 4.6 / 1.5 | 1.72 | 21.4 | 4.0% |
+
+In Lua and SQLite the backlog entry counted 27-37 direct transfers, 10-14 through the jump cache, 15 by VA, 10-15
+returns and 12-24 other indirect branches (2026-10); the returns are host returns now (0.3-0.4 probes left), the
+jump cache's share halved, and 56-73% of all transfers are edges. What is left of the entry's two verdicts:
+- *Regions entered at more than one block.* A block installed as a region's member and entered from outside it runs
+  interpreted until it is compiled again as a head. Of the interpreted steps reported at a key with no function,
+  those at such members: boot 11.1 M of 126.7 M (8.8%; 0.42% of all steps, 0.16% in October at 16 blocks), userspace
+  20.9 M of 170.8 M (12.2%; 0.20% of the steps, where October had 0.01-0.04%), pages 178.9 M of 2,150 M (8.3%).
+  15.2% of the pages session's regions (6,605 of 43,364) were headed by a block that was already a member: compiled
+  twice. Scaled to the session's 3.85 G interpreted steps that is 320 M steps at 8.5 ns more each (2.7 s, 1.2%) and
+  11.4 M of the 137.6 M compiled → interpreter round trips (two dispatches and a cold entry, 1.6 s, 0.7%). The
+  objection of October (an entry parameter on every function) is gone: a function's entries exist since host calls
+  (`Region::entries`, a call's continuations). **Open** (M): entries for members besides continuations, where the
+  head's page has them and outside loops; the pages session and the wasm's bytes measure it.
+- *Followed calls whose callee completes inside* (PERF loop 50, counted at 16 blocks). With every callee followed the
+  host calls that would go are 4.04 M of 39.9 M in the boot (10.1%; 6.0% then), 16.35 M of 140.6 M in the userspace
+  run (11.6%: compress 14.1%, Lua 13.1%, churn 9.4%, SQLite 12.3%; 5.3-10.9% then). At 2-4 ns each: 0.3-0.65% of the
+  userspace gate, 0.2-0.45% of the boot; the pages session's 2,078 M host calls at the same share, 0.2-0.45%. Larger
+  regions raised the share by half and the verdict stands: under the floor for a design that touches every exit.
+
+**Row 9, the transfer cache and the jump cache.** In the pages session the probes of BR, BLR and RET hit 640.8 M times
+and missed 137.8 M; the by-VA links hit 594.2 M and missed 18.1 M; with a chain's failed guard (2.3 M) and a host
+return that landed elsewhere (9.3 M) the miss function ran 167.4 M times. **RET is 39% hits (72.2 M of 187.0 M
+probes) where BLR is 97% and BR 95%**, and RET's 114.8 M misses are 69% of the miss function's calls. The miss
+function found the block 43.3 M times and failed 124.2 M times (74%): the target isn't compiled (a return into a
+caller that runs interpreted), which no cache size changes. By the entry it found: another VA's tag 108.1 M (of
+those 27.6 M would share a slot among 65,536 entries too, a quarter, what chance gives unrelated tags), an older
+generation 31.0 M, zeroed 21.1 M, tag and generation right 7.2 M (the budget or a poll). Only the 43.3 M refills are
+the cache's to lose: 65,536 entries could save at most three quarters of the conflicts among them (~21 M refills at
+~15-20 ns: ≤ 0.2%, for 768 KiB a vCPU), a per-ASID generation at most the stale ones (≤ 31 M: ≤ 0.3%, L). **Closed.**
+The jump cache is another matter: 65,536 entries a table hold the session's 43,364 functions and their entries by PA
+bits 17:2, and **4.36 M of its 4.50 M fills overwrote another key's entry**; 4.13 M times `Jit::miss` found a block
+compiled and installed but out of the jump cache (`smp_user_jit_4`'s SQLite phase: 1.60 M fills, all but 4,000 over
+another key, two hot blocks taking one slot from each other). Each is a probe that failed in compiled code, the host
+frames unwound, a dispatch and a map lookup: at 300-400 ns, 1.2-1.65 s, 0.55-0.75%. **Open** (S): `JC` at 131,072
+and 262,144 (1 MiB a table today, +1 and +3 MiB a vCPU), arms of one paired run.
+
+**Row 10, the TLB's misses.** 51.4 M misses in the pages session (529 per million steps; boot 198, userspace 96):
+EL0 read 21.6 M, write 8.3 M, exec 14.5 M, EL1 read 3.5 M, write 2.6 M, exec 0.9 M; 48.6 M walks ended at level 3,
+1.7 M at level 2, 0.9 M faulted, 0.2 M lacked the permission.
+- *The sibling.* A walk computes what each EL may do with the page and fills one array. 4.24 M read fills found the
+  page in the same EL's write array and 6.39 M write fills found it in the read array: 21.1% of the 50.3 M fills
+  (boot 25.4%, userspace 30.6%). The other EL's array had it 95 times, the exec and data arrays 0.14 M: nothing
+  there. A data miss costs its walk and the helper that runs the access's group (3.7 instructions in helpers a data
+  miss: 132.8 M over 36.0 M): 260-290 ns, so 2.8-3.1 s, **≤ 1.3-1.4%**. It assumes the write was permitted when the
+  read walked (190 K walks lacked a permission, so mostly yes), and that the extra fill evicts nothing useful.
+  Nothing in the walk has state to update (the access flag is software-managed, no DBM), so the read walk's fill of
+  the write array is the architecture's own TLB behaviour. **Open** (S-M; not watched pages, which record their write
+  fills).
+- *The size.* 82.8% of the misses found their slot empty: flushes, not capacity (121,978 `flush_ng` dropped 28.2 M
+  listed slots, 55% of the misses' number; 1.16 M flushes by VA). 8.79 M fills evicted another page's entry, 4.96 M of
+  them apart among 32,768 entries and 6.96 M among 65,536. An eviction is at most one later miss: ≤ 0.7% and ≤ 0.9%
+  at 290 ns, for +2.1 and +6.4 MiB a vCPU and flushes that clear as much more. **Closed** for the page. (On
+  `smp_user_jit_4` in Node the share is larger, 41% of its misses on an occupied slot, compress 85%: a gate's, not the
+  page's.)
+- *The rest.* A 64-entry cache of last-level tables would serve 81.7% of the walks three of their four loads (≤ 37 ns
+  of a walk: ≤ 0.7%, with every table write to track); 4.9% of the misses are next to the last miss's page (≤ 0.3%);
+  the nG list overflowed in 5,929 of 121,978 `flush_ng` (a 128 KiB scan each, ~0.02%). **Closed**, and per-ASID
+  stashes stay measured out (docs/cpu.md).
+
+**Row 11, a full TLBI queue.** 398,371 TLBI IS operations in the pages session: 393,292 by a user-half VA, 4,595 by
+ASID, 484 by a kernel-half VA, none of everything. 231,342 drains found something queued: lists of one 157,895, of
+2-7 54,070, of 8-63 16,892, of 64 87; **2,398 queues had collapsed** (372,541 operations arrived at a collapsed
+queue, 155 a collapse: a longer queue would collapse nearly as often). They are every `flush_all` of the session.
+2,392 of them had collected only user-half VAs and ASIDs since their last drain, which dropping the nG entries would
+have served; a sample of 152 held 2,540 valid entries each, 2,032 of them global. So ~4.9 M global entries a session
+are dropped for nothing, against 7.0 M EL1 misses in all: at 290 ns ≤ 0.6%, plus the flush's own 2.3 MiB cleared
+2,398 times (~0.25%) and both ELs' transfer cache generations (~0.1%): **≤ 1.0%**. `smp_user_jit_4`: 266 collapses
+(Node). **Open** (S-M): a collapsed queue that saw only user-half VAs and ASIDs drops the nG entries, unless the
+TLB may hold global entries in the low half (`Tlb::low_global`); a `maint.c` round and a planted bug.
+
+**Row 13, host frames lost.** A block returned to its caller with no exit and no transfer 153.6 M times in the pages
+session, 152.1 M of them not for the stop word: 124.2 M are the miss function's failures above, and the dispatcher
+then ran interpreted code 137.6 M times (24.7 steps a run). 19.5 M of those stops were above depth 0, with 52.8 M
+frames above them (2.7 each); in all 73.8 M host frames were left with their call unreturned (exits take the rest),
+3.5% of the 2,078 M host calls. A lost frame costs its `ret` a transfer cache probe in place of a host return, 5 ns
+when it hits and ~25 ns through the miss function: 0.4-1.8 s, **0.2-0.8%**. The interpreter called under the live
+frames would save that and not the round trip, whose cost is the dispatcher's (PERF loop 54: how much code runs
+interpreted is the compile threshold's call). **Closed.** 917 guest calls reached the depth limit of 64.
+
+**Row 18, the helpers.** 163.0 M helper steps, 167.6 M instructions by class (the histogram, published with the
+tallies): `STP`/`LDP` 56.4 M, `STR`/`LDR` with an unsigned offset 48.8 M, the other loads and stores 17.1 M (73.0%:
+the slow arms of the fast path, 36.0 M data TLB misses' worth, a group's span run by `jit_exec_span`); ISB 13.7 M,
+ERET 3.3 M, MSR 3.3 M, DSB 2.1 M, MRS 2.0 M, WFE, YIELD and SEVL 3.5 M, the cache operations 1.7 M (18.1%: the run
+loop's or a block's end by design, PERF loop 8); `ADD`/`ORR`/`MOVZ` and kin 10.4 M (6.2%: the integer instructions
+inside a group's span); atomics 2.6 M (CAS 0.89 M, LDADD 0.53 M: their slow arms); FP 1.8 M (FCVTZS 0.86 M and SCVTF
+0.69 M to and from a general register). **FlagM's forms: none**, nor any other class missing an inline form above
+0.9 M: at 60 ns a class of 1 M is 0.03% of busy time. **Closed**: what would shrink the histogram is fewer data TLB
+misses (row 10's sibling). The helper decodes its word twice (`jit::count`, then the interpreter's): ≤ 5 ns of 168 M,
+≤ 0.4%; S, with other work in the file.
+
+**Ranked** (expected gain for the page against effort): 1. the TLB's sibling fill (S-M, ≤ 1.3-1.4%); 2. the
+collapsed queue to `flush_ng` (S-M, ≤ 1.0%), the same files and tests as 1, one loop; 3. `JC`'s sweep (S, 0.55-0.75%);
+4. entries at members (M, ≤ 1.9% as a bound and half of it at best: the largest and the least certain); 5. the
+helper's second decode (S, ≤ 0.4%).
+
+**PERF loop 71's review** (`review/jit-emission-memo`, a static reading of the kept emission): both findings
+confirmed, one suggested test refuted.
+- *No test checked a kept emission against the one it replaces.* Fixed three ways. `block::module` asserts, wherever
+  debug assertions are on (every native test that compiles a region), that a kept emission is byte for byte the one
+  its arguments make (`Emission::same`). `a_kept_emission_has_its_flag_states`: a block that loops to itself with its
+  flags dead at entry and no register in a local (`cmp xzr, xzr; b.ne .`) has the first emission's `plain` and
+  register states and other flag states. `an_unsettled_region_enters_no_member_dirty_in_a_shadow_alone`: a chain of
+  nine blocks carrying D0's shadow settles in no four emissions, and its first edge stores the shadow
+  (`Regs::loose`). Planted: the memo not comparing the flag states fails the first test (the assertion, and with the
+  assertion off the test's own check); not comparing the register states or `plain` fails two tests each as before
+  and now the assertion too; `loose` taken out fails the second test.
+- *A test that reaches the `bad` fallback:* not written, because nothing reaches it. A member's entry flags are lazy
+  only when every edge into it carried the same setter in the emission before; an edge's setter is its own block's or
+  its block's entry state passed on; so the first entry to change from lazy to anything else would need an earlier
+  one. Counted: 0 fallbacks in 2,916 regions of several blocks in the boot (594 never settled), 3,946 in the userspace
+  run, 4,559 in `smp_user_jit_4` and 22,892 in the pages session (5,375 never settled, 23.5%). The fallback and its
+  assertion stay.
+- *`Emission`'s doc comment sat on `type Last`.* Moved.
+
+Memory: none (nothing built; the debug assertion emits a kept emission again in debug builds only). Compiled code
+unchanged (no x64 counts). The runs: three of 34 s in Node (the gates' guests twice, once more with every callee followed) and 226 s on the
+Mac; no CI but the finish's.

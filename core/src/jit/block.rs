@@ -1050,6 +1050,13 @@ pub fn module(
             if let Some((p, e, f, x)) = last.take()
                 && (p, &e[..], &f[..]) == (plain, entry, flags)
             {
+                // Checked wherever debug assertions are on (the tests): the
+                // emission kept is the one these arguments make.
+                debug_assert!(
+                    x.same(&emit_region(&env, r, plain, entry, flags)),
+                    "a kept emission isn't its arguments' ({:#x})",
+                    r.blocks[0].key
+                );
                 return x;
             }
             emit_region(&env, r, plain, entry, flags)
@@ -1175,10 +1182,6 @@ impl In {
 /// member's flags are dead at its entry, and whether an edge carried lazy
 /// flags other than its member's entry state (then emitted again, flags in
 /// memory).
-/// An emission with the arguments it was emitted with (`plain`, the entry
-/// states: [`emit_region`]).
-type Last = (u64, Vec<emit::Regs>, Vec<In>, Emission);
-
 struct Emission {
     c: emit::Func,
     inl: u32,
@@ -1187,6 +1190,21 @@ struct Emission {
     dead: Vec<bool>,
     bad: bool,
 }
+
+impl Emission {
+    /// Whether `o` is this emission: the same code and counts, and the same
+    /// states found.
+    fn same(&self, o: &Emission) -> bool {
+        self.c.c.b == o.c.c.b
+            && self.c.counts == o.c.counts
+            && (self.inl, &self.into, &self.flags) == (o.inl, &o.into, &o.flags)
+            && (&self.dead, self.bad) == (&o.dead, o.bad)
+    }
+}
+
+/// An emission with the arguments it was emitted with (`plain`, the entry
+/// states: [`emit_region`]).
+type Last = (u64, Vec<emit::Regs>, Vec<In>, Emission);
 
 /// One emission of region `r` with the registers in `plain` read without a
 /// local, each member starting in its `entry` register state and `fin` flag
@@ -2826,6 +2844,75 @@ mod tests {
         let body = e.bytes.windows(2).position(|w| w == [0x03, 0x40]).unwrap(); // the loop
         assert_eq!(pc(&e.bytes[body..edge]), 0);
         assert!(pc(&e.bytes[edge..]) >= 2); // the head's exit, b.lt's select
+    }
+
+    /// A kept emission is compared by its flag states too: a block that
+    /// loops to itself with its flags dead at entry and no register in a
+    /// local has its first emission's `plain` and register states, but not
+    /// its flag states (in memory there, so the back-edge stored NZCV).
+    #[test]
+    fn a_kept_emission_has_its_flag_states() {
+        // 0x100: cmp xzr, xzr; b.ne 0x100 (then ret)
+        let (_r, m) = mem_with(0x100, &[0xeb1f03ff, 0x54ffffe1, 0xd65f03c0]);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        assert_eq!((r.blocks.len(), r.back_edges()), (1, 1));
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            &Config::DEFAULT,
+            false,
+            crate::cpu::FEATURES,
+            None,
+        );
+        // No register load but the PC's: nothing the memo's register states
+        // could tell apart.
+        assert_eq!(e.bytes.windows(2).filter(|w| *w == [0x29, 3]).count(), 1);
+        // NZCV is stored where the loop is left, never on the back-edge (the
+        // `br` to the loop, inside the `if TAKEN` and the budget's `if`).
+        let back = e.bytes.windows(2).position(|w| w == [0x0c, 2]).unwrap();
+        assert_eq!(nzcv_stores(&e.bytes[..back]), 0);
+        assert!(nzcv_stores(&e.bytes[back..]) >= 1);
+    }
+
+    /// A region whose entry states don't settle in four emissions starts no
+    /// member with a register dirty in a shadow alone (`Regs::loose`): the
+    /// edge into the first such member stores the shadow.
+    #[test]
+    fn an_unsettled_region_enters_no_member_dirty_in_a_shadow_alone() {
+        // 0x100: fadd d0, d0, d1; b 0x10c
+        // 0x10c + 12k (k < 7): nop; b .+8 (a brk between the blocks)
+        // 0x160: subs x2, x2, #1; b.ne 0x100; ret
+        // D0's shadow reaches one member more at each emission: more
+        // emissions than the four that settle a region.
+        let mut words = vec![0x1e612800, 0x14000002, 0xd4200000];
+        for _ in 0..7 {
+            words.extend([NOP, 0x14000002, 0xd4200000]);
+        }
+        words.extend([0xf1000442, 0x54fffce1, 0xd65f03c0]);
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        assert_eq!((r.blocks.len(), r.back_edges()), (9, 1));
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            &Config::DEFAULT,
+            false,
+            crate::cpu::FEATURES,
+            None,
+        );
+        // V0's store from its shadow (f64.store, then zeros above it) comes
+        // before the head's edge to the first member (the first `br 1`).
+        let v = core::mem::offset_of!(crate::cpu::Cpu, v) as u32;
+        assert!((0x80..0x4000).contains(&v));
+        let lo = [0x39, 3, v as u8 | 0x80, (v >> 7) as u8];
+        let store = e.bytes.windows(4).position(|w| w == lo).unwrap();
+        let edge = e.bytes.windows(2).position(|w| w == [0x0c, 1]).unwrap();
+        assert!(
+            store < edge,
+            "V0 stored at {store}, the head's edge at {edge}"
+        );
     }
 
     #[test]

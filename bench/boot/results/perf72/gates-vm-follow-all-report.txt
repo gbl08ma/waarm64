@@ -1,0 +1,443 @@
+== boot: 2650 M steps (1 vCPU)
+  [   0] back-edge                                                          55,933,671      21,104.1 /M
+  [   1] forward edge                                                      319,500,292     120,549.4 /M
+  [   3] miss function entered                                               5,101,592       1,924.9 /M
+  [   5] chain back                                                         24,119,197       9,100.3 /M
+  [   6] chain fwd                                                          35,496,035      13,392.9 /M
+  [   7] chain via jc back                                                     547,409         206.5 /M
+  [   8] chain via jc fwd                                                    8,657,295       3,266.5 /M
+  [   9] by-VA link back (hit)                                               7,607,290       2,870.3 /M
+  [  10] by-VA link fwd (hit)                                                2,832,412       1,068.7 /M
+  [  11] host call                                                          32,816,310      12,381.8 /M
+  [  12] host return                                                        31,649,906      11,941.7 /M
+  [  80] block call after an exit                                              366,121         138.1 /M
+  [  81] after a chunk end                                                      41,036          15.5 /M
+  [  82] after the interpreter, stopped before a compiled block              4,430,664       1,671.7 /M
+  [  83] after the interpreter, otherwise                                       17,436           6.6 /M
+  [  84] after a compiled block, successor in the jump cache                    65,092          24.6 /M
+  [  85] after a compiled block, successor through Jit::miss                    27,671          10.4 /M
+  [  86] block calls with a jump-cache hit                                   4,903,622       1,850.2 /M
+  [  87] compiled block, then interpreted code                               4,511,827       1,702.3 /M
+  [  88] interpreted runs                                                    5,138,867       1,938.9 /M
+  [  89] exits after a compiled block                                          330,908         124.9 /M
+  [  90] exits after interpreted code                                          209,665          79.1 /M
+  [  91] chunk ends                                                             68,476          25.8 /M
+  [  92] interpreted steps (the dispatcher's runs)                         154,769,157      58,395.4 /M
+  [  96] transfer cache hit: RET                                             3,895,291       1,469.7 /M
+  [  97] transfer cache hit: BLR                                             2,804,583       1,058.2 /M
+  [  98] transfer cache hit: BR                                              2,720,983       1,026.6 /M
+  [ 100] probe missed: RET                                                   3,168,502       1,195.5 /M
+  [ 101] probe missed: BLR                                                     116,211          43.8 /M
+  [ 102] probe missed: BR                                                       70,754          26.7 /M
+  [ 103] probe missed: by-VA link                                              376,303         142.0 /M
+  [ 104] miss function straight from a chain whose guard failed                 10,066           3.8 /M
+  [ 105] miss function after a host return elsewhere                         1,359,756         513.0 /M
+  [ 106] miss function: entry zeroed                                         2,351,954         887.4 /M
+  [ 107] miss function: another tag                                          1,119,657         422.5 /M
+  [ 108] of those, same slot among 65,536 too                                  271,548         102.5 /M
+  [ 109] miss function: an older generation                                    320,530         120.9 /M
+  [ 110] miss function: tag and generation right                             1,309,451         494.1 /M
+  [ 111] miss function failed (returns)                                      3,422,855       1,291.5 /M
+  [ 112] miss function found the block (fills, tail-calls)                   1,678,737         633.4 /M
+  [ 113] stops (a block returns, no exit, no transfer)                       4,617,112       1,742.1 /M
+  [ 114] stops at depth > 0                                                    474,606         179.1 /M
+  [ 115] stops: depths summed                                                1,010,319         381.2 /M
+  [ 116] stops not by budget or stop word                                    4,343,195       1,638.7 /M
+  [ 117] of those at depth > 0                                                 423,430         159.8 /M
+  [ 118] of those: depths summed                                               893,868         337.3 /M
+  [ 119] host frames left unreturned                                         1,166,404         440.1 /M
+  [ 121] jump-cache probe of a static successor failed                       1,107,319         417.8 /M
+  [ 128] misses: EL0 read                                                      103,996          39.2 /M
+  [ 129] misses: EL0 write                                                      69,803          26.3 /M
+  [ 130] misses: EL0 exec                                                      118,700          44.8 /M
+  [ 131] misses: EL1 read                                                      126,294          47.7 /M
+  [ 132] misses: EL1 write                                                      77,356          29.2 /M
+  [ 133] misses: EL1 exec                                                       29,134          11.0 /M
+  [ 134] miss with the page in another array                                   131,883          49.8 /M
+  [ 135] read miss, same EL's write array has the page                          73,617          27.8 /M
+  [ 136] write miss, same EL's read array has the page                          56,709          21.4 /M
+  [ 137] exec miss, same EL's data arrays have the page                          1,047           0.4 /M
+  [ 138] data miss, same EL's exec array has the page                              510           0.2 /M
+  [ 140] miss on an empty slot                                                 423,658         159.8 /M
+  [ 141] miss on a slot holding another page                                   101,625          38.3 /M
+  [ 142] miss next to the last miss's page (+-1)                                57,534          21.7 /M
+  [ 143] miss in the last miss's 2 MiB (same last-level table)                 264,657          99.9 /M
+  [ 144] miss whose last-level table is in a 64-entry cache                    512,202         193.3 /M
+  [ 150] walks to level 2                                                       57,395          21.7 /M
+  [ 151] walks to level 3                                                      407,440         153.7 /M
+  [ 152] walks that faulted                                                     47,043          17.7 /M
+  [ 153] walks without the permission                                           13,405           5.1 /M
+  [ 154] RAM fills with the page in another array                              119,414          45.1 /M
+  [ 155] RAM fills                                                             464,703         175.3 /M
+  [ 156] read fills, the write array had the page                               73,589          27.8 /M
+  [ 157] write fills, the read array had the page                               44,268          16.7 /M
+  [ 160] fills (all)                                                           464,835         175.4 /M
+  [ 161] fills over another page's entry                                       101,609          38.3 /M
+  [ 162] of those, apart among 32,768                                           92,830          35.0 /M
+  [ 163] of those, apart among 65,536                                           93,457          35.3 /M
+  [ 164] flush_all                                                                  79           0.0 /M
+  [ 167] flush_ng                                                                5,192           2.0 /M
+  [ 168] flush_ng, the nG list overflowed                                            1           0.0 /M
+  [ 169] flush_ng: listed slots dropped                                        229,515          86.6 /M
+  [ 170] flush_va                                                               33,795          12.8 /M
+  [ 171] flush_va that scans the transfer cache                                    954           0.4 /M
+  [ 172] flush_va: generation bumps for blocks                                   6,104           2.3 /M
+  [ 173] transfer cache generation bumps                                        10,650           4.0 /M
+  [ 224] jump cache fills                                                       44,827          16.9 /M
+  [ 225] fills over another key                                                 38,625          14.6 /M
+  [ 226] Jit::miss: compiled and installed, not in the jump cache               38,332          14.5 /M
+  [ 227] interpreted steps reported at a key with no function              131,958,791      49,788.9 /M
+  [ 228] of those, at a region's member                                     17,816,703       6,722.4 /M
+  [ 229] reports at a member                                                    35,138          13.3 /M
+  [ 230] regions installed                                                       5,470           2.1 /M
+  [ 231] heads that were members                                                 1,228           0.5 /M
+  [ 232] members installed                                                      21,552           8.1 /M
+  [ 233] members that had a function                                             1,196           0.5 /M
+  [ 240] regions of several blocks emitted                                       2,693           1.0 /M
+  [ 241] of those, never settled                                                   669           0.3 /M
+  [ 243] single blocks emitted                                                   2,777           1.0 /M
+  helper calls by Op: 1,359,872 (513 /M)
+    STRx_LDRx_imm_2                          380,043   27.9%  cum  27.9%
+    STP_LDP_gen                              302,958   22.3%  cum  50.2%
+    ERET                                     197,376   14.5%  cum  64.7%
+    MRS                                       64,089    4.7%  cum  69.5%
+    STP_LDP_fpsimd                            60,414    4.4%  cum  73.9%
+    MSR_reg                                   54,010    4.0%  cum  77.9%
+    ORR_shift                                 49,865    3.7%  cum  81.5%
+    LDRx_reg                                  43,682    3.2%  cum  84.7%
+    DC_ZVA                                    28,575    2.1%  cum  86.8%
+    SYS                                       24,887    1.8%  cum  88.7%
+    ADD_imm                                   17,168    1.3%  cum  89.9%
+    STRx_reg                                  12,842    0.9%  cum  90.9%
+    SUB_shift                                 12,529    0.9%  cum  91.8%
+    STURx_LDURx                               11,310    0.8%  cum  92.6%
+    DC_CIVAC                                  10,783    0.8%  cum  93.4%
+    MOVZ                                      10,674    0.8%  cum  94.2%
+    MOVK                                       7,257    0.5%  cum  94.7%
+    STRx_LDRx_imm_1                            7,167    0.5%  cum  95.3%
+    ADD_shift                                  6,426    0.5%  cum  95.7%
+    SUB_imm                                    6,192    0.5%  cum  96.2%
+    SBFM                                       6,037    0.4%  cum  96.6%
+    CAS                                        5,867    0.4%  cum  97.1%
+    AND_imm                                    5,723    0.4%  cum  97.5%
+    ADRP                                       5,511    0.4%  cum  97.9%
+    STLR                                       3,918    0.3%  cum  98.2%
+    IC_IVAU                                    3,175    0.2%  cum  98.4%
+    LDTR                                       2,593    0.2%  cum  98.6%
+    CASP                                       2,122    0.2%  cum  98.8%
+    STTR                                       1,909    0.1%  cum  98.9%
+    LDADD                                      1,906    0.1%  cum  99.1%
+    BFM                                        1,876    0.1%  cum  99.2%
+    DC_CVAC                                    1,403    0.1%  cum  99.3%
+    LDx_mult_2                                 1,386    0.1%  cum  99.4%
+    UBFM                                       1,240    0.1%  cum  99.5%
+    LDSET                                      1,004    0.1%  cum  99.6%
+    STLXR                                        972    0.1%  cum  99.6%
+    STR_imm_fpsimd_2                             771    0.1%  cum  99.7%
+    SXTW                                         728    0.1%  cum  99.7%
+    MSR_imm                                      599    0.0%  cum  99.8%
+    MOVN                                         597    0.0%  cum  99.8%
+== user: 10431 M steps (1 vCPU)
+  [   0] back-edge                                                         140,729,962      13,491.1 /M
+  [   1] forward edge                                                    1,263,862,942     121,160.5 /M
+  [   3] miss function entered                                              10,587,069       1,014.9 /M
+  [   5] chain back                                                        106,558,124      10,215.2 /M
+  [   6] chain fwd                                                         184,470,761      17,684.3 /M
+  [   7] chain via jc back                                                   4,917,980         471.5 /M
+  [   8] chain via jc fwd                                                   48,467,192       4,646.3 /M
+  [   9] by-VA link back (hit)                                              97,163,043       9,314.6 /M
+  [  10] by-VA link fwd (hit)                                               21,830,487       2,092.8 /M
+  [  11] host call                                                         113,996,576      10,928.3 /M
+  [  12] host return                                                       111,688,959      10,707.1 /M
+  [  80] block call after an exit                                              740,337          71.0 /M
+  [  81] after a chunk end                                                     181,011          17.4 /M
+  [  82] after the interpreter, stopped before a compiled block              6,193,217         593.7 /M
+  [  83] after the interpreter, otherwise                                       26,311           2.5 /M
+  [  84] after a compiled block, successor in the jump cache                   140,858          13.5 /M
+  [  85] after a compiled block, successor through Jit::miss                    74,414           7.1 /M
+  [  86] block calls with a jump-cache hit                                   7,255,405         695.5 /M
+  [  87] compiled block, then interpreted code                               6,279,555         602.0 /M
+  [  88] interpreted runs                                                    7,257,559         695.7 /M
+  [  89] exits after a compiled block                                          799,115          76.6 /M
+  [  90] exits after interpreted code                                          256,808          24.6 /M
+  [  91] chunk ends                                                            314,037          30.1 /M
+  [  92] interpreted steps (the dispatcher's runs)                         203,037,286      19,464.2 /M
+  [  96] transfer cache hit: RET                                            12,375,545       1,186.4 /M
+  [  97] transfer cache hit: BLR                                            17,637,456       1,690.8 /M
+  [  98] transfer cache hit: BR                                             98,904,305       9,481.5 /M
+  [ 100] probe missed: RET                                                   3,966,639         380.3 /M
+  [ 101] probe missed: BLR                                                     159,574          15.3 /M
+  [ 102] probe missed: BR                                                      223,363          21.4 /M
+  [ 103] probe missed: by-VA link                                              737,296          70.7 /M
+  [ 104] miss function straight from a chain whose guard failed                 52,427           5.0 /M
+  [ 105] miss function after a host return elsewhere                         5,447,770         522.3 /M
+  [ 106] miss function: entry zeroed                                         2,700,564         258.9 /M
+  [ 107] miss function: another tag                                          1,863,505         178.6 /M
+  [ 108] of those, same slot among 65,536 too                                  497,067          47.7 /M
+  [ 109] miss function: an older generation                                    575,979          55.2 /M
+  [ 110] miss function: tag and generation right                             5,447,021         522.2 /M
+  [ 111] miss function failed (returns)                                      4,541,743         435.4 /M
+  [ 112] miss function found the block (fills, tail-calls)                   6,045,326         579.5 /M
+  [ 113] stops (a block returns, no exit, no transfer)                       6,557,033         628.6 /M
+  [ 114] stops at depth > 0                                                    775,616          74.4 /M
+  [ 115] stops: depths summed                                                1,638,370         157.1 /M
+  [ 116] stops not by budget or stop word                                    5,943,974         569.8 /M
+  [ 117] of those at depth > 0                                                 628,300          60.2 /M
+  [ 118] of those: depths summed                                             1,331,192         127.6 /M
+  [ 119] host frames left unreturned                                         2,307,617         221.2 /M
+  [ 121] jump-cache probe of a static successor failed                       1,713,698         164.3 /M
+  [ 128] misses: EL0 read                                                      377,472          36.2 /M
+  [ 129] misses: EL0 write                                                     292,379          28.0 /M
+  [ 130] misses: EL0 exec                                                      208,158          20.0 /M
+  [ 131] misses: EL1 read                                                       48,918           4.7 /M
+  [ 132] misses: EL1 write                                                      58,537           5.6 /M
+  [ 133] misses: EL1 exec                                                       12,399           1.2 /M
+  [ 134] miss with the page in another array                                   294,674          28.2 /M
+  [ 135] read miss, same EL's write array has the page                          88,677           8.5 /M
+  [ 136] write miss, same EL's read array has the page                         203,968          19.6 /M
+  [ 137] exec miss, same EL's data arrays have the page                          1,509           0.1 /M
+  [ 138] data miss, same EL's exec array has the page                              520           0.0 /M
+  [ 140] miss on an empty slot                                                 674,841          64.7 /M
+  [ 141] miss on a slot holding another page                                   323,022          31.0 /M
+  [ 142] miss next to the last miss's page (+-1)                                89,573           8.6 /M
+  [ 143] miss in the last miss's 2 MiB (same last-level table)                 608,523          58.3 /M
+  [ 144] miss whose last-level table is in a 64-entry cache                    967,863          92.8 /M
+  [ 150] walks to level 2                                                      190,713          18.3 /M
+  [ 151] walks to level 3                                                      695,573          66.7 /M
+  [ 152] walks that faulted                                                     88,345           8.5 /M
+  [ 153] walks without the permission                                           23,232           2.2 /M
+  [ 154] RAM fills with the page in another array                              272,858          26.2 /M
+  [ 155] RAM fills                                                             886,223          85.0 /M
+  [ 156] read fills, the write array had the page                               88,670           8.5 /M
+  [ 157] write fills, the read array had the page                              182,159          17.5 /M
+  [ 160] fills (all)                                                           886,286          85.0 /M
+  [ 161] fills over another page's entry                                       322,755          30.9 /M
+  [ 162] of those, apart among 32,768                                          291,638          28.0 /M
+  [ 163] of those, apart among 65,536                                          296,898          28.5 /M
+  [ 164] flush_all                                                                  33           0.0 /M
+  [ 167] flush_ng                                                               12,340           1.2 /M
+  [ 168] flush_ng, the nG list overflowed                                            9           0.0 /M
+  [ 169] flush_ng: listed slots dropped                                        437,412          41.9 /M
+  [ 170] flush_va                                                               59,232           5.7 /M
+  [ 171] flush_va that scans the transfer cache                                  1,353           0.1 /M
+  [ 172] flush_va: generation bumps for blocks                                   3,774           0.4 /M
+  [ 173] transfer cache generation bumps                                        14,348           1.4 /M
+  [ 224] jump cache fills                                                      101,479           9.7 /M
+  [ 225] fills over another key                                                 93,119           8.9 /M
+  [ 226] Jit::miss: compiled and installed, not in the jump cache               92,575           8.9 /M
+  [ 227] interpreted steps reported at a key with no function              178,870,580      17,147.5 /M
+  [ 228] of those, at a region's member                                     30,640,100       2,937.3 /M
+  [ 229] reports at a member                                                    63,921           6.1 /M
+  [ 230] regions installed                                                       7,604           0.7 /M
+  [ 231] heads that were members                                                 2,013           0.2 /M
+  [ 232] members installed                                                      28,145           2.7 /M
+  [ 233] members that had a function                                             1,764           0.2 /M
+  [ 240] regions of several blocks emitted                                       3,677           0.4 /M
+  [ 241] of those, never settled                                                   919           0.1 /M
+  [ 243] single blocks emitted                                                   3,927           0.4 /M
+  helper calls by Op: 7,323,268 (702 /M)
+    STRx_LDRx_imm_2                        3,365,788   46.0%  cum  46.0%
+    STP_LDP_gen                              702,431    9.6%  cum  55.6%
+    ADD_imm                                  627,374    8.6%  cum  64.1%
+    ORR_imm                                  400,749    5.5%  cum  69.6%
+    ERET                                     388,600    5.3%  cum  74.9%
+    STURx_LDURx                              328,280    4.5%  cum  79.4%
+    MRS                                      216,962    3.0%  cum  82.3%
+    MSR_reg                                  203,975    2.8%  cum  85.1%
+    AND_imm                                  201,038    2.7%  cum  87.9%
+    LDRx_reg                                 172,677    2.4%  cum  90.2%
+    MOVN                                     102,682    1.4%  cum  91.6%
+    AND_shift                                101,045    1.4%  cum  93.0%
+    STP_LDP_fpsimd                            99,266    1.4%  cum  94.4%
+    STRx_reg                                  83,274    1.1%  cum  95.5%
+    MOVZ                                      60,338    0.8%  cum  96.3%
+    ORR_shift                                 55,775    0.8%  cum  97.1%
+    SYS                                       49,924    0.7%  cum  97.8%
+    SXTW                                      40,223    0.5%  cum  98.3%
+    DC_ZVA                                    32,226    0.4%  cum  98.8%
+    DC_CIVAC                                  10,783    0.1%  cum  98.9%
+    SUB_shift                                  8,857    0.1%  cum  99.0%
+    MOVK                                       7,848    0.1%  cum  99.1%
+    STTR                                       6,983    0.1%  cum  99.2%
+    STRx_LDRx_imm_1                            6,252    0.1%  cum  99.3%
+    ADD_ext                                    5,238    0.1%  cum  99.4%
+    LDTR                                       4,742    0.1%  cum  99.5%
+    ADD_shift                                  4,695    0.1%  cum  99.5%
+    LDR_imm_fpsimd_2                           4,264    0.1%  cum  99.6%
+    ADRP                                       4,166    0.1%  cum  99.6%
+    STR_imm_fpsimd_2                           3,876    0.1%  cum  99.7%
+    STLXR                                      3,055    0.0%  cum  99.7%
+    SBFM                                       3,023    0.0%  cum  99.8%
+    UBFM                                       2,992    0.0%  cum  99.8%
+    IC_IVAU                                    2,914    0.0%  cum  99.9%
+    SUB_imm                                    2,472    0.0%  cum  99.9%
+    CAS                                        1,981    0.0%  cum  99.9%
+    BFM                                        1,342    0.0%  cum  99.9%
+    LDSET                                        780    0.0%  cum  99.9%
+    STUR_fpsimd                                  751    0.0%  cum 100.0%
+    MSR_imm                                      748    0.0%  cum 100.0%
+== smp-user4: 31668 M steps (4 vCPU)
+  [   0] back-edge                                                         409,927,557      12,944.5 /M
+  [   1] forward edge                                                    3,740,196,705     118,106.3 /M
+  [   3] miss function entered                                              19,148,391         604.7 /M
+  [   5] chain back                                                        336,168,648      10,615.4 /M
+  [   6] chain fwd                                                         696,578,165      21,996.2 /M
+  [   7] chain via jc back                                                  19,503,410         615.9 /M
+  [   8] chain via jc fwd                                                  170,855,909       5,395.2 /M
+  [   9] by-VA link back (hit)                                             340,824,149      10,762.4 /M
+  [  10] by-VA link fwd (hit)                                               75,631,650       2,388.3 /M
+  [  11] host call                                                         294,051,073       9,285.4 /M
+  [  12] host return                                                       290,598,527       9,176.4 /M
+  [  13] poll                                                            2,449,959,704      77,363.8 /M
+  [  80] block call after an exit                                            1,778,902          56.2 /M
+  [  81] after a chunk end                                                     772,500          24.4 /M
+  [  82] after the interpreter, stopped before a compiled block              9,441,329         298.1 /M
+  [  83] after the interpreter, otherwise                                       46,708           1.5 /M
+  [  84] after a compiled block, successor in the jump cache                   455,055          14.4 /M
+  [  85] after a compiled block, successor through Jit::miss                    83,736           2.6 /M
+  [  86] block calls with a jump-cache hit                                  12,442,591         392.9 /M
+  [  87] compiled block, then interpreted code                               9,712,929         306.7 /M
+  [  88] interpreted runs                                                   11,916,405         376.3 /M
+  [  89] exits after a compiled block                                        1,488,173          47.0 /M
+  [  90] exits after interpreted code                                          608,875          19.2 /M
+  [  91] chunk ends                                                            839,798          26.5 /M
+  [  92] interpreted steps (the dispatcher's runs)                         314,697,782       9,937.4 /M
+  [  93] stops by the word at the dispatcher                                     8,263           0.3 /M
+  [  94] of those, after a compiled block                                        1,697           0.1 /M
+  [  96] transfer cache hit: RET                                            51,865,198       1,637.8 /M
+  [  97] transfer cache hit: BLR                                            53,743,070       1,697.1 /M
+  [  98] transfer cache hit: BR                                            381,735,168      12,054.3 /M
+  [ 100] probe missed: RET                                                   6,175,000         195.0 /M
+  [ 101] probe missed: BLR                                                     239,665           7.6 /M
+  [ 102] probe missed: BR                                                      372,076          11.7 /M
+  [ 103] probe missed: by-VA link                                            2,872,818          90.7 /M
+  [ 104] miss function straight from a chain whose guard failed                 52,775           1.7 /M
+  [ 105] miss function after a host return elsewhere                         9,436,057         298.0 /M
+  [ 106] miss function: entry zeroed                                         4,491,690         141.8 /M
+  [ 107] miss function: another tag                                          4,278,306         135.1 /M
+  [ 108] of those, same slot among 65,536 too                                2,237,310          70.6 /M
+  [ 109] miss function: an older generation                                    757,900          23.9 /M
+  [ 110] miss function: tag and generation right                             9,620,495         303.8 /M
+  [ 111] miss function failed (returns)                                      7,275,375         229.7 /M
+  [ 112] miss function found the block (fills, tail-calls)                  11,873,016         374.9 /M
+  [ 113] stops (a block returns, no exit, no transfer)                      10,992,464         347.1 /M
+  [ 114] stops at depth > 0                                                  1,243,934          39.3 /M
+  [ 115] stops: depths summed                                                2,420,174          76.4 /M
+  [ 116] stops not by budget or stop word                                   10,252,000         323.7 /M
+  [ 117] of those at depth > 0                                               1,049,129          33.1 /M
+  [ 118] of those: depths summed                                             2,045,726          64.6 /M
+  [ 119] host frames left unreturned                                         3,550,139         112.1 /M
+  [ 121] jump-cache probe of a static successor failed                       2,786,585          88.0 /M
+  [ 128] misses: EL0 read                                                    1,170,942          37.0 /M
+  [ 129] misses: EL0 write                                                     975,193          30.8 /M
+  [ 130] misses: EL0 exec                                                      436,874          13.8 /M
+  [ 131] misses: EL1 read                                                      230,499           7.3 /M
+  [ 132] misses: EL1 write                                                     229,237           7.2 /M
+  [ 133] misses: EL1 exec                                                       98,567           3.1 /M
+  [ 134] miss with the page in another array                                 1,040,681          32.9 /M
+  [ 135] read miss, same EL's write array has the page                         235,585           7.4 /M
+  [ 136] write miss, same EL's read array has the page                         802,438          25.3 /M
+  [ 137] exec miss, same EL's data arrays have the page                          2,124           0.1 /M
+  [ 138] data miss, same EL's exec array has the page                              534           0.0 /M
+  [ 140] miss on an empty slot                                               1,861,498          58.8 /M
+  [ 141] miss on a slot holding another page                                 1,279,814          40.4 /M
+  [ 142] miss next to the last miss's page (+-1)                               219,736           6.9 /M
+  [ 143] miss in the last miss's 2 MiB (same last-level table)               1,793,303          56.6 /M
+  [ 144] miss whose last-level table is in a 64-entry cache                  3,049,124          96.3 /M
+  [ 150] walks to level 2                                                      782,715          24.7 /M
+  [ 151] walks to level 3                                                    2,094,513          66.1 /M
+  [ 152] walks that faulted                                                    210,754           6.7 /M
+  [ 153] walks without the permission                                           53,330           1.7 /M
+  [ 154] RAM fills with the page in another array                              990,681          31.3 /M
+  [ 155] RAM fills                                                           2,876,969          90.8 /M
+  [ 156] read fills, the write array had the page                              235,575           7.4 /M
+  [ 157] write fills, the read array had the page                              752,448          23.8 /M
+  [ 160] fills (all)                                                         2,877,221          90.9 /M
+  [ 161] fills over another page's entry                                     1,278,219          40.4 /M
+  [ 162] of those, apart among 32,768                                        1,236,064          39.0 /M
+  [ 163] of those, apart among 65,536                                        1,259,988          39.8 /M
+  [ 164] flush_all                                                                 413           0.0 /M
+  [ 167] flush_ng                                                               33,892           1.1 /M
+  [ 168] flush_ng, the nG list overflowed                                           31           0.0 /M
+  [ 169] flush_ng: listed slots dropped                                        909,279          28.7 /M
+  [ 170] flush_va                                                              521,645          16.5 /M
+  [ 171] flush_va that scans the transfer cache                                  4,151           0.1 /M
+  [ 172] flush_va: generation bumps for blocks                                   5,210           0.2 /M
+  [ 173] transfer cache generation bumps                                        23,456           0.7 /M
+  [ 192] TLBI IS: everything                                                        32           0.0 /M
+  [ 193] TLBI IS: by ASID                                                        6,591           0.2 /M
+  [ 194] TLBI IS: by VA, user half                                             137,225           4.3 /M
+  [ 195] TLBI IS: by VA, kernel half                                             3,369           0.1 /M
+  [ 196] queued (per target)                                                   418,377          13.2 /M
+  [ 197] a full queue collapsed                                                    281           0.0 /M
+  [ 198] arrived at a collapsed queue                                           22,993           0.7 /M
+  [ 199] drains with something queued                                          160,310           5.1 /M
+  [ 200] drains of a collapsed queue (flush_all)                                   281           0.0 /M
+  [ 201] of those, only user-half VAs and ASIDs since the last drain               253           0.0 /M
+  [ 202] operations drained from lists                                         400,393          12.6 /M
+  [ 203] longest list drained (max over vCPUs summed)                              256           0.0 /M
+  [ 204] lists of 1                                                            108,221           3.4 /M
+  [ 205] lists of 2-7                                                           39,671           1.3 /M
+  [ 206] lists of 8-63                                                          12,103           0.4 /M
+  [ 207] lists of 64                                                                34           0.0 /M
+  [ 208] lists with a flush of everything                                           71           0.0 /M
+  [ 209] sampled: valid entries at a collapsed drain                            47,207           1.5 /M
+  [ 210] sampled: global entries among them                                     38,164           1.2 /M
+  [ 211] samples (one in 16)                                                        18           0.0 /M
+  [ 212] targets waited for                                                     10,458           0.3 /M
+  [ 213] targets not waited for (another ASID)                                 431,193          13.6 /M
+  [ 214] ASID operations in lists                                               19,252           0.6 /M
+  [ 224] jump cache fills                                                      135,641           4.3 /M
+  [ 225] fills over another key                                                105,228           3.3 /M
+  [ 226] Jit::miss: compiled and installed, not in the jump cache              103,055           3.3 /M
+  [ 227] interpreted steps reported at a key with no function              204,388,534       6,454.1 /M
+  [ 228] of those, at a region's member                                     48,335,932       1,526.3 /M
+  [ 229] reports at a member                                                    80,419           2.5 /M
+  [ 230] regions installed                                                       8,840           0.3 /M
+  [ 231] heads that were members                                                 2,283           0.1 /M
+  [ 232] members installed                                                      30,853           1.0 /M
+  [ 233] members that had a function                                             1,940           0.1 /M
+  [ 240] regions of several blocks emitted                                       4,263           0.1 /M
+  [ 241] of those, never settled                                                   969           0.0 /M
+  [ 243] single blocks emitted                                                   4,577           0.1 /M
+  helper calls by Op: 48,284,248 (1,525 /M)
+    STP_LDP_gen                           14,336,078   29.7%  cum  29.7%
+    STRx_LDRx_imm_2                       13,936,217   28.9%  cum  58.6%
+    YIELD                                  4,567,741    9.5%  cum  68.0%
+    ADD_imm                                3,429,069    7.1%  cum  75.1%
+    ORR_shift                              2,358,064    4.9%  cum  80.0%
+    ORR_imm                                1,600,423    3.3%  cum  83.3%
+    STURx_LDURx                            1,298,696    2.7%  cum  86.0%
+    AND_imm                                  803,487    1.7%  cum  87.7%
+    SXTW                                     680,706    1.4%  cum  89.1%
+    LDRx_reg                                 670,148    1.4%  cum  90.5%
+    WFE                                      545,541    1.1%  cum  91.6%
+    ISB                                      544,994    1.1%  cum  92.7%
+    ERET                                     465,895    1.0%  cum  93.7%
+    MOVN                                     405,300    0.8%  cum  94.5%
+    AND_shift                                404,864    0.8%  cum  95.4%
+    STRx_reg                                 351,501    0.7%  cum  96.1%
+    DSB                                      278,642    0.6%  cum  96.7%
+    SEVL                                     274,714    0.6%  cum  97.2%
+    MOVZ                                     260,495    0.5%  cum  97.8%
+    MSR_reg                                  242,449    0.5%  cum  98.3%
+    MRS                                      157,729    0.3%  cum  98.6%
+    STP_LDP_fpsimd                           135,860    0.3%  cum  98.9%
+    SYS                                      124,311    0.3%  cum  99.1%
+    DC_ZVA                                   108,511    0.2%  cum  99.4%
+    STRx_LDRx_imm_1                           50,799    0.1%  cum  99.5%
+    ADD_shift                                 37,484    0.1%  cum  99.6%
+    ADD_ext                                   24,715    0.1%  cum  99.6%
+    MSR_imm                                   20,787    0.0%  cum  99.6%
+    CAS                                       18,605    0.0%  cum  99.7%
+    SUB_imm                                   15,120    0.0%  cum  99.7%
+    STTR                                      14,561    0.0%  cum  99.7%
+    SUB_shift                                 13,194    0.0%  cum  99.8%
+    LDTR                                      12,536    0.0%  cum  99.8%
+    WFI                                       10,022    0.0%  cum  99.8%
+    DC_CIVAC                                  10,011    0.0%  cum  99.8%
+    ADRP                                       9,812    0.0%  cum  99.9%
+    UBFM                                       9,571    0.0%  cum  99.9%
+    STR_imm_fpsimd_2                           8,044    0.0%  cum  99.9%
+    LDADD                                      7,486    0.0%  cum  99.9%
+    MOVK                                       7,115    0.0%  cum  99.9%

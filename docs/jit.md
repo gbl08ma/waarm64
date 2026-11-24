@@ -54,7 +54,10 @@ the interpreter's own code.
   counts its dispatches itself and reports them to the shared cache every 16, so the lock is
   taken once per 16 dispatches of a block that isn't compiled, not at every one; a jump-cache
   miss for a block the table already has compiled, or for a key with no instructions, takes it
-  not at all ([Sharing](#sharing) "What the lock costs").
+  not at all ([Sharing](#sharing) "What the lock costs"). The jump cache is indexed by PA bits 17:2, and a browser's
+  code overfills it: in a Firefox pages session (43,364 functions) 4.36 M of 4.50 M fills overwrote another key's
+  entry, and 4.13 M times a block compiled and installed was out of it (bench/boot/REPORT.md "PERF loop 72";
+  docs/backlog.md has the sweep of its size).
 - **Exact step accounting** (counted code: round-robin, deterministic or realtime, and user mode): a block knows its
   instruction count *n* and is entered only if the chunk has ≥ *n* steps left; chained successors and region edges
   are taken only when `left` covers them. So the JIT never outruns a chunk, IRQs, the signal word and deadlines are
@@ -348,6 +351,13 @@ the interpreter's own code.
     1.8M of 2.0M) came instead from host returns that landed elsewhere than the call's continuation, a region's
     followed callee returning one host frame early ([Calls](#calls)): compress's calls are 0.31M now, Lua's 0.23M;
     a by-VA link whose check failed is rare (5,700 in the boot).
+  - **In Firefox's pages session** (PERF loop 72, a diagnostic core on the Mac, 97 G steps): BLR's probes hit 97% of
+    the time and BR's 95%, RET's 39% (72 M of 187 M: a `ret` reaches the probe only at depth 0, after its host frame
+    was lost or when its caller never ran compiled). The miss function ran 167 M times and found the block 43 M
+    times; the other 124 M found nothing compiled (a return into a caller that runs interpreted), which no cache
+    changes. **Not worth building:** 65,536 entries (of the misses on another VA's tag a quarter would share a slot
+    there too, what chance gives; at most ~21 M refills saved, under 0.2% of busy time) and a per-ASID generation (31 M
+    misses on an older generation at most, under 0.3%).
   - The stale-code checker, which needs the key, is called with `u64::MAX` on a hit
     (`jit_check` then computes the key from the PC).
 - **Inside a region:** members are nested wasm `block`s; an edge to a later member is a `br`
@@ -390,6 +400,12 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   after the BL/BLR) the region runs on there; if it isn't (a longjmp, a coroutine switch), the PC's block is found
   through the transfer cache's miss function (with the MMU off, the block returns). That is rare now: 5-31K a phase of
   Alpine's userspace run, 74K in its boot, under 0.3% of the host returns (PERF loop 36; the rule below).
+  **What the unwinding loses** (PERF loop 72, a Firefox pages session on the Mac): 73.8 M host frames were left with
+  their call unreturned, 3.5% of the 2,078 M host calls, 52.8 M of them above a block that stopped because its
+  successor wasn't compiled (19.5 M such stops above depth 0, 2.7 frames each). Each costs its `ret` a transfer cache
+  probe instead of a host return: 0.2-0.8% of busy time. Calling the interpreter under the live frames (as
+  `jit_hot` is called) would keep them and still make the trip to interpreted code; with its re-entrancy it isn't
+  worth that: not built.
 - **A region follows a call only if the callee can't leave it** but by its predicted return (`block::forward`,
   `Region::open_call`): a followed call (`Region::follows`: the walk took the callee through that call) is a `br`, not
   a host call, so the frame it would have pushed is owed for as long as the callee runs. Every other call is a host
@@ -418,7 +434,9 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   call. Counted, they'd take 5-11% of the host calls away (Lua 4.2M of 38M a phase, SQLite 3.1M, the boot 2.4M), but a
   host call and its return cost only ~2 ns more than a `br` and a predicted return on the Mac (a leaf microbenchmark),
   so 0.2-0.3% of the userspace gate at most, against +4.6% wasm in the boot with every callee followed, before the
-  nested exits' code: dropped (bench/boot/REPORT.md "PERF loop 50").
+  nested exits' code: dropped (bench/boot/REPORT.md "PERF loop 50"). Counted again with 64-block regions (PERF loop
+  72): 10-14% of the host calls would go (the boot 4.0M of 39.9M, the userspace run 16.4M of 140.6M), 0.2-0.65% of the
+  gates and 0.2-0.45% of a Firefox pages session at 2-4 ns each: the verdict stands.
 - **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
   function (`Region::entries`; none in a region with a `loop`, whose members sit inside it: a loop region, and a
   forward region with an edge back to its head, which is what a loop through a call is, `for (…) f(x);`: after anything
@@ -1102,6 +1120,13 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   modules byte for byte the same. Regions that never settle are 20-30% of the regions of several blocks but 53-62% of
   the members emitted (six emissions each, larger regions). None came back to an earlier state within the four
   iterations (bench/boot/REPORT.md "PERF loop 71"; docs/backlog.md "Regions whose entry states never settle").
+  A kept emission is checked wherever debug assertions are on: `module` emits it again and asserts the two the same
+  (`Emission::same`), so every native test that compiles a region checks the rule, and
+  `block::tests::a_kept_emission_has_its_flag_states` and `an_unsettled_region_enters_no_member_dirty_in_a_shadow_alone`
+  pin the flag states' part of the comparison and the unsettled path. The fallback for lazy flag states that an
+  edge contradicts (`Emission::bad`: emitted again with flags in memory) has no test because nothing reaches it: an
+  entry is lazy only when every edge carried that setter in the emission before, so none stops being lazy; 0 in
+  22,892 regions of a Firefox pages session, 5,375 of them unsettled (bench/boot/REPORT.md "PERF loop 72").
   Locals map: i64 scratch 2..=5, i32 6..=9, the flag locals 10..=16, X registers from 17 (in
   order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, FT's f64s 97..=99 and
   113..=117 (the double FMA's exact product and sums), PMULL's i64s 100..=112, FZOK 118, VT 119–122,
@@ -1690,6 +1715,14 @@ system instructions, and why each stays a helper:
   exits to the run loop, which reads the host clock. Deterministic round-robin reads the step clock inline ("System"
   above, PERF loop 47).
 
+**The whole histogram of a Firefox pages session** (PERF loop 72, the Mac; `jit_helper_report`'s counts summed over
+the vCPUs): 163 M helper steps, 168 M instructions. 73% are loads and stores (`STP`/`LDP` 56 M, `STR`/`LDR` 49 M): the
+fast path's slow arms, a group's span at a time, for 36 M data TLB misses; 6% the integer instructions inside those
+spans; 18% the system instructions above (ISB 13.7 M); atomics 1.6% and FP 1.1% (FCVTZS and SCVTF to and from a
+general register, 1.5 M), their slow arms. No FlagM form ran, and no class without an inline form passes 0.9 M
+(0.03% of busy time at a helper's 60 ns): nothing there to inline. Fewer data TLB misses is what shrinks it
+([cpu.md](cpu.md) "MMU and TLB").
+
 Of the integer NEON (after the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,
 URECPE/URSQRTE, and the FP forms the FP
 fast paths send there (`WAARM64_JIT_DIFF_HELPERS=1` on the differential test lists them per class).
@@ -1935,10 +1968,12 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   and no phase faster. The patch is in `bench/boot/results/m8-xpage/`.
 - **Regions entered at more than one block** (a `br_table` on an entry index, v86's shape), so a
   member entered from outside its region runs there instead of waiting in the interpreter to be
-  compiled again as a head: measured, not built. Such blocks run 0.01–0.04% of the userspace
-  phases' steps interpreted (6–16% of their few dispatches), about 1% of a phase at most, and
-  multi-entry would put an entry parameter on every function (`bench/boot/REPORT.md` "M8: what a
-  region entered at more than one block could win").
+  compiled again as a head: measured in October with 16-block regions, not built. Such blocks ran 0.01–0.04% of the
+  userspace phases' steps interpreted (6–16% of their few dispatches), about 1% of a phase at most, and
+  multi-entry would have put an entry parameter on every function (`bench/boot/REPORT.md` "M8: what a
+  region entered at more than one block could win"). Both moved since: functions have entries (a call's
+  continuations, [Calls](#calls)), and with 64-block regions such members run 0.2% of the userspace run's steps and
+  0.4% of the boot's interpreted (PERF loop 72): open again, in docs/backlog.md.
 - **A per-block compile threshold** (2026-10-25; `bench/interp/REPORT.md` "Compile by expected benefit against
   cost", the patch in `bench/interp/results/m8-cp/`): measured first, then screened against the floor and the
   pressure rule. Cost: a compiled guest instruction is ~94 wasm bytes and ~3.3 µs of the vCPU's time (the emit ~12.7

@@ -1,0 +1,82 @@
+Transfers per 1000 steps (edges: inside a function; the rest leave it or call)
+                       edges  chain  viajc   byVA  XC ret  XC blr  XC br   miss  hcall   hret  stops interp%   c->i
+boot                   141.9   23.7    3.4    4.0    1.94    1.11   1.05   1.42   15.0   14.2   1.70    5.63   1.66
+user                   134.5   28.6    5.1   12.3    0.77    1.71   9.50   0.50   13.5   13.1   0.61    1.87   0.59
+user/compress          128.5   27.3    3.5    8.2    0.32    0.71   2.62   0.16    8.1    7.9   0.25    0.70   0.24
+user/lua               120.1   34.4    6.6   17.4    0.25    1.29  22.50   0.07   11.8   11.6   0.10    0.23   0.09
+user/churn             144.9   29.0    4.2    3.8    1.63    1.84   0.34   1.19   20.6   19.8   1.11    2.59   1.01
+user/sqlite            148.4   26.2    6.8   19.1    0.40    4.02   7.70   0.18   16.4   16.1   0.30    0.77   0.28
+smp-user4              130.6   32.4    6.4   14.1    0.49    1.71  12.09   0.76   11.7   11.5   0.41    1.03   0.32
+smp-user4/compress     125.7   31.1    3.8    9.1    0.11    0.46   2.84   0.06    6.6    6.6   0.14    0.35   0.10
+smp-user4/lua          121.4   35.2    7.6   15.6    0.08    1.09  24.23   0.94   10.7   10.6   0.07    0.13   0.04
+smp-user4/churn        144.1   35.2    5.2    2.6    1.49    1.78   0.42   1.06   19.7   19.0   1.18    2.37   1.05
+smp-user4/sqlite       143.0   30.3    8.5   22.4    0.71    4.05   8.33   0.77   15.4   15.0   0.44    0.62   0.20
+pages (Mac)            152.7   30.3    3.9    6.1    1.92    4.55   1.54   1.72   21.4   20.6   1.58    3.96   1.42
+
+boot                 RET probes hit/miss 2.04/3.09M; miss function found/failed 0.42/3.34M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 2.27/1.10/0.26/0.33/0.06M
+                     host frames left 2.10M; depths summed at stops not by budget or stop word 1.57M; jump cache fills/over another key/known refills 35K/28K/28K; interpreted steps at members 8.8% of 127M reported
+                     TLB misses 0.53M (198/M steps); read fills with the write entry/write fills with the read entry 0.07/0.04M (25.4% of 0.46M fills); misses on a slot holding another page 19.3%; evictions 0.10M (apart among 32,768/65,536: 0.09/0.09M); next to the last miss 10.9%; last-level table in a 64-entry cache 97.5%; flush_all/flush_ng/(list overflowed)/flush_va 79/5192/1/33795; nG slots dropped 0.23M
+                     regions of several blocks 2916, never settled 594, `bad` fallbacks 0
+user                 RET probes hit/miss 4.27/3.81M; miss function found/failed 0.81/4.37M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 2.57/1.82/0.45/0.58/0.21M
+                     host frames left 4.08M; depths summed at stops not by budget or stop word 2.14M; jump cache fills/over another key/known refills 52K/43K/43K; interpreted steps at members 12.2% of 171M reported
+                     TLB misses 1.00M (96/M steps); read fills with the write entry/write fills with the read entry 0.09/0.18M (30.6% of 0.89M fills); misses on a slot holding another page 32.4%; evictions 0.32M (apart among 32,768/65,536: 0.29/0.30M); next to the last miss 9.0%; last-level table in a 64-entry cache 97.0%; flush_all/flush_ng/(list overflowed)/flush_va 33/12340/9/59232; nG slots dropped 0.44M
+                     regions of several blocks 3946, never settled 819, `bad` fallbacks 0
+user/compress        RET probes hit/miss 0.54/0.10M; miss function found/failed 0.09/0.24M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.08/0.14/0.05/0.05/0.05M
+                     host frames left 0.45M; depths summed at stops not by budget or stop word 0.11M; jump cache fills/over another key/known refills 1K/1K/1K; interpreted steps at members 37.0% of 13M reported
+                     TLB misses 0.36M (178/M steps); read fills with the write entry/write fills with the read entry 0.01/0.14M (42.6% of 0.36M fills); misses on a slot holding another page 73.2%; evictions 0.26M (apart among 32,768/65,536: 0.26/0.26M); next to the last miss 4.6%; last-level table in a 64-entry cache 99.2%; flush_all/flush_ng/(list overflowed)/flush_va 0/3288/1/1020; nG slots dropped 0.08M
+                     regions of several blocks 296, never settled 77, `bad` fallbacks 0
+user/lua             RET probes hit/miss 0.71/0.10M; miss function found/failed 0.05/0.18M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.06/0.09/0.02/0.04/0.04M
+                     host frames left 0.65M; depths summed at stops not by budget or stop word 0.09M; jump cache fills/over another key/known refills 3K/3K/3K; interpreted steps at members 16.2% of 6M reported
+                     TLB misses 0.02M (6/M steps); read fills with the write entry/write fills with the read entry 0.01/0.00M (44.6% of 0.01M fills); misses on a slot holding another page 2.2%; evictions 0.00M (apart among 32,768/65,536: 0.00/0.00M); next to the last miss 12.6%; last-level table in a 64-entry cache 99.5%; flush_all/flush_ng/(list overflowed)/flush_va 0/38/1/5647; nG slots dropped 0.00M
+                     regions of several blocks 179, never settled 29, `bad` fallbacks 0
+user/churn           RET probes hit/miss 0.44/0.45M; miss function found/failed 0.20/0.44M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.16/0.30/0.07/0.15/0.03M
+                     host frames left 0.41M; depths summed at stops not by budget or stop word 0.29M; jump cache fills/over another key/known refills 15K/14K/14K; interpreted steps at members 11.3% of 15M reported
+                     TLB misses 0.17M (309/M steps); read fills with the write entry/write fills with the read entry 0.02/0.00M (14.5% of 0.13M fills); misses on a slot holding another page 2.8%; evictions 0.00M (apart among 32,768/65,536: 0.00/0.00M); next to the last miss 6.2%; last-level table in a 64-entry cache 97.8%; flush_all/flush_ng/(list overflowed)/flush_va 0/3567/1/12889; nG slots dropped 0.13M
+                     regions of several blocks 468, never settled 78, `bad` fallbacks 0
+user/sqlite          RET probes hit/miss 0.64/0.22M; miss function found/failed 0.04/0.34M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.13/0.20/0.05/0.02/0.02M
+                     host frames left 0.62M; depths summed at stops not by budget or stop word 0.20M; jump cache fills/over another key/known refills 2K/1K/1K; interpreted steps at members 17.6% of 15M reported
+                     TLB misses 0.03M (16/M steps); read fills with the write entry/write fills with the read entry 0.01/0.00M (44.0% of 0.03M fills); misses on a slot holding another page 9.3%; evictions 0.00M (apart among 32,768/65,536: 0.00/0.00M); next to the last miss 29.0%; last-level table in a 64-entry cache 99.3%; flush_all/flush_ng/(list overflowed)/flush_va 0/20/3/8855; nG slots dropped 0.00M
+                     regions of several blocks 362, never settled 76, `bad` fallbacks 0
+smp-user4            RET probes hit/miss 8.81/6.58M; miss function found/failed 14.73/9.18M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 4.85/5.75/2.23/0.71/12.60M
+                     host frames left 7.67M; depths summed at stops not by budget or stop word 5.37M; jump cache fills/over another key/known refills 1697K/1665K/1663K; interpreted steps at members 17.6% of 193M reported
+                     TLB misses 3.15M (100/M steps); read fills with the write entry/write fills with the read entry 0.27/0.72M (34.4% of 2.88M fills); misses on a slot holding another page 41.2%; evictions 1.30M (apart among 32,768/65,536: 1.21/1.23M); next to the last miss 6.9%; last-level table in a 64-entry cache 95.9%; flush_all/flush_ng/(list overflowed)/flush_va 391/34001/33/517576; nG slots dropped 0.93M
+                     TLBI IS all/ASID/VA user/VA kernel 31/6597/137740/3159; queued 413085, at a collapsed queue 29230; drains 160206, collapsed 266 (user-half and ASID only: 240); lists of 1/2-7/8-63/64: 108351/39721/11850/18; sampled at a collapse: 1593 valid entries, 1289 global (18 samples)
+                     regions of several blocks 4559, never settled 870, `bad` fallbacks 0
+smp-user4/compress   RET probes hit/miss 0.57/0.23M; miss function found/failed 0.04/0.42M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.23/0.16/0.05/0.04/0.04M
+                     host frames left 0.55M; depths summed at stops not by budget or stop word 0.25M; jump cache fills/over another key/known refills 5K/2K/2K; interpreted steps at members 36.8% of 16M reported
+                     TLB misses 1.24M (165/M steps); read fills with the write entry/write fills with the read entry 0.02/0.55M (46.9% of 1.23M fills); misses on a slot holding another page 85.0%; evictions 1.06M (apart among 32,768/65,536: 1.05/1.05M); next to the last miss 3.9%; last-level table in a 64-entry cache 99.4%; flush_all/flush_ng/(list overflowed)/flush_va 0/1574/17/15906; nG slots dropped 0.09M
+                     TLBI IS all/ASID/VA user/VA kernel 0/121/3974/4; queued 12297, at a collapsed queue 0; drains 7055, collapsed 0 (user-half and ASID only: 0); lists of 1/2-7/8-63/64: 5012/1907/136/0; sampled at a collapse: 0 valid entries, 0 global (0 samples)
+                     regions of several blocks 370, never settled 82, `bad` fallbacks 0
+smp-user4/lua        RET probes hit/miss 0.75/0.24M; miss function found/failed 10.76/0.47M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.18/0.17/0.04/0.03/10.85M
+                     host frames left 0.75M; depths summed at stops not by budget or stop word 0.24M; jump cache fills/over another key/known refills 5K/3K/3K; interpreted steps at members 14.6% of 10M reported
+                     TLB misses 0.10M (8/M steps); read fills with the write entry/write fills with the read entry 0.03/0.01M (40.1% of 0.08M fills); misses on a slot holding another page 6.7%; evictions 0.01M (apart among 32,768/65,536: 0.00/0.00M); next to the last miss 12.9%; last-level table in a 64-entry cache 96.6%; flush_all/flush_ng/(list overflowed)/flush_va 2/377/7/88150; nG slots dropped 0.03M
+                     TLBI IS all/ASID/VA user/VA kernel 0/72/22061/12; queued 66411, at a collapsed queue 22; drains 9299, collapsed 2 (user-half and ASID only: 2); lists of 1/2-7/8-63/64: 2424/2419/4452/2; sampled at a collapse: 0 valid entries, 0 global (0 samples)
+                     regions of several blocks 223, never settled 35, `bad` fallbacks 0
+smp-user4/churn      RET probes hit/miss 1.29/1.46M; miss function found/failed 0.43/1.53M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.67/0.89/0.21/0.37/0.03M
+                     host frames left 1.34M; depths summed at stops not by budget or stop word 0.74M; jump cache fills/over another key/known refills 44K/38K/37K; interpreted steps at members 16.6% of 34M reported
+                     TLB misses 0.89M (479/M steps); read fills with the write entry/write fills with the read entry 0.10/0.04M (19.6% of 0.75M fills); misses on a slot holding another page 11.5%; evictions 0.10M (apart among 32,768/65,536: 0.08/0.08M); next to the last miss 5.3%; last-level table in a 64-entry cache 94.4%; flush_all/flush_ng/(list overflowed)/flush_va 30/24772/2/203769; nG slots dropped 0.58M
+                     TLBI IS all/ASID/VA user/VA kernel 0/4877/51984/11; queued 167874, at a collapsed queue 2712; drains 104988, collapsed 30 (user-half and ASID only: 29); lists of 1/2-7/8-63/64: 77822/26096/1040/0; sampled at a collapse: 2039 valid entries, 1992 global (1 samples)
+                     regions of several blocks 941, never settled 153, `bad` fallbacks 0
+smp-user4/sqlite     RET probes hit/miss 4.53/1.07M; miss function found/failed 3.26/2.81M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 0.71/3.63/1.72/0.07/1.66M
+                     host frames left 3.34M; depths summed at stops not by budget or stop word 2.83M; jump cache fills/over another key/known refills 1608K/1604K/1604K; interpreted steps at members 28.9% of 20M reported
+                     TLB misses 0.31M (39/M steps); read fills with the write entry/write fills with the read entry 0.05/0.05M (35.4% of 0.28M fills); misses on a slot holding another page 15.2%; evictions 0.05M (apart among 32,768/65,536: 0.04/0.04M); next to the last miss 15.3%; last-level table in a 64-entry cache 95.6%; flush_all/flush_ng/(list overflowed)/flush_va 184/136/2/97648; nG slots dropped 0.01M
+                     TLBI IS all/ASID/VA user/VA kernel 0/28/32034/16; queued 77459, at a collapsed queue 18591; drains 9215, collapsed 184 (user-half and ASID only: 181); lists of 1/2-7/8-63/64: 1620/4229/3166/16; sampled at a collapse: 1064 valid entries, 612 global (12 samples)
+                     regions of several blocks 520, never settled 81, `bad` fallbacks 0
+pages (Mac)          RET probes hit/miss 72.21/114.80M; miss function found/failed 43.26/124.15M, entry zeroed/another tag/(same slot among 65,536)/older generation/right 21.13/108.13/27.62/31.00/7.16M
+                     host frames left 73.76M; depths summed at stops not by budget or stop word 52.77M; jump cache fills/over another key/known refills 4497K/4358K/4132K; interpreted steps at members 8.3% of 2150M reported
+                     TLB misses 51.41M (529/M steps); read fills with the write entry/write fills with the read entry 4.24/6.39M (21.1% of 50.33M fills); misses on a slot holding another page 17.2%; evictions 8.79M (apart among 32,768/65,536: 4.96/6.96M); next to the last miss 4.9%; last-level table in a 64-entry cache 81.7%; flush_all/flush_ng/(list overflowed)/flush_va 2398/121978/5929/1161268; nG slots dropped 28.19M
+                     TLBI IS all/ASID/VA user/VA kernel 0/4595/393292/484; queued 820174, at a collapsed queue 372541; drains 231342, collapsed 2398 (user-half and ASID only: 2392); lists of 1/2-7/8-63/64: 157895/54070/16892/87; sampled at a collapse: 2540 valid entries, 2032 global (152 samples)
+                     regions of several blocks 22892, never settled 5375, `bad` fallbacks 0
+
+Followed calls (PERF loop 50's count again, 64-block regions): today -> every callee followed
+boot                   host calls   39.87M ->   32.82M; followed calls/completed inside 0.67/0.58M -> 7.58/4.63M; host calls that would go 4.04M (10.1%)
+user                   host calls  140.57M ->  114.00M; followed calls/completed inside 1.68/1.37M -> 28.06/17.72M; host calls that would go 16.35M (11.6%)
+user/compress          host calls   16.48M ->   13.39M; followed calls/completed inside 0.19/0.15M -> 3.28/2.47M; host calls that would go 2.32M (14.1%)
+user/lua               host calls   38.03M ->   29.38M; followed calls/completed inside 0.24/0.18M -> 8.89/5.17M; host calls that would go 4.99M (13.1%)
+user/churn             host calls   11.16M ->    9.37M; followed calls/completed inside 0.21/0.17M -> 1.98/1.22M; host calls that would go 1.05M (9.4%)
+user/sqlite            host calls   35.10M ->   28.43M; followed calls/completed inside 0.18/0.14M -> 6.84/4.45M; host calls that would go 4.31M (12.3%)
+smp-user4              host calls  370.09M ->  294.05M; followed calls/completed inside 1.80/1.57M -> 79.22/31.34M; host calls that would go 29.77M (8.0%)
+smp-user4/compress     host calls   49.89M ->   46.79M; followed calls/completed inside 0.11/0.09M -> 3.06/0.99M; host calls that would go 0.90M (1.8%)
+smp-user4/lua          host calls  127.58M ->   85.94M; followed calls/completed inside 0.08/0.06M -> 41.80/12.82M; host calls that would go 12.76M (10.0%)
+smp-user4/churn        host calls   36.50M ->   30.99M; followed calls/completed inside 0.38/0.31M -> 5.88/3.07M; host calls that would go 2.76M (7.6%)
+smp-user4/sqlite       host calls  121.69M ->  100.77M; followed calls/completed inside 0.09/0.07M -> 22.13/10.47M; host calls that would go 10.40M (8.5%)

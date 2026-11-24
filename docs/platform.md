@@ -220,7 +220,11 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
 4 vCPUs (on QEMU and hvf too). In **parallel mode**:
 - Each vCPU has a queue of TLB operations under a lock, an atomic pending flag checked at every
   chunk boundary, and `queued`/`applied` counts. An issuer pushes to every other vCPU's queue: up
-  to 64 TLB operations (then one flush-all).
+  to 64 TLB operations (then one flush-all). In a Firefox pages session on 4 vCPUs (PERF loop 72: 398 K TLBI IS,
+  all but 484 by a user-half VA or an ASID) 231 K drains found a list (68% of one operation, 87 of all 64) and 2,398
+  found a collapsed queue: every flush of everything in the session, each dropping ~2,000 global entries that no
+  queued operation named (2,392 had seen only user-half VAs and ASIDs). 155 operations arrive at a collapsed queue
+  on average, so a longer queue isn't the fix; docs/backlog.md has the one that is.
 - **IC IVAU and IALLU(IS)** drop the blocks from the shared code cache on the issuing vCPU, and
   every other vCPU's function table catches up before its next block ([jit.md](jit.md)
   "Sharing"): nothing is queued. Before the cache was shared, each vCPU had its own and a queue of
