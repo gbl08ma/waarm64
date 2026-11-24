@@ -45,6 +45,14 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
   const files = readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile()).map((f) => f.split(sep).join('/'));
   assert.ok(!files.some((f) => /\.(?:ts|svelte)$/.test(f)), `source in the copy: ${files.filter((f) => /\.(?:ts|svelte)$/.test(f)).join(', ')}`);
   for (const f of ['index.html', 'web/app/index.html', '_headers', '.htaccess', '.nojekyll', 'LICENSE', 'THIRD-PARTY-LICENSES.md', 'EDK2-LICENSES.txt']) assert.ok(files.includes(f), `${f} is missing`);
+  // A shared link's preview: the head names the picture and the icon, which are in the copy under those names, and
+  // each page its own address.
+  const html = readFileSync(join(out, 'index.html'), 'utf8');
+  for (const f of ['social-card.png', 'apple-touch-icon.png']) assert.ok(files.includes(f) && html.includes(`/${f}"`), `${f} is missing, or the page doesn't name it`);
+  assert.match(html, /<meta name="description" content="[^"]{50,}">/);
+  for (const [f, url] of [['index.html', ''], ['demos.html', 'demos'], ['intro.html', 'intro']]) {
+    assert.ok(readFileSync(join(out, f), 'utf8').includes(`<meta property="og:url" content="https://waarm64.com/${url}">`), `${f}'s og:url`);
+  }
   for (const name of ['index', 'worker', 'vcpu-worker', 'device-worker', 'jit-compile-worker', 'gpu-worker', 'audio-worklet', 'waarm64_core', 'ts', 'QEMU_EFI']) {
     assert.ok(files.some((f) => new RegExp(`^assets/${name}-[\\w-]{8}\\.(?:js|wasm|fd)$`).test(f)), `no assets/${name}-<hash>`);
   }
