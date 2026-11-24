@@ -234,7 +234,12 @@ changes; the drop-before-run discipline of the page before machines is kept besi
   worker.
 - **Stored in the browser:** a file copied into OPFS (streamed, with progress, in `web/app/disk-worker.ts`; the
   confirmation says what it will take, that it duplicates the file, and that the browser's storage is where it goes)
-  and converted on the way (§4.4). It never needs picking again and can be merged into and written in place.
+  and converted on the way (§4.4). It never needs picking again and can be merged into and written in place. A
+  `File` a page builds from one `ArrayBuffer` of ~384 MiB or more (`new File([bytes])`) can't be read at all in
+  Chromium 153, on the page's thread too (`NotReadableError`; 360 MiB reads), so its import fails at offset 0
+  (`disks:stored.imageUnreadable`); built from parts of 64 MiB, or fetched, 512 MiB reads (2026-11-24, x86_64, a
+  temporary profile and a persistent one alike). A file the user picks is read from disk and has no such limit: a test
+  or a tool that makes a large image in a page makes it in parts.
 - **Blank:** a size (in MiB, GiB or TiB, up to `MAX_RESIZE`'s 8 TiB, the largest a disk grows to); read as zeros (a `zero` source), always read-write, so it always has an overlay. Its export is
   the whole disk only ("changes only" over nothing means nothing).
 - **Ramdisk:** below.

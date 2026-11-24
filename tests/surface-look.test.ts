@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CORE, FLASH, RIM, TICK } from '../web/app/ui/block-grid.ts';
 import { cellWords, checkable, detailLook, detailWords, legendOf, lookOf, rangesOfCell, sizeText, stepOf, viewOf, wholeWords } from '../web/app/surface-look.ts';
-import { asInPlace, choiceKey, chooseSource, holdsDisks, jobSource, pollDelay, type JobWorker } from '../web/app/surface-source.ts';
+import { asInPlace, choiceKey, chooseSource, holdsDisks, jobSource, keptIdentity, pollDelay, type JobWorker } from '../web/app/surface-source.ts';
+import { cacheIdentity } from '../web/diskcache.ts';
 import { carryActivity, RANGE, UNIT, type InspectAnswer, type RangeDetail, type Surface, type SurfaceLayer } from '../web/surface.ts';
 import type { Attachment, DiskRecord } from '../web/app/shape.ts';
 import type { OverlayRecord } from '../web/app/store.ts';
@@ -165,7 +166,14 @@ test('chooseSource: live where the machine on this page has the disk so, else th
     kind: 'offline',
     job: { stored: `disks/${stored.id}`, overlay: 'overlays/work', overlaySize: 128 * MiB, size: 64 * MiB, baseKind: 'stored' },
   });
-  assert.equal((chooseSource({ disk: url.id }, url, undefined) as { job: { baseKind: string } }).job.baseKind, 'opaque');
+  // A URL's image: from the blocks this browser keeps, named by its record (keptIdentity); none kept without a validator.
+  const urlDisk = { ...url, url: 'https://example.com/d.img', identity: { kind: 'url', path: '/d.img', bytes: 64 * MiB, etag: '"e1"' } } as DiskRecord;
+  assert.deepEqual(chooseSource({ disk: url.id }, urlDisk, undefined), {
+    kind: 'offline',
+    job: { baseKind: 'remote', remote: { bytes: 64 * MiB, identity: keptIdentity(urlDisk) }, size: 64 * MiB },
+  });
+  const plain = { ...urlDisk, identity: { kind: 'url', path: '/d.img', bytes: 64 * MiB } } as DiskRecord;
+  assert.deepEqual((chooseSource({ disk: url.id }, plain, undefined) as { job: unknown }).job, { baseKind: 'remote', remote: { bytes: 64 * MiB }, size: 64 * MiB });
   assert.equal((chooseSource({ disk: blank.id }, blank, undefined) as { job: { baseKind: string } }).job.baseKind, 'blank');
   // In place, and read-only: the disk alone is live.
   assert.deepEqual(chooseSource({ disk: stored.id }, stored, undefined, { attachments: [at(stored, { inPlace: true })] }), { kind: 'live', disk: 0, inPlace: true });
@@ -175,6 +183,17 @@ test('chooseSource: live where the machine on this page has the disk so, else th
   assert.deepEqual(chooseSource({ disk: ram.id }, ram, undefined), { kind: 'unavailable', why: { key: 'disks:surface-source.ramdisk' } });
   assert.deepEqual(chooseSource({ disk: 'gone' }, undefined, undefined, running), { kind: 'unavailable', why: { key: 'disks:surface-source.diskGone' } });
   assert.deepEqual(chooseSource({ disk: stored.id, overlay: 'x' }, stored, undefined, running), { kind: 'unavailable', why: { key: 'disks:surface-source.overlayGone' } });
+});
+
+test("keptIdentity: a URL disk's record names its kept blocks as the running machine names them", () => {
+  const rec = (url: string, identity: object) => ({ id: 'u', kind: 'url', name: 'u', size: 8 * MiB, url, identity, created: 0 }) as DiskRecord;
+  // web/disk-sources.ts `remoteSource`'s names, pinned: blocks kept under them by a page before stay found.
+  assert.equal(keptIdentity(rec('https://h/d.img', { kind: 'url', path: '/d.img', bytes: 8 * MiB, etag: '"e1"' })), '{"url":"https://h/d.img","size":8388608,"validator":"\\"e1\\""}');
+  assert.equal(keptIdentity(rec('https://h/d.img', { kind: 'url', path: '/d.img', bytes: 8 * MiB, lastModified: 'Tue, 01 Sep 2026 00:00:00 GMT' })), cacheIdentity({ url: 'https://h/d.img', size: 8 * MiB, validator: 'Tue, 01 Sep 2026 00:00:00 GMT' }));
+  assert.equal(keptIdentity(rec('https://h/d.json', { kind: 'url', chunked: 'abc', bytes: 8 * MiB })), 'chunked:abc');
+  assert.equal(keptIdentity(rec('https://h/d.json', { kind: 'url', path: '/d.json', bytes: 8 * MiB, etag: 'abc' })), 'chunked:abc', 'a chunked image added before content ids');
+  assert.equal(keptIdentity(rec('https://h/d.img', { kind: 'url', path: '/d.img', bytes: 8 * MiB })), undefined, 'no validator: nothing kept');
+  assert.equal(keptIdentity(disk('stored')), undefined);
 });
 
 test('a stored disk written in place answers live as a blank disk and its store: the store is shown as the disk', () => {

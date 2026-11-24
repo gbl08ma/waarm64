@@ -17,6 +17,7 @@ import { CORE, RIM } from '../web/app/ui/block-grid.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 import { openHome } from './page-home.ts';
+import { qcow2, type Kind } from './qcow2-make.ts';
 
 const MiB = 2 ** 20;
 const BLOCK = 4096;
@@ -150,8 +151,18 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   assert.deepEqual(await layout(), mapBefore, 'the map as it was');
   const [mapBox, pinBox] = [(await win(page).boundingBox())!, (await pin(page).boundingBox())!];
   assert.ok(pinBox.x >= mapBox.x + mapBox.width || pinBox.x + pinBox.width <= mapBox.x, 'beside the map');
-  assert.ok(await pin(page).evaluate((e) => [e, ...e.querySelectorAll('*')].every((x) => x.scrollWidth <= x.clientWidth && x.scrollHeight <= x.clientHeight)), 'nothing in it scrolls');
-  assert.match((await rangeWords(page))!, words('disks:surface-look.range.diskRuns', { blocks: 256, count: 1 }));
+  const scrolls = () => pin(page).evaluate((e) => [e, ...e.querySelectorAll('*')].some((x) => x.scrollWidth > x.clientWidth || x.scrollHeight > x.clientHeight));
+  assert.ok(!(await scrolls()), 'nothing in it scrolls');
+  // A short browser window: the words go beside the map, and still nothing scrolls.
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await page.waitForFunction(() => {
+    const r = document.querySelector('#surface-square')!.getBoundingClientRect();
+    return r.width > 400 && r.bottom <= innerHeight;
+  });
+  assert.ok(!(await scrolls()), 'nothing in it scrolls in a short window');
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.waitForFunction(() => document.querySelector('#surface-square')!.getBoundingClientRect().width < 300);
+  assert.match((await rangeWords(page))!,words('disks:surface-look.range.diskRuns', { blocks: 256, count: 1 }));
   await pin(page).locator('[data-action=surface-check]').click();
   await page.waitForFunction((re) => new RegExp(re).test(document.querySelector('[data-field=surface-range-words]')?.textContent ?? ''), words('disks:surface-look.range.content', { count: 256, zeros: 0 }).source);
   assert.equal((await view(page)).pinned, 0);
@@ -280,6 +291,97 @@ test('the disk surface window over a file disk without a handle to read: not exa
   await pin(page).locator('section.details[data-range="0"][data-loaded]').waitFor();
   assert.equal(await pin(page).locator('[data-action=surface-check]').count(), 0);
   assert.equal(await pin(page).locator('[data-field=surface-uncheckable]').textContent(), t('disks:surface-look.range.uncheckable'));
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the disk surface window over URL disks whose machine doesn't run: read from the blocks this browser keeps, nothing fetched", { timeout: 60_000 }, async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  const fetched: string[] = [];
+  context.on('request', (r) => { if (r.url().includes('/nowhere/')) fetched.push(r.url()); });
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?autostart=1&view=terminal`);
+  // A qcow2 of 12 MiB and a cluster, its file under 1 MiB: one kept block holds all of it.
+  const image = qcow2(12 * MiB + 64 * 1024, 16, new Map<number, Kind>([[0, 'data'], [1, 'data'], [2, 'zero'], [64, 'data'], [130, 'compressed'], [192, 'data']])).bytes;
+  const ids = await page.evaluate(async (q) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { createDisk } = await import('/web/app/machines.ts' as string);
+    const { keptIdentity } = await import('/web/app/surface-source.ts' as string);
+    const { cacheKey, CACHE_DIR } = await import('/web/diskcache.ts' as string);
+    const MiB = 2 ** 20;
+    const qcow = Uint8Array.from(atob(q), (c) => c.charCodeAt(0));
+    const store = await Store.open();
+    const url = (name: string) => `${location.origin}/nowhere/${name}`;
+    const raw = await createDisk(store, { kind: 'url', url: url('raw.img'), size: 8 * MiB, bytes: 8 * MiB, etag: '"r1"' });
+    const qd = await createDisk(store, { kind: 'url', url: url('d.qcow2'), size: 12 * MiB + 64 * 1024, bytes: qcow.length, lastModified: 'Tue, 01 Sep 2026 00:00:00 GMT' });
+    const none = await createDisk(store, { kind: 'url', url: url('none.img'), size: 8 * MiB, bytes: 8 * MiB, etag: '"n1"' });
+    store.close();
+    // The cache's bucket, expiring in a day; the raw image's blocks 2 and 5 (of 1 MiB) and the qcow2's one block kept.
+    const sb = (navigator as unknown as { storageBuckets: { open(n: string, o?: object): Promise<{ getDirectory(): Promise<FileSystemDirectoryHandle>; expires(): Promise<number | null> }> } }).storageBuckets;
+    const bucket = await sb.open(CACHE_DIR, { persisted: false, expires: Date.now() + 86_400_000 });
+    const root = await bucket.getDirectory();
+    const keep = async (identity: string, map: number[], data: Uint8Array<ArrayBuffer>) => {
+      const dir = await root.getDirectoryHandle(await cacheKey(identity), { create: true });
+      for (const [name, bytes] of [['map', new Uint8Array(Uint32Array.from(map).buffer)], ['data', data]] as const) {
+        const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+        await w.write(bytes);
+        await w.close();
+      }
+    };
+    const blocks = new Uint8Array(2 * MiB).fill(7);
+    await keep(keptIdentity(raw), [0, 0, 1, 0, 0, 2, 0, 0], blocks);
+    await keep(keptIdentity(qd), [1], qcow);
+    return { raw: raw.id as string, qcow: qd.id as string, none: none.id as string, expires: await bucket.expires() };
+  }, Buffer.from(image).toString('base64'));
+  await page.reload();
+  await openHome(page);
+  await modal(page).locator('nav [data-machine=disks]').click();
+  const open = async (id: string) => {
+    if (await win(page).count()) await win(page).locator('[data-action=close]').click();
+    await modal(page).locator(`section[data-selected=disks] [data-disk="${id}"] [data-action=surface-open]`).click();
+    await view(page, (x) => x.source === 'offline');
+    return page.evaluate(() => {
+      const l = window.__surface!.surface!.layers[0];
+      return { known: l.known, why: l.why, held: [...l.held], kept: l.kept && [...l.kept], line: document.querySelector('[data-field=surface-line]')?.textContent?.trim() };
+    });
+  };
+  // Raw: not examined, its kept blocks ticked and counted.
+  const raw = await open(ids.raw);
+  assert.deepEqual([raw.known, raw.why, raw.kept], ['opaque', 'raw', [256, 256]]);
+  assert.equal(raw.line, plain([t('disks:surface-look.why.raw'), t('disks:surface-look.keptAll', { size: '2 MiB' })].join(' ')));
+  // While a machine (here: the page) holds the image's cache, it isn't read: said, as a machine's disk in another tab.
+  await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { keptIdentity } = await import('/web/app/surface-source.ts' as string);
+    const { cacheKey } = await import('/web/diskcache.ts' as string);
+    const store = await Store.open();
+    const key = await cacheKey(keptIdentity(await store.get('disks', id)));
+    store.close();
+    await new Promise<void>((held) => void navigator.locks.request(`waarm64-cache:${key}`, () => {
+      held();
+      return new Promise<void>((r) => ((window as unknown as { __letGo: () => void }).__letGo = r));
+    }));
+  }, ids.raw);
+  await win(page).locator('[data-action=surface-refresh]').click();
+  await win(page).locator('[data-field=surface-why]').waitFor();
+  assert.equal((await win(page).locator('[data-field=surface-why]').textContent())!.trim(), t('disks:surface-job.inUse'));
+  await page.evaluate(() => (window as unknown as { __letGo: () => void }).__letGo());
+  // A qcow2: its clusters counted from the tables kept, all of them kept.
+  const q = await open(ids.qcow);
+  assert.deepEqual([q.known, q.held, q.kept], ['counted', [32, 16, 16, 16], [32, 16, 16, 16]]);
+  // Nothing kept: not examined, said why.
+  const none = await open(ids.none);
+  assert.deepEqual([none.known, none.why, none.kept], ['opaque', 'remote', undefined]);
+  assert.equal(none.line, plain(t('disks:surface-look.why.remote')));
+  assert.deepEqual(fetched, [], 'nothing fetched');
+  const expires = await page.evaluate(async () => {
+    const sb = (navigator as unknown as { storageBuckets: { open(n: string): Promise<{ expires(): Promise<number | null> }> } }).storageBuckets;
+    return (await sb.open('remote-cache')).expires();
+  });
+  assert.equal(expires, ids.expires, "the bucket's expiry isn't pushed on");
   assert.deepEqual(errors, []);
   await context.close();
 });

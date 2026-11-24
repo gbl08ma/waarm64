@@ -12,7 +12,7 @@ import { cachedSource } from '../web/blockcache.ts';
 import { blk } from '../web/blk-device.ts';
 import type { Source } from '../web/disk-sources.ts';
 import type { Ctx } from '../web/virtio.ts';
-import { blockStore } from '../web/diskcache.ts';
+import { blockStore, keptSlots } from '../web/diskcache.ts';
 import { memFile } from '../web/overlay.ts';
 import { ALLOCATION_MAX, openDisk, readAllocation, type Allocation } from '../web/qcow2.ts';
 import { allocationCounts, imageLayer, keptCounts, keptIndex, keptUnits, rangeDetail, type InspectAnswer, type Surface } from '../web/surface.ts';
@@ -104,6 +104,21 @@ test('the tables: read once from a local image, from a remote one only where kep
   assert.ok(await hd.read(0, 4096));
   const hc = allocationCounts(ha, hd.size);
   assert.deepEqual([ha.missing(), hc.held[0], hc.unknown[0], hc.unknown[128]], [tables - 1, 16, 0, 1024], 'the table read counted, the rest not examined');
+});
+
+test('a URL image read offline from the blocks kept: the store map\'s slots as the store takes them; a qcow2\'s tables where kept', async () => {
+  // Block 1 in slot 0, block 3 in slot 1; block 4 claims slot 1 again (not held), block 5 a slot past the data.
+  const slots = keptSlots(Uint32Array.from([0, 1, 0, 2, 2, 9]), 2 * 4096 + 100, 5 * 4096 + 100, 4096);
+  assert.deepEqual([...slots], [-1, 0, -1, 1, -1, -1]);
+  assert.deepEqual([...keptSlots(Uint32Array.from([3]), 3 * 4096, 4096 + 100, 4096)], [2, -1], 'a short map: the rest not held');
+  // The tables of a qcow2 read only where they can be: with `partial` the others are left not known.
+  const { bytes, l2At, cs } = qcow2(SIZE, 16, CLUSTERS);
+  const missing = l2At.get(0)!;
+  const read = async (off: number, len: number) => (off === missing ? undefined : readerOf(bytes)(off, len));
+  assert.equal(await readAllocation(read, bytes.length), undefined, 'whole or nothing');
+  const a = (await readAllocation(read, bytes.length, true))!;
+  assert.deepEqual([a.missing(), a.known(0), a.allocated(0)], [1, false, false]);
+  assert.equal(cs, 64 * 1024);
 });
 
 /** An allocation that counts its calls (each table's clusters are asked once). */
@@ -312,6 +327,9 @@ test('the job worker: a file\'s qcow2 counted from its tables, a raw one and one
   assert.deepEqual([none.known, none.why], ['opaque', 'permission']);
   const url = await surface({ size: MiB, baseKind: 'opaque', why: 'remote', query: q });
   assert.deepEqual([url.known, url.why], ['opaque', 'remote']);
+  // A URL's image where nothing is kept (Node: no OPFS): not examined, nothing kept said.
+  const remote = await surface({ size: MiB, baseKind: 'remote', remote: { identity: 'chunked:x', bytes: MiB }, query: q });
+  assert.deepEqual([remote.known, remote.why, remote.kept], ['opaque', 'remote', undefined]);
   const r = (await surfaceJob({ size: SIZE, baseKind: 'image', file: new Blob([bytes]), query: { kind: 'disk-range', disk: 0, range: 1 } })) as Extract<InspectAnswer, { kind: 'disk-range' }>;
   assert.deepEqual([r.detail.blocks[0], r.detail.blocks[15], r.detail.blocks[16]], [1, 1, 0]);
   assert.equal(r.detail.kept, undefined, 'a file: nothing kept');

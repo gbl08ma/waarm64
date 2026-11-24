@@ -4,6 +4,8 @@
 // (web/app/surface-worker.ts); a ramdisk not running has nothing to show. `chooseSource` decides (pure: Node's tests
 // run it), `sourceFor` makes the source; every ask is bounded (a worker that went away never answers).
 import { msg, type Msg } from '../msg.ts';
+import { isManifestUrl } from '../chunked.ts';
+import { cacheIdentity } from '../diskcache.ts';
 import { mergeLock } from '../overlay.ts';
 import type { InspectAnswer, InspectQuery, RangeDetail, Surface } from '../surface.ts';
 import type { PageState } from './areas/power.svelte.ts';
@@ -71,13 +73,36 @@ export function chooseSource(
   };
 }
 
-/** What a disk not running here is to a job: its store, nothing, or an image (a file's examined where its handle may be read without asking; a URL's only while its machine runs here). */
-function offlineBase(d: DiskRecord): Pick<OfflineJob, 'baseKind' | 'stored' | 'handle' | 'why'> {
+/**
+ * What a disk not running here is to a job: its store, nothing, or an image (a file's examined where its handle may be
+ * read without asking; a URL's from the blocks this browser keeps of it).
+ */
+function offlineBase(d: DiskRecord): Pick<OfflineJob, 'baseKind' | 'stored' | 'handle' | 'why' | 'remote'> {
   if (d.kind === 'stored') return { baseKind: 'stored', stored: diskDir(d.id) };
   if (d.kind === 'blank') return { baseKind: 'blank' };
   if (d.kind === 'file')
     return d.handle ? { baseKind: 'image', handle: d.handle } : { baseKind: 'opaque', why: 'permission' };
-  return { baseKind: 'opaque', why: 'remote' };
+  const identity = keptIdentity(d);
+  return { baseKind: 'remote', remote: { bytes: d.identity.bytes, ...(identity ? { identity } : {}) } };
+}
+
+/**
+ * What names the blocks this browser keeps of URL disk `d`'s image (web/diskcache.ts `cacheIdentity`, as
+ * web/disk-sources.ts `remoteSource` names them), from its record: the server isn't asked, so after the image changed
+ * on it the blocks of the image as it was added are the ones read (its machine's next run keeps the new one's). None
+ * for an image without a validator (nothing is kept of it).
+ */
+export function keptIdentity(d: DiskRecord): string | undefined {
+  if (d.kind !== 'url' || d.identity.kind !== 'url' || !d.url) return undefined;
+  const i = d.identity;
+  if ('chunked' in i) return cacheIdentity({ chunked: i.chunked });
+  // A chunked image's disk added before content ids: the manifest's id is its `etag`.
+  if (isManifestUrl(d.url)) return i.etag ? cacheIdentity({ chunked: i.etag }) : undefined;
+  const validator = i.etag ?? i.lastModified;
+  // Absolute, as the device worker has it (web/app/worker-devices.ts); no location in Node's tests.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const url = new URL(d.url, globalThis.location?.href).href;
+  return validator ? cacheIdentity({ url, size: i.bytes, validator }) : undefined;
 }
 
 /**

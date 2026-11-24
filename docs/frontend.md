@@ -721,8 +721,8 @@ was (on the screen).
   per L2 table as its tables are read, the squares under a table not read yet hatched like an image not examined, and
   one with no data seen but part not examined hatched too, never "no data"; other images flat, hatched, not
   examined), the overlay a core inset in it (four shades of what it changed; hollow where it only zeroed or discarded
-  blocks). A remote image viewed live has a **tick** on a square whose bytes this browser keeps (in memory or in its
-  storage), a thin green bar (`--map-tick`) along its bottom edge, its whole width when all the square has on the
+  blocks). A remote image has a **tick** on a square whose bytes this browser keeps (live: in memory or in its
+  storage; from the files: in its storage), a thin green bar (`--map-tick`) along its bottom edge, its whole width when all the square has on the
   server is kept (a raw image's every block, a qcow2's blocks with data), the left half when part is
   ([Partly kept in this browser](ui:disks:surface-look.legend.keptSome)): independent of the rim, so the rim always
   says what the disk holds and the tick only that the bytes are here; with an overlay larger than
@@ -735,7 +735,7 @@ was (on the screen).
   told the line (an `aria-live` copy) when the square pointed at or the view changes, not as a live poll changes its
   numbers (`wholeWords`: [The disk holds no data yet. Every block reads as zeros.](ui:disks:surface-look.empty)
   for an empty one; for an image not examined, why: raw, its tables not read yet, too large, no permission to
-  read the file, a URL while its machine doesn't run here (`opaqueWords`); for a qcow2 partly examined, why the rest
+  read the file, a URL whose kept blocks don't say what it holds (`opaqueWords`); for a qcow2 partly examined, why the rest
   isn't yet ([Some of the image's tables haven't been read yet, so the squares they cover aren't examined. They fill in as the guest reads them; the tables are never downloaded just for the map.](ui:disks:surface-look.why.tablesSome));
   and for a remote image how much of it this browser keeps). Another overlay chosen (or the disk alone), the picture
   before stays, dimmed, and the line says [Reading the map…](ui:disks:SurfaceWindow.reading) until the new one's first
@@ -745,7 +745,8 @@ was (on the screen).
 - **A click pins a square** (`SurfaceDetails.svelte`), in a small window of its own
   ([Pinned square](ui:disks:SurfaceWindow.pinned), a `fit` `ui/FloatingWindow.svelte`: sized by its content, its place
   not remembered), opened beside the map's (on its right if there's room, else on its left), so the map keeps its room
-  and its scale; a click on another square shows that one in it, on the same square or its Close unpins it. It shows
+  and its scale; in a browser window under 540 px high its words go beside its map instead of under it (a column there
+  would scroll; a RAM square's too); a click on another square shows that one in it, on the same square or its Close unpins it. It shows
   one 4 MiB range of the square block by block (its 1,024 blocks as a 32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
   consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
   fragmented it is there; blocks under a qcow2's table not read yet hatched, not examined, and a remote image's blocks
@@ -777,8 +778,16 @@ was (on the screen).
   machine's. A
   file disk's image is examined where its kept handle's read permission is already granted (`queryPermission`, never
   `requestPermission`: `surface-source.ts` `jobOf` hands the job the file): a qcow2's tables read whole
-  (web/qcow2.ts `readAllocation`, at most 32 MiB of them) for its clusters; a URL's image isn't examined offline
-  (its identity, which names the blocks kept in this browser, needs the server's answer; nothing is fetched). A
+  (web/qcow2.ts `readAllocation`, at most 32 MiB of them) for its clusters. A URL's image is read only from the blocks
+  this browser keeps of it (nothing is fetched): the page names them from the disk's record (`keptIdentity`: the
+  identity web/disk-sources.ts `remoteSource` keeps them under, web/diskcache.ts `cacheIdentity`; the server isn't
+  asked, so after the image changed on it the blocks of the image as it was added are the ones read), and the job reads
+  the cache's map and the blocks it needs under the image's lock (`withKept`; the bucket isn't made, nor its expiry
+  pushed on; a machine reading the image holds the lock, which is refused as its files are, `surface-job.inUse`, and
+  asked again just after this tab's machine stopped): a raw image not examined,
+  its kept blocks ticked (raw by its header, or, with its header not kept, by its file being the disk's size); a
+  qcow2's clusters under the tables kept (`readAllocation`'s `partial`; the others not examined yet), its kept ones
+  ticked; nothing kept, or a qcow2's header not, not examined ([The disk's image is on a web server: what it holds shows once its machine has read it in this browser. It is never downloaded just for the map.](ui:disks:surface-look.why.remote)). A
   ramdisk not running has nothing to show ([A ramdisk holds data only while its machine runs. Its map can be seen
   here while the machine runs in this tab.](ui:disks:surface-source.ramdisk)), the files of a machine running in
   another tab are refused in words (`surface-job.inUse`), and every ask is bounded (5 s live, 20 s for a content
@@ -792,7 +801,9 @@ was (on the screen).
   one had in flight (its picture dimmed until the new one answers); a live answer a newer ask of the same source
   replaced (a resize, a Refresh) is dropped, but its reads and writes flash with the next one (`carryActivity`); just
   after the machine on this page stopped, a refusal that the files are in use is asked again for a few seconds (the
-  device worker lets them go late). The grid's room is asked for again once a resize settles (150 ms).
+  device worker lets them go late). The grid's room is asked for again once a resize settles (150 ms). A runes module,
+  so Node's tests don't compile it: `tests/surface-poll.test.ts` drives it in Chromium over made-up sources
+  (`tests/browser/surface-poll.html`).
 - `window.__surface` is the tests' view of it (web/app/hooks.ts).
 
 ### RAM's map

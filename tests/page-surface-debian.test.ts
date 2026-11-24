@@ -4,7 +4,7 @@
 // the boot reads them, what's under the others not examined until then (nothing fetched for the map), and its blocks
 // this browser keeps ticked; the overlay's changes show as cores and the picker says what the overlay holds now, and a
 // write in the guest flashes "written" and adds to them; once the guest powers off, the same window reads the overlay
-// from its files (the URL's image not examined there). The window
+// from its files and the URL's image from the blocks this browser keeps of it (nothing fetched). The window
 // without a guest is tests/page-surface.test.ts's. scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian); a Debian
 // page boot is ~40 s in the dev VM, ~2.5 min in a cloud session.
 import assert from 'node:assert/strict';
@@ -100,7 +100,12 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
     const now = Date.now();
     const disk = newId();
     const path = '/target/images/debian/disk.qcow2';
-    await store.put('disks', { id: disk, kind: 'url', name: 'disk.qcow2', size, url: path, identity: { kind: 'url', path, bytes }, created: now });
+    // With the server's validator, as a disk added by its URL has it: what names the blocks this browser keeps of it.
+    const head = await fetch(path, { method: 'HEAD' });
+    const etag = head.headers.get('etag');
+    const lastModified = head.headers.get('last-modified');
+    const validator = etag ? { etag } : lastModified ? { lastModified } : {};
+    await store.put('disks', { id: disk, kind: 'url', name: 'disk.qcow2', size, url: path, identity: { kind: 'url', path, bytes, ...validator }, created: now });
     const [id, attachment] = [newId(), newId()];
     await store.put('machines', { id, name: 'Surface', ncpus: 2, ramMiB: 1024, display: '2d', network: false, attachments: [{ id: attachment, disk, readOnly: false }], created: now, modified: now });
     store.close();
@@ -176,12 +181,14 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
   if (process.env.SURFACE_SHOTS) await page.screenshot({ path: `${process.env.SURFACE_SHOTS}/surface-live.png` });
   console.log(`# disk blocks with data ${counted.disk!.held} (${kept.disk!.kept} kept, ${kept.ticks} squares ticked); ${seen.length} answers sampled from the boot's start, ${partial} with tables still unread (not examined: ${JSON.stringify([...new Set(seen.map((x) => x.unknown))])}); overlay blocks ${live.held} -> ${written.held}, ${written.cores} squares with changes at ${written.cellBytes / 2 ** 20} MiB`);
 
-  // Powered off: the same window reads the overlay from its files (once the device worker let them go).
+  // Powered off: the same window reads the overlay from its files and the image from the blocks this browser keeps
+  // (once the device worker let them go): every table the boot read, so the same blocks with data, and those kept.
   await type(page, 'poweroff\n');
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 180_000 });
-  const off = await until(page, 'from the files after the power-off', (v) => v.source === 'offline' && v.disk?.known === 'opaque' && v.held >= written.held, 30_000);
+  const off = await until(page, 'from the files after the power-off', (v) => v.source === 'offline' && v.disk?.known === 'counted' && v.held >= written.held, 30_000);
   assert.equal(off.live, false);
-  assert.deepEqual([off.disk?.known, off.disk?.why], ['opaque', 'remote'], 'a URL\'s image is examined only while it runs here');
+  assert.deepEqual([off.disk!.held, off.disk!.unknown], [counted.disk!.held, 0], 'the image counted from its tables kept here');
+  assert.ok(off.disk!.kept >= kept.disk!.kept && off.ticks > 0, JSON.stringify(off));
   await page.locator('#surface-window [data-action=surface-refresh]').waitFor();
   await page.locator('#surface-window [data-action=close]').click();
   assert.deepEqual(errors, []);

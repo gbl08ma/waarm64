@@ -89,24 +89,26 @@
       />
     {/if}
   </div>
-  {#if detail}
-    <div class="words" data-field="surface-range-words">
-      {#each lines as l, i (i)}<p>{l}</p>{/each}
-    </div>
-    {#if canCheck}
-      <Button
-        data-action="surface-check"
-        disabled={checking}
-        title={t('disks:SurfaceDetails.check.title')}
-        onclick={() => ask(range, true)}
-        >{checking ? t('disks:SurfaceDetails.checking') : t('disks:SurfaceDetails.check')}</Button
-      >
-    {:else if held}
-      <p class="words" data-field="surface-uncheckable">{t('disks:surface-look.range.uncheckable')}</p>
+  <div class="side">
+    {#if detail}
+      <div class="words" data-field="surface-range-words">
+        {#each lines as l, i (i)}<p>{l}</p>{/each}
+      </div>
+      {#if canCheck}
+        <Button
+          data-action="surface-check"
+          disabled={checking}
+          title={t('disks:SurfaceDetails.check.title')}
+          onclick={() => ask(range, true)}
+          >{checking ? t('disks:SurfaceDetails.checking') : t('disks:SurfaceDetails.check')}</Button
+        >
+      {:else if held}
+        <p class="words" data-field="surface-uncheckable">{t('disks:surface-look.range.uncheckable')}</p>
+      {/if}
+    {:else if why}
+      <Note>{text(why)}</Note>
     {/if}
-  {:else if why}
-    <Note>{text(why)}</Note>
-  {/if}
+  </div>
 </section>
 
 <style>
@@ -117,6 +119,29 @@
     flex-direction: column;
     gap: var(--space-3);
     font-size: var(--text-sm);
+  }
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  /* A browser window too short for the column (its window, ~380-480 px, would scroll): the words beside the map. */
+  @media (max-height: 540px) {
+    .details {
+      width: auto;
+      display: grid;
+      grid-template-columns: 196px 196px;
+      align-items: start;
+      column-gap: var(--space-4);
+    }
+    .stepper,
+    .blocks {
+      grid-column: 1;
+    }
+    .side {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+    }
   }
   .stepper {
     display: flex;

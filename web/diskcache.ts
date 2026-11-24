@@ -49,12 +49,17 @@ export type BlockStore = {
 /** The stores open in this worker, which `releaseStores` empties, by their image's key. */
 const stores = new Map<BlockStore, string>();
 
-type Bucket = { getDirectory(): Promise<FileSystemDirectoryHandle>; setExpires(t: number): Promise<void> };
+type Bucket = {
+  getDirectory(): Promise<FileSystemDirectoryHandle>;
+  expires(): Promise<number | null>;
+  setExpires(t: number): Promise<void>;
+};
 type Buckets = {
   open(
     name: string,
     o?: { persisted?: boolean; durability?: string; quota?: number; expires?: number },
   ): Promise<Bucket>;
+  keys(): Promise<string[]>;
 };
 /** Storage Buckets (Chromium; not in the DOM types yet). */
 const buckets = () => (navigator as unknown as { storageBuckets?: Buckets }).storageBuckets;
@@ -62,17 +67,14 @@ const buckets = () => (navigator as unknown as { storageBuckets?: Buckets }).sto
 /**
  * The directory holding the images' caches: the bucket's root (`use`: its expiry pushed on, as an image is opened), or
  * `remote-cache/` in the origin's OPFS. Where there are buckets, an older page's `remote-cache/` there is deleted.
+ * Chromium applies an `expires` given to `open` to a bucket that exists too, so it's set apart: at the bucket's making
+ * and its use only (the page's storage list and Clear don't push it on).
  */
 export async function cacheRoot(use = false): Promise<FileSystemDirectoryHandle> {
   const sb = buckets();
   if (!sb) return opfsDir(CACHE_DIR, true);
-  const bucket = await sb.open(CACHE_DIR, {
-    persisted: false,
-    durability: 'relaxed',
-    quota: BUCKET_QUOTA,
-    expires: Date.now() + CACHE_EXPIRY_MS,
-  });
-  if (use) await bucket.setExpires(Date.now() + CACHE_EXPIRY_MS);
+  const bucket = await sb.open(CACHE_DIR, { persisted: false, durability: 'relaxed', quota: BUCKET_QUOTA });
+  if (use || (await bucket.expires()) === null) await bucket.setExpires(Date.now() + CACHE_EXPIRY_MS);
   await (await navigator.storage.getDirectory()).removeEntry(CACHE_DIR, { recursive: true }).catch(() => {});
   return bucket.getDirectory();
 }
@@ -117,6 +119,13 @@ export async function makeRoom() {
   const freed = await clearCaches().catch(() => 0);
   return here || freed > 0;
 }
+
+/**
+ * What names an image's kept blocks (`cacheKey`'s input): a chunked image's content id, or a URL (absolute) with its
+ * size and the server's validator (its ETag, else its Last-Modified): an image without one isn't kept.
+ */
+export const cacheIdentity = (i: { chunked: string } | { url: string; size: number; validator: string }) =>
+  'chunked' in i ? `chunked:${i.chunked}` : JSON.stringify({ url: i.url, size: i.size, validator: i.validator });
 
 /** The directory name for an image's identity (any string: a JSON of what identifies it). */
 export async function cacheKey(identity: string) {
@@ -239,6 +248,92 @@ export async function clearCaches() {
     ch.close();
   }
   return freed;
+}
+
+/** An image's kept blocks as `withKept` reads them: which are held (`has`) and their bytes. */
+export type KeptBlocks = {
+  block: number;
+  has(k: number): boolean;
+  /** Block `k`'s bytes `from`..`to` (to its end: the last block's may be short), if held and readable. */
+  read(k: number, from?: number, to?: number): Promise<Uint8Array | undefined>;
+};
+
+/**
+ * Which blocks of an image of `size` bytes in `block`-byte blocks a store's `map` (its file's entries) holds, with
+ * `dataBytes` bytes of slots: by block, its slot, or -1. As `blockStore` takes them: a slot past the data, or claimed
+ * by a block before, isn't held.
+ */
+export function keptSlots(map: Uint32Array, dataBytes: number, size: number, block: number) {
+  const blocks = Math.ceil(size / block);
+  const out = new Int32Array(blocks).fill(-1);
+  const claimed = new Set<number>();
+  for (let b = 0; b < Math.min(blocks, map.length); b++) {
+    const s = map[b] - 1;
+    if (s < 0 || s * block + Math.min(block, size - b * block) > dataBytes || claimed.has(s)) continue;
+    claimed.add(s);
+    out[b] = s;
+  }
+  return out;
+}
+
+/**
+ * The caches' directory if it exists, without making it, and where there are buckets without opening it with
+ * options (its expiry isn't pushed on: only a machine's use does that, `cacheRoot`).
+ */
+async function existingRoot(): Promise<FileSystemDirectoryHandle | undefined> {
+  try {
+    const sb = buckets();
+    if (!sb) return await opfsDir(CACHE_DIR);
+    if (!(await sb.keys()).includes(CACHE_DIR)) return undefined;
+    return await (await sb.open(CACHE_DIR)).getDirectory();
+  } catch {
+    return undefined; // no OPFS, or no such directory
+  }
+}
+
+/**
+ * Reads the blocks kept of the image `key` (`cacheKey`) of `size` bytes in `block`-byte blocks without opening its store
+ * (a disk's surface while its machine doesn't run here: docs/frontend.md "A disk's surface"): `f` runs under the
+ * image's lock; `'in-use'` when a machine reading it holds that, undefined when nothing is kept for the image. Nothing
+ * is written, and no other image's cache is deleted.
+ */
+export async function withKept<T>(
+  key: string,
+  size: number,
+  block: number,
+  f: (k: KeptBlocks) => Promise<T>,
+): Promise<T | 'in-use' | undefined> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return undefined;
+  const root = await existingRoot();
+  if (!root) return undefined;
+  const release = await tryLock(key);
+  if (!release) return 'in-use';
+  try {
+    const dir = await root.getDirectoryHandle(key);
+    const [data, mapFile] = await Promise.all([
+      dir.getFileHandle('data').then((h) => h.getFile()),
+      dir.getFileHandle('map').then((h) => h.getFile()),
+    ]);
+    const bytes = await mapFile.arrayBuffer();
+    const map = new Uint32Array(bytes, 0, bytes.byteLength >> 2); // as `blockStore` reads it
+    const slots = keptSlots(map, data.size, size, block);
+    return await f({
+      block,
+      has: (k) => k >= 0 && k < slots.length && slots[k] >= 0,
+      async read(k, from = 0, to = Math.min(block, size - k * block)) {
+        if (!(k >= 0 && k < slots.length && slots[k] >= 0)) return undefined;
+        if (from < 0 || to > Math.min(block, size - k * block) || from >= to) return undefined;
+        const at = slots[k] * block;
+        const b = new Uint8Array(await data.slice(at + from, at + to).arrayBuffer());
+        return b.length === to - from ? b : undefined;
+      },
+    });
+  } catch {
+    return undefined; // nothing kept for it (no directory or files), or they went away
+  } finally {
+    release();
+  }
 }
 
 /**

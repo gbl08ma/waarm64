@@ -991,7 +991,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   65 s, a local file's time (bench/remote-disk/REPORT.md "R5"). A read that throws is an IOERR, not a failed device.
   **The blocks are kept in OPFS** (`web/diskcache.ts`), in a Storage Bucket of their own where the browser has
   them (Chromium): `remote-cache`, not persisted (the browser may take it back under pressure even when the origin's
-  storage is kept, as the machines' disks are), expiring a week after its last use (pushed on as an image opens);
+  storage is kept, as the machines' disks are), expiring a week after its last use (pushed on as an image opens, and only then: Chromium applies an `expires` given
+  to `open` to a bucket that exists too, so the page's storage list, Clear and the disk surface's reads open it
+  without one);
   elsewhere the origin's `remote-cache/` directory. Either way an image's cache unused for a week (its map's
   modification time, touched at opening) is deleted when the page next looks. The blocks are kept where the image has an identity that changes with it (a chunked
   image's id, or the URL, size and the server's `ETag` or `Last-Modified`; without one nothing is kept), so a reload, a
