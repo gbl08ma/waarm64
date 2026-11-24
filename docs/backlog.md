@@ -1520,13 +1520,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     Preferences, About) are entered from Connections (`machinesNav.origin`): `From` has no pane of the root to return
     to, so their Back leads to Connections rather than that pane.
 
-- **Ask.svelte reads a question that's gone** ("TypeError: Cannot read properties of undefined (reading 'kind')" at
-  `web/app/Ask.svelte:19`, Vite's overlay in the dev server's log): the dialog's effect queues a microtask that reads
-  `q`, a `$derived` of `asking.current`, again when it runs; a question answered before then (a test's click on OK
-  right after the dialog opened: bench/boot/results/stranded/loads.ts on every load's confirm, 2026-11-24, on the tree
-  before that work as after) leaves `q` undefined there. The answer goes through and nothing else breaks; the fix is
-  to read the question once, outside the microtask (and to skip the focus when the dialog is closed by then).
-
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
   desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't

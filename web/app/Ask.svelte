@@ -15,8 +15,16 @@
   $effect(() => {
     if (q && !dialog.open) dialog.showModal();
     else if (!q && dialog.open) dialog.close();
-    // A wait's one button cuts the power: not focused (an Enter meant for the question before mustn't press it).
-    if (q && q.kind !== 'wait') queueMicrotask(() => (q.kind === 'prompt' ? input?.select() : okButton?.focus()));
+    // A wait's one button cuts the power: not focused (an Enter meant for the question before mustn't press it). The
+    // kind is read here: the question can be answered before the microtask runs (a mutation observer's click), and
+    // then there is nothing to focus.
+    const kind = q?.kind;
+    if (kind && kind !== 'wait')
+      queueMicrotask(() => {
+        if (!dialog.open) return;
+        if (kind === 'prompt') input?.select();
+        else okButton?.focus();
+      });
   });
 </script>
 

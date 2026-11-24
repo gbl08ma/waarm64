@@ -73,3 +73,23 @@ test("a question whose words are an error draws them as the page draws errors: a
   assert.match(r.text ?? '', /disk-1\nboom-1/);
   await page.close();
 });
+
+test('a question answered the moment its dialog opens: no error from the focus after it', { timeout: 30_000 }, async () => {
+  const page = await browser.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`${base}/web/app/?autostart=1`);
+  await page.locator('#message-text').waitFor();
+  const r = await page.evaluate(async () => {
+    const { ask, asking } = await import('/web/app/ask.svelte.ts' as string);
+    const d = document.getElementById('ask') as HTMLDialogElement;
+    // OK clicked from a mutation observer: its callback runs before the dialog's queued focus.
+    new MutationObserver(() => { if (d.open) d.querySelector<HTMLButtonElement>('[data-answer=ok]')?.click(); }).observe(d, { attributes: true, subtree: true, childList: true });
+    const answers = [await ask.confirm('first'), await ask.prompt('second', 'text')];
+    await new Promise((res) => setTimeout(res, 100));
+    return { answers, open: d.open, shown: asking.current?.text ?? null };
+  });
+  assert.deepEqual(r, { answers: [true, 'text'], open: false, shown: null });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
