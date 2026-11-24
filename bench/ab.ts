@@ -10,7 +10,7 @@
 // the base a second time as the arm `aa`: what the same core against itself gives at this moment, to hold a result
 // against (it holds the stop only when it is the one arm: `--aa` with the base alone is an A/A run).
 //   node bench/ab.ts --out <dir> [--workloads node,user,boot] [--min 4] [--cap 12] [--band 0.5] [--overall 0.01]
-//     [--stop cycles,wall] [--budget <s>] [--warm same] [--rounds 1] [--aa] <base>=<core.wasm> <arm>=<core.wasm>[@<tree>][?<query>]...
+//     [--stop cycles,wall (smp: wall)] [--budget <s>] [--warm same] [--rounds 1] [--aa] <base>=<core.wasm> <arm>=<core.wasm>[@<tree>][?<query>]...
 // `@<tree>`: the arm's page, host code and dev server come from another checkout (a core of another ABI), with this
 // tree's bench/boot/pair* copied over it; `?<query>`: more of that arm's page query (`nocw`, `fma=emul`: what
 // bench/boot/suite.ts's `boot` reads). Measures (lower is better in all): `wall` ms, `cycles` and `instr` a guest
@@ -23,14 +23,23 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import type { Server } from 'node:http';
-import type { PairSample } from './boot/pair.ts';
+import type { Latency, PairSample } from './boot/pair.ts';
 import { lookAlpha, paired, quantile, rng, type Paired } from './stats.ts';
 
 export type Arm = { name: string; core: string; tree: string; query: string; coreBytes?: number };
 /** One sample as run: `at` its place in the round. */
 export type Row = { workload: string; block: number; warm?: true; at: number; slot: number; arm: string; s: PairSample };
 export type Run = { schema: 1; date: string; host: object; browser: string; arms: Arm[]; opts: Opts; alpha: number; seed?: number; rows: Row[]; ended?: Record<string, string>; failed?: string };
-type Opts = { min: number; cap: number; band: number; overall: number; stop: string[]; budget: number; workloads: string[]; rounds: number; warm: string };
+/** `stop`: the stop measures given (`--stop`), else each workload's (`stopFor`). */
+type Opts = { min: number; cap: number; band: number; overall: number; stop: string[]; stopGiven?: boolean; budget: number; workloads: string[]; rounds: number; warm: string };
+
+/**
+ * A workload's stop measures when `--stop` doesn't name them: the clock and cycles a step, but the clock alone on
+ * `smp`, whose work a step isn't fixed (parallel SMP: a vCPU's spins and the guest's scheduling are steps too, and
+ * which vCPU runs what differs run to run; bench/boot/REPORT.md "PERF tooling: a multi-vCPU paired workload").
+ */
+const STOP_BY: Record<string, string[]> = { smp: ['wall'] };
+export const stopFor = (o: Opts, workload: string) => (o.stopGiven === false ? (STOP_BY[workload] ?? o.stop) : o.stop);
 
 /** A measure's value, or none: not counted on this host, or counters that went backwards (a renderer ended inside the sample). */
 const pos = (x: number) => (x > 0 && Number.isFinite(x) ? x : undefined);
@@ -82,7 +91,7 @@ export function analyze(run: Run, workload: string): { pairs: number; arms: Reco
       if (!xy.length) continue;
       const p = paired(xy.map((v) => v[0]), xy.map((v) => v[1]), run.alpha, run.opts.band);
       arms[a.name][m] = p;
-      if (!run.opts.stop.includes(m)) continue;
+      if (!stopFor(run.opts, workload).includes(m)) continue;
       decides++;
       if (p.call === '?') open = true;
     }
@@ -123,9 +132,22 @@ export function verdict(run: Run): string[] {
       const v = [med(s.map((x) => x.ms)).toFixed(0), s[0]?.proc?.cycles ? med(s.map((x) => x.proc!.pCycles / x.proc!.cycles)).toFixed(4) : '-', s[0]?.footprint ? (med(s.map((x) => x.footprint!)) / 2 ** 20).toFixed(0) : '-', (j((x) => x.emitNs) / 1e6).toFixed(1), (j((x) => x.compileNs) / 1e6).toFixed(1), (j((x) => x.bytes) / 2 ** 20).toFixed(2), j((x) => x.modules).toFixed(0), j((x) => x.decSteps).toFixed(0)];
       out.push(`  ${arm.name.padEnd(12)} ${v.map((x) => x.padStart(12)).join(' ')}`);
     }
+    // A parallel workload's latency counters (bench/boot/pair.ts `Latency`), each the median of the arm's samples,
+    // and the longest stall and emission-to-ready delay of any.
+    if (rows.some((r) => r.s.lat)) {
+      out.push(`  ${'arm'.padEnd(12)} ${['compiled %', 'interp %', 'overdue', 'parks', 'modules', 'worker ms', 'ready ms', 'ready p50', 'ready p99', 'ready top', 'top of any', 'stall ms', 'of any', 'stall ms/s', 'out ms/s'].map((h) => h.padStart(10)).join(' ')}`);
+      for (const arm of run.arms) {
+        const l = rows.filter((r) => r.arm === arm.name && r.s.lat).map((r) => r.s.lat!);
+        if (!l.length) continue;
+        const m = (f: (x: Latency) => number, d = 0) => med(l.map(f)).toFixed(d);
+        const most = (f: (x: Latency) => number) => Math.max(...l.map(f)).toFixed(0);
+        const v = [m((x) => x.compiledPct, 2), m((x) => x.interpPct, 2), m((x) => x.overdue), m((x) => x.parks), m((x) => x.modules), m((x) => x.workerBusyMs), m((x) => x.readyMeanMs, 2), m((x) => x.readyP50Ms), m((x) => x.readyP99Ms), m((x) => x.readyTopMs), most((x) => x.readyTopMs), m((x) => x.stallMaxMs), most((x) => x.stallMaxMs), m((x) => x.stallMsPerS, 1), m((x) => x.outMsPerS, 0)];
+        out.push(`  ${arm.name.padEnd(12)} ${v.map((x) => x.padStart(10)).join(' ')}`);
+      }
+    }
   }
   out.push(`arms: ${run.arms.map((a) => `${a.name} ${a.coreBytes ?? '?'} bytes${a.query && ` ?${a.query}`}`).join('; ')}`);
-  out.push(`rule: a pair a fresh browser (warm-up ${run.opts.warm}, ${run.opts.rounds} round${run.opts.rounds > 1 ? 's' : ''}), pairs ${run.opts.min}-${run.opts.cap}, band ±${run.opts.band}%, stop on ${run.opts.stop.join(' and ')}${run.rows.some((r) => !r.s.proc?.cycles) ? ' (no cycles or instructions on this host)' : ''}, each interval's tail ${run.alpha.toExponential(2)} (${run.opts.overall} over all its looks, an interval: several arms and measures each take that chance); ${run.browser}`);
+  out.push(`rule: a pair a fresh browser (warm-up ${run.opts.warm}, ${run.opts.rounds} round${run.opts.rounds > 1 ? 's' : ''}), pairs ${run.opts.min}-${run.opts.cap}, band ±${run.opts.band}%, stop on ${run.opts.workloads.map((w) => `${stopFor(run.opts, w).join(' and ')}${run.opts.workloads.length > 1 ? ` (${w})` : ''}`).join(', ')}${run.rows.some((r) => !r.s.proc?.cycles) ? ' (no cycles or instructions on this host)' : ''}, each interval's tail ${run.alpha.toExponential(2)} (${run.opts.overall} over all its looks, an interval: several arms and measures each take that chance); ${run.browser}`);
   return out;
 }
 
@@ -142,7 +164,7 @@ export function shuffled(n: number, u: () => number): number[] {
 if (import.meta.main) {
   const { values: v, positionals } = parseArgs({
     allowPositionals: true,
-    options: { out: { type: 'string' }, workloads: { type: 'string', default: 'node' }, min: { type: 'string', default: '4' }, cap: { type: 'string', default: '12' }, band: { type: 'string', default: '0.5' }, overall: { type: 'string', default: '0.01' }, stop: { type: 'string', default: 'cycles,wall' }, budget: { type: 'string', default: '3000' }, rounds: { type: 'string', default: '1' }, aa: { type: 'boolean', default: false }, warm: { type: 'string', default: 'same' }, analyze: { type: 'string' } },
+    options: { out: { type: 'string' }, workloads: { type: 'string', default: 'node' }, min: { type: 'string', default: '4' }, cap: { type: 'string', default: '12' }, band: { type: 'string', default: '0.5' }, overall: { type: 'string', default: '0.01' }, stop: { type: 'string' }, budget: { type: 'string', default: '3000' }, rounds: { type: 'string', default: '1' }, aa: { type: 'boolean', default: false }, warm: { type: 'string', default: 'same' }, analyze: { type: 'string' } },
   });
   if (v.analyze) {
     console.log(verdict(JSON.parse(readFileSync(`${v.analyze}/ab.json`, 'utf8')) as Run).join('\n'));
@@ -158,7 +180,7 @@ if (import.meta.main) {
   if (new Set(arms.map((a) => a.name)).size !== arms.length || arms.some((a) => a.name === 'aa' || /^slot\d+$/.test(a.name))) throw new Error("arms' names must differ, `aa` is the A/A arm's and `slot<n>` the served cores'");
   if (v.aa) arms.splice(1, 0, { ...arms[0], name: 'aa' });
   if (arms.length < 2) throw new Error('one arm: nothing to compare (--aa compares the base with itself)');
-  const opts: Opts = { min: Number(v.min), cap: Number(v.cap), band: Number(v.band), overall: Number(v.overall), stop: v.stop!.split(','), budget: Number(v.budget), workloads: v.workloads!.split(','), rounds: Number(v.rounds), warm: v.warm! };
+  const opts: Opts = { min: Number(v.min), cap: Number(v.cap), band: Number(v.band), overall: Number(v.overall), stop: (v.stop ?? 'cycles,wall').split(','), stopGiven: v.stop !== undefined, budget: Number(v.budget), workloads: v.workloads!.split(','), rounds: Number(v.rounds), warm: v.warm! };
   if (!(opts.min >= 2 && opts.cap >= opts.min)) throw new Error('--min at least 2, --cap at least --min');
   checkStop(opts.stop);
   mkdirSync(v.out, { recursive: true });

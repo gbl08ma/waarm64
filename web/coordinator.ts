@@ -3,6 +3,7 @@
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit } from './jit-compile-worker.ts';
+import { CompileStat, compileStats } from './counters.ts';
 import { Exit, panicNote, STOP, threadAlloc, unsigned, type Stall } from './core.ts';
 import { newWorker, type WarmWorkers } from './warm-workers.ts';
 
@@ -130,12 +131,16 @@ export function coordinator(c: {
   };
   // The JIT's compile worker, and a port to it for each vCPU worker.
   let compiler: Promise<Handle> | undefined;
+  /** The compile worker's counters (web/jit-compile-worker.ts `CompileStat`), once it is started. */
+  let compileBlock: Float64Array | undefined;
   const start = () => {
     const channels = c.compileWorker ? Array.from({ length: c.ncpus }, () => new MessageChannel()) : [];
     if (channels.length) {
       compiler = spawn('compile');
       const ports = channels.map((ch) => ch.port2);
-      void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
+      const stats = new SharedArrayBuffer(CompileStat.LEN * 8);
+      compileBlock = new Float64Array(stats);
+      void compiler.then((h) => h.post({ memory: c.memory, ports, stats }, ports));
     }
     const made = Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();
@@ -193,6 +198,8 @@ export function coordinator(c: {
     liveness: (): VcpuLiveness[] => readLiveness(live),
     /** The liveness block itself (bench/gpu/guest-session.ts's timeline reads it from a worker). */
     liveBlock: live,
+    /** The compile worker's counters so far; none without one, or before the vCPUs started. */
+    compileStats: () => compileBlock && compileStats(compileBlock),
     /** When `steps` (all vCPUs) last changed. */
     progress(steps: number) {
       // Time paused isn't time without progress.

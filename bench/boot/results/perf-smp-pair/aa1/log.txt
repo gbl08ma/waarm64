@@ -1,0 +1,14 @@
+smp pair 1: aa 10052, base 10362 ms (1436 s left)
+smp pair 2: aa 9831, base 10009 ms (1373 s left)
+smp pair 3: aa 10048, base 10052 ms (1311 s left)
+smp pair 4: aa 10239, base 9828 ms (1249 s left)
+smp pair 5: aa 9883, base 9993 ms (1187 s left)
+smp pair 6: base 9457, aa 9733 ms (1126 s left)
+smp pair 7: aa 9654, base 9917 ms (1065 s left)
+smp pair 8: base 10176, aa 9721 ms (1004 s left)
+smp pair 9: aa 9750, base 9604 ms (943 s left)
+smp pair 10: base 9844, aa 9738 ms (882 s left)
+smp pair 11: base 9780, aa 9572 ms (822 s left)
+smp pair 12: base 9734, aa 9671 ms (761 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  aa              12 -0.72% [-2.93%, +1.54%] open         -0.16% [-2.18%, +1.90%] open         -0.55% [-3.30%, +2.29%] open         -0.14% [-2.17%, +1.93%] open        

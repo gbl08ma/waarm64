@@ -1,0 +1,15 @@
+smp: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k       12 -0.60% [-4.42%, +3.38%] open         -0.23% [-2.44%, +2.02%] open         +0.52% [-1.90%, +3.00%] open         -0.30% [-2.42%, +1.87%] open        
+  warm            12 -0.35% [-3.21%, +2.59%] open         +3.79% [+1.97%, +5.64%] HIGHER       +4.08% [+1.59%, +6.64%] HIGHER       +4.82% [+3.02%, +6.65%] HIGHER      
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9966       0.7277         2703       1357.8        381.0        84.23         2836   1203211249
+  batch100k            9733       0.7281         2625       1332.3        345.3        83.70         2274   1263753070
+  warm                 9866       0.7001         2773       1390.0        388.6        86.98         2904   1305006058
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  base              94.44       5.55          0       9965       2527        597       0.33          1          2          8         16          8          8        0.8         86
+  batch100k         94.08       5.92          0       8088       2036        509       0.33          1          2          8         16          8         15        2.0         73
+  warm              93.97       6.03          0      10252       2602       3007       1.32          2          8         16         32          8          8        1.5         91
+arms: base 9786743 bytes; batch100k 9786743 bytes; warm 9793246 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

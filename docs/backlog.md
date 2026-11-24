@@ -1976,10 +1976,12 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 
 - **The paired A/B's reach** (`bench/ab-mac.sh`, docs/benchmarking.md "The paired A/B"; bench/boot/REPORT.md "BENCH
   loop 2" to "4"), by what it would buy:
-  - *A paired workload under parallel SMP.* Every paired workload is one deterministic vCPU running budgeted code;
-    the page runs polled code on four. `bench/boot/pair.ts`'s `boot` takes `ncpus` and `parallel`: `node` on 2-4
-    vCPUs in realtime, its noise measured first (loop 1's parallel boots spread 0.35-0.9% a sample), then
-    calibrated on the preemption block (a base of another ABI through `@<tree>`, which has not yet been run).
+  - *A tighter time for the paired `smp` workload.* It exists (docs/benchmarking.md "The paired A/B"), but a pair's
+    time ratio spreads 2.5% (bench/boot/REPORT.md "PERF tooling: a multi-vCPU paired workload"), so tier 2's time
+    under parallel SMP is still the parallel boots'. Untried, by expected gain: each copy's own duration from the
+    guest (the window ends with the slowest of four), `WARM=none ROUNDS=3` (half of a pair's samples are warm-ups
+    now), Node's `--single-threaded` in the guest (fewer runnable threads than vCPUs), 3 vCPUs (the M4's four
+    performance cores against 4 vCPU workers, the compile worker and V8's threads).
   - *A desktop session inside one browser beside its other arm.* The pages session's pairs spread ~1% because each
     session is a browser of its own; arms alternated inside one browser spread a third of that on the gates. Two
     pages of web/app from one snapshot in one Chromium, one running while the other is paused, would make the

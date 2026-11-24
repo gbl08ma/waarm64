@@ -8252,3 +8252,90 @@ instructions, and the pages session and the parallel boots run it the same; its 
 (−0.4%, −0.6%), for ~1-2% more wasm. As in PERF loop 65, a constant that helps only the gates isn't worth the move.
 The redirects it removes bound any gain under ~0.2% of a browser's session. **The winner is 1000 (250 ties it for the
 browser)**, the base for the next rows (Liftoff's lazy compiles; the compile threshold's re-check after it).
+
+## PERF tooling: a multi-vCPU paired workload (2026-11-24)
+
+The PERF track's tooling loop, item (2) of PERF-HANDOVER.md's plan: a paired workload under parallel SMP for the
+screening tiers' multi-vCPU measure, and per-sample counters for the stutter investigation that comes next. M4 Mac
+mini, Chrome for Testing 158.0.8127.88, ABI 74 (the core unchanged); data in `results/perf-smp-pair/` (its README,
+`spread.mjs` for the pairs' spreads).
+
+**The workload, `smp`** (`WORKLOADS=smp`; bench/boot/pair.ts): the `alpine-node` image on 4 vCPUs in parallel SMP (a
+worker a vCPU and the compile worker, realtime, polled code: a user's machine), running four copies of
+`jitjit.js` at once (`waarm64.par=4`, new in the image's local.d script; scale 50), timed between "node start" and
+"node end". Chosen over `smp_user_jit_4`'s userspace phases because it keeps every vCPU busy writing new code (each
+guest V8 with its own compile and collector threads) and the JIT compiling from four tables into one cache through
+the compile worker, 2,500 modules a sample, where the userspace phases are mostly hot loops (1.5 MiB of JIT wasm a G
+step against 4.0). Its check line is the four copies' (`4× jitjit: ce31792e 660`), the same in all 120 samples. A
+sample's window is 9.9 s, 12.3 s with its boot; 20.9 G steps a run, 84 MiB of JIT wasm, 5.5% of the window's steps
+in the block interpreter. The image moved (`images/SHA256SUMS`); `node` is unchanged (no `waarm64.par`, the same
+script path).
+
+**Per sample**, over the window (`PairSample.lat`, the verdict's second table's second part): the share of steps run
+compiled and interpreted, modules gone overdue, parks, the compile worker's modules and busy ms, the delay from a
+module's emission to the ready word reaching it, and from a 5 ms vCPU timeline the longest stall (a vCPU inside one
+core call retiring nothing), the stalls' ms a second and the time out of the core. New, host-side only: the compile
+worker counts into a shared block (web/counters.ts `CompileStat`: modules, busy ms, the delays' sum, longest and log2
+buckets; each module carries its emission time from web/jit-host.ts), read by the VM's `compileStats()`;
+`summarizeTimeline` moved from bench/gpu/guest-session.ts to web/profiler.ts so a page can use it. Overdue and parks
+were core counters already.
+
+**A/A** (`aa1`: the base and its A/A arm, 12 pairs fixed; `aa-par2`: two copies, 8 pairs):
+
+| | a pair's ratio spreads: time | cycles | cycles a step | instructions | steps | renderer CPU |
+|---|---|---|---|---|---|---|
+| four copies (`aa1`) | 2.51% | 1.67% | 2.28% | 2.30% | 2.41% | 1.61% |
+| two copies (`aa-par2`) | 1.82% | 2.12% | 1.53% | 1.58% | 1.94% | 2.18% |
+| `node`, for comparison (BENCH loop 3) | 0.33% | 0.27% | | 0.10% | 0 | |
+
+The noise is the single samples' (their own spread 2.3%), not the pages': a quarter of the renderer's cycles run on
+efficiency cores (P share 0.73: four vCPU workers, the compile worker and V8's threads against four performance
+cores), and the window ends with the slowest of the four copies (the slowest samples tended to have the most
+time out of the core). Taking busy vCPU time (the window × 4 less the time out of the core) instead of the
+clock: 1.96%. Steps are not fixed work here (spins, the guest's scheduling): cycles and instructions a step carry the
+steps' noise. **What 12 pairs decide:** at 2.5% the stopping rule's interval is ±2.9% at 12 pairs (±1.8% at 24), so a
+difference of ~3% or more; nothing is called `same`. The time stays the stop measure (`STOP` defaults to `wall` on
+`smp`), so an arm under ~3% runs to the cap and ends `open`.
+
+**Calibration** (`cal`: the base, `BATCH_STEPS` 100K (`perf65/b100000.wasm`), the compile worker's warm-up
+(`perf67/warm.wasm` with `perf67-warmup`'s host code over this loop's, `@../waarm64-base`), 12 pairs, 18 min):
+
+| | pairs | time | cycles a step | instructions a step | renderer CPU a step |
+|---|---|---|---|---|---|
+| `BATCH_STEPS` 100K | 12 | −0.60% [−4.42, +3.38] open | −0.23% [−2.44, +2.02] open | +0.52% [−1.90, +3.00] open | −0.30% [−2.42, +1.87] open |
+| the warm-up | 12 | −0.35% [−3.21, +2.59] open | +3.79% [+1.97, +5.64] HIGHER | +4.08% [+1.59, +6.64] HIGHER | +4.82% [+3.02, +6.65] HIGHER |
+
+The known answers: 100K leaned +0.2-0.7% slower on the parallel boots and was the same on the pages session (here:
+open, as expected under ±3%); the warm-up ran the parallel boots 1.8-3.8% faster (`smp_alpine_jit`) and
+`smp_user_jit_4` +0.2% (here: open in time, −0.35%). The workload doesn't resolve either in time.
+
+**The counters, by arm** (medians of 12 samples; "of any" the most of any sample), as data for the stutter
+investigation:
+
+| | compiled | interpreted | overdue | parks | modules | worker busy ms | ready: mean, p50, p99, top (of any) ms | longest stall (of any) ms | stalls ms/s | out of core ms/s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| base | 94.44% | 5.55% | 0 | 9,965 | 2,527 | 597 | 0.33, 1, 2, 8 (16) | 8 (8) | 0.8 | 86 |
+| `BATCH_STEPS` 100K | 94.08% | 5.92% | 0 | 8,088 | 2,036 | 509 | 0.33, 1, 2, 8 (16) | 8 (15) | 2.0 | 73 |
+| the warm-up | 93.97% | 6.03% | 0 | 10,252 | 2,602 | 3,007 | 1.32, 2, 8, 16 (32) | 8 (8) | 1.5 | 91 |
+
+Under the warm-up the compile worker is busy five times as long (3.0 s of a 9.9 s window, calling every function
+of every module once), a module waits four times as long for `ready` (p99 8 ms against 2), and a little more of the
+window runs interpreted (6.03% against 5.55%, +0.5 point, as loop 67's `smp_user_jit_4` had +4.6% interpreted
+steps), while the renderer spends 4-5% more cycles. No module went overdue and no vCPU stalled past 15 ms in any
+arm: at 5 ms rows the stalls are the timeline's resolution, not stutter. The whole run's JIT wasm and interpreted
+steps (second table): base 84.2 MiB and 1.20 G steps, warm-up 87.0 MiB and 1.31 G.
+
+**Memory:** the renderers' footprint at a sample's end was 1.8-2.4 GiB with two arms, up to 3.2 GiB with three:
+four 4-vCPU machines are never live at once (an arm's machine ends with its sample), so no limit on arms.
+
+**What it decides, and tier 2:** time under parallel SMP to ~±3% in 12 pairs, where the parallel boots' three
+alternated rounds hold ~1%: the parallel boots stay tier 2's multi-vCPU time measure (docs/benchmarking.md
+"Screening an A/B"), and `smp` goes beside them for what they don't give, a CPU cost decided in a few percent and
+the latency counters a sample. Untried (docs/backlog.md "The paired A/B's reach"): each copy's own duration from the
+guest, `WARM=none ROUNDS=3`, Node's `--single-threaded` in the guest, 3 vCPUs.
+
+Tests: tests/jit-compile-worker.test.ts (the delay runs to `ready`, not to the module's own compile; the buckets and a
+quantile's bound), tests/ab-stats.test.ts (`smp`'s default stop is the clock, `--stop` overrides it, an older run reads
+as before; the latency table). Planted bugs, each caught by its test, then restored: delays counted at a module's
+arrival, every workload on the default stop, a quantile's bound one bucket low.
+CI at this commit: `scripts/ci-fast.sh`, `scripts/ci.sh` (719 s) and `scripts/ci-jit.sh` (256 s) passed.

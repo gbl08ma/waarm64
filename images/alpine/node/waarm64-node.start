@@ -1,12 +1,24 @@
 #!/bin/sh
 # waarm64's JIT-in-a-JIT benchmark (docs/benchmarking.md "The paired A/B"): the node image's local.d script. Node runs
 # jitjit.js, whose work is V8 writing, patching and discarding machine code that the emulator's JIT then compiles;
-# "waarm64: node start/end" for the host to time, and jitjit's check line. waarm64.jj=N scales its work (default 100).
+# "waarm64: node start/end" for the host to time, and jitjit's check line. waarm64.jj=N scales its work (default 100);
+# waarm64.par=N runs N copies at once (the `smp` workload on several vCPUs), each printing its check line.
 exec > /dev/console 2>&1
 echo "waarm64: alpine-node $(cat /etc/alpine-release) $(uname -r) node $(node --version)"
 n=$(sed -n 's/.*waarm64\.jj=\([0-9]*\).*/\1/p' /proc/cmdline)
+p=$(sed -n 's/.*waarm64\.par=\([0-9]*\).*/\1/p' /proc/cmdline)
 echo "waarm64: node start"
-node /usr/local/share/waarm64/jitjit.js "${n:-100}" && ok=1
+if [ -z "$p" ]; then
+  node /usr/local/share/waarm64/jitjit.js "${n:-100}" && ok=1
+else
+  i=0 pids=
+  while [ $i -lt "$p" ]; do
+    node /usr/local/share/waarm64/jitjit.js "${n:-100}" &
+    pids="$pids $!" i=$((i + 1))
+  done
+  ok=1
+  for x in $pids; do wait "$x" || ok=; done
+fi
 echo "waarm64: node end"
 [ -n "$ok" ] && echo "waarm64: test ok"
 poweroff

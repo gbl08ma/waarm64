@@ -1,0 +1,12 @@
+smp: 8 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  aa               8 +0.16% [-2.07%, +2.45%] open         +0.05% [-1.82%, +1.96%] open         -0.52% [-2.71%, +1.71%] open         +0.11% [-1.75%, +2.00%] open        
+  ended: the cap of 8 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 6029       0.7653         1897        881.2        221.9        55.57         1859    844044073
+  aa                   6025       0.7647         1911        878.7        224.3        55.52         1842    845131805
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  base              93.23       6.77          0       5492       1555        320       0.26          1          1          4          8          0          5        0.0        596
+  aa                93.22       6.78          0       5465       1539        318       0.26          1          1          4          8          3          8        0.5        579
+arms: base 9786743 bytes ?par=2&jj=50; aa 9786743 bytes ?par=2&jj=50
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 8-8, band ±0.5%, stop on wall, each interval's tail 1.00e-2 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

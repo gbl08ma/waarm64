@@ -1,0 +1,39 @@
+smp pair 1: warm 10037, batch100k 10188, base 10143 ms (1707 s left)
+smp pair 2: batch100k 10440, base 9544, warm 9871 ms (1614 s left)
+smp pair 3: batch100k 9779, warm 9719, base 9735 ms (1522 s left)
+smp pair 4: warm 9679, batch100k 9493, base 9653 ms (1432 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k        4 +2.07% [-19.81%, +29.92%] open       +0.47% [-12.90%, +15.89%] open       +1.05% [-6.69%, +9.44%] open         +0.33% [-12.41%, +14.91%] open      
+  warm             4 +0.61% [-8.80%, +10.98%] open        +4.48% [-1.97%, +11.36%] open        +5.31% [+0.38%, +10.48%] HIGHER      +5.47% [-1.01%, +12.37%] open       
+smp pair 5: base 9710, batch100k 9689, warm 9974 ms (1340 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k        5 +1.61% [-11.24%, +16.32%] open       +0.46% [-7.05%, +8.57%] open         +1.13% [-3.19%, +5.65%] open         +0.32% [-6.82%, +8.00%] open        
+  warm             5 +1.03% [-4.96%, +7.40%] open         +4.79% [+0.62%, +9.13%] HIGHER       +5.56% [+2.34%, +8.87%] HIGHER       +5.77% [+1.63%, +10.08%] HIGHER     
+smp pair 6: warm 9499, batch100k 9634, base 10003 ms (1250 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k        6 +0.71% [-9.32%, +11.84%] open        +0.21% [-5.06%, +5.78%] open         +1.29% [-1.77%, +4.45%] open         +0.09% [-4.92%, +5.36%] open        
+  warm             6 -0.01% [-7.08%, +7.60%] open         +4.29% [+0.30%, +8.45%] HIGHER       +5.42% [+3.11%, +7.78%] HIGHER       +5.27% [+1.31%, +9.40%] HIGHER      
+smp pair 7: batch100k 9853, warm 10050, base 9978 ms (1156 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k        7 +0.42% [-7.26%, +8.75%] open         +0.05% [-3.99%, +4.26%] open         +1.21% [-1.12%, +3.60%] open         -0.08% [-3.93%, +3.93%] open        
+  warm             7 +0.09% [-5.27%, +5.76%] open         +4.43% [+1.34%, +7.61%] HIGHER       +5.42% [+3.69%, +7.18%] HIGHER       +5.43% [+2.35%, +8.60%] HIGHER      
+smp pair 8: batch100k 9954, warm 9980, base 9955 ms (1064 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k        8 +0.37% [-5.80%, +6.94%] open         +0.30% [-3.14%, +3.86%] open         +1.45% [-0.73%, +3.67%] open         +0.18% [-3.13%, +3.61%] open        
+  warm             8 +0.11% [-4.18%, +4.60%] open         +4.35% [+1.86%, +6.90%] HIGHER       +5.24% [+3.61%, +6.89%] HIGHER       +5.35% [+2.87%, +7.89%] HIGHER      
+smp pair 9: warm 9650, batch100k 9694, base 10036 ms (971 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k        9 -0.06% [-5.50%, +5.70%] open         +0.15% [-2.79%, +3.17%] open         +1.13% [-1.14%, +3.46%] open         +0.05% [-2.77%, +2.94%] open        
+  warm             9 -0.33% [-4.39%, +3.90%] open         +4.30% [+2.22%, +6.43%] HIGHER       +5.01% [+3.30%, +6.74%] HIGHER       +5.32% [+3.26%, +7.43%] HIGHER      
+smp pair 10: base 9683, batch100k 9617, warm 9860 ms (881 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k       10 -0.12% [-4.79%, +4.78%] open         +0.04% [-2.51%, +2.65%] open         +1.20% [-0.77%, +3.20%] open         -0.07% [-2.52%, +2.45%] open        
+  warm            10 -0.12% [-3.72%, +3.61%] open         +4.11% [+2.16%, +6.10%] HIGHER       +4.88% [+3.32%, +6.46%] HIGHER       +5.12% [+3.15%, +7.12%] HIGHER      
+smp pair 11: batch100k 9731, base 10036, warm 9894 ms (789 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k       11 -0.39% [-4.60%, +4.01%] open         +0.02% [-2.21%, +2.30%] open         +0.92% [-1.12%, +3.01%] open         -0.06% [-2.20%, +2.13%] open        
+  warm            11 -0.24% [-3.42%, +3.04%] open         +4.03% [+2.30%, +5.80%] HIGHER       +4.55% [+2.66%, +6.48%] HIGHER       +5.06% [+3.32%, +6.82%] HIGHER      
+smp pair 12: warm 9859, batch100k 9735, base 10019 ms (698 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  batch100k       12 -0.60% [-4.42%, +3.38%] open         -0.23% [-2.44%, +2.02%] open         +0.52% [-1.90%, +3.00%] open         -0.30% [-2.42%, +1.87%] open        
+  warm            12 -0.35% [-3.21%, +2.59%] open         +3.79% [+1.97%, +5.64%] HIGHER       +4.08% [+1.59%, +6.64%] HIGHER       +4.82% [+3.02%, +6.65%] HIGHER      

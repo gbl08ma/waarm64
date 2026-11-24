@@ -1,0 +1,10 @@
+smp pair 1: aa 6272, base 6339 ms (1453 s left)
+smp pair 2: aa 6177, base 5937 ms (1406 s left)
+smp pair 3: base 6128, aa 6065 ms (1360 s left)
+smp pair 4: aa 6029, base 5971 ms (1314 s left)
+smp pair 5: base 6060, aa 6012 ms (1268 s left)
+smp pair 6: base 5997, aa 5997 ms (1222 s left)
+smp pair 7: aa 6020, base 5960 ms (1177 s left)
+smp pair 8: aa 6000, base 6105 ms (1131 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  aa               8 +0.16% [-2.07%, +2.45%] open         +0.05% [-1.82%, +1.96%] open         -0.52% [-2.71%, +1.71%] open         +0.11% [-1.75%, +2.00%] open        

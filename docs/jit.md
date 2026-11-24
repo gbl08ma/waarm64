@@ -623,7 +623,11 @@ its jump cache and hot words, its helper counts and its counters.
   cache holds one only while something does); a table that comes later compiles it itself, and one
   that has waited a second for the worker (it died, say) does too (`OVERDUE_NS`, counted). Without
   a worker (`jit_compile` returns 0: round-robin, Node's deterministic runs, `?jit=nocw` on the
-  page) a module is ready at once and a table installs it as before.
+  page) a module is ready at once and a table installs it as before. The worker counts
+  what it did in a shared block (web/counters.ts `CompileStat`, read by `compileStats()` on the VM): modules,
+  its busy ms, and each module's delay from its emission on a vCPU to `ready` reaching it (a sum, the longest and
+  log2 buckets); the paired A/B's `smp` workload prints them per sample ([benchmarking.md](benchmarking.md) "The
+  paired A/B").
   - **Why:** what stopped vCPUs at installs wasn't V8 compiling our few KB (0.35 ms on average)
     but its housekeeping: the wasm code GC holding up `NewNativeModule` (25-58 ms, every vCPU
     waiting on the one compile of the same bytes) and the JS heap's GC at an allocation (up to a

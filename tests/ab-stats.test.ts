@@ -5,8 +5,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { analyze, checkStop, shuffled, verdict, type Run } from '../bench/ab.ts';
-import type { PairSample } from '../bench/boot/pair.ts';
+import { analyze, checkStop, shuffled, stopFor, verdict, type Run } from '../bench/ab.ts';
+import type { Latency, PairSample } from '../bench/boot/pair.ts';
 import { lookAlpha, paired, rng, tCrit, tTail2 } from '../bench/stats.ts';
 
 const near = (a: number, b: number, eps: number) => assert.ok(Math.abs(a - b) < eps, `${a} against ${b}`);
@@ -165,6 +165,37 @@ test("a run's analysis: an arm decided is reported as decided, and the pairs aft
   assert.equal(later.arms.fast.wall.call, '<');
   assert.ok(later.decided.includes('fast'));
   assert.match(verdict(run).join('\n'), /fast +4 /);
+});
+
+test("the smp workload: the clock alone stops it unless --stop says otherwise, and its latency counters are the verdict's", () => {
+  const u = rng(13);
+  const arm = (name: string) => ({ name, core: `${name}.wasm`, tree: '.', query: '', coreBytes: 1 });
+  const lat = (stall: number): Latency => ({ compiledPct: 94.5, interpPct: 5.4, overdue: 0, parks: 10_000, modules: 2600, workerBusyMs: 1700, ready: 2600, readyMeanMs: 1.05, readyP50Ms: 1, readyP99Ms: 8, readyTopMs: 32, readyMaxMs: 20, stallMaxMs: stall, stallMsPerS: 1.5, outMsPerS: 90 });
+  // Time 3% lower and tight; cycles a step all over the place (a step isn't fixed work in parallel SMP).
+  const s = (f: number, stall: number): PairSample => {
+    const ms = 14000 * f * (1 + 0.002 * normal(u));
+    return { ms, steps: 19e9 * (1 + 0.03 * normal(u)), marks: {}, proc: { instructions: 60e9, cycles: 50e9, cpuNs: ms * 4e6, pInstructions: 0, pCycles: 40e9, pCpuNs: 0, energyNj: 0 }, lat: lat(stall), stats: { jit: {} } as PairSample['stats'] };
+  };
+  const make = (stopGiven: boolean): Run => {
+    const run: Run = { schema: 1, date: '', host: {}, browser: '', arms: [arm('base'), arm('new')], opts: { min: 4, cap: 12, band: 0.5, overall: 0.01, stop: ['cycles', 'wall'], stopGiven, budget: 1, workloads: ['smp'], rounds: 1, warm: 'same' }, alpha: 0.002, rows: [] };
+    for (let block = 1; block <= 4; block++) for (const a of run.arms) run.rows.push({ workload: 'smp', block, at: 0, slot: 0, arm: a.name, s: s(a.name === 'new' ? 0.97 : 1, a.name === 'new' ? 25 : 10) });
+    return run;
+  };
+  assert.deepEqual(stopFor(make(false).opts, 'smp'), ['wall']);
+  assert.deepEqual(stopFor(make(false).opts, 'node'), ['cycles', 'wall'], 'the other workloads keep the default');
+  assert.deepEqual(stopFor(make(true).opts, 'smp'), ['cycles', 'wall'], 'a --stop given is every workload\'s');
+  assert.equal(analyze(make(false), 'smp').arms.new.cycles.call, '?');
+  assert.equal(analyze(make(false), 'smp').done, true);
+  assert.equal(analyze(make(true), 'smp').done, false);
+  // A run from before the per-workload stops (no `stopGiven`) reads as it did.
+  const old = make(false);
+  delete old.opts.stopGiven;
+  assert.equal(analyze(old, 'smp').done, false);
+  const text = verdict(make(false)).join('\n');
+  assert.match(text, /compiled % +interp % +overdue/);
+  assert.match(text, /\n  new +94\.50 +5\.40 +0 +10000 +2600 +1700 +1\.05 +1 +8 +32 +32 +25 +25 +1\.5 +90\n/);
+  assert.match(text, /stop on wall,/);
+  assert.doesNotMatch(verdict({ ...make(false), rows: make(false).rows.map((r) => ({ ...r, s: { ...r.s, lat: undefined } })) }).join('\n'), /compiled %/, 'no latency table without the counters');
 });
 
 test("the node workload's script: its check line, the same every run", () => {

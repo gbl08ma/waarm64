@@ -12,7 +12,7 @@
 // `still,scroll,webgl,pages,support`; `pages` needs bench/gpu/firefox-pages.sh's disk; `startup` measures a launch);
 // WARM_S, PHASE_S their times; PAGES picks the sites of `pages` by name (e.g. `wiki,mdn`).
 // VIRGL_GPU picks the page's `?gpu=` in mode virgl (default `virgl`; `virgl-null` for G2's null renderer). TIMELINE=1
-// records the vCPU timeline over each phase (guest-session.ts `summarizeTimeline`; the rows in <outdir>/<tag>.timeline.json).
+// records the vCPU timeline over each phase (web/profiler.ts `summarizeTimeline`; the rows in <outdir>/<tag>.timeline.json).
 // TIMELINE_ALL=1 records it over the whole of `pages` instead (every start and load; <outdir>/pages-all.timeline.json).
 // PROFILE=1 samples the guest's PCs over each site's scroll (guest-session.ts `sampler`; the kernel's functions in results.json); SYSCALLS=1 counts syscalls (`load`).
 // QUERY adds to the page's query (e.g. `jit=nocw`: the JIT without its compile worker).

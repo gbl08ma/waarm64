@@ -129,7 +129,13 @@ export function jitHost(
       const bytes = new Uint8Array(len);
       bytes.set(new Uint8Array(memory.buffer, ptr >>> 0, len));
       port.postMessage(
-        { seq: seq >>> 0, epoch: epoch >>> 0, ready: ready >>> 0, bytes: bytes.buffer } satisfies CompileJob,
+        {
+          seq: seq >>> 0,
+          epoch: epoch >>> 0,
+          ready: ready >>> 0,
+          bytes: bytes.buffer,
+          t: performance.timeOrigin + performance.now(),
+        } satisfies CompileJob,
         [bytes.buffer],
       );
       return 1;

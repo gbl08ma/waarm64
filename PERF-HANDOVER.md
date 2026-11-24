@@ -119,7 +119,7 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-23, after loop 66)
+## State (2026-11-24, after loop 66 and the tooling loop)
 
 **The user is away for the rest of 2026-11-24 (said at the start of their absence): work autonomously, no decision
 prompts or questions (nobody will answer them); settle choices by measurement and by the decision rules below, and
@@ -128,10 +128,14 @@ committed on the local branch `perf67-warmup` (c5157fb3, on top of e629de4a), **
 report after it is worse desktop responsiveness and a lower compiled share under JIT churn (opening a large program,
 a new site). Its review is `review/jit-warmup` on origin (no correctness defect; five risks and gaps). The order now:
 (1) docs/benchmarking.md "Screening an A/B": `node` and a multi-vCPU workload first, the pages session to confirm,
-the one-vCPU gates last and only for an arm about to be kept; (2) a tooling loop: a multi-vCPU paired workload in
-`bench/ab.ts` (parallel SMP, 4 vCPUs), its A/A spread, calibration arms with known answers (the warm-up among them),
-and per sample the compiled share, emission-to-`ready` delay, overdue modules, the longest gap in a vCPU's progress,
-the compile worker's busy time; (3) the stutter investigation: before PERF loop 58 (96ca41ae^) against
+the one-vCPU gates last and only for an arm about to be kept; (2) done: the paired command's `smp` workload (four
+`jitjit.js` copies on 4 parallel vCPUs) with per-sample latency counters (compiled share, emission-to-`ready` delay,
+overdue, the longest stall, the compile worker's busy ms); its time spreads 2.5% a pair (decides ~3% in 12 pairs), so
+the parallel boots stay tier 2's multi-vCPU time measure, `smp` beside them for the counters and the CPU cost; on
+it the warm-up costs +4.8% of the renderer's CPU, its worker is busy 3.0 s against 0.6 a sample, `ready` p99 8 ms
+against 2, 6.03% of steps interpreted against 5.55% (bench/boot/REPORT.md "PERF tooling: a multi-vCPU paired
+workload"); `../waarm64-base` holds the warm-up's host code over these counters (the local branch `perf-smp-warm`,
+for `warm.wasm@../waarm64-base`); (3) the stutter investigation: before PERF loop 58 (96ca41ae^) against
 `perf67-warmup` first, then, on a regression, the idle waits (loops 58 and 60, one arm) against the warm-up; latency
 measured directly (audio underruns, frame gaps, a key's echo, stalls, the compiled share around opening Firefox and
 new sites) and the warm-up's host-CPU competition; variants of when and how it warms (no second worker). The user's
@@ -149,7 +153,7 @@ same on the parallel boots and the cut pages session. The redirects through a ti
 loop is 67, from the queue's first row. Open beside it: what makes the pages session's batches due if not
 `BATCH_STEPS` (not isolated: "PERF loop 65").
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
-ab-mac.sh's default disk. `../waarm64-base` is at 1fe6dec0.
+ab-mac.sh's default disk. `../waarm64-base` is at `perf-smp-warm` (above).
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,

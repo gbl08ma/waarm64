@@ -2,6 +2,7 @@
 // number up to which every module is compiled, whatever order the vCPUs' modules arrive in.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { CompileStat, compileStats, readyBucket, readyQuantile } from '../web/counters.ts';
 import { compiler } from '../web/jit-compile-worker.ts';
 
 const EMPTY = new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]).buffer;
@@ -64,4 +65,41 @@ test('compile worker: no view of the memory made per module', () => {
   } finally {
     globalThis.Uint32Array = Real;
   }
+});
+
+// The counters the paired A/B's `smp` workload prints (web/counters.ts `CompileStat`): a module's delay runs from its
+// emission to the ready word reaching it, so a module compiled before an earlier one waits for that one too.
+test('compile worker: the delay buckets, and the bound of a quantile', () => {
+  assert.deepEqual([0, 0.99, 1, 1.5, 2, 3.9, 4, 600, 1023, 1024, 1e6].map(readyBucket), [0, 0, 1, 1, 2, 2, 3, 10, 10, 11, 11]);
+  // 90 under 1 ms, 9 in [4, 8), one at 1024 ms or more.
+  const hist = [90, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 1];
+  assert.equal(readyQuantile(hist, 0.5), 1);
+  assert.equal(readyQuantile(hist, 0.9), 1);
+  assert.equal(readyQuantile(hist, 0.95), 8);
+  assert.equal(readyQuantile(hist, 0.99), 8);
+  assert.equal(readyQuantile(hist, 1), 2048);
+  assert.equal(readyQuantile(new Array(12).fill(0), 0.5), 0);
+});
+
+test('compile worker: the delay from emission to ready, and the time busy', () => {
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const block = new Float64Array(CompileStat.LEN);
+  const c = compiler(memory, [], block);
+  const ago = (ms: number) => performance.timeOrigin + performance.now() - ms;
+  c.job({ seq: 2, epoch: 0, ready: 64, bytes: EMPTY.slice(0), t: ago(50) });
+  assert.equal(block[CompileStat.READY], 0, 'module 2 is compiled, not ready: module 1 isn\'t');
+  assert.equal(block[CompileStat.COMPILED], 1);
+  c.job({ seq: 1, epoch: 0, ready: 64, bytes: EMPTY.slice(0), t: ago(200) });
+  const s = compileStats(block);
+  assert.equal(s.ready, 2);
+  assert.ok(s.readyMaxMs >= 200 && s.readyMaxMs < 10_000, `${s.readyMaxMs}`);
+  assert.ok(s.readySumMs >= 250 && s.readySumMs <= 2 * s.readyMaxMs, `${s.readySumMs}`);
+  // 50 ms and more (under 10 s): [32, 64) or above; 200 ms: [128, 256) or above, the two in different buckets.
+  const at = s.readyHist.flatMap((n, k) => Array(n).fill(k));
+  assert.equal(at.length, 2);
+  assert.ok(at[0] >= readyBucket(50) && at[1] >= readyBucket(200) && at[0] < at[1], `${s.readyHist}`);
+  c.job({ seq: 3, epoch: 0, ready: 64, bytes: EMPTY.slice(0) }); // no emission time: compiled, not timed
+  assert.equal(compileStats(block).ready, 2);
+  assert.equal(compileStats(block).compiled, 3);
+  assert.ok(s.busyMs > 0 && s.busyMs < 10_000);
 });

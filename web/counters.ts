@@ -1,4 +1,5 @@
-// The core's counters (`vm::Counters`, core/src/vm.rs) and the JIT's helper report, read from the shared memory.
+// The core's counters (`vm::Counters`, core/src/vm.rs) and the JIT's helper report, read from the shared memory; the
+// compile worker's (web/jit-compile-worker.ts).
 
 /** u64 word indexes in `vm::Counters` (core/src/vm.rs). */
 export const Counter = {
@@ -83,6 +84,52 @@ export const Counter = {
   JIT_MAP_RESCUES: 121,
   LEN: 122,
 } as const;
+
+/**
+ * The compile worker's counters, f64 indexes in its block: modules compiled and failed, ms spent on them (the whole
+ * job: compiling and posting), and for each module the delay from its emission on a vCPU to the ready word reaching
+ * it (that and every module before it compiled: when a table may install it): how many, their sum and the longest
+ * in ms, and from `READY_HIST` on how many fell in each of `READY_BUCKETS` buckets (`readyBucket`).
+ */
+export const CompileStat = {
+  COMPILED: 0,
+  FAILED: 1,
+  BUSY_MS: 2,
+  READY: 3,
+  READY_SUM_MS: 4,
+  READY_MAX_MS: 5,
+  READY_HIST: 6,
+  LEN: 18,
+} as const;
+/** Delay buckets: under 1 ms, then [2^(k-1), 2^k) ms for k = 1..10, then 1024 ms and over. */
+export const READY_BUCKETS = 12;
+/** A delay's bucket (`READY_BUCKETS`). */
+export function readyBucket(ms: number): number {
+  return ms < 1 ? 0 : Math.min(READY_BUCKETS - 1, Math.floor(Math.log2(ms)) + 1);
+}
+/**
+ * The upper bound in ms of the bucket of a delay histogram (`READY_BUCKETS`) that holds quantile `p`
+ * (the last bucket's, 1024 ms and over, is 2048); 0 for an empty histogram.
+ */
+export function readyQuantile(hist: number[], p: number): number {
+  const n = hist.reduce((a, b) => a + b, 0);
+  let c = 0;
+  for (let k = 0; k < hist.length && n; k++) if ((c += hist[k]) >= p * n) return 2 ** k;
+  return 0;
+}
+/** The counters of a block (`CompileStat`) as an object. */
+export function compileStats(block: Float64Array) {
+  const n = block[CompileStat.READY];
+  return {
+    compiled: block[CompileStat.COMPILED],
+    failed: block[CompileStat.FAILED],
+    busyMs: block[CompileStat.BUSY_MS],
+    ready: n,
+    readySumMs: block[CompileStat.READY_SUM_MS],
+    readyMaxMs: block[CompileStat.READY_MAX_MS],
+    readyHist: Array.from(block.subarray(CompileStat.READY_HIST, CompileStat.READY_HIST + READY_BUCKETS)),
+  };
+}
 
 /** A snapshot of counters read through `n` (word index → value); exceptions by EC only where non-zero. */
 export function stats(n: (i: number) => number) {

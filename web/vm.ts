@@ -1130,6 +1130,8 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     liveness: (): VcpuLiveness[] => par?.liveness() ?? [],
     /** The liveness block (parallel mode), for web/profiler.ts `startTimeline`. */
     liveBlock: par?.liveBlock,
+    /** The JIT's compile worker's counters (parallel mode with one: web/jit-compile-worker.ts `compileStats`). */
+    compileStats: () => par?.compileStats(),
     /** vCPU `i`'s PC (published once per chunk while it runs). */
     pc: (i = 0) => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, i) + 256, 1)[0],
   };

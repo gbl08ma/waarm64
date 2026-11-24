@@ -255,13 +255,15 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   bias look certain; and with fixed names and a rotating order the base was the fastest of four identical arms in
   four sessions out of four. The warm-up is the workload itself: without one, or after a boot, a pair's ratio spreads
   0.43-0.48% against 0.32% in sessions of 14 pairs, and instructions 0.20% against 0.05%.
-- **Workloads** (`WORKLOADS`, default `node`; several with commas, one after the other), deterministic, one vCPU:
+- **Workloads** (`WORKLOADS`, default `node`; several with commas, one after the other), deterministic, one vCPU,
+  but for `smp`:
 
   | | a sample | per G step: JIT wasm, dispatches a 1000 steps, interpreted | a pair's time ratio spreads | regions of 16 against 64 |
   |---|---|---|---|---|
   | `boot`: Alpine's boot to power-off (`boot_alpine_jit`) | 3.5 s | 4.3 MiB, 1.8, 5.6% | 0.33% | +5.6% |
   | `user`: Alpine's userspace phases with their boot (`alpine_user_jit`) | 9.4 s | 1.5 MiB, 0.7, 1.9% | 0.38% | +4.2% |
   | `node`: Node running `images/alpine/node/jitjit.js` (image `alpine-node`), timed between its lines | 9.0 s (12.5 with its boot) | 5.6 MiB, 2.3, 5.9% | 0.33% | +1.7% |
+  | `smp`: four copies of `jitjit.js` (scale 50) at once on 4 vCPUs, parallel SMP (below) | 9.9 s (12.3 with its boot) | 4.0 MiB, 2.7, 5.8% | 2.5% (1.8% with two copies) | not run |
   | Firefox's pages session, cut to two pages / whole (not a workload of this command: below) | 106 s / 222 s | 2.3 / 1.2 MiB, 2.0 / 1.6, 5.2% / 3.6% | ~1% (sessions) | no change (whole) |
 
   `node` is the JIT inside the JIT: `jitjit.js` keeps V8 writing, patching and dropping machine code (functions made
@@ -269,6 +271,28 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   JSON and the collector between them), 47.5 MiB of JIT wasm in 1452 modules in 9 s, and its check line must be the
   same in every sample of every arm (the run fails otherwise). By its counts and by the one arm with a known answer
   it stands closer to Firefox than the gates do (the calibration below).
+  `smp` is the same image on 4 vCPUs in parallel SMP, as the page runs a machine (a worker a vCPU, the compile
+  worker, polled code, realtime): `waarm64.par=4` starts four copies of `jitjit.js` at scale 50 at once, so every
+  vCPU is busy, the guest's V8s write code on all of them (with their own compile and collector threads beside),
+  and the JIT compiles from four tables into one cache through the compile worker (2,500 modules a sample). Its check
+  line is the four copies' (`4× jitjit: ce31792e 660`), the same every sample. `?par=N` and `?jj=N` in an arm's
+  query change the copies and the scale. Its time is a measure and its only stop measure by default (`STOP` names
+  others): parallel SMP's steps aren't fixed work (spins, the guest's scheduling: a sample's steps spread 1.6-2.4%
+  a pair), so cycles and instructions a step mean less than on the deterministic workloads, though they still
+  carry a CPU cost (the warm-up's below). Each sample also records, over its window (bench/boot/pair.ts `Latency`):
+  the share of steps run compiled and in the block interpreter, modules gone overdue and parks, the compile worker's
+  modules and busy ms, the delay from a module's emission to `ready` (mean; the buckets of the median, the 99th
+  percentile and the longest: web/counters.ts `CompileStat`), and from a 5 ms vCPU timeline (web/profiler.ts
+  `summarizeTimeline`) the longest run of rows in which a vCPU inside one core call retired nothing (a compile, V8's
+  GC, a lock or a wait on the host), those rows' ms a second and the ms a second out of the core; the verdict prints
+  them as the second table's second part. **Its time doesn't screen to ±0.5%**: a pair's ratio spreads 2.5% (12 A/A
+  pairs; 1.8% over 8 with two copies), the noise of single samples (their own spread 2.3%: a quarter of the
+  renderer's cycles on efficiency cores, how the four copies finish), so 12 pairs give ±2.9% and only a difference
+  of ~3% or more is called (24 pairs: ±1.8%). The calibration (bench/boot/REPORT.md "PERF tooling: a multi-vCPU
+  paired workload"): `BATCH_STEPS` 100K and the compile worker's warm-up both `open` in time at 12 pairs, the
+  warm-up's CPU cost decided (cycles +3.8%, renderer CPU +4.8%) and its counters plain (more interpreted steps,
+  `ready` 1.3 ms against 0.3). A pair of the base and one arm is ~62 s, ~92 s with a second arm; four arms' pages
+  peaked at 3.2 GiB, no limit needed.
   The pages session itself stays the confirmation: `PAGES=wiki,mdn bench/gpu/ab-mac.sh` halves it (106 s a session,
   77% of the whole session's code compiled, its starts and loads within 0.65% over four A/A sessions, as the whole
   session's), but sessions in browsers of their own spread a pair ~1%, so ±0.5% would take dozens of pairs.
@@ -279,7 +303,7 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   the level includes the other arms' pages), `emitNs`,
   `compileNs`, the JIT's wasm bytes, its modules and the interpreted steps, and the last line the cores' sizes.
 - **The stopping rule.** After every pair from `MIN` (4) on, each measure's ratios give a t interval; the workload
-  ends when every arm's `STOP` measures (`cycles,wall`) are each decided, `LOWER` or `HIGHER` (the interval excludes
+  ends when every arm's `STOP` measures (`cycles,wall`; `wall` on `smp`) are each decided, `LOWER` or `HIGHER` (the interval excludes
   zero) or `same` (it lies inside ±`BAND`, 0.5%), or at `CAP` (12 pairs) or `BUDGET` (1500 s for the whole run: a
   workload it leaves no time for isn't run, and the verdict says so), where what is still
   `open` is reported as such with its interval. An arm decided before the others stops running: its verdict is
@@ -314,8 +338,8 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
   first screen for the JIT's policy (what is compiled, when, how much) and the shape of compiled code. `user` and
   `boot` overstate what longer regions buy a browser by 2-5% and miss most of a lower threshold's cost: they are
   gates for their own guests (a kernel's boot, hot userspace loops), run to see nothing regressed, not to rank a
-  change for the browser. Nothing here sees a change to parallel SMP or the run loop (one vCPU, deterministic: the
-  compiled code carries a step budget, not the page's polls): preemption without the budget moved the gates 1-2% and
+  change for the browser. None of these three sees a change to parallel SMP or the run loop (one vCPU, deterministic:
+  the compiled code carries a step budget, not the page's polls; `smp` runs them, its time to ~±3%): preemption without the budget moved the gates 1-2% and
   the browser 4.7%. That, cache flushes and anything about four vCPUs go to the pages session. A change to the
   interpreter alone wasn't among the arms: `node` interprets the browser's share of its steps (5.9% against 3.6-5.2%),
   which is a reason to expect it to rank one, not a measurement.
@@ -338,8 +362,9 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
 1. **Counts** from a diagnostic build, wherever they can decide (minutes, any host).
 2. **`bench/ab-mac.sh <outdir> base=<core> new=<core>`** on `node`, its default ("The paired A/B"): 4-10 min for one
    arm, a verdict to ±0.5%. `node` ranks a change for the browser. Beside it, a short multi-vCPU measure for what one
-   vCPU can't show (parallel SMP, the compile worker, the run loop): the parallel boots (`smp_alpine_jit`,
-   `smp_user_jit_4`, three rounds alternated) until the paired command has a multi-vCPU workload of its own.
+   vCPU can't show (parallel SMP, the compile worker, the run loop): for time, the parallel boots (`smp_alpine_jit`,
+   `smp_user_jit_4`, three rounds alternated, a ~1% floor); for latency under JIT churn and the CPU cost, the paired
+   command's `smp` (`WORKLOADS=smp`, ~13 min for one arm at the cap: its counters a sample, its time only to ~±3%).
 3. **Firefox's pages session** (`bench/gpu/ab-mac.sh`, "Starting from a snapshot"), `PAGES=wiki,mdn` first (106 s a
    session) and whole (222 s) for a result that will be quoted: the confirmation of what passed 2, not a first
    screen (it is the slowest). Its pairs spread ~1%: three rounds settle 2% or more, nothing under 1%.
