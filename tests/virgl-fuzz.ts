@@ -264,7 +264,8 @@ export function runTrace(trace: Uint8Array): { findings: Finding[]; errors: numb
   const t0 = performance.now();
   try {
     replay(trace, (ram) => {
-      r = new VirglRenderer(mockGl(), { ram, log: () => {}, video: { decoders: nullDecoder, hardware: [] } });
+      // `checkPrograms`: a draw's kept key part that is stale throws a RangeError (a fault).
+      r = new VirglRenderer(mockGl(), { ram, log: () => {}, video: { decoders: nullDecoder, hardware: [] }, checkPrograms: true });
       r.onCaught = (e) => {
         if (!deliberate(e)) findings.push({ kind: 'fault', message: `${e instanceof Error ? e.name : typeof e}: ${e instanceof Error ? e.message : String(e)}`, where: where(e) });
       };

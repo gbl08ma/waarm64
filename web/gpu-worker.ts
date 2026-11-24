@@ -97,6 +97,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         }
       : undefined,
     video: decoders && { decoders: webCodecsDecoder, hardware: decoders.hardware },
+    checkPrograms: knobs.checkPrograms,
   });
   const screen = new Screen(gl, renderer);
   snapshotBytes = () => renderer.snapshotBytes();

@@ -85,7 +85,8 @@ gfxstream driver is Vulkan only.
 - **The switches:** the Machine menu's Graphics (3D or 2D, a restart applies it); on the query, `?gpu=2d`, `virgl`,
   `virgl-null` (the null renderer: streams walked and counted, nothing drawn, fences at once), `nopace` and `q<N>`
   (the flush pacing and the queue size, for measurements), `novideo`, `swvideo`, `waitattached` (the call queue's old,
-  coarser wait: a context waits while it has any pending picture's plane attached; A/B), `debug` (the renderer's trace) and
+  coarser wait: a context waits while it has any pending picture's plane attached; A/B), `debug` (the renderer's trace),
+  `checkprograms` (every part of a draw's program key read again at each draw, a stale kept one refusing the draw) and
   `capture` (devices.md "Captures"), comma-separated; `?displaystats` turns on the display's counters (commands by
   type, fences' round trip and each hop, replies held) and the renderer's; `?display=simple` gives a gpu machine the
   simple framebuffer instead.
@@ -400,9 +401,19 @@ elements, sampler views and states, surfaces, queries, stream-output targets), r
 that use them (a resource the guest unrefs lives until the last context lets go). **Every guest context draws on the
 one WebGL2 context** (WebGL contexts share no objects, where virglrenderer gives each guest context a GL context in one
 share group), so the GL state is set from the sub-context at every draw and nothing is assumed bound between draws.
-Programs come from the translator, made at the first draw that needs a (shader pair, draw-state key) and kept until
-either shader object is destroyed (`forgetShader`; a new object of the same text has a new serial, so before this the
-cache only grew: every Qt Quick or Firefox process of a desktop session left its programs behind). A sampler the
+Programs come from the translator, made at the first draw that needs a (shader pair, draw state) and kept with the
+shaders until either shader object is destroyed (`forgetShader`; a new object of the same text is another shader, so
+before this the cache only grew: every Qt Quick or Firefox process of a desktop session left its programs behind).
+**A draw finds its program without building its key:** each state object's contribution to the key (a *part*: the
+vertex elements' types, the rasterizer's flags, the alpha test, the folded blend factors, a view's sampler type and
+swizzle, a color buffer's type) is made once and given a small id, equal parts sharing one; the draw writes the ids
+of what is bound into a signature, finds the signature's *draw state* by its hash, and the shaders' program by the
+state's id. The key is made from the signature's parts alone (`keyOf`), once a state, so nothing the key reads can be
+missing from the signature, and no command has to say that it changed the key. A view's and a surface's part read
+their resource (its format and target, by number), so they are kept with the resource they were read with. (The key
+was an object built and a JSON string made of it at every draw. A state counter on the sub-context, the first design,
+lost: sway's trace rebuilt the key at 128 of 147 draws and a Steam session's at 64,516 of 65,028, since programs change
+textures, framebuffers and shaders between most draws; by signature the Steam session's draws have 49 states.) A sampler the
 program has with no view or texture gets nothing on any target of its unit and no sampler object, and a uniform block
 with no buffer (or one too short) nothing at its binding: another context's would be read.
 Protocol meanings are vrend's where they differ from Gallium's: query types are virgl's numbers (`VIRGL_QUERY_*`), a

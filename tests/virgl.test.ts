@@ -236,7 +236,7 @@ function replayMock(name: string) {
   const gl = mockGl();
   let r!: VirglRenderer;
   const errors: string[] = [];
-  const res = replay(fixture(name), (ram) => localHost((r = new VirglRenderer(gl, { ram, log: (m) => errors.push(m) }))));
+  const res = replay(fixture(name), (ram) => localHost((r = new VirglRenderer(gl, { ram, log: (m) => errors.push(m), checkPrograms: true }))));
   return { r, gl, res, errors };
 }
 
@@ -1019,6 +1019,86 @@ test('virgl renderer: a shader object destroyed deletes the programs made with i
   // The context destroyed: both shaders go, and the program with them.
   r.destroyContext(1);
   assert.equal(count('deleteProgram'), 2);
+  assert.deepEqual(errors, []);
+});
+
+test('virgl renderer: a draw finds its program by the ids of its key\'s parts: one state for equal parts, another when a part differs, a view\'s part read again with another resource of its number', () => {
+  for (const checkPrograms of [false, true]) {
+    const gl = mockGl();
+    gl.keepLog = true;
+    const errors: string[] = [];
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m), checkPrograms });
+    r.createContext(1);
+    const d = drawable(r);
+    const texture = (id: number, target: number, format: number) => {
+      r.createResource({ id, target, format, bind: 2 | 8, width: 4, height: 4, depth: target === 3 ? 4 : 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+      r.attach(1, id);
+    };
+    const words = (...cmds: number[][]) => new Uint32Array(cmds.flatMap(([c, obj, ...p]) => [c | obj << 8 | p.length << 16, ...p]));
+    const count = (n: string) => gl.log.filter(([m]) => m === n).length;
+    const used = () => gl.log.filter(([m]) => m === 'useProgram').at(-1)![1][0];
+    const draw = (...cmds: number[][]) => r.submit(1, new Uint32Array([...words(...cmds), ...d.draw]));
+    const at = (states: number, links: number, what: string) => assert.deepEqual([r.drawStates, count('linkProgram')], [states, links], `${what} (check ${checkPrograms})`);
+    r.submit(1, new Uint32Array([...d.setup, ...d.draw]));
+    const first = used();
+    for (let k = 0; k < 5; k++) draw();
+    at(1, 1, 'the same state drawn again');
+    // Another target of the same format (surface 23 of resource 4): the same part, so the same state and program.
+    texture(4, 2, 67);
+    draw([1, 8, 23, 4, 67, 0, 0], [5, 0, 1, 0, 23]);
+    at(1, 1, 'another surface of the same format');
+    // An integer target (resource 5, R8G8B8A8_UINT): another state, and the shaders' program for it.
+    texture(5, 2, 180);
+    draw([1, 8, 24, 5, 180, 0, 0], [5, 0, 1, 0, 24]);
+    at(2, 2, 'an integer target');
+    assert.notEqual(used(), first);
+    draw([5, 0, 1, 0, 22]);
+    at(2, 2, 'back on the first target');
+    assert.equal(used(), first, 'the first state\'s program');
+    // A view of resource 6 bound (the fragment shader's slot 0), then one of resource 7 with the same format and swizzle.
+    texture(6, 2, 67); texture(7, 2, 67);
+    const view = (h: number, res: number) => [1, 6, h, res, 67 | 2 << 24, 0, 0, 0 | 1 << 3 | 2 << 6 | 3 << 9];
+    draw(view(30, 6), view(31, 7), [10, 0, 1, 0, 30]);
+    at(3, 3, 'a view bound');
+    for (let k = 0; k < 4; k++) draw([10, 0, 1, 0, k & 1 ? 30 : 31]);
+    at(3, 3, 'views of equal parts in turn');
+    // Resource 6 gone and made again as a 3D texture, view 30 still naming it: its part is read again (a sampler3D).
+    r.unrefResource(6);
+    texture(6, 3, 67);
+    draw([10, 0, 1, 0, 30]);
+    at(4, 4, 'the view\'s resource is another');
+    draw([10, 0, 1, 0, 31]);
+    at(4, 4, 'the 2D view again');
+    // A blend that folds nothing and a rasterizer with the same flags are the parts they replace.
+    draw([1, 1, 32, 0, 0, 1 | 3 << 4 | 0x13 << 9, 0, 0, 0, 0, 0, 0, 0], [2, 1, 32], [1, 2, 33, 1 << 1 | 1 << 14, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0], [2, 2, 33]);
+    at(4, 4, 'a blend and a rasterizer of equal parts');
+    // Points are another state (the program writes a point size).
+    r.submit(1, new Uint32Array([...d.draw.slice(0, 3), 0, ...d.draw.slice(4)]));
+    at(5, 5, 'points');
+    assert.deepEqual(errors, [], `check ${checkPrograms}`);
+  }
+});
+
+test('virgl renderer: the kept draw states are bounded: past 4096 they are forgotten and made again as they are met', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const d = drawable(r);
+  r.submit(1, new Uint32Array([...d.setup, ...d.draw]));
+  // Rasterizers drawing points as quads, each with other sprite coordinates: a part and a state each.
+  const words: number[] = [];
+  for (let k = 1; k < 4096; k++) words.push(1 | 2 << 8 | 9 << 16, 40, 1 << 1 | 1 << 7, 0x3f800000, k, 0, 0x3f800000, 0, 0, 0, 2 | 2 << 8 | 1 << 16, 40, ...d.draw);
+  r.submit(1, new Uint32Array(words));
+  assert.equal(r.drawStates, 4096);
+  // The first state again: forgotten with the rest, so made again (and its program with it).
+  const links = gl.log.filter(([m]) => m === 'linkProgram').length;
+  r.submit(1, new Uint32Array([2 | 2 << 8 | 1 << 16, 21, ...d.draw]));
+  assert.equal(r.drawStates, 4097);
+  assert.equal(gl.log.filter(([m]) => m === 'linkProgram').length, links + 1);
+  r.submit(1, new Uint32Array(d.draw));
+  assert.equal(r.drawStates, 4097);
   assert.deepEqual(errors, []);
 });
 

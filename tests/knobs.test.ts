@@ -14,7 +14,7 @@ function oldGpuInit(params: URLSearchParams, shaderMiB?: number) {
   const knobNumber = (prefix: string) => { const v = knob(prefix); return v === undefined ? undefined : Number(v); };
   const knobList = (prefix: string) => knobs(prefix).flatMap((k) => k.split(/[+ ]/)).filter(Boolean);
   return {
-    stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'),
+    stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), checkPrograms: gpuKnobs.includes('checkprograms'), probe: params.has('avprobe'), video: !gpuKnobs.includes('novideo'),
     softwareVideo: gpuKnobs.includes('swvideo'), waitAttached: gpuKnobs.includes('waitattached'),
     vkShare: (['readback', 'canvas', 'bitmap'] as const).find((w) => gpuKnobs.includes(`vk${w}`)), vkBreak: knobs('vkbreak='), vkVendor: knob('vkvendor='),
     vkPoll: gpuKnobs.includes('vkpoll=timeout') ? 'timeout' : gpuKnobs.includes('vkpoll=pump') ? 'pump' : undefined,

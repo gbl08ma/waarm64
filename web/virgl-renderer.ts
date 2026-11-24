@@ -41,6 +41,7 @@ import {
   type Blend,
   type Box,
   type Ctx,
+  type DrawState,
   type Dsa,
   type ExternalResource,
   type ExternalSource,
@@ -63,6 +64,8 @@ import {
   type Span,
   type Stage,
   type Sub,
+  type Surface,
+  type VertexElements,
 } from './virgl-objects.ts';
 import { readbackOf, snapshotReader, uif, viewFor } from './virgl-pixels.ts';
 
@@ -171,15 +174,60 @@ const bgraKey = (ve: readonly ({ format: number } | undefined)[]) => {
   return bits ? { bgra: bits } : {};
 };
 
+/** The draw states kept, and the characters of their parts' JSON, before they are forgotten (`VirglRenderer.forgetStates`). */
+const MAX_STATES = 4096,
+  MAX_PART_CHARS = 1 << 20;
+/** A rasterizer's part of a program's key (`VirglRenderer.signature`). */
+type RasterizerPart = {
+  flatshade: boolean;
+  twoSide: boolean;
+  clampColor: boolean;
+  stipple: boolean;
+  pointSizePerVertex: boolean;
+  /** The rasterizer's, where points are drawn as quads. */
+  spriteCoordEnable: number | undefined;
+  spriteUpperLeft: boolean;
+};
+/** A color buffer's part of a program's key: `ColorKey` without the blend's. */
+type ColorPart = Pick<ColorKey, 'type' | 'write'>;
+const colorPart = (sf: Surface, r: Res | undefined): ColorPart | undefined => {
+  const f = FORMATS.get(sf.format) ?? r?.fmt;
+  if (!f) return undefined;
+  return { type: f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f', write: [...(f.write ?? [0, 1, 2, 3])] };
+};
+const sameSignature = (a: Int32Array, b: Int32Array, n: number) => {
+  if (a.length !== n) return false;
+  for (let k = 0; k < n; k++) if (a[k] !== b[k]) return false;
+  return true;
+};
+
 export class VirglRenderer {
   readonly gl: WebGL2RenderingContext;
   private ram: () => Ram;
   private log: (m: string) => void;
   readonly resources = new Map<number, Res>();
   private contexts = new Map<number, Ctx>();
-  private programs = new Map<string, Program | null>();
-  /** The programs made with each shader (by serial): deleted with it (`forgetShader`), so the cache doesn't grow for good. */
-  private programsOf = new Map<number, string[]>();
+  /**
+   * The parts of a program's key (`ProgramKey`), each kept once: a part's id is its place here, equal parts have one
+   * id (`partIds`, by their JSON) and 0 is no part. A draw compares ids, not keys (`signature`).
+   */
+  private parts: unknown[] = [undefined];
+  private partIds = new Map<string, number>();
+  /** The part id of a state object that never changes (vertex elements, a blend, rasterizer or depth-stencil-alpha state). */
+  private partOf = new WeakMap<object, number>();
+  /** The part id of a sampler view or a surface, and the resource it was read with (the part is of its format and target). */
+  private resPartOf = new WeakMap<object, { r: Res | undefined; id: number }>();
+  /** The draw states kept, by their signature's hash (tens in a desktop session; `forgetStates` bounds them). */
+  private states = new Map<number, DrawState[]>();
+  /** How many states are kept, and the length of the kept parts' JSON (`forgetStates`' bounds). */
+  private statesKept = 0;
+  private partChars = 0;
+  /** The signature of the draw being set up (`signature` fills it). */
+  private sig = new Int32Array(96);
+  /** Every part is read again at each draw, and one that differs from its kept id throws (tests, `?gpu=checkprograms`). */
+  private checkPrograms: boolean;
+  /** The draw states made so far (a draw makes one, and its key, only for a signature it doesn't find kept). */
+  drawStates = 0;
   private serial = 0;
   readonly stats: RendererStats = {
     submits: 0,
@@ -259,9 +307,11 @@ export class VirglRenderer {
       log?: (m: string) => void;
       debug?: (m: string) => void;
       video?: { decoders: DecoderFactory; hardware: readonly number[] };
+      checkPrograms?: boolean;
     },
   ) {
     this.gl = gl;
+    this.checkPrograms = !!o.checkPrograms;
     this.ram = o.ram;
     this.video = o.video;
     this.debug = o.debug;
@@ -373,7 +423,7 @@ export class VirglRenderer {
 
   private destroyObject(o: Obj, s: Sub) {
     if (o.kind === 'sampler' && o.v.sampler) this.gl.deleteSampler(o.v.sampler);
-    if (o.kind === 'shader') this.forgetShader(o.v.serial);
+    if (o.kind === 'shader') this.forgetShader(o.v);
     if (o.kind === 'query') {
       this.counting.delete(o.v);
       if (s.occlusion.delete(o.v) && this.counter?.sub === s) this.pauseQueries();
@@ -386,19 +436,21 @@ export class VirglRenderer {
     }
   }
 
-  /** A shader object gone: the programs made with it are deleted (a new object of the same text has a new serial). */
-  private forgetShader(serial: number) {
-    for (const id of this.programsOf.get(serial) ?? []) {
-      const p = this.programs.get(id);
-      if (p) this.gl.deleteProgram(p.prog);
-      this.programs.delete(id);
-      // The other shader's list too (a long-lived vertex shader meets many fragment shaders).
-      const [a, b] = id.split('/', 2).map(Number);
-      const other = this.programsOf.get(a === serial ? b : a);
-      const at = other && a !== b ? other.indexOf(id) : -1;
-      if (at >= 0) other!.splice(at, 1);
+  /** A shader object gone: the programs made with it are deleted (a new object of the same text is another shader). */
+  private forgetShader(sh: Shader) {
+    const drop = (programs?: Map<number, Program | null>) => {
+      for (const p of programs?.values() ?? []) if (p) this.gl.deleteProgram(p.prog);
+    };
+    for (const [fs, programs] of sh.programs ?? []) {
+      drop(programs);
+      fs.pairs?.delete(sh);
     }
-    this.programsOf.delete(serial);
+    // As a fragment shader: the vertex shaders' lists too (a long-lived vertex shader meets many fragment shaders).
+    for (const vs of sh.pairs ?? []) {
+      drop(vs.programs?.get(sh));
+      vs.programs?.delete(sh);
+    }
+    sh.programs = sh.pairs = undefined;
   }
 
   // --- resources -------------------------------------------------------------------------------------------------
@@ -2589,9 +2641,7 @@ void main() {
   }
 
   /** The sampler key of a view: its texture's type and the swizzle from the stored texel to what the shader sees. */
-  private samplerKey(c: Ctx, v: SamplerView | undefined): SamplerKey | undefined {
-    if (!v) return undefined;
-    const r = this.resources.get(v.res);
+  private samplerKey(v: SamplerView, r: Res | undefined): SamplerKey | undefined {
     const f = FORMATS.get(v.format) ?? r?.fmt;
     if (!r || !f) return undefined;
     const type = f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f';
@@ -2621,22 +2671,23 @@ void main() {
     return blend?.rt[blend.independent && this.indexed ? k : 0];
   }
 
-  private program(vs: Shader, fs: Shader, key: ProgramKey): Program | null {
-    const id = `${vs.serial}/${fs.serial}/${JSON.stringify(key)}`;
-    const cached = this.programs.get(id);
+  private program(vs: Shader, fs: Shader, state: DrawState): Program | null {
+    let programs = vs.programs?.get(fs);
+    const cached = programs?.get(state.id);
     if (cached !== undefined) return cached;
-    for (const serial of [vs.serial, fs.serial]) {
-      const ids = this.programsOf.get(serial);
-      if (ids) ids.push(id);
-      else this.programsOf.set(serial, [id]);
+    if (!programs) {
+      programs = new Map();
+      (vs.programs ??= new Map()).set(fs, programs);
+      (fs.pairs ??= new Set()).add(vs);
     }
+    const key = state.key;
     let layout: ProgramLayout;
     try {
       layout = generate(vs.tgsi!, fs.tgsi!, key);
     } catch (e) {
       this.onCaught?.(e);
       this.error(`program ${vs.serial}/${fs.serial}: ${e instanceof Error ? e.message : e}`);
-      this.programs.set(id, null);
+      programs.set(state.id, null);
       return null;
     }
     const gl = this.gl;
@@ -2644,7 +2695,7 @@ void main() {
     const prog = this.link(layout.vs, layout.fs, layout.tf);
     this.stats.compileMs += performance.now() - t0; // translating aside: the browser's compile and link (synchronous here)
     if (!prog) {
-      this.programs.set(id, null);
+      programs.set(state.id, null);
       return null;
     }
     this.stats.programs++;
@@ -2676,7 +2727,7 @@ void main() {
       }
     }
     const p = { prog, layout, loc };
-    this.programs.set(id, p);
+    programs.set(state.id, p);
     return p;
   }
 
@@ -2788,6 +2839,206 @@ void main() {
     return t;
   }
 
+  /** The id of a key's part (`parts`). */
+  private partId(part: unknown): number {
+    if (part === undefined) return 0;
+    const text = JSON.stringify(part);
+    let id = this.partIds.get(text);
+    if (id === undefined) {
+      id = this.parts.length;
+      this.parts.push(part);
+      this.partIds.set(text, id);
+      this.partChars += text.length;
+    }
+    return id;
+  }
+
+  /** The kept part id of a state object, or -1: none yet, or `checkPrograms` (which reads every part again). */
+  private keptPart(o: object): number {
+    return this.checkPrograms ? -1 : (this.partOf.get(o) ?? -1);
+  }
+
+  private keepPart(o: object, part: unknown): number {
+    const id = this.partId(part),
+      kept = this.partOf.get(o);
+    // Not an `Error` thrown on purpose (tests/virgl-fuzz.ts counts it a fault): a state object changed after its part was read.
+    if (kept !== undefined && kept !== id)
+      throw new RangeError(`a kept program key part is stale: ${JSON.stringify(part)}`);
+    this.partOf.set(o, id);
+    return id;
+  }
+
+  /** As `keptPart` and `keepPart`, for what reads a resource (`resPartOf`): kept while the resource of its number is the same one. */
+  private keptResPart(o: SamplerView | Surface, r: Res | undefined): number {
+    if (this.checkPrograms) return -1;
+    const kept = this.resPartOf.get(o);
+    return kept && kept.r === r ? kept.id : -1;
+  }
+
+  private keepResPart(o: SamplerView | Surface, r: Res | undefined, part: unknown): number {
+    const id = this.partId(part),
+      kept = this.resPartOf.get(o);
+    if (kept && kept.r === r && kept.id !== id)
+      throw new RangeError(`a kept program key part is stale: resource ${o.res}'s ${JSON.stringify(part)}`);
+    if (kept) [kept.r, kept.id] = [r, id];
+    else this.resPartOf.set(o, { r, id });
+    return id;
+  }
+
+  /**
+   * A draw's signature, into `sig` (its length returned): the part ids of everything its program's key is made from
+   * (`keyOf` makes the key from these alone, so what the key reads is here): the vertex elements' types, the
+   * rasterizer's flags, the alpha test, the blend factors folded into the shader, points or not, the stream outputs
+   * captured, then each stage's sampler views and the color buffers, each list after its length.
+   */
+  private signature(
+    s: Sub,
+    vs: Shader,
+    ve: VertexElements,
+    points: boolean,
+    so: { outputs: SoOutput[] } | undefined,
+  ): number {
+    const views = s.views,
+      cbufs = s.fb.cbufs,
+      rs = s.rs,
+      dsa = s.dsa,
+      blend = s.blend;
+    const need = 9 + views.vs.length + views.fs.length + cbufs.length;
+    if (need > this.sig.length) this.sig = new Int32Array(2 * need);
+    const sig = this.sig;
+    let id = this.keptPart(ve);
+    sig[0] =
+      id >= 0
+        ? id
+        : this.keepPart(ve, { attribs: ve.map((e) => VERTEX_FORMATS.get(e.format)?.int ?? 'f'), ...bgraKey(ve) });
+    if (!rs) sig[1] = 0;
+    else {
+      id = this.keptPart(rs);
+      sig[1] =
+        id >= 0
+          ? id
+          : this.keepPart(rs, {
+              flatshade: rs.flatshade,
+              twoSide: rs.lightTwoSide,
+              clampColor: rs.clampFragmentColor,
+              stipple: rs.stipple,
+              pointSizePerVertex: rs.pointSizePerVertex,
+              spriteCoordEnable: rs.pointQuad ? rs.spriteCoordEnable : undefined,
+              spriteUpperLeft: rs.spriteUpperLeft,
+            } satisfies RasterizerPart);
+    }
+    if (!dsa) sig[2] = 0;
+    else {
+      id = this.keptPart(dsa);
+      sig[2] = id >= 0 ? id : this.keepPart(dsa, dsa.alpha.enabled ? dsa.alpha.func : undefined);
+    }
+    if (!blend) sig[3] = 0;
+    else {
+      id = this.keptPart(blend);
+      if (id < 0) {
+        // Each color buffer's factor folded into the shader (0: none), by its blend target; no part where none is.
+        const folded = blend.rt.map((_, k) => foldedBlend(this.blendTarget(blend, k)) ?? 0);
+        id = this.keepPart(blend, folded.some((g) => g) ? folded : undefined);
+      }
+      sig[3] = id;
+    }
+    sig[4] = +points;
+    // What a shader with stream outputs captures follows the targets bound (`soOutputs`): read at each draw.
+    sig[5] = so
+      ? this.partId({ so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) })
+      : vs.so
+        ? this.partId(this.soKey(vs.so))
+        : 0;
+    let n = this.viewParts(views.vs, 6);
+    n = this.viewParts(views.fs, n);
+    sig[n++] = cbufs.length;
+    for (let k = 0; k < cbufs.length; k++) {
+      const sf = cbufs[k];
+      if (!sf) {
+        sig[n++] = 0;
+        continue;
+      }
+      const r = this.resources.get(sf.res);
+      id = this.keptResPart(sf, r);
+      sig[n++] = id >= 0 ? id : this.keepResPart(sf, r, colorPart(sf, r));
+    }
+    return n;
+  }
+
+  /** A stage's sampler views into `sig` at `n` (their count, then each one's part id); returns where the next list goes. */
+  private viewParts(list: (SamplerView | undefined)[], n: number): number {
+    const sig = this.sig;
+    sig[n++] = list.length;
+    for (let k = 0; k < list.length; k++) {
+      const v = list[k];
+      if (!v) {
+        sig[n++] = 0;
+        continue;
+      }
+      const r = this.resources.get(v.res);
+      const id = this.keptResPart(v, r);
+      sig[n++] = id >= 0 ? id : this.keepResPart(v, r, this.samplerKey(v, r));
+    }
+    return n;
+  }
+
+  /**
+   * The parts and the states forgotten, once a guest made more than any real one does (it can make them without end:
+   * vertex elements of any length, states of any mix). Programs stay with their shaders, under state ids that aren't
+   * given again, so a state met again makes its programs again.
+   */
+  private forgetStates() {
+    this.parts = [undefined];
+    this.partIds.clear();
+    this.partChars = 0;
+    this.partOf = new WeakMap();
+    this.resPartOf = new WeakMap();
+    this.states.clear();
+    this.statesKept = 0;
+  }
+
+  /** The state of the signature in `sig` (its first `n`): the one met before, or a new one with its key. */
+  private stateOf(n: number): DrawState {
+    const sig = this.sig;
+    let hash = n;
+    for (let k = 0; k < n; k++) hash = (Math.imul(hash, 31) + sig[k]) | 0;
+    const met = this.states.get(hash);
+    if (met) for (let k = 0; k < met.length; k++) if (sameSignature(met[k].sig, sig, n)) return met[k];
+    const state = { id: ++this.drawStates, sig: sig.slice(0, n), key: this.keyOf(sig) };
+    if (met) met.push(state);
+    else this.states.set(hash, [state]);
+    this.statesKept++;
+    return state;
+  }
+
+  /** A signature's program key: its parts put together. */
+  private keyOf(sig: Int32Array): ProgramKey {
+    const parts = this.parts;
+    let at = 6;
+    const list = <T>() => Array.from({ length: sig[at++] }, () => parts[sig[at++]] as T | undefined);
+    const rs = parts[sig[1]] as RasterizerPart | undefined,
+      folded = parts[sig[3]] as number[] | undefined,
+      points = !!sig[4];
+    return {
+      ...(parts[sig[0]] as Pick<ProgramKey, 'attribs' | 'bgra'>),
+      samplers: { vs: list<SamplerKey>(), fs: list<SamplerKey>() },
+      cbufs: list<ColorPart>().map(
+        (cb, k) =>
+          cb && { type: cb.type, write: cb.write, blendSrc: cb.type === 'f' && folded?.[k] ? folded[k] : undefined },
+      ),
+      alphaFunc: parts[sig[2]] as number | undefined,
+      flatshade: rs?.flatshade,
+      twoSide: rs?.twoSide,
+      clampColor: rs?.clampColor,
+      stipple: rs?.stipple,
+      points,
+      pointSizePerVertex: rs?.pointSizePerVertex,
+      spriteCoordEnable: points ? rs?.spriteCoordEnable : undefined,
+      spriteUpperLeft: rs?.spriteUpperLeft,
+      ...(parts[sig[5]] as Pick<ProgramKey, 'so'> | undefined),
+    };
+  }
+
   private draw(c: Ctx, p: Uint32Array) {
     if (p.length !== 12 && p.length !== 14 && p.length !== 20) throw new Error('bad DRAW_VBO');
     if (p.length === 20 && p[14]) return this.error("indirect draws aren't supported");
@@ -2835,38 +3086,11 @@ void main() {
     const rs = s.rs,
       dsa = s.dsa,
       blend = s.blend;
-    // The program for this state.
-    const key: ProgramKey = {
-      attribs: s.ve.map((e) => VERTEX_FORMATS.get(e.format)?.int ?? 'f'),
-      ...bgraKey(s.ve),
-      samplers: { vs: s.views.vs.map((v) => this.samplerKey(c, v)), fs: s.views.fs.map((v) => this.samplerKey(c, v)) },
-      cbufs: s.fb.cbufs.map((sf, k) => {
-        if (!sf) return undefined;
-        const f = FORMATS.get(sf.format) ?? this.resources.get(sf.res)?.fmt;
-        if (!f) return undefined;
-        const type = f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f';
-        return {
-          type,
-          write: [...(f.write ?? [0, 1, 2, 3])],
-          blendSrc: type === 'f' ? foldedBlend(this.blendTarget(blend, k)) : undefined,
-        };
-      }),
-      alphaFunc: dsa?.alpha.enabled ? dsa.alpha.func : undefined,
-      flatshade: rs?.flatshade,
-      twoSide: rs?.lightTwoSide,
-      clampColor: rs?.clampFragmentColor,
-      stipple: rs?.stipple,
-      points: mode === 0,
-      pointSizePerVertex: rs?.pointSizePerVertex,
-      spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined,
-      spriteUpperLeft: rs?.spriteUpperLeft,
-      ...(so
-        ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) }
-        : vs.so
-          ? this.soKey(vs.so)
-          : {}),
-    };
-    const prog = this.program(vs, fs, key);
+    // The program for this state: the state of the draw's signature, and the shaders' program for it.
+    if (this.statesKept >= MAX_STATES || this.partChars > MAX_PART_CHARS) this.forgetStates();
+    const state = this.stateOf(this.signature(s, vs, s.ve, mode === 0, so));
+    const key = state.key;
+    const prog = this.program(vs, fs, state);
     if (!prog) return;
     gl.useProgram(prog.prog);
     // Uniforms: constant buffer 0 and the system values.

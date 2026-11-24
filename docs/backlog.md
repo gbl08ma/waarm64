@@ -1949,8 +1949,6 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   `no-unnecessary-condition` (a check the types call dead: often data from a message or JSON typed as sure, so each
   needs a look, not a fix by rule), `no-empty-function` (a `.catch(() => {})` that wants its comment) and `no-unsafe-*`
   at the wasm and JSON edges (a typed parse would state them). Shrink them file by file when a change touches one.
-- **Graphics, per draw:** the program cache's key is a JSON string of an object built per draw (P2); caching the
-  program on the sub-context by a state version needs every input of the key listed, so its own loop with dEQP.
 - **Video, per picture:** 2–3 frame-sized allocations per decoded picture and the padding copies (P4): a pool needs
   the picture's lifetime (`VenusImport.last` and the renderer keep the planes); NV12's `copyTo` with a layout runs
   only with hardware decoders, which the dev VM's headless Chromium hasn't.

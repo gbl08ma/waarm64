@@ -181,7 +181,7 @@ export function replayTrace(trace: Uint8Array, read?: number) {
   const log: string[] = [];
   let r!: VirglRenderer;
   const t0 = performance.now();
-  const res = replay(trace, (ram) => localHost((r = new VirglRenderer(gl, { ram, log: (m) => log.push(m) }))), { lastSubmit: true });
+  const res = replay(trace, (ram) => localHost((r = new VirglRenderer(gl, { ram, log: (m) => log.push(m), checkPrograms: true }))), { lastSubmit: true });
   gl.finish();
   const ms = performance.now() - t0;
   const scanout = res.gpu.state().scanout;

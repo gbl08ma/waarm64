@@ -11,6 +11,8 @@ export type GpuWorkerKnobs = {
   stats?: boolean;
   /** `?gpu=debug`: the renderer's trace on the console, each line once. */
   debug?: boolean;
+  /** `?gpu=checkprograms`: the renderer reads every part of a draw's program key again and refuses the draw whose kept one is stale (web/virgl-renderer.ts `checkPrograms`; tests, dEQP runs). */
+  checkPrograms?: boolean;
   /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */
   probe?: boolean;
   /** Advertise the browser's video decoders and decode with them (docs/graphics.md "Video"; the page's default, `?gpu=novideo` turns it off). */
@@ -88,6 +90,7 @@ export function parseGpuKnobs(query: URLSearchParams, shaderMiB?: number): GpuWo
   return {
     stats: query.has('displaystats'),
     debug: list.includes('debug'),
+    checkPrograms: list.includes('checkprograms'),
     probe: query.has('avprobe'),
     video: !list.includes('novideo'),
     softwareVideo: list.includes('swvideo'),

@@ -3,7 +3,7 @@
 // surfaces, queries, stream-output targets), contexts, and the shapes a snapshot saves them as.
 import type { Segment } from './ram.ts';
 import type { Format } from './virgl-formats.ts';
-import type { ProgramLayout, Tgsi } from './virgl-tgsi.ts';
+import type { ProgramKey, ProgramLayout, Tgsi } from './virgl-tgsi.ts';
 import type { VideoContext } from './virgl-video.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
@@ -150,6 +150,10 @@ export type Shader = {
   text: string;
   expected: number;
   so?: { strides: number[]; outputs: { reg: number; start: number; comps: number; buffer: number; offset: number }[] };
+  /** As a draw's vertex shader: its programs, by fragment shader, then by the draw state's id (`DrawState`); null: one that failed. */
+  programs?: Map<Shader, Map<number, Program | null>>;
+  /** As a draw's fragment shader: the vertex shaders that have programs with it. */
+  pairs?: Set<Shader>;
 };
 
 export type VertexElements = { offset: number; divisor: number; vb: number; format: number }[];
@@ -302,5 +306,11 @@ export type SavedContext = { id: number; sub: number; attached: number[]; subs: 
 
 /** What `VirglRenderer.save` gives and `load` takes: JSON, but for the contents (`SavedLevel.data`). */
 export type RendererSnapshot = { version: 1; resources: SavedResource[]; contexts: SavedContext[] };
+
+/**
+ * What a draw's program is chosen by, besides its shaders: the signature (the ids of the key's parts, as
+ * `VirglRenderer.signature` lays them out), the key made from it, and an id (equal signatures have one state).
+ */
+export type DrawState = { id: number; sig: Int32Array; key: ProgramKey };
 
 export type Program = { prog: WebGLProgram; layout: ProgramLayout; loc: Map<string, WebGLUniformLocation | null> };
