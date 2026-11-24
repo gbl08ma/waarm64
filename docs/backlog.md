@@ -1959,7 +1959,6 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - **Pointer events:** a flat `Int32Array` posted instead of `[type, code, value][]` (P10's rest; the box is cached
   and the SYN pushed in place): the nested shape is read by web/input-device.ts `inject`, the runner's `EvdevEvent`
   and the page tests, for an allocation's gain.
-- **Sound:** a period's `toF32` and mono copies, `done`'s filter per completion (P8): small; with other sound work.
 - **Devices' worker `onerror` after ready** isn't routed into `failed` (an uncaught error in a backend's own timer);
   routing it could fail a machine that is healthy, so it needs a look at which errors reach it.
 - **Small:** the `Resource` union in gpu.ts (2D / 3D / blob).

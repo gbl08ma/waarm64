@@ -302,11 +302,6 @@
       "count": 7
     }
   },
-  "web/net.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    }
-  },
   "web/overlay.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 4
@@ -422,9 +417,6 @@
     }
   },
   "web/snapshot.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
     },
