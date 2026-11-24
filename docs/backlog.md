@@ -382,6 +382,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`WEBGL_draw_instanced_base_vertex_base_instance`). Caps that follow each extension, where a workload needs one.
   Geometry and tessellation exist in neither WebGL2 nor WebGPU, so desktop GL above 3.1 isn't reachable on WebGL2
   (on WebGPU through compute, as Vulkan's renderer does: graphics.md "Vulkan through Venus"; only if a real workload needs it).
+- **A lost graphics context crashes a 3D machine** (graphics.md "3D"; a user's run, 2026-11-24: the screen slept and
+  the session locked under a Godot project on Venus, on Nvidia; Dawn's "Importing a semaphore with an invalid handle",
+  then `CONTEXT_LOST_WEBGL` and the WebGPU instance dropped 375 ms later): the GPU worker posts `lost` and the page
+  crashes the machine ([The browser lost the screen's WebGL context](ui:display:worker-messages.webglLost)), the guest's
+  unsaved work with it. The renderer's objects are gone and can't be made again, but the machine needn't be: tell the
+  guest (Venus answers `VK_ERROR_DEVICE_LOST`, virgl's contexts end, 3D off as `off3d` has it) and keep it running
+  with the 2D screen on a new context, so it can be saved or shut down. Beside it: after `device.lost` (only a warning,
+  web/gpu-worker.ts) the pending `popErrorScope` promises reject uncaught, five a frame.
 - **A WebGPU backend for virgl** (GLES 3.1: compute, storage buffers), only where `navigator.gpu` gives an adapter.
   It could share what Vulkan's renderer learned of WebGPU (graphics.md "Vulkan through Venus").
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
