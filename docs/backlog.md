@@ -1962,9 +1962,7 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   `Devices.close`. A `release()` called from `close` and `closeSource` would give it back.
 - **Small:** Venus's fence keys,
   `pollQueries`' filter and `Screen.damage` coalescing; the `Resource` union in gpu.ts (2D / 3D / blob); VenusShare's
-  and VenusImport's `warned` Sets grow without bound; 9p's Rread scatter; input.ts's double blur releasing twice;
-  usb-keyboard's `actual` against a short TD; room-worker's `namesFetch` capturing `client` before it is assigned;
-  tailscale-state's one-transaction read and tailcat's identity `add` have no browser test; C comments in vk/ name
+  and VenusImport's `warned` Sets grow without bound; C comments in vk/ name
   web/venus-gpu.ts for what moved to venus-caps.ts, venus-formats.ts and venus-wgsl.ts.
 
 ## Tests and tools

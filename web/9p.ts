@@ -163,10 +163,14 @@ class Reader {
 
 const utf8 = new TextEncoder();
 
+const NONE: Uint8Array = new Uint8Array(0);
+
 class Writer {
   b = new Uint8Array(256);
   private v = new DataView(this.b.buffer);
   k = 7;
+  /** Bytes that follow `b[0, k)` (an Rread's data): scattered from where the tree put them, not copied in here. */
+  tail: Uint8Array = NONE;
   private room(n: number) {
     if (this.k + n <= this.b.length) return;
     const b = new Uint8Array(Math.max(this.b.length * 2, this.k + n));
@@ -644,14 +648,21 @@ export class P9Server<N = unknown> {
     return f;
   }
 
-  /** Answers the T-message `m` into at most `room` bytes. */
+  /** Answers the T-message `m` into at most `room` bytes, as one buffer. */
   handle(m: Uint8Array, room: number): Uint8Array | Promise<Uint8Array> {
+    const r = this.reply(m, room);
+    return r instanceof Promise ? r.then(joined) : joined(r);
+  }
+
+  /** Answers the T-message `m` into at most `room` bytes: the reply is `head` then `tail` (an Rread's data, uncopied). */
+  reply(m: Uint8Array, room: number): P9Reply | Promise<P9Reply> {
     const tag = m[5] | (m[6] << 8);
     const type = m[4];
     const w = new Writer();
     const failed = (e: unknown) => {
       if (!(e instanceof Err) && !(e instanceof RangeError)) throw e; // RangeError: a truncated message
       w.k = 7;
+      w.tail = NONE;
       w.u32(e instanceof Err ? e.errno : EINVAL);
       return finish(w, 7, m);
     };
@@ -662,7 +673,7 @@ export class P9Server<N = unknown> {
     }
     const g = this.op(type, new Reader(m), w, room);
     // A tree that answers at once costs no microtask: the request completes at the step it was taken.
-    const on = (next: () => IteratorResult<unknown, void>): Uint8Array | Promise<Uint8Array> => {
+    const on = (next: () => IteratorResult<unknown, void>): P9Reply | Promise<P9Reply> => {
       try {
         for (let s = next(); ; s = g.next(s.value)) {
           if (s.done) return finish(w, type + 1, m);
@@ -766,7 +777,7 @@ export class P9Server<N = unknown> {
             ? new Uint8Array(0)
             : x.data.subarray(Math.min(off, x.data.length), Math.min(off + count, x.data.length))
           : yield t.read(f, off, count);
-        w.u32(data.length).bytes(data);
+        w.u32(data.length).tail = data;
         return;
       }
       case 118: {
@@ -977,13 +988,24 @@ export class P9Server<N = unknown> {
   }
 }
 
+/** A reply: its bytes are `head`'s, then `tail`'s. */
+export type P9Reply = { head: Uint8Array; tail: Uint8Array };
+
 /** Fills in size, type and tag (the T-message's). */
-function finish(w: Writer, type: number, m: Uint8Array) {
+function finish(w: Writer, type: number, m: Uint8Array): P9Reply {
   const v = new DataView(w.b.buffer);
-  v.setUint32(0, w.k, true);
+  v.setUint32(0, w.k + w.tail.length, true);
   w.b[4] = type;
   w.b.set(m.subarray(5, 7), 5);
-  return w.b.subarray(0, w.k);
+  return { head: w.b.subarray(0, w.k), tail: w.tail };
+}
+
+function joined(r: P9Reply) {
+  if (!r.tail.length) return r.head;
+  const b = new Uint8Array(r.head.length + r.tail.length);
+  b.set(r.head);
+  b.set(r.tail, r.head.length);
+  return b;
 }
 
 /** The virtio-9p backend around `server`. A request the tree answers later completes when it does, any other at once. */
@@ -999,12 +1021,15 @@ export function p9Backend<N>(ctx: Ctx, server: P9Server<N>) {
       const size = len < 7 ? 0 : new DataView(m.buffer, m.byteOffset).getUint32(0, true);
       if (size < 7 || size > len || room < 11) return 0; // malformed: no answer
       const was = epoch;
-      const send = (reply: Uint8Array) => {
-        if (reply.length > room || was !== epoch) return 0;
-        scatter(ctx.ram(), r.write, reply);
-        return reply.length;
+      const send = ({ head, tail }: P9Reply) => {
+        const n = head.length + tail.length;
+        if (n > room || was !== epoch) return 0;
+        const ram = ctx.ram();
+        scatter(ram, r.write, head);
+        if (tail.length) scatter(ram, r.write, tail, head.length);
+        return n;
       };
-      const reply = server.handle(m.subarray(0, size), room); // `gather`'s own buffer: no copy
+      const reply = server.reply(m.subarray(0, size), room); // `gather`'s own buffer: no copy
       return reply instanceof Promise ? reply.then(send) : send(reply);
     },
     reset() {

@@ -10,9 +10,9 @@ let tag = 0;
 const control = (d: UsbKeyboard, requestType: number, request: number, value: number, index: number, length: number, data?: Uint8Array) =>
   new Promise<UsbResult>((resolve) => d.submit({ tag: ++tag, ep: 0, type: 'control', setup: { requestType, request, value, index, length }, data, length }, resolve));
 /** An IN TD on 0x81: its result once there is one (undefined while it waits). */
-function poll(d: UsbKeyboard) {
+function poll(d: UsbKeyboard, length = 8) {
   const box: { r?: UsbResult; tag: number } = { tag: ++tag };
-  d.submit({ tag: box.tag, ep: 0x81, type: 'interrupt', length: 8 }, (r) => { box.r = r; });
+  d.submit({ tag: box.tag, ep: 0x81, type: 'interrupt', length }, (r) => { box.r = r; });
   return box;
 }
 const bytes = (r?: UsbResult) => [...(r?.data ?? [])];
@@ -73,6 +73,17 @@ test('keys become boot reports: modifiers as bits, six keys, rollover, one repor
   assert.equal(USAGES.get('Enter'), 0x28);
   assert.equal(USAGES.get('ArrowDown'), 0x51);
   assert.equal(USAGES.get('F2'), 0x3b);
+});
+
+test('a TD shorter than the report gets what fits, and says so, whether it waited or not', async () => {
+  const d = new UsbKeyboard();
+  await control(d, 0x00, 9, 1, 0, 0);
+  const waiting = poll(d, 4);
+  d.key('KeyA', true);
+  assert.deepEqual([waiting.r?.actual, bytes(waiting.r)], [4, [0, 0, 0x04, 0]], 'a TD that waited');
+  d.key('KeyB', true);
+  const queued = poll(d, 3);
+  assert.deepEqual([queued.r?.actual, bytes(queued.r)], [3, [0, 0, 0x04]], 'a report that waited');
 });
 
 test('the keyboard takes LEDs, idle, protocol and GET_REPORT', async () => {

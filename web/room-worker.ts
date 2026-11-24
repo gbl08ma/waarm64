@@ -104,13 +104,15 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     const records = (await store?.load().catch(() => undefined)) ?? [];
     if (!port.attached()) return; // detached meanwhile
     names = store;
-    client = new TsClient(mod, config, {
+    // This start's client, read when an answer comes: a fetch asked during the constructor's first pump (before the
+    // assignment) still finds it, and an answer after a restart isn't the new client's.
+    let mine: TsClient | undefined;
+    client = mine = new TsClient(mod, config, {
       namesStore: (k, record) => names?.write(k, record),
       // A server's asks outside the room: the compiled calendars and explorers only (web/names.ts `serviceFetch`).
       namesFetch: (fid, url) => {
-        const asker = client; // an answer that comes after a restart isn't the new client's
         void serviceFetch(url).then((r) => {
-          if (asker && client === asker) asker.namesFetched(fid, r.status, r.body);
+          if (mine && client === mine) mine.namesFetched(fid, r.status, r.body);
         });
       },
       packet: (p) => port.send(p),

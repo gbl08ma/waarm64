@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { MemoryTree, P9Server, type P9Tree } from '../web/9p.ts';
+import { MemoryTree, p9Backend, P9Server, type P9Tree } from '../web/9p.ts';
 import { deviceEntry, Devices } from '../web/devices.ts';
 import { blk } from '../web/blk-device.ts';
 import { inputConfig, trimInput } from '../web/input-device.ts';
@@ -266,6 +266,31 @@ test('9p server: readdir offsets, qid versions, nanosecond times, xattrs, ACLs (
   const text = lines.join('\n') + '\n';
   if (process.env.P9_TRANSCRIPT === 'write') writeFileSync(TRANSCRIPT, text);
   assert.ok(readFileSync(TRANSCRIPT, 'utf8') === text, 'the exchanges are tests/p9/transcript.txt\'s (P9_TRANSCRIPT=write records them)');
+});
+
+test('9p backend: an Rread lands in the guest\'s buffers whole, its header and data across segments', () => {
+  const ram = new Uint8Array(4096);
+  const ctx = { ram: () => [ram] } as unknown as Ctx;
+  const data = 'the quick brown fox jumps over the lazy dog';
+  const be = p9Backend(ctx, new P9Server(new MemoryTree({ f: data }, true)));
+  // Each request at 0; the reply in three segments that split the 11-byte header and the data.
+  const ask = (m: Uint8Array, write = [{ off: 1000, len: 5, mem: 0 }, { off: 2000, len: 9, mem: 0 }, { off: 3000, len: 1000, mem: 0 }]) => {
+    ram.set(m, 0);
+    return be.request({ w0: 0, queue: 0, read: [{ off: 0, len: m.length, mem: 0 }], write }) as number;
+  };
+  ask(msg(100, u32(1 << 20), '9P2000.L'));
+  ask(msg(104, u32(0), u32(~0 >>> 0), 'root', '', u32(0)));
+  ask(msg(110, u32(0), u32(1), [2, 1], 'f'));
+  ask(msg(12, u32(1), u32(0)));
+  ram.fill(0, 1000);
+  const n = ask(msg(116, u32(1), u64(4), u32(100)));
+  const out = Buffer.concat([ram.subarray(1000, 1005), ram.subarray(2000, 2009), ram.subarray(3000, 4000)]).subarray(0, n);
+  assert.equal(n, 11 + data.length - 4);
+  assert.equal(out.readUInt32LE(0), n, 'size');
+  assert.deepEqual([out[4], out.readUInt16LE(5), out.readUInt32LE(7)], [117, 1, data.length - 4], 'type, tag, count');
+  assert.equal(out.subarray(11).toString(), data.slice(4));
+  // Buffers smaller than the count: the read is cut to them.
+  assert.equal(ask(msg(116, u32(1), u64(0), u32(100)), [{ off: 1000, len: 20, mem: 0 }]), 20);
 });
 
 test('9p server: a tree out of deterministic mode has nanosecond times', () => {

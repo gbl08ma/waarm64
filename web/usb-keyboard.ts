@@ -213,9 +213,15 @@ export class UsbKeyboard extends VirtualDevice {
   private send(r: Uint8Array) {
     if (!this.endpoint(0x81)) return; // not configured: nothing reads it (the state is kept)
     const w = this.waiting.shift();
-    if (w) return w.done({ code: 'success', actual: 8, data: r.subarray(0, w.t.length) });
+    if (w) return this.deliver(w.t, r, w.done);
     this.queue.push(r);
     if (this.queue.length > QUEUE) this.queue.shift();
+  }
+
+  /** Completes `t` with report `r`, cut to the TD's length. */
+  private deliver(t: UsbTransfer, r: Uint8Array, done: (r: UsbResult) => void) {
+    const data = r.subarray(0, t.length);
+    done({ code: 'success', actual: data.length, data });
   }
 
   private classDescriptor(type: number, index: number, s: Setup): Uint8Array | undefined {
@@ -259,7 +265,7 @@ export class UsbKeyboard extends VirtualDevice {
   protected transfer(t: UsbTransfer, done: (r: UsbResult) => void) {
     if (t.ep !== 0x81) return done({ code: 'stall', actual: 0 });
     const r = this.queue.shift();
-    if (r) return done({ code: 'success', actual: Math.min(8, t.length), data: r.subarray(0, t.length) });
+    if (r) return this.deliver(t, r, done);
     this.waiting.push({ t, done });
   }
 
