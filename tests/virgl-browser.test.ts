@@ -135,14 +135,17 @@ test('video on WebGL2: a damaged chunk is a decoder error that ends its codec\'s
     if (name === 'video-h264.vglt.gz' && !h264) { console.log('# H.264 not checked: this Chromium decodes no H.264'); continue; }
     // The 11th picture's bytes garbled: WebCodecs reports it (no decoder here conceals it), the decoder is closed and
     // the codec's later pictures, all deltas, are dropped until a key picture (the fixture has none).
-    const r = await replayVideo(name, undefined, { picture: 10, how: 'garble' });
+    // Each copy out of a decoded frame is held 30 ms, so the error comes with copies still out: it waits for them
+    // (webCodecsDecoder), or a host whose copies lag its decoder loses pictures that had come out (a GitHub runner
+    // wrote 5 of VP9's 10).
+    const r = await replayVideo(name, undefined, { picture: 10, how: 'garble', slowCopyMs: 30 });
     assert.equal(r.log.length, 1, r.log.join('\n'));
     assert.match(r.log[0], /video: codec \d+: .*Decoding error/);
     assert.equal(r.stats.errors, 1);
     assert.equal(r.stats.frames, ref.pictures);
     assert.equal(r.stats.decoded + r.stats.dropped, ref.pictures);
-    // What came out before it is written (a software H.264 decoder may have held one or two for reordering: lost).
-    assert.ok(r.stats.decoded <= 10 && r.stats.decoded >= 8, `${r.stats.decoded} written`);
+    // What came out before it is written: VP9's ten (a software H.264 decoder may have held one or two for reordering: lost).
+    assert.ok(r.stats.decoded <= 10 && r.stats.decoded >= (hashes ? 10 : 8), `${name}: ${r.stats.decoded} written`);
     if (hashes) assert.deepEqual(r.hashes, hashes.slice(0, r.hashes.length));
     // Nothing waited for the dropped pictures: the error freed the guest, not the queue's drain or give-up (held off
     // for 10 and 20 s here, so a host slowed by load doesn't fire them on a slow decode: replayVideo64).

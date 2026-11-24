@@ -611,7 +611,8 @@ On with 3D (`?gpu=novideo` off); the design, its findings and its measurements a
   the compositor's context still shows them), never over a later picture in the same planes; a destroyed buffer's
   pending picture is still written, and a destroyed codec's decoder is flushed (what it holds written) before it
   closes. A decoder error (WebCodecs reports a damaged chunk; none conceals) closes the decoder and drops the codec's
-  pending pictures; a new decoder starts at the next key picture. A seek sends a key picture to the same codec; a size
+  pending pictures, once the frames the decoder output before it are copied out and written (`webCodecsDecoder` holds
+  the error for the copies still out; told at once, it lost up to all of them where copies lag the decoder); a new decoder starts at the next key picture. A seek sends a key picture to the same codec; a size
   change makes a new codec ("Video's findings").
 - **AV1** (`web/video-av1.ts` `Av1Stream`, "Video's findings"): a sequence header and each frame header written from
   the desc, a tile group of the tiles; the decoder's reference slots are this side's (Mesa sends no

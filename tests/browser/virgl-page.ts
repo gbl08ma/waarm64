@@ -58,11 +58,12 @@ export function replayTrace64(trace: string, read?: number) {
  * visible `w`×`h` hashed as I420 (SHA-256). With `orig` (an H.264 stream's first pictures, Annex B), also the
  * browser's own decode of it, hashed the same way: what the planes must hold where its decoder isn't FFmpeg's.
  * `fault` damages the chunk of one picture (its index in decode order) before the decoder gets it: `garble` overwrites
- * its bytes after the first 8 with a pattern, `truncate` keeps its first 8 bytes. With a fault, the queue's drain and
+ * its bytes after the first 8 with a pattern, `truncate` keeps its first 8 bytes; `slowCopyMs` holds each frame's copy
+ * (`VideoFrame.copyTo`) that long, so the decoder's error finds copies still out. With a fault, the queue's drain and
  * give-up (CallQueue.tick) come only after 10 and 20 s, and `timedOut` counts them: what frees the guest after a
  * fault must be the decoder's error, not a timer, however slow the host runs.
  */
-export type ChunkFault = { picture: number; how: 'garble' | 'truncate' };
+export type ChunkFault = { picture: number; how: 'garble' | 'truncate'; slowCopyMs?: number };
 export async function replayVideo64(trace: string, w: number, h: number, orig?: string, fault?: ChunkFault) {
   const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
   const log: string[] = [];
@@ -73,6 +74,15 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   const timedOut = { drains: 0, giveUps: 0 };
   const t0 = performance.now();
   const timer = setInterval(() => q?.tick(), 20);
+  const copyTo = VideoFrame.prototype.copyTo;
+  if (fault?.slowCopyMs) {
+    const ms = fault.slowCopyMs;
+    VideoFrame.prototype.copyTo = async function (this: VideoFrame, ...a: Parameters<VideoFrame['copyTo']>) {
+      const layout = await copyTo.apply(this, a);
+      await new Promise((ok) => setTimeout(ok, ms));
+      return layout;
+    };
+  }
   const settled = async () => { while (q.length || r.videoWaiting) await new Promise((ok) => setTimeout(ok, 5)); };
   try {
     await replayAsync(fromBase64(trace), (ram) => {
@@ -97,6 +107,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
     await settled();
   } finally {
     clearInterval(timer);
+    VideoFrame.prototype.copyTo = copyTo;
   }
   return { hashes: await Promise.all(shots), stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, timedOut, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
 }

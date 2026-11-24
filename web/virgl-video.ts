@@ -726,10 +726,14 @@ function concat(parts: Uint8Array[]) {
  */
 export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
   let closed = false;
+  // The decoder's own error waits for the copies still out: the frames it output before the error are good pictures,
+  // and reporting it at once would lose them (a copy takes a task or more; the error ends the codec's pending pictures).
+  let copies: Promise<unknown> = Promise.resolve();
+  let failed = false;
   const d = new VideoDecoder({
     output: (f) => {
       const ts = f.timestamp;
-      copyPicture(f)
+      const copy = copyPicture(f)
         .then(
           (p) => {
             if (!closed) output(ts, p);
@@ -739,9 +743,13 @@ export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
           },
         )
         .finally(() => f.close());
+      copies = Promise.all([copies, copy]);
     },
     error: (e) => {
-      if (!closed) error(String(e));
+      failed = true;
+      void copies.then(() => {
+        if (!closed) error(String(e));
+      });
     },
   });
   d.configure({
@@ -753,6 +761,7 @@ export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
   });
   return {
     decode(data, key, timestamp) {
+      if (failed) return; // its error is on its way (above): the chunk's picture ends with the others
       try {
         d.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }));
       } catch (e) {
