@@ -212,7 +212,7 @@
     "note": "Title of a plate at the end of the introduction's “How it works” section, beside GitHub's mark: the project's code is public. No period."
   },
   "IntroSource.words": {
-    "message": "The emulator, this page, and the tests that hold them together are on GitHub under the MIT license. If you like what you see, a star helps others find it.",
+    "message": "All of $t(common:product.name) is on GitHub under the MIT license. If you like what you see, a star helps others find it.",
     "note": "Paragraph on the plate at the end of the introduction's “How it works” section, over a command line that fetches the code and beside a button that opens the repository. A star is GitHub's way of marking a repository as liked. GitHub and MIT are names."
   },
   "IntroSource.star": {
