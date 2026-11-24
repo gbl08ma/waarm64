@@ -519,7 +519,8 @@ export async function readSnapshot(
           if (t.kind === 'ram') {
             const disk = ramDisk(t.size);
             rams.push({ spec: t.spec, disk });
-            open.set(slot, { disk, close() {}, size: t.size });
+            // Released at the end: its chunks are handed on first (`chunkList`) unless the restore failed.
+            open.set(slot, { disk, close: () => disk.release(), size: t.size });
             continue;
           }
           // Its generation goes on from where it was (a replace never takes an overlay back to a generation an older

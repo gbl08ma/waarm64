@@ -101,6 +101,7 @@ export function ramDisk(
   arenaBytes(): number;
   chunkList(): [number, Uint8Array][];
   chunkKeys(): Iterable<number>;
+  release(): void;
 } {
   // `init`: a restored ramdisk's chunks (a snapshot's blocks, written by web/snapshot.ts into another ramDisk: shared memory, not copied).
   const chunks = new Map<number, Uint8Array>(init);
@@ -245,6 +246,17 @@ export function ramDisk(
         chunks.delete(c);
       }
       return out;
+    },
+    /**
+     * Its owner's close (web/devices.ts, a restore's temporary disk): its SharedArrayBuffers given back to the realm's
+     * budget (outside a worker the realm outlives the machine) and its memory dropped; it holds nothing after (once is
+     * enough; chunks handed on with `chunkList` count for the disk that took them).
+     */
+    release() {
+      for (const k of chunks.values()) if (own(k)) sabBytes -= k.byteLength;
+      chunks.clear();
+      free.length = 0;
+      arenas.length = 0;
     },
   };
 }

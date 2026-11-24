@@ -49,6 +49,7 @@ import {
 import { net } from './net-device.ts';
 import { input } from './input-device.ts';
 import { blk, BLK_MAX_UNMAP_SECTORS } from './blk-device.ts';
+import { inflatePool } from './inflate-pool.ts';
 import { blobSource, fileSource, remoteSource, zeroSource, type Source } from './disk-sources.ts';
 
 /**
@@ -453,6 +454,9 @@ export const diskIdentity = (d: { url?: string; file?: Blob; source?: string; id
         : { source: d.source, size },
   );
 
+/** A ramdisk's memory given back at its owner's close (web/ramdisk.ts `release`); any other source is left as it is. */
+const releaseRam = (s: Source | WritableDisk | undefined) => (s as { release?: () => void } | undefined)?.release?.();
+
 /** `Promise.all` that, when one rejects, closes the others' values once they settle (what they opened isn't left held). */
 async function allOrClose<T>(all: (Promise<T> | T)[], close: (x: T) => void): Promise<T[]> {
   const r = await Promise.allSettled(all);
@@ -533,6 +537,9 @@ export class Devices {
   private failed: unknown;
   /** The disks' sources, by device (an HTTP one's block cache has its counters). */
   private sources: (Source | WritableDisk | undefined)[];
+  /** The blk devices' one inflate pool (web/inflate-pool.ts), made for the first that reads an image; Node has none. */
+  private inflate?: ReturnType<typeof inflatePool>;
+  private inflater = () => (this.inflate ??= typeof Worker === 'function' ? inflatePool() : undefined);
   private served?: Int32Array;
   /** Views of `memory` for its buffer of now (a grown memory has a new one): `views`. */
   private viewsOf?: { buffer: ArrayBufferLike; u32: Uint32Array; i32: Int32Array; ram: Uint8Array[] };
@@ -619,6 +626,7 @@ export class Devices {
             overlays[i] && onFull,
             d.size,
             d.diskSize,
+            this.inflater,
           );
         }
         case 'net':
@@ -803,6 +811,7 @@ export class Devices {
     };
     const closeSource = (s: Source | WritableDisk | undefined) => {
       if (s && !('write' in s)) s.close?.();
+      releaseRam(s);
     };
     const sources = await allOrClose(
       init.specs.map(async (d) => {
@@ -865,6 +874,8 @@ export class Devices {
   /** Releases the backends' files (an overlay's handles lock them). */
   close() {
     for (const b of this.backends) b.close?.();
+    this.inflate?.close(); // after the disks that read through it (host-code.md: a pool ends with its thread)
+    this.sources.forEach(releaseRam); // a blk device's close leaves its ramdisk (a source that takes writes) alone
     this.usb?.close();
     // End `serve`: its pending Atomics.waitAsync would otherwise keep the VM's memory alive for
     // good (Node's parallel runs, where the backends share the VM's thread: ~10 MB a boot).

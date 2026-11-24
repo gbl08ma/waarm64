@@ -977,7 +977,7 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   starts once the last write, flush or discard before it ended; those wait for every request before them (the overlay
   changes one request at a time; a FLUSH covers the writes completed before it). A snapshot's quiesce drains them
   first (`Devices.drain`, the device worker's `drain`). The deterministic mode keeps one request at a time in order
-  (synchronous XHRs: a try that hasn't ended in 20 s is aborted and tried once more, then the read fails; by the
+  (synchronous XHRs: a try that hasn't ended in 120 s, `SYNC_STALL_MS`, long enough for a slow link's piece, is aborted and tried once more, then the read fails; by the
   whole answer, as a synchronous request tells no progress: `syncXhr`), as do the image's opening (header, L1) and
   Node. The device worker's longest answer during a
   remote boot went 0.7 s → 17 ms.

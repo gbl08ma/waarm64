@@ -5,8 +5,7 @@ import { IoStats } from './iostats.ts';
 import { releaseStores } from './diskcache.ts';
 import { blockList, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { diskInspector, RANGE, type LiveDisk, type LiveImage } from './surface.ts';
-import { inflatePool } from './inflate-pool.ts';
-import { openDisk, type Disk } from './qcow2.ts';
+import { openDisk, type Disk, type Inflater } from './qcow2.ts';
 import { bytes, type Ram } from './ram.ts';
 import { gather, scatter, type Backend, type Ctx, type Request } from './virtio.ts';
 import type { Source } from './disk-sources.ts';
@@ -33,6 +32,8 @@ const S_UNSUPP = 2;
  * write lands again (a ramdisk says so through its own `onFull`). `size`: the disk's size as the guest sees it (the
  * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too);
  * `diskSize`: then a stored or blank source's own size (its source is opened at the guest's), for the surface alone.
+ * `inflater`: where compressed clusters are inflated besides this thread (the device worker's one pool, which
+ * `Devices` makes at its first disk that reads an image and closes at its own close; none: on this thread alone).
  */
 export function blk(
   ctx: Ctx,
@@ -45,10 +46,10 @@ export function blk(
   onFull?: () => void,
   size?: number,
   diskSize?: number,
+  inflater?: () => Inflater | undefined,
 ): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
-  let pool: ReturnType<typeof inflatePool> | undefined;
   const plain = src; // before the stats' wrapping: the surface's reads aren't the guest's
   if ('write' in src) {
     base = rw = src; // a disk that takes writes in itself (a ramdisk)
@@ -63,12 +64,11 @@ export function blk(
       if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
     }
     const s = src;
-    pool = typeof Worker === 'function' ? inflatePool() : undefined; // Node has none
     concurrent &&= !!s.readAsync;
     base = openDisk(
       (off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)),
       s.size,
-      pool,
+      inflater?.(),
       concurrent ? (off, len) => (len === 0 ? Promise.resolve(new Uint8Array(0)) : s.readAsync!(off, len)) : undefined,
     );
     rw = files && overlay(base, files.data, files.map, files.meta, size);
@@ -204,7 +204,6 @@ export function blk(
     close() {
       if (!('write' in src)) src.close?.();
       files?.close();
-      pool?.close();
     },
   };
   if (st) {

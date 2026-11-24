@@ -2,7 +2,7 @@
 // blank disk's zeros, a local file in Node.
 import { BLOCK_CACHE, cachedSource } from './blockcache.ts';
 import { cacheIdentity, cacheKey, openBlockStore } from './diskcache.ts';
-import { chunkedSource, fetchBytes, isManifestUrl } from './chunked.ts';
+import { chunkedSource, fetchBytes, isManifestUrl, syncXhr } from './chunked.ts';
 import type { MapLeaves } from './overlay.ts';
 
 /** A disk image's bytes: synchronous range reads (`undefined` on a short or failed read). */
@@ -29,24 +29,17 @@ export type Source = {
  * worker reads it through a block cache (web/blockcache.ts).
  */
 export function httpSource(url: string): Source & { validator?: string } {
-  const xhr = (method: string, range?: string) => {
-    const x = new XMLHttpRequest();
-    x.open(method, url, false);
-    x.responseType = 'arraybuffer';
-    if (range) x.setRequestHeader('Range', range);
-    x.send();
-    return x;
-  };
-  const head = xhr('HEAD');
-  if (head.status !== 200) throw new Error(`${url}: ${head.status}`);
+  // Bounded as `fetchBytes` is (`syncXhr`): a read every try of which timed out fails.
+  const head = syncXhr('HEAD', url);
+  if (head?.status !== 200) throw new Error(`${url}: ${head?.status ?? 'no answer'}`);
   return {
     size: Number(head.getResponseHeader('content-length')),
     // What says the file changed (for the cache kept in OPFS): its ETag, or its modification time.
     validator: head.getResponseHeader('etag') ?? head.getResponseHeader('last-modified') ?? undefined,
     read(off, len) {
-      const x = xhr('GET', `bytes=${off}-${off + len - 1}`);
-      const b = x.response as ArrayBuffer | null;
-      return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
+      const x = syncXhr('GET', url, `bytes=${off}-${off + len - 1}`);
+      const b = x?.response as ArrayBuffer | null | undefined;
+      return x?.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
     },
     async readAsync(off, len) {
       const b = await fetchBytes(url, 206, { Range: `bytes=${off}-${off + len - 1}` });

@@ -135,15 +135,46 @@ export function checkManifest(m: unknown): Manifest {
 /** A synchronous GET (with a `Range` header if given): the status and the body. */
 export type SyncGet = (url: string, range?: string) => { status: number; body?: Uint8Array };
 
-/** A synchronous XHR (workers only). */
+/**
+ * A synchronous read's bound, on its whole answer: long enough for a slow link's piece (2 MiB at ~17 KB/s; `STALL_MS`
+ * there failed every piece under ~100 KB/s, which `fetchBytes` reads), short enough that a dead connection ends.
+ */
+export const SYNC_STALL_MS = 120_000;
+
+/**
+ * A synchronous XHR (workers only), sent, or undefined when every try timed out (a failed read). Bounded as `fetchBytes`
+ * is, but by the whole answer (a synchronous request tells no progress; hence `SYNC_STALL_MS`): a try that hasn't ended in `stallMs` is
+ * aborted and tried again, `tries` times. A window refuses a synchronous request's `timeout`: there it isn't bounded.
+ * A failure of the network throws, as `send` does.
+ */
+export function syncXhr(
+  method: string,
+  url: string,
+  range?: string,
+  stallMs = SYNC_STALL_MS,
+  tries = STALL_TRIES,
+): XMLHttpRequest | undefined {
+  for (let t = 0; t < tries; t++) {
+    const x = new XMLHttpRequest();
+    x.open(method, url, false);
+    x.responseType = 'arraybuffer';
+    if (typeof document === 'undefined') x.timeout = stallMs;
+    if (range) x.setRequestHeader('Range', range);
+    try {
+      x.send();
+      return x;
+    } catch (e) {
+      if ((e as DOMException | undefined)?.name !== 'TimeoutError') throw e;
+    }
+  }
+  return undefined;
+}
+
+/** A synchronous GET by XHR (workers only): status 0 when every try timed out (`syncXhr`). */
 export const xhrGet: SyncGet = (url, range) => {
-  const x = new XMLHttpRequest();
-  x.open('GET', url, false);
-  x.responseType = 'arraybuffer';
-  if (range) x.setRequestHeader('Range', range);
-  x.send();
-  const b = x.response as ArrayBuffer | null;
-  return { status: x.status, body: b ? new Uint8Array(b) : undefined };
+  const x = syncXhr('GET', url, range);
+  const b = x?.response as ArrayBuffer | null | undefined;
+  return { status: x?.status ?? 0, body: b ? new Uint8Array(b) : undefined };
 };
 
 /** The SHA-256 of `b` in hex, without blocking (the platform's). */

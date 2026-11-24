@@ -98,6 +98,7 @@ test('past its budget of SharedArrayBuffers the ramdisk takes slots in wasm memo
   got = await next.read(0, size);
   assert.ok(got && Buffer.compare(got, model) === 0, 'handed over');
   assert.equal(fulls, 0);
+  next.release(); // the realm's budget as it was, for the tests after
   // No memory to be had (no budget, no slots: WebAssembly.Memory refused): the write fails, and onFull is told once.
   const Memory = WebAssembly.Memory;
   try {
@@ -170,4 +171,37 @@ test('zeroRange: a word-wise scan agrees with a byte-wise one, aligned or not, a
       }
     }
   }
+});
+
+test("a ramdisk's release gives its SharedArrayBuffers back to the realm's budget, once, and a handed-on chunk isn't given back twice", async () => {
+  // The budget is the realm's: a disk past it takes wasm slots (`arenaBytes`), so what the next disk gets shows what was given back.
+  const budget = 3 * RAM_CHUNK;
+  const fill = async (d: ReturnType<typeof ramDisk>, n: number) => {
+    for (let c = 0; c < n; c++) assert.ok(await d.write(c * RAM_CHUNK, Uint8Array.of(1)));
+  };
+  for (let round = 0; round < 2; round++) {
+    const a = ramDisk(4 * RAM_CHUNK, [], { sabBudget: budget });
+    const b = ramDisk(4 * RAM_CHUNK, [], { sabBudget: budget });
+    await fill(a, 2);
+    await fill(b, 2);
+    assert.equal(a.arenaBytes() + b.arenaBytes(), RAM_CHUNK, `round ${round}: three of their own, one slot`);
+    a.release();
+    b.release();
+    b.release(); // idempotent
+    assert.equal(a.chunks() + b.chunks(), 0);
+  }
+  // A restore's temporary disk hands its chunks on, then is released: they stay counted for the disk that took them.
+  const tmp = ramDisk(4 * RAM_CHUNK, [], { sabBudget: budget });
+  await fill(tmp, 2);
+  const taken = ramDisk(4 * RAM_CHUNK, tmp.chunkList(), { sabBudget: budget });
+  tmp.release();
+  const other = ramDisk(4 * RAM_CHUNK, [], { sabBudget: budget });
+  await fill(other, 2);
+  assert.equal(other.arenaBytes(), RAM_CHUNK, 'the handed-on chunks still count');
+  taken.release();
+  other.release();
+  const last = ramDisk(4 * RAM_CHUNK, [], { sabBudget: budget });
+  await fill(last, 3);
+  assert.equal(last.arenaBytes(), 0, 'all given back');
+  last.release();
 });
