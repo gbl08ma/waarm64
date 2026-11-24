@@ -317,6 +317,8 @@ test("How it was made: the author's account, the reasons, and the way to the cre
   // The way to the source, prominent, closes "How it works": the repository's link (apart from the page) and how to fetch it.
   const source = page.locator('[data-section="intro-how"] [data-intro-source]');
   assert.deepEqual([await source.locator('[data-action="intro-star"]').getAttribute('href'), await source.locator('[data-action="intro-star"]').getAttribute('target'), (await source.locator('[data-field="clone"]').innerText()).trim()], ['https://github.com/gbl08ma/waarm64', '_blank', '$ git clone https://github.com/gbl08ma/waarm64']);
+  const bar = page.locator('[data-intro] header [data-action="intro-bar-source"]');
+  assert.deepEqual([await bar.getAttribute('href'), await bar.getAttribute('target'), (await bar.innerText()).trim()], ['https://github.com/gbl08ma/waarm64', '_blank', t('intro:IntroPage.source')]);
   const foot = page.locator('[data-intro-foot]');
   assert.deepEqual([await foot.locator('[data-action="intro-source"]').getAttribute('href'), await foot.locator('[data-action="intro-source"]').getAttribute('target')], ['https://github.com/gbl08ma/waarm64', '_blank']);
   assert.equal((await foot.locator('[data-field="license"]').innerText()).trim(), t('intro:IntroEnd.license'));

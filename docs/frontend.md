@@ -981,7 +981,9 @@ and the floating windows don't show, and the machine, Home or the store's page s
     closes [How it works](ui:intro:IntroHow.title), under its last topic: a plate with GitHub's mark, a sentence on what is there and its
     license, the command that fetches it, and the repository's link drawn as the page's main button
     ([Star it on GitHub](ui:intro:IntroSource.star), the repository's name under it; it opens apart from the page). The
-    page's last lines keep the plain link.
+    page's last lines keep the plain link, and the introduction's bar has one at its end, before Skip
+    ([GitHub](ui:intro:IntroPage.source) beside the mark, `IntroPage.svelte`; the bar's section links give way under
+    860 px, this one and Skip stay).
   - **The call to the demos** (`intro/IntroEnd.svelte`: [Pick a machine and start it](ui:intro:IntroEnd.title)) comes
     here, after how it works and before the long account that follows, so that it isn't far down; and again, small,
     as the page's last lines (`foot`), with a link to the repository

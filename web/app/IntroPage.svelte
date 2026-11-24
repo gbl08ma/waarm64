@@ -8,7 +8,9 @@
   introduction").
 -->
 <script lang="ts">
+  import about from 'virtual:waarm64-about';
   import Button from './ui/Button.svelte';
+  import Icon from './ui/Icon.svelte';
   import IntroCompare from './intro/IntroCompare.svelte';
   import IntroEnd from './intro/IntroEnd.svelte';
   import IntroFacts from './intro/IntroFacts.svelte';
@@ -25,6 +27,7 @@
   /** Where Skip leads, said on the button: the demos, or the machines of a visitor who has some. */
   const skipTo = $derived(afterIntro(records.machines.length));
   const toDemos = () => void page.closeIntro('demos');
+  const repo = about.repository.replace(/\.git$/, '');
 
   /** The sections the bar's links scroll to. */
   let facts = $state<HTMLElement>();
@@ -52,9 +55,21 @@
         {t('intro:IntroPage.nav.made')}
       </Button>
     </nav>
-    <Button variant="plain" onclick={() => void page.closeIntro()} data-action="skip-intro" data-to={skipTo}>
-      {skipTo === 'home' ? t('intro:IntroPage.skip.home') : t('intro:IntroPage.skip')}
-    </Button>
+    <div class="end">
+      <a
+        class="source"
+        href={repo}
+        target="_blank"
+        rel="external noopener noreferrer"
+        title={t('intro:IntroPage.source.title')}
+        data-action="intro-bar-source"
+      >
+        <Icon name="brand-github" size={18} />{t('intro:IntroPage.source')}
+      </a>
+      <Button variant="plain" onclick={() => void page.closeIntro()} data-action="skip-intro" data-to={skipTo}>
+        {skipTo === 'home' ? t('intro:IntroPage.skip.home') : t('intro:IntroPage.skip')}
+      </Button>
+    </div>
   </header>
   <IntroHero ondemos={toDemos} onhow={() => show(how)} />
   <IntroFacts bind:ref={facts} />
@@ -93,8 +108,8 @@
   :global(html[data-vt='intro']) header {
     view-transition-name: page-bar;
   }
-  /* The ways to the sections, after the wordmark; Skip at the bar's end. In a narrow window (the four links
-     and Skip need 730px), Skip alone. */
+  /* The ways to the sections, after the wordmark; the source's link and Skip at the bar's end. In a narrow window (the
+     four links, the source and Skip need 830px), those two alone. */
   nav {
     display: flex;
     gap: var(--space-1);
@@ -102,10 +117,29 @@
     color: var(--text-dim);
     font-size: var(--bar-text-md);
   }
-  @media (max-width: 760px) {
+  @media (max-width: 860px) {
     nav {
       display: none;
     }
+  }
+  .end {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  /* The repository's link, drawn as the bar's plain buttons are. */
+  .source {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    font-size: var(--bar-text-md);
+    text-decoration: none;
+  }
+  .source:hover {
+    color: var(--text);
   }
   .wordmark {
     margin: 0 var(--space-3) 0 var(--space-2);

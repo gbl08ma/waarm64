@@ -207,6 +207,14 @@
     "message": "The demos are ready-made machines. The smallest is a 25 MB download and puts you at a shell prompt in a few seconds. The largest is a desktop with a browser in it.",
     "note": "The introduction's last paragraph, over the button to the demos. The figures are the Alpine demo's (docs/comparison.md §3)."
   },
+  "IntroPage.source": {
+    "message": "GitHub",
+    "note": "A link at the end of the introduction's top bar, beside GitHub's mark and before the Skip button: opens the project's repository on GitHub in a new tab. GitHub is a name: keep it."
+  },
+  "IntroPage.source.title": {
+    "message": "See the source code on GitHub.",
+    "note": "Tooltip of the GitHub link in the introduction's top bar. GitHub is a name."
+  },
   "IntroSource.title": {
     "message": "All of it is open source",
     "note": "Title of a plate at the end of the introduction's “How it works” section, beside GitHub's mark: the project's code is public. No period."
