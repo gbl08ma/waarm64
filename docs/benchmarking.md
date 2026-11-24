@@ -337,13 +337,16 @@ and instructions; bench/boot/REPORT.md "BENCH loop 2"). It prints a verdict and 
 
 1. **Counts** from a diagnostic build, wherever they can decide (minutes, any host).
 2. **`bench/ab-mac.sh <outdir> base=<core> new=<core>`** on `node`, its default ("The paired A/B"): 4-10 min for one
-   arm, a verdict to ±0.5%. `node` ranks a change for the browser.
-3. **The same on `WORKLOADS=user,boot`** before a change is kept, as a check that the kernel's boot and hot userspace
-   loops didn't regress (and the measure itself, for a change aimed at them): ~10 min.
-4. **Firefox's pages session** (`bench/gpu/ab-mac.sh`, "Starting from a snapshot"), `PAGES=wiki,mdn` first (106 s a
-   session) and whole (222 s) for a result that will be quoted: the confirmation of what passed 2, and the only
-   measure of what 2 can't see (parallel SMP, the run loop, cache flushes, four vCPUs). Its pairs spread ~1%:
-   three rounds settle 2% or more, nothing under 1%.
+   arm, a verdict to ±0.5%. `node` ranks a change for the browser. Beside it, a short multi-vCPU measure for what one
+   vCPU can't show (parallel SMP, the compile worker, the run loop): the parallel boots (`smp_alpine_jit`,
+   `smp_user_jit_4`, three rounds alternated) until the paired command has a multi-vCPU workload of its own.
+3. **Firefox's pages session** (`bench/gpu/ab-mac.sh`, "Starting from a snapshot"), `PAGES=wiki,mdn` first (106 s a
+   session) and whole (222 s) for a result that will be quoted: the confirmation of what passed 2, not a first
+   screen (it is the slowest). Its pairs spread ~1%: three rounds settle 2% or more, nothing under 1%.
+4. **The same paired command on `WORKLOADS=user,boot`** last, only for the arm about to be kept: the check that the
+   kernel's boot and hot userspace loops didn't regress (~10 min). A win on these one-vCPU gates alone doesn't keep
+   an arm (PERF loops 65 and 66: `BATCH_STEPS` 100K and `REGION_AFTER` 250 won there and tied in the browser); for
+   a change aimed at the gates themselves they are the measure, and come first.
 
 What follows screens the code cache's policies, which need a cache that fills.
 

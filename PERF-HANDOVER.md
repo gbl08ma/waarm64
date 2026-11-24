@@ -39,10 +39,12 @@ theory of the answer):
 - Rank on the **Mac** (the VM distorts code size and bounds checks). Tiers, so no one decision takes 70 minutes:
   1. counts from a diagnostic build, wherever they can decide;
   2. `bench/ab-mac.sh <outdir> base=<core.wasm> new=<core.wasm>` (docs/benchmarking.md "The paired A/B"; in the
-     background, alone; it stops by itself with a verdict to ±0.5%): on `node`, its default, to rank the change for
-     the browser (4-10 min), then `WORKLOADS=user,boot` to see the gates didn't regress (~10 min); several arms in
-     one run when a row has variants; `AA=1` when a result looks like noise; plus `jit_fp_mips`
-     (`bench/interp/ab-mac.sh`) when FP is touched. Read time: the renderer's cycles and instructions are all its
+     background, alone; it stops by itself with a verdict to ±0.5%, at 12 pairs at most): on `node`, its default, to
+     rank the change for the browser (4-10 min), with a short multi-vCPU measure beside it (the parallel boots, until
+     the paired command has a multi-vCPU workload); several arms in one run when a row has variants; `AA=1` when a
+     result looks like noise; plus `jit_fp_mips` (`bench/interp/ab-mac.sh`) when FP is touched. `WORKLOADS=user,boot`
+     (the one-vCPU gates) comes last, after tier 3, only for the arm about to be kept (a gate-only win keeps
+     nothing; docs/benchmarking.md "Screening an A/B"). Read time: the renderer's cycles and instructions are all its
      threads' and have pointed the wrong way;
   3. Firefox's pages session on the Mac (`bench/gpu/ab-mac.sh`, docs/benchmarking.md "Starting from a snapshot";
      ~4 min a session, `PAGES=wiki,mdn` under 2; from `target/snapbench/pages.waarm64snap`, which
