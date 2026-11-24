@@ -95,8 +95,10 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     const config = titles.length
       ? { ...withKey, room: { ...withKey.room, names: { ...withKey.room.names, titles } } }
       : withKey;
+    // A stored connection's records only: an ephemeral one (its key in memory, `identity`) would leave its own when its
+    // page closes, under an id nothing names again. One on a stored connection's key (no `identity`) keeps that one's.
     const store =
-      m.identityKey !== undefined && 'room' in parsed
+      m.identityKey !== undefined && !m.identity && 'room' in parsed
         ? await roomNamesStore(parsed.room.id, m.identityKey).catch(() => undefined)
         : undefined;
     const records = (await store?.load().catch(() => undefined)) ?? [];

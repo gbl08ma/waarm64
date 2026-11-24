@@ -4,13 +4,14 @@
 // counted whenever it comes, and a renewal that can no longer link dropped; one Web Lock a title (two tabs make one entry);
 // a lost title not renewed; a zone's `seq` never shared by two copies of a title; nothing asked of any service but the
 // compiled ones; the dialog's check (as typed, by the page alone; at Register, its servers asked for one first byte, never the id) and the last week's notice;
-// a room connection's key, name and domains without running it (`member`). A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
+// a room connection's key, name and domains without running it (`member`); the asks for a pending proof against N0b's real
+// stamps. A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { CALENDARS, EXPLORERS, serviceFetch, SERVICES } from '../web/names-fetch.ts';
 import { exportNames, importNames } from '../web/names-export.ts';
-import { inLastWeek, LAST_WEEK_S, NamesAgent, roomOf, type TitleView } from '../web/names.ts';
+import { collectWait, inLastWeek, LAST_WEEK_S, NamesAgent, PASS_MS, PUBLIC_IN_MS, RETRY_MS, roomOf, type TitleView } from '../web/names.ts';
 import { memoryNamesStore } from '../web/names-store.ts';
 import { localBackend, mergeIds, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
 import { TsClient, type NamesIds, type TsEvent } from '../web/ts-client.ts';
@@ -501,6 +502,28 @@ test('Let it go wins over a renewal the room finished: one browser renews, the o
   // What any server holding both computes: nobody owns the name.
   const j = await a.backend.op<{ verdict: string }>('judge', { room: roomOf(LINK), item: tb.item, other: ta.item, now: nowS() });
   assert.equal(j.verdict, 'none', 'the renewed copy shown the release: nobody owns it');
+  // The copy that renewed is shown the release by the room (judged `none`): taken in, so it says let go and makes no
+  // more renewals of the ended branch (NAMES2 loop 3).
+  const told = await testAgent({ store: b.store, publish: fakePublish(() => [{ id: '', server: 's1', result: 'better', item: ta.item }]), log });
+  await told.agent.pass(cb.identityKey);
+  assert.equal((await told.agent.titles(cb.identityKey))[0].state, 'released', log.join('\n'));
+  let [tb2] = await b.store.titles(cb.identityKey);
+  let sb = await statusOf(b.backend, tb2);
+  assert.ok(sb.entries.some((e) => e.kind === 'release' && e.time !== null), 'the release taken into the title');
+  assert.equal(sb.owner, null);
+  assert.equal(tb2.ahead, undefined, 'no renewal made ahead for an ended branch');
+  assert.deepEqual(await told.agent.held(cb.identityKey), [], 'not held: deleting the connection loses nothing');
+  // Its renewal would be due 15 days on: none is made.
+  const real = Date.now;
+  Date.now = () => real() + 16 * DAY * 1000;
+  try {
+    await told.agent.pass(cb.identityKey);
+  } finally {
+    Date.now = real;
+  }
+  [tb2] = await b.store.titles(cb.identityKey);
+  sb = await statusOf(b.backend, tb2);
+  assert.ok(!sb.entries.some((e) => e.time === null), `no renewal made: ${log.join('\n')}`);
 });
 
 test('a name registered again counts its zones past the earlier tenure\'s, which the same owner key signed (the final review, finding 9)', { skip, timeout: 90_000 }, async () => {
@@ -828,11 +851,187 @@ test('a room connection\'s key, name and domains without running it: as its runn
   assert.notEqual(e.name, m.name);
 });
 
-test('Let it go before the claim is public: the title says let go, not Reserved (DOMAINS loop 4: the pane\'s card kept Let it go)', { skip, timeout: 60_000 }, async () => {
-  const { agent } = await testAgent({ publish: fakePublish() });
+test('Let it go before the claim is public: the title says let go, not Reserved, and the claim is never public without its release (DOMAINS loop 4; NAMES2 loop 3)', { skip, timeout: 60_000 }, async () => {
+  const log: string[] = [];
+  const pub = fakePublish();
+  const { agent, store, backend } = await testAgent({ publish: pub, log });
   const c = conn('conn-early');
   assert.equal((await agent.register(c, 'early', point())).state, 'reserved');
   assert.equal((await agent.release(c, 'early')).state, 'released');
   assert.deepEqual((await agent.titles(c.identityKey)).map((v) => v.state), ['released']);
   assert.deepEqual(await agent.held(c.identityKey), [], 'not held: deleting the connection loses nothing');
+  // The claim anchored later: the release is made on it then, and nothing is put while the release waits for its
+  // anchor (the claim alone would resolve in the room until then).
+  cal.mine(6);
+  await agent.pass(c.identityKey);
+  let [t] = await store.titles(c.identityKey);
+  let st = await statusOf(backend, t);
+  assert.ok(st.entries.some((e) => e.kind === 'claim' && e.time !== null), log.join('\n'));
+  assert.ok(st.entries.some((e) => e.kind === 'release' && e.time === null && t.stamps[e.id]?.length), 'the release made and stamped');
+  assert.equal(pub.puts.length, 0, 'not public while the release waits for its anchor');
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'released');
+  // The release anchored: put with it, and nobody owns the name.
+  cal.mine(7);
+  await agent.pass(c.identityKey);
+  [t] = await store.titles(c.identityKey);
+  st = await statusOf(backend, t);
+  assert.ok(st.best?.released && !st.owner, log.join('\n'));
+  assert.equal(pub.puts.length, 1, 'put once, the release with it');
+  const put = await backend.op<{ owner: unknown; best: { released: boolean } | null }>('status', { item: pub.puts[0], now: nowS() });
+  assert.ok(put.best?.released && !put.owner, 'what the room is given ends in the release');
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'released');
+});
+
+test('Let it go cut short (an error or a reload in its proof of work) is finished by the next pass: the intent is kept first (NAMES2 review fix B)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });
+  const c = conn('conn-cut');
+  await aged(cal, agent, c, 'cut', nowS() - 2 * DAY);
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'active', log.join('\n'));
+  // The proof of work fails half-way (the worker gone with the tab, an error): the release isn't made...
+  const op = backend.op;
+  backend.op = (o, input) => (o === 'mine' ? Promise.reject(new Error('the tab closed')) : op(o, input));
+  try {
+    await assert.rejects(agent.release(c, 'cut'), /the tab closed/);
+  } finally {
+    backend.op = op;
+  }
+  // ...but the choice is kept: let go, and the next visit's agent makes the release.
+  assert.deepEqual((await agent.titles(c.identityKey)).map((v) => v.state), ['released'], 'let go is kept before the work');
+  const again = await testAgent({ store, publish: fakePublish(), log });
+  await again.agent.pass(c.identityKey);
+  const [t] = await store.titles(c.identityKey);
+  const r = (await statusOf(backend, t)).entries.find((e) => e.kind === 'release');
+  assert.ok(r && t.stamps[r.id]?.length, `the release made by the next pass: ${log.join('\n')}`);
+});
+
+test('New name\'s choice for the domains is kept before the key changes and finished by the passes, a reload between; only this room\'s domains (NAMES2 review fix B)', { skip, timeout: 120_000 }, async () => {
+  const log: string[] = [];
+  const store = memoryNamesStore();
+  const keys = new Map<string, string>([['conn-nk', 'aa'.repeat(32)]]);
+  const identity = (k: string) => Promise.resolve({ key: keys.get(k)! });
+  const { agent } = await testAgent({ store, publish: fakePublish(), log, identity });
+  const c = conn('conn-nk');
+  // A node key as its room sees it (`member`: the public one of the key kept under the entry).
+  const old = (await agent.member(c)).key;
+  const other = 'ab'.repeat(32);
+  const elsewhere = { identityKey: c.identityKey, link: 'waarm64-room:elsewhere?nostr=ws%3A%2F%2F127.0.0.1%3A9&derp=127.0.0.1%3A9' };
+  await aged(cal, agent, c, 'one', nowS() - 2 * DAY, [{ label: null, key: old }, { label: 'git', key: other }]);
+  await aged(cal, agent, c, 'two', nowS() - 2 * DAY, point(old));
+  await aged(cal, agent, elsewhere, 'far', nowS() - 2 * DAY, point(old));
+  // The question lists this room's domains only: the ones New name acts on.
+  assert.deepEqual(await agent.held(c.identityKey, roomOf(c.link)), ['one', 'two']);
+  assert.deepEqual(await agent.held(c.identityKey), ['far', 'one', 'two'], 'Delete loses them all');
+  // Point at the new name: recorded while the key is the old one (nothing to do yet)...
+  await agent.newKey(c, 'point', old);
+  await agent.pass(c.identityKey);
+  const pointsOf = async (name: string) => (await store.titles(c.identityKey)).find((t) => t.name === name)!.points.map((p) => `${p.label ?? ''}>${p.key}`).join(' ');
+  assert.equal(await pointsOf('one'), `>${old} git>${other}`, 'the key is still the old one');
+  // ...the key changes, the page reloads before anything else: the next visit's agent moves the points.
+  keys.set(c.identityKey, 'cc'.repeat(32));
+  const reloaded = await testAgent({ store, publish: fakePublish(), log, identity });
+  const now = (await reloaded.agent.member(c)).key;
+  assert.notEqual(now, old);
+  await reloaded.agent.pass();
+  assert.equal(await pointsOf('one'), `>${now} git>${other}`, `what was at the old key moves, another member's stays: ${log.join('\n')}`);
+  assert.equal(await pointsOf('two'), `>${now}`);
+  assert.equal(await pointsOf('far'), `>${old}`, 'another room\'s domain is left as it is');
+  assert.ok((await store.titles(c.identityKey)).every((t) => t.repoint === undefined), 'done: nothing left to do');
+  // Let them go: let go at once (before any proof of work), the releases made by the passes.
+  await reloaded.agent.newKey(c, 'release', '');
+  const states = async () => Object.fromEntries((await reloaded.agent.titles(c.identityKey)).map((v) => [v.name, v.state]));
+  assert.deepEqual(await states(), { far: 'active', one: 'released', two: 'released' });
+  const third = await testAgent({ store, publish: fakePublish(), log, identity });
+  await third.agent.pass(c.identityKey);
+  for (const t of await store.titles(c.identityKey)) {
+    const r = (await statusOf(third.backend, t)).entries.find((e) => e.kind === 'release');
+    assert.equal(!!(r && t.stamps[r.id]?.length), t.name !== 'far', `${t.name}: ${log.join('\n')}`);
+  }
+});
+
+test('a claim its calendars lost is made again a day after its stamp, the one before kept, so it doesn\'t stay Reserved for good (NAMES2 loop 2)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });
+  const c = conn('conn-lost-claim');
+  await agent.register(c, 'lostclaim', point());
+  cal.forget(); // every calendar lost it: its proof stays pending for good
+  const real = Date.now;
+  const at = async (hours: number) => {
+    Date.now = () => real() + hours * 3600_000;
+    try {
+      await agent.pass(c.identityKey);
+      const [t] = await store.titles(c.identityKey);
+      const st = await statusOf(backend, t);
+      const [v] = await agent.titles(c.identityKey);
+      return { t, claims: st.entries.filter((e) => e.kind === 'claim'), v, now: Date.now() };
+    } finally {
+      Date.now = real;
+    }
+  };
+  let r = await at(3);
+  assert.equal(r.claims.length, 1, 'not made again within the day');
+  const [first] = r.claims;
+  assert.equal(r.v.state, 'reserved');
+  assert.ok(r.v.publicAbout! <= r.now, 'past the usual wait: the card says so (names-view.reservedLate)');
+  r = await at(25);
+  assert.equal(r.claims.length, 2, `made again a day on: ${log.join('\n')}`);
+  assert.ok(r.claims.some((e) => e.id === first.id), 'the one before kept (an anchor that comes still counts)');
+  assert.equal(r.t.stamps[first.id]?.length, 3, 'with its pending anchors');
+  const second = r.claims.find((e) => e.id !== first.id)!;
+  assert.equal(r.v.state, 'reserved');
+  assert.ok(Math.abs(r.v.publicAbout! - (r.now + PUBLIC_IN_MS)) < 60_000, 'the new claim counts its wait again');
+  cal.forget();
+  r = await at(30);
+  assert.equal(r.claims.length, 2, 'once a day at most');
+  r = await at(50);
+  assert.equal(r.claims.length, 2, 'two wait at most: the oldest goes when a third is made');
+  assert.ok(!r.claims.some((e) => e.id === first.id) && r.claims.some((e) => e.id === second.id));
+  assert.equal(r.t.stamps[first.id], undefined);
+  // This one the calendars keep: anchored, public.
+  cal.mine(6);
+  r = await at(51);
+  assert.equal(r.v.state, 'active', log.join('\n'));
+  // The claim still waiting is asked for a week from its stamp, then dropped (the title has an anchored claim).
+  r = await at(51 + 7 * 24);
+  assert.equal(r.claims.filter((e) => e.time === null).length, 0, 'the claim never anchored dropped a week on');
+  assert.equal(r.v.state, 'active');
+});
+
+// "About 2 hours" (PUBLIC_IN_MS) against N0b's 80 real stamps (bench/net/REPORT.md "NAMES loop 0b"): a stamp's proof is
+// served from its calendar's block's sixth confirmation, the first of the three calendars' is when the agent can collect
+// it, and the agent's asks (`collectWait`, the real schedule) collect it at the first ask at or after then. Pure: no
+// module, no services.
+test('the asks for a pending proof collect N0b\'s stamps by "about 2 hours" whenever the calendars serve them by then', () => {
+  const anchors = JSON.parse(readFileSync(new URL('../bench/net/results/names0/anchors.json', import.meta.url), 'utf8')) as {
+    stamps: { digest: string; toSixDeepH: number }[];
+  };
+  const first = new Map<string, number>();
+  for (const s of anchors.stamps) first.set(s.digest, Math.min(first.get(s.digest) ?? Infinity, s.toSixDeepH * 3600_000));
+  const served = [...first.values()];
+  assert.equal(served.length, 80);
+  // The ages of a claim's asks while its proof stays pending, to `until`.
+  const asks = (wait: (tries: number) => number, until: number) => {
+    const at: number[] = [];
+    for (let age = wait(0), tries = 1; age <= until; age += wait(tries++)) at.push(age);
+    return at;
+  };
+  const collected = (wait: (tries: number) => number) => {
+    const at = asks(wait, 24 * 3600_000);
+    return served.map((t) => at.find((a) => a >= t) ?? Infinity);
+  };
+  const byPublic = (c: number[]) => c.filter((a) => a <= PUBLIC_IN_MS).length;
+  const old = (tries: number) => (tries === 0 ? RETRY_MS : Math.min(RETRY_MS * 2 ** (tries - 1), PASS_MS));
+  // The proofs the calendars served by then: no schedule collects more (that evening's blocks were slow: 13 came later).
+  const possible = served.filter((t) => t <= PUBLIC_IN_MS).length;
+  assert.equal(possible, 67);
+  // The doubling (5, 10, 20, 40, 80, 140, 200 minutes) collected 4 of them by then; the late line for 76.
+  assert.equal(byPublic(collected(old)), 4);
+  // The schedule: every one served by then, and none collected more than 10 minutes after the calendars served it.
+  const now = collected(collectWait);
+  assert.equal(byPublic(now), possible, `${byPublic(now)} of ${possible} collected by PUBLIC_IN_MS`);
+  for (const [i, t] of served.entries()) assert.ok(now[i] - t <= 10 * 60_000, `served at ${t / 60_000} min, collected at ${now[i] / 60_000}`);
+  // Its cost: the asks a claim makes of each calendar over 3 hours with its proof pending all along.
+  const three = 3 * 3600_000;
+  assert.equal(asks(old, three).length, 6);
+  assert.equal(asks(collectWait, three).length, 13);
 });

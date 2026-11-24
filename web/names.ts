@@ -27,6 +27,7 @@ import { exportNames, importNames, newBranch } from './names-export.ts';
 import {
   idbNamesStore,
   NAMES_CHANNEL,
+  repointed,
   roomHash,
   type NamesStore,
   type TitleRecord,
@@ -35,13 +36,27 @@ import {
 
 /** How often titles are looked after while the page is open (and at every load). */
 export const PASS_MS = 60 * 60 * 1000;
-/** The first wait before asking again (a pending proof, an entry to make again), doubling to PASS_MS. */
+/** The first wait before asking again (an entry to make again, a pass that failed), doubling to PASS_MS. */
 export const RETRY_MS = 5 * 60 * 1000;
+/** The wait before asking the calendars again for a pending proof that `tries` asks have found pending (0: from the
+ * stamp to the first ask), at `retryMs` RETRY_MS: spaced around the expected proof (served from the calendar's block's
+ * sixth confirmation, about an hour after the stamp), so the first ask at an hour, then every 10 minutes to 3 hours,
+ * then 20 and 40 minutes and hourly (names.md "The names agent"). */
+export function collectWait(tries: number): number {
+  if (tries === 0) return PASS_MS;
+  if (tries <= 12) return 10 * 60 * 1000;
+  return Math.min(20 * 60 * 1000 * 2 ** (tries - 13), PASS_MS);
+}
 /** A zone's slots, narrow and wide (net/ts room/names/zone.rs): a name with more points than the first is sealed in the
  * second, and has at most that many (web/app/names-view.ts `MAX_POINTS`). */
 const ZONE_NARROW = 4;
-/** An entry unanchored past its window is kept and asked for this long more (seconds). */
+/** An entry unanchored past its window is kept and asked for this long more (seconds); so is a claim never anchored
+ * once another claim of the title was made after it or anchored. */
 const STALE_KEEP_S = 7 * 24 * 60 * 60;
+/** A claim no calendar has served a proof of this long after its stamp is made again (the calendars lost it: a claim
+ * never goes stale, so it would stay Reserved for good); the one before is kept, and asked for, since an anchor that
+ * does come still counts (names.md "The names agent"). */
+export const CLAIM_AGAIN_MS = 24 * 60 * 60 * 1000;
 /** Proof of work tries a call (production: ~0.5 ms each in a tab), so the worker answers between slices. */
 const MINE_SLICE = 256;
 /** A server takes a new zone for a name at most this often (net/ts room/names/store.rs `ZONE_EVERY`), and a minute. */
@@ -191,12 +206,15 @@ export type AgentOptions = {
   /** A room connection's node key under `identityKey`, made the first time (default: web/room.ts `roomIdentity`, in
    * `waarm64-room`, where the room's worker reads it; the tests' in memory). */
   identity?: (identityKey: string) => Promise<RoomIdentity>;
-  /** The first wait before asking again (default RETRY_MS; the tests' is 0). */
+  /** The first wait before asking again (default RETRY_MS; the tests' is 0), and a pending proof's `collectWait` scaled
+   * by it over RETRY_MS. */
   retryMs?: number;
   log?: (s: string) => void;
 };
 
 const nowS = () => Math.floor(Date.now() / 1000);
+/** A title's states while it is held (not let go, lost or lapsed). */
+const HELD: TitleState[] = ['preparing', 'reserved', 'active', 'grace'];
 
 export class NamesAgent {
   private readonly store: NamesStore;
@@ -309,26 +327,47 @@ export class NamesAgent {
     }
   }
 
-  /** Lets `name` go: a release made on its chain and stamped; published once anchored, like any entry. */
+  /**
+   * Lets `name` go: let go kept first, then a release made on its chain (proof of work) and stamped; published once
+   * anchored, like any entry. Cut short (an error, the tab closed), the passes make the release.
+   */
   async release(c: NamesConn, name: string): Promise<TitleView> {
     const room = roomOf(c.link);
     await this.relink(c);
-    await this.locked({ identityKey: c.identityKey, room, name }, true, async () => {
+    const at = { identityKey: c.identityKey, room, name };
+    await this.locked(at, true, async () => {
       const t = await this.mustGet(c.identityKey, room, name);
-      // Renewals waiting for their anchors go: one collected later would be a branch whose cover outlasts the
-      // release's, and the name would stay (review 2).
-      const waiting =
-        (await this.status(t))?.entries.filter((e) => e.kind === 'renew' && e.time === null).map((e) => e.id) ?? [];
-      if (waiting.length) await this.dropEntries(t, waiting);
-      const st = await this.status(t);
-      if (st?.owner && !t.lost && !st.owner.released) await this.makeEntry(t, 'release', st.owner.ids.at(-1));
-      t.released = true;
-      delete t.ahead;
+      await this.letGo(t);
       await this.save(t);
+    });
+    await this.locked(at, true, async () => {
+      const t = await this.mustGet(c.identityKey, room, name);
+      if (await this.releaseDue(t, await this.status(t))) await this.save(t);
     });
     const t = await this.mustGet(c.identityKey, room, name);
     await this.publish(t);
     return this.view(t);
+  }
+
+  /**
+   * After New name on room connection `c` (the user's choice; its key was `from`), its domains in its room that are
+   * held: pointed at the new key (`point`: what pointed at `from` moves once the key under the connection's entry is
+   * another; another member's points stay) or let go (`release`). Only kept, before the key changes: the passes do the
+   * work (`work`), whenever a page is open, so a reload or an error doesn't lose it.
+   */
+  async newKey(c: NamesConn, how: 'point' | 'release', from: string): Promise<void> {
+    const room = roomOf(c.link);
+    await this.relink(c);
+    for (const v of await this.titles(c.identityKey)) {
+      if (v.room !== room || !HELD.includes(v.state)) continue;
+      await this.locked(v, true, async () => {
+        const t = await this.store.get(v.identityKey, v.room, v.name);
+        if (!t) return;
+        if (how === 'release') await this.letGo(t);
+        else t.repoint = from;
+        await this.save(t);
+      });
+    }
   }
 
   /**
@@ -378,9 +417,12 @@ export class NamesAgent {
     return { state: 'disputed', until: Math.max(...held) };
   }
 
-  /** The names connection `identityKey` holds now (not let go, lost or lapsed), by name: what deleting it would lose. */
-  async held(identityKey: string): Promise<string[]> {
-    const live = (await this.titles(identityKey)).filter((v) => !['released', 'lost', 'lapsed'].includes(v.state));
+  /** The names connection `identityKey` holds now (not let go, lost or lapsed), by name: what deleting it would lose;
+   * in room ID `room` only, when given (what New name acts on). */
+  async held(identityKey: string, room?: string): Promise<string[]> {
+    const live = (await this.titles(identityKey)).filter(
+      (v) => HELD.includes(v.state) && (room === undefined || v.room === room),
+    );
     return [...new Set(live.map((v) => v.name))].sort();
   }
 
@@ -518,14 +560,69 @@ export class NamesAgent {
     return t.item ? this.b.op<TitleStatus>('status', { item: t.item, now: nowS() }) : Promise.resolve(undefined);
   }
 
+  /** A pending proof's next ask (`collectWait`): the first from its stamp (`prev` none), else after one more ask found it
+   * pending; `since`, the stamp's time, carried. */
+  private ask(prev: { tries: number; since?: number } | undefined): { next: number; tries: number; since: number } {
+    const tries = prev ? prev.tries + 1 : 0;
+    return {
+      next: Date.now() + (collectWait(tries) * this.retryMs) / RETRY_MS,
+      tries,
+      since: prev?.since ?? Date.now(),
+    };
+  }
+
+  /** When unanchored entry `id` of title `t` was stamped (ms): a record from before `since` was kept, the title's. */
+  private since(t: TitleRecord, id: string): number {
+    return (id in t.collect ? t.collect[id].since : undefined) ?? t.stampedAt ?? t.made;
+  }
+
   private backoff(prev: { tries: number } | undefined): { next: number; tries: number } {
     const tries = (prev?.tries ?? 0) + 1;
     return { next: Date.now() + Math.min(this.retryMs * 2 ** (tries - 1), PASS_MS), tries };
   }
 
-  /** One title's turn under its lock: collect, drop what can't count, make what is due. Whether it changed. */
+  /** Title `t` let go (under its lock, not saved): renewals waiting for their anchors go (one collected later would be
+   * a branch whose cover outlasts the release's, and the name would stay: review 2), and so does what was to come. */
+  private async letGo(t: TitleRecord) {
+    const waiting =
+      (await this.status(t))?.entries.filter((e) => e.kind === 'renew' && e.time === null).map((e) => e.id) ?? [];
+    if (waiting.length) await this.dropEntries(t, waiting);
+    t.released = true;
+    delete t.ahead;
+    delete t.repoint;
+  }
+
+  /** Title `t` (status `st`) let go and its release not made, or not stamped: made now (proof of work). Whether it was
+   * tried (`t` changed). */
+  private async releaseDue(t: TitleRecord, st: TitleStatus | undefined): Promise<boolean> {
+    const o = st?.owner;
+    if (!t.released || t.lost || !o || o.released || st.entries.some((e) => e.kind === 'release' && !e.stale))
+      return false;
+    await this.makeEntry(t, 'release', o.ids.at(-1));
+    return true;
+  }
+
+  /** New name's Point at the new name (`newKey`), once the connection's key is another: the points at the old one
+   * moved, the zone sealed (published by the pass). Whether `t` changed. */
+  private async repoint(t: TitleRecord): Promise<boolean> {
+    const from = t.repoint;
+    if (from === undefined) return false;
+    const to = (await this.member({ identityKey: t.identityKey, link: t.link })).key;
+    if (to === from) return false; // the key hasn't changed yet
+    delete t.repoint;
+    const points = repointed(t.points, from, to);
+    if (points) {
+      t.points = points;
+      if (t.item) await this.seal(t);
+      this.log(`${t.name}: pointed at the connection's new key`);
+    }
+    return true;
+  }
+
+  /** One title's turn under its lock: New name's repoint, collect, drop what can't count, make what is due. Whether
+   * it changed. */
   private async work(t: TitleRecord): Promise<boolean> {
-    let changed = false;
+    let changed = await this.repoint(t);
     let st = await this.status(t);
     // Finished anchors for the entries that wait for one.
     for (const e of st?.entries ?? []) {
@@ -541,7 +638,7 @@ export class NamesAgent {
         delete t.stamps[e.id];
         delete t.collect[e.id];
         this.log(`${t.name}: an anchor for ${e.kind} ${e.id.slice(0, 8)}`);
-      } else t.collect[e.id] = this.backoff(t.collect[e.id]);
+      } else t.collect[e.id] = this.ask(t.collect[e.id]);
       changed = true;
     }
     st = await this.status(t);
@@ -557,22 +654,48 @@ export class NamesAgent {
       st = await this.status(t);
       changed = true;
     }
+    // A claim never anchored, once another claim was made after it or anchored: asked for a week from its stamp, then
+    // dropped (it would be asked for hourly for good).
+    const claims = (st?.entries ?? []).filter((e) => e.kind === 'claim');
+    const old = claims.filter(
+      (e) =>
+        e.time === null &&
+        Date.now() > this.since(t, e.id) + STALE_KEEP_S * 1000 &&
+        claims.some((c) => c.time !== null || this.since(t, c.id) > this.since(t, e.id)),
+    );
+    if (old.length) {
+      this.log(`${t.name}: ${old.length} claim(s) never anchored a week on, another made since; dropped`);
+      await this.dropEntries(
+        t,
+        old.map((e) => e.id),
+      );
+      st = await this.status(t);
+      changed = true;
+    }
     if (t.lost || (t.remake && t.remake.next > Date.now())) return changed;
     const live = (e: EntryStatus) => e.time === null && !e.stale;
     if (!st?.best) {
-      // No anchored entry yet: a claim, unless one waits for its anchor.
-      if (!t.released && !st?.entries.some((e) => live(e) && e.kind === 'claim')) {
-        await this.makeEntry(t, 'claim');
-        changed = true;
+      if (t.released) return changed;
+      // No anchored entry yet: a claim, unless one waits for its anchor, stamped less than a day ago. One no calendar
+      // served a day on, the calendars lost: made again, the one before kept (an anchor that comes still counts), the
+      // others before it dropped, so two wait at most.
+      const waitingClaims = st?.entries.filter((e) => live(e) && e.kind === 'claim') ?? [];
+      if (waitingClaims.length && Date.now() < (t.stampedAt ?? t.made) + CLAIM_AGAIN_MS) return changed;
+      if (waitingClaims.length) {
+        const [, ...before] = waitingClaims.sort((a, b) => this.since(t, b.id) - this.since(t, a.id));
+        this.log(`${t.name}: no calendar served the claim in a day; made again`);
+        if (before.length)
+          await this.dropEntries(
+            t,
+            before.map((e) => e.id),
+          );
       }
-      return changed;
-    }
-    const o = st.owner;
-    // Let go, but the release wasn't stamped (or never came): made again.
-    if (t.released && o && !o.released && !st.entries.some((e) => e.kind === 'release' && !e.stale)) {
-      await this.makeEntry(t, 'release', o.ids.at(-1));
+      await this.makeEntry(t, 'claim');
       return true;
     }
+    const o = st.owner;
+    // Let go, but the release wasn't made (cut short), stamped (or never came): made now.
+    if (await this.releaseDue(t, st)) return true;
     if (!o || t.released || o.released) return changed;
     // The title's own key, from its secret: a chain of another key's (a secret that doesn't sign this title) isn't
     // renewed with it.
@@ -687,7 +810,7 @@ export class NamesAgent {
     }
     t.item = item;
     t.stamps[id] = stamps;
-    t.collect[id] = { next: Date.now() + this.retryMs, tries: 0 };
+    t.collect[id] = this.ask(undefined);
     // From the claim's own stamp: a claim made again counts its wait again (review 2).
     if (kind === 'claim' || t.stampedAt === undefined) t.stampedAt = Date.now();
     delete t.remake;
@@ -814,7 +937,9 @@ export class NamesAgent {
   /**
    * Publishes title `t` (under no lock) when its claim is public (anchored) and it changed since it was last taken, or
    * wasn't put this visit or this hour: a `put` to the servers a publisher finds. A server's better chain is judged: the title's
-   * own (nothing to do), another branch of it (taken into the title), another key's (the title is lost).
+   * own (nothing to do), another branch of it (taken into the title), another key's (the title is lost), none (the
+   * entries of the title's key taken in: another copy's release ends this one's chain too). A title let go before it
+   * was put stays private until its release is anchored.
    */
   private async publish(t: TitleRecord): Promise<void> {
     // A lost title is put too, so that it is judged again: its own renewal, collected late, may have revived its chain
@@ -822,6 +947,9 @@ export class NamesAgent {
     if (!t.item) return;
     const st = await this.status(t);
     if (!st?.best) return; // a claim stays private until anchored
+    // Let go before it was ever put: private until the release is anchored too, then put with it (the claim put alone
+    // would resolve in the room until servers finished the release: NAMES2 loop 3).
+    if (t.released && t.publishedAt === undefined && !st.best.released) return;
     const k = titleKey(t);
     // Unchanged, put this visit and within the hour: not again (the next hour's pass puts it again, so another branch
     // the room settled on, or a reset room, is seen within the hour).
@@ -832,6 +960,8 @@ export class NamesAgent {
     let lost: string | undefined;
     let lostBlock: { block?: string | null; header?: string | null } = {};
     const branches: string[] = [];
+    /** Chains of the title's key that nobody owns now (another copy's release ending ours), to take in. */
+    const ended: string[] = [];
     // A server that holds the title's chain but didn't take its zone (review 2): within its 10 minutes of the last
     // (put again after them), or a zone of the room's at or past ours (another copy's: counted past it).
     let zoneAgain = false;
@@ -852,6 +982,7 @@ export class NamesAgent {
         }
         if (j.verdict === 'ours') shown = true;
         else if (j.verdict === 'branch') branches.push(a.item);
+        else if (j.verdict === 'none' && j.item !== item) ended.push(a.item);
         else if (j.verdict === 'lost') {
           lost = j.by;
           lostBlock = j;
@@ -890,7 +1021,7 @@ export class NamesAgent {
         await this.save(now);
       });
     }
-    if (!shown && !lost && !branches.length) {
+    if (!shown && !lost && !branches.length && !ended.length) {
       this.log(`${t.name}: not published (${answers.map((a) => a.result).join(', ') || 'no answer'}); next pass`);
       return;
     }
@@ -903,7 +1034,7 @@ export class NamesAgent {
         `${t.name}: another key's chain owns it while an entry of ours waits for its anchor; judged again later`,
       );
       lost = undefined;
-      if (!shown && !branches.length) return;
+      if (!shown && !branches.length && !ended.length) return;
     }
     await this.locked(t, true, async () => {
       const now = await this.mustGet(t.identityKey, t.room, t.name);
@@ -922,6 +1053,22 @@ export class NamesAgent {
         } catch (err) {
           this.log(`${t.name}: ${String(err)}`);
         }
+      }
+      // Nobody owns it with the room's entries of the title's key: taken in (another copy's release, which beats this
+      // copy's renewals beside it). Ended by a release, the title is let go here too: nothing renewed or made ahead.
+      for (const other of ended) {
+        try {
+          const j = await this.b.op<Judged>('judge', { room: now.room, item: now.item, other, now: nowS() });
+          if (j.verdict === 'none') now.item = j.item;
+        } catch (err) {
+          this.log(`${t.name}: ${String(err)}`);
+        }
+      }
+      const after = ended.length ? await this.status(now) : undefined;
+      if (after && !after.owner && after.best?.released && !now.released) {
+        now.released = true;
+        delete now.ahead;
+        this.log(`${t.name}: another copy of the title let it go: taken in`);
       }
       if (shown && now.item === item) {
         now.published = item;

@@ -174,6 +174,33 @@ class PageNames {
     await this.refresh();
   }
 
+  /** Room connection `c`'s node key as its room sees it (the agent's `member`; made under its entry if it has none). */
+  async key(c: MemberConn): Promise<string> {
+    return (await (await names()).namesAgent().member(memberOf(c))).key;
+  }
+
+  /**
+   * New name on room connection `c` (its key now `from`): what becomes of its domains held in its room, kept before
+   * the key changes (web/names.ts `NamesAgent.newKey`: pointed at the new key, `point`, or let go, `release`); the
+   * work is the agent's passes' (`afterNewKey`, and each load's), so a reload or an error doesn't lose it.
+   */
+  async newKey(c: NamesConn, from: string, how: 'point' | 'release') {
+    try {
+      await (await names()).namesAgent().newKey(c, how, from);
+    } finally {
+      await this.refresh();
+    }
+  }
+
+  /** Room connection `c`'s key changed (New name): a pass of its titles now does what `newKey` kept (in the
+   * background: a release's proof of work takes a while). */
+  afterNewKey(c: NamesConn) {
+    void names()
+      .then((n) => n.namesAgent().pass(c.identityKey))
+      .catch((e: unknown) => console.warn('names: after New name:', e))
+      .finally(() => void this.refresh());
+  }
+
   /**
    * At load: the agent starts when titles are kept; after its first pass, the names in their last week are said, with
    * a Domains action that opens (`open`) the pane of the connection holding the first of them.

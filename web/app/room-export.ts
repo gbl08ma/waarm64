@@ -1,7 +1,9 @@
 // A room connection's export (docs/networking/adapters.md §2.1): its node key and, after a dot, its names: the names
 // agent's owners' secret and titles kept under the connection's `identityKey` (web/names-export.ts `exportNames`), so a name
-// travels with the key. A connection made from a pasted export takes the names as its own (`importNames`).
-import type { Connection, ConnectionState, NewConnection } from './connections.ts';
+// travels with the key. A connection made from a pasted export takes the names as its own (`importNames`). And what a
+// deleted room connection's names leave: its titles, and its registry records in its room (`sweepRoomRecords`).
+import { parseRoomLink } from '../room.ts';
+import type { Connection, ConnectionState, NewConnection, RoomConnection } from './connections.ts';
 
 /** The page's names (web/names-store.ts, `waarm64-room`'s `owner` and `titles`), loaded when an export needs them. */
 const pageNames = {
@@ -14,9 +16,9 @@ const pageNames = {
       e.importNames(s.idbNamesStore(), k, b),
     ),
   // Without titles no worker is started: the agent (and its module) only when there is something to judge.
-  held: (k: string) =>
+  held: (k: string, room?: string) =>
     import('../names-store.ts').then(async (s) =>
-      (await s.idbNamesStore().titles(k)).length ? (await import('../names.ts')).namesAgent().held(k) : [],
+      (await s.idbNamesStore().titles(k)).length ? (await import('../names.ts')).namesAgent().held(k, room) : [],
     ),
   forget: (k: string) => import('../names-store.ts').then((s) => s.idbNamesStore().forget(k)),
 };
@@ -36,10 +38,35 @@ export async function keepExported(state: ConnectionState, c: Connection, o: New
   if (names && c.room) await (state.keepNames ?? pageNames.keep)(c.room.identityKey, names);
 }
 
-/** The names this browser holds under connection key `identityKey` now (not let go, lost or lapsed). */
-export const heldRoomNames = (identityKey: string): Promise<string[]> => pageNames.held(identityKey);
+/** The names this browser holds under connection key `identityKey` now (not let go, lost or lapsed); in room ID `room`
+ * only, when given. */
+export const heldRoomNames = (identityKey: string, room?: string): Promise<string[]> =>
+  pageNames.held(identityKey, room);
 
 /** Forgets the owners' secret and titles kept under `identityKey` (its connection deleted). */
 export function forgetRoomNames(state: ConnectionState, identityKey: string): Promise<void> {
   return (state.forgetNames ?? pageNames.forget)(identityKey);
+}
+
+/** A room connection's room ID, from its link (undefined if it isn't one). */
+function roomIdOf(link: string): string | undefined {
+  const p = parseRoomLink(link);
+  return 'room' in p ? p.room.id : undefined;
+}
+
+/**
+ * The registry records in its room under room settings `r`'s `identityKey` (a deleted connection's, or the one a New
+ * name left), forgotten unless a connection in `all` (the connections now) in that room keeps them under that entry,
+ * or another tab's uses it (`elsewhere`). An ephemeral connection's own key (`identity`) keeps none (web/room-worker.ts).
+ */
+export async function sweepRoomRecords(
+  state: ConnectionState,
+  r: RoomConnection,
+  all: Connection[],
+  elsewhere: (identityKey: string) => Promise<boolean>,
+) {
+  const [k, room] = [r.identityKey, roomIdOf(r.link)];
+  if (room === undefined || r.identity) return;
+  const keeps = (x: RoomConnection) => x.identityKey === k && !x.identity && roomIdOf(x.link) === room;
+  if (!all.some((x) => x.room && keeps(x.room)) && !(await elsewhere(k))) await state.forgetRoomRecords(room, k);
 }

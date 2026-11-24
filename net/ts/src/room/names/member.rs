@@ -16,17 +16,19 @@
 //!   time per key (8 at once, the earliest `since` first), each calling back and sending the owning chain's run,
 //!   checked as `history` is, until the best run checked is older than every `since` left, or [`CONTEST_FOR`] ran
 //!   out; the owner by "Who owns a name" if every key shown is settled, else no answer. Silence through the last
-//!   round: nobody serves (30 s doubling to 10 minutes). A reply within 3 s after the decision is still checked:
-//!   another owner starts a contest.
+//!   round: SERVFAIL (the guest's resolver asks again), at the resolver's wait when the room replied or "who serves?"
+//!   found servers in the last minute (its replies were spent, by its own load or the guest's), else at once, and
+//!   "who serves?" is asked: nobody within 2.5 s is nobody serves (30 s doubling to 10 minutes). A reply within 3 s
+//!   after the decision is still checked: another owner starts a contest.
 //! - **Finding servers** for what must not name an id (the refresh of kept names, the dialog's check, a publisher's
 //!   puts): "who serves the registry?" as a server asks it (server.rs), the plain draw: shares of 1/64, 1/8, everyone;
 //!   the two answers with the lowest `BLAKE2s(nonce, owner key)` 0.3 s after the first. Held while asked and for
 //!   [`SERVERS_HELD`] after, redrawn every [`SERVERS_REDRAW`]; a server that fails is let go, and with none left the
 //!   next refresh asks again. Nobody within 2.5 s: remembered for 30 s, doubling to 10 minutes, reset by an answer;
 //!   meanwhile names not kept get NXDOMAIN at once and nothing goes out.
-//! - **A refresh** (a kept name confirmed more than [`KEPT_REFRESH`] ago): `get` (owner mode, with the last entry and
-//!   zone kept) to each server; each answers with the owning chain's last entry and the zone, those the member lacks,
-//!   or none. The answers disagree, or one contests what the member keeps (chain.rs `Kept::offer` refuses it):
+//! - **A refresh** (a kept name confirmed more than [`KEPT_REFRESH`] ago, [`KEPT_GRACE_REFRESH`] in its grace): `get`
+//!   (owner mode, with the last entry and zone kept) to each server; each answers with the owning chain's last entry
+//!   and the zone, those the member lacks, or none. The answers disagree, or one contests what the member keeps (chain.rs `Kept::offer` refuses it):
 //!   `history` from each, and the owner by "Who owns a name" over everything shown, which `Kept::offer` then takes or
 //!   refuses. **A refresh never sends an `ask`**: that would tell the room how long a name stays in use.
 //! - **What is kept**: each name resolved, its chain's last entry, the earliest time verified for that chain, the
@@ -64,10 +66,15 @@ pub enum Answer {
     Nx,
     /// Not known yet: the query waits (SERVFAIL after the resolver's wait).
     Wait,
+    /// SERVFAIL now: a first lookup met silence (the guest's resolver asks again).
+    ServFail,
 }
 
 /// A kept name is asked again in the background once servers last confirmed it this long ago (seconds).
 pub const KEPT_REFRESH: u64 = 300;
+/// ...and once this long ago while it is in its grace (NXDOMAIN meanwhile): a renewal the servers come to hold shows
+/// this late at most (seconds).
+pub const KEPT_GRACE_REFRESH: u64 = 60;
 /// None, and no owner: NXDOMAIN at once for this long, twice as long each time after while the name stays unknown, up
 /// to [`NEGATIVE_MAX`].
 pub const NEGATIVE_FOR: Duration = Duration::from_secs(60);
@@ -97,8 +104,10 @@ pub const REPLIERS_A_KEY: usize = 32;
 pub const FIRST_SPREAD: u8 = 6;
 /// A round that brings more replies than this starts the next lookup 3 bits narrower (up to [`MAX_SPREAD`]).
 const REPLIES_FEW: usize = 8;
-/// Silence this soon after a reply counted isn't taken for "nobody serves".
+/// Silence this soon after a reply counted, or "who serves?" found servers, isn't taken for "nobody serves".
 const HEARD_FOR: Duration = Duration::from_secs(60);
+/// A silence's SERVFAIL holds for the queries that waited on it this long at most (the resolver's wait).
+const SERVFAIL_FOR: Duration = Duration::from_secs(4);
 /// Replies under our reply tag to nonces we never sent (or sent more than [`STRAY_FOR`] ago), this many in
 /// [`STRAY_FOR`]: someone spends servers' budgets under our tag ([`super::server::REPLIES_PER_TAG`] a minute each),
 /// and silence, none or one key shown may be what it left (final review, finding 2). Half a server's budget: an
@@ -405,6 +414,12 @@ pub struct Member {
     replies_on: bool,
     /// When a reply last counted: silence soon after isn't "nobody serves".
     heard: Option<Instant>,
+    /// When "who serves?" last found servers: silence soon after isn't "nobody serves" either.
+    served: Option<Instant>,
+    /// A first lookup met silence that nothing heard explains: "who serves?" is asked, and decides whether anybody does.
+    probe: bool,
+    /// First lookups that met silence, and when: their waiting queries get SERVFAIL now.
+    servfail: BTreeMap<[u8; 32], Instant>,
     /// The `ids` checks wanted (first bytes), and what came back: the ids servers hold under each.
     ids_wanted: BTreeSet<u8>,
     pub ids_answers: BTreeMap<u8, BTreeMap<[u8; 32], u64>>,
@@ -448,6 +463,9 @@ impl Member {
             ready: false,
             replies_on: false,
             heard: None,
+            served: None,
+            probe: false,
+            servfail: BTreeMap::new(),
             ids_wanted: BTreeSet::new(),
             ids_answers: BTreeMap::new(),
             ids_done: VecDeque::new(),
@@ -559,8 +577,16 @@ impl Member {
                 self.cmds.push_back(Cmd::Store { id, record: None });
             } else {
                 k.used = unix;
-                let fresh = unix < k.checked + KEPT_REFRESH;
-                let answer = if k.kept.chain.resolves(unix) {
+                let resolves = k.kept.chain.resolves(unix);
+                // In its grace a name is NXDOMAIN while fresh, so it is confirmed sooner: a renewal the servers come
+                // to hold shows a minute late at most, not five.
+                let refresh = if resolves {
+                    KEPT_REFRESH
+                } else {
+                    KEPT_GRACE_REFRESH
+                };
+                let fresh = unix < k.checked + refresh;
+                let answer = if resolves {
                     let node = k.zone.as_ref().and_then(|z| z.open(&self.names, full));
                     Some(node.map_or(Answer::Nx, Answer::Node))
                 } else if fresh {
@@ -583,7 +609,10 @@ impl Member {
             return Answer::Nx;
         }
         if start {
+            self.servfail.remove(&id); // asked again
             self.lookup(id, now);
+        } else if self.servfail.contains_key(&id) {
+            return Answer::ServFail;
         }
         Answer::Wait
     }
@@ -638,8 +667,10 @@ impl Member {
         if self.servers.is_empty() {
             // Only what must not name an id needs servers: refreshes, the dialog's check, puts (a first lookup asks the
             // room).
-            let needs =
-                !self.lookups.is_empty() || !self.ids_wanted.is_empty() || !self.puts.is_empty();
+            let needs = !self.lookups.is_empty()
+                || !self.ids_wanted.is_empty()
+                || !self.puts.is_empty()
+                || self.probe;
             if self.ask.is_none() && needs && self.next_question.is_none() {
                 self.start_question(now);
             }
@@ -937,6 +968,7 @@ impl Member {
 
     fn nobody_answered(&mut self, now: Instant) {
         self.ask = None;
+        self.probe = false;
         self.stats.nobody += 1;
         let wait = self
             .nobody
@@ -1015,6 +1047,8 @@ impl Member {
     fn choose(&mut self, now: Instant) {
         let a = self.ask.take().unwrap();
         self.nobody = None;
+        self.probe = false;
+        self.served = Some(now);
         let (keep, rest) = a.choose();
         self.cmds.push_back(Cmd::Accept { until: now, max: 0 });
         self.servers.extend(keep);
@@ -2062,29 +2096,39 @@ impl Member {
         self.strays.len() >= STRAYS_MAX
     }
 
-    /// Nobody replied through the last round: nobody serves (as "who serves?" remembers it). Unless the room replied
-    /// lately: its servers' reply budgets were spent (a guest asking many names at once), and the query gets the
-    /// resolver's SERVFAIL; the next asks again.
+    /// Nobody replied through the last round. The room replied lately, or "who serves?" found servers lately: its
+    /// servers' reply budgets were spent (its own load, or a guest asking many names at once), and the query gets the
+    /// resolver's SERVFAIL; the next asks again. Else SERVFAIL at once, and "who serves?" is asked (it names no name,
+    /// and servers answer it from a budget of their own): nobody within 2.5 s is nobody serves
+    /// ([`Member::nobody_answered`]: NXDOMAIN for 30 s doubling, the queries waiting too); servers that answer keep
+    /// the silences SERVFAIL for [`HEARD_FOR`].
     fn silence(&mut self, id: [u8; 32], now: Instant) {
         self.end_first(id);
         if self.interfered(now) {
             return self.log("no reply to an ask, while our replies are spent by others".into());
         }
-        if self
-            .heard
-            .is_some_and(|t| now.saturating_duration_since(t) < HEARD_FOR)
-        {
+        if self.nobody.is_some_and(|(t, _)| t > now) {
+            return; // "who serves?" found nobody meanwhile: the queries waiting get NXDOMAIN
+        }
+        let lately =
+            |t: Option<Instant>| t.is_some_and(|t| now.saturating_duration_since(t) < HEARD_FOR);
+        if lately(self.heard) {
             return self.log("no reply to an ask, from a room that replied lately".into());
         }
-        self.stats.nobody += 1;
-        let wait = self
-            .nobody
-            .map_or(NOBODY_FIRST, |(_, w)| (w * 2).min(NOBODY_MAX));
-        self.nobody = Some((now + wait, wait));
-        self.log(format!(
-            "nobody serves the registry; NXDOMAIN for {} s",
-            wait.as_secs()
-        ));
+        if lately(self.served) || !self.servers.is_empty() {
+            return self
+                .log("no reply to an ask, from a room whose servers answered lately".into());
+        }
+        // NAMES2 loop 5b: N6a's joiners, never having heard the room, took a silence its own load made for "nobody
+        // serves" (30 of 500; 20 still when only the second silence was): SERVFAIL at once, and "who serves?" decides.
+        self.servfail
+            .retain(|_, t| now.saturating_duration_since(*t) < SERVFAIL_FOR);
+        self.servfail.insert(id, now);
+        self.probe = true;
+        self.dispatch(now);
+        self.log(
+            "no reply to an ask, from a room not heard lately: SERVFAIL; asking who serves".into(),
+        );
     }
 
     fn end_first(&mut self, id: [u8; 32]) {

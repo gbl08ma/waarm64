@@ -1521,8 +1521,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The backup is copied, as the key is: no file to save or open.
   - Other dialogs could become pages on Home's levels (the precedent: a connection's page replaced its details dialog
     and the wizard's edit mode), such as a disk's Overlays or a machine's snapshots.
-  - A domain let go before its claim was public shows Let go (loop 4's fix in web/names.ts `view`), but what the agent
-    publishes for it once the claim is anchored later (the claim with no release after it?) was not looked into.
   - The toolbar menu's link to a room's Domains is checked by `tests/page-room.test.ts` (a running machine) but has no
     screenshot in `tools/screens.ts`.
   - The toolbar's ways into a connection's page while Home shows a pane that isn't a machine's (Disks, Shared folders,
@@ -1645,346 +1643,118 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
   a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.
 - **Room names' loose ends** (NAMES track, [networking/names.md](networking/names.md); the records and rules in
-  `net/ts/src/room/names/`):
-  - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not the
-    ~1,400 newer generic ones (`app`, `dev`, …): words people want as names, which a guest asks under the room's
-    domain only after the name itself failed. Compile them if a guest turns out to ask them unprompted.
-  - **The days-long run on public services** (the kickoff's N6 "a few days on the public calendars, explorers and
-    default relays with real stamps, between two pages"): built as `bench/net/names-long.ts` and proved for 1.8 hours
-    (bench/net/REPORT.md "NAMES loop 6b", "The days-long run"); **the user postponed the run itself until after their
-    hands-on tests**, and launches it. From the repo root of the branch it runs on, after `net/ts/build.sh`:
-    ```sh
-    systemd-run --user --scope -p MemoryMax=1G -p MemorySwapMax=0 -- nice -n 19 timeout 4d \
-      node --disable-warning=ExperimentalWarning bench/net/names-long.ts run --dir bench/results/local/names-long --days 4 --every 20
-    node bench/net/names-long.ts summary bench/results/local/names-long/log.jsonl --out results/names6b/long.json
-    ```
-    Expected (from the proof): ~1,000 events a relay a day, a few dozen calendar and explorer requests over the run,
-    ~0.2% of a core and ~150 MB RSS a node. Killed or ended early, the same `run` with the same `--dir` goes on (the
-    room, the name, A's node key and the agent's titles are in its `state.json`). Then a "NAMES loop 6b, the long run"
-    REPORT entry from the summary, and backlog items from what it shows (resolves over days, relay and DERP drops,
-    renewals made ahead, the agent's hourly publisher). **The relay budget, the user's call before launching**: a
-    room's own cadence (a server alone asks "who serves?" about every 5 minutes, three events each; the agent's
-    publisher connects hourly; a member's names client reconnects at a lookup after 10 idle minutes) sends each relay
-    ~40 events and ~6 connections an hour, ~1,000 events a day, past the kickoff's "a few hundred requests a service";
-    the script's caps (`CAPS`: 2,000 events and 300 connections a relay a day, past which it ends) are a safety valve at
-    that rate. With the six default relays the connection cap ends the run within hours, on relay.degmods.com's
-    reconnects (~80 an hour while it doesn't answer): either raise `CAPS.relayOpensADay`, or name steadier relays with
-    `--nostr wss://relay.routstr.com,wss://relay.nostrmap.net,wss://relay.primal.net` (a fresh `--dir`; still ~250
-    connections a relay a day); or run shorter (`timeout 1d`, ~1,000 events a relay). The calendars and explorers stay
-    far under theirs (150 each over the run; the proof: 5 or 6 a calendar, 4 at blockstream.info).
-  - **Past a few thousand names: servers that hold a share of the id space each** (names.md "Size, and where it
-    stops"): today every server holds the whole registry and every new owner pays its first sync (5,000 names held six
-    months are 72 to 93 MB and 6 to 8 minutes; 20,000 too much for a tab), and the bound (20,000 names, 128 MiB) drops
-    the youngest chains past it. Servers each holding the ids under some prefixes, found by a question naming the
-    prefix, is the one to build; the others (owners syncing over WebRTC, which shows an owner's IP address to other
-    owners; fewer renewals a term) are the user's calls.
-  - **Old history in chains**: a chain grows by an entry a renewal for as long as a name is held (two a month, ~1.45 KB
-    each with its anchor), and a server needs all of it, since a held-back chain is beaten only by showing an older
-    unbroken run. No compact proof of an unbroken run was found. A title's item likewise holds every entry it ever had
-    (below).
-  - **Transfer of a name to another owner key, and a recovery key**: not built; a lost title (its browser's storage
-    gone, no export kept) is a lost name, and an export is the only way to move one (it hands over the secret). A
-    transfer would be an entry by the old key naming the new; a recovery key one that may sign over a lost one after a
-    wait (did:plc's 72-hour override is the pattern).
-  - **A claim public before its anchor** ("public now, may be raced"), on the user's request: not offered; a claim stays
-    private for the ~2 hours its proof takes.
-  - **The short name through the search domain** is checked on Debian (resolved takes the lease's domains); guests
-    without systemd-resolved (a plain `resolv.conf` from DHCPv6's domain list) aren't.
-  - **For the user, from review 3's fixes** (each fixed as conservatively as the decisions allow):
-    - **A contest crowded by forged repliers**: copies of a key's real entry from made-up servers, claiming `since` 0,
-      crowd out its real holder; the contest ends within 10 s with no answer, never another owner's. So anyone who
-      knows the room's ID can keep a contested name (one with a second live chain: a registration) from resolving on
-      first lookups. Closing it needs a reply to prove its server (a serve-style proof over the nonce): a protocol
-      change, and the replier's identity in every reply.
-    - **The spread under forged replies**: forged nones and copies of real entries still count toward the next first
-      lookup's spread (narrower by 3 bits, to 15 at most); its rounds widen to everyone, so a lookup is slower by about
-      a second, not wrong.
-    - **A refresh that can't see the kept owner's claim**: while a member never saw the kept chain's claim, a refresh
-      whose two drawn servers show only another key's run keeps what is kept (refused). A first lookup's `ask` would
-      find the owner's holders but announces the name id from a member that keeps it (the user's widening covers only
-      names not kept); not done.
-  - **For the user: a measured GPU figure for Argon2id** needs a tool installed on the Mac host (hashcat, or a WebGPU
-    Argon2 kernel in Chrome for Testing): nothing that runs Argon2 on a GPU is installed. The figure in names.md
-    ("Records": ~110x an RTX 3090 to ~220x an RTX 5090 over a tab, a million names ~63 RTX 5090-hours a term) is
-    published Chukwa v2 mining rates (Argon2id 1 MiB, t = 4) scaled to t = 1 and by bandwidth, which agree with N0a's
-    bandwidth bound.
-  - Done (N4c, N4d): a zone's `seq` is `n << 32 | branch`, each copy of a title a branch of its own, 32 random bits
-    drawn at registration and by every copy taken in from an export, so one export pasted twice gives two branches.
-    Titles kept with N4c's one-byte branch (and their items' 4-byte zones) are refused now: rooms are pre-release.
-  - Servers keep one chain a name, the owner's (N2, names.md "Servers"), so a back-order (a younger chain alive
-    beside the owner) isn't carried: when the holder lapses it owns the name by the rule, but servers have it only
-    once its owner's agent puts it again. Done (N4c): the agent puts each public title once a visit and an hour, not
-    only at its changes, so a back-order or a reset room has it within the hour of a page being open.
-  - A server's sync partners last one round (a new question every 5 minutes; idle sessions go after 3 minutes), where
-    the spec's members hold theirs across questions. Holding servers' partners would save a question a round.
-  - A zone a server got through sync waits out the 10-minute limit like one put to it, so servers can differ on a
-    zone for up to 10 minutes (sync then asks for it every round).
-  - Headers are kept once an item, not once a registry: entries a calendar anchored in one block repeat its header
-    across names (80 bytes each, ~5.5% of an entry's 1.45 KB: N0b). Anchors through one calendar transaction likewise
-    repeat their common path (a second one made apart adds 304 to 713 bytes of its own, of ~1,185): a store of anchors
-    by transaction would save ~30% at 1,000 names, ~40% at 5,000 (names.md "Size, and where it stops"). N6's
-    sizes say whether it matters.
-  - **The agent collects a claim's anchor later than the dialog says** (N0b): it asks 5 minutes after stamping, then
-    5 minutes doubling to an hour (`RETRY_MS`, `PASS_MS`: at 5, 10, 20, 40, 80, 140, 200 minutes), so a proof the
-    calendars serve at 81 to 140 minutes (the first of the three's p90 is 1.7 to 2.3 hours) is collected at 140, past
-    `PUBLIC_IN_MS`'s 2 hours, and the page shows "public once this web app has been open a while" while open: 76 of
-    N0b's 80 stamps would have. Asks spaced around the expected proof (a first at an hour, then every 10 to 15 minutes
-    to 3 hours, then the doubling) make "about 2 hours" true for ~90%.
-  - Names a server dropped by its bound keep their ranges' fingerprints differing from other servers', so each sync
-    round descends to them and lists them again (a request or two a range). Not measured past one round (N6a's junk
-    run: the bound dropped 2,500 junk names a server as the registrant's names came, ~0.2 cores for 20 servers over
-    the 5 minutes): the churn of rounds after it is for a longer run.
-  - **The bound by age** (N6a: the youngest owning chains first, names.md "Servers"): an honest room past the
-    bound now drops its newest names, and an attacker who claimed junk early and kept it renewed still pushes out
-    names claimed after it. A share of the id space per server (names.md "Size, and where it stops") is what
-    takes a room past the bound for good.
-  - An asker checks each `serve` whole (an Argon2id, ~0.5 ms in wasm) as it comes; at most 32 a question.
-  - The module grew 92 KB Brotli (592 to 684, `net/ts/build.sh`, 2026-11-16) once the names code was linked (N1's
-    records and rules were dead code until N2 used them). Not looked into: what dominates (Argon2, the anchor
-    verifier, monomorphized collections), and whether it's worth trimming.
-  - Done (N4c): titles as they change go to a running room (`ts_room_names_titles`, the room worker listening on the
-    agent's BroadcastChannel `waarm64-names`). Tested natively (room/tests/names.rs) and through the config in Node;
-    the BroadcastChannel path in a page isn't (N5's page test can: register while the room runs).
-  - The `names` store in `waarm64-room` is kept by room and connection (review 1): deleting a connection leaves its
-    records (a member's few KB, a server's registry) for good. A sweep at Delete of the connection's key in each room
-    it named would clean them.
-  - A member that holds a better chain than a server showed it (it kept the owner's after a reset) doesn't `put` it:
-    it keeps only the chain's last entry, not the run a server needs to take it. The owner's agent puts it back at its
-    next visit, or within the hour while its page is open (N4c).
-  - A member's resolver logs every query for a name that isn't a key to the worker's console, names in words
-    included (the page tests read it to see what a guest asks on its own). Quieter (a count, or only in a debug
-    mode) once N6 has its numbers.
-  - A member's refresh that two servers left unanswered is tried once more and then given up (what is kept answers
-    meanwhile); a server that never answers a `get` but always answers "who serves?" is found again at each new
-    question. N6 sees whether that matters at scale.
-  - **A first lookup's loose ends** (R3, names.md "A member resolving a name"):
-    - Done (R3a): **the owner's own last entry shown with an old zone or none** (or an entry a renewal behind) no longer
-      silences the dissent: `shown` is 8 bytes of a hash of the owner key, the last entry and the zone, so a holder of
-      anything newer replies (names.md "A member resolving a name"; the ask stays 164 bytes).
-    - Done (the final review's finding 5): **the owner's last entry before its release, replayed**: a server holding a
-      release replies it (the release and the entries before it that fit) to shares and every dissent, and a member
-      takes no key whose last entry such a release ends. Not done: a contest's `fetch` still sends only the owning
-      chain's run (the release comes by the share and dissent replies, which every holder sends).
-    - **`REPLY_MAX` (4 KiB) is the user's starting value**: whether the six default relays forward an ephemeral event of
-      that size, and how fast they rate-limit a server's replies, is a dev VM session's to measure (N0c/N6: about a
-      hundred events, no public service touched in the cloud). Under a relay's limit, items come by `fetch` (a session).
+  `net/ts/src/room/names/`). The NAMES2 track (2026-11-23) took what the pane promises, titles that can't get stuck,
+  honest lookups under load and the relays (names.md, rooms.md say what exists); what is left here is by kind, the
+  weightier first. What an attacker can still do and what stops it is names.md "What an attacker can do":
+  a row there with no remedy to build isn't repeated here.
+  - **Needs a design, and the user's call** (a dishonest participant, or plain growth, spoils names for everyone):
+    - **Past the bound: servers that hold a share of the id space each** (names.md "Size, and where it stops").
+      Every server holds the whole registry and every new owner pays its first sync (5,000 names held six months:
+      72 to 93 MB, 6 to 8 minutes, and 67 minutes of block checks at an explorer; 20,000 is too much for a tab), and
+      the bound (20,000 names, 128 MiB) drops the youngest owning chains first. So an honest room past it loses its
+      newest names, and **junk claimed early and kept renewed pushes out every name claimed after it** (by names.md's
+      GPU estimate, 20,000 junk names are about 1.3 RTX 5090-hours a term). Servers each holding the ids under some
+      prefixes, found by a question naming the prefix, is the one to build: a track of its own. The others (owners
+      syncing over WebRTC, which shows an owner's IP address to other owners; fewer renewals a term) are the user's
+      calls. A chain also grows by an entry a renewal (two a month, ~1.45 KB each) and a server needs all of it: no
+      compact proof of an unbroken run was found.
     - **Forged asks in a room of hundreds of servers**: each holder replies once to a made-up `dissent` (up to 4.1 KB
-      through two relays), bounded only by 2 a second a server and 16 a minute a tag: megabytes a second onto public
-      relays. The design's remedy (servers answering on one relay, thinning replies by the room's size) isn't built.
-      Measured on the bus (N6a, bench/net/REPORT.md "NAMES loop 6a"): 300 holders, 10 forged asks a second already
-      make the room's whole budget, 600 replies a second (100 or 1,000 a second make no more): with real items (up
-      to 4.1 KB) ~2.5 MB/s, each through two relays, from one event's worth of attacker work per ask. Thinning
-      `dissent` replies by the room's size would cost the dissent's guarantee (one honest holder suffices) a chance of
-      silence: the user's call.
-    - **Reply budgets spent by one guest** (N6a measured it on the bus, after the rounds fix below): a guest asking 10
-      names at once in a room of one or two servers has all 10 within 10 s (SERVFAILs meanwhile); 40 names at once
-      against 2 servers, 20 within a minute and no more (each server's 16 replies a minute to one reply tag), 5
-      servers 34, 20 servers all 40 within 30 s. Never NXDOMAIN now. Before N6a's fix (a lookup's rounds timed from
-      its start while its asks waited for the member's 4 a second), 10 names at once in a room of one or two servers
-      were all NXDOMAIN, "nobody serves" for 30 s doubling to 10 minutes.
-    - **"Nobody serves" from a member that never heard the room, while the servers' reply budgets are spent** (N6a):
-      500 members joining in a minute, each asking one name as it runs (20 servers, 5,000 names): 467 answered, 33
-      NXDOMAIN (30 of them silence through every round, taken for "nobody serves", 30 s; 3 "none" from a server
-      lacking the name whose holders' dissent went over budget). A first silence from a room never heard could be a
-      SERVFAIL (asked again) and only a second "nobody serves", at the cost of a room with no server answering
-      NXDOMAIN ~2.5 s later than now; or the servers' 2 replies a second could grow with the room. Both change what
-      the user measured or decided: open question.
-    - **"Who serves?" ranks a server by the best of its names** (N6a): asks now draw once a server, but a question's
-      answer carries a `serve` that proves the name it ranks by, so a server owning many names answers nearly every
-      question's first round (250 names: 98% at a spread of 6). Refreshes ask questions rarely (servers held 3
-      minutes, redrawn every 15), so it didn't show at 1,000 members; a server answering every question costs it a
-      call back and a handshake each.
-    - **A name in its grace resolved first while its renewal is pending** is kept and NXDOMAIN for 5 minutes, as any
-      kept name in its grace (names.md "A member resolving a name"); a first lookup now comes sooner than the
-      servers finish a renewal, which the rig's test had to wait out. A shorter freshness for a kept name in its grace
-      would end it.
-    - The first lookup's time on public relays (~1 s in a room asked before, ~2 s the first time: *estimates*) is
-      N0c's item 6.
-  - **A forged header at the floor** (R1: an anchor is its proof and its block's one header, against one floor at 1/16
-    of block 976,177's difficulty): one header mined in private, timed weeks back, anchors claims on any number of
-    names in every room. Servers asking an explorer about each block (R2, built) refuse it at a server; a member, which
-    asks no explorer, still takes it from any server that shows it (since R3 a first lookup's reply or a contest's
-    run: its older run wins the contest; names.md "What an attacker can do").
-    N4b's run of seven headers and the floor's schedule are gone, and with them the schedule's upkeep.
-  - The floor is one constant. Raising it at a release must stay under every block since the oldest anchor still
-    alive (a term and a grace, 37 days), or entries alive then are refused; no release step does it yet, and nothing
-    has to while difficulty doesn't fall sixteen-fold.
-  - A claim never goes stale (R1: an anchor at any time makes it a claim then), so the agent asks for a claim's proof
-    hourly for as long as its calendars never finish it (all three lost the commitment), and never makes it again. A
-    limit (made again after, say, a day with every calendar answering pending) would end that.
-  - What servers ask outside the room (R2, names.md "Servers", "Outside the room"):
-    - A server's count of the room's servers, which sets its chance of asking a calendar, comes from its own questions'
-      answers (times the round's share, at most 64). Junk registrations that answer questions raise it, so honest
-      servers ask a renewal's calendar less often (at worst 1/64 a slot each) and a renewal is finished later; the
-      owner's own visit still collects it. A room of many young or junk servers isn't measured (N6a measured the rest
-      of its scale; this one wants hours of simulated time with hundreds of servers on the bus, ~an hour of `cargo
-      test` at the 20-server test's pace): by the rule, junk servers counted at the cap of 64 leave `h` honest servers
-      asking a renewal's calendar `h`/64 times a slot together instead of about once, never less than the owner's visit.
-    - The pace of block checks (one every 3 s a server, the newest first): 100 checks at that pace to each explorer
-      all answered, no limit seen (N0c, bench/net/REPORT.md "NAMES loop 0c"; both explorers' 404s for an unknown block
-      carry their CORS header, and a cross-origin-isolated page sees them). Not measured: a big room's first sync,
-      whose distinct blocks are bounded by the window, not the names (37 days are ~5,300 blocks; the calendars' own
-      transactions land in ~2,000 to 3,000 of them: alice's every ~3 blocks, bob's ~4), so that many checks, 1.7 to
-      2.5 hours at one explorer for one new server.
-      N6a's rig confirms the count at scale: 20 servers syncing 5,000 names anchored in 1,342 distinct blocks asked
-      the explorer 1,342 times each (26,838 in all), every block once a server whatever the names in it, and nothing
-      more once the verdicts were stored (a restart from its records asked none). At production's pace that is 67
-      minutes of checks for each new server, one request every 3 s.
-    - A server finishes the one pending anchor it keeps an entry (the lower of two): if that calendar never finishes
-      (it lost the commitment), the servers ask it, ever more rarely, until the renewal goes stale; the owner's agent,
-      at its visit, tries all three of its calendars.
-    - The renewal made ahead is made after a pass's publish while the page stays open (proof of work: half a minute on
-      average); a page closed sooner leaves it to the next visit, which makes it then if a renewal is due (the slow
-      path, as before R2). The visit after a registration makes the first one.
-    - The 20-server and 60-day tests (server_tests.rs) take ~1.5 minutes of `cargo test` each, even with the curve,
-      Argon2 and the hashes optimized in test builds (the root Cargo.toml's `profile.dev.package`).
-  - On the public relays and DERP (N0c, bench/net/REPORT.md "NAMES loop 0c"):
-    - Done (N6b): **a first sync was what's in flight over the RTT**: not the 8-part window alone but a run's 4 `get`s
-      (one name each, ~3 KB, three parts) under it. Through the rig's derper behind a 95 ms shaper
-      (`bench/net/names-window.ts`): 4 gets and 8 parts 0.72 Mbit/s; a window of 16 or 32 alone 0.97; 8 gets and 16
-      parts 1.44, no drop at the derper with one partner or two, unshaped or at 4 Mbit/s; 16 and 32 2.9, but the
-      derper's 32-packet queue dropped 25 to 33 parts with one partner and 16 to 117 with two. Now 8 and 16 (two partners' 16
-      are the queue); tailcat's 303 moved 20 MB in 114 s (N0c: 228), a guest's ping beside it unmoved. **Left**: two
-      partners at once into a new server are rarer than thought (a server's question stops at the first round with an
-      answer and keeps what answered, often one), so a first sync is mostly one partner's rate; and a wider pipe
-      wants either more gets in flight with acknowledgements paced by the derper's queue, or `get`s naming several
-      ids (fewer round trips): neither tried. 5,000 names held six months (72 to 93 MB) now take 6 to 8 minutes.
-    - Done (N6b): **a first sync past one run's 4 minutes** goes on in a round that starts at once after a run cut by
-      its time (a breach still waits for the round's 5 minutes); N0c's 50 MB had waited ~100 s.
-    - **A server's memory, measured** (N6b, `net/ts/examples/names-memory.rs`, a counting allocator; 5,000 names held as
-      N0c's and N6a's, 15.5 MB of items): the items decoded alone are 36.3 MB (2.35x: an anchor's 62 operations are a
-      `Vec<Op>` of 32 bytes each and 31 allocations of their own, ~3.4 KB an entry with its anchor against ~1.2 KB
-      encoded); a server held 61.7 MB (3.99x), of which the store's records 55.3 and the rest (the registry's map,
-      blocks to check) 6.4; a server syncing them all peaked at 68.7. **Cut** (N6b): a name's entries in a sorted `Vec`
-      of their number instead of a `BTreeMap`, whose node held 11 entries of 416 bytes whatever it held: 41.1 MB
-      (2.66x), its sync's peak 48.3. What's left is the anchors' decoded form: keeping each anchor encoded (decoded
-      only when checked) would save ~2 KB an entry, ~20 MB more at 5,000 names (to ~1.4x); `Anchor` is public and
-      used by the verifier, the agent and the tests, so it is a change of its own, not done. A tab's linear memory is
-      its heap's high-water mark (dlmalloc never gives it back), so the sync's peak is what a tab keeps.
-    - Done (N6b): **a room's servers that all start at once converge in rounds**: a round whose sync brought names is
-      followed by the next 30 to 40 s on (8 in a row at most), so twenty servers through the fake DERP and relay
-      converge in 40 s (was 340 s); on N6a's rig (20 servers of 250 names) every server held all 5,000 within 296 s
-      (p50 125 s; was not all within 8 minutes).
-    - **Items of a `get` answer dropped for a full verify queue** (N6b's rig run: 1,933 log lines over 20 servers
-      converging, each item sent and dropped): a run's `get`s wait for room in the queue, but answers already in
-      flight (8 a run since N6b, and `have`'s) arrive past it. Counting a run's outstanding `get`s against the room
-      before sending would stop the waste; not measured whether the 8 gets made more of it than 4.
-    - **A relay that doesn't answer is retried every few seconds for good** (N6b's long-run proof): relay.degmods.com
-      "didn't answer" ~120 times in 1.8 hours and was connected 142 times by two nodes (their room clients and names
-      clients), the backoff (2, 4, 8, 16 s) starting over after each connection that opened. Every room node does this
-      against a flaky default relay; a backoff that keeps growing while a relay keeps not answering (or dropping it
-      for the session) is rooms.md's (docs/networking/rooms.md "What a room needs from a Nostr relay").
-    - The days-long run gives the rest (above, "The days-long run on public services").
-    - Done (N6b): **two servers that start within a second found each other only 30 s on**, for two reasons. (1) Each
-      one's first question came while the other's was open and unsynced, and each refused the other: a server that
-      refused a question for that now asks again within 1.5 to 3 s. (2) A server's first question went out before its
-      names client's DERP connection was up, so on a public region (a second or more to connect) the answers' call
-      backs found nobody there (a derper drops them as an unknown destination): it now asks once that region is up,
-      as a member does. On the six default relays and tailcat's 303, two servers started at once now hold each other's
-      name 7.3 to 8.8 s from the start, five rounds of five (N0c: 34 s, once ~350 s). Why N0c's ~350 s run had three
-      more questions go unanswered is still unknown (its logs had no names lines); it wasn't seen in these five, nor
-      in the long run's proof.
-  - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
-    - The accept window's eviction (names.md "The names client") is tested on `AcceptWindow` itself
-      (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.
-    - A server none of whose names is alive can't prove one, so the servers it asks refuse its `sync`s: it keeps what
-      it holds and syncs nothing until its agent renews (it answers no question either).
-    - One registration still buys a server's work: its `sync`s may make another fingerprint 16 times its registry a
-      round, its `have`s 64 `get`s at once; any session `put`s 4 at a time (a junk one costs one check, an Argon2id).
-      N6 measures what that costs a server at 5,000 names.
-    - A peer's proof is checked once a session (an Argon2id), a refused one not again; a new session is a new key and
-      a new DERP connection.
-    - A send past the 8 MiB queued to a peer fails quietly when it is an answer (the asker's request times out).
-    - Done (N4c): the agent signs every pending anchor (`ts_names_pending`), and the rig test sees servers hold it.
-  - The names agent's loose ends (N4c, names.md "The names agent"):
-    - Done (R2): servers finish pending renewals at the calendar and an explorer, and the agent makes the next renewal
-      ahead of the visit that stamps it, so one short visit every 2 weeks keeps a name (names.md "Servers",
-      "Outside the room", and "The names agent").
-    - Done (N5): deleting a room connection that holds names says so in its question, with the export to copy, and
-      forgets them (names.md "What the user sees").
-    - Done (N5): an ephemeral connection with a key of its own can't hold a name; the dialog says so.
-    - Done (N5): the wizard's key field is the export with names, and a pasted one brings them.
-    - The page's loose ends (N5):
-      - New name on a room connection that holds names keeps its titles (under the same entry) pointing at the old
-        key: each card's [Point all at this connection](ui:network:DomainCard.pointHere) fixes it by hand. New name could
-        offer it, or repoint them itself.
-      - Done (DOMAINS): a connection's Domains pane registers and manages its domains with the connection
-        disconnected (the names agent's `member`, the key made in `waarm64-room` if it never started).
-      - The dialog's check opens a checker (a publisher: a new key, "who serves?") for each press of Register (N5b), so
-        Register waits for servers to be found (a few seconds) before a free name registers. A running room's own
-        names client could ask sooner, but it would link one press to the next and to the node's own lookups.
-      - "Taken until" is a server's word, unchecked: a lying server can make a free name look taken (Register is then
-        disabled). Two servers are asked and the latest date wins; a check that showed both answers apart could say so.
-      - A card's points take a member's name or key pasted; nothing lists the room's members to choose from.
-      - The last week's notice is a message bar notice that clears itself (with a Domains action since DOMAINS); a name
-        past its term in grace says so in its card, the pane's upkeep line and the status links' warning.
-    - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
-      entries a month, 1.17 to 1.52 KB each with their anchors and headers (R1; measured by N0b), and is put whole. Pruning dead branches and
-      stale entries from the item (they never count again) would keep puts small.
-    - The publisher waits up to 45 s for its answers and is made again at each publish: a page with many titles in one
-      room puts them one publisher each. One publisher a pass a room would ask "who serves?" once.
-  - Review 2's fixes (N5a; the review was NAMES-REVIEW-2.md, in git history before its deletion), what they leave:
-    - Done (R2): finding 3 (servers finish renewals, option A).
-      Spreading one owner's renewals over visits (finding 13) waits on the same decision: it moves when renewals happen.
-      N0b measured what spreading must cover: stamps made within the same second are near-siblings in a calendar's tree
-      (under ~450 bytes of path apart, where stamps 10 s or more apart differ by 290 to 700), so a server sees which ids
-      were stamped together without guessing them; 1 to 10 s apart they partly do (291 to 641).
-    - Answers rank by their chain's age (finding 2), so a Sybil needs registrations held as long as the honest
-      servers', renewed all along: three months buys the top tier, and from there it is a lottery again. In a room
-      younger than that servers rank by age among themselves, and rounds sample young ones rarely, so more questions
-      reach the last round (everyone answers, within each server's 4 a second). A `serve` carries up to 8 entries
-      (~16 KB with anchors and headers) where it carried one: N6 measures a cold lookup with it.
-    - A server remembers 16,384 entries it verified (finding 7); an attacker with more valid entries than that (a dead
-      registry's, collected over time) can still make it check them whole. Checking an item's anchors before its
-      entries' proof of work (a dead chain fails on the cheap part) or a budget of whole checks a second for puts would
-      close it; neither is built.
-    - A question's key proves nothing (finding 12): a server answers questions naming one key 4 times a minute, so a
-      victim's node gets 4 call backs and `serve`s a minute from each server (1.3 trials a second with 20, of its 16). A
-      proof needs a round trip the asker starts, which "who serves?" can't carry.
-    - Listing the registry's ids costs nothing (finding 13; the spec's table says so now). The dialog's check asks one
-      first byte a press of Register (finding 1, as the user decided in N5b; N5a's every-id form is gone): a server
-      that hashes a dictionary can tell a guessable name from the byte, and nothing more.
-    - A sync run lasts 4 minutes at most (finding 14): a new server answers questions after its first run even when
-      that run's partner held it up, with what it got so far; the next rounds fill in the rest.
-    - A member's answer goes only into a lookup asking that server in the same mode (finding 9): a defence beside the
-      fix (no lookup being checked is asked again), with no test of its own, since the fix leaves nothing for it to
-      catch.
-  - The final review's fixes (findings 4, 8, 9, 10), what they leave:
-    - The dialog's "taken" (finding 8) weighs each server's `ids` list apart: taken only when every server that
-      answered lists the name, a disagreement said as such with a second press that registers. Still taken on a lie:
-      one liar alone answering in time (the other silent past 3 s), or both drawn servers liars. A `get` of the one
-      id, checked as a member checks a reply, would prove "taken" but names the id to the server before the claim
-      (review 2's finding 1, which the user's N5b decision answered with one byte a press): the user's call.
-    - A release beats every sibling branch at its parent (finding 4), but a copy of the title that renewed (another
-      browser holding the export) learns the release only as a "better" answer with no owner (`judge` says `none` and
-      takes nothing in): that page shows the name active until its own chain lapses, and keeps renewing on an ended
-      branch (its renewals count for nothing). Taking the release into the title on `none` would end it there too.
-  - The final review's fixes (NAMES-REVIEW-FINAL.md on `review/names-final`; findings 1, 2, 3, 5, 6 and 7 in the
-    Rust lane), what they leave:
-    - **Reply budgets keyed on an unproven key** (finding 2, mitigated only): `REPLIES_PER_TAG` and `ANSWERS_PER_KEY`
-      are counted by the asker's names key, which anyone reads in an ask or question and can name in its own. A member
-      now sees replies under its tag to nonces it never sent and decides no first lookup while they come
-      (`STRAYS_MAX`, 8 a minute): no answer instead of an impostor's or a forged NXDOMAIN, but no answer all the same,
-      for 16 events a minute (and forged strays, made up from nothing, do the same for 8). Questions aren't covered:
-      4 forged questions a minute naming a key cost it "who serves?" at every server (a member's refreshes, puts, the
-      dialog's check, its contests' fetches; a new server its sync partners, so it counts itself alone and serves
-      unsynced until the next round). The fix is a proof of the key before a server spends on it: the asker opening
-      the session (a round trip before the call back, which the question can't carry), or budgets per (key, nonce)
-      under a global cap, which lets a forger aim the whole per-second budget at one victim (2 replies and 4 call
-      backs a second a server, against 16 and 4 a minute now). A protocol change, the user's call.
-    - **`ids` lists the registry** (finding 7, mitigated only): answered twice a session and four times a minute a
-      server, so listing every id takes ~64 minutes of one server, ~3 of twenty, a question a session. Closing it
-      needs answers a dictionary can't be hashed against. Ids cut short don't do it: at 3 bytes (with the first byte
-      asked) a million-word dictionary against 20,000 ids gets ~1,200 false matches beside the real ones, and at 2 the
-      dialog would say taken for a free name ~30% of the time. A private membership check (the server answering only
-      whether the asker's id is held, blinded, as an OPRF does) is a protocol and a dependency; the user's call.
-    - **A re-signed entry still costs its signature's check** (finding 1): the proof of work's verdict is remembered by
-      the fields it covers, so a copy signed again costs a BIP-340 check (0.15 ms), as any junk entry does, and a
-      member charges it a whole entry's units. Covering the signature by the work (sign, then mine over the signed
-      bytes) would make copies cost a mining each: a format change, not needed while the junk floor is the same.
-    - **An imported title's secret is trusted** (finding 6): a title is refused unless its entries and zone are its
-      key's, but an export crafted by its sender with a secret the sender knows passes: the importer's node then
-      serves and claims a name the sender can sign for too. What an export is (a secret handed over) can't tell.
+      through two relays), bounded only by 2 a second a server and 16 a minute a tag. Measured on the bus (N6a,
+      bench/net/REPORT.md "NAMES loop 6a"): 300 holders and 10 forged asks a second make 600 replies a second,
+      ~2.5 MB/s onto public relays, from one event's worth of attacker work an ask. The design's remedy (servers
+      answering on one relay, replies thinned by the room's size) isn't built; thinning costs the dissent's guarantee
+      (one honest holder suffices) a chance of silence.
+    - **A forged header at the floor** (one floor at 1/16 of block 976,177's difficulty): one header mined in private
+      (~0.2 BTC of mining forgone), timed weeks back, anchors claims on any number of names in every room. Servers
+      refuse it (they ask an explorer about each block); a member, which asks no explorer, takes it from any server
+      that shows it, and its older run wins a contest. A member asking an explorer about a contest's winning block
+      would close it, at the price of members' requests outside the room.
+    - **The count of servers under junk registrations**: a server's chance of asking a renewal's calendar comes from
+      the answers to its own questions (at most 64), so junk servers that answer leave `h` honest ones asking `h`/64
+      times a slot together: renewals are finished later, never later than the owner's own visit. How much later is
+      the scalability test's.
+  - **Features**:
+    - **Transfer of a name to another owner key, and a recovery key**: a lost title (its browser's storage gone, no
+      backup kept) is a lost name, and a backup is the only way to move one (it hands over the secret). A transfer
+      would be an entry by the old key naming the new; a recovery key one that may sign over a lost one after a wait
+      (did:plc's 72-hour override is the pattern).
+    - **A claim public before its anchor** ("public now, may be raced"), should the user ask for it: a claim stays
+      private for the ~2 hours its proof takes.
+    - A card's points take a member's name or key pasted; nothing lists the room's members to choose from (they are
+      known only while the connection is connected).
+    - **Records left before Delete swept them** (NAMES2 loop 4): a connection deleted earlier left its registry
+      records in `waarm64-room`'s `names`, and nothing sweeps them now (a member's few KB, a server's up to 128 MiB).
+      A sweep at the page's start of every key that no stored connection's room and `identityKey` hash to would take
+      them (an ephemeral connection's own key keeps none any more; one on a stored key is that one's).
+  - **One scalability test, some day** (low priority; it replaces every "not measured" this entry had). A room of
+    hundreds of servers and thousands of names on the bus for hours of simulated time (`bench/net/room-scale.ts names`
+    and server_tests.rs are the rigs), and the public arm, `bench/net/names-long.ts` for a few days (built and proved
+    for 1.8 hours, bench/net/REPORT.md "NAMES loop 6b"; the user launches it: its header has the command and the relay
+    budget to choose first). What it should answer:
+    - How late renewals are finished with many young or junk servers (above), and whether a new server's first sync
+      of a big room (one block check every 3 s: 67 minutes at 5,000 names) keeps it from serving meanwhile.
+    - What one registration's `sync`s, `have`s and `put`s cost a server at 5,000 names, and a cold lookup whose
+      `serve` carries 8 entries (~16 KB).
+    - The churn of sync rounds after the bound dropped names (their ranges' fingerprints differ for good, so each
+      round descends to them and lists them again), and the `get` answers dropped for a full verify queue (1,933
+      over 20 servers converging: counting a run's outstanding `get`s against the queue would stop the waste).
+    - A server that owns many names answering nearly every question's first round ("who serves?" ranks a server by
+      the best of its names: 250 names, 98% at a spread of 6), and a server that answers questions but never a `get`
+      being found again at each question.
+    - On the public services: resolves over days, relay and DERP drops, how fast the relays rate-limit a server's
+      replies, a first lookup's time (~1 s in a room asked before, ~2 s the first time, are estimates), renewals made
+      ahead, the agent's hourly publisher.
+  - **Efficiency, if that test says it matters**:
+    - A server's memory is 2.66x its items (41 MB at 5,000 names): keeping each anchor encoded and decoding it when
+      checked would save ~2 KB an entry (to ~1.4x); `Anchor` is public to the verifier, the agent and the tests.
+    - A store of anchors by transaction and headers by block would save ~30% of a registry at 1,000 names, ~40% at
+      5,000 (an item repeats its header, 80 bytes, and its calendar transaction's common path).
+    - A first sync is mostly one partner's rate (~1.7 Mbit/s through public DERP): more `get`s in flight paced by the
+      derper's queue, or `get`s naming several ids, weren't tried.
+    - Servers' sync partners last one round where the spec's members hold theirs (a question a round saved); a zone
+      got through sync waits out the 10-minute limit like one put, so servers can differ on a zone for 10 minutes.
+    - A title's item holds every entry the title ever had and is put whole: pruning dead branches and stale entries
+      would keep puts small. A page with many titles in one room makes a publisher each (45 s of answers at most):
+      one a pass a room would ask "who serves?" once.
+    - The module grew 92 KB Brotli with names (592 to 684): what dominates wasn't looked into.
+  - **Accepted, with a remedy known** (each harms one name, one key or one member, or needs a protocol change: low
+    priority; names.md's table has the rest of each):
+    - A contest crowded by forged repliers, and reply budgets keyed on a key anyone can name (`REPLIES_PER_TAG`,
+      `ANSWERS_PER_KEY`, questions naming a key): one name's or one member's first lookups, refreshes and puts get no
+      answer while it lasts, never a wrong one. Closing them needs a reply or an asker to prove its key (a serve-style
+      proof over the nonce, or the asker opening the session): a protocol change.
+    - A refresh whose two drawn servers show only another key's run keeps what is kept while the member never saw
+      the kept chain's claim; a first lookup's `ask` would find the owner's holders but announces the name id.
+    - `ids` lists the registry (~64 minutes of one server): closing it needs a private membership check (an OPRF: a
+      protocol and a dependency). The dialog's "taken" stays a server's word when one liar alone answers in time or
+      both drawn servers lie: a `get` of the id would prove it but names the id before the claim.
+    - A server remembers 16,384 verified entries; past that many distinct valid ones (a dead registry's) it checks
+      them whole again. Checking an item's anchors before its proof of work, or a budget of whole checks a second
+      for puts, would close it.
+    - Stamps made within a second are near-siblings in a calendar's tree, so a server sees which ids one owner
+      renewed together: spreading an owner's renewals over visits would hide it.
+    - A member that kept the owner's chain after a reset doesn't `put` it (it keeps only the last entry): the
+      owner's agent does, at its next visit.
+  - **Small**:
+    - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not
+      the ~1,400 newer generic ones (`app`, `dev`, …), which a guest asks under the room's domain only after the name
+      itself failed. Compile them if a guest turns out to ask them unprompted.
+    - The short name through the search domain is checked on Debian (resolved takes the lease's domains), not on
+      guests with a plain `resolv.conf` from DHCPv6's domain list.
+    - The floor is one constant: raising it at a release must stay under every block since the oldest anchor still
+      alive (a term and a grace, 37 days). No release step does it, and nothing has to while difficulty doesn't fall
+      sixteen-fold.
+    - The 20-server and 60-day tests (server_tests.rs) take ~1.5 minutes of `cargo test` each.
+    - A guest asking 40 names at once against 2 servers has 20 within a minute and no more (each server's 16 replies
+      a minute to one reply tag; SERVFAILs meanwhile, never NXDOMAIN): the limit stays, the load isn't realistic
+      (the user, 2026-11-23).
+    - A first lookup's silence from a room not heard lately asks "who serves?" (NAMES2 loop 5b): in N6a's rig 1 of 500
+      joiners' questions went unanswered within 2.5 s under the joins' load, NXDOMAIN for 30 s (bench/net/REPORT.md
+      "NAMES2 loop 5b"; 35 before). Worth a look only if it shows in use.
+    - The page's `online` and Network Information `change` don't reach the room client (NAMES2's review): after an
+      outage its Nostr relays are opened again within a minute (`NOSTR_CLOSED_MAX`), not at once; an open that hangs
+      past 15 s counts as a relay that doesn't answer and backs off to 10 minutes (rooms.md "What a room needs from a
+      Nostr relay"). Passing the events on is a worker message; worth it only if a minute shows in use.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

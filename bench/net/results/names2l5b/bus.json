@@ -1,0 +1,13 @@
+{
+ "date": "2026-11-23",
+ "host": "linux x64 (Claude Code cloud session, 4 vCPUs)",
+ "tests": {
+  "a_room_whose_replies_stay_spent_past_a_first_retry_isnt_taken_for_nobody_serves": {
+   "before": { "answers": [["ServFail", 2500], ["Nx", 5010]] },
+   "after": { "answers": [["ServFail", 2500], ["ServFail", 6510], ["ServFail", 10520], ["Node", 11830]], "nobodyServes": 0 }
+  },
+  "with_no_server_nxdomain_then_a_server_that_appears_is_found_while_the_guest_keeps_asking": {
+   "after": { "firstServFailMs": 2500, "secondNxdomainMs": 2500 }
+  }
+ }
+}

@@ -1,0 +1,418 @@
+{
+ "date": "2026-11-23T20:45:59.004Z",
+ "host": "linux x64",
+ "cpus": 4,
+ "node": "v26.13.1",
+ "phase": "members",
+ "serversUp": {
+  "servingS": 5.2,
+  "names": {
+   "n": 20,
+   "p50": 5000,
+   "p90": 5000,
+   "p99": 5000,
+   "max": 5000
+  },
+  "serving": 20,
+  "wasmMB": {
+   "n": 20,
+   "p50": 35.1,
+   "p90": 35.1,
+   "p99": 35.2,
+   "max": 35.2
+  },
+  "fetches": {},
+  "fetchesPerServer": {
+   "n": 20,
+   "p50": 0,
+   "p90": 0,
+   "p99": 0,
+   "max": 0
+  },
+  "stored": 0,
+  "deleted": 0,
+  "logs": {
+   "a names client, nodekey:H": 20
+  }
+ },
+ "join500": {
+  "seconds": 5.6,
+  "over": {
+   "seconds": 5,
+   "relayPerSecond": {
+    "reqs": 98.2,
+    "eventsIn": 9,
+    "forwards": 180,
+    "kbIn": 21.5,
+    "kbOut": 105.5
+   },
+   "cores": {
+    "relay": 0.1,
+    "derper": 0.2,
+    "services": 0,
+    "server": 0.6,
+    "member": 1
+   },
+   "rssMB": {
+    "relay": 83.5,
+    "derper": 52.6,
+    "services": 229.1,
+    "server": 2619.8,
+    "member": 830.2
+   }
+  }
+ },
+ "idle": {
+  "seconds": 59,
+  "relayPerSecond": {
+   "reqs": 9.2,
+   "eventsIn": 0,
+   "forwards": 0.3,
+   "kbIn": 1.5,
+   "kbOut": 0.4
+  },
+  "cores": {
+   "relay": 0,
+   "derper": 0,
+   "services": 0,
+   "server": 0,
+   "member": 0
+  },
+  "rssMB": {
+   "relay": 85.5,
+   "derper": 53.3,
+   "services": 229.3,
+   "server": 2632.3,
+   "member": 852.5
+  },
+  "servers": {
+   "names": {
+    "n": 20,
+    "p50": 5000,
+    "p90": 5000,
+    "p99": 5000,
+    "max": 5000
+   },
+   "serving": 20,
+   "wasmMB": {
+    "n": 20,
+    "p50": 35.2,
+    "p90": 35.2,
+    "p99": 35.2,
+    "max": 35.2
+   },
+   "fetches": {},
+   "fetchesPerServer": {
+    "n": 20,
+    "p50": 0,
+    "p90": 0,
+    "p99": 0,
+    "max": 0
+   },
+   "stored": 0,
+   "deleted": 0,
+   "logs": {
+    "a names client, nodekey:H": 20,
+    "nobody answered, but someone asked meanwhile; asking again in N ms": 20,
+    "nobody serves the registry; asking again in N s": 1
+   }
+  },
+  "fetchesDuring": null
+ },
+ "cold": {
+  "asked": 100,
+  "found": 100,
+  "nxdomain": 0,
+  "failed": 0,
+  "ms": {
+   "n": 100,
+   "p50": 1111.2,
+   "p90": 1119.7,
+   "p99": 1317.1,
+   "max": 1317.1
+  },
+  "tries": {
+   "n": 100,
+   "p50": 1,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  },
+  "over": {
+   "seconds": 50,
+   "relayPerSecond": {
+    "reqs": 4.7,
+    "eventsIn": 12.9,
+    "forwards": 117.7,
+    "kbIn": 24.9,
+    "kbOut": 90.7
+   },
+   "cores": {
+    "relay": 0,
+    "derper": 0,
+    "services": 0,
+    "server": 0.2,
+    "member": 0
+   },
+   "rssMB": {
+    "relay": 99.8,
+    "derper": 62.5,
+    "services": 169.3,
+    "server": 2546.5,
+    "member": 853.7
+   }
+  }
+ },
+ "second": {
+  "asked": 100,
+  "found": 100,
+  "nxdomain": 0,
+  "failed": 0,
+  "ms": {
+   "n": 100,
+   "p50": 713.7,
+   "p90": 1119,
+   "p99": 5119.2,
+   "max": 5119.2
+  },
+  "tries": {
+   "n": 100,
+   "p50": 1,
+   "p90": 1,
+   "p99": 2,
+   "max": 2
+  },
+  "over": {
+   "seconds": 49,
+   "relayPerSecond": {
+    "reqs": 7.9,
+    "eventsIn": 32.2,
+    "forwards": 118.3,
+    "kbIn": 82.3,
+    "kbOut": 137.8
+   },
+   "cores": {
+    "relay": 0,
+    "derper": 0,
+    "services": 0,
+    "server": 0.1,
+    "member": 0
+   },
+   "rssMB": {
+    "relay": 103.2,
+    "derper": 62.5,
+    "services": 170.2,
+    "server": 2545,
+    "member": 857.6
+   }
+  }
+ },
+ "join500InAMinute": {
+  "asked": 500,
+  "found": 438,
+  "nxdomain": 62,
+  "failed": 0,
+  "ms": {
+   "n": 438,
+   "p50": 1116.5,
+   "p90": 1319,
+   "p99": 1345.5,
+   "max": 1394.7
+  },
+  "tries": {
+   "n": 500,
+   "p50": 1,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  },
+  "seconds": 62.2,
+  "over": {
+   "seconds": 61,
+   "relayPerSecond": {
+    "reqs": 27.2,
+    "eventsIn": 55.4,
+    "forwards": 511.1,
+    "kbIn": 107.9,
+    "kbOut": 392.7
+   },
+   "cores": {
+    "relay": 0,
+    "derper": 0,
+    "services": 0,
+    "server": 0.6,
+    "member": 0.3
+   },
+   "rssMB": {
+    "relay": 146.9,
+    "derper": 123.7,
+    "services": 170.6,
+    "server": 2505.1,
+    "member": 1417.8
+   }
+  },
+  "byTenSeconds": [
+   78,
+   79,
+   68,
+   74,
+   74,
+   65,
+   0,
+   0,
+   0
+  ],
+  "serverLogsDuring": {
+   "a names client, nodekey:H": 0,
+   "nobody answered, but someone asked meanwhile; asking again in N ms": 0,
+   "nobody serves the registry; asking again in N s": 0
+  }
+ },
+ "end": {
+  "servers": {
+   "names": {
+    "n": 20,
+    "p50": 5000,
+    "p90": 5000,
+    "p99": 5000,
+    "max": 5000
+   },
+   "serving": 20,
+   "wasmMB": {
+    "n": 20,
+    "p50": 35.3,
+    "p90": 35.3,
+    "p99": 35.3,
+    "max": 35.3
+   },
+   "fetches": {},
+   "fetchesPerServer": {
+    "n": 20,
+    "p50": 0,
+    "p90": 0,
+    "p99": 0,
+    "max": 0
+   },
+   "stored": 0,
+   "deleted": 0,
+   "logs": {
+    "a names client, nodekey:H": 20,
+    "nobody answered, but someone asked meanwhile; asking again in N ms": 20,
+    "nobody serves the registry; asking again in N s": 1
+   }
+  },
+  "memberWasmKB": {
+   "n": 1000,
+   "p50": 1472,
+   "p90": 1472,
+   "p99": 1472,
+   "max": 1472
+  },
+  "memberLogs": {
+   "a member's names client, nodekey:H": 600,
+   "nobody serves the registry; NXDOMAIN for N s": 62,
+   "no reply to an ask, from a room that replied lately": 1
+  },
+  "joinerLogs": {
+   "a member's names client, nodekey:H": 500,
+   "nobody serves the registry; NXDOMAIN for N s": 62
+  },
+  "workers": [
+   {
+    "rssMB": 247.9,
+    "cpuS": 7.4,
+    "nodes": 2
+   },
+   {
+    "rssMB": 256.2,
+    "cpuS": 7.5,
+    "nodes": 2
+   },
+   {
+    "rssMB": 249.3,
+    "cpuS": 7.6,
+    "nodes": 2
+   },
+   {
+    "rssMB": 250.3,
+    "cpuS": 7.5,
+    "nodes": 2
+   },
+   {
+    "rssMB": 250.4,
+    "cpuS": 7.5,
+    "nodes": 2
+   },
+   {
+    "rssMB": 248.4,
+    "cpuS": 7.6,
+    "nodes": 2
+   },
+   {
+    "rssMB": 249.9,
+    "cpuS": 7.6,
+    "nodes": 2
+   },
+   {
+    "rssMB": 244.8,
+    "cpuS": 7.5,
+    "nodes": 2
+   },
+   {
+    "rssMB": 252,
+    "cpuS": 7.7,
+    "nodes": 2
+   },
+   {
+    "rssMB": 252.2,
+    "cpuS": 7.5,
+    "nodes": 2
+   },
+   {
+    "rssMB": 351.3,
+    "cpuS": 8.7,
+    "nodes": 250
+   },
+   {
+    "rssMB": 352,
+    "cpuS": 8,
+    "nodes": 250
+   },
+   {
+    "rssMB": 353.7,
+    "cpuS": 8.5,
+    "nodes": 250
+   },
+   {
+    "rssMB": 359.6,
+    "cpuS": 7.7,
+    "nodes": 250
+   }
+  ],
+  "calendarRequests": {},
+  "over": {
+   "seconds": 238.1,
+   "relayPerSecond": {
+    "reqs": 14.6,
+    "eventsIn": 24.1,
+    "forwards": 187.9,
+    "kbIn": 51.4,
+    "kbOut": 153.1
+   },
+   "cores": {
+    "relay": 0,
+    "derper": 0,
+    "services": 0,
+    "server": 0.3,
+    "member": 0.1
+   },
+   "rssMB": {
+    "relay": 146.9,
+    "derper": 123.7,
+    "services": 170.6,
+    "server": 2505.1,
+    "member": 1417.8
+   }
+  }
+ }
+}

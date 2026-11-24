@@ -9,7 +9,7 @@ import { DEMO_URL } from '../demo-net.ts';
 import { t } from '../i18n.ts';
 import { newTailcatIdentity, type TailcatIdentity } from '../tailcat.ts';
 import { RoomEntries } from './room-entries.ts';
-import { forgetRoomNames, keepExported, roomExportOf } from './room-export.ts';
+import { forgetRoomNames, keepExported, roomExportOf, sweepRoomRecords } from './room-export.ts';
 import { newRoomIdentity, parseRoomLink, roomName, type RoomIdentity } from '../room.ts';
 import { memoryState } from './connection-memory.ts';
 import { DEFAULT_CONTROL, parseControlURL, type NetworkSettings } from './network.ts';
@@ -132,6 +132,8 @@ export type ConnectionState = {
   keepNames?(identityKey: string, names: string): Promise<void>;
   /** Forgets the names kept under `identityKey` (its connection deleted, after saying so). */
   forgetNames?(identityKey: string): Promise<void>;
+  /** Forgets the registry records kept under room ID `id` and `identityKey` (web/room.ts `forgetRoomRecords`). */
+  forgetRoomRecords(id: string, identityKey: string): Promise<void>;
 };
 
 export { memoryState };
@@ -326,8 +328,9 @@ export class Connections {
 
   /**
    * Deletes a connection: its record, then its state (a tailnet's node, tailcat's identity, a room's key unless another
-   * connection shares it), so the next one made is a new node. The caller has its lock (no machine has it) and has
-   * logged a tailnet's node out where it could.
+   * connection shares it, and its registry records in its room unless another connection keeps them), so the next one
+   * made is a new node. The caller has its lock and has stopped its client (no worker writes its records any more), and
+   * has logged a tailnet's node out where it could.
    */
   async delete(id: string) {
     const eph = this.memory.get(id);
@@ -335,7 +338,7 @@ export class Connections {
       this.memory.delete(id);
       this.entries.release(id);
       // An ephemeral room connection may use a stored one's kept key: the last to go forgets it.
-      if (eph.room && !(await this.sharesKey(eph))) await this.#forgetKey(eph.room);
+      if (eph.room) await this.#forgetRoom(eph, eph.room);
       return;
     }
     const c = await this.store.get('connections', id);
@@ -343,8 +346,26 @@ export class Connections {
     await this.store.forget('connections', id);
     if (c.tailnet) await this.state.forgetTailnet(c.tailnet.stateKey);
     if (c.tailcat) await this.state.forgetTailcat(c.tailcat.identityKey);
-    if (c.room && !(await this.sharesKey(c))) await this.#forgetKey(c.room);
+    if (c.room) await this.#forgetRoom(c, c.room);
   }
+
+  /**
+   * What deleted room connection `c` (settings `r`) leaves: its registry records in its room (kept by the room and
+   * `identityKey`, web/room.ts `roomNamesKey`), unless another connection in that room has the key, and its key unless
+   * another connection shares it. Another tab's connection on the key keeps both (which room it is in isn't told).
+   */
+  async #forgetRoom(c: Connection, r: RoomConnection) {
+    await this.sweepRoom(r);
+    if (!(await this.sharesKey(c))) await this.#forgetKey(r);
+  }
+
+  /**
+   * The registry records kept under room settings `r`'s entry in its room, forgotten unless a connection in that room
+   * still has the entry (`sweepRoomRecords`): after Delete, and after New name moved a connection off a shared entry
+   * (the caller's, once the old client has stopped: its worker writes them until then).
+   */
+  sweepRoom = async (r: RoomConnection) =>
+    sweepRoomRecords(this.state, r, await this.list(), (k) => this.entries.elsewhere(k));
 
   /** A room key no connection uses any more: its entry (a stored one's) and its names (the delete said so). */
   async #forgetKey(r: RoomConnection) {

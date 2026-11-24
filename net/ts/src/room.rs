@@ -147,6 +147,15 @@ const INIT_AGAIN: Duration = Duration::from_millis(500);
 const NOSTR_CHECK: Duration = Duration::from_secs(60);
 const NOSTR_ANSWER: Duration = Duration::from_secs(15);
 const NOSTR_RESUBSCRIBE: Duration = Duration::from_secs(10);
+/// A lost Nostr relay is opened again after 2 s, doubling at each loss: up to this when our client dropped it for not
+/// answering a REQ, up to [`NOSTR_CLOSED_MAX`] when the connection closed (an open that failed: offline, refused, the
+/// name not found; or the relay's side closed it). It starts afresh when a connection carried something: an event
+/// for our subscription, an accepted `OK` to one we published, or an answer (an EOSE) on a connection open
+/// [`NOSTR_HELD`]; and when the relay's side closes a connection that answered and held that long (an idle timeout).
+/// A first REQ's EOSE, or a second one seconds on, is what a relay that then stalls gives too.
+const NOSTR_BACKOFF_MAX: Duration = Duration::from_secs(600);
+const NOSTR_CLOSED_MAX: Duration = Duration::from_secs(60);
+const NOSTR_HELD: Duration = Duration::from_secs(30);
 /// A lookup from a key we have a peer for doesn't re-route it (a member could forge one): it
 /// probes the session with a signalling ping, and only a peer that answers nothing in this long
 /// (its page reloaded, say) is forgotten and called back afresh, in the lookup's region.
@@ -212,6 +221,9 @@ const NAMES_RETRY: Duration = Duration::from_secs(60);
 pub const DNS_WAIT: Duration = Duration::from_secs(4);
 /// Queries waiting at once; past it, SERVFAIL at once.
 const MAX_DNS_WAITING: usize = 64;
+/// How often the resolver logs how many registered names the guest asked for (names.md "The resolver"): the names
+/// themselves only in the page tests' build (`test-params`), which reads them.
+const DNS_COUNT_EVERY: Duration = Duration::from_secs(60);
 /// A registered name's answer's TTL: a zone change or a lost name shows within a minute of the member's knowing.
 const NAME_TTL: u32 = 60;
 /// tailcat's ULA /48, which no room's may be (the guest may be on tailcat beside it).
@@ -695,6 +707,9 @@ struct Nostr {
     check_at: Option<Instant>,
     /// The relay must answer our last REQ (EOSE) by then.
     answer_by: Option<Instant>,
+    /// When this connection was opened, and whether it answered a REQ.
+    opened: Instant,
+    answered: bool,
 }
 
 /// A lookup the guest's packets wait on.
@@ -788,6 +803,8 @@ pub struct Client {
     /// The names line last told the page (`names` event): serving, names resolved or held, servers held.
     names_told: Option<(bool, usize, usize)>,
     dns_waiting: Vec<DnsWait>,
+    /// The registered names the guest asked for since the count was last logged, and when that was.
+    dns_asked: (u32, Option<Instant>),
     flows: BTreeMap<Flow, Instant>,
     next_conn: u32,
     state: State,
@@ -925,6 +942,8 @@ impl Client {
                 reconnect_at: None,
                 check_at: None,
                 answer_by: None,
+                opened: now,
+                answered: false,
             })
             .collect();
         let known = cfg
@@ -988,6 +1007,7 @@ impl Client {
             publisher: None,
             names_told: None,
             dns_waiting: Vec::new(),
+            dns_asked: (0, None),
             flows: BTreeMap::new(),
             next_conn: 1,
             state: State::Connecting,
@@ -1370,12 +1390,13 @@ impl Client {
             self.relays[r].conn = None;
             self.relay_lost(r, now, "the connection closed".into());
         } else if let Some(i) = self.nostr.iter().position(|n| n.conn == Some(conn)) {
-            self.nostr_lost(i, now);
+            self.nostr_lost(i, false, now);
         }
     }
 
-    /// Nostr relay `i`'s connection is gone: again after a backoff (reset by an answered REQ).
-    fn nostr_lost(&mut self, i: usize, now: Instant) {
+    /// Nostr relay `i`'s connection is gone (`unanswered`: our client dropped it for not answering a REQ; else it
+    /// closed): again after a backoff ([`NOSTR_BACKOFF_MAX`]).
+    fn nostr_lost(&mut self, i: usize, unanswered: bool, now: Instant) {
         {
             let n = &mut self.nostr[i];
             if let Some(conn) = n.conn.take() {
@@ -1384,8 +1405,15 @@ impl Client {
             n.sub = None;
             n.check_at = None;
             n.answer_by = None;
+            if !unanswered && n.answered && now.saturating_duration_since(n.opened) >= NOSTR_HELD {
+                n.failures = 0; // a connection that held, closed by the relay's side (an idle timeout)
+            }
             n.failures += 1;
-            let wait = Duration::from_secs(1u64 << n.failures.min(6)).min(Duration::from_secs(60));
+            let (most, cap) = match unanswered {
+                true => (10, NOSTR_BACKOFF_MAX),
+                false => (6, NOSTR_CLOSED_MAX),
+            };
+            let wait = Duration::from_secs(1u64 << n.failures.min(most)).min(cap);
             n.reconnect_at = Some(now + wait);
             let url = n.url.clone();
             self.log(format!(
@@ -1441,11 +1469,19 @@ impl Client {
             match nostr::parse(data) {
                 nostr::FromRelay::Event {
                     kind, x, content, ..
-                } if kind == KIND => self.on_lookup(i, &x, &content, now),
+                } if kind == KIND => {
+                    // It carries: the backoff starts afresh.
+                    self.nostr[i].failures = 0;
+                    self.on_lookup(i, &x, &content, now)
+                }
+                nostr::FromRelay::Accepted => self.nostr[i].failures = 0,
                 nostr::FromRelay::Eose(sub) if self.nostr[i].sub.as_ref() == Some(&sub) => {
-                    // It answers: alive, and the backoff starts afresh.
+                    // It answers: alive; on a connection that held, the backoff starts afresh.
                     let n = &mut self.nostr[i];
-                    n.failures = 0;
+                    n.answered = true;
+                    if now.saturating_duration_since(n.opened) >= NOSTR_HELD {
+                        n.failures = 0;
+                    }
                     n.answer_by = None;
                     n.check_at = Some(now + NOSTR_CHECK);
                 }
@@ -1580,6 +1616,8 @@ impl Client {
         let n = &mut self.nostr[i];
         n.conn = Some(conn);
         n.reconnect_at = None;
+        n.opened = now;
+        n.answered = false;
         let url = n.url.clone();
         self.actions.push_back(Action::WsOpen {
             conn,
@@ -2806,7 +2844,7 @@ impl Client {
             (Some(k), _) => self.dns_answer(&m, info.sport, Answer::Node(k), 3600),
             (None, Some(rel)) => {
                 let a = self.resolve_name(&rel, now, true);
-                self.log(format!("resolver: {rel} (type {}): {a:?}", q.qtype));
+                self.log_asked(&rel, q.qtype, &a, now);
                 if a != Answer::Wait {
                     self.dns_answer(&m, info.sport, a, NAME_TTL);
                 } else if self.dns_waiting.len() >= MAX_DNS_WAITING {
@@ -2821,6 +2859,26 @@ impl Client {
                 }
             }
             (None, None) => self.dns_answer(&m, info.sport, Answer::Nx, 0),
+        }
+    }
+
+    /// The guest asked for registered name `rel`: in the page tests' build (`test-params`), the name, its type and the
+    /// answer, which they read; else a count, logged at the first and then at most once a minute (the worker's console
+    /// is no place for what the guest looks up).
+    fn log_asked(&mut self, rel: &str, qtype: u16, a: &Answer, now: Instant) {
+        if cfg!(feature = "test-params") {
+            return self.log(format!("resolver: {rel} (type {qtype}): {a:?}"));
+        }
+        let (n, since) = self.dns_asked;
+        let waited = since.map_or(Duration::ZERO, |t| now.saturating_duration_since(t));
+        self.dns_asked.0 = n + 1;
+        if since.is_none() || waited >= DNS_COUNT_EVERY {
+            self.dns_asked = (0, Some(now));
+            self.log(format!(
+                "resolver: names asked: {} (in {} s)",
+                n + 1,
+                waited.as_secs()
+            ));
         }
     }
 
@@ -2860,7 +2918,7 @@ impl Client {
             }
             Answer::Own => (dns::NOERROR, vec![IpAddr::V6(self.addr.into())]),
             Answer::Nx => (dns::NXDOMAIN, Vec::new()),
-            Answer::Wait => (dns::SERVFAIL, Vec::new()),
+            Answer::Wait | Answer::ServFail => (dns::SERVFAIL, Vec::new()),
         };
         let answer = dns::fit(&dns::answer(m, &q, rcode, &addrs, ttl), q.udp_size);
         let r = ip::udp(
@@ -2883,9 +2941,13 @@ impl Client {
                 continue;
             }
             if a == Answer::Wait {
+                let rel = if cfg!(feature = "test-params") {
+                    w.rel.as_str()
+                } else {
+                    "a name"
+                };
                 self.log(format!(
-                    "resolver: {}: no answer in {} s",
-                    w.rel,
+                    "resolver: {rel}: no answer in {} s",
                     DNS_WAIT.as_secs()
                 ));
             }
@@ -2993,7 +3055,7 @@ impl Client {
             } else if n.answer_by.is_some_and(|t| t <= now) {
                 let url = n.url.clone();
                 self.log(format!("Nostr: {url} didn't answer"));
-                self.nostr_lost(i, now);
+                self.nostr_lost(i, true, now);
             } else if n.conn.is_some() && n.check_at.is_some_and(|t| t <= now) {
                 self.nostr_subscribe(i, now);
             }

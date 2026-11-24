@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { t, text } from '../web/i18n.ts';
 import type { NameCheck, TitleView } from '../web/names.ts';
-import { canRegister, checkWords, domainsLink, hasDomainsLink, heldDomains, endedWords, isLive, NameForm, needsAttention, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleDates, titleState, titleTone, titlesOf, upkeepLine, zonePoints } from '../web/app/names-view.ts';
+import { canRegister, checkWords, domainsLink, hasDomainsLink, heldDomains, endedWords, isLive, NameForm, needsAttention, type CheckShown, namesLine, parseTarget, repointed, subdomainOk, targetName, titleDates, titleState, titleTone, titlesOf, upkeepLine, zonePoints } from '../web/app/names-view.ts';
 import { msg, MsgError } from '../web/i18n.ts';
 
 const NOW = 1_800_000_000_000;
@@ -290,4 +290,11 @@ test('wording: the upkeep line, the dates, the link (the kickoff\'s words)', () 
   assert.equal(t('network:names-view.link.held', { count: 3 }), '3 domains registered');
   assert.equal(text(msg('network:names-view.link.attention', { held: msg('network:names-view.link.held', { count: 1 }), count: 1 })), '1 domain registered, 1 needs attention');
   assert.equal(text(msg('network:names-view.link.attention', { held: msg('network:names-view.link.held', { count: 3 }), count: 2 })), '3 domains registered, 2 need attention');
+});
+
+test('New name pointing a domain at the new key: what was at the old key moves, another member\'s stays (NAMES2 loop 3)', () => {
+  const [old, now, other] = ['01'.repeat(32), '02'.repeat(32), 'ab'.repeat(32)];
+  assert.deepEqual(repointed([{ label: null, key: old }, { label: 'git', key: other }, { label: 'www', key: old }], old, now),
+    [{ label: null, key: now }, { label: 'git', key: other }, { label: 'www', key: now }]);
+  assert.equal(repointed([{ label: null, key: other }], old, now), undefined, 'nothing at the old key: left as it is');
 });

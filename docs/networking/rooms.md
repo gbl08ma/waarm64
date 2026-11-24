@@ -387,6 +387,23 @@ tag is one node's), again after 1 s and 3 s only while no call back comes, at mo
 thousand members: 17 REQs a second steady, 2.8 KB/s in; each new pair a second, one event (bench/net/REPORT.md "Rooms
 at scale"). The relays' own terms (rate limits, proof of work, payment) decide how far public relays carry a room.
 
+**A relay that doesn't answer** is tried less and less: a lost connection is opened again after 2 s, twice as long
+at each loss. The cap depends on how it was lost: a connection our client dropped for a REQ unanswered in 15 s grows
+**to 10 minutes** (`NOSTR_BACKOFF_MAX`); one that closed (an open that failed: offline, refused, the name not found;
+or the relay's side closed it) **to a minute** (`NOSTR_CLOSED_MAX`), so after a network outage the relays are open
+again within a minute of the network's return. It starts afresh at 2 s when a connection carried something (an event
+for our subscription, an accepted `OK` to an event we published), answered a REQ (an EOSE) having been open **30 s**
+(`NOSTR_HELD`: a renewal's answer, a minute on), or, having answered and held that long, was closed by the relay's
+side (a relay or proxy closing connections idle for a minute, as nginx's default `proxy_read_timeout` does, before
+the renewal's answer: opened again after 2 s each time). An answer within 30 s of opening resets nothing (the first
+REQ's EOSE, or a second REQ's seconds on: a CLOSED's renewal, a names client's Subscribe or Replies toggled): it is
+what a relay that then stalls gives too (relay.degmods.com, answering each new connection and then nothing, was
+opened 142 times in 1.8 hours by two nodes while that reset the backoff: bench/net/REPORT.md "NAMES loop 6b"). A relay
+that never answers costs a member ~6 connections an hour (it cost ~48 at the earlier 60 s cap). An open that hangs
+until our 15 s, rather than failing, counts as a relay that doesn't answer. It is the same for every `Client`, a
+node's own and its names client's (each its own count: a member's names client, made anew at a query after 10 idle
+minutes, starts at 2 s).
+
 **Registered names** ([names.md](names.md)) ask more of a relay, still nothing stored. A node whose names client runs
 (a server's always, a member's from its guest's first query for a name that isn't a key until 10 minutes after the
 last) holds a second connection a relay. All of a room's servers subscribe to one names tag, so a question (123 bytes
@@ -421,7 +438,9 @@ and misdirected lookups, the trial rate, incoming off and its flows, two regions
 minutes off, a forged lookup that doesn't move a live peer and one that names another region, outsiders' initiations without the
 room's proof and their junk lookups (neither charged to a budget), a reloaded peer
 called back, a peer made again on one side, both dialing at once, a lost call back, junk handshakes, a lookup's
-copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
+copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, the backoff
+for a relay that never answers, answers only a connection's first REQ or two REQs seconds apart, its minute's cap for
+failed opens (an outage) and its reset by an event, an `OK`, an answered renewal or an idle close by the relay, a failed map with an inline home, the channel cap and the idle close, the R0
 cases; BIP-340's first vector; and the registry of room names ([names.md](names.md) "Tests and benches"): servers' names clients finding each other,
 syncing two and twenty, a reset, a flood of "who serves?" beside the node's own lookups, nothing under the node's key,
 a member's first lookup asking the room through the relays (no DERP packet), a contested one fetching through sessions
@@ -432,7 +451,7 @@ NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, i
 RFC 6455 server, no dependency; a message past 1 MiB closes the connection, `events` keeps the last 65,536); `tests/room-browser.test.ts` (Chromium, `WAARM64_TAILCAT=1`: pages joining one room
 by its link on the rig's derper and that relay, by address and by name, relay only, incoming off); `tests/room-link.test.ts` (the page's link and
 key checks against link.rs's); `tests/room-keys.test.ts` (tests/net/room-keys.ts's address, name and room label against
-the module's) and `tests/room-names.test.ts`'s case on the `self` event's name in rooms of each kind; `tests/connections.test.ts`'s (another tab's ephemeral connection on a stored one's key) and `tests/network.test.ts`'s room cases;
+the module's) and `tests/room-names.test.ts`'s case on the `self` event's name in rooms of each kind; `tests/connections.test.ts`'s (another tab's ephemeral connection on a stored one's key; a deleted connection's records swept unless another in its room keeps them) and `tests/network.test.ts`'s room cases;
 `tests/net-live.test.ts` (the key's lock); `tests/page-connections.test.ts` (the global room in the wizard); and, in
 `scripts/ci-net.sh`, `tests/page-room.test.ts` (two Debian guests in one Chromium: Create, Join by link, the wizard's
 refusals, the resolver asked directly and through resolved, pings both ways by name; ~2 min) and

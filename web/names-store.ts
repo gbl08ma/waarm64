@@ -20,8 +20,9 @@ export type TitleRecord = {
   item: string;
   /** Each unanchored entry's pending anchors (hex, signed), one per calendar that gave a receipt. */
   stamps: Record<string, string[]>;
-  /** When an entry's proof is asked for again. */
-  collect: Record<string, { next: number; tries: number }>;
+  /** When an entry's proof is asked for again, how many asks found it pending, and when it was stamped (ms; none in a
+   * record from before it was kept). */
+  collect: Record<string, { next: number; tries: number; since?: number }>;
   /** When an entry may be made again (one that no calendar stamped). */
   remake?: { next: number; tries: number };
   /** The next renewal made ahead (names.md "Decisions"): its proof of work and signature done, after entry `prev`
@@ -39,8 +40,12 @@ export type TitleRecord = {
   secret?: string;
   /** A better chain of another key's owns the name (its owner key): renewal stops. */
   lost?: { at: number; by: string };
-  /** Let go: a release was made. */
+  /** Let go (Let it go, or New name's Let them go): kept before the release is made (its proof of work takes a while),
+   * which the passes make when it isn't yet. */
   released?: boolean;
+  /** New name's Point at the new name: the points at this node key move to the connection's key once it is another
+   * one (the passes); kept before the key changes. None in a record from before it was kept. */
+  repoint?: string;
   /** A server didn't take the zone put (within its 10 minutes of the last, or behind the room's): put again then (ms). */
   putAgain?: number;
   /** The item last published and taken (or shown as the title's own), and when. */
@@ -50,6 +55,13 @@ export type TitleRecord = {
   stampedAt?: number;
   made: number;
 };
+
+/** `points` with what pointed at node key `from` pointed at `to` (another member's points stay); undefined when none
+ * pointed at `from`. */
+export function repointed(points: ZonePoint[], from: string, to: string): ZonePoint[] | undefined {
+  if (!points.some((p) => p.key === from)) return undefined;
+  return points.map((p) => (p.key === from ? { ...p, key: to } : p));
+}
 
 // ---- Storage ----
 

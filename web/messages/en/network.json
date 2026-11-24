@@ -1107,6 +1107,26 @@
     "message": "New name",
     "note": "The confirm button (drawn as a warning) of the question asked by a room connection's New name."
   },
+  "network-actions.newName.confirm.domains_one": {
+    "message": "Give <name>{{name}}</name> a new name in its room? Members who have the machine's current name won't be able to reach it any more. It holds the domain <name>{{names}}</name>. If you point it at the new name, whoever knows the domain will find the new address. If you let it go, anyone can register it once the release is public.",
+    "note": "Text of the question asked by a room connection's New name when the connection holds a registered domain (docs/networking/names.md “What the user sees”): its buttons are Cancel, network.network-actions.newName.release (lets the domain go, as a card's Let it go does) and network.network-actions.newName.point (the domain then points at the connection's new key). {{name}} is the connection's name, {{names}} the domain it holds."
+  },
+  "network-actions.newName.confirm.domains_other": {
+    "message": "Give <name>{{name}}</name> a new name in its room? Members who have the machine's current name won't be able to reach it any more. It holds the domains <name>{{names}}</name>. If you point them at the new name, whoever knows a domain will find the new address. If you let them go, anyone can register them once the release is public.",
+    "note": "Text of the question asked by a room connection's New name when the connection holds several registered domains: its buttons are Cancel, network.network-actions.newName.release (lets them go, as a card's Let it go does) and network.network-actions.newName.point (they then point at the connection's new key). {{name}} is the connection's name, {{names}} the domains, {{count}} how many."
+  },
+  "network-actions.newName.point": {
+    "message": "Point at the new name",
+    "note": "The confirm button (drawn as a warning) of New name's question on a room connection that holds domains: gives the connection a new key and points its domains (where they pointed at the old key) at the new one."
+  },
+  "network-actions.newName.release_one": {
+    "message": "Let it go",
+    "note": "The other button of New name's question on a room connection that holds one domain: gives the connection a new key and lets the domain go (as its card's Let it go does)."
+  },
+  "network-actions.newName.release_other": {
+    "message": "Let them go",
+    "note": "The other button of New name's question on a room connection that holds several domains: gives the connection a new key and lets them go (as their cards' Let it go does)."
+  },
   "NameDialog.title": {
     "message": "Register a domain in this room",
     "note": "Title of Register a domain… (a dialog opened from a room connection's Domains pane on the Home page)."

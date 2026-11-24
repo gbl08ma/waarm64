@@ -28,5 +28,6 @@ export function memoryState(): ConnectionState {
     exportNames: (k) => Promise.resolve(names.get(k)),
     keepNames: (k, n) => Promise.resolve(void names.set(k, n)),
     forgetNames: (k) => Promise.resolve(void names.delete(k)),
+    forgetRoomRecords: none,
   };
 }

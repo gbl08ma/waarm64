@@ -298,6 +298,8 @@ export function zonePoints(rows: { label: string | null; target: string }[]): Zo
   return out;
 }
 
+export { repointed } from '../names-store.ts';
+
 const B32 = 'abcdefghijklmnopqrstuvwxyz234567';
 
 /** A member's name in the room (`<key>.<room name or tag>.p2p.internal`, or its first label) or a node key (64 hex digits) as a node

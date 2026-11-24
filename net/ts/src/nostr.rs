@@ -92,7 +92,9 @@ pub enum FromRelay {
     Closed(String, String),
     /// `OK` false (a refused event), `NOTICE` and `AUTH`: the words, for the log.
     Said(String),
-    /// An accepted `OK`, what isn't understood.
+    /// `OK` true: the relay took an event we published.
+    Accepted,
+    /// What isn't understood.
     Other,
 }
 
@@ -123,6 +125,7 @@ pub fn parse(text: &[u8]) -> FromRelay {
         "OK" if m.get(2) == Some(&Value::Bool(false)) => {
             FromRelay::Said(format!("refused an event: {}", s(3)))
         }
+        "OK" if m.get(2) == Some(&Value::Bool(true)) => FromRelay::Accepted,
         "NOTICE" => FromRelay::Said(format!("notice: {}", s(1))),
         "EOSE" => FromRelay::Eose(s(1).into()),
         "CLOSED" => FromRelay::Closed(s(1).into(), s(2).into()),
@@ -195,7 +198,7 @@ mod tests {
             parse(br#"["CLOSED","s1","rate-limited"]"#),
             FromRelay::Closed("s1".into(), "rate-limited".into())
         );
-        assert_eq!(parse(br#"["OK","ab",true,""]"#), FromRelay::Other);
+        assert_eq!(parse(br#"["OK","ab",true,""]"#), FromRelay::Accepted);
         assert!(matches!(
             parse(br#"["OK","ab",false,"rate-limited: slow down"]"#),
             FromRelay::Said(s) if s.contains("rate-limited")

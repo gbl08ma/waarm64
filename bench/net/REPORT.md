@@ -1198,7 +1198,7 @@ behind; N6a's logs bucketed lines differently, so whether the 8 gets made more o
 
 ### The days-long run (`bench/net/names-long.ts`)
 
-Built, not run here for days: the user launches it (docs/backlog.md "The days-long run on public services"). **Two Node processes, not two pages**,
+Built, not run here for days: the user launches it (`bench/net/names-long.ts`'s header has the command and the relay budget). **Two Node processes, not two pages**,
 each running the page's own code: the shipped module (`target/net/ts.wasm`: production's proof of work and headers
 floor), the names agent (`web/names.ts` `NamesAgent`) on `web/names-ops.ts` `localBackend` (the ops the names worker
 runs, in the process's thread: Node has no page Worker), its publisher, and a room node wired as the room's worker
@@ -1254,7 +1254,7 @@ each relay (A's "who serves?" alone in its room, three events every 5 minutes, t
 not answering; the calendars and explorers a few dozen over the run (one claim; no renewal is due within a term's
 half, 15 days). The script's caps (2,000 events and 300 connections a relay a day; past one the run ends) are past
 the kickoff's "a few hundred" for events and would end the run within hours on relay.degmods.com's reconnects: the
-launch is the user's call (docs/backlog.md "The days-long run on public services").
+launch is the user's call (`bench/net/names-long.ts`'s header has the command and the relay budget).
 
 ### Reproduce
 ```sh
@@ -1273,3 +1273,89 @@ node bench/net/room-scale.ts names make && node bench/net/room-scale.ts names co
 node bench/net/names-long.ts run --dir bench/results/local/names6b-proof --days 1 --every 5 --drop 15  # the proof's first part, under timeout 2400
 node bench/net/names-long.ts summary bench/results/local/names6b-proof/log.jsonl --out results/names6b/long-proof.json
 ```
+
+## NAMES2 loop 5 (cloud session), 2026-11-23
+
+The kickoff's loop 5, "an honest room's lookups under its own load", against N6a's numbers ("NAMES loop 6a" above). A
+Claude Code cloud session (x86_64, 4 vCPUs, 15 GiB; Node 26.13.1), nothing else running: N6a's configuration whole (20
+servers of 250 names, 1,000 members), `make`, `converge` and `members` as N6a ran them, on the tests' module before the
+fix (the tree at `fd57155`) and after. JSON under `results/names2l5/` (`bus.json`: the two bus tests' before and after).
+
+**A first silence from a room never heard is SERVFAIL, at once; "nobody serves" only at the second** (the user's
+decision; `a_first_silence_from_a_room_never_heard_is_servfail_not_nobody_serves`, failing first: NXDOMAIN at 2.5 s and
+"nobody serves" for 30 s with the room's one server holding the name, its replies all spent by other members' asks).
+The lookups in flight at that silence are SERVFAIL too; a lookup started after it that meets silence is "nobody serves".
+
+| 500 members joining in a minute, each asking a name as it runs | found | NXDOMAIN | SERVFAIL then asked again | p50 / p90 / p99 found |
+|---|---|---|---|---|
+| N6a (dev VM, after its fixes) | 467 | 33 (30 "nobody serves") | | 1.12 / 1.32 / 1.32 s |
+| before (this session) | 438 | 62 (62 "nobody serves") | | 1.12 / 1.32 / 1.35 s |
+| after | **480** | **20** (all "nobody serves" at a second silence) | 71 (51 found at the next ask) | 1.12 / 3.61 / 3.82 s |
+
+- One run each arm: this host's before (62) is twice N6a's (30), so the counts move with the host; the after keeps
+  71 first silences, of which 51 are found when the resolver asks again (~2.5 s on: the p90's 3.6 s) and 20 meet a
+  second silence, still inside the minute's load, and are NXDOMAIN for 30 s as before. Asking again at once (the
+  guest's resolver does) is what the decision gives; a later second ask, or more rounds, would find more of them and
+  is a change of what the guest sees: not made (docs/backlog.md).
+- The cold first lookups (100 of 100, p50 1.11 s) and the second ones (100 of 100, p50 0.72 s) are unchanged; the
+  relay's load during the joins the same (57 events/s in, 563 forwards/s, against 55 and 511 before).
+
+**A kept name in its grace is confirmed after a minute, not five** (`KEPT_GRACE_REFRESH`;
+`a_kept_name_in_its_grace_finds_its_renewal_within_a_minute`, failing first): a name in its grace resolved first while
+its renewal was pending is kept and NXDOMAIN while fresh; once both servers hold the renewal, a guest asking every 2 s
+found it 297 s later before, 57 s after. A minute is the shortest negative answer the member already gives (NXDOMAIN
+60 s for a name replies said none for), and costs a guest that keeps asking a refresh (two `get`s) a minute while the
+name is in its grace, against one in five; a live name's freshness stays 5 minutes. N6a's rig has no name in its grace,
+so the bus test is its measurement.
+
+### Reproduce
+```sh
+cargo build -q -p waarm64_ts --features test-params --example names-title && net/ts/build.sh --test-params
+node bench/net/room-scale.ts names make                                                       # ~18 s
+node bench/net/room-scale.ts names converge --wait 470 --out results/names2l5/converge.json   # ~2.6 min here
+node bench/net/room-scale.ts names members --out results/names2l5/members-after.json          # ~4 min
+cargo test -p waarm64_ts --lib -- --nocapture a_first_silence_from_a_room_never_heard a_kept_name_in_its_grace
+```
+(`members-before.json` is the same run on the module built from `fd57155`.)
+
+## NAMES2 loop 5b (cloud session), 2026-11-23
+
+"NAMES2 loop 5"'s 20 of 500 joiners, which met a second silence while the room's own load lasted, under the user's
+decision of the day (what a member's lookups answer the guest may change: docs/networking/names.md "Decisions"). The
+same session's host and configuration as loop 5 (N6a's whole: 20 servers of 250 names, 1,000 members), from loop 5's
+`make` and `converge` (the records under `bench/results/local/names6a/`), `members` once on the tests' module at
+`b628dee` (before) and once with the fix (after). JSON under `results/names2l5b/` (`bus.json`: the bus tests).
+
+**A silence that nothing heard explains is SERVFAIL at once, and "who serves?" decides whether anybody serves**: it
+names no name, servers answer it from a budget of their own (4 a second, which first lookups' asks don't spend), and
+servers that answer keep the next minute's silences SERVFAIL (the query waits the resolver's 4 s, as after a reply
+heard); nobody within 2.5 s is nobody serves, as for a refresh. Failing first:
+`a_room_whose_replies_stay_spent_past_a_first_retry_isnt_taken_for_nobody_serves` (the room's one server's replies
+spent by other members' asks for 10 s from the guest's first query; the guest asks again at each SERVFAIL): SERVFAIL at
+2.5 s, NXDOMAIN at 5.0 s before; SERVFAIL at 2.5, 6.5 and 10.5 s, then found at 11.8 s after.
+
+| 500 members joining in a minute, each asking a name as it runs | found | NXDOMAIN | p50 / p90 / p99 / max found | tries p99 / max |
+|---|---|---|---|---|
+| NAMES2 loop 5's after (this host, earlier) | 480 | 20 | 1.12 / 3.61 / 3.82 / 3.84 s | 2 / 2 |
+| before (`b628dee`, this session) | 465 | 35 (35 "nobody serves", 119 first silences) | 1.31 / 3.81 / 3.84 / 3.85 s | 2 / 2 |
+| after | **499** | **1** ("who serves?" unanswered in 2.5 s) | 1.12 / 3.62 / 7.63 / 15.8 s | 3 / 5 |
+
+- One run each arm. After: 59 silences from a room not heard (each a SERVFAIL and a question), 11 more after servers
+  answered (SERVFAIL at the resolver's 4 s); the slowest joiners are found after up to five tries, 15.8 s in, where
+  they were NXDOMAIN for 30 s. One question went unanswered inside its 2.5 s: that member is NXDOMAIN for 30 s (the
+  question's own budget, not the replies', is what would have to be spent).
+- A room with no server: NXDOMAIN ~5 s after the guest's first query, as since loop 5 (SERVFAIL at 2.5 s, the next
+  query waits for the question: 2.5 s; `with_no_server_…` through the fake DERP and relay), and the same each time the
+  memory runs out (2.5 s before: a second silence was nobody). Never a wrong answer: the question's answers decide only
+  SERVFAIL against NXDOMAIN, and a `serve` is checked whole (its title live, signed by its owner key).
+- The cold (100 of 100, p50 1.11 s) and second lookups (100 of 100, p50 0.71 s) are unchanged; the relay's load during
+  the joins the same (60 events/s in, 593 forwards/s, against 62 and 615).
+
+### Reproduce
+```sh
+cargo build -q -p waarm64_ts --features test-params --example names-title && net/ts/build.sh --test-params
+node bench/net/room-scale.ts names make && node bench/net/room-scale.ts names converge --wait 470   # as loop 5
+node bench/net/room-scale.ts names members --out results/names2l5b/members-after.json             # ~4 min
+cargo test -p waarm64_ts --lib -- --nocapture a_room_whose_replies_stay_spent with_no_server_nxdomain
+```
+(`members-before.json` is the same run on the module built from `b628dee`.)

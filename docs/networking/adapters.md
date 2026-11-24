@@ -73,8 +73,9 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect, or before
   it when the connection's page shows its name in the room: names.md "The names agent", `member`), so the
   machine's address and name in the room stay the same. The same database's `names` store (version 2) keeps a stored
-  connection's room-names records, by room (a hash of its ID) and name id (web/room.ts `roomNamesStore`,
-  [names.md](names.md) "Servers"); its `owner` and `titles` stores (version 3) keep the names agent's owners' secret and
+  connection's room-names records, by room and connection (a hash of the room's ID and the `identityKey`) and name id
+  (web/room.ts `roomNamesStore`, [names.md](names.md) "Servers"), swept by Delete unless another connection in that
+  room has the `identityKey`; its `owner` and `titles` stores (version 3) keep the names agent's owners' secret and
 titles under the connection's `identityKey`, so names go with the key: the connection's export is the key and, after a
 dot, its names (`Connections.exportKey`, web/app/room-export.ts), and a connection made from it takes them. A connection made with another's key ([The connection's key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
   the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its
@@ -84,7 +85,8 @@ dot, its names (`Connections.exportKey`, web/app/room-export.ts), and a connecti
   break each other on a shared region: a derper delivers the key's packets to one of them). A page notes a key it is
   taking before it waits for the lock, so two connects on one key at once there don't both pass. A stored connection
   made with an ephemeral one's key (pasted, or chosen) keeps a copy in its own entry, never the key in its record. Delete forgets the key only when no other connection uses it, and New name gives the
-  connection a key of its own (a new `identityKey` when it was shared). An ephemeral connection that uses a stored
+  connection a key of its own (a new `identityKey` when it was shared; the registry records the old entry kept in its
+  room are then swept as Delete's are, `Connections.sweepRoom`). An ephemeral connection that uses a stored
   one's entry holds a shared Web Lock named by it (`waarm64-room-entry:<identityKey>`, web/app/connections.ts) while it
   lives, so another tab's Delete and New name see it (`sharesKey`: more holders than that page's own) and keep the
   entry; the last one using it forgets it, whichever tab. Each room has its own /48, so rooms on several

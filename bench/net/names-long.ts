@@ -1,4 +1,4 @@
-// NAMES loop 6b: the kickoff's days-long run (docs/backlog.md "The days-long run on public services": "a few days on the public calendars, explorers and
+// NAMES loop 6b: the kickoff's days-long run (docs/backlog.md "Room names' loose ends", the scalability test's public arm: "a few days on the public calendars, explorers and
 // default relays with real stamps, between two pages"; bench/net/REPORT.md "NAMES loop 6b"). Two Node processes play the
 // two pages, each running the page's own code: the shipped module (target/net/ts.wasm: production's proof of work and
 // headers floor), the names agent (web/names.ts `NamesAgent` on web/names-ops.ts `localBackend`, the ops the names
@@ -28,6 +28,23 @@
 //   node bench/net/names-long.ts summary bench/results/local/names-long/log.jsonl [--out results/names6b/long.json]
 // `--nostr wss://a,wss://b` names the relays in the room's link instead of the six defaults (a fresh run only: the
 // link is in state.json). (`--drop <min>`: close A's first relay connection after that many minutes, once: the proof that a drop is survived.)
+//
+// Launching the days-long run (the user's: postponed until after their hands-on tests). From the repo root, after `net/ts/build.sh`:
+//   systemd-run --user --scope -p MemoryMax=1G -p MemorySwapMax=0 -- nice -n 19 timeout 4d \
+//     node --disable-warning=ExperimentalWarning bench/net/names-long.ts run --dir bench/results/local/names-long --days 4 --every 20
+//   node bench/net/names-long.ts summary bench/results/local/names-long/log.jsonl --out results/names6b/long.json
+// Expected (the 1.8-hour proof): ~1,000 events a relay a day, a few dozen calendar and explorer requests over the run, ~0.2% of a
+// core and ~150 MB RSS a node. Then a "NAMES loop 6b, the long run" REPORT entry from the summary, and backlog items from what it
+// shows (resolves over days, relay and DERP drops, renewals made ahead, the agent's hourly publisher).
+// The relay budget, to choose before launching: a room's own cadence (a server alone asks "who serves?" about every 5 minutes,
+// three events each; the agent's publisher connects hourly; a member's names client reconnects at a lookup after 10 idle minutes)
+// sends each relay ~40 events and ~6 connections an hour, ~1,000 events a day, past the kickoff's "a few hundred requests a
+// service"; CAPS (2,000 events and 300 connections a relay a day, past which the run ends) is a safety valve at that rate. With
+// the six default relays the connection cap ends the run within hours, on relay.degmods.com's reconnects (~80 an hour while it
+// doesn't answer): either raise `CAPS.relayOpensADay`, or name steadier relays with
+// `--nostr wss://relay.routstr.com,wss://relay.nostrmap.net,wss://relay.primal.net` (a fresh `--dir`; still ~250 connections a
+// relay a day), or run shorter (`timeout 1d`, ~1,000 events a relay). The calendars and explorers stay far under theirs (150
+// each over the run; the proof: 5 or 6 a calendar, 4 at blockstream.info).
 import { fork, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';

@@ -64,6 +64,14 @@ struct Faults {
     late: Option<(usize, Duration)>,
     /// The Nostr relay takes what nodes send and does nothing (a half-open connection).
     silent_nostr: bool,
+    /// The Nostr relay answers a connection's first REQ (an EOSE) and nothing after: no EOSE to a renewal, no
+    /// event forwarded, no OK (relay.degmods.com in bench/net/REPORT.md "NAMES loop 6b").
+    nostr_answers_once: bool,
+    /// The Nostr relay ends each connection's first subscription at once (a CLOSED after its EOSE) and answers that
+    /// connection's next REQ, the one ten seconds on, and nothing after.
+    nostr_answers_twice: bool,
+    /// Opening a Nostr relay fails at once (the browser offline, the name not found, refused).
+    nostr_offline: bool,
     /// The first DERP connection node `.0` opens to URL `.1` gets its server's hello only when
     /// `Net::release` says (a region far away, or down).
     hold_first: Vec<(usize, String)>,
@@ -103,6 +111,12 @@ struct Net {
     opened: std::collections::BTreeSet<(usize, String)>,
     /// Packets relayed, by (source key, destination key).
     by_keys: BTreeMap<([u8; 32], [u8; 32]), usize>,
+    /// The Nostr connections opened: (node, connection, when).
+    nostr_opens: Vec<(usize, u32, Instant)>,
+    /// The Nostr connections (node, connection) a REQ was answered on.
+    nostr_answered: std::collections::BTreeSet<(usize, u32)>,
+    /// The Nostr connections a second REQ was answered on ([`Faults::nostr_answers_twice`]).
+    nostr_answered_twice: std::collections::BTreeSet<(usize, u32)>,
 }
 
 fn key(seed: u8) -> [u8; 32] {
@@ -189,6 +203,9 @@ impl Net {
             held: Vec::new(),
             opened: Default::default(),
             by_keys: BTreeMap::new(),
+            nostr_opens: Vec::new(),
+            nostr_answered: Default::default(),
+            nostr_answered_twice: Default::default(),
         };
         n.run();
         n
@@ -229,6 +246,15 @@ impl Net {
         if self.faults.silent_nostr {
             return;
         }
+        if self.faults.nostr_answers_once && !self.nostr_answered.insert((i, conn)) {
+            return;
+        }
+        // The connection's first REQ: answered and ended; its second answered.
+        let first = self.faults.nostr_answers_twice && self.nostr_answered.insert((i, conn));
+        if self.faults.nostr_answers_twice && !first && !self.nostr_answered_twice.insert((i, conn))
+        {
+            return;
+        }
         let m: Value = serde_json::from_slice(text).unwrap();
         match m[0].as_str().unwrap() {
             "REQ" => {
@@ -257,6 +283,12 @@ impl Net {
                 let eose = json!(["EOSE", m[1]]).to_string();
                 let now = self.now;
                 self.nodes[i].c.ws_message(conn, eose.as_bytes(), now);
+                if first {
+                    self.subs
+                        .retain(|s| !(s.node == i && s.conn == conn && s.id == m[1]));
+                    let closed = json!(["CLOSED", m[1], "error: test"]).to_string();
+                    self.nodes[i].c.ws_message(conn, closed.as_bytes(), now);
+                }
             }
             "CLOSE" => self
                 .subs
@@ -325,6 +357,10 @@ impl Net {
             } => {
                 if url.starts_with("wss://nostr") {
                     assert_eq!(protocol, "");
+                    self.nostr_opens.push((i, conn, now));
+                    if self.faults.nostr_offline {
+                        return self.nodes[i].c.ws_closed(conn, now);
+                    }
                     self.nodes[i].conns.insert(conn, Conn::Nostr(url));
                     return;
                 }
@@ -1900,6 +1936,177 @@ fn a_relay_that_ends_our_subscription_or_goes_silent_is_subscribed_again() {
             .iter()
             .any(|s| s.node == 1 && n.nodes[1].conns.contains_key(&s.conn))
     );
+}
+
+impl Net {
+    /// When node `i`'s own client (not its names client) opened its Nostr connections.
+    fn nostr_opened(&self, i: usize) -> Vec<Instant> {
+        (self.nostr_opens.iter())
+            .filter(|(j, c, _)| *j == i && *c < NAMES_CONN)
+            .map(|(_, _, t)| *t)
+            .collect()
+    }
+
+    /// The relay closes node `i`'s own Nostr connection.
+    fn nostr_drop(&mut self, i: usize) {
+        let conn = (self.nodes[i].conns.iter())
+            .find_map(|(c, x)| matches!(x, Conn::Nostr(_)).then_some(*c))
+            .filter(|c| *c < NAMES_CONN)
+            .unwrap();
+        self.nodes[i].conns.remove(&conn);
+        self.subs.retain(|s| !(s.node == i && s.conn == conn));
+        let now = self.now;
+        self.nodes[i].c.ws_closed(conn, now);
+        self.run();
+    }
+}
+
+/// Node 1's Nostr connections opened in the third hour of a relay that keeps failing it: its backoff grew to
+/// [`NOSTR_BACKOFF_MAX`] (each try then takes the cap and [`NOSTR_ANSWER`]).
+fn opens_in_third_hour(n: &mut Net) -> usize {
+    let start = n.now;
+    n.advance(Duration::from_secs(3 * 3600));
+    let from = start + Duration::from_secs(2 * 3600);
+    n.nostr_opened(1).iter().filter(|t| **t >= from).count()
+}
+
+#[test]
+fn a_relay_that_never_answers_is_tried_less_and_less() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.silent_nostr = true;
+    let opens = opens_in_third_hour(&mut n);
+    let most = 3600 / (NOSTR_BACKOFF_MAX + NOSTR_ANSWER).as_secs() as usize + 1;
+    assert!(opens <= most, "{opens} connections in the third hour");
+}
+
+#[test]
+fn a_relay_that_answers_only_a_connections_first_req_is_tried_less_and_less() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.nostr_answers_once = true;
+    n.nostr_answered
+        .extend((0..2).flat_map(|i| n.nodes[i].conns.keys().map(move |c| (i, *c))));
+    let opens = opens_in_third_hour(&mut n);
+    let most = 3600 / (NOSTR_BACKOFF_MAX + NOSTR_ANSWER).as_secs() as usize + 1;
+    assert!(opens <= most, "{opens} connections in the third hour");
+}
+
+#[test]
+fn a_relay_that_answers_a_second_req_seconds_on_and_then_stalls_is_tried_less_and_less() {
+    // A second EOSE seconds after connecting (a subscription renewed after a CLOSED; a names client's Subscribe or
+    // Replies toggled) isn't a connection that held.
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.nostr_answers_twice = true;
+    n.nostr_answered
+        .extend((0..2).flat_map(|i| n.nodes[i].conns.keys().map(move |c| (i, *c))));
+    n.nostr_answered_twice
+        .extend((0..2).flat_map(|i| n.nodes[i].conns.keys().map(move |c| (i, *c))));
+    let opens = opens_in_third_hour(&mut n);
+    let most = 3600 / (NOSTR_BACKOFF_MAX + NOSTR_ANSWER).as_secs() as usize + 1;
+    assert!(opens <= most, "{opens} connections in the third hour");
+}
+
+impl Net {
+    /// Whether node `i`'s own client has a Nostr connection open.
+    fn nostr_up(&self, i: usize) -> bool {
+        (self.nodes[i].conns.iter()).any(|(c, x)| matches!(x, Conn::Nostr(_)) && *c < NAMES_CONN)
+    }
+}
+
+#[test]
+fn after_an_outage_a_relay_is_opened_again_within_a_minute() {
+    // Ten minutes offline: every open fails at once, and that backoff stays at about a minute.
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.nostr_offline = true;
+    n.nostr_drop(1);
+    n.advance(Duration::from_secs(600));
+    assert!(!n.nostr_up(1));
+    n.faults.nostr_offline = false;
+    n.advance(Duration::from_secs(61));
+    assert!(
+        n.nostr_up(1),
+        "not open a minute after the outage: {:?}",
+        n.logs(1)
+    );
+}
+
+#[test]
+fn a_relay_that_closes_idle_connections_after_a_minute_is_opened_again_at_once() {
+    // A relay (or its proxy: nginx's proxy_read_timeout is 60 s) closes a connection idle for a minute, before the
+    // renewal's EOSE: a connection that answered and held, opened again after 2 s each time.
+    let mut n = Net::new(configs(&[1, 2]));
+    for k in 0..12 {
+        n.advance(Duration::from_secs(57));
+        n.nostr_drop(1);
+        n.advance(Duration::from_secs(3));
+        assert!(
+            n.nostr_up(1),
+            "drop {k}: not open again in 3 s: {:?}",
+            n.logs(1)
+        );
+    }
+}
+
+#[test]
+fn a_relay_that_carries_an_event_or_a_renewal_has_its_backoff_start_afresh() {
+    let mut n = Net::new(configs(&[1, 2]));
+    // A relay down for an hour, then back: the backoff grew; node `i` connects again within the cap and its first REQ
+    // is answered (that alone resets nothing).
+    let down_and_back = |n: &mut Net, i: usize| {
+        n.faults.silent_nostr = true;
+        n.advance(Duration::from_secs(3600));
+        n.faults.silent_nostr = false;
+        let since = n.now;
+        for _ in 0..(NOSTR_ANSWER + NOSTR_BACKOFF_MAX).as_secs() + 1 {
+            if n.nostr_opened(i).last() > Some(&since) {
+                return;
+            }
+            n.advance(Duration::from_secs(1));
+        }
+        panic!("node {i} not connected again within the cap");
+    };
+    // The relay drops node `i`'s connection: it's opened again within `secs`, not before `after`.
+    let again = |n: &mut Net, i: usize, after: u64, secs: u64| {
+        n.nostr_drop(i);
+        let opened = n.nostr_opened(i).len();
+        n.advance(Duration::from_secs(after));
+        assert_eq!(
+            n.nostr_opened(i).len(),
+            opened,
+            "node {i}: again within {after} s"
+        );
+        n.advance(Duration::from_secs(secs - after));
+        assert!(
+            n.nostr_opened(i).len() > opened,
+            "node {i}: not again within {secs} s"
+        );
+    };
+    // An accepted OK: node 0's lookup for an address nobody holds, taken by the relay.
+    down_and_back(&mut n, 0);
+    let mut nobody = n.addr(1);
+    nobody[15] ^= 0xff;
+    let published = n.published.len();
+    n.send_to(0, nobody, 9, b"nobody");
+    assert!(n.published.len() > published, "a lookup published");
+    again(&mut n, 0, 1, 3);
+    // An event for our subscription (one that doesn't open: the relay carried it all the same).
+    down_and_back(&mut n, 1);
+    let x = (n.subs.iter().find(|s| s.node == 1 && s.conn < NAMES_CONN))
+        .unwrap()
+        .xs[1]
+        .clone();
+    let unix = n.nodes[1].c.unix(n.now);
+    let e = nostr::Author::random()
+        .unwrap()
+        .event(KIND, &x, "junk", unix);
+    n.forward(&e);
+    n.run();
+    again(&mut n, 1, 1, 3);
+    // A quiet relay: a renewal answered (a minute on) is a connection that held.
+    down_and_back(&mut n, 1);
+    n.advance(NOSTR_CHECK + Duration::from_secs(1));
+    again(&mut n, 1, 1, 3);
+    // That connection's first REQ alone answered: the backoff carries on (4 s, not 2).
+    again(&mut n, 1, 3, 5);
 }
 
 #[test]

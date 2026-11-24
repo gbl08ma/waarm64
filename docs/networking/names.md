@@ -67,6 +67,10 @@ The user's, 2026-11-15 to 2026-11-18; they bind.
   records, `ts_names_*`, the outside fetches. Wire and storage changes that stop older pages serving or syncing names
   are fine while rooms are pre-release; one that stops them meeting in a room is asked.
 - **An ephemeral connection with a key of its own can't hold a name** (its title would outlive the key by weeks).
+- **How a member's lookups answer the guest may change** (the user, 2026-11-23: "it's fine to change what the guest
+  sees when it comes to this part of the system"): SERVFAIL or NXDOMAIN, when each comes, what is asked again and how
+  long the resolver waits, without asking. It doesn't cover the records' format, the wire, or servers' budgets
+  ("Bounds and budgets").
 - Not decided: which suffixes names may use beyond the room's own domains ("Names").
 
 ## What it doesn't give
@@ -82,6 +86,14 @@ The user's, 2026-11-15 to 2026-11-18; they bind.
 - **Names in a room with nobody serving.** Where no owner is online, only key names resolve.
 - **A registry of any size**: comfortable to a few thousand names held for months, too much for a tab at 20,000
   ("Size, and where it stops").
+- **A renewal finished from a short visit when the calendar its servers finish loses the stamp.** The agent stamps
+  every entry at all three calendars and collects at any of them, but an item carries one pending anchor an entry (the
+  lowest: `alice`'s whenever it gave a receipt) and a server keeps the lower of two offered. A calendar that gave a
+  receipt and then lost the commitment (never seen: every stamp measured finished, bench/net/REPORT.md "NAMES loop 0",
+  "NAMES loop 0b") would leave a renewal stamped at a short visit to the owner's next visit, which collects it at
+  another calendar; on a visit every 2 weeks the name could stop resolving for days in between. Accepted with no work
+  planned (the user, 2026-11-23): stamping at three calendars is the mitigation, and the remedies (servers keeping
+  each calendar's pending anchor, or two renewals made ahead) cost a protocol change or a fork every term.
 
 ## Terms
 
@@ -305,7 +317,8 @@ doesn't take new transfers for old ones.
 ### Finding a server
 
 "Who serves the registry?" is for what must not name an id: the refresh of names a member keeps, the dialog's check,
-a publisher's `put`s, and servers' sync partners (a first lookup asks the room instead: below). An ephemeral event like
+a publisher's `put`s, and servers' sync partners (a first lookup asks the room instead: below), and whether anybody
+serves at all when a first lookup met silence from a room not heard lately. An ephemeral event like
 a lookup (the same kind, MAC and seal with the room's lookup key) under the room's names tag, `BLAKE2s(tag salt,
 "names", hour)` (`Room::names_tag`), its body a lookup's (the names client's key, region, time, nonce) and `spread`:
 123 bytes. Servers subscribe to it and drop questions as they drop lookups (MAC first, copies through other relays, the
@@ -332,10 +345,11 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   the room has two. Registrations buy places in this draw; what it's used for is what that can't hurt much (a refresh
   can be shown a stale zone or a release hidden, never another owner). A member holds its servers while it asks and 3
   minutes after, and **redraws them 15 minutes after they were drawn**; one that fails is let go.
-- **Nobody answered** 1.5 s after the third round: the waiting queries get NXDOMAIN, and the fact is remembered 30 s,
+- **Nobody answered** 1.5 s after the third round (a member's question: for a refresh, the dialog's check, a put, or a
+  first lookup's silence, "A member resolving a name"): the waiting queries get NXDOMAIN, and the fact is remembered 30 s,
   twice as long each time after, to 10 minutes (names not kept get NXDOMAIN at once meanwhile; kept ones answer); the
   next query after it asks again, so a member finds a room's first server with no reconnection. A room with no names
-  costs a member three events every 10 minutes at most, only while its guest asks. A server nobody answered counts as
+  costs a member six events every 10 minutes at most (a first lookup's three rounds, the question's three), only while its guest asks. A server nobody answered counts as
   synced and asks again after the same wait (5 minutes at most, plus a fifth at random). **A server that refused a
   question meanwhile for not being synced asks again in 1.5 to 3 s** (`ASK_SOON`), and **a server asks only once its
   names client's home region is up**: two servers started together then hold each other's name 1.5 to 6.5 s after the
@@ -373,19 +387,27 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
      `since` (32 a key), `fetch` to the earliest, 8 at once, handshakes let in from those names keys only, each run
      checked as a `history` is; it ends when nothing is in flight and the best run is older than every `since` left, or
      at 10 s (`CONTEST_FOR`), and names an owner only if every key shown is settled, else no answer (the next query asks
-     again), never another owner; **silence** 1.5 s after the last ask left, nobody serves (30 s doubling to 10
-     minutes), unless a reply counted in the last minute (the reply budgets were spent: SERVFAIL, asked again). A key
-     whose last entry a release replied ends is taken by nobody.
+     again), never another owner; **silence** 1.5 s after the last ask left is SERVFAIL, and only "who serves?" says
+     nobody serves. When a reply counted, or "who serves?" found servers, in the last minute (`HEARD_FOR`), the reply
+     budgets were spent: the query gets the resolver's SERVFAIL (at 4 s) and the next asks again. Otherwise
+     **SERVFAIL at once** (`Answer::ServFail`; the guest's resolver asks again) **and the member asks "who serves?"**
+     ("Finding a server": it names no name, and servers answer it from a budget of their own): servers that answer
+     keep the next minute's silences SERVFAIL; nobody within 2.5 s is nobody serves (30 s doubling to 10 minutes; the
+     queries waiting get NXDOMAIN then). So a room whose own load spent its reply budgets, for as long as it lasts, isn't
+     taken for one nobody serves (N6a's 500 joiners: 30 were, NXDOMAIN for 30 s; 20 while a second silence still was,
+     NAMES2 loop 5; none since, bench/net/REPORT.md "NAMES2 loop 5b"), and a room with no server answers NXDOMAIN
+     ~5 s after the guest's first query (SERVFAIL at 2.5 s; its resolver's next query waits for "who serves?"), again
+     each time the memory runs out. A key whose last entry a release replied ends is taken by nobody.
   5. A reply up to 3 s after the decision is still checked (another key starts a contest; a name decided none takes a
      late owner). **Replies spent by others**: past 8 replies a minute under its tag to nonces it never sent
      (`STRAYS_MAX`, `STRAY_FOR`), a first lookup decides nothing, never an impostor's answer.
-- **A refresh** (a kept name confirmed more than 5 minutes ago, or in its grace) **never sends an `ask`** (that would
-  tell the room how long a name stays in use): it goes to the two servers "who serves?" drew, `get` in owner mode (the
-  name id and what it keeps); each answers with what it lacks of the owning chain's last entry and the zone, or none. It
-  checks the last entry (signature, work, header, anchor, alive) and the zone. **When the servers disagree or contest
-  what it keeps** (`Kept::offer` would refuse it), it asks each for `history` (the owning chain's whole run, up to
-  1,024 entries, checked a slice a turn, each entry once; the first that fails refuses that run) and picks by the rule.
-  Last entries alone can't be compared (a renewal's time isn't its chain's seniority).
+- **A refresh** (a kept name confirmed more than 5 minutes ago, a minute in its grace) **never sends an `ask`** (that
+  would tell the room how long a name stays in use): it goes to the two servers "who serves?" drew, `get` in owner mode
+  (the name id and what it keeps); each answers with what it lacks of the owning chain's last entry and the zone, or
+  none. It checks the last entry (signature, work, header, anchor, alive) and the zone. **When the servers disagree or
+  contest what it keeps** (`Kept::offer` would refuse it), it asks each for `history` (the owning chain's whole run, up
+  to 1,024 entries, checked a slice a turn, each entry once; the first that fails refuses that run) and picks by the
+  rule. Last entries alone can't be compared (a renewal's time isn't its chain's seniority).
 - **What a member keeps**: each name it resolved, with its chain's last entry, the earliest entry time it verified for
   that chain and whether it was the claim's, the zone and when servers last confirmed it (a record a name, under 2 KB;
   1,024 names at most, the least asked for going first). While that chain covers now, another replaces it only by
@@ -393,8 +415,9 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   only a last entry), another key's run never replaces it on seniority alone. So a member that knew a name refuses an
   impersonator after a reset, with no rule of its own. A kept name **answers at once** while its chain resolves,
   refreshed in the background when older than 5 minutes (so a zone change shows one query late); in its grace it is
-  NXDOMAIN while confirmed in the last 5 minutes. Both servers saying none doesn't drop a kept chain; **a release
-  does**: a server whose tombstone holds the member's last entry answers with the release and what leads to it (8
+  NXDOMAIN while confirmed in the last minute (`KEPT_GRACE_REFRESH`), so a renewal its servers come to hold shows a
+  minute late at most (it was 5 minutes, as a live name's). Both servers saying none doesn't drop a kept chain; **a
+  release does**: a server whose tombstone holds the member's last entry answers with the release and what leads to it (8
   entries at most), and the member ends what it keeps and asks again as a first lookup.
 - **The dialog's check** must not tell a server which id is about to be claimed: Register asks for `ids` (every id held
   under one first byte, each with when its owner's hold ends rounded up to a week, 0 for nobody), through a checker made
@@ -460,8 +483,13 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
   for being asked for only once that moved an hour. A member's records likewise (what it keeps). The page keeps them in
   IndexedDB `waarm64-room`'s store `names` (web/room.ts `roomNamesStore`) under 16 bytes of SHA-256 over the room's ID
   and the connection's `identityKey` (a private room's ID is a secret), written in batches of a second and before the
-  worker goes, streamed in at the start; one the module doesn't take is deleted. Stored connections only. The node's
-  own names aren't stored there: their titles are the agent's.
+  worker goes, streamed in at the start; one the module doesn't take is deleted. Stored connections' only (and an
+  ephemeral connection's on a stored one's key, which are that one's): an ephemeral connection's own key keeps none
+  (web/room-worker.ts), so a closed page leaves nothing under an id nothing names again. Delete sweeps a connection's
+  records in its room once its client has stopped (`Connections.delete`, `sweepRoom`, web/room.ts `forgetRoomRecords`),
+  unless another connection in that room has its `identityKey` (or another tab's ephemeral connection uses the entry:
+  which room it is in isn't told); so does New name for the entry a connection left (a shared one's, or a stored
+  one's that an ephemeral connection used), once its old client has stopped. The node's own names aren't stored there: their titles are the agent's.
 - **Outside the room** (`outside.rs`; servers ask, members never). The module builds a GET only from the compiled
   calendars (`Calendar::url`) and explorers (`EXPLORERS`), never from a record; the room's worker fetches it through
   web/names-fetch.ts `serviceFetch`, which refuses any other URL (action 12, `ts_room_names_fetched`; status 0: no answer).
@@ -489,12 +517,18 @@ relay's budget, an hour off, their own key, a region outside the link), copies b
 - **on a member's**, a kept name, its chain alive: AAAA from the slot the name opens (none: NXDOMAIN), TTL 60, the key
   learnt by the module;
 - **otherwise the query waits** while the names client asks: answered when the answer comes, SERVFAIL at 4 s
-  (`DNS_WAIT`; 64 wait at most, past that SERVFAIL at once; a contest goes on and the next query has it);
+  (`DNS_WAIT`; 64 wait at most, past that SERVFAIL at once; a contest goes on and the next query has it), or at once
+  when the lookup met silence from a room not heard lately (`Answer::ServFail`, and the member asks "who serves?": "A
+  member resolving a name");
 - **NXDOMAIN at once** for a reserved or ill-formed name, a name replies said none for (60 s doubling to 10 minutes),
   and any name not kept while the member remembers nobody serves.
 
-Every type is answered alike (AAAA has the address, the rest an empty answer). Each query for a name that isn't a key
-is logged to the worker's console (`resolver: <name> (type <n>): <answer>`). Measured: a first lookup 1.3 s through the
+Every type is answered alike (AAAA has the address, the rest an empty answer). The worker's console gets how many
+names that aren't keys the guest asked for, never which: `resolver: names asked: <n> (in <s> s)` at the first, then at
+the first query a minute or more after the last count (`DNS_COUNT_EVERY`), and `resolver: a name: no answer in 4 s`
+for a SERVFAIL. Only the page tests' build (`test-params`, "Tests' parameters") logs each one in words
+(`resolver: <name> (type <n>): <answer>`, `<name>: no answer in 4 s`), which tests/page-room.test.ts reads for what
+the guests asked on their own. Measured: a first lookup 1.3 s through the
 fake DERP and relay in a room of two, 0.3 s once the spread is known; on the public relays a fresh member's first name
 1.52 to 1.59 s, a second 0.90 to 0.95, one that doesn't exist 0.64 to 1.0 to NXDOMAIN, a kept one 1 ms.
 
@@ -504,7 +538,8 @@ fake DERP and relay in a room of two, 0.3 s once the spread is known; on the pub
 owns the owners' secret and the titles, the only place a name is kept in words: IndexedDB `waarm64-room` (version 3),
 store `owner` (32 random bytes under the connection's `identityKey`, made at the first registration) and `titles` (a
 record under [identityKey, a hash of the room's ID, the name]: the room's ID and link, the item, the calendars' pending
-anchors, the zone's points and counter, the backoffs, lost or released, the renewal made ahead). **A title is the only
+anchors, the zone's points and counter, the backoffs, lost or released, the renewal made ahead, New name's repoint to
+do). **A title is the only
 copy of ownership**: registering asks for persistent storage, and deleting the connection shows its export. The module
 does the work (`ts_names_*`, JSON in and out: make, mine in slices of 256 tries, sign and check an entry; pending
 anchors; the commitment to ask; a finished proof's anchor with its header; a zone; a title's status; a server's better
@@ -515,12 +550,22 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   such as a store's error, is tried again 5 minutes later; one still running when the agent stops arms nothing; its
   worker's failure or close refuses what waits on it), for each title, under
   **one Web Lock a title** (`waarm64-names:<identityKey>:<room hash>:<name>`, taken if free): collect finished anchors
-  (a pending proof asked 5 minutes doubling to an hour), each with its block's header from an explorer; renew when the
-  owning chain's last entry is `TERM / 2` old and no renewal waits; make the claim of a title that has none. An entry
-  no calendar stamped is made again. Nothing else drops one: every anchor counts whenever it comes, a calendar's answer
+  (a pending proof asked around when it is expected, `collectWait`: an hour after the stamp, then every 10 minutes to
+  3 hours, then 20 and 40 minutes and hourly; against N0b's 80 real stamps it collects by "about 2 hours" every one
+  the calendars served by then, 67, each within 10 minutes of being served, where doubling from 5 minutes collected 4;
+  13 asks a calendar in a pending proof's first 3 hours, where doubling made 6; counted by asks, so a page opened
+  late asks at once and then from the hour's 10 minutes), each with its block's header from an explorer; renew when
+  the owning chain's last entry is `TERM / 2` old and no renewal waits; make the claim of a title that has none. An entry
+  no calendar stamped is made again. Nothing else drops one but what follows: every anchor counts whenever it comes, a calendar's answer
   that isn't a proof moves on to the next, a header one explorer serves that the module refuses goes to the other. A
   renewal unanchored past its link end is kept and asked for a week more (it may have an anchor timed before then). A
-  claim never goes stale.
+  claim never goes stale, so **a claim no calendar has served a day after its stamp is made again** (`CLAIM_AGAIN_MS`:
+  the calendars lost it, and it would stay Reserved for good; a day is past the worst a year's samples showed for
+  the first of three, 5.3 hours, and for `finney` alone, 15); the one before is kept with its pending anchors and asked for, since an
+  anchor that does come still counts, so two claims wait at most (a third made drops the oldest), and a claim never
+  anchored is dropped a week after its stamp once another was made after it or anchored. Meanwhile the card says
+  Reserved, public once this web app has been open a while (`names-view.reservedLate`) from 2 hours on, then, from
+  the new claim's stamp, public in about 2 hours again (`stampedAt`: a claim made again counts its wait again).
 - **The next renewal is made ahead**: once a pass has published, the agent makes the renewal that will follow the
   title's newest entry (proof of work and signature) and keeps it unstamped (`TitleRecord.ahead`). A visit that finds
   a renewal due stamps it (seconds) and hands it to the servers with its signed pending anchor; they finish it. So **a
@@ -533,13 +578,18 @@ worker of its own for proof of work; no JavaScript crypto. It needs no running m
   other way is seen within the hour).
 - **A server's better item** is checked whole and judged with the title's entries: the title's own chain (`ours`);
   **another branch of the title's key** (a title forked between browsers: taken in, the next renewal from the room's
-  branch; a zone a server didn't take counted past, put again 11 minutes on); or **another key's chain: lost**, renewal
-  stops and the page says so. Not while the title's own chain has an entry waiting for its anchor, nor when another
+  branch; a zone a server didn't take counted past, put again 11 minutes on); **nobody's** (`none`: the entries of the
+  title's key taken in all the same, so a copy that renewed, shown another copy's release, ends with it: Let go, nothing
+  renewed or made ahead after); or **another key's chain: lost**, renewal stops and the page says so. Not while the title's own chain has an entry waiting for its anchor, nor when another
   server of the same pass took it, nor until an explorer knows the better chain's first block (a forged header can't
   stop the owner's renewals). A lost title is still put hourly, and judged again.
 - **[Let it go](ui:network:DomainCard.release)** drops the renewals waiting for their anchors and the one made ahead,
-  and makes the release on the owning chain's last entry (made again if no calendar stamped it). A renewal servers
-  already finished is ended by the release once both are anchored.
+  keeps the title let go (`released`), and then makes the release on the owning chain's last entry (proof of work); a
+  pass makes one that wasn't made (cut short by an error or the tab closing) or that no calendar stamped. A renewal servers
+  already finished is ended by the release once both are anchored. A claim let go before it was public has its
+  release made once the claim is anchored, and **nothing is put until the release is anchored too**: the room is
+  given the claim and its release together, so the name never resolves (put alone, the claim resolved until servers
+  finished the release, ~2 hours).
 - **A running room** is given the connection's titles (`room.names.titles`, the owner key and item each) and again as
   they change (BroadcastChannel `waarm64-names`, `ts_room_names_titles`): a member given titles becomes a server. Each
   is checked whole **before it counts as the node's own**: a title with no entries, one not the title key's for its
@@ -658,6 +708,24 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
   browser.](ui:network:DomainsPane.ephemeral) and nothing else, and it has no status link anywhere (`names-view.ts`
   `hasDomainsLink`, the menu's, the tab's and the cards' one rule: an ephemeral connection on a stored connection's key
   has one).
+- **New name on a connection that holds domains** ([New name](ui:network:ConnectionRoomSettings.newName) in its
+  Settings, under Advanced; a domain held is one not let go, lapsed or lost) asks what becomes of them (the user's
+  decision, 2026-11-23: New name is how a user gets away from members who learned their address, and a domain pointed
+  at the new key by itself would lead them there): [Point at the new name](ui:network:network-actions.newName.point)
+  (each point at the old key moves to the new one, another member's stays: `repointed`, a new zone each), or
+  [Let them go](ui:network:network-actions.newName.release_other) (each released, as Let it go does). The question names, and
+  New name acts on, the domains held in the connection's room only (`held(identityKey, room)`: a title under the same
+  entry in another room, from an export made there, is left). **The choice is kept with each title before the key
+  changes** (`NamesAgent.newKey`: let go at once, or `repoint`, the old key, in its record), and the agent's passes do
+  the work: the points move once the key under the entry is another one (`member`'s), a release is made as Let it go's
+  is. The page runs a pass of the connection's titles in the background once the key changed (a release's proof of
+  work takes a while), so Settings shows the new key at once; a reload or an error meanwhile leaves the rest to the
+  next pass. The
+  question says what each means: [Give {{name}} a new name in its room? Members who have the machine's current name
+  won't be able to reach it any more. It holds the domains {{names}}. If you point them at the new name, whoever knows
+  a domain will find the new address. If you let them go, anyone can register them once the release is
+  public.](ui:network:network-actions.newName.confirm.domains_other)
+  A connection with none, or whose key another connection shares (the domains stay with that one), is asked as before.
 - **Elsewhere**: deleting a room connection that holds names asks in a question of its own, with the export to copy,
   then forgets them. A pasted export (the wizard's key to paste) brings its names. Words: `web/messages/en/network.json`
   (the Home page's column and Details' own lines in `machines.json`).
@@ -681,7 +749,8 @@ ConnectionBackup.svelte, areas/names.svelte.ts, names-view.ts; frontend.md "The 
 | strays under a member's tag | 8 a minute, then no decision | replies spent by others |
 | `ids` | twice a session, 4 a minute a server | listing the registry |
 | the resolver's wait | 4 s, 64 queries | a guest's resolver retries |
-| negative answers | NXDOMAIN 60 s to 10 min; nobody serves 30 s to 10 min | a room with no names costs three events every 10 min |
+| negative answers | NXDOMAIN 60 s to 10 min; nobody serves 30 s to 10 min | a room with no names costs six events every 10 min |
+| a kept name confirmed again | after 5 minutes; 1 minute in its grace | in its grace it is NXDOMAIN while fresh, and a renewal ends that |
 | a member's kept names | 1,024, under 2 KB each | |
 | a history | 1,024 entries, a slice a turn | ~0.7 s of the worker in one turn otherwise |
 | verification | 24 units a turn (~6 entries, ~4 ms) | the worker stays responsive |
@@ -755,6 +824,7 @@ Production's parameters need real Bitcoin work, so a test can't make a title the
 seconds; a Rust test of the asks' rates runs `Params::TEST_PACED`). `net/ts/build.sh --test-params` builds it to
 `target/net/ts-test.wasm` (`scripts/ci.sh` builds both), which the page tests serve in `ts.wasm`'s place; `npm run
 dist` ships `ts.wasm` only, and nothing on a page can choose the other. A room's `self` event says which (`params`).
+The same feature has the resolver log each name the guest asks for in words ("The resolver"); production's counts them.
 Titles for the page tests come from `net/ts/examples/names-title.rs`; the agent's tests have the agent make its own on
 the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a block 6 deep in the past).
 
@@ -764,19 +834,27 @@ the pretend services of `tests/net/ots-calendar.ts` (`mine(n, time)` puts a bloc
   `blake2` and `sha2` in test builds): `room/names/tests.rs` (records and rules: alice's real proof of block 976,177 as
   the vector, merge order over 60 scenarios with forks, releases, stale copies and partial anchors, the floor, zones),
   `server_tests.rs` and `member_tests.rs` (the registry's logic on a bus in simulated time: answer counts at 1, 20 and
-  500 servers, 128 and 1,280 junk registrations, contests, the release replayed, strays, the 60-day promise, the
+  500 servers, 128 and 1,280 junk registrations, contests, the release replayed, strays, a room whose own load spent its
+  replies, at a first lookup and past the guest's first retry, a renewal reaching a name kept in its grace, the 60-day promise, the
   calendar's rates, the bound), `room/tests/names.rs` (through room.rs's fake DERP and relay: two and twenty servers
   converge, a reset, a flood of questions beside the node's own lookups, nothing under the node's key, no WebRTC, a
   first lookup with no DERP packet, a contest through sessions, names under the room's name), `agent.rs`'s ops, and
   `the_module_runs_on_production_parameters`.
 - **Node** (each named to `node --test`): `tests/room-names.test.ts` (the pretend calendars and explorer, which module
-  runs on which parameters, the `self` event's name, the records in IndexedDB in Chromium), `tests/names-agent.test.ts`
+  runs on which parameters, the `self` event's name, the records in IndexedDB in Chromium, swept by room and connection,
+  none for an ephemeral connection's own key), `tests/names-agent.test.ts`
   (the agent on the tests' module and the pretend services: claims held back, anchors whenever they come, the Web
-  Lock, lost titles, forks and pasted exports, the dialog's check, Let it go, only compiled services fetched),
+  Lock, lost titles, forks and pasted exports, the dialog's check, Let it go (before the claim is public too, and
+  another copy's taken in; cut short, finished by the next pass), New name's choice kept and finished across a reload,
+only compiled services fetched, the asks for a pending proof against N0b's 80 stamps, a
+  claim its calendars lost made again),
   `tests/names-room.test.ts` (opt-in `WAARM64_TAILCAT=1`: real servers through the rig's derper, a renewal finished
   with the page closed, a fork settled, a lost name), `tests/names-browser.test.ts` (Chromium: the worker, IndexedDB,
-  routes, an export into another profile), `tests/names-page.test.ts` (the words, the dialog's outcomes, and the
-  `wording:` cases that pin the two notices), `tests/connections.test.ts` (export, import, names forgotten with the key).
+  routes, an export into another profile), `tests/names-page.test.ts` (the words, the dialog's outcomes, a domain
+  pointed at New name's key, and the `wording:` cases that pin the two notices), `tests/page-domains.test.ts`
+  (Chromium: the Domains pane, New name's question on a connection that holds domains, its room's only, the new key
+  shown while the releases wait), `tests/connections.test.ts` (export, import, names forgotten with the key, records
+  swept by Delete and by New name off a shared entry).
 - **Debian** (`scripts/ci-net.sh`): `tests/page-room.test.ts` grown by names (two guests in one Chromium, the tests'
   module served in `ts.wasm`'s place): no server, a server that appears while a guest keeps asking, full and short
   names, a label, reserved names, a zone change, what Debian asks unprompted, the dialog from typing to a name another
@@ -869,14 +947,24 @@ Negentropy) is the repair primitive: no parameter to guess, a few round trips.
 
 ### Findings (don't re-discover)
 
+- **A relay's EOSE to a connection's first REQ isn't proof it works**: relay.degmods.com answered each new connection's
+  REQ and then nothing (no EOSE to the renewal), so the backoff it reset started over at 2 s and two nodes opened it
+  142 times in 1.8 hours (N6b). Only an event, an accepted `OK` or an answer on a connection open 30 s resets it now;
+  it grows to 10 minutes only for a relay our client dropped for not answering, to a minute for failed opens (an
+  outage) and relay-side closes, and an idle close of a connection that held resets it ([rooms.md](rooms.md) "What a
+  room needs from a Nostr relay").
 - **A calendar's pending proof is a 404 without CORS**: the page sees a failed fetch, not a status. Both explorers'
   404s for an unknown block do carry CORS, so a refusal is visible.
 - **A calendar's history can't be listed by address**: it pays from several coins, each transaction spending an
   earlier one's change on its own coin; a year is ~16,000 requests. It was sampled (bench/net/REPORT.md "NAMES loop 0").
 - **A stamp made within ~10 minutes of its calendar's block misses that transaction**, and a calendar serves a proof
   from the sixth confirmation (its status page counts transactions under 6 as waiting).
-- **The agent's backoff collects a claim later than "about 2 hours"** (asks at 80, then 140 minutes): 76 of 80 real
-  stamps would have shown the late line; the long run's proof collected at 1.38 hours a block 13 minutes old.
+- **Asking for a pending proof 5 minutes doubling to an hour collected a claim later than "about 2 hours"** (asks at
+  80, then 140 minutes): 76 of N0b's 80 real stamps would have shown the late line, where the calendars had served 67
+  of them by then; the long run's proof collected at 1.38 hours a block 13 minutes old. The asks are spaced around the
+  proof's hour since (`collectWait`, tests/names-agent.test.ts). On N0b's evening of slow blocks 13 of 80 proofs came
+  after 2 hours, so no schedule shows the late line for fewer than 13 of them; the calendars' recent record puts the
+  first proof's p90 at 1.7 hours.
 - **A GPU's lead at Argon2id of 1 MiB is ~110x to ~220x**, not the ~10x first assumed: a memory-hard function narrows
   the gap only past what fits on the card's chips, and memory a server can afford to check stays small. 256 KiB leaves
   the card most of its lead; 4 MiB keeps the ratio at four times the check.
