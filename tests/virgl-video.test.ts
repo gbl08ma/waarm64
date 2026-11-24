@@ -400,16 +400,18 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   assert.deepEqual([...made[0].chunks[0].data], [1, 2, 3]);
   r.detach(1, 10);
   r.detach(1, 11);
-  const before = gl.log.filter(([n]) => n === 'texSubImage2D').length;
+  let from = gl.log.length;
   // The decoder is told the planes' shape while the picture is awaited, to copy it out that way (`copyPicture`).
   assert.deepEqual(made[0].shape(0), { w: 6, h: 4, cw: 3, ch: 2, planar: false });
   made[0].out(0);
   assert.equal(made[0].shape(0), undefined, 'nothing takes a picture that is out');
   assert.deepEqual(errors, []);
-  const ups = gl.log.filter(([n]) => n === 'texSubImage2D').slice(before);
-  // Each plane whole (its padding the picture's edges, not what the texture held), then the picture alone into a
-  // texture of its size (what draws sample: players import the plane at the picture's size): x, y, width, height.
-  assert.deepEqual(ups.map(([, a]) => (a as number[]).slice(2, 6)), [[0, 0, 6, 4], [0, 0, 4, 2], [0, 0, 3, 2], [0, 0, 2, 1]]);
+  // Each plane whole (its padding the picture's edges, not what the texture held), uploaded once, then the picture
+  // alone copied from it on the GPU into a texture of its size (what draws sample: players import the plane at the
+  // picture's size): x, y, width, height.
+  const puts = () => gl.log.slice(from).filter(([n]) => n === 'texSubImage2D' || n === 'copyTexSubImage2D').map(([n, a]) => [n, ...(a as number[]).slice(n === 'texSubImage2D' ? 2 : 4, n === 'texSubImage2D' ? 6 : 8)]);
+  const expected = [['texSubImage2D', 0, 0, 6, 4], ['copyTexSubImage2D', 0, 0, 4, 2], ['texSubImage2D', 0, 0, 3, 2], ['copyTexSubImage2D', 0, 0, 2, 1]];
+  assert.deepEqual(puts(), expected);
   assert.deepEqual(gl.log.filter(([n]) => n === 'texStorage2D').slice(-2).map(([, a]) => (a as number[]).slice(3)), [[4, 2], [2, 1]]);
   assert.equal(r.videoStats.decoded, 1);
   // A picture already in its planes' shape (rows of the plane's width) is uploaded from its own arrays, not a copy.
@@ -420,12 +422,12 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   const shaped: DecodedPicture = { width: 4, height: 2, y: new Uint8Array(24).fill(7), uv: new Uint8Array(12).fill(8), stride: 6, rows: 4, cstride: 3, crows: 2, planar: false };
   const planes: Uint8Array[] = [];
   r.onPlane = (_res, data) => planes.push(data);
-  const mark = gl.log.filter(([n]) => n === 'texSubImage2D').length;
+  from = gl.log.length;
   made[0].out(1, shaped);
   assert.deepEqual(errors, []);
   assert.deepEqual(planes, [shaped.y, shaped.uv]);
   assert.ok(planes[0] === shaped.y && planes[1] === shaped.uv, 'the arrays themselves');
-  assert.deepEqual(gl.log.filter(([n]) => n === 'texSubImage2D').slice(mark).map(([, a]) => (a as number[]).slice(2, 6)), [[0, 0, 6, 4], [0, 0, 4, 2], [0, 0, 3, 2], [0, 0, 2, 1]]);
+  assert.deepEqual(puts(), expected);
   r.onPlane = undefined;
   // Anything else written into a plane drops its picture: the plane is sampled again.
   r.attachBacking(10, [{ off: 2048, len: 24, mem: 0 }]);

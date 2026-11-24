@@ -64,7 +64,7 @@ test('virgl on WebGL2: every program of the TGSI corpus compiles and links', asy
   assert.ok(r.programs >= 35);
 });
 
-type VideoReplay = { hashes: string[]; stats: { frames: number; decoded: number; dropped: number; errors: number }; ahead: number; maxWaitMs: number; timedOut: { drains: number; giveUps: number }; hardware: number[]; log: string[]; ms: number; orig: { hashes: string[]; errors: string[] } | null };
+type VideoReplay = { hashes: string[]; sampled: string[]; pictureTextures: number; stats: { frames: number; decoded: number; dropped: number; errors: number }; ahead: number; maxWaitMs: number; timedOut: { drains: number; giveUps: number }; hardware: number[]; log: string[]; ms: number; orig: { hashes: string[]; errors: string[] } | null };
 async function replayVideo(name: string, orig?: string, fault?: ChunkFault): Promise<VideoReplay> {
   const ref = videoRef();
   return page.evaluate(([t, w, h, o, f]) => (window as unknown as { virgl: { replayVideo64(t: string, w: number, h: number, o?: string, f?: ChunkFault): Promise<VideoReplay> } }).virgl.replayVideo64(t, w, h, o, f),
@@ -81,6 +81,11 @@ test('video on WebGL2: VP9 pictures through the device and WebCodecs into their 
   // Shown in decode order (none hidden in these): each picture the original's frame, exactly.
   const wrong = r.hashes.flatMap((h, k) => (h === ref.vp9[k] ? [] : [k]));
   assert.equal(wrong.length, 0, `pictures ${wrong.join(' ')} differ from FFmpeg's`);
+  // What draws sample is the same picture: each plane's picture texture (854×480 in 864×480 planes, the luma and two
+  // of chroma), filled from the plane on the GPU.
+  assert.equal(r.pictureTextures, 3 * ref.pictures);
+  const off = r.sampled.flatMap((h, k) => (h === ref.vp9[k] ? [] : [k]));
+  assert.equal(off.length, 0, `pictures ${off.join(' ')} sampled differ from FFmpeg's`);
 });
 
 test('video on WebGL2: H.264 pictures through the device and WebCodecs into their planes, as the original decodes', { timeout: 180_000 }, async (t) => {

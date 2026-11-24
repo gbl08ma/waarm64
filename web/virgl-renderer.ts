@@ -1370,6 +1370,7 @@ export class VirglRenderer {
    * at END_FRAME, when virglrenderer writes them (`VideoEnv.write`).
    */
   private writePicture(planes: number[], pic: DecodedPicture) {
+    const gl = this.gl;
     const cw = (pic.width + 1) >> 1,
       ch = (pic.height + 1) >> 1;
     // The arrays' sizes: the planes' own when the decoder was told them (`VideoEnv.dims`), written as they are.
@@ -1378,7 +1379,8 @@ export class VirglRenderer {
       CW = pic.cstride ?? cw,
       CH = pic.crows ?? ch;
     // Each plane filled to its texture's size, the picture's edges repeated (`padPlane`, where the array isn't that
-    // size already), and a picture smaller than its plane also kept alone, for draws to sample (`Res.picture`).
+    // size already), and a picture smaller than its plane also kept alone, for draws to sample (`Res.picture`):
+    // copied from the plane on the GPU, which costs half of uploading its rows again (bench/video/upload.ts).
     const put = (res: number, data: Uint8Array, w: number, h: number, bpp: number, sw: number, sh: number) => {
       const r = this.resources.get(res);
       if (!r) return;
@@ -1403,7 +1405,11 @@ export class VirglRenderer {
           : undefined;
       if (prev && prev !== t) this.gl.deleteTexture(prev.tex!);
       if (t) {
-        this.upload(t, 0, { x: 0, y: 0, z: 0, w, h, d: 1 }, p.data, p.w * bpp, 0);
+        if (this.bindForRead(r, 0, 0)) {
+          gl.bindTexture(E.TEXTURE_2D, t.tex!);
+          gl.copyTexSubImage2D(E.TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+        } else this.upload(t, 0, { x: 0, y: 0, z: 0, w, h, d: 1 }, p.data, p.w * bpp, 0);
+        gl.bindFramebuffer(E.READ_FRAMEBUFFER, null);
         r.picture = t;
       }
     };

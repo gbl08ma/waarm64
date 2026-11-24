@@ -69,6 +69,8 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   const log: string[] = [];
   const { hardware } = await probeVideo();
   const shots: Promise<string>[] = [];
+  const sampled: Promise<string>[] = [];
+  let pictureTextures = 0;
   let r!: VirglRenderer;
   let q!: CallQueue<HostCall>;
   const timedOut = { drains: 0, giveUps: 0 };
@@ -93,6 +95,10 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
       p.writePicture = (planes, pic) => {
         write(planes, pic);
         shots.push(sha256(i420(planes.map((id) => ({ bytes: r.readResource(id)!, width: r.resources.get(id)!.width })), w, h)));
+        // And what a draw samples: a plane's picture texture where the picture is smaller than its plane.
+        const res = planes.map((id) => r.resources.get(id)!);
+        pictureTextures += res.filter((x) => x.picture).length;
+        sampled.push(sha256(i420(res.map((x) => texels(gl, x.picture ?? x)), w, h)));
       };
       // `ctx` -1: the guest's read of a picture (below), which only waits.
       q = new CallQueue<HostCall>({ run: (c) => { if (c.t !== 'transfer' || c.ctx !== -1) runCall(c, r); }, pending: r.videoPending, nudge: () => r.videoNudge(), drain: () => { timedOut.drains++; r.videoDrain(); }, giveUp: () => { timedOut.giveUps++; r.videoGiveUp(); }, ...(fault ? { drainMs: 10_000, giveUpMs: 20_000 } : {}) });
@@ -109,7 +115,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
     clearInterval(timer);
     VideoFrame.prototype.copyTo = copyTo;
   }
-  return { hashes: await Promise.all(shots), stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, timedOut, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
+  return { hashes: await Promise.all(shots), sampled: await Promise.all(sampled), pictureTextures, stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, timedOut, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
 }
 
 /**
@@ -182,6 +188,20 @@ function faulty(fault: ChunkFault): DecoderFactory {
 }
 
 /** I420 of planes read back (NV12: R8 then RG8; or three R8), the top-left `w`×`h`. */
+/** A texture's texels (R8 or RG8), read through a framebuffer of its own. */
+function texels(gl: WebGL2RenderingContext, t: { tex?: WebGLTexture | null; width: number; height: number; fmt?: { bpp: number } }) {
+  const fbo = gl.createFramebuffer(), bpp = t.fmt!.bpp;
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.tex!, 0);
+  const rgba = new Uint8Array(t.width * t.height * 4);
+  gl.readPixels(0, 0, t.width, t.height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fbo);
+  const bytes = new Uint8Array(t.width * t.height * bpp);
+  for (let k = 0; k < t.width * t.height; k++) for (let c = 0; c < bpp; c++) bytes[k * bpp + c] = rgba[k * 4 + c];
+  return { bytes, width: t.width };
+}
+
 function i420(planes: { bytes: Uint8Array; width: number }[], w: number, h: number) {
   const cw = (w + 1) >> 1, ch = (h + 1) >> 1;
   const out = new Uint8Array(w * h + 2 * cw * ch);

@@ -593,8 +593,9 @@ On with 3D (`?gpu=novideo` off); the design, its findings and its measurements a
   an 854×480 video, 640×368 for 640×360), and Chromium and mpv import a plane at the picture's size, which on real
   hardware crops it. virgl's import never reaches the host (Mesa's virgl sends nothing for an ordinary resource; views
   carry no size), so they sampled the whole plane and showed its padding along the right or bottom edge: zeros (a green
-  stripe), then the repeated edge (a smear). A picture smaller than its plane is also written into a texture of its own
-  size, and draws sampling the plane sample that; an upload into the plane or a draw into it drops it. Firefox shows the
+  stripe), then the repeated edge (a smear). A picture smaller than its plane also fills a texture of its own
+  size (copied from the plane on the GPU, `copyTexSubImage2D`), and draws sampling the plane sample that; an upload
+  into the plane or a draw into it drops it. Firefox shows the
   same picture either way. Checked with the padding painted a marker colour (`bench/results/local/edge/`): VP9 at
   854×480 in Chromium (the right edge) and at 640×360 in Chromium and mpv (the bottom) showed it, none with the fix, in
   Chromium, mpv and Firefox; H.264 at 640×360 showed none either way. The size a player asked for can't tell them apart:
@@ -652,7 +653,10 @@ Decided 2026-10-14 (the user); the track ended 2026-10-15 with H.264, VP9 and AV
 - **The host decodes with WebCodecs in the GPU worker** and writes each picture into the guest's video buffer (Mesa's
   `vl_video_buffer`: ordinary virgl textures), as virglrenderer does with host VA-API (`vrend_video.c`: decode, then
   copy into the plane resources). The copy out of each `VideoFrame` (`copyTo`, exact) stays: a GPU-only conversion in a
-  shader (not exact) was kept in reserve in case the copy cost too much, and it costs 0.04 ms a picture.
+  shader was kept in reserve in case the copy cost too much, and isn't worth its price: the copy costs 0.25 to 1.4 ms
+  a picture at 1080p ("Video's measurements", "A picture's copy"), and the browser hands a frame to the GPU only as
+  converted RGB (`texImage2D` or `importExternalTexture` of a `VideoFrame`; no plane of it), so the planes would be
+  converted back and no longer exact.
 - **Stateless in, stateful out.** VA-API is stateless (the guest parses the stream and sends a picture's parameters
   and its slice data); `VideoDecoder` takes the stream, so the host rebuilds what the guest parsed away: H.264's SPS and
   PPS (the slices arrive whole, with their headers), AV1's sequence and frame headers (the tiles arrive alone); VP9
@@ -793,7 +797,20 @@ on the M4, the dev VM its Chromium 153; Sintel's trailer at 854×480 and 24 fps 
   In the dev VM (software only) 2.27 → 0.81 and 2.88 → 0.49. The same bytes either way, in every case. The crossover
   two bytes a step (a `Uint16Array` over the chroma) rather than one took the VM's I420 into two planes from 1.06 to
   0.82 ms and NV12 into three from 1.19 to 0.90.
+- **A picture's uploads** (`upload/`, `bench/video/upload.ts`, 2026-11-24; the same browsers; 1080p, NV12's two
+  planes, 9 rounds of 120 pictures, the arms in turn, no round of one within another's but the Mac's two copies): a
+  1080p picture is smaller than its planes (1920×1088), so it also fills its picture textures. The planes' uploads
+  alone are 0.70 ms a picture on the Mac (Metal) and 0.47 in the dev VM (SwiftShader), a texel's read-back after each
+  picture included; uploading the picture's rows again, as it was, 1.13 and 0.62; copying them from the plane on the
+  GPU 0.91 and 0.54 (`copyTexSubImage2D`, the path now; `blitFramebuffer` the same on the Mac and 1.89 in the VM).
+  The same texels every way.
+- **Not done, per picture:** a pool for the picture's array (3 MiB at 1080p, allocated a picture) is bounded by the
+  whole copy of a software frame, 0.25 ms with the allocation in it, and needs the array's lifetime
+  (web/venus-import.ts keeps the last picture of each imported plane); worth a look only if a trace of playback shows
+  the GPU worker collecting garbage. A hardware frame kept on the GPU would save its read-back (most of the Mac's
+  ~1 ms) but not exactly ("Video's design").
 - The tools: `bench/video/copy.ts` (a picture's copy, before and after; `copy-mac.sh` on the Mac's hardware decoders),
+  `upload.ts` (a picture's uploads; `TOOL=upload copy-mac.sh` on the Mac's GPU),
   `bench/video/v0.ts` (`vainfo`, FFmpeg and Firefox on the page, `CAPTURE=1`), `v1.ts` (the guest's FFmpeg
   through VA-API against its software decode, framemd5; `SNAPSHOT=1`), `seek.ts`, `replay.ts` (a capture's pictures
   through `VideoDecoder`; `hw|sw`, `REORDER`), `pictures.ts`, `fixture.ts` (the Chromium tests' fixtures),

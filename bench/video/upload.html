@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // A picture's uploads, measured (bench/video/upload.ts calls into this page's module).
+  import * as b from './upload-page.ts';
+  window.uploadBench = b;
+  window.ready = true;
+</script>
