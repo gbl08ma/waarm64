@@ -290,7 +290,7 @@ test("New name, then Save or a rename from the card: the new key stays (the page
   const name = page.locator(`[data-connection="${eph}"] [data-field=connection-name]`);
   await name.fill('renamed');
   await name.press('Enter');
-  await page.waitForFunction((id) => !!document.querySelector(`[data-connection="${id}"]`) && !document.querySelector('.machines[data-busy=true]'), eph, { timeout: 5_000 });
+  await page.waitForFunction((id) => !!document.querySelector(`[data-connection="${id}"]`) && !document.querySelector('.machines[data-busy]'), eph, { timeout: 5_000 });
   await page.locator(`[data-connection="${eph}"] [data-action=connection-details]`).click();
   await page.locator('[data-context-connection] h3').filter({ hasText: 'renamed' }).waitFor({ timeout: 5_000 });
   assert.equal(await backup(page), now, 'the rename kept the new key');
@@ -337,7 +337,7 @@ test("New name on a connection that holds domains asks what becomes of them: poi
     const n = asked.length;
     await page.click('#settings-room-new-name');
     for (let k = 0; k < 100 && asked.length === n; k++) await page.waitForTimeout(100);
-    await page.waitForFunction(() => document.querySelector('.machines')?.getAttribute('data-busy') !== 'true' && !(document.getElementById('ask') as HTMLDialogElement | null)?.open, null, { timeout: 30_000 });
+    await page.waitForFunction(() => !document.querySelector('.machines[data-busy]') && !(document.getElementById('ask') as HTMLDialogElement | null)?.open, null, { timeout: 30_000 });
     return asked.slice(n);
   };
   const pointsOf = async (name: string) => (await titles(page)).find((v) => v.name === name)?.points.map((p) => `${p.label ?? ''}>${p.key}`).join(' ');
