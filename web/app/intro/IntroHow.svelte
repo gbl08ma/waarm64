@@ -2,7 +2,7 @@
   The introduction's "How it works" (web/app/IntroPage.svelte): five topics (IntroTopic.svelte), each a paragraph and
   a path of five stages that steps by itself (IntroPath.svelte): the processor, memory, OpenGL, video, Vulkan. Two
   have a deep dive: the processor's shows captured code in its four forms (IntroCpuDive.svelte), memory's how RAM is
-  split over WebAssembly memories (IntroRam.svelte). The facts are the docs' (cpu.md, jit.md, architecture.md,
+  split over WebAssembly memories (IntroRam.svelte). Under them, the way to the source (IntroSource.svelte). The facts are the docs' (cpu.md, jit.md, architecture.md,
   spill-memories.md, graphics.md); a figure names what it was measured on.
 -->
 <script lang="ts">
@@ -10,6 +10,7 @@
   import IntroPath from './IntroPath.svelte';
   import IntroRam from './IntroRam.svelte';
   import IntroSection from './IntroSection.svelte';
+  import IntroSource from './IntroSource.svelte';
   import IntroTopic from './IntroTopic.svelte';
   import { t } from '../../i18n.ts';
   import { msg } from '../../msg.ts';
@@ -87,4 +88,5 @@
   <IntroTopic id="intro-how-vulkan" title={t('intro:IntroHow.vulkan')} words={t('intro:IntroHow.vulkan.words')}>
     {#snippet picture()}<IntroPath name={t('intro:IntroHow.vulkan.path')} stages={stages(VULKAN)} />{/snippet}
   </IntroTopic>
+  <IntroSource />
 </IntroSection>

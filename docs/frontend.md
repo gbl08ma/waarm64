@@ -977,6 +977,11 @@ and the floating windows don't show, and the machine, Home or the store's page s
     - **Memory's** ([Try the split](ui:intro:IntroHow.memory.deeper); `intro/IntroRam.svelte`): a slider of guest RAM
       (256 MiB to 16 GiB) and under it a bar per WebAssembly memory, 4 GiB long, filled as the machine really splits
       that much RAM (`web/ram.ts` `splitRam`, the function a machine's start uses), in the block map's colors.
+  - **The way to the source** (`intro/IntroSource.svelte`: [All of it is open source](ui:intro:IntroSource.title))
+    closes [How it works](ui:intro:IntroHow.title), under its last topic: a plate with GitHub's mark, a sentence on what is there and its
+    license, the command that fetches it, and the repository's link drawn as the page's main button
+    ([Star it on GitHub](ui:intro:IntroSource.star), the repository's name under it; it opens apart from the page). The
+    page's last lines keep the plain link.
   - **The call to the demos** (`intro/IntroEnd.svelte`: [Pick a machine and start it](ui:intro:IntroEnd.title)) comes
     here, after how it works and before the long account that follows, so that it isn't far down; and again, small,
     as the page's last lines (`foot`), with a link to the repository

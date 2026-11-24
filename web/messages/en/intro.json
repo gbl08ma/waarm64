@@ -207,6 +207,18 @@
     "message": "The demos are ready-made machines. The smallest is a 25 MB download and puts you at a shell prompt in a few seconds. The largest is a desktop with a browser in it.",
     "note": "The introduction's last paragraph, over the button to the demos. The figures are the Alpine demo's (docs/comparison.md §3)."
   },
+  "IntroSource.title": {
+    "message": "All of it is open source",
+    "note": "Title of a plate at the end of the introduction's “How it works” section, beside GitHub's mark: the project's code is public. No period."
+  },
+  "IntroSource.words": {
+    "message": "The emulator, this page, and the tests that hold them together are on GitHub under the MIT license. If you like what you see, a star helps others find it.",
+    "note": "Paragraph on the plate at the end of the introduction's “How it works” section, over a command line that fetches the code and beside a button that opens the repository. A star is GitHub's way of marking a repository as liked. GitHub and MIT are names."
+  },
+  "IntroSource.star": {
+    "message": "Star it on GitHub",
+    "note": "Words of a button-like link on the plate at the end of the introduction's “How it works” section, beside a star icon and over the repository's name: opens the project's repository on GitHub in a new tab, where the visitor can give it a star. GitHub is a name."
+  },
   "IntroEnd.source": {
     "message": "Source code on GitHub",
     "note": "A link in the introduction's last lines: opens the project's repository on GitHub in a new tab. GitHub is a name."

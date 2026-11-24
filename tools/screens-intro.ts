@@ -54,6 +54,8 @@ async function at(browser: Browser, o: Shots, viewport: { width: number; height:
       await to(page, `[data-topic$="${topic}"] [data-field="dive"]`);
     });
   }
+  // The way to the source, under the last topic.
+  await take('source', (page) => page.locator('[data-intro-source]').evaluate((e) => e.scrollIntoView({ behavior: 'instant', block: 'center' })));
   await take('made', (page) => to(page, '[data-section="intro-made"]'));
   await take('end', (page) => page.locator('[data-action="intro-end-demos"]').scrollIntoViewIfNeeded());
   // The page's last lines: the account's close and its signature, the call again, the source and the license.

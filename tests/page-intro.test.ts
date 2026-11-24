@@ -314,6 +314,9 @@ test("How it was made: the author's account, the reasons, and the way to the cre
   // source's address and the license.
   const tops = await page.evaluate(() => ['[data-intro-end]', '[data-section="intro-made"]', '[data-intro-foot]'].map((s) => document.querySelector(s)!.getBoundingClientRect().top));
   assert.ok(tops[0]! < tops[1]! && tops[1]! < tops[2]!, `the order down the page: ${tops.join(', ')}`);
+  // The way to the source, prominent, closes "How it works": the repository's link (apart from the page) and how to fetch it.
+  const source = page.locator('[data-section="intro-how"] [data-intro-source]');
+  assert.deepEqual([await source.locator('[data-action="intro-star"]').getAttribute('href'), await source.locator('[data-action="intro-star"]').getAttribute('target'), (await source.locator('[data-field="clone"]').innerText()).trim()], ['https://github.com/gbl08ma/waarm64', '_blank', '$ git clone https://github.com/gbl08ma/waarm64']);
   const foot = page.locator('[data-intro-foot]');
   assert.deepEqual([await foot.locator('[data-action="intro-source"]').getAttribute('href'), await foot.locator('[data-action="intro-source"]').getAttribute('target')], ['https://github.com/gbl08ma/waarm64', '_blank']);
   assert.equal((await foot.locator('[data-field="license"]').innerText()).trim(), t('intro:IntroEnd.license'));
