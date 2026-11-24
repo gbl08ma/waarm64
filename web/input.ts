@@ -197,6 +197,39 @@ export function terminalBytes(e: KeyLike): string | null {
   return e.altKey ? `\x1b${c}` : c;
 }
 
+/** An element's place and size on the page (CSS pixels), as `getBoundingClientRect` gives it. */
+type Box = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>;
+
+/**
+ * `el`'s box as the pointer reads it: read once (a layout read, forced if anything dirtied the layout), then kept until
+ * something can have moved or resized it: a resize of the element or of an ancestor (they position it), a scroll
+ * anywhere (captured), the window's resize, fullscreen, or `stale` (`attachInput` calls it at each pointerenter and
+ * pointerdown, for what nothing observes: a transform). `detach` lets go of the observer and the listeners.
+ */
+export function boxCache(el: HTMLElement) {
+  let box: Box | undefined;
+  const stale = () => {
+    box = undefined;
+  };
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(stale) : undefined;
+  if (ro) for (let e: HTMLElement | null = el; e; e = e.parentElement) ro.observe(e);
+  const capture = { capture: true, passive: true };
+  window.addEventListener('resize', stale);
+  window.addEventListener('scroll', stale, capture);
+  document.addEventListener('fullscreenchange', stale);
+  return {
+    get: (): Box => (box ??= el.getBoundingClientRect()),
+    stale,
+    detach() {
+      ro?.disconnect();
+      window.removeEventListener('resize', stale);
+      window.removeEventListener('scroll', stale, capture);
+      document.removeEventListener('fullscreenchange', stale);
+      box = undefined;
+    },
+  };
+}
+
 /** `v` of `len` (a CSS length across the element) as the tablet's 0–32767. */
 const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
 
@@ -296,6 +329,8 @@ function keyMachine(o: Pick<InputOptions, 'keyboard' | 'text'>, hooks: { hold: I
     key,
     press,
     typed,
+    /** Whether any key is held (by a holder, by the guest, or by `hooks.hold`). */
+    held: () => !!holding || holders.size > 0 || keys.size > 0,
     /** Drops the held key and lets go of every key the guest has down. */
     release() {
       holding = undefined;
@@ -311,12 +346,13 @@ function keyMachine(o: Pick<InputOptions, 'keyboard' | 'text'>, hooks: { hold: I
  * the pointer, or while the element holds the mouse, the tablet by the motion (`pointer`) or the mouse (`raw`); the
  * buttons as the guest sees them, on the port they were pressed on.
  */
-function pointerMachine(el: HTMLElement, tablet: MessagePort | undefined, pointers: Pointers) {
+function pointerMachine(el: HTMLElement, box: () => Box, tablet: MessagePort | undefined, pointers: Pointers) {
   /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked in the `pointer` mode, the page's cursor. */
   const spot = { x: 16384, y: 16384 };
   const abs = (e: MouseEvent): EvdevEvent[] => {
-    const r = el.getBoundingClientRect();
-    [spot.x, spot.y] = [at(e.clientX - r.left, r.width), at(e.clientY - r.top, r.height)];
+    const r = box();
+    spot.x = at(e.clientX - r.left, r.width);
+    spot.y = at(e.clientY - r.top, r.height);
     return [
       [EV_ABS, 0, spot.x],
       [EV_ABS, 1, spot.y],
@@ -336,15 +372,13 @@ function pointerMachine(el: HTMLElement, tablet: MessagePort | undefined, pointe
   /** What a pointer event moves: the tablet to the pointer; while locked, the tablet by the motion (`pointer`) or the mouse (`raw`). */
   const motion = (e: PointerEvent): { port?: MessagePort; events: EvdevEvent[] } => {
     if (!locked()) return { port: tablet, events: abs(e) };
-    if (raw())
-      return {
-        port: mouse,
-        events: [
-          ...(e.movementX ? [[EV_REL, 0, e.movementX] as const] : []),
-          ...(e.movementY ? [[EV_REL, 1, e.movementY] as const] : []),
-        ],
-      };
-    const r = el.getBoundingClientRect();
+    if (raw()) {
+      const events: EvdevEvent[] = [];
+      if (e.movementX) events.push([EV_REL, 0, e.movementX]);
+      if (e.movementY) events.push([EV_REL, 1, e.movementY]);
+      return { port: mouse, events };
+    }
+    const r = box();
     spot.x = Math.max(0, Math.min(32767, Math.round(spot.x + (e.movementX / r.width) * 32767)));
     spot.y = Math.max(0, Math.min(32767, Math.round(spot.y + (e.movementY / r.height) * 32767)));
     return {
@@ -377,7 +411,9 @@ function pointerMachine(el: HTMLElement, tablet: MessagePort | undefined, pointe
       else buttons.delete(b);
       events.push([EV_KEY, b, down ? 1 : 0]);
     }
-    if (events.length) port.postMessage([...events, [EV_SYN, 0, 0]] satisfies EvdevEvent[]);
+    if (!events.length) return;
+    events.push([EV_SYN, 0, 0]);
+    port.postMessage(events);
   };
   const takeMouse = () => {
     // The pointer mode moves as the host's pointer does (the browser's motion is accelerated as it is).
@@ -396,6 +432,8 @@ function pointerMachine(el: HTMLElement, tablet: MessagePort | undefined, pointe
     locked,
     raw,
     pointer,
+    /** Whether a button is down, as the guest sees it. */
+    held: () => buttons.size > 0,
     releaseButtons,
     /** A mouse's (or a pen's) pointerdown: the click that takes the mouse, or the guest's. */
     down(e: PointerEvent) {
@@ -421,13 +459,14 @@ function pointerMachine(el: HTMLElement, tablet: MessagePort | undefined, pointe
  * down is also the single-touch position (as Linux's pointer emulation, input_mt_report_pointer_emulation, picks it),
  * and BTN_TOUCH is from the first down to the last up. Without one, the fingers that aren't the tablet's (`stray`).
  */
-function touchMachine(el: HTMLElement, touch: MessagePort | undefined) {
+function touchMachine(box: () => Box, touch: MessagePort | undefined) {
   /** The fingers down, oldest first (a Map keeps its insertion order): their slots and last positions. */
   const fingers = new Map<number, { slot: number; x: number; y: number }>();
   let tracking = 0;
   const finger = (e: PointerEvent, phase: 'down' | 'move' | 'up') => {
-    const r = el.getBoundingClientRect();
-    const [x, y] = [at(e.clientX - r.left, r.width), at(e.clientY - r.top, r.height)];
+    const r = box();
+    const x = at(e.clientX - r.left, r.width);
+    const y = at(e.clientY - r.top, r.height);
     const lead = fingers.keys().next().value;
     let f = fingers.get(e.pointerId);
     const ev: EvdevEvent[] = [];
@@ -459,7 +498,8 @@ function touchMachine(el: HTMLElement, touch: MessagePort | undefined) {
     const now = fingers.keys().next().value;
     const p = now === undefined ? undefined : fingers.get(now);
     if (p && (now !== lead || now === e.pointerId)) ev.push([EV_ABS, 0, p.x], [EV_ABS, 1, p.y]);
-    touch!.postMessage([...ev, [EV_SYN, 0, 0]] satisfies EvdevEvent[]);
+    ev.push([EV_SYN, 0, 0]);
+    touch!.postMessage(ev);
   };
   const liftFingers = () => {
     if (!fingers.size) return;
@@ -498,6 +538,8 @@ function touchMachine(el: HTMLElement, touch: MessagePort | undefined) {
     stray,
     /** The touchscreen's (`finger` takes it). */
     touched: (e: PointerEvent) => !!touch && e.pointerType === 'touch',
+    /** Whether a finger is down (the touchscreen's, or one on the element without one). */
+    held: () => fingers.size > 0 || onEl.size > 0,
     /** Forgets the fingers on the element, and lifts the touchscreen's. */
     release() {
       tabletTouch = undefined;
@@ -577,8 +619,9 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     return () => target.removeEventListener(type, f as EventListener);
   };
   const keys = keyMachine(o, hooks);
-  const ptr = pointerMachine(el, tablet, pointers);
-  const touches = touchMachine(el, pointers.touch);
+  const box = boxCache(el);
+  const ptr = pointerMachine(el, box.get, tablet, pointers);
+  const touches = touchMachine(box.get, pointers.touch);
   const wheel = wheelMachine();
   const { mouse } = pointers;
   const released: (() => void)[] = [];
@@ -596,6 +639,13 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     touches.release();
     for (const f of released) f();
   };
+  /**
+   * The focus lost or the page hidden: what's held is released, once (the element's blur and the window's come one after
+   * the other for one focus loss).
+   */
+  const lost = () => {
+    if (keys.held() || ptr.held() || touches.held()) releaseAll();
+  };
   // A mouse's back and forward buttons: the guest's, not the browser's history (Chromium navigates on an uncancelled mouseup).
   const sideButton = (e: MouseEvent) => {
     if (e.button === 3 || e.button === 4) e.preventDefault();
@@ -603,6 +653,9 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
   const { finger, stray, touched } = touches;
   const { pointer } = ptr;
   const off = [
+    // The box read again at a pointer's arrival and press (before the press's own listener reads it).
+    on(el, 'pointerenter', box.stale),
+    on(el, 'pointerdown', box.stale),
     on(el, 'keydown', unlessHeld(keys.key(1))),
     on(el, 'keyup', unlessHeld(keys.key(0))),
     on(
@@ -637,12 +690,14 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       if (!port || (!e.deltaY && !e.deltaX)) return;
       e.preventDefault();
       const ev = wheel.turn(e);
-      if (ev.length) port.postMessage([...ev, [EV_SYN, 0, 0]] satisfies EvdevEvent[]);
+      if (!ev.length) return;
+      ev.push([EV_SYN, 0, 0]);
+      port.postMessage(ev);
     }),
     on(el, 'contextmenu', (e: Event) => e.preventDefault()),
-    on(el, 'blur', releaseAll),
-    on(window, 'blur', releaseAll),
-    on(document, 'visibilitychange', () => document.hidden && releaseAll()),
+    on(el, 'blur', lost),
+    on(window, 'blur', lost),
+    on(document, 'visibilitychange', () => document.hidden && lost()),
     // Taking the mouse or letting it go moves the buttons to the other device: what was held is released first.
     on(document, 'pointerlockchange', () => {
       ptr.releaseButtons();
@@ -654,6 +709,7 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       releaseAll();
       if (ptr.locked()) document.exitPointerLock();
       off.forEach((f) => f());
+      box.detach();
       pointers.locked?.(false); // its pointerlockchange comes after the listener is gone
     },
     mouseLock: ptr.mouseLock,

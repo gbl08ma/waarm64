@@ -1819,7 +1819,9 @@ page writes the context's output latency into the ring's header, and the guest g
   prompt goes to its line editor as commands). The clipboard for the screen is clipboard sharing's ("The toolbar", Clipboard: the paste chord,
   Copy the screen).
 - **The tablet** maps a pointer to 0–32767 across the canvas's box as laid out
-  (`getBoundingClientRect`), so it follows the CSS scaling, integer or not. Its buttons come from the event's
+  (`getBoundingClientRect`), so it follows the CSS scaling, integer or not. The box is read once and kept
+  (`boxCache`: no forced layout per move) until something can have moved it: a resize of the canvas or an ancestor
+  (a `ResizeObserver`), a scroll, the window's resize, full screen, or a pointer entering or pressing. Its buttons come from the event's
   `buttons` mask (a second button pressed while one is held is a `pointermove`, not a `pointerdown`): left, right,
   middle, and a mouse's **back and forward** as `BTN_SIDE` and `BTN_EXTRA`, whose browser navigation is cancelled on
   the screen (Chromium navigates on an uncancelled `mouseup`; `tests/page-pointers.test.ts` sees it navigate without).

@@ -1949,8 +1949,9 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - **The network, per packet:** an IP-port packet with 14 bytes of headroom would let the gateway write the Ethernet
   header in place (P1(b): an IP-port protocol change); frame ports could take batches as IP ports do (P7: one post per
   WebSocket message from the local helper and the demo network, not per frame).
-- **Pointer events:** a cached box rectangle (a ResizeObserver) instead of `getBoundingClientRect()` per move, the SYN
-  pushed in place, a flat `Int32Array` posted (P10: forced layouts are the point, not the allocations).
+- **Pointer events:** a flat `Int32Array` posted instead of `[type, code, value][]` (P10's rest; the box is cached
+  and the SYN pushed in place): the nested shape is read by web/input-device.ts `inject`, the runner's `EvdevEvent`
+  and the page tests, for an allocation's gain.
 - **Sound:** a period's `toF32` and mono copies, `done`'s filter per completion (P8): small; with other sound work.
 - **One inflate pool per device worker** instead of per blk device (up to 4 workers each).
 - **Devices' worker `onerror` after ready** isn't routed into `failed` (an uncaught error in a backend's own timer);
