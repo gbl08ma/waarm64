@@ -119,21 +119,17 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-24, after loop 67b)
+## State (2026-11-24, after loop 68)
 
 **The user is away for the rest of 2026-11-24: work autonomously, no decision prompts or questions; settle choices by
-measurement and the decision rules, and report at the end.** Loop 67 (the compile worker's warm-up) is **not landed**:
-loop 67b measured it against main and the pre-58 host (bench/boot/REPORT.md "PERF loop 67b: the warm-up's latency",
-`bench/boot/results/perf67b/`). Stutter wasn't reproduced on the Mac in any arm (frame gaps, stalls); the warm-up's
-compiled-share drop under churn and its 3× waits for `ready` were; posting first took those back but stalled vCPUs
-88-114 ms under host load. By the user's rule it is filed under docs/jit.md "Tried and not kept"; queue row 4 is
-closed and the backlog's "Cold, kernel-heavy phases" entry removed. Loops 58-66 showed no regression (pre-58 and main
-agree everywhere). Kept as tooling: `Status.compile` and the pages session's `jit.jsonl` `cw`, `bench/gpu/ab-mac.sh`'s
-`QUERY_<arm>`, `results/perf67b/latency.ts`; its commit passed `scripts/ci-fast.sh`, `scripts/ci.sh` (719 s) and
-`scripts/ci-jit.sh` (264 s). The local branches `perf67-warmup` and `perf-smp-warm` stay unpushed (the
-idea's code, for reference); `../waarm64-base` is detached at 96ca41ae^ (5d8f29ef, clean). The review branch
-`review/jit-warmup` on origin is moot (its code isn't on main): the supervisor may delete it.
-**Next:** row 5 (`WARM` with `REPORT`), then the compile threshold's re-check the notes above the table call for.
+measurement and the decision rules, and report at the end.** Loop 68 (`WARM` with `REPORT`, 4 to 128) **kept nothing**
+(bench/boot/REPORT.md "PERF loop 68", `bench/boot/results/perf68/`): 4 and 8 lose on `node`; 64 won `node` −0.55%
+(3% fewer cycles), which Firefox's pages session didn't confirm (MIPS −1.9% within overlap) and `smp_user_jit_4`'s
+churn phase lost (+2.5%), the compiled share a little lower under churn. No code changed, docs only, no CI. Loop 67
+(the compile worker's warm-up) is not landed (REPORT "PERF loop 67b"; docs/jit.md "Tried and not kept"); the local
+branches `perf67-warmup` and `perf-smp-warm` stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The
+review branch `review/jit-warmup` on origin is moot: the supervisor may delete it.
+**Next:** the compile threshold's re-check the notes above the table call for (1000/2000 against 500/1000), then row 6.
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's
 default disk. The ABI is 74.
 
@@ -163,8 +159,7 @@ every row:
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 5 | **Next:** JIT: `WARM` (mod.rs:537, 16) with the interpreter's `REPORT` (interp/block.rs:3154, 16) | sweep, stale verdict | 4, 8, 16, 32 (`REPORT` 8 with `WARM` 8). 1 and 4 lost on 2026-10-16 in the VM on +33-41% wasm and a third flush at 160 MiB; the budget is 320 MiB now, a session doesn't flush in an hour (loop 63) and size costs nothing on the Mac. State the wasm and V8's code memory with the result |
-| 6 | Interpreter: XZR's writes through a sink slot, and one TLB probe for a pair (bench/interp/REPORT.md, 2026-10-30/31) | stale verdict | lost in the VM for its store bounds check and a register-allocation cliff in `hot<Flat>`; `hot` has lean and rich copies since loop 19, and the interpreter is 18.4% of the Mac's pages session. The patch: `bench/interp/results/xzr-spike/sink/`; `bench/interp/ab-mac.sh` on the block-interpreter guests, the flat one too |
+| 6 | **Next:** Interpreter: XZR's writes through a sink slot, and one TLB probe for a pair (bench/interp/REPORT.md, 2026-10-30/31) | stale verdict | lost in the VM for its store bounds check and a register-allocation cliff in `hot<Flat>`; `hot` has lean and rich copies since loop 19, and the interpreter is 18.4% of the Mac's pages session. The patch: `bench/interp/results/xzr-spike/sink/`; `bench/interp/ab-mac.sh` on the block-interpreter guests, the flat one too |
 | 7 | JIT: a settled region's last emission repeats the one before (core/src/jit/block.rs:1023-1057) | count, build | a region of several blocks is emitted to find `plain`, then until its entry states settle, then once more with the arguments that just settled: three emissions where two would do. Emission is ~170 ms of the boot gate's 3.84 s, ~1.9 s of a pages session. A passes-per-region histogram first; the modules must stay byte for byte (`bench/jit/dump-modules.ts`). Follow-up: a single block with `plain` 0 emits twice alike |
 | 8 | JIT: transfers that still leave a function (backlog "JIT") | re-count | re-profile with `bench/boot/userprof.ts` at 64 blocks; with it the two verdicts 64 blocks may move: "Regions entered at more than one block" (2026-10-08, the VM; `results/m8-entries/member-entries.patch`: more members now have no function of their own) and loop 50's followed calls that complete inside the region (`WAARM64_FOLLOW_ALL`, `bench/boot/preempt-counts.ts`). Turn into a doable to-do or a finding |
 | 9 | JIT: the transfer cache under a browser's code (`XC_ENTRIES` 16,384, core/src/mmu.rs:82; `JC` 65,536, mod.rs:505) | count, sweep | 161 M miss-function calls a pages session against 651 M hits (loop 54); "65,536 measured the same" was Alpine in Node, and loop 28's split of causes (zeroed, another VA's, an older generation) Alpine's userspace run. Its `results/perf28/diag.patch` counters on the pages session; conflicts → 65,536 (+768 KiB a vCPU; the `XC - XC_LO` OR needs its alignment), stale generations → a per-ASID generation (L). `JC` was never swept: count the probes that miss while their key is compiled |
@@ -187,7 +182,7 @@ every row:
 
 Swept or measured on the Mac recently, not to redo: the compile threshold (2026-11-09, but see the note above the
 table), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
-41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
+41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), `WARM` with `REPORT` (loop 68), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
 function's size as such (2026-11-05, loop 13), the dispatcher's entries and the signature check (loop 54), lazy NZCV
 at a loop's head (loop 42), and the features off by default (I8MM, FCMA, FP16, FHM, BF16: host-op counts, which
 nothing since has changed).

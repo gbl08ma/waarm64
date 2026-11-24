@@ -144,7 +144,11 @@ the interpreter's own code.
       re-emitted): a `return_call_indirect`, which in a browser's code footprint costs a stall at
       the target's first instruction (a quarter of a busy vCPU's time in Firefox). With 16,
       Firefox's busy vCPUs ran 18% faster for 16% more wasm; 1 and 4 cost 41% and 33% more wasm
-      and a flush (`bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in Firefox").
+      and a flush (`bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in Firefox"). **16 on the Mac too**, with
+      `REPORT` (`bench/boot/REPORT.md` "PERF loop 68": 4 to 128): at 64-block regions 4 and 8 add only 1.5-2.7% wasm
+      but cost `node` 0.4-1.5% in reports and members; 32 to 128 compile 1.5-5% less, interpret 1-7% more and save
+      the renderer 1-4.7% of its cycles (V8's compiles), and only 64 gained `node` time (−0.55%), which Firefox's
+      pages session didn't confirm and the parallel boots' churn phase lost (+2.5%).
     - **Across pages:** a successor in another page is the batch's block that was seen at that VA
       (with the MMU off, the block at that PA). Members' positions are their VAs relative to the
       head's, and an edge into a member checks that the member's VA still maps to its page
@@ -257,11 +261,12 @@ the interpreter's own code.
   interpreter, so 1000/2000 was raced against 500/1000 and 250/500 on the Mac host. 250/500 lost everywhere (pages
   +3.6%, Alpine's userspace +1.4%, its boot +2.9%); 500/1000 tied (within the rounds) at 21% more wasm. Halving the
   threshold takes only a fifth of the interpreted steps away (3.9 → 3.1% in the pages session).
-- **A block reports every 16 dispatches until it has run `warm`, then once at the threshold** (at most 255 at a
+- **A block reports every 16 dispatches (`interp::block::REPORT`) until it has run `warm`, then once at the threshold** (at most 255 at a
   time, a slot's quota; queued blocks every 16 for `BATCH_STEPS`): what a forward region's members need is the
   count up to `warm`, and the batch the crossing. At the floor of 500 it halves the cache's lock acquisitions,
   and Firefox's pages session compiled 20% less wasm at +6% busy MIPS, `smp_user_jit_4` −4.5%
-  (`bench/interp/REPORT.md` "Loop 6 continued").
+  (`bench/interp/REPORT.md` "Loop 6 continued"). The cache sees a block's hits as 1, 1 + `REPORT`, 1 + 2·`REPORT`...,
+  so a `warm` below `REPORT` acts as `REPORT`: the two move together (PERF loop 68).
 
 ## Linking
 

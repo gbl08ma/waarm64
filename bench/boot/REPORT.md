@@ -8424,3 +8424,67 @@ queue row 4 is closed. Kept, as tooling: the compile worker's counters in the ma
 `QUERY_<arm>` (a page query per arm), and `results/perf67b/latency.ts`. Untried: a warm-up the user's x86_64 host
 would show differently (one worker against a slower core), a budget per module of the functions likely hot, and
 audio underruns or a key's echo measured directly (no harness gives them per session yet).
+
+## PERF loop 68: `WARM` with `REPORT` (2026-11-24)
+
+PERF-HANDOVER.md's queue row 5 (no docs/backlog.md entry): `jit::WARM` (the dispatches a block must have run for a
+forward region to take it as a member, 16) with `interp::block::REPORT` (the dispatches a decoded block counts before it
+reports them to the cache, 16), last swept on 2026-10-16 in the dev VM, where 1 and 4 cost 33-41% more wasm and a
+third flush at 160 MiB. **Not kept: 16 and 16 stay.** No code changed (ABI 74, `tests/steps.txt` unchanged). Data:
+`bench/boot/results/perf68/` (README). M4 Mac mini, macOS 26.6.2, Chrome for Testing 158.0.8127.88.
+
+**How the two relate** (read): a fresh block reports at its first dispatch, then every `REPORT` (`Cache::miss` hands
+back the quota), until it has `warm.max(REPORT)` hits; then once more at the threshold (at most 255 at a time); a
+queued block reports every `REPORT` for the batch's `BATCH_STEPS`. So the cache sees a block's hits as 1, 1 + R,
+1 + 2R..., and a `WARM` below `REPORT` acts as `REPORT` (`WARM` 8 with `REPORT` 16 takes the members `WARM` 16 does). The
+arms pair `REPORT` with `WARM` (w4r4, w8r8, w64r64, w128r128) or keep it below (w32r16, w64r32, w128r64: `REPORT`'s
+lock acquisitions apart from `WARM`'s members). `REPORT` stays under the slot's u8 quota.
+
+**`node`** (three paired runs of four arms against w16r16, 12 pairs each unless decided sooner; time, the interval,
+pairs; the counters' medians against the base: 47.69 MiB of JIT wasm, 1461 modules, 504 M steps interpreted, 1.61 M
+lock acquisitions; no flush in any arm):
+
+| | wall | cycles | instructions | JIT wasm | modules | interpreted | locks | emission |
+|---|---|---|---|---|---|---|---|---|
+| w4r4 | **+1.45% [+0.12, +2.81] `HIGHER`** (5) | +2.39% `HIGHER` | +2.25% | +2.7% | +1.0% | −0.9% | +103% | +3.1% |
+| w8r8 | **+0.41% [+0.01, +0.81] `HIGHER`** (9) | +1.23% `HIGHER` | +1.13% | +1.5% | +0.7% | −0.6% | +38% | +1.5% |
+| w32r16 | +0.24% [−0.51, +1.00] `open` | −0.73% `LOWER` | −0.88% | −1.7% | −0.1% | +0.5% | +10% | −1.3% |
+| w32r32 (2 runs) | −0.22% `open`, −0.13% `open`; pooled −0.18% [−0.40, +0.05] (24) | −1.0% `LOWER` | −1.0% | −1.5% | −1.3% | +1.1% | −22% | −1.2% |
+| w64r32 | −0.20% [−0.69, +0.30] `open` | −2.57% `LOWER` | −2.39% | −3.4% | −1.4% | +1.9% | −13% | −3.6% |
+| w64r64 (2 runs) | **−0.66% [−1.32, −0.01] `LOWER`** (10), −0.45% [−0.92, +0.04] `open`; pooled −0.55% [−0.82, −0.27] (22) | −3.05% `LOWER` | −2.8% | −3.5% | −4.0% | +3.1% | −33% | −4.0% |
+| w128r64 | +0.00% [−0.47, +0.48] `same` (7) | −3.94% `LOWER` | −3.74% | −5.3% | −3.6% | +4.4% | −26% | −5.7% |
+| w128r128 | −0.01% [−0.77, +0.75] `open` | −4.68% `LOWER` | −4.21% | −5.1% | −5.8% | +7.1% | −40% | −5.9% |
+
+The October verdict on low values holds, for another reason: at 64-block regions and 320 MiB, 4 and 8 add only
+1.5-2.7% wasm (not 33-41%) and no flush, but their reports (twice and four times the locks) and members cost `node`
+0.4-1.5%. Higher values compile less (smaller regions: the blocks in regions −2 to −5.5%, more regions), report less,
+and interpret more; V8 compiles less on the other cores, so the cycles fall 1-4.7%, and the vCPU's clock gains
+little: the time is best at 64 (−0.55% pooled) and back to the base's at 128, where the interpreted steps (+4-7%) take
+the rest. Footprints within the levels' noise (1684-1981 MiB, the arms' pages together; no arm's pattern).
+
+**w64r64 on four vCPUs:**
+- `smp` (the paired command, 12 pairs): wall −0.24% [−2.53, +2.09] `open`, cycles −1.19% `open`, wasm −3.0%,
+  interpreted +3.2%, locks −34%. The latency counters: compiled 94.23% against 94.43% (interpreted 5.76 against 5.57%),
+  modules and parks the same, the compile worker 579 against 577 ms, `ready` 0.32 ms mean in both (p99 bucket 2, the
+  longest 16 against 8 ms), stalled 1.3 against 1.5 ms/s, the longest stall 8 ms in both.
+- The parallel boots (`bench/run-mac.sh`, 3 rounds alternated): `smp_alpine_jit`'s totals +0.2% (n1), −0.3% (n2),
+  +0.3% (n4), all overlapping, for 2.2-2.7% less CPU (no overlap); `smp_user_jit_4`'s total +2.5% (overlap; compress
+  +7.1%, Lua +0.3%, SQLite −4.0%, all overlapping), its **churn phase +2.5% without overlap** (702-715 against 727-737
+  ms), its CPU +0.2%. Peak RSS the same (1548-1666 MiB against 1528-1677 on `smp_alpine_jit`, 2023-2057 against 2036-2054 on `smp_user_jit_4`).
+
+**Firefox's pages session, cut to two pages** (`PAGES=wiki,mdn`, 3 sessions each, alternated, no flush): **not
+confirmed, leaning slower.** Busy MIPS 423 · 422 · 428 against 431 · 425 · 431 (−1.9% by the medians, the rounds
+overlapping), the starts 25.2 · 24.7 · 24.7 against 24.6 · 24.7 · 24.6 s, `pagesS` 32.6 against 32.4 s, the
+renderer's CPU 138.3 against 138.4 s. The code moved as on `node`: wasm 88-90 against 93-94 MB (−5%), modules −3%,
+locks −13%, emission 1.45 against 1.54 s, interpreted 2.08-2.09 against 2.04-2.05 G steps; the compiled share in
+Firefox's churn windows (`latency.ts`) 96.74-96.83% against 96.82-96.88%, its worst second 92.6-93.1% against
+92.8-93.2%, `ready` 0.29-0.30 ms in both, no stall of 20 ms, frame gaps the same within the sessions' spread.
+
+**Why nothing is kept.** The one decided win is w64r64's on `node` (−0.55% pooled, at 3% fewer cycles); the pages
+session doesn't confirm it (MIPS −1.9% within the rounds' overlap, starts and loads +0.1-0.2 s), the parallel boots
+tie in time with `smp_user_jit_4`'s churn phase 2.5% slower, and every multi-vCPU measure shows the compiled share a
+little lower under churn (0.05-0.2 point), which the user's rule doesn't trade for a one-workload gain. The gates
+(`WORKLOADS=user,boot`) weren't run: no arm got that far. What stays measured: 4 and 8 lose on `node`; above 16 the
+JIT compiles 1.5-5% less for 1-7% more interpreted steps and saves the renderer 1-4.7% of its cycles (V8's compiles,
+on other cores), not the vCPU's time. A larger `REPORT` alone (w64r32 against w64r64; w128r64 against w128r128) is
+most of the locks' difference and none of the time.

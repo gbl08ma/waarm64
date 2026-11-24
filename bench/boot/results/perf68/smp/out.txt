@@ -1,0 +1,17 @@
+
+added 56 packages in 3s
+mac_chrome: Chrome for Testing 158.0.8127.88
+smp: 12 pairs against w16r16
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64          12 -0.24% [-2.53%, +2.09%] open         -1.19% [-2.76%, +0.40%] open         -1.90% [-4.54%, +0.83%] open         -1.36% [-2.90%, +0.20%] open        
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  w16r16               9720       0.7273         2332       1354.8        370.2        84.33         2838   1210331354
+  w64r64               9765       0.7330         2269       1318.1        373.2        81.81         2844   1249297811
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  w16r16            94.43       5.57          0       9979       2532        577       0.32          1          2          8         16          8         11        1.5         79
+  w64r64            94.23       5.76          0       9983       2532        579       0.32          1          2         16         16          8          8        1.3         73
+arms: w16r16 9786743 bytes; w64r64 9786746 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88
+no leftovers
+exit 0

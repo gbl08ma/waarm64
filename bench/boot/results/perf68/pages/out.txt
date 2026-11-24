@@ -1,0 +1,7 @@
+w64r64-1 wall 110.3 exit 0 no leftovers
+w16r16-1 wall 108.5 exit 0 no leftovers
+w16r16-2 wall 111.1 exit 0 no leftovers
+w64r64-2 wall 110.0 exit 0 no leftovers
+w64r64-3 wall 109.6 exit 0 no leftovers
+w16r16-3 wall 109.5 exit 0 no leftovers
+exit 0

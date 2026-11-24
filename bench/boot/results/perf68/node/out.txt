@@ -1,0 +1,19 @@
+
+added 56 packages in 3s
+mac_chrome: Chrome for Testing 158.0.8127.88
+node: 12 pairs against w16r16
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w4r4             5 +1.45% [+0.12%, +2.81%] HIGHER       +2.39% [+1.35%, +3.44%] HIGHER       +2.25% [+1.93%, +2.58%] HIGHER       +2.45% [+1.42%, +3.48%] HIGHER      
+  w8r8             9 +0.41% [+0.01%, +0.81%] HIGHER       +1.23% [+1.02%, +1.44%] HIGHER       +1.13% [+1.01%, +1.24%] HIGHER       +1.29% [+1.08%, +1.50%] HIGHER      
+  w32r16          12 +0.24% [-0.51%, +1.00%] open         -0.73% [-1.23%, -0.23%] LOWER        -0.88% [-0.95%, -0.81%] LOWER        -0.79% [-1.29%, -0.29%] LOWER       
+  w32r32          12 -0.22% [-0.57%, +0.13%] open         -1.06% [-1.35%, -0.78%] LOWER        -1.00% [-1.07%, -0.93%] LOWER        -1.10% [-1.39%, -0.81%] LOWER       
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  w16r16               9565       0.9824         1747        726.9        220.7        47.69         1461    504474364
+  w4r4                 9710       0.9816         1957        749.4        227.7        48.97         1475    500054136
+  w8r8                 9606       0.9817         1981        737.8        222.8        48.38         1471    501409733
+  w32r16               9569       0.9827         1860        717.3        220.4        46.89         1460    507165837
+  w32r32               9552       0.9828         1862        714.7        218.2        46.99         1442    510157188
+arms: w16r16 9786743 bytes; w4r4 9786743 bytes; w8r8 9786743 bytes; w32r16 9786743 bytes; w32r32 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88
+no leftovers

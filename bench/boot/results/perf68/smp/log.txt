@@ -1,0 +1,30 @@
+smp pair 1: w16r16 10340, w64r64 10166 ms (1438 s left)
+smp pair 2: w64r64 9645, w16r16 9620 ms (1377 s left)
+smp pair 3: w64r64 9615, w16r16 9683 ms (1316 s left)
+smp pair 4: w16r16 9487, w64r64 9614 ms (1256 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64           4 -0.20% [-6.61%, +6.65%] open         -0.99% [-9.48%, +8.28%] open         -1.69% [-18.66%, +18.82%] open       -1.18% [-9.32%, +7.69%] open        
+smp pair 5: w16r16 10226, w64r64 9790 ms (1194 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64           5 -1.03% [-7.70%, +6.12%] open         -1.22% [-6.18%, +3.99%] open         -2.03% [-11.87%, +8.92%] open        -1.35% [-5.99%, +3.53%] open        
+smp pair 6: w64r64 9873, w16r16 9872 ms (1132 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64           6 -0.86% [-5.49%, +4.01%] open         -1.41% [-4.92%, +2.23%] open         -2.21% [-9.00%, +5.08%] open         -1.55% [-4.89%, +1.91%] open        
+smp pair 7: w64r64 9741, w16r16 9736 ms (1071 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64           7 -0.73% [-4.28%, +2.95%] open         -1.09% [-4.20%, +2.12%] open         -1.82% [-7.32%, +4.01%] open         -1.23% [-4.23%, +1.88%] open        
+smp pair 8: w64r64 9942, w16r16 9693 ms (1009 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64           8 -0.32% [-3.74%, +3.23%] open         -0.92% [-3.53%, +1.76%] open         -1.62% [-6.12%, +3.09%] open         -1.08% [-3.58%, +1.48%] open        
+smp pair 9: w16r16 9764, w64r64 9887 ms (948 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64           9 -0.15% [-3.10%, +2.90%] open         -1.03% [-3.25%, +1.25%] open         -1.85% [-5.72%, +2.18%] open         -1.21% [-3.35%, +0.99%] open        
+smp pair 10: w16r16 9793, w64r64 9539 ms (887 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64          10 -0.39% [-3.12%, +2.41%] open         -1.04% [-2.95%, +0.89%] open         -1.81% [-5.13%, +1.63%] open         -1.20% [-3.04%, +0.67%] open        
+smp pair 11: w16r16 9678, w64r64 9580 ms (827 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64          11 -0.45% [-2.84%, +2.01%] open         -1.06% [-2.72%, +0.63%] open         -1.75% [-4.67%, +1.25%] open         -1.21% [-2.82%, +0.42%] open        
+smp pair 12: w64r64 9903, w16r16 9704 ms (765 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  w64r64          12 -0.24% [-2.53%, +2.09%] open         -1.19% [-2.76%, +0.40%] open         -1.90% [-4.54%, +0.83%] open         -1.36% [-2.90%, +0.20%] open        

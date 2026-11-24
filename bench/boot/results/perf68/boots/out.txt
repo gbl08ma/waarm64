@@ -1,0 +1,272 @@
+w16r16 r1: smp_alpine_jit_n1_script       2624.575 ±20.735 ms
+w16r16 r1: smp_alpine_jit_n1_total        5151.040 ±23.780 ms
+w16r16 r1: smp_alpine_jit_n2_script       2267.490 ±15.110 ms
+w16r16 r1: smp_alpine_jit_n2_total        4795.980 ±29.260 ms
+w16r16 r1: smp_alpine_jit_n4_script       2231.325 ±16.665 ms
+w16r16 r1: smp_alpine_jit_n4_total        4797.865 ±23.365 ms
+w16r16 r1: smp_alpine_jit_n1_total_cpu_ms                                                          5378.388 ±38.669 ms
+w16r16 r1: smp_alpine_jit_n1_total_cpu_ns_step                                                             2.220 ±0.013 ns/step
+w16r16 r1: smp_alpine_jit_n1_total_ginstr                                                            65.648 ±0.055 G instructions
+w16r16 r1: smp_alpine_jit_n1_total_gcycles                                                            20.886 ±0.071 G cycles
+w16r16 r1: smp_alpine_jit_n1_total_instr_step                                                            27.127 ±0.047 instructions/step
+w16r16 r1: smp_alpine_jit_n1_total_cycles_step                                                             8.622 ±0.018 cycles/step
+w16r16 r1: smp_alpine_jit_n1_total_pshare                                                             0.975 ±0.002 share of cycles on P cores
+w16r16 r1: smp_alpine_jit_n1_total_joules                                                            24.554 ±0.102 J
+w16r16 r1: smp_alpine_jit_n2_total_cpu_ms                                                          6256.009 ±96.505 ms
+w16r16 r1: smp_alpine_jit_n2_total_cpu_ns_step                                                             2.553 ±0.036 ns/step
+w16r16 r1: smp_alpine_jit_n2_total_ginstr                                                            73.518 ±0.880 G instructions
+w16r16 r1: smp_alpine_jit_n2_total_gcycles                                                            23.829 ±0.370 G cycles
+w16r16 r1: smp_alpine_jit_n2_total_instr_step                                                            30.016 ±0.321 instructions/step
+w16r16 r1: smp_alpine_jit_n2_total_cycles_step                                                             9.724 ±0.137 cycles/step
+w16r16 r1: smp_alpine_jit_n2_total_pshare                                                             0.941 ±0.004 share of cycles on P cores
+w16r16 r1: smp_alpine_jit_n2_total_joules                                                            27.100 ±0.285 J
+w16r16 r1: smp_alpine_jit_n4_total_cpu_ms                                                          7526.446 ±130.248 ms
+w16r16 r1: smp_alpine_jit_n4_total_cpu_ns_step                                                             3.007 ±0.039 ns/step
+w16r16 r1: smp_alpine_jit_n4_total_ginstr                                                            84.102 ±1.130 G instructions
+w16r16 r1: smp_alpine_jit_n4_total_gcycles                                                            27.819 ±0.398 G cycles
+w16r16 r1: smp_alpine_jit_n4_total_instr_step                                                            33.338 ±0.057 instructions/step
+w16r16 r1: smp_alpine_jit_n4_total_cycles_step                                                            11.101 ±0.084 cycles/step
+w16r16 r1: smp_alpine_jit_n4_total_pshare                                                             0.866 ±0.001 share of cycles on P cores
+w16r16 r1: smp_alpine_jit_n4_total_joules                                                            29.176 ±0.330 J
+p68-w16r16-r1-smp_alpine_jit: rss peak 1528 MiB; no leftovers
+w16r16 r1: smp_user_jit_n4_compress       1120.350 ±3.520 ms
+w16r16 r1: smp_user_jit_n4_lua            2318.177 ±1.153 ms
+w16r16 r1: smp_user_jit_n4_churn           710.388 ±13.518 ms
+w16r16 r1: smp_user_jit_n4_sqlite         1782.027 ±26.033 ms
+w16r16 r1: smp_user_jit_n4_total         10571.945 ±22.385 ms
+w16r16 r1: smp_user_jit_n4_total_cpu_ms                                                         33005.230 ±231.352 ms
+w16r16 r1: smp_user_jit_n4_total_cpu_ns_step                                                             1.045 ±0.008 ns/step
+w16r16 r1: smp_user_jit_n4_total_ginstr                                                           458.183 ±1.988 G instructions
+w16r16 r1: smp_user_jit_n4_total_gcycles                                                           125.058 ±0.758 G cycles
+w16r16 r1: smp_user_jit_n4_total_instr_step                                                            14.502 ±0.055 instructions/step
+w16r16 r1: smp_user_jit_n4_total_cycles_step                                                             3.958 ±0.026 cycles/step
+w16r16 r1: smp_user_jit_n4_total_pshare                                                             0.911 ±0.001 share of cycles on P cores
+w16r16 r1: smp_user_jit_n4_total_joules                                                           139.630 ±0.221 J
+p68-w16r16-r1-smp_user_jit_4: rss peak 2036 MiB; no leftovers
+w64r64 r1: smp_alpine_jit_n1_script       2628.060 ±9.110 ms
+w64r64 r1: smp_alpine_jit_n1_total        5147.100 ±27.490 ms
+w64r64 r1: smp_alpine_jit_n2_script       2254.045 ±20.680 ms
+w64r64 r1: smp_alpine_jit_n2_total        4787.625 ±14.735 ms
+w64r64 r1: smp_alpine_jit_n4_script       2210.625 ±9.035 ms
+w64r64 r1: smp_alpine_jit_n4_total        4777.000 ±12.770 ms
+w64r64 r1: smp_alpine_jit_n1_total_cpu_ms                                                          5209.101 ±32.337 ms
+w64r64 r1: smp_alpine_jit_n1_total_cpu_ns_step                                                             2.151 ±0.011 ns/step
+w64r64 r1: smp_alpine_jit_n1_total_ginstr                                                            63.939 ±0.005 G instructions
+w64r64 r1: smp_alpine_jit_n1_total_gcycles                                                            20.278 ±0.116 G cycles
+w64r64 r1: smp_alpine_jit_n1_total_instr_step                                                            26.401 ±0.021 instructions/step
+w64r64 r1: smp_alpine_jit_n1_total_cycles_step                                                             8.375 ±0.041 cycles/step
+w64r64 r1: smp_alpine_jit_n1_total_pshare                                                             0.974 ±0.003 share of cycles on P cores
+w64r64 r1: smp_alpine_jit_n1_total_joules                                                            23.944 ±0.089 J
+w64r64 r1: smp_alpine_jit_n2_total_cpu_ms                                                          6005.695 ±48.360 ms
+w64r64 r1: smp_alpine_jit_n2_total_cpu_ns_step                                                             2.451 ±0.025 ns/step
+w64r64 r1: smp_alpine_jit_n2_total_ginstr                                                            71.575 ±0.133 G instructions
+w64r64 r1: smp_alpine_jit_n2_total_gcycles                                                            22.985 ±0.228 G cycles
+w64r64 r1: smp_alpine_jit_n2_total_instr_step                                                            29.243 ±0.108 instructions/step
+w64r64 r1: smp_alpine_jit_n2_total_cycles_step                                                             9.381 ±0.114 cycles/step
+w64r64 r1: smp_alpine_jit_n2_total_pshare                                                             0.948 ±0.002 share of cycles on P cores
+w64r64 r1: smp_alpine_jit_n2_total_joules                                                            26.734 ±0.266 J
+w64r64 r1: smp_alpine_jit_n4_total_cpu_ms                                                          7315.650 ±140.720 ms
+w64r64 r1: smp_alpine_jit_n4_total_cpu_ns_step                                                             2.924 ±0.044 ns/step
+w64r64 r1: smp_alpine_jit_n4_total_ginstr                                                            82.392 ±0.481 G instructions
+w64r64 r1: smp_alpine_jit_n4_total_gcycles                                                            27.082 ±0.276 G cycles
+w64r64 r1: smp_alpine_jit_n4_total_instr_step                                                            32.688 ±0.213 instructions/step
+w64r64 r1: smp_alpine_jit_n4_total_cycles_step                                                            10.831 ±0.132 cycles/step
+w64r64 r1: smp_alpine_jit_n4_total_pshare                                                             0.871 ±0.002 share of cycles on P cores
+w64r64 r1: smp_alpine_jit_n4_total_joules                                                            29.059 ±0.078 J
+p68-w64r64-r1-smp_alpine_jit: rss peak 1550 MiB; no leftovers
+w64r64 r1: smp_user_jit_n4_compress       1402.968 ±57.958 ms
+w64r64 r1: smp_user_jit_n4_lua            2414.930 ±11.135 ms
+w64r64 r1: smp_user_jit_n4_churn           736.963 ±9.442 ms
+w64r64 r1: smp_user_jit_n4_sqlite         1710.080 ±29.245 ms
+w64r64 r1: smp_user_jit_n4_total         10924.810 ±44.125 ms
+w64r64 r1: smp_user_jit_n4_total_cpu_ms                                                         33514.168 ±164.092 ms
+w64r64 r1: smp_user_jit_n4_total_cpu_ns_step                                                             1.061 ±0.005 ns/step
+w64r64 r1: smp_user_jit_n4_total_ginstr                                                           468.060 ±2.106 G instructions
+w64r64 r1: smp_user_jit_n4_total_gcycles                                                           127.328 ±0.542 G cycles
+w64r64 r1: smp_user_jit_n4_total_instr_step                                                            14.820 ±0.066 instructions/step
+w64r64 r1: smp_user_jit_n4_total_cycles_step                                                             4.032 ±0.017 cycles/step
+w64r64 r1: smp_user_jit_n4_total_pshare                                                             0.916 ±0.000 share of cycles on P cores
+w64r64 r1: smp_user_jit_n4_total_joules                                                           142.533 ±0.809 J
+p68-w64r64-r1-smp_user_jit_4: rss peak 2023 MiB; no leftovers
+w64r64 r2: smp_alpine_jit_n1_script       2615.550 ±27.165 ms
+w64r64 r2: smp_alpine_jit_n1_total        5141.785 ±20.695 ms
+w64r64 r2: smp_alpine_jit_n2_script       2237.935 ±7.525 ms
+w64r64 r2: smp_alpine_jit_n2_total        4767.400 ±26.240 ms
+w64r64 r2: smp_alpine_jit_n4_script       2214.835 ±36.485 ms
+w64r64 r2: smp_alpine_jit_n4_total        4792.485 ±42.465 ms
+w64r64 r2: smp_alpine_jit_n1_total_cpu_ms                                                          5218.209 ±26.605 ms
+w64r64 r2: smp_alpine_jit_n1_total_cpu_ns_step                                                             2.153 ±0.012 ns/step
+w64r64 r2: smp_alpine_jit_n1_total_ginstr                                                            64.027 ±0.074 G instructions
+w64r64 r2: smp_alpine_jit_n1_total_gcycles                                                            20.290 ±0.087 G cycles
+w64r64 r2: smp_alpine_jit_n1_total_instr_step                                                            26.426 ±0.038 instructions/step
+w64r64 r2: smp_alpine_jit_n1_total_cycles_step                                                             8.373 ±0.038 cycles/step
+w64r64 r2: smp_alpine_jit_n1_total_pshare                                                             0.976 ±0.000 share of cycles on P cores
+w64r64 r2: smp_alpine_jit_n1_total_joules                                                            24.101 ±0.170 J
+w64r64 r2: smp_alpine_jit_n2_total_cpu_ms                                                          6017.003 ±43.311 ms
+w64r64 r2: smp_alpine_jit_n2_total_cpu_ns_step                                                             2.454 ±0.017 ns/step
+w64r64 r2: smp_alpine_jit_n2_total_ginstr                                                            71.464 ±0.237 G instructions
+w64r64 r2: smp_alpine_jit_n2_total_gcycles                                                            23.038 ±0.104 G cycles
+w64r64 r2: smp_alpine_jit_n2_total_instr_step                                                            29.198 ±0.090 instructions/step
+w64r64 r2: smp_alpine_jit_n2_total_cycles_step                                                             9.398 ±0.041 cycles/step
+w64r64 r2: smp_alpine_jit_n2_total_pshare                                                             0.950 ±0.005 share of cycles on P cores
+w64r64 r2: smp_alpine_jit_n2_total_joules                                                            26.981 ±0.292 J
+w64r64 r2: smp_alpine_jit_n4_total_cpu_ms                                                          7408.920 ±81.468 ms
+w64r64 r2: smp_alpine_jit_n4_total_cpu_ns_step                                                             2.964 ±0.040 ns/step
+w64r64 r2: smp_alpine_jit_n4_total_ginstr                                                            82.323 ±0.961 G instructions
+w64r64 r2: smp_alpine_jit_n4_total_gcycles                                                            27.468 ±0.215 G cycles
+w64r64 r2: smp_alpine_jit_n4_total_instr_step                                                            32.895 ±0.208 instructions/step
+w64r64 r2: smp_alpine_jit_n4_total_cycles_step                                                            10.992 ±0.109 cycles/step
+w64r64 r2: smp_alpine_jit_n4_total_pshare                                                             0.869 ±0.003 share of cycles on P cores
+w64r64 r2: smp_alpine_jit_n4_total_joules                                                            29.595 ±0.203 J
+p68-w64r64-r2-smp_alpine_jit: rss peak 1548 MiB; no leftovers
+w64r64 r2: smp_user_jit_n4_compress       1139.697 ±8.477 ms
+w64r64 r2: smp_user_jit_n4_lua            2522.522 ±50.258 ms
+w64r64 r2: smp_user_jit_n4_churn           727.887 ±8.258 ms
+w64r64 r2: smp_user_jit_n4_sqlite         1851.310 ±13.525 ms
+w64r64 r2: smp_user_jit_n4_total         10844.342 ±37.043 ms
+w64r64 r2: smp_user_jit_n4_total_cpu_ms                                                         33234.915 ±100.744 ms
+w64r64 r2: smp_user_jit_n4_total_cpu_ns_step                                                             1.052 ±0.003 ns/step
+w64r64 r2: smp_user_jit_n4_total_ginstr                                                           459.875 ±1.553 G instructions
+w64r64 r2: smp_user_jit_n4_total_gcycles                                                           126.258 ±0.334 G cycles
+w64r64 r2: smp_user_jit_n4_total_instr_step                                                            14.563 ±0.044 instructions/step
+w64r64 r2: smp_user_jit_n4_total_cycles_step                                                             3.998 ±0.009 cycles/step
+w64r64 r2: smp_user_jit_n4_total_pshare                                                             0.915 ±0.001 share of cycles on P cores
+w64r64 r2: smp_user_jit_n4_total_joules                                                           140.141 ±0.099 J
+p68-w64r64-r2-smp_user_jit_4: rss peak 2038 MiB; no leftovers
+w16r16 r2: smp_alpine_jit_n1_script       2614.160 ±6.755 ms
+w16r16 r2: smp_alpine_jit_n1_total        5133.285 ±2.905 ms
+w16r16 r2: smp_alpine_jit_n2_script       2245.465 ±30.430 ms
+w16r16 r2: smp_alpine_jit_n2_total        4753.015 ±50.920 ms
+w16r16 r2: smp_alpine_jit_n4_script       2204.320 ±39.865 ms
+w16r16 r2: smp_alpine_jit_n4_total        4763.585 ±30.170 ms
+w16r16 r2: smp_alpine_jit_n1_total_cpu_ms                                                          5365.714 ±27.327 ms
+w16r16 r2: smp_alpine_jit_n1_total_cpu_ns_step                                                             2.216 ±0.011 ns/step
+w16r16 r2: smp_alpine_jit_n1_total_ginstr                                                            65.665 ±0.144 G instructions
+w16r16 r2: smp_alpine_jit_n1_total_gcycles                                                            20.897 ±0.123 G cycles
+w16r16 r2: smp_alpine_jit_n1_total_instr_step                                                            27.120 ±0.070 instructions/step
+w16r16 r2: smp_alpine_jit_n1_total_cycles_step                                                             8.622 ±0.056 cycles/step
+w16r16 r2: smp_alpine_jit_n1_total_pshare                                                             0.975 ±0.001 share of cycles on P cores
+w16r16 r2: smp_alpine_jit_n1_total_joules                                                            24.734 ±0.134 J
+w16r16 r2: smp_alpine_jit_n2_total_cpu_ms                                                          6173.084 ±110.778 ms
+w16r16 r2: smp_alpine_jit_n2_total_cpu_ns_step                                                             2.523 ±0.047 ns/step
+w16r16 r2: smp_alpine_jit_n2_total_ginstr                                                            73.531 ±0.101 G instructions
+w16r16 r2: smp_alpine_jit_n2_total_gcycles                                                            23.616 ±0.338 G cycles
+w16r16 r2: smp_alpine_jit_n2_total_instr_step                                                            30.057 ±0.085 instructions/step
+w16r16 r2: smp_alpine_jit_n2_total_cycles_step                                                             9.650 ±0.144 cycles/step
+w16r16 r2: smp_alpine_jit_n2_total_pshare                                                             0.942 ±0.004 share of cycles on P cores
+w16r16 r2: smp_alpine_jit_n2_total_joules                                                            27.702 ±0.340 J
+w16r16 r2: smp_alpine_jit_n4_total_cpu_ms                                                          7440.697 ±104.813 ms
+w16r16 r2: smp_alpine_jit_n4_total_cpu_ns_step                                                             2.976 ±0.065 ns/step
+w16r16 r2: smp_alpine_jit_n4_total_ginstr                                                            83.731 ±0.586 G instructions
+w16r16 r2: smp_alpine_jit_n4_total_gcycles                                                            27.570 ±0.377 G cycles
+w16r16 r2: smp_alpine_jit_n4_total_instr_step                                                            33.441 ±0.160 instructions/step
+w16r16 r2: smp_alpine_jit_n4_total_cycles_step                                                            11.035 ±0.221 cycles/step
+w16r16 r2: smp_alpine_jit_n4_total_pshare                                                             0.865 ±0.000 share of cycles on P cores
+w16r16 r2: smp_alpine_jit_n4_total_joules                                                            29.657 ±0.414 J
+p68-w16r16-r2-smp_alpine_jit: rss peak 1554 MiB; no leftovers
+w16r16 r2: smp_user_jit_n4_compress       1139.385 ±8.745 ms
+w16r16 r2: smp_user_jit_n4_lua            2415.387 ±74.347 ms
+w16r16 r2: smp_user_jit_n4_churn           715.108 ±0.898 ms
+w16r16 r2: smp_user_jit_n4_sqlite         1678.722 ±27.768 ms
+w16r16 r2: smp_user_jit_n4_total         10576.935 ±90.335 ms
+w16r16 r2: smp_user_jit_n4_total_cpu_ms                                                         33175.749 ±136.550 ms
+w16r16 r2: smp_user_jit_n4_total_cpu_ns_step                                                             1.050 ±0.005 ns/step
+w16r16 r2: smp_user_jit_n4_total_ginstr                                                           458.258 ±3.797 G instructions
+w16r16 r2: smp_user_jit_n4_total_gcycles                                                           125.763 ±0.732 G cycles
+w16r16 r2: smp_user_jit_n4_total_instr_step                                                            14.506 ±0.132 instructions/step
+w16r16 r2: smp_user_jit_n4_total_cycles_step                                                             3.981 ±0.026 cycles/step
+w16r16 r2: smp_user_jit_n4_total_pshare                                                             0.912 ±0.002 share of cycles on P cores
+w16r16 r2: smp_user_jit_n4_total_joules                                                           139.675 ±1.188 J
+p68-w16r16-r2-smp_user_jit_4: rss peak 2047 MiB; no leftovers
+w16r16 r3: smp_alpine_jit_n1_script       2616.225 ±8.775 ms
+w16r16 r3: smp_alpine_jit_n1_total        5133.075 ±8.095 ms
+w16r16 r3: smp_alpine_jit_n2_script       2251.175 ±14.560 ms
+w16r16 r3: smp_alpine_jit_n2_total        4782.160 ±18.850 ms
+w16r16 r3: smp_alpine_jit_n4_script       2207.685 ±2.785 ms
+w16r16 r3: smp_alpine_jit_n4_total        4770.900 ±26.515 ms
+w16r16 r3: smp_alpine_jit_n1_total_cpu_ms                                                          5346.655 ±24.109 ms
+w16r16 r3: smp_alpine_jit_n1_total_cpu_ns_step                                                             2.208 ±0.011 ns/step
+w16r16 r3: smp_alpine_jit_n1_total_ginstr                                                            65.687 ±0.141 G instructions
+w16r16 r3: smp_alpine_jit_n1_total_gcycles                                                            20.811 ±0.043 G cycles
+w16r16 r3: smp_alpine_jit_n1_total_instr_step                                                            27.116 ±0.042 instructions/step
+w16r16 r3: smp_alpine_jit_n1_total_cycles_step                                                             8.594 ±0.022 cycles/step
+w16r16 r3: smp_alpine_jit_n1_total_pshare                                                             0.975 ±0.002 share of cycles on P cores
+w16r16 r3: smp_alpine_jit_n1_total_joules                                                            24.806 ±0.255 J
+w16r16 r3: smp_alpine_jit_n2_total_cpu_ms                                                          6158.654 ±37.695 ms
+w16r16 r3: smp_alpine_jit_n2_total_cpu_ns_step                                                             2.517 ±0.016 ns/step
+w16r16 r3: smp_alpine_jit_n2_total_ginstr                                                            73.318 ±0.288 G instructions
+w16r16 r3: smp_alpine_jit_n2_total_gcycles                                                            23.586 ±0.050 G cycles
+w16r16 r3: smp_alpine_jit_n2_total_instr_step                                                            29.933 ±0.097 instructions/step
+w16r16 r3: smp_alpine_jit_n2_total_cycles_step                                                             9.640 ±0.024 cycles/step
+w16r16 r3: smp_alpine_jit_n2_total_pshare                                                             0.944 ±0.005 share of cycles on P cores
+w16r16 r3: smp_alpine_jit_n2_total_joules                                                            27.504 ±0.085 J
+w16r16 r3: smp_alpine_jit_n4_total_cpu_ms                                                          7555.796 ±123.976 ms
+w16r16 r3: smp_alpine_jit_n4_total_cpu_ns_step                                                             2.998 ±0.040 ns/step
+w16r16 r3: smp_alpine_jit_n4_total_ginstr                                                            84.277 ±0.956 G instructions
+w16r16 r3: smp_alpine_jit_n4_total_gcycles                                                            27.926 ±0.331 G cycles
+w16r16 r3: smp_alpine_jit_n4_total_instr_step                                                            33.434 ±0.287 instructions/step
+w16r16 r3: smp_alpine_jit_n4_total_cycles_step                                                            11.081 ±0.098 cycles/step
+w16r16 r3: smp_alpine_jit_n4_total_pshare                                                             0.868 ±0.002 share of cycles on P cores
+w16r16 r3: smp_alpine_jit_n4_total_joules                                                            29.952 ±0.269 J
+p68-w16r16-r3-smp_alpine_jit: rss peak 1677 MiB; no leftovers
+w16r16 r3: smp_user_jit_n4_compress       1143.998 ±14.437 ms
+w16r16 r3: smp_user_jit_n4_lua            2414.408 ±23.453 ms
+w16r16 r3: smp_user_jit_n4_churn           701.813 ±12.778 ms
+w16r16 r3: smp_user_jit_n4_sqlite         1881.240 ±24.260 ms
+w16r16 r3: smp_user_jit_n4_total         10761.582 ±71.293 ms
+w16r16 r3: smp_user_jit_n4_total_cpu_ms                                                         33316.928 ±211.137 ms
+w16r16 r3: smp_user_jit_n4_total_cpu_ns_step                                                             1.055 ±0.006 ns/step
+w16r16 r3: smp_user_jit_n4_total_ginstr                                                           466.647 ±5.907 G instructions
+w16r16 r3: smp_user_jit_n4_total_gcycles                                                           126.481 ±0.867 G cycles
+w16r16 r3: smp_user_jit_n4_total_instr_step                                                            14.777 ±0.179 instructions/step
+w16r16 r3: smp_user_jit_n4_total_cycles_step                                                             4.005 ±0.025 cycles/step
+w16r16 r3: smp_user_jit_n4_total_pshare                                                             0.914 ±0.000 share of cycles on P cores
+w16r16 r3: smp_user_jit_n4_total_joules                                                           141.479 ±1.364 J
+p68-w16r16-r3-smp_user_jit_4: rss peak 2054 MiB; no leftovers
+w64r64 r3: smp_alpine_jit_n1_script       2623.825 ±11.000 ms
+w64r64 r3: smp_alpine_jit_n1_total        5142.065 ±1.745 ms
+w64r64 r3: smp_alpine_jit_n2_script       2232.775 ±23.095 ms
+w64r64 r3: smp_alpine_jit_n2_total        4751.930 ±36.595 ms
+w64r64 r3: smp_alpine_jit_n4_script       2214.460 ±18.075 ms
+w64r64 r3: smp_alpine_jit_n4_total        4786.500 ±28.825 ms
+w64r64 r3: smp_alpine_jit_n1_total_cpu_ms                                                          5224.358 ±16.034 ms
+w64r64 r3: smp_alpine_jit_n1_total_cpu_ns_step                                                             2.157 ±0.006 ns/step
+w64r64 r3: smp_alpine_jit_n1_total_ginstr                                                            63.921 ±0.140 G instructions
+w64r64 r3: smp_alpine_jit_n1_total_gcycles                                                            20.383 ±0.018 G cycles
+w64r64 r3: smp_alpine_jit_n1_total_instr_step                                                            26.397 ±0.047 instructions/step
+w64r64 r3: smp_alpine_jit_n1_total_cycles_step                                                             8.417 ±0.005 cycles/step
+w64r64 r3: smp_alpine_jit_n1_total_pshare                                                             0.975 ±0.001 share of cycles on P cores
+w64r64 r3: smp_alpine_jit_n1_total_joules                                                            24.315 ±0.317 J
+w64r64 r3: smp_alpine_jit_n2_total_cpu_ms                                                          6001.411 ±84.361 ms
+w64r64 r3: smp_alpine_jit_n2_total_cpu_ns_step                                                             2.452 ±0.034 ns/step
+w64r64 r3: smp_alpine_jit_n2_total_ginstr                                                            71.500 ±0.094 G instructions
+w64r64 r3: smp_alpine_jit_n2_total_gcycles                                                            22.977 ±0.308 G cycles
+w64r64 r3: smp_alpine_jit_n2_total_instr_step                                                            29.215 ±0.047 instructions/step
+w64r64 r3: smp_alpine_jit_n2_total_cycles_step                                                             9.388 ±0.124 cycles/step
+w64r64 r3: smp_alpine_jit_n2_total_pshare                                                             0.945 ±0.011 share of cycles on P cores
+w64r64 r3: smp_alpine_jit_n2_total_joules                                                            27.156 ±0.149 J
+w64r64 r3: smp_alpine_jit_n4_total_cpu_ms                                                          7357.516 ±67.407 ms
+w64r64 r3: smp_alpine_jit_n4_total_cpu_ns_step                                                             2.930 ±0.073 ns/step
+w64r64 r3: smp_alpine_jit_n4_total_ginstr                                                            82.705 ±0.177 G instructions
+w64r64 r3: smp_alpine_jit_n4_total_gcycles                                                            27.370 ±0.382 G cycles
+w64r64 r3: smp_alpine_jit_n4_total_instr_step                                                            32.794 ±0.473 instructions/step
+w64r64 r3: smp_alpine_jit_n4_total_cycles_step                                                            10.913 ±0.311 cycles/step
+w64r64 r3: smp_alpine_jit_n4_total_pshare                                                             0.872 ±0.003 share of cycles on P cores
+w64r64 r3: smp_alpine_jit_n4_total_joules                                                            29.674 ±0.271 J
+p68-w64r64-r3-smp_alpine_jit: rss peak 1666 MiB; no leftovers
+w64r64 r3: smp_user_jit_n4_compress       1219.930 ±121.800 ms
+w64r64 r3: smp_user_jit_n4_lua            2421.102 ±88.737 ms
+w64r64 r3: smp_user_jit_n4_churn           726.880 ±4.285 ms
+w64r64 r3: smp_user_jit_n4_sqlite         1679.805 ±12.525 ms
+w64r64 r3: smp_user_jit_n4_total         10682.748 ±68.948 ms
+w64r64 r3: smp_user_jit_n4_total_cpu_ms                                                         33095.153 ±51.877 ms
+w64r64 r3: smp_user_jit_n4_total_cpu_ns_step                                                             1.047 ±0.001 ns/step
+w64r64 r3: smp_user_jit_n4_total_ginstr                                                           458.230 ±4.196 G instructions
+w64r64 r3: smp_user_jit_n4_total_gcycles                                                           125.655 ±0.354 G cycles
+w64r64 r3: smp_user_jit_n4_total_instr_step                                                            14.503 ±0.130 instructions/step
+w64r64 r3: smp_user_jit_n4_total_cycles_step                                                             3.977 ±0.010 cycles/step
+w64r64 r3: smp_user_jit_n4_total_pshare                                                             0.915 ±0.002 share of cycles on P cores
+w64r64 r3: smp_user_jit_n4_total_joules                                                           139.425 ±0.413 J
+p68-w64r64-r3-smp_user_jit_4: rss peak 2057 MiB; no leftovers
+gates done 07:32:43
+exit 0

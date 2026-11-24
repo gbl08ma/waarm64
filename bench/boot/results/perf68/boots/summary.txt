@@ -1,0 +1,43 @@
+smp_alpine_jit_n1_script         w16r16 2614-2625  w64r64 2616-2628  +0.3% overlap
+smp_alpine_jit_n1_total          w16r16 5133-5151  w64r64 5142-5147  +0.2% overlap
+smp_alpine_jit_n2_script         w16r16 2245-2267  w64r64 2233-2254  -0.6% overlap
+smp_alpine_jit_n2_total          w16r16 4753-4796  w64r64 4752-4788  -0.3% overlap
+smp_alpine_jit_n4_script         w16r16 2204-2231  w64r64 2211-2215  +0.3% overlap
+smp_alpine_jit_n4_total          w16r16 4764-4798  w64r64 4777-4792  +0.3% overlap
+smp_alpine_jit_n1_total_cpu_ms   w16r16 5347-5378  w64r64 5209-5224  -2.7% no overlap
+smp_alpine_jit_n1_total_cpu_ns_step w16r16 2-2  w64r64 2-2  -2.8% no overlap
+smp_alpine_jit_n1_total_ginstr   w16r16 66-66  w64r64 64-64  -2.6% no overlap
+smp_alpine_jit_n1_total_gcycles  w16r16 21-21  w64r64 20-20  -2.9% no overlap
+smp_alpine_jit_n1_total_instr_step w16r16 27-27  w64r64 26-26  -2.7% no overlap
+smp_alpine_jit_n1_total_cycles_step w16r16 9-9  w64r64 8-8  -2.9% no overlap
+smp_alpine_jit_n1_total_pshare   w16r16 1-1  w64r64 1-1  +0.0% overlap
+smp_alpine_jit_n1_total_joules   w16r16 25-25  w64r64 24-24  -2.6% no overlap
+smp_alpine_jit_n2_total_cpu_ms   w16r16 6159-6256  w64r64 6001-6017  -2.7% no overlap
+smp_alpine_jit_n2_total_cpu_ns_step w16r16 3-3  w64r64 2-2  -2.8% no overlap
+smp_alpine_jit_n2_total_ginstr   w16r16 73-74  w64r64 71-72  -2.7% no overlap
+smp_alpine_jit_n2_total_gcycles  w16r16 24-24  w64r64 23-23  -2.7% no overlap
+smp_alpine_jit_n2_total_instr_step w16r16 30-30  w64r64 29-29  -2.7% no overlap
+smp_alpine_jit_n2_total_cycles_step w16r16 10-10  w64r64 9-9  -2.7% no overlap
+smp_alpine_jit_n2_total_pshare   w16r16 1-1  w64r64 1-1  +0.6% no overlap
+smp_alpine_jit_n2_total_joules   w16r16 27-28  w64r64 27-27  -1.9% overlap
+smp_alpine_jit_n4_total_cpu_ms   w16r16 7441-7556  w64r64 7316-7409  -2.2% no overlap
+smp_alpine_jit_n4_total_cpu_ns_step w16r16 3-3  w64r64 3-3  -2.3% no overlap
+smp_alpine_jit_n4_total_ginstr   w16r16 84-84  w64r64 82-83  -2.0% no overlap
+smp_alpine_jit_n4_total_gcycles  w16r16 28-28  w64r64 27-27  -1.6% no overlap
+smp_alpine_jit_n4_total_instr_step w16r16 33-33  w64r64 33-33  -1.9% no overlap
+smp_alpine_jit_n4_total_cycles_step w16r16 11-11  w64r64 11-11  -1.5% no overlap
+smp_alpine_jit_n4_total_pshare   w16r16 1-1  w64r64 1-1  +0.6% no overlap
+smp_alpine_jit_n4_total_joules   w16r16 29-30  w64r64 29-30  -0.2% overlap
+smp_user_jit_n4_compress         w16r16 1120-1144  w64r64 1140-1403  +7.1% overlap
+smp_user_jit_n4_lua              w16r16 2318-2415  w64r64 2415-2523  +0.3% overlap
+smp_user_jit_n4_churn            w16r16 702-715  w64r64 727-737  +2.5% no overlap
+smp_user_jit_n4_sqlite           w16r16 1679-1881  w64r64 1680-1851  -4.0% overlap
+smp_user_jit_n4_total            w16r16 10572-10762  w64r64 10683-10925  +2.5% overlap
+smp_user_jit_n4_total_cpu_ms     w16r16 33005-33317  w64r64 33095-33514  +0.2% overlap
+smp_user_jit_n4_total_cpu_ns_step w16r16 1-1  w64r64 1-1  +0.2% overlap
+smp_user_jit_n4_total_ginstr     w16r16 458-467  w64r64 458-468  +0.4% overlap
+smp_user_jit_n4_total_gcycles    w16r16 125-126  w64r64 126-127  +0.4% overlap
+smp_user_jit_n4_total_instr_step w16r16 15-15  w64r64 15-15  +0.4% overlap
+smp_user_jit_n4_total_cycles_step w16r16 4-4  w64r64 4-4  +0.4% overlap
+smp_user_jit_n4_total_pshare     w16r16 1-1  w64r64 1-1  +0.4% no overlap
+smp_user_jit_n4_total_joules     w16r16 140-141  w64r64 139-143  +0.3% overlap

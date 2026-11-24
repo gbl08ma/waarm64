@@ -1,0 +1,18 @@
+workload smp
+n {'w16r16': 12, 'w64r64': 12}
+                    w16r16        w64r64
+blocks               43929        +1.30%
+modules               2838        +0.21%
+bytes             88429586        -2.99%
+regionBlocks        182510        -2.91%
+tierUps               2610        -0.15%
+decSteps        1210331354        +3.22%
+locks              4203652       -34.47%
+flushes                  0             0
+emitNs          1354754816        -2.70%
+planNs          1087290112        -1.32%
+compileNs        370180992        +0.82%
+dispatches        56019257        +2.87%
+footMiB               2332          2269
+instructions  581527908636        -1.62%
+cycles        205246713012        -0.93%
