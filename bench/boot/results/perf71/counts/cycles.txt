@@ -1,0 +1,4 @@
+boot: block-emissions 125084; the last repeating the one before 12788 (10.2%)
+  unsettled regions 594: 65766 block-emissions (52.6%); cycling early 0 (at 2: 0, at 3: 0), their repeated iterations 0 (0.0%)
+node: block-emissions 491031; the last repeating the one before 38994 (7.9%)
+  unsettled regions 2789: 302508 block-emissions (61.6%); cycling early 0 (at 2: 0, at 3: 0), their repeated iterations 0 (0.0%)

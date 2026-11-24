@@ -1,0 +1,122 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index e13f5a90..2a439033 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -1018,19 +1018,26 @@ pub fn module(
+         //
+         // Flags likewise (step 8.4): the first emission finds the members
+         // whose flags are dead at entry, and what lazy flags the edges carry.
++        //
++        // An emission is a function of its arguments (`plain`, the entry
++        // states): one with the arguments of the last is that one, kept
++        // (`last`) rather than emitted again. A region whose states settled
++        // ends with the emission that showed it, and a block whose first
++        // emission found no register plain, nor its flags dead, with that one.
+         let n = r.blocks.len();
+-        let mem = vec![In::Mem; n];
+-        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem);
++        let (none, mem) = (vec![emit::Regs::default(); n], vec![In::Mem; n]);
++        let first = emit_region(&env, r, 0, &none, &mem);
+         let plain = if r.looped() {
+             0
+         } else {
+             first.c.read & !first.c.reused
+         };
++        let dead = first.dead.clone();
+         let settle = |x: &Emission| -> (Vec<emit::Regs>, Vec<In>) {
+             let regs = x.into.iter().map(|s| s.merge(*s, plain)).collect();
+             let flags = (0..n)
+                 .map(|j| match x.flags[j] {
+-                    _ if first.dead[j] => In::Dead,
++                    _ if dead[j] => In::Dead,
+                     In::Lazy(k, sf) if j > 0 => In::Lazy(k, sf),
+                     _ => In::Mem,
+                 })
+@@ -1038,26 +1045,46 @@ pub fn module(
+             (regs, flags)
+         };
+         let (mut entry, mut flags) = settle(&first);
++        let mut last = Some((0, none, mem, first));
++        let dunset = core::cell::Cell::new(0u64);
++        let (dfresh, dreused) = (core::cell::Cell::new(1u64), core::cell::Cell::new(0u64));
++        let emit = |last: &mut Option<Last>, plain, entry: &[_], flags: &[_]| {
++            if let Some((p, e, f, x)) = last.take()
++                && (p, &e[..], &f[..]) == (plain, entry, flags)
++            {
++                // DIAG: the kept emission must be what emitting again gives.
++                let y = emit_region(&env, r, plain, entry, flags);
++                assert!(y.c.c.b == x.c.c.b && y.inl == x.inl && y.bad == x.bad && y.into == x.into && y.flags == x.flags, "DIAG: a kept emission differs");
++                dreused.set(dreused.get() + 1);
++                return x;
++            }
++            dfresh.set(dfresh.get() + 1);
++            emit_region(&env, r, plain, entry, flags)
++        };
+         if n > 1 {
+             let mut settled = false;
+             for _ in 0..4 {
+-                let next = settle(&emit_region(&env, r, plain, &entry, &flags));
++                let x = emit(&mut last, plain, &entry, &flags);
++                let next = settle(&x);
+                 if next == (entry.clone(), flags.clone()) {
+                     settled = true;
++                    last = Some((plain, entry.clone(), flags.clone(), x));
+                     break;
+                 }
+                 (entry, flags) = next;
+             }
+             if !settled {
++                dunset.set(1);
+                 // Edges may not have what an entry holds dirty in a shadow
+                 // alone: made clean, a form every edge conforms to.
+                 entry = entry.iter().map(|s| s.loose()).collect();
+             }
+         }
+-        let mut x = emit_region(&env, r, plain, &entry, &flags);
++        let mut x = emit(&mut last, plain, &entry, &flags);
++        let dbad = x.bad as u64;
+         if x.bad {
+             // The lazy states didn't settle: flags in memory on every edge.
+-            let dead = |j: usize| if first.dead[j] { In::Dead } else { In::Mem };
++            let dead = |j: usize| if dead[j] { In::Dead } else { In::Mem };
+             x = emit_region(
+                 &env,
+                 r,
+@@ -1068,6 +1095,26 @@ pub fn module(
+             assert!(!x.bad);
+         }
+         let (mut c, n) = (x.c, x.inl);
++        {
++            // DIAG: the passes per region in the counts (bench/results/local/perf71/diag.patch).
++            let nb = r.blocks.len() as u64;
++            let passes = dfresh.get() + dreused.get() + dbad; // the base's
++            let mut d = emit::Counts::default();
++            if nb == 1 {
++                d.flags_stored = 1 | dreused.get() << 32;
++            } else {
++                match passes {
++                    ..=3 => d.flags_elided = 1,
++                    4 => d.flags_elided = 1 << 32,
++                    5 => d.cond_direct = 1,
++                    6 => d.cond_direct = 1 << 32,
++                    _ => d.cond_computed = 1,
++                }
++                d.cond_computed += (dunset.get() | dbad << 16) << 32;
++            }
++            d.cond_memory = dreused.get() * nb | (passes * nb) << 32;
++            c.counts = d;
++        }
+         nzcv_used |= c.nzcv_used;
+         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
+         let locals = c.locals();
+@@ -1157,6 +1204,10 @@ impl In {
+ /// member's flags are dead at its entry, and whether an edge carried lazy
+ /// flags other than its member's entry state (then emitted again, flags in
+ /// memory).
++/// An emission with the arguments it was emitted with (`plain`, the entry
++/// states: [`emit_region`]).
++type Last = (u64, Vec<emit::Regs>, Vec<In>, Emission);
++
+ struct Emission {
+     c: emit::Func,
+     inl: u32,

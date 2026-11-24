@@ -1093,7 +1093,15 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   measurable gain: [Tried and not kept](#tried-and-not-kept)); registers read once and never written stay plain loads (for a V register read as a
   scalar lane, a scalar load: `Func::vlane`). In regions, each member starts in a fixed register
   state (the merge of its incoming edges, found by a first emission) and every edge conforms to
-  it; the head's state is loaded once before the loop.
+  it; the head's state is loaded once before the loop. A function is emitted more than once (`block::module`): a
+  first emission finds the plain registers, the members' entry states and dead flags, then a region of several blocks
+  is emitted again until its entry states settle (at most four times), then once with what settled. An emission is a
+  function of its arguments, so one whose arguments are the last emission's is that one, kept. The emission that
+  showed the states settled is the function's, and so is a single block's first when its second would have the same
+  arguments (no register plain, flags not dead). PERF loop 71: 8-10% fewer members emitted, `emitNs` 5-8% lower, the
+  modules byte for byte the same. Regions that never settle are 20-30% of the regions of several blocks but 53-62% of
+  the members emitted (six emissions each, larger regions). None came back to an earlier state within the four
+  iterations (bench/boot/REPORT.md "PERF loop 71"; docs/backlog.md "Regions whose entry states never settle").
   Locals map: i64 scratch 2..=5, i32 6..=9, the flag locals 10..=16, X registers from 17 (in
   order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, FT's f64s 97..=99 and
   113..=117 (the double FMA's exact product and sums), PMULL's i64s 100..=112, FZOK 118, VT 119–122,

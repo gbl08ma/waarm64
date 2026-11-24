@@ -1,0 +1,30 @@
+node pair 1: base 9648, new 9731 ms (1144 s left)
+node pair 2: new 9573, base 9571 ms (1089 s left)
+node pair 3: base 9578, new 9539 ms (1034 s left)
+node pair 4: base 9526, new 9497 ms (979 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              4 +0.04% [-2.84%, +3.00%] open         +0.12% [-2.17%, +2.46%] open         -0.22% [-0.52%, +0.08%] open         +0.14% [-2.45%, +2.80%] open        
+node pair 5: new 9509, base 9525 ms (925 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              5 -0.00% [-1.60%, +1.62%] open         +0.08% [-1.19%, +1.37%] open         -0.21% [-0.38%, -0.05%] LOWER        +0.10% [-1.34%, +1.56%] open        
+node pair 6: new 9487, base 9522 ms (870 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              6 -0.06% [-1.19%, +1.08%] open         +0.03% [-0.87%, +0.94%] open         -0.22% [-0.33%, -0.10%] LOWER        +0.06% [-0.95%, +1.07%] open        
+node pair 7: base 9538, new 9506 ms (815 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              7 -0.10% [-0.97%, +0.78%] open         -0.00% [-0.70%, +0.70%] open         -0.22% [-0.30%, -0.13%] LOWER        +0.01% [-0.77%, +0.80%] open        
+node pair 8: new 9717, base 9708 ms (760 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              8 -0.08% [-0.78%, +0.63%] open         +0.02% [-0.55%, +0.59%] open         -0.22% [-0.30%, -0.15%] LOWER        +0.04% [-0.60%, +0.67%] open        
+node pair 9: base 9735, new 9684 ms (704 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              9 -0.13% [-0.75%, +0.50%] open         -0.01% [-0.50%, +0.48%] open         -0.22% [-0.28%, -0.15%] LOWER        -0.00% [-0.55%, +0.55%] open        
+node pair 10: new 9741, base 9721 ms (648 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new             10 -0.09% [-0.65%, +0.46%] open         +0.01% [-0.42%, +0.43%] same         -0.22% [-0.27%, -0.16%] LOWER        +0.02% [-0.46%, +0.50%] open        
+node pair 11: new 9698, base 9698 ms (592 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new             11 -0.09% [-0.57%, +0.40%] open         +0.00% [-0.37%, +0.37%] same         -0.22% [-0.27%, -0.17%] LOWER        +0.01% [-0.40%, +0.43%] same        
+node pair 12: new 9701, base 9622 ms (536 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new             12 -0.01% [-0.54%, +0.52%] open         +0.04% [-0.33%, +0.41%] same         -0.22% [-0.27%, -0.18%] LOWER        +0.05% [-0.35%, +0.46%] same        

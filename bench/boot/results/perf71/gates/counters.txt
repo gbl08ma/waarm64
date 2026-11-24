@@ -1,0 +1,36 @@
+workload boot
+n {'base': 9, 'new': 9}
+                      base           new
+blocks                5564        +0.00%
+modules                310        +0.00%
+bytes             11915604        +0.00%
+regionBlocks         25809        +0.00%
+tierUps                421        +0.00%
+decSteps         149207117        +0.00%
+locks               423724        +0.00%
+flushes                  0             0
+emitNs           176489728        -7.51%
+planNs            60212992        +0.35%
+compileNs         47746304        +0.09%
+dispatches         4833871        +0.00%
+footMiB                853           851
+instructions   72809807926        -0.47%
+cycles         23322845652        -0.38%
+workload user
+n {'base': 12, 'new': 12}
+                      base           new
+blocks                7653        +0.00%
+modules                530        +0.00%
+bytes             16249222        +0.00%
+regionBlocks         34126        +0.00%
+tierUps                545        +0.00%
+decSteps         194642775        +0.00%
+locks               556709        +0.00%
+flushes                  0             0
+emitNs           243380096        -7.96%
+planNs            84867840        -0.73%
+compileNs         74130176        -0.59%
+dispatches         7150212        +0.00%
+footMiB                952           766
+instructions  182331731730        -0.03%
+cycles         52190066353        -0.46%

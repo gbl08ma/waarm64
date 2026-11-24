@@ -1018,19 +1018,26 @@ pub fn module(
         //
         // Flags likewise (step 8.4): the first emission finds the members
         // whose flags are dead at entry, and what lazy flags the edges carry.
+        //
+        // An emission is a function of its arguments (`plain`, the entry
+        // states): one with the arguments of the last is that one, kept
+        // (`last`) rather than emitted again. A region whose states settled
+        // ends with the emission that showed it, and a block whose first
+        // emission found no register plain, nor its flags dead, with that one.
         let n = r.blocks.len();
-        let mem = vec![In::Mem; n];
-        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem);
+        let (none, mem) = (vec![emit::Regs::default(); n], vec![In::Mem; n]);
+        let first = emit_region(&env, r, 0, &none, &mem);
         let plain = if r.looped() {
             0
         } else {
             first.c.read & !first.c.reused
         };
+        let dead = first.dead.clone();
         let settle = |x: &Emission| -> (Vec<emit::Regs>, Vec<In>) {
             let regs = x.into.iter().map(|s| s.merge(*s, plain)).collect();
             let flags = (0..n)
                 .map(|j| match x.flags[j] {
-                    _ if first.dead[j] => In::Dead,
+                    _ if dead[j] => In::Dead,
                     In::Lazy(k, sf) if j > 0 => In::Lazy(k, sf),
                     _ => In::Mem,
                 })
@@ -1038,12 +1045,23 @@ pub fn module(
             (regs, flags)
         };
         let (mut entry, mut flags) = settle(&first);
+        let mut last = Some((0, none, mem, first));
+        let emit = |last: &mut Option<Last>, plain, entry: &[_], flags: &[_]| {
+            if let Some((p, e, f, x)) = last.take()
+                && (p, &e[..], &f[..]) == (plain, entry, flags)
+            {
+                return x;
+            }
+            emit_region(&env, r, plain, entry, flags)
+        };
         if n > 1 {
             let mut settled = false;
             for _ in 0..4 {
-                let next = settle(&emit_region(&env, r, plain, &entry, &flags));
+                let x = emit(&mut last, plain, &entry, &flags);
+                let next = settle(&x);
                 if next == (entry.clone(), flags.clone()) {
                     settled = true;
+                    last = Some((plain, entry.clone(), flags.clone(), x));
                     break;
                 }
                 (entry, flags) = next;
@@ -1054,10 +1072,10 @@ pub fn module(
                 entry = entry.iter().map(|s| s.loose()).collect();
             }
         }
-        let mut x = emit_region(&env, r, plain, &entry, &flags);
+        let mut x = emit(&mut last, plain, &entry, &flags);
         if x.bad {
             // The lazy states didn't settle: flags in memory on every edge.
-            let dead = |j: usize| if first.dead[j] { In::Dead } else { In::Mem };
+            let dead = |j: usize| if dead[j] { In::Dead } else { In::Mem };
             x = emit_region(
                 &env,
                 r,
@@ -1157,6 +1175,10 @@ impl In {
 /// member's flags are dead at its entry, and whether an edge carried lazy
 /// flags other than its member's entry state (then emitted again, flags in
 /// memory).
+/// An emission with the arguments it was emitted with (`plain`, the entry
+/// states: [`emit_region`]).
+type Last = (u64, Vec<emit::Regs>, Vec<In>, Emission);
+
 struct Emission {
     c: emit::Func,
     inl: u32,

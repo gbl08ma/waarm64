@@ -1,0 +1,6 @@
+smp_user_jit_n4_compress         base 1148-1176  new 1116-1144  -3.3% no overlap
+smp_user_jit_n4_lua              base 2337-2712  new 2368-2431  +0.1% overlap
+smp_user_jit_n4_churn            base 719-724  new 717-740  +1.9% overlap
+smp_user_jit_n4_sqlite           base 1709-1862  new 1686-1792  -1.1% overlap
+smp_user_jit_n4_total            base 10690-10973  new 10552-10783  -0.9% overlap
+smp_user_jit_n4_total_cpu_ms     base 33329-33452  new 33091-33501  +0.2% overlap

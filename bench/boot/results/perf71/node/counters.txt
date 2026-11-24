@@ -1,0 +1,18 @@
+workload node
+n {'base': 12, 'new': 12}
+                      base           new
+blocks               21580        +0.00%
+modules               1461        +0.00%
+bytes             50004455        +0.00%
+regionBlocks         99837        +0.00%
+tierUps               1673        +0.00%
+decSteps         504474364        +0.00%
+locks              1609751        +0.00%
+flushes                  0             0
+emitNs           727973888        -5.47%
+planNs           392019200        +0.34%
+compileNs        219688704        +0.47%
+dispatches        19215913        +0.00%
+footMiB               1237          1493
+instructions  232745349585        -0.23%
+cycles         67829111216        +0.20%

@@ -158,6 +158,12 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
     dev VM has no x86 Chromium. The FMA forms took relaxed SIMD's other useful op (jit.md "Floating point").
   The same shader's guest loads spend ~11% on the TLB's tag load (a translation memo in locals lost: [jit.md](jit.md)
   "Tried and not kept").
+- **Regions whose entry states never settle** (`block::module`, [jit.md](jit.md) "Emission"; `bench/boot/REPORT.md`
+  "PERF loop 71"): 20-30% of the regions of several blocks never settle in the four iterations, and their six
+  emissions each are 53-62% of the members emitted (emission is 163 ms of the boot gate on the Mac, 1.44 s of a
+  pages session). None comes back to an earlier state, so no pass repeats. Fewer iterations, or loosening (`Regs::loose`)
+  after two, would cut up to a third of that, but it changes the code those regions get: count first what the
+  iterations change between them, then an A/B of both the code (`node`, the gates) and `emitNs`.
 - **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds
   checks V8 keeps on Linux arm64. Don't fit the design to it.
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering

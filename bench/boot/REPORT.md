@@ -8545,3 +8545,72 @@ measured: the threshold trades the renderer's compile cycles against the compile
 doubling ~7% of `node`'s cycles, a fifth to a quarter of the wasm, half again as many interpreted steps), and the
 vCPU's time is best between 1000 and 2000. Untried: a floor of ~1400, a higher floor only for blocks seen after the
 boot's first compile burst (the boots' loss is cold code).
+
+## PERF loop 71: a region's last emission when it repeats the one before (2026-11-24)
+
+Queue row 7: `block::module` emits a function more than once. A first emission finds the plain registers, the
+members' entry states and dead flags. A region of several blocks is then emitted until its entry states settle (at
+most four times), then once more with what settled. That last emission's arguments are those of the emission that
+showed the states settled, so it repeated that one, and a single block whose second emission has the first's
+arguments (nothing plain, flags not dead, no state carried) emitted twice alike. **Kept:** an emission whose
+arguments (`plain`, the entry register and flag states) are the last emission's is that one, kept, not emitted again
+(core/src/jit/block.rs). The modules are byte for byte the same; no ABI or step change (ABI 74, `tests/steps.txt`
+unchanged). Data: `bench/boot/results/perf71/` (README). M4 Mac mini, macOS 26.6.2, Chrome for Testing
+158.0.8127.88.
+
+**Counts** (a diagnostic core that emits each kept emission again and asserts the two identical, on the dev VM's
+Chromium: `counts/passes.txt`; no assertion failed on `boot`, `user`, `node` or `smp`). Counted per member emitted
+(an emission of an n-block region counts n), the repeated last pass was 10.4% of the members emitted on `boot`, 10.2%
+on `user`, 8.1% on `node` and 9.0% on `smp`:
+
+| | functions | of several blocks | their passes: 3 / 4 / 5 / 6 | never settled | single blocks emitted twice alike |
+|---|---|---|---|---|---|
+| `boot` | 5564 | 2916 | 34 / 22 / 14 / 30% | 594 | 588 of 2648 (22%) |
+| `user` | 7653 | 3946 | 35 / 22 / 14 / 30% | 819 | 773 of 3707 (21%) |
+| `node` | 21580 | 9385 | 28 / 22 / 12 / 39% | 2789 | 1770 of 12195 (15%) |
+| `smp` | 44916 | 16149 | 31 / 22 / 12 / 35% | 4477 | 4236 of 28767 (15%) |
+
+The brief's estimate (three emissions where two would do) assumed all of emission could shrink by a third. The
+cost sits elsewhere: **regions whose states never settle** (6 emissions each, no repeat to skip) are 20-30% of the
+regions of several blocks but 53% of the members emitted on `boot` and 62% on `node` (`counts/cycles.txt`, a second
+diagnostic). None of them returned to an earlier state within the four iterations, so no cycle lets a pass be
+skipped without changing the code. Cutting those passes (fewer iterations, or loosening the entry states earlier)
+changes the emitted code and would be an A/B of its own; it is in docs/backlog.md.
+
+**Byte for byte:** `bench/jit/dump-modules.ts` on Buildroot's boot (43 modules) and Alpine's (317): every module
+identical between base and new (`dump/`).
+
+**The Mac** (`emitNs` against the base; time and cycles from the paired command):
+
+| | pairs | wall | cycles | instructions | `emitNs` |
+|---|---|---|---|---|---|
+| `node` | 12 | −0.01% [−0.54, +0.52] `open` | +0.04% `same` | −0.22% `LOWER` | 728 → 688 ms (−5.5%) |
+| `user` | 12 | −0.48% [−1.22, +0.26] `open` | −0.20% `open` | −0.04% `same` | 243 → 224 ms (−8.0%) |
+| `boot` | 9 | **−0.44% [−0.77, −0.11] `LOWER`** | −0.37% `LOWER` | −0.46% `LOWER` | 176 → 163 ms (−7.5%) |
+
+JIT wasm, modules, interpreted steps and `compileNs` are equal in every workload. The footprint is bimodal in both
+arms alike: on `node` it is about 1230 or about 1490 MiB depending on the pages' order, in either arm.
+
+- The parallel boots (3 rounds alternated): `smp_alpine_jit` totals −0.1% (n1), +0.1% (n2), −0.6% (n4), all within
+  the rounds' spread but n4, whose ranges just miss each other (4752-4775 against 4778-4787 ms). In
+  `smp_user_jit_4` the compress phase was +11.6% with no overlap in the first three rounds (one sample of 1449 ms) and
+  −3.3% with no overlap in three more; its totals were +1.4% and −0.9%, overlapping. That is the multi-vCPU phases'
+  noise, not the change. Peak RSS was the same (1532-1667 against 1646-1667 MiB, 2020-2055 against 2020-2041).
+- Firefox's pages session (`PAGES=wiki,mdn`, 3 sessions each, alternated): **emission 1522-1561 → 1438-1440 ms
+  (−6.0%, no overlap)**, waits for the cache's lock 586-662 → 549-572 ms; `pagesS` 33.1 against 32.5 s, busy MIPS
+  428 against 427, the starts 25.1 against 24.6 s (overlapping). The compiled share under churn was 96.85-96.90%
+  against 96.84-96.91%, `ready` 0.29-0.30 against 0.29-0.31 ms mean (p99 bucket 1 in both), no stall of 20 ms in
+  either (`pages/latency.txt`).
+
+**Why it is kept.** The change only removes work, the output is identical, and every measure agrees: `emitNs`
+−5.5 to −8% everywhere and boot `LOWER`. The time gains on `node` and the pages session are under the ~1% floor, as
+the counts predicted: the 40 ms saved is 0.4% of a `node` sample, and the 92 ms saved is 0.07% of the pages
+session's 138 s of renderer CPU. A byte-identical
+change that strictly removes work is kept on decided `emitNs` savings with no contradicting browser measure. It
+costs no memory: a function holds one more `Emission` while it settles, and drops it at the function's end.
+
+**Tests:** the JIT's unit tests and the byte check. A planted bug that keeps an emission when only `plain` and the
+flag states match, ignoring the register states, fails two unit tests (`a_loop_carried_scalar_keeps_its_shadow`,
+`a_region_is_a_loop_with_registers_across_its_edges`) and changes 26 of Buildroot's 43 modules. One that ignores the
+flag states changes nothing on either gate: no emission there has the last one's `plain` and register states with
+other flag states. The comparison stays anyway: an emission is a function of all three.

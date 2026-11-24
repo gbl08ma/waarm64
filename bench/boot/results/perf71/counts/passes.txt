@@ -1,0 +1,12 @@
+boot: 5564 functions (2916 of several blocks), 18077 emissions; single blocks 2648 (2 passes; the second repeats the first: 588, 22.2%)
+  several blocks by passes: 3: 1002 (34.4%), 4: 655 (22.5%), 5: 399 (13.7%), 6: 860 (29.5%), 7+: 0 (0.0%); unsettled 594, bad 0
+  block-emissions 125084, repeated 13054 (10.4%); emissions repeated 2910 of 18077 (16.1%, by count)
+user: 7653 functions (3946 of several blocks), 24682 emissions; single blocks 3707 (2 passes; the second repeats the first: 773, 20.9%)
+  several blocks by passes: 3: 1381 (35.0%), 4: 864 (21.9%), 5: 537 (13.6%), 6: 1164 (29.5%), 7+: 0 (0.0%); unsettled 819, bad 0
+  block-emissions 164948, repeated 16825 (10.2%); emissions repeated 3900 of 24682 (15.8%, by count)
+node: 21580 functions (9385 of several blocks), 67727 emissions; single blocks 12195 (2 passes; the second repeats the first: 1770, 14.5%)
+  several blocks by passes: 3: 2593 (27.6%), 4: 2016 (21.5%), 5: 1162 (12.4%), 6: 3614 (38.5%), 7+: 0 (0.0%); unsettled 2789, bad 0
+  block-emissions 491031, repeated 39667 (8.1%); emissions repeated 8366 of 67727 (12.4%, by count)
+smp: 44916 functions (16149 of several blocks), 130268 emissions; single blocks 28767 (2 passes; the second repeats the first: 4236, 14.7%)
+  several blocks by passes: 3: 4994 (30.9%), 4: 3598 (22.3%), 5: 1982 (12.3%), 6: 5575 (34.5%), 7+: 0 (0.0%); unsettled 4477, bad 0
+  block-emissions 881842, repeated 79118 (9.0%); emissions repeated 15908 of 130268 (12.2%, by count)
