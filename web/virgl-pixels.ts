@@ -145,9 +145,23 @@ export function readbackOf(
 /**
  * How a snapshot reads the formats `readbackOf` doesn't (the guest isn't told it can read them back; a snapshot must
  * keep them all the same): A4B4G4R4 as RGBA8 packed again into 4 bits a channel, R11G11B10_FLOAT as floats packed
- * into 11, 11 and 10-bit floats (both exact for the values the formats hold).
+ * into 11, 11 and 10-bit floats (both exact for the values the formats hold), the 16-bit normalized formats as shorts.
+ * Also how the host reads a resource for itself (`VirglRenderer.readResource`, `readExternalRows`).
  */
 export function snapshotReader(f: Format, floats: boolean): ReturnType<typeof readbackOf> {
+  if (f.type === GL.UNSIGNED_SHORT && f.kind === 'unorm') {
+    // 16-bit normalized (EXT_texture_norm16): read as four shorts, the format's own kept.
+    const comps = f.bpp / 2;
+    return {
+      format: E.RGBA,
+      type: GL.UNSIGNED_SHORT,
+      bytes: 8,
+      pack: (s, d, w) => {
+        if (comps === 4) return d.set(s.subarray(0, w * 8));
+        for (let x = 0; x < w; x++) for (let b = 0; b < comps * 2; b++) d[x * comps * 2 + b] = s[x * 8 + b];
+      },
+    };
+  }
   if (f.type === GL.UNSIGNED_SHORT_4_4_4_4 && f.kind === 'unorm') {
     return {
       format: E.RGBA,

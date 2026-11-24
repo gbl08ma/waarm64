@@ -37,6 +37,8 @@ test('a Venus image reaches the virgl renderer\'s texture byte for byte, once ea
     const m = r[mode] as Record<string, string> | string;
     if (typeof m === 'string') { assert.notEqual(mode, 'readback', m); continue; }
     for (const k of ['first', 'x', 'rgba', 'float', 'unwritten', 'written', 'blit', 'blitRows', 'blitUnwritten', 'blitWritten', 'rgb565', 'bgr10']) assert.equal(m[k], 'same', `${mode}: ${k}: ${m[k]}`);
+    // A 16-bit normalized image (mpv's swapchain on Vulkan), where the adapter and WebGL2 have such textures.
+    assert.match(m.unorm16, /^(same|skipped: )/, `${mode}: unorm16: ${m.unorm16}`);
     assert.equal(m.log, 'none', `${mode}: the renderer's errors`);
     assert.equal(m.check, 'kept', `${mode}: the check`);
   }

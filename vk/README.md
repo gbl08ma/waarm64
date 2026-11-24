@@ -1368,6 +1368,10 @@ image into the virgl texture made at the import (web/virgl-objects.ts `ExternalR
   in red) and R5G6B5's (`rgba8unorm`) hold colours, not virgl's bytes. Where the texture's bytes aren't virgl's, the
   readback way and the check first draw the image into a texture of virgl's bytes (`storedOf`: `rgb10a2unorm` swizzled,
   5-6-5 packed into `r16uint`); the GPU ways draw it swizzled into their canvas as before, and WebGL converts.
+  Where the adapter has `texture-formats-tier1` and WebGL2 `EXT_texture_norm16` (the M4, NVIDIA; not SwiftShader), the
+  WSI also offers R16G16B16A16_UNORM, which mpv on Vulkan takes (its default): its `rgba16unorm` texture holds virgl's
+  bytes and goes the readback way whatever the mode (`readbackOnly`: from a bitmap or a canvas, `texSubImage2D` leaves a
+  16-bit normalized texture as it was, and the check then dropped the GPU ways for every surface).
 - **Not NVIDIA's vendor ID:** the device reports the adapter's maker as its vendor (web/venus-caps.ts `VENDORS`), but
   never NVIDIA's 0x10de: Venus's guest driver (Mesa 26's `vn_wsi_init`) then takes the device for Venus on NVIDIA's own
   driver, which can't render to linear images, and its WSI renders into an optimal image and copies each frame into a
@@ -1444,7 +1448,7 @@ of 5 rounds, IQR ≤ 0.07 ms; `bench/vulkan/results/vk2/l4/`):
 1080p screen on the M4 holds 60 frames/s both ways; the bitmap way takes ~0.08 ms of the GPU worker's thread a frame,
 the readback way ~0.7 ms and holds the compositor's submit up to 8 ms (bench/vulkan/REPORT.md "VK2 L4").
 
-`tests/venus-share.test.ts` checks the bytes every way, R5G6B5's and A2R10G10B10's packed textures among them (the GPU ways only where the page doesn't render in software:
+`tests/venus-share.test.ts` checks the bytes every way, R5G6B5's and A2R10G10B10's packed textures among them and, where the browser has them, a 16-bit normalized image (exact in every mode, no GPU way dropped for it; its rule in Node, `tests/venus-share-node.test.ts`) (the GPU ways only where the page doesn't render in software:
 on the Mac, not in the dev VM), the check's fallback with the GPU ways broken (everywhere) and its verdicts (Node);
 `tests/page-venus.test.ts` checks vkcube's frames on a GLES sway with grim, the page's GPU ways broken so its check
 falls back to the readback way. `bench/vulkan/present.ts` compares the page's screen (`window.__waarm64Grab`: the

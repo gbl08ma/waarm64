@@ -11,6 +11,7 @@
 //   canvas    the same draw, then texSubImage2D from the canvas itself.
 //   readback  copyTextureToBuffer, mapAsync, texSubImage2D from the bytes: through the CPU, and asynchronous, so the
 //             compositor's submit is held (as for a video picture: `VirglRenderer.externalWait`) until they arrive.
+//             A 16-bit normalized image (mpv's swapchain on Vulkan) goes this way whatever the mode (`readbackOnly`).
 // The GPU ways need a browser whose WebGPU canvases work beside WebGL2 (SwiftShader's in headless Chromium has none:
 // its swap chain's shared image can't be made, and the GPU channel is lost), so they are tried unless the page renders
 // in software (`shareWays`), and they are checked when they start: the first copies of a GPU way are held while a few
@@ -75,12 +76,14 @@ const TOLERANCE = 1.5 / 255;
 /** A check whose sampled texels are all darker than this says nothing (a black frame looks the same either way). */
 const DARK = 8 / 255;
 
-/** How texels decode (`decode`): 8-bit channels, 10-10-10-2 packed, half floats, or 5-6-5 in 16 bits (R high). */
-type Kind = 8 | 10 | 16 | 565;
+/** How texels decode (`decode`): 8-bit channels, 10-10-10-2 packed, half floats, 5-6-5 in 16 bits (R high), or 16-bit
+ * normalized channels. */
+type Kind = 8 | 10 | 16 | 565 | 'unorm16';
 
 /** The texture formats of WSI images whose samples are the image's colours: a packed format's texture holds them as
  * values (the driver's `WG_FMT_PACKED`: R5G6B5 an `rgba8unorm` texture, A2R10G10B10 an `rgb10a2unorm` one with R in
- * red). The surface formats the desktop guest's WSI offers under sway: these and those two (VK4 T48). */
+ * red). The surface formats the desktop guest's WSI offers under sway: these and those two (VK4 T48);
+ * `rgba16unorm` where the adapter has texture-formats-tier1 and WebGL2 `EXT_texture_norm16` (mpv on Vulkan takes it). */
 const SAMPLED = new Set<string>([
   'bgra8unorm',
   'bgra8unorm-srgb',
@@ -88,6 +91,7 @@ const SAMPLED = new Set<string>([
   'rgba8unorm-srgb',
   'rgb10a2unorm',
   'rgba16float',
+  'rgba16unorm',
 ]);
 
 /**
@@ -111,11 +115,21 @@ export function stored(
     swizzle += 'rgba'[j < 0 ? 3 : j];
   }
   const target: GPUTextureFormat =
-    kind === 8 ? 'rgba8unorm' : kind === 10 ? 'rgb10a2unorm' : kind === 16 ? 'rgba16float' : 'r16uint';
+    kind === 8
+      ? 'rgba8unorm'
+      : kind === 10
+        ? 'rgb10a2unorm'
+        : kind === 16
+          ? 'rgba16float'
+          : kind === 'unorm16'
+            ? 'rgba16unorm'
+            : 'r16uint';
   const linear = texture.replace('-srgb', '');
   const raw =
     (linear === target && swizzle === 'rgba') || (linear === 'bgra8unorm' && kind === 8 && swizzle === 'bgra');
-  return { swizzle, kind, bytes: kind === 16 ? 8 : kind === 565 ? 2 : 4, target, raw };
+  // A 16-bit normalized texture exists only with texture-formats-tier1: only an image that is one is stored as one.
+  if (kind === 'unorm16' && linear !== target) return undefined;
+  return { swizzle, kind, bytes: kind === 16 || kind === 'unorm16' ? 8 : kind === 565 ? 2 : 4, target, raw };
 }
 
 /**
@@ -146,7 +160,8 @@ function unhalf(h: number) {
 
 /**
  * Texels' channels in memory order (the stored channels both renderers agree on), each in [0, 1] and clamped: 4 a
- * texel. `kind`: 8 for 8-bit channels, 10 for 10-10-10-2 packed, 16 for half floats, 565 for 5-6-5 (alpha 1).
+ * texel. `kind`: 8 for 8-bit channels, 10 for 10-10-10-2 packed, 16 for half floats, 565 for 5-6-5 (alpha 1),
+ * 'unorm16' for 16-bit normalized channels.
  */
 function decode(bytes: Uint8Array, texels: number, kind: Kind): Float32Array {
   const out = new Float32Array(texels * 4);
@@ -161,7 +176,8 @@ function decode(bytes: Uint8Array, texels: number, kind: Kind): Float32Array {
       } else if (kind === 10) {
         const w = dv.getUint32(i * 4, true);
         v = c < 3 ? ((w >>> (10 * c)) & 1023) / 1023 : (w >>> 30) / 3;
-      } else v = unhalf(dv.getUint16(i * 8 + c * 2, true));
+      } else if (kind === 'unorm16') v = dv.getUint16(i * 8 + c * 2, true) / 65535;
+      else v = unhalf(dv.getUint16(i * 8 + c * 2, true));
       out[i * 4 + c] = Math.min(1, Math.max(0, Number.isNaN(v) ? 0 : v));
     }
   }
@@ -178,7 +194,18 @@ const glKind = (type: number, bpp: number): Kind | undefined =>
         ? 16
         : type === 0x8363 && bpp === 2
           ? 565
-          : undefined;
+          : type === 0x1403 && bpp === 8
+            ? 'unorm16'
+            : undefined;
+
+/**
+ * Whether a virgl format's images go the readback way whatever the mode: the 16-bit normalized ones, which WebGL2 takes
+ * from bytes only (from a bitmap or a canvas, `texSubImage2D` leaves an `EXT_texture_norm16` texture as it was).
+ */
+function readbackOnly(virgl: number) {
+  const f = FORMATS.get(virgl);
+  return !!f && glKind(f.type, f.bpp) === 'unorm16';
+}
 
 /**
  * The verdict of a check: the image's texels (`want`) against the virgl texture's (`got`), both decoded; `x`: the
@@ -383,7 +410,7 @@ export class VenusShare {
 
   /** Before a submit of the compositor's context runs (`VirglRenderer.external.refresh`): a GPU way copies now. */
   refresh(r: ExternalResource) {
-    if (this.mode === 'readback') return;
+    if (this.mode === 'readback' || readbackOnly(r.format)) return;
     const src = this.sourceOf(r);
     if (!src || src.written === (this.copied.get(r.id) ?? -1)) return;
     const t0 = performance.now();
@@ -412,12 +439,12 @@ export class VenusShare {
         return;
       }
     }
-    if (this.mode !== 'readback' && this.check.state !== 'checking') return;
     for (const r of externals) {
-      if (this.inFlight.has(r.id)) continue;
+      const bytes = this.mode === 'readback' || readbackOnly(r.format);
+      if ((!bytes && this.check.state !== 'checking') || this.inFlight.has(r.id)) continue;
       const src = this.sourceOf(r);
       if (!src || src.written === (this.copied.get(r.id) ?? -1)) continue;
-      if (this.mode === 'readback') this.readback(r, src);
+      if (bytes) this.readback(r, src);
       else this.copyChecked(r, src);
     }
   }

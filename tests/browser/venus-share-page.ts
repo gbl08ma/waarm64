@@ -37,6 +37,21 @@ function floats() {
   return b;
 }
 
+/** R16G16B16A16_UNORM texels: colours of all 16 bits, opaque. */
+function unorms() {
+  const b = new Uint16Array(W * H * 4);
+  for (let k = 0; k < W * H; k++) b.set([(k * 4099) & 65535, (k * 257 + 77) & 65535, (k * 31 + 5000) & 65535, 65535], k * 4);
+  return b;
+}
+
+/** Whether R16G16B16A16_UNORM texels match channel for channel, within `tol` of 1. */
+function sameUnorms(got: Uint8Array, want: Uint16Array, tol: number) {
+  const g = new Uint16Array(got.buffer, got.byteOffset, got.byteLength / 2);
+  if (g.length !== want.length) return `${g.length} channels for ${want.length}`;
+  for (let k = 0; k < want.length; k++) if (Math.abs(g[k] - want[k]) / 65535 > tol) return `channel ${k}: ${g[k]} for ${want[k]}`;
+  return 'same';
+}
+
 /** R5G6B5 values as an `rgba8unorm` texture holds them (the driver's packed texture: VK4 T48), each channel's bits
  * replicated into 8, and the B5G6R5 words virgl stores (R high). */
 function rgb565() {
@@ -85,7 +100,9 @@ function sameFloats(got: Uint8Array, want: Uint16Array, tol: number) {
 export async function run(modes: ShareMode[]) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
-  const device = await adapter.requestDevice();
+  // 16-bit normalized images (mpv's swapchain on Vulkan) need texture-formats-tier1 here and EXT_texture_norm16 in WebGL2.
+  const tier1 = adapter.features.has('texture-formats-tier1');
+  const device = await adapter.requestDevice(tier1 ? { requiredFeatures: ['texture-formats-tier1' as GPUFeatureName] } : {});
   const errors: string[] = [];
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const gl0 = new OffscreenCanvas(1, 1).getContext('webgl2')!;
@@ -138,7 +155,14 @@ export async function run(modes: ShareMode[]) {
     const c565 = rgb565(), c10 = bgr10();
     put(13, c565.texels);
     put(14, c10.texels);
-    await submit([...setType(7, 1), ...setType(8, 2), ...setType(9, 67), ...setType(10, 236), ...setType(11, 1, BLIT), ...setType(12, 67), ...setType(13, 7, W * 2), ...setType(14, 131)]);
+    // R16G16B16A16_UNORM from an rgba16unorm texture: by readback whatever the way, so exact, and no GPU way dropped for it.
+    const norm16 = tier1 && !!gl.getExtension('EXT_texture_norm16');
+    const pn = unorms();
+    if (norm16) {
+      sources.set(15, { texture: tex('rgba16unorm' as GPUTextureFormat), written: 1 });
+      put(15, pn);
+    }
+    await submit([...setType(7, 1), ...setType(8, 2), ...setType(9, 67), ...setType(10, 236), ...setType(11, 1, BLIT), ...setType(12, 67), ...setType(13, 7, W * 2), ...setType(14, 131), ...(norm16 ? setType(15, 51, W * 8) : [])]);
     await submit([0]);
     const read = (id: number) => r.readResource(id)!;
     const same = (a: Uint8Array, b: Uint8Array, rgbOnly = false) => {
@@ -147,6 +171,7 @@ export async function run(modes: ShareMode[]) {
     };
     const res: Record<string, string> = { first: same(read(7), p1), x: same(read(8), px, true), rgba: same(read(9), p2), float: sameFloats(read(10), pf, mode === 'readback' ? 0 : 0.6 / 255), blit: same(read(11), p2), blitRows: same(read(12), p1),
       rgb565: sameWords(read(13), c565.words, 565, mode === 'readback' ? 0 : 1.5 / 31), bgr10: sameWords(read(14), c10.words, 10, mode === 'readback' ? 0 : 1.5 / 255) };
+    res.unorm16 = norm16 ? sameUnorms(read(15), pn, 0) : 'skipped: no 16-bit normalized textures here';
     // A buffer written but not said to be: not copied again; then said, copied.
     putBuffer(11, p1, BLIT);
     await submit([0]);

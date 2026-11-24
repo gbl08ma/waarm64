@@ -1,6 +1,6 @@
 // web/venus-share.ts's bookkeeping in Node, against fakes of WebGPU and the virgl renderer (the copies themselves are
 // tests/venus-share.test.ts's, in Chromium): a resource id the guest reuses starts afresh, and the GPU ways' canvases
-// (one per size) are let go of one at a time, unconfigured.
+// (one per size) are let go of one at a time, unconfigured; a 16-bit normalized image goes by readback in a GPU mode.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { VenusShare, type SharedTexture } from '../web/venus-share.ts';
@@ -122,4 +122,28 @@ test('venus-share: the GPU ways keep at most 8 canvases, the least recently used
   } finally {
     g.OffscreenCanvas = had;
   }
+});
+
+test('venus-share: a 16-bit normalized image goes the readback way whatever the mode', () => {
+  const renderer = fakeRenderer();
+  // The readback's buffer: mapped never (the copy's start is under test).
+  const device = new Proxy(fakeDevice(), {
+    get: (t, k) =>
+      k === 'createBuffer'
+        ? () => ({ mapAsync: () => new Promise(() => {}), mapState: 'pending', destroy: () => undefined })
+        : (t as unknown as Record<string | symbol, unknown>)[k],
+  });
+  const src: SharedTexture = { texture: texture(64, 64, 'rgba16unorm' as GPUTextureFormat), written: 1 };
+  const share = new VenusShare(device, 'bitmap', renderer as unknown as VirglRenderer, () => src);
+  const r = { id: 9, width: 64, height: 64, format: 51 } as ExternalResource; // R16G16B16A16_UNORM
+  renderer.externals = [r];
+  // When the compositor's submit arrives: its bytes are on their way, and the submit waits for them.
+  share.prepare(1);
+  assert.equal(share.stats.readbacks, 1);
+  assert.ok(renderer.waits.has(9));
+  // Before the submit runs, a GPU way copies nothing of it, and stays the way.
+  share.refresh(r);
+  assert.deepEqual([share.stats.bitmaps, share.stats.canvases, renderer.writes], [0, 0, 0]);
+  assert.equal(share.mode, 'bitmap');
+  assert.equal(share.stats.checks, 0);
 });

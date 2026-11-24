@@ -827,9 +827,9 @@ Firefox makes 10–25 resources a second, where the state is bounded by what the
   objects made on demand as always. Queries ended are settled first (the GPU worker polls them before it answers the
   save), their results already in the guest's memory; an occlusion query begun and not ended is begun again (what it
   counted before the snapshot is lost).
-- **Contents**, a level at a time, every layer: a buffer's CPU copy; a color texture through the read-back path (two
+- **Contents**, a level at a time, every layer: a buffer's CPU copy; a color texture through the read-back path (the
   formats the guest isn't offered read-back of through `snapshotReader`: A4B4G4R4 as RGBA8, R11G11B10_FLOAT as
-  floats); a format WebGL can't render to, its kept texels; a compressed one, its kept blocks; a multisampled color
+  floats, the 16-bit normalized ones as shorts); a format WebGL can't render to, its kept texels; a compressed one, its kept blocks; a multisampled color
   renderbuffer, resolved (a load draws it into every sample). Depth and stencil can't be read with `readPixels`: each
   layer is blitted to a 2D texture of its format (resolving samples), its depths drawn as float bits into R32UI, its
   stencil a bit a pass; a load draws them back with `drawZs`. A 16-bit depth is written a quarter step up

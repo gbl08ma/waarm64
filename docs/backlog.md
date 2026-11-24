@@ -585,11 +585,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   own trace categories (`dawn.validation`, per-command timings) at both commits, which would name the slower command.
 - [B, C] **Presentation's gaps** (VK2 L4, VK4 T48; vk/README.md "Presentation"): [B] a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
-  screen to draw a WebGPU texture); a WSI format `stored` (web/venus-share.ts) has no way for isn't shared (a warning, a black window): the 4444 and 5551
-  formats, which the guest's sway doesn't offer today, and R16G16B16A16_UNORM, which it does and **mpv 0.42 on Vulkan
-  takes, its default: its window is black** on the M4 and on NVIDIA (2026-11-24, `mpv-frames.ts` with `GRAB=1`: mpv's own
-  screenshot right, the page's screen 0, "a rgba16unorm image isn't shared as virgl's format R16G16B16A16_UNORM";
-  `--vo=gpu --gpu-api=opengl` shows it); nor a prime blit's buffer of R5G6B5 (X11's WSI; `bufferFormat`
+  screen to draw a WebGPU texture); a WSI format the guest's sway doesn't offer today isn't shared (the 4444 and 5551
+  formats: a warning, a black window); a 16-bit normalized image (mpv on Vulkan's swapchain) goes the readback way
+  only, its compositor's submit held for the bytes (a GPU way would need the bitmap in an RGBA8 texture and a blit
+  into the 16-bit one; not measured); nor a prime blit's buffer of R5G6B5 (X11's WSI; `bufferFormat`
   has no 16-bit texture of its bytes); [C] a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
   way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); [B] the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).

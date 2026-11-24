@@ -660,7 +660,7 @@ export class VirglRenderer {
     if (!r?.external || r.dead || !r.tex) return null;
     const rows: Uint8Array[] = [];
     for (const y of ys) {
-      const row = this.readback(r, 0, { x: 0, y, z: 0, w, h: 1, d: 1 }, 0, 0);
+      const row = this.readback(r, 0, { x: 0, y, z: 0, w, h: 1, d: 1 }, 0, 0, this.hostReader(r));
       if (!row) return null;
       rows.push(row);
     }
@@ -959,7 +959,9 @@ export class VirglRenderer {
               ? new Int32Array(tmp.buffer)
               : reader.type === E.UNSIGNED_INT_2_10_10_10_REV
                 ? new Uint32Array(tmp.buffer)
-                : tmp;
+                : reader.type === E.UNSIGNED_SHORT
+                  ? new Uint16Array(tmp.buffer)
+                  : tmp;
       gl.readPixels(box.x, box.y, box.w, box.h, reader.format, reader.type, view);
       for (let y = 0; y < box.h; y++)
         reader.pack(
@@ -4528,6 +4530,11 @@ void main() {
   readResource(id: number): Uint8Array | null {
     const r = this.resources.get(id);
     if (!r) return null;
-    return this.readback(r, 0, { x: 0, y: 0, z: 0, w: r.width, h: r.height, d: 1 }, 0, 0);
+    return this.readback(r, 0, { x: 0, y: 0, z: 0, w: r.width, h: r.height, d: 1 }, 0, 0, this.hostReader(r));
+  }
+
+  /** How the host reads a resource for itself: also the formats the guest isn't told it can read back. */
+  private hostReader(r: Res) {
+    return r.fmt && (readbackOf(r.fmt, this.colorBufferFloat) ?? snapshotReader(r.fmt, this.colorBufferFloat));
   }
 }
