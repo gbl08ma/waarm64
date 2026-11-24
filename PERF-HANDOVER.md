@@ -121,8 +121,7 @@ replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried an
 
 ## State (2026-11-24, after loop 71)
 
-**The user is away for the rest of 2026-11-24: work autonomously, no decision prompts or questions; settle choices by
-measurement and the decision rules, and report at the end.** Loop 71 (row 7) **kept the repeated last emission's
+**Paused 2026-11-24 after loop 71, at the user's request: start no loop until they resume the track.** Loop 71 (row 7) **kept the repeated last emission's
 removal** (bench/boot/REPORT.md "PERF loop 71", `bench/boot/results/perf71/`). An emission whose arguments are the
 last one's is that one, kept. The modules are byte for byte the same, `emitNs` is 5.5-8% lower on the Mac (`node`,
 the gates) and 6% lower in the pages session, and the boot gate is −0.44% `LOWER`; the rest even. Unsettled regions,
@@ -132,7 +131,7 @@ connection that holds domains…" ("a new key", the key read before it changed).
 said not to rerun the whole CI for it. Loop 67's warm-up is not landed; the local branches `perf67-warmup` and
 `perf-smp-warm` stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The review branch
 `review/jit-warmup` on origin is moot: the supervisor may delete it.
-**Next:** row 8. `target/snapbench/pages.waarm64snap` loads into the current state layout;
+**Next, on resuming:** an out-of-context review of loop 71's emission memo (`block::module`), then row 8. `target/snapbench/pages.waarm64snap` loads into the current state layout;
 `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
