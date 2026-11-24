@@ -5,7 +5,7 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { statSync } from 'node:fs';
-import { copyFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sirv from 'sirv';
@@ -161,9 +161,13 @@ const rootPage = (): Plugin => ({
   },
 });
 
+/** The page's address in its head, as web/app/index.html writes it. */
+const OG_URL = '<meta property="og:url" content="https://waarm64.com/"';
+
 /**
- * The demo store's page in the copy: `demos.html`, the built `index.html` as it is, beside it (docs/frontend.md "A
- * static copy"). A host serves it at `/demos` (Cloudflare's `auto-trailing-slash`, Vite's preview server), one segment
+ * The demo store's page in the copy: `demos.html`, the built `index.html` beside it (docs/frontend.md "A static
+ * copy"), with its own address in the head's `og:url` (what a shared link's preview links to) and nothing else changed.
+ * A host serves it at `/demos` (Cloudflare's `auto-trailing-slash`, Vite's preview server), one segment
  * deep, so its `./assets/…` are the page's; the page tells the store's page by its path (web/app/demos-route.ts).
  */
 const demosPage = (): Plugin => ({
@@ -171,9 +175,10 @@ const demosPage = (): Plugin => ({
   apply: 'build',
   writeBundle: async (o) => {
     if (!o.dir) return;
-    await copyFile(join(o.dir, 'index.html'), join(o.dir, 'demos.html'));
+    const html = await readFile(join(o.dir, 'index.html'), 'utf8');
+    if (!html.includes(OG_URL)) throw new Error('web/app/index.html has no og:url of the site: update demosPage');
     // The introduction's way in, `/intro`, alike (web/app/intro-route.ts).
-    await copyFile(join(o.dir, 'index.html'), join(o.dir, 'intro.html'));
+    for (const name of ['demos', 'intro']) await writeFile(join(o.dir, `${name}.html`), html.replace(OG_URL, OG_URL.replace('/"', `/${name}"`)));
   },
 });
 

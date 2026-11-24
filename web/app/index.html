@@ -6,9 +6,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>waarm64</title>
+<!-- What a search engine and a link's preview show (Open Graph, which the messaging services read too; X's card).
+     Their readers run no script, so the words are here and not the catalog's: the introduction's headline
+     (web/messages/en/intro.json IntroHero.headline) and its first paragraphs in short; keep them alike. The addresses
+     are whole, as the readers want them, and waarm64.com's wherever the page is served from. The picture is
+     tools/social-card.ts's, in public/ under a name without a hash. -->
+<meta name="description" content="A whole-system AArch64 emulator that runs in your browser. It boots unmodified ARM Linux images through UEFI, compiling their code to WebAssembly as it runs: fast enough for a desktop with 3D, video, sound, networking and USB. Nothing is installed, and nothing runs on a server.">
+<meta name="theme-color" content="#262624">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="waarm64">
+<meta property="og:title" content="waarm64: a whole 64-bit ARM computer in a browser tab">
+<meta property="og:description" content="An emulator of the hardware, not of an operating system: unmodified ARM Linux boots in your browser, compiled to WebAssembly as it runs. Desktops with 3D, video, sound, networking and USB, on your computer and not on a server.">
+<meta property="og:url" content="https://waarm64.com/">
+<meta property="og:image" content="https://waarm64.com/social-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="waarm64: a whole 64-bit ARM computer in a browser tab. Beside the words, a small machine's screen with a picture drawn on it, and its Linux shell.">
+<meta name="twitter:card" content="summary_large_image">
 <!-- The icon: a lit w on a key of the panel, its edges on whole pixels at 16 px, steam over it (waarm64, warm); the
      panel's colors (theme/tokens.css: the bar, the accent), written out since a data URI reads no token. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%23262624'/%3E%3Cpath shape-rendering='crispEdges' fill='%23fa6432' d='M3 7h2v5h2V7h2v5h2V7h2v7H3z'/%3E%3Cpath fill='none' stroke='%236e6e67' stroke-width='1.1' stroke-linecap='round' d='M6 5.6C7.6 4 4.4 2.5 6 .9M10 5.6C8.4 4 11.6 2.5 10 .9'/%3E%3C/svg%3E">
+<!-- The same icon as a PNG (tools/social-card.ts), for what takes no SVG: a phone's home screen, some previews. -->
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="./theme/tokens.css">
 <link rel="stylesheet" href="./theme/base.css">
 <!-- The page's look is the theme's (tokens, element defaults) and its components'. These rules are the fallback's

@@ -2848,15 +2848,21 @@ stops if a binary is missing, Vulkan's renderer among them), then builds the pag
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the
   page is.
-- `intro.html`, the same copy again: the introduction's way in, `/intro`, which the page rewrites to its own address
+  **Its head says what a shared link shows**: a description, Open Graph's tags (title, description, address, picture)
+  and X's card, static words since their readers run no script (the introduction's headline and first paragraphs in
+  short: keep them alike), with whole `https://waarm64.com/` addresses wherever the copy is served from.
+- `intro.html`, the same copy with `/intro` as its head's address (`og:url`): the introduction's way in, `/intro`, which the page rewrites to its own address
   with `#intro` at its load (web/app/intro-route.ts `introFromPath`), so leaving it and a reload go by the fragment.
-- `demos.html`, the built `index.html` as it is (vite.config.ts `demosPage`), the demo store's page at `/demos` (above,
+- `demos.html`, the built `index.html` with `/demos` as its head's address (vite.config.ts `demosPage`), the demo store's page at `/demos` (above,
   "The demo store"): Cloudflare's `auto-trailing-slash` and Vite's preview server serve it there, one segment deep, so
   its `./assets/…` are the page's (not `demos/index.html`, served at `/demos/`, where they would be `/demos/assets/`).
 - From `web/app/public/`, copied as they are: `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and
   `.htaccess` (Apache) with the two headers (and, for Apache, the agent's `.gz` as `application/gzip` with no
   `Content-Encoding`, which would have the browser decode it; Vite's servers likewise: vite.config.ts `plainGzip`;
-  a server that decodes it all the same costs only the page's own gzip of the ELF it gets), `.nojekyll`, and `web/app/index.html`, which redirects to the root with
+  a server that decodes it all the same costs only the page's own gzip of the ELF it gets), `.nojekyll`, the head's pictures under names
+  without a hash (`social-card.png`, 1200x630, the picture of a shared link; `apple-touch-icon.png`, the icon for what
+  takes no SVG; both rendered from `tools/social-card/card.html` by `node tools/social-card.ts` and committed: run it
+  after changing the card), and `web/app/index.html`, which redirects to the root with
   the query and fragment (the page was there until 2026-10-23).
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
   firmware's), `VENUS-LICENSES.txt` (Vulkan's renderer's: virglrenderer, Mesa, wasi-sdk's libraries; vk/build.sh
