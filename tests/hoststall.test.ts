@@ -32,7 +32,7 @@ for (const on of ['clock', 'install'] as const) {
     assert.match(m, /^Error: vCPU 0: /, m); // the waiting vCPU panicked, not the stalled one
     assert.match(m, /core panic: .*vCPU 0: DSB waited 10 s for TLBI IS/s, m);
     // The waited vCPU: RUN (1), nothing applied, the retired count and PC as it froze, the lock's state.
-    assert.match(m, /vCPU 1: state 1 applied 0 waited-for 1 queued 1 \(queue: 1 tlb, all false\) pending true waiting false retired (\d+) -> \1 pc (0x[0-9a-f]+) -> \2\n/, m);
+    assert.match(m, /vCPU 1: state 1 applied 0 waited-for 1 queued 1 \(queue: 1 tlb, collapsed No\) pending true waiting false retired (\d+) -> \1 pc (0x[0-9a-f]+) -> \2\n/, m);
     assert.match(m, /waiter: 1\d{4} ms waiting of 1\d{4} ms wall; passes over 100 ms \(its own thread stalled\): 0 ms/, m);
     assert.match(m, /platform lock free/, m);
     // After the DSB limit, not before or long after (the stall lasts 20 s).

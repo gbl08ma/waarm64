@@ -347,7 +347,9 @@ fn block_counts_follow_their_block() {
 /// The TLB against a fresh walk, on tables remapped at random with the TLBIs
 /// Linux would send (one VA of a block for the block, each page's for
 /// pages): 1 GiB and 2 MiB blocks and pages in both halves, at VAs whose TLB
-/// indices coincide, read, written and fetched at EL1.
+/// indices coincide, some read-only (a read's walk must not let a write
+/// through, nor a remap to read-only without its TLBI), read, written and
+/// fetched at EL1.
 #[test]
 fn tlb_matches_a_fresh_walk_through_remaps() {
     const REGIONS: [u64; 4] = [
@@ -416,7 +418,8 @@ fn tlb_matches_a_fresh_walk_through_remaps() {
                     if d1 & 3 == 3 {
                         drop2(j, &mut draw, &mut flushes);
                     }
-                    let d = [0, BLOCK, 0x20_0000 | BLOCK, l3[r][j] | TABLE][draw(4) as usize];
+                    let d = [0, BLOCK, 0x20_0000 | BLOCK, l3[r][j] | TABLE, BLOCK | AP_RO]
+                        [draw(5) as usize];
                     p.r.mem.write(l2[r] + 8 * j as u64, 8, d).unwrap();
                 }
                 2 => {
@@ -425,7 +428,8 @@ fn tlb_matches_a_fresh_walk_through_remaps() {
                     if d1 & 3 == 3 && d2(j) & 3 == 3 {
                         flushes.push(base + ((j as u64) << 21) + (i << 12));
                     }
-                    let d = draw(RAM as u64 >> 12) << 12 | PAGE;
+                    let ro = if draw(3) == 0 { AP_RO } else { 0 };
+                    let d = draw(RAM as u64 >> 12) << 12 | PAGE | ro;
                     p.r.mem.write(l3[r][j] + 8 * i, 8, d).unwrap();
                 }
                 _ => {
@@ -1061,7 +1065,7 @@ fn spill_memory_pages() {
     assert_eq!(b.read(&c, 0x1008, 8), Ok(0x1122_3344_5566_7788));
     assert_eq!(b.read(&c, 0x100c, 4), Ok(0x1122_3344));
     assert_eq!(b.read(&c, 0x1008, 1), Ok(0x88));
-    assert_eq!(b.tlb.as_ref().unwrap().stats.walks, walks + 1); // the read array's first fill
+    assert_eq!(b.tlb.as_ref().unwrap().stats.walks, walks); // the write's walk filled the read array too
     let e = b.tlb.as_ref().unwrap().e[1].0[3 + Use::Read as usize];
     assert_eq!(e.tag & 0xfff, 0xfff ^ 1 << 3);
     // Page-crossing accesses between memory 0 and the spill memory, both ways.
@@ -1267,4 +1271,144 @@ fn a_block_flush_drops_transfer_cache_entries_filled_from_hits() {
             assert!(!live(&v.tlb, VA + 0x3000, 3), "drop {n}, evicted {evict}");
         }
     }
+}
+
+/// A data access's walk fills the same EL's other data array too, with what the walk permits: a write after a
+/// read of a page (or a read after a write) doesn't walk again, a read-only page's write still faults, and a
+/// TLBI drops both entries.
+#[test]
+fn a_walk_fills_the_sibling_data_array() {
+    const NG: u64 = 1 << 11;
+    const DEV: u64 = 2 << 2;
+    let mut p = Pt::new();
+    p.map(0x1000, 3, 0x9000 | PAGE); // EL1 RW
+    p.map(0x2000, 3, 0xa000 | PAGE | AP_RO); // EL1 RO
+    p.map(0x3000, 3, 0xb000 | PAGE | AP_EL0_RO);
+    p.map(0x4000, 3, 0xc000 | PAGE | AP_EL0_RW | NG);
+    p.map(0x5000, 3, 0xd000 | PAGE | DEV); // Device memory that is RAM
+    p.map(0x4000_0000, 2, 0x20_0000 | BLOCK);
+    let l3 = {
+        let l0 = p.r.mem.read(ROOT0, 8).unwrap() & OA_MASK;
+        let l1 = p.r.mem.read(l0, 8).unwrap() & OA_MASK;
+        p.r.mem.read(l1, 8).unwrap() & OA_MASK
+    };
+    let c = cpu();
+    let c0 = {
+        let mut c = cpu();
+        c.set_pstate(M_EL0T);
+        c
+    };
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    let walks = |b: &Mmu| b.tlb.as_ref().unwrap().stats.walks;
+    let perm = |addr| {
+        Err(Fault {
+            addr,
+            access: Access::Write,
+            kind: FaultKind::Permission(3),
+        })
+    };
+    // A read, then a write without a walk; and the other way around.
+    assert_eq!(b.read(&c, 0x1010, 8), Ok(0));
+    assert!(b.fast(&c, 0x1010, 8, Use::Write).is_some());
+    assert_eq!(b.write(&c, 0x1010, 8, 7), Ok(()));
+    assert_eq!(walks(&b), 1);
+    b.flush_va(0x1000);
+    assert!(
+        b.fast(&c, 0x1010, 8, Use::Write).is_none() && b.fast(&c, 0x1010, 8, Use::Read).is_none()
+    );
+    assert_eq!(b.write(&c, 0x1010, 8, 8), Ok(()));
+    assert_eq!((b.read(&c, 0x1010, 8), walks(&b)), (Ok(8), 2));
+    // Made read-only between a read and a write, with its TLBI: the write faults.
+    b.flush_va(0x1000);
+    assert_eq!(b.read(&c, 0x1010, 8), Ok(8));
+    p.r.mem.write(l3 + 8, 8, 0x9000 | PAGE | AP_RO).unwrap();
+    b.flush_va(0x1000);
+    assert_eq!(b.write(&c, 0x1010, 8, 9), perm(0x1010));
+    assert_eq!(b.read(&c, 0x1010, 8), Ok(8));
+    // A read-only page's read fills no write entry, at either EL; EL0's walk fills no EL1 array.
+    assert_eq!(b.read(&c, 0x2010, 8), Ok(0));
+    assert!(b.fast(&c, 0x2010, 8, Use::Write).is_none());
+    assert_eq!(b.write(&c, 0x2010, 8, 1), perm(0x2010));
+    assert_eq!(b.read(&c0, 0x3010, 8), Ok(0));
+    assert!(b.fast(&c0, 0x3010, 8, Use::Write).is_none());
+    assert_eq!(b.write(&c0, 0x3010, 8, 1), perm(0x3010));
+    assert!(b.fast(&c, 0x3010, 8, Use::Read).is_none());
+    // EL0's write fills EL0's read array; the entries are nG, and go with the ASID's.
+    let n = walks(&b);
+    assert_eq!(b.write(&c0, 0x4010, 8, 5), Ok(()));
+    assert_eq!((b.read(&c0, 0x4010, 8), walks(&b)), (Ok(5), n + 1));
+    p.r.mem
+        .write(l3 + 8 * 4, 8, 0xe000 | PAGE | AP_EL0_RW | NG)
+        .unwrap();
+    b.flush_ng();
+    assert_eq!(b.read(&c0, 0x4010, 8), Ok(0));
+    assert_eq!(b.write(&c0, 0x4010, 8, 6), Ok(()));
+    assert_eq!(p.r.mem.read(0xe010, 8), Ok(6));
+    // Device memory: the read's walk leaves the write array alone, so a misaligned write still faults.
+    assert_eq!(b.read(&c, 0x5010, 8), Ok(0));
+    assert_eq!(v.tlb.e[5].0[3 + Use::Write as usize].tag, 0);
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    assert_eq!(
+        b.write(&c, 0x5011, 2, 0).map_err(|f| f.kind),
+        Err(FaultKind::Align)
+    );
+    // Only into an empty slot: a page read and another of the same TLB index written (a copy's source and
+    // destination) keep an entry each, and neither access walks again.
+    p.map(0x6000 + ((TLB_ENTRIES as u64) << 12), 3, 0x1_0000 | PAGE);
+    p.map(0x6000, 3, 0x1_1000 | PAGE);
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    let (src, dst) = (0x6010, 0x6010 + ((TLB_ENTRIES as u64) << 12));
+    let n = walks(&b);
+    for k in 0..4 {
+        assert_eq!(b.read(&c, src, 8), Ok(0));
+        assert_eq!(b.write(&c, dst, 8, 0), Ok(()));
+        assert_eq!(walks(&b), n + 2, "round {k}");
+    }
+    // A block's page: both entries are counted, and a TLBI by another VA of the block drops both.
+    assert_eq!(b.read(&c, 0x4000_3010, 8), Ok(0));
+    assert_eq!(v.tlb.rblk.iter().sum::<u32>(), 2);
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    b.flush_va(0x4010_0000);
+    assert!(b.fast(&c, 0x4000_3010, 8, Use::Write).is_none());
+    assert!(v.tlb.rblk.iter().all(|&n| n == 0));
+}
+
+/// The window's write-watch and the sibling fill: a read's walk fills no write entry for a watched page (a
+/// write entry there is always a write's, recorded), so the write that follows is seen; a write's walk fills
+/// the read array.
+#[test]
+fn a_read_fills_no_write_entry_for_a_watched_page() {
+    const WIN: u64 = 0x20_0000;
+    const VA: u64 = 0x4000_0000;
+    let mut p = Pt {
+        r: TestRam::new(RAM).watch(WIN, 0x10_0000),
+        next: ROOT1 + 0x1000,
+    };
+    p.map(VA, 3, WIN | PAGE);
+    p.map(VA + 0x1000, 3, (WIN + 0x1000) | PAGE);
+    let c = cpu();
+    let w = p.r.mem.watch().unwrap();
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    assert_eq!(b.read(&c, VA + 8, 8), Ok(0));
+    assert!(b.fast(&c, VA + 8, 8, Use::Write).is_none());
+    assert_eq!(b.tlb.as_ref().unwrap().nwatched, 0);
+    assert_eq!(b.write(&c, VA + 8, 8, 1), Ok(()));
+    assert_eq!(b.tlb.as_ref().unwrap().nwatched, 1);
+    // The second page, written first: its read entry comes with the write's walk.
+    assert_eq!(b.write(&c, VA + 0x1008, 8, 2), Ok(()));
+    assert!(b.fast(&c, VA + 0x1008, 8, Use::Read).is_some());
+    assert_eq!(b.tlb.as_ref().unwrap().stats.walks, 3);
+    // The host's look drops the write entries and finds both pages; a read after it brings none back.
+    w.bump();
+    v.tlb.unwatch(&p.r.mem);
+    assert_eq!(w.take(), [0, 1]);
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    assert_eq!(b.read(&c, VA + 8, 8), Ok(1));
+    assert!(b.fast(&c, VA + 8, 8, Use::Write).is_none());
+    assert_eq!(b.write(&c, VA + 8, 8, 3), Ok(()));
+    w.bump();
+    v.tlb.unwatch(&p.r.mem);
+    assert_eq!(w.take(), [0]);
 }

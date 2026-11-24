@@ -27,7 +27,7 @@ const OFF: u32 = 0;
 const RUN: u32 = 1;
 const OUT: u32 = 2;
 
-/// Queued TLB operations before a queue collapses them into one flush.
+/// Queued TLB operations before a queue collapses them into one flush ([`Collapsed`]).
 const QUEUE: usize = 64;
 
 /// The DSB wait gives up (a deadlock: a bug) after this long *waiting*: see [`DsbBudget`].
@@ -194,9 +194,31 @@ struct Queue {
     /// TLBI IS operations as (op2, VA): op2 0 is VMALLE1IS, 2 ASIDE1IS, the
     /// rest by VA (as round-robin's `Exit::TlbiIs`).
     tlb: Vec<(u32, u64)>,
-    tlb_all: bool,
+    collapsed: Collapsed,
     /// Operations ever queued (its `applied` catches up at each drain).
     queued: u64,
+}
+
+/// What a queue past [`QUEUE`] operations became: one flush, of as little as covers every operation it held and
+/// every one that came after.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Collapsed {
+    /// Not collapsed: `Queue::tlb` lists the operations.
+    #[default]
+    No,
+    /// Every operation was by ASID or by a VA of the TTBR0 half ([`low`]): the entries they drop are nG ones
+    /// unless the TLB holds global entries in that half (`mmu::Tlb::low_global`, which only the draining vCPU
+    /// knows), so the drain drops the nG entries, or everything if it does. Linux's user mappings are all
+    /// nG, and nearly every queue that collapses held only their TLBIs: the kernel's global entries stay.
+    Ng,
+    /// An operation was for everything or for a VA of the TTBR1 half: everything.
+    All,
+}
+
+/// Whether a TLBI IS (op2, VA) drops only entries of the TTBR0 half or of an ASID: ASIDE1IS, or by a VA
+/// with bit 55 clear (the TLB's entries are told apart by VA bits 55:12, `mmu::Tlb::flush_va`).
+fn low(kind: u32, va: u64) -> bool {
+    kind == 2 || kind != 0 && va >> 55 & 1 == 0
 }
 
 /// One broadcast operation: a TLBI IS (op2, VA, and the ASID it's
@@ -884,13 +906,17 @@ impl Vm {
                 continue;
             }
             let mut q = s.par.queue.lock().unwrap_or_else(PoisonError::into_inner);
-            match op {
-                Op::Tlb(..) if q.tlb_all => {}
-                Op::Tlb(..) if q.tlb.len() == QUEUE => {
+            let Op::Tlb(kind, va, _) = op;
+            match q.collapsed {
+                Collapsed::All => {}
+                Collapsed::Ng if low(kind, va) => {}
+                Collapsed::Ng => q.collapsed = Collapsed::All,
+                Collapsed::No if q.tlb.len() == QUEUE => {
+                    let ng = low(kind, va) && q.tlb.iter().all(|&(k, v)| low(k, v));
                     q.tlb.clear();
-                    q.tlb_all = true;
+                    q.collapsed = if ng { Collapsed::Ng } else { Collapsed::All };
                 }
-                Op::Tlb(kind, va, _) => q.tlb.push((kind, va)),
+                Collapsed::No => q.tlb.push((kind, va)),
             }
             q.queued += 1;
             let seq = q.queued;
@@ -928,14 +954,17 @@ impl Vm {
                 ..Queue::default()
             },
         );
-        if q.tlb_all {
-            v.tlb.flush_all();
-        } else {
-            for &(kind, va) in &q.tlb {
-                match kind {
-                    0 => v.tlb.flush_all(),
-                    2 => v.tlb.flush_ng(),
-                    _ => v.tlb.flush_va(va),
+        match q.collapsed {
+            // Its global entries are all in the TTBR1 half, which no operation it held named.
+            Collapsed::Ng if !v.tlb.low_global => v.tlb.flush_ng(),
+            Collapsed::Ng | Collapsed::All => v.tlb.flush_all(),
+            Collapsed::No => {
+                for &(kind, va) in &q.tlb {
+                    match kind {
+                        0 => v.tlb.flush_all(),
+                        2 => v.tlb.flush_ng(),
+                        _ => v.tlb.flush_va(va),
+                    }
                 }
             }
         }
@@ -1009,14 +1038,14 @@ impl Vm {
         let mut s = format!("vCPU {c}: DSB waited 10 s for TLBI IS");
         for (i, &(t, seq)) in own.waits.iter().enumerate() {
             let p = &self.shared.cpus[t].par;
-            let (queued, tlb, tlb_all) = match p.queue.try_lock() {
-                Ok(q) => (q.queued, q.tlb.len(), q.tlb_all),
-                Err(_) => (u64::MAX, 0, false),
+            let (queued, tlb, collapsed) = match p.queue.try_lock() {
+                Ok(q) => (q.queued, q.tlb.len(), q.collapsed),
+                Err(_) => (u64::MAX, 0, Collapsed::No),
             };
             let (b, n) = (began.get(i).copied().unwrap_or_default(), now[i]);
             s += &format!(
                 "\n  vCPU {t}: state {} applied {} waited-for {seq} queued {queued} \
-                 (queue: {tlb} tlb, all {tlb_all}) pending {} waiting {} \
+                 (queue: {tlb} tlb, collapsed {collapsed:?}) pending {} waiting {} \
                  retired {} -> {} pc {:#x} -> {:#x}",
                 p.state.load(Ordering::SeqCst),
                 p.applied.load(Ordering::SeqCst),

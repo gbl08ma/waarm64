@@ -68,16 +68,6 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
   when touching FP again. A biased fuzz against qemu-aarch64 (2026-11-03: 1.07M FP and AdvSIMD FP instructions, every
   FZ/DN/RMode, every cumulative flag) found no difference, so this is coverage, not a suspected bug; its generator
   (special values per lane size, random FPCR) wasn't kept and is what those forms would be.
-- **The TLB's sibling fill** (`Mmu::miss`, core/src/mmu.rs; `bench/boot/REPORT.md` "PERF loop 72"): a walk computes
-  what each EL may do with the page and fills the one array that missed. In a Firefox pages session 10.6 M of the
-  50.3 M fills (21%; Alpine's boot 25%, its userspace run 31%) were for a page the same EL's other data array
-  already held: 4.2 M read fills after a write's, 6.4 M write fills after a read's. Fill the read array at a write's
-  walk and the write array at a read's when the walk permits the write (not a watched page's write entry, which is
-  recorded; not a device's). A data miss costs its walk and the helper that runs its group (260-290 ns on the Mac by
-  the profile's shares), so the bound is 1.3-1.4% of the page's busy time and a quarter fewer instructions in
-  helpers. Nothing in a walk updates state (a software access flag, no DBM). Measure: the misses and fills in the
-  counters, the paired A/B on `node`, a pages session; the random-remap TLB test and a bare-metal case for a page
-  made read-only between the two accesses.
 
 ## Interpreter
 
@@ -149,12 +139,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   the head's page has them and outside a `loop`; measure with the pages session and the wasm's bytes. The other
   transfers that leave are counted there per 1000 steps (direct chains 24-34, the jump cache 3-7, by-VA links 4-19,
   the transfer cache 2-24, host calls 8-21); following every callee stays under the floor ([jit.md](jit.md) "Calls").
-- **The jump cache's size** (`JC` 65,536, core/src/jit/mod.rs; `bench/boot/REPORT.md` "PERF loop 72"): in a Firefox
-  pages session 4.36 M of its 4.50 M fills overwrote another key's entry, and 4.13 M times a block compiled and
-  installed was out of it (a failed probe, the host frames unwound, a dispatch and a map lookup: 0.55-0.75% of busy
-  time by count); `smp_user_jit_4`'s SQLite phase has two hot blocks taking one slot from each other 1.6 M times.
-  Sweep 131,072 and 262,144 on the Mac (arms of one paired run, a pages session, `smp_user_jit_4`): +1 and +3 MiB
-  a vCPU.
 - **The helper decodes its word twice** (`jit::count` for the histogram, then the interpreter's own decode): 168 M
   instructions a Firefox pages session, under 0.4% of busy time at 5 ns each. Pass the `Op` on, with other work in the
   file; its own micro-benchmark judges it.
@@ -1200,15 +1184,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (MMU-off) `jit_new` vCPUs, so the transfer cache's probe, the forward and backward by-VA links, the miss function
   and the guarded chains' polls are covered only by the parallel boots and the spin tests. A `jit_new` vCPU at EL1
   with the MMU on (as `setupSpill`'s page tables, but through `jit_run_exit`) in the polled core would add them.
-- **A collapsed TLBI queue drops the global entries** (`QUEUE` 64, core/src/vm/parallel.rs `broadcast`, `drain`;
-  `bench/boot/REPORT.md` "PERF loop 72"): a vCPU that doesn't drain (idle, or out of the core) collects every other
-  vCPU's TLBI IS, and past 64 its queue becomes one flush of everything. In a Firefox pages session that is 2,398
-  flushes (every one of the session's), 2,392 of them for queues that had seen only user-half VAs and ASIDs, each
-  dropping ~2,000 global entries (4.9 M a session against 7.0 M EL1 misses) and both ELs' transfer cache
-  generations: at most 1.0% of busy time. A collapsed queue that saw only those drops the nG entries (`flush_ng`)
-  when the TLB holds no global entry in the low half (`Tlb::low_global`), else everything; a `maint.c` round and a
-  planted bug. A longer queue wouldn't do (155 operations arrive at a collapsed one). With the sibling fill ("CPU
-  and ISA"): the same files and tests.
 - **Parallel `make`** as a scaling workload: `images/debian-tools` has gcc and make now, but no harness boots it at
   N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.waarm64snap` is the
   compile workload in use meanwhile.

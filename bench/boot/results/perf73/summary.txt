@@ -1,0 +1,62 @@
+TLB misses before -> after (per million steps), by array EL0 r/w/x EL1 r/w/x; fills that found the page in the same
+EL's other data array; sibling fills (at a read's walk / at a write's); instructions run by helpers
+boot                 misses    525,032 ->    455,226 (-13.3% a step; 198 -> 172/M)
+                     by array 104K/70K/118K/126K/77K/29K -> 76K/59K/118K/110K/63K/29K
+                     the other array had the page 117,857 -> 48,265; sibling fills 41,101 / 63,134 (over an entry: 0); evictions 101,408 -> 105,471; nG list overflows 1 of 5,192 -> 1 of 5,192 flush_ng
+                     helper instructions 1,365,953 -> 1,289,492 (-5.6% a step); steps 2,650,367,147 -> 2,650,367,147
+user                 misses    997,811 ->    885,171 (-11.3% a step; 96 -> 85/M)
+                     by array 377K/292K/208K/49K/59K/12K -> 319K/260K/208K/35K/51K/12K
+                     the other array had the page 270,829 -> 158,597; sibling fills 68,888 / 95,560 (over an entry: 0); evictions 322,755 -> 328,423; nG list overflows 9 of 12,340 -> 9 of 12,340 flush_ng
+                     helper instructions 7,332,310 -> 7,204,567 (-1.7% a step); steps 10,431,311,691 -> 10,431,311,691
+user/compress        misses    361,306 ->    340,559 (-5.7% a step; 178 -> 167/M)
+                     by array 175K/155K/21K/2K/9K/0K -> 170K/139K/21K/1K/9K/0K
+                     the other array had the page 152,464 -> 131,739; sibling fills 33,042 / 12,246 (over an entry: 0); evictions 264,317 -> 264,628; nG list overflows 1 of 3,288 -> 1 of 3,288 flush_ng
+                     helper instructions 705,270 -> 677,905 (-3.9% a step); steps 2,034,703,340 -> 2,034,703,340
+user/lua             misses     19,317 ->     13,578 (-29.7% a step; 6 -> 4/M)
+                     by array 6K/11K/1K/0K/0K/0K -> 1K/11K/1K/0K/0K/0K
+                     the other array had the page 5,988 -> 251; sibling fills 45 / 5,660 (over an entry: 0); evictions 423 -> 457; nG list overflows 1 of 38 -> 1 of 38 flush_ng
+                     helper instructions 605,305 -> 600,392 (-0.8% a step); steps 3,213,997,826 -> 3,213,997,826
+user/churn           misses    167,530 ->    150,399 (-10.2% a step; 309 -> 277/M)
+                     by array 64K/29K/69K/3K/1K/0K -> 51K/26K/69K/3K/1K/0K
+                     the other array had the page 19,094 -> 1,983; sibling fills 4,173 / 14,079 (over an entry: 0); evictions 4,760 -> 5,647; nG list overflows 1 of 3,567 -> 1 of 3,567 flush_ng
+                     helper instructions 231,471 -> 217,895 (-5.9% a step); steps 542,966,340 -> 542,966,340
+user/sqlite          misses     34,822 ->     23,682 (-32.0% a step; 16 -> 11/M)
+                     by array 11K/18K/1K/2K/3K/0K -> 5K/14K/1K/1K/3K/0K
+                     the other array had the page 12,198 -> 1,306; sibling fills 4,119 / 7,560 (over an entry: 0); evictions 3,242 -> 3,502; nG list overflows 3 of 20 -> 3 of 20 flush_ng
+                     helper instructions 4,516,103 -> 4,501,350 (-0.3% a step); steps 2,138,513,672 -> 2,138,513,672
+smp-user4            misses  3,146,932 ->  2,550,961 (-19.1% a step; 100 -> 81/M)
+                     by array 1141K/948K/446K/297K/226K/90K -> 992K/828K/439K/126K/124K/43K
+                     the other array had the page 991,593 -> 591,113; sibling fills 196,533 / 233,371 (over an entry: 0); evictions 1,296,111 -> 1,202,203; nG list overflows 33 of 34,001 -> 57 of 34,388 flush_ng
+                     helper instructions 41,440,667 -> 37,419,889 (-9.9% a step); steps 31,610,009,146 -> 31,675,889,718
+                     flush_all 391 -> 153; collapsed queues 266 -> 269, of user-half VAs and ASIDs only 240 -> 246 (the TLB with a low global entry: 0); at a collapse (sampled) 1,593 valid entries, 1,289 global -> 17,309, 16,943
+                     transfer cache generation bumps 22,466 -> 22,833; miss function found/failed 14,733,523/9,183,647 -> 2,936,955/7,070,443, on an older generation 714,818 -> 747,203
+smp-user4/compress   misses  1,244,277 ->  1,189,157 (-4.4% a step; 165 -> 158/M)
+                     by array 592K/584K/21K/11K/36K/0K -> 583K/545K/21K/8K/33K/0K
+                     the other array had the page 577,060 -> 525,147; sibling fills 57,142 / 34,980 (over an entry: 0); evictions 1,056,103 -> 1,055,922; nG list overflows 17 of 1,574 -> 15 of 1,761 flush_ng
+                     helper instructions 2,455,570 -> 4,609,964 (+87.8% a step); steps 7,536,725,289 -> 7,535,044,213
+                     flush_all 0 -> 0; collapsed queues 0 -> 2, of user-half VAs and ASIDs only 0 -> 2 (the TLB with a low global entry: 0); at a collapse (sampled) 0 valid entries, 0 global -> 0, 0
+                     transfer cache generation bumps 1,361 -> 1,426; miss function found/failed 43,775/421,438 -> 44,642/444,168, on an older generation 38,119 -> 36,968
+smp-user4/lua        misses    100,875 ->     75,532 (-25.2% a step; 8 -> 6/M)
+                     by array 32K/48K/7K/7K/5K/1K -> 15K/48K/7K/3K/3K/0K
+                     the other array had the page 30,914 -> 6,842; sibling fills 5,095 / 22,888 (over an entry: 0); evictions 6,796 -> 14,027; nG list overflows 7 of 377 -> 7 of 374 flush_ng
+                     helper instructions 711,573 -> 4,495,277 (+531.1% a step); steps 11,939,101,886 -> 11,950,263,871
+                     flush_all 2 -> 0; collapsed queues 2 -> 6, of user-half VAs and ASIDs only 2 -> 6 (the TLB with a low global entry: 0); at a collapse (sampled) 0 valid entries, 0 global -> 17,996, 17,928
+                     transfer cache generation bumps 303 -> 336; miss function found/failed 10,760,735/466,451 -> 38,488/489,002, on an older generation 25,399 -> 29,377
+smp-user4/churn      misses    886,321 ->    682,402 (-23.5% a step; 479 -> 367/M)
+                     by array 304K/131K/289K/110K/37K/14K -> 243K/114K/288K/25K/12K/0K
+                     the other array had the page 146,060 -> 17,333; sibling fills 28,197 / 64,123 (over an entry: 0); evictions 102,337 -> 36,387; nG list overflows 2 of 24,772 -> 0 of 24,771 flush_ng
+                     helper instructions 2,219,483 -> 1,861,682 (-16.6% a step); steps 1,849,717,853 -> 1,861,292,401
+                     flush_all 30 -> 0; collapsed queues 30 -> 34, of user-half VAs and ASIDs only 29 -> 34 (the TLB with a low global entry: 0); at a collapse (sampled) 2,039 valid entries, 1,992 global -> 17,902, 17,886
+                     transfer cache generation bumps 12,697 -> 12,592; miss function found/failed 427,403/1,525,233 -> 531,877/1,528,519, on an older generation 369,494 -> 423,110
+smp-user4/sqlite     misses    307,595 ->    174,385 (-43.3% a step; 39 -> 22/M)
+                     by array 97K/112K/12K/28K/38K/22K -> 80K/62K/11K/6K/14K/1K
+                     the other array had the page 98,752 -> 24,669; sibling fills 40,668 / 37,472 (over an entry: 0); evictions 46,732 -> 54,155; nG list overflows 2 of 136 -> 35 of 297 flush_ng
+                     helper instructions 33,062,551 -> 20,082,938 (-39.3% a step); steps 7,906,984,133 -> 7,906,119,715
+                     flush_all 184 -> 3; collapsed queues 184 -> 172, of user-half VAs and ASIDs only 181 -> 169 (the TLB with a low global entry: 0); at a collapse (sampled) 1,064 valid entries, 612 global -> 22,215, 21,592
+                     transfer cache generation bumps 496 -> 290; miss function found/failed 3,259,370/2,810,783 -> 2,042,551/659,653, on an older generation 69,849 -> 37,238
+pages (Mac)          misses 51,410,472 -> 40,788,825 (-20.8% a step; 529 -> 419/M)
+                     by array 21565K/8344K/14513K/3526K/2596K/867K -> 19726K/3798K/14513K/1442K/1296K/14K
+                     the other array had the page 10,630,900 -> 3,575,577; sibling fills 9,532,590 / 2,561,114 (over an entry: 0); evictions 8,792,589 -> 9,645,738; nG list overflows 5,929 of 121,978 -> 7,378 of 122,656 flush_ng
+                     helper instructions 167,637,174 -> 153,411,294 (-8.6% a step); steps 97,196,184,401 -> 97,333,474,212
+                     flush_all 2,398 -> 8; collapsed queues 2,398 -> 2,306, of user-half VAs and ASIDs only 2,392 -> 2,298 (the TLB with a low global entry: 0); at a collapse (sampled) 2,540 valid entries, 2,032 global -> 31,786, 31,122
+                     transfer cache generation bumps 163,146 -> 158,616; miss function found/failed 43,258,511/124,151,860 -> 41,668,828/125,685,556, on an older generation 30,997,302 -> 29,893,700

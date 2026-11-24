@@ -159,6 +159,26 @@ int main(void) {
   tlbi_va(TEST_VA + 2 * PAGE_SZ);
   check(load(TEST_VA + 2 * PAGE_SZ + 8) == 0x3333, 22);
 
+  // A read's walk may cache what a write is permitted too (the TLB's sibling fill, docs/cpu.md): a read of a
+  // read-only page lets no write through, and a page made read-only after a read of it (with its TLBI) faults
+  // the write; writable again, it stores.
+  n0 = n_exc;
+  check(load(TEST_VA + 3 * PAGE_SZ + 8) == 0x3333, 23);
+  store(TEST_VA + 3 * PAGE_SZ + 8, 5);
+  check(n_exc == n0 + 1 && last_esr == DATA_ABORT_EL1(0x0f, 1) && pages[3][1] == 0x3333, 24);
+  check(load(TEST_VA + 2 * PAGE_SZ + 8) == 0x3333, 25);
+  l3_test[2] = (u64)pages[3] | PAGE | AP_RO;
+  tlbi_va(TEST_VA + 2 * PAGE_SZ);
+  check(load(TEST_VA + 2 * PAGE_SZ + 8) == 0x3333, 26);
+  store(TEST_VA + 2 * PAGE_SZ + 8, 9);
+  check(n_exc == n0 + 2 && last_esr == DATA_ABORT_EL1(0x0f, 1) && last_far == TEST_VA + 2 * PAGE_SZ + 8, 27);
+  l3_test[2] = (u64)pages[3] | PAGE;
+  tlbi_va(TEST_VA + 2 * PAGE_SZ);
+  check(load(TEST_VA + 2 * PAGE_SZ + 8) == 0x3333, 28);
+  store(TEST_VA + 2 * PAGE_SZ + 8, 9);
+  check(n_exc == n0 + 2 && pages[3][1] == 9, 29);
+  pages[3][1] = 0x3333;
+
   // Page crossing: TEST_VA's two pages sit on swapped PAs.
   *(volatile u64 *)(TEST_VA + PAGE_SZ - 4) = 0x8877665544332211UL;
   check(((volatile u32 *)pages[1])[1023] == 0x44332211 && ((volatile u32 *)pages[0])[0] == 0x88776655, 30);

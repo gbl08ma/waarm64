@@ -126,30 +126,38 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-24, after loop 72)
+## State (2026-11-24, after loop 73)
+
+**The track is paused after loop 73 (the user, 2026-11-24): nothing runs until it is resumed.** To resume: read
+this file, then start at "Next" below; an out-of-context review of loop 73's two mechanisms (the sibling fill in
+`Mmu::miss`, the TLBI queue's `Collapsed`) is still due and comes first or with the next loop.
 
 **Resumed 2026-11-24 (the user), with one more rule: spend as little time in benchmarks and CI as the answers allow
-("Batching", above).** Loop 72 built nothing: it fixed loop 71's review (the kept emission is asserted against a
-fresh one wherever debug assertions are on, two region tests; the `bad` fallback never reached in the counts, and argued unreachable; the
-branch is deleted) and counted rows 8, 9, 10, 11, 13 and 18 in one pass with one diagnostic core
-(`bench/boot/results/perf72/diag.patch`: the gates' guests in Node on the dev VM, one Firefox pages session on the
-Mac; bench/boot/REPORT.md "PERF loop 72" has the table of bounds). Closed there as findings: the transfer cache's
-size and generations, `TLB_ENTRIES`, a last-level table cache, the nG list, host frames lost at a stop, the helper
-histogram, followed calls again. Open, in the queue below with their bounds: the TLB's sibling fill, the collapsed
-TLBI queue, the jump cache's size, entries at members, the helper's second decode. Its commit passed `ci-fast.sh`,
-`ci.sh` and `ci-jit.sh`. Loop 67's warm-up is not landed; the local branches `perf67-warmup` and `perf-smp-warm`
-stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The review branch `review/jit-warmup` on origin is
-moot: the supervisor may delete it.
-**Next:** loop 73, row 8: the sibling fill and the collapsed queue in one loop (the same files and tests), each
-behind its counters, then one paired run and one pages session for both. The diagnostic patch applies to loop 72's
-commit and carries the counters a later row may want again (the TLB's, the queues', the jump cache's).
+("Batching", above).** Loop 72 counted rows 8, 9, 10, 11, 13 and 18 in one pass with one diagnostic core and closed
+most as findings. Loop 73 took the three it ranked first (bench/boot/REPORT.md "PERF loop 73",
+`bench/boot/results/perf73/`): **the TLB's sibling fill and the collapsed TLBI queue's nG flush are built and kept
+within the floor** (a pages session: TLB misses 51.4 M → 40.8 M, flushes of everything 2,398 → 8, 8.6% fewer
+instructions in helpers; no time measure moved outside its noise on `node`, the pages session or the gates: small,
+tested, no memory, no speedup claimed), **and `JC` stays 65,536** (131,072 and 262,144 `open` on `node`; the gates'
+guests refill it tens of thousands of times a run, and loop 72's 1.6 M in `smp_user_jit_4`'s SQLite phase was one
+run's placement). Its commit passed `ci-fast.sh`, `ci.sh`, `ci-jit.sh` and `ci-debian.sh`. No export or state layout changed.
+Loop 67's warm-up is not landed; the local branches `perf67-warmup` and `perf-smp-warm` stay unpushed;
+`../waarm64-base` is detached at 5d8f29ef (clean). The review branch `review/jit-warmup` on origin is moot: the
+supervisor may delete it.
+**Next, when resumed:** row 10, entries at a region's members (the largest bound left, 1.9%, and the least certain: its count
+first on today's tree, the pages session and the wasm's bytes its measure), with row 11 (the helper's second decode,
+S, the same files) beside it if the loop has room. Loop 73's lesson for bounds: a count times a unit cost near the
+pages session's ~1% floor came out under it twice; rank what is left by bounds well past the floor. An
+out-of-context review of the MMU's fills and parallel SMP's queue (loop 73 added a fill rule and a queue state) is
+due before or with the next loop. `bench/boot/results/perf73/diag.patch` applies to loop 73's commit and carries
+the counters a later row may want (the TLB's, the queues', the jump cache's, the members').
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
 ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
 36, 42, 47, 50, 55, 58 and 71) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60 and 72 (50's: comments only).
-The next is due after the next loop that adds a mechanism. Built but off by default (measured slower): I8MM, FCMA,
+The next is due now: loop 73 added a fill rule to the TLB and a state to the TLBI queue. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)
@@ -172,9 +180,7 @@ every row:
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 8 | **Next:** TLB: fill the sibling array at a walk, and a collapsed TLBI queue that drops only the nG entries (backlog "The TLB's sibling fill", "A collapsed TLBI queue drops the global entries") | build | counted in loop 72 (a pages session on the Mac): 10.6 M of 50.3 M fills are for a page the same EL's other data array holds (bound 1.3-1.4% of busy time at 260-290 ns a data miss; a quarter of the helpers' instructions); 2,398 collapsed queues, 2,392 of them with only user-half VAs and ASIDs, ~2,000 global entries dropped each (bound 1.0%). S-M each, one loop: `Mmu::miss`'s fill (not watched pages, not devices), `drain` with `Tlb::low_global`; the random-remap TLB test, a bare-metal case for a page made read-only between a read and a write, a `maint.c` round, a planted bug each. Measure by the counters (misses, fills, helper steps), `node`'s paired run, one pages session |
-| 9 | JIT: the jump cache's size (`JC` 65,536, core/src/jit/mod.rs; backlog "The jump cache's size") | sweep | loop 72: 4.36 M of 4.50 M fills in a pages session overwrite another key's entry, 4.13 M refills of a block already installed (bound 0.55-0.75%); `smp_user_jit_4`'s SQLite phase ping-pongs one slot 1.6 M times. 131,072 and 262,144 as arms of one paired run, `smp_user_jit_4`, one pages session; +1 and +3 MiB a vCPU |
-| 10 | JIT: entries at a region's members (backlog "Entries at a region's members") | build | loop 72: 8-12% of the interpreted steps reported are at blocks installed as members (0.2-0.4% of the gates' steps, ~0.3% of a pages session's), 15% of the session's regions headed by a block already a member; bound 1.9% (1.2% the steps, 0.7% the round trips), half at best. M: `Region::entries` for members entered from outside (the head's page, no `loop`); the pages session and the wasm's bytes. The largest bound and the least certain |
+| 10 | **Next:** JIT: entries at a region's members (backlog "Entries at a region's members") | build | loop 72: 8-12% of the interpreted steps reported are at blocks installed as members (0.2-0.4% of the gates' steps, ~0.3% of a pages session's), 15% of the session's regions headed by a block already a member; bound 1.9% (1.2% the steps, 0.7% the round trips), half at best. M: `Region::entries` for members entered from outside (the head's page, no `loop`); the pages session and the wasm's bytes. The largest bound and the least certain |
 | 11 | JIT: the helper decodes its word twice (`jit::count`, then `interp::exec_at`; backlog) | build | 168 M instructions in helpers a pages session (loop 72), under 0.4% at 5 ns; S, by its own micro-benchmark, with other work in the file |
 | 12 | JIT: probes a region's earlier block already made, and the translation memo again (jit.md "Wider groups of accesses", "A TLB translation memo in wasm locals") | re-count, bound | groups are per block; "46% of probes land on the page of one of the function's last two probes" was counted at 16 blocks, the memo lost at M8 in the VM on `alpine_user_jit`, and the groups' "moved no time" is the VM's (its bounds checks tax every access). Count statically (the accstat analysis, `bench/boot/results/accstat/`), on the gates and the pages session, the probes dominated in their region by a probe of the same base and span, the base unchanged (SP's frame first); then an unsound bound that skips them (as `flagx` was); build the dominated-successor form only past ~1%. Check what a poll between the two may change in parallel SMP (another vCPU's TLBI) |
 | 14 | Devices: `bench/io` on a persistent profile, then the overlay's flush per write request (web/overlay.ts:756, :789, `ORDERED`) | re-measure, build | `bench/run.ts` launches off the record, where an OPFS call is 210-300 µs and a flush free; on a profile a call is ~1 µs and each ordered flush ~0.17 ms (SNAPZ loop 5), so bench/io/REPORT.md ranked the blk path on a cost users on a profile don't have. First: a persistent-profile option for `--only io` (`bench/snapz/probe.ts` has the launch), `io_stats` with `ORDERED` on and off, the `scatter`/`gather` copies' share (a read into the guest's segment, if past a few percent). Then map entries kept to the guest's FLUSH with one data flush a group (bench/io/REPORT.md names it twice, never built; `tests/overlay.test.ts`'s crash replay moves); an image's import opened unordered with one flush at its end (web/stored.ts:101; check a half import is always discarded). The Mac too |
@@ -189,7 +195,7 @@ every row:
 | 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (backlog "The network, per packet" P7), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
 | 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
-Swept, measured or counted on the Mac recently, not to redo: loop 72's closed counts (the transfer cache at 65,536 entries and a per-ASID generation, `TLB_ENTRIES` 32,768 and 65,536, a last-level table cache, a fill of the neighbour's PTE, `NG_SLOTS`, a longer TLBI queue, the interpreter under live host frames, the helper histogram: nothing to inline, FlagM never runs), the repeated last emission (loop 71: kept), XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
+Swept, measured or counted on the Mac recently, not to redo: the jump cache's size (loop 73: `JC` 131,072 and 262,144), the sibling fill over another page's entry (loop 73: it thrashes a copy between two pages of one index), loop 72's closed counts (the transfer cache at 65,536 entries and a per-ASID generation, `TLB_ENTRIES` 32,768 and 65,536, a last-level table cache, a fill of the neighbour's PTE, `NG_SLOTS`, a longer TLBI queue, the interpreter under live host frames, the helper histogram: nothing to inline, FlagM never runs), the repeated last emission (loop 71: kept), XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
 41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), `WARM` with `REPORT` (loop 68), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
 function's size as such (2026-11-05, loop 13), the dispatcher's entries and the signature check (loop 54), lazy NZCV
 at a loop's head (loop 42), and the features off by default (I8MM, FCMA, FP16, FHM, BF16: host-op counts, which

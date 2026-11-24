@@ -395,6 +395,132 @@ fn a_dsb_wait_of_stalled_passes_ends_at_the_wall_backstop_with_a_note() {
     unsafe { t.vm.run_cpu(0, 1000) };
 }
 
+/// Parallel SMP's TLBI queue past its 64 operations: vCPU 0 runs `ops` (TLBI ...IS, op2 and Xt each) while vCPU 1
+/// is out of the core, its TLB holding a user page's nG entry (ASID 5, the TTBR0 half), a kernel page's global one
+/// (the TTBR1 half) and, `low_global`, a global one in the TTBR0 half; vCPU 1 then drains its queue. Returns which
+/// of the three it still holds (a read that doesn't walk).
+fn tlbi_queue(ops: &[(u32, u64)], low_global: bool) -> [bool; 3] {
+    use crate::mmu::{Bus, Mmu};
+    const TABLES: u64 = RAM_BASE + 0x8_0000;
+    const PAGE: u64 = 3 | 1 << 10;
+    let cfg = VmConfig {
+        ncpus: 2,
+        smp: 1,
+        ..VmConfig::default()
+    };
+    // Each operation's Xt is in X1 when its turn comes.
+    let mut prog: Vec<u32> = ops
+        .iter()
+        .map(|&(op2, _)| 0xd508_8300 | op2 << 5 | if op2 == 0 { 31 } else { 1 })
+        .collect();
+    prog.push(B_SELF);
+    let mut t = T::new(&prog, cfg);
+    // Two roots and a table a level under each, bumped from TABLES.
+    let mut next = TABLES + 0x2000;
+    let mem = &t.vm.mem;
+    let mut map = |root: u64, va: u64, desc: u64| {
+        let mut table = root;
+        for level in 0..3 {
+            let slot = table + 8 * (va >> (39 - 9 * level) & 511);
+            let mut d = mem.read(slot, 8).unwrap();
+            if d & 1 == 0 {
+                d = next | 3;
+                next += 0x1000;
+                mem.write(slot, 8, d).unwrap();
+            }
+            table = d & 0x0000_ffff_ffff_f000;
+        }
+        mem.write(table + 8 * (va >> 12 & 511), 8, desc).unwrap();
+    };
+    let data = RAM_BASE + 0x4_0000;
+    map(TABLES, USER, data | PAGE | 1 << 11);
+    map(TABLES, LOW_GLOBAL, (data + 0x1000) | PAGE);
+    map(TABLES + 0x1000, KERNEL, (data + 0x2000) | PAGE);
+    let c1 = Cpu {
+        sctlr_el1: sctlr::M,
+        tcr_el1: 16 | 16 << 16 | 2 << 32,
+        ttbr0_el1: TABLES | 5 << 48,
+        ttbr1_el1: TABLES + 0x1000,
+        mair_el1: 0xff,
+        ..t.vm.vcpus[1].cpu.clone()
+    };
+    let pages = [USER, KERNEL, LOW_GLOBAL];
+    let held = if low_global { 3 } else { 2 };
+    {
+        let vm = &mut t.vm;
+        let mut b = Mmu::new(&vm.mem, Some(&mut vm.vcpus[1].tlb));
+        for &va in &pages[..held] {
+            b.read(&c1, va, 8).unwrap();
+        }
+    }
+    assert_eq!(t.vm.vcpus[1].tlb.low_global, low_global);
+    // vCPU 1 is on, out of the core: nothing waits for it, and its queue fills.
+    t.vm.shared.cpus[1].par.state.store(2, Ordering::SeqCst);
+    for &(_, xt) in ops {
+        t.cpu().x[1] = xt;
+        // SAFETY: this thread is the only one, and runs one vCPU at a time.
+        assert_eq!(unsafe { t.vm.run_cpu(0, 1) }, exit::BUDGET);
+    }
+    assert_eq!(t.cpu().pc, RAM_BASE + 4 * ops.len() as u64);
+    // SAFETY: as above. The drain comes before the budget's check.
+    assert_eq!(unsafe { t.vm.run_cpu(1, 0) }, exit::BUDGET);
+    let vm = &mut t.vm;
+    let mut b = Mmu::new(&vm.mem, Some(&mut vm.vcpus[1].tlb));
+    let mut kept = [false; 3];
+    for (k, &va) in pages[..held].iter().enumerate() {
+        let walks = b.tlb.as_ref().unwrap().stats.walks;
+        b.read(&c1, va, 8).unwrap();
+        kept[k] = b.tlb.as_ref().unwrap().stats.walks == walks;
+    }
+    kept
+}
+
+const USER: u64 = 0x7000_1000;
+const LOW_GLOBAL: u64 = 0x7000_5000;
+const KERNEL: u64 = 0xffff_8000_0000_3000;
+
+#[test]
+fn a_collapsed_tlbi_queue_of_user_operations_keeps_the_global_entries() {
+    // TLBI VAE1IS, ASIDE1IS, VAAE1IS, VMALLE1IS as (op2, Xt).
+    let asid = 5u64 << 48;
+    let vae = |va: u64| (1, asid | (va & 0x00ff_ffff_ffff_f000) >> 12);
+    let vaae = |va: u64| (3, (va & 0x00ff_ffff_ffff_f000) >> 12);
+    let (aside, all) = ((2, asid), (0, 0));
+    let other = |k: u64| vae(0x1_0000_0000 + (k << 12));
+    let many = |n: u64| (0..n).map(other).collect::<Vec<_>>();
+    let [gone, kept] = [false, true];
+    // A queue that didn't collapse is applied operation by operation.
+    assert_eq!(tlbi_queue(&many(64), false), [kept, kept, false]);
+    let mut ops = many(63);
+    ops.push(vae(USER));
+    assert_eq!(tlbi_queue(&ops, false), [gone, kept, false]);
+    // Collapsed, user-half VAs and ASIDs only: the nG entries go (one of the operations named the page, and
+    // nothing remembers which), the kernel's global entry stays.
+    let mut ops = many(40);
+    ops.extend([vae(USER), aside, vaae(USER)]);
+    ops.extend(many(30));
+    assert_eq!(tlbi_queue(&ops, false), [gone, kept, false]);
+    // A kernel-half VA or VMALLE1IS among them, before the collapse, at it or after: everything.
+    for at in [10, 64, 70] {
+        for op in [vaae(KERNEL), vae(KERNEL), all] {
+            let mut ops = many(72);
+            ops[at] = op;
+            assert_eq!(
+                tlbi_queue(&ops, false),
+                [gone, gone, false],
+                "{op:x?} at {at}"
+            );
+        }
+    }
+    // A TLB with a global entry in the TTBR0 half, which a TLBI by VA for any ASID there drops: everything.
+    let mut ops = many(70);
+    ops[3] = vaae(LOW_GLOBAL);
+    assert_eq!(tlbi_queue(&ops, true), [gone, gone, gone]);
+    ops[3] = vae(LOW_GLOBAL);
+    ops.truncate(64);
+    assert_eq!(tlbi_queue(&ops, true), [kept, kept, gone]);
+}
+
 #[test]
 fn the_rtc_counts_host_time_in_realtime_mode_only() {
     const LDR_W2_X0: u32 = 0xb940_0002; // ldr w2, [x0]

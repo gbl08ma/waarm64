@@ -56,8 +56,13 @@ the interpreter's own code.
   miss for a block the table already has compiled, or for a key with no instructions, takes it
   not at all ([Sharing](#sharing) "What the lock costs"). The jump cache is indexed by PA bits 17:2, and a browser's
   code overfills it: in a Firefox pages session (43,364 functions) 4.36 M of 4.50 M fills overwrote another key's
-  entry, and 4.13 M times a block compiled and installed was out of it (bench/boot/REPORT.md "PERF loop 72";
-  docs/backlog.md has the sweep of its size).
+  entry, and 4.13 M times a block compiled and installed was out of it (bench/boot/REPORT.md "PERF loop 72"): at
+  most 0.55-0.75% of busy time by count. **Its size stays 65,536** (`JC`; swept at 131,072 and 262,144, PERF loop
+  73): on `node` both ended `open` at the cap of 12 pairs, +0.17% [−0.62, +0.97] and +0.40% [−0.74, +1.55] in time
+  on the same instructions; the gates' guests refill it 28-43 K times a run (17-23 K and 9 K at the larger sizes:
+  milliseconds either way); and the 1.6 M refills of `smp_user_jit_4`'s SQLite phase in loop 72's count were that
+  run's placement of two hot blocks (7 K in loop 73's run of the same core size). What a larger table could save a
+  browser is under what a pages session resolves, for 1 and 3 MiB more a vCPU.
 - **Exact step accounting** (counted code: round-robin, deterministic or realtime, and user mode): a block knows its
   instruction count *n* and is entered only if the chunk has ≥ *n* steps left; chained successors and region edges
   are taken only when `left` covers them. So the JIT never outruns a chunk, IRQs, the signal word and deadlines are

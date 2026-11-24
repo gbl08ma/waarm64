@@ -19,6 +19,18 @@
 //! Every inline compare expects memory 0's all ones, so a spill memory's entry
 //! misses there; [`Mmu::miss`] recognises it (docs/spill-memories.md).
 //!
+//! **The sibling fill:** a data access's walk computes what its EL may do with
+//! the page, and [`Mmu::miss`] fills the EL's other data array too (the write
+//! array at a read's walk, the read array at a write's) when the walk permits
+//! that access and the slot there is empty: a page read and then written (or
+//! the other way) walks once. That is a TLB's own behaviour (an entry caches
+//! the permissions; a guest that takes one away sends a TLBI, which drops
+//! every array's entry), and no walk has state to update (the access flag is
+//! software-managed, no DBM). Never over another page's entry (a copy between
+//! two pages of one index would then walk at every access), nor for a Device
+//! page, nor the write entry of a watched page (`Tlb::fill_watched` records
+//! those, at a write).
+//!
 //! Entries carry no ASID: the arrays only ever hold global entries and the
 //! current ASID's non-global (nG) ones. An ASID change or `TLBI ASIDE1` drops
 //! the nG entries alone, found through a list of the slots they were filled
@@ -1098,10 +1110,31 @@ impl<'a> Mmu<'a> {
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
             let array = 3 * el as usize + u as usize;
-            if u == Use::Write && self.mem.watched(w.pa) {
+            let watched = self.mem.watched(w.pa);
+            if u == Use::Write && watched {
                 t.fill_watched(self.mem, array, va, page, &w);
             } else {
                 t.fill(array, va, page, w.ng, w.level, device);
+            }
+            // The sibling: the same EL's other data array, when the walk permits that access too, so a
+            // write after a read of the page (or a read after a write) doesn't walk again. Only into an
+            // empty slot: over another page's entry, a copy between two pages of one index (a source
+            // read, a destination written) would walk at every access, each walk evicting the other
+            // page's entry from both arrays. Not a Device page's (rare, and its entries are told apart
+            // by what filled them), nor a watched page's write entry, which is filled only by a write,
+            // recorded.
+            let other = match u {
+                Use::Read => Use::Write,
+                Use::Write => Use::Read,
+                Use::Exec => return Ok(p),
+            };
+            let sibling = 3 * el as usize + other as usize;
+            if !w.device()
+                && w.allows(el, other)
+                && !(other == Use::Write && watched)
+                && t.e[index(va)].0[sibling].tag == 0
+            {
+                t.fill(sibling, va, page, w.ng, w.level, false);
             }
         }
         Ok(p)

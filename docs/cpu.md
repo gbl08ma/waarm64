@@ -362,17 +362,35 @@ The table is `core/src/interp/sys.rs`.
   (flushes: 122 K drops of the nG entries took 28 M slots), 17% another page's entry, so 32,768 or 65,536 entries
   could save at most 0.7% and 0.9% of busy time (4.96 M and 6.96 M of the evictions are of pages apart there); a
   cache of last-level tables would serve 82% of the walks three of their four loads (at most 0.7%, with every table
-  write to track), and 4.9% of the misses are next to the last one's page. None is worth building. What is: a walk
-  fills one array, and 21% of the fills (10.6 M) are for a page the same EL's other data array already holds
-  (docs/backlog.md "The TLB's sibling fill").
+  write to track), and 4.9% of the misses are next to the last one's page. None is worth building.
+- **The sibling fill** (PERF loop 73): a data access's walk computes what its EL may do with the page, and
+  `Mmu::miss` fills the EL's other data array as well (the write array at a read's walk, the read array at a
+  write's) when the walk permits that access and the slot there is empty, so a page read and then written, or the
+  other way, walks once. It is what a TLB does: an entry caches the permissions, a guest that takes one away sends a
+  TLBI (which drops the page from every array), and no walk has state to update (a software access flag, no DBM:
+  Linux keeps a clean page read-only, so its read's walk permits no write). Not for a Device page (its entries are
+  told apart by what filled them), nor the write entry of a watched page, which only a write fills, recorded
+  (below). **Only into an empty slot:** filled over another page's entry, a copy between two pages of one TLB index
+  (a source read, a destination written, 64 MiB apart or a multiple) walks at every access, each walk evicting the
+  other page's entry from both arrays; counted, that form took EL0's read misses in `smp_user_jit_4`'s guest from
+  1.14 M to 2.06 M (its compression phase) where the empty-slot form takes them to 0.99 M. Counted in a Firefox
+  pages session (bench/boot/REPORT.md "PERF loop 73", with the collapsed queue's change, [platform.md](platform.md)
+  "Broadcast maintenance"): 12.1 M sibling fills, misses 51.4 M → 40.8 M (529 → 419 per million steps; EL0's write
+  misses 8.3 M → 3.8 M), 8% fewer instructions in the JIT's helpers; Alpine's boot 525 K → 455 K misses, its
+  userspace run 998 K → 885 K. 3.6 M fills still find the page in the other array (its slot held another page at
+  the first walk): at most 0.45% of busy time, and taking them means evicting, which is the form that lost. Tests: `a_walk_fills_the_sibling_data_array`, `a_read_fills_no_write_entry_for_a_watched_page`,
+  the random-remap test with read-only pages and blocks (core/src/mmu/tests.rs), and bare-metal `mmu` (a read-only
+  page read then written; a page made read-only between a read and a write). Planted, each caught: no permission
+  check (the unit tests and `mmu`'s check 24), a watched page's write entry filled by a read, a Device page's
+  sibling, a fill over another page's entry.
 - **ASIDs:** entries hold no ASID. An ASID change or `TLBI ASIDE1` drops only the non-global
   (nG) entries, tracked in `Tlb::ng` (up to 1024 slots); past that the slots' nG marks in `Tlb::blk` are scanned
   (128 KiB read, eight slots a word), so the global entries survive a busy process too (a full flush there was ~7 a
   second in Firefox on 4 vCPUs, 2026-11-04); a change of
   `SCTLR_EL1.M` flushes everything. (Keeping global entries cut Alpine's boot misses 3.61M →
   1.07M.) Per-ASID stashes of nG entries would serve under a sixth of the nG refills (measured out: "The TLB" above).
-  The list overflows in 4.9% of the drops in Firefox's pages session (5,929 of 121,978: ~0.02% of busy time in
-  scans), so 1024 slots stay.
+  The list overflows in 6.0% of the drops in Firefox's pages session (7,378 of 122,656 with the sibling fill, whose
+  entries it lists too; 4.9% before it: ~0.02% of busy time in scans), so 1024 slots stay.
 - **Blocks:** a 2 MiB or 1 GiB leaf is cached as entries for the pages it was used through, and
   a TLBI by VA drops every one of them, not only its own page's: Linux unmaps a transparent huge
   page with one TLBI for the 2 MiB. `Tlb::blk` marks the slots filled from blocks by class (VA

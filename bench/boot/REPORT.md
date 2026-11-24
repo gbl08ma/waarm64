@@ -8821,3 +8821,111 @@ confirmed, one suggested test refuted.
 Memory: none (nothing built; the debug assertion emits a kept emission again in debug builds only). Compiled code
 unchanged (no x64 counts). The runs: three of 34 s in Node (the gates' guests twice, once more with every callee followed) and 226 s on the
 Mac; no CI but the finish's.
+
+## PERF loop 73: the TLB's sibling fill, a collapsed TLBI queue's nG flush, the jump cache's size (2026-11-24)
+
+The three rows PERF loop 72 ranked first. **Two are built and kept, by their counts: a walk fills the same EL's
+other data array too, and a collapsed TLBI queue of user operations drops the nG entries instead of everything. In a
+Firefox pages session the TLB's misses fall 20.7% (51.4 M → 40.8 M) and the flushes of everything from 2,398 to 8;
+no time measure moves outside its noise (`node`, the pages session, the gates), so both are kept as small, tested
+changes within the floor, not as measured speedups. The jump cache stays at 65,536 entries.** Data:
+`bench/boot/results/perf73/` (README; `summary.txt` has the counts before and after). The Mac: M4, macOS 26.6.2,
+Chrome for Testing 158.0.8127.88; the counts' Node runs on the dev VM.
+
+**What was built.**
+- *The sibling fill* (`Mmu::miss`, core/src/mmu.rs): after a data access's walk fills its array, the same EL's other
+  data array gets the page too when the walk permits that access and the slot there is empty. Not for a Device page,
+  nor the write entry of a page of the watched window (those are filled by a write, recorded). The first form filled
+  the sibling over whatever its slot held, and was wrong for a copy: a page read and another of the same TLB index
+  written (64 MiB apart) then walk at every access, each walk evicting the other page's entry from both arrays. Its
+  count on the gates' guests: Alpine's boot 525 K → 437 K misses and the userspace run 998 K → 748 K, but
+  `smp_user_jit_4`'s guest 3.15 M → 3.16 M with EL0's read misses 1.14 M → 2.06 M and evictions 1.30 M → 3.61 M.
+  Into empty slots only, a fill can't add a miss the base didn't have: boot 455 K (−13.3%), userspace 885 K
+  (−11.3%), `smp_user_jit_4` 2.55 M (−19%, EL0 read 0.99 M).
+- *The collapsed queue* (`parallel::Collapsed`, core/src/vm/parallel.rs): a queue past 64 operations remembers
+  whether everything it held and got since was by ASID or by a VA of the TTBR0 half; its drain then drops the nG
+  entries (`flush_ng`) unless the vCPU's TLB holds a global entry in that half (`Tlb::low_global`: a firmware's
+  identity map), and everything otherwise, as before. The architecture's side: a TLBI by a TTBR0-half VA or by ASID
+  names entries of that half or of an ASID, which are nG ones when the TLB has no global entry there.
+
+**Counts, before (PERF loop 72's) → after, one run each** (the diagnostic core with both changes, `diag.patch`):
+
+| | Alpine's boot | its userspace run | `smp_user_jit_4`'s guest | Firefox's pages session (Mac) |
+|---|---|---|---|---|
+| TLB misses | 525,032 → 455,226 (−13.3%) | 997,811 → 885,171 (−11.3%) | 3.15 M → 2.55 M (−19%) | 51.41 M → 40.79 M (−20.7%; 529 → 419 per M steps) |
+| EL0 read / write | 104 K / 70 K → 76 K / 59 K | 377 K / 292 K → 319 K / 260 K | 1,141 K / 948 K → 992 K / 828 K | 21.56 M / 8.34 M → 19.73 M / 3.80 M |
+| EL1 read / write / exec | 126 K / 77 K / 29 K → 110 K / 63 K / 29 K | 49 K / 59 K / 12 K → 35 K / 51 K / 12 K | 297 K / 226 K / 90 K → 126 K / 124 K / 43 K | 3.53 M / 2.60 M / 0.87 M → 1.44 M / 1.30 M / 0.014 M |
+| sibling fills (at a read's walk / a write's) | 41 K / 63 K | 69 K / 96 K | 197 K / 233 K | 9.53 M / 2.56 M |
+| fills with the page in the other array | 118 K → 48 K | 271 K → 159 K | 992 K → 591 K | 10.63 M → 3.58 M |
+| instructions run by helpers | 1.37 M → 1.29 M | 7.33 M → 7.20 M | (not reproducible) | 167.6 M → 153.4 M (−8.6% a step) |
+| flushes of everything | 79 → 79 | 33 → 33 | 391 → 153 | 2,398 → 8 |
+| collapsed queues; of user operations only | | | 266; 240 → 269; 246 | 2,398; 2,392 → 2,306; 2,298 |
+| entries at a collapse (sampled): valid, global | | | 1,593, 1,289 → 17,309, 16,943 | 2,540, 2,032 → 31,786, 31,122 |
+
+The one-vCPU runs are deterministic and their steps didn't move (2,650,367,147 and 10,431,311,691). In the pages
+session no collapsed queue found a low global entry in its TLB (0 of 2,298). The misses that went are 10.6 M: at
+PERF loop 72's 260-290 ns a data miss, 2.8-3.1 s of the session's ~220 busy vCPU-seconds, **1.3-1.4%** as a bound, of
+which EL1's 4.2 M (7.0 M → 2.75 M) are mostly the queue's (its instruction misses, which no sibling fill touches,
+867 K → 14 K). What the sibling leaves: 3.58 M fills still find the page in the other array, where the slot held
+another page at the first walk (≤ 0.45%; taking them is the evicting form). Its costs, counted: evictions 8.79 M →
+9.65 M (primary fills over a sibling's entry), the nG list overflowing in 6.0% of `flush_ng` for 4.9% (7,378 of
+122,656 for 5,929 of 121,978; a 128 KiB scan each).
+
+**Time** (the Mac):
+
+| workload | arm | time against the base | pairs / rounds | verdict |
+|---|---|---|---|---|
+| `node` (`bench/ab-mac.sh`) | the sibling fill | +0.10% [−0.59, +0.79]; cycles +0.09% [−0.42, +0.60]; instructions +0.00% [−0.09, +0.09] | 12 | `open` at the cap: within ±0.8% |
+| `node` | `JC` 131,072 | +0.17% [−0.62, +0.97]; instructions −0.01% | 12 | `open` |
+| `node` | `JC` 262,144 | +0.40% [−0.74, +1.55]; instructions −0.08% [−0.16, +0.01] | 12 | `open` |
+| Firefox's pages session (`bench/gpu/ab-mac.sh`, 3 rounds alternated) | both changes | starts and loads 68.0 / 69.4 / 69.0 s → 68.5 / 67.5 / 68.7 s (medians 69.0 → 68.5, −0.7%); starts 51.4 / 52.4 / 51.9 → 51.9 / 51.3 / 51.8 s; busy MIPS 482 / 470 / 480 → 480 / 478 / 478 | 3 | the rounds overlap: no difference |
+| `user` (`WORKLOADS=user,boot bench/ab-mac.sh`) | both changes | +0.09% [−0.41, +0.59]; cycles +0.02% [−0.37, +0.41] `same`; instructions −0.10% [−0.22, +0.03] | 12 | `open` at the cap in time, `same` in cycles |
+| `boot` | both changes | −0.02% [−0.48, +0.45]; cycles +0.01% [−0.37, +0.40]; instructions −0.12% [−0.16, −0.09] `LOWER` | 7 | `same` |
+
+The queue's change can only act with several vCPUs in parallel mode, so it had no arm on `node` (one vCPU); the
+pages session is its measure and the sibling's confirmation, and one A/B of both against the base served the two.
+Neither shows: a bound of 1.3-1.4% that assumes every miss costs its full 260-290 ns is at the session's ~1% floor to
+begin with, and the session says the real gain is under it. The session's other counters agree with a small effect:
+CPU 279.2 → 280.6 s, the renderer's instructions a step 23.96 → 23.87 (−0.4%, IQR 0.20 and 0.02), the time DSBs
+waited 126 / 146 / 103 → 115 / 150 / 142 ms.
+
+**Kept and dropped.**
+- **Kept, within the floor: the sibling fill and the collapsed queue's nG flush.** Their counts bounded them at the
+  floor (≤ 1.3-1.4% together), the counters show the events they target gone (10.6 M misses and 14 M helper
+  instructions a session, 2,390 flushes of everything), nothing regressed, they are small (some 20 and 45 lines of code), each
+  rule is tested with a planted bug, and neither takes memory. No speedup is claimed for either.
+- **Dropped: the jump cache at 131,072 and 262,144 entries** (+1 and +3 MiB a vCPU). No verdict on `node` (both
+  `open`, the larger nominally slower), and the counts take the rest of its case away: the gates' guests refill the
+  cache 28-43 K times a run at 65,536 (17-23 K at 131,072, 9 K at 262,144: milliseconds), and the 1.60 M refills of
+  `smp_user_jit_4`'s SQLite phase in PERF loop 72's run were that run's placement of two hot blocks, not the
+  workload's: 7,195 fills in this loop's run of the same guest at 65,536 (7,264 and 4,404 at the larger sizes). What
+  is left is the pages session's 4.1 M refills, ≤ 0.55-0.75% as a bound, under what the session resolves; no pages
+  session was spent on it. A finding (docs/jit.md "Dispatch").
+
+**Tests and planted bugs.**
+- The sibling: `a_walk_fills_the_sibling_data_array` (a read then a write and the reverse walk once; read-only pages
+  at EL1 and EL0 fill no write entry and the write faults; a page made read-only between a read and a write, with
+  its TLBI; nG entries dropped with the ASID's; Device memory; a block's two entries counted and dropped by another
+  VA's TLBI; a copy between two pages of one index), `a_read_fills_no_write_entry_for_a_watched_page`, the
+  random-remap test with read-only pages and blocks, `spill_memory_pages` (the write's walk fills the read array),
+  and bare-metal `mmu` (checks 23-29). Planted, each caught: no permission check (two unit tests; `mmu` check 24),
+  a watched page's write entry filled at a read, a Device page's sibling filled, the sibling over another page's
+  entry.
+- The queue: `a_collapsed_tlbi_queue_of_user_operations_keeps_the_global_entries` (core/src/vm/tests.rs: vCPU 0
+  runs the TLBIs, vCPU 1 out of the core drains): lists of 64 applied one by one; a collapse of user-half VAs and
+  ASIDs (the nG entry gone, the kernel's global one kept); a kernel-half VA or VMALLE1IS before the collapse, at it
+  and after (everything); a TLB with a low global entry (everything). It fails on the base (the global entry gone).
+  Planted, each caught: the drain not looking at `low_global`, an operation after the collapse not widening it, the
+  collapse not looking at its list, or not at the operation that overflowed it, VMALLE1IS or a kernel-half VA taken
+  for a low operation, a collapse that drops nothing. No `maint.c` round: a queue collapses only when a vCPU stays
+  out of the core through 64 operations, which the unit test arranges exactly and a bare-metal guest on threads
+  can't.
+
+Memory: none (the arrays and the queue exist; `node`'s footprint 1,709 MiB against the base's 1,718). Compiled code
+unchanged (no x64 counts). No export or state layout changed: the ABI stays 74 and
+`target/snapbench/pages.waarm64snap` loads as before. The runs: four counts in Node (36 s each: one of the evicting
+form, one of the kept form, two for `JC`), one counting pages session (227 s), the paired run on `node` (4 arms, 12
+pairs, 23 min), six pages sessions (22 min), the gates' paired run (10 min).
+CI: `ci-fast.sh` (246 s), `ci.sh` (733 s), `ci-jit.sh` (269 s) and `ci-debian.sh` (309 s: Debian through UEFI is
+the guest whose firmware fills global entries in the TTBR0 half, the queue's `low_global` branch); `tests/steps.txt`
+unmoved.

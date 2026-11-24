@@ -220,11 +220,25 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
 4 vCPUs (on QEMU and hvf too). In **parallel mode**:
 - Each vCPU has a queue of TLB operations under a lock, an atomic pending flag checked at every
   chunk boundary, and `queued`/`applied` counts. An issuer pushes to every other vCPU's queue: up
-  to 64 TLB operations (then one flush-all). In a Firefox pages session on 4 vCPUs (PERF loop 72: 398 K TLBI IS,
-  all but 484 by a user-half VA or an ASID) 231 K drains found a list (68% of one operation, 87 of all 64) and 2,398
-  found a collapsed queue: every flush of everything in the session, each dropping ~2,000 global entries that no
-  queued operation named (2,392 had seen only user-half VAs and ASIDs). 155 operations arrive at a collapsed queue
-  on average, so a longer queue isn't the fix; docs/backlog.md has the one that is.
+  to 64 TLB operations, then the queue collapses into one flush (`parallel::Collapsed`) of as little as covers
+  every operation it held and every one that comes before its drain: **the nG entries** while all of them are by
+  ASID or by a VA of the TTBR0 half, **everything** once one is VMALLE1IS or by a VA of the TTBR1 half. The drain
+  applies it: a TLBI of the TTBR0 half names nG entries only when the TLB holds no global entry there, which the
+  draining vCPU knows (`Tlb::low_global`, below: a firmware's or a bootloader's identity map), so with one it drops
+  everything. A vCPU that doesn't drain (idle, or out of the core) is what collects 64: in a Firefox pages session
+  on 4 vCPUs (PERF loop 72: 398 K TLBI IS, all but 484 by a user-half VA or an ASID) 231 K drains found a list
+  (68% of one operation, 87 of all 64) and 2,398 a collapsed queue, 2,392 of those with only user-half VAs and
+  ASIDs. Until PERF loop 73 a collapsed queue dropped everything: every flush of everything in the session, ~2,000
+  of the kernel's global entries each time that no queued operation named. Now (bench/boot/REPORT.md "PERF loop
+  73") the session has 8 flushes of everything, a TLB at a collapse holds ~31,000 global entries, and EL1's misses
+  fell from 7.0 M to 2.75 M (its instruction misses 867 K → 14 K; the sibling fill, [cpu.md](cpu.md) "MMU and TLB",
+  has a part in the data arrays'). 155 operations arrive at a collapsed queue on average, so a longer queue
+  wouldn't do. `a_collapsed_tlbi_queue_of_user_operations_keeps_the_global_entries` (core/src/vm/tests.rs) runs
+  the TLBIs on one vCPU and drains another: lists under 64, a collapse of user operations (the nG entry gone, the
+  kernel's kept), a kernel-half VA or VMALLE1IS before the collapse, at it and after, and a TLB with a low global
+  entry. Planted, each caught: the drain ignoring `low_global`, an operation after the collapse not widening it,
+  the collapse not looking at its list or at the operation that overflowed it, VMALLE1IS taken for a low
+  operation, a collapse that drops nothing.
 - **IC IVAU and IALLU(IS)** drop the blocks from the shared code cache on the issuing vCPU, and
   every other vCPU's function table catches up before its next block ([jit.md](jit.md)
   "Sharing"): nothing is queued. Before the cache was shared, each vCPU had its own and a queue of

@@ -1,0 +1,13 @@
+node: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sib             12 +0.10% [-0.59%, +0.79%] open         +0.09% [-0.42%, +0.60%] open         +0.00% [-0.09%, +0.09%] same         +0.10% [-0.44%, +0.65%] open        
+  jc131           12 +0.17% [-0.62%, +0.97%] open         +0.13% [-0.44%, +0.71%] open         -0.01% [-0.09%, +0.07%] same         +0.15% [-0.47%, +0.76%] open        
+  jc262           12 +0.40% [-0.74%, +1.55%] open         +0.28% [-0.51%, +1.08%] open         -0.08% [-0.16%, +0.01%] same         +0.24% [-0.47%, +0.95%] open        
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9531       0.9822         1718        681.4        220.9        47.69         1461    504474364
+  sib                  9521       0.9821         1709        681.1        221.6        47.69         1461    504474364
+  jc131                9532       0.9820         1710        679.0        221.9        47.71         1461    504474842
+  jc262                9547       0.9821         1730        681.5        221.7        47.72         1461    504472168
+arms: base 9799342 bytes; sib 9800176 bytes; jc131 9799693 bytes; jc262 9799180 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88
