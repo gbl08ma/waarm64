@@ -1,0 +1,18 @@
+workload smp
+n {'t1000': 7, 't2000': 7}
+                     t1000         t2000
+blocks               43813       -19.95%
+modules               2877        -5.77%
+bytes             88715803       -16.91%
+regionBlocks        183386       -16.36%
+tierUps               2608        -4.41%
+decSteps        1209761081       +34.69%
+locks              4214548        +5.39%
+flushes                  0             0
+emitNs          1357930752       -16.14%
+planNs          1083158272       -13.04%
+compileNs        369175808       -17.94%
+dispatches        55958405       +25.33%
+footMiB               2258          2146
+instructions  583260783156        -0.85%
+cycles        205381429644        -5.97%

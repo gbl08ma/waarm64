@@ -1,0 +1,15 @@
+
+added 56 packages in 2s
+mac_chrome: Chrome for Testing 158.0.8127.88
+node: 6 pairs against t1000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t500             5 +2.62% [+0.92%, +4.35%] HIGHER       +6.37% [+4.94%, +7.82%] HIGHER       +2.52% [+2.19%, +2.85%] HIGHER       +6.62% [+5.25%, +8.01%] HIGHER      
+  t2000            6 -0.98% [-1.91%, -0.04%] LOWER        -6.71% [-7.51%, -5.91%] LOWER        -2.98% [-3.12%, -2.85%] LOWER        -6.99% [-7.82%, -6.16%] LOWER       
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  t1000                9488       0.9821         1637        722.3        219.3        47.69         1461    504474364
+  t500                 9765       0.9782         1516        857.0        245.6        57.21         1434    335663299
+  t2000                9390       0.9876         1404        555.3        184.4        36.42         1358    739342864
+arms: t1000 9786743 bytes; t500 9786743 bytes; t2000 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88
+no leftovers

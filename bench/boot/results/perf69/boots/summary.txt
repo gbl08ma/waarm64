@@ -1,0 +1,43 @@
+smp_alpine_jit_n1_script         t1000 2621-2629  t2000 2783-2809  +6.4% no overlap
+smp_alpine_jit_n1_total          t1000 5143-5154  t2000 5293-5324  +2.9% no overlap
+smp_alpine_jit_n2_script         t1000 2233-2249  t2000 2338-2346  +4.4% no overlap
+smp_alpine_jit_n2_total          t1000 4769-4786  t2000 4852-4872  +1.8% no overlap
+smp_alpine_jit_n4_script         t1000 2213-2242  t2000 2255-2289  +0.8% no overlap
+smp_alpine_jit_n4_total          t1000 4786-4825  t2000 4815-4860  +0.2% overlap
+smp_alpine_jit_n1_total_cpu_ms   t1000 5366-5398  t2000 5186-5248  -2.9% no overlap
+smp_alpine_jit_n1_total_cpu_ns_step t1000 2-2  t2000 2-2  -3.0% no overlap
+smp_alpine_jit_n1_total_ginstr   t1000 66-66  t2000 65-65  -0.8% no overlap
+smp_alpine_jit_n1_total_gcycles  t1000 21-21  t2000 20-20  -2.6% no overlap
+smp_alpine_jit_n1_total_instr_step t1000 27-27  t2000 27-27  -0.8% no overlap
+smp_alpine_jit_n1_total_cycles_step t1000 9-9  t2000 8-8  -2.7% no overlap
+smp_alpine_jit_n1_total_pshare   t1000 1-1  t2000 1-1  +0.5% no overlap
+smp_alpine_jit_n1_total_joules   t1000 25-25  t2000 24-25  -1.2% overlap
+smp_alpine_jit_n2_total_cpu_ms   t1000 6184-6225  t2000 6076-6120  -1.6% no overlap
+smp_alpine_jit_n2_total_cpu_ns_step t1000 3-3  t2000 2-2  -1.7% no overlap
+smp_alpine_jit_n2_total_ginstr   t1000 73-74  t2000 74-74  +0.5% no overlap
+smp_alpine_jit_n2_total_gcycles  t1000 24-24  t2000 23-24  -1.0% no overlap
+smp_alpine_jit_n2_total_instr_step t1000 30-30  t2000 30-30  +0.3% no overlap
+smp_alpine_jit_n2_total_cycles_step t1000 10-10  t2000 10-10  -1.1% no overlap
+smp_alpine_jit_n2_total_pshare   t1000 1-1  t2000 1-1  +1.1% no overlap
+smp_alpine_jit_n2_total_joules   t1000 27-28  t2000 28-28  +0.5% overlap
+smp_alpine_jit_n4_total_cpu_ms   t1000 7506-7632  t2000 7425-7592  -0.9% overlap
+smp_alpine_jit_n4_total_cpu_ns_step t1000 3-3  t2000 3-3  -0.7% overlap
+smp_alpine_jit_n4_total_ginstr   t1000 84-84  t2000 85-85  +0.8% no overlap
+smp_alpine_jit_n4_total_gcycles  t1000 28-28  t2000 28-28  -0.2% overlap
+smp_alpine_jit_n4_total_instr_step t1000 33-33  t2000 34-34  +1.1% no overlap
+smp_alpine_jit_n4_total_cycles_step t1000 11-11  t2000 11-11  +0.1% overlap
+smp_alpine_jit_n4_total_pshare   t1000 1-1  t2000 1-1  +0.4% no overlap
+smp_alpine_jit_n4_total_joules   t1000 30-30  t2000 30-30  +0.6% no overlap
+smp_user_jit_n4_compress         t1000 1081-1144  t2000 1094-1159  +1.4% overlap
+smp_user_jit_n4_lua              t1000 2328-2534  t2000 2408-2602  +3.1% overlap
+smp_user_jit_n4_churn            t1000 707-740  t2000 671-686  -5.6% no overlap
+smp_user_jit_n4_sqlite           t1000 1687-1786  t2000 1682-1802  -4.2% overlap
+smp_user_jit_n4_total            t1000 10531-10820  t2000 10621-10816  +0.7% overlap
+smp_user_jit_n4_total_cpu_ms     t1000 32943-33466  t2000 32463-32831  -1.1% no overlap
+smp_user_jit_n4_total_cpu_ns_step t1000 1-1  t2000 1-1  -1.0% no overlap
+smp_user_jit_n4_total_ginstr     t1000 457-464  t2000 460-468  +0.9% overlap
+smp_user_jit_n4_total_gcycles    t1000 125-127  t2000 123-125  -0.9% overlap
+smp_user_jit_n4_total_instr_step t1000 14-15  t2000 15-15  +0.9% overlap
+smp_user_jit_n4_total_cycles_step t1000 4-4  t2000 4-4  -0.9% overlap
+smp_user_jit_n4_total_pshare     t1000 1-1  t2000 1-1  +0.7% no overlap
+smp_user_jit_n4_total_joules     t1000 139-142  t2000 140-142  +0.4% overlap

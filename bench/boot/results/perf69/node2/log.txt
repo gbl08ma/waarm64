@@ -1,0 +1,25 @@
+node pair 1: t4000 9731, t1000 9674, t2000 9374 ms (2616 s left)
+node pair 2: t4000 9573, t1000 9501, t2000 9404 ms (2533 s left)
+node pair 3: t1000 9517, t2000 9407, t4000 9566 ms (2450 s left)
+node pair 4: t1000 9477, t4000 9566, t2000 9406 ms (2368 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t2000            4 -1.51% [-6.89%, +4.18%] open         -7.13% [-11.20%, -2.86%] LOWER       -3.00% [-3.16%, -2.84%] LOWER        -7.42% [-11.12%, -3.57%] LOWER      
+  t4000            4 +0.70% [-0.27%, +1.68%] open         -12.30% [-13.33%, -11.26%] LOWER     -4.26% [-4.56%, -3.95%] LOWER        -12.90% [-14.04%, -11.75%] LOWER    
+node pair 5: t2000 9396, t4000 9571, t1000 9489 ms (2285 s left)
+node: decided, no longer run: t4000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t2000            5 -1.40% [-4.46%, +1.76%] open         -7.10% [-9.35%, -4.79%] LOWER        -3.02% [-3.18%, -2.86%] LOWER        -7.38% [-9.43%, -5.28%] LOWER       
+  t4000            5 +0.74% [+0.16%, +1.32%] HIGHER       -12.30% [-12.86%, -11.73%] LOWER     -4.26% [-4.43%, -4.09%] LOWER        -12.88% [-13.52%, -12.24%] LOWER    
+node pair 6: t1000 9475, t2000 9382 ms (2230 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t2000            6 -1.33% [-3.44%, +0.82%] open         -7.05% [-8.59%, -5.48%] LOWER        -3.02% [-3.13%, -2.91%] LOWER        -7.34% [-8.74%, -5.91%] LOWER       
+  t4000            5 +0.74% [+0.16%, +1.32%] HIGHER       -12.30% [-12.86%, -11.73%] LOWER     -4.26% [-4.43%, -4.09%] LOWER        -12.88% [-13.52%, -12.24%] LOWER    
+node pair 7: t2000 9405, t1000 9540 ms (2176 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t2000            7 -1.34% [-2.92%, +0.26%] open         -7.07% [-8.22%, -5.90%] LOWER        -3.02% [-3.11%, -2.94%] LOWER        -7.35% [-8.40%, -6.29%] LOWER       
+  t4000            5 +0.74% [+0.16%, +1.32%] HIGHER       -12.30% [-12.86%, -11.73%] LOWER     -4.26% [-4.43%, -4.09%] LOWER        -12.88% [-13.52%, -12.24%] LOWER    
+node pair 8: t2000 9405, t1000 9544 ms (2121 s left)
+node: decided, no longer run: t2000, t4000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t2000            8 -1.36% [-2.62%, -0.08%] LOWER        -7.06% [-7.98%, -6.13%] LOWER        -3.02% [-3.09%, -2.94%] LOWER        -7.35% [-8.19%, -6.50%] LOWER       
+  t4000            5 +0.74% [+0.16%, +1.32%] HIGHER       -12.30% [-12.86%, -11.73%] LOWER     -4.26% [-4.43%, -4.09%] LOWER        -12.88% [-13.52%, -12.24%] LOWER    

@@ -8488,3 +8488,60 @@ little lower under churn (0.05-0.2 point), which the user's rule doesn't trade f
 JIT compiles 1.5-5% less for 1-7% more interpreted steps and saves the renderer 1-4.7% of its cycles (V8's compiles,
 on other cores), not the vCPU's time. A larger `REPORT` alone (w64r32 against w64r64; w128r64 against w128r128) is
 most of the locks' difference and none of the time.
+
+## PERF loop 69: the compile threshold at 64-block regions (2026-11-24)
+
+The re-check PERF-HANDOVER.md's queue notes called for after loops 64-66 (regions of 64 blocks, `BATCH_STEPS` 50K,
+`REGION_AFTER` 1000; `WARM`/`REPORT` 16/16 after loop 68): `Config::DEFAULT`'s `threshold` (the floor: dispatches of
+a block key before it joins the batch) and `threshold_max` (what `Cache::retune` raises it to past `PRESSURE_KNEE`'s
+eighths of the 320 MiB budget, and each flush doubles the floor toward), 1000/2000, tied with 500/1000 on 2026-11-09
+at 16 blocks ("Where a busy vCPU's time goes on the Mac, and the compile threshold there"). **Not kept: 1000/2000
+stays.** No code changed (ABI 74, `tests/steps.txt` unchanged). Data: `bench/boot/results/perf69/` (README). M4 Mac
+mini, macOS 26.6.2, Chrome for Testing 158.0.8127.88.
+
+The maximum binds only past 120 MiB of live modules (the floor doubles at each eighth past two: 2000 needs 3/8), which
+no workload here reached (`node` 48 MiB, `smp` 85, the pages session 93, no flush in any): every arm ran at its floor.
+
+**`node`** (two paired runs against t1000; the counters' medians against its 47.7 MiB of wasm, 1461 modules, 504 M
+steps interpreted, 723 ms of emission):
+
+| | wall | cycles | instructions | JIT wasm | modules | interpreted | emission | footprint |
+|---|---|---|---|---|---|---|---|---|
+| 500/1000 | **+2.62% [+0.92, +4.35] `HIGHER`** (5) | +6.4% `HIGHER` | +2.6% | +20% | −1.9% | −33% | +19% | 1516 against 1637 MiB |
+| 2000/4000 | **−0.98% [−1.91, −0.04] `LOWER`** (6), **−1.36% [−2.62, −0.08] `LOWER`** (8); pooled −1.20% [−1.72, −0.67] (14) | −6.9% `LOWER` | −3.0% | −24% | −7.0% | +47% | −23% | 1383-1404 against 1450-1637 |
+| 4000/8000 | **+0.74% [+0.16, +1.32] `HIGHER`** (5) | −12.3% `LOWER` | −4.3% | −40% | −16% | +114% | −39% | 1338 against 1450 |
+
+Halving the threshold costs `node` 2.6% (a fifth more wasm, V8 compiling it on the other cores: the cycles +6.4%)
+for a third fewer interpreted steps; doubling it saves 1.2% of the time and 7% of the cycles for half again as many
+interpreted steps; at 4000 the interpreter takes back more than the compiles save.
+
+**2000/4000 on four vCPUs:**
+- `smp` (the paired command, 7 pairs): **wall −4.20% [−7.53, −0.75] `LOWER`**, cycles −1.65% `open`, wasm −17%,
+  modules −5.8%, interpreted +35%. The latency counters: **compiled 92.30% against 94.47%** (interpreted 7.70 against
+  5.53%), the compile worker 517 against 584 ms, `ready` 0.30 against 0.31 ms mean (p99 bucket 1 against 2, the
+  longest 8 against 16 ms), stalled 0.5 against 1.2 ms/s, the longest stall 5 against 6 ms.
+- The parallel boots (`bench/run-mac.sh`, 3 rounds alternated): `smp_alpine_jit`'s totals **+2.9% (n1), +1.8% (n2)
+  without overlap**, +0.2% (n4, overlap), for 2.9 / 1.6 / 0.9% less CPU; `smp_user_jit_4`'s total +0.7% (overlap;
+  compress +1.4%, Lua +3.1%, SQLite −4.2%, all overlapping), its churn phase **−5.6% without overlap** (671-686 against
+  707-740 ms), its CPU −1.1%. Peak RSS the same within the rounds (1522-1668 against 1536-1677 MiB on `smp_alpine_jit`,
+  2003-2019 against 2033-2048 on `smp_user_jit_4`).
+
+**Firefox's pages session, cut to two pages** (`PAGES=wiki,mdn`, 3 sessions each, alternated, no flush): **no time
+gain.** Busy MIPS 418 · 430 · 435 against 416 · 433 · 430 (the same median), the starts 25.1 · 24.5 · 24.0 against
+25.2 · 24.1 · 24.6 s, `pagesS` 32.4 against 32.4 s; the renderer's CPU 132.7 against 137.3 s (−3.3%, no overlap),
+its cycles −3.9%. The code: wasm 70-73 against 93-94 MB (−24%), modules −2%, emission 1.19 against 1.52 s,
+interpreted 2.84 against 2.03 G steps (the whole session's compiled share 92.9 against 94.9%). In Firefox's churn
+windows (`latency.ts`: launch to 10 s past each page's `ready`) **the compiled share 95.37-95.64% against
+96.80-96.90%**, its worst second 90.2-91.1% against 92.8-94.2%, its worst 100 ms 42.6-43.7% against 55.7-59.7%;
+`ready` 0.27 against 0.31-0.34 ms mean, no stall of 20 ms, frame gaps the same within the sessions' spread.
+
+**Why nothing is kept.** 2000/4000 has decided wins on `node` (−1.2% pooled) and `smp` (−4.2%), and saves the
+renderer 3-7% of its cycles, but the pages session doesn't confirm them in time, the parallel boot loses 1.8-2.9% on
+one and two vCPUs (cold code runs twice the dispatches interpreted before it compiles), and every measure under churn runs 1.4-2.2 points fewer
+steps compiled, the worst second 3 points lower: the status bar's reading, which the user's rule doesn't trade
+(`ready` waits and stalls aren't worse). The gates (`WORKLOADS=user,boot`) weren't run: no arm got that far.
+500/1000's tie of 2026-11-09 is a loss at 64-block regions (`node` +2.6%), and 4000/8000 loses `node` too. What stays
+measured: the threshold trades the renderer's compile cycles against the compiled share almost linearly (each
+doubling ~7% of `node`'s cycles, a fifth to a quarter of the wasm, half again as many interpreted steps), and the
+vCPU's time is best between 1000 and 2000. Untried: a floor of ~1400, a higher floor only for blocks seen after the
+boot's first compile burst (the boots' loss is cold code).

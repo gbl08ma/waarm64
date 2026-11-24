@@ -119,19 +119,18 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-24, after loop 68)
+## State (2026-11-24, after loop 69)
 
 **The user is away for the rest of 2026-11-24: work autonomously, no decision prompts or questions; settle choices by
-measurement and the decision rules, and report at the end.** Loop 68 (`WARM` with `REPORT`, 4 to 128) **kept nothing**
-(bench/boot/REPORT.md "PERF loop 68", `bench/boot/results/perf68/`): 4 and 8 lose on `node`; 64 won `node` −0.55%
-(3% fewer cycles), which Firefox's pages session didn't confirm (MIPS −1.9% within overlap) and `smp_user_jit_4`'s
-churn phase lost (+2.5%), the compiled share a little lower under churn. No code changed, docs only, no CI. Loop 67
-(the compile worker's warm-up) is not landed (REPORT "PERF loop 67b"; docs/jit.md "Tried and not kept"); the local
-branches `perf67-warmup` and `perf-smp-warm` stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The
-review branch `review/jit-warmup` on origin is moot: the supervisor may delete it.
-**Next:** the compile threshold's re-check the notes above the table call for (1000/2000 against 500/1000), then row 6.
-`target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's
-default disk. The ABI is 74.
+measurement and the decision rules, and report at the end.** Loop 69 (the compile threshold's re-check at 64-block
+regions) **kept nothing** (bench/boot/REPORT.md "PERF loop 69", `bench/boot/results/perf69/`): 500/1000 loses `node`
+2.6%, 4000/8000 0.7%; 2000/4000 wins `node` 1.2% and `smp` 4.2% (7% fewer cycles, 24% less wasm) but ties the pages
+session in time, loses `smp_alpine_jit` on one and two vCPUs 1.8-2.9%, and runs 1.4-2.2 points fewer steps compiled
+under churn. No code changed, docs only, no CI. Loop 67's warm-up is not landed; the local branches `perf67-warmup`
+and `perf-smp-warm` stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The review branch
+`review/jit-warmup` on origin is moot: the supervisor may delete it.
+**Next:** row 6. `target/snapbench/pages.waarm64snap` loads into the current state layout;
+`target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
@@ -154,8 +153,8 @@ every row:
 - The rows are the surveys' reading of the code, nothing run: each row's figures are a bound to check, its count
   comes first, and a count that leaves a row under the floor closes it as a finding (the REPORT, the docs).
 - A row from the backlog names its entry; the others have none (their finish writes the docs and the REPORT only).
-- Rows 3-4 changed which blocks a region gets (on regions of 64 blocks: loop 64; batches of 50K steps: loop 65; `REGION_AFTER` 1000: loop 66): run them one at a time, each on the last one's winner, and re-check the
-  compile threshold (1000/2000 against 500/1000, tied on 2026-11-09 at 16 blocks) once after them.
+- Rows 3-4 changed which blocks a region gets (on regions of 64 blocks: loop 64; batches of 50K steps: loop 65; `REGION_AFTER` 1000: loop 66): run them one at a time, each on the last one's winner; the compile threshold was re-checked after them (loop 69:
+  1000/2000 stays).
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
@@ -180,8 +179,7 @@ every row:
 | 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (backlog "The network, per packet" P7), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
 | 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
-Swept or measured on the Mac recently, not to redo: the compile threshold (2026-11-09, but see the note above the
-table), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
+Swept or measured on the Mac recently, not to redo: the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
 41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), `WARM` with `REPORT` (loop 68), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
 function's size as such (2026-11-05, loop 13), the dispatcher's entries and the signature check (loop 54), lazy NZCV
 at a loop's head (loop 42), and the features off by default (I8MM, FCMA, FP16, FHM, BF16: host-op counts, which

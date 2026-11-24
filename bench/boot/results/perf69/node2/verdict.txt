@@ -1,0 +1,11 @@
+node: 8 pairs against t1000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t2000            8 -1.36% [-2.62%, -0.08%] LOWER        -7.06% [-7.98%, -6.13%] LOWER        -3.02% [-3.09%, -2.94%] LOWER        -7.35% [-8.19%, -6.50%] LOWER       
+  t4000            5 +0.74% [+0.16%, +1.32%] HIGHER       -12.30% [-12.86%, -11.73%] LOWER     -4.26% [-4.43%, -4.09%] LOWER        -12.88% [-13.52%, -12.24%] LOWER    
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  t1000                9509       0.9823         1450        722.9        219.5        47.69         1461    504474364
+  t2000                9404       0.9878         1383        554.8        183.3        36.42         1358    739342864
+  t4000                9571       0.9902         1338        442.6        154.6        28.52         1227   1080554931
+arms: t1000 9786743 bytes; t2000 9786743 bytes; t4000 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

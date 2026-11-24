@@ -1,0 +1,2 @@
+t2000 wall: -1.20% [-1.72, -0.67] over 14 pairs
+t2000 cycles: -6.91% [-7.31, -6.51] over 14 pairs

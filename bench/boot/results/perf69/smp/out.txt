@@ -1,0 +1,17 @@
+
+added 56 packages in 2s
+mac_chrome: Chrome for Testing 158.0.8127.88
+smp: 7 pairs against t1000
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  t2000            7 -4.20% [-7.53%, -0.75%] LOWER        -1.65% [-5.95%, +2.85%] open         +3.32% [-1.52%, +8.40%] open         -2.07% [-6.56%, +2.64%] open        
+  ended: every stop measure decided
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  t1000                9717       0.7249         2258       1357.9        369.2        84.61         2877   1209761081
+  t2000                9264       0.7381         2146       1138.8        302.9        70.30         2711   1629399636
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  t1000             94.47       5.53          0      10124       2569        584       0.31          1          2         16         16          6          8        1.2         77
+  t2000             92.30       7.70          0       9462       2389        517       0.30          1          1          8         16          5          8        0.5         78
+arms: t1000 9786743 bytes; t2000 9786743 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on wall, each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88
+no leftovers
+exit 0

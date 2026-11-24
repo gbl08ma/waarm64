@@ -116,7 +116,12 @@ the interpreter's own code.
   (`Config::threshold`, `threshold_max`, `PRESSURE_KNEE`), and each flush doubles the floor it
   starts from. Code that fits is compiled early; a working set that doesn't fills the rest of the
   budget with the code that runs most. One threshold for every block: one by the block's length, mix or rate was
-  measured and won nothing ([Tried and not kept](#tried-and-not-kept)). JIT-stress, JIT-check, the dispatcher-only mode and the
+  measured and won nothing ([Tried and not kept](#tried-and-not-kept)). The floor was re-checked on the Mac at 64-block
+  regions (bench/boot/REPORT.md "PERF loop 69"): 500/1000 loses `node` 2.6%; 2000/4000 wins it 1.2% and `smp` 4.2% for
+  24% less wasm and 3-7% fewer cycles, but loses the parallel boot on one and two vCPUs 1.8-2.9%, ties Firefox's pages
+  session in time, and runs 1.4 points fewer steps compiled in its churn windows (the worst second 3 points): 1000
+  stays; 4000/8000 loses `node` too. No workload measured reaches 120 MiB without a flush, so the maximum seldom
+  binds. JIT-stress, JIT-check, the dispatcher-only mode and the
   user-mode `jit_new` keep a fixed threshold.
   Fewer, larger modules run faster (chains stay within a module) and cost V8 ~16 KB less each
   ([Memory](#memory)): Alpine's userspace benchmark makes 970 modules (3,860 with the 1M-step
