@@ -12,7 +12,7 @@
 // echo. It runs in the device worker, so a synchronous backend keeps deterministic
 // mode exact (the timer behind periodic advertisements exists only when asked for).
 import { eq } from './bytes.ts';
-import { batchSender, checksum, packetsOf, type NetAdapter } from './net.ts';
+import { batchSender, checksum, IP_HEADROOM, packetsOf, type NetAdapter } from './net.ts';
 import {
   ALL_DHCP_AGENTS,
   ALL_NODES,
@@ -99,7 +99,11 @@ export type IpBackend = { lease(): Lease | null; send(packet: Uint8Array): void;
 export type FramePath = { frames(port: MessagePort | null): void; gateway(): void };
 
 /** What `gateway` gives a backend's maker: where the guest's packets come from, and to tell the gateway its lease changed. */
-export type Deliver = (packet: Uint8Array) => void;
+/**
+ * A packet for the guest. `headroom`: the `IP_HEADROOM` bytes before it in its buffer are the gateway's, which writes
+ * the Ethernet header there and hands the guest that buffer; without it the gateway copies the packet into a frame.
+ */
+export type Deliver = (packet: Uint8Array, headroom?: boolean) => void;
 
 export type GatewayOptions = {
   /** The gateway's MAC and IP (the guest's router). The IP must not be one a peer can have. */
@@ -281,14 +285,22 @@ export function gateway(
 
   let leaseNow = (): Lease | null | undefined => undefined; // the backend's, once it exists
   const backend = makeBackend(
-    (packet) => {
+    (packet, headroom) => {
       // The guest hasn't shown a MAC before its first frame (its DHCP request).
       if (!guestMac || packet.length > 1500) return;
       const v = packet[0] >> 4;
+      const type = v === 4 && packet.length >= 20 ? 0x0800 : v === 6 && packet.length >= 40 ? 0x86dd : 0;
+      if (!type) return;
       const lease = leaseNow();
       if (lease) clampMss(packet, lease.mtu);
-      if (v === 4 && packet.length >= 20) receive(eth(guestMac, mac, 0x0800, packet));
-      else if (v === 6 && packet.length >= 40) receive(eth(guestMac, mac, 0x86dd, packet));
+      if (!headroom || packet.byteOffset < IP_HEADROOM) return receive(eth(guestMac, mac, type, packet));
+      // The header goes in the room before the packet (per packet: no frame allocated, nothing copied).
+      const f = new Uint8Array(packet.buffer, packet.byteOffset - IP_HEADROOM, IP_HEADROOM + packet.length);
+      f.set(guestMac, 0);
+      f.set(mac, 6);
+      f[12] = type >> 8;
+      f[13] = type & 0xff;
+      receive(f);
     },
     () => {
       // A lease for another address than the one the guest holds (another connection on the adapter): the guest would keep
@@ -663,15 +675,16 @@ export function echoBackend(lease: Lease = ECHO_LEASE) {
  * A backend on the other end of a MessagePort (the Tailscale worker): an
  * ArrayBuffer is one IP packet in either direction, an array of them a batch
  * (web/net.ts `batchSender`), `{type: 'lease', lease}` (or `lease: null`) from
- * the backend sets the lease.
+ * the backend sets the lease. The backend's buffers have `IP_HEADROOM` bytes
+ * before their packet, where the Ethernet header is written.
  */
 export function portBackend(port: MessagePort, path?: FramePath) {
   return (deliver: Deliver, leaseChanged: () => void): IpBackend => {
     let lease: Lease | null = null;
     const send = batchSender(port);
     port.onmessage = (e: MessageEvent) => {
-      const packets = packetsOf(e.data);
-      if (packets) for (const p of packets) deliver(p);
+      const packets = packetsOf(e.data, IP_HEADROOM);
+      if (packets) for (const p of packets) deliver(p, true);
       else if (e.data?.type === 'lease') {
         lease = e.data.lease;
         leaseChanged();

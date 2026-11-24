@@ -1245,8 +1245,14 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   This frame port is the adapter API (no v86 compatibility: [plans/networking.md](plans/networking.md)).
   Layer-3 backends use the **IP-packet port**, `IpPort = {send(packet), close?()}` (`ipPort(port,
   receive)` over a `MessagePort`): one IPv4 or IPv6 packet per transferred `ArrayBuffer`, no Ethernet
-  header, or a **batch**, an array of them (`packetsOf` reads either). Both ends send with `batchSender`
-  (web/net.ts): what one task sends is posted in one message from a microtask, so a batch waits for no
+  header, or a **batch**, an array of them (`packetsOf` reads either). **Toward the gateway each buffer has 14 bytes
+  of headroom before its packet** (`IP_HEADROOM`; the direction says it, the gateway's own packets have none): the
+  tailnet client copies a packet out of its memory into such a buffer (web/ts-client.ts), the port transfers it, and
+  the gateway writes the Ethernet header in that room (`deliver(packet, true)`), so the buffer that crossed is the
+  guest's frame, with no second copy or allocation per packet; whoever holds the gateway's end of an IP port reads
+  with `packetsOf(data, IP_HEADROOM)`. Both ends send with `batchSender`
+  (web/net.ts; with the headroom, a packet that isn't the rest of such a buffer is copied into one): what one task
+  sends is posted in one message from a microtask, so a batch waits for no
   timer: the segments of one TSO packet from the device, everything one relay message brought from the
   tailnet worker (the relay writes ~4 KB at a time, so 2–4 packets of a download). **The Ethernet gateway** (`web/gateway.ts`, in the device worker) sits between a frame
   adapter and an IP backend (`IpBackend = {lease(), send(packet)}` plus the `deliver` it's made

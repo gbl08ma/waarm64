@@ -68,7 +68,7 @@ test("the guest's packets reach the client; the client's reach the port", async 
   host.send(new Uint8Array([9]));
   await settle();
   assert.deepEqual(heard, [[1, 2], [3]]);
-  assert.ok(c.got.some((m) => m instanceof ArrayBuffer && new Uint8Array(m)[0] === 9));
+  assert.ok(c.got.some((m) => m instanceof ArrayBuffer && m.byteLength === 15 && new Uint8Array(m)[14] === 9), "the client's packet after the gateway's headroom");
   host.detach();
   c.port.close();
   c.far.close();

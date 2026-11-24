@@ -1,11 +1,11 @@
 // The gateway's IP port as a tailnet client's worker holds it (web/tailnet-worker.ts, web/tailcat-worker.ts,
 // web/room-worker.ts): the port of the moment (a restarted machine attaches another), the guest's packets in, the
-// client's out (batched: web/net.ts `batchSender`), and the lease the guest's DHCP gets, told again only when it
+// client's out (batched, each after its headroom: web/net.ts `batchSender`, `IP_HEADROOM`), and the lease the guest's DHCP gets, told again only when it
 // changed (each one the gateway hears makes a router advertisement: web/gateway.ts `leaseChanged`). Whether the
 // adapter is the guest's default way out (`primary`, per family) and its rank come with the page's `primary` message;
 // the worker's `offered` makes the lease of them. The worker keeps its client: a detach only hands the port back.
 import type { Lease } from './gateway.ts';
-import { batchSender, packetsOf } from './net.ts';
+import { batchSender, IP_HEADROOM, packetsOf } from './net.ts';
 
 /** What the page said of the adapter's place (docs/networking/adapters.md §4; the `primary` message). */
 export type Placement = {
@@ -55,7 +55,7 @@ export function ipPortHost(
         ip.close();
       }
       ip = port;
-      send = batchSender(port);
+      send = batchSender(port, IP_HEADROOM);
       port.onmessage = (ev: MessageEvent) => {
         const packets = packetsOf(ev.data);
         if (packets) guest(packets);

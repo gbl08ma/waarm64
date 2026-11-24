@@ -8,7 +8,7 @@
   // (the peer's userspace tailscaled hands its ports to its machine's localhost, where the test's
   // echo server is), counting what comes back.
   import { startTailscale } from '../../web/tailscale.ts';
-  import { packetsOf } from '../../web/net.ts';
+  import { IP_HEADROOM, packetsOf } from '../../web/net.ts';
   import * as pk from '../net/packets.ts';
   const q = new URLSearchParams(location.search);
   const events = [];
@@ -18,9 +18,9 @@
   let lease = null;
   const waiting = new Map();
   ts.ip.onmessage = (e) => {
-    const packets = packetsOf(e.data);
+    const packets = packetsOf(e.data, IP_HEADROOM);
     if (!packets) { if (e.data?.type === 'lease') lease = e.data.lease; return; }
-    for (const p of packets) if (p[0] >> 4 === 4 && p[9] === 17 && p.length >= 32) waiting.get(new DataView(p.buffer).getUint32(28))?.(p);
+    for (const p of packets) if (p[0] >> 4 === 4 && p[9] === 17 && p.length >= 32) waiting.get(new DataView(p.buffer, p.byteOffset).getUint32(28))?.(p);
   };
   let seq = 0;
   async function echoes(n, size, window = 16) {

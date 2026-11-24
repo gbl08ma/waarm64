@@ -90,7 +90,8 @@ export function portAdapter(port: MessagePort, receive: (frame: Uint8Array) => v
  * the same shape as a frame port, but each ArrayBuffer is one IPv4 or IPv6 packet
  * with no Ethernet header; a batch (an array of ArrayBuffers) is what one task
  * sent (`batchSender`). The Ethernet gateway (N3) sits between a frame
- * adapter and one of these.
+ * adapter and one of these. Toward the gateway each buffer has `IP_HEADROOM`
+ * bytes before its packet.
  */
 export type IpPort = { send(packet: Uint8Array): void; close?(): void };
 
@@ -99,11 +100,21 @@ export function ipPort(port: MessagePort, receive: (packet: Uint8Array) => void)
   return portAdapter(port, receive);
 }
 
-/** The packets in an IP-port message (one ArrayBuffer, or an array of them); undefined for other messages. */
-export function packetsOf(data: unknown): Uint8Array[] | undefined {
-  if (data instanceof ArrayBuffer) return [new Uint8Array(data)];
-  if (Array.isArray(data) && data.length && data.every((d) => d instanceof ArrayBuffer))
-    return data.map((d) => new Uint8Array(d));
+/**
+ * The room before each packet an IP port carries toward the gateway: an Ethernet header's, which the gateway writes
+ * there, so the buffer that crossed is the guest's frame (web/gateway.ts `portBackend`). The direction says it (a bare
+ * ArrayBuffer can't): what a backend posts has it, what the gateway posts doesn't.
+ */
+export const IP_HEADROOM = 14;
+
+/**
+ * The packets in an IP-port message (one ArrayBuffer, or an array of them), each past its buffer's `headroom` bytes;
+ * undefined for other messages, and for a buffer shorter than the headroom.
+ */
+export function packetsOf(data: unknown, headroom = 0): Uint8Array[] | undefined {
+  if (data instanceof ArrayBuffer) return data.byteLength >= headroom ? [new Uint8Array(data, headroom)] : undefined;
+  if (Array.isArray(data) && data.length && data.every((d) => d instanceof ArrayBuffer && d.byteLength >= headroom))
+    return data.map((d) => new Uint8Array(d, headroom));
   return undefined;
 }
 
@@ -111,8 +122,10 @@ export function packetsOf(data: unknown): Uint8Array[] | undefined {
  * Sends packets on an IP port, those of one task as one message: they wait for the task's end (a microtask),
  * never for a timer, so batching adds no latency. A batch keeps its packets together for the other side
  * (the tailnet client joins their relay frames into one WebSocket message; virtio-net merges TCP segments).
+ * With a `headroom`, each buffer has that many bytes before its packet: a packet that is the rest of such a buffer
+ * crosses as it is, any other is copied into one.
  */
-export function batchSender(port: MessagePort): (packet: Uint8Array) => void {
+export function batchSender(port: MessagePort, headroom = 0): (packet: Uint8Array) => void {
   let batch: ArrayBuffer[] = [];
   const flush = () => {
     const b = batch;
@@ -122,6 +135,12 @@ export function batchSender(port: MessagePort): (packet: Uint8Array) => void {
   };
   return (p) => {
     if (!batch.length) queueMicrotask(flush);
-    batch.push((p.buffer.byteLength === p.length && p.byteOffset === 0 ? p.buffer : p.slice().buffer) as ArrayBuffer);
+    if (p.byteOffset === headroom && p.buffer.byteLength === headroom + p.length) batch.push(p.buffer as ArrayBuffer);
+    else if (!headroom) batch.push(p.slice().buffer);
+    else {
+      const b = new Uint8Array(headroom + p.length);
+      b.set(p, headroom);
+      batch.push(b.buffer);
+    }
   };
 }

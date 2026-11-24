@@ -12,7 +12,7 @@
   // `?probeMs`: how often a blocked member probes again. `?names=` (JSON: titles, each a name's owner key and its item, as
   // net/ts/examples/names-title.rs prints them): it serves the room's names (tests/page-room.test.ts).
   import { startRoom } from '../../web/room.ts';
-  import { packetsOf } from '../../web/net.ts';
+  import { IP_HEADROOM, packetsOf } from '../../web/net.ts';
   const q = new URLSearchParams(location.search);
   let noUdp = q.has('noUdp');
   const Real = RTCPeerConnection;
@@ -32,7 +32,7 @@
   const answers = [];
   const send = (p) => room.ip.postMessage(p.buffer, [p.buffer]);
   room.ip.onmessage = (e) => {
-    const packets = packetsOf(e.data);
+    const packets = packetsOf(e.data, IP_HEADROOM);
     if (!packets) return;
     for (const p of packets) {
       if (p[0] >> 4 !== 6 || p[6] !== 17 || p.length < 52) continue;

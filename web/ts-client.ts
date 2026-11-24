@@ -5,6 +5,7 @@
 // a worker or in Node alike: WebSocket, fetch and crypto are all it needs.
 import type { Lease } from './gateway.ts';
 import { MsgError } from './msg.ts';
+import { IP_HEADROOM } from './net.ts';
 import { wasi } from './ts-wasi.ts';
 import type { NetMap } from './tailscale.ts';
 
@@ -189,7 +190,7 @@ export type TsEvent =
   | NamesLine;
 
 export type TsHandlers = {
-  /** An IP packet for the guest (the array is the client's: keep it). */
+  /** An IP packet for the guest (the array is the handler's to keep: a view past `IP_HEADROOM` bytes of its buffer). */
   packet(p: Uint8Array): void;
   event(e: TsEvent): void;
   /** A room's WebRTC connections, which the page holds (web/room.ts): it hands each one's data channel back with
@@ -511,9 +512,12 @@ export class TsClient {
     for (let n = x.ts_poll(this.h); n > 0; n = x.ts_poll(this.h)) {
       const ptr = x.ts_buf();
       const mem = new Uint8Array(x.memory.buffer);
-      // A packet for the guest (per packet): copied once, to an exact-sized buffer that the IP port transfers as it is.
+      // A packet for the guest (per packet): copied once, into a buffer with the IP port's headroom before it, which
+      // the port transfers as it is and the gateway makes the guest's frame of.
       if (mem[ptr] === 5) {
-        this.on.packet(mem.slice(ptr + 5, ptr + n));
+        const b = new Uint8Array(IP_HEADROOM + n - 5);
+        b.set(mem.subarray(ptr + 5, ptr + n), IP_HEADROOM);
+        this.on.packet(b.subarray(IP_HEADROOM));
         continue;
       }
       const a = mem.slice(ptr, ptr + n);

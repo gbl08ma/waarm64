@@ -1954,12 +1954,6 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - **Video, per picture:** 2–3 frame-sized allocations per decoded picture and the padding copies (P4): a pool needs
   the picture's lifetime (`VenusImport.last` and the renderer keep the planes); NV12's `copyTo` with a layout runs
   only with hardware decoders, which the dev VM's headless Chromium hasn't.
-- **The network, per packet:** an IP-port packet with 14 bytes of headroom would let the gateway write the Ethernet
-  header in place (P1(b): one copy of ≤ 1.5 KB and an allocation per packet, on tailnet and tailcat only). Not
-  contained: a bare ArrayBuffer can't say it has headroom, so every consumer at the gateway's end changes with it
-  (gateway.ts `portBackend`, the harness pages tests/browser/tailscale.html, tailcat.html and room.html, which read
-  packets at offset 0), and room-worker's packets would take a copy in the sender. A shape if taken: `batchSender`
-  with a headroom mode, `portBackend`'s `deliver(view, inPlace)` flagged explicitly, the producers allocating 14 + len.
 - **Frame batches, unmeasured:** a helper's or the demo network's message reaches the card as one post, so its TCP
   segments are merged as an IP port's are; a message of more unmergeable frames (UDP) than the guest's buffers plus
   `RX_QUEUE` (256) drops the oldest in one delivery. `bench/net/local.ts`'s download (`local::worker,batch`) base

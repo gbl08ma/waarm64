@@ -1,7 +1,7 @@
 // The frame and IP-packet ports of web/net.ts (docs/devices.md "net").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { batchSender, ipPort, packetsOf, portAdapter } from '../web/net.ts';
+import { batchSender, IP_HEADROOM, ipPort, packetsOf, portAdapter } from '../web/net.ts';
 
 for (const [name, make] of [['frame', portAdapter], ['IP packet', ipPort]] as const) {
   test(`the ${name} port carries one ArrayBuffer per message both ways`, async () => {
@@ -57,6 +57,25 @@ test('an IP port batch: what one task sends is one message, a single packet stay
   assert.deepEqual(messages.map((m) => packetsOf(m)?.map((p) => [...p])), [[[1], [2, 3], [4]], [[5]]]);
   assert.equal(packetsOf({ type: 'lease', lease: null }), undefined);
   assert.equal(packetsOf([]), undefined);
+  port1.close();
+  port2.close();
+});
+
+test('an IP port toward the gateway: each buffer has the headroom before its packet, and one that has it already crosses uncopied', async () => {
+  const { port1, port2 } = new MessageChannel();
+  const got = new Promise<unknown>((r) => (port2.onmessage = (e) => r(e.data)));
+  const send = batchSender(port1, IP_HEADROOM);
+  const roomy = new Uint8Array(IP_HEADROOM + 2);
+  roomy.set([7, 8], IP_HEADROOM);
+  send(roomy.subarray(IP_HEADROOM));
+  send(new Uint8Array([1, 2, 3])); // no headroom: copied into a buffer that has it
+  send(new Uint8Array(IP_HEADROOM + 4).fill(5).subarray(IP_HEADROOM, IP_HEADROOM + 2)); // not its buffer's rest: copied too
+  const message = (await got) as ArrayBuffer[];
+  assert.equal(roomy.buffer.byteLength, 0, 'the buffer with headroom was transferred as it was');
+  assert.deepEqual(message.map((b) => b.byteLength), [16, 17, 16]);
+  assert.deepEqual(packetsOf(message, IP_HEADROOM)?.map((p) => [p.byteOffset, ...p]), [[14, 7, 8], [14, 1, 2, 3], [14, 5, 5]]);
+  assert.equal(packetsOf(new ArrayBuffer(IP_HEADROOM - 1), IP_HEADROOM), undefined, 'shorter than the headroom: not packets');
+  assert.equal(packetsOf([message[0], new ArrayBuffer(3)], IP_HEADROOM), undefined);
   port1.close();
   port2.close();
 });

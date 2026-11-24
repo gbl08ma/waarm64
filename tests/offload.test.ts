@@ -286,8 +286,9 @@ test('virtio-net on a port backend: a batch\'s segments reach the guest as one p
     ram.set(tx, 0);
     dev.request({ w0: 999, queue: 1, read: [{ off: 0, len: tx.length, mem: 0 }], write: [] });
     for (let k = 0; k < 40; k++) dev.request({ w0: k, queue: 0, read: [], write: [{ off: 0x10000 + k * 2048, len: 2048, mem: 0 }] });
-    // One message from the backend: 4 segments of a stream, as IP packets.
-    const segs = stream(false, 3 * 1228 + 100).map((s) => s.slice(ETH).buffer);
+    // One message from the backend: 4 segments of a stream, as IP packets after their headroom (the frames' header is
+    // zeroed: the gateway writes it).
+    const segs = stream(false, 3 * 1228 + 100).map((s) => s.slice().fill(0, 0, ETH).buffer);
     port2.postMessage(segs, segs);
     await tick();
     const hl = ETH + 20 + 32;

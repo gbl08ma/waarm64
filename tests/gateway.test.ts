@@ -15,7 +15,7 @@ const be16 = (b: Uint8Array, at: number) => (b[at] << 8) | b[at + 1];
 function rig(lease: Lease | null = ECHO_LEASE, backendSend?: (p: Uint8Array) => void, opts: GatewayOptions = {}) {
   const out: Uint8Array[] = []; // frames for the guest
   const sent: Uint8Array[] = []; // packets for the backend
-  let deliver!: (p: Uint8Array) => void;
+  let deliver!: (p: Uint8Array, headroom?: boolean) => void;
   let changed!: () => void;
   const g = gateway((f) => out.push(f), (d, c) => {
     deliver = d;
@@ -23,7 +23,7 @@ function rig(lease: Lease | null = ECHO_LEASE, backendSend?: (p: Uint8Array) => 
     const inner = echoBackend(lease ?? ECHO_LEASE)(d);
     return { lease: () => lease, send: (p) => { sent.push(p); backendSend?.(p) ?? inner.send(p); } } satisfies IpBackend;
   }, opts);
-  return { g, out, sent, deliver: (p: Uint8Array) => deliver(p), setLease: (l: Lease | null) => { lease = l; changed(); } };
+  return { g, out, sent, deliver: (p: Uint8Array, headroom?: boolean) => deliver(p, headroom), setLease: (l: Lease | null) => { lease = l; changed(); } };
 }
 
 function frame(dst: Iterable<number>, src: Iterable<number>, type: number, payload: Iterable<number>) {
@@ -191,6 +191,28 @@ test('IP framing: packets lose their Ethernet header out and gain it in', () => 
   out.length = 0;
   deliver(ping);
   assert.equal(hex(out[0]), hex(frame(GUEST_MAC, GATEWAY_MAC, 0x0800, ping)));
+  // With headroom, the header is written before the packet: the frame is the packet's own buffer, nothing copied.
+  out.length = 0;
+  const roomy = new Uint8Array(14 + ping.length).fill(0xee);
+  roomy.set(ping, 14);
+  deliver(roomy.subarray(14), true);
+  assert.equal(out[0].buffer, roomy.buffer, 'the frame is the buffer that came');
+  assert.equal(out[0].byteOffset, 0);
+  assert.equal(hex(out[0]), hex(frame(GUEST_MAC, GATEWAY_MAC, 0x0800, ping)));
+  // Said to have headroom without it (a view at its buffer's start): copied, as without.
+  out.length = 0;
+  deliver(ping.slice(), true);
+  assert.equal(hex(out[0]), hex(frame(GUEST_MAC, GATEWAY_MAC, 0x0800, ping)));
+  // IPv6 the same, and a packet that is neither is dropped with its headroom untouched.
+  out.length = 0;
+  const six = new Uint8Array(14 + 40);
+  six[14] = 0x60;
+  deliver(six.subarray(14), true);
+  assert.equal(hex(out[0].subarray(0, 14)), hex(frame(GUEST_MAC, GATEWAY_MAC, 0x86dd, [])));
+  const junk = new Uint8Array(14 + 40);
+  deliver(junk.subarray(14), true);
+  assert.equal(out.length, 1);
+  assert.ok(junk.every((b) => b === 0));
 });
 
 test('what must not reach the backend is dropped: spoofed sources, multicast, IPv6, other ethertypes, no lease', () => {
