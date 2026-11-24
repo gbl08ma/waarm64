@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // A picture's copy out of its frame, measured (bench/video/copy.ts calls into this page's module).
+  import * as b from './copy-page.ts';
+  window.copyBench = b;
+  window.ready = true;
+</script>

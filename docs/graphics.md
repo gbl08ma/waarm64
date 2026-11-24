@@ -614,6 +614,14 @@ On with 3D (`?gpu=novideo` off); the design, its findings and its measurements a
   pending pictures, once the frames the decoder output before it are copied out and written (`webCodecsDecoder` holds
   the error for the copies still out; told at once, it lost up to all of them where copies lag the decoder); a new decoder starts at the next key picture. A seek sends a key picture to the same codec; a size
   change makes a new codec ("Video's findings").
+- **Out of the decoder:** a frame is copied once, into one array a picture, in the shape of the planes it goes into
+  (`copyPicture`, `PictureShape`): the decoder asks the context for the pending picture's planes (their sizes, two or
+  three), and `VideoFrame.copyTo` takes a layout whose offsets and strides are theirs, so I420 into three planes and
+  NV12 into two need nothing more; the other two (a software decoder's I420 into NV12's two planes, a hardware
+  decoder's NV12 into three) cross over in place through a scratch plane the decoder keeps. The picture's last column
+  and row are then repeated out to the planes' sizes in place, and the renderer uploads the arrays as they are (and
+  hands them to Venus's import). A frame nothing waits for (given up, its buffer gone) isn't copied. A decoder not told
+  the shape (a test's fake) gives the picture's own size, interleaved, which `writePicture` widens and parts as before.
 - **AV1** (`web/video-av1.ts` `Av1Stream`, "Video's findings"): a sequence header and each frame header written from
   the desc, a tile group of the tiles; the decoder's reference slots are this side's (Mesa sends no
   refresh_frame_flags): a frame goes to a slot holding nothing the guest's reference map has, or waits for the next
@@ -776,7 +784,17 @@ on the M4, the dev VM its Chromium 153; Sintel's trailer at 854×480 and 24 fps 
 - **AV1** exact against the guest's software decode (libaom, SVT-AV1, film grain 240 of 240; the tools clip 72 of 72:
   segmentation, 2x2 tiles, 128x128 superblocks, quantizer matrices, rotzoom global motion, delta q and lf, loop
   restoration) on dav1d and VideoToolbox.
-- The tools: `bench/video/v0.ts` (`vainfo`, FFmpeg and Firefox on the page, `CAPTURE=1`), `v1.ts` (the guest's FFmpeg
+- **A picture's copy** (`copy/`, `bench/video/copy.ts`, 2026-11-24; Chrome for Testing 158 on the M4, the dev VM's
+  Chromium 155; 1080p frames into 1920×1088 planes, 9 alternated rounds of 120 pictures, no round of one arm within
+  the other's): the path before (the frame copied whole, its rows copied into arrays of the picture's size, each
+  widened to its plane, the chroma parted for three planes) allocated 8.9 MiB a picture for two planes and 9.9 for
+  three; the shaped copy 3.0. On the Mac, VideoToolbox's NV12 frames: 1.65 → 1.05 ms a picture into two planes, 2.30 →
+  1.44 into three (most of what's left is the frame's readback); software frames (I420) 1.38 → 0.55 and 1.94 → 0.25.
+  In the dev VM (software only) 2.27 → 0.81 and 2.88 → 0.49. The same bytes either way, in every case. The crossover
+  two bytes a step (a `Uint16Array` over the chroma) rather than one took the VM's I420 into two planes from 1.06 to
+  0.82 ms and NV12 into three from 1.19 to 0.90.
+- The tools: `bench/video/copy.ts` (a picture's copy, before and after; `copy-mac.sh` on the Mac's hardware decoders),
+  `bench/video/v0.ts` (`vainfo`, FFmpeg and Firefox on the page, `CAPTURE=1`), `v1.ts` (the guest's FFmpeg
   through VA-API against its software decode, framemd5; `SNAPSHOT=1`), `seek.ts`, `replay.ts` (a capture's pictures
   through `VideoDecoder`; `hw|sw`, `REORDER`), `pictures.ts`, `fixture.ts` (the Chromium tests' fixtures),
   `media-disk.sh` (the clips as a second disk; images/arch/media.sh makes them); `bench/audio/avsync.ts` (`MEDIA=disk`,

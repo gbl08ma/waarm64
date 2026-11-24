@@ -7,7 +7,7 @@ import { decodeCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl, withVideo } from '../web/virgl-caps.ts';
 import { CallQueue, type WorkerCall } from '../web/virgl-host.ts';
 import { VirglRenderer } from '../web/virgl-renderer.ts';
-import { decodeVideoCaps, encodeVideoCaps, FORMAT_NV12, padPlane, PROFILE, probeVideo, VideoContext, videoStats, type DecodedPicture, type DecoderConfig, type DecoderFactory, type VideoStats } from '../web/virgl-video.ts';
+import { decodeVideoCaps, encodeVideoCaps, FORMAT_NV12, fillEdges, padPlane, PROFILE, probeVideo, VideoContext, videoStats, type DecodedPicture, type DecoderConfig, type DecoderFactory, type PictureShape, type VideoStats } from '../web/virgl-video.ts';
 import { mockGl } from './virgl-mock-gl.ts';
 
 const H264 = { profile: PROFILE.AVC_HIGH, maxLevel: 51, maxWidth: 4096, maxHeight: 2304 };
@@ -97,11 +97,11 @@ test('VideoContext: codecs, buffers and a picture\'s parameters and data, read f
 
 /** A decoder that keeps its chunks; the test outputs pictures (`out`) or fails it (`fail`). */
 /** A fake decoder: what it was given; `out` outputs a picture, `fail` errs, `flushed` ends the last flush. */
-type Fake = { config: DecoderConfig; chunks: { data: Uint8Array; key: boolean; ts: number }[]; flushes: number; closed: boolean; out(ts: number): void; fail(m: string): void; flushed?: () => void };
+type Fake = { config: DecoderConfig; chunks: { data: Uint8Array; key: boolean; ts: number }[]; flushes: number; closed: boolean; shape(ts: number): PictureShape | undefined; out(ts: number, pic?: DecodedPicture): void; fail(m: string): void; flushed?: () => void };
 function fakeDecoders() {
   const made: Fake[] = [];
-  const factory: DecoderFactory = (config, output, error) => {
-    const f: Fake = { config, chunks: [], flushes: 0, closed: false, out: (ts) => output(ts, picture(ts)), fail: error };
+  const factory: DecoderFactory = (config, output, error, shape) => {
+    const f: Fake = { config, chunks: [], flushes: 0, closed: false, shape: (ts) => shape?.(ts), out: (ts, pic) => output(ts, pic ?? picture(ts)), fail: error };
     made.push(f);
     return {
       decode: (data, key, ts) => void f.chunks.push({ data: data.slice(), key, ts }),
@@ -401,7 +401,10 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   r.detach(1, 10);
   r.detach(1, 11);
   const before = gl.log.filter(([n]) => n === 'texSubImage2D').length;
+  // The decoder is told the planes' shape while the picture is awaited, to copy it out that way (`copyPicture`).
+  assert.deepEqual(made[0].shape(0), { w: 6, h: 4, cw: 3, ch: 2, planar: false });
   made[0].out(0);
+  assert.equal(made[0].shape(0), undefined, 'nothing takes a picture that is out');
   assert.deepEqual(errors, []);
   const ups = gl.log.filter(([n]) => n === 'texSubImage2D').slice(before);
   // Each plane whole (its padding the picture's edges, not what the texture held), then the picture alone into a
@@ -409,6 +412,21 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   assert.deepEqual(ups.map(([, a]) => (a as number[]).slice(2, 6)), [[0, 0, 6, 4], [0, 0, 4, 2], [0, 0, 3, 2], [0, 0, 2, 1]]);
   assert.deepEqual(gl.log.filter(([n]) => n === 'texStorage2D').slice(-2).map(([, a]) => (a as number[]).slice(3)), [[4, 2], [2, 1]]);
   assert.equal(r.videoStats.decoded, 1);
+  // A picture already in its planes' shape (rows of the plane's width) is uploaded from its own arrays, not a copy.
+  cmd(57, 1, 2);
+  cmd(59, 1, 2, 7, 8, 3);
+  cmd(61, 1, 2);
+  r.submit(1, new Uint32Array(words.slice(-12)));
+  const shaped: DecodedPicture = { width: 4, height: 2, y: new Uint8Array(24).fill(7), uv: new Uint8Array(12).fill(8), stride: 6, rows: 4, cstride: 3, crows: 2, planar: false };
+  const planes: Uint8Array[] = [];
+  r.onPlane = (_res, data) => planes.push(data);
+  const mark = gl.log.filter(([n]) => n === 'texSubImage2D').length;
+  made[0].out(1, shaped);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(planes, [shaped.y, shaped.uv]);
+  assert.ok(planes[0] === shaped.y && planes[1] === shaped.uv, 'the arrays themselves');
+  assert.deepEqual(gl.log.filter(([n]) => n === 'texSubImage2D').slice(mark).map(([, a]) => (a as number[]).slice(2, 6)), [[0, 0, 6, 4], [0, 0, 4, 2], [0, 0, 3, 2], [0, 0, 2, 1]]);
+  r.onPlane = undefined;
   // Anything else written into a plane drops its picture: the plane is sampled again.
   r.attachBacking(10, [{ off: 2048, len: 24, mem: 0 }]);
   const deleted = gl.calls.get('deleteTexture') ?? 0;
@@ -781,4 +799,23 @@ test('padPlane: a picture widened to its plane, the last column and row repeated
   const same = new Uint8Array(4);
   assert.equal(padPlane(same, 2, 2, 1, 2, 2).data, same);
   assert.equal(padPlane(same, 2, 2, 1, 1, 1).data, same);
+  // From an array with longer rows (4 texels a row, the picture 3×2): its rows alone are taken.
+  const wide = padPlane(new Uint8Array([1, 2, 3, 0, 4, 5, 6, 0]), 3, 2, 1, 5, 3, 4, 2);
+  assert.deepEqual({ w: wide.w, h: wide.h, data: [...wide.data] }, { w: 5, h: 3, data: [1, 2, 3, 3, 3, 4, 5, 6, 6, 6, 4, 5, 6, 6, 6] });
+  // An array of the plane's size already (the picture in its corner) is returned, with its size.
+  const big = new Uint8Array(15);
+  assert.deepEqual(padPlane(big, 3, 2, 1, 5, 3, 5, 3), { data: big, w: 5, h: 3 });
+});
+
+test('fillEdges: a picture\'s last column and row repeated out to its array\'s size, in place', () => {
+  const y = new Uint8Array([1, 2, 3, 0, 0, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0]);
+  fillEdges(y, 3, 2, 1, 5, 3);
+  assert.deepEqual([...y], [1, 2, 3, 3, 3, 4, 5, 6, 6, 6, 4, 5, 6, 6, 6]);
+  const uv = new Uint8Array([10, 20, 30, 40, 0, 0, 0, 0, 0, 0, 0, 0]);
+  fillEdges(uv, 2, 1, 2, 3, 2);
+  assert.deepEqual([...uv], [10, 20, 30, 40, 30, 40, 10, 20, 30, 40, 30, 40]);
+  // Nothing to fill: untouched.
+  const same = new Uint8Array([1, 2, 3, 4]);
+  fillEdges(same, 2, 2, 1, 2, 2);
+  assert.deepEqual([...same], [1, 2, 3, 4]);
 });

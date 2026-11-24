@@ -126,6 +126,13 @@ test('video on WebGL2: AV1 frames through the device and WebCodecs into their pl
   }
 });
 
+test('video on WebGL2: a frame is copied out in its planes\' shape, I420 or NV12, interleaved or planar, its edges repeated', async () => {
+  // Frames made on the page: the dev VM's Chromium has no hardware decoder, whose frames are the NV12 ones.
+  const r = await page.evaluate(() => (window as unknown as { virgl: { copyPictures(): Promise<{ cases: number; wrong: string[] }> } }).virgl.copyPictures());
+  assert.deepEqual(r.wrong, []);
+  assert.equal(r.cases, 28);
+});
+
 // Skipped in a Claude Code cloud session: Playwright's x86_64 Chromium writes 5 of VP9's 10 pictures before the error,
 // every run, against this test's 8 to 10 (docs/cloud.md).
 const cloud = !!process.env.CLAUDE_CODE_REMOTE && 'a cloud session\'s Chromium writes 5 pictures before the error (docs/cloud.md)';

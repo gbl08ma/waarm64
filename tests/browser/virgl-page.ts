@@ -37,7 +37,7 @@ import { Gpu } from '../../web/gpu.ts';
 import { ramLayout, type Ram } from '../../web/ram.ts';
 import { canvasPresenter } from '../../web/gpu-present.ts';
 import { Screen } from '../../web/virgl-screen.ts';
-import { probeVideo, webCodecsDecoder, type DecodedPicture, type DecoderFactory } from '../../web/virgl-video.ts';
+import { copyPicture, probeVideo, webCodecsDecoder, type DecodedPicture, type DecoderFactory, type PictureScratch, type PictureShape } from '../../web/virgl-video.ts';
 
 const fromBase64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 function toBase64(b: Uint8Array) {
@@ -112,11 +112,62 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   return { hashes: await Promise.all(shots), stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, timedOut, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
 }
 
+/**
+ * `copyPicture` on frames made here (I420 and NV12: no decoder in the dev VM's Chromium gives NV12), their visible
+ * rectangle inside the coded size at an offset, an odd size and an even one, in each shape: none, the picture's own
+ * size and a larger plane's, interleaved and planar. Each texel of each array against the frame's bytes, the picture's
+ * last column and row where the array is larger. Returns the cases that differ, and how many ran.
+ */
+export async function copyPictures() {
+  const wrong: string[] = [];
+  let cases = 0;
+  const scratch: PictureScratch = {};
+  const CODED_W = 32, CODED_H = 24, CCW = CODED_W / 2, CCH = CODED_H / 2;
+  // The frame's planes: every byte its plane's own (a wrong plane, row or column reads as another value).
+  const Y = Uint8Array.from({ length: CODED_W * CODED_H }, (_, k) => (k * 7 + 3) & 0xff);
+  const U = Uint8Array.from({ length: CCW * CCH }, (_, k) => (k * 5 + 101) & 0xff);
+  const V = Uint8Array.from({ length: CCW * CCH }, (_, k) => (k * 11 + 53) & 0xff);
+  for (const format of ['I420', 'NV12'] as const) {
+    const data = new Uint8Array(CODED_W * CODED_H + 2 * CCW * CCH);
+    data.set(Y);
+    if (format === 'I420') { data.set(U, Y.length); data.set(V, Y.length + U.length); }
+    else for (let k = 0; k < U.length; k++) { data[Y.length + 2 * k] = U[k]; data[Y.length + 2 * k + 1] = V[k]; }
+    for (const rect of [{ x: 2, y: 4, width: 21, height: 13 }, { x: 0, y: 0, width: 28, height: 16 }]) {
+      const cw = (rect.width + 1) >> 1, ch = (rect.height + 1) >> 1;
+      const shapes: (PictureShape | undefined)[] = [undefined];
+      for (const planar of [false, true]) shapes.push({ w: 0, h: 0, cw: 0, ch: 0, planar }, { w: 32, h: 16, cw: 16, ch: 8, planar }, { w: 22, h: 24, cw: 11, ch: 12, planar });
+      for (const shape of shapes) {
+        cases++;
+        const name = `${format} ${rect.width}x${rect.height} into ${shape ? `${shape.w}x${shape.h} ${shape.planar ? 'planar' : 'interleaved'}` : 'no shape'}`;
+        const f = new VideoFrame(data, { format, codedWidth: CODED_W, codedHeight: CODED_H, timestamp: 0, visibleRect: rect });
+        let p: DecodedPicture;
+        try { p = await copyPicture(f, shape, scratch); } catch (e) { wrong.push(`${name}: ${e}`); continue; } finally { f.close(); }
+        const W = Math.max(rect.width, shape?.w ?? 0), H = Math.max(rect.height, shape?.h ?? 0), CW = Math.max(cw, shape?.cw ?? 0), CH = Math.max(ch, shape?.ch ?? 0);
+        const said = [p.width, p.height, p.stride, p.rows, p.cstride, p.crows, !!p.planar, p.y.length, p.uv.length].join(' ');
+        const want = [rect.width, rect.height, W, H, CW, CH, !!shape?.planar, W * H, 2 * CW * CH].join(' ');
+        if (said !== want) { wrong.push(`${name}: sizes ${said}, not ${want}`); continue; }
+        let bad = '';
+        for (let r = 0; r < H && !bad; r++) for (let x = 0; x < W && !bad; x++) {
+          const v = Y[(rect.y + Math.min(r, rect.height - 1)) * CODED_W + rect.x + Math.min(x, rect.width - 1)];
+          if (p.y[r * W + x] !== v) bad = `luma at ${x},${r}: ${p.y[r * W + x]}, not ${v}`;
+        }
+        for (let r = 0; r < CH && !bad; r++) for (let x = 0; x < CW && !bad; x++) {
+          const at = ((rect.y >> 1) + Math.min(r, ch - 1)) * CCW + (rect.x >> 1) + Math.min(x, cw - 1);
+          const u = p.planar ? p.uv[r * CW + x] : p.uv[2 * (r * CW + x)], v = p.planar ? p.uv[CW * CH + r * CW + x] : p.uv[2 * (r * CW + x) + 1];
+          if (u !== U[at] || v !== V[at]) bad = `chroma at ${x},${r}: ${u} ${v}, not ${U[at]} ${V[at]}`;
+        }
+        if (bad) wrong.push(`${name}: ${bad}`);
+      }
+    }
+  }
+  return { cases, wrong };
+}
+
 /** WebCodecs' decoders with one chunk damaged (`ChunkFault`). */
 function faulty(fault: ChunkFault): DecoderFactory {
   let n = 0;
-  return (config, output, error) => {
-    const d = webCodecsDecoder(config, output, error);
+  return (config, output, error, shape) => {
+    const d = webCodecsDecoder(config, output, error, shape);
     return {
       ...d,
       decode(data, key, timestamp) {

@@ -171,8 +171,29 @@ export type VideoStream = {
   decoded: number;
 };
 
-/** A decoded picture as the host writes it: luma rows `width` bytes long, and chroma at half size with U and V interleaved (NV12's second plane). */
-export type DecodedPicture = { width: number; height: number; y: Uint8Array; uv: Uint8Array };
+/**
+ * A decoded picture as the host writes it, `width`×`height`. `y` is its luma in rows of `stride` bytes, `rows` of
+ * them; `uv` its chroma at half size, `cstride`×`crows` texels: U and V interleaved (NV12's second plane) or, `planar`,
+ * U's rows then V's. Without the sizes the arrays are the picture's own (`width`×`height`, and half of each rounded
+ * up); with them they may be larger, a plane's size (`PictureShape`), the picture's last column and row repeated.
+ */
+export type DecodedPicture = {
+  width: number;
+  height: number;
+  y: Uint8Array;
+  uv: Uint8Array;
+  stride?: number;
+  rows?: number;
+  cstride?: number;
+  crows?: number;
+  planar?: boolean;
+};
+
+/**
+ * The planes a picture goes into, so it is copied out of the decoder once, in their shape: luma `w`×`h` and chroma
+ * `cw`×`ch` texels (0: the picture's own size), the chroma as one interleaved plane or, `planar`, as two.
+ */
+export type PictureShape = { w: number; h: number; cw: number; ch: number; planar: boolean };
 
 /** One codec's decoder: WebCodecs' `VideoDecoder` in a browser (`webCodecsDecoder`), a fake in Node's tests. */
 export type PictureDecoder = {
@@ -187,6 +208,8 @@ export type DecoderFactory = (
   config: DecoderConfig,
   output: (timestamp: number, picture: DecodedPicture) => void,
   error: (m: string) => void,
+  /** The shape of the planes the picture with this timestamp goes into; undefined when nothing takes it (it needn't come out). */
+  shape?: (timestamp: number) => PictureShape | undefined,
 ) => PictureDecoder;
 
 type Codec = {
@@ -246,6 +269,8 @@ export type VideoEnv = {
   read(res: number, len: number): Uint8Array | null;
   /** The size of a resource's backing (0 if none). */
   size(res: number): number;
+  /** A plane resource's size in texels (`PictureShape`), while it exists. */
+  dims?(res: number): { width: number; height: number } | undefined;
   error(m: string): void;
   /** Every exception a picture's parsing caught (`VirglRenderer.onCaught`). */
   caught?: (e: unknown) => void;
@@ -616,11 +641,27 @@ export class VideoContext {
         // The pictures it had are lost; a new decoder starts at the next key picture.
         this.closeCodec(c);
       },
+      (ts) => this.shape(ts),
     );
     c.dec = dec;
     this.env.debug?.(
       `video: codec ${c.handle}: decoder ${codec} ${c.width}x${c.height} ${c.hardware ? 'hardware' : 'software'}`,
     );
+  }
+
+  /** The planes' shape for the pending picture `ts` (`DecoderFactory`'s `shape`): none once it's out or given up. */
+  private shape(ts: number): PictureShape | undefined {
+    const q = this.pending.get(ts);
+    if (!q || q.pic) return undefined;
+    const y = this.env.dims?.(q.planes[0]),
+      c = this.env.dims?.(q.planes[1]);
+    return {
+      w: y?.width ?? 0,
+      h: y?.height ?? 0,
+      cw: c?.width ?? 0,
+      ch: c?.height ?? 0,
+      planar: q.planes.length === 3,
+    };
   }
 
   /** A decoded picture into its planes (`VideoEnv.write`), no longer pending. */
@@ -722,10 +763,11 @@ function concat(parts: Uint8Array[]) {
 /**
  * Decoders from WebCodecs (the GPU worker's): `optimizeForLatency`, in hardware for the profiles `probeVideo` found
  * there (else in software, so the H.264 stream matches the decoder: `buildSps`). Each frame's visible rectangle is
- * copied out (`copyTo`, exact) as luma and interleaved chroma.
+ * copied out (`copyTo`, exact) in the shape of the planes it goes into (`copyPicture`).
  */
-export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
+export const webCodecsDecoder: DecoderFactory = (config, output, error, shape) => {
   let closed = false;
+  const scratch: PictureScratch = {};
   // The decoder's own error waits for the copies still out: the frames it output before the error are good pictures,
   // and reporting it at once would lose them (a copy takes a task or more; the error ends the codec's pending pictures).
   let copies: Promise<unknown> = Promise.resolve();
@@ -733,7 +775,10 @@ export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
   const d = new VideoDecoder({
     output: (f) => {
       const ts = f.timestamp;
-      const copy = copyPicture(f)
+      const s = shape?.(ts);
+      // Nothing takes it (given up, or its buffer gone): not copied.
+      if (shape && !s) return f.close();
+      const copy = copyPicture(f, s, scratch)
         .then(
           (p) => {
             if (!closed) output(ts, p);
@@ -779,10 +824,11 @@ export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
 };
 
 /**
- * A plane's rows (`w` texels of `bpp` bytes, `h` of them) widened to at least `tw`×`th` texels, the last column and the
- * last row repeated. The planes are the coded size (whole blocks: 864×480 for an 854×480 video) and a picture is its
- * visible part; what the rest held would be zeros (luma and chroma 0: green) to whoever reads the whole plane. A hardware
- * decoder leaves the blocks' own pixels there. (Draws sample the picture alone: `VirglRenderer.writePicture`.)
+ * A plane's rows (`w` texels of `bpp` bytes, `h` of them, in an array of `sw`×`sh` texels) widened to at least `tw`×`th`
+ * texels, the last column and the last row repeated; an array already that large is returned as it is. The planes are
+ * the coded size (whole blocks: 864×480 for an 854×480 video) and a picture is its visible part; what the rest held
+ * would be zeros (luma and chroma 0: green) to whoever reads the whole plane. A hardware decoder leaves the blocks' own
+ * pixels there. (Draws sample the picture alone: `VirglRenderer.writePicture`.)
  */
 export function padPlane(
   data: Uint8Array,
@@ -791,49 +837,111 @@ export function padPlane(
   bpp: number,
   tw: number,
   th: number,
+  sw = w,
+  sh = h,
 ): { data: Uint8Array; w: number; h: number } {
-  if (!w || !h || (tw <= w && th <= h)) return { data, w, h };
+  if (!w || !h || (tw <= sw && th <= sh)) return { data, w: sw, h: sh };
   const W = Math.max(w, tw),
     H = Math.max(h, th),
     out = new Uint8Array(W * H * bpp);
-  for (let r = 0; r < h; r++) {
-    const o = r * W * bpp;
-    out.set(data.subarray(r * w * bpp, (r + 1) * w * bpp), o);
-    for (let x = w; x < W; x++) out.copyWithin(o + x * bpp, o + (w - 1) * bpp, o + w * bpp);
-  }
-  for (let r = h; r < H; r++) out.copyWithin(r * W * bpp, (h - 1) * W * bpp, h * W * bpp);
+  for (let r = 0; r < h; r++) out.set(data.subarray(r * sw * bpp, (r * sw + w) * bpp), r * W * bpp);
+  fillEdges(out, w, h, bpp, W, H);
   return { data: out, w: W, h: H };
 }
 
-/** A frame's visible rectangle as luma and interleaved chroma (from I420 or NV12, the formats the decoders give). */
-export async function copyPicture(f: VideoFrame): Promise<DecodedPicture> {
+/** A plane's last column and row (`w`×`h` texels of `bpp` bytes) repeated out to its array's `W`×`H` texels, in place. */
+export function fillEdges(data: Uint8Array, w: number, h: number, bpp: number, W: number, H: number) {
+  if (!w || !h) return;
+  if (W > w)
+    for (let r = 0; r < h; r++) {
+      const o = r * W * bpp;
+      for (let x = w; x < W; x++) data.copyWithin(o + x * bpp, o + (w - 1) * bpp, o + w * bpp);
+    }
+  for (let r = h; r < H; r++) data.copyWithin(r * W * bpp, (h - 1) * W * bpp, h * W * bpp);
+}
+
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
+/** A decoder's scratch for `copyPicture`: one chroma plane, kept from picture to picture. */
+export type PictureScratch = { bytes?: Uint8Array };
+
+/**
+ * A frame's visible rectangle (I420 or NV12, the formats the decoders give) copied out in the shape of the planes it
+ * goes into (`shape`; without one, its own size and interleaved chroma): one array a picture, which `copyTo` fills
+ * through a layout whose strides are the planes', so a frame in the planes' own format (I420 into three planes, NV12
+ * into two) is copied once and no more. The other two cross over in place, through `scratch`: U and V interleaved,
+ * or NV12's chroma parted. The edges are then repeated out to the planes' sizes (`fillEdges`).
+ */
+export async function copyPicture(
+  f: VideoFrame,
+  shape?: PictureShape,
+  scratch: PictureScratch = {},
+): Promise<DecodedPicture> {
   if (f.format !== 'I420' && f.format !== 'NV12') throw new Error(`frame format ${f.format}`);
-  const raw = new Uint8Array(f.allocationSize());
-  const layout = await f.copyTo(raw);
   const width = f.visibleRect!.width,
     height = f.visibleRect!.height;
   const cw = (width + 1) >> 1,
     ch = (height + 1) >> 1;
-  const y = new Uint8Array(width * height),
-    uv = new Uint8Array(cw * 2 * ch);
-  const rows = (dst: Uint8Array, plane: PlaneLayout, w: number, h: number) => {
-    for (let r = 0; r < h; r++)
-      dst.set(raw.subarray(plane.offset + r * plane.stride, plane.offset + r * plane.stride + w), r * w);
-  };
-  rows(y, layout[0], width, height);
-  if (f.format === 'NV12') rows(uv, layout[1], cw * 2, ch);
-  else {
-    const u = layout[1],
-      v = layout[2];
-    for (let r = 0; r < ch; r++) {
-      const uo = u.offset + r * u.stride,
-        vo = v.offset + r * v.stride,
-        o = r * cw * 2;
-      for (let x = 0; x < cw; x++) {
-        uv[o + 2 * x] = raw[uo + x];
-        uv[o + 2 * x + 1] = raw[vo + x];
+  const W = Math.max(width, shape?.w ?? 0),
+    H = Math.max(height, shape?.h ?? 0),
+    CW = Math.max(cw, shape?.cw ?? 0),
+    CH = Math.max(ch, shape?.ch ?? 0);
+  const planar = !!shape?.planar,
+    at = W * H,
+    n = CW * CH;
+  const all = new Uint8Array(at + 2 * n),
+    y = all.subarray(0, at),
+    uv = all.subarray(at);
+  // The frame's planes land where the picture's are: I420's U and V as the two halves of `uv`, NV12's as all of it.
+  const want =
+    f.format === 'I420'
+      ? [
+          { offset: 0, stride: W },
+          { offset: at, stride: CW },
+          { offset: at + n, stride: CW },
+        ]
+      : [
+          { offset: 0, stride: W },
+          { offset: at, stride: 2 * CW },
+        ];
+  const got = await f.copyTo(all, { layout: want });
+  if (got.length !== want.length || got.some((p, k) => p.offset !== want[k].offset || p.stride !== want[k].stride))
+    throw new Error('copyTo with another layout');
+  if ((f.format === 'I420') === planar) {
+    // Its planes' own format.
+  } else {
+    const s = scratch.bytes && scratch.bytes.length >= n ? scratch.bytes : (scratch.bytes = new Uint8Array(n));
+    // Two bytes a step where the chroma starts on an even byte (it does unless the luma's size is odd): U is a texel's
+    // low byte on every host the page runs on (little-endian).
+    const pairs = LITTLE_ENDIAN && uv.byteOffset % 2 === 0 ? new Uint16Array(uv.buffer, uv.byteOffset, n) : undefined;
+    if (planar) {
+      // NV12 parted: V aside, U closed up from the front (a write never passes its read), V after it.
+      if (pairs) {
+        for (let k = 0; k < n; k++) {
+          const t = pairs[k];
+          s[k] = t >> 8;
+          uv[k] = t;
+        }
+      } else {
+        for (let k = 0; k < n; k++) s[k] = uv[2 * k + 1];
+        for (let k = 0; k < n; k++) uv[k] = uv[2 * k];
       }
+      uv.set(s.subarray(0, n), n);
+    } else {
+      // I420 interleaved: V aside, U spread out from the back, V between.
+      s.set(uv.subarray(n));
+      if (pairs) for (let k = n - 1; k >= 0; k--) pairs[k] = uv[k] | (s[k] << 8);
+      else
+        for (let k = n - 1; k >= 0; k--) {
+          uv[2 * k] = uv[k];
+          uv[2 * k + 1] = s[k];
+        }
     }
   }
-  return { width, height, y, uv };
+  fillEdges(y, width, height, 1, W, H);
+  if (planar) {
+    fillEdges(uv.subarray(0, n), cw, ch, 1, CW, CH);
+    fillEdges(uv.subarray(n), cw, ch, 1, CW, CH);
+  } else fillEdges(uv, cw, ch, 2, CW, CH);
+  return { width, height, y, uv, stride: W, rows: H, cstride: CW, crows: CH, planar };
 }

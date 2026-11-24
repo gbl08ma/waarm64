@@ -1349,6 +1349,7 @@ export class VirglRenderer {
           const r = this.lookup(c, res);
           return r ? this.backingSize(r) : 0;
         },
+        dims: (res) => this.resources.get(res),
         error: (m) => this.error(`ctx ${c.id}: ${m}`),
         caught: (e) => this.onCaught?.(e),
         debug: this.debug,
@@ -1371,15 +1372,20 @@ export class VirglRenderer {
   private writePicture(planes: number[], pic: DecodedPicture) {
     const cw = (pic.width + 1) >> 1,
       ch = (pic.height + 1) >> 1;
-    // Each plane filled to its texture's size, the picture's edges repeated (`padPlane`), and a picture smaller than
-    // its plane also kept alone, for draws to sample (`Res.picture`).
-    const put = (res: number, data: Uint8Array, w: number, h: number, bpp: number) => {
+    // The arrays' sizes: the planes' own when the decoder was told them (`VideoEnv.dims`), written as they are.
+    const W = pic.stride ?? pic.width,
+      H = pic.rows ?? pic.height,
+      CW = pic.cstride ?? cw,
+      CH = pic.crows ?? ch;
+    // Each plane filled to its texture's size, the picture's edges repeated (`padPlane`, where the array isn't that
+    // size already), and a picture smaller than its plane also kept alone, for draws to sample (`Res.picture`).
+    const put = (res: number, data: Uint8Array, w: number, h: number, bpp: number, sw: number, sh: number) => {
       const r = this.resources.get(res);
       if (!r) return;
       // The last picture's texture, kept from the plane's upload (which drops it) for this picture if it's its size.
       const prev = r.picture;
       r.picture = undefined;
-      const p = padPlane(data, w, h, bpp, r.width, r.height);
+      const p = padPlane(data, w, h, bpp, r.width, r.height, sw, sh);
       this.upload(
         r,
         0,
@@ -1401,17 +1407,32 @@ export class VirglRenderer {
         r.picture = t;
       }
     };
-    put(planes[0], pic.y, pic.width, pic.height, 1);
-    if (planes.length === 2) put(planes[1], pic.uv, cw, ch, 2);
+    put(planes[0], pic.y, pic.width, pic.height, 1, W, H);
+    const n = CW * CH;
+    if (planes.length === 3 && pic.planar) {
+      put(planes[1], pic.uv.subarray(0, n), cw, ch, 1, CW, CH);
+      put(planes[2], pic.uv.subarray(n, 2 * n), cw, ch, 1, CW, CH);
+    } else if (planes.length === 2 && !pic.planar) put(planes[1], pic.uv, cw, ch, 2, CW, CH);
     else if (planes.length === 3) {
+      // Interleaved chroma for three planes (a decoder that wasn't told the planes' shape): parted.
       const u = new Uint8Array(cw * ch),
         v = new Uint8Array(cw * ch);
-      for (let k = 0; k < u.length; k++) {
-        u[k] = pic.uv[2 * k];
-        v[k] = pic.uv[2 * k + 1];
-      }
-      put(planes[1], u, cw, ch, 1);
-      put(planes[2], v, cw, ch, 1);
+      for (let r = 0; r < ch; r++)
+        for (let x = 0; x < cw; x++) {
+          u[r * cw + x] = pic.uv[2 * (r * CW + x)];
+          v[r * cw + x] = pic.uv[2 * (r * CW + x) + 1];
+        }
+      put(planes[1], u, cw, ch, 1, cw, ch);
+      put(planes[2], v, cw, ch, 1, cw, ch);
+    } else if (planes.length === 2) {
+      // And planar chroma for two: interleaved.
+      const uv = new Uint8Array(2 * cw * ch);
+      for (let r = 0; r < ch; r++)
+        for (let x = 0; x < cw; x++) {
+          uv[2 * (r * cw + x)] = pic.uv[r * CW + x];
+          uv[2 * (r * cw + x) + 1] = pic.uv[n + r * CW + x];
+        }
+      put(planes[1], uv, cw, ch, 2, cw, ch);
     }
   }
 
