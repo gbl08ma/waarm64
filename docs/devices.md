@@ -948,7 +948,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   whole chunk (a missing chunk reads as zeros), so an empty ramdisk costs nothing and `fstrim` gives the memory
   back. Past 4 GiB of those in one worker (`SAB_BUDGET`: a tab's ArrayBuffers share an 8 GiB pool), chunks are
   slots in shared wasm memories, reused by the ramdisk when dropped but not given back; a write with no memory to be
-  had fails with IOERR and the page says so (`notice`). It is the device worker's, so every start, the guest's reboot too, finds it empty
+  had fails with IOERR and the page says so (`notice`); its close (`Devices.close`) gives its buffers back to the
+  budget (`release`: Node and the in-thread path outlive it). It is the device worker's, so every start, the guest's reboot too, finds it empty
   (`tests/ramdisk.test.ts`; on the page `tests/page-machines.test.ts`).
 - **`DISCARD` and `WRITE_ZEROES`** with an overlay and the spec's `discard` (the page's machines;
   the tests' guests and the native twin are without it, as their step counts are): the config
@@ -976,7 +977,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   starts once the last write, flush or discard before it ended; those wait for every request before them (the overlay
   changes one request at a time; a FLUSH covers the writes completed before it). A snapshot's quiesce drains them
   first (`Devices.drain`, the device worker's `drain`). The deterministic mode keeps one request at a time in order
-  (synchronous XHRs), as do the image's opening (header, L1) and Node. The device worker's longest answer during a
+  (synchronous XHRs: a try that hasn't ended in 20 s is aborted and tried once more, then the read fails; by the
+  whole answer, as a synchronous request tells no progress: `syncXhr`), as do the image's opening (header, L1) and
+  Node. The device worker's longest answer during a
   remote boot went 0.7 s → 17 ms.
   **A chunked image's boot trace is fetched ahead** (R5): its manifest's `prefetch` (`tools/disk-trace.ts` writes a
   boot's reads there: 1 MiB blocks in the order it first read them) is fetched in the background from the opening
@@ -1032,8 +1035,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   crate, `core/tests/common/qcow2.rs`). A cluster unpacks to exactly its size or the read fails (a stream that is
   corrupt, truncated or longer than the cluster is refused); the bytes after a stream's end are ignored. A request's compressed
   clusters are inflated as one batch (an `Inflater`): where the thread can start workers (the device worker, the
-  disk-in and disk-out workers) it shares the batch with up to four of `web/inflate-pool.ts`'s
-  (`inflate-worker.ts`, each given the thread's core; started by the first request with two or more, each share one message; a single cluster
+  disk-in and disk-out workers) it shares the batch with up to four of `web/inflate-pool.ts`'s (one pool per thread:
+  a device worker's disks share theirs, made at the first that reads an image and closed with `Devices.close`;
+  `inflate-worker.ts`, each given the thread's core; started by the first request with two or more, each share one message; a single cluster
   stays on the reading thread), otherwise one after another in place (Node). A worker that fails (an error, a
   request it answers it couldn't do: its codec didn't start; or no answer in 10 s, `INFLATE_STALL_MS`) leaves its
   share, and every later request, to the reading thread (tests/qcow2.test.ts "the inflate pool"); a thread's codec
@@ -1234,7 +1238,10 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   device worker: it plays 10.0.2.2 at `52:55:0a:00:02:02` and answers ARP and ICMP echo
   synchronously (a TX's replies complete before the doorbell is acked, so deterministic mode
   stays exact). `{adapter: port}` puts the adapter on the page behind a `MessagePort`, one frame
-  per transferred `ArrayBuffer`; such frames arrive whenever they arrive (realtime behavior).
+  per transferred `ArrayBuffer`, or to the card a **batch**, an array of them in order (a frame socket's message:
+  web/local-net.ts `framePath` posts the local helper's and the demo network's this way, one post per WebSocket
+  message, and the card delivers a batch together, its TCP segments merged); such frames arrive whenever they arrive
+  (realtime behavior).
   This frame port is the adapter API (no v86 compatibility: [plans/networking.md](plans/networking.md)).
   Layer-3 backends use the **IP-packet port**, `IpPort = {send(packet), close?()}` (`ipPort(port,
   receive)` over a `MessagePort`): one IPv4 or IPv6 packet per transferred `ArrayBuffer`, no Ethernet

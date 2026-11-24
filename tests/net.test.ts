@@ -21,6 +21,24 @@ for (const [name, make] of [['frame', portAdapter], ['IP packet', ipPort]] as co
   });
 }
 
+for (const [name, make] of [['frame', portAdapter], ['IP packet', ipPort]] as const) {
+  test(`the ${name} port takes a batch: an array of ArrayBuffers is its frames, in order, beside bare ones`, async () => {
+    const { port1, port2 } = new MessageChannel();
+    const got: number[][] = [];
+    let done!: () => void;
+    const all = new Promise<void>((r) => (done = r));
+    const a = make(port1, (f) => { got.push([...f]); if (got.length === 4) done(); });
+    const batch = [new Uint8Array([1]).buffer, new Uint8Array([2, 3]).buffer, new Uint8Array([4]).buffer];
+    port2.postMessage(batch, batch);
+    port2.postMessage(new Uint8Array([5]).buffer);
+    port2.postMessage({ type: 'other' }); // not frames: ignored
+    await all;
+    assert.deepEqual(got, [[1], [2, 3], [4], [5]]);
+    a.close!();
+    port2.close();
+  });
+}
+
 test('an IP port batch: what one task sends is one message, a single packet stays a bare ArrayBuffer, and both read back', async () => {
   const { port1, port2 } = new MessageChannel();
   const messages: unknown[] = [];

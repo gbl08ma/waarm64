@@ -92,6 +92,25 @@ test('net: a card on a frame port of its own (a MessagePort adapter) sends the g
   }
 });
 
+test("net: a card on a frame port takes a batch (a socket message's frames in one post) as its frames, in order, in one delivery", async () => {
+  const { ram, ctx, given } = card();
+  const port = new MessageChannel();
+  const n = net(ctx, { type: 'net', adapter: port.port2 });
+  try {
+    for (let k = 0; k < 4; k++) n.request({ w0: 100 + k, queue: 0, read: [], write: [{ off: 4096 * (k + 1), len: 2048, mem: 0 }] });
+    const batch = [1, 2, 3].map((tag) => new Uint8Array(60 + tag).fill(tag).buffer);
+    port.port1.postMessage(batch, batch);
+    port.port1.postMessage(new Uint8Array(70).fill(4).buffer); // a frame alone: a bare ArrayBuffer still
+    for (let k = 0; k < 100 && given.n < 4; k++) await tick(10);
+    assert.equal(given.n, 4);
+    // Each frame after virtio's 12-byte header, in the receive buffers in the order they were posted.
+    assert.deepEqual([1, 2, 3, 4].map((k) => [ram[4096 * k + 12], ram[4096 * k + 12 + 59 + (k < 4 ? k : 10)], ram[4096 * k + 12 + 60 + (k < 4 ? k : 10)]]), [[1, 1, 0], [2, 2, 0], [3, 3, 0], [4, 4, 0]]);
+  } finally {
+    n.close?.();
+    port.port1.close();
+  }
+});
+
 test("net: on the helper's frames, the page's gateway says nothing to the guest (a lease it still had, its advertisements)", async () => {
   const { ctx, given } = card();
   const ip = new MessageChannel();

@@ -9,7 +9,7 @@
 // unreachable). No pairing, no token, no Local Network Access (a public `wss://` URL). DOM-free, its socket and
 // timers given (`DemoEnv`), so tests/demo-net.test.ts runs it against a fake server in Node; web/demo-net-worker.ts
 // runs it in a worker of its own.
-import { framedClient, framePath } from './local-net.ts';
+import { framedClient, framePath, type FrameSink } from './local-net.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
@@ -189,11 +189,11 @@ export const browserEnv = (): DemoEnv => ({
   random: () => Math.random(),
 });
 
-/** The card's end: one Ethernet frame per message (a `MessagePort`). */
-export type FramePort = {
-  onmessage: ((e: MessageEvent) => void) | null;
-  postMessage(data: ArrayBuffer, transfer: Transferable[]): void;
-};
+/**
+ * The card's end (a `MessagePort`): its frames one Ethernet frame per message, the server's to it a frame or a batch
+ * (web/local-net.ts `FrameSink`).
+ */
+export type FramePort = FrameSink & { onmessage: ((e: MessageEvent) => void) | null };
 
 export type DemoState = DemoStatus['phase'] | 'closed';
 

@@ -1947,8 +1947,15 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   the picture's lifetime (`VenusImport.last` and the renderer keep the planes); NV12's `copyTo` with a layout runs
   only with hardware decoders, which the dev VM's headless Chromium hasn't.
 - **The network, per packet:** an IP-port packet with 14 bytes of headroom would let the gateway write the Ethernet
-  header in place (P1(b): an IP-port protocol change); frame ports could take batches as IP ports do (P7: one post per
-  WebSocket message from the local helper and the demo network, not per frame).
+  header in place (P1(b): one copy of ≤ 1.5 KB and an allocation per packet, on tailnet and tailcat only). Not
+  contained: a bare ArrayBuffer can't say it has headroom, so every consumer at the gateway's end changes with it
+  (gateway.ts `portBackend`, the harness pages tests/browser/tailscale.html, tailcat.html and room.html, which read
+  packets at offset 0), and room-worker's packets would take a copy in the sender. A shape if taken: `batchSender`
+  with a headroom mode, `portBackend`'s `deliver(view, inPlace)` flagged explicitly, the producers allocating 14 + len.
+- **Frame batches, unmeasured:** a helper's or the demo network's message reaches the card as one post, so its TCP
+  segments are merged as an IP port's are; a message of more unmergeable frames (UDP) than the guest's buffers plus
+  `RX_QUEUE` (256) drops the oldest in one delivery. `bench/net/local.ts`'s download (`local::worker,batch`) base
+  against new would say what it's worth, a UDP burst the case to look at.
 - **Pointer events:** a flat `Int32Array` posted instead of `[type, code, value][]` (P10's rest; the box is cached
   and the SYN pushed in place): the nested shape is read by web/input-device.ts `inject`, the runner's `EvdevEvent`
   and the page tests, for an allocation's gain.

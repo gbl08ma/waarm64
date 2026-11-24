@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { dhcpAck, frameMessage, framesOf, LOCAL_MAX_MESSAGE, LOCAL_SUBPROTOCOL, parseLocalURL, startLocalNet } from '../web/local-net.ts';
+import { portAdapter } from '../web/net.ts';
 import { MAX_PORT_FRAME } from '../web/offload.ts';
 import { MsgError } from '../web/msg.ts';
 import { helperSource } from './waarm64-net.ts';
@@ -152,6 +153,72 @@ test("the client's lease is its own guest's, not another's on the same helper", 
     net.close();
   } finally {
     globalThis.WebSocket = realSocket;
+  }
+});
+
+test("a message's frames reach the card as one post, in order and transferred; a frame alone as a bare ArrayBuffer", async () => {
+  const realSocket = globalThis.WebSocket;
+  let socket: { onmessage?: (e: MessageEvent) => void; onopen?: () => void } | undefined;
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    protocol = LOCAL_SUBPROTOCOL;
+    constructor() { socket = this as never; }
+    send() {}
+    close() {}
+  } as unknown as typeof WebSocket;
+  const posts: { data: unknown; transfer: Transferable[] }[] = [];
+  const port = { postMessage(data: unknown, transfer: Transferable[]) { posts.push({ data, transfer }); }, close() {} } as unknown as MessagePort;
+  try {
+    const net = startLocalNet('ws://127.0.0.1:1/t', port);
+    socket!.onopen!();
+    socket!.onmessage!({ data: frameMessage([frame(60, 1), frame(1514, 2), frame(14, 3)]).buffer } as MessageEvent);
+    assert.equal(posts.length, 1, 'one post for the message');
+    const batch = posts[0].data as ArrayBuffer[];
+    assert.ok(Array.isArray(batch), 'a batch');
+    assert.deepEqual(batch.map((b) => [b.byteLength, new Uint8Array(b)[0]]), [[60, 1], [1514, 2], [14, 3]]);
+    assert.equal(posts[0].transfer.length, 3);
+    assert.ok(batch.every((b, k) => posts[0].transfer[k] === b), "each frame's buffer is transferred");
+    socket!.onmessage!({ data: frameMessage([frame(60, 4)]).buffer } as MessageEvent);
+    assert.equal(posts.length, 2);
+    assert.ok(posts[1].data instanceof ArrayBuffer && posts[1].transfer[0] === posts[1].data, 'one frame: a bare ArrayBuffer');
+    socket!.onmessage!({ data: new ArrayBuffer(0) } as MessageEvent);
+    assert.equal(posts.length, 2, 'a message with no frame posts nothing');
+    assert.deepEqual([net.stats().rxFrames, net.stats().rxMessages, net.stats().rxBytes], [4, 3, 60 + 1514 + 14 + 60]);
+    net.close();
+  } finally {
+    globalThis.WebSocket = realSocket;
+  }
+});
+
+test('a batch crosses a real port to the card\'s adapter as its frames, in order', async () => {
+  const realSocket = globalThis.WebSocket;
+  let socket: { onmessage?: (e: MessageEvent) => void; onopen?: () => void } | undefined;
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    protocol = LOCAL_SUBPROTOCOL;
+    constructor() { socket = this as never; }
+    send() {}
+    close() {}
+  } as unknown as typeof WebSocket;
+  const mc = new MessageChannel();
+  const got: number[] = [];
+  let done!: () => void;
+  const all = new Promise<void>((r) => (done = r));
+  const card = portAdapter(mc.port2, (f) => { got.push(f[0]); if (got.length === 4) done(); });
+  try {
+    const net = startLocalNet('ws://127.0.0.1:1/t', mc.port1);
+    socket!.onopen!();
+    socket!.onmessage!({ data: frameMessage([frame(60, 1), frame(1514, 2), frame(14, 3)]).buffer } as MessageEvent);
+    socket!.onmessage!({ data: frameMessage([frame(60, 4)]).buffer } as MessageEvent);
+    await all;
+    assert.deepEqual(got, [1, 2, 3, 4]);
+    net.close();
+  } finally {
+    globalThis.WebSocket = realSocket;
+    card.close!();
+    mc.port1.close();
   }
 });
 

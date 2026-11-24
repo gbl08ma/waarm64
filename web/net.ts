@@ -5,7 +5,9 @@
 // Adapters run in the device worker (the test adapters, which answer
 // synchronously so deterministic mode stays exact) or on the page, behind a
 // MessagePort handed to the device (`{type: 'net', adapter: port}`): each
-// message on the port is one frame, an ArrayBuffer, in either direction.
+// message on the port is one frame, an ArrayBuffer, in either direction, or a
+// batch of them (an array of ArrayBuffers, in order: a frame socket's message,
+// web/local-net.ts `framePath`).
 
 import { eq } from './bytes.ts';
 
@@ -64,9 +66,16 @@ export function loopback(receive: (frame: Uint8Array) => void): NetAdapter {
   };
 }
 
-/** Frames cross `port` as ArrayBuffers (transferred). */
+/**
+ * Frames cross `port` as ArrayBuffers (transferred): one a message, or a batch (an array of them, received in order
+ * within one task: the card delivers them together, web/net-device.ts). Other messages are ignored.
+ */
 export function portAdapter(port: MessagePort, receive: (frame: Uint8Array) => void): NetAdapter {
-  port.onmessage = (e: MessageEvent) => receive(new Uint8Array(e.data));
+  port.onmessage = (e: MessageEvent<unknown>) => {
+    const d = e.data;
+    if (d instanceof ArrayBuffer) receive(new Uint8Array(d));
+    else if (Array.isArray(d)) for (let k = 0; k < d.length; k++) receive(new Uint8Array(d[k] as ArrayBuffer));
+  };
   return {
     send(f) {
       const b = f.buffer.byteLength === f.length ? f.buffer : f.slice().buffer;
@@ -78,9 +87,9 @@ export function portAdapter(port: MessagePort, receive: (frame: Uint8Array) => v
 
 /**
  * The IP-packet port of layer-3 backends (Tailscale, docs/plans/networking.md):
- * the same shape as a frame port, but each message is one IPv4 or IPv6 packet
- * with no Ethernet header, or a batch of them (an array of ArrayBuffers: what
- * one task sent, `batchSender`). The Ethernet gateway (N3) sits between a frame
+ * the same shape as a frame port, but each ArrayBuffer is one IPv4 or IPv6 packet
+ * with no Ethernet header; a batch (an array of ArrayBuffers) is what one task
+ * sent (`batchSender`). The Ethernet gateway (N3) sits between a frame
  * adapter and one of these.
  */
 export type IpPort = { send(packet: Uint8Array): void; close?(): void };

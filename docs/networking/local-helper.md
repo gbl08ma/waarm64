@@ -86,7 +86,8 @@ decisions below.
 - **The client** runs in a worker (web/local-net-worker.ts, started by web/local-net.ts `startLocal`). It moves frames
   between the adapter's frame port and the WebSocket in QEMU's framing (each frame after its 4-byte big-endian length,
   several per message). A batch flushes on `setTimeout(0)`, or early at `LOCAL_MAX_MESSAGE` (1 MiB): past that the
-  helper closes the socket.
+  helper closes the socket. The helper's message goes to the card as one post, its frames a batch
+  ([devices.md](../devices.md) "net": the card merges a batch's TCP segments).
 - **No gateway in the page.** The card goes onto a frame port (web/gateway.ts `FramePath`), and the helper's DHCP,
   DNS and gateway serve the guest. Switching between the page's gateway and the helper flaps the card's link, so the
   guest asks for a new lease at once; a reconnect to the same helper doesn't flap it ([devices.md](../devices.md) "net",

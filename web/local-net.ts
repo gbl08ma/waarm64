@@ -1,7 +1,8 @@
 // The local network helper's client (docs/networking/local-helper.md, the connection kind `local`: docs/networking/adapters.md).
 // The helper (github.com/gbl08ma/waarm64-net) runs on the user's computer and serves the guest DHCP, DNS and a gateway onto its own
-// sockets, so this only moves Ethernet frames: between a card's frame port (web/net.ts `portAdapter`: one frame per
-// message, the page's gateway bypassed: web/gateway.ts `FramePath`) and a WebSocket on loopback. On the socket each
+// sockets, so this only moves Ethernet frames: between a card's frame port (web/net.ts `portAdapter`: the card's frames
+// one per message, a socket message's frames to it as one batch; the page's gateway bypassed: web/gateway.ts
+// `FramePath`) and a WebSocket on loopback. On the socket each
 // binary message is one or more whole frames, each after its 4-byte big-endian length (QEMU's stream framing, what the
 // helper's switch speaks); the frames that come before a timer's turn go out as one message, up to `LOCAL_MAX_MESSAGE`
 // (`setTimeout(0)`, measured: twice the upload of a microtask's batches at the same round trip, bench/net/REPORT.md
@@ -137,14 +138,17 @@ export function dhcpAck(f: Uint8Array, mac: Uint8Array): { address: string; mtu?
   return ack ? { address: Array.from(f.subarray(d + 16, d + 20)).join('.'), mtu } : undefined;
 }
 
-/** A card's frame port as the frame path posts to it (a `MessagePort`; the demo network's tests' fake). */
-type FrameSink = { postMessage(data: ArrayBuffer, transfer: Transferable[]): void };
+/**
+ * A card's frame port as the frame path posts to it (a `MessagePort`; the demo network's tests' fake): a frame, or a
+ * batch of them in order (web/net.ts `portAdapter` takes either, as `packetsOf` reads them), each buffer transferred.
+ */
+export type FrameSink = { postMessage(data: ArrayBuffer | ArrayBuffer[], transfer: Transferable[]): void };
 
 /**
  * The frame path this client and the demo network's (web/demo-net.ts) share between the card and a socket: the guest's
  * frames batched into one message per timer's turn, at most `maxMessage` (`LOCAL_MAX_MESSAGE`); the guest's MAC, from
  * the first unicast source of its frames (its DHCP acknowledgments are the ones for it); and a message's frames to the
- * card, an acknowledgment for the guest kept as its lease (`leased` hears it). The client owns the socket: a batch is
+ * card in one post (a batch: a post per frame was the cost of a download's message of hundreds), an acknowledgment for the guest kept as its lease (`leased` hears it). The client owns the socket: a batch is
  * sent while `ready()`, else dropped.
  */
 export function framePath(o: {
@@ -191,12 +195,14 @@ export function framePath(o: {
       batch = [];
       batchBytes = 0;
     },
-    /** A socket's binary message to the card: false when it isn't whole frames. */
+    /** A socket's binary message to the card, its frames as one post: false when it isn't whole frames. */
     receive(data: ArrayBuffer, to: FrameSink): boolean {
       const got = framesOf(new Uint8Array(data));
       if (!got) return false;
       stats.rxMessages++;
-      for (const f of got) {
+      const buffers = new Array<ArrayBuffer>(got.length);
+      for (let k = 0; k < got.length; k++) {
+        const f = got[k];
         stats.rxFrames++;
         stats.rxBytes += f.length;
         const ack = mac && dhcpAck(f, mac); // its first checks (the length, IPv4, UDP) turn other frames away at once
@@ -204,8 +210,11 @@ export function framePath(o: {
           lease = ack;
           o.leased();
         }
-        to.postMessage(f.buffer as ArrayBuffer, [f.buffer]);
+        buffers[k] = f.buffer as ArrayBuffer;
       }
+      // As an IP port's batches (web/net.ts `batchSender`): one frame alone stays a bare ArrayBuffer.
+      if (buffers.length === 1) to.postMessage(buffers[0], buffers);
+      else if (buffers.length) to.postMessage(buffers, buffers);
       return true;
     },
   };

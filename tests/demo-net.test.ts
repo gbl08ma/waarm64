@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEMO_SUBPROTOCOL, DEMO_URL, demoNetmap, HEALTHY_MS, parseDemoURL, startDemoNet, type DemoEnv, type DemoNotice, type FramePort, type SocketLike } from '../web/demo-net.ts';
 import { frameMessage, framesOf } from '../web/local-net.ts';
+import { packetsOf } from '../web/net.ts';
 import { demoNotice, refusalText } from '../web/app/demo-view.ts';
 import { viewOf } from '../web/app/network-view.ts';
 import { t } from '../web/i18n.ts';
@@ -59,7 +60,9 @@ function harness(random = () => 0.5) {
     now: () => now,
     random,
   };
-  const port: FramePort = { onmessage: null, postMessage: (d) => { toGuest.push(new Uint8Array(d)); } };
+  /** The posts to the card's port: how many frames each carried. */
+  const posts: number[] = [];
+  const port: FramePort = { onmessage: null, postMessage: (d) => { const fs = packetsOf(d)!; posts.push(fs.length); toGuest.push(...fs); } };
   const net = startDemoNet('wss://demo.test/', port, { change: () => { changes++; }, notice: (n) => notices.push(n) }, env);
   const advance = (ms: number) => {
     const end = now + ms;
@@ -76,7 +79,7 @@ function harness(random = () => 0.5) {
   const guest = (f: Uint8Array) => port.onmessage?.({ data: f.slice().buffer } as MessageEvent);
   const last = () => sockets.at(-1)!;
   const nextAt = () => Math.min(...[...timers.values()].map((x) => x.at));
-  return { net, env, sockets, notices, toGuest, guest, advance, last, nextAt, port, now: () => now, changes: () => changes, timers };
+  return { net, env, sockets, notices, toGuest, posts, guest, advance, last, nextAt, port, now: () => now, changes: () => changes, timers };
 }
 
 /** An Ethernet frame from the guest's MAC, `n` bytes long, tagged by `tag`. */
@@ -117,7 +120,10 @@ test('connecting: the subprotocol offered, frames held until the hello and sent 
   assert.equal(s.sent.filter((m) => typeof m !== 'string').length, 1, 'in one message (one timer turn)');
   s.frames([frame(9), frame(10)]);
   assert.deepEqual(h.toGuest.map((f) => f[20]), [9, 10]);
-  assert.equal(h.net.stats().rxFrames, 2);
+  assert.deepEqual(h.posts, [2], "a message's frames in one post");
+  s.frames([frame(11)]);
+  assert.deepEqual([h.posts, h.toGuest.map((f) => f[20])], [[2, 1], [9, 10, 11]]);
+  assert.equal(h.net.stats().rxFrames, 3);
   // The holding is bounded: past it a link drops frames, as a link would.
   const h2 = harness();
   for (let k = 0; k < 400; k++) h2.guest(frame(k & 255, 1000));
@@ -340,7 +346,7 @@ test('budget? while the guest\'s traffic moves the budget, not while it doesn\'t
   assert.equal(s.texts().length, 2);
   // A restart's new card port: the same socket.
   const got: number[] = [];
-  h.net.setFrames({ onmessage: null, postMessage: (d) => { got.push(new Uint8Array(d)[20]); } });
+  h.net.setFrames({ onmessage: null, postMessage: (d) => { got.push(...packetsOf(d)!.map((f) => f[20])); } });
   s.frames([frame(3)]);
   assert.deepEqual(got, [3]);
   assert.equal(h.sockets.length, 1);
