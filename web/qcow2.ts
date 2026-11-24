@@ -117,9 +117,14 @@ function allocationOver(
 /**
  * A qcow2's allocation read whole without blocking (an image file the disk surface's job worker opens: web/app/surface-job.ts):
  * its header, L1 and every L2 table, at most `ALLOCATION_MAX` bytes of them; undefined for a raw image, one this reader
- * refuses, or one whose tables are larger or can't be read.
+ * refuses, or one whose tables are larger or can't be read. `partial` (a remote image's tables, from the blocks this
+ * browser keeps): a table that can't be read, or past `ALLOCATION_MAX` bytes of those read, is left not known instead.
  */
-export async function readAllocation(read: ReadAtAsync, fileSize: number): Promise<Allocation | undefined> {
+export async function readAllocation(
+  read: ReadAtAsync,
+  fileSize: number,
+  partial = false,
+): Promise<Allocation | undefined> {
   const head = fileSize >= HEADER ? await read(0, HEADER) : undefined;
   if (!head || !isQcow2(head)) return undefined;
   const { version, backing, clusterBits, size, encrypted, l1Size, l1Offset, incompatible } = qcow2Header(head);
@@ -141,14 +146,19 @@ export async function readAllocation(read: ReadAtAsync, fileSize: number): Promi
     const off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
     if (off) offs.push([i, off]);
   }
-  if (offs.length * cs > ALLOCATION_MAX) return undefined;
+  if (!partial && offs.length * cs > ALLOCATION_MAX) return undefined;
   const l2s = new Map<number, DataView>();
   for (const [i, off] of offs) {
+    if ((l2s.size + 1) * cs > ALLOCATION_MAX) break; // partial: the rest not known
     const b = await read(off, cs);
-    if (!b) return undefined;
+    if (!b) {
+      if (partial) continue;
+      return undefined;
+    }
     l2s.set(i, new DataView(b.buffer, b.byteOffset, cs));
   }
-  return allocationOver(l2s, cs, size, version, l1Size, (t) => l2s.has(t), fileSize);
+  const named = new Set(offs.map(([i]) => i)); // an L1 entry names a table (one not read: not known)
+  return allocationOver(l2s, cs, size, version, l1Size, (t) => named.has(t), fileSize);
 }
 
 const MAGIC = 0x514649fb; // "QFI\xfb"

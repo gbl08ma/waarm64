@@ -1462,17 +1462,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
 - **The disk surface window's loose ends** (SURFACE, [frontend.md](frontend.md) "A disk's surface"; 2026-11-15):
-  - A URL disk offline isn't examined: its kept blocks are named by its identity (a chunked image's manifest id, or
-    the server's validator), which needs a request to the server; its store is locked by a machine reading it, and
-    opening the cache's bucket pushes on its expiry. The page could keep the identity in the disk's record.
   - Storing a record with an OPFS file's handle (granted without a prompt) in IndexedDB closes Chromium's headless page
     under Playwright (seen 2026-11-15, not traced), so the page test of a file disk examined offline is Node's
     (`tests/surface-image.test.ts`). Worth checking a real file handle's record isn't affected.
   - A transient machine's disk (a test's `?machine=`, `?disk=`) has no "visualize": its disk has no record; its
     pane would need one made from the run's disks.
   - A ramdisk viewed while its machine runs in another tab says it has nothing (only this tab's run answers live).
-  - The carrying of a dropped live answer's activity into the next picture (`SurfacePoll`, `carryActivity`) is tested
-    only as the pure function: `SurfacePoll` is a `.svelte.ts` (runes), which Node's tests don't compile.
+  - A URL disk's map offline reads the blocks kept under the validator its record has (the one its URL was added
+    with: `keptIdentity`); once the server's image changed, its runs keep the new image's blocks under another name, and
+    the map goes on reading the old one's until they expire. The run could write the validator it saw into the record.
   - A remote qcow2's kept count passes over every cluster with data at each answer (2.5–4.9 ms at 20 GiB of 64 KiB
     clusters, all allocated; Node, a cloud container): past ~100 GiB it would want counts kept per cell, recounted only
     where the cache's blocks changed (the cache would have to say which).
@@ -1483,11 +1481,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     square has a window of its own now, but the offline source runs one range ask at a time (`jobSource`: a newer ask
     of a kind ends the one before), so each window's first answer would end another's; it would key range asks by
     range, and `BlockGrid`'s `pinned` would become a list.
-  - The pinned square's details are a 204 px column; in a short window its words scroll (the window's default,
-    720 × 520, fits them).
-  - Importing a 512 MiB raw image built in a page (`new File([Uint8Array])`) failed at offset 0
-    (`disks:stored.imageUnreadable`); 256 MiB worked (seen making screenshots, 2026-11-15, not traced: the import
-    worker's read of a large in-memory `File`?).
 - **The RAM map's loose ends** ([frontend.md](frontend.md) "RAM's map"; 2026-11-16):
   - A pass reads every page with data whole for its fingerprint; a sample per page (a word per 256 bytes) would read a
     quarter of the cache lines and look ~4 times as often, but would miss writes it doesn't sample. Not measured beside
@@ -1508,7 +1501,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       vCPUs' registers). The kernel half is the linear map and a few regions; the user half is whichever process a
       vCPU runs at the look, unnamed (the emulator knows no processes). Page-table pages as a RAM layer, found by a
       walk from the live TTBRs, would be a small developer's view.
-  - It has one entry, the status bar's RAM element: with RAM taken out of the bar, there's no way to it.
   - Notes on the disk surface's measurement that led to it (2026-11-15, Chromium 153 on x86_64 Linux, one run): a
     worker's scan of an untouched 4 GiB shared wasm memory doesn't make the host commit it (the browser's processes'
     resident memory 372 MiB before, 381 MiB after; writing 512 MiB of it then added 512 MiB); a zero-or-not pass per

@@ -4,10 +4,14 @@
 // lock (web/overlay.ts `openOverlay`'s `readOnly`): a machine in another tab that has the overlay open holds its lock
 // exclusively, and after a short wait the answer says so; the page's checks of whether a machine has the files open
 // leave the job's holds out (`SURFACE_READER_LOCK`). A stored disk whose merge was interrupted is said so, not drawn. A file's qcow2 image the page may read without asking (its
-// handle's permission granted) has its L2 tables read (web/qcow2.ts `readAllocation`, bounded) for its clusters.
+// handle's permission granted) has its L2 tables read (web/qcow2.ts `readAllocation`, bounded) for its clusters. A URL's
+// image is read only from the blocks this browser keeps of it (web/diskcache.ts `withKept`: nothing is fetched): which
+// they are, and a qcow2's clusters under the tables among them.
 // web/app/surface-worker.ts runs it; Node's tests call it.
 import { msg, msgOf } from '../msg.ts';
 import { openOverlay, readMap, readMeta, SURFACE_READER_LOCK, type MapLeaves, type OverlayFiles } from '../overlay.ts';
+import { BLOCK_CACHE } from '../blockcache.ts';
+import { cacheKey, withKept, type KeptBlocks } from '../diskcache.ts';
 import { openDisk, readAllocation } from '../qcow2.ts';
 import {
   cellBytesFor,
@@ -39,9 +43,14 @@ export type SurfaceJob = {
    * What the disk is: a block store, nothing (a blank disk), an image file to examine (`file`: a qcow2's clusters, else
    * not examined), or an image not examined (`why`).
    */
-  baseKind: 'stored' | 'blank' | 'image' | 'opaque';
+  baseKind: 'stored' | 'blank' | 'image' | 'remote' | 'opaque';
   /** `image`: the image's file (the page got it from a handle whose read permission was granted: never asked for). */
   file?: Blob;
+  /**
+   * `remote`: what names the blocks this browser keeps of the image (web/diskcache.ts `cacheIdentity`; none: it has no
+   * validator, so nothing is kept) and its file's bytes.
+   */
+  remote?: { identity?: string; bytes: number };
   /** `opaque`: why it isn't examined. */
   why?: OpaqueWhy;
   query: InspectQuery;
@@ -83,6 +92,9 @@ function slotBytes(o: Open, b: number) {
 
 const NO_LEAVES = { top: new Uint32Array(0), recs: new Uint32Array(0), n: 0 };
 
+/** Whether `h` starts as a qcow2's header does. */
+const isQcow2Head = (h: Uint8Array) => h[0] === 0x51 && h[1] === 0x46 && h[2] === 0x49 && h[3] === 0xfb;
+
 /** An image file's bytes, without blocking. */
 const blobRead = (file: Blob) => async (off: number, len: number) => {
   if (off < 0 || off + len > file.size) return undefined;
@@ -98,7 +110,7 @@ async function imageOf(job: SurfaceJob): Promise<DetailLayer> {
   const head = await read(0, 4);
   const allocation = await readAllocation(read, file.size);
   if (allocation) return { kind: 'clusters', id: 'disk', size: allocation.size, allocation };
-  const qcow2 = !!head && head[0] === 0x51 && head[1] === 0x46 && head[2] === 0x49 && head[3] === 0xfb;
+  const qcow2 = !!head && isQcow2Head(head);
   return { kind: 'opaque', id: 'disk', size: job.size, why: qcow2 ? 'large' : 'raw' };
 }
 
@@ -117,9 +129,54 @@ function imageBlocks(file: Blob) {
   return (b: number) => disk.read(b * BLOCK, Math.min(BLOCK, disk.size - b * BLOCK));
 }
 
+/** `kept`'s bytes `off`..`off + len` of the image (of `size` bytes), where every block they span is kept. */
+const keptRead = (kept: KeptBlocks, size: number) => async (off: number, len: number) => {
+  if (off < 0 || len <= 0 || off + len > size) return undefined;
+  const out = new Uint8Array(len);
+  for (let k = Math.floor(off / kept.block); k * kept.block < off + len; k++) {
+    const from = Math.max(off, k * kept.block);
+    const to = Math.min(off + len, (k + 1) * kept.block);
+    const b = await kept.read(k, from - k * kept.block, to - k * kept.block); // only the bytes asked for
+    if (!b) return undefined;
+    out.set(b, from - off);
+  }
+  return out;
+};
+
+/**
+ * A URL's image from the blocks this browser keeps of it, as the running machine shows it: a raw image not examined
+ * with its kept blocks ticked, a qcow2's clusters under the tables kept (the others not examined yet); not examined at
+ * all where nothing tells what it is (nothing kept, a qcow2's header not kept). `'in-use'`: a machine reads the image
+ * (in another tab, or this tab's as it stops), so its blocks can't be.
+ */
+async function remoteOf(job: SurfaceJob): Promise<DetailLayer | 'in-use'> {
+  const none: DetailLayer = { kind: 'opaque', id: 'disk', size: job.size, why: 'remote' };
+  const r = job.remote;
+  if (!r?.identity) return none;
+  const got = await withKept(
+    await cacheKey(r.identity),
+    r.bytes,
+    BLOCK_CACHE.block,
+    async (k): Promise<DetailLayer> => {
+      const kept = { block: k.block, has: (b: number) => k.has(b) };
+      const read = keptRead(k, r.bytes);
+      const head = await read(0, 4);
+      // Its header not kept: a raw image's file is the disk's size (a qcow2's isn't, but by chance).
+      if (head ? !isQcow2Head(head) : job.size === r.bytes)
+        return { kind: 'opaque', id: 'disk', size: job.size, why: 'raw', kept };
+      if (!head) return none;
+      const allocation = await readAllocation(read, r.bytes, true);
+      return allocation
+        ? { kind: 'clusters', id: 'disk', size: allocation.size, allocation, why: 'tables', kept }
+        : none;
+    },
+  );
+  return got ?? none;
+}
+
 /** The disk's layer: its store's map, nothing, or an image not examined. */
 function diskOf(job: SurfaceJob, stored: Open | undefined): DetailLayer {
-  if (job.baseKind === 'opaque' || job.baseKind === 'image')
+  if (job.baseKind === 'opaque' || job.baseKind === 'image' || job.baseKind === 'remote')
     return { kind: 'opaque', id: 'disk', size: job.size, ...(job.why ? { why: job.why } : {}) };
   return stored
     ? { kind: 'map', id: 'disk', size: job.size, leaves: stored.map }
@@ -148,7 +205,13 @@ function blockReader(job: SurfaceJob, disk: DetailLayer, stored: Open | undefine
 
 /** The answer from the files opened (`over` undefined with `job.overlay`: an overlay without files, nothing changed). */
 async function answer(job: SurfaceJob, stored: Open | undefined, over: Open | undefined): Promise<InspectAnswer> {
-  const disk = job.baseKind === 'image' ? await imageOf(job) : diskOf(job, stored);
+  const disk =
+    job.baseKind === 'image'
+      ? await imageOf(job)
+      : job.baseKind === 'remote'
+        ? await remoteOf(job)
+        : diskOf(job, stored);
+  if (disk === 'in-use') return { kind: 'none', why: msg('disks:surface-job.inUse') };
   const ov = overlayOf(job, over);
   const size = Math.max(job.size, ov?.size ?? 0);
   const q = job.query;

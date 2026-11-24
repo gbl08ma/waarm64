@@ -1321,7 +1321,7 @@
   },
   "surface-job.inUse": {
     "message": "A machine in another tab has this disk open: its map can be seen there, while it runs.",
-    "note": "The disk surface visualizer's window, in place of the map, when the disk (or the overlay chosen) is in use by a machine that runs in another tab: its files are locked, so this tab can't read what they hold."
+    "note": "The disk surface visualizer's window, in place of the map, when the disk (or the overlay chosen) is in use by a machine that runs in another tab: its files (or, for a URL's image, the blocks this browser keeps of it) are locked, so this tab can't read what they hold."
   },
   "surface-job.merging": {
     "message": "A merge into this disk was interrupted. It completes the next time the disk is used, and its map can be seen after that.",
@@ -1656,8 +1656,8 @@
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a file on this computer that this browser has no read permission for now (it's asked for when the machine starts; the map never asks)."
   },
   "surface-look.why.remote": {
-    "message": "The disk's image is on a web server: what it holds is shown only while its machine runs in this tab.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a URL, examined only from what the running machine already has (nothing is downloaded for the map)."
+    "message": "The disk's image is on a web server: what it holds shows once its machine has read it in this browser. It is never downloaded just for the map.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a URL, examined only from what this browser already keeps of it (nothing is downloaded for the map), and nothing kept says what it is yet (or a machine in another tab is reading it)."
   },
   "surface-look.why.unknown": {
     "message": "The disk's image is a file or a URL, whose contents aren't examined.",

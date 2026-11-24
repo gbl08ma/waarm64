@@ -1,7 +1,7 @@
 // A disk image's bytes (`Source`): over HTTP, on a web server through the block cache, a file the user chose, a
 // blank disk's zeros, a local file in Node.
 import { BLOCK_CACHE, cachedSource } from './blockcache.ts';
-import { cacheKey, openBlockStore } from './diskcache.ts';
+import { cacheIdentity, cacheKey, openBlockStore } from './diskcache.ts';
 import { chunkedSource, fetchBytes, isManifestUrl } from './chunked.ts';
 import type { MapLeaves } from './overlay.ts';
 
@@ -65,9 +65,9 @@ export async function remoteSource(url: string, keep: boolean, realtime: boolean
   const src = isManifestUrl(url) ? chunkedSource(url, undefined, chunked) : httpSource(url);
   const identity =
     'manifest' in src
-      ? `chunked:${src.manifest.id}`
+      ? cacheIdentity({ chunked: src.manifest.id })
       : src.validator
-        ? JSON.stringify({ url, size: src.size, validator: src.validator })
+        ? cacheIdentity({ url, size: src.size, validator: src.validator })
         : undefined;
   const store =
     identity && keep

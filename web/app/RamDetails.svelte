@@ -85,13 +85,15 @@
       />
     {/if}
   </div>
-  {#if detail}
-    <div class="words" data-field="ram-range-words">
-      {#each lines as l, i (i)}<p>{l}</p>{/each}
-    </div>
-  {:else if why}
-    <Note>{text(why)}</Note>
-  {/if}
+  <div class="side">
+    {#if detail}
+      <div class="words" data-field="ram-range-words">
+        {#each lines as l, i (i)}<p>{l}</p>{/each}
+      </div>
+    {:else if why}
+      <Note>{text(why)}</Note>
+    {/if}
+  </div>
 </section>
 
 <style>
@@ -102,6 +104,24 @@
     flex-direction: column;
     gap: var(--space-3);
     font-size: var(--text-sm);
+  }
+  /* A browser window too short for the column: the words beside the map (as a disk's pinned square's). */
+  @media (max-height: 540px) {
+    .details {
+      width: auto;
+      display: grid;
+      grid-template-columns: 196px 196px;
+      align-items: start;
+      column-gap: var(--space-4);
+    }
+    .stepper,
+    .pages {
+      grid-column: 1;
+    }
+    .side {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+    }
   }
   .stepper {
     display: flex;
