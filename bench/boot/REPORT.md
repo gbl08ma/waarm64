@@ -8545,3 +8545,38 @@ measured: the threshold trades the renderer's compile cycles against the compile
 doubling ~7% of `node`'s cycles, a fifth to a quarter of the wasm, half again as many interpreted steps), and the
 vCPU's time is best between 1000 and 2000. Untried: a floor of ~1400, a higher floor only for blocks seen after the
 boot's first compile burst (the boots' loss is cold code).
+
+## Workers stranded at a machine's end (2026-11-24)
+
+A cloud session (x86_64, 4 vCPUs), Playwright's Chromium (Chrome for Testing 158.0.8127.36) headless, Debian on the
+page's transient machine (2 vCPUs, 1 GiB), a snapshot of it saved from the page (~97 MB) and loaded again and again.
+Raw: `results/stranded/` (`runs.json`; `loads.ts`, the raw-CDP driver). This is the backlog's "the browser's memory
+grows with each load of a big snapshot" (SNAPZ loop 0 above: the desktop 3.3, 5.5, 7.2 GB over three rounds).
+
+**What grows:** the renderer alone (the GPU and browser processes flat), ~290 MiB a load of Debian, which a full GC
+(CDP's `HeapProfiler.collectGarbage`) doesn't give back: anonymous memory 530 → 2,563 MiB over 8 loads, and two worker
+threads more after each. Not Playwright's doing: Chromium driven over raw CDP with no auto-attach (`loads.ts`) grew
+the same on 7 of 8 loads. **What holds it:** the old machine's worker and its device worker. After a load the targets
+list them twice; the old pair doesn't answer `Runtime.evaluate` (their scripts are ended) and their threads never exit
+(90 s and more, until the page goes), so their isolates and the guest's RAM stay. Their own workers did end (the old
+vCPU and inflate workers' targets are gone, new ones listed).
+
+**Why, by elimination** (4-8 loads each): the device worker's `self.close()` replaced by its host's `terminate` on
+`closed`: as bad (the pairs piled up, 5 after 8 loads). No warm device worker for a snapshot's start: as bad. The
+inflate pool off: 3 of 4 loads clean. **No nested worker ended explicitly at the end** (the inflate pool's, the vCPU
+and compile workers, the device worker): 6 of 6 clean, the renderer flat at ~500 MiB anonymous, 9 worker threads
+throughout. So Chromium (Chrome for Testing 158.0.8127.36 here) strands a worker that terminates a worker of its own just
+before it is terminated itself; the same terminates in the middle of a worker's life (a load's snapshot pool, closed
+after its fill) strand nothing.
+
+**Built:** `endWithOwner` (web/worker-end.ts): a close that says it is its thread's end (`ending`: the machine
+worker's stop, `Vm.close({ ending: true })`) leaves, in a browser worker, the workers it started to that end (the vCPU
+and compile workers, the device worker, the RAM scanner, a save's pool during a stop; the inflate and deflate pools
+always, as they close only at their thread's end); any other close terminates them as before, and so does the page
+and Node. The device worker no longer calls `self.close()`: its host terminates it after `closed`, or leaves it to
+an ending close. docs/host-code.md §2.1 has the rule. **With it** (the first form, which left every in-worker close's
+workers; the stop path is the same): 21 of 22 loads clean (6 + 8 + 8: the last two runs, 9 worker threads and
+~490-500 MiB throughout); one load (run 1's fourth) left a pair again (+290 MiB), for a reason not found
+(docs/backlog.md). The final form, two runs of 8: one thread stranded in each (at the second and the fifth load,
++270-280 MiB, one thread where the pair was two), and none after it: the renderer stays at that level (~750-780 MiB
+anonymous) where the base grew ~290 MiB with every load. The desktop guest on the dev VM isn't measured yet.

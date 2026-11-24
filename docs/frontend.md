@@ -1269,7 +1269,11 @@ on after the resume, while the guest runs and may power off), up to `SAVE_STOP_M
 too), and a save still in progress when the workers end fails ([The machine stopped before the save was
 done.](ui:snapshots:run.stopped)), so the toolbar doesn't stay saving. Before, the worker lived on with the guest's RAM (1.3 GiB after Buildroot's power-off or
 Suspend, of 1.36 GiB that `measureUserAgentSpecificMemory` counted) and its framebuffer's animation frames and status
-timer (2–8% of a core in its threads, and the compositor's frames). The canvas keeps the last frame the worker drew.
+timer (2–8% of a core in its threads, and the compositor's frames). The canvas keeps the last frame the worker drew. Its own
+workers (the vCPUs', the compile worker, the device worker and its inflate pool, the RAM scanner, a save's pool) end
+with it: the stop closes the machine as the worker's end (`Vm.close({ ending: true })`), which leaves them to it
+rather than terminating them (docs/host-code.md §2.1), since Chromium otherwise kept the old machine's workers and RAM
+after a snapshot's load, ~290 MiB a load of Debian (bench/boot/REPORT.md "Workers stranded at a machine's end").
 The page also follows the host's game pads only while the machine runs with its USB controller (docs/usb.md "The
 game pad"): Chromium polls the pads, ~0.5% of a core in a thread of the browser, from the first gamepad listener or
 `getGamepads()` until the last listener is removed. Measured 2026-11-18 (Buildroot, 2 vCPUs, headless Chromium,

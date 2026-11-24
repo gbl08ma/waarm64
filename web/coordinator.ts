@@ -6,6 +6,7 @@ import type { CompileInit } from './jit-compile-worker.ts';
 import { CompileStat, compileStats } from './counters.ts';
 import { Exit, panicNote, STOP, threadAlloc, unsigned, type Stall } from './core.ts';
 import { newWorker, type WarmWorkers } from './warm-workers.ts';
+import { endWithOwner, type CloseOptions } from './worker-end.ts';
 
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -228,13 +229,15 @@ export function coordinator(c: {
         (_, i) =>
           `0x${new BigUint64Array(c.memory.buffer, (unsigned(c.instance.exports).vm_cpu as (vm: number, i: number) => number)(c.vm, i) + 256, 1)[0].toString(16)}`,
       ),
-    close() {
+    close(o: CloseOptions = {}) {
       closed = true;
       c.raise(STOP);
       release();
       bump();
-      for (const w of workers ?? []) void w.then((h) => h.terminate());
-      void compiler?.then((h) => h.terminate());
+      // Stopped by STOP; with `ending`, left to this thread's end in a browser worker (`endWithOwner`).
+      const ending = !!o.ending;
+      for (const w of workers ?? []) void w.then((h) => endWithOwner(h, ending));
+      void compiler?.then((h) => endWithOwner(h, ending));
     },
   };
 }

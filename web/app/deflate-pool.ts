@@ -3,6 +3,7 @@ import { coreModule } from '../deflate.ts';
 import { fromWire } from '../msg.ts';
 import type { Packer } from '../qcow2-write.ts';
 import type { DeflateInit, DeflateRequest, DeflateResult } from './deflate-worker.ts';
+import { endWithOwner } from '../worker-end.ts';
 
 /**
  * Compression on other threads: deflate is what a compressed export spends its time in, and the machine has
@@ -51,8 +52,9 @@ export function deflatePool(
           }),
       );
     },
+    // At the export job's end, which the page's terminate follows: left to it in a browser worker (`endWithOwner`).
     close() {
-      for (const w of workers) w.terminate();
+      for (const w of workers) endWithOwner(w, true);
     },
   };
 }

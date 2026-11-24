@@ -111,7 +111,7 @@ async function stop() {
   stopping = true;
   unpause?.();
   screen?.stop();
-  await vm?.close();
+  await vm?.close({ ending: true }); // the page ends this worker next (web/worker-end.ts `endWithOwner`)
   vm = undefined;
   post({ type: 'stopped' });
 }

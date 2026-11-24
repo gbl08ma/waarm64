@@ -7,6 +7,7 @@ import { fromWire, type Msg } from './msg.ts';
 import type { DeviceAnswer, FromDeviceWorker, ToDeviceWorker } from './device-worker.ts';
 import type { InspectAnswer, InspectQuery } from './surface.ts';
 import { newWorker, type WarmWorkers } from './warm-workers.ts';
+import { endWithOwner, type CloseOptions } from './worker-end.ts';
 
 /** `attach` and `detach` over the xHCI's port, each resolving with its `usb-state` (one per request, in order; a keyboard's `usb-leds` isn't an answer). */
 export function usbHost(port: MessagePort) {
@@ -115,7 +116,7 @@ export async function deviceHost(
       flush: async () => {
         if (failed) throw failed;
       },
-      close: async () => {
+      close: async (_c?: CloseOptions) => {
         closed = true;
         Atomics.notify(bell, 1); // a quiesce waiting for its answer
         d.close();
@@ -156,7 +157,7 @@ export async function deviceHost(
       release: () => d.release(),
       output: () => text,
       flush: async () => {},
-      close: async () => (d.close(), d.stats()),
+      close: async (_c?: CloseOptions) => (d.close(), d.stats()),
     };
   }
   const worker = warm?.take('device') ?? newWorker('device');
@@ -201,6 +202,8 @@ export async function deviceHost(
     return a;
   };
   let closing: Promise<unknown> | undefined;
+  /** The close's `ending` (web/worker-end.ts `endWithOwner`). */
+  let endingClose = false;
   let closedWith = (_stats?: unknown) => {};
   const ready = new Promise<void>((resolve, reject) => {
     let started = false;
@@ -222,6 +225,7 @@ export async function deviceHost(
       else if (m.type === 'notice') notice?.(m.message);
       else if (m.type === 'closed') {
         ended = true;
+        endWithOwner(worker, endingClose); // its files released (it never ends itself: web/device-worker.ts)
         settleAll((w) => w.closed());
         closedWith(m.stats);
       } else {
@@ -321,13 +325,16 @@ export async function deviceHost(
       ),
     /**
      * Resolves once it released its files (so another VM can open the overlay), or after `CLOSE_MS` and a little
-     * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call. The value is
+     * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call. Then the worker is
+     * ended: terminated, or with `ending` left to this thread's end (web/worker-end.ts `endWithOwner`). The value is
      * the blk timers of devices with `stats` (web/iostats.ts), if any.
      */
-    close: () =>
+    close: (c: CloseOptions = {}) =>
       (closing ??= new Promise<unknown>((resolve) => {
+        endingClose = !!c.ending;
         closedWith = resolve;
         setTimeout(() => {
+          if (!ended) endWithOwner(worker, endingClose);
           ended = true;
           settleAll((w) => w.closed());
           resolve(undefined);

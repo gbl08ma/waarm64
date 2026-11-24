@@ -51,6 +51,7 @@ import { Counter, helperReport, stats } from './counters.ts';
 import { coordinator } from './coordinator.ts';
 import { deviceHost, usbHost } from './device-host.ts';
 import type { WarmWorkers } from './warm-workers.ts';
+import type { CloseOptions } from './worker-end.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
 export const ABI = 74;
@@ -1119,12 +1120,15 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
         held: par?.held() ?? false,
       };
     },
-    /** Stops the vCPUs and releases the backends; resolves once their files are closed. */
-    close: () => {
-      par?.close();
+    /**
+     * Stops the vCPUs and releases the backends; resolves once their files are closed. `ending`: this thread ends next
+     * (the machine worker's stop): its workers are left to that end (web/worker-end.ts `endWithOwner`).
+     */
+    close: (c: CloseOptions = {}) => {
+      par?.close(c);
       o.warm?.end(); // a machine closed before its vCPUs ran
       usbChannel?.port2.close();
-      return devices.close();
+      return devices.close(c);
     },
     /** Per-vCPU liveness (parallel mode; empty otherwise): time inside the current chunk, the longest chunk and host-side handling so far. */
     liveness: (): VcpuLiveness[] => par?.liveness() ?? [],

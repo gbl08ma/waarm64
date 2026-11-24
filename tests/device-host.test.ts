@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { deviceHost } from '../web/device-host.ts';
 import type { WarmWorkers } from '../web/warm-workers.ts';
-import { Devices, type DevicesInit } from '../web/devices.ts';
+import { CLOSE_MS, Devices, type DevicesInit } from '../web/devices.ts';
 import type { FromDeviceWorker, ToDeviceWorker } from '../web/device-worker.ts';
 import { openOverlay } from '../web/overlay.ts';
 import { toWire } from '../web/msg.ts';
@@ -92,6 +92,31 @@ test('overlapping saves and flushes each get their own answer (by id), in any or
   assert.equal(await r, undefined);
   await s;
   await closed;
+  // It never ends itself (web/device-worker.ts): a close that isn't the thread's end terminates it once it said closed.
+  assert.ok(fake.terminated, 'terminated once it said closed');
+});
+
+test("a device worker closed at its owner's end is left to that end, in a browser worker", async () => {
+  const { h, fake } = await host();
+  const g = globalThis as Record<string, unknown>;
+  g.WorkerGlobalScope = class {};
+  try {
+    const closed = h.close({ ending: true });
+    await fake.answer({ type: 'closed' });
+    await closed;
+  } finally {
+    delete g.WorkerGlobalScope;
+  }
+  assert.ok(!fake.terminated, 'left to the machine worker\'s end (web/worker-end.ts `endWithOwner`)');
+});
+
+test('a device worker that never answers its close is terminated when the wait runs out', async (t) => {
+  const { h, fake } = await host();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const closed = h.close();
+  t.mock.timers.tick(CLOSE_MS + 500);
+  await closed;
+  assert.ok(fake.terminated, 'terminated without its answer');
 });
 
 test("a backend's error after the start reaches a quiesce, the save waiting and every later request", async () => {

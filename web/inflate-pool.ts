@@ -3,6 +3,7 @@
 import { coreModule } from './deflate.ts';
 import { inflateEach, type Inflater } from './qcow2.ts';
 import type { InflateInit, InflateRequest, InflateResult } from './inflate-worker.ts';
+import { endWithOwner } from './worker-end.ts';
 
 /** How long a request may go unanswered before its worker counts as failed (a share takes milliseconds). */
 export const INFLATE_STALL_MS = 10_000;
@@ -76,7 +77,7 @@ export function inflatePool(
   const pool = Object.assign(
     async (inputs: Uint8Array[], size: number) => {
       if (inputs.length < 2 || broken) return local(inputs, size);
-      // A pool closed while the core loaded starts none (they'd never be ended).
+      // A pool closed while the core loaded starts none (its close has passed).
       const ws = await (workers ??= coreModule().then((m) => (broken ? [] : (started = start(m)))));
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `close` sets it meanwhile
       if (broken) return local(inputs, size);
@@ -95,8 +96,10 @@ export function inflatePool(
     },
     {
       sent: 0,
+      // Only at its reading thread's end (a device worker's close, which its owner's terminate follows; a disk or export
+      // job's end): its workers end with that thread in a browser worker (`endWithOwner`).
       close() {
-        for (const w of started) w.terminate();
+        for (const w of started) endWithOwner(w, true);
         fail(new Error('the inflate pool was closed'));
       },
     },

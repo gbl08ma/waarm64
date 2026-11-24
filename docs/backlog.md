@@ -1522,6 +1522,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     Preferences, About) are entered from Connections (`machinesNav.origin`): `From` has no pane of the root to return
     to, so their Back leads to Connections rather than that pane.
 
+- **Ask.svelte reads a question that's gone** ("TypeError: Cannot read properties of undefined (reading 'kind')" at
+  `web/app/Ask.svelte:19`, Vite's overlay in the dev server's log): the dialog's effect queues a microtask that reads
+  `q`, a `$derived` of `asking.current`, again when it runs; a question answered before then (a test's click on OK
+  right after the dialog opened: bench/boot/results/stranded/loads.ts on every load's confirm, 2026-11-24, on the tree
+  before that work as after) leaves `q` undefined there. The answer goes through and nothing else breaks; the fix is
+  to read the question once, outside the microtask (and to skip the focus when the dialog is closed by then).
+
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
   desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't
@@ -1612,12 +1619,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **A tracked benchmark case for the page** (`page_debian`: page load to `running` with a fresh
   profile, measured today only by ad-hoc drivers and the end-to-end test). A snapshot's load, its saves, a suspend and
   its resume have `bench/snapz/probe.ts` (benchmarking.md "The snapshot probe"), outside `bench/run.ts`.
-- **The browser's memory grows with each load of a big snapshot** (bench/boot/REPORT.md "SNAPZ loop 0"): on the
-  desktop guest (2.5 GiB of RAM) the probe's browser had 3.3 GB resident before the first round's saves, 5.5 before
-  the second's and 7.2 before the third's (PSS alike); the transient machine's rounds (a load and a download each)
-  3.4, 6.2, 7.9. Debian's (1 GiB) grew 1.8 to 2.7 GB on the transient machine, not on the stored one, whose rounds
-  end with the page opened again. Not found yet: which process holds it (the old machine's memories collected late,
-  the downloads' Blobs, the 3D state), and whether a user who loads snapshots repeatedly runs out of memory.
+- **A machine's workers still stranded now and then at its end** (bench/boot/REPORT.md "Workers stranded at a
+  machine's end"): the memory that grew with each load of a snapshot (SNAPZ loop 0: the desktop's browser 3.3, 5.5,
+  7.2 GB over three rounds) was the old machine's worker and device worker, which Chromium never ended. Their own
+  workers now end with them (docs/host-code.md §2.1): in the cloud, loads of Debian no longer pile up (the base grew
+  ~290 MiB every load), but a run of 8 still strands one thread (+270-290 MiB) once, early, and none after: which
+  worker it is and what strands it isn't found (CDP's attach after the fact didn't name it; the page's terminate of a
+  worker whose own workers are still running is what remains). Not measured yet: the desktop guest on the dev VM
+  (`bench/snapz/probe.ts`, `MODE=transient` and the stored rounds, one browser for all the rounds), whether Chromium
+  has the bug filed, and Firefox.
 - **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a

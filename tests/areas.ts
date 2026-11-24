@@ -80,7 +80,7 @@ export const AREAS: Record<string, Area> = {
   },
   core: {
     // The interpreter, the MMU, the GIC, the platform and the rest of the core.
-    src: ['core/**', 'tests/corpus/**', 'tests/baremetal/**', 'tests/dtb/**', 'tests/steps.txt', 'tests/steps.ts', 'tools/corpus/**', 'web/cpu-features.ts', 'web/vm.ts', 'web/core.ts', 'web/jit-host.ts', 'web/counters.ts', 'web/coordinator.ts', 'web/device-host.ts', 'web/warm-workers.ts', 'web/test-guests.ts', 'web/vcpu-worker.ts', 'web/ram.ts', 'web/clock.ts', 'web/liveness.ts', 'web/profiler.ts', 'web/sampler-worker.ts', 'web/timeline-worker.ts', 'web/iostats.ts'],
+    src: ['core/**', 'tests/corpus/**', 'tests/baremetal/**', 'tests/dtb/**', 'tests/steps.txt', 'tests/steps.ts', 'tools/corpus/**', 'web/cpu-features.ts', 'web/vm.ts', 'web/core.ts', 'web/jit-host.ts', 'web/counters.ts', 'web/coordinator.ts', 'web/device-host.ts', 'web/warm-workers.ts', 'web/worker-end.ts', 'web/test-guests.ts', 'web/vcpu-worker.ts', 'web/ram.ts', 'web/clock.ts', 'web/liveness.ts', 'web/profiler.ts', 'web/sampler-worker.ts', 'web/timeline-worker.ts', 'web/iostats.ts'],
     heavy: ['tests/corpus-wasm.test.ts', 'tests/boot-node.test.ts'],
     cargo: ['core'],
     end: ['ci-jit.sh', 'ci-debian.sh'],
