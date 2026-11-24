@@ -2043,7 +2043,10 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - [B] **`tests/browser.test.ts` "the page says what's wrong…" stalled once** (2026-11-18, `scripts/ci.sh`): 600 s at
   idle CPU, no step named; 24 runs alone and 20 with every CPU busy passed in 8-18 s. A page-side hang would fail its
   30 s waits, so a Playwright call with no timeout (an `evaluate`, `close`, `newPage`) didn't return. It now notes each
-  section (`t.diagnostic`) and fails at 3 min: the next stall names its step.
+  section (`t.diagnostic`) and fails at 3 min. It stalled again on 2026-11-24 (`scripts/ci.sh` on 40a31df6, the merge
+  of the worker-end change): in "a 404 for **/buildroot/rootfs.ext4", after the core's 404 page had closed, so in
+  that section's `newPage`, `route`, `goto` or `settled`; then 5 runs alone and 3 with every CPU busy passed in 10-20 s.
+  Next: a diagnostic before each of those four calls, and a timeout on `settled`'s waits if it has none.
 - [B] **The tailcat upload in `tests/net-tailcat.test.ts` came back empty once** (2026-11-19, `scripts/ci-net.sh`): the
   guest sent the 2 MB (372 packets, 0.8 s) but curl printed nothing, so the console's next line (the end marker's echo)
   was read as its answer; the download just before passed, and the next run passed. Print curl's exit code and
