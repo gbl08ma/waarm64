@@ -1,0 +1,52 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf67b/churn-load/before-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 98.53,
+   "flushes": 1,
+   "modules": 30232,
+   "mib": 383.6,
+   "overdue": 20,
+   "parks": 74203,
+   "locks": 41868012,
+   "interpGsteps": 8.83,
+   "share": 0.91,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 99,
+    "atGsteps": 83.17,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 5277,
+    "mibEmitted": 66.1,
+    "shareBefore": 0.912,
+    "shareAfter": [
+     0.813,
+     0.813,
+     0.813,
+     0.828,
+     0.863,
+     0.863,
+     0.863,
+     0.864,
+     0.868,
+     0.868
+    ]
+   }
+  ]
+ }
+}

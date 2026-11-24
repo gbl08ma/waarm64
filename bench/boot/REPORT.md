@@ -8339,3 +8339,88 @@ quantile's bound), tests/ab-stats.test.ts (`smp`'s default stop is the clock, `-
 as before; the latency table). Planted bugs, each caught by its test, then restored: delays counted at a module's
 arrival, every workload on the default stop, a quantile's bound one bucket low.
 CI at this commit: `scripts/ci-fast.sh`, `scripts/ci.sh` (719 s) and `scripts/ci-jit.sh` (256 s) passed.
+
+## PERF loop 67b: the warm-up's latency (2026-11-24)
+
+The user's report after loop 67 (the compile worker's warm-up, on the local branch `perf67-warmup`, never on main), by
+eye: more stutter in latency-sensitive loads (audio, video, games), a much lower share of steps in the JIT in the
+status bar under JIT churn (a large program opened, a new site), and worse desktop responsiveness after the last 24
+hours' changes. **Stutter not reproduced, from any arm; the lower compiled share and the worker's longer waits
+reproduced, small on the Mac; the one variant that takes them back added vCPU stalls of 88-114 ms under load. Not
+landed: the warm-up is filed under docs/jit.md "Tried and not kept". Loops 58-66: no regression.** M4 Mac mini (4 P +
+6 E cores), macOS 26.6.2, Chrome for Testing 158.0.8127.88; ABI 74, core unchanged since 96ca41ae^. Arms and data:
+`results/perf67b/` (README); the measures per session in each run's `latency.txt` (`results/perf67b/latency.ts`).
+
+**Before loop 58 against main against the warm-up** (Firefox's pages session, 3 rounds alternated; `pre58` is
+96ca41ae^'s host code, `main` a1ece66b's, `warm` loop 67's):
+
+| | pre58 | main | warm |
+|---|---|---|---|
+| Firefox's starts (5 pages, s) | 51.5 · 52.0 · 50.5 | 51.8 · 52.0 · 51.3 | 50.4 · 50.9 · 50.4 |
+| starts and loads (`pagesS`) | 67.8 · 68.7 · 67.0 | 68.3 · 68.5 · 68.0 | 66.6 · 67.3 · 67.0 (−1.9%, no overlap with main) |
+| compiled share, launch to 10 s past `ready` (median page) | 96.90 · 96.89 · 96.98% | 96.95 · 96.91 · 96.87% | 96.94 · 96.94 · 96.94% |
+| the compile worker busy (busiest second) | | 0.3% (3.4-3.8%) | 1.4-1.6% (17-19%) |
+| emission to `ready`: mean, p99 bucket | | 0.30 ms, 1 | 1.16-1.31 ms, 8 |
+| seconds with a frame gap past 50 ms (of 109) | 22 · 24 · 23 | 25 · 21 · 25 | 22 · 26 · 22 |
+| frame gaps p99 / max (ms) | 463-486 / 484-492 | 483-500 / 504-539 | 484-510 / 505-642 |
+| vCPU stalls of 20 ms or more (longest) | 0 · 0 · 0 | 0 · 0 · 0 | 1 · 1 · 0 (24, 27 ms) |
+| renderer CPU (s), P-core share | | 277.0-280.7, 0.900-0.902 | 281.7-282.8, 0.892-0.897 |
+
+The idle waits of loops 58 and 60 (the only host changes on the vCPU's path in loops 58-66; 59 and 61-66 changed no
+code, the tooling loop only counters) move nothing: `pre58` and `main` agree in every row, so there was no bisection
+to do. NAMES2's changes (the network's names) were not measured: the sessions run offline. In this session the
+churn is mild (the worker at 0.3% of a second's time under main), so the warm-up's delay doesn't reach the compiled
+share; its costs show in the worker (5×) and the waits (4×), its gain in the starts.
+
+**Heavier churn** (`PHASES=churn`, bench/gpu/firefox/churn.html: Firefox making and running new JS functions for 90
+s), with the variants of when the worker calls the functions (each a switch, `?jitwarm=`): `before` as loop 67 (then
+post and move `ready`), `after` (post and move `ready`, then warm in the same job), `idle` (post and move `ready`, warm
+one module a task while no compile job waits):
+
+| 40 functions a second, 2 rounds | main | before | after | idle |
+|---|---|---|---|---|
+| compiled share (interpreted) | 92.45 · 92.43% (7.56%) | 91.88 · 91.91% (8.11%, +7%) | 92.40 · 92.42% | 92.37 · 92.42% |
+| worker busy (busiest second) | 1.8% (4.8-5.0%) | 6.1-6.3% (19-21%) | 5.9% (18%) | 5.9-6.0% (19-20%) |
+| emission to `ready`: mean, p99 bucket | 0.15 ms, 1 | 0.45-0.46 ms, 4 | 0.15-0.16 ms, 1 | 0.16 ms, 1 |
+| stalls of 20 ms or more | 0 · 0 | 0 · 0 | 0 · 0 | 0 · 0 |
+| seconds with a frame gap past 50 ms (of 92) | 10 · 8 | 7 · 9 | 8 · 9 | – · 10 (one read failed) |
+
+| 200 functions a second, six busy loops on the Mac (four cores free), 2 rounds | main | before | idle |
+|---|---|---|---|
+| compiled share | 91.87 · 91.87% | 91.18 · 91.24% (+8% interpreted) | 91.85 · 91.78% |
+| worker busy (busiest second) | 2.9% (5.2-5.4%) | 10.3-10.6% (22-25%) | 9.8-10.1% (20-21%) |
+| emission to `ready`: mean, p99 bucket | 0.13-0.14 ms, 1 | 0.42-0.43 ms, 4 | 0.15-0.16 ms, 1 |
+| functions made in 90 s (the guest's throughput) | 6776 · 6910 | 6678 · 6804 | 6910 · 6977 |
+| stalls of 20 ms or more (longest) | 0 · 1 (22 ms) | 0 · 0 | 2 · 1 (88, 114 ms) |
+
+At 200 a second the page itself keeps Firefox's frames ~1.3 s apart in every arm, so the frame gaps tell nothing
+there. The warm-up as built (`before`) holds each module back until the worker has called its functions, serially:
+the waits triple and 7-8% more steps run interpreted under churn, the user's status-bar reading in direction (here
+0.5-0.7 points of the share; it grows with the worker's load, toward the 1 s overdue backstop on a host where one
+worker falls behind). Posting first (`after`, `idle`) takes the waits and the share back to main's, but brings back
+what loop 67 feared: a vCPU reaching a function before the worker compiles it there, while the worker compiles the
+same module. Under load `idle` stalled vCPUs 88 and 114 ms inside one core call (3 stalls of 20 ms in 2 sessions,
+against none for `before` and one of 22 ms for main), the stutter the user describes; `after`, the same race over a
+shorter window, wasn't run under load.
+
+**The gains** (the parallel boots `smp_alpine_jit`, 3 rounds rotated; n1 / n2 / n4 total, ms):
+
+| | main | before | idle |
+|---|---|---|---|
+| total | 5049-5108 / 4706-4757 / 4727-4751 | 4917-4937 / 4604-4625 / 4637-4713 (−3.0 / −2.4 / −1.4%) | 4936-4962 / 4624-4645 / 4655-4692 (−2.6 / −2.0 / −1.2%) |
+| CPU (all threads, ms) | 5237-5317 / 6102-6166 / 7390-7499 | 5382-5398 / 6254-6315 / 7578-7713 (+2.2 / +2.6 / +2.6%) | 5383-5414 / 6225-6288 / 7575-7634 (+2.3 / +2.0 / +1.9%) |
+
+The pages session with `idle` (2 rounds; `pages-idle/`): starts 52.6 · 50.4 s against main's 50.9 · 52.0 and
+`before`'s 49.9 · 51.0, `pagesS` 69.5 · 66.7 against 67.3 · 69.0 and 66.4 · 67.5: no gain shown past the rounds'
+spread; compiled share, frame gaps and stalls of 20 ms as main's.
+
+**Decided by the user's rule.** Stutter isn't shown worse on the Mac for the warm-up as built (frame gaps, stalls of 50
+ms: none; two of 24-27 ms in three pages sessions against none in six), so that part is inconclusive; what is shown is
+the compiled share's drop under churn and the waits behind it, and the variant that removes them adds stalls of ~0.1 s
+under load. The rule's default for an inconclusive answer and its condition for a variant both say: not landed.
+Main stays as it is (no warm-up, no guard); the idea is filed under docs/jit.md "Tried and not kept" and PERF-HANDOVER's
+queue row 4 is closed. Kept, as tooling: the compile worker's counters in the machine's status
+(`Status.compile`) and in the pages session's `jit.jsonl` (`cw`, once a second), `bench/gpu/ab-mac.sh`'s
+`QUERY_<arm>` (a page query per arm), and `results/perf67b/latency.ts`. Untried: a warm-up the user's x86_64 host
+would show differently (one worker against a slower core), a budget per module of the functions likely hot, and
+audio underruns or a key's echo measured directly (no harness gives them per session yet).

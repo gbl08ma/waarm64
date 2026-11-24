@@ -180,11 +180,12 @@ export async function openSession(o: SessionOptions) {
     log('tailcat', net[1]);
   }
   // JITLOG=1: the JIT's counters (`__status.stats.jit`, summed over the vCPUs) once a second, as JSON lines in
-  // <out>/jit.jsonl ({t: epoch ms, steps, jit}): the flushes, the wasm compiled and alive (bench/boot/results/m8-replay/counts.ts reads it).
+  // <out>/jit.jsonl ({t: epoch ms, steps, jit, cw}): the flushes, the wasm compiled and alive (bench/boot/results/m8-replay/counts.ts reads it),
+  // and the compile worker's counters (`__status.compile`: its busy ms, the delays to `ready`) where the page has them.
   const jitLog = process.env.JITLOG ? setInterval(async () => {
     try {
-      const st = await page.evaluate(() => (window as unknown as { __status?: { stats: { steps: number; jit: unknown } } }).__status?.stats);
-      if (st) appendFileSync(`${o.out}/jit.jsonl`, JSON.stringify({ t: Date.now(), steps: st.steps, jit: st.jit }) + '\n');
+      const st = await page.evaluate(() => { const s = (window as unknown as { __status?: { stats: { steps: number; jit: unknown }; compile?: unknown } }).__status; return s && { ...s.stats, cw: s.compile }; });
+      if (st) appendFileSync(`${o.out}/jit.jsonl`, JSON.stringify({ t: Date.now(), steps: st.steps, jit: st.jit, cw: st.cw }) + '\n');
     } catch {}
   }, 1000) : undefined;
 

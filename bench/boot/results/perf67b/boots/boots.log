@@ -1,0 +1,64 @@
+main r1: smp_alpine_jit_n1_script       2555.955 ±29.250 ms
+main r1: smp_alpine_jit_n1_total        5049.040 ±44.630 ms
+main r1: smp_alpine_jit_n2_script       2206.255 ±29.370 ms
+main r1: smp_alpine_jit_n2_total        4705.880 ±51.605 ms
+main r1: smp_alpine_jit_n4_script       2192.625 ±16.225 ms
+main r1: smp_alpine_jit_n4_total        4750.790 ±24.850 ms
+no leftovers
+before r1: smp_alpine_jit_n1_script       2440.820 ±8.650 ms
+before r1: smp_alpine_jit_n1_total        4928.210 ±38.185 ms
+before r1: smp_alpine_jit_n2_script       2118.145 ±38.650 ms
+before r1: smp_alpine_jit_n2_total        4624.645 ±29.015 ms
+before r1: smp_alpine_jit_n4_script       2125.100 ±19.170 ms
+before r1: smp_alpine_jit_n4_total        4661.140 ±30.685 ms
+no leftovers
+idle r1: smp_alpine_jit_n1_script       2468.485 ±31.125 ms
+idle r1: smp_alpine_jit_n1_total        4951.925 ±27.860 ms
+idle r1: smp_alpine_jit_n2_script       2126.455 ±41.910 ms
+idle r1: smp_alpine_jit_n2_total        4623.980 ±55.815 ms
+idle r1: smp_alpine_jit_n4_script       2122.320 ±39.105 ms
+idle r1: smp_alpine_jit_n4_total        4654.885 ±51.280 ms
+no leftovers
+before r2: smp_alpine_jit_n1_script       2430.230 ±9.400 ms
+before r2: smp_alpine_jit_n1_total        4916.815 ±11.360 ms
+before r2: smp_alpine_jit_n2_script       2103.865 ±40.660 ms
+before r2: smp_alpine_jit_n2_total        4604.325 ±46.960 ms
+before r2: smp_alpine_jit_n4_script       2100.415 ±38.930 ms
+before r2: smp_alpine_jit_n4_total        4636.840 ±43.180 ms
+no leftovers
+idle r2: smp_alpine_jit_n1_script       2466.510 ±28.790 ms
+idle r2: smp_alpine_jit_n1_total        4935.625 ±31.005 ms
+idle r2: smp_alpine_jit_n2_script       2146.880 ±11.675 ms
+idle r2: smp_alpine_jit_n2_total        4645.250 ±14.395 ms
+idle r2: smp_alpine_jit_n4_script       2146.635 ±38.830 ms
+idle r2: smp_alpine_jit_n4_total        4692.090 ±50.870 ms
+no leftovers
+main r2: smp_alpine_jit_n1_script       2579.990 ±12.600 ms
+main r2: smp_alpine_jit_n1_total        5084.270 ±14.120 ms
+main r2: smp_alpine_jit_n2_script       2243.410 ±4.455 ms
+main r2: smp_alpine_jit_n2_total        4756.750 ±35.075 ms
+main r2: smp_alpine_jit_n4_script       2182.870 ±28.150 ms
+main r2: smp_alpine_jit_n4_total        4726.655 ±26.010 ms
+no leftovers
+idle r3: smp_alpine_jit_n1_script       2471.770 ±25.090 ms
+idle r3: smp_alpine_jit_n1_total        4962.060 ±14.520 ms
+idle r3: smp_alpine_jit_n2_script       2150.250 ±35.775 ms
+idle r3: smp_alpine_jit_n2_total        4639.905 ±15.010 ms
+idle r3: smp_alpine_jit_n4_script       2146.285 ±21.665 ms
+idle r3: smp_alpine_jit_n4_total        4691.635 ±52.135 ms
+no leftovers
+main r3: smp_alpine_jit_n1_script       2584.610 ±17.210 ms
+main r3: smp_alpine_jit_n1_total        5108.235 ±18.685 ms
+main r3: smp_alpine_jit_n2_script       2231.810 ±17.290 ms
+main r3: smp_alpine_jit_n2_total        4754.460 ±9.750 ms
+main r3: smp_alpine_jit_n4_script       2189.065 ±30.260 ms
+main r3: smp_alpine_jit_n4_total        4734.075 ±48.500 ms
+no leftovers
+before r3: smp_alpine_jit_n1_script       2445.825 ±104.905 ms
+before r3: smp_alpine_jit_n1_total        4936.995 ±114.695 ms
+before r3: smp_alpine_jit_n2_script       2125.110 ±281.595 ms
+before r3: smp_alpine_jit_n2_total        4624.470 ±337.515 ms
+before r3: smp_alpine_jit_n4_script       2146.425 ±532.465 ms
+before r3: smp_alpine_jit_n4_total        4712.700 ±792.415 ms
+GPU now 0% busy
+boots done 05:03:11

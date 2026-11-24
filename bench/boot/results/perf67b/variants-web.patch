@@ -1,0 +1,320 @@
+diff --git a/bench/boot/suite.ts b/bench/boot/suite.ts
+index 3e73ce10..be43a1d1 100644
+--- a/bench/boot/suite.ts
++++ b/bench/boot/suite.ts
+@@ -32,6 +32,7 @@
+ import type { Options, Sample } from '../spike/benchmarks.ts';
+ import type { DeviceSpec } from '../../web/devices.ts';
+ import { bootVm } from '../../web/vm.ts';
++import type { WarmMode } from '../../web/jit-compile-worker.ts';
+ import { compileCore, Exit, PSCI_SYSTEM_OFF } from '../../web/core.ts';
+ import { Counter } from '../../web/counters.ts';
+ import type { Counters, ProcStat } from '../procstat.ts';
+@@ -91,7 +92,7 @@ function procSamples(name: string, params: Record<string, unknown>, procs: (Coun
+ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
+   const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
+   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
+-  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), fma: pageQuery().get('fma') !== 'emul', exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined });
++  const vm = await bootVm(module, { ramSize: img.ramSize, spill: img.spill, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, sha3: o.sha3, rng: o.rng, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000, compileWorker: !pageQuery().has('nocw'), fma: pageQuery().get('fma') !== 'emul', exactCore: !pageQuery().has('growcore'), vcpuYieldMs: pageQuery().has('vyield') ? Number(pageQuery().get('vyield')) : undefined, jitWarm: (pageQuery().get('jitwarm') ?? undefined) as WarmMode | undefined });
+   await onVm?.(vm);
+   const proc0 = await procNow();
+   let console = '';
+diff --git a/web/app/protocol.ts b/web/app/protocol.ts
+index 18c3cd7e..1ce173b9 100644
+--- a/web/app/protocol.ts
++++ b/web/app/protocol.ts
+@@ -458,6 +458,8 @@ export type Status = {
+    * undefined in round-robin mode, where vCPU 0's block counts them all.
+    */
+   cpus?: { steps: number; jitSteps: number }[];
++  /** The JIT's compile worker's counters (parallel SMP with one: web/counters.ts `compileStats`), for harnesses (bench/gpu/guest-session.ts `JITLOG`). */
++  compile?: ReturnType<NonNullable<Vm['compileStats']>>;
+   /** The guest has suspended itself (PSCI SYSTEM_SUSPEND): it sleeps until a `wake`. */
+   asleep?: boolean;
+ };
+diff --git a/web/app/run/dev-knobs.ts b/web/app/run/dev-knobs.ts
+index 67944758..923d6f5e 100644
+--- a/web/app/run/dev-knobs.ts
++++ b/web/app/run/dev-knobs.ts
+@@ -26,6 +26,8 @@ export type DevKnobs = {
+   snd: { wake: 'timer' | 'worklet'; stats: boolean };
+   /** The JIT compiles in its compile worker (`?jit=nocw` turns it off: an A/B). */
+   compileWorker: boolean;
++  /** When the compile worker calls a polled module's functions (`?jitwarm=before|after|idle|off`; web/jit-compile-worker.ts `WarmMode`). */
++  jitWarm?: 'before' | 'after' | 'idle' | 'off';
+   /** The JIT's FMA forms on the host's fused `madd` (`?fma=emul` forces their emulation; web/vm.ts `BootOptions.fma`). */
+   fma: boolean;
+   /** The core's memory imported at its size (`?growcore`: growable, web/core.ts `exactCore`; an A/B). */
+@@ -75,6 +77,7 @@ export function parseDevKnobs(q: URLSearchParams): DevKnobs {
+     },
+     snd: { wake: snd.includes('timer') ? 'timer' : 'worklet', stats: snd.includes('stats') },
+     compileWorker: q.get('jit') !== 'nocw',
++    jitWarm: (['before', 'after', 'idle', 'off'] as const).find((w) => w === q.get('jitwarm')),
+     fma: q.get('fma') !== 'emul',
+     exactCore: !q.has('growcore'),
+     vcpuYieldMs: q.has('vyield') ? Number(q.get('vyield')) : undefined,
+diff --git a/web/app/worker-start.ts b/web/app/worker-start.ts
+index 73bb578f..1dc6db84 100644
+--- a/web/app/worker-start.ts
++++ b/web/app/worker-start.ts
+@@ -295,6 +295,7 @@ export function bootOptions(
+     parallel: true,
+     realtime: true,
+     compileWorker: dev.compileWorker && !spiderMonkey,
++    jitWarm: dev.jitWarm,
+     warm,
+     fma: dev.fma,
+     exactCore: dev.exactCore,
+diff --git a/web/app/worker-status.ts b/web/app/worker-status.ts
+index bb5a2e3f..a7712692 100644
+--- a/web/app/worker-status.ts
++++ b/web/app/worker-status.ts
+@@ -46,6 +46,7 @@ export function status(
+     usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },
+     cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
+     asleep: vm.suspended(),
++    compile: vm.compileStats?.(),
+   };
+ }
+ 
+diff --git a/web/coordinator.ts b/web/coordinator.ts
+index 5fc6f3e5..e042ae58 100644
+--- a/web/coordinator.ts
++++ b/web/coordinator.ts
+@@ -2,7 +2,7 @@
+ // compile worker, their start, the run's end, pausing and resuming.
+ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
+ import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
+-import type { CompileInit } from './jit-compile-worker.ts';
++import type { CompileInit, WarmMode } from './jit-compile-worker.ts';
+ import { CompileStat, compileStats } from './counters.ts';
+ import { Exit, panicNote, STOP, threadAlloc, unsigned, type Stall } from './core.ts';
+ import { newWorker, type WarmWorkers } from './warm-workers.ts';
+@@ -34,6 +34,7 @@ export function coordinator(c: {
+   quiesce: () => Promise<void>;
+   stall: Stall[];
+   compileWorker: boolean;
++  jitWarm?: WarmMode;
+   yieldMs: number;
+   warm?: WarmWorkers;
+ }) {
+@@ -140,7 +141,7 @@ export function coordinator(c: {
+       const ports = channels.map((ch) => ch.port2);
+       const stats = new SharedArrayBuffer(CompileStat.LEN * 8);
+       compileBlock = new Float64Array(stats);
+-      void compiler.then((h) => h.post({ memory: c.memory, ports, stats }, ports));
++      void compiler.then((h) => h.post({ memory: c.memory, spill: c.spill, ports, stats, warm: c.jitWarm }, ports));
+     }
+     const made = Array.from({ length: c.ncpus }, async (_, cpu) => {
+       const h = await spawn();
+diff --git a/web/jit-compile-worker.ts b/web/jit-compile-worker.ts
+index f9c0b8ec..40d5eade 100644
+--- a/web/jit-compile-worker.ts
++++ b/web/jit-compile-worker.ts
+@@ -7,11 +7,28 @@
+ // something holds it, and a table that comes later (a vCPU that slept) compiles it itself. What it did goes into a
+ // shared block of counters (web/counters.ts `CompileStat`) that the VM reads (web/vm.ts `compileStats`; the paired A/B's `smp`
+ // workload prints them).
++// V8 compiles a module's functions lazily, each at its first call (Chromium 158 as Node's V8 14.6): `new
++// WebAssembly.Module` only validates them. So before it posts a module marked `waarm64.warm` (the core's polled code,
++// whose functions start with a guard: core/src/jit/emit.rs `warm_guard`), this instantiates it and calls every export
++// once with the guard's depth, which returns at once: the functions are compiled here, into the module that V8 shares
++// with every thread it is posted to, instead of on the vCPUs (docs/jit.md "Sharing", bench/boot/REPORT.md "PERF loop 67").
+ // Runs in a browser worker or a Node worker thread.
+ import { CompileStat, readyBucket } from './counters.ts';
+ 
+-/** What the coordinator sends: the core's memory, a port per vCPU worker and the counters' block (`CompileStat.LEN` f64s). */
+-export type CompileInit = { memory: WebAssembly.Memory; ports: MessagePort[]; stats?: SharedArrayBuffer };
++/** What the coordinator sends: the core's memory, the spill memories, a port per vCPU worker and the counters' block. */
++export type CompileInit = {
++  memory: WebAssembly.Memory;
++  spill?: WebAssembly.Memory[];
++  ports: MessagePort[];
++  stats?: SharedArrayBuffer;
++  warm?: WarmMode;
++};
++/**
++ * When a marked module's functions are called (`?jitwarm=`, PERF loop 67b's arms): `before` it is posted and `ready`
++ * moves (the default), `after` (posted, `ready` moved, then called in the same job), `idle` (posted, `ready` moved, and
++ * called later, one module a task, only while no compile job waits), `off` never.
++ */
++export type WarmMode = 'before' | 'after' | 'idle' | 'off';
+ /**
+  * A module from a vCPU (the core's numbers are u32s); `t`: when the vCPU emitted it (`performance.timeOrigin +
+  * performance.now()`, which every worker of a page reads off one clock, as the vCPUs' guest clock does).
+@@ -23,11 +40,39 @@ export type CompiledJob = { seq: number; module?: WebAssembly.Module };
+ /** How long a compiled module is kept for the tables that haven't installed it yet. */
+ const KEEP_MS = 30_000;
+ 
++/** The marker that opens a module whose exports may be called with `WARM` (core/src/jit/wasm.rs `WARM_SECTION`). */
++const MARKER = new Uint8Array([
++  0,
++  0x61,
++  0x73,
++  0x6d,
++  1,
++  0,
++  0,
++  0,
++  0,
++  13,
++  12,
++  ...new TextEncoder().encode('waarm64.warm'),
++]);
++/** The depth argument the guard returns on (core/src/jit/emit.rs `WARM_DEPTH`). */
++const WARM = -1;
++
++/** Whether `bytes` opens with the marker. */
++export function warmable(bytes: ArrayBuffer): boolean {
++  if (bytes.byteLength < MARKER.length) return false;
++  const b = new Uint8Array(bytes, 0, MARKER.length);
++  for (let i = 0; i < MARKER.length; i++) if (b[i] !== MARKER[i]) return false;
++  return true;
++}
++
+ /** The compile worker's state: in a function so a test can drive it without a worker. */
+ export function compiler(
+   memory: WebAssembly.Memory,
+   ports: { postMessage(m: CompiledJob): void }[] = [],
+   block: Float64Array = new Float64Array(CompileStat.LEN),
++  spill: WebAssembly.Memory[] = [],
++  mode: WarmMode = 'before',
+ ) {
+   let next = 1; // the lowest number not compiled yet
+   /** Compiled modules past `next`, with when each was emitted (NaN: not said). */
+@@ -36,9 +81,45 @@ export function compiler(
+   const kept: { module?: WebAssembly.Module; epoch: number; at: number }[] = [];
+   let compiled = 0,
+     failed = 0,
+-    ms = 0;
++    ms = 0,
++    warmed = 0,
++    warmMs = 0;
++  // What a module imports, for the calls that only compile: the memories by name, a table of its own (the modules
++  // import one with no minimum), and a function that's never called (the guard returns first) for every other name.
++  const never = () => 0;
++  const table = new WebAssembly.Table({ element: 'anyfunc', initial: 0 });
++  const env = new Proxy(
++    {},
++    {
++      get: (_, k) =>
++        k === 'memory'
++          ? memory
++          : k === 'table'
++            ? table
++            : typeof k === 'string' && k.startsWith('ram')
++              ? spill[+k.slice(3) - 1]
++              : never,
++    },
++  );
++  const imports = { env, t: new Proxy({}, { get: () => never }) };
+   // The memory's words, the view made again only after the memory grew (no allocation per module).
+   let u32 = new Uint32Array(memory.buffer);
++  /** Calls every export of `module` with the guard's depth, so V8 compiles its functions here. */
++  const warm = (module: WebAssembly.Module) => {
++    const t1 = performance.now();
++    try {
++      // (Its exports are the region functions `f0`, `f1`, …: nothing else.)
++      const f = new WebAssembly.Instance(module, imports).exports;
++      for (const g of Object.values(f)) (g as (...a: number[]) => number)(0, 0, 0, WARM);
++      warmed++;
++    } catch {
++      // (Left to compile lazily on the vCPUs, as without the marker.)
++    }
++    warmMs += performance.now() - t1;
++  };
++  /** `idle`'s modules, oldest first, and the task that calls the next one (a message to itself: after waiting jobs). */
++  const later: { module: WebAssembly.Module; epoch: number }[] = [];
++  let tick = { post: () => {} };
+   /** The emission times of the modules the ready word just reached (reused). */
+   const readied: number[] = [];
+   return {
+@@ -51,6 +132,8 @@ export function compiler(
+         failed++; // the table compiles it too and reports the error there
+       }
+       ms += performance.now() - t0;
++      const marked = module !== undefined && mode !== 'off' && warmable(j.bytes);
++      if (marked && mode === 'before') warm(module!);
+       compiled++;
+       if (j.epoch !== epoch && ((j.epoch - epoch) | 0) > 0) {
+         // A flush: the old epoch's modules are dead (each table moves on before it installs this epoch's).
+@@ -86,23 +169,46 @@ export function compiler(
+       readied.length = 0;
+       block[CompileStat.COMPILED] = compiled;
+       block[CompileStat.FAILED] = failed;
+-      block[CompileStat.BUSY_MS] += now - t0;
++      if (marked && mode === 'after') warm(module!);
++      if (marked && mode === 'idle') {
++        later.push({ module: module!, epoch: j.epoch });
++        if (later.length === 1) tick.post();
++      }
++      block[CompileStat.BUSY_MS] += performance.now() - t0;
++    },
++    /** One module of `idle`'s queue (a task of its own, after the jobs already waiting); true while more wait. */
++    idle() {
++      const m = later.shift();
++      if (!m) return false;
++      const t0 = performance.now();
++      if (m.epoch === epoch) warm(m.module); // (a flushed epoch's modules are dead)
++      block[CompileStat.BUSY_MS] += performance.now() - t0;
++      if (later.length) tick.post();
++      return later.length > 0;
++    },
++    stats: () => ({ compiled, failed, ms, warmed, warmMs, kept: kept.length, later: later.length }),
++    /** How `idle` schedules its next module (the worker: a message on a channel of its own; tests: by hand). */
++    schedule(post: () => void) {
++      tick = { post };
+     },
+-    stats: () => ({ compiled, failed, ms, kept: kept.length }),
+   };
+ }
+ 
+ if ('WorkerGlobalScope' in globalThis) {
+   const self = globalThis as unknown as { onmessage: ((e: MessageEvent<CompileInit>) => void) | null };
+   self.onmessage = (e) => {
+-    const c = compiler(e.data.memory, e.data.ports, e.data.stats && new Float64Array(e.data.stats));
++    const c = compiler(e.data.memory, e.data.ports, e.data.stats && new Float64Array(e.data.stats), e.data.spill, e.data.warm);
++    const self2 = new MessageChannel();
++    self2.port1.onmessage = () => c.idle();
++    c.schedule(() => self2.port2.postMessage(0));
+     for (const p of e.data.ports) p.onmessage = (m: MessageEvent<CompileJob>) => c.job(m.data);
+   };
+ } else {
+   const { parentPort } = await import('node:worker_threads');
+   // (No parent port: imported by a test on Node's main thread.)
+   parentPort?.once('message', (init: CompileInit) => {
+-    const c = compiler(init.memory, init.ports, init.stats && new Float64Array(init.stats));
++    const c = compiler(init.memory, init.ports, init.stats && new Float64Array(init.stats), init.spill, init.warm);
++    c.schedule(() => setImmediate(() => c.idle()));
+     for (const p of init.ports)
+       (p as unknown as import('node:worker_threads').MessagePort).on('message', (m: CompileJob) => c.job(m));
+   });
+diff --git a/web/vm.ts b/web/vm.ts
+index cbd44674..7c72459a 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -49,6 +49,7 @@ import {
+ } from './core.ts';
+ import { Counter, helperReport, stats } from './counters.ts';
+ import { coordinator } from './coordinator.ts';
++import type { WarmMode } from './jit-compile-worker.ts';
+ import { deviceHost, usbHost } from './device-host.ts';
+ import type { WarmWorkers } from './warm-workers.ts';
+ export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
+@@ -215,6 +216,8 @@ export type BootOptions = {
+    * On unless false.
+    */
+   compileWorker?: boolean;
++  /** When the compile worker calls a polled module's functions (web/jit-compile-worker.ts `WarmMode`; default `before`). */
++  jitWarm?: WarmMode;
+   /**
+    * The browser's workers started ahead of `bootVm` ({@link warmWorkers}): taken where it would start its own, the
+    * rest ended once the machine's are all started (or `bootVm` fails).
+@@ -716,6 +719,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+         quiesce: () => devices.quiesce(),
+         stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })),
+         compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false,
++        jitWarm: o.jitWarm,
+         yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS,
+         warm: o.warm,
+       })

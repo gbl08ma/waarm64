@@ -13,7 +13,8 @@
 # --kill after every session. PHASES=browse (with BROWSE_S, DWELL_S, CHUNK_S, RSSLOG=1) runs the long session instead
 # (bench/gpu/firefox-load.ts), KEEP_TIMELINES=1 keeps the timelines gzipped (bench/gpu/flush-cost.ts reads them). Then `node bench/gpu/ab-summary.ts <outdir>` (`pagesS`: Firefox's starts and the pages'
 # loads, summed). Each session is bounded on the Mac (MAC_TIMEOUT, default 600 s) and here (SESSION_S, 800): run it
-# alone, in the background, nothing on the dev VM or the Mac beside it.
+# alone, in the background, nothing on the dev VM or the Mac beside it. QUERY_<arm> (e.g. QUERY_nocw=jit=nocw) is
+# that arm's page query in place of QUERY.
 set -u
 cd "$(dirname "$0")/../.."
 repo=$PWD
@@ -30,7 +31,8 @@ for r in $(seq 1 "$rounds"); do
     tag=abmac-$name-$r o=$out/$name-$r
     rm -rf "$o" "$tree/bench/results/local/$tag" "$tree/bench/results/local/$tag".*; mkdir -p "$o"
     t0=$(date +%s.%N)
-    WASM=$core SCRIPT=firefox-load.ts FROM_SNAPSHOT=$from PHASES=${PHASES:-pages} PHASE_S=${PHASE_S:-1} JITLOG=1 TIMELINE_ALL=1 \
+    qv=QUERY_$name; aq=${!qv:-${QUERY:-}}
+    QUERY=$aq WASM=$core SCRIPT=firefox-load.ts FROM_SNAPSHOT=$from PHASES=${PHASES:-pages} PHASE_S=${PHASE_S:-1} JITLOG=1 TIMELINE_ALL=1 \
       WAARM64_GUEST_USER=${WAARM64_GUEST_USER:-alarm} MAC_TIMEOUT=${MAC_TIMEOUT:-600} \
       timeout "${SESSION_S:-800}" "$tree/bench/gpu/sway-mac.sh" virgl "${IMAGE:-target/archarm/desktop.qcow2}" "$tag" > "$o/log.txt" 2>&1
     code=$?

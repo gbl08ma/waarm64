@@ -1,0 +1,52 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/results/local/perf67b/churn-load/idle-2/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 105.87,
+   "flushes": 1,
+   "modules": 33021,
+   "mib": 410.5,
+   "overdue": 1912,
+   "parks": 81002,
+   "locks": 38551271,
+   "interpGsteps": 8.94,
+   "share": 0.915,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 100,
+    "atGsteps": 84.22,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 7644,
+    "mibEmitted": 93.1,
+    "shareBefore": 0.915,
+    "shareAfter": [
+     0.807,
+     0.807,
+     0.807,
+     0.833,
+     0.853,
+     0.853,
+     0.853,
+     0.872,
+     0.884,
+     0.884
+    ]
+   }
+  ]
+ }
+}

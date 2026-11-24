@@ -1,0 +1,837 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "158.0.8127.88",
+ "prefs": "",
+ "from": {
+  "file": "bench/results/local/pages.waarm64snap",
+  "bytes": 664542411,
+  "loadMs": 1251,
+  "created": "2026-11-21T04:54:18.247Z",
+  "coreVersion": 6,
+  "abi": 71,
+  "core": "de80615e35fc1e35",
+  "sameCore": false
+ },
+ "info": "7.2.10-1-aarch64-ARCHMem:            2449         565         964          53        1050        1883",
+ "mesa": "583 firefox 6;",
+ "timelineAll": {
+  "seconds": 115.9,
+  "rows": 8783,
+  "cpus": [
+   {
+    "cpu": 0,
+    "mips": 214.9,
+    "binMips": {
+     "p10": 112.1,
+     "p50": 318.8,
+     "p90": 1030.7
+    },
+    "outMs": 625.9,
+    "compileMs": 4.1,
+    "syscalls": 898,
+    "stallMs": 0.4,
+    "worstStall": {
+     "ms": 15,
+     "compileMs": 0,
+     "atMs": 70352
+    },
+    "longCalls": [
+     {
+      "atMs": 9123,
+      "ms": 53,
+      "Msteps": 15.1,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 9171,
+      "ms": 63,
+      "Msteps": 19.6,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 11927,
+      "ms": 57,
+      "Msteps": 16.4,
+      "compileMs": 0.1
+     }
+    ]
+   },
+   {
+    "cpu": 1,
+    "mips": 95.2,
+    "binMips": {
+     "p10": 228.1,
+     "p50": 548.8,
+     "p90": 930.8
+    },
+    "outMs": 731.3,
+    "compileMs": 3.9,
+    "syscalls": 1224,
+    "stallMs": 0.1,
+    "worstStall": {
+     "ms": 15,
+     "compileMs": 0,
+     "atMs": 70352
+    },
+    "longCalls": [
+     {
+      "atMs": 3190,
+      "ms": 53,
+      "Msteps": 25,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3346,
+      "ms": 58,
+      "Msteps": 38.6,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3492,
+      "ms": 56,
+      "Msteps": 28.9,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3552,
+      "ms": 60,
+      "Msteps": 45.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 3612,
+      "ms": 56,
+      "Msteps": 42.4,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 4168,
+      "ms": 54,
+      "Msteps": 29.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 4222,
+      "ms": 57,
+      "Msteps": 56.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 4379,
+      "ms": 55,
+      "Msteps": 36.1,
+      "compileMs": 0
+     },
+     {
+      "atMs": 4512,
+      "ms": 55,
+      "Msteps": 41.6,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 4566,
+      "ms": 64,
+      "Msteps": 53.7,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 5325,
+      "ms": 60,
+      "Msteps": 39.7,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 5377,
+      "ms": 65,
+      "Msteps": 41.7,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 5429,
+      "ms": 75,
+      "Msteps": 48.3,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 5534,
+      "ms": 55,
+      "Msteps": 44.5,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 5601,
+      "ms": 70,
+      "Msteps": 52.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 5753,
+      "ms": 76,
+      "Msteps": 66.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 7239,
+      "ms": 66,
+      "Msteps": 38.3,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 7538,
+      "ms": 67,
+      "Msteps": 21,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 7744,
+      "ms": 114,
+      "Msteps": 71.8,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 7849,
+      "ms": 110,
+      "Msteps": 65.9,
+      "compileMs": 0.2
+     }
+    ]
+   },
+   {
+    "cpu": 2,
+    "mips": 339.9,
+    "binMips": {
+     "p10": 0,
+     "p50": 798.9,
+     "p90": 1370.9
+    },
+    "outMs": 481.1,
+    "compileMs": 4.5,
+    "syscalls": 820,
+    "stallMs": 0.9,
+    "worstStall": {
+     "ms": 88,
+     "compileMs": 0,
+     "atMs": 113306
+    },
+    "longCalls": [
+     {
+      "atMs": 1797,
+      "ms": 52,
+      "Msteps": 57.8,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 1974,
+      "ms": 60,
+      "Msteps": 70.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 2032,
+      "ms": 64,
+      "Msteps": 96.5,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 2086,
+      "ms": 67,
+      "Msteps": 84.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 2144,
+      "ms": 61,
+      "Msteps": 83.8,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 4512,
+      "ms": 55,
+      "Msteps": 65.5,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 113304,
+      "ms": 105,
+      "Msteps": 0.6,
+      "compileMs": 93.6
+     }
+    ]
+   },
+   {
+    "cpu": 3,
+    "mips": 221.2,
+    "binMips": {
+     "p10": 151.8,
+     "p50": 651.3,
+     "p90": 1160.2
+    },
+    "outMs": 602.9,
+    "compileMs": 4,
+    "syscalls": 806,
+    "stallMs": 0.6,
+    "worstStall": {
+     "ms": 75,
+     "compileMs": 0,
+     "atMs": 113320
+    },
+    "longCalls": [
+     {
+      "atMs": 6256,
+      "ms": 79,
+      "Msteps": 30.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6336,
+      "ms": 53,
+      "Msteps": 43.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6379,
+      "ms": 97,
+      "Msteps": 80.6,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6465,
+      "ms": 70,
+      "Msteps": 55.6,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6530,
+      "ms": 58,
+      "Msteps": 56.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6580,
+      "ms": 74,
+      "Msteps": 73,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 6647,
+      "ms": 61,
+      "Msteps": 38.5,
+      "compileMs": 0.3
+     },
+     {
+      "atMs": 6756,
+      "ms": 51,
+      "Msteps": 31.4,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 11927,
+      "ms": 58,
+      "Msteps": 11.8,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 102821,
+      "ms": 53,
+      "Msteps": 13.7,
+      "compileMs": 0.2
+     },
+     {
+      "atMs": 105740,
+      "ms": 62,
+      "Msteps": 26.2,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 105890,
+      "ms": 55,
+      "Msteps": 66.8,
+      "compileMs": 0.1
+     },
+     {
+      "atMs": 105993,
+      "ms": 50,
+      "Msteps": 53.6,
+      "compileMs": 0
+     },
+     {
+      "atMs": 113310,
+      "ms": 99,
+      "Msteps": 12.7,
+      "compileMs": 0.1
+     }
+    ]
+   }
+  ]
+ },
+ "churn": {
+  "query": "rate=200",
+  "seconds": 90,
+  "doneS": null,
+  "startAt": 1795494924991,
+  "readyAt": 1795494937107,
+  "started": 11,
+  "made": 6910,
+  "vm": {
+   "seconds": 89.99759000015258,
+   "Msteps": 906.576225,
+   "irqs": 2957,
+   "exceptions": {
+    "0x0": 2,
+    "0x15": 3383,
+    "0x20": 89,
+    "0x24": 901,
+    "0x25": 22
+   },
+   "tlbMisses": 143801,
+   "tlbFlushes": 2033,
+   "jitFlushes": 0,
+   "jitInvalidations": 159,
+   "jitCompileMs": 16.337319
+  },
+  "fpsAll": [
+   [
+    2,
+    5,
+    1534
+   ],
+   [
+    4,
+    1,
+    2068
+   ],
+   [
+    5,
+    1,
+    1765
+   ],
+   [
+    7,
+    1,
+    1384
+   ],
+   [
+    8,
+    1,
+    1250
+   ],
+   [
+    9,
+    1,
+    1383
+   ],
+   [
+    11,
+    1,
+    1284
+   ],
+   [
+    12,
+    1,
+    1383
+   ],
+   [
+    13,
+    1,
+    1317
+   ],
+   [
+    15,
+    1,
+    1283
+   ],
+   [
+    16,
+    1,
+    1317
+   ],
+   [
+    17,
+    1,
+    1250
+   ],
+   [
+    19,
+    1,
+    1300
+   ],
+   [
+    20,
+    1,
+    1350
+   ],
+   [
+    21,
+    1,
+    1333
+   ],
+   [
+    23,
+    1,
+    1284
+   ],
+   [
+    24,
+    1,
+    1317
+   ],
+   [
+    25,
+    1,
+    1283
+   ],
+   [
+    26,
+    1,
+    1267
+   ],
+   [
+    28,
+    1,
+    1283
+   ],
+   [
+    29,
+    1,
+    1250
+   ],
+   [
+    30,
+    1,
+    1283
+   ],
+   [
+    31,
+    1,
+    1267
+   ],
+   [
+    33,
+    1,
+    1300
+   ],
+   [
+    34,
+    1,
+    1300
+   ],
+   [
+    35,
+    1,
+    1284
+   ],
+   [
+    37,
+    1,
+    1283
+   ],
+   [
+    38,
+    1,
+    1234
+   ],
+   [
+    39,
+    1,
+    1349
+   ],
+   [
+    40,
+    1,
+    1251
+   ],
+   [
+    42,
+    1,
+    1300
+   ],
+   [
+    43,
+    1,
+    1216
+   ],
+   [
+    44,
+    1,
+    1269
+   ],
+   [
+    46,
+    1,
+    1265
+   ],
+   [
+    47,
+    1,
+    1350
+   ],
+   [
+    48,
+    1,
+    1284
+   ],
+   [
+    49,
+    1,
+    1316
+   ],
+   [
+    51,
+    1,
+    1250
+   ],
+   [
+    52,
+    1,
+    1300
+   ],
+   [
+    53,
+    1,
+    1333
+   ],
+   [
+    55,
+    1,
+    1250
+   ],
+   [
+    56,
+    1,
+    1284
+   ],
+   [
+    57,
+    1,
+    1283
+   ],
+   [
+    58,
+    1,
+    1300
+   ],
+   [
+    60,
+    1,
+    1300
+   ],
+   [
+    61,
+    1,
+    1201
+   ],
+   [
+    62,
+    1,
+    1233
+   ],
+   [
+    63,
+    1,
+    1167
+   ],
+   [
+    65,
+    1,
+    1268
+   ],
+   [
+    66,
+    1,
+    1282
+   ],
+   [
+    67,
+    1,
+    1183
+   ],
+   [
+    68,
+    1,
+    1200
+   ],
+   [
+    70,
+    1,
+    1217
+   ],
+   [
+    71,
+    1,
+    1251
+   ],
+   [
+    72,
+    1,
+    1232
+   ],
+   [
+    73,
+    1,
+    1250
+   ],
+   [
+    74,
+    1,
+    1201
+   ],
+   [
+    76,
+    1,
+    1249
+   ],
+   [
+    77,
+    1,
+    1201
+   ],
+   [
+    78,
+    1,
+    1250
+   ],
+   [
+    79,
+    1,
+    1220
+   ],
+   [
+    81,
+    1,
+    1213
+   ],
+   [
+    82,
+    1,
+    1200
+   ],
+   [
+    83,
+    1,
+    1251
+   ],
+   [
+    84,
+    1,
+    1334
+   ],
+   [
+    86,
+    1,
+    1482
+   ],
+   [
+    87,
+    1,
+    1233
+   ],
+   [
+    88,
+    1,
+    1267
+   ],
+   [
+    90,
+    1,
+    1250
+   ]
+  ]
+ },
+ "jit": {
+  "blocks": 232133,
+  "modules": 31702,
+  "bytes": 405899925,
+  "compileNs": 1951545088,
+  "steps": 93773593990,
+  "dispatches": 583664365,
+  "invalidations": 16794,
+  "flushes": 1,
+  "inline": 4223576,
+  "helpers": 213,
+  "inlineSteps": 93713238888,
+  "flagsStored": 547876,
+  "flagsElided": 8260,
+  "condDirect": 244961,
+  "condComputed": 16171,
+  "condMemory": 3180,
+  "regionBlocks": 831084,
+  "backEdges": 51052,
+  "tierUps": 16903,
+  "stale": 0,
+  "decSteps": 8572037270,
+  "decoded": 5110918,
+  "decClears": 5,
+  "workerInstalls": 124954,
+  "overdue": 1852,
+  "parks": 77672,
+  "parkExits": 77304,
+  "locks": 37424269,
+  "lockContended": 97166,
+  "lockWaitNs": 1507327744,
+  "emitNs": 6352683008,
+  "emitLockedNs": 6352683008,
+  "planNs": 2578639104,
+  "prunes": 2,
+  "rescues": 0,
+  "lagFlushes": 0,
+  "decBytes": 207749120,
+  "knownBytes": 4456448,
+  "lockSkipped": 5015461,
+  "pruneNs": 46690048,
+  "mapRescues": 0
+ },
+ "par": {
+  "dsbWaits": 10176,
+  "dsbWaitNs": 133659212,
+  "tlbiIs": 91355,
+  "ic": 1158775,
+  "drains": 60940,
+  "idles": 186349,
+  "lockContended": 29769,
+  "lockWaitNs": 106422850,
+  "wfes": 856455,
+  "outNs": 303331569314
+ },
+ "proc": {
+  "instructions": 3356294057754,
+  "cycles": 1096937687965,
+  "cpuNs": 290403025582,
+  "pInstructions": 3179799613677,
+  "pCycles": 982520478185,
+  "pCpuNs": 249652971000,
+  "energyNj": 1150696542193,
+  "steps": 102245269323
+ },
+ "log": [
+  "34",
+  "28   Stack:",
+  "27 console.error: services.settings:",
+  "25   Message: TypeError: NetworkError: Network request failed",
+  "25     fetch/</request.onerror@resource://services-settings/Utils.sys.mjs:264:26",
+  "10 Exiting due to channel error.",
+  "4 JavaScript warning: resource://gre/modules/Troubleshoot.sys.mjs, line 748: WebGL context was lost.",
+  "3 getRecipesFromCollection@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:816:13",
+  "3 console.error: RSLoader:",
+  "3   Message: Error: Could not sync nimbus-desktop-experiments: get-exception",
+  "3   Failed to retrieve recipes from Remote Settings",
+  "3     RemoteSettingsSyncError@resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs:1562:5",
+  "2 void main() {}",
+  "2 console.warn: TopSitesFeed: Failed to fetch data from MARS server: NetworkError when attempting to fetch resource.",
+  "2 GetShaderSource() ->",
+  "2 GetShaderInfoLog() ->",
+  "2 0:2(12): error: extension `GL_EXT_shader_texture_lod' unsupported in fragment shader",
+  "2 #extension GL_EXT_shader_texture_lod: require",
+  "2   Remote Settings startup changesets bundle could not be extracted (TypeError: NetworkError: Network request failed)",
+  "1 JavaScript error: moz-src:///browser/components/sidebar/SidebarState.sys.mjs, line 545: TypeError: this[#launcherEl].requestUpdate is not a function",
+  "1 1795236840636 addons.xpi      ERROR   System addon update list error Error: Failed downloading XML, status: 0, channelStatus: 2152398878, errorCode: 2, reason: error"
+ ],
+ "times": {
+  "start": 1795494915254,
+  "running": 1795494919370,
+  "setUp": 1795494920193,
+  "saved": 1795495049658
+ },
+ "warnings": {},
+ "slow": []
+}

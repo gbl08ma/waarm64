@@ -458,6 +458,8 @@ export type Status = {
    * undefined in round-robin mode, where vCPU 0's block counts them all.
    */
   cpus?: { steps: number; jitSteps: number }[];
+  /** The JIT's compile worker's counters (parallel SMP with one: web/counters.ts `compileStats`), for harnesses (bench/gpu/guest-session.ts `JITLOG`). */
+  compile?: ReturnType<Vm['compileStats']>;
   /** The guest has suspended itself (PSCI SYSTEM_SUSPEND): it sleeps until a `wake`. */
   asleep?: boolean;
 };

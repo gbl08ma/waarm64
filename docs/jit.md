@@ -1679,6 +1679,22 @@ fast paths send there (`WAARM64_JIT_DIFF_HELPERS=1` on the differential test lis
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **The compile worker calling every function of a module once (the warm-up)** (PERF loops 67 and 67b, 2026-11-24;
+  `bench/boot/REPORT.md` "PERF loop 67" on the local branch `perf67-warmup`, and "PERF loop 67b: the warm-up's
+  latency", `bench/boot/results/perf67b/`): V8 compiles wasm lazily (Chromium 158), so the worker's `new
+  WebAssembly.Module` only validates and Liftoff compiles each JIT function at its first call, on a vCPU (1.73 s of a
+  cut pages session). A compile on any thread reaches every thread's instance of the posted module, so polled modules
+  were marked (`waarm64.warm`, a custom section first) and each function opened with a guard (depth −1 returns 0); the
+  worker instantiated each marked module and called every export before it posted the module and moved `ready`. The
+  parallel boots ran 1.4-3.0% faster (`smp_alpine_jit`, for 2-2.6% more CPU) and Firefox's starts and loads ~2%, but
+  the worker is busy 4-5× as long, serially, and holds each module back: the emission-to-`ready` wait tripled and
+  under JIT churn 7-8% more steps ran interpreted (the user saw the status bar's JIT share drop), more on a busier
+  host. Posting first and calling after (in the same job, or one module a task while no compile job waits) took the
+  waits and the share back to the plain worker's, but a vCPU reaching a function the worker is compiling then stalls:
+  88 and 114 ms inside one core call under host load, against none with the warm-up before posting. The user had felt
+  more stutter; no variant removed the share's drop without adding stalls, so none was kept. V8's own routes
+  (`--no-wasm-lazy-compilation`, the compilation-priority section) aren't open to a page. Untried: a budget per module
+  (the entries likely hot), a second worker (doubted by the user).
 - **Fewer or cheaper entries from the dispatcher, and no signature check** (PERF loop 54, 2026-11-22;
   `bench/boot/REPORT.md` "PERF loop 54", `bench/boot/results/perf54/`): on the Mac, entries at a function's first
   instruction are 12.7% of the pages session's busy ticks. Of the dispatcher's 161 M block calls there (8% of the

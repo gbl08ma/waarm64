@@ -589,7 +589,11 @@ and energy (`bench/mac/procstat.c`, built there by `bench/run-mac.sh` and `bench
   `readyAt` on the host's clock) lines up with the timeline, whose rows also carry each vCPU's `jitSteps` and
   `flushes`; `bench/boot/results/m8-replay/flushes.ts` reads both per flush. `JITLOG=1` logs the JIT's counters once
   a second (`<outdir>/jit.jsonl`; `bench/boot/results/m8-replay/counts.ts report` per flush: the wasm alive before and
-  after). The renderer's memory: `bench/boot/results/m8-replay/r2/rss.sh <out> [s]` beside the session (the biggest
+  after), with the compile worker's counters as `cw` (the status's `compile`: its busy ms, each module's wait from
+  emission to `ready` as a sum and log2 buckets); `bench/boot/results/perf67b/latency.ts` reads them with the
+  timeline (`KEEP_TIMELINES=1`) and the frames per page: the compiled share around each Firefox start, the worker's
+  busy share, the waits, Firefox's frame gaps and the vCPU stalls. `bench/gpu/ab-mac.sh` takes a page query per arm
+  as `QUERY_<arm>`. The renderer's memory: `bench/boot/results/m8-replay/r2/rss.sh <out> [s]` beside the session (the biggest
   `--type=renderer` process's RSS and its executable anonymous mappings, V8's wasm code, every 5 s). At the 320 MiB
   budget the session doesn't flush (it did twice at 160). A/B two sessions each at least,
   alternating: by `QUERY` for a mode the page takes (`jit=nocw`), or by swapping core builds

@@ -46,6 +46,7 @@ export function status(
     usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },
     cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
     asleep: vm.suspended(),
+    compile: vm.compileStats(),
   };
 }
 

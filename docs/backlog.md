@@ -158,11 +158,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
     dev VM has no x86 Chromium. The FMA forms took relaxed SIMD's other useful op (jit.md "Floating point").
   The same shader's guest loads spend ~11% on the TLB's tag load (a translation memo in locals lost: [jit.md](jit.md)
   "Tried and not kept").
-- **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
-  third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread (measured before the compile
-  worker). With a worker per vCPU, V8 compiles off the vCPU's thread: the JIT's compile worker
-  ([jit.md](jit.md) "Sharing"), built for the install stalls a GUI guest showed; the vCPU still
-  instantiates each module. Without the worker (round-robin, Node's runs, `?jit=nocw`) it compiles too.
 - **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds
   checks V8 keeps on Linux arm64. Don't fit the design to it.
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering
