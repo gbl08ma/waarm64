@@ -531,6 +531,40 @@ test('gpu: a cropped console keeps the display from shrinking below its buffer',
   assert.deepEqual([c.gpu.size.width, c.gpu.size.height], [800, 600]);
 });
 
+test('gpu: the floor goes when a desktop shows another resource whole or the console\'s buffer is freed, not when the console fills it', async () => {
+  const { gpuBackend } = await import('../web/gpu-backend.ts');
+  const cfg = new Uint8Array(256);
+  let events = 0;
+  const ctx = { ram: () => [new Uint8Array(1 << 16)], layout: ramLayout(1 << 16), complete() {}, config: () => cfg, untaken: () => 0, features: () => 0n, changeConfig: (w: (c: Uint8Array) => void) => { events++; w(cfg); } };
+  const b = gpuBackend(ctx, { width: 1024, height: 768, keepConsole: true });
+  const size = () => [b.gpu.size.width, b.gpu.size.height];
+  b.gpu.control(cmd(T.CREATE, 1, B8G8R8X8, 1024, 768), 4096);
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1), 4096);
+  b.gpu.setSize(800, 600);
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 800, 600, 0, 1), 4096); // the console cropped: the floor
+  assert.deepEqual(size(), [1024, 768]);
+  // The console takes the mode the floor asked for, its buffer whole: the floor stays (dropping it would shrink the console again).
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1), 4096);
+  assert.deepEqual(size(), [1024, 768]);
+  // A desktop starts at the reported size with a buffer of its own: it is told the page's size, once.
+  events = 0;
+  b.gpu.control(cmd(T.CREATE, 2, B8G8R8X8, 1024, 768), 4096);
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 2), 4096);
+  assert.deepEqual([...size(), events], [800, 600, 1]);
+  b.gpu.setSize(640, 480);
+  assert.deepEqual(size(), [640, 480]);
+  // Back at the console (a VT switch), cropped at the desktop's mode: its floor again.
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 640, 480, 0, 1), 4096);
+  assert.deepEqual(size(), [1024, 768]);
+  // A resource shown from elsewhere than the origin, or cropped itself, is no desktop's whole screen.
+  b.gpu.control(cmd(T.CREATE, 3, B8G8R8X8, 2048, 768), 4096);
+  b.gpu.control(cmd(T.SCANOUT, 1024, 0, 1024, 768, 0, 3), 4096);
+  assert.deepEqual(size(), [1024, 768]);
+  // The console's buffer freed: nothing to keep whole.
+  b.gpu.control(cmd(T.UNREF, 1, 0), 4096);
+  assert.deepEqual(size(), [640, 480]);
+});
+
 test('gpu: one flush is answered per frame, the first at once; what is queued behind a held one keeps its order', async () => {
   const { gpuBackend } = await import('../web/gpu-backend.ts');
   const frame = 1000 / 60, slack = 2;
@@ -1156,6 +1190,21 @@ test('venus: a virgl resource attached to a Venus context is imported there with
     { t: 'blob-ctx', ctx: 3, res: 20, attach: true, size: 864 * 480 * 4 },
     { t: 'blob-ctx', ctx: 3, res: 20, attach: false, size: 864 * 480 * 4 },
   ]);
+});
+
+test('venus: a virgl resource freed while attached to a Venus context is detached there first', () => {
+  const calls: { t: string }[] = [];
+  const r = rig({ virgl: true, venus: true, window: 1 << 20 });
+  r.gpu.host = { call: (c) => calls.push(JSON.parse(JSON.stringify(c, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v)))), fence: () => Promise.resolve() };
+  r.ok(ctxCreate(3, 4, 'mpv'));
+  r.ok(ctxCreate(4, 0, 'mpv-va'));
+  r.ok(create3d(20, 2, 864, 480));
+  r.ok(ctxCmd(4, V.CTX_ATTACH, 20, 0));
+  r.ok(ctxCmd(3, V.CTX_ATTACH, 20, 0));
+  calls.length = 0;
+  // Not Linux's order (it detaches at the GEM close): the id's next resource attached to the context would find the old import.
+  r.ok(cmd(T.UNREF, 20, 0));
+  assert.deepEqual(calls.filter((c) => c.t !== 'hold'), [{ t: 'blob-ctx', ctx: 3, res: 20, attach: false, size: 0 }, { t: 'unref', id: 20 }]);
 });
 
 test('gpu: a cropped console wider than an EDID can say: the floor and the fallback modes stay within EDID_MAX', async () => {

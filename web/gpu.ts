@@ -331,9 +331,12 @@ export class Gpu {
    * The size of a resource the guest shows cropped (a rectangle smaller than the resource, from the
    * origin): fbcon keeps its buffer and crops the console when the mode shrinks (docs/graphics.md "The console and the display size"),
    * so the display never reports less than this. Zero until a guest does it; a compositor that
-   * allocates a resource per mode never trips it, so desktops follow shrinks.
+   * allocates a resource per mode never trips it, so desktops follow shrinks. It goes when the guest shows
+   * another resource whole (a desktop took the screen from the console) or frees the cropped one, and at a reset.
    */
   private floor = { width: 0, height: 0 };
+  /** The resource whose crop set `floor` (0: none). */
+  private floorRes = 0;
   /** The floor raised the display event and the guest hasn't cleared an event since (`eventsCleared`). */
   private bounce = false;
   /** The size of the resource last on the scanout (kept while the scanout is off): a mode the guest's buffer holds, for the EDID. */
@@ -455,8 +458,13 @@ export class Gpu {
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         this.resources.delete(res.id);
         this.total -= res.pixels.length;
-        for (const set of this.contexts.values()) set.delete(res.id);
+        // Freed while attached (Linux detaches first): a Venus context's import of it goes too, or the id's next
+        // resource attached there would find the old import (web/venus-host.ts `imported`).
+        for (const [c, set] of this.contexts)
+          if (set.delete(res.id) && res.three && this.venusContexts.has(c))
+            this.host?.call({ t: 'blob-ctx', ctx: c, res: res.id, attach: false, size: 0 });
         if (this.scanout?.id === res.id) this.setScanout(null);
+        if (res.id === this.floorRes) this.dropFloor();
         if (res.three) this.host?.call({ t: 'unref', id: res.id });
         if (res.blob) {
           this.blobBytes -= res.blob.size;
@@ -1015,11 +1023,34 @@ export class Gpu {
           width: Math.min(EDID_MAX, Math.max(this.floor.width, res.width)),
           height: Math.min(EDID_MAX, Math.max(this.floor.height, res.height)),
         };
+        this.floorRes = res.id;
         if (this.report()) {
           this.bounce = true;
           this.raise?.();
         }
-      }
+      } else if (
+        this.floorRes !== 0 &&
+        res.id !== this.floorRes &&
+        s.rect.x === 0 &&
+        s.rect.y === 0 &&
+        s.rect.w === res.width &&
+        s.rect.h === res.height
+      )
+        // Another resource shown whole: a desktop has the screen, and the console's buffer holds it back no more
+        // (the console shown again, cropped, raises the floor again). Never the floor's own resource shown whole:
+        // that is the console at the size the floor asked for, and dropping it there would shrink it again, forever.
+        this.dropFloor();
+    }
+  }
+
+  /** The floor gone; the guest is told the page's size if that differs (as the floor's own event: `eventsCleared`). */
+  private dropFloor() {
+    this.floor = { width: 0, height: 0 };
+    this.floorRes = 0;
+    this.floorRes = 0;
+    if (this.report()) {
+      this.bounce = true;
+      this.raise?.();
     }
   }
 
@@ -1256,6 +1287,7 @@ export class Gpu {
     this.shown = { width: 0, height: 0 };
     // The last boot's console is gone with its floor: the next boot is told the page's size.
     this.floor = { width: 0, height: 0 };
+    this.floorRes = 0;
     this.bounce = false;
     this.report();
     this.resources.clear();
@@ -1355,6 +1387,7 @@ export class Gpu {
     [this.width, this.height, this.flushes] = [t.width, t.height, t.flushes];
     this.wanted = { width: t.width, height: t.height };
     this.floor = { width: 0, height: 0 };
+    this.floorRes = 0;
     this.bounce = false;
     this.trace = t.trace ?? [];
     const three = new Map(t.three ?? []);
@@ -1440,7 +1473,7 @@ export class Gpu {
       s.rect.y === 0 &&
       (s.rect.w < shown.width || s.rect.h < shown.height)
     )
-      this.floor = { width: shown.width, height: shown.height };
+      [this.floor, this.floorRes] = [{ width: shown.width, height: shown.height }, s.id];
     this.announce();
     this.hostScanout();
     if (s) this.draw(this.resources.get(s.id)!, s.rect);

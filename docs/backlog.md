@@ -1959,9 +1959,7 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - **A ramdisk's reservation outside a worker:** `ramDisk` has no release, so the realm's `sabBytes` counter only
   drops when the realm ends (the page's device worker always does); Node and the in-thread path keep it after
   `Devices.close`. A `release()` called from `close` and `closeSource` would give it back.
-- **The display's floor never comes down in a session** (a desktop that starts after the console raised it can't
-  shrink below it); the reset drops it.
-- **Small:** a Venus import not detached at an unref while attached (Linux detaches first; D5); Venus's fence keys,
+- **Small:** Venus's fence keys,
   `pollQueries`' filter and `Screen.damage` coalescing; the `Resource` union in gpu.ts (2D / 3D / blob); VenusShare's
   and VenusImport's `warned` Sets grow without bound; 9p's Rread scatter; input.ts's double blur releasing twice;
   usb-keyboard's `actual` against a short TD; room-worker's `namesFetch` capturing `client` before it is assigned;
