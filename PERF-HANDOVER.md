@@ -66,6 +66,13 @@ theory of the answer):
 - Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu/sway-mac.sh <feature>,<mode>
   target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`).
 
+**Batching** (the user, 2026-11-24): rows that start with a count on the same workloads share one diagnostic core
+and one pass of those workloads (one run each: counts need no rounds), and their loop reports a bound a row; a row
+under the floor closes as a finding there, with no A/B. A/Bs are for what the counts leave standing, several arms in
+one paired run. One push tier (`ci.sh` and the topic scripts) for a batch of kept changes, targeted tests while
+iterating; a loop that changes only docs, REPORTs and results needs none. Before a long run, check the REPORTs for a
+number that already answers it.
+
 **Correctness:** new behavior gets a test at the cheapest layer (bare-metal tests in tests/baremetal/ for JIT and MMU
 paths; golden corpus for instruction semantics); each new rule gets a planted bug that a test must catch, then the
 source is restored and the wasm rebuilt. `cargo fmt --all`, then `scripts/ci.sh`, plus the topic scripts for what the
@@ -121,7 +128,7 @@ replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried an
 
 ## State (2026-11-24, after loop 71)
 
-**Paused 2026-11-24 after loop 71, at the user's request: start no loop until they resume the track.** Loop 71 (row 7) **kept the repeated last emission's
+**Resumed 2026-11-24 (the user), with one more rule: spend as little time in benchmarks and CI as the answers allow ("Batching", below).** Loop 71 (row 7) **kept the repeated last emission's
 removal** (bench/boot/REPORT.md "PERF loop 71", `bench/boot/results/perf71/`). An emission whose arguments are the
 last one's is that one, kept. The modules are byte for byte the same, `emitNs` is 5.5-8% lower on the Mac (`node`,
 the gates) and 6% lower in the pages session, and the boot gate is −0.44% `LOWER`; the rest even. Unsettled regions,
@@ -131,7 +138,10 @@ connection that holds domains…" ("a new key", the key read before it changed).
 said not to rerun the whole CI for it. Loop 67's warm-up is not landed; the local branches `perf67-warmup` and
 `perf-smp-warm` stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The review branch
 `review/jit-warmup` on origin is moot: the supervisor may delete it.
-**Next, on resuming:** an out-of-context review of loop 71's emission memo (`block::module`), then row 8. `target/snapbench/pages.waarm64snap` loads into the current state layout;
+The out-of-context review of loop 71's kept emission is on origin's `review/jit-emission-memo` (no wrong-code
+defect; a test gap: nothing in the tree checks a kept emission against the one it replaces, the flag-state comparison,
+the unsettled path or the `bad` fallback; a doc comment misplaced over `type Last`).
+**Next:** loop 72: that review's fixes, and one counting pass for rows 8, 9, 10, 11, 13 and 18 (below). `target/snapbench/pages.waarm64snap` loads into the current state layout;
 `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop

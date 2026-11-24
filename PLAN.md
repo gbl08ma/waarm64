@@ -54,7 +54,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | Rebinding (RB) | Tried, not kept 2026-11-05 | [jit.md](docs/jit.md) "Tried and not kept" |
 | Clipboard sharing (CLIP) | Done 2026-11-07 | [clipboard.md](docs/clipboard.md) |
 | The block interpreter on the Mac host | In progress since 2026-11-09 | `bench/interp/REPORT.md` "The block interpreter on the Mac" |
-| The performance backlog (PERF) | Paused 2026-11-24 (after loop 71, the user's request) | [PERF-HANDOVER.md](PERF-HANDOVER.md) |
+| The performance backlog (PERF) | In progress (resumed 2026-11-24, after loop 71) | [PERF-HANDOVER.md](PERF-HANDOVER.md) |
 | Faster, quieter A/Bs (BENCH) | Done 2026-11-23 | [docs/benchmarking.md](docs/benchmarking.md) "The paired A/B"; bench/boot/REPORT.md "BENCH loop 1" on |
 | Peer-to-peer rooms (P2P) | Done 2026-11-12 | [networking/rooms.md](docs/networking/rooms.md); left open: [plans/networking-p2p.md](docs/plans/networking-p2p.md) |
 | The guest agent (AGENT) | Done 2026-11-13 | [devices.md](docs/devices.md) "The guest's agent" |
