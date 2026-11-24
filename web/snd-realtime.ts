@@ -29,18 +29,28 @@ import {
   type SndSource,
 } from './snd-proto.ts';
 
+/** Reads sample `k` of raw frames as f32 in [-1, 1]. */
+type SampleReader = (v: DataView, k: number) => number;
+const readS16: SampleReader = (v, k) => v.getInt16(2 * k, true) / 32768;
+const readS32: SampleReader = (v, k) => v.getInt32(4 * k, true) / 2147483648;
+const readFloat: SampleReader = (v, k) => v.getFloat32(4 * k, true);
+function sampleReader(format: number) {
+  if (format === FMT_S16) return readS16;
+  if (format === FMT_S32) return readS32;
+  if (format === FMT_FLOAT) return readFloat;
+  throw new Error(`no conversion from sample format ${format}`);
+}
+
 /** Samples of `frames` (raw, in `format`) as f32 in [-1, 1], interleaved as they come. */
 export function toF32(
   frames: Uint8Array,
   format: number,
   out = new Float32Array(frames.length / SAMPLE_BYTES[format]),
 ) {
+  const read = sampleReader(format);
   const v = new DataView(frames.buffer, frames.byteOffset, frames.byteLength);
   const n = out.length;
-  if (format === FMT_S16) for (let k = 0; k < n; k++) out[k] = v.getInt16(2 * k, true) / 32768;
-  else if (format === FMT_S32) for (let k = 0; k < n; k++) out[k] = v.getInt32(4 * k, true) / 2147483648;
-  else if (format === FMT_FLOAT) for (let k = 0; k < n; k++) out[k] = v.getFloat32(4 * k, true);
-  else throw new Error(`no conversion from sample format ${format}`);
+  for (let k = 0; k < n; k++) out[k] = read(v, k);
   return out;
 }
 
@@ -168,9 +178,14 @@ export function ringSink(
   const { h, data } = ringViews(ring);
   const now = o.now ?? (() => performance.now());
   const post = (m: SndToPage) => o.port?.postMessage(m);
-  /** A message: its frames as f32 stereo, how many are in the ring, and the ring position after its last (once all are). */
+  /**
+   * A message: its raw frames (the device's copy, kept until they're all in the ring, where `fill` converts them to f32
+   * stereo), how many are in the ring, and the ring position after its last (once all are).
+   */
   type Item = {
-    f32: Float32Array;
+    raw: DataView;
+    read: SampleReader;
+    mono: boolean;
     frames: number;
     at: number;
     end?: number;
@@ -198,6 +213,12 @@ export function ringSink(
   let waiting = false;
 
   const frameBytes = () => p!.channels * SAMPLE_BYTES[p!.format];
+  /** `n` of `it`'s frames from its frame `from` into the ring's frames from `to`, as f32 stereo (a mono frame to both channels). */
+  const put = (it: Item, from: number, n: number, to: number) => {
+    const { raw, read } = it;
+    if (it.mono) for (let f = 0; f < n; f++) data[2 * (to + f)] = data[2 * (to + f) + 1] = read(raw, from + f);
+    else for (let k = 0; k < 2 * n; k++) data[2 * to + k] = read(raw, 2 * from + k);
+  };
   /** Writes what fits of the messages not yet in the ring. */
   const fill = () => {
     let w = Atomics.load(h, WRITE) >>> 0;
@@ -208,8 +229,8 @@ export function ringSink(
       if (n === 0) break;
       const at = w % CAPACITY;
       const first = Math.min(n, CAPACITY - at);
-      data.set(it.f32.subarray(2 * it.at, 2 * (it.at + first)), 2 * at);
-      if (first < n) data.set(it.f32.subarray(2 * (it.at + first), 2 * (it.at + n)), 0);
+      put(it, it.at, first, at);
+      if (first < n) put(it, it.at + first, n - first, 0);
       it.at += n;
       w = (w + n) >>> 0;
       room -= n;
@@ -323,13 +344,12 @@ export function ringSink(
     pump,
     play(params: SndParams, frames: Uint8Array, done: (latencyBytes: number) => void) {
       p = params;
-      let f32 = toF32(frames, params.format);
-      if (params.channels === 1) {
-        const st = new Float32Array(f32.length * 2);
-        for (let k = 0; k < f32.length; k++) st[2 * k] = st[2 * k + 1] = f32[k];
-        f32 = st;
-      }
-      items.push({ f32, frames: f32.length / 2, at: 0, bytes: frames.length, done });
+      // The frames are the device's own copy (web/snd.ts `gather`s them): kept, not copied again.
+      const read = sampleReader(params.format);
+      const samples = Math.trunc(frames.length / SAMPLE_BYTES[params.format]);
+      const mono = params.channels === 1;
+      const raw = new DataView(frames.buffer, frames.byteOffset, frames.byteLength);
+      items.push({ raw, read, mono, frames: mono ? samples : samples / 2, at: 0, bytes: frames.length, done });
       bound.posted();
       fill();
     },
@@ -364,19 +384,24 @@ export function ringSink(
 /** Interleaved stereo f32 frames as `p`'s frames (a mono stream gets their mean), clamped to the format's range. */
 export function fromF32(f32: Float32Array, p: SndParams) {
   const frames = f32.length / 2;
+  const out = new Uint8Array(frames * p.channels * SAMPLE_BYTES[p.format]);
+  writeFrames(f32, 0, frames, p, new DataView(out.buffer), 0);
+  return out;
+}
+
+/** `n` interleaved stereo f32 frames of `f32` from its frame `from`, as `p`'s frames into `v` from its frame `to` (as `fromF32`). */
+function writeFrames(f32: Float32Array, from: number, n: number, p: SndParams, v: DataView, to: number) {
   const size = SAMPLE_BYTES[p.format];
-  const out = new Uint8Array(frames * p.channels * size);
-  const v = new DataView(out.buffer);
-  for (let f = 0; f < frames; f++) {
+  for (let f = 0; f < n; f++) {
+    const s = 2 * (from + f);
     for (let c = 0; c < p.channels; c++) {
-      const x = Math.max(-1, Math.min(1, p.channels === 1 ? (f32[2 * f] + f32[2 * f + 1]) / 2 : f32[2 * f + c]));
-      const at = (f * p.channels + c) * size;
+      const x = Math.max(-1, Math.min(1, p.channels === 1 ? (f32[s] + f32[s + 1]) / 2 : f32[s + c]));
+      const at = ((to + f) * p.channels + c) * size;
       if (p.format === FMT_S16) v.setInt16(at, Math.round(x * 32767), true);
       else if (p.format === FMT_S32) v.setInt32(at, Math.round(x * 2147483647), true);
       else v.setFloat32(at, x, true);
     }
   }
-  return out;
 }
 
 /**
@@ -413,6 +438,8 @@ export function micSource(
   let quantaAt = -Infinity;
   const bound = completionBound(o.untaken);
   let timer: ReturnType<typeof setInterval> | undefined;
+  /** The clock's silence, one zeroed buffer given to every such message (receivers read it, never write it). */
+  let silence = new Uint8Array(0);
   const ran = (t: number) => before + Math.floor(((t - startedAt) * p!.rate) / 1000);
   const pump = () => {
     if (!running || !p) return;
@@ -435,15 +462,17 @@ export function micSource(
         const it = items[0];
         if (!bound.allows(t, p, it.bytes)[0]) break;
         items.shift();
-        const f32 = new Float32Array(2 * it.frames);
+        // Its own bytes, converted straight from the ring: the receiver may keep them.
+        const out = new Uint8Array(it.frames * p.channels * SAMPLE_BYTES[p.format]);
+        const v = new DataView(out.buffer);
         const at = (r >>> 0) % CAPACITY;
         const first = Math.min(it.frames, CAPACITY - at);
-        f32.set(data.subarray(2 * at, 2 * (at + first)));
-        if (first < it.frames) f32.set(data.subarray(0, 2 * (it.frames - first)), 2 * first);
+        writeFrames(data, at, first, p, v, 0);
+        if (first < it.frames) writeFrames(data, 0, it.frames - first, p, v, first);
         r = (r + it.frames) | 0;
         given += it.frames;
         bound.done(it.bytes);
-        it.done(fromF32(f32, p), 0);
+        it.done(out, 0);
       }
       Atomics.store(h, READ, r);
     } else {
@@ -453,7 +482,8 @@ export function micSource(
         items.shift();
         given += it.frames;
         bound.done(it.bytes);
-        it.done(new Uint8Array(it.bytes), 0);
+        if (silence.length < it.bytes) silence = new Uint8Array(it.bytes);
+        it.done(silence.subarray(0, it.bytes), 0);
       }
     }
   };

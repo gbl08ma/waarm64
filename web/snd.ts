@@ -101,7 +101,13 @@ export function sndBackend(
   const done = (sid: number, m: Msg) => {
     if (!m.live) return false;
     m.live = false;
-    running[sid] = running[sid].filter((x) => x !== m);
+    // Completions come in order: the first, else (a sink that completes out of order) wherever it is.
+    const q = running[sid];
+    if (q[0] === m) q.shift();
+    else {
+      const i = q.indexOf(m);
+      if (i >= 0) q.splice(i, 1);
+    }
     return true;
   };
   const run = (sid: number, m: Msg) => {

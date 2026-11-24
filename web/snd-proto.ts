@@ -89,7 +89,7 @@ export type SndParams = { bufferBytes: number; periodBytes: number; channels: nu
 /**
  * Where a playback stream's frames go. `play` gets a message's frames (raw, in the stream's format: `toF32`
  * converts) and calls `done(latencyBytes)` once they're played, which completes the message; frames come in
- * order. `start` (with the stream's parameters) and `stop` start and pause consumption; `release` drops whatever wasn't played (the device
+ * order, and are the sink's to keep until then (the device gathers each message's into a copy of their own). `start` (with the stream's parameters) and `stop` start and pause consumption; `release` drops whatever wasn't played (the device
  * returns those messages itself, and a later `done` for them does nothing). `tick` ends a DEVICE exit's
  * requests: a sink that completes at exits does it there.
  */
@@ -108,7 +108,8 @@ export type SndSink = {
 /**
  * Where an input stream's frames come from. `record` asks for `bytes` of frames (a message's room, in the stream's
  * format) and calls `done(data, latencyBytes)` once they're recorded, which completes the message; asks come in
- * order. `start`, `stop`, `release`, `tick`, `save` and `restore` as for a sink.
+ * order. `data` is read, never written (a source may give the same silence to every message). `start`, `stop`,
+ * `release`, `tick`, `save` and `restore` as for a sink.
  */
 export type SndSource = {
   record(p: SndParams, bytes: number, done: (data: Uint8Array, latencyBytes: number) => void): void;
