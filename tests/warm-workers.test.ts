@@ -1,11 +1,13 @@
 // A machine's workers started ahead of its `bootVm` (web/warm-workers.ts `warmWorkers`, `BootOptions.warm`; bench/boot/REPORT.md
 // "SNAPZ loop 7"): what `take` hands out, a worker that failed to load replaced, the rest ended (by `end`, once the vCPU
-// workers are started, when `bootVm` fails). The browser's workers are faked here (`Worker`, `WorkerGlobalScope`).
+// workers are started, when `bootVm` fails); and web/worker-end.ts `endWithOwner`: a worker's own workers at its end. The browser's workers are
+// faked here (`Worker`, `WorkerGlobalScope`).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { bootVm } from '../web/vm.ts';
 import { warmWorkers, type WarmWorkers } from '../web/warm-workers.ts';
+import { endWithOwner } from '../web/worker-end.ts';
 
 class FakeWorker {
   static made: FakeWorker[] = [];
@@ -126,4 +128,19 @@ test('a machine that is not parallel ends the warm workers at its boot', async (
   const vm = await bootVm(wasm, { ramSize: 16 << 20, kernel, kernelOffset: 0, cmdline: '', ncpus: 1, warm });
   assert.equal(w.ends, 1);
   await vm.close();
+});
+
+test("a worker's own workers: left to its end only when the caller says it ends next, in a browser worker", () => {
+  // In a browser worker, a terminate just before the thread's own end strands both threads in Chromium (and the
+  // guest's memory with them): web/worker-end.ts `endWithOwner`. A thread that goes on must end them itself.
+  const make = () => new FakeWorker(new URL('file:///x.ts'), {});
+  const [ending, goesOn, onPage] = [make(), make(), make()];
+  withFakeWorkers(() => {
+    endWithOwner(ending, true);
+    endWithOwner(goesOn, false);
+  });
+  endWithOwner(onPage, true);
+  assert.ok(!ending.terminated, 'ending: left to the owner');
+  assert.ok(goesOn.terminated, 'the thread goes on (a failed resume that boots again): terminated');
+  assert.ok(onPage.terminated, 'on the page or in Node nothing ends it for us: terminated');
 });

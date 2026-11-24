@@ -4,8 +4,9 @@
 // the doorbell value it handled to word 1, which the vCPU waits on in
 // deterministic mode. Console output goes to the owner as messages. If a
 // backend throws, word 1 becomes -1 so the vCPU fails instead of waiting.
-// `close` releases the backends' files (OPFS locks), answers `closed` and ends
-// the worker.
+// `close` releases the backends' files (OPFS locks) and answers `closed`; the
+// worker then ends with its owner, the machine worker (web/warm-workers.ts
+// `endWithOwner`), not by itself.
 import { CLOSE_MS, Devices, stateBuffers, type DevicesInit } from './devices.ts';
 import { toWire, type Msg, type WireError } from './msg.ts';
 import type { Hinted } from './balloon.ts';
@@ -157,8 +158,9 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
     void Promise.race([devices?.drain().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_MS))]).then(() => {
       const stats = devices?.stats(); // the blk devices' timers (spec `stats`), before close
       devices?.close();
+      // No `self.close()`: a nested worker's own close goes through its owner, and Chromium strands it as it does a
+      // `terminate` just before the owner's end (web/worker-end.ts `endWithOwner`). The owner's end ends this worker.
       self.postMessage({ type: 'closed', stats } satisfies FromDeviceWorker);
-      self.close();
     });
   }
 };

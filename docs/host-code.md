@@ -26,7 +26,15 @@ per audio period; cold when it runs per attach, start, lease or snapshot. On a h
 
 1. **Teardown frees what start took**: listeners on `navigator.usb`/`navigator.hid`/`window`, timers, workers,
    sockets, WebGPU contexts (`unconfigure`), GL objects, locks, open files. A device detached and attached again must
-   not find its last session's leftovers.
+   not find its last session's leftovers. **At a worker's own end, its workers end with it:** a close that the
+   owner's `terminate` follows says so (`ending`: `Vm.close({ ending: true })` at the machine worker's stop and the
+   intro's, a save's pool during a stop, the RAM scanner at the stop; the inflate and deflate pools, which only close
+   at their thread's end), and in a browser worker the workers it started are then left to that end
+   (`endWithOwner`, web/worker-end.ts); a nested worker never calls `self.close()` (its owner ends it). Chromium
+   strands a worker that ends a worker of its own just before it is ended itself: neither thread exits, and a
+   machine's guest RAM stayed with them for the page's life (bench/boot/REPORT.md "Workers stranded at a machine's
+   end"). A close after which the thread goes on (a failed resume that boots again, the tests' snapshot round trips)
+   terminates its workers, as does one in the middle of the thread's life (a load's pool, the warm workers not taken).
 2. **A worker's failure reaches its owner after start too**: `onerror` and `messageerror` lead to the same path as a
    posted error, not only to the start's promise (a promise settled once ignores a later reject).
 3. **Network fetches have a deadline** (`AbortSignal.timeout`) where a hang would hold a start, a drain or a lock.

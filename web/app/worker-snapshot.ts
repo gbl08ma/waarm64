@@ -201,7 +201,8 @@ function poolFor(r: Running) {
       const pool = await started;
       return { pool, times: { poolWait: performance.now() - t, poolReady: pool?.readyMs ?? 0 } };
     },
-    close: () => void started.then((p) => p?.close()),
+    /** `ending`: the machine worker ends next (a stop during the save, a suspend: web/worker-end.ts `endWithOwner`). */
+    close: (ending = false) => void started.then((p) => p?.close({ ending })),
   };
 }
 
@@ -247,7 +248,7 @@ export async function saveSnapshot(
       pausedMs = performance.now() - t0;
     } finally {
       r.vm.release(); // the guest's free memory back to it, the save done or not
-      pool.close();
+      pool.close(r.stopping());
     }
     post({ type: 'snapshot-resumed', id });
     const after = await finishStaged(staged, id, out.writable, handle?.name);
@@ -274,7 +275,7 @@ export async function saveSnapshot(
   } catch (err) {
     fail(new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: err }));
   } finally {
-    pool?.close();
+    pool?.close(r.stopping());
     await out?.abort();
     if (!handed) await staged?.discard();
     end();
@@ -363,7 +364,7 @@ export async function suspend(r: Running | undefined, id: number) {
     const pause = performance.now() - t0;
     const { bytes, phases } = await writeSuspended(r, home, id, lz, started.pool);
     const pausedMs = performance.now() - t0;
-    pool.close();
+    pool.close(true); // the suspend ends the machine, and the page this worker
     // From here the machine must not run: the file is only good for the disk as it is now.
     closing = true;
     await r.close();
@@ -374,7 +375,7 @@ export async function suspend(r: Running | undefined, id: number) {
     if (!closing) r.vm.release();
     fail(new MsgError('machine:worker-snapshot.suspend.failed', {}, { cause: err }));
   } finally {
-    pool?.close();
+    pool?.close(closing);
     end();
   }
 }

@@ -6,6 +6,7 @@ import type { Vm } from '../vm.ts';
 import type { RamPart } from '../ram-scan.ts';
 import type { InspectAnswer, InspectQuery } from '../surface.ts';
 import type { FromRamScan, ToRamScan } from './ram-scan-worker.ts';
+import { endWithOwner } from '../worker-end.ts';
 
 /** How long the scanner stays without a query (the page asks at least every few seconds while its window is open). */
 const IDLE_MS = 20_000;
@@ -30,9 +31,9 @@ export function ramParts(vm: Pick<Vm, 'memory' | 'ram' | 'layout' | 'spill'>): R
   return parts.every((p) => p.buffer instanceof SharedArrayBuffer) ? parts : undefined;
 }
 
-function end(s: Scanner) {
+function end(s: Scanner, ending = false) {
   clearTimeout(s.idle);
-  s.worker.terminate();
+  endWithOwner(s.worker, ending);
   for (const reply of s.asks.values()) reply({ kind: 'none' });
   s.asks.clear();
   if (scanner === s) scanner = undefined;
@@ -69,7 +70,7 @@ export function inspectRam(vm: Vm | undefined, query: InspectQuery): Promise<Ins
   });
 }
 
-/** Ends the scanner (the machine stops). */
+/** Ends the scanner (the machine stops: this worker ends next, the scanner with it: web/worker-end.ts `endWithOwner`). */
 export function stopRam() {
-  if (scanner) end(scanner);
+  if (scanner) end(scanner, true);
 }

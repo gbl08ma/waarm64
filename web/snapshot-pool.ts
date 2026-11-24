@@ -6,6 +6,7 @@
 // closed after it: no worker stays between them.
 import type { FrameTimes, LoadPool, RamFrame, RamPool } from './snapshot-file.ts';
 import type { PoolInit, PoolJob, PoolReply } from './snapshot-pool-worker.ts';
+import { endWithOwner, type CloseOptions } from './worker-end.ts';
 
 /** What a load's piece came to: the jobs its worker failed, and the times. */
 type Loaded = { failed: number[] } & FrameTimes;
@@ -25,7 +26,7 @@ export function poolSize(cores = globalThis.navigator?.hardwareConcurrency ?? 1)
  * workers have made so far for a save (each about 1 MiB; written frames' go back to their worker: `recycle`). `close`
  * ends its workers.
  */
-export type SavePool = RamPool & LoadPool & { readyMs: number; buffers(): number; close(): void };
+export type SavePool = RamPool & LoadPool & { readyMs: number; buffers(): number; close(o?: CloseOptions): void };
 
 type Handle = { post(m: PoolInit | PoolJob, transfer?: ArrayBuffer[]): void; terminate(): void };
 /** Makes a worker, its replies to `heard` and its failure to `failed` (tests give their own). */
@@ -77,8 +78,8 @@ export async function startPool(
   const made: number[] = Array.from({ length: n }, () => 0);
   let broken: Error | undefined;
   let handles: Handle[] = [];
-  const end = () => {
-    for (const h of handles) h.terminate();
+  const end = (ending = false) => {
+    for (const h of handles) endWithOwner(h, ending);
   };
   /** No reply for `stallMs` while jobs are out: the pool has failed. */
   let stall: ReturnType<typeof setTimeout> | undefined;
@@ -176,8 +177,9 @@ export async function startPool(
       const b = frame.buffer;
       if (!broken && b instanceof ArrayBuffer && b.byteLength === frameSize && !b.detached) back[index % n].push(b);
     },
-    close() {
-      end();
+    /** `ending`: the thread ends next (a save during a stop, a suspend): its workers are left to that end (`endWithOwner`). */
+    close(c: CloseOptions = {}) {
+      end(!!c.ending);
       fail(new Error('the snapshot pool was closed'));
     },
   };

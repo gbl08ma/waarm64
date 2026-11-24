@@ -127,7 +127,9 @@ function keepFlash(v: Vm) {
 let closed: Promise<void> | undefined;
 const shutdown = (v: Vm) =>
   (closed ??= (async () => {
-    await v.close(); // the vCPUs stop at once; the flash isn't written after that
+    // The vCPUs stop at once; the flash isn't written after that. The page terminates this worker next: its own
+    // workers are left to that end (web/worker-end.ts `endWithOwner`).
+    await v.close({ ending: true });
     await keepFlash(v);
   })());
 
