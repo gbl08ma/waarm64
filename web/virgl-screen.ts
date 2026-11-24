@@ -114,14 +114,33 @@ export class Screen {
 
   /** What the screen shows from now on, nothing uploaded or drawn (the 2D presenter's, which draws on its own frames: `upload`, `draw`). */
   set(c: ScanoutOn) {
+    this.dirtyW = 0;
     this.src = c.pixels
       ? { pixels: c.pixels, swizzle: c.swizzle, width: c.width, height: c.height, rect: c.rect }
       : { res: c.res, width: c.width, height: c.height, rect: c.rect };
   }
 
+  /**
+   * The 2D scanout's damage not uploaded yet (scanout coordinates; `dirtyW` 0: none): the rectangles that come before
+   * a draw, as one that holds them all (`draw` uploads it), so a frame's flushes make one upload as they make one draw.
+   */
+  private dirtyX = 0;
+  private dirtyY = 0;
+  private dirtyW = 0;
+  private dirtyH = 0;
+
   damage(rect: Rect) {
     if (!this.src) return;
-    if (this.src.pixels) this.upload(rect);
+    if (this.src.pixels && rect.w > 0 && rect.h > 0) {
+      const x1 = this.dirtyW ? Math.min(this.dirtyX, rect.x) : rect.x,
+        y1 = this.dirtyW ? Math.min(this.dirtyY, rect.y) : rect.y;
+      const x2 = this.dirtyW ? Math.max(this.dirtyX + this.dirtyW, rect.x + rect.w) : rect.x + rect.w,
+        y2 = this.dirtyW ? Math.max(this.dirtyY + this.dirtyH, rect.y + rect.h) : rect.y + rect.h;
+      this.dirtyX = x1;
+      this.dirtyY = y1;
+      this.dirtyW = x2 - x1;
+      this.dirtyH = y2 - y1;
+    }
     this.present();
   }
 
@@ -195,6 +214,10 @@ export class Screen {
       tw = s.width,
       th = s.height;
     if (s.pixels) {
+      if (this.dirtyW) {
+        this.upload({ x: this.dirtyX, y: this.dirtyY, w: this.dirtyW, h: this.dirtyH });
+        this.dirtyW = 0;
+      }
       tex = this.tex2d;
       swz = s.swizzle ?? swz;
     } else {

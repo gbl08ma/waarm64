@@ -205,7 +205,7 @@ wg_format_init(uint32_t features)
       if ((tier1 && (f->flags & WG_FMT_T1_RENDER)) ||
           ((features & WG_FEATURE_RG11B10_RENDER) && (f->flags & WG_FMT_RG11B10)))
          f->flags |= WG_FMT_RENDER | WG_FMT_BLEND;
-      /* Both off by default (the worker holds them back: web/venus-gpu.ts `HELD_FEATURES`, mpv's VA-API chroma on the
+      /* Both off by default (the worker holds them back: web/venus-caps.ts `HELD_FEATURES`, mpv's VA-API chroma on the
        * M4 under libplacebo's advanced rendering, VK3 L4); `?gpu=vkformats=all` passes them on. */
       /* Offered unless held, on an adapter without tier1 too: such an image goes by its words (vk/README.md). */
       if ((features & WG_FEATURE_TIER1_STORAGE) && (f->flags & WG_FMT_T1_STORAGE))
@@ -335,7 +335,7 @@ static const struct {
    { VK_FORMAT_R32G32B32A32_SINT, "sint32x4" },
    { VK_FORMAT_A2B10G10R10_UNORM_PACK32, "unorm10-10-10-2" },
    /* Formats WebGPU's vertex buffers lack (VK4 T31): their bindings always pulled ("Pulled vertices"), the names the
-    * worker's fetch decodes (web/venus-gpu.ts `vertexDecode`). */
+    * worker's fetch decodes (web/venus-wgsl.ts `vertexDecode`). */
    { VK_FORMAT_R8G8B8_UNORM, "unorm8x3", true },
    { VK_FORMAT_B8G8R8_UNORM, "unorm8x3-bgra", true },
    { VK_FORMAT_R16G16B16_UNORM, "unorm16x3", true },

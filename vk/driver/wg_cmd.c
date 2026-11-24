@@ -2071,7 +2071,7 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
             bound[b] = cmd->vbs[b].buffer->offset + cmd->vbs[b].offset;
       wg_vertex_pull(&k, vs->info.inputs, bound);
       /* A binding the draw reads past its end (Vulkan's robust buffer access reads in range or 0; WebGPU refuses the
-       * draw, VK4 T37): pulled, its loads past the range 0 (venus-gpu.ts `pulledCode`). */
+       * draw, VK4 T37): pulled, its loads past the range 0 (venus-wgsl.ts `pulledCode`). */
       for (uint32_t b = 0; b < WG_VERTEX_BINDINGS; b++) {
          uint32_t last = 0;
          bool used = false;

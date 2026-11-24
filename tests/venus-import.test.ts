@@ -196,3 +196,17 @@ test('VenusImport: with `rewrite` (`?gpu=vkimport=rewrite`) each image keeps its
   assert.deepEqual(d.writes, ['A=1,1', 'B=1,1']);
   assert.equal(d.made, 0);
 });
+
+test('VenusImport: each warning shows once, and past a cap of distinct ones (some name a resource) one says no more do', (t) => {
+  const { im } = setup();
+  const shown: unknown[] = [];
+  t.mock.method(console, 'warn', (m: unknown) => void shown.push(m));
+  const warn = (im as unknown as { warn(m: string): void }).warn.bind(im);
+  warn('a');
+  warn('a');
+  assert.deepEqual(shown, ['venus-import: a'], 'once');
+  for (let i = 0; i < 1000; i++) warn(`resource ${i}`);
+  assert.equal(shown.length, 65, 'the cap, then one that says so');
+  assert.match(String(shown[64]), /no more are shown/);
+  assert.equal((im as unknown as { warned: Set<string> }).warned.size, 65, 'the set stops growing');
+});

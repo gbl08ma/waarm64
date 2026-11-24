@@ -1679,7 +1679,7 @@ says `ready`. The machine then starts with those caps and a port to the GPU work
 `web/devices.ts`). The device worker keeps the virtqueues and forwards its 3D work (`web/virgl-host.ts`: contexts,
 resources, backings, transfers, submits; the guest's RAM is shared) and every scanout to the GPU worker. That
 includes 2D ones (the firmware, the console), whose pixels are in shared memory and whose damaged rectangles go up
-to a texture. The GPU worker runs the renderer (`web/virgl-renderer.ts`) and draws the screen
+to a texture, a frame's as one rectangle holding them all, at its draw. The GPU worker runs the renderer (`web/virgl-renderer.ts`) and draws the screen
 (`web/virgl-screen.ts`) once per animation frame, however many scanout and damage calls a frame brought. Drawing
 at each call committed up to three canvas frames per guest frame, which Chromium holds to the display's rate, and
 capped sway at 39 frames a second. A fenced command's reply waits until the GPU worker has run everything before it.

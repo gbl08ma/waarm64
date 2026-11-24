@@ -68,6 +68,8 @@ const RENDER_ATTACHMENT = 16,
 /** Rows of the image a check reads back, spread over its height, and the conclusive checks a GPU way must pass. */
 const CHECK_ROWS = 8,
   CHECKS = 3;
+/** The distinct warnings shown at most (`warn`). */
+const WARNINGS = 64;
 /** Within this of each other (of 1), a channel copied is right: a GPU way goes through 8 bits (and a 10-bit or float image). */
 const TOLERANCE = 1.5 / 255;
 /** A check whose sampled texels are all darker than this says nothing (a black frame looks the same either way). */
@@ -283,10 +285,12 @@ export class VenusShare {
     return this.check.way;
   }
 
+  /** Warns once of each message, the first `WARNINGS` (some name a resource or an error: the set mustn't grow for ever). */
   private warn(m: string) {
-    if (this.warned.has(m)) return;
+    if (this.warned.size > WARNINGS || this.warned.has(m)) return;
     this.warned.add(m);
-    console.warn(`venus-share: ${m}`);
+    if (this.warned.size > WARNINGS) console.warn(`venus-share: more warnings than ${WARNINGS}: no more are shown`);
+    else console.warn(`venus-share: ${m}`);
   }
 
   private hold(id: number) {

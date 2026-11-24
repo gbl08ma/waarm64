@@ -87,6 +87,25 @@ test("a fence is retired by itself, not by others of its ring or context", { ski
   assert.equal(v.retired(7, 1, 1n), true, 'a context destroyed takes its fences');
 });
 
+// The module's retire passes its u32s and u64 as wasm's i32s and i64 (signed): a fence id past 2^63 retires the fence
+// the device read as unsigned, and only that one.
+test('a fence retired through the module takes the fence the device sent, its id past 2^63', { skip }, async () => {
+  const { v } = await renderer();
+  v.call({ t: 'vctx', id: 7, create: true, name: 'a' });
+  v.wake = () => {};
+  (v as unknown as { ex: { venus_submit_fence(): number } }).ex.venus_submit_fence = () => 1;
+  const big = (1n << 64n) - 2n;
+  v.call({ t: 'vsubmit', ctx: 7, bytes: new Uint8Array(0), fence: { flags: 3, ring: 1, id: big } });
+  v.call({ t: 'vsubmit', ctx: 7, bytes: new Uint8Array(0), fence: { flags: 3, ring: 1, id: 3n } });
+  assert.equal(v.retired(7, 1, big), false);
+  const retire = (v as unknown as { retire(ctx: number, ring: number, id: bigint): void }).retire.bind(v);
+  retire(7, 1, -2n); // the module's i64 of `big`
+  assert.equal(v.retired(7, 1, big), true, 'retired');
+  assert.equal(v.retired(7, 1, 3n), false, 'not the other fence of its ring');
+  retire(7, 1, 3n);
+  assert.equal(v.retired(7, 1, 3n), true);
+});
+
 // VK4 T13 (vk/README.md "Calls and rings"): vkr's commands are counted by where they came from and whether the guest
 // waits for a reply, the replied ones named (a Venus call the guest makes synchronously) and the virtqueue's all.
 test('the commands vkr runs are counted, those asking for a reply and the virtqueue\'s by name', { skip }, async () => {

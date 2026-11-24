@@ -39,6 +39,8 @@ export type ImportStats = {
 /** A plane's bytes as written: rows of `w` texels of `bpp` bytes, `h` of them. */
 type Plane = { data: Uint8Array; w: number; h: number; bpp: number };
 
+/** The distinct warnings shown at most (`warn`). */
+const WARNINGS = 64;
 /** Bytes a texel of the formats an imported texture may have (WebGPU's 8-bit ones: VA-API's planes are R8 and RG8). */
 const BYTES: Partial<Record<GPUTextureFormat, number>> = {
   r8unorm: 1,
@@ -86,10 +88,12 @@ export class VenusImport {
     this.rewrite = !!options.rewrite;
   }
 
+  /** Warns once of each message, the first `WARNINGS` (some name a resource or an error: the set mustn't grow for ever). */
   private warn(m: string) {
-    if (this.warned.has(m)) return;
+    if (this.warned.size > WARNINGS || this.warned.has(m)) return;
     this.warned.add(m);
-    console.warn(`venus-import: ${m}`);
+    if (this.warned.size > WARNINGS) console.warn(`venus-import: more warnings than ${WARNINGS}: no more are shown`);
+    else console.warn(`venus-import: ${m}`);
   }
 
   /**

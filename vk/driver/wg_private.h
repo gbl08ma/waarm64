@@ -38,7 +38,7 @@
 #include "wg_gpu.h"
 #include "wgsl.h"
 
-/* The WebGPU device's optional features the driver uses (venus_init's flags, from the GPU worker: web/venus-gpu.ts
+/* The WebGPU device's optional features the driver uses (venus_init's flags, from the GPU worker: web/venus-caps.ts
  * `gpuFeatures`). */
 enum wg_feature {
    WG_FEATURE_BC = 1 << 0,
@@ -56,17 +56,17 @@ enum wg_feature {
    WG_FEATURE_FLOAT32_BLEND = 1 << 12, /* float32-blendable */
    WG_FEATURE_BGRA8_STORAGE = 1 << 13, /* bgra8unorm-storage */
    WG_FEATURE_TIER1_STORAGE = 1 << 14, /* storage offered for tier1's formats: the worker sets it unless held back
-                                        * (`?gpu=vkhold=tier1-storage`, web/venus-gpu.ts `gpuFeatures`) */
+                                        * (`?gpu=vkhold=tier1-storage`, web/venus-caps.ts `gpuFeatures`) */
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
    WG_FEATURE_SWIZZLE = 1 << 17,       /* texture-component-swizzle (image views' component mappings) */
    WG_FEATURE_TIMESTAMP = 1 << 18,     /* timestamp-query (Vulkan's timestamps written on the GPU, VK4 T46) */
    /* Not the adapter's: the translator anchors ballots, elections and reads of the first invocation
-    * (WGSL_SUBGROUP_ANCHOR) on a WebGPU whose are wrong in divergent control flow without (web/venus-gpu.ts
+    * (WGSL_SUBGROUP_ANCHOR) on a WebGPU whose are wrong in divergent control flow without (web/venus-caps.ts
     * `subgroupsRight`: Chromium on Metal). */
    WG_FEATURE_SUBGROUP_ANCHOR = 1 << 27,
    /* Not the adapter's: VK3 L9a's suspects back at 4fdc69fb's behaviour for the NVIDIA run's A/B (`?gpu=vkl9=…`,
-    * web/venus-gpu.ts `L9_SUSPECTS`; never by default): each pipeline's bind group layouts their own uids (wg_shader.c
+    * web/venus-caps.ts `L9_SUSPECTS`; never by default): each pipeline's bind group layouts their own uids (wg_shader.c
     * `bgl_uid`), memories' GPUBuffers without WG_MEMORY_PAD. */
    WG_FEATURE_L9_PAD = 1 << 28,
    WG_FEATURE_L9_BGL_UIDS = 1 << 29,
@@ -75,7 +75,7 @@ enum wg_feature {
    WG_FEATURE_DEVICE = 1 << 31, /* a device at all (none in Node: objects are kept, nothing runs) */
 };
 
-/* The WebGPU device's limits and its maker (venus_init's, from the GPU worker: web/venus-gpu.ts `LIMITS`, in this order, each
+/* The WebGPU device's limits and its maker (venus_init's, from the GPU worker: web/venus-caps.ts `LIMITS`, in this order, each
  * clamped to 32 bits). */
 struct wg_limits {
    uint32_t max_texture_1d, max_texture_2d, max_texture_3d, max_texture_array_layers, max_bind_groups,
@@ -88,7 +88,7 @@ struct wg_limits {
       max_compute_workgroup_size_z, max_compute_workgroups_per_dimension, max_immediate_size,
       max_storage_buffers_in_fragment_stage, max_storage_textures_in_fragment_stage,
       max_storage_buffers_in_vertex_stage, max_storage_textures_in_vertex_stage, max_bindings_per_bind_group,
-      /* Not a limit: the adapter's maker as a PCI vendor ID (web/venus-gpu.ts `VENDORS`; 0 for one it doesn't know). */
+      /* Not a limit: the adapter's maker as a PCI vendor ID (web/venus-caps.ts `VENDORS`; 0 for one it doesn't know). */
       vendor_id,
       /* Not limits: the adapter's subgroup sizes (GPUAdapterInfo's; 0 without `subgroups`). */
       subgroup_min_size, subgroup_max_size;
@@ -933,7 +933,7 @@ wg_key_reads_dst(const struct wg_pipeline_key *k)
 bool wg_pipeline_pull_ok(struct wg_program *p, const struct wg_pipeline_key *k);
 /* Sets the key's `pull` on the bindings WebGPU's vertex buffers can't take (VK4 T5; `bound`: each binding's byte in its
  * GPUBuffer): a stride, a bound offset or an attribute's offset WebGPU refuses. The vertex stage reads them from a
- * storage binding (web/venus-gpu.ts `pulledCode`). */
+ * storage binding (web/venus-wgsl.ts `pulledCode`). */
 void wg_vertex_pull(struct wg_pipeline_key *k, uint32_t inputs, const uint64_t *bound);
 /* What a pipeline's pulled bindings take: a bind group `group` of layout `bgl`, the storage bindings of `slots` and
  * their offsets' remainders' uniform, in a pipeline layout `layout` of the program's groups with it. */

@@ -3597,13 +3597,20 @@ void main() {
 
   /** Folds a query's spans that have their results into `passed`, and lets them go. */
   private foldSpans(q: Query) {
-    if (!q.spans?.length) return;
-    q.spans = q.spans.filter((span) => {
-      if (!this.readSpan(span)) return true;
+    const spans = q.spans;
+    if (!spans?.length) return;
+    // Compacted in place (each query's own array): a poll folds each pending query's.
+    let n = 0;
+    for (let i = 0; i < spans.length; i++) {
+      const span = spans[i];
+      if (!this.readSpan(span)) {
+        spans[n++] = span;
+        continue;
+      }
       q.passed ||= span.passed;
       this.releaseSpan(span);
-      return false;
-    });
+    }
+    spans.length = n;
   }
 
   /** Lets go of a query's spans unread (begun again, destroyed). */
@@ -3655,17 +3662,24 @@ void main() {
 
   /** Polls pending queries (the GPU worker calls it between tasks: WebGL results arrive after the task ends). */
   pollQueries() {
-    this.queries = this.queries.filter((q) => {
+    // Compacted in place: a poll runs each task while queries are pending.
+    const qs = this.queries;
+    let n = 0;
+    for (let i = 0; i < qs.length; i++) {
+      const q = qs[i];
       this.foldSpans(q);
-      if (q.spans?.length) return true;
+      if (q.spans?.length) {
+        qs[n++] = q;
+        continue;
+      }
       q.result = q.passed ? 1 : 0;
       q.spans = undefined;
       q.pending = false;
       this.queryState(undefined, q, 1);
       this.queryChanges++;
-      return false;
-    });
-    return this.queries.length;
+    }
+    qs.length = n;
+    return n;
   }
 
   // --- for the screen --------------------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 /*
  * What the device advertises, from the browser's WebGPU device (docs/plans/graphics.md §2: the caps follow the
  * adapter): its optional features (`wg_features`) and limits (`wg_limits`), both venus_init's, from the GPU worker
- * (web/venus-gpu.ts `gpuFeatures`, `gpuLimits`). The mapping is VK0 A's (bench/vulkan/profiles/make.ts `direct`): the
+ * (web/venus-caps.ts `gpuFeatures`, `gpuLimits`). The mapping is VK0 A's (bench/vulkan/profiles/make.ts `direct`): the
  * direct rows of docs/graphics.md "What maps, what's emulated, what isn't offered" only, less what the translator can't do yet, plus what Venus's WSI shares through. The
  * formats' features are wg_format.c's, from the same flags.
  */
@@ -133,7 +133,7 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_vertex_attribute_divisor = true,
       .EXT_vertex_attribute_divisor = true,
       /* Unaligned strides and offsets, and formats of another numeric type than the shader's input: pulled (VK4 T44),
-       * the values' bits as the input's type (web/venus-gpu.ts `vertexDecode`). */
+       * the values' bits as the input's type (web/venus-wgsl.ts `vertexDecode`). */
       .EXT_legacy_vertex_attributes = true,
       .EXT_depth_bias_control = true,
       /* A cube's linear filter kept to the face from fetches (wgsl_sampler.c, VK4 T28). */

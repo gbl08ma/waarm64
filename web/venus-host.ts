@@ -240,6 +240,16 @@ type Exports = {
   venus_free(p: number): void;
 };
 
+/** A context's rings (virtio-gpu's ring_idx is a byte: web/gpu.ts reads it with getUint8). */
+const LANES = 256;
+/**
+ * A fence's lane, a context's ring as one number: exact (a u32 context id times 256 stays under 2^53), and the same for
+ * the device's ids and the module's (whose u32s arrive as i32s).
+ */
+const lane = (ctx: number, ring: number) => (ctx >>> 0) * LANES + (ring & (LANES - 1));
+/** A fence id as the device reads it (a u64): the module's i64 arrives signed past 2^63 (allocates only then). */
+const fenceId = (id: bigint) => (id < 0n ? BigInt.asUintN(64, id) : id);
+
 /** The WASI calls the module imports, stubbed: no files, no environment, the clock from `performance.now()`. */
 function wasi(memory: WebAssembly.Memory) {
   const dv = () => new DataView(memory.buffer);
@@ -317,11 +327,16 @@ export class VenusRenderer {
   private readonly imported = new Set<string>();
   /** The contexts made and not destroyed (a virtio reset destroys them: `reset`). */
   private readonly contexts = new Set<number>();
-  /** Fences sent to vkr and not yet retired ("ctx:ring:id"). */
-  private readonly pending = new Set<string>();
-  /** When each pending fence was sent (performance.now()), for the stuck-fence warning (`watchFences`). */
-  private readonly sentAt = new Map<string, number>();
+  /**
+   * Fences sent to vkr and not yet retired, by lane (`lane`: a context's ring), each with when it was sent
+   * (performance.now(): the fence's time and the stuck-fence warning, `watchFences`). Keyed by numbers, not a string per
+   * fence: a submit and each retire and check would build one.
+   */
+  private readonly pending = new Map<number, Map<bigint, number>>();
+  /** The fences in `pending`. */
+  private pendingCount = 0;
   private fenceWatch: ReturnType<typeof setInterval> | undefined;
+  /** The stuck fences warned of ("ctx:ring:id"), until they retire or their context ends. */
   private readonly warnedStuck = new Set<string>();
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
   private poll: VenusPoll;
@@ -407,7 +422,7 @@ export class VenusRenderer {
       env: {
         memory,
         venus_retire: (ctx: number, ring: number, fence: bigint) => {
-          self?.retire(`${ctx}:${ring}:${fence}`);
+          self?.retire(ctx, ring, fence);
         },
         venus_submitted: () => {},
       },
@@ -500,16 +515,26 @@ export class VenusRenderer {
     this.schedule();
   }
 
-  private retire(key: string) {
+  /** Takes a fence out of `pending`; returns when it was sent, or undefined if it wasn't pending. */
+  private unpend(ctx: number, ring: number, id: bigint) {
+    id = fenceId(id);
+    const fences = this.pending.get(lane(ctx, ring));
+    const at = fences?.get(id);
+    if (at === undefined) return undefined;
+    fences!.delete(id);
+    this.pendingCount--;
+    if (this.warnedStuck.size) this.warnedStuck.delete(`${ctx >>> 0}:${ring >>> 0}:${id}`);
+    return at;
+  }
+
+  private retire(ctx: number, ring: number, id: bigint) {
     this.stats.fences++;
-    this.pending.delete(key);
-    const at = this.sentAt.get(key);
+    const at = this.unpend(ctx, ring, id);
     if (at !== undefined) {
       const ms = performance.now() - at;
       this.stats.fenceMs += ms;
       this.stats.fenceMaxMs = Math.max(this.stats.fenceMaxMs, ms);
     }
-    this.sentAt.delete(key);
     this.onRetire?.();
   }
 
@@ -517,25 +542,28 @@ export class VenusRenderer {
   private watchFences() {
     if (this.fenceWatch) return;
     this.fenceWatch = setInterval(() => {
-      if (!this.pending.size) {
+      if (!this.pendingCount) {
         clearInterval(this.fenceWatch);
         this.fenceWatch = undefined;
         return;
       }
       const now = performance.now();
-      for (const [k, t] of this.sentAt) {
-        if (now - t < 5000 || this.warnedStuck.has(k)) continue;
-        this.warnedStuck.add(k);
-        console.warn(
-          `venus: fence ${k} unretired for ${((now - t) / 1000).toFixed(0)} s (submits ${this.stats.submits}, GPU submits ${this.gpu.stats.submits}, completed ${this.stats.completed}, pending fences ${this.pending.size})`,
-        );
-      }
+      for (const [l, fences] of this.pending)
+        for (const [id, t] of fences) {
+          if (now - t < 5000) continue;
+          const k = `${Math.floor(l / LANES)}:${l % LANES}:${id}`;
+          if (this.warnedStuck.has(k)) continue;
+          this.warnedStuck.add(k);
+          console.warn(
+            `venus: fence ${k} unretired for ${((now - t) / 1000).toFixed(0)} s (submits ${this.stats.submits}, GPU submits ${this.gpu.stats.submits}, completed ${this.stats.completed}, pending fences ${this.pendingCount})`,
+          );
+        }
     }, 2000);
   }
 
   /** Whether a fence sent has retired (or its context ended). */
   retired(ctx: number, ring: number, id: bigint) {
-    return !this.pending.has(`${ctx}:${ring}:${id}`);
+    return !this.pending.get(lane(ctx, ring))?.has(fenceId(id));
   }
 
   /** Copies `bytes` into the module's heap for a call, then frees them. */
@@ -603,15 +631,17 @@ export class VenusRenderer {
         if (fence) {
           // Retired once the queue's work before it is done (`retired`); a ring fence of no queue's work retires at
           // the next poll.
-          const key = `${c.ctx}:${fence.ring}:${fence.id}`;
-          this.pending.add(key);
-          this.sentAt.set(key, performance.now());
+          const l = lane(c.ctx, fence.ring);
+          let fences = this.pending.get(l);
+          if (!fences) this.pending.set(l, (fences = new Map<bigint, number>()));
+          const id = fenceId(fence.id);
+          if (!fences.has(id)) this.pendingCount++;
+          fences.set(id, performance.now());
           this.watchFences();
           // Refused (no such ring): it never retires, and it mustn't hold its ring's lane or a guest waiting for it.
           if (!this.ex.venus_submit_fence(c.ctx, fence.flags, fence.ring, fence.id)) {
-            console.warn(`venus: fence ${key} refused`);
-            this.pending.delete(key);
-            this.sentAt.delete(key);
+            console.warn(`venus: fence ${c.ctx}:${fence.ring}:${fence.id} refused`);
+            this.unpend(c.ctx, fence.ring, fence.id);
           }
         }
         this.wake();
@@ -628,11 +658,12 @@ export class VenusRenderer {
     }
     for (const [res, ctx] of this.owner) if (ctx === id) this.owner.delete(res);
     for (const k of this.imported) if (k.startsWith(`${id}:`)) this.imported.delete(k);
-    for (const k of this.pending) {
-      if (!k.startsWith(`${id}:`)) continue;
-      this.pending.delete(k);
-      this.sentAt.delete(k);
+    for (const [l, fences] of this.pending) {
+      if (Math.floor(l / LANES) !== id >>> 0) continue;
+      this.pendingCount -= fences.size;
+      this.pending.delete(l);
     }
+    for (const k of this.warnedStuck) if (k.startsWith(`${id >>> 0}:`)) this.warnedStuck.delete(k);
   }
 
   /**

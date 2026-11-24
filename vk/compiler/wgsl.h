@@ -293,7 +293,7 @@ void wgsl_link(nir_shader *vs, nir_shader *fs);
 /* With WGSL_SUBGROUPS: a ballot, an election or a read of the first invocation takes an add of the subgroup into its
  * operand, for a WebGPU that computes them with every invocation where they are an `if`'s only other subgroup
  * operations, and shuffles up, down and by xor are shuffles by the invocation's index, for one whose deltas must be
- * uniform (Chromium on Metal: web/venus-gpu.ts `subgroupsRight`). */
+ * uniform (Chromium on Metal: web/venus-caps.ts `subgroupsRight`). */
 #define WGSL_SUBGROUP_ANCHOR (1u << 5)
 
 /* Whether a stage's `access` (WGSL_ACCESS_*) of a storage image of this enum pipe_format goes by the image's words,

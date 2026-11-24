@@ -1962,10 +1962,7 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
 - **Sound:** a period's `toF32` and mono copies, `done`'s filter per completion (P8): small; with other sound work.
 - **Devices' worker `onerror` after ready** isn't routed into `failed` (an uncaught error in a backend's own timer);
   routing it could fail a machine that is healthy, so it needs a look at which errors reach it.
-- **Small:** Venus's fence keys,
-  `pollQueries`' filter and `Screen.damage` coalescing; the `Resource` union in gpu.ts (2D / 3D / blob); VenusShare's
-  and VenusImport's `warned` Sets grow without bound; C comments in vk/ name
-  web/venus-gpu.ts for what moved to venus-caps.ts, venus-formats.ts and venus-wgsl.ts.
+- **Small:** the `Resource` union in gpu.ts (2D / 3D / blob).
 
 ## Tests and tools
 
