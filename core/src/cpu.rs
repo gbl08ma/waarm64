@@ -84,8 +84,11 @@ pub struct Cpu {
     pub dispatch: u8,
     pub reserved: [u8; 5],
     /// Always 0, not saved: where the block interpreter reads XZR without a
-    /// compare (`interp::block::ZERO`). Two to leave no padding.
-    pub zero: [u64; 2],
+    /// compare (`interp::block::ZERO`).
+    pub zero: u64,
+    /// Where it writes XZR without a compare (`interp::block::SINK`): 0 outside
+    /// its loop, not saved.
+    pub sink: u64,
 }
 
 /// `Cpu::interp_only`: `SCTLR_EL1.A` is set (the JIT doesn't check alignment).
@@ -615,7 +618,7 @@ mod tests {
         c.dbgbcr = c.dbgbcr.map(|v| v & crate::interp::debug::BCR_MASK);
         c.dbgwcr = c.dbgwcr.map(|v| v & crate::interp::debug::WCR_MASK);
         c.step_syn &= crate::interp::debug::STEP_SYN;
-        (c.reserved, c.zero) = ([0; 5], [0; 2]);
+        (c.reserved, c.zero, c.sink) = ([0; 5], 0, 0);
         crate::interp::debug::arm(&mut c);
         let mut w = Writer::default();
         c.save(&mut w);

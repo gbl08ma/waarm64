@@ -1,0 +1,100 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 272e474c..be5e429d 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -207,7 +207,9 @@ fn rich_kind(k: u8) -> bool {
+ 
+ /// Marks each MovI with the number of MovIs right after it, and each LdO or
+ /// StO followed by another with bit 16 of `x` (pairs from the block's
+-/// start): [`hot`] runs them in its dispatch; [`run`] ignores the marks.
++/// start), and with bit 14 too a pair of one kind and size off one base that
++/// the first doesn't load ([`same_base`]): [`hot`] runs them in its dispatch,
++/// the second with one probe; [`run`] ignores the marks.
+ pub fn mov_runs(b: &mut [Wide]) {
+     let mut n = 0;
+     for k in (0..b.len()).rev() {
+@@ -235,7 +237,7 @@ pub fn mov_runs(b: &mut [Wide]) {
+     let mut k = 0;
+     while k + 1 < b.len() {
+         if o(&b[k]) && o(&b[k + 1]) {
+-            b[k].x |= 1 << 16;
++            b[k].x |= 1 << 16 | (same_base(&b[k], &b[k + 1]) as u32) << 14;
+             k += 2;
+         } else {
+             k += 1;
+@@ -243,6 +245,18 @@ pub fn mov_runs(b: &mut [Wide]) {
+     }
+ }
+ 
++/// Whether an LdO or StO pair is one kind and size off one base, the first
++/// not a load of the base, spanning at most 256 bytes: [`hot`] probes the
++/// bytes both span once.
++fn same_base(a: &Wide, b: &Wide) -> bool {
++    let span = (a.imm as i64).abs_diff(b.imm as i64) + (4 << (a.x & 1));
++    a.k == b.k
++        && a.n == b.n
++        && a.x & 3 == b.x & 3
++        && !(a.k == K::LdO && a.d == a.n && a.n != 31)
++        && span <= 256
++}
++
+ /// One instruction, decoded: what [`uop_el`] makes, and [`run`] runs
+ /// ([`pack`] stores it as a [`Uop`]).
+ #[derive(Clone, Copy, Debug)]
+@@ -2373,6 +2387,56 @@ pub fn hot<B: Fast, const RICH: bool>(
+                     c.x[30] = pc.wrapping_add(4);
+                     break 'block to;
+                 }
++                K::LdO | K::StO if w & 0x4000 != 0 && unsafe { u.add(1) } != end => {
++                    // One probe of the bytes both span ([`same_base`]).
++                    let base = rsp(c, n);
++                    if n == 31 && base & 15 != 0 {
++                        break 'run SLOW;
++                    }
++                    // SAFETY: u + 1 < end.
++                    let o2 = unsafe { &*u.add(1) };
++                    let (f1, f2) = ((w as i32 >> 16) as i64, (o2.w as i32 >> 16) as i64);
++                    let (lo, bytes) = (f1.min(f2), 4u32 << (w & 1));
++                    let span = (f1.max(f2) - lo) as u32 + bytes;
++                    let store = o.k == K::StO as u8;
++                    let at = base.wrapping_add(lo as u64);
++                    let us = if store { Use::Write } else { Use::Read };
++                    let Some(p) = m.fast_in(fx, at, span, us) else {
++                        break 'run SLOW;
++                    };
++                    let (p1, p2) = (
++                        p.wrapping_add((f1 - lo) as usize),
++                        p.wrapping_add((f2 - lo) as usize),
++                    );
++                    if store {
++                        // SAFETY: `fast_in` found `span` bytes of RAM at `p`, both stores in them.
++                        if !unsafe { mem::store_aligned(p1, bytes, ra(c, d)) } {
++                            break 'run SLOW;
++                        }
++                        // SAFETY: u + 1 < end.
++                        u = unsafe { u.add(1) };
++                        pc = pc.wrapping_add(4);
++                        // SAFETY: as for the first.
++                        if !unsafe { mem::store_aligned(p2, bytes, ra(c, o2.d as u32)) } {
++                            break 'run SLOW;
++                        }
++                    } else {
++                        // SAFETY: as for the stores; in one range of RAM.
++                        let (v1, v2) = unsafe {
++                            (
++                                mem::load_aligned(p1, bytes)
++                                    .unwrap_or_else(|| mem::load_misaligned(p1, bytes)),
++                                mem::load_aligned(p2, bytes)
++                                    .unwrap_or_else(|| mem::load_misaligned(p2, bytes)),
++                            )
++                        };
++                        wr(c, d, v1);
++                        wr(c, o2.d as u32, v2);
++                        // SAFETY: u + 1 < end.
++                        u = unsafe { u.add(1) };
++                        pc = pc.wrapping_add(4);
++                    }
++                }
+                 K::LdO | K::StO => {
+                     if !single_h(c, m, fx, o) {
+                         break 'run SLOW;

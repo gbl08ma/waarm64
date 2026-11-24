@@ -1,0 +1,60 @@
+node pair 1: sink 9518, base 9654 ms (2345 s left)
+node pair 2: sink 9468, base 9451 ms (2290 s left)
+node pair 3: sink 9465, base 9480 ms (2236 s left)
+node pair 4: sink 9524, base 9526 ms (2181 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             4 -0.36% [-3.99%, +3.42%] open         -0.19% [-2.49%, +2.16%] open         -0.10% [-0.57%, +0.37%] open         -0.27% [-3.26%, +2.81%] open        
+node pair 5: base 9522, sink 9466 ms (2127 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             5 -0.40% [-2.42%, +1.66%] open         -0.23% [-1.51%, +1.07%] open         -0.08% [-0.37%, +0.21%] same         -0.28% [-1.92%, +1.38%] open        
+node pair 6: base 9527, sink 9474 ms (2072 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             6 -0.43% [-1.80%, +0.96%] open         -0.24% [-1.11%, +0.63%] open         -0.08% [-0.27%, +0.11%] same         -0.29% [-1.39%, +0.83%] open        
+node pair 7: sink 9512, base 9541 ms (2018 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             7 -0.41% [-1.44%, +0.63%] open         -0.23% [-0.88%, +0.43%] open         -0.07% [-0.22%, +0.08%] same         -0.26% [-1.10%, +0.57%] open        
+node pair 8: base 9469, sink 9519 ms (1963 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             8 -0.29% [-1.28%, +0.71%] open         -0.16% [-0.77%, +0.45%] open         -0.07% [-0.19%, +0.05%] same         -0.20% [-0.94%, +0.55%] open        
+node pair 9: base 9524, sink 9506 ms (1909 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             9 -0.28% [-1.11%, +0.55%] open         -0.16% [-0.67%, +0.35%] open         -0.07% [-0.17%, +0.04%] same         -0.19% [-0.81%, +0.42%] open        
+node pair 10: base 9524, sink 9530 ms (1854 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            10 -0.25% [-0.97%, +0.48%] open         -0.14% [-0.58%, +0.30%] open         -0.06% [-0.15%, +0.03%] same         -0.18% [-0.71%, +0.36%] open        
+node pair 11: sink 9540, base 9536 ms (1799 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            11 -0.22% [-0.86%, +0.42%] open         -0.13% [-0.52%, +0.26%] open         -0.06% [-0.14%, +0.02%] same         -0.15% [-0.63%, +0.32%] open        
+node pair 12: base 9509, sink 9494 ms (1745 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            12 -0.22% [-0.78%, +0.35%] open         -0.13% [-0.47%, +0.22%] same         -0.06% [-0.14%, +0.01%] same         -0.15% [-0.57%, +0.27%] open        
+smp pair 1: sink 9787, base 9593 ms (1684 s left)
+smp pair 2: base 10153, sink 9857 ms (1623 s left)
+smp pair 3: sink 9761, base 9863 ms (1562 s left)
+smp pair 4: base 9499, sink 9920 ms (1501 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             4 +0.58% [-14.71%, +18.62%] open       +0.19% [-7.88%, +8.97%] open         +0.02% [-15.74%, +18.71%] open       +0.17% [-7.93%, +8.97%] open        
+smp pair 5: base 9545, sink 10018 ms (1440 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             5 +1.44% [-8.99%, +13.07%] open        -0.15% [-5.19%, +5.16%] open         +0.07% [-8.84%, +9.86%] open         -0.22% [-5.42%, +5.27%] open        
+smp pair 6: base 9723, sink 9729 ms (1379 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             6 +1.21% [-6.01%, +8.99%] open         -0.00% [-3.52%, +3.64%] open         +0.24% [-5.91%, +6.80%] open         -0.06% [-3.70%, +3.73%] open        
+smp pair 7: base 9902, sink 9440 ms (1318 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             7 +0.35% [-6.52%, +7.73%] open         +0.02% [-2.62%, +2.73%] open         +0.28% [-4.36%, +5.15%] open         +0.03% [-2.74%, +2.87%] open        
+smp pair 8: sink 9511, base 9836 ms (1258 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             8 -0.11% [-6.00%, +6.13%] open         -0.04% [-2.16%, +2.13%] open         +0.51% [-3.35%, +4.52%] open         -0.05% [-2.28%, +2.24%] open        
+smp pair 9: base 9694, sink 9885 ms (1196 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink             9 +0.11% [-4.90%, +5.39%] open         +0.07% [-1.76%, +1.93%] open         +0.57% [-2.66%, +3.90%] open         +0.05% [-1.86%, +2.00%] open        
+smp pair 10: base 9935, sink 9889 ms (1135 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            10 +0.06% [-4.25%, +4.55%] open         +0.30% [-1.55%, +2.18%] open         +0.96% [-2.26%, +4.28%] open         +0.27% [-1.61%, +2.19%] open        
+smp pair 11: sink 9900, base 10187 ms (1073 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            11 -0.21% [-4.11%, +3.85%] open         +0.18% [-1.51%, +1.89%] open         +0.63% [-2.46%, +3.82%] open         +0.17% [-1.52%, +1.89%] open        
+smp pair 12: sink 9746, base 9587 ms (1012 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            12 -0.05% [-3.58%, +3.60%] open         -0.12% [-2.02%, +1.82%] open         +0.20% [-3.03%, +3.53%] open         -0.14% [-2.06%, +1.83%] open        

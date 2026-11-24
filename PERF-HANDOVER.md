@@ -119,17 +119,19 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-24, after loop 69)
+## State (2026-11-24, after loop 70)
 
 **The user is away for the rest of 2026-11-24: work autonomously, no decision prompts or questions; settle choices by
-measurement and the decision rules, and report at the end.** Loop 69 (the compile threshold's re-check at 64-block
-regions) **kept nothing** (bench/boot/REPORT.md "PERF loop 69", `bench/boot/results/perf69/`): 500/1000 loses `node`
-2.6%, 4000/8000 0.7%; 2000/4000 wins `node` 1.2% and `smp` 4.2% (7% fewer cycles, 24% less wasm) but ties the pages
-session in time, loses `smp_alpine_jit` on one and two vCPUs 1.8-2.9%, and runs 1.4-2.2 points fewer steps compiled
-under churn. No code changed, docs only, no CI. Loop 67's warm-up is not landed; the local branches `perf67-warmup`
-and `perf-smp-warm` stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The review branch
-`review/jit-warmup` on origin is moot: the supervisor may delete it.
-**Next:** row 6. `target/snapbench/pages.waarm64snap` loads into the current state layout;
+measurement and the decision rules, and report at the end.** Loop 70 (row 6) **kept XZR's writes through a sink slot**
+in the block interpreter and **dropped one TLB probe for a pair of LdOs/StOs off one base** (bench/interp/REPORT.md
+"PERF loop 70", `bench/interp/results/perf70/`, `bench/boot/results/perf70/`): the sink +0.5-0.7% on the flat and MMU
+guests, Alpine's block-interpreter boot −0.3% cycles a step, `hot` ~165 bytes smaller a copy; `node`, `smp`, the pages
+session and the gates even. The pair probe lost every small guest (−0.4 to −1.8%); its pairs are 0.41% of dispatches.
+Under the floor by the counts, small and tested (the triage rule); its commit passed `ci-fast.sh`, `ci.sh` and
+`ci-jit.sh`. Loop 67's warm-up is not landed; the local branches
+`perf67-warmup` and `perf-smp-warm` stay unpushed; `../waarm64-base` is detached at 5d8f29ef (clean). The review
+branch `review/jit-warmup` on origin is moot: the supervisor may delete it.
+**Next:** row 7. `target/snapbench/pages.waarm64snap` loads into the current state layout;
 `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
@@ -158,8 +160,7 @@ every row:
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 6 | **Next:** Interpreter: XZR's writes through a sink slot, and one TLB probe for a pair (bench/interp/REPORT.md, 2026-10-30/31) | stale verdict | lost in the VM for its store bounds check and a register-allocation cliff in `hot<Flat>`; `hot` has lean and rich copies since loop 19, and the interpreter is 18.4% of the Mac's pages session. The patch: `bench/interp/results/xzr-spike/sink/`; `bench/interp/ab-mac.sh` on the block-interpreter guests, the flat one too |
-| 7 | JIT: a settled region's last emission repeats the one before (core/src/jit/block.rs:1023-1057) | count, build | a region of several blocks is emitted to find `plain`, then until its entry states settle, then once more with the arguments that just settled: three emissions where two would do. Emission is ~170 ms of the boot gate's 3.84 s, ~1.9 s of a pages session. A passes-per-region histogram first; the modules must stay byte for byte (`bench/jit/dump-modules.ts`). Follow-up: a single block with `plain` 0 emits twice alike |
+| 7 | **Next:** JIT: a settled region's last emission repeats the one before (core/src/jit/block.rs:1023-1057) | count, build | a region of several blocks is emitted to find `plain`, then until its entry states settle, then once more with the arguments that just settled: three emissions where two would do. Emission is ~170 ms of the boot gate's 3.84 s, ~1.9 s of a pages session. A passes-per-region histogram first; the modules must stay byte for byte (`bench/jit/dump-modules.ts`). Follow-up: a single block with `plain` 0 emits twice alike |
 | 8 | JIT: transfers that still leave a function (backlog "JIT") | re-count | re-profile with `bench/boot/userprof.ts` at 64 blocks; with it the two verdicts 64 blocks may move: "Regions entered at more than one block" (2026-10-08, the VM; `results/m8-entries/member-entries.patch`: more members now have no function of their own) and loop 50's followed calls that complete inside the region (`WAARM64_FOLLOW_ALL`, `bench/boot/preempt-counts.ts`). Turn into a doable to-do or a finding |
 | 9 | JIT: the transfer cache under a browser's code (`XC_ENTRIES` 16,384, core/src/mmu.rs:82; `JC` 65,536, mod.rs:505) | count, sweep | 161 M miss-function calls a pages session against 651 M hits (loop 54); "65,536 measured the same" was Alpine in Node, and loop 28's split of causes (zeroed, another VA's, an older generation) Alpine's userspace run. Its `results/perf28/diag.patch` counters on the pages session; conflicts → 65,536 (+768 KiB a vCPU; the `XC - XC_LO` OR needs its alignment), stale generations → a per-ASID generation (L). `JC` was never swept: count the probes that miss while their key is compiled |
 | 10 | MMU: one diagnostic build for the TLB's misses (`Mmu::miss`, core/src/mmu.rs:1097) | count | miss and walk are 1.6-1.9% of the Mac's busy ticks, ~10 M misses a render. Tally: the read/write sibling that walks again (a walk computes all six permissions and fills one array; a mixed group probes the write array), fills next to the last fill (a neighbour's PTE is one load away), walks by level and their time (a last-level table cache), nG-list overflows, `flush_all` calls. Then `TLB_ENTRIES` 32,768 and 65,536 on the Mac (swept in the VM only, 2026-11-03; +1.6 MiB a vCPU a doubling; `NG_SLOTS` 1,024 never resized). Build what the tallies justify, the sibling fill first (not watched pages) |
@@ -179,7 +180,7 @@ every row:
 | 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (backlog "The network, per packet" P7), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
 | 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
-Swept or measured on the Mac recently, not to redo: the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
+Swept or measured on the Mac recently, not to redo: XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
 41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), `WARM` with `REPORT` (loop 68), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
 function's size as such (2026-11-05, loop 13), the dispatcher's entries and the signature check (loop 54), lazy NZCV
 at a loop's head (loop 42), and the features off by default (I8MM, FCMA, FP16, FHM, BF16: host-op counts, which

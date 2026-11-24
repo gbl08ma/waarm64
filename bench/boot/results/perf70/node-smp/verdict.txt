@@ -1,0 +1,19 @@
+node: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            12 -0.22% [-0.78%, +0.35%] open         -0.13% [-0.47%, +0.22%] same         -0.06% [-0.14%, +0.01%] same         -0.15% [-0.57%, +0.27%] open        
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9524       0.9821         1363        723.7        219.5        47.69         1461    504474364
+  sink                 9509       0.9820         1363        723.2        219.6        47.69         1461    504474364
+smp: 12 pairs against base
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  sink            12 -0.05% [-3.58%, +3.60%] open         -0.12% [-2.02%, +1.82%] open         +0.20% [-3.03%, +3.53%] open         -0.14% [-2.06%, +1.83%] open        
+  ended: the cap of 12 pairs
+  arm               wall ms      P share   memory MiB      emit ms   compile ms JIT wasm MiB      modules interp steps
+  base                 9780       0.7273         2296       1352.9        373.7        84.20         2842   1202924867
+  sink                 9822       0.7265         2268       1354.4        370.0        84.01         2833   1199147495
+  arm          compiled %   interp %    overdue      parks    modules  worker ms   ready ms  ready p50  ready p99  ready top top of any   stall ms     of any stall ms/s   out ms/s
+  base              94.48       5.52          0       9981       2533        576       0.32          1          2          8         16          8         13        0.8         83
+  sink              94.47       5.53          0       9944       2522        586       0.32          1          2          8         16          7          8        1.1         82
+arms: base 9786743 bytes; sink 9784770 bytes
+rule: a pair a fresh browser (warm-up same, 1 round), pairs 4-12, band ±0.5%, stop on cycles and wall (node), wall (smp), each interval's tail 2.00e-3 (0.01 over all its looks, an interval: several arms and measures each take that chance); Chromium 158.0.8127.88

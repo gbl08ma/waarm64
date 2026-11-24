@@ -1,0 +1,18 @@
+{
+ "/home/gabriel.guest/Development/waarm64/bench/boot/results/perf70/pages/sink-2/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 39.78,
+   "flushes": 0,
+   "modules": 2076,
+   "mib": 89.4,
+   "overdue": 0,
+   "parks": 6838,
+   "locks": 9045605,
+   "interpGsteps": 2.04,
+   "share": 0.949,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

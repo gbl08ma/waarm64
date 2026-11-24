@@ -1,0 +1,12 @@
+import json,statistics,sys,glob
+pre=sys.argv[1]; arms=sys.argv[2].split(','); rows=[('dec_mips','dec_mips'),('vm_dec_flat_mips','vm_dec_flat_mips'),('vm_dec_mmu_mips','vm_dec_mmu_mips'),('boot_alpine_dec','boot_alpine_dec_mips'),('boot_alpine_dec','boot_alpine_dec_total_instr_step'),('boot_alpine_dec','boot_alpine_dec_total_cycles_step')]
+for b,n in rows:
+    out={}
+    for a in arms:
+        v=[]
+        for f in sorted(glob.glob(f'bench/results/local/mac/{pre}*-r1-{a}-{b}.json')):
+            for r in json.load(open(f))['results']:
+                if r['name']==n: v.append(r.get('median', r.get('value')))
+        out[a]=v
+    base=statistics.median(out[arms[0]])
+    print(n.ljust(34),' | '.join(f"{a} "+' · '.join(f'{x:.1f}' if x>100 else f'{x:.3f}' for x in out[a])+f" ({(statistics.median(out[a])/base-1)*100:+.2f}%)" for a in arms))

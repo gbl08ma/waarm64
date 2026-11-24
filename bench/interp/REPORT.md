@@ -2572,3 +2572,62 @@ Planted, each caught by it (two also by the random-block test): any zero taken, 
 sign kept in the operands' test, the sum's op bit wrong. The golden corpus has a new `fp_scalar` form, `dp2zero` (400
 tests, 280 with FPCR 0 and IXC set; the M4's results, QEMU agreeing), which the block interpreter on wasm failed with
 "any zero taken" planted. Steps don't move. `scripts/ci.sh` and `ci-fp.sh` passed (the JIT untouched: no `ci-jit.sh`).
+
+## PERF loop 70: XZR's writes through a sink slot, and one TLB probe for a pair, on the Mac (2026-11-24)
+
+The two October losses re-measured where `hot` is ranked now (PERF-HANDOVER.md's queue, row 6): both lost in the dev
+VM ("XZR's writes without a compare", "A shared TLB probe for pairs off one base"), the flat guest −23% and −19.5%,
+a code-shape cliff in `hot<Flat>`; since loop 19 `hot` has lean and rich copies, and the VM's explicit bounds checks
+distort code size. M4 Mac mini, macOS 26.6.2, Chrome for Testing 158.0.8127.88; base `a7f20d86`. Data:
+`results/perf70/` (README) and `../boot/results/perf70/` (the paired runs and the pages session).
+
+**Counts** (`results/perf70/diag.patch`, Alpine's native boot through the block interpreter, 2.65 G steps, 2.24 G
+dispatches in `hot`): the kinds whose destination is only written (`writes`: Ld, LdO, LDP's two, LdLit, Ubfm, Sbfm,
+ShiftV, Csel, Madd, Maddl, Extr, Bit1, Adc, Div, Mulh, Adr, Adrp, Mrs, Ldx, Lse) are 605 M dispatches (27%), XZR
+the destination of 1.0 M of them (LDADD as STADD 0.69 M, LDR to XZR 0.31 M); the flag setters, left out, have XZR in
+most (SUBS immediate 90.8 of 94.3 M, register 90.3 of 100.5 M, ANDS immediate 20.0 of 72.8 M). LdO/StO pairs (one
+dispatch, two probes) are 51.6 M; of one kind 28.8 M; **off one base, of one kind, the first not loading the base
+9.26 M (0.41% of dispatches), 9.14 M of them in one page**; adjacent of one size only 1.12 M. LDP/STP across a page
+16.9 K of 180 M.
+
+**Arms.** `sink` (`results/perf70/sink.patch`, kept): the October patch ported (`Cpu::zero: [u64; 2]` split into
+`zero` and `sink`, the layout and ABI unchanged; LdLit added to `writes`). `pair` (`pair.patch`): `mov_runs` marks a
+pair of LdOs or StOs of one kind and size off one base, the first not loading it, spanning at most 256 bytes; `hot`
+probes the span once and runs both (a store pair's second misaligned: the first retired, the second to the slow path;
+a span miss: the pair to the slow path from its first). Code: `hot` lean 13,244 → 13,081 bytes (MMU) and 12,779 →
+12,618 (flat), rich 15,483 → 15,311 and 15,011 → 14,836 with `sink`; +794, +736, +781, +734 with `pair`; the core
+9,786,743 → 9,784,770 bytes (`sink`), 9,801,273 (`pair`). No call in any.
+
+**The block-interpreter guests** (`bench/interp/ab-mac.sh`, 3 rounds, the order rotated each round; medians of each
+round, MIPS, and Alpine's boot through the block interpreter's cycles and instructions a step):
+
+| | base | sink | pair |
+|---|---|---|---|
+| `dec_mips` | 515.1 · 517.0 · 517.5 | 516.8 · 514.7 · 519.2 (even) | 507.7 · 508.4 · 507.7 (−1.8%) |
+| `vm_dec_flat_mips` | 514.3 · 515.9 · 513.4 | **518.8 · 518.1 · 517.1 (+0.7%)** | 508.8 · 510.3 · 509.9 (−0.9%) |
+| `vm_dec_mmu_mips` | 517.6 · 520.5 · 518.3 | **521.0 · 522.3 · 520.8 (+0.5%)** | 515.6 · 516.5 · 513.9 (−0.5%) |
+| `boot_alpine_dec_mips` | 259.9 · 256.7 · 256.7 | 259.6 · 258.4 · 257.6 (+0.6%, overlapping) | 254.4 · 255.8 · 255.8 (−0.4%) |
+| its cycles a step | 16.090 · 16.083 · 16.090 | **16.036 · 16.034 · 16.022 (−0.3%)** | 16.316 · 16.162 · 16.142 (+0.5%) |
+| its instructions a step | 62.43 · 62.43 · 62.43 | **62.01 · 62.00 · 62.00 (−0.7%)** | 62.50 (+0.1%) |
+
+No cliff on the Mac: the flat guest is `sink`'s best row. `pair` loses every row, rounds apart: its extra path costs
+more than the probe it saves, and the counts bound the saving at ~0.1% of the interpreter's time. **Dropped.**
+
+**`sink` on the browser-facing measures** (`bench/ab-mac.sh`, 12 pairs each, the cap): `node` wall −0.22% [−0.78,
++0.35] `open`, cycles −0.13% `same`, instructions −0.06% `same`; `smp` wall −0.05% [−3.58, +3.60] `open` (its ±3%
+resolution), the latency counters alike (compiled 94.47 against 94.48%). Firefox's pages session cut to two pages
+(`bench/gpu/ab-mac.sh`, 3 sessions each, alternated): busy MIPS 431 · 431 · 423 against 428 · 426 · 430, `pagesS`
+32.6 against 32.5 s, the renderer's CPU 138.2 against 138.9 s, cycles 475.0 against 476.6 G: even, overlapping. The
+gates last (`WORKLOADS=user,boot`, 12 pairs): `user` wall +0.07% [−0.41, +0.55] `open`, cycles `same`; `boot` wall
++0.19% [−0.76, +1.15] `open`, cycles +0.09% `open`, instructions −0.08% `LOWER`. Memory the same (no new state:
+`sink` takes `zero`'s padding word).
+
+**Kept: `sink`.** A decided win on the interpreter's own measures (the flat and MMU guests' rounds apart, Alpine's
+cycles and instructions a step lower in every round), under the ~1% floor as the counts bound it (the interpreter runs
+~5% of the browser's steps), smaller code, and nothing contradicting it in `node`, `smp`, the pages session or the
+gates. The VM's −23% on the flat guest doesn't reproduce: the October verdict was the VM's code-shape cliff.
+Correctness: the random-block test (`blocks_run_as_the_interpreter_runs_them`, whole `Cpu`s compared) and the MRS test
+failed with each planted bug: the sink not zeroed at `hot`'s return, `Uop::wide` not mapping it back, SUBS's result
+through the sink (CMP writing SP), LDP's second register left out of `writes`, the sink and the zero slot one slot.
+(Movk in `writes` passed: `x` is the `Cpu`'s first field, so its unchecked index lands on the sink itself; not a
+rule a kind may rely on.) Steps don't move. `scripts/ci-fast.sh`, `ci.sh` and `ci-jit.sh` passed.

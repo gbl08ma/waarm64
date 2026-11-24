@@ -1,0 +1,142 @@
+diff --git a/core/src/interp.rs b/core/src/interp.rs
+index 1c574d37..380ff57c 100644
+--- a/core/src/interp.rs
++++ b/core/src/interp.rs
+@@ -4,7 +4,7 @@
+ //! a user-mode host wants (the golden corpus, the benchmarks); [`run_system`]
+ //! takes them into EL1 the way hardware does.
+ 
+-pub(crate) mod block;
++pub mod block;
+ /// The capture build only (Cargo feature `capture`): the block interpreter's micro-ops, for `examples/uops.rs`.
+ #[cfg(feature = "capture")]
+ pub use block::{Described, describe};
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 272e474c..b7ff0903 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -1675,6 +1675,8 @@ pub fn hot<B: Fast, const RICH: bool>(
+             }
+             // SAFETY: u < end, in the arena.
+             let o = unsafe { &*u };
++            #[cfg(feature = "diag")]
++            diag::uop(c, u, end);
+             let (d, n, w) = (o.d as u32, o.n as u32, o.w);
+             match o.kind() {
+                 K::Generic => break 'run SLOW,
+@@ -3570,3 +3572,102 @@ impl Cache {
+ 
+ #[cfg(test)]
+ mod tests;
++
++/// DIAGNOSTIC (PERF loop 70; not for commit): XZR as a destination and LdO/StO pairs.
++#[cfg(feature = "diag")]
++pub mod diag {
++    use super::{K, Uop, rsp};
++    use crate::cpu::Cpu;
++    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
++    const NW: usize = 40;
++    /// [kind]: dispatches, then with d (or Ldp's m) 31.
++    static W: [[AtomicU64; 2]; NW] = [const { [const { AtomicU64::new(0) }; 2] }; NW];
++    /// 0 uops, 1 pairs, 2 same kind, 3 same base and size, 4 adjacent, 5 load base conflict,
++    /// 6 adjacent span on one page, 7 any pair both on one page, 8 adjacent loads, 9 adjacent stores,
++    /// 10 LDP/STP, 11 LDP/STP crossing a page.
++    static P: [AtomicU64; 14] = [const { AtomicU64::new(0) }; 14];
++    fn add(a: &AtomicU64) {
++        a.fetch_add(1, Relaxed);
++    }
++    pub fn uop(c: &Cpu, u: *const Uop, end: *const Uop) {
++        // SAFETY: u < end.
++        let o = unsafe { &*u };
++        let k = o.kind();
++        add(&P[0]);
++        if (k as usize) < NW {
++            add(&W[k as usize][0]);
++            let z = o.d == 31 || (k == K::Ldp && o.m == 31);
++            if z {
++                add(&W[k as usize][1]);
++            }
++        }
++        if matches!(k, K::Ldp | K::Stp) {
++            add(&P[10]);
++            let size = (o.w & 15) as u64;
++            let mode = o.w >> 8 & 3;
++            let base = rsp(c, o.n as u32);
++            let a = if mode == 1 { base } else { base.wrapping_add((o.w as i32 >> 16) as i64 as u64) };
++            if (a ^ a.wrapping_add(2 * size - 1)) >> 12 != 0 {
++                add(&P[11]);
++            }
++        }
++        if matches!(k, K::LdO | K::StO) && o.w & 0x8000 != 0 && unsafe { u.add(1) } != end {
++            add(&P[1]);
++            // SAFETY: u + 1 < end.
++            let p = unsafe { &*u.add(1) };
++            let b1 = 4u64 << (o.w & 1);
++            let b2 = 4u64 << (p.w & 1);
++            let a1 = rsp(c, o.n as u32).wrapping_add((o.w as i32 >> 16) as i64 as u64);
++            let a2 = rsp(c, p.n as u32).wrapping_add((p.w as i32 >> 16) as i64 as u64);
++            if (a1 >> 12) == (a1 + b1 - 1) >> 12 && (a2 >> 12) == (a2 + b2 - 1) >> 12 && a1 >> 12 == a2 >> 12 {
++                add(&P[7]);
++            }
++            if p.k == o.k {
++                add(&P[2]);
++                if p.n == o.n && !(k == K::LdO && o.d == o.n && o.d != 31) {
++                    add(&P[12]);
++                    let lo = a1.min(a2);
++                    let hi = (a1 + b1).max(a2 + b2);
++                    if lo >> 12 == (hi - 1) >> 12 {
++                        add(&P[13]);
++                    }
++                }
++                if p.n == o.n && b1 == b2 {
++                    add(&P[3]);
++                    let d = (p.w as i32 >> 16) as i64 - (o.w as i32 >> 16) as i64;
++                    if d == b1 as i64 || d == -(b1 as i64) {
++                        add(&P[4]);
++                        if k == K::LdO {
++                            add(&P[8]);
++                            if o.d == o.n && o.d != 31 {
++                                add(&P[5]);
++                            }
++                        } else {
++                            add(&P[9]);
++                        }
++                        let lo = a1.min(a2);
++                        if lo >> 12 == (lo + 2 * b1 - 1) >> 12 {
++                            add(&P[6]);
++                        }
++                    }
++                }
++            }
++        }
++    }
++    pub fn report() -> String {
++        let mut s = String::from("diag70");
++        for (i, w) in W.iter().enumerate() {
++            let (a, b) = (w[0].load(Relaxed), w[1].load(Relaxed));
++            if a != 0 {
++                // SAFETY: a K's discriminant.
++                let k = unsafe { core::mem::transmute::<u8, K>(i as u8) };
++                s += &format!(" {k:?}={a}/{b}");
++            }
++        }
++        s += " |";
++        for p in &P {
++            s += &format!(" {}", p.load(Relaxed));
++        }
++        s
++    }
++}
+diff --git a/core/tests/distros.rs b/core/tests/distros.rs
+index 6fe3482a..73b280ef 100644
+--- a/core/tests/distros.rs
++++ b/core/tests/distros.rs
+@@ -78,6 +78,8 @@ fn alpine_boots_through_the_block_interpreter() {
+         ..Boot::new(&kernel, d.cmdline)
+     });
+     eprintln!("\n[{}]", r.summary);
++    #[cfg(feature = "diag")]
++    eprintln!("{}", waarm64_core::interp::block::diag::report());
+     assert!(r.console.contains("waarm64: test ok\n"), "test failed");
+     assert_eq!(r.steps, common::steps("alpine"));
+ }

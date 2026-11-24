@@ -321,6 +321,9 @@ impl Uop {
         let (rd_, rn_, rm_) = reads(k, w);
         let back = |v: u32, on: bool| if on && v == ZERO as u32 { 31 } else { v };
         let (d, n, m) = (back(d, rd_), back(n, rn_), back(m, rm_));
+        let (wd, wm) = writes(k);
+        let sunk = |v: u32, on: bool| if on && v == SINK as u32 { 31 } else { v };
+        let (d, m) = (sunk(d, wd), sunk(m, wm));
         let s = w as i32 as i64 as u64;
         let c = || b[i + w as usize].bits();
         let off16 = (w as i32 >> 16) as i64 as u64;
@@ -541,6 +544,9 @@ pub fn pack_into(b: &[Wide], out: &mut Vec<Uop>) {
         let (rd_, rn_, rm_) = reads(u.k, u.x);
         let zero = |v: u8, on: bool| if on && v == 31 { ZERO } else { v };
         let (d, n, m) = (zero(u.d, rd_), zero(u.n, rn_), zero(u.m, rm_));
+        let (wd, wm) = writes(u.k);
+        let sink = |v: u8, on: bool| if on && v == 31 { SINK } else { v };
+        let (d, m) = (sink(d, wd), sink(m, wm));
         out.push(match u.k {
             K::Generic => p(u.imm as u8, (u.imm >> 8) as u8, 0, u.x),
             K::Nop | K::Dmb | K::Zva => p(d, n, m, u.imm as u32),
@@ -1561,7 +1567,39 @@ pub const SWITCH: u32 = 3;
 /// The slot XZR's reads go to in [`hot`] ([`reads`]): `Cpu::zero`, as an index of
 /// the `Cpu`'s u64s.
 const ZERO: u8 = (core::mem::offset_of!(Cpu, zero) / 8) as u8;
-const _: () = assert!(core::mem::offset_of!(Cpu, zero) / 8 < 256);
+/// The slot XZR's writes go to ([`writes`]): `Cpu::sink`.
+const SINK: u8 = (core::mem::offset_of!(Cpu, sink) / 8) as u8;
+const _: () = assert!(core::mem::offset_of!(Cpu, sink) / 8 < 256);
+
+/// Which of a micro-op's `d` and `m` are registers only written, 31 being XZR:
+/// [`pack`] stores [`SINK`] for them, and [`hot`] writes them with [`wa`]. Not
+/// the flag setters, whose Rd is XZR too often (CMP, TST) to pay for a store
+/// that goes nowhere.
+fn writes(k: K) -> (bool, bool) {
+    match k {
+        K::Ldp => (true, true),
+        K::Ld
+        | K::LdO
+        | K::LdLit
+        | K::Lse
+        | K::Ldx
+        | K::Mrs
+        | K::Maddl
+        | K::Madd
+        | K::Extr
+        | K::Bit1
+        | K::Adc
+        | K::Div
+        | K::Mulh
+        | K::Ubfm
+        | K::Sbfm
+        | K::ShiftV
+        | K::Csel
+        | K::Adr
+        | K::Adrp => (true, false),
+        _ => (false, false),
+    }
+}
 
 /// Which of a micro-op's `d`, `n` and `m` are registers only read, 31 being XZR: [`pack`]
 /// stores [`ZERO`] for them, and [`hot`] reads them with [`ra`]. `x` is the micro-op's `x`
@@ -1596,6 +1634,13 @@ fn reads(k: K, x: u32) -> (bool, bool, bool) {
 fn ra(c: &Cpu, n: u32) -> u64 {
     // SAFETY: a register byte, or `ZERO`: a u64 of the `Cpu` (`pack`).
     unsafe { *(c as *const Cpu as *const u64).add(n as usize) }
+}
+
+/// A register [`writes`] names: no compare for XZR.
+#[inline(always)]
+fn wa(c: &mut Cpu, n: u32, v: u64) {
+    // SAFETY: a register byte, or `SINK`: a u64 of the `Cpu` (`pack`).
+    unsafe { *(c as *mut Cpu as *mut u64).add(n as usize) = v };
 }
 
 #[inline(always)]
@@ -1703,7 +1748,7 @@ pub fn hot<B: Fast, const RICH: bool>(
                     };
                     // SAFETY: `fast_in` found `size` bytes of RAM at `p`, in one range.
                     let v = unsafe { load_any(p, size) };
-                    wr(c, d, if sx { v as i32 as u64 } else { v });
+                    wa(c, d, if sx { v as i32 as u64 } else { v });
                 }
                 K::VImm => {
                     if !fp_on(c) {
@@ -1974,7 +2019,7 @@ pub fn hot<B: Fast, const RICH: bool>(
                             }
                         },
                     };
-                    wr(c, d, old);
+                    wa(c, d, old);
                 }
                 K::Ldx => {
                     let base = rsp(c, n);
@@ -1997,7 +2042,7 @@ pub fn hot<B: Fast, const RICH: bool>(
                             val: [v, 0],
                         };
                     }
-                    wr(c, d, v);
+                    wa(c, d, v);
                 }
                 K::Stx => {
                     let base = rsp(c, n);
@@ -2132,7 +2177,7 @@ pub fn hot<B: Fast, const RICH: bool>(
                     if n == 4 && c.pstate & 1 == 0 {
                         break 'run SLOW;
                     }
-                    wr(c, d, mrs(c, n, imm))
+                    wa(c, d, mrs(c, n, imm))
                 }
                 K::Msr => {
                     let (rt, a) = (d & 31, n | (o.m as u32) << 8);
@@ -2162,15 +2207,15 @@ pub fn hot<B: Fast, const RICH: bool>(
                         _ => c.pstate |= a as u64,
                     }
                 }
-                K::Maddl => wr(c, d, maddl(w, ra(c, n), ra(c, o.m as u32), rd(c, w & 31))),
-                K::Extr => wr(c, d, extr(w, ra(c, n), ra(c, o.m as u32))),
-                K::Bit1 => wr(c, d, bit1(w, ra(c, n))),
+                K::Maddl => wa(c, d, maddl(w, ra(c, n), ra(c, o.m as u32), rd(c, w & 31))),
+                K::Extr => wa(c, d, extr(w, ra(c, n), ra(c, o.m as u32))),
+                K::Bit1 => wa(c, d, bit1(w, ra(c, n))),
                 K::Adc => {
                     let v = adc(c, w, ra(c, n), ra(c, o.m as u32));
-                    wr(c, d, v)
+                    wa(c, d, v)
                 }
-                K::Div => wr(c, d, div(w, ra(c, n), ra(c, o.m as u32))),
-                K::Mulh => wr(c, d, mulh(w, ra(c, n), ra(c, o.m as u32))),
+                K::Div => wa(c, d, div(w, ra(c, n), ra(c, o.m as u32))),
+                K::Mulh => wa(c, d, mulh(w, ra(c, n), ra(c, o.m as u32))),
                 K::Bfm => wr(c, d, bfm(o.m as u32, w, rd(c, d), ra(c, n))),
                 K::Cas => {
                     let base = rsp(c, n);
@@ -2282,7 +2327,7 @@ pub fn hot<B: Fast, const RICH: bool>(
                 }
                 K::Ubfm => {
                     let sf = w & 1 != 0;
-                    wr(
+                    wa(
                         c,
                         d,
                         ror(trunc(ra(c, n), sf), o.m as u32 & 63, sf) & ubfm_mask(w),
@@ -2296,12 +2341,12 @@ pub fn hot<B: Fast, const RICH: bool>(
                     } else {
                         sext(src, s + 1) << ((if sf { 64 } else { 32 } - rr) & 63)
                     };
-                    wr(c, d, trunc(v, sf));
+                    wa(c, d, trunc(v, sf));
                 }
                 K::ShiftV => {
                     let sf = w & 4 != 0;
                     let amt = (ra(c, o.m as u32) & if sf { 63 } else { 31 }) as u32;
-                    wr(c, d, shift(ra(c, n), w & 3, amt, sf));
+                    wa(c, d, shift(ra(c, n), w & 3, amt, sf));
                 }
                 K::Csel => {
                     let v = if holds(w >> 16, c.nzcv) {
@@ -2315,7 +2360,7 @@ pub fn hot<B: Fast, const RICH: bool>(
                             _ => y.wrapping_neg(),
                         }
                     };
-                    wr(c, d, trunc(v, w >> 6 & 1 != 0));
+                    wa(c, d, trunc(v, w >> 6 & 1 != 0));
                 }
                 K::Ccmp => {
                     c.nzcv = if holds(w >> 16, c.nzcv) {
@@ -2339,10 +2384,10 @@ pub fn hot<B: Fast, const RICH: bool>(
                     } else {
                         a.wrapping_add(p)
                     };
-                    wr(c, d, trunc(v, w >> 6 & 1 != 0));
+                    wa(c, d, trunc(v, w >> 6 & 1 != 0));
                 }
-                K::Adr => wr(c, d, pc.wrapping_add(w as i32 as i64 as u64)),
-                K::Adrp => wr(
+                K::Adr => wa(c, d, pc.wrapping_add(w as i32 as i64 as u64)),
+                K::Adrp => wa(
                     c,
                     d,
                     (pc & !0xfff).wrapping_add((w as i32 as i64 as u64) << 12),
@@ -2430,7 +2475,7 @@ pub fn hot<B: Fast, const RICH: bool>(
                             1 => sext(v, 8 * bytes),
                             _ => sext(v, 8 * bytes) as u32 as u64,
                         };
-                        wr(c, d, v);
+                        wa(c, d, v);
                     }
                     if let Some(wb) = wb {
                         wsp(c, n, wb);
@@ -2486,6 +2531,8 @@ pub fn hot<B: Fast, const RICH: bool>(
         }
     };
     (r.u, r.end, r.pc, r.key, r.bpc, r.done) = (u, end, pc, key, bpc, r.left - rest);
+    // What [`wa`] left doesn't outlive the loop: outside it a `Cpu` is registers.
+    c.sink = 0;
     if status != SLOW {
         c.pc = pc;
     }
@@ -2726,7 +2773,7 @@ fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
         let v = unsafe {
             mem::load_aligned(p, bytes).unwrap_or_else(|| mem::load_misaligned(p, bytes))
         };
-        wr(c, d, v);
+        wa(c, d, v);
         true
     }
 }
@@ -2772,8 +2819,8 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
         // aligned or not (a misaligned pair is owed no atomicity without LSE2).
         let (v1, v2) = unsafe { (load_any(p1, size), load_any(p2, size)) };
         let ext = |v: u64| if o.w & 16 != 0 { v as i32 as u64 } else { v };
-        wr(c, rt, ext(v1));
-        wr(c, rt2, ext(v2));
+        wa(c, rt, ext(v1));
+        wa(c, rt2, ext(v2));
     } else {
         // A store writes only its own bytes: misaligned, the slow path's.
         if p1 as usize & (size as usize - 1) != 0 {

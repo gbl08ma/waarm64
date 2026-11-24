@@ -573,7 +573,11 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
   path (one may write only its own bytes: "Tried and not kept"). PRFM by register is a `Nop`, as the other PRFMs.
   A register only read needs no compare for XZR: `pack` stores `Cpu::zero`'s slot for it (`reads`),
   `hot` reads it with a plain load and `Uop::wide` maps it back: +3.1% on Alpine's boot and the user-mode guest
-  (`bench/interp/REPORT.md` "XZR's reads without a compare").
+  (`bench/interp/REPORT.md` "XZR's reads without a compare"). A register only written (`writes`: loads, LDP's two,
+  the bitfield, shift, multiply and select results, ADR/ADRP, MRS, LSE's old value; not the flag setters, whose Rd is
+  XZR in most CMPs and TSTs) goes to `Cpu::sink`'s slot, which `hot` stores to with no compare and zeroes when it
+  returns: 27% of Alpine's dispatches lose a compare and a branch for 0.17% whose store goes nowhere; the small guests
+  +0.5-0.7% on the Mac, the browser's workloads even (`bench/interp/REPORT.md` "PERF loop 70").
 - **The structure loads and stores** (LD1–LD4, ST1–ST4, LD1R–LD4R: generic micro-ops, so the interpreter's own
   code, `interp::ldst_fp`) take `Bus::fast` for the whole transfer: when it's RAM in one page, the multiple forms move
   8 bytes an access and (de-)interleave the elements in a buffer, and the single forms' elements go through the one
@@ -767,9 +771,12 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
     FMINNM/FMAXNM 0.44 M; FCVTZS/U ~0.4 M; FRINTx ~0.4 M; FMADD 0.17 M): under ~0.05% each. They matter to the FP
     guest (its exits are 21% of its steps: FMLA by element 7.4 M, LDR (register) 10 M a placement), not to a browser.
   - *Literal loads in the lean copy:* 2.5 M, ~0.1%; inline they lost (above), and choosing the rich copy ran even.
-- **XZR's writes through a sink slot,** as its reads go through `Cpu::zero` (`bench/interp/REPORT.md` "XZR's writes without
-  a compare"): nothing past noise on the boots, the flat guest −23%. A shared TLB probe for pairs of LdOs and StOs
-  lost it −19.5% the same way: a change to `hot` that reads as smaller can still cross what V8's register allocation holds.
+- **One TLB probe for a pair of LdOs or StOs off one base** (of one kind and size, the first not loading the base,
+  spanning at most 256 bytes): lost in the dev VM (−19.5% on the flat guest, 2026-10-30) and again on the Mac (PERF
+  loop 70: −0.5 to −1.8% on the small guests, −0.35% on Alpine's boot; `hot` ~760 bytes larger a copy). Such pairs
+  are 0.41% of Alpine's dispatches, so a probe saved on each is worth ~0.1% at best. XZR's writes through a sink slot
+  lost in the VM the same way (−23% flat, 2026-10-31) and are kept since loop 70 (above): the VM's verdicts on `hot`'s
+  code shape don't carry to the Mac.
 - **LDTR and STTR as handlers** (EL0's TLB array taken in the single-register handler; loop 13): Alpine's boot
   1-4% slower in Node, the branch costing more than the uaccess loads it took off the slow path.
 - **One decoded-block store for every table** (loop 7's design, not built): decoding is ~0.6% of a vCPU in Firefox's
