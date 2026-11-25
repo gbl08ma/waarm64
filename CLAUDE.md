@@ -83,7 +83,8 @@ benchmarks): [docs/devenv.md](docs/devenv.md) "Commands" and [docs/benchmarking.
 **CI runs in tiers** ([docs/testing.md](docs/testing.md) "Tiers"): `scripts/ci-fast.sh` after every change; before
 a push, `scripts/ci.sh` and the topic scripts of the areas the branch touched (docs/testing.md's change table, which
 `ci-fast.sh` prints at its end: e.g. the network → `ci-net.sh`, Vulkan → `ci-deqp-vk.sh`); at a track's end the whole
-set. A piece of work is done when its push tier passed. A handover says which tier each commit passed. A new file goes
+set. `ci.sh` runs all the fast lane does: going straight to the push tier, skip the fast lane and take the topic
+scripts from `scripts/ci-fast.sh --dry-run`. A piece of work is done when its push tier passed. A handover says which tier each commit passed. A new file goes
 in an area of `tests/areas.ts` (the map's check fails otherwise). **Exception:** a change that only edits docs needs no
 CI run (`tools/i18n-check.ts` if it changes a `(ui:` quote).
 

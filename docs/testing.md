@@ -24,7 +24,8 @@ the changes (the commits since the merge base with the upstream, the index, the 
   importing a changed test helper. Reduced: no `WAARM64_DISTROS` (no Alpine), no `WAARM64_LONG_TESTS`,
   `WAARM64_PARALLEL_RUNS=1`, `WAARM64_JIT_DIFF=512` (8× fewer words a class).
 - It ends naming the push tier for the changes ("Before a push: scripts/ci.sh scripts/ci-net.sh") and the track end's
-  additions, and appends a line to `bench/results/local/ci-history.jsonl` (the changes, areas, files run and failed):
+  additions (`--dry-run` names them without running anything: `ci.sh` runs all the fast lane does, unreduced, so a
+  change going straight to its push tier skips the fast lane), and appends a line to `bench/results/local/ci-history.jsonl` (the changes, areas, files run and failed):
   a `ci.sh` failure on a change whose fast lane passed is a miss of the map, to fix in it.
 - A change to the dependencies, the toolchain or the build's configuration (`build-rust`, `build-js`) runs every
   heavy file and every crate, and its tier is `ci.sh`. A file in no area runs the smoke set; the map's check prevents
