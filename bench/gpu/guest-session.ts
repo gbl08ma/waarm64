@@ -97,6 +97,17 @@ awk -v m=$2 'NR==FNR&&/^cpu/{for(i=2;i<=9;i++)a[$1,i]=$i;next} /^cpu/{t=0;for(i=
 echo $2-done
 `;
 
+/** A wait ended because the page's machine stopped for good (`document.body.dataset.state` crashed or failed). */
+export class MachineStopped extends Error {
+  readonly state: string;
+  readonly pageMessage: string;
+  constructor(text: string, state: string, pageMessage: string) {
+    super(text);
+    this.state = state;
+    this.pageMessage = pageMessage;
+  }
+}
+
 export async function openSession(o: SessionOptions) {
   // A kept profile (WAARM64_PROFILE, below) keeps its storage only for the same origin: a fixed port then (WAARM64_PORT).
   const server = await startServer(REMOTE_CDP ? remotePort() : process.env.WAARM64_PROFILE ? Number(process.env.WAARM64_PORT ?? 8197) : 0);
@@ -211,13 +222,30 @@ export async function openSession(o: SessionOptions) {
   }, Number(process.env.MEMLOG) * 1000) : undefined;
 
   const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
-  const shows = (re: RegExp, ms = 60_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 200 })
-    .catch(async (e) => {
-      await page.screenshot({ path: `${o.out}/fail.png` });
-      // The serial console's whole output (the page's log), for what scrolled off: a hung task's stack, say.
-      writeFileSync(`${o.out}/serial.txt`, await page.evaluate(() => (window as unknown as { __serialLog?: () => string }).__serialLog?.() ?? ''));
-      throw new Error(`${e}; the terminal shows: ${await terminal()} (all of it: ${o.out}/serial.txt)`);
-    });
+  const keepFailure = async () => {
+    await page.screenshot({ path: `${o.out}/fail.png` }).catch(() => {});
+    // The serial console's whole output (the page's log), for what scrolled off: a hung task's stack, say.
+    writeFileSync(`${o.out}/serial.txt`, await page.evaluate(() => (window as unknown as { __serialLog?: () => string }).__serialLog?.() ?? '').catch((e) => String(e)));
+  };
+  // A wait on the terminal also ends when the machine stops for good (crashed: a lost WebGL context, say; or failed),
+  // with a MachineStopped error carrying the page's message: else the run would wait out its whole limit (a crash on
+  // D3D11 3.5 minutes into dEQP-GLES3 left a run waiting for 4.5 hours).
+  const shows = async (re: RegExp, ms = 60_000) => {
+    const stopped = await page.waitForFunction((src) => {
+      const state = document.body.dataset.state;
+      if (state === 'crashed' || state === 'failed') return state;
+      return new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? '') && 'shown';
+    }, re.source, { timeout: ms, polling: 200 })
+      .then((h) => h.jsonValue())
+      .catch(async (e) => {
+        await keepFailure();
+        throw new Error(`${e}; the terminal shows: ${await terminal().catch((x) => `(unreadable: ${x})`)} (all of it: ${o.out}/serial.txt)`);
+      });
+    if (stopped === 'shown') return;
+    const message = await page.evaluate(() => document.getElementById('message-text')?.textContent?.trim() ?? '').catch(() => '');
+    await keepFailure();
+    throw new MachineStopped(`the machine ${stopped}: ${message || '(no message)'} (the serial log: ${o.out}/serial.txt)`, String(stopped), message);
+  };
   const onSerial = async (text: string) => { await page.locator('.xterm').click(); await page.keyboard.type(text, { delay: 5 }); };
   /** Many lines on the serial terminal: pasted (typing kilobytes takes minutes), each line with an Enter (insertText sends none for a `\n`). */
   const pasteSerial = async (text: string) => {

@@ -429,6 +429,12 @@ the draw's start into it), and Mesa never sets stream output's append mask (a se
 - **Textures** by target (1D and rectangles as 2D, 1D arrays as 2D arrays, cubes, 3D, 2D arrays); multisampled and
   stencil-only resources are renderbuffers. A texture of a format WebGL can't render to (RGB9_E5, the SNORMs) keeps
   its uploaded texels on the CPU for copies from it; a compressed one its blocks (for snapshots).
+- **Samplers** are WebGL2 sampler objects made from the guest's sampler state, its LOD range as it is (vrend's way)
+  even for a minifying filter without mipmaps: GLES picks the magnifying filter where the LOD after that clamp is at
+  most 0, and a MAX_LOD of 0 (what the renderer set there before) magnified everything on ANGLE's D3D11, whose
+  MaxLOD takes it as it is, where ANGLE on SwiftShader's Vulkan still minified (a WebGL2 probe, no emulator: 28 of 46
+  filter and LOD rows wrong on D3D11 at MAX_LOD 0, none at the default; dEQP-GLES2 `texture.filtering` and
+  `texture.vertex` nearest_linear and linear_nearest, 84 cases, failed on D3D11 alone).
 - **No BGRA and no texture swizzle in WebGL2**: a format is stored as its bytes are (`B8G8R8X8` is an RGBA8 texture
   holding B, G, R, X) and swizzled in the generated shaders, on sampling (the format's swizzle composed with the
   sampler view's) and on writing (the render target's stored order, the clear and blend colors and the color mask go
@@ -587,6 +593,35 @@ following vrend's conventions:
   `isnan`/`!isnan`, since Metal's fast math folds `x != x` to false; an integer immediate whose bits aren't a normal
   float is `uintBitsToFloat(K ^ u_zero)` (`u_zero` a uniform never set), since ANGLE folds a constant expression and
   its Metal backend writes a NaN as the canonical one (-1 came back as 0x7fc00000);
+- **no GLSL `sign()` of a float** (found on ANGLE over D3D11): SSG is `ssg()`, two comparisons, since ANGLE writes
+  `sign` as HLSL's, which returns an int, and `floatBitsToUint` of it (a register's store) took the int's bits (1 a
+  denormal, -1 a NaN). Mesa lowers `asin`, `acos` and a scalar's `normalize` through SSG, so dEQP-GLES2's `sign`,
+  `asin`, `acos`, `normalize` and the random shaders that use them drew nonsense on D3D11 and right everywhere else;
+- **a normal float's bits copied into a register are no constant** (D3D11 again): a MOV or UCMP of an immediate
+  writes such components as `K ^ u_zero`. Float arithmetic on two constants that reached registers as bits came out
+  wrong there (a lane of `(-1.5, 4.0, …) + (5.0, -3.5, …) + (…, -0.5, …)` made of constants alone lost both register
+  constants: dEQP-GLES2 `shaders.random`'s scalar_conversion, conditionals and basic_expression; with `floatBitsToUint`
+  of float literals too, so it is the folding, not the literals). A lane mixed with anything not constant was right;
+  small integers (counters, indices: a float's denormals) and integer operations' immediates stay constants;
+- **on D3D11, a vertex shader's shadow lookup at an explicit level is the implicit one** (`Quirks.d3d11`, from the
+  unmasked renderer string; the only translation that depends on the backend): ANGLE writes `textureLod` (and
+  `textureLodOffset`, Mesa's `TEX_LZ`) of a shadow sampler in a vertex shader as an instruction vs_5_0 lacks (only
+  SampleCmpLevelZero compares there), the program links with "error X4532: cannot map expression to vs_5_0 instruction
+  set" in its log, and the first draw fails to compile its vertex shader for the draw's input layout and **loses the
+  context**: Chromium's GPU process exits and the machine crashes (dEQP-GLES3's `texture_functions`
+  `*.sampler2dshadow_vertex`, 3.5 minutes into the list, WARP the same). `texture` there (level 0) compiles; a level
+  above 0 reads level 0, a failed case on D3D11 instead of a lost machine;
+- **a derivative goes into a vec4 of its own** (`vec4 ddN = dFdx(…);`, then read): in a loop whose count isn't a
+  constant ANGLE's D3D11 backend writes a derivative as `(x, 0.0)`, a scalar (GLES leaves it undefined there), so
+  `floatBitsToUint(dFdx(v)).xy` was "error X3018: invalid subscript 'xy'" in its HLSL (`WEBGL_debug_shaders` shows
+  it), which ANGLE reports only in the program's log with the status true (dEQP-GLES3 `derivate`'s uniform_loop
+  cases);
+- **on D3D11, a program D3D's compiler refused is no program** (the renderer's `link`): ANGLE links a program whose
+  HLSL fxc rejected (`error X…` in the program's log, the status true) and loses the context at the draw that
+  compiles it again for its vertex or target layout (the GPU process exits, the machine crashes), so whether a machine
+  crashed depended on what was bound before. Such a program draws nothing and says why. It still catches an fxc
+  internal error in some derivative cases ("X8000: Invalid Bytecode: Abs modifier not allowed"); a program whose
+  draw-time compile alone fails (its link-time one passing) it can't see;
 - what GLES 3.0 lacks is refused with a reason, and none of it is advertised: images, buffers and atomics, `IMUL_HI`,
   cube arrays and buffer textures, 64-bit types, indirect inputs, outputs and constant-buffer selection, geometry,
   tessellation and compute stages.
@@ -1189,6 +1224,18 @@ Worth not re-discovering:
   (`bench/gpu/filter-probe.ts`, no emulator involved): mixed `nearest_linear`/`linear_nearest` filters differ by a few
   pixels near the switch. Metal's line rasterization and one invariant loop (`shaders.invariance.lowp.loop_2`) differ
   too. None of it is ours to fix.
+- **ANGLE on D3D11 (Chrome on Windows; the Windows VM's RTX 3070, WARP alike) differs from SwiftShader in ways that
+  are the translator's to avoid** ("The translator": integer bits through floats, `sign()`, constants in registers,
+  derivatives' swizzles, vertex shadow lookups at a level, programs fxc refused); each passed everywhere else. A
+  context loss there is Chromium's GPU process exiting (`exit_code=34` in Chrome's log with `--enable-logging=stderr`,
+  after ANGLE's "Internal D3D11 error … Error compiling dynamic vertex/pixel executable"): the machine crashes. ANGLE
+  reports fxc's errors for a linked program only in its log; `WEBGL_debug_shaders` gives the HLSL. What still fails
+  after the fixes (2026-11-25: GLES2 8 of 17,035, GLES3 154 of 44,476, against 204 and a crash before) is ANGLE's
+  D3D11, most of it in ANGLE's own dEQP expectations for D3D11: invariance's common_subexpression, polygon_offset's
+  units, texture_functions' texturesize and shadow lookups at a level or gradient, fbo.blit.rect's out_of_bounds,
+  rbo_multisample_max lines; derivatives in loops (ANGLE writes a derivative in a loop it can't unroll as 0, and
+  Mesa's TGSI keeps no loop count constant, so dEQP's static_loop cases are such loops too); switch's dynamic cases,
+  by a hair over the threshold. Not explained yet: GLES3 `atan2` mediump (8 cases, large differences).
 - Headed and headless Chromium on the Mac give the same frame rates (no headless throttling).
 - **Headless WebGPU in the dev VM** needs `--enable-unsafe-webgpu` and, to present from a worker's `OffscreenCanvas`,
   `--enable-features=Vulkan --use-angle=swiftshader --use-gl=angle`; WebGPU's `writeBuffer`/`writeTexture` and WebGL's

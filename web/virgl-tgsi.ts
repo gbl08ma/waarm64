@@ -473,6 +473,12 @@ function operand(ins: Instr, k: number): Operand {
 /** An instruction's two sources are the same value (register, swizzle, modifiers). */
 const same = (ins: Instr) => ins.src.length === 2 && JSON.stringify(ins.src[0]) === JSON.stringify(ins.src[1]);
 
+/** The bits are a normal float's (not 0, a denormal, an infinity or a NaN). */
+function isNormalFloat(bits: number) {
+  const e = (bits >>> 23) & 0xff;
+  return e !== 0 && e !== 0xff;
+}
+
 function floatLiteral(bits: number) {
   const f = floatOf(bits);
   // Not a normal float (an integer's bits, most often): kept as bits, so they survive into an integer cast. Not a
@@ -545,13 +551,30 @@ const declareVarying = (v: Varying, dir: 'in' | 'out') =>
     ? [`${qualifier(v)}${dir} highp ivec4 vf_${v.name.slice(2)};`, `uvec4 ${v.name} = uvec4(0u);`]
     : [`${qualifier(v)}${dir} vec4 ${v.name};`];
 
+/**
+ * What the browser's WebGL2 can't take that the program is changed for (the renderer's, from its renderer string).
+ * `d3d11`: ANGLE's D3D11 backend. Its vertex shaders have no shadow lookup at an explicit level of detail (vs_5_0
+ * only compares at level 0, SampleCmpLevelZero): `textureLod` of a shadow sampler in a vertex shader links with
+ * "error X4532: cannot map expression to vs_5_0 instruction set" in its log, and the first draw loses the context
+ * (the GPU process exits: the machine crashed, dEQP-GLES3 texture_functions' sampler2dshadow_vertex cases). Such a
+ * lookup is the implicit one, `texture` (level 0 in a vertex shader), which it compiles.
+ */
+export type Quirks = { d3d11?: boolean };
+
+/** This browser's quirks, from its unmasked renderer string (ANGLE names its backend there: "… Direct3D11 …, D3D11)"). */
+export function quirksOf(gl: WebGL2RenderingContext): Quirks {
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  return { d3d11: /Direct3D11|D3D11\)?$/.test(renderer) };
+}
+
 /** Generates the program for a vertex and a fragment shader under `key`. */
-export function generate(vs: Tgsi, fs: Tgsi, key: ProgramKey): ProgramLayout {
+export function generate(vs: Tgsi, fs: Tgsi, key: ProgramKey, quirks: Quirks = {}): ProgramLayout {
   if (vs.stage !== 'VERT' || fs.stage !== 'FRAG')
     throw new TgsiError(`a program is a vertex and a fragment shader, not ${vs.stage} and ${fs.stage}`);
   const varyings = fsVaryings(fs, key);
-  const v = new Gen(vs, 'vs', key, varyings);
-  const f = new Gen(fs, 'fs', key, varyings);
+  const v = new Gen(vs, 'vs', key, varyings, quirks);
+  const f = new Gen(fs, 'fs', key, varyings, quirks);
   const vsText = v.emit();
   const fsText = f.emit();
   return {
@@ -596,8 +619,11 @@ class Gen {
   readonly key: ProgramKey;
   readonly varyings: Map<string, Varying>;
 
-  constructor(t: Tgsi, stage: 'vs' | 'fs', key: ProgramKey, varyings: Map<string, Varying>) {
-    [this.t, this.stage, this.key, this.varyings] = [t, stage, key, varyings];
+  readonly quirks: Quirks;
+  /** Derivatives so far (each into a vec4 of its own, `ddN`). */
+  private derivs = 0;
+  constructor(t: Tgsi, stage: 'vs' | 'fs', key: ProgramKey, varyings: Map<string, Varying>, quirks: Quirks = {}) {
+    [this.t, this.stage, this.key, this.varyings, this.quirks] = [t, stage, key, varyings, quirks];
     this.writesAllCbufs = t.props.get('FS_COLOR0_WRITES_ALL_CBUFS') === '1';
     for (const d of t.decls) {
       for (let k = d.first; k <= d.last; k++) {
@@ -847,19 +873,27 @@ class Gen {
     }
   }
 
-  /** A source operand as a 4-vector of type `ty` (swizzled, cast, with its modifiers). */
-  private src(op: Operand, ty: Ty): string {
+  /**
+   * A source operand as a 4-vector of type `ty` (swizzled, cast, with its modifiers). `copy`: the operand is copied as
+   * bits into a register (MOV, UCMP), where an immediate component that is a normal float's bits is made no constant
+   * (`^ u_zero`): ANGLE's D3D11 backend misfolds float arithmetic on two such constants once they are in registers
+   * (4.0 + -0.5 came out 0: dEQP-GLES2 shaders.random's scalar_conversion, conditionals, basic_expression). Small
+   * integers (loop counters, indices: a float's denormals) stay constants.
+   */
+  private src(op: Operand, ty: Ty, copy = false): string {
     let e: string;
     if (op.file === 'IMM' && !op.ind) {
       const imm = this.t.imms[op.index];
       if (!imm) throw new TgsiError(`IMM[${op.index}] isn't declared`);
       const comps = op.swizzle.map((k) => imm.bits[k] ?? 0);
+      const opaque = (b: number, lit: string) =>
+        copy && isNormalFloat(b) ? `${lit} ^ ${ty === 'u' ? 'u_zero' : 'int(u_zero)'}` : lit;
       e =
         ty === 'f'
           ? `vec4(${comps.map(floatLiteral).join(', ')})`
           : ty === 'u'
-            ? `uvec4(${comps.map((b) => `${b >>> 0}u`).join(', ')})`
-            : `ivec4(${comps.map((b) => String(b | 0)).join(', ')})`;
+            ? `uvec4(${comps.map((b) => opaque(b, `${b >>> 0}u`)).join(', ')})`
+            : `ivec4(${comps.map((b) => opaque(b, String(b | 0))).join(', ')})`;
     } else {
       const sw = op.swizzle.join('') === '0123' ? '' : '.' + op.swizzle.map((k) => COMP[k]).join('');
       e = cast(`${this.regName(op)}${sw}`, this.storage(op), ty);
@@ -918,7 +952,7 @@ class Gen {
         if (ins.sat || sop.neg || sop.abs) return f(s(0));
         // A bit copy: in the source's own type, so integers keep their bits.
         const ty: Ty = sop.file === 'IMM' && !sop.ind ? (d ? this.storage(d) : 'f') : this.storage(sop);
-        return this.dst(ins, s(0, ty), ty);
+        return this.dst(ins, this.src(sop, ty, true), ty);
       }
       case 'ADD':
         return f(`${s(0)} + ${s(1)}`);
@@ -973,14 +1007,26 @@ class Gen {
         return f(`trunc(${s(0)})`);
       case 'ABS':
         return f(`abs(${s(0)})`);
+      // Not GLSL's sign(): ANGLE's D3D11 backend writes it as HLSL's, which returns an int, and floatBitsToUint of it
+      // (what a uvec4 register stores) took the int's bits: 1 a denormal, -1 a NaN (dEQP-GLES2 sign, and through
+      // Mesa's lowering asin, acos and a scalar's normalize).
       case 'SSG':
-        return f(`sign(${s(0)})`);
+        this.helper(
+          'ssg',
+          'vec4 ssg(vec4 x) { return vec4(greaterThan(x, vec4(0.0))) - vec4(lessThan(x, vec4(0.0))); }',
+        );
+        return f(`ssg(${s(0)})`);
+      // Into a vec4 of its own first: in a loop whose count isn't constant ANGLE's D3D11 backend writes a derivative
+      // as `(x, 0.0)`, a scalar (GLES leaves it undefined there), so a swizzle of it is "error X3018: invalid subscript"
+      // in its HLSL, which surfaces only at the draw, losing the context (dEQP-GLES3 derivate's uniform_loop cases).
       case 'DDX':
       case 'DDX_FINE':
-        return f(`dFdx(${s(0)})`);
       case 'DDY':
-      case 'DDY_FINE':
-        return f(`dFdy(${s(0)})`);
+      case 'DDY_FINE': {
+        const n = `dd${this.derivs++}`;
+        this.line(`vec4 ${n} = ${ins.op.startsWith('DDX') ? 'dFdx' : 'dFdy'}(${s(0)});`);
+        return f(n);
+      }
       case 'XPD':
         return f(`vec4(cross(${s(0)}.xyz, ${s(1)}.xyz), 1.0)`);
       case 'DST':
@@ -1107,7 +1153,16 @@ class Gen {
       case 'UCMP': {
         // A bit select: in the destination's storage type.
         const ty = this.storage(ins.dst[0]);
-        return this.dst(ins, this.select(`notEqual(${s(0, 'u')}, uvec4(0u))`, s(1, ty), s(2, ty), ty), ty);
+        return this.dst(
+          ins,
+          this.select(
+            `notEqual(${s(0, 'u')}, uvec4(0u))`,
+            this.src(operand(ins, 1), ty, true),
+            this.src(operand(ins, 2), ty, true),
+            ty,
+          ),
+          ty,
+        );
       }
       case 'ARL':
         return i(`ivec4(floor(${s(0)}))`);
@@ -1347,13 +1402,17 @@ class Gen {
     const offs = ins.offsets[0] ? this.offsetLiteral(ins.offsets[0], gl === '3D' ? 3 : 2) : '';
     const off = (fn: string) => (offs ? `${fn}Offset` : fn);
     const withRef = (cc: string) => (ref ? `vec${dims + 1}(${cc}, ${ref})` : cc);
+    // D3D11's vertex shaders compare at level 0 only (`Quirks`): an explicit level there is the implicit lookup.
+    const implicitLod = !!ref && this.stage === 'vs' && !!this.quirks.d3d11;
     switch (ins.op) {
       case 'TEX':
       case 'TEX2':
         call = `${off('texture')}(${name}, ${withRef(coord)}${offs ? `, ${offs}` : ''})`;
         break;
       case 'TEX_LZ':
-        call = `${off('textureLod')}(${name}, ${withRef(coord)}, 0.0${offs ? `, ${offs}` : ''})`;
+        call = implicitLod
+          ? `${off('texture')}(${name}, ${withRef(coord)}${offs ? `, ${offs}` : ''})`
+          : `${off('textureLod')}(${name}, ${withRef(coord)}, 0.0${offs ? `, ${offs}` : ''})`;
         break;
       case 'TXP': {
         // Projective: divide by w ourselves (textureProj doesn't take arrays, cubes or our 1D stand-ins).
@@ -1376,7 +1435,9 @@ class Gen {
       case 'TXL':
       case 'TXL2': {
         const lod = ins.op === 'TXL2' ? `${this.src(operand(ins, 1), 'f')}.x` : `${cv}.w`;
-        call = `${off('textureLod')}(${name}, ${withRef(coord)}, ${lod}${offs ? `, ${offs}` : ''})`;
+        call = implicitLod
+          ? `${off('texture')}(${name}, ${withRef(coord)}${offs ? `, ${offs}` : ''})`
+          : `${off('textureLod')}(${name}, ${withRef(coord)}, ${lod}${offs ? `, ${offs}` : ''})`;
         break;
       }
       case 'TXD': {

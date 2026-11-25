@@ -278,6 +278,35 @@ test('virgl on WebGL2: integers keep their bits through the registers and a flat
   assert.deepEqual(r, { error: null, pixel: [0x45, 0x2bb + 0x48, 0x09, 0x3ff] });
 });
 
+test('virgl on WebGL2: SSG\'s result keeps a float\'s bits in both stages (ANGLE\'s D3D11 read sign() as HLSL\'s int: dEQP-GLES2 sign, asin, acos, normalize)', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { signs(): { error: unknown; pixel: number[] } } }).virgl.signs());
+  // sign(-2.5, 0, 3, -0.5) as float bits: -1, 0, 1, -1.
+  assert.deepEqual(r, { error: null, pixel: [0xbf800000, 0, 0x3f800000, 0xbf800000] });
+});
+
+test('virgl on WebGL2: float constants copied into registers keep their values in arithmetic (ANGLE\'s D3D11 dropped them where a lane was constants alone: dEQP-GLES2 shaders.random)', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { constantRegisters(): { error: unknown; pixel: number[] } } }).virgl.constantRegisters());
+  // (-1.5, 4, 1.5, 0.25) + (5, -3.5, 6, 1) + (0.625, -0.5, -7, 1): 4.125, 0, 0.5, 2.25 as float bits.
+  assert.deepEqual(r, { error: null, pixel: [0x40840000, 0, 0x3f000000, 0x40100000] });
+});
+
+test('virgl on WebGL2: a vertex shader\'s shadow lookup at an explicit level draws and compares (ANGLE\'s D3D11 lost the context: dEQP-GLES3 texturelod.sampler2dshadow_vertex crashed the machine)', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { vertexShadowLod(): { error: unknown; pixel: number[]; lost: boolean } } }).virgl.vertexShadowLod());
+  // 0.5 <= 0.75 passes: the lookup is 1 (as float bits), then (0, 0, 1) as TGSI's shadow result's other components.
+  assert.deepEqual(r, { error: null, pixel: [0x3f800000, 0, 0, 0x3f800000], lost: false });
+});
+
+test('virgl on WebGL2: a program D3D\'s compiler refused is no program on D3D11, where drawing with it could lose the context (dEQP-GLES3 derivate crashed the machine)', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { refusedProgram(): { linked: boolean; d3d11: boolean; refused: number; lost: boolean } } }).virgl.refusedProgram());
+  assert.deepEqual(r, r.d3d11 ? { linked: false, d3d11: true, refused: 1, lost: false } : { linked: true, d3d11: false, refused: 0, lost: false });
+});
+
+test('virgl on WebGL2: a derivative in a loop of a constant buffer\'s count draws (ANGLE\'s D3D11 made it a scalar and lost the context: dEQP-GLES3 derivate uniform_loop)', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { loopDerivative(): { d3dErrors: string[]; error: unknown; pixel: number[] } } }).virgl.loopDerivative());
+  // The loop runs 0 times: (0, 0) and the rest of TGSI's register as it was set (0), stored BGRA as the key's swizzle.
+  assert.deepEqual(r, { d3dErrors: [], error: null, pixel: [0, 0, 0, 0] });
+});
+
 test('virgl on WebGL2: stream output captures interleaved, separate and mixed, appends, stops at a full buffer, counts what it wrote', async () => {
   const r = await page.evaluate(() => (window as unknown as { virgl: { streamOut(): { appended: number[]; emitted: number; overflowed: number[]; separate: number[][]; mixed: number[][]; log: string[]; glError: number } } }).virgl.streamOut());
   assert.deepEqual([r.log, r.glError], [[], 0]);

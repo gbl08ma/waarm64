@@ -1,5 +1,5 @@
 // What tests/virgl-browser.test.ts runs in Chromium: the shader corpus compiled on WebGL2, traces replayed.
-import { generate, parseTgsi, type ProgramKey } from '../../web/virgl-tgsi.ts';
+import { generate, parseTgsi, quirksOf, type ProgramKey } from '../../web/virgl-tgsi.ts';
 
 /** Compiles every fragment shader of the corpus with the vertex shader before it; returns the failures. */
 export function compileCorpus(corpus: string) {
@@ -554,6 +554,218 @@ IMM[0] UINT32 {255, 1023, 10, 0}
   gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, 1);
   const px = new Uint32Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, px);
   return { error: gl.getError() || null, pixel: Array.from(px) };
+}
+
+/**
+ * A vertex and fragment shader pair from TGSI drawn over a 1×1 RGBA32UI color buffer (so the pixel is the bits the
+ * fragment shader wrote), attribute 0 the constant `a0`, attribute 1 the position. Returns the pixel.
+ */
+function drawBits(vsText: string, fsText: string, a0: number[]) {
+  const gl = new OffscreenCanvas(1, 1).getContext('webgl2')!;
+  const p = generate(parseTgsi(vsText), parseTgsi(fsText), { attribs: ['f', 'f'], samplers: { vs: [], fs: [] }, cbufs: [{ type: 'u', write: [0, 1, 2, 3] }] });
+  const compile = (type: number, src: string) => { const sh = gl.createShader(type)!; gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+  const prog = gl.createProgram()!;
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, p.vs)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, p.fs)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return { error: gl.getProgramInfoLog(prog), pixel: [] };
+  gl.useProgram(prog);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_adjy'), 1);
+  gl.uniform2f(gl.getUniformLocation(prog, 'u_adjz'), 1, 0);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, 1, 1);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, 1, 1);
+  gl.vertexAttrib4f(0, a0[0], a0[1], a0[2], a0[3]);
+  const pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Uint32Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, px);
+  return { error: gl.getError() || null, pixel: Array.from(px) };
+}
+
+/**
+ * TGSI's SSG on WebGL2, in both stages: a vertex shader's sign of an attribute (-2.5, 0, 3, -0.5) into a flat varying,
+ * the fragment shader's sign of that. ANGLE's D3D11 backend writes GLSL's sign() as HLSL's, which returns an int, and
+ * floatBitsToUint of it took the int's bits. Returns the pixel (the result's bits).
+ */
+export function signs() {
+  return drawBits(
+    'VERT\nDCL IN[0]\nDCL IN[1]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\nDCL TEMP[0]\n  0: SSG TEMP[0], IN[0]\n  1: MOV OUT[1], TEMP[0]\n  2: MOV OUT[0], IN[1]\n  3: END',
+    'FRAG\nDCL IN[0], GENERIC[0], CONSTANT\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: SSG TEMP[0], IN[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END',
+    [-2.5, 0, 3, -0.5],
+  );
+}
+
+/**
+ * Float constants copied into registers as bits, then added (dEQP-GLES2 shaders.random's scalar_conversion.74): the
+ * lanes made of constants alone came out without them on ANGLE's D3D11 backend (4.0 + -3.5 + -0.5 gave -3.5), the
+ * lanes mixed with an attribute right. Attribute 0 is (0.25, 0.625, 0, 0). Returns the pixel (the result's bits).
+ */
+export function constantRegisters() {
+  return drawBits(
+    `VERT
+DCL IN[0]
+DCL IN[1]
+DCL OUT[0], POSITION
+DCL OUT[1], GENERIC[0]
+DCL TEMP[0..2]
+IMM[0] UINT32 {3217031168, 1082130432, 1069547520, 1065353216}
+IMM[1] FLT32 {5.0, -3.5, 6.0, 1.0}
+IMM[2] UINT32 {3204448256, 3235905536, 0, 0}
+  0: MOV TEMP[0].xyz, IMM[0]
+  1: MOV TEMP[0].w, IN[0].xxxx
+  2: ADD TEMP[1], TEMP[0], IMM[1]
+  3: MOV TEMP[2].x, IN[0].yyyy
+  4: MOV TEMP[2].yz, IMM[2].xxyx
+  5: MOV TEMP[2].w, IMM[0].wwww
+  6: ADD OUT[1], TEMP[1], TEMP[2]
+  7: MOV OUT[0], IN[1]
+  8: END`,
+    'FRAG\nDCL IN[0], GENERIC[0], CONSTANT\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0]\n  1: END',
+    [0.25, 0.625, 0, 0],
+  );
+}
+
+/**
+ * A vertex shader's shadow lookup at an explicit level (TGSI's TXL on a SHADOW2D view: dEQP-GLES3 texture_functions'
+ * texturelod.sampler2dshadow_vertex) from a 4×4 DEPTH_COMPONENT16 texture of depth 0.75, the reference 0.5 under
+ * LEQUAL (passes: 1) into a flat varying, generated with this browser's quirks (web/virgl-tgsi.ts `quirksOf`). On
+ * ANGLE's D3D11 a `textureLod` there linked with an error in its log and the first draw lost the context. Returns the
+ * pixel and whether the context was lost.
+ */
+export function vertexShadowLod() {
+  const gl = new OffscreenCanvas(1, 1).getContext('webgl2')!;
+  const vs = parseTgsi(`VERT
+DCL IN[0]
+DCL IN[1]
+DCL OUT[0], POSITION
+DCL OUT[1], GENERIC[0]
+DCL SAMP[0]
+DCL SVIEW[0], SHADOW2D, FLOAT
+DCL TEMP[0]
+  0: TXL TEMP[0], IN[0], SAMP[0], SHADOW2D
+  1: MOV OUT[1], TEMP[0]
+  2: MOV OUT[0], IN[1]
+  3: END`);
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], CONSTANT\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0]\n  1: END');
+  const p = generate(vs, fs, { attribs: ['f', 'f'], samplers: { vs: [{ type: 'f', swizzle: [0, 1, 2, 3], gl: '2D' }], fs: [] }, cbufs: [{ type: 'u', write: [0, 1, 2, 3] }] }, quirksOf(gl));
+  const compile = (type: number, src: string) => { const sh = gl.createShader(type)!; gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+  const prog = gl.createProgram()!;
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, p.vs)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, p.fs)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return { error: gl.getProgramInfoLog(prog), pixel: [], lost: false };
+  gl.useProgram(prog);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_adjy'), 1);
+  gl.uniform2f(gl.getUniformLocation(prog, 'u_adjz'), 1, 0);
+  const depth = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, depth);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, 4, 4, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, new Uint16Array(16).fill(0xc000));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+  gl.uniform1i(gl.getUniformLocation(prog, 'vs0'), 0);
+  gl.activeTexture(gl.TEXTURE1);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, 1, 1);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, 1, 1);
+  // (s, t, reference, lod)
+  gl.vertexAttrib4f(0, 0.5, 0.5, 0.5, 0);
+  const pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Uint32Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, px);
+  const error = gl.getError();
+  return { error: error || null, pixel: Array.from(px), lost: gl.isContextLost() };
+}
+
+/**
+ * A program ANGLE's D3D11 backend links though its HLSL compiler refused it (a derivative of a varying read as bits in
+ * a loop: "error X3018: invalid subscript 'xy'" in the program's log, the link status true), linked by the renderer,
+ * then drawn if it gave one. On D3D11 a draw with such a program can lose the context (the GPU process exits): the
+ * renderer refuses it there. Returns whether it gave a program, its log lines and whether the context was lost.
+ */
+export function refusedProgram() {
+  const gl = new OffscreenCanvas(1, 1).getContext('webgl2')!;
+  const log: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => log.push(m) });
+  const vs = '#version 300 es\nlayout(location = 0) in vec4 a_0;\nlayout(location = 1) in vec4 a_1;\nout vec4 v_GENERIC0;\nvoid main() { v_GENERIC0 = a_1; gl_Position = a_0; }';
+  const fs = `#version 300 es
+precision highp float;
+precision highp int;
+uniform uvec4 fc0[4];
+in vec4 v_GENERIC0;
+layout(location = 0) out vec4 o0;
+uvec4 t0 = uvec4(0u);
+uvec4 t1 = uvec4(0u);
+uvec4 t5 = uvec4(0u);
+void main() {
+  while (true) {
+    if (ivec4(t0.xxxx).x >= ivec4(fc0[2].xxxx).x) break;
+    t5.xy = uvec2((floatBitsToUint(dFdx(v_GENERIC0))).xy);
+    t1.xy = uvec2((floatBitsToUint(uintBitsToFloat(t1.xyyy) + uintBitsToFloat(t5.xyyy))).xy);
+    t0.x = t0.x + 1u;
+  }
+  o0 = uintBitsToFloat(t1);
+}`;
+  const d3d11 = !!quirksOf(gl).d3d11; // before any draw: a lost context answers nothing
+  const prog = (r as unknown as { link(vs: string, fs: string): WebGLProgram | null }).link(vs, fs);
+  if (prog) {
+    gl.useProgram(prog);
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 1, 1);
+    const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.vertexAttrib4f(0, 0, 0, 0, 1); gl.vertexAttrib4f(1, 0.5, 0.5, 0.5, 1);
+    gl.drawArrays(gl.POINTS, 0, 1);
+    gl.getError();
+  }
+  return { linked: !!prog, d3d11, refused: log.filter((l) => l.includes("D3D's compiler refused it")).length, lost: gl.isContextLost() };
+}
+
+/**
+ * A derivative in a loop whose count is a constant buffer's (dEQP-GLES3 derivate's uniform_loop cases): ANGLE's D3D11
+ * backend writes such a derivative as a scalar 0, and a swizzle of it failed in its HLSL ("error X3018: invalid
+ * subscript" in the program's log, the status true; at a draw that compiles it again, a lost context). Drawn into an
+ * RGBA32F pixel with the count 0 (cbuf 0 unset). Returns the program's D3D errors, the pixel and the GL error.
+ */
+export function loopDerivative() {
+  const gl = new OffscreenCanvas(1, 1).getContext('webgl2')!;
+  gl.getExtension('EXT_color_buffer_float');
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL IN[1]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[1], IN[0]\n  1: MOV OUT[0], IN[1]\n  2: END');
+  const fs = parseTgsi(`FRAG
+DCL IN[0], GENERIC[0], PERSPECTIVE
+DCL OUT[0], COLOR
+DCL CONST[0][0]
+DCL TEMP[0..2]
+IMM[0] UINT32 {0, 1, 0, 0}
+  0: MOV TEMP[0].x, IMM[0].xxxx
+  1: MOV TEMP[1], IMM[0].xxxx
+  2: BGNLOOP
+  3:   ISGE TEMP[2].x, TEMP[0].xxxx, CONST[0][0].xxxx
+  4:   UIF TEMP[2].xxxx
+  5:     BRK
+  6:   ENDIF
+  7:   DDX TEMP[2].xy, IN[0]
+  8:   ADD TEMP[1].xy, TEMP[1].xyyy, TEMP[2].xyyy
+  9:   UADD TEMP[0].x, TEMP[0].xxxx, IMM[0].yyyy
+ 10: ENDLOOP
+ 11: MOV OUT[0], TEMP[1]
+ 12: END`);
+  const p = generate(vs, fs, { attribs: ['f', 'f'], samplers: { vs: [], fs: [] }, cbufs: [{ type: 'f', write: [0, 1, 2, 3] }] });
+  const compile = (type: number, src: string) => { const sh = gl.createShader(type)!; gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+  const prog = gl.createProgram()!;
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, p.vs)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, p.fs)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return { d3dErrors: [gl.getProgramInfoLog(prog)], pixel: [], error: null };
+  const d3dErrors = (gl.getProgramInfoLog(prog) ?? '').match(/error X\d+[^\n]*/g) ?? [];
+  if (d3dErrors.length) return { d3dErrors, pixel: [], error: null }; // a draw could lose the context
+  gl.useProgram(prog);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_adjy'), 1);
+  gl.uniform2f(gl.getUniformLocation(prog, 'u_adjz'), 1, 0);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, 1, 1);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, 1, 1);
+  gl.vertexAttrib4f(0, 0.25, 0.5, 0, 1);
+  const pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Float32Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, px);
+  return { d3dErrors, pixel: Array.from(px), error: gl.getError() || null };
 }
 
 /**

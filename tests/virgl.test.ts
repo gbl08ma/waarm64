@@ -123,11 +123,11 @@ IMM[0] UINT32 {3, 7, 0, 0}
   assert.ok(fv.vs.includes('flat out highp ivec4 vf_GENERIC0;') && fv.vs.includes('uvec4 v_GENERIC0 = uvec4(0u);') && fv.vs.includes('vf_GENERIC0 = ivec4(v_GENERIC0);'), fv.vs);
   assert.ok(fv.fs.includes('flat in highp ivec4 vf_GENERIC0;') && fv.fs.includes('v_GENERIC0 = uvec4(vf_GENERIC0);'), fv.fs);
   // Small integers as float immediates stay bits (a float literal would be a denormal, flushed on some GPUs); into a
-  // register (bits) they are an integer literal.
+  // register (bits) they are an integer literal, and a normal float's bits there no constant (below).
   const mv = parseTgsi('VERT\nDCL OUT[0], POSITION\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 1065353216}\n  0: MOV TEMP[0], IMM[0]\n  1: MOV OUT[0], IMM[0]\n  2: END');
   const mvs = generate(mv, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), KEY).vs;
   assert.match(mvs, /uintBitsToFloat\(1u \^ u_zero\)/);
-  assert.match(mvs, /t0 = uvec4\(1u, 2u, 0u, 1065353216u\);/);
+  assert.match(mvs, /t0 = uvec4\(1u, 2u, 0u, 1065353216u \^ u_zero\);/);
 });
 
 test('virgl tgsi: a vertex shader that writes the point size declares it once (dEQP-GLES2 points)', () => {
@@ -157,6 +157,47 @@ test('virgl tgsi: x != x is isnan(x), x == x its negation (dEQP-GLES3 common.isn
   assert.match(p.fs, /uvec4\(-ivec4\(isnan\(v_GENERIC0\)\)\)/, p.fs);
   assert.match(p.fs, /not\(isnan\(v_GENERIC0\)\)/);
   assert.match(p.fs, /notEqual\(v_GENERIC0\.xxxx, v_GENERIC0\.yyyy\)/);
+});
+
+test('virgl tgsi: a float\'s SSG is no sign() (ANGLE\'s D3D11 wrote it as HLSL\'s, an int, whose bits a register took: dEQP-GLES2 sign, asin, acos, normalize)', () => {
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: SSG TEMP[0], IN[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
+  const p = generate(vs, fs, { ...KEY, attribs: ['f'] });
+  assert.doesNotMatch(p.fs, /\bsign\(/, p.fs);
+  assert.match(p.fs, /t0 = floatBitsToUint\(ssg\(v_GENERIC0\)\);/, p.fs);
+});
+
+test('virgl tgsi: a normal float\'s bits copied into a register are no constant, small integers are (ANGLE\'s D3D11 misfolded sums of such constants: dEQP-GLES2 shaders.random)', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL TEMP[0..2]\nIMM[0] UINT32 {3217031168, 1082130432, 3, 0}\n  0: MOV TEMP[0], IMM[0]\n  1: UCMP TEMP[1], IN[0], IMM[0].yyyy, IMM[0].zzzz\n  2: ADD TEMP[2], TEMP[0], TEMP[1]\n  3: AND TEMP[2].x, TEMP[2].xxxx, IMM[0].yyyy\n  4: MOV OUT[0], TEMP[2]\n  5: END');
+  const p = generate(vs, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), { ...KEY, attribs: ['u'] });
+  assert.match(p.vs, /t0 = uvec4\(3217031168u \^ u_zero, 1082130432u \^ u_zero, 3u, 0u\);/, p.vs);
+  assert.match(p.vs, /uvec4\(1082130432u \^ u_zero, 1082130432u \^ u_zero, 1082130432u \^ u_zero, 1082130432u \^ u_zero\), uvec4\(3u, 3u, 3u, 3u\)/, p.vs);
+  // An integer operation's immediate stays a constant.
+  assert.match(p.vs, /& uvec4\(1082130432u, 1082130432u, 1082130432u, 1082130432u\)/, p.vs);
+  assert.match(p.vs, /^uniform uint u_zero;$/m);
+});
+
+test('virgl tgsi: on D3D11 a vertex shader\'s shadow lookup at an explicit level is the implicit one (ANGLE lost the context at the draw: dEQP-GLES3 texture_functions sampler2dshadow_vertex)', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\nDCL SAMP[0]\nDCL SVIEW[0], SHADOW2D, FLOAT\nDCL TEMP[0..1]\n  0: TXL TEMP[0], IN[0], SAMP[0], SHADOW2D\n  1: TEX_LZ TEMP[1], IN[0], SAMP[0], SHADOW2D\n  2: ADD OUT[1], TEMP[0], TEMP[1]\n  3: MOV OUT[0], IN[0]\n  4: END');
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\nDCL SAMP[0]\nDCL SVIEW[0], SHADOW2D, FLOAT\nDCL TEMP[0]\n  0: TXL TEMP[0], IN[0], SAMP[0], SHADOW2D\n  1: MOV OUT[0], TEMP[0]\n  2: END');
+  const key: ProgramKey = { ...KEY, attribs: ['f'], samplers: { vs: [{ type: 'f', swizzle: [0, 1, 2, 3], gl: '2D' }], fs: [{ type: 'f', swizzle: [0, 1, 2, 3], gl: '2D' }] } };
+  const d3d = generate(vs, fs, key, { d3d11: true });
+  assert.doesNotMatch(d3d.vs, /textureLod/, d3d.vs);
+  assert.equal(d3d.vs.match(/\btexture\(vs0, vec3\(/g)?.length, 2, d3d.vs);
+  // The fragment shader's, and every one elsewhere, as it was.
+  assert.match(d3d.fs, /textureLod\(fs0, vec3\(/, d3d.fs);
+  const other = generate(vs, fs, key);
+  assert.equal(other.vs.match(/textureLod\(vs0, vec3\(/g)?.length, 2, other.vs);
+});
+
+test('virgl tgsi: a derivative goes into a vec4 of its own before it is swizzled (ANGLE\'s D3D11 made one in a loop a scalar: dEQP-GLES3 derivate uniform_loop lost the context)', () => {
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: DDX TEMP[0].xy, IN[0]\n  1: DDY_FINE TEMP[0].zw, IN[0].yyxx\n  2: MOV OUT[0], TEMP[0]\n  3: END');
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
+  const p = generate(vs, fs, { ...KEY, attribs: ['f'] });
+  assert.match(p.fs, /^ {2}vec4 dd0 = dFdx\(v_GENERIC0\);$/m, p.fs);
+  assert.match(p.fs, /^ {2}vec4 dd1 = dFdy\(v_GENERIC0\.yyxx\);$/m, p.fs);
+  assert.doesNotMatch(p.fs, /dFd[xy]\([^;]*\)\)?\.[xyzw]/, p.fs);
+  assert.match(p.fs, /floatBitsToUint\(dd0\)/, p.fs);
 });
 
 test('virgl tgsi: an invariant position stays invariant (dEQP-GLES2 shaders.invariance on Metal)', () => {
@@ -1247,6 +1288,33 @@ test('virgl renderer: a sampler with no view samples nothing: another context\'s
   const calls = gl.log.slice(at).map(([n, a]) => `${n} ${(a as unknown[]).map((x) => (x === null ? 'null' : typeof x === 'number' ? x : 'obj')).join(' ')}`);
   assert.ok(calls.includes(`bindTexture ${E.TEXTURE_CUBE_MAP} null`), 'no cube map left on the unit');
   assert.ok(calls.some((c) => /^bindSampler \d+ null$/.test(c)), 'no sampler left on the unit');
+});
+
+test('virgl renderer: a sampler without mipmaps keeps the guest\'s LOD range, so the minifying filter still applies (ANGLE\'s D3D11 magnified everything at MAX_LOD 0: dEQP-GLES2 texture.filtering nearest_linear, linear_nearest)', () => {
+  const f = (x: number) => new Uint32Array(new Float32Array([x]).buffer)[0];
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const d = drawable(r);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const [len, ...t] = text('FRAG\nDCL OUT[0], COLOR\nDCL SAMP[0]\nDCL SVIEW[0], 2D, FLOAT\nIMM[0] FLT32 {0.5, 0.5, 0.0, 0.0}\n  0: TEX OUT[0], IMM[0], SAMP[0], 2D\n  1: END\n');
+  cmd(1, 4, 12, 1, len, 0, 0, ...t); cmd(31, 0, 12, 1);
+  cmd(1, 6, 40, 3, 67 | 2 << 24, 0, 0, 0 | 1 << 3 | 2 << 6 | 3 << 9);
+  // GL_NEAREST minifying (mip filter NONE, 2), GL_LINEAR magnifying; Mesa's default LOD range, 0 to 1000.
+  cmd(1, 7, 41, 2 << 11 | 1 << 13, 0, f(0), f(1000), 0, 0, 0, 0);
+  cmd(10, 0, 1, 0, 40); cmd(18, 0, 1, 0, 41);
+  r.submit(1, new Uint32Array([...d.setup, ...words, ...d.draw]));
+  assert.deepEqual(errors, []);
+  const lod = gl.log.filter(([n, a]) => n === 'samplerParameterf' && (a[1] === E.TEXTURE_MIN_LOD || a[1] === E.TEXTURE_MAX_LOD)).map(([, a]) => a.slice(1));
+  // GLES decides between the filters on the LOD after its clamp: MAX_LOD 0 would make every pixel magnified on a
+  // backend that passes it on as it is (D3D11's MaxLOD); without mipmaps the level is the base one whatever the range.
+  assert.deepEqual(lod, [[E.TEXTURE_MIN_LOD, 0], [E.TEXTURE_MAX_LOD, 1000]]);
+  const filters = gl.log.filter(([n, a]) => n === 'samplerParameteri' && (a[1] === E.TEXTURE_MIN_FILTER || a[1] === E.TEXTURE_MAG_FILTER)).map(([, a]) => a.slice(1));
+  assert.deepEqual(filters, [[E.TEXTURE_MAG_FILTER, E.LINEAR], [E.TEXTURE_MIN_FILTER, E.NEAREST]]);
 });
 
 test('virgl renderer: a multisampled source is resolved before a conversion or a flip (dEQP-GLES3 fbo.invalidate unbind_blit_msaa)', () => {

@@ -17,11 +17,13 @@ import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from '
 import {
   generate,
   parseTgsi,
+  quirksOf,
   samplerUnit,
   uboBinding,
   type ColorKey,
   type ProgramKey,
   type ProgramLayout,
+  type Quirks,
   type SamplerKey,
 } from './virgl-tgsi.ts';
 import {
@@ -299,6 +301,7 @@ export class VirglRenderer {
   /** A framebuffer for draws that only capture (stream output with nothing bound to draw on). */
   private nullFbo?: WebGLFramebuffer;
   private errorsLogged = 0;
+  private quirks: Quirks;
   private errorKinds = new Map<string, number>();
 
   /** A trace of what the guest makes and draws with, each line once (`?gpu=virgl,debug`): resources, surfaces, views, draws. */
@@ -325,6 +328,7 @@ export class VirglRenderer {
     this.fbo = gl.createFramebuffer()!;
     this.readFbo = gl.createFramebuffer()!;
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
+    this.quirks = quirksOf(gl);
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
     this.floatBlend = !!gl.getExtension('EXT_float_blend');
     this.indexed = gl.getExtension('OES_draw_buffers_indexed') as OES_draw_buffers_indexed | null;
@@ -2543,7 +2547,7 @@ void main() {
     gl.attachShader(prog, f);
     if (tf) gl.transformFeedbackVaryings(prog, tf.varyings, tf.separate ? E.SEPARATE_ATTRIBS : E.INTERLEAVED_ATTRIBS);
     gl.linkProgram(prog);
-    const ok = gl.getProgramParameter(prog, E.LINK_STATUS);
+    let ok = gl.getProgramParameter(prog, E.LINK_STATUS);
     if (!ok) {
       const which = !gl.getShaderParameter(v, E.COMPILE_STATUS)
         ? `vertex: ${gl.getShaderInfoLog(v)}\n${vs}`
@@ -2551,6 +2555,16 @@ void main() {
           ? `fragment: ${gl.getShaderInfoLog(f)}\n${fs}`
           : `link: ${gl.getProgramInfoLog(prog)}`;
       this.error(`program: ${which}`);
+    } else if (this.quirks.d3d11) {
+      // ANGLE's D3D11 backend links a program whose HLSL its compiler refused (the errors in the program's log, the
+      // status true), and the first draw with it, compiling again for the draw's vertex or target layout, loses the
+      // context: the GPU process exits and the machine crashes. Such a program draws nothing instead (graphics.md
+      // "The translator": dEQP-GLES3's derivate cases with a derivative in a loop, X3018 in ANGLE's own HLSL).
+      const log = gl.getProgramInfoLog(prog) ?? '';
+      if (/\berror X\d{4}/.test(log)) {
+        ok = false;
+        this.error(`program: D3D's compiler refused it: ${log.slice(0, 600)}\n${vs}\n${fs}`);
+      }
     }
     gl.deleteShader(v);
     gl.deleteShader(f);
@@ -2726,7 +2740,7 @@ void main() {
     const key = state.key;
     let layout: ProgramLayout;
     try {
-      layout = generate(vs.tgsi!, fs.tgsi!, key);
+      layout = generate(vs.tgsi!, fs.tgsi!, key, this.quirks);
     } catch (e) {
       this.onCaught?.(e);
       this.error(`program ${vs.serial}/${fs.serial}: ${e instanceof Error ? e.message : e}`);
@@ -3763,7 +3777,10 @@ void main() {
     gl.samplerParameteri(sm, E.TEXTURE_MAG_FILTER, mag);
     gl.samplerParameteri(sm, E.TEXTURE_MIN_FILTER, min);
     gl.samplerParameterf(sm, E.TEXTURE_MIN_LOD, st.minLod);
-    gl.samplerParameterf(sm, E.TEXTURE_MAX_LOD, st.minMip === 2 ? st.minLod : st.maxLod);
+    // The guest's range even without mipmaps (vrend's way): GLES picks the magnifying filter where the LOD after this
+    // clamp is at most 0, so a MAX_LOD of 0 magnifies everywhere on a backend that takes it as it is (ANGLE's D3D11:
+    // dEQP-GLES2 texture.filtering's nearest_linear and linear_nearest); the level is the base one either way.
+    gl.samplerParameterf(sm, E.TEXTURE_MAX_LOD, st.maxLod);
     if (st.compare) {
       gl.samplerParameteri(sm, E.TEXTURE_COMPARE_MODE, E.COMPARE_REF_TO_TEXTURE);
       gl.samplerParameteri(sm, E.TEXTURE_COMPARE_FUNC, COMPARE[st.compareFunc]);

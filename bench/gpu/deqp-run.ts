@@ -21,10 +21,14 @@
 // for a line on stdin: the caller holds them until no other machine runs), RAM_MIB=<the guest's RAM, default the session's>, JOBS=<n> (n dEQP processes at once, each a block of the list; JOBS_BLOCK=<k>: blocks of k cases dealt in turn), LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases), CONSOLE_FILE=<path> (guest-session.ts: the renderers' console
 // lines whole, a shader that didn't compile with its WGSL).
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// A machine that crashes (the page's state `crashed` or `failed`: a lost WebGL context, say) ends the run at once, exit
+// 3: results.crash (the page's message), results.crashDone (each process's count of statuses, from the terminal's
+// `deqp-now` line, ~2 s old) and, for a CASES list without patterns dealt in JOBS_BLOCK blocks, results.crashRunning
+// (the case each process was most likely in; the GPU may lose the context a few cases after the one that caused it).
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { encodeTrace } from '../../web/virgl-trace.ts';
-import { openSession } from './guest-session.ts';
+import { traceHeader } from '../../web/virgl-trace.ts';
+import { MachineStopped, openSession } from './guest-session.ts';
 
 const api = process.argv[2] ?? 'gles2';
 const image = process.argv[3];
@@ -50,7 +54,34 @@ const CAPTURE = process.env.CAPTURE;
 // own loop instead takes 19 ms. Both zero it; Metal has no such extension.
 if (vk) process.env.CHROMIUM_ARGS = `${process.env.CHROMIUM_ARGS ?? ''} --disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`;
 const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: process.env.DISK2 ? `/${process.env.DISK2.replace(/^\/+/, '')}` : vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4', ...(process.env.RAM_MIB ? { ramMiB: Number(process.env.RAM_MIB) } : {}) });
-const { log, pasteSerial, rootShell, run, runLines } = s;
+const { log, pasteSerial, rootShell, run, runLines, terminal } = s;
+// CAPTURE: the guest's 3D commands with the memory they read, from boot (nothing 3D runs before dEQP) to the end, drained
+// from the page into the file every 5 s, 32 MiB at a time (held in the page to the end, a few hundred cases' records
+// ran the browser out of memory).
+let captured = 0, draining = false;
+const drainCapture = async () => {
+  const b64 = await s.page.evaluate(() => {
+    const rs = (window as unknown as { __virglCapture?: Uint8Array[] }).__virglCapture ?? [];
+    let t = '', n = 0, k = 0;
+    for (; k < rs.length && n < 32 << 20; k++) {
+      n += rs[k].length;
+      for (let j = 0; j < rs[k].length; j += 8192) t += String.fromCharCode(...rs[k].subarray(j, j + 8192));
+    }
+    rs.splice(0, k);
+    return btoa(t);
+  });
+  if (!b64) return false;
+  const chunk = Buffer.from(b64, 'base64');
+  appendFileSync(CAPTURE!, chunk);
+  captured += chunk.length;
+  return true;
+};
+if (CAPTURE) writeFileSync(CAPTURE, traceHeader());
+const drainTimer = CAPTURE ? setInterval(() => {
+  if (draining) return;
+  draining = true;
+  void drainCapture().catch(() => {}).finally(() => { draining = false; });
+}, 5000) : undefined;
 const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET, jobs: JOBS, jobsBlock: JOBS_BLOCK };
 const save = () => {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
@@ -122,13 +153,45 @@ echo core > /proc/sys/kernel/core_pattern; ulimit -c 0; dmesg -n 7
 start=$(date +%s)
 rm -rf /tmp/j[0-9]* /tmp/jcases.*
 SPLIT
-k=0; for f in /tmp/jcases.*; do mkdir -p /tmp/j$k; mv $f /tmp/j$k/cases.txt; J=/tmp/j$k sh /tmp/deqp1.sh & k=$((k + 1)); done
-wait
+k=0; pids=; for f in /tmp/jcases.*; do mkdir -p /tmp/j$k; mv $f /tmp/j$k/cases.txt; J=/tmp/j$k sh /tmp/deqp1.sh & pids="$pids $!"; k=$((k + 1)); done
+# Each process's count of statuses, on one line of the terminal rewritten every 2 s: what a crashed machine ran last.
+( while :; do printf '\rdeqp-now'; for d in /tmp/j[0-9]*; do printf ' %s:%s' "$(echo $d | tr -dc 0-9)" "$(wc -l 2>/dev/null < $d/deqp.res)"; done; printf '\033[K'; sleep 2; done ) &
+rep=$!
+wait $pids
+kill $rep; printf '\r\033[K'
 cat /tmp/j[0-9]*/deqp.res >> /tmp/deqp.res; cat /tmp/j[0-9]*/deqp.qpa >> /tmp/deqp.qpa; cat /tmp/j[0-9]*/deqp.out >> /tmp/deqp.out
 echo "elapsed $(( $(date +%s) - start )); each: $(cat /tmp/j[0-9]*/elapsed | tr '\n' ' ')"
 EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('SPLIT', () => SPLIT).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '$J/rest.txt')));
 const t0 = performance.now();
-const elapsed = await run(`: > /tmp/deqp.res; : > /tmp/deqp.qpa; : > /tmp/deqp.out; sh /tmp/deqp.sh /tmp/cases.txt ${JOBS}`, (LIMIT_S + 120) * 1000);
+const elapsed = await run(`: > /tmp/deqp.res; : > /tmp/deqp.qpa; : > /tmp/deqp.out; sh /tmp/deqp.sh /tmp/cases.txt ${JOBS}`, (LIMIT_S + 120) * 1000)
+  .catch(async (e) => {
+    if (!(e instanceof MachineStopped)) {
+      // Another end (the page or the browser gone): what there is, saved, and the error.
+      results.seconds = (performance.now() - t0) / 1000;
+      results.error = String(e).slice(0, 2000);
+      save();
+      throw e;
+    }
+    // The machine crashed (a lost WebGL context, say): nothing more can be read from the guest. What each process had
+    // done (the terminal's deqp-now line) and, where the list is known here (CASES with no patterns, JOBS_BLOCK's
+    // dealing), the case each was most likely running; then out, saved.
+    results.seconds = (performance.now() - t0) / 1000;
+    results.crash = { state: e.state, message: e.pageMessage };
+    const now = [...(await terminal().catch(() => '')).matchAll(/deqp-now((?: \d+:\d+)+)/g)].pop()?.[1].trim().split(' ').map((x) => x.split(':').map(Number));
+    if (now) {
+      results.crashDone = Object.fromEntries(now);
+      const names = process.env.CASES ? readFileSync(process.env.CASES, 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')) : [];
+      if (JOBS_BLOCK > 0 && names.length && !names.some((n) => n.includes('*'))) {
+        const list = [...new Set(names)];
+        const jobs = Array.from({ length: JOBS }, (_, j) => list.filter((_, n) => Math.floor(n / JOBS_BLOCK) % JOBS === j));
+        results.crashRunning = now.map(([j, done]) => jobs[j]?.[done]).filter(Boolean);
+      }
+    }
+    log('crashed:', e.message, '| done', JSON.stringify(results.crashDone ?? null), '| running', JSON.stringify(results.crashRunning ?? null));
+    save();
+    await s.close().catch(() => {});
+    process.exit(3);
+  });
 const seconds = (performance.now() - t0) / 1000;
 results.seconds = seconds;
 log('ran', elapsed, seconds.toFixed(0), 's');
@@ -204,16 +267,10 @@ if (process.env.DETAIL) {
 // QPA=1: dEQP's whole log, its images in it, as <out>/deqp.qpa (for a few cases: it comes through the terminal).
 if (process.env.QPA) writeFileSync(`${out}/deqp.qpa`, gunzipSync(Buffer.from((await runLines('gzip -9c /tmp/deqp.qpa | base64 -w 150', 600_000)).join(''), 'base64')));
 if (CAPTURE) {
-  // The guest's 3D commands with the memory they read, from boot (nothing 3D runs before dEQP) to the end.
-  const b64 = await s.page.evaluate(() => {
-    const rs = (window as unknown as { __virglCapture?: Uint8Array[] }).__virglCapture ?? [];
-    let t = '';
-    for (const r of rs) for (let k = 0; k < r.length; k += 8192) t += String.fromCharCode(...r.subarray(k, k + 8192));
-    return btoa(t);
-  });
-  const trace = encodeTrace([new Uint8Array(Buffer.from(b64, 'base64'))]);
-  writeFileSync(CAPTURE, trace);
-  log(`${CAPTURE}: ${trace.length} bytes`);
+  clearInterval(drainTimer);
+  while (draining) await new Promise((r) => setTimeout(r, 100));
+  while (await drainCapture());
+  log(`${CAPTURE}: ${captured} bytes of records`);
 }
 save();
 log('done', (results.notPassed as string[]).length, 'not passed; warnings', s.warnings.size);
