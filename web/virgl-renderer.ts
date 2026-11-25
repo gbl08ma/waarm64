@@ -266,6 +266,12 @@ export class VirglRenderer {
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
   private anisotropy: boolean;
   private colorBufferFloat: boolean;
+  /**
+   * Blending into 32-bit float targets (EXT_float_blend): WebGL2 refuses a draw that blends into one without it. The
+   * caps can't say a render target isn't blendable (virgl's Mesa ignores PIPE_BIND_BLENDABLE), so without it such a
+   * target is drawn unblended.
+   */
+  private floatBlend: boolean;
   /** Per-buffer blending and color masks (the caps' independent blending: web/virgl-caps.ts), if the browser has them. */
   private indexed: OES_draw_buffers_indexed | null;
   /** Clip control (the caps' CLIP_HALFZ), if the browser has it, and whether it's at 0 to 1 now. */
@@ -320,6 +326,7 @@ export class VirglRenderer {
     this.readFbo = gl.createFramebuffer()!;
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
+    this.floatBlend = !!gl.getExtension('EXT_float_blend');
     this.indexed = gl.getExtension('OES_draw_buffers_indexed') as OES_draw_buffers_indexed | null;
     this.clipControl = gl.getExtension('EXT_clip_control') as {
       clipControlEXT(origin: number, depth: number): void;
@@ -2093,6 +2100,11 @@ export class VirglRenderer {
       if (depth) this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, p[1], dz + z);
       gl.drawBuffers([depth ? E.NONE : E.COLOR_ATTACHMENT0]);
       gl.disable(E.SCISSOR_TEST);
+      // GLES 3.0's blits ignore the write masks (§4.3.3: only the scissor and pixel ownership tests apply); every mask
+      // on all the same, as `blit` and `resolve` set them, so no implementation leaves a draw's masks on a raw copy.
+      gl.colorMask(true, true, true, true);
+      gl.depthMask(true);
+      gl.stencilMask(0xff);
       gl.blitFramebuffer(
         box.x,
         box.y,
@@ -2655,6 +2667,8 @@ void main() {
     const fb = this.bindFramebuffer(c, s);
     s.fb = saved;
     if (!fb) return;
+    // As `clear`: GLES clears nothing with the rasterizer's discard on (a draw's, or a capture-only draw's).
+    gl.disable(E.RASTERIZER_DISCARD);
     gl.enable(E.SCISSOR_TEST);
     gl.scissor(p[6], p[7], p[8], p[9]);
     gl.colorMask(true, true, true, true);
@@ -3233,10 +3247,18 @@ void main() {
     const first = key.cbufs.findIndex((k) => k);
     const targets = ix ? key.cbufs.flatMap((cb, k) => (cb ? [k] : [])) : [Math.max(first, 0)];
     let blendColorOf: ColorKey | undefined;
+    // A 32-bit float target without EXT_float_blend: unblended (WebGL2 refuses the draw otherwise); without per-buffer
+    // state, one such target leaves every buffer unblended.
+    const float32 = (k: number) => {
+      const sf = s.fb.cbufs[k];
+      return !!(sf && (FORMATS.get(sf.format) ?? this.resources.get(sf.res)?.fmt))?.float32;
+    };
+    const anyFloat32 = !this.floatBlend && !ix && key.cbufs.some((cb, k) => !!cb && float32(k));
+    const blendable = (k: number) => this.floatBlend || (ix ? !float32(k) : !anyFloat32);
     for (const k of targets) {
       const cb = key.cbufs[k];
       const rt = this.blendTarget(blend, ix ? k : 0);
-      if (rt?.enable && cb?.type === 'f') {
+      if (rt?.enable && cb?.type === 'f' && blendable(k)) {
         const sf = s.fb.cbufs[k];
         const noAlpha = !!(sf && (FORMATS.get(sf.format) ?? this.resources.get(sf.res)?.fmt))?.x;
         const fac = (g: number) => {
@@ -4193,6 +4215,9 @@ void main() {
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
     gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
     gl.disable(E.SCISSOR_TEST);
+    gl.colorMask(true, true, true, true); // the write masks, as `copyRegion`'s blit
+    gl.depthMask(true);
+    gl.stencilMask(0xff);
     gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, mask, E.NEAREST);
     this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);

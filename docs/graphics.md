@@ -433,7 +433,8 @@ the draw's start into it), and Mesa never sets stream output's append mask (a se
   holding B, G, R, X) and swizzled in the generated shaders, on sampling (the format's swizzle composed with the
   sampler view's) and on writing (the render target's stored order, the clear and blend colors and the color mask go
   through it). Uploads and read-backs are then the guest's bytes as they are (no CPU pass), and the screen draws a
-  scanout through its format's swizzle.
+  scanout through its format's swizzle, from level 0 through a sampler of its own (the texture's own filters and
+  levels are what the guest's last view of it left).
 - **Alpha of formats without it:** an X format (or RGB565, R8, RG8) used as a render target gets the fragment's alpha
   in its unused component, since GL blends with the source alpha as written (writing 1 there drew Firefox's
   translucent menus with black borders); sampling an X format reads 1, and its destination alpha is 1 through
@@ -469,7 +470,12 @@ the draw's start into it), and Mesa never sets stream output's append mask (a se
 - **Blits** go through GL's framebuffer blit for the same stored layout (and between integer formats of one
   signedness, which can't be sampled as floats), a draw through both formats' swizzles otherwise; a drawn blit has
   only its destination attached (a texture still attached from the last draw and sampled is a feedback loop WebGL
-  refuses).
+  refuses). GLES 3.0's framebuffer blit ignores the write masks (§4.3.3: only the scissor and pixel ownership tests
+  apply); every blit and resource copy still sets them all on, with the scissor off, so no implementation's reading
+  of that leaves a draw's masks on a copy.
+- **Clears** are Gallium's: `CLEAR` ignores the scissor and the write masks, `CLEAR_SURFACE` clears its rectangle of
+  one surface, and both turn the rasterizer's discard off (GLES clears nothing under it: a draw's, or a capture-only
+  one's, left it on for the next clear).
 
 ### Where WebGL2 refuses what GLES allows
 
@@ -485,6 +491,11 @@ Most of the bugs dEQP found were WebGL2 silently refusing a draw that GLES allow
 - an inverted depth range (near above far): the range goes the right way round and the vertex shader negates z
   (`u_adjz`);
 - WebGL2 has one color mask: components the first target doesn't store stay on (another target may store them);
+- WebGL2 blends into a 32-bit float target (R32F, RG32F, RGBA32F) only with `EXT_float_blend`, refusing the draw
+  without it; the renderer enables it, and where the browser lacks it such a target is drawn unblended (with one blend
+  state for all buffers, every buffer of that draw). The caps can't keep blending away: virgl's Mesa ignores
+  `PIPE_BIND_BLENDABLE` (so its guest has `EXT_float_blend` wherever 32-bit floats render), and taking the formats
+  out of the render mask would take `EXT_color_buffer_float` with them (vrend has no case for it);
 - WebGL2 has no BGRA vertex attribute: desktop GL's `GL_BGRA` arrays (`EXT_vertex_array_bgra`'s colors, the
   2_10_10_10 ones; `B8G8R8A8_UNORM` and `B10G10R10A2_*`) are fetched as their RGBA twin and read as `.zyxw` in the
   vertex shader (`ProgramKey.bgra`), as vrend does on GLES. Mesa's virgl takes every plain vertex format as supported
@@ -835,7 +846,8 @@ Firefox makes 10–25 resources a second, where the state is bounded by what the
 - **Contents**, a level at a time, every layer: a buffer's CPU copy; a color texture through the read-back path (the
   formats the guest isn't offered read-back of through `snapshotReader`: A4B4G4R4 as RGBA8, R11G11B10_FLOAT as
   floats, the 16-bit normalized ones as shorts); a format WebGL can't render to, its kept texels; a compressed one, its kept blocks; a multisampled color
-  renderbuffer, resolved (a load draws it into every sample). Depth and stencil can't be read with `readPixels`: each
+  renderbuffer, resolved (a load draws it into every sample; a 32-bit float's denormals may come back 0: D3D11 flushes
+  them in the draw and the resolve, as GLES allows, and keeps 16-bit ones). Depth and stencil can't be read with `readPixels`: each
   layer is blitted to a 2D texture of its format (resolving samples), its depths drawn as float bits into R32UI, its
   stencil a bit a pass; a load draws them back with `drawZs`. A 16-bit depth is written a quarter step up
   (SwiftShader truncates the float). Lost, and logged (`SavedResource.lost`): multisampled integer color.

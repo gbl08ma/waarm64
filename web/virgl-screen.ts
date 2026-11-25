@@ -63,6 +63,11 @@ export class Screen {
   private prog: WebGLProgram;
   private loc: { src: WebGLUniformLocation | null; swz: WebGLUniformLocation | null; s: WebGLUniformLocation | null };
   private tex2d: WebGLTexture;
+  /**
+   * The present's sampling: nearest, unmipped (a 3D scanout's texture keeps the filters and levels the guest's last
+   * view of it left: its own sampler and level 0 here, or a mipmapped one could show another level, or none).
+   */
+  private sampler: WebGLSampler;
   private size2d = { width: 0, height: 0 };
   /** What it shows: a 2D resource's pixels or a 3D resource (null: nothing). */
   private src: ScanoutOn | null = null;
@@ -98,6 +103,11 @@ export class Screen {
       s: gl.getUniformLocation(this.prog, 's'),
     };
     this.tex2d = gl.createTexture()!;
+    this.sampler = gl.createSampler()!;
+    gl.samplerParameteri(this.sampler, E.TEXTURE_MIN_FILTER, E.NEAREST);
+    gl.samplerParameteri(this.sampler, E.TEXTURE_MAG_FILTER, E.NEAREST);
+    gl.samplerParameteri(this.sampler, E.TEXTURE_WRAP_S, E.CLAMP_TO_EDGE);
+    gl.samplerParameteri(this.sampler, E.TEXTURE_WRAP_T, E.CLAMP_TO_EDGE);
   }
 
   scanout(c: ScanoutShown) {
@@ -233,7 +243,9 @@ export class Screen {
     gl.bindVertexArray(null);
     gl.activeTexture(E.TEXTURE0);
     gl.bindTexture(E.TEXTURE_2D, tex);
-    gl.bindSampler(0, null);
+    // Level 0 (the renderer sets a view's levels at each draw that samples it); with an unmipped filter it alone counts.
+    if (!s.pixels) gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_BASE_LEVEL, 0);
+    gl.bindSampler(0, this.sampler);
     gl.uniform1i(this.loc.s, 0);
     // The scanout's rectangle in texture coordinates, top row first.
     gl.uniform4f(this.loc.src, s.rect.x / tw, s.rect.y / th, s.rect.w / tw, s.rect.h / th);

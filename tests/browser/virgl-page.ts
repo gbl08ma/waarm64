@@ -369,6 +369,9 @@ export function snapshotFormats() {
           const size = f.type === 0x140b ? 2 : 4;
           for (let i = size - 1; i < data.length; i += size) data[i] &= 0x3f;
           if (f.type === 0x8c3b || f.type === 0x8c3e) data.fill(0x10);
+          // A multisampled 32-bit float is loaded by a draw and saved through a resolve, and D3D11 flushes 32-bit
+          // denormals to zero in both (GLES allows it; its 16-bit ones it keeps): its floats are normal.
+          if (f.float32 && what === '4 samples') for (let i = 3; i < data.length; i += 4) if (!(data[i] & 0x7f) && !(data[i - 1] & 0x80)) data[i - 1] |= 0x80;
         }
         if (f.kind === 'snorm') for (let i = 0; i < data.length; i++) if (data[i] === 0x80) data[i] = 0x81;
         levels.push({ level, how: 'bytes' as const, data });

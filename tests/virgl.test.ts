@@ -15,6 +15,7 @@ import { capsBacked, capsFromGl, withBits, withoutFormats } from '../web/virgl-c
 import { FORMATS } from '../web/virgl-formats.ts';
 import { clock, FenceGate, fenceSettled, localHost, portHost, queryScheduler, SPIN_MS, type HostCall, type VirglHost } from '../web/virgl-host.ts';
 import { VirglRenderer } from '../web/virgl-renderer.ts';
+import { Screen } from '../web/virgl-screen.ts';
 import type { RendererSnapshot } from '../web/virgl-objects.ts';
 import { readbackOf, toHalf } from '../web/virgl-pixels.ts';
 import { replay } from '../web/virgl-replay.ts';
@@ -745,6 +746,109 @@ test('virgl renderer: the blend color\'s alpha is the guest\'s on a target that 
   assert.deepEqual(errors, []);
   const bc = gl.log.filter(([n]) => n === 'blendColor').at(-1)![1] as number[];
   assert.deepEqual(bc.map((x) => Math.round(x * 100) / 100), [0.1, 0.2, 0.3, 0.25]);
+});
+
+/** The GL state a recording held at each call named `at`: what was enabled, the color, depth and stencil masks. */
+function stateAtCalls(log: [string, unknown[]][], at: string) {
+  const on = new Set<number>();
+  let mask: unknown[] = [true, true, true, true], depth: unknown = true, stencil: unknown = 0xff;
+  const seen: { on: Set<number>; mask: unknown[]; depth: unknown; stencil: unknown }[] = [];
+  for (const [n, a] of log) {
+    if (n === 'enable') on.add(a[0] as number);
+    else if (n === 'disable') on.delete(a[0] as number);
+    else if (n === 'colorMask') mask = a;
+    else if (n === 'depthMask') depth = a[0];
+    else if (n === 'stencilMask') stencil = a[0];
+    if (n === at) seen.push({ on: new Set(on), mask, depth, stencil });
+  }
+  return seen;
+}
+
+test('virgl renderer: a surface clear after a draw with the rasterizer\'s discard on clears (GLES ignores clears under RASTERIZER_DISCARD)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const d = drawable(r);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  // A rasterizer with rasterizer_discard (bit 3) for the draw, then CLEAR_SURFACE (62) of the draw's surface 22.
+  cmd(1, 2, 25, 1 << 1 | 1 << 3, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0); cmd(2, 2, 25);
+  r.submit(1, new Uint32Array([...d.setup, ...words, ...d.draw, 62 | 10 << 16, 0, 22, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 4, 4]));
+  assert.deepEqual(errors, []);
+  const at = stateAtCalls(gl.log, 'clearBufferfv');
+  assert.equal(at.length, 1);
+  assert.ok(!at[0].on.has(E.RASTERIZER_DISCARD), 'the clear runs with the rasterizer\'s discard off');
+  assert.ok(at[0].on.has(E.SCISSOR_TEST), 'within its rectangle');
+});
+
+test('virgl renderer: a blended draw into a 32-bit float target blends with EXT_float_blend, and draws unblended without it (WebGL2 refuses the draw)', () => {
+  const r32f = [...FORMATS.values()].find((f) => f.name === 'R32_FLOAT')!;
+  const run = (extensions: string[]) => {
+    const gl = mockGl({ extensions });
+    gl.keepLog = true;
+    const errors: string[] = [];
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+    r.createContext(1);
+    const d = drawable(r);
+    r.createResource({ id: 4, target: 2, format: r32f.id, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+    r.attach(1, 4);
+    const words: number[] = [];
+    const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+    cmd(1, 8, 23, 4, r32f.id, 0, 0);
+    cmd(5, 0, 1, 0, 23);
+    // ONE, ONE (additive), all of RGBA written.
+    cmd(1, 1, 30, 0, 0, 1 | 0x1 << 4 | 0x1 << 9 | 0x1 << 17 | 0x1 << 22 | 0xf << 27, 0, 0, 0, 0, 0, 0, 0); cmd(2, 1, 30);
+    r.submit(1, new Uint32Array([...d.setup, ...words, ...d.draw]));
+    assert.deepEqual(errors, []);
+    return { asked: gl.log.some(([n, a]) => n === 'getExtension' && a[0] === 'EXT_float_blend'), blend: stateAtCalls(gl.log, 'drawArrays').map((s) => s.on.has(E.BLEND)) };
+  };
+  const base = ['EXT_color_buffer_float', 'OES_texture_float_linear'];
+  assert.deepEqual(run([...base, 'EXT_float_blend']), { asked: true, blend: [true] });
+  assert.deepEqual(run(base).blend, [false]);
+});
+
+test('virgl renderer: a resource copy\'s blit runs with every write mask on (a draw\'s partial color mask before it)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const d = drawable(r);
+  r.createResource({ id: 4, target: 2, format: 67, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 4);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  // A blend state writing only R, a draw, then RESOURCE_COPY_REGION (17) of resource 3 into 4.
+  cmd(1, 1, 30, 0, 0, 0x1 << 27, 0, 0, 0, 0, 0, 0, 0); cmd(2, 1, 30);
+  r.submit(1, new Uint32Array([...d.setup, ...words, ...d.draw, 17 | 13 << 16, 4, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 4, 1]));
+  assert.deepEqual(errors, []);
+  assert.notDeepEqual(stateAtCalls(gl.log, 'drawArrays')[0].mask, [true, true, true, true], 'the draw wrote R only');
+  const at = stateAtCalls(gl.log, 'blitFramebuffer');
+  assert.equal(at.length, 1);
+  assert.deepEqual([at[0].mask, at[0].depth, at[0].stencil, at[0].on.has(E.SCISSOR_TEST)], [[true, true, true, true], true, 0xff, false]);
+});
+
+test('virgl screen: a 3D scanout is drawn from its level 0 through the screen\'s own sampler, whatever the guest\'s last view left on the texture', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const tex = { obj: 'tex', id: 999 };
+  const fake = { scanoutSource: () => ({ tex, fmt: FORMATS.get(2)!, width: 8, height: 8 }) } as unknown as VirglRenderer;
+  const screen = new Screen(gl, fake);
+  screen.set({ res: 3, width: 8, height: 8, rect: { x: 0, y: 0, w: 8, h: 8 } });
+  // The guest's last draw sampled the texture from level 1 (its view), with mipmapped filtering.
+  gl.bindTexture(E.TEXTURE_2D, tex);
+  gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_BASE_LEVEL, 1);
+  gl.log.length = 0;
+  screen.draw();
+  const i = gl.log.findIndex(([n]) => n === 'drawArrays');
+  assert.ok(i > 0);
+  const before = gl.log.slice(0, i);
+  const sampler = before.filter(([n, a]) => n === 'bindSampler' && a[0] === 0).at(-1)?.[1][1];
+  assert.ok(sampler, 'a sampler of its own');
+  const base = before.filter(([n, a]) => n === 'texParameteri' && a[1] === E.TEXTURE_BASE_LEVEL).at(-1)?.[1][2];
+  assert.equal(base, 0, 'level 0');
 });
 
 test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GLES3 occlusion_query: results after glFinish)', () => {
