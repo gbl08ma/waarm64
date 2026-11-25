@@ -403,7 +403,7 @@ export class VenusGpu {
       (e) => {
         if (e) this.warn(what(e));
       },
-      () => {},
+      () => undefined,
     );
   }
 
@@ -442,7 +442,7 @@ export class VenusGpu {
     const rp = () => this.pass as GPURenderPassEncoder;
     const cp = () => this.pass as GPUComputePassEncoder;
     const buf = (id: number) => this.get<GPUBuffer>(id);
-    const nothing = () => {};
+    const nothing = () => undefined;
     if (!d) {
       // No device: objects aren't made; a submit completes in a later task.
       const noop: Record<string, (...a: number[]) => number | void> = {};
@@ -1252,7 +1252,7 @@ export class VenusGpu {
               this.stats.gpuTimed++;
               this.stats.gpuMs += ms;
             },
-            () => {},
+            () => undefined,
           )
           .finally(() => this.timings.push(timing));
     }

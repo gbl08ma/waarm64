@@ -568,9 +568,6 @@
     }
   },
   "web/venus-gpu.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 2
-    },
     "@typescript-eslint/no-invalid-void-type": {
       "count": 5
     },
