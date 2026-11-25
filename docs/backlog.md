@@ -366,10 +366,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, results in the session's
   `bench/results/local/win/deqp-d3d11-*`): GLES2 8 Fail, GLES3 120 after the loops' fix, most of them ANGLE's own
   D3D11 expectations (texturesize, shadow lookups with a level, gradient or offset, invariance, polygon_offset's
-  units, fbo.blit's out_of_bounds, multisample lines). Not proven ANGLE's: `shaders.switch.*_dynamic` (32; a switch
-  in a loop the compiler unrolls, then a texture fetch, read 0 in a probe: D3D11's, ours to work around if it is
-  that), GLES3's atan2 (8, image difference ~2757 at highp and mediump: capture the TGSI with `CAPTURE=`, Mesa's
-  sign transfer through AND/OR bits is the suspect), invariance's common_subexpression_3. Then a Windows/D3D11
+  units, fbo.blit's out_of_bounds, multisample lines); switch's dynamic cases and atan2 were ours, fixed since. Not
+  proven ANGLE's: invariance's common_subexpression_3. Then a Windows/D3D11
   expectations file beside tests/deqp/ so a rerun shows only what's new. Context losses on D3D11 that only a draw
   reveals (HLSL that fails to compile for the draw's layout) still crash the machine (the entry on lost contexts).
 - **The published desktop demo image's Chromium doesn't start** ("libsimdutf.so.36: cannot open shared object file";

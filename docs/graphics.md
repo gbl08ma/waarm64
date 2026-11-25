@@ -604,13 +604,18 @@ following vrend's conventions:
   of float literals too, so it is the folding, not the literals). A lane mixed with anything not constant was right;
   small integers (counters, indices: a float's denormals) and integer operations' immediates stay constants;
 - **on D3D11, a vertex shader's shadow lookup at an explicit level is the implicit one** (`Quirks.d3d11`, from the
-  unmasked renderer string; the only translation that depends on the backend): ANGLE writes `textureLod` (and
+  unmasked renderer string; with FRC below, the only translations that depend on the backend): ANGLE writes `textureLod` (and
   `textureLodOffset`, Mesa's `TEX_LZ`) of a shadow sampler in a vertex shader as an instruction vs_5_0 lacks (only
   SampleCmpLevelZero compares there), the program links with "error X4532: cannot map expression to vs_5_0 instruction
   set" in its log, and the first draw fails to compile its vertex shader for the draw's input layout and **loses the
   context**: Chromium's GPU process exits and the machine crashes (dEQP-GLES3's `texture_functions`
   `*.sampler2dshadow_vertex`, 3.5 minutes into the list, WARP the same). `texture` there (level 0) compiles; a level
   above 0 reads level 0, a failed case on D3D11 instead of a lost machine;
+- **on D3D11, FRC is `x - floor(x)`** (GLSL's own definition of `fract`; `Quirks.d3d11`): Mesa lowers `floor(t)` to
+  `t - fract(t)`, and ANGLE's HLSL computed `t` fused (a mad) for one use and not for the other, so the difference fell
+  a hair below the integer and `int()` of it took the one below: 23,452 of 200,000 values of `int(floor(z * 1.5 + 2.0))`
+  in a vertex shader, plain GLSL alike (`floor` itself exact); dEQP-GLES3 `switch`'s 32 dynamic cases drew speckled
+  bands. GLES allows it (a value may differ within a shader without `invariant`); written so, it's exact;
 - **a derivative goes into a vec4 of its own** (`vec4 ddN = dFdx(…);`, then read): in a loop whose count isn't a
   constant ANGLE's D3D11 backend writes a derivative as `(x, 0.0)`, a scalar (GLES leaves it undefined there), so
   `floatBitsToUint(dFdx(v)).xy` was "error X3018: invalid subscript 'xy'" in its HLSL (`WEBGL_debug_shaders` shows
@@ -629,9 +634,13 @@ following vrend's conventions:
 - **on D3D11, a program D3D's compiler refused is no program** (the renderer's `link`): ANGLE links a program whose
   HLSL fxc rejected (`error X…` in the program's log, the status true) and loses the context at the draw that
   compiles it again for its vertex or target layout (the GPU process exits, the machine crashes), so whether a machine
-  crashed depended on what was bound before. Such a program draws nothing and says why. It still catches an fxc
-  internal error in some derivative cases ("X8000: Invalid Bytecode: Abs modifier not allowed"); a program whose
-  draw-time compile alone fails (its link-time one passing) it can't see;
+  crashed depended on what was bound before. Such a program draws nothing and says why. Given up means a series of
+  ANGLE's tries that ends in a failure (`d3dRefused`): it compiles with default flags, then skipping validation, then
+  skipping optimization, logging each failure and " Retrying with" while one is left. A program it compiled on a retry
+  is kept: fxc's internal error at the first two ("X8000: Invalid Bytecode: Abs modifier not allowed") on dEQP-GLES3's
+  mediump `atan2`, which then draws right, came only from a fresh browser (ANGLE's cache keeps the binary, no log), and
+  refusing it failed those 8 cases in the first run after a start. A program whose draw-time compile alone fails (its
+  link-time one passing) it can't see;
 - what GLES 3.0 lacks is refused with a reason, and none of it is advertised: images, buffers and atomics, `IMUL_HI`,
   cube arrays and buffer textures, 64-bit types, indirect inputs, outputs and constant-buffer selection, geometry,
   tessellation and compute stages.
@@ -1244,8 +1253,8 @@ Worth not re-discovering:
   D3D11, most of it in ANGLE's own dEQP expectations for D3D11: invariance's common_subexpression, polygon_offset's
   units, texture_functions' texturesize and shadow lookups at a level or gradient, fbo.blit.rect's out_of_bounds,
   rbo_multisample_max lines; derivatives in loops (ANGLE writes a derivative in a loop it can't unroll as 0, and
-  Mesa's TGSI keeps no loop count constant, so dEQP's static_loop cases are such loops too); switch's dynamic cases,
-  by a hair over the threshold. Not explained yet: GLES3 `atan2` mediump (8 cases, large differences).
+  Mesa's TGSI keeps no loop count constant, so dEQP's static_loop cases are such loops too). Ours since and fixed:
+  the derivate loops (34), switch's dynamic cases (32, FRC above) and mediump `atan2` (8, a recovered program refused).
 - Headed and headless Chromium on the Mac give the same frame rates (no headless throttling).
 - **Headless WebGPU in the dev VM** needs `--enable-unsafe-webgpu` and, to present from a worker's `OffscreenCanvas`,
   `--enable-features=Vulkan --use-angle=swiftshader --use-gl=angle`; WebGPU's `writeBuffer`/`writeTexture` and WebGL's

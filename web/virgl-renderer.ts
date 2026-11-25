@@ -2561,7 +2561,7 @@ void main() {
       // context: the GPU process exits and the machine crashes. Such a program draws nothing instead (graphics.md
       // "The translator": dEQP-GLES3's derivate cases with a derivative in a loop, X3018 in ANGLE's own HLSL).
       const log = gl.getProgramInfoLog(prog) ?? '';
-      if (/\berror X\d{4}/.test(log)) {
+      if (d3dRefused(log)) {
         ok = false;
         this.error(`program: D3D's compiler refused it: ${log.slice(0, 600)}\n${vs}\n${fs}`);
       }
@@ -4579,4 +4579,19 @@ void main() {
   private hostReader(r: Res) {
     return r.fmt && (readbackOf(r.fmt, this.colorBufferFloat) ?? snapshotReader(r.fmt, this.colorBufferFloat));
   }
+}
+
+/**
+ * Whether ANGLE's D3D11 backend gave up on a program's HLSL, from the program's log. Its compiler tries each shader
+ * with default flags, then skipping validation, then skipping optimization; each failure logs the compiler's errors
+ * and "Warning: D3D shader compilation failed with <flags> flags. (<profile>)", then " Retrying with <next>" while one
+ * is left. A series that ends in a failure (no retry after it) gave up; one whose retry compiled (fxc's internal
+ * errors on dEQP-GLES3's mediump atan2, whose program then draws right) didn't. Errors without that series: given up.
+ */
+export function d3dRefused(log: string): boolean {
+  const failures = [
+    ...log.matchAll(/Warning: D3D shader compilation failed with [^\n]*? flags\. \([^)\n]*\)(\n Retrying with )?/g),
+  ];
+  if (!failures.length) return /\berror X\d{4}/.test(log);
+  return failures.some((m) => !m[1]);
 }

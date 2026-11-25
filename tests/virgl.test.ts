@@ -14,7 +14,7 @@ import { CAPS_FIELDS, decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl, withBits, withoutFormats } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
 import { clock, FenceGate, fenceSettled, localHost, portHost, queryScheduler, SPIN_MS, type HostCall, type VirglHost } from '../web/virgl-host.ts';
-import { VirglRenderer } from '../web/virgl-renderer.ts';
+import { d3dRefused, VirglRenderer } from '../web/virgl-renderer.ts';
 import { Screen } from '../web/virgl-screen.ts';
 import type { RendererSnapshot } from '../web/virgl-objects.ts';
 import { readbackOf, toHalf } from '../web/virgl-pixels.ts';
@@ -188,6 +188,36 @@ test('virgl tgsi: on D3D11 a vertex shader\'s shadow lookup at an explicit level
   assert.match(d3d.fs, /textureLod\(fs0, vec3\(/, d3d.fs);
   const other = generate(vs, fs, key);
   assert.equal(other.vs.match(/textureLod\(vs0, vec3\(/g)?.length, 2, other.vs);
+});
+
+test('virgl: a program ANGLE\'s D3D11 compiled on a retry is no refused program; one whose every try failed is (dEQP-GLES3 mediump atan2 drew nothing in a fresh browser)', () => {
+  // ANGLE's logs on the Windows VM (Chrome 158, 2026-11-25): fxc's internal error on the atan2 program at default flags
+  // and skipping validation, compiled skipping optimization (it draws right) ...
+  const ice = 'error X8000: D3D11 Internal Compiler Error: Invalid Bytecode: Abs modifier not allowed for operand #4 of opcode #8 (counts are 1-based). \n\n';
+  const recovered = `${ice}Warning: D3D shader compilation failed with default flags. (ps_5_0)\n Retrying with skip validation\n${ice}Warning: D3D shader compilation failed with skip validation flags. (ps_5_0)\n Retrying with skip optimization\n\n`;
+  assert.equal(d3dRefused(recovered), false);
+  // ... and the derivative in a loop (refusedProgram in tests/browser/virgl-page.ts), refused at every try.
+  const err = "(62,34-63): error X3018: invalid subscript 'xy'\n(62,17-64): error X3013: 'uvec2_ctor_uint2': no matching 1 parameter function\n\n";
+  const failed = `${err}Warning: D3D shader compilation failed with default flags. (ps_5_0)\n Retrying with skip validation\n${err}Warning: D3D shader compilation failed with skip validation flags. (ps_5_0)\n Retrying with skip optimization\n${err}Warning: D3D shader compilation failed with skip optimization flags. (ps_5_0)\n\n`;
+  assert.equal(d3dRefused(failed), true);
+  // A vertex shader that gave up beside a pixel shader that recovered; errors without ANGLE's series; a clean log.
+  assert.equal(d3dRefused(recovered + failed.replaceAll('ps_5_0', 'vs_5_0')), true);
+  assert.equal(d3dRefused(err), true);
+  assert.equal(d3dRefused(''), false);
+});
+
+test('virgl tgsi: on D3D11 FRC is x - floor(x) (Mesa\'s floor, t - fract(t), fell below the integer where ANGLE fused t for one use: dEQP-GLES3 switch dynamic cases)', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\nDCL TEMP[0..1]\n  0: MUL TEMP[0].x, IN[0].zzzz, IN[0].xxxx\n  1: FRC TEMP[1].x, TEMP[0].xxxx\n  2: ADD OUT[1].x, TEMP[0].xxxx, -TEMP[1].xxxx\n  3: MOV OUT[0], IN[0]\n  4: END');
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: FRC TEMP[0], IN[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
+  const key: ProgramKey = { ...KEY, attribs: ['f'] };
+  const d3d = generate(vs, fs, key, { d3d11: true });
+  for (const src of [d3d.vs, d3d.fs]) {
+    assert.doesNotMatch(src, /\bfract\(/, src);
+    assert.match(src, /\(([^()]*(?:\([^()]*\))?[^()]*) - floor\(\1\)\)/, src);
+  }
+  const other = generate(vs, fs, key);
+  assert.match(other.vs, /\bfract\(/, other.vs);
+  assert.doesNotMatch(other.vs, /floor\(/, other.vs);
 });
 
 test('virgl tgsi: a derivative goes into a vec4 of its own before it is swizzled (ANGLE\'s D3D11 made one in a loop a scalar: dEQP-GLES3 derivate uniform_loop lost the context)', () => {

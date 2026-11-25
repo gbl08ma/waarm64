@@ -557,7 +557,8 @@ const declareVarying = (v: Varying, dir: 'in' | 'out') =>
  * only compares at level 0, SampleCmpLevelZero): `textureLod` of a shadow sampler in a vertex shader links with
  * "error X4532: cannot map expression to vs_5_0 instruction set" in its log, and the first draw loses the context
  * (the GPU process exits: the machine crashed, dEQP-GLES3 texture_functions' sampler2dshadow_vertex cases). Such a
- * lookup is the implicit one, `texture` (level 0 in a vertex shader), which it compiles.
+ * lookup is the implicit one, `texture` (level 0 in a vertex shader), which it compiles. FRC is x - floor(x) there
+ * (`fract` beside the value it came from differed by the value's rounding: the FRC case).
  */
 export type Quirks = { d3d11?: boolean };
 
@@ -1071,8 +1072,11 @@ class Gen {
         return f(rep(`sin(${x(0)})`));
       case 'COS':
         return f(rep(`cos(${x(0)})`));
+      // On D3D11 GLSL's own definition, x - floor(x): Mesa lowers floor(t) to t - fract(t), and ANGLE's HLSL computed
+      // t fused (mad) for one use and not for the other, so t - fract(t) fell a hair below the integer and int() of it
+      // took the one below (12% of int(floor(z * 1.5 + 2.0)) in a vertex shader; dEQP-GLES3 switch's dynamic cases).
       case 'FRC':
-        return f(`fract(${s(0)})`);
+        return f(this.quirks.d3d11 ? `(${s(0)} - floor(${s(0)}))` : `fract(${s(0)})`);
       case 'FLR':
         return f(`floor(${s(0)})`);
       case 'CEIL':
