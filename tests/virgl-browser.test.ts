@@ -11,6 +11,7 @@ import { after, before, test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { chromiumEnv } from '../tools/nosme.ts';
+import { connectRemote, REMOTE_CDP, remoteBase, remotePort } from '../tools/remote-chromium.ts';
 import { startServer } from '../tools/serve.ts';
 import { PROFILE } from '../web/virgl-video.ts';
 import type { ChunkFault } from './browser/virgl-page.ts';
@@ -26,12 +27,13 @@ const fixture = (name: string) => {
 };
 
 before(async () => {
-  const server = await startServer();
+  const server = await startServer(REMOTE_CDP ? remotePort() : 0);
   close = () => server.close();
-  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  // The video test reads decoded frames: SME hidden where the CPU needs it (tools/nosme.ts).
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', env: chromiumEnv() });
-  page = await browser.newPage();
+  base = REMOTE_CDP ? remoteBase() : `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  // The video test reads decoded frames: SME hidden where the CPU needs it (tools/nosme.ts). WAARM64_CDP: a
+  // Chromium elsewhere (tools/remote-chromium.ts; the Windows VM's D3D11).
+  browser = REMOTE_CDP ? await connectRemote() : await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', env: chromiumEnv() });
+  page = await (await browser.newContext()).newPage();
   await page.goto(`${base}/tests/browser/virgl.html`);
   await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready, null, { timeout: 30_000 });
   // Chromium builds without proprietary codecs (Playwright's, in a cloud session) decode no H.264 at all.
@@ -268,6 +270,12 @@ test('virgl on WebGL2: a draw that samples what it draws into samples a copy (We
   assert.deepEqual(r.layer0, [0, 255, 0, 255], 'layer 0 drawn from layer 1');
   assert.deepEqual(r.layer1, [0, 255, 0, 255]);
   assert.equal(r.copies, 2);
+});
+
+test('virgl on WebGL2: integers keep their bits through the registers and a flat varying (ANGLE\'s D3D11 folded masked ones to 0: Firefox\'s toolbar dark red)', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { integerRegisters(): { error: unknown; pixel: number[] } } }).virgl.integerRegisters());
+  // (0x12345, 0x2bb, 0xff09, -1) & (255, 1023, 255, 1023), .y plus .x >> 10 (0x48).
+  assert.deepEqual(r, { error: null, pixel: [0x45, 0x2bb + 0x48, 0x09, 0x3ff] });
 });
 
 test('virgl on WebGL2: stream output captures interleaved, separate and mixed, appends, stops at a full buffer, counts what it wrote', async () => {

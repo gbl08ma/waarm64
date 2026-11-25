@@ -97,6 +97,23 @@ update. It also installs `/etc/udev/rules.d/70-waarm64-usb.rules` (the 0525 gadg
 moved QEMU from 11.1.1 to 11.1.2 on 2026-10-18, while `qemu-linux-user` (the corpus oracle) and `qemu-img` stay at
 11.1.1.
 
+## Chrome on the Windows VM
+
+ANGLE's Direct3D 11 backend (what Chrome on Windows uses) is reached through the user's Windows 10 VM with an NVIDIA
+GPU passed through, up only when the user boots it that way (its address and key are kept out of this repository).
+Headless Chrome started there over ssh gets the GPU, also with the user's session locked; a headed one runs in the
+user's session through a `schtasks /IT` task. The route:
+- ssh with `-L 9333:127.0.0.1:9333` (Chrome's DevTools there) and `-R 8197:127.0.0.1:8197` (this side's server: the
+  page is `http://localhost:8197` there, a secure context, so cross-origin isolation holds), running
+  `chrome.exe --headless=new --remote-debugging-port=9333 --user-data-dir=%TEMP%\waarm64-cdp --disk-cache-size=1`.
+  Disks are served from here by URL (~100 MB/s through the tunnel), never copied there.
+- `WAARM64_CDP=http://127.0.0.1:9333` (`tools/remote-chromium.ts`) makes `bench/gpu/guest-session.ts` (its harnesses)
+  and `tests/virgl-browser.test.ts` attach to that Chrome instead of launching one, their server on 8197.
+- Chrome outlives the ssh session: `bench/gpu/win-leftovers.sh --kill` after every run stops the harness's Chrome
+  there by its profile path (never by name: the user's own Chrome may be open) and this side's forwards. Never reboot
+  the VM; if it stops answering, wait for the user.
+- `--use-angle=d3d11-warp` is D3D11 in software: what it reproduces needs no GPU.
+
 ## Deploying
 
 The page and the disk images' host `disks.waarm64.com` (`deploy/disks/`), only when the user asks; images never on R2

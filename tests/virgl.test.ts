@@ -91,7 +91,7 @@ IMM[0] UINT32 {1065353216, 3, 0, 0}
   assert.match(p.vs, /gl_Position.y \*= u_adjy;/);
   assert.match(p.fs, /uniform highp sampler2D fs0;/);
   assert.match(p.fs, /vec4\(tx0.z, tx0.y, tx0.x, 1.0\)/, 'the sampler swizzle');
-  assert.match(p.fs, /if \(uvec4\(3u, 3u, 3u, 3u\).x != 0u\) \{|if \(floatBitsToUint\(t1.xxxx\).x != 0u\) \{/);
+  assert.match(p.fs, /if \(uvec4\(3u, 3u, 3u, 3u\).x != 0u\) \{|if \(t1.xxxx.x != 0u\) \{/);
   // The X byte gets the fragment's alpha (blending reads it: a constant 1 made translucent edges opaque).
   assert.match(p.fs, /o0 = vec4\(col0.z, col0.y, col0.x, col0.w\);/, 'the render target\'s stored order, alpha in the X byte');
   assert.deepEqual(p.attribs, [0]);
@@ -112,18 +112,21 @@ IMM[0] UINT32 {3, 7, 0, 0}
   2: MOV OUT[0], IN[0]
   3: END`);
   const p = generate(vs, fs, { ...KEY, alphaFunc: 1 });
-  assert.match(p.fs, /uintBitsToFloat\(uvec4\(3u, 3u, 3u, 3u\) \+ uvec4\(7u, 7u, 7u, 7u\)\)|uintBitsToFloat\(\(uvec4\(3u, 3u, 3u, 3u\) \+ uvec4\(7u, 7u, 7u, 7u\)\)/);
-  assert.match(p.fs, /vec4\(floatBitsToUint\(t0.xxxx\)\)/);
+  assert.match(p.fs, /t0.x = uint\(\(uvec4\(3u, 3u, 3u, 3u\) \+ uvec4\(7u, 7u, 7u, 7u\)\).x\);/);
+  assert.match(p.fs, /floatBitsToUint\(vec4\(t0.xxxx\)\)/);
   assert.match(p.fs, /vec4\(gl_FragCoord.x - 0.5, gl_FragCoord.y - 0.5,/);
   assert.match(p.fs, /if \(!\(col0.w < u_alpharef\)\) discard;/);
   // A flat varying carries integers between the stages (a float varying may flush or canonicalize their bits).
   const fv = generate(parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END'),
     parseTgsi('FRAG\nDCL IN[0], GENERIC[0], CONSTANT\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0]\n  1: END'), { ...KEY, attribs: ['i'] });
-  assert.ok(fv.vs.includes('flat out highp ivec4 vf_GENERIC0;') && fv.vs.includes('vf_GENERIC0 = floatBitsToInt(v_GENERIC0);'), fv.vs);
-  assert.ok(fv.fs.includes('flat in highp ivec4 vf_GENERIC0;') && fv.fs.includes('v_GENERIC0 = intBitsToFloat(vf_GENERIC0);'), fv.fs);
-  // Small integers as float immediates stay bits (a float literal would be a denormal, flushed on some GPUs).
-  const mv = parseTgsi('VERT\nDCL OUT[0], POSITION\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 1065353216}\n  0: MOV TEMP[0], IMM[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
-  assert.match(generate(mv, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), KEY).vs, /uintBitsToFloat\(1u \^ u_zero\)/);
+  assert.ok(fv.vs.includes('flat out highp ivec4 vf_GENERIC0;') && fv.vs.includes('uvec4 v_GENERIC0 = uvec4(0u);') && fv.vs.includes('vf_GENERIC0 = ivec4(v_GENERIC0);'), fv.vs);
+  assert.ok(fv.fs.includes('flat in highp ivec4 vf_GENERIC0;') && fv.fs.includes('v_GENERIC0 = uvec4(vf_GENERIC0);'), fv.fs);
+  // Small integers as float immediates stay bits (a float literal would be a denormal, flushed on some GPUs); into a
+  // register (bits) they are an integer literal.
+  const mv = parseTgsi('VERT\nDCL OUT[0], POSITION\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 1065353216}\n  0: MOV TEMP[0], IMM[0]\n  1: MOV OUT[0], IMM[0]\n  2: END');
+  const mvs = generate(mv, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), KEY).vs;
+  assert.match(mvs, /uintBitsToFloat\(1u \^ u_zero\)/);
+  assert.match(mvs, /t0 = uvec4\(1u, 2u, 0u, 1065353216u\);/);
 });
 
 test('virgl tgsi: a vertex shader that writes the point size declares it once (dEQP-GLES2 points)', () => {
@@ -165,6 +168,29 @@ test('virgl tgsi: an invariant position stays invariant (dEQP-GLES2 shaders.inva
     const p = generate(vs, fs, { ...KEY, attribs: ['f'] });
     assert.equal(/^invariant gl_Position;$/m.test(p.vs), invariant, p.vs);
   }
+});
+
+test('virgl tgsi: an integer never passes through a float (ANGLE\'s D3D11 folds a float made of a masked or shifted integer\'s bits to 0: Firefox\'s WebRender drew its toolbar dark red)', () => {
+  // WebRender's clip and blur shaders unpack instance data so (cs_clip_rectangle: AND with 255 and 1023, USHR by 10).
+  // As float registers, `uintBitsToFloat(uvec4(a_1) & uvec4(255u, ...))` came back 0 on D3D11 (its HLSL compiler
+  // knows the exponent bits are clear: a denormal, flushed): registers that may hold integers are uvec4s.
+  const vs = parseTgsi(`VERT
+DCL IN[0]
+DCL OUT[0], POSITION
+DCL OUT[1], GENERIC[0]
+DCL TEMP[0..1]
+IMM[0] UINT32 {255, 1023, 10, 0}
+  0: AND TEMP[0], IN[0], IMM[0].xyxy
+  1: USHR TEMP[1], IN[0], IMM[0].zzzz
+  2: MOV OUT[1], TEMP[0]
+  3: UADD OUT[1].y, TEMP[0].yyyy, TEMP[1].xxxx
+  4: MOV OUT[0], IMM[0].wwww
+  5: END`);
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], CONSTANT\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: MOV TEMP[0], IN[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
+  const p = generate(vs, fs, { ...KEY, attribs: ['i'], cbufs: [{ type: 'u', write: [0, 1, 2, 3] }] });
+  for (const text of [p.vs, p.fs]) assert.doesNotMatch(text, /(uint|int|float)BitsTo/, text);
+  assert.match(p.vs, /^uvec4 t0 = uvec4\(0u\);$/m);
+  assert.match(p.vs, /t0 = uvec4\(a_0\) & uvec4\(255u, 1023u, 255u, 1023u\);/);
 });
 
 test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the shader; a target without alpha gets the source alpha; z flips for an inverted depth range (dEQP blend, depth_range)', () => {

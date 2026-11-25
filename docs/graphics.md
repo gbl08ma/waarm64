@@ -559,8 +559,13 @@ sampled through a swizzle (its old texels come out), an array's layer drawn whil
 `web/virgl-tgsi.ts` parses the TGSI text Mesa sends (what `tgsi_dump` writes) and generates GLSL ES 3.00 for a vertex
 and fragment shader **pair** (their varyings must agree in name and interpolation, which only the pair knows),
 following vrend's conventions:
-- registers are float vec4s holding bits; constant buffer 0 is a `uvec4` uniform array, the others uniform blocks;
-  immediates are literals, as bits where a float literal would be a denormal or not finite;
+- registers hold bits: temporaries, flat varyings and the logical colors are `uvec4`s, read through
+  `uintBitsToFloat` by float instructions; constant buffer 0 is a `uvec4` uniform array, the others uniform blocks;
+  immediates are literals, as bits where a float literal would be a denormal or not finite. **No integer passes
+  through a float** (found on ANGLE over D3D11, NVIDIA and WARP alike): its HLSL compiler knows the bits an integer
+  operation leaves and folds a float made of them to 0 when that is a denormal, so with float registers
+  `floatBitsToUint(uintBitsToFloat(x & 255u))` was 0 and Firefox's WebRender, which unpacks its instance data so
+  (`cs_clip_rectangle`, `cs_blur`), drew its toolbar dark red and its text not at all;
 - the program key carries what a shader can't know: the attributes' integer-ness, each sampler's type and swizzle,
   each color buffer's type and stored order, alpha test, flat shading, two-sided color, points, the blend substitution;
 - flat varyings travel as integers (`vf_…`): an integer's bits in a float varying are a denormal or a NaN, which GLSL

@@ -6,6 +6,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { chromiumEnv } from '../../tools/nosme.ts';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { connectRemote, REMOTE_CDP, remoteBase, remotePort } from '../../tools/remote-chromium.ts';
 import { startServer } from '../../tools/serve.ts';
 import type { VideoStats } from '../../web/virgl-video.ts';
 import { SYSCALLS } from './arm64-syscalls.ts';
@@ -98,8 +99,8 @@ echo $2-done
 
 export async function openSession(o: SessionOptions) {
   // A kept profile (WAARM64_PROFILE, below) keeps its storage only for the same origin: a fixed port then (WAARM64_PORT).
-  const server = await startServer(process.env.WAARM64_PROFILE ? Number(process.env.WAARM64_PORT ?? 8197) : 0);
-  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const server = await startServer(REMOTE_CDP ? remotePort() : process.env.WAARM64_PROFILE ? Number(process.env.WAARM64_PORT ?? 8197) : 0);
+  const base = REMOTE_CDP ? remoteBase() : `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   // HEADED=1: a visible window (only on the Mac host, where the user allows it: never on the dev VM).
   // CHROMIUM_ARGS: extra flags (e.g. `--mute-audio` on the Mac host: its sound still renders and keeps time, unheard).
   // CHROMIUM_JS_FLAGS: V8's flags, spaces and all (`--js-flags`; e.g. `--perf-basic-prof --perf-basic-prof-path=<dir>`).
@@ -114,6 +115,10 @@ export async function openSession(o: SessionOptions) {
     page = ctx.pages()[0] ?? await ctx.newPage();
     const ua = await page.evaluate(() => navigator.userAgent);
     browser = { version: () => ua.match(/Chrome\/([\d.]+)/)?.[1] ?? ua, close: () => ctx.close(), newPage: () => ctx.newPage() } as unknown as Browser;
+  } else if (REMOTE_CDP) {
+    // WAARM64_CDP: a Chromium started elsewhere (tools/remote-chromium.ts; the Windows VM's): the disk by its URL.
+    browser = await connectRemote();
+    page = await (await browser.newContext(contextOptions)).newPage();
   } else {
     browser = await chromium.launch(launch);
     page = await (await browser.newContext(contextOptions)).newPage();
@@ -144,7 +149,7 @@ export async function openSession(o: SessionOptions) {
 
   // The image under the repository, as the server serves it.
   const served = relative(resolve(new URL('../..', import.meta.url).pathname), resolve(o.image));
-  const byUrl = !!o.disk2 || !!o.byUrl || !!o.snapshot || !!o.diskUrl;
+  const byUrl = !!o.disk2 || !!o.byUrl || !!o.snapshot || !!o.diskUrl || !!REMOTE_CDP; // a remote Chromium reads the disk by its URL (no file upload over CDP)
   if (byUrl && !o.diskUrl && served.startsWith('..')) throw new Error(`an image opened by its URL must be under the repository (${o.image})`);
   const url = `${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=${o.diskUrl ? encodeURIComponent(o.diskUrl) : `/${served}`}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}&clocksync=0${o.query ? `&${o.query}` : ''}`; // snapshots' pauses as measured before the clock catch-up (`query` may turn it on)
   const coreServed = o.core ? await routeCore(page, o.core) : undefined;

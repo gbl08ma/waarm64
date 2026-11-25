@@ -510,6 +510,50 @@ export function streamOut() {
 }
 
 /**
+ * Integers through the translator's registers on WebGL2: WebRender's unpacking of instance data (an integer attribute
+ * masked with 255 and 1023, shifted right by 10, added) into a flat varying and an RGBA32UI color buffer. ANGLE's
+ * D3D11 backend made 0 of every one when the registers were floats (its HLSL compiler folds a float made of an
+ * integer whose exponent bits it knows are clear, a denormal, to 0). Returns the pixel.
+ */
+export function integerRegisters() {
+  const gl = new OffscreenCanvas(1, 1).getContext('webgl2')!;
+  const vs = parseTgsi(`VERT
+DCL IN[0]
+DCL IN[1]
+DCL OUT[0], POSITION
+DCL OUT[1], GENERIC[0]
+DCL TEMP[0..1]
+IMM[0] UINT32 {255, 1023, 10, 0}
+  0: AND TEMP[0], IN[0], IMM[0].xyxy
+  1: USHR TEMP[1], IN[0], IMM[0].zzzz
+  2: MOV OUT[1], TEMP[0]
+  3: UADD OUT[1].y, TEMP[0].yyyy, TEMP[1].xxxx
+  4: MOV OUT[0], IN[1]
+  5: END`);
+  const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], CONSTANT\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: MOV TEMP[0], IN[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
+  const p = generate(vs, fs, { attribs: ['i', 'f'], samplers: { vs: [], fs: [] }, cbufs: [{ type: 'u', write: [0, 1, 2, 3] }] });
+  const compile = (type: number, src: string) => { const sh = gl.createShader(type)!; gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+  const prog = gl.createProgram()!;
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, p.vs)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, p.fs)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return { error: gl.getProgramInfoLog(prog), pixel: [] };
+  gl.useProgram(prog);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_adjy'), 1);
+  gl.uniform2f(gl.getUniformLocation(prog, 'u_adjz'), 1, 0);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, 1, 1);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, 1, 1);
+  const ints = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, ints);
+  gl.bufferData(gl.ARRAY_BUFFER, new Uint32Array([0x12345, 0x2bb, 0xff09, 0xffffffff]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribIPointer(0, 4, gl.INT, 16, 0); gl.vertexAttribDivisor(0, 1);
+  const pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, 1);
+  const px = new Uint32Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, px);
+  return { error: gl.getError() || null, pixel: Array.from(px) };
+}
+
+/**
  * A 3D machine's 2D scanout on the screen: the device (web/gpu.ts) with a host whose screen draws on WebGL2, a 4×4
  * resource of `format` filled with the guest's bytes `px`, transferred and shown. Returns the screen's centre pixel.
  */

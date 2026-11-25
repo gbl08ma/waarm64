@@ -537,11 +537,12 @@ const qualifier = (v: Varying) => `${v.interp === 'CONSTANT' ? 'flat ' : 'smooth
  * A varying's declaration between the stages. A flat one travels as integers (`vf_…`), copied from and into the
  * shaders' own vec4 (which holds bits, as every register does): an integer's bits in a float varying are a denormal
  * or a NaN to the implementation, which GLSL ES lets it flush or canonicalize at the interface (SwiftShader keeps
- * them; nothing says another GPU does). Flat is where integer varyings are (GLES requires it).
+ * them; nothing says another GPU does). Flat is where integer varyings are (GLES requires it). The shaders' own
+ * register is a uvec4, as every register that may hold an integer's bits is (`Gen.storage`).
  */
 const declareVarying = (v: Varying, dir: 'in' | 'out') =>
   v.interp === 'CONSTANT'
-    ? [`${qualifier(v)}${dir} highp ivec4 vf_${v.name.slice(2)};`, `vec4 ${v.name} = vec4(0.0);`]
+    ? [`${qualifier(v)}${dir} highp ivec4 vf_${v.name.slice(2)};`, `uvec4 ${v.name} = uvec4(0u);`]
     : [`${qualifier(v)}${dir} vec4 ${v.name};`];
 
 /** Generates the program for a vertex and a fragment shader under `key`. */
@@ -631,11 +632,17 @@ class Gen {
 
   // --- registers -------------------------------------------------------------------------------------------------
 
-  /** The storage type of a register file (what a read yields before casting). */
+  /**
+   * The storage type of a register file (what a read yields before casting). What holds bits that may be an
+   * integer's is a uvec4 (temporaries, flat varyings, the logical colors): an integer's bits in a float are a denormal
+   * or a NaN, and a compiler may take the float's liberties with them. ANGLE's D3D11 backend (its HLSL compiler)
+   * knows the bits an integer operation leaves (a mask, a shift) and folds the float made of them to 0 when that is a
+   * denormal, even with no float operation between: `floatBitsToUint(uintBitsToFloat(x & 255u))` is 0 there.
+   */
   private storage(op: Operand): Ty {
     switch (op.file) {
       case 'TEMP':
-        return 'f';
+        return 'u';
       case 'CONST':
         return 'u';
       case 'ADDR':
@@ -643,7 +650,7 @@ class Gen {
       case 'IN':
         return this.stage === 'vs' ? (this.key.attribs[op.index] ?? 'f') : this.fsInputType(op.index);
       case 'OUT':
-        return this.stage === 'fs' ? this.fsOutType(op.index) : 'f';
+        return this.stage === 'fs' ? this.fsOutType(op.index) : this.vsOutType(op.index);
       case 'SV':
         return this.svType(op.index);
       default:
@@ -651,15 +658,24 @@ class Gen {
     }
   }
 
+  /** A flat varying's register holds bits (`declareVarying`). */
+  private flatVarying(name: string) {
+    return this.varyings.get(name)?.interp === 'CONSTANT';
+  }
+
   private fsInputType(i: number): Ty {
     const d = this.inputs.get(i);
-    if (d?.semantic === 'FACE') return 'f';
-    return 'f';
+    if (!d?.semantic || isSprite(d.semantic, d.semIndex, this.key)) return 'f';
+    return this.flatVarying(`v_${d.semantic}${d.semIndex}`) ? 'u' : 'f';
+  }
+
+  private vsOutType(i: number): Ty {
+    return this.flatVarying(this.vsOutput(i)) ? 'u' : 'f';
   }
 
   private fsOutType(i: number): Ty {
     const d = this.outputs.get(i);
-    if (d?.semantic === 'COLOR') return 'f'; // the logical color is a float vec4 of bits; the epilogue writes the typed output
+    if (d?.semantic === 'COLOR') return 'u'; // the logical color holds bits; the epilogue writes the typed output
     return 'f';
   }
 
@@ -804,7 +820,7 @@ class Gen {
     const d = this.outputs.get(i);
     if (d?.semantic === 'COLOR') {
       this.colorWrites.add(d.semIndex);
-      return `col${d.semIndex}`;
+      return `colb${d.semIndex}`;
     }
     if (d?.semantic === 'POSITION') return 'o_depth';
     return `o_${i}`;
@@ -1526,12 +1542,12 @@ class Gen {
         if (written.has(vy.name)) continue;
         h.push(...declareVarying(vy, 'out'));
         epilogue.push(
-          `${vy.name} = ${vy.semantic === 'COLOR' || vy.semantic === 'BCOLOR' ? 'vec4(0.0, 0.0, 0.0, 1.0)' : 'vec4(0.0, 0.0, 0.0, 1.0)'};`,
+          `${vy.name} = ${vy.interp === 'CONSTANT' ? 'floatBitsToUint(vec4(0.0, 0.0, 0.0, 1.0))' : 'vec4(0.0, 0.0, 0.0, 1.0)'};`,
         );
         // A varying written in the epilogue must not overwrite one written in the body: only unwritten ones get here.
       }
       for (const vy of this.varyings.values())
-        if (vy.interp === 'CONSTANT') epilogue.push(`vf_${vy.name.slice(2)} = floatBitsToInt(${vy.name});`);
+        if (vy.interp === 'CONSTANT') epilogue.push(`vf_${vy.name.slice(2)} = ivec4(${vy.name});`);
       if (this.key.points)
         epilogue.push(this.writesPointSize() ? 'gl_PointSize = o_psize.x;' : 'gl_PointSize = u_psize;');
       if (this.writesPointSize() && !this.key.points) epilogue.push('// point size unused');
@@ -1541,7 +1557,7 @@ class Gen {
         // As bits: an integer's survive (a float captured would canonicalize a NaN's pattern).
         h.push(`flat out highp ${o.comps === 1 ? 'uint' : `uvec${o.comps}`} tf_${k};`);
         epilogue.push(
-          `tf_${k} = floatBitsToUint(${this.vsOutput(o.reg)}.${'xyzw'.slice(o.start, o.start + o.comps)});`,
+          `tf_${k} = ${cast(`${this.vsOutput(o.reg)}.${'xyzw'.slice(o.start, o.start + o.comps)}`, this.vsOutType(o.reg), 'u')};`,
         );
       });
       epilogue.push('gl_Position.y *= u_adjy;');
@@ -1550,20 +1566,23 @@ class Gen {
     } else {
       for (const vy of this.varyings.values()) {
         h.push(...declareVarying(vy, 'in'));
-        if (vy.interp === 'CONSTANT') prologue.push(`${vy.name} = intBitsToFloat(vf_${vy.name.slice(2)});`);
+        if (vy.interp === 'CONSTANT') prologue.push(`${vy.name} = uvec4(vf_${vy.name.slice(2)});`);
       }
       for (const [k, d] of [...this.inputs].sort((a, b) => a[0] - b[0])) {
         if (!d.semantic) h.push(`vec4 in_${k} = vec4(0.0);`);
       }
-      // Color outputs: the logical colors (col<n>, float bits) go out through each buffer's swizzle and type.
+      // Color outputs: the logical colors (colb<n>, bits; col<n> as floats) go out through each buffer's swizzle and type.
       const cbufs = this.key.cbufs;
       const colors = new Set<number>(
         [...this.outputs.values()].filter((d) => d.semantic === 'COLOR').map((d) => d.semIndex),
       );
-      for (const n of colors) h.push(`vec4 col${n} = vec4(0.0);`);
+      for (const n of colors) h.push(`uvec4 colb${n} = uvec4(0u);`);
+      // The float view of a logical color, for what reads it as floats (a float target, the alpha test).
+      const floats = new Set<number>();
       const sources = cbufs.map((_, k) => (this.writesAllCbufs ? (colors.has(0) ? 0 : -1) : colors.has(k) ? k : -1));
       if (this.key.alphaFunc !== undefined && this.key.alphaFunc !== 7 && colors.has(0)) {
         const op = ['', '<', '==', '<=', '>', '!=', '>='][this.key.alphaFunc];
+        if (this.key.alphaFunc !== 0) floats.add(0);
         epilogue.push(this.key.alphaFunc === 0 ? 'discard;' : `if (!(col0.w ${op} u_alpharef)) discard;`);
       }
       if (this.key.stipple)
@@ -1579,7 +1598,9 @@ class Gen {
           epilogue.push(`o${k} = ${VEC[ty]}(0);`);
           return;
         }
-        let c = `col${src}`;
+        if (ty === 'f') floats.add(src);
+        let c = ty === 'f' ? `col${src}` : `colb${src}`;
+        const cty: Ty = ty === 'f' ? 'f' : 'u';
         if (this.key.clampColor && ty === 'f') c = `clamp(${c}, 0.0, 1.0)`;
         if (cb.blendSrc && ty === 'f') {
           const f = {
@@ -1591,14 +1612,15 @@ class Gen {
           if (f) c = `vec4(${c}.rgb * ${f}, ${c}.a)`;
         }
         const comps = cb.write.map((q) =>
-          q < 0 ? (ty === 'f' ? '1.0' : ty === 'i' ? '1' : '1u') : `${cast(c, 'f', ty)}.${COMP[q]}`,
+          q < 0 ? (ty === 'f' ? '1.0' : ty === 'i' ? '1' : '1u') : `${cast(c, cty, ty)}.${COMP[q]}`,
         );
         // Components the format doesn't store: 0, but the fourth gets the logical alpha, which blending reads as the
         // source alpha (0 there blended SRC_ALPHA onto RGB565 as transparent: dEQP-GLES2 fbo.render.color.blend_*rgb565).
         while (comps.length < 3) comps.push(ty === 'f' ? '0.0' : ty === 'i' ? '0' : '0u');
-        if (comps.length < 4) comps.push(`${cast(c, 'f', ty)}.w`);
+        if (comps.length < 4) comps.push(`${cast(c, cty, ty)}.w`);
         epilogue.push(`o${k} = ${VEC[ty]}(${comps.join(', ')});`);
       });
+      epilogue.unshift(...[...floats].sort((a, b) => a - b).map((n) => `vec4 col${n} = uintBitsToFloat(colb${n});`));
       const depth = [...this.outputs.values()].some((d) => d.semantic === 'POSITION');
       if (depth) {
         h.push('vec4 o_depth = vec4(0.0);');
@@ -1608,8 +1630,8 @@ class Gen {
         if (d.semantic !== 'COLOR' && d.semantic !== 'POSITION') h.push(`vec4 o_${k} = vec4(0.0);`);
     }
     // Registers.
-    for (const k of [...this.temps].sort((a, b) => a - b)) h.push(`vec4 t${k} = vec4(0.0);`);
-    for (const [id, r] of this.arrays) h.push(`vec4 ta${id}[${r.last - r.first + 1}];`);
+    for (const k of [...this.temps].sort((a, b) => a - b)) h.push(`uvec4 t${k} = uvec4(0u);`);
+    for (const [id, r] of this.arrays) h.push(`uvec4 ta${id}[${r.last - r.first + 1}];`);
     for (const d of this.t.decls)
       if (d.file === 'ADDR') for (let k = d.first; k <= d.last; k++) h.push(`ivec4 a${k} = ivec4(0);`);
     h.push(...this.head);
