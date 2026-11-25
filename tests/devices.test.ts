@@ -515,6 +515,48 @@ test('terminalBytes: what a terminal sends for the keys that drive EDK2 and GRUB
   assert.equal(k('a', { metaKey: true }), null);
 });
 
+test('Windows\' AltGr (a left Ctrl and a right Alt at one time) reaches the guest as AltGr alone; a left Ctrl of its own goes on', async () => {
+  const { altGrFilter, ALTGR_MS, onWindows } = await import('../web/input.ts');
+  const got: string[] = [];
+  let pending: (() => void) | undefined;
+  const timer = { set: (f: () => void) => ((pending = f), 1), clear: () => (pending = undefined) };
+  const f = altGrFilter((e, down) => got.push(`${e.code}${down ? '+' : '-'}${e.repeat ? 'r' : ''}`), timer);
+  let prevented = 0;
+  const ev = (code: string, timeStamp: number, repeat = false) => ({ code, timeStamp, repeat, preventDefault: () => prevented++ }) as unknown as KeyboardEvent;
+  // AltGr+2, held a while (Windows repeats both), released; Chrome 158 on Windows 10 put the Ctrl and the Alt 0.2 ms apart.
+  f.key(1)(ev('ControlLeft', 100));
+  f.key(1)(ev('AltRight', 100));
+  f.key(1)(ev('ControlLeft', 600, true));
+  f.key(1)(ev('AltRight', 600, true));
+  f.key(1)(ev('Digit2', 700));
+  f.key(0)(ev('Digit2', 750));
+  f.key(0)(ev('ControlLeft', 800));
+  f.key(0)(ev('AltRight', 800));
+  assert.deepEqual(got, ['AltRight+', 'AltRight+r', 'Digit2+', 'Digit2-', 'AltRight-']);
+  assert.equal(prevented, 3, 'the Ctrl\'s press, repeat and release: no browser action');
+  // A left Ctrl of its own: on the next key (Ctrl+C), or after the wait (Ctrl alone, Ctrl+click), and a right Alt
+  // later than the wait (Ctrl then AltGr).
+  got.length = 0;
+  f.key(1)(ev('ControlLeft', 1000));
+  f.key(1)(ev('KeyC', 1080));
+  f.key(0)(ev('KeyC', 1100));
+  f.key(0)(ev('ControlLeft', 1120));
+  f.key(1)(ev('ControlLeft', 2000));
+  assert.ok(pending);
+  pending!();
+  f.key(1)(ev('AltRight', 2000 + ALTGR_MS + 30));
+  f.key(0)(ev('AltRight', 2200));
+  f.key(0)(ev('ControlLeft', 2210));
+  assert.deepEqual(got, ['ControlLeft+', 'KeyC+', 'KeyC-', 'ControlLeft-', 'ControlLeft+', 'AltRight+', 'AltRight-', 'ControlLeft-']);
+  // A release (a blur) drops a waiting Ctrl.
+  got.length = 0;
+  f.key(1)(ev('ControlLeft', 3000));
+  f.reset();
+  f.key(1)(ev('KeyA', 3010));
+  assert.deepEqual(got, ['KeyA+']);
+  assert.deepEqual([onWindows({ platform: 'Win32' }), onWindows({ userAgentData: { platform: 'Windows' } }), onWindows({ platform: 'Linux aarch64' }), onWindows({ platform: 'MacIntel' })], [true, true, false, false]);
+});
+
 test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overlay, they reach it; bad requests are refused', async () => {
   // The offer: features 13 and 14 and a 60-byte config, only with an overlay and `discard`.
   const plain = deviceEntry({ type: 'blk', url: 'x', size: 1 << 20, overlay: 'o' });

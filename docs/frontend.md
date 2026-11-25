@@ -1880,7 +1880,11 @@ page writes the context's output latency into the ring's header, and the guest g
   guest unshifted. Past a PC's keys, `NumpadEqual`, `NumpadComma`, F13–F24 and the media and volume keys are mapped
   too (the keyboard advertises every code to `KEY_MICMUTE`). The browser's repeats of a held key aren't sent: the
   keyboard has `EV_REP`, so the guest's kernel repeats it (as QEMU's does; forwarded as value 2, a console repeated
-  the key twice as fast). The built-in USB keyboard is a boot keyboard (usages up to 101): the keys past it reach only virtio-input.
+  the key twice as fast). On a Windows host AltGr comes as a left Ctrl and a right Alt 0.2 ms apart (and both up, both
+  repeating), and the guest saw Ctrl+AltGr, which a layout's third level doesn't take (AltGr+2 typed no "@" on a
+  Portuguese layout): a left Ctrl's press waits up to 50 ms for the next key event, and goes nowhere if that is a right
+  Alt's press within it (`altGrFilter` in web/input.ts), nor do its repeats and release; otherwise it goes on first.
+  The built-in USB keyboard is a boot keyboard (usages up to 101): the keys past it reach only virtio-input.
 
 ### The on-screen keyboard
 

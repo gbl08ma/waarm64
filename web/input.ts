@@ -139,6 +139,8 @@ export type InputOptions = Pointers & {
   tablet?: MessagePort;
   text?: { live: () => boolean; send: (bytes: string) => void; usb?: (code: string, down: boolean) => boolean };
   hold?: (e: KeyboardEvent) => Promise<void> | undefined;
+  /** The host is Windows (its AltGr comes as a left Ctrl and a right Alt: `altGrFilter`); the browser's own by default. */
+  windows?: boolean;
 };
 
 const CSI: Record<string, string> = {
@@ -232,6 +234,67 @@ export function boxCache(el: HTMLElement) {
 
 /** `v` of `len` (a CSS length across the element) as the tablet's 0–32767. */
 const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
+
+/** Whether the browser runs on Windows: its client hints' platform, else `navigator.platform`. */
+export function onWindows(nav: { platform?: string; userAgentData?: { platform?: string } } | undefined): boolean {
+  return /^win/i.test(nav?.userAgentData?.platform ?? nav?.platform ?? '');
+}
+
+/** How far apart (ms) Windows' AltGr may put its left Ctrl and its right Alt (Chrome 158 on Windows 10: 0.2 ms). */
+export const ALTGR_MS = 50;
+
+/**
+ * Windows' AltGr as the guest's: Windows sends AltGr as a left Ctrl and a right Alt, both down with one message time
+ * (and both up, and both repeating; Chrome clears ctrlKey on the character itself), so the guest saw Ctrl+AltGr, which the third level doesn't take (AltGr+2 typed
+ * no "@" on a Portuguese layout). A left Ctrl's press waits up to `ALTGR_MS` for the next key event: a right Alt's press
+ * within that is AltGr, and the Ctrl goes nowhere, nor its repeats and release; anything else, or the wait's end, lets
+ * it go on first. `next` takes the events that go on; `reset` (a release) drops a waiting Ctrl.
+ */
+export function altGrFilter(
+  next: (e: KeyboardEvent, down: number) => void,
+  timer: { set: (f: () => void, ms: number) => unknown; clear: (t: unknown) => void } = {
+    set: (f, ms) => setTimeout(f, ms),
+    clear: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+  },
+) {
+  let waiting: { e: KeyboardEvent; t: unknown } | undefined;
+  let fake = false;
+  const flush = () => {
+    const w = waiting;
+    waiting = undefined;
+    if (w) next(w.e, 1);
+  };
+  return {
+    key: (down: number) => (e: KeyboardEvent) => {
+      if (waiting) {
+        const w = waiting;
+        timer.clear(w.t);
+        if (down && e.code === 'AltRight' && Math.abs(e.timeStamp - w.e.timeStamp) <= ALTGR_MS) {
+          waiting = undefined;
+          fake = true;
+        } else flush();
+      }
+      if (e.code === 'ControlLeft') {
+        if (fake) {
+          if (!down) fake = false;
+          e.preventDefault();
+          return;
+        }
+        if (down && !e.repeat) {
+          e.preventDefault();
+          waiting = { e, t: timer.set(flush, ALTGR_MS) };
+          return;
+        }
+      }
+      next(e, down);
+    },
+    reset() {
+      if (waiting) timer.clear(waiting.t);
+      waiting = undefined;
+      fake = false;
+    },
+  };
+}
 
 /**
  * The keys (`attachInput`'s `keyboard` and `text`, `hold`): who holds each, what the guest has down, and the key
@@ -619,6 +682,8 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     return () => target.removeEventListener(type, f as EventListener);
   };
   const keys = keyMachine(o, hooks);
+  const altGr =
+    (o.windows ?? onWindows(globalThis.navigator)) ? altGrFilter((e, down) => keys.key(down)(e)) : undefined;
   const box = boxCache(el);
   const ptr = pointerMachine(el, box.get, tablet, pointers);
   const touches = touchMachine(box.get, pointers.touch);
@@ -634,6 +699,7 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       if (e.type.startsWith('key')) e.preventDefault();
     };
   const releaseAll = () => {
+    altGr?.reset();
     keys.release();
     ptr.releaseButtons();
     touches.release();
@@ -656,8 +722,8 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     // The box read again at a pointer's arrival and press (before the press's own listener reads it).
     on(el, 'pointerenter', box.stale),
     on(el, 'pointerdown', box.stale),
-    on(el, 'keydown', unlessHeld(keys.key(1))),
-    on(el, 'keyup', unlessHeld(keys.key(0))),
+    on(el, 'keydown', unlessHeld(altGr ? altGr.key(1) : keys.key(1))),
+    on(el, 'keyup', unlessHeld(altGr ? altGr.key(0) : keys.key(0))),
     on(
       el,
       'pointerdown',
