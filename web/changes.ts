@@ -5,13 +5,14 @@
 import type { Source } from './disk-sources.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
 import {
+  endFill,
   openOverlay,
   overlay,
   readMeta,
-  removeOverlay,
   storageFullError,
   withRoom,
   writeMeta,
+  type OverlayFiles,
   type SyncFile,
 } from './overlay.ts';
 import { openDisk, readChanges, type ChangedBlock, type Disk } from './qcow2.ts';
@@ -70,9 +71,11 @@ export function baseHash(src: Source, made: number | undefined, progress: (done:
  * Replaces overlay `overlayName` (over `base`, whose identity is `identity`: `diskIdentity`) with
  * the blocks of the changes file `changes`. The overlay, and the firmware's variable store beside
  * it, are deleted first: the changes are the whole of what the disk has written. Refuses, before
- * touching anything, a file that isn't one of ours or whose base isn't `base` (`hashSource` of its
- * bytes is compared), with a message for the user (a `MsgError`). `label` names `base` in it. A write the storage
- * refuses asks `makeRoom` for room first (`withRoom`).
+ * touching anything, a file that isn't one of ours, whose tables or clusters lie past its end (`check`), or whose base
+ * isn't `base` (`hashSource` of its bytes is compared), with a message for the user (a `MsgError`). `label` names
+ * `base` in it. A write the storage refuses asks `makeRoom` for room first (`withRoom`). A failure once the overlay was
+ * emptied (a cluster that doesn't unpack, the file unreadable, the storage full) leaves it marked, so it reads as empty
+ * (its next opening empties it), and the error says so (`cleared: true`).
  */
 export async function loadChanges(o: {
   changes: Source;
@@ -93,13 +96,19 @@ export async function loadChanges(o: {
   // A changes file may be larger than its base (a grown overlay's export, docs/machines.md §4.5): the overlay takes its
   // size. A stored base grown since is the size its hash covers (`hashedSize`); the overlay over it is as large as it.
   const hashed = hashedSize(o.base, o.made);
-  if (c.size < hashed)
+  // At least an image's virtual size (a qcow2's file may be larger or smaller than it); a stored or blank base's bytes
+  // are its disk's (`held`), where one grown since counts up to the size its hash covers.
+  const least = o.base.held ? hashed : base.size;
+  if (c.size < least)
     throw new MsgError('disks:changes.otherSize', {
       size: c.size,
       backing: c.backingName,
       label: o.label,
-      baseSize: hashed,
+      baseSize: least,
     });
+  // Every table and cluster the file names is in it, checked before the overlay is touched (they are read lazily, as
+  // the blocks are loaded).
+  c.check();
   const hash = await baseHash(o.base, o.made, (done) => progress(msg('disks:changes.checkingBase'), done, hashed));
   if (hash !== c.hash) {
     throw new MsgError('disks:changes.otherBase', {
@@ -109,18 +118,29 @@ export async function loadChanges(o: {
       baseHash: hash.slice(0, 12),
     });
   }
-  await removeOverlay(o.overlay);
-  const files = await openOverlay(o.overlay, o.identity);
+  // Emptied under its lock (no other opener between), marked as filling before its first block and cleared once both
+  // files are flushed: a load refused or cut off part way is never read as the disk's (web/overlay.ts `openOverlay`
+  // empties it). What failed from here on has emptied the overlay: it says so (`cleared`, for the page's words).
+  let files: OverlayFiles | undefined;
   try {
-    if (c.size > base.size && !writeMeta(files.meta, { ...readMeta(files.meta), size: c.size }))
-      throw await storageFullError();
+    files = await openOverlay(o.overlay, o.identity, undefined, { fresh: true });
+    const f = files;
     const lands = withRoom(o.makeRoom);
+    const m = { ...readMeta(f.meta), filling: true, ...(c.size > base.size ? { size: c.size } : {}) };
+    if (!(await lands(() => writeMeta(f.meta, m)))) throw await storageFullError();
     const total = Math.ceil(c.size / 4096);
-    return await changesInto(c.blocks(), base, files, lands, (block) =>
+    const r = await changesInto(c.blocks(), base, f, lands, (block) =>
       progress(msg('disks:changes.loadingChanges'), block, total),
     );
+    if (!(await lands(() => endFill(f.meta)))) throw await storageFullError();
+    return r;
+  } catch (e) {
+    // Its lock not given (another tab has the disk open): nothing was touched.
+    const untouched = (e as { problem?: unknown } | null)?.problem === 'overlay-in-use';
+    if (!untouched && e && typeof e === 'object') Object.assign(e, { cleared: true });
+    throw e;
   } finally {
-    files.close();
+    files?.close();
   }
 }
 
@@ -131,8 +151,8 @@ const CHANGES_RUN = 256;
  * Writes a changes file's blocks (`blocks`, ascending) into the new, empty overlay of `files` over `base`: runs of
  * consecutive blocks of one kind (data or zeros), up to `CHANGES_RUN`, a write or a zeroing each (a block a call, a
  * changes file of 4 GiB was ~10^6 calls, each with a data flush). Unordered (`overlay`'s `ordered: false`), both files
- * flushed at its end: nothing reads the overlay before the page records it, which it does once this is done
- * (web/app/disks.ts `loadChangesInto`), so a load cut off part way is never a disk's. A write the storage refuses
+ * flushed at its end: the caller marks the overlay as filling until then (`loadChanges`), so a load cut off part way
+ * is never read as a disk (web/overlay.ts `openOverlay` takes a marked overlay as empty). A write the storage refuses
  * goes through `lands` (`withRoom`). `progress` gets a block every 256. The blocks written, and the calls.
  */
 export async function changesInto(

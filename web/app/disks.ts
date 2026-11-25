@@ -228,7 +228,7 @@ export async function diskJob(
   // Node has no Worker (the tests): a merge runs here, on the same in-memory files.
   if (typeof Worker === 'undefined' && j.type === 'merge') {
     const { mergeOverlay } = await import('../stored.ts');
-    return { type: 'done', blocks: await mergeOverlay(j.disk, j.overlay, j.identity, j.size) };
+    return { type: 'done', blocks: await mergeOverlay(j.disk, j.overlay, j.identity, j.size, undefined, j.keep) };
   }
   return new Promise<Extract<DiskJobResult, { type: 'done' }>>((resolve, reject) => {
     const w = new Worker(new URL('./disk-worker.ts', import.meta.url), { type: 'module' });

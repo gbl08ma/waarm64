@@ -8,6 +8,7 @@
 import type { Source } from './disk-sources.ts';
 import { MsgError } from './msg.ts';
 import {
+  endFill,
   mapBlocks,
   mapEntry,
   openOverlay,
@@ -98,10 +99,13 @@ export async function importImage(
   makeRoom?: () => Promise<boolean>,
 ) {
   const image = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
+  const lands = withRoom(makeRoom);
   // Unordered (no data flush per write), both files flushed at the end: nothing reads a store before the page records
   // it, which it does once the import is done (web/app/disks.ts `importStored`), so an import cut off is never a disk.
+  // Marked as filling until then: one cut off is the leftovers the page removes (web/app/store.ts `dropCutFills`).
+  if (!(await lands(() => writeMeta(files.meta, { ...readMeta(files.meta), filling: true }))))
+    throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
   const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta, 0, { ordered: false });
-  const lands = withRoom(makeRoom);
   const CHUNK = 1 << 20;
   let blocks = 0;
   for (let off = 0; off < image.size; off += CHUNK) {
@@ -127,6 +131,8 @@ export async function importImage(
     progress(off + len, image.size);
   }
   store.flush();
+  if (!(await lands(() => endFill(files.meta))))
+    throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
   return { size: image.size, format: image.format, blocks };
 }
 
@@ -153,6 +159,7 @@ export async function mergeOverlay(
   identity: string,
   size: number,
   makeRoom?: () => Promise<boolean>,
+  keep = false,
 ) {
   const was = (await overlayMeta(diskPath)).merging;
   const resumed = await resumeMerge(diskPath, size, makeRoom);
@@ -162,7 +169,7 @@ export async function mergeOverlay(
     const m = readMeta(files.meta);
     if (!writeMeta(files.meta, { ...m, generation: m.generation + 1, merging: overlayPath }))
       throw new MsgError('disks:stored.stateWriteFailed');
-    return await copyIn(files, overlayPath, size, makeRoom);
+    return await copyIn(files, overlayPath, size, makeRoom, keep);
   } finally {
     files.close();
   }
@@ -186,8 +193,18 @@ export async function resumeMerge(diskPath: string, size: number, makeRoom?: () 
 /** The most blocks a merge copies in one read and write (1 MiB). */
 const MERGE_RUN = 256;
 
-/** The merge's copy, with the store open and marked: the overlay's blocks in (its zero blocks as zeros), the overlay deleted, the mark cleared. */
-async function copyIn(files: OverlayFiles, overlayPath: string, size: number, makeRoom?: () => Promise<boolean>) {
+/**
+ * The merge's copy, with the store open and marked: the overlay's blocks in (its zero blocks as zeros), the overlay
+ * deleted (unless `keep`: a blank disk's conversion, whose page deletes it once the disk's record says stored), the mark
+ * cleared.
+ */
+async function copyIn(
+  files: OverlayFiles,
+  overlayPath: string,
+  size: number,
+  makeRoom?: () => Promise<boolean>,
+  keep = false,
+) {
   let blocks = 0;
   let ov: OverlayFiles | undefined;
   try {
@@ -230,7 +247,7 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number, ma
       ov.close();
     }
   }
-  await removeOverlay(overlayPath); // what is left of it (none is fine)
+  if (!keep) await removeOverlay(overlayPath); // what is left of it (none is fine)
   const m = readMeta(files.meta);
   if (!writeMeta(files.meta, { ...m, merging: '' })) throw new MsgError('disks:stored.stateWriteFailed');
   return blocks;

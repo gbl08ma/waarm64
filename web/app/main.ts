@@ -112,6 +112,8 @@ window.__folders = folders; // tools/screens.ts's hook
 void folders.refresh();
 void records.watch(store);
 void fillStoredBytes(store).catch((e: unknown) => console.warn('waarm64: the stored disks could not be read:', e));
+// What an import or Import changes cut off part way (a tab closed) left in OPFS.
+void store.dropCutFills().catch((e: unknown) => console.warn('waarm64: a cut-off import could not be removed:', e));
 store.onChange((c) => {
   void net.refresh();
   void folders.refresh();

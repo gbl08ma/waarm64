@@ -313,3 +313,65 @@ page closing leaves no stored disk" (a 256 MiB import, the page closed at its fi
 left). Planted, each caught: runs not split where data turns to zeros, no final flush (the load's and the import's),
 the load opened ordered, the import opened ordered, no 256-block cap, a cluster a read, and the disk's record put
 before the import's job.
+
+## PERF loop 77 (2026-11-25): the out-of-context review of disk writes, fixed
+
+The review of how disk data reaches OPFS outside the guest's own writes (branch `review/disk-writes` at b491684d,
+`review/disk-writes.md`; static, at 0c5d26f1) ranked nine findings. Each was checked against the code; each defect got
+its test at the cheapest layer, run first against 0c5d26f1's code (all seven reviewer scenarios that need no new API
+failed there), then fixed. Nothing was measured: no change touches a path the guest's I/O takes (a meta write before a
+bulk fill's first block and after its last flush; a lock probe per id-named directory at the page's start), and no
+stored format changes for existing data (below). Step counts don't move.
+
+**The common fix: a bulk fill's mark.** A restore's, an import's and Import changes' bulk writes (unordered since
+loop 76 and SNAPZ loop 5) went into an overlay a record could already name, so "nothing reads it before the page
+records it" didn't hold. The overlay's `meta` gets a fill mark (a u64 at 40: `meta` grows from 40 to 48 bytes only
+while marked; a 32- or 40-byte meta reads as unmarked, so every stored machine, disk and snapshot opens as before).
+A fill opens its overlay `fresh` (emptied under the overlay's Web Lock, closing the gap `removeOverlay` then
+`openOverlay` left), writes the mark before its first block and clears it after both files' flush. An opening that
+finds the mark, under the lock (so no fill runs), never reads the overlay as written: a writer's empties it in place
+with its generation moved on (no fork record or snapshot pin matches it again), a reader's sees it empty
+(web/overlay.ts `openOverlay`). docs/devices.md "blk" says what exists.
+
+| # | the review's finding | outcome | test (failing first) | fix |
+|---|---|---|---|---|
+| 1 | High: a restore cut off or refused leaves a half-written overlay recorded and attached; a later restore reuses it | **defect** | `tests/snapshot.test.ts` "a restore refused after some of its disk's blocks were written leaves the overlay marked…" (a stream's damaged second DISK frame, refused after the first was written: failed at 0c5d26f1, unmarked); `tests/template.test.ts` "a fork whose restore was cut off before its fill was done is never reused…" | the fill mark (web/snapshot.ts); the worker refuses a `keep` of a marked overlay; `earlierFork` skips a marked fork; a new fork records what its attachment had (`fork.before`, an optional field), and `undoCutRestores` (web/app/snapshot-undo.ts, run by `loadStored`) puts a machine whose fork is still marked and free back on it, the fork deleted; the worker's words now say the disks hold none of the snapshot (`worker-errors.notRestored.cause`) |
+| 2 | High: Import changes onto a transient disk deletes the overlay before the file is known readable, then says "The disk is unchanged" | **defect** (confirmed) | `tests/changes.test.ts` "a changes file cut short (its tables past its end) is refused before the overlay is touched…" (the reviewer's case: failed, block 9 gone) and "a changes file whose blocks fail to read part way leaves the overlay empty…" | `readChanges`'s `check` (every L1, L2 table and cluster in the file) before the overlay is touched (`disks:qcow2.changesTruncated`); the load is a fill (`fresh`: the second tab's gap closed too); a failure after the emptying carries `cleared`, and the page says [The changes the disk held were deleted, and it starts from its image.](ui:disks:disk-changes.changes.failed.emptied) for its own disk |
+| 3 | Medium-high: after a merge cut off, the machine with the merged overlay chosen can't start (its lock held by itself) | **defect** (confirmed) | `tests/stored.test.ts` "a machine whose disk is marked by a merge cut off of the overlay it has chosen starts…" (`Devices.open`: failed after 10,022 ms, "in use") | `Devices.open` finishes the stored disks' merges before it opens any overlay |
+| 4 | Medium: an interrupted import's files are never removed (the sweep never runs), though the docs rely on it | **defect in the docs and the code**; the sweep **not** wired in (below) | `tests/stored.test.ts` "in Chromium (OPFS): an import cut off by its page closing…" now also removes what it left at the next page | imports are marked too; the page's start runs `Store.dropCutFills`: an id-named `disks/` or `overlays/` directory still marked, its lock free (`ifAvailable`), no record naming it, all checked under its lock; `tests/overlay.test.ts` "dropCutFill removes … only when marked, its lock free and no record names it"; machines.md §2 and devices.md say what is removed and what still isn't |
+| 5 | Medium: a blank disk's conversion loses the overlay if cut off between the copy and the disk's record | **defect** | `tests/merge.test.ts` "a blank disk's conversion cut off after its copy, before the disk's record…" (the record write made to throw: failed, the overlay's files gone) | the copy keeps the overlay (`keep`); the page unchooses it, writes the disk's record, then deletes the overlay's record and files |
+| 6 | Low: `writeMeta` on a raw sync handle throws `QuotaExceededError` where callers expect `false` | **defect** | `tests/overlay.test.ts` "writeMeta on a file whose write throws QuotaExceededError is a refusal…" | `writeMeta` writes through `shortOnFull`, so `withRoom` makes room and retries |
+| 7 | Low: a merge blocked by an earlier unfinished merge deletes the other overlays first, then fails | **defect** | `tests/merge.test.ts` "a merge into a disk marked by an unfinished merge of another overlay is refused before any overlay is deleted" (failed: `overlayMerging` after the deletions) | refused up front, naming the overlay whose merge didn't finish ([A merge of the overlay {{name}} into this disk didn't finish…](ui:disks:merge.otherMerging)) |
+| 8 | Low: `loadChanges` compares the changes' virtual size with a qcow2 base's file size | **defect** | `tests/changes.test.ts` "a changes file over a qcow2 base whose file is larger than its virtual size loads" (a 16 KiB qcow2 in a 36 KiB file: failed, `otherSize`) | an image base is compared by its virtual size; a stored or blank base as before (its bytes are its disk's, a grown one up to what its hash covers) |
+| 9 | Suspicious: a sweep (once wired) could race `createOverlay`'s own size | **not a defect today** (nothing calls the sweep) | — | written into backlog.md "The store's sweep never runs" as a condition for wiring it |
+
+**What was decided.**
+- **The sweep stays unwired.** Its known races (a template's import keeps its snapshot outside the write lock; a
+  `writing` nested in `writing` deadlocks behind a queued exclusive sweep; finding 9) aren't this review's to fix, and
+  it would delete by "no record" alone. `dropCutFills` removes only what a fill's mark proves cut off, under the
+  directory's own lock, so it is safe beside other tabs and their jobs; what else the sweep would take stays
+  (backlog).
+- **A cut-off restore's fork is undone, not just emptied.** The mark alone keeps a half fork from being read, but the
+  machine would then boot the disk's image while its earlier overlay sat detached in the list. The fork's record
+  says what its attachment had (`fork.before`, optional: older records lack it and are only emptied), and the page puts
+  it back when it next loads the machine, after a closed tab and after a refusal alike (Retry reloads it).
+- **A replace keeps no old blocks.** A restore's replace, a template's fresh overlay, a transient machine's load and
+  Import changes onto the page's own disk empty the overlay before filling it; cut off, they start from the image,
+  and the words say so. Keeping the old blocks until the new ones are whole needs a second directory and a pointer
+  every opener reads (OPFS can't swap directories): out of proportion here, written as backlog.md "A restore's replace
+  fills in place".
+- **A conversion cut off after the disk's record** may leave the overlay's record beside the disk made stored
+  (unchosen, its blocks the disk's): two IndexedDB writes apart, harmless, and deletable.
+
+**Planted bugs, each caught:** the restore's mark not written; its mark never cleared; a writer's opening not
+emptying a marked overlay; a reader's not; the generation not moved on; `fresh` ignored; a `keep` of a marked overlay
+let through; `earlierFork` reusing a marked fork; no undo; the undo ignoring a fork open elsewhere (a reader holding
+it); no `check`; Import changes unmarked (the test first wrote no block before its failure, so it missed this: it now
+fails on the third of three runs); no `cleared`; the hashed size kept for an image base; no merge resume before the
+overlays; the conversion's copy deleting the overlay; no up-front refusal of a blocked merge; `writeMeta` on the raw
+handle; `dropCutFill` ignoring the record (the test first passed by a released lock that hadn't landed yet: it waits
+for the release now) and ignoring the lock; a 40-byte meta growing without a mark; the import unmarked.
+
+**A flake fixed on the way:** `tests/page-home-levels.test.ts` failed once in `scripts/ci.sh` with two levels in the
+column (a strict-mode locator): its wait for one level alone could pass before the move had started. It now waits
+for the level it expects to be there alone (`atLevel`).

@@ -154,7 +154,11 @@ export class DiskChanges {
         new MsgError('disks:disk-changes.changes.failed', undefined, {
           cause: inUse(e)
             ? new MsgError('disks:disk-actions.inUse', undefined, { cause: e })
-            : new MsgError('disks:disk-changes.changes.failed.unchanged', undefined, { cause: e }),
+            : // The page's own disk, emptied before the load failed part way (web/changes.ts `loadChanges`'s `cleared`);
+              // a stored machine's took a new overlay, removed on the failure, so its disk is as it was.
+              !into.m && (e as { cleared?: unknown } | null)?.cleared
+              ? new MsgError('disks:disk-changes.changes.failed.emptied', undefined, { cause: e })
+              : new MsgError('disks:disk-changes.changes.failed.unchanged', undefined, { cause: e }),
         }),
         [runner.d.later.problems().retry],
       );

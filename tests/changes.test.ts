@@ -208,3 +208,74 @@ test('a changes file loads in runs: its consecutive data clusters one read, cons
   assert.ok(got && Buffer.compare(got, merged) === 0, 'the overlay holds another disk');
   for (let b = 310; b < 315; b++) assert.ok(overlay(disk, f.data, f.map).zeroed!(b), `block ${b} zeros without a slot`);
 });
+
+/** The bytes overlay `name` holds at block `b` (its first byte), as a writer's opening reads it, or undefined for none. */
+async function heldAt(name: string, base: Uint8Array, b: number) {
+  const files = await openOverlay(name, ident(name));
+  try {
+    const d = overlay(openDisk((o, l) => base.slice(o, o + l), base.length), files.data, files.map);
+    return [...d.written()].includes(b) ? (await d.read(b * 4096, 1))![0] : undefined;
+  } finally {
+    files.close();
+  }
+}
+
+// Review disk-writes 2: a file whose tables lie past its end passes the header's checks; the overlay (the page's own
+// disk: a fixed name) was deleted before the blocks were read, and "The disk is unchanged" wasn't true.
+test("a changes file cut short (its tables past its end) is refused before the overlay is touched: the disk's own blocks stay", async () => {
+  const base = randomBase(11n);
+  const old = await openOverlay('cut-short', ident('cut-short'));
+  assert.ok(await overlay(openDisk((o, l) => base.slice(o, o + l), base.length), old.data, old.map).write(9 * 4096, new Uint8Array(4096).fill(0xee)));
+  old.close();
+  const file = await changesFile(base, [[100 * 4096, new Uint8Array(4096).fill(5)]]);
+  const cut = file.subarray(0, 2 * 4096); // the header and the data cluster: the L1 and L2 tables are past its end
+  await assert.rejects(load('cut-short', cut, base), (e: unknown) => msgOf(e)?.key === 'disks:qcow2.changesTruncated' && !(e as { cleared?: boolean }).cleared);
+  assert.equal(await heldAt('cut-short', base, 9), 0xee, "the overlay's block 9 is as it was");
+});
+
+// What fails once the overlay was emptied (the file unreadable part way, the storage full, a cluster that doesn't
+// unpack): the error says so (`cleared`), and the half-loaded overlay is marked, so it opens empty.
+test('a changes file whose blocks fail to read part way leaves the overlay empty, not half loaded, and says it was cleared', async () => {
+  const base = randomBase(12n);
+  // Three runs: the first is written once the second is read, and the third's read fails.
+  const marks: [number, Uint8Array][] = [[10 * 4096, new Uint8Array(4096).fill(1)], [200 * 4096, new Uint8Array(4096).fill(2)], [250 * 4096, new Uint8Array(4096).fill(3)]];
+  const file = await changesFile(base, marks);
+  let reads = 0;
+  const counted: Source = { size: file.length, read: (o, l) => (reads++, o + l <= file.length ? file.slice(o, o + l) : undefined) };
+  await loadChanges({ changes: counted, base: source(base), label: 'x', overlay: 'half', identity: ident('half') });
+  const all = reads; // its last read is the third run's data
+  const old = await openOverlay('half', ident('half'));
+  assert.ok(await overlay(openDisk((o, l) => base.slice(o, o + l), base.length), old.data, old.map).write(9 * 4096, new Uint8Array(4096).fill(0xee)));
+  old.close();
+  reads = 0;
+  const failing: Source = { size: file.length, read: (o, l) => (++reads >= all ? undefined : o + l <= file.length ? file.slice(o, o + l) : undefined) };
+  await assert.rejects(
+    loadChanges({ changes: failing, base: source(base), label: 'x', overlay: 'half', identity: ident('half') }),
+    (e: unknown) => (e as { cleared?: boolean }).cleared === true,
+  );
+  assert.equal(await heldAt('half', base, 10), undefined, 'the first run, written before the failure, is not read as the disk');
+  assert.equal(await heldAt('half', base, 9), undefined, 'what the overlay held was deleted (the error said so)');
+});
+
+// Review disk-writes 8: a qcow2 base's file may be larger than its virtual size (its tables, preallocation).
+test("a changes file over a qcow2 base whose file is larger than its virtual size loads (the base's virtual size is what it is checked against)", async () => {
+  const size = 4 * 4096;
+  const raw = randomBase(13n, size);
+  const parts: Uint8Array[] = [];
+  const sink: Sink = (chunk, at) => { if (at === undefined) parts.push(chunk); else parts[0] = chunk; };
+  const all = overlay(openDisk((o, l) => raw.slice(o, o + l), size), memFile(), memFile());
+  assert.ok(await all.write(0, raw)); // every block: the qcow2 holds every cluster
+  await writeQcow2({ size, clusters: changedClusters(all), sink });
+  const q = Buffer.concat(parts);
+  assert.ok(q.length > size, `the qcow2's file (${q.length} bytes) is larger than its disk (${size})`);
+  const disk = openDisk((o, l) => q.slice(o, o + l), q.length);
+  assert.equal(disk.size, size);
+  const rw = overlay(disk, memFile(), memFile());
+  assert.ok(await rw.write(4096, new Uint8Array(4096).fill(0x42)));
+  const out: Uint8Array[] = [];
+  const sink2: Sink = (chunk, at) => { if (at === undefined) out.push(chunk); else out[0] = chunk; };
+  await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.qcow2', format: 'qcow2', hash: await hashSource(source(q), () => {}) }, sink: sink2 });
+  const r = await loadChanges({ changes: source(Buffer.concat(out)), base: source(q), label: 'x', overlay: 'over-qcow2', identity: ident('over-qcow2') });
+  assert.equal(r.blocks, 1);
+  assert.equal(await heldAt('over-qcow2', q, 1), 0x42);
+});

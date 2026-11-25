@@ -553,6 +553,66 @@ test('a file whose DISK frames say impossible things is refused before the overl
   await removeOverlay(name);
 });
 
+// Review disk-writes 1: a restore refused part way (here a stream's damaged frame, which no check pass saw first; the
+// storage full or a closed tab alike) left the overlay holding part of the snapshot, recorded and read as complete.
+test("a restore refused after some of its disk's blocks were written leaves the overlay marked: it opens empty, never as part of the snapshot", async () => {
+  const codec = await lzCodec(WASM);
+  const name = 'snapshot-test-cut-fill';
+  const size = 64 * 4096;
+  const spec = { type: 'blk', url: 'file:///cut/disk.img', overlay: name } as const;
+  const header: SnapshotHeader = { ...HEADER, coreVersion: codec.snapshotVersion, ramSize: 65536, disks: [{ slot: 0, identity: diskIdentity(spec, size), size, blocks: 3 }] };
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, header, { codec, concurrency: 1 });
+  await w.bytes('CORE', new Uint8Array(3000).fill(9));
+  await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify({ devices: [], input: [] })));
+  await w.disk([1, 40, 41].map((b) => ({ block: b, data: new Uint8Array(4096).fill(b) })));
+  await w.end();
+  const file = Buffer.from(Buffer.concat(parts));
+  const disks = framesOf(file).filter((f) => f.tag === 'DISK');
+  assert.equal(disks.length, 2, 'two DISK frames');
+  // The second frame names a slot the header doesn't pin (its CRC right): refused once the first was written.
+  const f2 = disks[1];
+  const head = file.subarray(f2.at - 32, f2.at);
+  head.writeUInt32LE(head.readUInt32LE(12) + 7 * 256, 12);
+  head.writeUInt32LE(crc32(file.subarray(f2.at, f2.at + f2.len), crc32(head.subarray(0, 24))), 24);
+  await removeOverlay(name);
+  {
+    const f = await openOverlay(name, diskIdentity(spec, size));
+    assert.ok(await overlay(zeroDisk(size), f.data, f.map, f.meta).write(6 * 4096, new Uint8Array(4096).fill(7)));
+    f.close();
+  }
+  const was = (await overlayMeta(name)).generation;
+  await assert.rejects(async () => {
+    const r = await readSnapshot(new Blob([new Uint8Array(file)]).stream(), codec, codec.snapshotVersion, { devices: [spec] });
+    await r.restore.fill(new Uint8Array(65536));
+  }, (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt');
+  assert.equal((await overlayMeta(name)).filling, true, 'cut off part way: still marked');
+  // A plan that keeps it at the fill's generation (another tab's, planned on its record) is refused too.
+  const gen = (await overlayMeta(name)).generation;
+  await assert.rejects(
+    readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, { devices: [spec], plan: [{ slot: 0, action: 'keep', generation: gen }] }),
+    (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
+  );
+  const f = await openOverlay(name, diskIdentity(spec, size));
+  try {
+    assert.deepEqual([...overlay(zeroDisk(size), f.data, f.map).written()], [], "none of the snapshot's blocks (nor the overlay's own, replaced)");
+  } finally {
+    f.close();
+  }
+  assert.ok((await overlayMeta(name)).generation > was + 1, 'its generation moved past the fill\'s: no fork record or pin matches it');
+  // The whole file restores, its mark cleared.
+  const good = await readSnapshot(new Blob(parts as BlobPart[]).stream(), codec, codec.snapshotVersion, { devices: [spec] });
+  await good.restore.fill(new Uint8Array(65536));
+  assert.equal((await overlayMeta(name)).filling, undefined, 'the mark cleared');
+  const g = await openOverlay(name, diskIdentity(spec, size));
+  try {
+    assert.deepEqual([...overlay(zeroDisk(size), g.data, g.map).written()], [1, 40, 41]);
+  } finally {
+    g.close();
+  }
+  await removeOverlay(name);
+});
+
 test('a snapshot of another machine, another version or with a damaged state is refused', { skip }, async () => {
   const codec = await lzCodec(WASM);
   const o = buildroot();

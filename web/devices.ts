@@ -21,7 +21,7 @@ import type { BlockCacheStats } from './blockcache.ts';
 import { openOverlay, storageNumbers, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import type { InspectAnswer, InspectQuery } from './surface.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
-import { openStored, openStoredForWriting } from './stored.ts';
+import { openStored, openStoredForWriting, resumeMerge } from './stored.ts';
 import { coreModule } from './deflate.ts';
 import { Usb, type UsbAttach } from './usb.ts';
 import { sndBackend } from './snd.ts';
@@ -796,6 +796,11 @@ export class Devices {
     notice: (m: Msg) => void = () => {},
   ) {
     if (init.core) void coreModule(init.core);
+    // A merge into a stored disk that was cut off or refused is finished before any overlay is opened: it reads the
+    // overlay it merges (perhaps one of these, its machine's choice), and this worker holding that one's lock would
+    // keep it waiting (web/stored.ts `resumeMerge`; docs/machines.md §4.4). One disk at a time: two attachments of one
+    // disk would queue on its lock anyway.
+    for (const d of init.specs) if (d.type === 'blk' && d.stored) await resumeMerge(d.stored, d.size ?? 0);
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
     const overlays = await allOrClose(
       init.specs.map((d) =>

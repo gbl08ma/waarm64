@@ -126,7 +126,7 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-25, after loop 76)
+## State (2026-11-25, after loop 77)
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 76 took rows 14 and 15 (bench/io/REPORT.md "PERF loop 76", `bench/io/results/2026-11-25-perf76/`):
@@ -135,15 +135,16 @@ input). On a profile the ordered flush is a direct first write's cost (fio's 4 K
 it in the VM, 3.3× on the Mac) and nothing else's (buffered and fsync'd writes don't move): kept, a finding (deferring
 map entries would lose a closed tab's writes). Built: Import changes in runs with merged reads of the file (256 MiB:
 ~21 s → 0.3 s on the VM's profile, 18-29 s → 0.17 s on the Mac's) and the import's store unordered (the Mac's 2×).
-Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop 67's warm-up is not
+Loop 77 fixed loop 76's review of disk writes (bench/io/REPORT.md "PERF loop 77": a bulk fill's mark in the
+overlay's `meta`, cut-off restores undone, the merge resumed before a machine's overlays open). Loop 75's notes still hold: `bench/boot/results/perf75/diag.patch` applies to 3a08fdf3; loop 67's warm-up is not
 landed (local branches `perf67-warmup`, `perf-smp-warm`, unpushed); `../waarm64-base` is detached at 5d8f29ef.
 **Next:** row 16, virgl's per-draw GL state (count, build). `target/snapbench/pages.waarm64snap` loads into the current
 state layout; `target/archarm/desktop.qcow2` is ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58, 71, 73 and 74) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72 and 75
-(50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71, 73, 74 and 76) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60, 72, 75
+and 77 (50's: comments only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)

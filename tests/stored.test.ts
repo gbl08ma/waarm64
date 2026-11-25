@@ -10,6 +10,7 @@ import { openOverlay, overlay, overlayMeta, readMeta, writeMeta } from '../web/o
 import { openDisk } from '../web/qcow2.ts';
 import { blockSource, importImage, mergeOverlay, openStored, openStoredForWriting, storedEstimate, zeroDisk } from '../web/stored.ts';
 import { loggedFiles } from './logged-files.ts';
+import { Devices } from '../web/devices.ts';
 import type { Source } from '../web/disk-sources.ts';
 
 const bufferSource = (b: Uint8Array): Source => ({ size: b.length, read: (off, len) => (off >= 0 && off + len <= b.length ? b.slice(off, off + len) : undefined) });
@@ -51,7 +52,7 @@ test('an import writes its store unordered and flushes both files once, at its e
 });
 
 // A tab closed during an import: the disk's record is made only once the job is done (after its last flush), so a
-// store cut off part way is never a disk; its files are left for the store's sweep.
+// store cut off part way is never a disk; its files, marked as filling, are removed at the page's next start.
 test('in Chromium (OPFS): an import cut off by its page closing leaves no stored disk', async () => {
   const server = await startServer();
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
@@ -79,12 +80,18 @@ test('in Chromium (OPFS): an import cut off by its page closing leaves no stored
       const { Store } = await import('/web/app/store.ts' as string);
       const store = await Store.open();
       const disks = (await store.all('disks')).length;
+      const list = async () => {
+        const dirs: string[] = [];
+        for await (const name of (await (await navigator.storage.getDirectory()).getDirectoryHandle('disks')).keys()) dirs.push(name);
+        return dirs.length;
+      };
+      const left = await list();
+      // The page's start removes what it left (review disk-writes 4): marked as filling, its lock free, no record.
+      const removed = (await store.dropCutFills()).length;
       store.close();
-      const dirs: string[] = [];
-      for await (const name of (await (await navigator.storage.getDirectory()).getDirectoryHandle('disks')).keys()) dirs.push(name);
-      return { disks, dirs: dirs.length };
+      return { disks, left, removed, after: await list() };
     });
-    assert.deepEqual(r, { disks: 0, dirs: 1 }, 'no record; the files left are the sweep\'s');
+    assert.deepEqual(r, { disks: 0, left: 1, removed: 1, after: 0 }, 'no record; the files left are removed at the next start');
   } finally {
     await browser.close();
     server.close();
@@ -210,4 +217,29 @@ test('in Chromium (OPFS): a merge resumed after its overlay was partly deleted (
     await browser.close();
     server.close();
   }
+});
+
+// Review disk-writes 3: the machine that has the merged overlay chosen opens it first (exclusive); the merge's resume,
+// at the stored disk's opening, then asked for it shared and waited on itself (Web Locks aren't re-entrant), 10 s and
+// "in use", at every start.
+test('a machine whose disk is marked by a merge cut off of the overlay it has chosen starts: the merge is finished first', async () => {
+  const size = 32 * 4096;
+  const disk = 'disks/merge-chosen', ov = 'overlays/merge-chosen';
+  let f = await openStoredForWriting(disk, 'stored', size);
+  await importImage(bufferSource(new Uint8Array(size).fill(3)), f);
+  writeMeta(f.meta, { ...readMeta(f.meta), generation: readMeta(f.meta).generation + 1, merging: ov });
+  f.close();
+  const o = await openOverlay(ov, 'over-it');
+  assert.ok(await overlay(zeroDisk(size), o.data, o.map, o.meta).write(4096, new Uint8Array(4096).fill(0xaa)));
+  o.close();
+  const memory = new WebAssembly.Memory({ initial: 4, maximum: 4, shared: true });
+  const started = performance.now();
+  const d = await Devices.open({ memory, shared: [0, 1024], ram: 8192, ramSize: 0, signal: 4096, deterministic: true, specs: [{ type: 'blk', stored: disk, size, overlay: ov, identity: 'over-it' }] }, () => {});
+  const ms = performance.now() - started;
+  d.close();
+  assert.ok(ms < 5000, `opened in ${Math.round(ms)} ms`);
+  assert.equal((await overlayMeta(disk)).merging, '', 'the merge finished');
+  const src = await openStored(disk, size);
+  assert.equal(src.read(4096, 1)![0], 0xaa, "the overlay's block is the disk's");
+  src.close();
 });

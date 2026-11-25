@@ -9,6 +9,7 @@ import type { MachineConfig } from '../protocol.ts';
 import type { Run } from './run.ts';
 import { asRun, effectiveDisplay, resolveMachine, type RunDisplay } from './config.ts';
 import { currentShape } from '../snapshots.ts';
+import { undoCutRestores } from '../snapshot-undo.ts';
 import { basesOf } from '../snapshot-lost.ts';
 import { settings } from '../settings.ts';
 import { DEFAULT_SHARES_PATH } from '../shares-mount.ts';
@@ -38,10 +39,14 @@ const hasWebgl2 = () => {
   }
 };
 
-/** A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. */
+/**
+ * A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. A restore cut
+ * off before its disks were filled is undone first (`undoCutRestores`): the machine opens on the disks it had.
+ */
 export async function loadStored(store: Store, id: string): Promise<Stored> {
-  const record = await store.get('machines', id);
-  if (!record) throw new MsgError('machine:page-machine.noMachine', { id });
+  const found = await store.get('machines', id);
+  if (!found) throw new MsgError('machine:page-machine.noMachine', { id });
+  const record = await undoCutRestores(store, found);
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- filled here, then held raw by `Stored`
   const disks = new Map<string, DiskRecord>();
   for (const a of record.attachments) {

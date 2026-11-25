@@ -32,13 +32,14 @@ import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { msg, MsgError, type Param } from './msg.ts';
 import {
+  endFill,
   openOverlay,
   overlay,
   overlayMeta,
-  removeOverlay,
   storageFullError,
   withRoom,
   writeMeta,
+  type SyncFile,
   type WritableDisk,
 } from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
@@ -356,7 +357,10 @@ export async function readSnapshot(
       const plan = opts.plan?.find((p) => p.slot === d.slot);
       // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
       // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
-      if (!opts.resume && plan?.action === 'keep' && (await overlayMeta(spec.overlay)).generation !== plan.generation) {
+      // One a fill was cut off in (marked) holds none of what it was planned at either.
+      const kept = !opts.resume && plan?.action === 'keep' ? plan : undefined;
+      const now = kept && (await overlayMeta(spec.overlay));
+      if (kept && now && (now.generation !== kept.generation || now.filling)) {
         throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
       }
       targets.set(
@@ -503,7 +507,8 @@ export async function readSnapshot(
       phases.ram = since();
       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
-      const open = new Map<number, { disk: WritableDisk; close(): void; size: number } | 'skip'>();
+      // `meta`: an overlay's, whose fill mark is cleared at the end; `disk` set once its files are open and marked.
+      const open = new Map<number, { disk?: WritableDisk; meta?: SyncFile; close(): void; size: number } | 'skip'>();
       // A write the storage refused gets the remote disks' kept blocks out of the way (`makeRoom`) and is tried once more
       // (until there's nothing left to give).
       const lands = withRoom(makeRoom);
@@ -526,17 +531,26 @@ export async function readSnapshot(
           // Its generation goes on from where it was (a replace never takes an overlay back to a generation an older
           // snapshot pinned): emptied, it starts one past its old one, and the writes below move nothing further. Its
           // size is the disk's as the snapshot saw it (a grown overlay's fork is as grown: docs/machines.md §4.5).
+          // Emptied under its lock (no other opener between), and marked as filling before its first block: until the
+          // mark is cleared at the end, after both files' flush, every opening takes it as empty (web/overlay.ts
+          // `openOverlay`), so a restore cut off or refused part way is never read as a disk's.
           const was = (await overlayMeta(t.name)).generation;
-          await removeOverlay(t.name);
-          const files = await openOverlay(t.name, t.identity);
-          if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '', size: t.size }))))
-            throw await full();
+          const files = await openOverlay(t.name, t.identity, undefined, { fresh: true });
+          const o: { disk?: WritableDisk; meta: SyncFile; close(): void; size: number } = {
+            meta: files.meta,
+            close: files.close,
+            size: t.size,
+          };
+          open.set(slot, o); // closed at the end, failed or not
+          const meta = { generation: was + 1, merging: '', size: t.size, filling: true };
+          if (!(await lands(() => writeMeta(files.meta, meta)))) throw await full();
           // Over zeros: the file's blocks are written whole, but the disk's last one may be shorter than 4 KiB, and its
           // write reads the rest of its block (none: zeros). No meta: its generation is set.
           // Unordered (no flush between a run's data and its map entries): until the restore's end the overlay is half
-          // a snapshot's whatever its order, and the end flushes both (docs/devices.md "Crash and refusal").
+          // a snapshot's whatever its order, and the end flushes both, then clears the mark (docs/devices.md "Crash
+          // and refusal").
           const disk = overlay(zeroDisk(t.size), files.data, files.map, undefined, 0, { ordered: false });
-          open.set(slot, { disk, close: files.close, size: t.size });
+          o.disk = disk;
           if (t.whole && !(await lands(() => disk.zero(0, t.size))))
             throw new MsgError('snapshots:snapshot.storageFull.whole', undefined, { cause: await storageFullError() });
         }
@@ -550,14 +564,20 @@ export async function readSnapshot(
           diskFrame(index, data.length);
           const o = open.get(Math.floor(index / SLOT))!;
           if (o === 'skip') continue;
+          const disk = o.disk!; // every target's is set above
           for (const run of diskRuns(index % SLOT, data)) {
             const at = run.block * BLOCK;
             const len = Math.min(run.count * BLOCK, o.size - at);
-            if (!(await lands(() => (run.zero ? o.disk.zero(at, len) : o.disk.write(at, run.data.subarray(0, len))))))
+            if (!(await lands(() => (run.zero ? disk.zero(at, len) : disk.write(at, run.data.subarray(0, len))))))
               throw await full();
           }
         }
-        for (const o of open.values()) if (o !== 'skip') o.disk.flush();
+        for (const o of open.values()) if (o !== 'skip') o.disk!.flush();
+        // Every overlay whole on disk: their marks cleared (each in place: its meta's size doesn't change).
+        for (const o of open.values()) {
+          const meta = o !== 'skip' ? o.meta : undefined;
+          if (meta && !(await lands(() => endFill(meta)))) throw await full();
+        }
         for (const r of rams) r.spec.ramInit = r.disk.chunkList();
       } finally {
         for (const o of open.values()) if (o !== 'skip') o.close();

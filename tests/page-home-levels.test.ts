@@ -52,9 +52,18 @@ async function seed(page: Page): Promise<Seeded> {
 }
 
 const text = async (page: Page, sel: string) => ((await page.locator(sel).textContent()) ?? '').trim();
-/** The column's levels in the DOM (two while one leaves and another comes in), once the move is over. */
-const settled = (page: Page) => page.waitForFunction(() => document.querySelectorAll('.machines nav [data-level]').length === 1, null, { timeout: 5000 });
-const level = async (page: Page) => { await settled(page); return page.locator('.machines nav [data-level]').getAttribute('data-level'); };
+/**
+ * Waits until the column shows level `want` alone (two levels are in the DOM while one leaves and another comes in, and
+ * a move may start a moment after what asked for it: waiting for one level alone could see the old one before it).
+ */
+async function atLevel(page: Page, want: string, what = '') {
+  const now = () => page.evaluate(() => [...document.querySelectorAll('.machines nav [data-level]')].map((l) => l.getAttribute('data-level')));
+  try {
+    await page.waitForFunction((w) => { const l = document.querySelectorAll('.machines nav [data-level]'); return l.length === 1 && l[0].getAttribute('data-level') === w; }, want, { timeout: 5000 });
+  } catch {
+    assert.fail(`${what ? `${what}: ` : ''}the column shows ${JSON.stringify(await now())}, not ${want} alone`);
+  }
+}
 const hash = (page: Page) => page.evaluate(() => location.hash);
 /** Calls `page.openConnection` as the toolbar's Details… and a machine's tab do. */
 const openConnection = (page: Page, id: string, from: unknown) =>
@@ -93,7 +102,7 @@ test("Home's levels: a connection's page by its address, Back and Esc to each or
   // A reload on a room connection's address: its page, entered from Connections.
   await page.goto(`${base}/web/app/?autostart=1&m=${s.alpha}#home/connections/${s.room}`);
   await page.locator('[data-context-connection]').waitFor({ timeout: 30_000 });
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   assert.equal(await hash(page), `#home/connections/${s.room}`);
   const back = page.locator('.machines nav [data-action=back]');
   assert.equal(await back.getAttribute('data-back'), 'connections');
@@ -117,7 +126,7 @@ test("Home's levels: a connection's page by its address, Back and Esc to each or
   assert.equal(await page.locator('.machines nav [data-level]').count(), 1, 'a section is no move between levels');
   await page.locator('section[data-selected=connection-domains]').waitFor();
   await page.keyboard.press('Escape');
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await hash(page), '#home');
   await page.locator('section[data-selected=connections]').waitFor();
   assert.equal(await page.evaluate(() => document.activeElement?.closest('[data-connection]')?.getAttribute('data-connection')), s.room);
@@ -132,21 +141,21 @@ test("Home's levels: a connection's page by its address, Back and Esc to each or
     return [...document.querySelectorAll('.machines nav [data-level]')].map((e) => (e as HTMLElement).dataset.level);
   }, s.tailnet);
   assert.deepEqual(during.sort(), [`connection:${s.tailnet}`, 'root'].sort());
-  assert.equal(await level(page), `connection:${s.tailnet}`);
+  await atLevel(page, `connection:${s.tailnet}`);
   assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'H3', "the pane's title has the focus");
   assert.equal(await page.locator('[data-section=domains]').count(), 0, 'a tailnet has no Domains');
   await page.locator('[data-section=settings]').click();
   assert.equal(await hash(page), `#home/connections/${s.tailnet}/settings`);
   await back.click();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
 
   // Bravo's link: its Network tab. Entered from there, Back returns there.
   await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
   await page.locator(`[data-machine-tab="${s.bravo}"]`).click();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
   await openConnection(page, s.room, { to: 'tab', machine: s.bravo });
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   assert.equal(await text(page, '.machines nav [data-action=back]'), t('machines:ConnectionNav.back.machine', { machine: 'Bravo' }));
   await page.keyboard.press('Escape');
   await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
@@ -163,12 +172,12 @@ test("Home's levels: a connection's page by its address, Back and Esc to each or
   assert.equal(await hash(page), '');
   // Home opens at its root next time.
   await page.locator('#machines-open').click();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
 
   // An unknown id opens Connections.
   await page.goto(`${base}/web/app/?autostart=1&m=${s.alpha}#home/connections/gone`);
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 30_000 });
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await hash(page), '#home');
   await page.close();
 });
@@ -182,37 +191,37 @@ test("Home's levels in the browser's history: Back and Forward from each origin,
 
   // From Connections: down pushes, a section replaces; Back leaves for Connections, Forward enters again.
   await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   assert.equal(await length(), before + 1, 'down a level: an entry of its own');
   await page.locator('[data-section=settings]').click();
   assert.equal(await length(), before + 1, 'a section: in place');
   await page.goBack();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await hash(page), '#home');
   await page.locator('section[data-selected=connections]').waitFor();
   await page.goForward();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   assert.equal(await hash(page), `#home/connections/${s.room}/settings`);
   assert.equal(await backTo(page), 'connections', 'entered from Connections again');
   // The column's Back after a push: back in the history, so no entry is left to come back to by mistake.
   await page.locator('.machines nav [data-action=back]').click();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await page.evaluate(() => history.state), null, "Connections' entry, not a new one");
   await page.goForward();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   await page.keyboard.press('Escape');
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
 
   // From a machine's Network tab: Back returns to the tab, Forward to the page with its Back to the machine.
   await page.locator(`[data-machine="${s.bravo}"]`).click();
   await page.locator('[data-tab=network]').click();
   await openConnection(page, s.room, { to: 'tab', machine: s.bravo });
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   await page.goBack();
   await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   await page.goForward();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   assert.equal(await backTo(page), 'tab', 'the origin kept in the entry');
   assert.equal(await text(page, '.machines nav [data-action=back]'), t('machines:ConnectionNav.back.machine', { machine: 'Bravo' }));
 
@@ -222,7 +231,7 @@ test("Home's levels in the browser's history: Back and Forward from each origin,
   assert.equal(await backTo(page), 'connections');
   const reloaded = await length();
   await page.locator('.machines nav [data-action=back]').click();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await length(), reloaded, 'in place');
   assert.equal(await hash(page), '#home');
 
@@ -230,12 +239,12 @@ test("Home's levels in the browser's history: Back and Forward from each origin,
   await page.locator('[data-action=back-to-machine]').click();
   assert.equal(await homeOpen(page), false);
   await openConnection(page, s.tailnet, { to: 'screen' });
-  assert.equal(await level(page), `connection:${s.tailnet}`);
+  await atLevel(page, `connection:${s.tailnet}`);
   await page.goBack();
   await page.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
   assert.equal(await hash(page), '');
   await page.goForward();
-  assert.equal(await level(page), `connection:${s.tailnet}`);
+  await atLevel(page, `connection:${s.tailnet}`);
   assert.equal(await backTo(page), 'screen');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.getElementById('machines-open')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
@@ -289,7 +298,7 @@ test("a connection's Settings: its values, Revert, a refusal, Save and a rename;
   // A room's Settings: its switches, and its key under Advanced (made when its Details first showed its name, though it
   // never connected).
   await openConnection(page, s.room, { to: 'connections' });
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   await page.locator('[data-section=settings]').click();
   assert.equal(await page.isChecked('#settings-room-direct'), true);
   assert.equal(await page.isChecked('#settings-room-incoming'), true);
@@ -308,7 +317,7 @@ test("a connection's Settings: its values, Revert, a refusal, Save and a rename;
   assert.equal(await page.locator('.machines nav [data-action=delete-connection]').getAttribute('title'), t('machines:ConnectionsPane.connection.delete.title'));
   await page.locator('.machines nav [data-action=delete-connection]').click();
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 10_000 });
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(asked.length, 1, 'Delete asks first');
   assert.equal((await stored(page)).some((c) => c.id === s.room), false);
   // A card keeps its name, its line, Details and Delete.
@@ -379,9 +388,9 @@ test("a machine's draft through a connection's page and back; Home reopens where
   await page.fill('[data-field=name]', 'Bravo edited');
   await page.locator('[data-tab=network]').click();
   await page.locator('[data-adapter="0"] [data-action=domains-link]').click();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   await page.locator('.machines nav [data-action=back]').click();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
   assert.deepEqual(await focused(page), { tag: 'H3', pane: s.bravo }, "the machine's title has the focus");
   await page.locator('[data-tab=settings]').click();
@@ -412,34 +421,34 @@ test("Back and Esc twice during a move run once; a link out of a level is an ent
   await page.locator('section[data-selected=connections]').waitFor();
   // Back double-clicked: one move, Home still open at Connections.
   await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   await page.locator('.machines nav [data-action=back]').dblclick();
   await settledFor(page);
   assert.equal(await homeOpen(page), true, 'Home still open');
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await hash(page), '#home');
   await page.locator('section[data-selected=connections]').waitFor();
   // Esc twice at once: the same.
   await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await settledFor(page);
   assert.equal(await homeOpen(page), true, 'Home still open after two Esc');
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await hash(page), '#home');
 
   // Details' machine link out of a pushed level: an entry of its own, so the browser's Back returns to the level.
   await page.locator(`[data-connection="${s.room}"] [data-action=connection-details]`).click();
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   const before = await page.evaluate(() => history.length);
   await page.locator(`[data-machine-tab="${s.bravo}"]`).click();
   await page.locator(`section[data-selected="${s.bravo}"] [data-tab=network][aria-selected=true]`).waitFor();
   assert.equal(await page.evaluate(() => history.length), before + 1);
   await page.goBack();
-  assert.equal(await level(page), `connection:${s.room}`, "Back: the connection's page again");
+  await atLevel(page, `connection:${s.room}`, "Back: the connection's page again");
   await page.goBack();
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
 
   // Home on Bravo's Settings: the toolbar's way in (its origin is what Home shows) leads back to Bravo's Settings.
   await page.locator(`[data-machine="${s.bravo}"]`).click();
@@ -449,7 +458,7 @@ test("Back and Esc twice during a move run once; a link out of a level is an ent
     const { machinesNav } = await import('/web/app/areas/machines-nav.svelte.ts' as string) as typeof import('../web/app/areas/machines-nav.svelte.ts');
     p.openConnection(id, 'details', machinesNav.origin());
   }, s.room);
-  assert.equal(await level(page), `connection:${s.room}`);
+  await atLevel(page, `connection:${s.room}`);
   assert.equal(await text(page, '.machines nav [data-action=back]'), t('machines:ConnectionNav.back.machine', { machine: 'Bravo' }));
   await page.locator('.machines nav [data-action=back]').click();
   await page.locator(`section[data-selected="${s.bravo}"] [data-tab=settings][aria-selected=true]`).waitFor();
@@ -468,10 +477,10 @@ test("a connection gone under its page: Home leaves the level for Connections; a
   });
   await page.locator('[data-machine="connections"]').click();
   await page.locator(`[data-connection="${spare}"] [data-action=connection-details]`).click();
-  assert.equal(await level(page), `connection:${spare}`);
+  await atLevel(page, `connection:${spare}`);
   await page.locator('.machines nav [data-action=delete-connection]').click();
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 10_000 });
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await hash(page), '#home');
   await inConnections();
   // The same entered by its address (another pane chosen before).
@@ -481,7 +490,7 @@ test("a connection gone under its page: Home leaves the level for Connections; a
   const tailnet = (await stored(page)).find((c) => c.id === s.tailnet);
   await page.locator('.machines nav [data-action=delete-connection]').click();
   await page.locator('section[data-selected=connections]').waitFor({ timeout: 10_000 });
-  assert.equal(await level(page), 'root');
+  await atLevel(page, 'root');
   assert.equal(await hash(page), '#home');
   await page.waitForFunction(() => document.activeElement?.closest('section[data-selected]')?.getAttribute('data-selected') === 'connections', null, { timeout: 5_000 });
   assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'H3', "Connections' title has the focus");
@@ -495,7 +504,7 @@ test("a connection gone under its page: Home leaves the level for Connections; a
   }, { ...tailnet, id: 'later' });
   await page.locator('li[data-connection="later"]').waitFor({ timeout: 5_000 });
   await settledFor(page, 300);
-  assert.equal(await level(page), 'root', 'not entered unasked');
+  await atLevel(page, 'root', 'not entered unasked');
 
   // Two machines with one name: each linked to its own Network tab.
   const twin = await page.evaluate(async ([modules, room]) => {

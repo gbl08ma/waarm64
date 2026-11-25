@@ -2321,22 +2321,30 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   disk: a backing file) puts a changes file onto **the disk on the page** (the machine's own or the
   chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
   `web/app/import.ts`; the machine stops, as for the export): `readChanges` (web/qcow2.ts) parses
-  the file (clusters of 4 KiB or more, zero clusters as zeros, compressed ones inflated), its virtual size
-  and **hash** (the `WAM2` extension) are checked against the base's (`hashSource`, under a second
+  the file (clusters of 4 KiB or more, zero clusters as zeros, compressed ones inflated), every table and cluster it
+  names is checked to lie in it (`check`), its virtual size (against the base's virtual size: a qcow2 base's file may
+  be larger) and **hash** (the `WAM2` extension) are checked against the base's (`hashSource`, under a second
   for Debian's 400 MB), then the overlay and the variable store beside it are **deleted** (the
   changes are the whole of what the disk has written; EDK2 rebuilds its variables, Debian boots
   by the fallback path) and the blocks are written into a fresh overlay (`changesInto`: the file's consecutive data
   clusters one read, consecutive blocks of one kind one write or zeroing, up to 1 MiB; unordered, both files flushed
-  at the end, the overlay's record made after: devices.md "blk"; 256 MiB in 0.16-0.31 s on a profile, where a block a
-  call took 18-29 s: bench/io/REPORT.md "PERF loop 76"). Refused before anything
+  at the end; a fill, marked until then: devices.md "blk"; 256 MiB in 0.16-0.31 s on a profile, where a block a
+  call took 18-29 s: bench/io/REPORT.md "PERF loop 76"). A stored machine's disk takes it as a new overlay, recorded
+  after the job (removed on a failure: the disk is unchanged); the page's own disk (a transient machine's, at its fixed
+  name) has its overlay emptied, so a failure after that (a cluster that doesn't unpack, the file unreadable, the
+  storage full) says so: [The changes the disk held were deleted, and it starts from its image.](ui:disks:disk-changes.changes.failed.emptied)
+  Refused before anything
   is touched, with what the user can act on: not a changes file; a qcow2 over a backing file that
-  isn't ours (no checksum to check); another size; another base (names the file it was made over and both
+  isn't ours (no checksum to check); a file shorter than what it lists ([This file is shorter than the changes it
+  lists, so it may not have been saved or copied whole. Its changes can't be imported.](ui:disks:qcow2.changesTruncated));
+  another size; another base (names the file it was made over and both
   hashes' first digits: open that disk first). The file name isn't compared (the base can be
   renamed), the bytes are. The confirm says what is replaced; afterwards the machine starts again.
   The fresh-profile round trip works: the page's Debian plus the changes file saved from a disk
   chosen under another name boots with the file written.
 - Tests: `tests/changes.test.ts` (the import in memory: the saved disk comes back, the old overlay
-  is replaced; refusals leave it untouched; a compressed changes file; changes files from qemu-img with 64 KiB clusters, a
+  is replaced; refusals leave it untouched, a file cut short among them; a load that fails part way leaves the overlay
+  empty and says so; a qcow2 base whose file is larger than its disk; a compressed changes file; changes files from qemu-img with 64 KiB clusters, a
   zero cluster, compressed clusters), in `tests/page-save.test.ts` (a file loads back, a non-changes file is refused) and
   `tests/page-disk.test.ts` (the fresh-profile round trip on Debian), and `tests/qcow2-write.test.ts` (the base's hash against node:crypto; the writers' output against
   `qemu-img check`/`compare`/`info`, small and over several L2 tables and refcount blocks, compressed and not, and compressed clusters among ones that don't shrink; planted:

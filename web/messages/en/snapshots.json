@@ -708,8 +708,8 @@
     "note": "Error headline in the message bar (under the toolbar) when a snapshot failed once its disk's changes were being written (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it, after its cause (snapshots:worker-errors.notRestored.cause) on the line under the headline."
   },
   "worker-errors.notRestored.cause": {
-    "message": "The machine didn't start, and its disk may hold part of the snapshot's changes. <ui>Start</ui> boots <name>{{machine}}</name> normally from what is there. To start over from the disk's image, reset the disk.",
-    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place; what happened. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
+    "message": "The machine didn't start, and its disks hold none of the snapshot's changes. <ui>Start</ui> boots <name>{{machine}}</name> normally.",
+    "note": "Error details: the cause under the headline snapshots:worker-errors.notRestored, on the line under it in the same place; what happened: a disk the restore forked is back on the overlay it had (the new one deleted), and one whose overlay the restore replaced (or a page's own disk a loaded snapshot replaced) starts from its image, since its changes were deleted for the restore. {{machine}}: as that entry's note says. <ui>Start</ui> is the message bar's button (snapshots:problems.startNormally)."
   },
   "worker-errors.notLoaded": {
     "message": "Couldn't load the snapshot",

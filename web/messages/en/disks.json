@@ -463,6 +463,10 @@
     "message": "A machine using the overlay <name>{{name}}</name> is running. Power it off first.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the overlay, or another overlay of the disk the merge deletes, open. {{name}} is that overlay's name."
   },
+  "merge.otherMerging": {
+    "message": "A merge of the overlay <name>{{name}}</name> into this disk didn't finish, and part of it is in the disk already. Merge <name>{{name}}</name> into the disk again to finish it, or start a machine on the disk. Nothing was deleted.",
+    "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk of an overlay is refused because an earlier merge of another overlay of the disk (its name: {{name}}) failed partway (e.g. the storage was full): this merge would delete that overlay, which only a merge of it again (or the disk's next opening by a machine) finishes. Checked before any overlay is deleted."
+  },
   "merge.changed": {
     "message": "The disk's overlays changed since you were asked (in another tab, or by a machine). Look again and merge it again.",
     "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk is refused because what it would do is no longer what the confirmation said: the overlay was written meanwhile (a grow became a conversion), or another overlay the merge would delete was made."
@@ -494,6 +498,10 @@
   "changes.notChanges": {
     "message": "This file isn't a changes file, as it names no base image. To start a machine from a disk image, use <ui>Open disk…</ui>.",
     "note": "Error (message bar) of Import changes… when the file is a disk image rather than a changes file."
+  },
+  "qcow2.changesTruncated": {
+    "message": "This file is shorter than the changes it lists, so it may not have been saved or copied whole. Its changes can't be imported.",
+    "note": "Error (message bar) of Import changes… when a table or a cluster the qcow2 names lies past the end of the file (checked before the disk is touched); the developer's detail (which table or cluster) is the cause under it."
   },
   "changes.notOurs": {
     "message": "This qcow2 file wasn't made by this web app's <ui>Export…</ui> › <ui>Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked. Its changes can't be imported.",
@@ -766,6 +774,10 @@
   "disk-changes.changes.failed": {
     "message": "Couldn't import the changes",
     "note": "Error headline in the message bar (under the toolbar) when an import of changes failed; under it, disks:main.changes.failed.unchanged (or disks:main.inUse when another tab has the disk open, and Retry follows), then why."
+  },
+  "disk-changes.changes.failed.emptied": {
+    "message": "The changes the disk held were deleted, and it starts from its image.",
+    "note": "Error details: the line under the headline disks:disk-changes.changes.failed, before why the import failed, when the page's own disk (not a stored machine's) had its changes deleted for the import before the import failed part way (the storage full, a part of the file that couldn't be read): what it held is gone, and the machine starts from the disk's image."
   },
   "disk-changes.changes.failed.unchanged": {
     "message": "The disk is unchanged.",

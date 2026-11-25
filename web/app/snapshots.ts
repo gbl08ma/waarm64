@@ -135,13 +135,12 @@ type Step = {
  * grown since is another disk to the guest): attached again rather than forking once more.
  */
 async function earlierFork(store: Store, d: DiskRecord, key: string, size: number) {
-  for (const o of await store.overlaysOf(d.id))
-    if (
-      o.fork?.snapshot === key &&
-      Math.max(d.size, o.size ?? 0) === size &&
-      (await overlayMeta(overlayDir(o.id))).generation === o.fork.generation
-    )
-      return { id: o.id, generation: o.fork.generation };
+  for (const o of await store.overlaysOf(d.id)) {
+    if (o.fork?.snapshot !== key || Math.max(d.size, o.size ?? 0) !== size) continue;
+    // One whose fill was cut off (still marked) holds part of the snapshot at the fork's generation: not reused.
+    const meta = await overlayMeta(overlayDir(o.id));
+    if (meta.generation === o.fork.generation && !meta.filling) return { id: o.id, generation: o.fork.generation };
+  }
   return undefined;
 }
 
@@ -237,7 +236,16 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
     await r.store.put('overlays', { ...into, name: r.snap.name, fork, modified: Date.now() });
     return write(into.id);
   }
-  const o = await createOverlay(r.store, s.disk, r.snap.name, fork, s.size, await forkMark(r.store, s.pinned, s.size));
+  // What the attachment had, for the restore cut off before its fill was done (`undoCutRestores`).
+  const before = { ...(a.overlay ? { overlay: a.overlay } : {}), ...(a.inPlace ? { inPlace: true } : {}) };
+  const o = await createOverlay(
+    r.store,
+    s.disk,
+    r.snap.name,
+    { ...fork, before },
+    s.size,
+    await forkMark(r.store, s.pinned, s.size),
+  );
   a.overlay = o.id;
   a.inPlace = undefined;
   return write(o.id, s.action === 'fork-whole');

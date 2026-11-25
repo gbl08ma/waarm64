@@ -1298,7 +1298,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   another tab's sweep in that window would delete the snapshot the record then names (`restoreFirst`). Wrapping the
   whole import in `writing` isn't the fix as is: a shared lock asked again inside it waits behind an exclusive sweep
   queued meanwhile (Web Locks queue in order), a deadlock; the import's own nested `writing` calls would need to go.
-  A room connection left by a tab closed mid-import (`forMachine` naming no machine) would be the sweep's too.
+  A room connection left by a tab closed mid-import (`forMachine` naming no machine) would be the sweep's too. Also
+  before wiring it in (review disk-writes 9): `createOverlay` (web/app/disks.ts) writes a grown fork's or a new empty
+  overlay's `meta` (`writeOwnSize`) before its record and outside `writing`, so a sweep in another tab between the two
+  would delete it and the overlay would open at its disk's size. What a cut-off import or Import changes leaves is
+  removed already, safely, by `Store.dropCutFills` (machines.md §2); the sweep is for the rest (a snapshot's import,
+  a deletion cut off between its record and its files).
+- **A restore's replace fills in place** (review disk-writes 1, 2): a restore that replaces an overlay (the user's
+  answer, a template's fresh overlay, a transient machine's at its fixed name) and Import changes onto the page's own
+  disk empty the overlay first and fill it under the fill mark (devices.md "blk"), so one cut off or refused part way
+  starts from the disk's image: the replaced blocks are gone, as the confirmation said they would be, but so is the
+  snapshot's. To keep the old blocks until the new ones are whole: fill a new directory (`overlays/<id>.fill`) and
+  switch at the end, which OPFS can't do in one step for a directory: a pointer file the opening reads (which
+  directory is current), written last, with the old one deleted after, and every opener and the sweep taught it.
 - **The Alpine demo's loose ends** (bench/demo/REPORT.md "DEMO loop 3"), ranked:
   - **The resume's disk reads, prefetched with the snapshot:** 2–3 dependent 2 MiB misses before the first command (a
     trace from the resume, as loop 1 ranked it: ~0.3 s each at 100/20).

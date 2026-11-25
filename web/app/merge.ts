@@ -76,6 +76,11 @@ async function unchoose(store: Store, id: string) {
 async function merge(store: Store, o: OverlayRecord, d: DiskRecord) {
   const others = (await store.overlaysOf(d.id)).filter((x) => x.id !== o.id);
   await noneInUse(d, [o, ...others]);
+  // An earlier merge of another overlay that didn't finish (the disk marked): that one is deleted below, and its
+  // deletion is refused (part of it is in the disk already), so this merge is refused before anything is deleted.
+  const marked = d.kind === 'stored' ? (await overlayMeta(diskDir(d.id))).merging : '';
+  const earlier = marked && marked !== overlayDir(o.id) ? others.find((x) => overlayDir(x.id) === marked) : undefined;
+  if (earlier) throw new MsgError('disks:merge.otherMerging', { name: earlier.name });
   for (const x of others) await deleteOverlay(store, x.id);
   if (d.kind === 'blank') return convertBlank(store, o, d);
   const size = await growForMerge(store, d, o);
@@ -103,8 +108,11 @@ async function merge(store: Store, o: OverlayRecord, d: DiskRecord) {
  * then its record says `stored`, with a stored disk's identity (the machines that attach it see another disk: their
  * snapshots orphan), the overlay's size and its grow mark; then `o`'s record goes, and the machines that had it chosen
  * are left without one. A copy that fails (the storage full) leaves the overlay as it was, and the half-made store is
- * removed. The record after the bytes: cut off between the copy (which deletes the overlay's files) and the disk's
- * record, the disk is still blank, and what the overlay held is lost.
+ * removed. The record after the bytes, the overlay's files deleted last: the copy keeps them (`keep`), the machines
+ * that had it chosen are left without it first (over the disk made stored, its `base` would be another disk's), then
+ * the disk's record says stored, then the overlay's goes and its files. Cut off before the disk's record, the disk is
+ * still blank and the overlay holds what it held (unchosen once the copy was done); after it and before the overlay's
+ * record went, that record stays beside the disk made stored, unchosen, its blocks the disk's, to be deleted.
  */
 async function convertBlank(store: Store, o: OverlayRecord, d: DiskRecord) {
   const size = Math.max(d.size, o.size ?? 0);
@@ -119,11 +127,13 @@ async function convertBlank(store: Store, o: OverlayRecord, d: DiskRecord) {
         overlay: overlayDir(o.id),
         identity: canonical(identity),
         size,
+        keep: true,
       });
     } catch (e) {
       await removeOverlay(diskDir(d.id)).catch(() => undefined); // tidying up: the failure thrown is the one to report
       throw e;
     }
+    await unchoose(store, o.id);
     await store.put('disks', {
       ...d,
       kind: 'stored',
@@ -133,8 +143,8 @@ async function convertBlank(store: Store, o: OverlayRecord, d: DiskRecord) {
       bytes: await overlayBytes(diskDir(d.id)),
       ...(o.grow ? { grow: o.grow } : {}),
     });
-    await store.forget('overlays', o.id); // its files went with the copy
-    await unchoose(store, o.id);
+    await store.forget('overlays', o.id);
+    await removeOverlay(overlayDir(o.id)); // its blocks are the disk's now
     return r.blocks ?? 0;
   });
 }

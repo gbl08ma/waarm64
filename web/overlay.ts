@@ -152,11 +152,13 @@ export function withRoom(makeRoom?: () => Promise<boolean>) {
 
 /**
  * An overlay's `meta` file: its generation (u64 LE at 0), for a stored disk the overlay being merged into it
- * (`merging`: its id, or empty; 24 bytes at 8), and the overlay's own size (`size`, u64 LE at 32: a grown overlay's,
- * docs/machines.md §4.5; 0 for none: the base's). A meta of 32 bytes, from before sizes, has none.
+ * (`merging`: its id, or empty; 24 bytes at 8), the overlay's own size (`size`, u64 LE at 32: a grown overlay's,
+ * docs/machines.md §4.5; 0 for none: the base's), and the fill mark (`filling`, u64 LE at 40: 1 while a bulk fill of a
+ * new or emptied store or overlay runs, docs/devices.md "Crash and refusal"; 0 or absent: none). A meta of 32 bytes,
+ * from before sizes, has no size; one of 40, from before the mark, no mark.
  */
-export type Meta = { generation: number; merging: string; size: number };
-const META_SIZE = 40;
+export type Meta = { generation: number; merging: string; size: number; filling?: boolean };
+const META_SIZE = 48;
 /** A meta file's bytes (`writeMeta`'s). */
 export function encodeMeta(m: Meta) {
   const b = new Uint8Array(META_SIZE);
@@ -164,6 +166,7 @@ export function encodeMeta(m: Meta) {
   v.setBigUint64(0, BigInt(m.generation), true);
   b.set(new TextEncoder().encode(m.merging).subarray(0, 24), 8);
   v.setBigUint64(32, BigInt(m.size), true);
+  v.setBigUint64(40, m.filling ? 1n : 0n, true);
   return b;
 }
 
@@ -222,15 +225,30 @@ export function readMeta(f: SyncFile): Meta {
   return {
     generation: Number(v.getBigUint64(0, true)),
     merging,
-    size: n >= META_SIZE ? Number(v.getBigUint64(32, true)) : 0,
+    size: n >= 40 ? Number(v.getBigUint64(32, true)) : 0,
+    ...(n >= META_SIZE && v.getBigUint64(40, true) === 1n ? { filling: true } : {}),
   };
 }
 
-/** Writes a `meta` file, durably (flushed). False on a failed write. */
+/**
+ * Writes a `meta` file, durably (flushed). False on a failed write: short, or refused with `QuotaExceededError` (a raw
+ * sync handle's, `shortOnFull`), so a caller's `withRoom` can make room and try again.
+ */
 export function writeMeta(f: SyncFile, m: Meta) {
-  if (f.write(encodeMeta(m), { at: 0 }) !== META_SIZE) return false;
+  // Without a mark to write or clear, a meta of 40 bytes stays 40 (no growth to refuse on a full storage).
+  const b = m.filling || f.getSize() > 40 ? encodeMeta(m) : encodeMeta(m).subarray(0, 40);
+  if (shortOnFull(f).write(b, { at: 0 }) !== b.length) return false;
   f.flush();
   return true;
+}
+
+/**
+ * A bulk fill's end (docs/devices.md "Crash and refusal"): its store or overlay `files` flushed by the caller already,
+ * the mark it was filled under (`filling`, written before its first block) cleared, durably. False on a failed write.
+ */
+export function endFill(meta: SyncFile) {
+  const m = readMeta(meta);
+  return writeMeta(meta, { ...m, filling: false });
 }
 
 /** A {@link SyncFile} that reads `bytes` (and writes nothing). */
@@ -1066,15 +1084,19 @@ export async function lockOverlay(
  * image's identity `want` (`diskIdentity` in web/devices.ts: a URL's path and the size, or a chosen file's name, size and modification time): an overlay only makes sense over the bytes it was
  * written against, so a mismatch is an error (`want` undefined: not checked, as a merge does). `readOnly`: an
  * existing directory, opened with read-only handles under a shared lock (several readers: a stored disk under
- * its machines' overlays, docs/machines.md §4.4; a writer waits for them all). Dedicated workers only
- * (sync access handles).
+ * its machines' overlays, docs/machines.md §4.4; a writer waits for them all). `fresh`: the overlay is emptied first
+ * under the same lock (its files, firmware variables and suspended machine deleted, as `removeOverlay` does; no other
+ * opener can come between), for a bulk fill. An overlay a fill was cut off in (its meta's `filling` mark, found under
+ * the lock: no fill runs now) is never read as written: a writer's opening empties it in place, its generation moved
+ * on (so no snapshot's pin or fork record matches it again), and a reader's sees it empty (docs/devices.md "Crash and
+ * refusal"). Dedicated workers only (sync access handles).
  */
 // ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place.
 export async function openOverlay(
   name: string,
   want: string | undefined,
   waitMs = OVERLAY_WAIT_MS,
-  opts: { readOnly?: boolean } = {},
+  opts: { readOnly?: boolean; fresh?: boolean } = {},
 ): Promise<OverlayFiles> {
   const release = await lockOverlay(name, waitMs, opts.readOnly ? 'shared' : 'exclusive');
   const handles: FileSystemSyncAccessHandle[] = [];
@@ -1083,6 +1105,7 @@ export async function openOverlay(
     release();
   };
   try {
+    if (opts.fresh && !opts.readOnly) await removeFiles(name);
     if (!(await hasOpfs())) {
       if (opts.readOnly && !inMemory.has(name)) throw new DOMException(`no overlay ${name}`, 'NotFoundError');
       const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), meta: memFile(), base: want ?? '' };
@@ -1092,7 +1115,8 @@ export async function openOverlay(
           problem: 'overlay-mismatch',
         });
       inMemory.set(name, o);
-      return { data: o.data, map: o.map, meta: o.meta, close: done };
+      const files = { data: o.data, map: o.map, meta: o.meta, close: done };
+      return (await cutFill(files, !!opts.readOnly)) ?? files;
     }
     const dir = await opfsDir(name, !opts.readOnly);
     const open = async (f: string) => {
@@ -1124,13 +1148,48 @@ export async function openOverlay(
       throw Object.assign(new Error(`overlay ${name} belongs to ${got}, not ${want}`), { problem: 'overlay-mismatch' });
     base.close();
     handles.pop();
-    return { data, map, meta, close: done };
+    const files = { data, map, meta, close: done };
+    return (await cutFill(files, !!opts.readOnly)) ?? files;
   } catch (e) {
     done();
     // Making its directory or files refused (the storage full): said as a write is. What was made is empty, and the
     // next opening goes on from it.
     if ((e as DOMException)?.name === 'QuotaExceededError') throw await storageFullError();
     throw e;
+  }
+}
+
+/**
+ * The files of an overlay a fill was cut off in (`files`, opened under its lock, its meta marked `filling`), as an
+ * empty overlay: a writer's emptied in place (`map`, then `data`, then the mark cleared with the generation moved on: cut
+ * off again, the mark stays and the next opening does it again), a reader's in memory. Undefined for one not marked.
+ */
+async function cutFill(files: OverlayFiles, readOnly: boolean): Promise<OverlayFiles | undefined> {
+  const m = readMeta(files.meta);
+  if (!m.filling) return undefined;
+  if (readOnly) return { ...files, data: memFile(), map: memFile() };
+  for (const f of [files.map, files.data]) {
+    f.truncate(0);
+    f.flush();
+  }
+  if (!writeMeta(files.meta, { generation: m.generation + 1, merging: '', size: m.size }))
+    throw await storageFullError();
+  return files;
+}
+
+/** Overlay `name`'s files deleted (its directory, or Node's memory), the caller holding its lock. */
+async function removeFiles(name: string) {
+  try {
+    if (!(await hasOpfs())) {
+      inMemory.delete(name);
+      inMemoryFlash.delete(name);
+      inMemoryFiles.delete(`${name}/${SUSPEND}`);
+      return;
+    }
+    const parts = name.split('/');
+    await (await opfsDir(parts.slice(0, -1).join('/'))).removeEntry(parts.at(-1)!, { recursive: true });
+  } catch (e) {
+    if ((e as DOMException).name !== 'NotFoundError') throw e;
   }
 }
 
@@ -1143,19 +1202,41 @@ export async function openOverlay(
 export async function removeOverlay(name: string) {
   const release = await lockOverlay(name); // after the machine that had it closed it
   try {
-    if (!(await hasOpfs())) {
-      inMemory.delete(name);
-      inMemoryFlash.delete(name);
-      inMemoryFiles.delete(`${name}/${SUSPEND}`);
-      return;
-    }
-    const parts = name.split('/');
-    await (await opfsDir(parts.slice(0, -1).join('/'))).removeEntry(parts.at(-1)!, { recursive: true });
-  } catch (e) {
-    if ((e as DOMException).name !== 'NotFoundError') throw e;
+    await removeFiles(name);
   } finally {
     release();
   }
+}
+
+/**
+ * Whether a fill was cut off in store or overlay `name`: its meta marked `filling`, read under its lock, taken only if
+ * free (a fill holds it while it runs, and clears the mark before it lets go, so a mark found under it is one cut off).
+ * False where it's held (in use) or there are no Web Locks. From a page or a worker.
+ */
+export async function fillCutOff(name: string) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return false;
+  return navigator.locks.request(
+    overlayLock(name),
+    { ifAvailable: true },
+    async (lock) => !!lock && !!(await overlayMeta(name)).filling,
+  );
+}
+
+/**
+ * Deletes store or overlay `name` if a fill was cut off in it (its meta marked `filling`) and `unowned()` says no record
+ * names it, both checked under its lock, taken only if free (a fill holds it while it runs, and clears the mark before
+ * it lets go, so a mark found under it is one cut off). Whether it was deleted. From a page (the store's
+ * `dropCutFills`).
+ */
+export async function dropCutFill(name: string, unowned: () => Promise<boolean>) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return false;
+  return navigator.locks.request(overlayLock(name), { ifAvailable: true }, async (lock) => {
+    if (!lock || !(await overlayMeta(name)).filling || !(await unowned())) return false;
+    await removeFiles(name);
+    return true;
+  });
 }
 
 /** Node has no OPFS: files written by `fileWriter` (suspended machines) live in memory there, by path. */
@@ -1280,7 +1361,8 @@ export async function writeOwnSize(name: string, size: number) {
     const was = readMeta(bytesFile(new Uint8Array(await (await handle.getFile()).arrayBuffer())));
     const out = await handle.createWritable();
     try {
-      await out.write(encodeMeta({ ...was, size }));
+      const b = encodeMeta({ ...was, size });
+      await out.write(was.filling ? b : b.subarray(0, 40)); // 40 bytes without a mark, as `writeMeta` keeps it
       await out.close();
     } catch (e) {
       await out.abort().catch(() => undefined); // the failure thrown is the one to report

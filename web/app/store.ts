@@ -7,7 +7,7 @@
 // before their record do it inside `writing`, which the sweep waits out (a Web Lock, shared by
 // every tab). Other tabs hear of every change through a BroadcastChannel (`onChange`): their
 // views reread. DOM-free: Node's tests run it over memory (`memoryRecords`, `memoryFiles`).
-import { hasOpfs, lockOverlay } from '../overlay.ts';
+import { dropCutFill, hasOpfs, lockOverlay } from '../overlay.ts';
 import { MsgError } from '../msg.ts';
 import type { Connection } from './connections.ts';
 import type { Folder } from './folders.ts';
@@ -20,7 +20,9 @@ import { isId, type DiskIdentity, type DiskRecord, type MachineRecord, type Shap
  * `overlays/<id>/` (`data`, `map`, `meta`). `generation` is the meta file's, as the page last
  * read it (the device worker bumps the file's before a session's first write). `fork`: the
  * snapshot whose blocks it was made from, and its generation then, so a second restore of that
- * snapshot reuses it while it hasn't moved (§5.2).
+ * snapshot reuses it while it hasn't moved (§5.2); `before`, for a new fork, what its attachment had before the restore
+ * attached it (its overlay, or the disk written in place), to go back to where the restore's fill was cut off
+ * (web/app/snapshot-undo.ts `undoCutRestores`).
  */
 export type OverlayRecord = {
   id: string;
@@ -32,7 +34,7 @@ export type OverlayRecord = {
   bytes: number;
   created: number;
   modified: number;
-  fork?: { snapshot: string; generation: number };
+  fork?: { snapshot: string; generation: number; before?: { overlay?: string; inPlace?: boolean } };
   /**
    * Its own size, bytes (machines.md §4.5: a grown overlay; its meta file's, which the device worker reads): the guest
    * sees the larger of it and its disk's. Absent: none of its own.
@@ -305,6 +307,23 @@ export class Store {
     if (!machines.has(n)) return gone(machineDir(n));
     for (const s of await this.files.list(`${machineDir(n)}/snapshots`))
       if (isId(s) && !snapshots.has(s)) await gone(snapshotPath(n, s));
+  }
+
+  /**
+   * Removes what an import or Import changes cut off part way left (machines.md §2): a `disks/<id>` or `overlays/<id>`
+   * whose fill was cut off (still marked as filling, its lock free: web/overlay.ts `dropCutFill`) and that no record
+   * names, checked under its lock (a job's record comes only after its fill's mark is cleared). Safe beside other tabs
+   * and their jobs, unlike `sweep`, which nothing calls (backlog.md "The store's sweep never runs"). The paths removed.
+   */
+  async dropCutFills(): Promise<string[]> {
+    const removed: string[] = [];
+    for (const [kind, dir] of [
+      ['disks', diskDir],
+      ['overlays', overlayDir],
+    ] as const)
+      for (const n of await this.files.list(kind))
+        if (isId(n) && (await dropCutFill(dir(n), async () => !(await this.get(kind, n))))) removed.push(dir(n));
+    return removed;
   }
 
   /**

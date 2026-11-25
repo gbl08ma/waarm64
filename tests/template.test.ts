@@ -6,11 +6,12 @@
 // The first start's restore on the page, in a fresh profile: tests/page-template-first.test.ts.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { openOverlay, writeMeta } from '../web/overlay.ts';
+import { openOverlay, overlayMeta, readMeta, writeMeta } from '../web/overlay.ts';
 import { exportDefinition, importDefinition, parseDefinition } from '../web/app/definitions.ts';
 import { createDisk, createMachine, attach, knownDisk } from '../web/app/machines.ts';
 import { resolveUrls } from '../web/app/template.ts';
 import { planRestore } from '../web/app/snapshots.ts';
+import { undoCutRestores } from '../web/app/snapshot-undo.ts';
 import { canonical, shapeHash, shapeOf, type MachineRecord } from '../web/app/shape.ts';
 import { overlayDir, Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
@@ -84,7 +85,7 @@ test("a template's restore onto a new machine with no overlay yet forks: a new o
   const m = (await b.get('machines', machine.id))!;
   const o = (await b.get('overlays', m.attachments[0].overlay!))!;
   assert.deepEqual(steps, [{ slot: pins[0].slot, action: 'write', overlay: overlayDir(o.id), identity: canonical(o.identity), size: 256 * MiB, whole: false }]);
-  assert.deepEqual([o.name, o.fork], ['Alpine', { snapshot: 'k1', generation: 1 }]);
+  assert.deepEqual([o.name, o.fork], ['Alpine', { snapshot: 'k1', generation: 1, before: {} }], 'what the attachment had: no overlay');
   assert.equal((await b.all('overlays')).length, 1);
 });
 
@@ -124,6 +125,52 @@ test("a machine's first restore onto a fresh overlay (never written) fills that 
   await again.commit(false);
   const after = (await b.get('machines', m.id))!;
   assert.ok(![written.id, empty.id].includes(after.attachments[0].overlay!), 'a new fork');
+});
+
+// Review disk-writes 1: a restore's fork recorded and attached before its fill; the fill cut off (a closed tab, the
+// storage full), the next restore of the snapshot reused the half-filled fork as complete (its generation was the
+// fork's), and the machine started on it.
+test("a fork whose restore was cut off before its fill was done is never reused; the machine goes back to the overlay it had, the fork deleted", async () => {
+  const { b, machine, pins } = await imported();
+  const disk = (await b.all('disks'))[0];
+  const now = Date.now();
+  const mine = { id: 'e00000000003', name: 'Mine', disk: disk.id, identity: disk.identity, generation: 2, bytes: 4096, created: now, modified: now };
+  await b.put('overlays', mine);
+  machine.attachments[0].overlay = mine.id;
+  await b.put('machines', machine);
+  const plan = await planRestore(b, machine, await disksOf(b), { name: 'Alpine', key: 'k4', pins }, { display: '2d' });
+  await plan.commit(false);
+  const m = (await b.get('machines', machine.id))!;
+  const fork = m.attachments[0].overlay!;
+  assert.notEqual(fork, mine.id);
+  assert.deepEqual((await b.get('overlays', fork))!.fork, { snapshot: 'k4', generation: 1, before: { overlay: mine.id } });
+  // The worker's fill cut off: the fork marked at generation 1, part of the blocks in (web/snapshot.ts).
+  const f = await openOverlay(overlayDir(fork), canonical(disk.identity));
+  assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0, filling: true }));
+  f.close();
+  await navigator.locks.request(`waarm64-overlay:${overlayDir(fork)}`, async () => {}); // its lock let go (a release lands a moment later)
+  const again = await planRestore(b, m, await disksOf(b), { name: 'Alpine', key: 'k4', pins }, { display: '2d' });
+  assert.deepEqual(again.forks.map((x) => x.reused), [false], 'the half-filled fork is not reused');
+  // Open somewhere (its fill still running, or a machine in another tab): left as it is.
+  const open = await openOverlay(overlayDir(fork), undefined, undefined, { readOnly: true }); // a writer's would empty it
+  assert.equal(await undoCutRestores(b, m), m, 'not while it is open');
+  open.close();
+  await navigator.locks.request(`waarm64-overlay:${overlayDir(fork)}`, async () => {});
+  const back = await undoCutRestores(b, m);
+  assert.equal(back.attachments[0].overlay, mine.id, 'back on the overlay it had');
+  assert.equal((await b.get('machines', m.id))!.attachments[0].overlay, mine.id, 'in its record');
+  assert.equal(await b.get('overlays', fork), undefined, 'the fork deleted');
+  assert.equal((await overlayMeta(overlayDir(fork))).generation, 0, 'and its files');
+  assert.equal(await undoCutRestores(b, back), back, 'nothing more to undo');
+  // A fork whose fill ended (its mark cleared) stays, and is reused.
+  await again.commit(false);
+  const m2 = (await b.get('machines', m.id))!;
+  const g = await openOverlay(overlayDir(m2.attachments[0].overlay!), canonical(disk.identity));
+  assert.ok(writeMeta(g.meta, { ...readMeta(g.meta), generation: 1 }));
+  g.close();
+  assert.equal(await undoCutRestores(b, m2), m2);
+  const third = await planRestore(b, m2, await disksOf(b), { name: 'Alpine', key: 'k4', pins }, { display: '2d' });
+  assert.deepEqual(third.forks.map((x) => x.reused), [true]);
 });
 
 // REVIEW.md (review/demo-page) R1: a definition naming an image's content id from another URL (another store's demo,

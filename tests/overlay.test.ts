@@ -2,7 +2,7 @@
 // in-memory files shaped like OPFS sync access handles.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { encodeMeta, grown, lockOverlay, memFile, openOverlay, overlay, overlayMeta, readMeta, writeMeta, writeOwnSize, writeWhole } from '../web/overlay.ts';
+import { dropCutFill, encodeMeta, endFill, grown, lockOverlay, overlayLock, memFile, openOverlay, overlay, overlayMeta, readMeta, withRoom, writeMeta, writeOwnSize, writeWhole } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
@@ -616,5 +616,97 @@ test("the variable store is rewritten in place: a full storage leaves the old on
     });
     assert.throws(() => writeWhole(g, new Uint8Array(8192).fill(4)), /storage is full/);
     assert.equal(empty.getSize(), 0, `${how}: no half store (it would load as one)`);
+  }
+});
+
+// A bulk fill's mark (docs/devices.md "Crash and refusal"; review disk-writes 1, 2, 4): an overlay a restore or an
+// Import changes was cut off in is never read as what it holds part of.
+test("an overlay a fill was cut off in (its meta's mark) opens empty: a writer's empties it, its generation moved on; a reader's sees none of it; a fill's own opening empties it first under its lock", async () => {
+  const name = `overlays/cut-${process.pid}`;
+  const base = openDisk((off, len) => new Uint8Array(len).fill(7), 16 * 4096);
+  const f = await openOverlay(name, 'cut-base', undefined, { fresh: true });
+  assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0, filling: true }));
+  const d = overlay(base, f.data, f.map, undefined, 0, { ordered: false });
+  assert.ok(await d.write(3 * 4096, new Uint8Array(4096).fill(0xaa)));
+  d.flush();
+  f.close(); // cut off: the mark stays
+  assert.deepEqual(await overlayMeta(name), { generation: 1, merging: '', size: 0, filling: true });
+  const r = await openOverlay(name, undefined, undefined, { readOnly: true });
+  assert.deepEqual([...overlay(base, r.data, r.map).written()], [], 'a reader sees none of it');
+  r.close();
+  const w = await openOverlay(name, 'cut-base');
+  const o = overlay(base, w.data, w.map, w.meta);
+  assert.deepEqual([...o.written()], [], 'a writer sees none of it');
+  assert.ok((await o.read(3 * 4096, 4096))!.every((x) => x === 7), 'block 3 reads as the base');
+  w.close();
+  assert.deepEqual(await overlayMeta(name), { generation: 2, merging: '', size: 0 }, 'emptied, unmarked, its generation moved on');
+  // A fill that ends clears the mark; its blocks stay.
+  const g = await openOverlay(name, 'cut-base', undefined, { fresh: true });
+  assert.deepEqual(await overlayMeta(name), { generation: 0, merging: '', size: 0 }, 'a fresh opening empties it');
+  assert.ok(writeMeta(g.meta, { generation: 3, merging: '', size: 0, filling: true }));
+  const e = overlay(base, g.data, g.map, undefined, 0, { ordered: false });
+  assert.ok(await e.write(5 * 4096, new Uint8Array(4096).fill(0xbb)));
+  e.flush();
+  assert.ok(endFill(g.meta));
+  g.close();
+  const h = await openOverlay(name, 'cut-base');
+  assert.deepEqual([...overlay(base, h.data, h.map).written()], [5]);
+  h.close();
+  assert.deepEqual(await overlayMeta(name), { generation: 3, merging: '', size: 0 });
+});
+
+test("a meta of 40 bytes (from before the fill mark) reads as no mark and stays 40 bytes; the mark makes it 48, cleared it reads as none", () => {
+  const meta = memFile();
+  meta.write(encodeMeta({ generation: 4, merging: '', size: 8192 }).subarray(0, 40), { at: 0 });
+  assert.deepEqual(readMeta(meta), { generation: 4, merging: '', size: 8192 });
+  assert.ok(writeMeta(meta, { generation: 5, merging: '', size: 8192 }));
+  assert.equal(meta.getSize(), 40, 'no growth without a mark');
+  assert.ok(writeMeta(meta, { generation: 5, merging: '', size: 8192, filling: true }));
+  assert.equal(meta.getSize(), 48);
+  assert.deepEqual(readMeta(meta), { generation: 5, merging: '', size: 8192, filling: true });
+  assert.ok(endFill(meta));
+  assert.deepEqual(readMeta(meta), { generation: 5, merging: '', size: 8192 });
+});
+
+// Review disk-writes 6: a raw sync handle throws past the quota where a wrapped one comes back short.
+test('writeMeta on a file whose write throws QuotaExceededError is a refusal (false), so withRoom makes room and tries again', async () => {
+  const meta = memFile();
+  let refuse = 1;
+  const thrower = { ...meta, write: (b: Uint8Array, o: { at: number }) => { if (refuse-- > 0) throw new DOMException('full', 'QuotaExceededError'); return meta.write(b, o); } };
+  let asked = 0;
+  const lands = withRoom(async () => { asked++; return true; });
+  assert.ok(await lands(() => writeMeta(thrower, { generation: 1, merging: '', size: 0, filling: true })));
+  assert.equal(asked, 1, 'room made once');
+  assert.deepEqual(readMeta(meta), { generation: 1, merging: '', size: 0, filling: true });
+  const other = { ...meta, write: () => { throw new DOMException('gone', 'NotFoundError'); } };
+  assert.throws(() => writeMeta(other, { generation: 2, merging: '', size: 0 }), /gone/, 'other errors are thrown');
+});
+
+// Review disk-writes 4: what an import or Import changes cut off left (no record, still marked) is removed at the page's
+// start; never one a fill holds now, one a record names, or one not marked.
+test('dropCutFill removes a store or overlay only when marked, its lock free and no record names it', async () => {
+  const mk = async (name: string, filling: boolean) => {
+    const f = await openOverlay(name, 'x', undefined, { fresh: true });
+    assert.ok(writeMeta(f.meta, { generation: 1, merging: '', size: 0, filling }));
+    f.close();
+    await navigator.locks.request(overlayLock(name), async () => {}); // its lock let go (a release lands a moment later)
+  };
+  const p = process.pid;
+  await mk(`disks/cut-a-${p}`, true);
+  assert.equal(await dropCutFill(`disks/cut-a-${p}`, async () => false), false, 'a record names it');
+  assert.equal((await overlayMeta(`disks/cut-a-${p}`)).filling, true);
+  assert.equal(await dropCutFill(`disks/cut-a-${p}`, async () => true), true);
+  assert.deepEqual(await overlayMeta(`disks/cut-a-${p}`), { generation: 0, merging: '', size: 0 }, 'gone');
+  await mk(`disks/cut-b-${p}`, false);
+  assert.equal(await dropCutFill(`disks/cut-b-${p}`, async () => true), false, 'not marked: a job done, its record to come');
+  await mk(`disks/cut-c-${p}`, true);
+  const held = await openOverlay(`disks/cut-c-${p}`, 'x');
+  try {
+    // A fill holds its lock: opened under it, the mark is the fill's own (here a writer's opening would empty it, so
+    // the mark is set again while held).
+    assert.ok(writeMeta(held.meta, { generation: 2, merging: '', size: 0, filling: true }));
+    assert.equal(await dropCutFill(`disks/cut-c-${p}`, async () => true), false, 'in use: a fill that runs');
+  } finally {
+    held.close();
   }
 });

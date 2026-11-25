@@ -10,7 +10,8 @@ import { importImage, mergeOverlay, openStoredForWriting, storedEstimate } from 
 export type DiskJob =
   | { type: 'estimate'; file: File }
   | { type: 'import'; file: File; path: string; identity: string }
-  | { type: 'merge'; disk: string; overlay: string; identity: string; size: number };
+  /** `keep`: the overlay's files stay (a blank disk's conversion: the page deletes them once the disk's record says stored). */
+  | { type: 'merge'; disk: string; overlay: string; identity: string; size: number; keep?: boolean };
 
 export type DiskJobResult =
   | { type: 'progress'; done: number; total: number }
@@ -41,7 +42,7 @@ self.onmessage = async (e: MessageEvent<DiskJob>) => {
         pool.close();
       }
     } else {
-      post({ type: 'done', blocks: await mergeOverlay(j.disk, j.overlay, j.identity, j.size, makeRoom) });
+      post({ type: 'done', blocks: await mergeOverlay(j.disk, j.overlay, j.identity, j.size, makeRoom, j.keep) });
     }
   } catch (err) {
     post({ type: 'error', error: toWire(err) });

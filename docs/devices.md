@@ -1057,7 +1057,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   the first change of each opening: a write, a discard or a zeroing; an opening that only reads leaves it, so "the
   overlay is as it was at generation g" is two integers compared: docs/machines.md §3.3), for a stored
   disk the overlay being merged into it, and the overlay's **own size** (a u64 at 32: a grown overlay's,
-  docs/machines.md §4.5; a 32-byte `meta` from before sizes has none), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
+  docs/machines.md §4.5; a 32-byte `meta` from before sizes has none), and the **fill mark** (a u64 at 40, 1 while a
+  bulk fill runs: below; a 40-byte `meta` has none, and one without a mark stays 40 bytes), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage: a block reads as the base, as
   something written to it, or as zeros it was given, never as another block's data or an I/O error. **Against an OS
   crash or a power loss too** (`ORDERED`): the OS may write either file back first, so the order is made durable by
@@ -1075,12 +1076,25 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   check themselves (each new entry beside a checksum of its slot's bytes, in a log the opening replays and every
   reader of a map file reads too), a fourth file and a new format for a gain only direct I/O sees.
   **Bulk writes into a new store or overlay are unordered** (`overlay`'s `ordered: false`), both files flushed at
-  their end: **a snapshot's restore** (until then the overlay is part of a snapshot's blocks over an emptied one
-  whatever its order, and a data flush per run was most of the restore's disk phase: bench/boot/REPORT.md "SNAPZ
-  loop 5"), **an image's import** (web/stored.ts `importImage`) and **[Import changes](ui:disks:disk-changes.changes.title)** (web/changes.ts
-  `changesInto`): nothing reads a store or an overlay before the page records it, which it does once the job is done,
-  so one cut off part way (a closed tab, a crash) is never a disk's; its files are the store's sweep's
-  (tests/stored.test.ts closes a page during an import). A merge writes into a disk that exists: it stays ordered.
+  their end: **a snapshot's restore** (a data flush per run was most of the restore's disk phase: bench/boot/REPORT.md
+  "SNAPZ loop 5"), **an image's import** (web/stored.ts `importImage`) and **[Import changes](ui:disks:disk-changes.changes.title)** (web/changes.ts
+  `loadChanges`, `changesInto`). Each is a **fill**: its store or overlay is opened `fresh` (emptied under its Web Lock,
+  so no other opener comes between the deletion and the fill), marked as filling in its `meta` before the first block,
+  and the mark cleared once both files are flushed. A restore's and an Import changes' overlay may already have a
+  record (a fork the page made, a replace, the page's own disk at its fixed name), so the mark, not the record, is what
+  keeps a fill cut off part way (a closed tab, the storage full, a damaged file, a crash) from being read as a disk:
+  **an opening that finds the mark** (under the lock, so no fill runs) takes the overlay as empty, a writer's emptying
+  it in place with its generation moved on (no fork record or snapshot pin matches it again), a reader's seeing none
+  of it (`openOverlay`). A plan that keeps a marked overlay is refused (`snapshot.keptMoved`), and the page never reuses
+  a marked fork (web/app/snapshots.ts `earlierFork`) and puts a machine whose new fork was cut off back on what it had
+  (web/app/snapshot-undo.ts `undoCutRestores`, at the machine's loading). A store or overlay an import or a stored machine's Import changes cut
+  off leaves has no record (the record comes after the job): the page's start removes those (`Store.dropCutFills`:
+  marked, the lock free, no record; tests/stored.test.ts closes a page during an import). Import changes checks every
+  table and cluster the file names is in it (`readChanges`'s `check`) before the overlay is touched; a failure after
+  (a cluster that doesn't unpack, the file unreadable, the storage full) leaves it marked, and the error says it was
+  emptied (`cleared`). What a fill can't keep is a replaced overlay's own blocks (a replace, the page's own disk): they
+  are deleted when it starts (backlog.md "A restore's replace fills in place"). A merge writes into a disk that exists:
+  it stays ordered.
   **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
   disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros
   past it), as an unwritten block does. So the map file and the memory grow with what's written, not with the disk's

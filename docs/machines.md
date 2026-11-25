@@ -86,7 +86,10 @@ Since decided (the user, 2026-10-17):
   is written after its bytes and deleted before them, so a crash leaves unreferenced files, never a record without
   its files. `Store.sweep` removes id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
   `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock); the page doesn't call
-  it yet (backlog.md "The store's sweep never runs").
+  it yet (backlog.md "The store's sweep never runs"), so those files stay. What the page's start does remove
+  (`Store.dropCutFills`) is a cut-off import's or Import changes' `disks/<id>` or `overlays/<id>`: one still marked
+  as filling (devices.md "blk"), checked under its own lock taken only if free (a running job holds it, and clears
+  the mark before it lets go) and with no record naming it, which is safe beside other tabs and their jobs.
 - **Without OPFS** (Firefox's private windows, where `getDirectory` throws a SecurityError; Node): `hasOpfs`
   (`web/overlay.ts`, one probe per context) sends the store to memory (records and files, for the page's life) and the
   overlays, variable stores and suspended copies to the memory of the context that opens them (the machine's worker,
@@ -291,8 +294,9 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   (`web/stored.ts`). A stored disk from before leaves (a flat map) is read as it is under its overlays and converted
   by its first writable opening's first change (writing in place, a merge into it). An imported qcow2 is converted on the
   way in (compressed clusters inflated, zero and unallocated ones left out), a raw image too (zero blocks left out).
-  The import writes its store unordered and flushes it at its end; the disk's record comes after, so an import cut off
-  is never a disk (devices.md "blk"). So a stored disk takes no more than its data, and the same code reads, writes and exports it. Debian's published
+  The import writes its store unordered and flushes it at its end, marked as filling until then; the disk's record
+  comes after, so an import cut off is never a disk, and the page's next start removes its files (§2, devices.md
+  "blk"). So a stored disk takes no more than its data, and the same code reads, writes and exports it. Debian's published
   image (a ~400 MB compressed qcow2) stores as 1,043 MB, estimated beforehand at 1,212 MB from the qcow2's
   allocated clusters (`storedEstimate`); its import took ~94–140 s in a cloud session. Keeping the file as it is was
   the alternative: a qcow2 can't be written in place (our qcow2 code reads, and writes whole files, never allocates
@@ -313,7 +317,12 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   overlay's record. Interrupted, or failed partway (the storage full), the disk finishes the merge at its next opening
   (`resumeMerge`: writing the same blocks again is harmless) before anything reads it, or at the next Merge into the
   disk of the overlay: its record kept, the sweep keeps its files, and deleting it is refused (`disks.overlayMerging`:
-  part of it is in the disk already). An overlay that can't be opened any more (gone, or its deletion, a file at a time in OPFS, cut off)
+  part of it is in the disk already). A machine's start finishes it before it opens any overlay (`Devices.open`): the
+  machine that has the overlay chosen would otherwise hold that overlay's lock while the merge waits for it. A merge of
+  another overlay of the disk meanwhile is refused before it deletes anything ([A merge of the overlay {{name}} into
+  this disk didn't finish, and part of it is in the disk already. Merge {{name}} into the disk again to finish it, or
+  start a machine on the disk. Nothing was deleted.](ui:disks:merge.otherMerging)): it would delete the one being
+  merged. An overlay that can't be opened any more (gone, or its deletion, a file at a time in OPFS, cut off)
   has had its blocks copied, and what is left of it is deleted.
 - **A blank disk's overlay merged** (`web/app/merge.ts`; the user's QA, 2026-11-18: an overlay a resize on a machine
   made, §4.5, had no way into its disk): an overlay **nothing was ever written to** (its generation 0, read from its
@@ -326,9 +335,11 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   with a stored disk's identity and the overlay's grow mark); its other overlays are deleted, as above, and the machines
   that attach it see another disk (their snapshots orphan by the shape); then the overlay's record goes and the
   machines that had it chosen are left without one. A copy that fails (the storage full) leaves the overlay as it was
-  (its blocks, its record, its machines' choice), and the half-made block store is removed. The disk's record is
-  written after the copy, which deletes the overlay's files: cut off between, the disk is still blank and what the
-  overlay held is lost. The confirmation (`mergeEffect`) says which, the size, the overlays deleted and the
+  (its blocks, its record, its machines' choice), and the half-made block store is removed. The copy keeps the
+  overlay's files (`keep`); after it the machines that had it chosen are left without it, then the disk's record says
+  stored, then the overlay's record goes and its files: cut off before the disk's record, the disk is still blank and
+  the overlay holds what it held (the next conversion starts over); after it, the overlay's record may stay beside the
+  stored disk, unchosen (tests/merge.test.ts). The confirmation (`mergeEffect`) says which, the size, the overlays deleted and the
   snapshots it orphans (for a grow: those of machines whose guest would see the disk at another size); under the
   merge's lock, a merge that is no longer the one confirmed (another how or size: the overlay written meanwhile, by a
   machine in another tab; or an overlay to delete the confirmation didn't list) is refused
@@ -525,7 +536,18 @@ The file's format, what the core saves and the page's toolbar and header fields:
   nothing is asked: it holds nothing to lose (`pristine`, `planRestore`'s `fresh`; tests/template.test.ts). A restore
   the user asks for leaves an overlay they made as it is.
 - **Repeated restores don't pile up forks:** a restore that would fork attaches an earlier fork of the same snapshot
-  whose generation hasn't moved since (still 1), at the snapshot's size, instead (**reuse**).
+  whose generation hasn't moved since (still 1), at the snapshot's size, instead (**reuse**); never one whose fill
+  was cut off (below).
+- **A restore cut off or refused part way** (a closed tab, the storage full, a damaged file): the page records the
+  fork and attaches it before the worker fills it, so the fill marks its overlay (devices.md "blk", "Crash and
+  refusal") and anything that opens it before the mark is cleared takes it as empty. A new fork records what its
+  attachment had (`fork.before`): when the machine is next loaded, a fork still marked and not open anywhere is
+  undone (`undoCutRestores`: the attachment back on its earlier overlay, or in place, the fork deleted), so the machine
+  starts on its disks as they were. A replace, a template's fresh overlay and a transient machine's overlay were
+  emptied for the restore: they start from the disk's image. The worker's message says the disks hold none of the
+  snapshot ([The machine didn't start, and its disks hold none of the snapshot's changes. Start boots {{machine}}
+  normally.](ui:snapshots:worker-errors.notRestored.cause)); tests/template.test.ts,
+  tests/snapshot.test.ts.
 - **On the records as they are:** the page reads the machine's records again before it plans a restore of a machine
   that is off, and again once it has stopped (the Home page or another tab may have changed them while the
   questions were open: the shape is checked again then); `commit` plans on the record and disks the store has then and
