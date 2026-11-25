@@ -125,8 +125,8 @@ pub struct StepClock {
 /// vCPU's IRQ line `CpuPar::irq` and `CpuPar::pending` (its queue of other
 /// vCPUs' maintenance): the inline unmask is then what `fast` would do with
 /// its `Exit::Resync` (no IRQ on the line, nothing queued to drain; it doesn't
-/// look at the published ASID, as a DAIF write isn't context
-/// synchronization: the ISB after a TTBR write still ends the chunk).
+/// look at the published ASID, which a DAIF write doesn't change: a write
+/// that does republishes it, `mmu::Tlb::republish`).
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct Unmask {

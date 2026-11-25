@@ -1287,8 +1287,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   waited for the chunk's end (up to 32K steps; `tests/baremetal/unmask.c`, PERF loop 9). Parallel SMP sets it when the
   chunk has fast completions, and there the block also loads two atomic bytes, the vCPU's IRQ line (`CpuPar::irq`) and
   its queue's `pending`, as `fast` would decide (without the drain, another vCPU's TLBI IS waits in its DSB for this
-  one's next drain point); not the published ASID, which a DAIF write doesn't synchronize (the ISB after a TTBR write
-  ends the chunk). Else, and for ERET, the helper's `Exit::Resync` lets the run loop take it. Steps don't move
+  one's next drain point); not the published ASID, which a DAIF write doesn't change (a TTBR, TCR or SCTLR write that
+  does republishes it at once: platform.md "Parallel SMP"). Else, and for ERET, the helper's `Exit::Resync` lets the run loop take it. Steps don't move
   (deterministic chunks end at the same places). The differential test runs the inline arm against the interpreter
   through `jit_unmask` (and `jit_parallel`, ABI 64), and counts the helper calls each condition sends there (a
   round-robin block's signal byte, a parallel one's IRQ and pending bytes);
@@ -1703,7 +1703,8 @@ system instructions, and why each stays a helper:
   ns against the counter read's ~115, "Counter reads compiled inline"): ~0.3 s of the session's 96 G steps (some 100
   vCPU-seconds), under what a pages A/B resolves. Inline it would need every condition `fast` checks in the block: the queue and
   IRQ bytes, the table not behind the cache (two shared counters against the table's, and the tier-up flag) and the
-  published ASID (TTBR/TCR and the TLB's `low_global`), each with a way to change mid-chunk. Outside parallel SMP
+  published ASID (TTBR/TCR, which republish it, and the TLB's `low_global`, which a drain's flush clears), each with a
+  way to change mid-chunk. Outside parallel SMP
   it's inline (it does nothing there).
 - **LSE min/max** (LDSMAX, LDUMIN and kin, their ST forms): none in Alpine's boot and userspace benchmark, Debian's
   boot and shell, or Firefox's pages session (musl and glibc's atomics and the kernel's use LDADD, SWP, CAS). A CAS

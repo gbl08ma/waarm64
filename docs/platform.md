@@ -287,8 +287,14 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   manager to GRUB's menu in Node, 3 s after). So a vCPU caches them, and while its TLB may hold
   one (`Tlb::low_global`, until a flush of everything) it publishes `ANY`, and every TLBI IS
   waits for it; the first such entry publishes `ANY` before the walk it caches, the order a
-  TTBR write's new ASID follows. Planted out (no `ANY`), `maint` fails (262, 263). A TTBR write that changes the ASID mid-chunk needs an
-  ISB before the new ASID is promised to translate, and the ISB ends the chunk (and drains). In
+  TTBR write's new ASID follows. Planted out (no `ANY`), `maint` fails (262, 263). A write that changes the ASID or the
+  MMU enable mid-chunk (MSR TTBR0/1_EL1, TCR_EL1's A1 or AS, SCTLR_EL1.M: `interp::sys`'s `write`, which the JIT's
+  helper runs too) republishes it after its flush and before anything walks with it (`Tlb::republish`, a fence
+  after): before its ISB a PE may already walk with the new TTBR, and a TLBI for the new ASID must wait for an entry
+  walked so (`vm::tests` `a_tlbi_is_waits_for_a_vcpu_whose_asid_changed_mid_chunk`; planted out, it and
+  `an_msr_that_changes_the_asid_or_the_mmu_republishes_it` fail). So an ISB after a TTBR write completes in place
+  like any other (docs/jit.md "Fast completions"). A drain takes the queue and drops its lock before its flushes and
+  wake-ups, so an issuer queuing for that vCPU doesn't wait for them. In
   the userspace phases on 4 vCPUs this cut the DSB waits from 92K (8.3 s over the vCPUs) to 3K
   (0.06 s) and process churn by 37% in Chromium (`bench/boot/REPORT.md` "M7 loop 8"): after a
   fork, parent and child have different ASIDs, so COW faults rarely concern another running vCPU.

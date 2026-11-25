@@ -521,6 +521,112 @@ fn a_collapsed_tlbi_queue_of_user_operations_keeps_the_global_entries() {
     assert_eq!(tlbi_queue(&ops, true), [kept, kept, gone]);
 }
 
+/// Parallel SMP: vCPU 1 is in RUN with ASID 5 published at its chunk's start; it writes TTBR0_EL1 with ASID 6 (no
+/// ISB yet), and reads a user page of ASID 6, walking and caching it. Another vCPU's TLBI VAE1IS for ASID 6 must wait
+/// for it at its DSB, whichever TTBR value the walk used: the write republished the ASID (`Tlb::republish`). The DSB
+/// waits here (nothing drains vCPU 1), so it panics at the lowered limit.
+#[test]
+#[should_panic(expected = "DSB waited")]
+fn a_tlbi_is_waits_for_a_vcpu_whose_asid_changed_mid_chunk() {
+    use crate::mmu::{Bus, Mmu};
+    const TABLES: u64 = RAM_BASE + 0x8_0000;
+    const MSR_TTBR0_X0: u32 = 0xd518_2000;
+    let cfg = VmConfig {
+        ncpus: 2,
+        smp: 1,
+        ..VmConfig::default()
+    };
+    // TLBI VAE1IS, x1; DSB ISH; b .
+    let mut t = T::new(&[0xd508_8321, 0xd503_3b9f, B_SELF], cfg);
+    t.vm.dsb_limit_ns = 50_000_000;
+    let mem = &t.vm.mem;
+    let data = RAM_BASE + 0x4_0000;
+    // USER (0x7000_1000): L0[0] -> L1[1] -> L2[384] -> L3[1], an nG page.
+    mem.write(TABLES, 8, (TABLES + 0x1000) | 3).unwrap();
+    mem.write(TABLES + 0x1000 + 8, 8, (TABLES + 0x2000) | 3)
+        .unwrap();
+    mem.write(TABLES + 0x2000 + 8 * 384, 8, (TABLES + 0x3000) | 3)
+        .unwrap();
+    mem.write(TABLES + 0x3000 + 8, 8, data | 3 | 1 << 10 | 1 << 11)
+        .unwrap();
+    let mut c1 = Cpu {
+        sctlr_el1: sctlr::M,
+        tcr_el1: 16 | 16 << 16 | 2 << 32 | 1 << 23,
+        ttbr0_el1: TABLES | 5 << 48,
+        mair_el1: 0xff,
+        ..t.vm.vcpus[1].cpu.clone()
+    };
+    // SAFETY: the word is the VM's, which outlives the test.
+    let word = unsafe { &*t.vm.shared.cpus[1].par.asid_word() };
+    word.store(5, Ordering::SeqCst);
+    {
+        let vm = &mut t.vm;
+        let mut b = Mmu::new(&vm.mem, Some(&mut vm.vcpus[1].tlb));
+        c1.x[0] = TABLES | 6 << 48;
+        let pc = c1.pc;
+        crate::interp::exec_at(&mut c1, &mut b, MSR_TTBR0_X0, pc).unwrap();
+        b.read(&c1, USER, 8).unwrap();
+    }
+    assert_eq!(word.load(Ordering::SeqCst), 6, "the new ASID is published");
+    t.vm.vcpus[1].cpu = c1;
+    t.vm.shared.cpus[1].par.state.store(1, Ordering::SeqCst); // RUN, mid-chunk
+    t.cpu().x[1] = 6 << 48 | USER >> 12;
+    // SAFETY: this thread is the only one, and runs vCPU 0 only.
+    unsafe { t.vm.run_cpu(0, 2) };
+}
+
+/// Parallel SMP: every write that changes the ASID or the MMU enable republishes vCPU 0's ASID at once (MSR
+/// TTBR0_EL1, TTBR1_EL1 under TCR_EL1.A1, TCR_EL1's A1 and AS, SCTLR_EL1.M off), and one that changes neither
+/// leaves the word alone.
+#[test]
+fn an_msr_that_changes_the_asid_or_the_mmu_republishes_it() {
+    use crate::mmu::Mmu;
+    const TTBR0: u32 = 0xd518_2000; // msr ttbr0_el1, x0
+    const TTBR1: u32 = 0xd518_2020;
+    const TCR: u32 = 0xd518_2040;
+    const SCTLR: u32 = 0xd518_1000;
+    let cfg = VmConfig {
+        ncpus: 2,
+        smp: 1,
+        ..VmConfig::default()
+    };
+    let mut t = T::new(&[B_SELF], cfg);
+    let mut c = Cpu {
+        sctlr_el1: t.vm.vcpus[0].cpu.sctlr_el1 | sctlr::M,
+        tcr_el1: 16 | 16 << 16 | 2 << 32,
+        ttbr0_el1: 0x1234 << 48,
+        ttbr1_el1: 0x0077 << 48,
+        ..t.vm.vcpus[0].cpu.clone()
+    };
+    // SAFETY: the word is the VM's, which outlives the test.
+    let word = unsafe { &*t.vm.shared.cpus[0].par.asid_word() };
+    word.store(0x34, Ordering::SeqCst); // what the chunk published (8-bit ASIDs)
+    let vm = &mut t.vm;
+    let mut b = Mmu::new(&vm.mem, Some(&mut vm.vcpus[0].tlb));
+    let mut msr = |c: &mut Cpu, insn: u32, v: u64| {
+        c.x[0] = v;
+        let pc = c.pc;
+        let _ = crate::interp::exec_at(c, &mut b, insn, pc);
+        word.load(Ordering::SeqCst)
+    };
+    let tcr = c.tcr_el1;
+    assert_eq!(
+        msr(&mut c, TTBR1, 0x0078 << 48),
+        0x34,
+        "TTBR1's ASID isn't the current one"
+    );
+    assert_eq!(msr(&mut c, TTBR0, 0x1256 << 48), 0x56);
+    assert_eq!(msr(&mut c, TCR, tcr | 1 << 36), 0x1256, "AS: 16-bit ASIDs");
+    assert_eq!(msr(&mut c, TCR, tcr | 1 << 22), 0x78, "A1: TTBR1's");
+    assert_eq!(msr(&mut c, TTBR1, 0x0079 << 48), 0x79);
+    let sctlr = c.sctlr_el1;
+    assert_eq!(
+        msr(&mut c, SCTLR, sctlr & !sctlr::M),
+        crate::mmu::ANY_ASID,
+        "the MMU off"
+    );
+}
+
 #[test]
 fn the_rtc_counts_host_time_in_realtime_mode_only() {
     const LDR_W2_X0: u32 = 0xb940_0002; // ldr w2, [x0]

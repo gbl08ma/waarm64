@@ -255,7 +255,38 @@ pub struct TlbStats {
     pub flushes: u64,
 }
 
+/// A published ASID (`Tlb::published`) that every TLBI IS waits for.
+pub(crate) const ANY_ASID: u64 = u64::MAX;
+
 impl Tlb {
+    /// The ASID its vCPU publishes in parallel SMP (vm/parallel.rs
+    /// `broadcast`): the current one with the MMU on and no global entry in
+    /// the TTBR0 half cached, else [`ANY_ASID`].
+    pub(crate) fn asid_to_publish(&self, c: &Cpu) -> u64 {
+        if c.sctlr_el1 & sctlr::M != 0 && !self.low_global {
+            asid(c)
+        } else {
+            ANY_ASID
+        }
+    }
+
+    /// Parallel SMP: publishes [`Tlb::asid_to_publish`] after a write that
+    /// changed the ASID or the MMU enable mid-chunk, before anything walks
+    /// with it (the order `Mmu::miss`'s `ANY` follows). Without one, a TLBI IS
+    /// for the new ASID would read the chunk's old one and skip this vCPU
+    /// while it holds entries walked under the new one.
+    pub(crate) fn republish(&self, c: &Cpu) {
+        // SAFETY: set in parallel mode to the vCPU's word in the VM's
+        // `Shared`, which outlives the vCPU (`Tlb::published`).
+        if let Some(a) = unsafe { self.published.as_ref() } {
+            let asid = self.asid_to_publish(c);
+            if a.load(core::sync::atomic::Ordering::Relaxed) != asid {
+                a.store(asid, core::sync::atomic::Ordering::SeqCst);
+            }
+            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
     /// Drops every transfer cache entry (TLB flushes, and the JIT cache's
     /// dropping blocks).
     pub fn bump(&mut self) {
@@ -746,6 +777,9 @@ pub trait Bus {
     fn flush_va(&mut self, _va: u64) {}
     /// Drops the non-global entries (ASID changes, `TLBI ASIDE1`).
     fn flush_ng(&mut self) {}
+    /// After a write that changed the ASID or the MMU enable (and the flush
+    /// it needed): parallel SMP's published ASID follows ([`Tlb::republish`]).
+    fn republish(&mut self, _c: &Cpu) {}
 
     #[inline(always)]
     fn read(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
@@ -1079,7 +1113,7 @@ impl<'a> Mmu<'a> {
             // SAFETY: set in parallel mode to the vCPU's word in the VM's
             // `Shared`, which outlives the vCPU (`Tlb::published`).
             if let Some(a) = unsafe { t.published.as_ref() } {
-                a.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
+                a.store(ANY_ASID, core::sync::atomic::Ordering::SeqCst);
             }
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
             return self.miss(c, va, len, split, access, u, el);
@@ -1284,6 +1318,12 @@ impl Bus for Mmu<'_> {
     fn flush_ng(&mut self) {
         if let Some(t) = &mut self.tlb {
             t.flush_ng();
+        }
+    }
+
+    fn republish(&mut self, c: &Cpu) {
+        if let Some(t) = &self.tlb {
+            t.republish(c);
         }
     }
 }

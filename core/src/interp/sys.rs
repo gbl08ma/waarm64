@@ -726,8 +726,10 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     }
     if (c.sctlr_el1 ^ copy) & sctlr::M != 0 {
         m.flush_all();
+        m.republish(c);
     } else if mmu::asid(c) != asid {
         m.flush_ng();
+        m.republish(c);
     }
     if c.sctlr_el1 & (sctlr::M | sctlr::A) != copy {
         return Err(Exit::Resync); // retired; the run loop switches interpreter copy

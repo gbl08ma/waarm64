@@ -108,10 +108,10 @@ pub(super) struct CpuPar {
     applied: AtomicU64,
     /// It's in a DSB wait: whoever drains a queue wakes it.
     waiting: AtomicBool,
-    /// The ASID its TLB holds nG entries of, published before each chunk;
-    /// `ANY` with the MMU off or before it runs. A TTBR write changing it
-    /// mid-chunk needs an ISB before the new ASID is promised to translate,
-    /// and the ISB ends the chunk (and drains the queue).
+    /// The ASID its TLB holds nG entries of, published before each chunk
+    /// and again by a write that changes it or the MMU enable mid-chunk
+    /// (`Tlb::republish`), before anything walks with it; `ANY` with the MMU
+    /// off or before it runs.
     asid: AtomicU64,
     /// Its stop word (`jit::State::stop`, in its `Vcpu`, which is boxed: the
     /// address holds for the VM's life), which [`Vm::stop`] clears.
@@ -142,7 +142,7 @@ const TIMER_STEPS: u64 = 4096;
 
 /// `CpuPar::asid` when a TLBI IS must wait for the vCPU whatever its ASID
 /// (`mmu::Tlb::miss` stores it too).
-const ANY: u64 = u64::MAX;
+const ANY: u64 = crate::mmu::ANY_ASID;
 
 impl CpuPar {
     /// Its published ASID's word, for its TLB (`Tlb::published`).
@@ -504,11 +504,7 @@ impl Vm {
             // Before the chunk translates anything (`broadcast`).
             if self.vcpus.len() > 1 {
                 // `ANY` too while its TLB may hold global TTBR0-half entries (`Tlb::low_global`).
-                let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 && !v.tlb.low_global {
-                    crate::mmu::asid(&v.cpu)
-                } else {
-                    ANY
-                };
+                let asid = v.tlb.asid_to_publish(&v.cpu);
                 if p.asid.load(Ordering::Relaxed) != asid {
                     p.asid.store(asid, Ordering::SeqCst);
                 }
@@ -522,7 +518,7 @@ impl Vm {
             });
             // An unmasking MSR inline (`jit::Unmask`) where `fast` would finish its `Exit::Resync`: no IRQ
             // on the line, nothing queued (another vCPU's DSB waits for the drain). Not the published
-            // ASID: a DAIF write isn't context synchronization, and the ISB after a TTBR write ends the chunk.
+            // ASID: a DAIF write doesn't change it, and a write that does republishes it (`Tlb::republish`).
             v.jit.unmask = jit::Unmask {
                 ok: v.jit.fast.is_some() as u32,
                 irq: &self.shared.cpus[c].par.irq as *const AtomicBool as usize as u32,
@@ -615,11 +611,7 @@ impl Vm {
                 }
                 if self.vcpus.len() > 1 {
                     // As the run loop publishes it before a chunk (`broadcast`).
-                    let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 && !v.tlb.low_global {
-                        crate::mmu::asid(&v.cpu)
-                    } else {
-                        ANY
-                    };
+                    let asid = v.tlb.asid_to_publish(&v.cpu);
                     if p.asid.load(Ordering::Relaxed) != asid {
                         return false;
                     }
@@ -944,16 +936,20 @@ impl Vm {
         if !p.pending.load(Ordering::SeqCst) {
             return;
         }
-        let mut q = p.queue.lock().unwrap_or_else(PoisonError::into_inner);
-        p.pending.store(false, Ordering::SeqCst);
-        let queued = q.queued;
-        let q = core::mem::replace(
-            &mut *q,
-            Queue {
-                queued,
-                ..Queue::default()
-            },
-        );
+        // Takes the queue and lets go of its lock before the flushes and wake-ups (issuers lock it to queue more).
+        let (q, queued) = {
+            let mut g = p.queue.lock().unwrap_or_else(PoisonError::into_inner);
+            p.pending.store(false, Ordering::SeqCst);
+            let queued = g.queued;
+            let q = core::mem::replace(
+                &mut *g,
+                Queue {
+                    queued,
+                    ..Queue::default()
+                },
+            );
+            (q, queued)
+        };
         match q.collapsed {
             // Its global entries are all in the TTBR1 half, which no operation it held named.
             Collapsed::Ng if !v.tlb.low_global => v.tlb.flush_ng(),

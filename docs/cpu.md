@@ -387,7 +387,8 @@ The table is `core/src/interp/sys.rs`.
   (nG) entries, tracked in `Tlb::ng` (up to 1024 slots); past that the slots' nG marks in `Tlb::blk` are scanned
   (128 KiB read, eight slots a word), so the global entries survive a busy process too (a full flush there was ~7 a
   second in Firefox on 4 vCPUs, 2026-11-04); a change of
-  `SCTLR_EL1.M` flushes everything. (Keeping global entries cut Alpine's boot misses 3.61M →
+  `SCTLR_EL1.M` flushes everything. In parallel SMP either then republishes the vCPU's ASID, which TLBI IS
+  operations read to skip vCPUs of another ASID ([platform.md](platform.md) "Parallel SMP"). (Keeping global entries cut Alpine's boot misses 3.61M →
   1.07M.) Per-ASID stashes of nG entries would serve under a sixth of the nG refills (measured out: "The TLB" above).
   The list overflows in 6.0% of the drops in Firefox's pages session (7,378 of 122,656 with the sibling fill, whose
   entries it lists too; 4.9% before it: ~0.02% of busy time in scans), so 1024 slots stay.

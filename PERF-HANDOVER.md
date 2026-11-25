@@ -129,8 +129,10 @@ replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried an
 ## State (2026-11-24, after loop 73)
 
 **The track is paused after loop 73 (the user, 2026-11-24): nothing runs until it is resumed.** To resume: read
-this file, then start at "Next" below; an out-of-context review of loop 73's two mechanisms (the sibling fill in
-`Mmu::miss`, the TLBI queue's `Collapsed`) is still due and comes first or with the next loop.
+this file, then start at "Next" below. The out-of-context review of loop 73's two mechanisms (the sibling fill in
+`Mmu::miss`, the TLBI queue's `Collapsed`) is done (branch `review/mmu-tlbi-queue`, 0505820b, deleted since): its two findings (a mid-chunk
+ASID change left the old ASID published; `drain` held the queue's lock through its flushes) were fixed in the
+commit "PERF: loop 73's review fixed", outside the loops; the track stays paused.
 
 **Resumed 2026-11-24 (the user), with one more rule: spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 72 counted rows 8, 9, 10, 11, 13 and 18 in one pass with one diagnostic core and closed
@@ -147,17 +149,15 @@ supervisor may delete it.
 **Next, when resumed:** row 10, entries at a region's members (the largest bound left, 1.9%, and the least certain: its count
 first on today's tree, the pages session and the wasm's bytes its measure), with row 11 (the helper's second decode,
 S, the same files) beside it if the loop has room. Loop 73's lesson for bounds: a count times a unit cost near the
-pages session's ~1% floor came out under it twice; rank what is left by bounds well past the floor. An
-out-of-context review of the MMU's fills and parallel SMP's queue (loop 73 added a fill rule and a queue state) is
-due before or with the next loop. `bench/boot/results/perf73/diag.patch` applies to loop 73's commit and carries
+pages session's ~1% floor came out under it twice; rank what is left by bounds well past the floor. `bench/boot/results/perf73/diag.patch` applies to loop 73's commit and carries
 the counters a later row may want (the TLB's, the queues', the jump cache's, the members').
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
 ab-mac.sh's default disk. The ABI is 74.
 
 What every loop kept, dropped and found is in its REPORT entry (bench/boot/REPORT.md "PERF loop 36" to "PERF loop
 66" for this session) and the docs pages it names; the out-of-context reviews (after loops 8, 19, 21, 23, 28, 32, 34,
-36, 42, 47, 50, 55, 58 and 71) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60 and 72 (50's: comments only).
-The next is due now: loop 73 added a fill rule to the TLB and a state to the TLBI queue. Built but off by default (measured slower): I8MM, FCMA,
+36, 42, 47, 50, 55, 58, 71 and 73) were fixed in loops 9, 20, 22, 24, 29, 33, 35, 37, 43, 48, 56, 60 and 72 (50's: comments
+only), 73's in its own commit while paused. Built but off by default (measured slower): I8MM, FCMA,
 FP16, FHM, BF16. The ABI is 74.
 
 ## Still open (the queue: the first is next; by expected gain, highest first)
