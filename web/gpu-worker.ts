@@ -387,8 +387,13 @@ async function startVenus(
   } = knobs;
   let share: VenusShare | undefined;
   let imports: VenusImport | undefined;
-  // Not bundled (`@vite-ignore`): the static copy doesn't carry the renderer yet (vk/README.md "Not yet").
-  const module = await WebAssembly.compileStreaming(fetch(new URL('../target/vk/venus.wasm', import.meta.url).href));
+  // Vite resolves the URL (`npm run dist`: a hashed asset; the dev server: the file's real path, so a target/vk linked
+  // from outside a worktree is a 403 under fs.strict: docs/devenv.md "Worktrees"). Its status in the error: a renderer
+  // that never starts leaves the guest's Venus waiting on a ring nothing reads.
+  const venusUrl = new URL('../target/vk/venus.wasm', import.meta.url).href;
+  const venusRes = await fetch(venusUrl);
+  if (!venusRes.ok) throw new Error(`${venusUrl}: HTTP ${venusRes.status}`); // i18n-ignore: a developer's (the GPU worker logs it)
+  const module = await WebAssembly.compileStreaming(venusRes);
   // The driver's WebGPU device (none: it keeps Venus's objects and draws nothing).
   const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
   const device = adapter

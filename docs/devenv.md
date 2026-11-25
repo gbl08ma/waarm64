@@ -39,7 +39,12 @@ starts its own. An entry that can't be linked is left out with a warning, not a 
 and `scripts/ci.sh` runs `npm ci` when the lockfile is newer than `node_modules`; a branch that changed it keeps its
 mtime, so CI installs the branch's packages). Idempotent, and it never replaces what's there. Not linked: Cargo's and Vite's outputs (the wasm
 core, `venus.wasm`, `ts.wasm`), which a build could rewrite in place and which can be stale for the branch:
-`scripts/ci.sh` builds them, and `scripts/build-wasm.sh` (and `vk/build.sh`) before a page test run alone.
+`scripts/ci.sh` builds them, and `scripts/build-wasm.sh` (and `vk/build.sh`) before a page test run alone. Don't link
+`target/vk` (or `venus.wasm`) in from the main checkout either: Vite rewrites the GPU worker's URL for it to the file's
+real path, outside the worktree, so its fetch is a 403, the renderer never starts (`venus: the renderer could not
+start … HTTP 403` on the page's console) and the guest's Venus aborts "stuck in ring seqno wait" (2026-11-25, two
+worktrees' runs of `tests/page-venus.test.ts`). Copy the file (`mkdir -p target/vk && cp
+../waarm64/target/vk/venus.wasm ../waarm64/target/vk/LICENSES.txt target/vk/`; the host's own check says when it's stale for the branch) or run `vk/build.sh`.
 
 It runs once, when the worktree is made: Claude Code's **`WorktreeCreate` hook**, `scripts/worktree-hook.sh
 create` (`.claude/settings.json`). CI doesn't run it: a worktree's own changes to `node_modules` or the

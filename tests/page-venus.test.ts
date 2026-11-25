@@ -97,6 +97,10 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
       passed = true;
       return t.skip('SKIPPED: the page has no WebGPU adapter');
     }
+    // A renderer that didn't start (a 403 for venus.wasm: a target/vk linked into a worktree, docs/devenv.md "Worktrees")
+    // shows in the guest only as Venus stuck in its ring's wait.
+    const unstarted = Object.keys((res as unknown as { warnings: Record<string, number> }).warnings ?? {}).filter((w) => w.startsWith('venus: the renderer could not start'));
+    assert.deepEqual(unstarted, [], 'the page\'s Vulkan renderer started');
     assert.match(res.vulkaninfo, /deviceName\s*= Virtio-GPU Venus \(waarm64 WebGPU\)/, 'the guest\'s Vulkan device is the renderer\'s');
     console.log(`host-visible memory mapped at once: ${res[VKMAP]}`);
     assert.match(res[VKMAP] ?? '', /vkmap mapped 6 of 6 x 128 MiB/, `host-visible memory mapped at once (the window too small?): ${res[VKMAP]}`);
