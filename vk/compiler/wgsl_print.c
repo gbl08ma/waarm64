@@ -2307,11 +2307,15 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
       break;
    case nir_op_ishl: e = fmt(c, "(%s << (%s & 31u))", a, b); break;
    case nir_op_ishr: case nir_op_ushr: e = fmt(c, "(%s >> (%s & 31u))", a, b); break;
-   /* WGSL's offsets and counts are u32: their sources as stored. */
-   case nir_op_ubitfield_extract: case nir_op_ibitfield_extract:
-      e = fmt(c, "extractBits(%s, %s, %s)", a, src_comp(c, &alu->src[1].src, alu->src[1].swizzle[comp]),
-              src_comp(c, &alu->src[2].src, alu->src[2].swizzle[comp]));
+   /* WGSL's offsets and counts are u32: their sources as stored. A count of 0 extracts 0 (WGSL says so; Dawn's D3D12
+    * gave an ivec4's sign in some lanes, dEQP-VK's bitfieldextract.ivec4_*_compute): selected, not left to the backend. */
+   case nir_op_ubitfield_extract: case nir_op_ibitfield_extract: {
+      const char *n = src_comp(c, &alu->src[2].src, alu->src[2].swizzle[comp]);
+      e = fmt(c, "select(extractBits(%s, %s, %s), %s, %s == 0u)", a,
+              src_comp(c, &alu->src[1].src, alu->src[1].swizzle[comp]), n,
+              alu->op == nir_op_ibitfield_extract ? "0i" : "0u", n);
       break;
+   }
    case nir_op_bitfield_insert:
       e = fmt(c, "insertBits(%s, %s, %s, %s)", a, b, src_comp(c, &alu->src[2].src, alu->src[2].swizzle[comp]),
               src_comp(c, &alu->src[3].src, alu->src[3].swizzle[comp]));
@@ -2995,7 +2999,12 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       line(c, "t%u = sid;", def->index);
       return;
    case nir_intrinsic_load_sample_mask_in:
-      line(c, "t%u = smask;", def->index);
+      /* At the sample rate an invocation's mask is its sample's bit (Vulkan's; D3D12's coverage had every covered
+       * sample: dEQP-VK's multisample_shader_builtin.sample_mask.bit_count at 4 samples). */
+      if (c->uses_sample_id || c->nir->info.fs.uses_sample_shading)
+         line(c, "t%u = smask & (1u << sid);", def->index);
+      else
+         line(c, "t%u = smask;", def->index);
       return;
    case nir_intrinsic_load_local_invocation_id:
       line(c, "t%u = lid;", def->index);

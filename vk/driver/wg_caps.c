@@ -433,8 +433,12 @@ wg_caps_properties(struct vk_properties *p)
    p->maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks = 4;
    p->maxDescriptorSetUpdateAfterBindInlineUniformBlocks = 4;
    p->maxInlineUniformTotalSize = 4 * 4096;
-   /* Samplers aren't counted; a fragment shader's colour attachments are. */
-   p->maxPerStageResources = MAX2(sampled + storage_tex + ubo + ssbo + L->max_color_attachments, 53);
+   /* Samplers aren't counted; a fragment shader's colour and input attachments are (Vulkan's minimum is the smaller of
+    * 128 and that sum: without the input attachments D3D12's limits fell 4 short, dEQP-VK's vulkan1p2_limits_validation).
+    * Each kind is still held to its own limit (wg_bindings_fit). */
+   p->maxPerStageResources = MAX2(sampled + storage_tex + ubo + ssbo + p->maxPerStageDescriptorInputAttachments +
+                                     L->max_color_attachments,
+                                  53);
    /* WebGPU counts per stage, Vulkan per layout: six of a stage's, as Vulkan's table of minimums is. A layout may spread
     * them over stages: what a stage of a pipeline binds is held to a stage's (wg_bindings_fit), and the rest of a set
     * isn't bound. */

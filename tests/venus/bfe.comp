@@ -1,0 +1,18 @@
+#version 450
+// bitfieldExtract with counts read at run time, 0 among them: WGSL's extractBits of a count 0 is 0, and the translator
+// selects it (wgsl_print.c) since Dawn's D3D12 gave an ivec4's sign in some lanes (dEQP-VK's
+// glsl.builtin.function.integer.bitfieldextract.ivec4_*_compute). tests/wgsl.test.ts.
+layout(local_size_x = 4) in;
+layout(std430, binding = 0) buffer Buf {
+  ivec4 v[4];
+  uvec4 u[4];
+  int offs[4];
+  int counts[4];
+  ivec4 oi[4];
+  uvec4 ou[4];
+};
+void main() {
+  uint n = gl_LocalInvocationIndex;
+  oi[n] = bitfieldExtract(v[n], offs[n], counts[n]);
+  ou[n] = bitfieldExtract(u[n], offs[n], counts[n]);
+}

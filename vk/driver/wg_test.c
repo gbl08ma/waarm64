@@ -761,7 +761,7 @@ wgt_import_planes(uint32_t res_y, uint32_t res_uv)
  * maxPerStageDescriptorStorageImages, maxPerStageDescriptorSampledImages, maxStorageBufferRange, subgroupSize,
  * subgroupSupportedOperations, textureCompressionBC, shaderStorageImageExtendedFormats, depthClamp, then the optimal
  * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, vendorID and pipelineCacheUUID's first
- * word, the sample counts and features below, NV12's queries, maxPushDescriptors, then what's below it (36 words); NULL with wgt_error(). Its own instance: the
+ * word, the sample counts and features below, NV12's queries, maxPushDescriptors, then what's below it (38 words); NULL with wgt_error(). Its own instance: the
  * device's caps are read when the instance enumerates it. */
 EXPORT const uint32_t *
 wgt_caps(void)
@@ -892,6 +892,13 @@ wgt_caps(void)
    VkImageFormatProperties rgb32_input;
    out[i++] = (uint32_t)image_formats(pdev, VK_FORMAT_R32G32B32_SFLOAT, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
                                       VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, 0, &rgb32_input);
+   /* maxPerStageResources, and Vulkan's minimum of it: the smaller of 128 and the per-stage descriptors' limits (but
+    * samplers') with the colour attachments (dEQP-VK's vulkan1p2_limits_validation; D3D12's fell 4 short). */
+   out[i++] = l->maxPerStageResources;
+   const uint32_t sum = l->maxPerStageDescriptorUniformBuffers + l->maxPerStageDescriptorStorageBuffers +
+                        l->maxPerStageDescriptorSampledImages + l->maxPerStageDescriptorStorageImages +
+                        l->maxPerStageDescriptorInputAttachments + l->maxColorAttachments;
+   out[i++] = sum < 128 ? sum : 128;
    destroy(inst, NULL);
    return out;
 }

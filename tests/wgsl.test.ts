@@ -533,6 +533,35 @@ test('anchored, a ballot, an election and a read of the first invocation take an
   }
 });
 
+test('a bitfield extract of a count of 0 is 0, selected rather than left to the backend (WIN: Dawn\'s D3D12 gave an ivec4\'s sign in some lanes)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
+  try {
+    const wgsl = glslStage(await translator(), tmp, 'tests/venus/bfe.comp');
+    assert.equal(wgsl.rc, 0, wgsl.text);
+    assert.match(wgsl.text, /select\(extractBits\([^;]*, 0i, [^;]* == 0u\)/);
+    assert.match(wgsl.text, /select\(extractBits\([^;]*, 0u, [^;]* == 0u\)/);
+    // Values with the sign set; offsets 8, 1, 4, 0; counts 0, 0, 4, 31.
+    const v = [-1398218642, -515900180, -1945543614, 572203159, 1712907786, 2013059715, -1678302356, -2045247303, -7591, 31576, -24003, 26485, -1, -2, 3, -4];
+    const offs = [8, 1, 4, 0], counts = [0, 0, 4, 31];
+    const init = new Int32Array(16 + 16 + 4 + 4 + 16 + 16);
+    init.set(v, 0); init.set(v, 16); init.set(offs, 32); init.set(counts, 36);
+    const res = await runCompute(wgsl.text, [{ binding: 0, init: new Uint8Array(init.buffer) }]);
+    if (!res) return t.skip('SKIPPED: no WebGPU adapter');
+    assert.deepEqual(res.errors, []);
+    const o = new Int32Array(res.out[0].buffer, 0, init.length), bad: string[] = [];
+    for (let n = 0; n < 4; n++)
+      for (let k = 0; k < 4; k++) {
+        const x = v[n * 4 + k], c = counts[n], f = offs[n];
+        const si = c === 0 ? 0 : (x << (32 - f - c)) >> (32 - c), ui = c === 0 ? 0 : ((x >>> f) & ((2 ** c) - 1)) | 0;
+        if (o[40 + n * 4 + k] !== si) bad.push(`ivec4 ${n}.${k}: ${o[40 + n * 4 + k]}, not ${si}`);
+        if (o[56 + n * 4 + k] !== ui) bad.push(`uvec4 ${n}.${k}: ${o[56 + n * 4 + k]}, not ${ui}`);
+      }
+    assert.deepEqual(bad, []);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('a subgroup barrier is a subgroup operation where the device has subgroups, and orders the subgroup\'s shared writes before its reads (WIN)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
@@ -1091,6 +1120,30 @@ test('a fragment stage at the sample rate reads its inputs at their sample and W
     const errors = await compile([shading.text, id.text]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.deepEqual(errors, ['', ''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('at the sample rate gl_SampleMaskIn is the invocation\'s own sample\'s bit (WIN: D3D12 gave every covered sample)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
+  try {
+    const translate = await translator();
+    const file = 'tests/venus/sample-mask.frag';
+    const own = /= smask & \(1u << sid\);/;
+    const pixel = glslStage(translate, tmp, file);
+    assert.equal(pixel.rc, 0, pixel.text);
+    assert.doesNotMatch(pixel.text, own);
+    assert.match(pixel.text, /= smask;/);
+    const shading = glslStage(translate, tmp, file, { features: WGSL.DUAL_SOURCE | TEST_SAMPLE_SHADING });
+    assert.equal(shading.rc, 0, shading.text);
+    assert.match(shading.text, own);
+    const id = glslStage(translate, tmp, file, {}, 'vulkan1.2', ['SAMPLE_ID']);
+    assert.equal(id.rc, 0, id.text);
+    assert.match(id.text, own);
+    const errors = await compile([pixel.text, shading.text, id.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', '', ''], 'WGSL Chromium rejected');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

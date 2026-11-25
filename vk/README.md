@@ -192,7 +192,7 @@ loads, so it is `var<storage, read>` and its layout entry `read-only-storage`). 
 same way: a stage's room is WebGPU's uniform buffers less one for the push buffer (counted always), one for each group
 with texel buffers or storage images (their parameter table: a storage image may be words) and its dynamic uniform buffers (never folded: WebGPU's dynamic storage buffers are fewer); the rest, in
 set and binding order, are storage (the set layouts' hash carries the stage flags, the shaders' keys with it).
-`maxDescriptorSetUniformBuffers` and the other set-wide limits are six times a stage's, as Vulkan's table of minimums is (VK4 R7): a set may spread its descriptors over stages, what one stage of a pipeline binds being held to a stage's.
+`maxDescriptorSetUniformBuffers` and the other set-wide limits are six times a stage's, as Vulkan's table of minimums is (VK4 R7): a set may spread its descriptors over stages, what one stage of a pipeline binds being held to a stage's. `maxPerStageResources` is the per-stage descriptors' limits but samplers', with the colour and input attachments: Vulkan's minimum is the smaller of 128 and that sum (without the input attachments D3D12's and Metal's limits fell 4 short: dEQP-VK's `vulkan1p2_limits_validation`).
 
 **Draw parameters** (VK3 L7.5, `shaderDrawParameters`, vkd3d's row): WGSL has no built-ins for SPIR-V's `BaseVertex`,
 `BaseInstance` and `DrawIndex` (its `vertex_index` and `instance_index` include the bases, as Vulkan's `VertexIndex`
@@ -239,6 +239,10 @@ where WebGPU interpolates it (the pixel's centre, or its sample at the sample ra
 moved to the offset from the centre or to the sample's position along its fine derivatives (`dpdxFine`, `dpdyFine`):
 exact for linear interpolation, within a pixel close for perspective (dEQP-VK's `multisample_interpolation` samples_4
 cases of it pass); a flat input as it is.
+At the sample rate `gl_SampleMaskIn` is the coverage with only the invocation's own sample's bit (`smask & (1u << sid)`:
+Vulkan's; D3D12's coverage input had every covered sample, dEQP-VK's `sample_mask.bit_count` at 4 samples). A bitfield
+extract of a count of 0 is selected as 0 (`select(extractBits(…), 0, n == 0u)`: WGSL defines it so, and Dawn's D3D12
+gave an ivec4's sign in some lanes).
 
 Subgroups are in compute and fragment shaders only
 (WGSL's), and a subgroup-scoped barrier (WGSL has none) is a subgroup operation, `_ = subgroupBallot(true);`, which keeps the

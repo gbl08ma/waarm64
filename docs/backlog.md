@@ -363,6 +363,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in their own browser: it boots the dEQP guest, runs the lists and downloads a results file with the renderer string
   and the limits; and a tool that compares result files across platforms (as G5 compared Metal with SwiftShader).
   Until then, `bench/gpu/sway-mac.sh`'s route (`SCRIPT=deqp-run.ts`) is the way for a host we can reach.
+- **dEQP-VK's failures left on D3D12** (the whole pass list on the Windows VM's Chrome 158, Dawn on D3D12, RTX 3070,
+  2026-11-25: 82,237 Pass, 9 Fail, 1,734 NotSupported; four of the failures fixed since: `bitfieldExtract` of a count of
+  0, `gl_SampleMaskIn` at the sample rate, `maxPerStageResources`): `texture.filtering.cube.formats.s8_uint.nearest.
+  non_seamless` (784 pixels: a stencil cube without seamless filtering, which WebGPU's cubes always have) and
+  `multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r16g16b16a16_sint_s8_uint.
+  random_105` (36 pixels of the RGBA16F attachment). The results are the session's `bench/results/local/win/vk/`;
+  `deqp-run.ts` with `WAARM64_CDP` runs a list there (docs/devenv.md "Chrome on the Windows VM").
 - **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, Chrome 158): GLES2 8 Fail,
   GLES3 81, each in `tests/deqp/d3d11-expected.txt` (`deqp-run.ts EXPECT=` shows what's new), all but two kinds ANGLE's
   own D3D11 expectations. Ours to look at: invariance's `common_subexpression_3` (3 a list, GLES2 and GLES3: "variance
@@ -1119,7 +1126,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the guest's `VN_PERF=no_async_mem_alloc` would give the error back; a program within its budget doesn't meet it
     (VK_EXT_memory_budget is advertised).
   - [B] **A render pass's JSON garbled** (seen in VK4 T38's SwiftShader runs, before and after its change, three times in
-    16,024 cases; the case not identified): `gpu_render_pass threw: SyntaxError` on fragments such as `}` and `eight"`,
+    16,024 cases; twice in the whole list on D3D12, 2026-11-25; the case not identified): `gpu_render_pass threw: SyntaxError` on fragments such as `}` and `eight"`,
     so the pass's description reached the worker cut or overwritten (wg_cmd.c's `gpu_render_pass(json, strlen(json))`
     at a pass's replay, or its JSON buffer reused). That pass is lost; nothing failed that names it. Next: run the
     sample with `VIRGL_GPU=virgl,vulkan,debug` and find the case from the trace.
