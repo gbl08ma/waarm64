@@ -354,7 +354,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   programs where GL has one, an invariance mark dropped, NaN-pattern integer constants folded, `x != x` for isnan;
   the rest was the GPU's (the filter switch near level 0, one invariance loop, line rasterization). Worth a run, in
   order:
-  1. **Windows, ANGLE on D3D11**: most users.
+  1. ~~Windows, ANGLE on D3D11~~: run 2026-11-25 (graphics.md "Findings"); what it left is the entry below.
   2. **Linux with an NVIDIA GPU** (ANGLE on GL or Vulkan): the user's desktop, run by the user when convenient, never
      by us.
   3. **An Android or ChromeOS phone** (Mali or Adreno): the strictest precision and limits.
@@ -363,6 +363,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in their own browser: it boots the dEQP guest, runs the lists and downloads a results file with the renderer string
   and the limits; and a tool that compares result files across platforms (as G5 compared Metal with SwiftShader).
   Until then, `bench/gpu/sway-mac.sh`'s route (`SCRIPT=deqp-run.ts`) is the way for a host we can reach.
+- **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, results in the session's
+  `bench/results/local/win/deqp-d3d11-*`): GLES2 8 Fail, GLES3 120 after the loops' fix, most of them ANGLE's own
+  D3D11 expectations (texturesize, shadow lookups with a level, gradient or offset, invariance, polygon_offset's
+  units, fbo.blit's out_of_bounds, multisample lines). Not proven ANGLE's: `shaders.switch.*_dynamic` (32; a switch
+  in a loop the compiler unrolls, then a texture fetch, read 0 in a probe: D3D11's, ours to work around if it is
+  that), GLES3's atan2 (8, image difference ~2757 at highp and mediump: capture the TGSI with `CAPTURE=`, Mesa's
+  sign transfer through AND/OR bits is the suspect), invariance's common_subexpression_3. Then a Windows/D3D11
+  expectations file beside tests/deqp/ so a rerun shows only what's new. Context losses on D3D11 that only a draw
+  reveals (HLSL that fails to compile for the draw's layout) still crash the machine (the entry on lost contexts).
+- **The H.264 damaged-chunk test writes 5 pictures on Windows** (tests/virgl-browser.test.ts, against Chrome on the
+  Windows VM, 2026-11-25; it expects at least 8): the decode there is software, as on the dev VM, so the cause isn't
+  the hardware decoder holding frames. Not traced.
+- **The desktop image's Chromium doesn't start** (2026-11-25, `target/arch/desktop.qcow2` as built in the dev VM:
+  Chromium 156 fails on "libsimdutf.so.36: cannot open shared object file", a partial upgrade in the image):
+  `bench/gpu/chromium-video.ts` can't run on it. Rebuild the image (`images/arch/desktop.sh`) and check whether the
+  deployed desktop image has it too.
 - **A KDE desktop's session on 3D** (graphics.md "Queries", "Feedback loops"): a user's KDE Plasma session (2026-10-24)
   found occlusion queries holding every fence and draws refused as feedback loops, both fixed. Run KDE Plasma on the
   desktop guest to see what else it asks for, and measure what the feedback copies cost there (a copy at every such
@@ -2017,6 +2033,8 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   crate's other `getrandom::fill` calls (room.rs's keys and nonces, `agent.rs`, the DERP and tailnet nonces) still draw
   from the OS in tests; seed them the same way if a test that reaches them turns flaky. `WAARM64_TS_SEED=<text>`
   draws another stream: sweeping it is how a test's bounds are checked against chance (below).
+- **`room::tests::names::twenty_servers_converge` failed once in `scripts/ci.sh`** (2026-11-25, "converged in 420s";
+  passed alone 6 of 6 and on the rerun): sweep `WAARM64_TS_SEED` for a seed that misses its bound, as below.
 - **A names test whose bound a few draws miss** (found sweeping `WAARM64_TS_SEED`, 2026-11-22; it doesn't flake now
   that its draws are fixed, but a change that moves the draws can land on a failing one):
   `calendar_asks_stay_bounded_across_twenty_servers` fails 1 seed in 80 (`later <= first`: 22 asks after 21; the

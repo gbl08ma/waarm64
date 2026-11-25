@@ -200,6 +200,93 @@ test('virgl tgsi: a derivative goes into a vec4 of its own before it is swizzled
   assert.match(p.fs, /floatBitsToUint\(dd0\)/, p.fs);
 });
 
+test('virgl tgsi: a fragment shader\'s loop with an implicit derivative has no break or continue (ANGLE\'s D3D11 samples level 0 and zeroes derivatives in one that has: a blur\'s lookups came out sharp)', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\nDCL TEMP[0]\n  0: BGNLOOP\n  1:   UIF TEMP[0].xxxx\n  2:     BRK\n  3:   ENDIF\n  4: ENDLOOP\n  5: MOV OUT[0], IN[0]\n  6: MOV OUT[1], IN[0]\n  7: END');
+  // BRK in nested IFs, then code after them; CONT in a switch (whose BRKs stay); an inner loop without a derivative
+  // (left as it was), the lookup after it.
+  const fs = parseTgsi(`FRAG
+DCL IN[0], GENERIC[0], PERSPECTIVE
+DCL OUT[0], COLOR
+DCL SAMP[0]
+DCL SVIEW[0], 2D, FLOAT
+DCL TEMP[0..2]
+IMM[0] UINT32 {0, 1, 3, 0}
+  0: BGNLOOP
+  1:   UIF TEMP[2].xxxx
+  2:     UIF TEMP[2].yyyy
+  3:       BRK
+  4:     ELSE
+  5:       MOV TEMP[1].x, IMM[0].xxxx
+  6:     ENDIF
+  7:     MOV TEMP[1].y, IMM[0].xxxx
+  8:   ENDIF
+  9:   SWITCH TEMP[0].xxxx
+ 10:   CASE IMM[0].yyyy
+ 11:     CONT
+ 12:     BRK
+ 13:   DEFAULT
+ 14:     MOV TEMP[1].z, IMM[0].xxxx
+ 15:     BRK
+ 16:   ENDSWITCH
+ 17:   BGNLOOP
+ 18:     UIF TEMP[2].zzzz
+ 19:       BRK
+ 20:     ENDIF
+ 21:   ENDLOOP
+ 22:   TEX TEMP[2], IN[0], SAMP[0], 2D
+ 23:   UIF TEMP[2].wwww
+ 24:     CONT
+ 25:   ENDIF
+ 26:   ADD TEMP[1], TEMP[1], TEMP[2]
+ 27: ENDLOOP
+ 28: MOV OUT[0], TEMP[1]
+ 29: END`);
+  const key: ProgramKey = { ...KEY, attribs: ['f'], samplers: { vs: [], fs: [{ type: 'f', swizzle: [0, 1, 2, 3], gl: '2D' }] } };
+  const p = generate(vs, fs, key);
+  const flow = (src: string) => src.slice(src.indexOf('void body()'), src.indexOf('void main()')).split('\n').filter((l) => /^\s*(}|bool l|while|if \(|lb|lc|break|continue|switch|case|default|t2 = .*texture)/.test(l)).map((l) => l.replace(/^(\s*if \().*(\) \{)$/, (m, a, b) => (m.includes('lc') ? m : `${a}…${b}`)));
+  assert.deepEqual(flow(p.fs), [
+    '  bool lb0 = true;',
+    '  while (lb0) {',
+    '    bool lc0 = true;',
+    '    if (…) {',
+    '      if (…) {',
+    '        lb0 = false; lc0 = false;',
+    '      } else {',
+    '      }',
+    '      if (lc0) {',
+    '      }',
+    '    }',
+    '    if (lc0) {',
+    '      switch (ivec4(t0.xxxx).x) {',
+    '        case 1:',
+    '        lc0 = false; break;',
+    '        break;',
+    '        default:',
+    '        break;',
+    '      }',
+    '      if (lc0) {',
+    '        while (true) {',
+    '          if (…) {',
+    '            break;',
+    '          }',
+    '        }',
+    '        t2 = floatBitsToUint(texture(fs0, v_GENERIC0.xy));',
+    '        if (…) {',
+    '          lc0 = false;',
+    '        }',
+    '        if (lc0) {',
+    '        }',
+    '      }',
+    '    }',
+    '  }',
+    '}',
+  ], p.fs);
+  // A vertex shader's loops, and a fragment shader's without a derivative, as they were.
+  assert.match(p.vs, /while \(true\) \{\n\s*if \([^\n]*\{\n\s*break;/, p.vs);
+  const plain = generate(vs, parseTgsi('FRAG\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: BGNLOOP\n  1:   UIF TEMP[0].xxxx\n  2:     BRK\n  3:   ENDIF\n  4: ENDLOOP\n  5: MOV OUT[0], TEMP[0]\n  6: END'), { ...KEY, attribs: ['f'] });
+  assert.match(plain.fs, /while \(true\) \{\n\s*if \([^\n]*\{\n\s*break;/, plain.fs);
+});
+
 test('virgl tgsi: an invariant position stays invariant (dEQP-GLES2 shaders.invariance on Metal)', () => {
   const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END');
   // Declared, or (Mesa's way) the instructions that compute it marked precise; `_SAT` comes before `_PRECISE`.

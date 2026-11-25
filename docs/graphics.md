@@ -616,6 +616,16 @@ following vrend's conventions:
   `floatBitsToUint(dFdx(v)).xy` was "error X3018: invalid subscript 'xy'" in its HLSL (`WEBGL_debug_shaders` shows
   it), which ANGLE reports only in the program's log with the status true (dEQP-GLES3 `derivate`'s uniform_loop
   cases);
+- **a fragment shader's loop with an implicit derivative has no `break` or `continue`** (`FlowBlock` in
+  web/virgl-tgsi.ts; every backend): ANGLE's D3D11 backend samples level 0 (`SampleLevel` 0) for an implicit-LOD lookup
+  and makes derivatives 0 in a loop that has either (its translator's "discontinuous" loops, which HLSL gives no
+  gradients), and TGSI's loops are all `while (true)` with a BRK, so a blur's or a compositor's lookups of a mipmapped
+  texture read level 0 with the magnifying filter (a 64×64 texture over 16×16 pixels: level 0 instead of 2), and
+  dEQP-GLES3 `derivate`'s static_loop and uniform_loop cases failed (34, all passing after). Such a loop is
+  `bool lbN = true; while (lbN) { bool lcN = true; … }`: BRK clears both flags, CONT `lcN` (`lcN = false; break;` in a
+  switch), and what may follow either is guarded by `if (lcN) {`. Measured on D3D11 (NVIDIA): without `break` the
+  level is right whether the count is uniform, a flat varying's or read from a texture, nested too. A KILL or RET in
+  such a loop still makes it discontinuous (not rewritten);
 - **on D3D11, a program D3D's compiler refused is no program** (the renderer's `link`): ANGLE links a program whose
   HLSL fxc rejected (`error X…` in the program's log, the status true) and loses the context at the draw that
   compiles it again for its vertex or target layout (the GPU process exits, the machine crashes), so whether a machine

@@ -769,6 +769,74 @@ IMM[0] UINT32 {0, 1, 0, 0}
 }
 
 /**
+ * An implicit-LOD lookup (TGSI's TEX) in a fragment shader's loop, as a blur's: a 64×64 texture of 7 levels, level L
+ * filled with red 30·L, sampled over a 16×16 target at uv = the position's (λ = 2: red 60). The loop runs three
+ * times, skips the first with CONT and adds half of each lookup. ANGLE's D3D11 backend samples level 0 in a loop with a
+ * `break` or `continue` (and makes its derivatives 0): red 0. Generated with this browser's quirks. Returns the
+ * centre pixel's red, the program's D3D errors and whether the context was lost.
+ */
+export function loopTexture() {
+  const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\nIMM[0] FLT32 {0.5, 0.0, 0.0, 0.0}\n  0: MAD OUT[1], IN[0], IMM[0].xxxx, IMM[0].xxxx\n  1: MOV OUT[0], IN[0]\n  2: END');
+  const fs = parseTgsi(`FRAG
+DCL IN[0], GENERIC[0], PERSPECTIVE
+DCL OUT[0], COLOR
+DCL SAMP[0]
+DCL SVIEW[0], 2D, FLOAT
+DCL TEMP[0..2]
+IMM[0] UINT32 {0, 1, 3, 0}
+IMM[1] FLT32 {0.5, 0.0, 0.0, 0.0}
+  0: MOV TEMP[0].x, IMM[0].xxxx
+  1: MOV TEMP[1], IMM[1].yyyy
+  2: BGNLOOP
+  3:   ISGE TEMP[2].x, TEMP[0].xxxx, IMM[0].zzzz
+  4:   UIF TEMP[2].xxxx
+  5:     BRK
+  6:   ENDIF
+  7:   UADD TEMP[0].x, TEMP[0].xxxx, IMM[0].yyyy
+  8:   USEQ TEMP[2].x, TEMP[0].xxxx, IMM[0].yyyy
+  9:   UIF TEMP[2].xxxx
+ 10:     CONT
+ 11:   ENDIF
+ 12:   TEX TEMP[2], IN[0], SAMP[0], 2D
+ 13:   MAD TEMP[1], TEMP[2], IMM[1].xxxx, TEMP[1]
+ 14: ENDLOOP
+ 15: MOV OUT[0], TEMP[1]
+ 16: END`);
+  const p = generate(vs, fs, { attribs: ['f'], samplers: { vs: [], fs: [{ type: 'f', swizzle: [0, 1, 2, 3], gl: '2D' }] }, cbufs: [{ type: 'f', write: [0, 1, 2, 3] }] }, quirksOf(gl));
+  const compile = (type: number, src: string) => { const sh = gl.createShader(type)!; gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+  const prog = gl.createProgram()!;
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, p.vs)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, p.fs)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return { d3dErrors: [gl.getProgramInfoLog(prog)], red: -1, lost: false };
+  const d3dErrors = (gl.getProgramInfoLog(prog) ?? '').match(/error X\d+[^\n]*/g) ?? [];
+  if (d3dErrors.length) return { d3dErrors, red: -1, lost: false }; // a draw could lose the context
+  gl.useProgram(prog);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_adjy'), 1);
+  gl.uniform2f(gl.getUniformLocation(prog, 'u_adjz'), 1, 0);
+  gl.uniform1i(gl.getUniformLocation(prog, 'fs0'), 0);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texStorage2D(gl.TEXTURE_2D, 7, gl.RGBA8, 64, 64);
+  for (let l = 0; l < 7; l++) {
+    const s = 64 >> l;
+    const b = new Uint8Array(s * s * 4);
+    for (let k = 0; k < s * s; k++) b.set([30 * l, 0, 0, 255], k * 4);
+    gl.texSubImage2D(gl.TEXTURE_2D, l, 0, 0, s, s, gl.RGBA, gl.UNSIGNED_BYTE, b);
+  }
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.activeTexture(gl.TEXTURE1);
+  const target = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, target); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 16, 16);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
+  gl.viewport(0, 0, 16, 16);
+  const pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Uint8Array(4); gl.readPixels(8, 8, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.getError();
+  return { d3dErrors, red: px[0], lost: gl.isContextLost() };
+}
+
+/**
  * A 3D machine's 2D scanout on the screen: the device (web/gpu.ts) with a host whose screen draws on WebGL2, a 4×4
  * resource of `format` filled with the guest's bytes `px`, transferred and shown. Returns the screen's centre pixel.
  */

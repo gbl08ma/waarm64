@@ -307,6 +307,12 @@ test('virgl on WebGL2: a derivative in a loop of a constant buffer\'s count draw
   assert.deepEqual(r, { d3dErrors: [], error: null, pixel: [0, 0, 0, 0] });
 });
 
+test('virgl on WebGL2: an implicit-LOD lookup in a loop with a break and a continue samples the level its derivatives pick (ANGLE\'s D3D11 sampled level 0 there)', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { loopTexture(): { d3dErrors: string[]; red: number; lost: boolean } } }).virgl.loopTexture());
+  // Level 2 (red 60), half of it in each of the two iterations the CONT left.
+  assert.deepEqual(r, { d3dErrors: [], red: 60, lost: false });
+});
+
 test('virgl on WebGL2: stream output captures interleaved, separate and mixed, appends, stops at a full buffer, counts what it wrote', async () => {
   const r = await page.evaluate(() => (window as unknown as { virgl: { streamOut(): { appended: number[]; emitted: number; overflowed: number[]; separate: number[][]; mixed: number[][]; log: string[]; glError: number } } }).virgl.streamOut());
   assert.deepEqual([r.log, r.glError], [[], 0]);

@@ -591,6 +591,27 @@ export function generate(vs: Tgsi, fs: Tgsi, key: ProgramKey, quirks: Quirks = {
 /** The uniforms every program has (the renderer sets them by name): see `Gen.emit`. */
 export const SYS_UNIFORMS = ['u_adjy', 'u_adjz', 'u_fbh', 'u_alpharef', 'u_psize', 'u_stipple', 'u_blendc'] as const;
 
+/** What an implicit derivative is taken in: an implicit-LOD lookup, a derivative (`FlowBlock`). */
+const GRADIENT_OPS = new Set(['TEX', 'TXP', 'TXB', 'TEX2', 'TXB2', 'LODQ', 'DDX', 'DDX_FINE', 'DDY', 'DDY_FINE']);
+
+/** What ends a block (where a guard opened just before would guard nothing). */
+const BLOCK_ENDS = new Set(['ELSE', 'ENDIF', 'ENDLOOP', 'CASE', 'DEFAULT', 'ENDSWITCH', 'END']);
+
+/**
+ * An open IF, loop or switch while the instructions are written. A fragment shader's loop with an implicit derivative in
+ * it is written without `break` and `continue`: ANGLE's D3D11 backend samples level 0 (HLSL's SampleLevel 0) and makes
+ * derivatives 0 in a loop that has either (HLSL allows no gradient in a loop that may exit early: "discontinuous" in
+ * ANGLE's translator), and TGSI's loops always have one (`while (true)` with a BRK). A blur's lookups came out sharp
+ * from level 0 of a mipmapped texture, with the magnifying filter. Such a loop is `bool lbN = true; while (lbN) {
+ * bool lcN = true; … }` instead: BRK clears both flags, CONT `lcN`, and what may run after either is guarded by
+ * `if (lcN) {` to the end of its block (a block that cleared it guards the rest of its parent likewise). Measured on
+ * D3D11 (NVIDIA): a loop with no `break` samples the right level, its count uniform, varying or read from a texture.
+ * Written so on every backend: one form, the one the tests run. A KILL or RET in such a loop still makes it one for
+ * ANGLE (not rewritten). `flag`: the loop's N; `guards`: the guards open in the
+ * block; `cleared`: the flagged loops whose `lcN` the block may have cleared.
+ */
+type FlowBlock = { kind: 'if' | 'loop' | 'switch'; flag?: number; guards: number; cleared: Set<number> };
+
 class Gen {
   readonly out: string[] = [];
   readonly head: string[] = [];
@@ -611,8 +632,12 @@ class Gen {
   private colorWrites = new Set<number>();
   private writesAllCbufs: boolean;
   private needSys = new Set<string>();
-  private loops = 0;
-  private switchDepth: boolean[] = [];
+  /** The open IF, loop and switch blocks, innermost last. */
+  private flow: FlowBlock[] = [];
+  /** Loops written with flags so far (`lbN`, `lcN`). */
+  private flagLoops = 0;
+  /** The instruction being written's index. */
+  private pc = 0;
 
   readonly t: Tgsi;
   readonly stage: 'vs' | 'fs';
@@ -649,6 +674,57 @@ class Gen {
 
   private line(s: string) {
     this.out.push('  '.repeat(this.depth) + s);
+  }
+
+  // --- control flow ----------------------------------------------------------------------------------------------
+
+  /** A block opened (its line written): one level deeper. */
+  private open(kind: FlowBlock['kind'], flag?: number) {
+    this.depth++;
+    this.flow.push({ kind, flag, guards: 0, cleared: new Set() });
+  }
+
+  /**
+   * Whether the loop at this BGNLOOP is written without `break` and `continue` (`FlowBlock`): a fragment shader's
+   * loop with an implicit derivative in it (an implicit-LOD lookup, a derivative), its inner loops' included.
+   */
+  private loopNeedsFlags() {
+    if (this.stage !== 'fs') return false;
+    for (let k = this.pc + 1, nest = 0; k < this.t.instrs.length; k++) {
+      const op = this.t.instrs[k].op;
+      if (op === 'BGNLOOP') nest++;
+      else if (op === 'ENDLOOP' && nest-- === 0) return false;
+      else if (GRADIENT_OPS.has(op)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * After a BRK or CONT of the flagged loop `n` (the block `at`): the blocks between it and the loop may have skipped
+   * the rest of the iteration (each guards what follows it in its parent when it ends), and what follows here does.
+   */
+  private skipRest(at: number, n: number) {
+    for (let k = at + 1; k < this.flow.length; k++) this.flow[k].cleared.add(n);
+    const next = this.t.instrs[this.pc + 1]?.op ?? 'END';
+    if (!BLOCK_ENDS.has(next)) this.guard(new Set([n]));
+  }
+
+  /** What follows in the current block runs only while the loops `ns` go on with this iteration. */
+  private guard(ns: Set<number>) {
+    const b = this.flow.at(-1);
+    if (!ns.size || !b) return;
+    this.line(`if (${[...ns].map((n) => `lc${n}`).join(' && ')}) {`);
+    this.depth++;
+    b.guards++;
+  }
+
+  /** Closes the current block's guards (at its end, or a CASE's). */
+  private closeGuards() {
+    const b = this.flow.at(-1);
+    for (; b && b.guards > 0; b.guards--) {
+      this.depth--;
+      this.line('}');
+    }
   }
 
   private sys(name: string) {
@@ -1016,9 +1092,10 @@ class Gen {
           'vec4 ssg(vec4 x) { return vec4(greaterThan(x, vec4(0.0))) - vec4(lessThan(x, vec4(0.0))); }',
         );
         return f(`ssg(${s(0)})`);
-      // Into a vec4 of its own first: in a loop whose count isn't constant ANGLE's D3D11 backend writes a derivative
-      // as `(x, 0.0)`, a scalar (GLES leaves it undefined there), so a swizzle of it is "error X3018: invalid subscript"
-      // in its HLSL, which surfaces only at the draw, losing the context (dEQP-GLES3 derivate's uniform_loop cases).
+      // Into a vec4 of its own first: in a loop with a `break` ANGLE's D3D11 backend writes a derivative as `(x, 0.0)`,
+      // a scalar, so a swizzle of it is "error X3018: invalid subscript" in its HLSL, which surfaces only at the draw,
+      // losing the context (dEQP-GLES3 derivate's uniform_loop cases). Such loops are written without one now
+      // (`FlowBlock`); a KILL or RET in a loop still makes one.
       case 'DDX':
       case 'DDX_FINE':
       case 'DDY':
@@ -1240,54 +1317,81 @@ class Gen {
         return;
       case 'IF':
         this.line(`if (${x(0)} != 0.0) {`);
-        this.depth++;
+        this.open('if');
         return;
       case 'UIF':
         this.line(`if (${x(0, 'u')} != 0u) {`);
-        this.depth++;
+        this.open('if');
         return;
       case 'ELSE':
+        this.closeGuards();
         this.depth--;
         this.line('} else {');
         this.depth++;
         return;
       case 'ENDIF':
+      case 'ENDSWITCH': {
+        this.closeGuards();
+        const b = this.flow.pop();
         this.depth--;
         this.line('}');
+        if (b) this.guard(b.cleared);
         return;
+      }
       case 'BGNLOOP':
-        this.loops++;
-        this.switchDepth.push(false);
-        this.line('while (true) {');
-        this.depth++;
+        if (this.loopNeedsFlags()) {
+          const n = this.flagLoops++;
+          this.line(`bool lb${n} = true;`);
+          this.line(`while (lb${n}) {`);
+          this.open('loop', n);
+          this.line(`bool lc${n} = true;`);
+        } else {
+          this.line('while (true) {');
+          this.open('loop');
+        }
         return;
       case 'ENDLOOP':
-        this.loops--;
-        this.switchDepth.pop();
+        this.closeGuards();
+        this.flow.pop();
         this.depth--;
         this.line('}');
         return;
-      case 'BRK':
-        this.line('break;');
+      case 'BRK': {
+        // Out of the innermost loop or switch.
+        const at = this.flow.findLastIndex((b) => b.kind !== 'if');
+        const n = this.flow[at]?.flag;
+        if (n === undefined) this.line('break;');
+        else {
+          this.line(`lb${n} = false; lc${n} = false;`);
+          this.skipRest(at, n);
+        }
         return;
-      case 'CONT':
-        this.line('continue;');
+      }
+      case 'CONT': {
+        const at = this.flow.findLastIndex((b) => b.kind === 'loop');
+        const n = this.flow[at]?.flag;
+        if (n === undefined) this.line('continue;');
+        else if (this.flow.findLastIndex((b) => b.kind === 'switch') > at) {
+          // Out of the switch first (a guard there would fall through into the next case).
+          this.line(`lc${n} = false; break;`);
+          for (let k = at + 1; k < this.flow.length; k++) this.flow[k].cleared.add(n);
+        } else {
+          this.line(`lc${n} = false;`);
+          this.skipRest(at, n);
+        }
         return;
+      }
       case 'SWITCH':
-        this.switchDepth.push(true);
         this.line(`switch (${x(0, 'i')}) {`);
-        this.depth++;
+        this.open('switch');
         return;
       case 'CASE':
+        this.closeGuards();
         this.line(`case ${(this.t.imms[operand(ins, 0).index]?.bits[operand(ins, 0).swizzle[0]] ?? 0) | 0}:`);
         return;
       case 'DEFAULT':
+        this.closeGuards();
         this.line('default:');
-        return;
-      case 'ENDSWITCH':
-        this.switchDepth.pop();
-        this.depth--;
-        this.line('}');
         return;
       case 'RET':
         this.line('return;');
@@ -1513,7 +1617,7 @@ class Gen {
     const body: string[] = [];
     // The instructions first: they tell which registers and samplers are used.
     this.depth = 1;
-    for (const ins of this.t.instrs) this.emitInstr(ins);
+    for (this.pc = 0; this.pc < this.t.instrs.length; this.pc++) this.emitInstr(this.t.instrs[this.pc]);
     body.push(...this.out);
     const h: string[] = ['#version 300 es', 'precision highp float;', 'precision highp int;'];
     for (const p of [
