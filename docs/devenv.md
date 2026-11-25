@@ -115,7 +115,9 @@ user's session through a `schtasks /IT` task. The route:
 - `WAARM64_CDP=http://127.0.0.1:9333` (`tools/remote-chromium.ts`) makes `bench/gpu/guest-session.ts` (its harnesses)
   and `tests/virgl-browser.test.ts` attach to that Chrome instead of launching one, their server on 8197.
 - Chrome outlives the ssh session: `bench/gpu/win-leftovers.sh --kill` after every run stops the harness's Chrome
-  there by its profile path (never by name: the user's own Chrome may be open) and this side's forwards. Never reboot
+  there by its profile path (never by name: the user's own Chrome may be open) and lists this side's forwards on 9333
+  and 8197, which it kills only with `--kill-forwards` (the user may run a forward or a test server of their own on
+  those ports: the harness stops its own forward by its pid). Never reboot
   the VM; if it stops answering, wait for the user.
 - `--use-angle=d3d11-warp` is D3D11 in software: what it reproduces needs no GPU.
 
