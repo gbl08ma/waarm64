@@ -66,7 +66,7 @@ test('virgl on WebGL2: every program of the TGSI corpus compiles and links', asy
   assert.ok(r.programs >= 35);
 });
 
-type VideoReplay = { hashes: string[]; sampled: string[]; pictureTextures: number; stats: { frames: number; decoded: number; dropped: number; errors: number }; ahead: number; maxWaitMs: number; timedOut: { drains: number; giveUps: number }; hardware: number[]; log: string[]; ms: number; orig: { hashes: string[]; errors: string[] } | null };
+type VideoReplay = { hashes: string[]; sampled: string[]; pictureTextures: number; stats: { frames: number; decoded: number; dropped: number; errors: number }; ahead: number; maxWaitMs: number; timedOut: { drains: number; giveUps: number }; outputs: number; hardware: number[]; log: string[]; ms: number; orig: { hashes: string[]; errors: string[] } | null };
 async function replayVideo(name: string, orig?: string, fault?: ChunkFault): Promise<VideoReplay> {
   const ref = videoRef();
   return page.evaluate(([t, w, h, o, f]) => (window as unknown as { virgl: { replayVideo64(t: string, w: number, h: number, o?: string, f?: ChunkFault): Promise<VideoReplay> } }).virgl.replayVideo64(t, w, h, o, f),
@@ -158,8 +158,11 @@ test('video on WebGL2: a damaged chunk is a decoder error that ends its codec\'s
     assert.equal(r.stats.errors, 1);
     assert.equal(r.stats.frames, ref.pictures);
     assert.equal(r.stats.decoded + r.stats.dropped, ref.pictures);
-    // What came out before it is written: VP9's ten (a software H.264 decoder may have held one or two for reordering: lost).
-    assert.ok(r.stats.decoded <= 10 && r.stats.decoded >= (hashes ? 10 : 8), `${name}: ${r.stats.decoded} written`);
+    // What came out of the decoder before it is written: VP9's ten. H.264 in software comes out later than it goes in
+    // (FFmpeg holds the stream's reorder depth and 3 more for its frame threads, graphics.md "Video's findings": 5 of
+    // the 10 out in Chrome on Windows and on GitHub's runners; OpenH264 more), and what it held is lost with it.
+    assert.equal(r.stats.decoded, r.outputs, `${name}: ${r.stats.decoded} written of the decoder's ${r.outputs}`);
+    assert.ok(r.stats.decoded <= 10 && r.stats.decoded >= (hashes ? 10 : 4), `${name}: ${r.stats.decoded} written`);
     if (hashes) assert.deepEqual(r.hashes, hashes.slice(0, r.hashes.length));
     // Nothing waited for the dropped pictures: the error freed the guest, not the queue's drain or give-up (held off
     // for 10 and 20 s here, so a host slowed by load doesn't fire them on a slow decode: replayVideo64).

@@ -61,7 +61,8 @@ export function replayTrace64(trace: string, read?: number) {
  * its bytes after the first 8 with a pattern, `truncate` keeps its first 8 bytes; `slowCopyMs` holds each frame's copy
  * (`VideoFrame.copyTo`) that long, so the decoder's error finds copies still out. With a fault, the queue's drain and
  * give-up (CallQueue.tick) come only after 10 and 20 s, and `timedOut` counts them: what frees the guest after a
- * fault must be the decoder's error, not a timer, however slow the host runs.
+ * fault must be the decoder's error, not a timer, however slow the host runs; `outputs` counts the frames the decoder
+ * put out (what it still held when the error closed it is lost with it).
  */
 export type ChunkFault = { picture: number; how: 'garble' | 'truncate'; slowCopyMs?: number };
 export async function replayVideo64(trace: string, w: number, h: number, orig?: string, fault?: ChunkFault) {
@@ -74,6 +75,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   let r!: VirglRenderer;
   let q!: CallQueue<HostCall>;
   const timedOut = { drains: 0, giveUps: 0 };
+  const outputs = { n: 0 };
   const t0 = performance.now();
   const timer = setInterval(() => q?.tick(), 20);
   const copyTo = VideoFrame.prototype.copyTo;
@@ -88,7 +90,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   const settled = async () => { while (q.length || r.videoWaiting) await new Promise((ok) => setTimeout(ok, 5)); };
   try {
     await replayAsync(fromBase64(trace), (ram) => {
-      r = new VirglRenderer(gl, { ram, log: (m) => log.push(m), video: { decoders: fault ? faulty(fault) : webCodecsDecoder, hardware } });
+      r = new VirglRenderer(gl, { ram, log: (m) => log.push(m), video: { decoders: fault ? faulty(fault, outputs) : webCodecsDecoder, hardware } });
       // Each picture's planes, read back as it's written (the buffers are used again).
       const p = r as unknown as { writePicture(planes: number[], pic: DecodedPicture): void };
       const write = p.writePicture.bind(r);
@@ -115,7 +117,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
     clearInterval(timer);
     VideoFrame.prototype.copyTo = copyTo;
   }
-  return { hashes: await Promise.all(shots), sampled: await Promise.all(sampled), pictureTextures, stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, timedOut, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
+  return { hashes: await Promise.all(shots), sampled: await Promise.all(sampled), pictureTextures, stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, timedOut, outputs: outputs.n, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
 }
 
 /**
@@ -170,10 +172,16 @@ export async function copyPictures() {
 }
 
 /** WebCodecs' decoders with one chunk damaged (`ChunkFault`). */
-function faulty(fault: ChunkFault): DecoderFactory {
+function faulty(fault: ChunkFault, outputs: { n: number }): DecoderFactory {
   let n = 0;
   return (config, output, error, shape) => {
-    const d = webCodecsDecoder(config, output, error, shape);
+    // Each frame out of the decoder asks for its planes' shape once (webCodecsDecoder): counted there.
+    const counted: typeof shape = (ts) => {
+      const s = shape?.(ts);
+      if (s) outputs.n++;
+      return s;
+    };
+    const d = webCodecsDecoder(config, output, error, shape ? counted : shape);
     return {
       ...d,
       decode(data, key, timestamp) {
