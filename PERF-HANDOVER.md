@@ -126,15 +126,14 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-24, after loop 73)
+## State (2026-11-25, after loop 73)
 
-**The track is paused after loop 73 (the user, 2026-11-24): nothing runs until it is resumed.** To resume: read
-this file, then start at "Next" below. The out-of-context review of loop 73's two mechanisms (the sibling fill in
+**Resumed 2026-11-25 (the user), after a pause following loop 73; loop 74 takes "Next" below.** The out-of-context review of loop 73's two mechanisms (the sibling fill in
 `Mmu::miss`, the TLBI queue's `Collapsed`) is done (branch `review/mmu-tlbi-queue`, 0505820b, deleted since): its two findings (a mid-chunk
 ASID change left the old ASID published; `drain` held the queue's lock through its flushes) were fixed in the
-commit "PERF: loop 73's review fixed", outside the loops; the track stays paused.
+commit "PERF: loop 73's review fixed", outside the loops.
 
-**Resumed 2026-11-24 (the user), with one more rule: spend as little time in benchmarks and CI as the answers allow
+**The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
 ("Batching", above).** Loop 72 counted rows 8, 9, 10, 11, 13 and 18 in one pass with one diagnostic core and closed
 most as findings. Loop 73 took the three it ranked first (bench/boot/REPORT.md "PERF loop 73",
 `bench/boot/results/perf73/`): **the TLB's sibling fill and the collapsed TLBI queue's nG flush are built and kept
