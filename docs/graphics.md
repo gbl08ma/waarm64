@@ -620,6 +620,14 @@ following vrend's conventions:
   a hair below the integer and `int()` of it took the one below: 23,452 of 200,000 values of `int(floor(z * 1.5 + 2.0))`
   in a vertex shader, plain GLSL alike (`floor` itself exact); dEQP-GLES3 `switch`'s 32 dynamic cases drew speckled
   bands. GLES allows it (a value may differ within a shader without `invariant`); written so, it's exact;
+- **on D3D11, what computes an invariant position is stored opaquely** (`^ uvec4(u_zero)` on each TEMP store of an
+  instruction Mesa marked `_PRECISE`; `Quirks.d3d11`): fxc fused and reordered the same sums differently in two
+  programs, so their `gl_Position.w` differed (3,943 of 100,000 inputs in a transform-feedback probe of dEQP's two
+  programs; none with the stores opaque) and invariance's `common_subexpression` cases saw other depths. All 36
+  invariance cases of each list pass, `common_subexpression_1` too, which ANGLE's own D3D11 expectations fail.
+  Stored so, `t - (t - floor(t))` (Mesa's floor of a precise value) is no longer folded back into `floor(t)`, and an
+  infinite `t` made NaN of it (dEQP-GLES3 `precision.floor` and `.mod` failed): a precise FRC there is 0 at an infinity
+  (`frcInf`), as the other GPUs' `fract` is;
 - **a derivative goes into a vec4 of its own** (`vec4 ddN = dFdx(…);`, then read): in a loop whose count isn't a
   constant ANGLE's D3D11 backend writes a derivative as `(x, 0.0)`, a scalar (GLES leaves it undefined there), so
   `floatBitsToUint(dFdx(v)).xy` was "error X3018: invalid subscript 'xy'" in its HLSL (`WEBGL_debug_shaders` shows
@@ -1253,15 +1261,15 @@ Worth not re-discovering:
   context loss there is Chromium's GPU process exiting (`exit_code=34` in Chrome's log with `--enable-logging=stderr`,
   after ANGLE's "Internal D3D11 error … Error compiling dynamic vertex/pixel executable"): the machine crashes. ANGLE
   reports fxc's errors for a linked program only in its log; `WEBGL_debug_shaders` gives the HLSL. What still fails
-  after the fixes (2026-11-25: GLES2 8 Fail of 17,035, GLES3 81 of 44,476, against 204 and a crash before; each in
+  after the fixes (2026-11-25: GLES2 2 Fail of 17,035, GLES3 75 of 44,476, against 204 and a crash before; each in
   `tests/deqp/d3d11-expected.txt`, which `deqp-run.ts EXPECT=` checks a rerun against) is ANGLE's
   D3D11, most of it in ANGLE's own dEQP expectations for D3D11: invariance's common_subexpression, polygon_offset's
   units, texture_functions' texturesize and shadow lookups at a level or gradient, fbo.blit.rect's out_of_bounds,
   rbo_multisample_max lines; derivatives in loops (ANGLE writes a derivative in a loop it can't unroll as 0, and
   Mesa's TGSI keeps no loop count constant, so dEQP's static_loop cases are such loops too). Ours since and fixed:
   the derivate loops (34), switch's dynamic cases (32, FRC above) and mediump `atan2` (8, a recovered program refused).
-  Not ANGLE's and not explained: invariance's `common_subexpression_3` (3 a list: the Z test's depths differ between
-  the two programs) and one `draw_buffers_indexed.random` case.
+  And invariance (6 a list, stores made opaque above). Not ANGLE's and not explained: one `draw_buffers_indexed.random`
+  case.
 - Headed and headless Chromium on the Mac give the same frame rates (no headless throttling).
 - **Headless WebGPU in the dev VM** needs `--enable-unsafe-webgpu` and, to present from a worker's `OffscreenCanvas`,
   `--enable-features=Vulkan --use-angle=swiftshader --use-gl=angle`; WebGPU's `writeBuffer`/`writeTexture` and WebGL's

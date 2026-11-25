@@ -370,13 +370,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r16g16b16a16_sint_s8_uint.
   random_105` (36 pixels of the RGBA16F attachment). The results are the session's `bench/results/local/win/vk/`;
   `deqp-run.ts` with `WAARM64_CDP` runs a list there (docs/devenv.md "Chrome on the Windows VM").
-- **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, Chrome 158): GLES2 8 Fail,
-  GLES3 81, each in `tests/deqp/d3d11-expected.txt` (`deqp-run.ts EXPECT=` shows what's new), all but two kinds ANGLE's
-  own D3D11 expectations. Ours to look at: invariance's `common_subexpression_3` (3 a list, GLES2 and GLES3: "variance
-  detected" in the Z test, the depths of the two programs differ; ANGLE passes it natively; the suspect is FRC's kind,
-  a multiply fused in one program and not in the other, through the registers' bit casts), and
-  `draw_buffers_indexed.random.max_implementation_draw_buffers.2` (1, once). Context losses on D3D11 that only a draw
-  reveals (HLSL that fails to compile for the draw's layout) still crash the machine (the entry on lost contexts).
+- **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, Chrome 158): GLES2 2 Fail,
+  GLES3 75, each in `tests/deqp/d3d11-expected.txt` (`deqp-run.ts EXPECT=` shows what's new), all ANGLE's own D3D11
+  expectations but `draw_buffers_indexed.random.max_implementation_draw_buffers.2` (1, once). Context losses on D3D11
+  that only a draw reveals (HLSL that fails to compile for the draw's layout) stop 3D (backlog "3D back after a lost
+  graphics context").
 - **Hardware-decoded frames cost the GPU's fences** (Chrome on the Windows VM, headed so it offers hardware decoders
   for H.264, VP9, AV1 and HEVC; headless offers none; 2026-11-25, `bench/gpu/chromium-video.ts`, the H.264 trailer in
   the guest's Chromium): decoded in hardware, a picture is out in 14–19 ms (software: ~211 ms), but the fences' mean

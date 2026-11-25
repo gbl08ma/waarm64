@@ -6,20 +6,14 @@
 # (docs/backlog.md "dEQP's failures left on ANGLE's D3D11"); `line` a line's interpolation (a QualityWarning, as on
 # Metal); `timing` a timing case's warning on a busy host. The pass lists stay SwiftShader's (tests/deqp/gles*.txt).
 
-# GLES2: {'CompatibilityWarning': 1, 'Fail': 8, 'Pass': 17024, 'QualityWarning': 2}
+# GLES2: {'CompatibilityWarning': 1, 'Fail': 8, 'Pass': 17024, 'QualityWarning': 2}; invariance's 6 pass since
 dEQP-GLES2.functional.flush_finish.flush CompatibilityWarning  # timing
 dEQP-GLES2.functional.polygon_offset.default_render_with_units Fail  # angle 42260109
 dEQP-GLES2.functional.polygon_offset.fixed16_render_with_units Fail  # angle 42260109
 dEQP-GLES2.functional.rasterization.interpolation.basic.lines QualityWarning  # line
 dEQP-GLES2.functional.rasterization.interpolation.projected.lines QualityWarning  # line
-dEQP-GLES2.functional.shaders.invariance.highp.common_subexpression_1 Fail  # angle 42261971
-dEQP-GLES2.functional.shaders.invariance.highp.common_subexpression_3 Fail  # ours
-dEQP-GLES2.functional.shaders.invariance.lowp.common_subexpression_1 Fail  # angle 42261971
-dEQP-GLES2.functional.shaders.invariance.lowp.common_subexpression_3 Fail  # ours
-dEQP-GLES2.functional.shaders.invariance.mediump.common_subexpression_1 Fail  # angle 42261971
-dEQP-GLES2.functional.shaders.invariance.mediump.common_subexpression_3 Fail  # ours
 
-# GLES3: {'Fail': 81, 'Pass': 44391, 'QualityWarning': 4}
+# GLES3: {'Fail': 81, 'Pass': 44391, 'QualityWarning': 4}; invariance's 6 pass since
 dEQP-GLES3.functional.draw_buffers_indexed.random.max_implementation_draw_buffers.2 Fail  # ours
 dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_dst_x Fail  # angle 42261975
 dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_dst_y Fail  # angle 42261975
@@ -41,12 +35,6 @@ dEQP-GLES3.functional.rasterization.fbo.rbo_singlesample.interpolation.lines Qua
 dEQP-GLES3.functional.rasterization.fbo.texture_2d.interpolation.lines QualityWarning  # line
 dEQP-GLES3.functional.rasterization.interpolation.basic.lines QualityWarning  # line
 dEQP-GLES3.functional.rasterization.interpolation.projected.lines QualityWarning  # line
-dEQP-GLES3.functional.shaders.invariance.highp.common_subexpression_1 Fail  # angle 42261137
-dEQP-GLES3.functional.shaders.invariance.highp.common_subexpression_3 Fail  # ours
-dEQP-GLES3.functional.shaders.invariance.lowp.common_subexpression_1 Fail  # angle 42261137
-dEQP-GLES3.functional.shaders.invariance.lowp.common_subexpression_3 Fail  # ours
-dEQP-GLES3.functional.shaders.invariance.mediump.common_subexpression_1 Fail  # angle 42261137
-dEQP-GLES3.functional.shaders.invariance.mediump.common_subexpression_3 Fail  # ours
 dEQP-GLES3.functional.shaders.texture_functions.texturegrad.sampler2darrayshadow_fragment Fail  # angle 40096369
 dEQP-GLES3.functional.shaders.texture_functions.texturegrad.sampler2darrayshadow_vertex Fail  # angle 40096369
 dEQP-GLES3.functional.shaders.texture_functions.texturegrad.sampler2dshadow_fragment Fail  # angle 40096369

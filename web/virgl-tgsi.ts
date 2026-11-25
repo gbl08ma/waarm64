@@ -558,7 +558,8 @@ const declareVarying = (v: Varying, dir: 'in' | 'out') =>
  * "error X4532: cannot map expression to vs_5_0 instruction set" in its log, and the first draw loses the context
  * (the GPU process exits: the machine crashed, dEQP-GLES3 texture_functions' sampler2dshadow_vertex cases). Such a
  * lookup is the implicit one, `texture` (level 0 in a vertex shader), which it compiles. FRC is x - floor(x) there
- * (`fract` beside the value it came from differed by the value's rounding: the FRC case).
+ * (`fract` beside the value it came from differed by the value's rounding: the FRC case), and what computes an
+ * invariant position is stored opaquely (`dst`).
  */
 export type Quirks = { d3d11?: boolean };
 
@@ -987,6 +988,10 @@ class Gen {
     if (ins.sat && ty === 'f') e = `clamp(${e}, 0.0, 1.0)`;
     const st = this.storage(d);
     e = cast(e, ty, st);
+    // On D3D11 what computes an invariant position (`_PRECISE`) is stored through `^ u_zero`, which fxc can't see
+    // through: it fused and reordered the same sums differently in two programs, and their gl_Position.w differed (3,943
+    // of 100,000 inputs; dEQP's invariance common_subexpression_3, whose depths then differed).
+    if (this.quirks.d3d11 && ins.precise && d.file === 'TEMP' && st === 'u') e = `(${e}) ^ uvec4(u_zero)`;
     const lhs = this.regName(d);
     const mask = d.mask & 15;
     if (mask === 0) return;
@@ -1075,8 +1080,17 @@ class Gen {
       // On D3D11 GLSL's own definition, x - floor(x): Mesa lowers floor(t) to t - fract(t), and ANGLE's HLSL computed
       // t fused (mad) for one use and not for the other, so t - fract(t) fell a hair below the integer and int() of it
       // took the one below (12% of int(floor(z * 1.5 + 2.0)) in a vertex shader; dEQP-GLES3 switch's dynamic cases).
+      // What computes an invariant output is stored opaquely there (`dst`), so fxc no longer folds t - (t - floor(t))
+      // back into floor(t), and an infinite t made NaN of it (dEQP-GLES3's precision.floor and .mod): its FRC is 0 at
+      // an infinity, as the other GPUs' fract is.
       case 'FRC':
-        return f(this.quirks.d3d11 ? `(${s(0)} - floor(${s(0)}))` : `fract(${s(0)})`);
+        if (!this.quirks.d3d11) return f(`fract(${s(0)})`);
+        if (!ins.precise) return f(`(${s(0)} - floor(${s(0)}))`);
+        this.helper(
+          'frcInf',
+          'vec4 frcInf(vec4 x) { return mix(x - floor(x), vec4(0.0), equal(floatBitsToUint(x) & uvec4(0x7fffffffu), uvec4(0x7f800000u))); }',
+        );
+        return f(`frcInf(${s(0)})`);
       case 'FLR':
         return f(`floor(${s(0)})`);
       case 'CEIL':

@@ -220,6 +220,26 @@ test('virgl tgsi: on D3D11 FRC is x - floor(x) (Mesa\'s floor, t - fract(t), fel
   assert.doesNotMatch(other.vs, /floor\(/, other.vs);
 });
 
+test('virgl tgsi: on D3D11 what computes an invariant position is stored through ^ u_zero (fxc fused two programs\' same sums differently: dEQP invariance common_subexpression_3)', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL TEMP[0..2]\nIMM[0] FLT32 {0.7000, 0.5000, 0.0000, 0.0000}\n  0: MUL_PRECISE TEMP[0], IN[0], IMM[0].xxxx\n  1: ADD_PRECISE TEMP[1], TEMP[0].yyzy, TEMP[0].xyxz\n  2: MUL TEMP[2].xy, IN[0].xyyy, IMM[0].yyyy\n  3: ADD_PRECISE OUT[0], IN[0], TEMP[1]\n  4: END');
+  const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END');
+  const key: ProgramKey = { ...KEY, attribs: ['f'] };
+  const d3d = generate(vs, fs, key, { d3d11: true });
+  assert.match(d3d.vs, /^invariant gl_Position;$/m, d3d.vs);
+  assert.match(d3d.vs, /^ {2}t0 = \(floatBitsToUint\([^;]*\)\) \^ uvec4\(u_zero\);$/m, d3d.vs);
+  assert.match(d3d.vs, /^ {2}t1 = \(floatBitsToUint\([^;]*\)\) \^ uvec4\(u_zero\);$/m, d3d.vs);
+  // Not what isn't marked, nor an output.
+  assert.doesNotMatch(d3d.vs, /t2\.xy = [^;]*u_zero/, d3d.vs);
+  assert.doesNotMatch(d3d.vs, /gl_Position = [^;]*u_zero/, d3d.vs);
+  assert.match(d3d.vs, /^uniform uint u_zero;$/m);
+  const other = generate(vs, fs, key);
+  assert.doesNotMatch(other.vs, /\^ uvec4\(u_zero\)/, other.vs);
+  // A precise FRC there is 0 at an infinity (Mesa's floor, t - fract(t), no longer folded back: dEQP-GLES3 precision.floor).
+  const frc = generate(parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL TEMP[0..1]\n  0: FRC_PRECISE TEMP[0], IN[0]\n  1: ADD_PRECISE TEMP[1], IN[0], -TEMP[0]\n  2: MOV OUT[0], TEMP[1]\n  3: END'), fs, key, { d3d11: true });
+  assert.match(frc.vs, /^vec4 frcInf\(vec4 x\) \{ return mix\(x - floor\(x\), vec4\(0\.0\), equal\(floatBitsToUint\(x\) & uvec4\(0x7fffffffu\), uvec4\(0x7f800000u\)\)\); \}$/m, frc.vs);
+  assert.match(frc.vs, /t0 = \(floatBitsToUint\(frcInf\(a_0\)\)\) \^ uvec4\(u_zero\);/, frc.vs);
+});
+
 test('virgl tgsi: a derivative goes into a vec4 of its own before it is swizzled (ANGLE\'s D3D11 made one in a loop a scalar: dEQP-GLES3 derivate uniform_loop lost the context)', () => {
   const fs = parseTgsi('FRAG\nDCL IN[0], GENERIC[0], PERSPECTIVE\nDCL OUT[0], COLOR\nDCL TEMP[0]\n  0: DDX TEMP[0].xy, IN[0]\n  1: DDY_FINE TEMP[0].zw, IN[0].yyxx\n  2: MOV OUT[0], TEMP[0]\n  3: END');
   const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
