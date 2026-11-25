@@ -1,0 +1,107 @@
+# dEQP's GLES cases that don't pass on ANGLE's D3D11 backend (Chrome on Windows, NVIDIA RTX 3070; 2026-11-25,
+# Chrome 158), `<case> <status>` a line: bench/gpu/deqp-run.ts EXPECT=tests/deqp/d3d11-expected.txt splits a run's
+# results into these and what's new (results.unexpected), and lists those that pass now (results.nowPass). The
+# reasons (docs/graphics.md "Findings"): `angle <bug>` a case ANGLE's own dEQP expectations list as failing on D3D11
+# (src/tests/deqp_support/deqp_gles*_test_expectations.txt, those of WIN, D3D11 and NVIDIA); `ours` not explained yet
+# (docs/backlog.md "dEQP's failures left on ANGLE's D3D11"); `line` a line's interpolation (a QualityWarning, as on
+# Metal); `timing` a timing case's warning on a busy host. The pass lists stay SwiftShader's (tests/deqp/gles*.txt).
+
+# GLES2: {'CompatibilityWarning': 1, 'Fail': 8, 'Pass': 17024, 'QualityWarning': 2}
+dEQP-GLES2.functional.flush_finish.flush CompatibilityWarning  # timing
+dEQP-GLES2.functional.polygon_offset.default_render_with_units Fail  # angle 42260109
+dEQP-GLES2.functional.polygon_offset.fixed16_render_with_units Fail  # angle 42260109
+dEQP-GLES2.functional.rasterization.interpolation.basic.lines QualityWarning  # line
+dEQP-GLES2.functional.rasterization.interpolation.projected.lines QualityWarning  # line
+dEQP-GLES2.functional.shaders.invariance.highp.common_subexpression_1 Fail  # angle 42261971
+dEQP-GLES2.functional.shaders.invariance.highp.common_subexpression_3 Fail  # ours
+dEQP-GLES2.functional.shaders.invariance.lowp.common_subexpression_1 Fail  # angle 42261971
+dEQP-GLES2.functional.shaders.invariance.lowp.common_subexpression_3 Fail  # ours
+dEQP-GLES2.functional.shaders.invariance.mediump.common_subexpression_1 Fail  # angle 42261971
+dEQP-GLES2.functional.shaders.invariance.mediump.common_subexpression_3 Fail  # ours
+
+# GLES3: {'Fail': 81, 'Pass': 44391, 'QualityWarning': 4}
+dEQP-GLES3.functional.draw_buffers_indexed.random.max_implementation_draw_buffers.2 Fail  # ours
+dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_dst_x Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_dst_y Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_src_x Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_src_y Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_linear Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_reverse_dst_x_linear Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_reverse_dst_y_linear Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_reverse_src_dst_x_linear Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_reverse_src_dst_y_linear Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_reverse_src_x_linear Fail  # angle 42261975
+dEQP-GLES3.functional.fbo.blit.rect.out_of_bounds_reverse_src_y_linear Fail  # angle 42261975
+dEQP-GLES3.functional.polygon_offset.default_render_with_units Fail  # angle 42261137
+dEQP-GLES3.functional.polygon_offset.fixed16_render_with_units Fail  # angle 42260109
+dEQP-GLES3.functional.polygon_offset.fixed24_render_with_units Fail  # angle 42260109
+dEQP-GLES3.functional.rasterization.fbo.rbo_multisample_max.interpolation.lines Fail  # angle 42267037
+dEQP-GLES3.functional.rasterization.fbo.rbo_multisample_max.primitives.lines Fail  # angle 42267037
+dEQP-GLES3.functional.rasterization.fbo.rbo_singlesample.interpolation.lines QualityWarning  # line
+dEQP-GLES3.functional.rasterization.fbo.texture_2d.interpolation.lines QualityWarning  # line
+dEQP-GLES3.functional.rasterization.interpolation.basic.lines QualityWarning  # line
+dEQP-GLES3.functional.rasterization.interpolation.projected.lines QualityWarning  # line
+dEQP-GLES3.functional.shaders.invariance.highp.common_subexpression_1 Fail  # angle 42261137
+dEQP-GLES3.functional.shaders.invariance.highp.common_subexpression_3 Fail  # ours
+dEQP-GLES3.functional.shaders.invariance.lowp.common_subexpression_1 Fail  # angle 42261137
+dEQP-GLES3.functional.shaders.invariance.lowp.common_subexpression_3 Fail  # ours
+dEQP-GLES3.functional.shaders.invariance.mediump.common_subexpression_1 Fail  # angle 42261137
+dEQP-GLES3.functional.shaders.invariance.mediump.common_subexpression_3 Fail  # ours
+dEQP-GLES3.functional.shaders.texture_functions.texturegrad.sampler2darrayshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturegrad.sampler2darrayshadow_vertex Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturegrad.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturegrad.sampler2dshadow_vertex Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturegradoffset.sampler2darrayshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturegradoffset.sampler2darrayshadow_vertex Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturegradoffset.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturegradoffset.sampler2dshadow_vertex Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturelod.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturelod.sampler2dshadow_vertex Fail  # angle 40096368
+dEQP-GLES3.functional.shaders.texture_functions.texturelodoffset.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.texturelodoffset.sampler2dshadow_vertex Fail  # angle 40096368
+dEQP-GLES3.functional.shaders.texture_functions.textureprojgrad.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.textureprojgrad.sampler2dshadow_vertex Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.textureprojgradoffset.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.textureprojgradoffset.sampler2dshadow_vertex Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.textureprojlod.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.textureprojlod.sampler2dshadow_vertex Fail  # angle 40096368
+dEQP-GLES3.functional.shaders.texture_functions.textureprojlodoffset.sampler2dshadow_fragment Fail  # angle 40096369
+dEQP-GLES3.functional.shaders.texture_functions.textureprojlodoffset.sampler2dshadow_vertex Fail  # angle 40096368
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isampler2d_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isampler2d_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isampler2darray_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isampler2darray_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isampler3d_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isampler3d_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isamplercube_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.isamplercube_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2d_fixed_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2d_fixed_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2d_float_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2d_float_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2darray_fixed_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2darray_fixed_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2darray_float_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2darray_float_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2darrayshadow_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2darrayshadow_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2dshadow_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler2dshadow_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler3d_fixed_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler3d_fixed_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler3d_float_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.sampler3d_float_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.samplercube_fixed_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.samplercube_fixed_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.samplercube_float_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.samplercube_float_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.samplercubeshadow_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.samplercubeshadow_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler2d_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler2d_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler2darray_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler2darray_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler3d_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler3d_vertex Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usamplercube_fragment Fail  # angle 40644748
+dEQP-GLES3.functional.shaders.texture_functions.texturesize.usamplercube_vertex Fail  # angle 40644748

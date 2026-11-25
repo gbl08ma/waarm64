@@ -363,12 +363,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in their own browser: it boots the dEQP guest, runs the lists and downloads a results file with the renderer string
   and the limits; and a tool that compares result files across platforms (as G5 compared Metal with SwiftShader).
   Until then, `bench/gpu/sway-mac.sh`'s route (`SCRIPT=deqp-run.ts`) is the way for a host we can reach.
-- **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, results in the session's
-  `bench/results/local/win/deqp-d3d11-*`): GLES2 8 Fail, GLES3 120 after the loops' fix, most of them ANGLE's own
-  D3D11 expectations (texturesize, shadow lookups with a level, gradient or offset, invariance, polygon_offset's
-  units, fbo.blit's out_of_bounds, multisample lines); switch's dynamic cases and atan2 were ours, fixed since. Not
-  proven ANGLE's: invariance's common_subexpression_3. Then a Windows/D3D11
-  expectations file beside tests/deqp/ so a rerun shows only what's new. Context losses on D3D11 that only a draw
+- **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, Chrome 158): GLES2 8 Fail,
+  GLES3 81, each in `tests/deqp/d3d11-expected.txt` (`deqp-run.ts EXPECT=` shows what's new), all but two kinds ANGLE's
+  own D3D11 expectations. Ours to look at: invariance's `common_subexpression_3` (3 a list, GLES2 and GLES3: "variance
+  detected" in the Z test, the depths of the two programs differ; ANGLE passes it natively; the suspect is FRC's kind,
+  a multiply fused in one program and not in the other, through the registers' bit casts), and
+  `draw_buffers_indexed.random.max_implementation_draw_buffers.2` (1, once). Context losses on D3D11 that only a draw
   reveals (HLSL that fails to compile for the draw's layout) still crash the machine (the entry on lost contexts).
 - **Hardware-decoded frames cost the GPU's fences** (Chrome on the Windows VM, headed so it offers hardware decoders
   for H.264, VP9, AV1 and HEVC; headless offers none; 2026-11-25, `bench/gpu/chromium-video.ts`, the H.264 trailer in

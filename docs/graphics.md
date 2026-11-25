@@ -1249,12 +1249,15 @@ Worth not re-discovering:
   context loss there is Chromium's GPU process exiting (`exit_code=34` in Chrome's log with `--enable-logging=stderr`,
   after ANGLE's "Internal D3D11 error … Error compiling dynamic vertex/pixel executable"): the machine crashes. ANGLE
   reports fxc's errors for a linked program only in its log; `WEBGL_debug_shaders` gives the HLSL. What still fails
-  after the fixes (2026-11-25: GLES2 8 of 17,035, GLES3 154 of 44,476, against 204 and a crash before) is ANGLE's
+  after the fixes (2026-11-25: GLES2 8 Fail of 17,035, GLES3 81 of 44,476, against 204 and a crash before; each in
+  `tests/deqp/d3d11-expected.txt`, which `deqp-run.ts EXPECT=` checks a rerun against) is ANGLE's
   D3D11, most of it in ANGLE's own dEQP expectations for D3D11: invariance's common_subexpression, polygon_offset's
   units, texture_functions' texturesize and shadow lookups at a level or gradient, fbo.blit.rect's out_of_bounds,
   rbo_multisample_max lines; derivatives in loops (ANGLE writes a derivative in a loop it can't unroll as 0, and
   Mesa's TGSI keeps no loop count constant, so dEQP's static_loop cases are such loops too). Ours since and fixed:
   the derivate loops (34), switch's dynamic cases (32, FRC above) and mediump `atan2` (8, a recovered program refused).
+  Not ANGLE's and not explained: invariance's `common_subexpression_3` (3 a list: the Z test's depths differ between
+  the two programs) and one `draw_buffers_indexed.random` case.
 - Headed and headless Chromium on the Mac give the same frame rates (no headless throttling).
 - **Headless WebGPU in the dev VM** needs `--enable-unsafe-webgpu` and, to present from a worker's `OffscreenCanvas`,
   `--enable-features=Vulkan --use-angle=swiftshader --use-gl=angle`; WebGPU's `writeBuffer`/`writeTexture` and WebGL's

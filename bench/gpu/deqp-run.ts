@@ -11,6 +11,7 @@
 //   node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 [outdir]
 // STRIDE=<n> (default 50), OFFSET=<k> (0 to n-1, default 0), PREFIX=<groups, comma-separated: the list's cases under them>,
 // CASES=<file of case names, `*` patterns allowed, `#` lines comments>,
+// EXPECT=<file of a platform's expected failures, `<case or pattern> <status>` a line> (results.unexpected, nowPass),
 // DETAIL=<n> (dEQP's messages for the first n cases that didn't pass; DETAIL_MATCH=<regex>: of those it names;
 // DETAIL_NOTSUPPORTED=1: NotSupported ones too, their reasons), VIRGL_GPU=virgl,debug (the renderer's trace,
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
@@ -227,6 +228,19 @@ const statuses = gunzipSync(Buffer.from((await runLines('gzip -9c /tmp/deqp.res 
   .split('\n').filter(Boolean).map((l) => l.split(' '));
 results.notPassed = statuses.filter(([, st]) => st !== 'Pass').map(([name, st]) => `${name} ${st}`);
 if (process.env.PASSED) results.passed = statuses.filter(([, st]) => st === 'Pass').map(([name]) => name);
+// EXPECT=<file>: a platform's expected failures (tests/deqp/d3d11-expected.txt): `<case, * patterns> <status>` a line,
+// `#` comments. results.unexpected is what didn't pass and isn't there (or not with that status), results.nowPass the
+// expected ones that passed: a rerun on that platform shows only what's new.
+if (process.env.EXPECT) {
+  const want = readFileSync(process.env.EXPECT, 'utf8').split('\n').map((l) => l.replace(/#.*/, '').trim()).filter(Boolean).map((l) => {
+    const [pat, st] = l.split(/\s+/);
+    return { re: new RegExp(`^${pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`), st };
+  });
+  const expected = (name: string, st: string) => want.some((w) => w.re.test(name) && w.st === st);
+  results.unexpected = statuses.filter(([name, st]) => st !== 'Pass' && !expected(name, st)).map(([name, st]) => `${name} ${st}`);
+  results.nowPass = statuses.filter(([name, st]) => st === 'Pass' && want.some((w) => w.re.test(name))).map(([name]) => name);
+  log('expected', JSON.stringify({ unexpected: (results.unexpected as string[]).length, nowPass: (results.nowPass as string[]).length }));
+}
 results.slowest = await runLines('sort -k3 -n -r /tmp/deqp.res | head -10');
 results.last = await run('tail -3 /tmp/deqp.res');
 // deqp's own lines besides the statuses (an assertion's or a crash's message, prefixed with the case running), the last 40.
