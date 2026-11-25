@@ -372,13 +372,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   sign transfer through AND/OR bits is the suspect), invariance's common_subexpression_3. Then a Windows/D3D11
   expectations file beside tests/deqp/ so a rerun shows only what's new. Context losses on D3D11 that only a draw
   reveals (HLSL that fails to compile for the draw's layout) still crash the machine (the entry on lost contexts).
-- **The H.264 damaged-chunk test writes 5 pictures on Windows** (tests/virgl-browser.test.ts, against Chrome on the
-  Windows VM, 2026-11-25; it expects at least 8): the decode there is software, as on the dev VM, so the cause isn't
-  the hardware decoder holding frames. Not traced.
-- **The desktop image's Chromium doesn't start** (2026-11-25, `target/arch/desktop.qcow2` as built in the dev VM:
-  Chromium 156 fails on "libsimdutf.so.36: cannot open shared object file", a partial upgrade in the image):
-  `bench/gpu/chromium-video.ts` can't run on it. Rebuild the image (`images/arch/desktop.sh`) and check whether the
-  deployed desktop image has it too.
+- **The published desktop demo image's Chromium doesn't start** ("libsimdutf.so.36: cannot open shared object file";
+  images.md "The `simdutf36-compat` package"): an image rebuilt since starts it (2026-11-25); publishing one is the
+  user's call.
 - **A KDE desktop's session on 3D** (graphics.md "Queries", "Feedback loops"): a user's KDE Plasma session (2026-10-24)
   found occlusion queries holding every fence and draws refused as feedback loops, both fixed. Run KDE Plasma on the
   desktop guest to see what else it asks for, and measure what the feedback copies cost there (a copy at every such

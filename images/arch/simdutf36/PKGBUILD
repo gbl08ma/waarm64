@@ -1,0 +1,28 @@
+# simdutf 9.2.2's library alone (libsimdutf.so.36), beside the mirror's newer simdutf: for the port's Chromium while it
+# is still linked against it (images/arch/simdutf36.sh says when it is installed). Arch's simdutf 9.2.2-1 PKGBUILD,
+# built the same way, packaging only the versioned library.
+pkgname=simdutf36-compat
+pkgver=9.2.2
+pkgrel=1
+pkgdesc="simdutf 9.2.2's libsimdutf.so.36 for programs not yet rebuilt against the current simdutf"
+arch=('aarch64')
+url="https://simdutf.github.io/simdutf/"
+license=('Apache-2.0 OR MIT')
+depends=('glibc' 'libgcc' 'libstdc++')
+makedepends=('cmake' 'git')
+options=('!debug')
+source=("git+https://github.com/simdutf/simdutf.git#tag=v${pkgver}")
+sha256sums=('042df50de88d7a50ca27fcd4f7029fe3382f1dac58de08922a286bce4aeb3c89')
+
+build() {
+	cmake -B build -S simdutf -D CMAKE_BUILD_TYPE=None -D CMAKE_INSTALL_PREFIX=/usr -D BUILD_SHARED_LIBS=ON \
+		-D SIMDUTF_CXX_STANDARD=20 -D SIMDUTF_TESTS=OFF -D SIMDUTF_TOOLS=OFF -D SIMDUTF_BENCHMARKS=OFF
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$srcdir/root" cmake --install build
+	install -d "$pkgdir/usr/lib"
+	cp -a "$srcdir"/root/usr/lib/libsimdutf.so.36* "$pkgdir/usr/lib/"
+	install -Dm644 simdutf/LICENSE-MIT -t "$pkgdir/usr/share/licenses/$pkgname/"
+}

@@ -2350,6 +2350,17 @@
           }
         },
         {
+          "id": "simdutf36-compat",
+          "name": "simdutf 9.2.2 (desktop guest)",
+          "url": "https://github.com/simdutf/simdutf",
+          "md": {
+            "workload": "The desktop guest's `simdutf36-compat` package (`images/arch/simdutf36.sh`): `libsimdutf.so.36` for the port's Chromium while it still links it",
+            "source": "simdutf tag `v9.2.2` (Arch's PKGBUILD's checksum), built unmodified in the Arch container",
+            "license": "Apache-2.0 OR MIT (its `LICENSE-MIT`, `LICENSE-APACHE`); the package keeps `LICENSE-MIT`",
+            "use": "Installed into the guest image `target/arch/desktop.qcow2` while Chromium needs it, as the port's own simdutf would be"
+          }
+        },
+        {
           "id": "librequake",
           "name": "LibreQuake",
           "url": "https://github.com/lavenderdotpet/LibreQuake",

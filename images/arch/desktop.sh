@@ -36,12 +36,14 @@ PACKAGES="sway foot fuzzel jq firefox htop ttf-dejavu pipewire pipewire-pulse pi
 echo "==== waarm64-va"
 rm -f "$W"/pkg/waarm64-va-*
 "$ROOT/images/arch/waarm64-va.sh"
+echo "==== simdutf36-compat"
+"$ROOT/images/arch/simdutf36.sh"
 echo "==== media"
 "$ROOT/images/arch/media.sh" "$W/media"
 
 FILES=$W/desktop-files
 rm -rf "$FILES"; mkdir -p "$FILES/root/pkg" "$FILES/home/arch/media"
-cp "$W"/pkg/waarm64-va-*.pkg.tar.* "$FILES/root/pkg/"
+cp "$W"/pkg/{waarm64-va,simdutf36-compat}-*.pkg.tar.* "$FILES/root/pkg/"
 # sway as a conventional desktop: its drop-in, the taskbar's script, the menu's settings (images/arch/desktop/).
 cp -a "$ROOT/images/arch/desktop/." "$FILES/"
 cp "$W"/media/{avsync.webm,sintel.webm,sintel-silent.webm,sintel_trailer-480p.mp4,avsync.html} "$FILES/home/arch/media/"

@@ -6,6 +6,15 @@ find /usr/lib/modules/$K -name 'virtio_snd.ko*' | grep -q . || { echo "no virtio
 # Video: waarm64's VA-API driver (Mesa's virgl with NV12 surfaces only; LIBVA_DRIVER_NAME=waarm64 for every session).
 pacman -U --noconfirm --noprogressbar /root/pkg/waarm64-va-*.pkg.tar.* >/dev/null
 pacman -Q waarm64-va
+# Chromium: the port's may lag a soname bump of a library it links (images/arch/simdutf36.sh); then the old library
+# goes in beside the new one. Chromium must find every library, or the image isn't made.
+if ldd /usr/lib/chromium/chromium | grep -q 'libsimdutf.so.36 => not found'; then
+  pacman -U --noconfirm --noprogressbar /root/pkg/simdutf36-compat-*.pkg.tar.* >/dev/null
+  pacman -Q simdutf36-compat
+else
+  echo "desktop: Chromium no longer needs simdutf36-compat (images/arch/simdutf36.sh can go)"
+fi
+! ldd /usr/lib/chromium/chromium | grep 'not found' || { echo "Chromium misses a library" >&2; exit 1; }
 rm -rf /root/pkg
 # Vulkan: Venus presents on the calling thread (VN_PERF=no_async_present; VK3 L4e, vk/README.md "The guest's Mesa"):
 # Mesa's async present (26.2, and main as of 2026-10-27) hands a present's error to the next present, of any swapchain,

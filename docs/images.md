@@ -141,6 +141,11 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   sized by what their planes span (a Vulkan importer checks; vk/README.md "Imports"), `LIBVA_DRIVER_NAME=waarm64` for every session
   ([graphics.md](graphics.md) "Video"). `options=('!debug')`: Arch's `makepkg.conf` makes debug packages by default.
   Result `target/arch/pkg/waarm64-va-<ver>-aarch64.pkg.tar.zst`; not published anywhere.
+- **The `simdutf36-compat` package** (`images/arch/simdutf36/`, `images/arch/simdutf36.sh`, as `waarm64-va.sh`; ~1
+  min): simdutf 9.2.2's `libsimdutf.so.36` alone, beside the mirror's simdutf. The port moved simdutf to 9.3
+  (`.so.37`) on 2026-11-24 before rebuilding its Chromium (156, linked against `.so.36`), whose start then failed on the
+  missing library; `desktop-setup.sh` installs the package only while Chromium needs it (it says when it no longer
+  does: then remove both), and refuses to make the image if Chromium misses any library (`ldd`).
 - **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox, Chromium (since 2026-10-22, graphics.md "The call queue"),
   htop, nano, lsof, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`),
   gtk4-demos (`gtk4-demo`, for `bench/gpu/gtk4-load.ts`), mesa-utils (`eglinfo`, `glxgears`), Mesa's Venus driver
