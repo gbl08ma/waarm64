@@ -507,6 +507,16 @@ image_dim(struct ctx *c, enum glsl_sampler_dim dim, bool array)
    return tex_dim(c, dim, array);
 }
 
+/* A barrier of the subgroup's scope (subgroupBarrier, subgroupMemoryBarrier*) where the shader has WGSL's subgroups (compute
+ * and fragment shaders on a device with them); of one invocation, it orders nothing. */
+static bool
+subgroup_barrier(const struct ctx *c, nir_intrinsic_instr *intr)
+{
+   const mesa_scope exec = nir_intrinsic_execution_scope(intr);
+   return c->subgroups && (c->nir->info.stage == MESA_SHADER_COMPUTE || c->nir->info.stage == MESA_SHADER_FRAGMENT) &&
+          (exec == SCOPE_SUBGROUP || (exec == SCOPE_NONE && nir_intrinsic_memory_scope(intr) == SCOPE_SUBGROUP));
+}
+
 /* An array's atomics compare signed (imin, imax: atomic<i32>) or unsigned (umin, umax: atomic<u32>); WGSL's atomics
  * have one type, so an array that needs both is of atomic<i32>, its umin and umax compare-exchange loops (emit_atomic). */
 static void
@@ -950,6 +960,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       c->info->immediate_size = MAX2(c->info->immediate_size, align(end, 16));
       break;
    }
+   case nir_intrinsic_barrier:
+      if (subgroup_barrier(c, intr))
+         c->uses_subgroup_ops = true;
+      break;
    default:
       break;
    }
@@ -3079,6 +3093,11 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          if (modes & nir_var_image)
             line(c, "textureBarrier();");
          line(c, "workgroupBarrier();");
+      } else if (subgroup_barrier(c, intr)) {
+         /* WGSL has no subgroup barrier: a subgroup operation in its place keeps the subgroup's reads after it after its
+          * writes before it (D3D12 on NVIDIA read a word of shared memory before another invocation's write to it without one:
+          * dEQP-VK's subgroups.basic.compute.subgroupmemorybarriershared). */
+         line(c, "_ = subgroupBallot(true);");
       }
       return;
    }

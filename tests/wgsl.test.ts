@@ -533,6 +533,37 @@ test('anchored, a ballot, an election and a read of the first invocation take an
   }
 });
 
+test('a subgroup barrier is a subgroup operation where the device has subgroups, and orders the subgroup\'s shared writes before its reads (WIN)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
+  try {
+    const translate = await translator();
+    const stage = (device: Device) => {
+      const r = glslStage(translate, tmp, 'tests/venus/sg-barrier.comp', device);
+      assert.equal(r.rc, 0, r.text);
+      return r.text;
+    };
+    // WGSL has no subgroup barrier: without a subgroup operation between the elected write and the reads, D3D12 on
+    // NVIDIA read the word before the write (dEQP-VK's subgroups.basic.compute.subgroupmemorybarriershared).
+    const real = stage({ features: WGSL.SUBGROUPS, subgroupSize: 32 });
+    assert.match(real, /subgroupElect\(\);\n\s*if \(t\d+\) \{\n[^}]*shm\[[^\n]*\n\s*\}\n\s*_ = subgroupBallot\(true\);\n[^\n]*\n?[^\n]*= shm\[/);
+    assert.doesNotMatch(real, /workgroupBarrier/);
+    // Of one invocation: nothing to order, and no WGSL subgroups.
+    assert.doesNotMatch(stage({}), /enable subgroups|subgroupBallot/);
+    // Run: every invocation reads its subgroup's word (on D3D12 on NVIDIA, 31 of each 32 didn't without the operation).
+    const run = (size: number) => runCompute(stage({ features: WGSL.SUBGROUPS, subgroupSize: size }), [{ binding: 0, size: 64 * 2 * 4 }], ['subgroups']);
+    let res = await run(32);
+    if (!res) return t.skip('SKIPPED: the adapter has no subgroups');
+    if (res.min !== res.max) return t.skip(`SKIPPED: the adapter's subgroups vary in size (${res.min}-${res.max})`);
+    if (res.min !== 32) res = (await run(res.min))!;
+    assert.deepEqual(res.errors, []);
+    const o = new Uint32Array(res.out[0].buffer), bad: string[] = [];
+    for (let n = 0; n < 64; n++) if (o[n * 2] !== 1000 + o[n * 2 + 1]) bad.push(`invocation ${n}: ${o[n * 2]}, not ${1000 + o[n * 2 + 1]}`);
+    assert.deepEqual(bad.slice(0, 8), [], `subgroups of ${res.min}: of ${bad.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('values are lets where their uses allow, vars where they leave their scope or a loop carries them (GD G2)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
