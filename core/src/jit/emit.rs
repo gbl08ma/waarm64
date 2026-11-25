@@ -1972,8 +1972,9 @@ pub fn transfer(c: &mut Func, x: Xfer, len: u32, ty: u32, to: To, inner: u32) {
 }
 
 /// Where a function's entry number sits in its [`DEPTH`] parameter: a
-/// region entered at a member other than its head (a call's continuation,
-/// docs/jit.md "Calls") gets it there, and clears it.
+/// region entered at a member other than its head (any of its entries:
+/// `block::Region::entries`, docs/jit.md "Calls") gets it there, and clears
+/// it.
 pub const ENTRY_BIT: u32 = 16;
 
 /// A `ret` at a depth above 0 (a host call's, [`DEPTH`]): returns the

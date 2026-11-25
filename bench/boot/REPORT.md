@@ -9039,3 +9039,93 @@ pairs), six pages sessions (22 min), the gates paired (9 and 6 pairs); the micro
 arm); the static counts (5 min). CI: `ci.sh` (726 s) and `ci-jit.sh` (274 s); `tests/steps.txt` unmoved. No export or
 state layout changed: the ABI stays 74. Also fixed on the way: `bench/mac-packages.sh` sends `tools/remote-chromium.ts`
 to the Mac, which `bench/gpu/guest-session.ts` imports since 157831d4 (every Mac pages session failed at its start).
+
+## PERF loop 75: loop 74's review, probes a region's earlier block made, Liftoff's fill at 64 blocks (2026-11-25)
+
+The out-of-context review of loop 74's entries (`review/jit-entries`, ff930add: static, nothing run), then queue rows
+12 and 19, which both start with a count on the same workloads and shared one diagnostic core. **The review's one
+defect is fixed (a caller of an entry the map had no room for outlived that entry's region), its performance claim
+is counted at ≤ 0.2% of Firefox's pages session and recorded, and both rows close as findings under the floor:
+probes that an earlier probe of the region already made are 0.4-0.7% of the probes with today's entries, and X
+registers sharing locals would save ~0.25% of the boot at best.** Nothing that changes compiled code was kept. Data:
+`bench/boot/results/perf75/` (README).
+
+**The review's findings.**
+1. *A region that calls an entry `Cache::entry` couldn't file isn't dropped with that entry's region* (the latent
+   lost invalidation). Confirmed: the filing half of `Cache::install` is `Cache::file` now, callable natively, and
+   `a_caller_of_an_entry_not_filed_goes_with_its_region` (`jit/mod.rs`) fills the map to its bound
+   (`at_the_bound`, factored out of `an_entry_filed_by_an_install_keeps_the_bound`), files R (head and member m in
+   page P) and R2 (page Q, linking m), and invalidates P. Against loop 74's filing it failed twice: no checker words
+   for m (JIT-check's `jit_check(m)` would index a missing span and panic), and with that assertion off, "the region
+   calling the entry stayed compiled". Fixed: the checker's words go in for every entry, filed or not, and an entry
+   not filed hands its linkers to its region's head (after the whole module is filed, so a later region's link
+   counts too; a prune would have dropped them, keyed by a key not in the map). Reachable only in the forced and
+   JIT-check modes with the map at its bound, as the reviewer said; no guest-visible change.
+2. *A loop head taken as a member is frozen as an entry and never gets a loop region.* Counted, not changed. The
+   diagnostic core counts every backward transfer that lands at an entry (a chain, a by-VA link or a jump-cache hit
+   whose word has an entry number), whatever its cause: 1.3 M in Alpine's boot, 10.4 M in its userspace run, 38.6 M
+   in `smp_user_jit_4`'s guest and 40.9 M in the pages session, against 56 M, 141 M, 409 M and 1,310 M loop
+   back-edges (and 8.5 M, 45 M, 162 M and 352 M ways in at an entry in all). At ~10 ns each more than a `br` that is
+   ≤ 0.2% of the session's ~230 busy vCPU-seconds. Loop 74's own two cores bound what that loop moved more tightly:
+   their back-edges per step differed by +0.02%, −0.14%, −0.9% and −0.44% (≤ 6 M laps of the session, ~0.03%), and
+   the session measured 1.5% less CPU with the cost inside it. docs/jit.md "Entries" records it with the fix's shape
+   (ask `plan` about loops across pages, or count an entry's ways in) should it ever count.
+3. *Comments and docs the change made wrong:* `Cache::plan`'s doc, `Region`'s, `ENTRY_SHIFT`'s, `ENTRY_BIT`'s,
+   `Cache::entry`'s, docs/jit.md's line on what decodes a helper's word again (only `fast` since loop 74) and its
+   sentence on aliased entries (what is fixed at formation, and what the mapping argument then gives) corrected.
+
+Of the three it found suspicious: **the checker at an entry hashed the whole region**, so a head rewritten without an
+IC failed a way in that never runs it (a test mode's false positive). Changed: an entry's words are its member's and
+the later members' (an entry is in a region without a `loop`, so nothing before it runs), which
+`the_checker_at_an_entry_reads_what_it_can_run` covers (planted back to the whole region: the entries' checks fail).
+**A followed callee entered from outside** is correct, as the reviewer found (it costs a frame when X30 matches).
+**An entry overwriting a compiled key's word** happens only where the forced and JIT-check modes take compiled
+blocks as members; conservative, now said in docs/jit.md "Compile policy".
+
+**Row 12, probes a region's earlier block already made** (and the translation memo again). The core runs a dataflow
+over each region's edges (each member's edges in, a host call's continuation, a predicted return; a loop's head
+knows nothing) and walks each member's instructions: a probe whose base register is unchanged or moved by an
+immediate (SP by multiples of 16, `mov` and `add` copying a base) since probes on every path in covered a range
+holding its own, in the write array if it stores, is counted, weighted by the member's runs. Three variants: today's
+entries (an entry's way in knows nothing), entries whose way in probed again, and that plus SP and X19-X29 keeping
+their ranges across host calls (which would need a check of the register: the memo's shape).
+
+| | Alpine's boot | its userspace run | `smp_user_jit_4` | Firefox's pages session (Mac) |
+|---|---|---|---|---|
+| immediate probes run (a step) | 404 M (0.152) | 1,966 M (0.188) | 6,473 M (0.195) | 21,759 M (0.210) |
+| made earlier in the region, today's entries | 0.64% (SP 0.29) | 0.59% (SP 0.37) | 0.43% (SP 0.28) | 0.68% (SP 0.22) |
+| entries probing again | 4.74% | 3.84% | 3.26% | 4.83% |
+| and SP, X19-X29 across host calls | 11.81% | 9.11% | 6.98% | 11.71% |
+| made earlier in the same block, no group | 1.33% | 1.10% | 1.12% | 0.70% |
+| static: today's / probing again / across calls | 1.1 / 6.0 / 17.6% | 1.2 / 5.7 / 16.9% | 1.2 / 5.4 / 16.0% | 1.3 / 5.0 / 14.9% |
+
+X29 bases are ≤ 0.05% everywhere; loop regions hold 12-30% of the probes but few dominated ones (the head knows
+nothing at each lap). Probes are ~10% of the wasm, so the static shares are ~0.1%, ~0.5% and ~1.5% of it, and none
+of it is a region or a module (loop 74's lesson: nothing compiled goes away but probes). At a generous 0.5 ns a probe
+(the groups took ~26 points of probes and moved no time) the three are ≤ 0.03%, ≤ 0.23% and ≤ 0.55% of the session,
+the last before its checks: **closed, no bound built** (the brief built the unsound bound only past ~1%). The
+translation memo's probes are the same 0.21 a step, and a hit would save part of a TLB hit at best (it lost by
+2-13% in the VM at M8): under the floor too. **Parallel SMP**: nothing changes a vCPU's TLB while its compiled code
+runs (another vCPU's TLBI is applied by this vCPU's own run loop, `drain`, at a chunk's end; a failed poll leaves the
+function), so a poll between two probes changes nothing they share.
+
+**Row 19, Liftoff's zero-fill and X registers sharing locals at 64 blocks.** Loop 27's model ported into the same
+core (each X register's local dropped after its last touch, non-overlapping ones sharing; looped regions keep
+theirs), counted at every call of a function that fills (more than 12 locals, or one not i32/i64; two turns a local):
+
+| | Alpine's boot | its userspace run | `smp_user_jit_4` | pages session |
+|---|---|---|---|---|
+| calls of filling functions, per 1000 steps (loop 27) | 26.3 (35.5) | 37.0 (41.1) | 38.4 | 29.8 |
+| turns a call (loop 27) | 44.9 (43.4) | 42.1 (42.6) | 40.4 | 42.9 |
+| turns a step (loop 27) | 1.18 (1.54) | 1.56 (1.75) | 1.55 | 1.28 |
+| fewer turns with sharing (loop 27, region model) | 11.6% (14.9%) | 11.0% (13.5%) | 14.6% | 9.8% |
+
+The 64-block functions are entered less often and fill about as many turns a call, so the fill runs 24% fewer turns a
+step in the boot and 11% fewer in userspace than at loop 27; with loop 26's measured cost (2.8% and 1.7% then) the
+fill is ~2.1% and ~1.5% now and sharing would save ~0.25% and ~0.17% at best, before the costs loop 27's model leaves
+out: **closed**.
+
+The runs: the gates' counts twice in Node (35 s each; the second core adds finding 2's counters, the shared counts
+are the same), two counting pages sessions (286 s each). No A/B: the kept changes don't change compiled code
+(filing an entry the map has no room for, and the checker's words in the check mode). Tests: the two above, each
+failing first; `tests/steps.txt` unmoved; no export or state layout changed, the ABI stays 74. CI: `ci.sh` (736 s) and `ci-jit.sh` (270 s).

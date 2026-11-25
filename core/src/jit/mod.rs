@@ -496,8 +496,8 @@ pub struct Jc {
 
 /// A compiled block's word (`Info::idx`, a jump or transfer cache entry's):
 /// its function's table index, and above this bit the entry it's at in that
-/// function (0: its head; else a member that a call returns to: docs/jit.md
-/// "Calls").
+/// function (0: its head; else the member's number among the entries:
+/// [`block::Region::entries`], docs/jit.md "Calls").
 pub const ENTRY_SHIFT: u32 = 24;
 pub const IDX_MASK: u32 = (1 << ENTRY_SHIFT) - 1;
 
@@ -1029,7 +1029,9 @@ impl Cache {
     /// it outside [`Cache::room`] and may not prune or flush (`tier_up` runs
     /// inside JIT code), so a key that would double the table past
     /// [`MAP_BUCKETS`] (`room`'s rule), or that the heap has no room for,
-    /// isn't filed. Its block runs interpreted until it's compiled as a head.
+    /// isn't filed: its block runs interpreted until it's compiled as a head,
+    /// and the regions of its module that call it at its entry become linkers
+    /// of its region's head ([`Cache::file`]).
     fn entry(&mut self, m: u64, len: u32) -> Option<&mut Info> {
         if !self.map.contains_key(&m) {
             let (n, half) = (self.map.len(), grows_past(MAP_KEYS));
@@ -1236,11 +1238,18 @@ impl Cache {
     /// The other blocks are grouped into forward regions
     /// ([`block::forward`]): each takes the batch's blocks that static edges
     /// reach from it (loop heads apart), so a block is compiled once, as a
-    /// head or as a member. A member has no function of its own: entered
-    /// from elsewhere (a branch from outside its region, a return into it,
-    /// the dispatcher after its region ran out of steps), it is a block not
-    /// compiled yet, counted from zero again and compiled as a head once
-    /// that has happened often enough.
+    /// head or as a member. A member where the head's page has it is an entry
+    /// of its region's function ([`block::Region::entries`]): entered from
+    /// elsewhere (a branch from outside its region, a return into it, the
+    /// dispatcher after its region ran out of steps), it runs there. Any other
+    /// member (in another page, or of a region with a `loop`) has no function
+    /// of its own: entered from elsewhere, it is a block not compiled yet,
+    /// counted from zero again and compiled as a head once that has happened
+    /// often enough. An entry is never counted again, so it never heads a
+    /// region of its own: a loop through another page whose head a forward
+    /// region took as an entry stays without a `loop`, each lap a transfer to
+    /// the entry (counted at ~0.2% of Firefox's pages session at most:
+    /// docs/jit.md "Entries").
     fn plan(&mut self, mem: &Mem) -> Vec<block::Region> {
         #[cfg(test)]
         if let Some(l) = self.limit_at_plan.take() {
@@ -1517,21 +1526,37 @@ impl Cache {
         s.cond_computed += counts.cond_computed;
         s.cond_memory += counts.cond_memory;
         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
+        self.file(&regions, &inl, links, entries, idx, slot, &mut t.stats);
+        Some(idx)
+    }
+
+    /// Files an installed module's regions, the first at table index `idx`
+    /// (its hot words from `slot`): each head's and entry's [`Info`], the
+    /// pages they go with, the blocks they link to (`links`: their code calls
+    /// those functions directly) and the stale-code checker's words. Counted
+    /// in `s`.
+    #[allow(clippy::too_many_arguments)]
+    fn file(
+        &mut self,
+        regions: &[block::Region],
+        inl: &[u32],
+        links: Vec<Vec<u64>>,
+        entries: Vec<Vec<(u64, u32, u32)>>,
+        idx: u32,
+        slot: u32,
+        s: &mut Stats,
+    ) {
         let heads: Vec<u64> = regions.iter().map(|r| r.blocks[0].key).collect();
-        for (k, (((r, inl), links), ents)) in
+        // The entries the map had no room for, with their region's head.
+        let mut unfiled = vec![];
+        for (k, (((r, &inl), links), ents)) in
             regions.iter().zip(inl).zip(links).zip(entries).enumerate()
         {
             let size: u32 = r.blocks.iter().map(|b| b.words.len() as u32).sum();
-            let s = &mut t.stats;
             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
             s.region_blocks += r.blocks.len() as u64;
             s.back_edges += r.back_edges() as u64;
             let (key, len) = (r.blocks[0].key, r.blocks[0].words.len() as u32);
-            let words: Vec<u32> = r
-                .blocks
-                .iter()
-                .flat_map(|b| b.words.iter().copied())
-                .collect();
             let word = if r.tier.is_some() {
                 slot + k as u32 + 1
             } else {
@@ -1539,10 +1564,18 @@ impl Cache {
             };
             let i = self.info(key, || 0);
             (i.idx, i.len, i.word) = (idx + k as u32, len as u8, word);
-            if self.cfg.check {
-                let spans = r.blocks.iter().map(|b| (b.key & !3, b.words.len() as u32));
-                self.spans
-                    .insert(key, (block::hash(&words), spans.collect()));
+            // The stale-code checker's words for a way in at member `j`: its
+            // own and every later member's, the ones it can reach (members
+            // before it can't: an entry is in a region without a `loop`).
+            let check = self.cfg.check;
+            let from = |j: usize| {
+                let bs = &r.blocks[j..];
+                let words: Vec<u32> = bs.iter().flat_map(|b| b.words.iter().copied()).collect();
+                let spans = bs.iter().map(|b| (b.key & !3, b.words.len() as u32));
+                (block::hash(&words), spans.collect())
+            };
+            if check {
+                self.spans.insert(key, from(0));
             }
             for t in links {
                 self.link(t, key);
@@ -1553,21 +1586,16 @@ impl Cache {
                 if heads.contains(&m) {
                     continue;
                 }
+                if check && let Some(j) = r.blocks.iter().position(|b| b.key == m) {
+                    self.spans.insert(m, from(j));
+                }
                 let Some(i) = self.entry(m, mlen) else {
+                    // The module's code calls it at its entry all the same.
+                    unfiled.push((m, key));
                     continue;
                 };
                 let at = (idx + k as u32) | e << ENTRY_SHIFT;
                 (i.idx, i.len, i.word, i.queued) = (at, mlen as u8, 0, false);
-                // Entered at m, the function runs the members after it too:
-                // the checker hashes the whole region, as at its head.
-                if let Some(s) = self
-                    .cfg
-                    .check
-                    .then(|| self.spans.get(&key).cloned())
-                    .flatten()
-                {
-                    self.spans.insert(m, s);
-                }
                 self.link(key, m);
             }
             // A region goes with any of its pages (`invalidate`).
@@ -1577,10 +1605,18 @@ impl Cache {
                 }
             }
         }
+        // An entry not filed is no key of the map, which an IC drops with its
+        // region, but the module's regions that call it at its entry (the
+        // ones it lists as linkers) must go with that region: they become its
+        // head's linkers.
+        for (m, key) in unfiled {
+            for from in self.linkers.remove(&m).unwrap_or_default() {
+                self.link(key, from);
+            }
+        }
         // A member new to the map was filed outside [`Cache::room`]
         // ([`Cache::entry`]): its bound goes by the table's size.
         self.map_full = self.map_full.max(self.map.capacity());
-        Some(idx)
     }
 }
 
@@ -3900,21 +3936,14 @@ mod tests {
         assert_eq!((c.linkers[&b].len(), c.linkers[&b].capacity()), (8, 16));
     }
 
-    /// A region's entry new to the map, filed by `install` outside
-    /// [`Cache::room`], never doubles the table past [`MAP_BUCKETS`]: with
-    /// the table at them, its tombstones leaving room for one key, `room`
-    /// lets a key in that takes the last of it (the review after PERF loop
-    /// 47, finding 2).
-    #[test]
-    fn an_entry_filed_by_an_install_keeps_the_bound() {
-        let mut c = Cache::new(Config::DEFAULT);
-        let s = &mut Stats::default();
+    /// Fills `c`'s map (through [`Cache::room`], keys `k << 4` from `k`) until its table is at [`MAP_BUCKETS`] with
+    /// no room left and exactly half its keys: the next key new to the map can't be filed outside `room`.
+    fn at_the_bound(c: &mut Cache, s: &mut Stats, k: &mut u64) {
         let half = grows_past(MAP_KEYS);
-        let mut k = 0u64;
         while c.map.len() <= half + 1000 {
-            c.room(k << 4, s);
-            c.info(k << 4, || 1);
-            k += 1;
+            c.room(*k << 4, s);
+            c.info(*k << 4, || 1);
+            *k += 1;
         }
         assert_eq!(c.map_full, MAP_BUCKETS / 8 * 7);
         // Tombstones until one key's room is left with `half` keys in it.
@@ -3932,22 +3961,35 @@ mod tests {
                 break;
             }
             if cap > n + 1 || n < half {
-                c.info(k << 4, || 1);
-                k += 1;
+                c.info(*k << 4, || 1);
+                *k += 1;
             } else {
                 c.map.remove(&(old << 4));
                 old += 1;
             }
-            assert!(k < 100_000_000, "never down to one key's room");
+            assert!(*k < 100_000_000, "never down to one key's room");
         }
         // The dispatcher's keys, through `room` (no prune: there's room), until one takes the last of it (a key that
         // lands on a tombstone takes none).
         while c.map.capacity() > c.map.len() {
-            c.room(k << 4, s);
-            c.info(k << 4, || 1);
-            k += 1;
+            c.room(*k << 4, s);
+            c.info(*k << 4, || 1);
+            *k += 1;
         }
         assert_eq!(s.prunes, 0);
+    }
+
+    /// A region's entry new to the map, filed by `install` outside
+    /// [`Cache::room`], never doubles the table past [`MAP_BUCKETS`]: with
+    /// the table at them, its tombstones leaving room for one key, `room`
+    /// lets a key in that takes the last of it (the review after PERF loop
+    /// 47, finding 2).
+    #[test]
+    fn an_entry_filed_by_an_install_keeps_the_bound() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let s = &mut Stats::default();
+        let mut k = 0u64;
+        at_the_bound(&mut c, s, &mut k);
         // Then a member to enter a region at, new to the map.
         let filed = c.entry(k << 4, 1).is_some();
         assert!(
@@ -3961,6 +4003,102 @@ mod tests {
         // And below the bound a member grows the table as a miss would.
         let mut c = Cache::new(Config::DEFAULT);
         assert!(c.entry(0x40, 1).is_some() && c.map.contains_key(&0x40));
+    }
+
+    /// An entry the map has no room for isn't filed, but a region of the same
+    /// module whose code calls it at that entry goes with the entry's region
+    /// all the same: an IC on the region's page drops the caller too, and the
+    /// stale-code checker has the entry's words (the review after PERF loop
+    /// 74, finding 1).
+    #[test]
+    fn a_caller_of_an_entry_not_filed_goes_with_its_region() {
+        let mut c = Cache::new(Config {
+            check: true,
+            ..Config::DEFAULT
+        });
+        let s = &mut Stats::default();
+        // R in page P, its head and a member m; R2's head in page Q chains to
+        // m. The heads are a batch's, in the map; m is new to it.
+        let (head, m, other) = (0x4000_0000u64, 0x4000_0040u64, 0x4000_2000u64);
+        for key in [head, other] {
+            c.info(key, || 4).queued = true;
+        }
+        let mut k = 0u64;
+        at_the_bound(&mut c, s, &mut k);
+        let block = |key: u64| block::Block {
+            key,
+            va: key,
+            words: vec![0xd503_201f; 4], // NOPs
+        };
+        let regions = [
+            block::Region {
+                blocks: vec![block(head), block(m)],
+                tier: None,
+                returns: vec![],
+                follows: vec![],
+            },
+            block::Region::from(block(other)),
+        ];
+        let (links, entries) = (vec![vec![], vec![m]], vec![vec![(m, 1, 4)], vec![]]);
+        c.file(&regions, &[8, 4], links, entries, 100, 0, s);
+        assert!(!c.map.contains_key(&m), "no room for the entry");
+        assert_eq!(c.map[&other].idx, 101);
+        assert!(
+            c.spans.contains_key(&m),
+            "the checker has the entry's words"
+        );
+        c.invalidate(head, s);
+        assert!(!c.map.contains_key(&head));
+        assert!(
+            c.map.get(&other).is_none_or(|i| i.idx == 0),
+            "the region calling the entry stayed compiled"
+        );
+    }
+
+    /// The stale-code checker at a region's entry reads the member's words and
+    /// the later members' (all it can run: an entry is in a region without a
+    /// `loop`), not the head's: a guest may rewrite a block it no longer runs
+    /// without an IC (the review after PERF loop 74).
+    #[test]
+    fn the_checker_at_an_entry_reads_what_it_can_run() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        let nop = 0xd503_201fu32;
+        for k in 0..12u64 {
+            mem.write(0x100 + 4 * k, 4, nop as u64).unwrap();
+        }
+        let mut c = Cache::new(Config {
+            check: true,
+            ..Config::DEFAULT
+        });
+        c.tolerant = true;
+        let s = &mut Stats::default();
+        let block = |key: u64| block::Block {
+            key,
+            va: key,
+            words: vec![nop; 4],
+        };
+        let r = block::Region {
+            blocks: vec![block(0x100), block(0x110), block(0x120)],
+            tier: None,
+            returns: vec![],
+            follows: vec![],
+        };
+        c.info(0x100, || 4).queued = true;
+        let entries = vec![vec![(0x110, 1, 4), (0x120, 2, 4)]];
+        c.file(&[r], &[12], vec![vec![]], entries, 100, 0, s);
+        // The head rewritten, without an IC: only a way in at the head runs it.
+        mem.write(0x104, 4, 0xd503_203f).unwrap(); // yield
+        assert!(
+            !c.check(0x100, &mem, s),
+            "the head's way in runs the new word"
+        );
+        assert!(c.check(0x110, &mem, s) && c.check(0x120, &mem, s));
+        // A later member rewritten: the ways in before it run it.
+        mem.write(0x124, 4, 0xd503_203f).unwrap();
+        assert!(!c.check(0x110, &mem, s) && !c.check(0x120, &mem, s));
+        assert_eq!(s.stale, 3);
     }
 
     /// A table below [`MAP_BUCKETS`] full at the same count grows to them,

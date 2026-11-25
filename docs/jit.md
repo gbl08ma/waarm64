@@ -179,7 +179,9 @@ the interpreter's own code.
       call that took the callee (`Region::follows`); a call to a block taken already (the head: recursion; a callee
       another call took, whose `ret` predicts that call's return) is a host call, and so is one whose callee could
       leave the region ("Calls" below). Only for callees compiled in the same batch: one already
-      compiled keeps its own function, and is called as a host call ("Calls" below). The indirect
+      compiled keeps its own function, and is called as a host call ("Calls" below). (JIT-check and the tests'
+      forced mode take compiled blocks as members too, and a member that becomes an entry then takes that key's word
+      in the map: the old function's callers stay its linkers, and both functions run the same words.) The indirect
       branch takes the target from `ADDR`, where the `ret` left it, unless a checked edge's page
       check wrote its own VA there first; then it loads the PC again. Before that was handled
       (2026-11-05), the branch probed the predicted block's VA, and when a function for that block
@@ -447,9 +449,11 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   **entry** of the region's function (`Region::entries`), none in a region with a `loop`. A member is reached from
   outside its region in many ways: a return to a call's continuation at depth 0 after anything that unwound the host
   frames, a branch or a chain from another function, the transfer caches, the dispatcher after the region ran out of
-  steps. Entered by its own VA, the function then has the head's mapping too, which the edges `Region::checked`
-  leaves unchecked rely on; so a member in another page, or reached through another VA page that maps the same PA
-  page, isn't one. A block's word in the jump and transfer caches holds its function's table index in the low 24 bits
+  steps. What makes one is fixed when the region is formed: the member's PA page is the head's and its VA offset
+  from the head is its PA offset (so a member in another page, or one the walk reached through another VA page that
+  maps the head's PA page, isn't one). Then however an entry is reached (by its own VA, or through any VA that maps its
+  page: the jump cache is keyed by PA), the VA page it runs at maps the head's PA page too, which the edges
+  `Region::checked` leaves unchecked rely on. A block's word in the jump and transfer caches holds its function's table index in the low 24 bits
   (`IDX_MASK`, asserted) and its entry number above (`ENTRY_SHIFT`); a transfer passes the entry number above
   `ENTRY_BIT` (16) of the depth parameter, and the prologue clears it and branches to that member with the registers
   it starts with loaded and its flags in memory (an entry's way in is one more edge into the member: an edge that
@@ -468,6 +472,16 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
     overlapping by one), no memory more.
     Left without entries: members of regions with a loop (boot 2.6 M interpreted steps, the pages session 44 M) and
     members in another page (0.8 M, 34 M).
+    **What it costs a loop** (the review after loop 74, counted in PERF loop 75): an entry is never counted again,
+    so it never heads a region of its own, and whether a member heads a loop is asked of its page only
+    (`Cache::region`). A loop through another page whose head an earlier block's forward region took as a member
+    stays without a wasm `loop`: each lap leaves through a chain or a by-VA link and comes back in at the entry.
+    Counted, the backward transfers that land at an entry are 1.3 M in Alpine's boot, 10.4 M in its userspace run,
+    38.6 M in `smp_user_jit_4` and 40.9 M in Firefox's pages session (against 56 M, 141 M, 409 M and 1,310 M loop
+    back-edges), all such transfers whatever their cause: at ~10 ns each over a `br`, ≤ 0.2% of the session. What
+    loop 74 itself moved is smaller: its two cores' back-edges per step differed by +0.02%, −0.14%, −0.9% and −0.44%
+    (≤ 6 M laps of the session). Not changed: asking `plan` whether a candidate heads a loop across pages (with
+    `forward`'s walk) or counting an entry's ways in from outside would be the fix if it ever counts.
   - **Inside a `loop`, not changed** (PERF loop 51): after anything that unwound inside `f`, a loop through a call's
     continuation (`for (…) f(x);`, a forward region with an edge back to its head) runs interpreted until compiled
     again as a head. Counted, those continuations and the members after them run 0.01-0.07% of the steps interpreted
@@ -476,8 +490,9 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
     the members emitted again outside it (bench/boot/REPORT.md "PERF loop 51"). Without the continuations' entries
     (before host calls had them), a continuation ran interpreted until compiled again as a head: 54% more dispatches
     in Firefox.
-- **The stale-code checker** covers both new ways in: an entry at a member hashes the whole region (the members
-  after it run too), and a host return into its caller is checked as an entry before the members run on (the
+- **The stale-code checker** covers both new ways in: an entry at a member hashes that member and the later ones
+  (all it can run: before PERF loop 75 the whole region, so a head rewritten without an IC failed a way in that
+  never ran it), and a host return into its caller is checked as an entry before the members run on (the
   callee may have rewritten them without an IC).
 - **Locals:** the depth is local 128 as emitted (the encoder's placeholder indices go up to 255 and compact under
   128); a region that uses more than 127 locals besides the four parameters writes every index as two bytes
@@ -1111,8 +1126,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   in Node on the dev VM, a bare-metal loop of one exiting instruction with the MMU on, 2 vCPUs, parallel and realtime,
   timed by the host): a WFE yield, an exit with nothing to do, takes ~65 ns: `jit::steps`' re-entry (`key`, `enter`,
   `fresh`) a fifth, the run loop's own iteration (the atomics, the timer check's test, the chunk's set-up) a fifth,
-  `jit_exec_mmu` (the interpreter decoding and running the exiting instruction in the helper; the word is decoded
-  again by `count` and by `fast`) a fifth, then `publish_cpu` 4%, `handle_par` 3%, `Vm::counter`'s u128 division
+  `jit_exec_mmu` (the interpreter decoding and running the exiting instruction in the helper; then the word was
+  decoded again by `count` and by `fast`, and since PERF loop 74 only by `fast`) a fifth, then `publish_cpu` 4%, `handle_par` 3%, `Vm::counter`'s u128 division
   (every chunk) 2.5%, `drain` 2%. `mrs cntfrq_el0` takes ~150 ns: every `Exit::Platform` reads the host clock first
   (16% of it there, though CNTFRQ shows no timer), and the interpreter's MRS. A fast-completed ISB takes ~20 ns.
   Each part is a few ns, and exits are ~0.2-0.3% of a busy vCPU's time in a browser: nothing to cut.
@@ -1801,7 +1816,11 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   regions too; 13.5%), weighted by calls: ~0.1% and at best ~0.4% of the boot, under what an A/B can tell, before
   the new chains and edge stores sharing costs. Only 412 of the boot's 3,560 filled functions are single blocks out
   of a loop, and a loop holds every register it touches. Taking any one other local out of every filled function
-  (a scratch, a flag local, the entry PC as a parameter) is bounded at ~0.3% likewise.
+  (a scratch, a flag local, the entry PC as a parameter) is bounded at ~0.3% likewise. **Counted again at 64-block regions**
+  (PERF loop 75, the same model in that loop's diagnostic core): the fill turns run per guest step fell 24% in the
+  boot (1.54 → 1.18) and 11% in the userspace run (1.75 → 1.56), with 42-45 turns a call as before, and sharing would
+  take 11.6% and 11.0% of them (`smp_user_jit_4` 14.6%, Firefox's pages session 10.2% of 1.33 turns a step): with
+  loop 26's measured cost scaled, ~0.25% and ~0.17% of the gates at best. Closed.
 - **A lone table's jump cache and hot words as constants** (PERF loop 14, 2026-11-10; `bench/boot/results/perf14/`):
   with one table, modules can address its jump cache and hot words directly instead of through the vCPU
   (`emit::JC_PTR`, `HOT_PTR`). On the Mac's gates −0.2% on the boot and the userspace benchmark (compress −1.1%, apart;
@@ -1901,7 +1920,10 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   that only in loop regions, wasm +0.8%, still +2.1% (compress +5.8%) and `gl_llvmpipe_jit` +1.9%
   a frame. TurboFan's TLB hit (shift, mask, an L1 load, compare) is cheaper than the memo's
   compares and the extra loop-carried locals. The patch (with two-byte indices for locals from 128
-  and bare-metal tests of its rules) is in `bench/boot/results/m8-memo/`.
+  and bare-metal tests of its rules) is in `bench/boot/results/m8-memo/`. Bounded again on the Mac (PERF loop 75, below): the
+  probes it could serve are the page's whole set, ~0.21 a guest step in Firefox's pages session, and a hit would save
+  at most part of a TLB hit (a load and a compare against the memo's two compares and its loop-carried locals), well
+  under 1% of the session at any cost per probe the groups' A/Bs allow.
 - **One TLB check for a run of accesses off the same base** (M8, 2026-10-20, counted, not built; `bench/boot/REPORT.md`
   "M8: what Liftoff runs that a static change could cut"): in Firefox's pages session 27% of the 1.04 M access
   sites compiled follow an access in the same direction off the same, unchanged base register within a straight
@@ -2012,7 +2034,21 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   the cold arm's failure exit to re-derive the setter's lazy flags (the chain's return stores the flag locals,
   stale once the helper retired the setter): the failure-chain class of bug. Register offsets (5.6% of accesses) have
   no static span. The one larger lever, if probes ever cost time: across blocks, 46% of probes land on the page of
-  one of the function's last two probes, which no group reaches.
+  one of the function's last two probes, which no group reaches (by page, not by range: what a region's dominance
+  can prove was counted in PERF loop 75, below).
+- **Probes a region's earlier block already made** (PERF loop 75, `bench/boot/REPORT.md` "PERF loop 75"; counted,
+  not built). A probe whose base register is unchanged (or moved by an immediate) since a probe on every path into
+  it covered a range holding its own (the write array if it stores) could take that probe's `HOST`. Counted with a
+  dataflow over each region's edges in a diagnostic core, weighted by each member's runs: with today's entries
+  (where nothing is known) 0.4-0.7% of the immediate forms' probes on the gates' guests and Firefox's pages session
+  (21.8 G probes, 0.21 a step); 3.3-4.8% if an entry's way in made the probes again; 7.0-11.8% if SP and X19-X29
+  also kept theirs across host calls (a check of the register would then be the memo's shape, which lost: above).
+  Statically 1.1-1.3%, 5-6% and 15-18% of the probes, ~0.1%, ~0.5% and ~1.5% of the wasm (probes are ~10% of it).
+  At a generous 0.5 ns a probe that is ≤ 0.03%, ≤ 0.23% and ≤ 0.55% of the session's ~230 busy vCPU-seconds, under its ~1%
+  floor, so neither the unsound bound nor the dominated form was built. In parallel SMP nothing changes the TLB
+  between two probes of one invocation: another vCPU's TLBI reaches this one's TLB only through its own run loop's
+  drain at a chunk's end (a failed poll leaves the function), so a poll between them would change nothing either.
+  The same-block leftovers (a probe an earlier one of its block made that no group took) are 0.7-1.3%.
 - **Larger batches** (`bench/boot/REPORT.md` "PERF loop 65" on the Mac, 2026-11-23; "The wasm code GC today, and
   larger batches in a browser" in the VM, 2026-11-03): `BATCH_STEPS` 25K-200K on the Mac and 200K and 800K in the VM.
   The Mac's verdicts are in [Compile policy](#compile-policy): the deterministic workloads' modules follow the

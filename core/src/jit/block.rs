@@ -209,13 +209,15 @@ fn goes_on(op: Op) -> bool {
 /// Blocks per region, at most (step 8).
 pub const REGION: usize = 64;
 
-/// A region (step 8): a head and other blocks of its page that static edges
-/// reach from it, in reverse postorder (`blocks[0]` is the head), compiled
-/// into one function. Every other member is reached only through the
-/// region's own edges. Either the head's loop ([`region`]: the blocks that
-/// lead back to it; without a loop through the head, the head alone), or a
-/// forward region ([`forward`]: what the head reaches among the blocks
-/// compiled with it).
+/// A region (step 8): a head and other blocks that static edges reach from
+/// it, in reverse postorder (`blocks[0]` is the head), compiled into one
+/// function. The other members are reached through the region's own edges,
+/// and those where the head's page has it also from outside, at the
+/// function's entries ([`Region::entries`]; none in a loop). Either the
+/// head's loop ([`region`]: the blocks of its page that lead back to it;
+/// without a loop through the head, the head alone), or a forward region
+/// ([`forward`]: what the head reaches among the blocks compiled with it, in
+/// any page).
 pub struct Region {
     pub blocks: Vec<Block>,
     /// A loop head compiled alone until it's hot (step 8.3): the index of

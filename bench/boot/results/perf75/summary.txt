@@ -1,0 +1,59 @@
+== boot: 2,650,367,147 steps; wasm 19,519,144 bytes, 292 modules
+  immediate probes run 404,156,587 (0.152 a step); group followers 142,295,708; other accesses 94,254,615
+  made earlier in the region, today's entries              2,585,725 ( 0.64% of the probes run; SP 0.29, X29 0.00, other 0.35); static 267 of 23,743 (1.12%)
+  made earlier in the region, entries probing again       19,169,888 ( 4.74% of the probes run; SP 1.83, X29 0.05, other 2.86); static 1,423 of 23,743 (5.99%)
+  ... and SP, X19-X29 across host calls           47,716,841 (11.81%); static 4,175 (17.58%)
+  made earlier in the same block (no group)        5,363,749 ( 1.33%); static 380 (1.60%)
+  member runs 472,742,214; looped regions' probes 120,630,619 (29.8%), dominated there 1,958,686; in other-page members 630,244
+  backward transfers to an entry 1,334,227 (chains 1,291,404, by-VA links 18,312, through the jump cache 24,511) of 8,517,023 ways in at an entry; loop back-edges 56,479,379
+  fill: calls of filling functions 69,611,124 (26.26 per 1000 steps), turns 3,122,643,808 (44.9 a call, 1.178 a step), with sharing 2,760,175,222 (11.6% fewer); functions that fill 2,882
+  emitNs 375,940,352
+  compileNs 63,231,232
+  decSteps 142,967,918
+== user: 10,431,311,691 steps; wasm 25,828,131 bytes, 494 modules
+  immediate probes run 1,965,628,432 (0.188 a step); group followers 534,348,951; other accesses 502,690,364
+  made earlier in the region, today's entries             11,517,932 ( 0.59% of the probes run; SP 0.37, X29 0.00, other 0.22); static 395 of 32,413 (1.22%)
+  made earlier in the region, entries probing again       75,578,014 ( 3.84% of the probes run; SP 1.75, X29 0.01, other 2.08); static 1,857 of 32,413 (5.73%)
+  ... and SP, X19-X29 across host calls          179,029,225 ( 9.11%); static 5,477 (16.90%)
+  made earlier in the same block (no group)       21,703,841 ( 1.10%); static 513 (1.58%)
+  member runs 2,013,590,576; looped regions' probes 280,124,000 (14.3%), dominated there 8,998,953; in other-page members 2,524,059
+  backward transfers to an entry 10,401,302 (chains 8,248,525, by-VA links 2,133,723, through the jump cache 19,054) of 45,174,536 ways in at an entry; loop back-edges 141,423,368
+  fill: calls of filling functions 385,915,079 (37.00 per 1000 steps), turns 16,256,985,558 (42.1 a call, 1.558 a step), with sharing 14,474,024,814 (11.0% fewer); functions that fill 3,890
+  emitNs 351,812,864
+  compileNs 98,102,528
+  decSteps 182,989,866
+== smp-user4: 33,228,296,708 steps; wasm 28,727,914 bytes, 516 modules
+  immediate probes run 6,472,777,913 (0.195 a step); group followers 1,638,003,578; other accesses 1,757,143,373
+  made earlier in the region, today's entries             27,719,821 ( 0.43% of the probes run; SP 0.28, X29 0.00, other 0.14); static 424 of 36,947 (1.15%)
+  made earlier in the region, entries probing again      211,060,767 ( 3.26% of the probes run; SP 1.41, X29 0.00, other 1.85); static 2,009 of 36,947 (5.44%)
+  ... and SP, X19-X29 across host calls          451,832,154 ( 6.98%); static 5,925 (16.04%)
+  made earlier in the same block (no group)       72,522,276 ( 1.12%); static 601 (1.63%)
+  member runs 6,547,524,441; looped regions' probes 751,615,246 (11.6%), dominated there 22,884,585; in other-page members 5,249,968
+  backward transfers to an entry 38,586,320 (chains 35,565,647, by-VA links 2,991,903, through the jump cache 28,770) of 161,933,893 ways in at an entry; loop back-edges 409,399,568
+  fill: calls of filling functions 1,277,401,098 (38.44 per 1000 steps), turns 51,637,680,518 (40.4 a call, 1.554 a step), with sharing 44,118,444,174 (14.6% fewer); functions that fill 4,301
+  emitNs 497,004,288
+  compileNs 105,507,840
+  decSteps 286,405,119
+== pages: 103,520,880,820 steps; wasm 160,687,570 bytes, 2,494 modules
+  immediate probes run 21,759,029,561 (0.210 a step); group followers 7,672,303,367; other accesses 2,706,853,410
+  made earlier in the region, today's entries            148,012,426 ( 0.68% of the probes run; SP 0.22, X29 0.01, other 0.44); static 3,081 of 233,481 (1.32%)
+  made earlier in the region, entries probing again    1,049,974,224 ( 4.83% of the probes run; SP 2.32, X29 0.03, other 2.48); static 11,714 of 233,481 (5.02%)
+  ... and SP, X19-X29 across host calls        2,548,461,764 (11.71%); static 34,826 (14.92%)
+  made earlier in the same block (no group)      153,036,924 ( 0.70%); static 2,693 (1.15%)
+  member runs 20,866,610,810; looped regions' probes 4,117,698,765 (18.9%), dominated there 108,421,880; in other-page members 40,945,780
+  backward transfers to an entry 40,914,748 (chains 36,640,778, by-VA links 3,457,268, through the jump cache 816,702) of 352,398,118 ways in at an entry; loop back-edges 1,310,353,458
+  fill: calls of filling functions 3,084,556,624 (29.80 per 1000 steps), turns 132,402,341,912 (42.9 a call, 1.279 a step), with sharing 119,455,926,272 (9.8% fewer); functions that fill 21,912
+  emitNs 2,109,940,736
+  compileNs 371,470,592
+  decSteps 4,013,777,642
+== pages, the first core (no backward-entry counters): 102,980,934,220 steps; wasm 158,169,811 bytes, 2,493 modules
+  immediate probes run 21,659,068,633 (0.210 a step); group followers 7,637,636,500; other accesses 2,694,442,320
+  made earlier in the region, today's entries            139,571,164 ( 0.64% of the probes run; SP 0.23, X29 0.01, other 0.40); static 3,200 of 232,963 (1.37%)
+  made earlier in the region, entries probing again    1,126,205,680 ( 5.20% of the probes run; SP 2.83, X29 0.03, other 2.34); static 11,797 of 232,963 (5.06%)
+  ... and SP, X19-X29 across host calls        2,722,589,077 (12.57%); static 34,847 (14.96%)
+  made earlier in the same block (no group)      152,137,146 ( 0.70%); static 2,666 (1.14%)
+  member runs 20,758,009,340; looped regions' probes 3,970,936,365 (18.3%), dominated there 97,250,964; in other-page members 43,835,341
+  fill: calls of filling functions 3,258,363,308 (31.64 per 1000 steps), turns 137,276,774,490 (42.1 a call, 1.333 a step), with sharing 123,299,637,662 (10.2% fewer); functions that fill 21,810
+  emitNs 2,087,924,992
+  compileNs 366,476,288
+  decSteps 3,959,917,811
