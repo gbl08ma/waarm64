@@ -69,7 +69,8 @@ RESUME, TIME) is in devices.md "The guest's agent".
 1. **Sync on focus** (Chromium with `clipboard-read` granted: the main way). The page reads the host's clipboard when
    it gets the focus back (`focus`, `visibilitychange`, only while `document.hasFocus()`), at the agent's HELLO and
    SESSION, and when the permission becomes `granted`. It offers what changed. Where `clipboardchange` exists
-   (Chromium 155), a focus reads only after one, and the event reads at once. Because the host's copy is already the
+   (Chromium 155), a focus reads only after one, and the event reads at once (during a read, once that read ends: the read may
+   have seen the clipboard before the change). Because the host's copy is already the
    guest's clipboard when the user comes back, every way of pasting in the guest gets it, including its own menus.
    The page never reads while the permission is `prompt`, except on the user's clicks (the setting, Allow…, the
    switch turned on), nor while paused.

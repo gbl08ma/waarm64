@@ -2023,6 +2023,29 @@ test("images, guest to host: kept pending without focus (the newest only, a newe
   await until(() => take(FRAME.OFFER).length === 1, "the host's image offered");
 });
 
+test("a clipboardchange during a focus read: read again once it ends, the new copy offered", async () => {
+  const { link, take } = fakeLink();
+  const { host } = fakeHost();
+  host.changeEvents = true;
+  // The grant's read held until the host's copy lands (the read saw the old clipboard).
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const readText = host.clipboard.readText;
+  host.clipboard.readText = async () => {
+    const s = await readText();
+    await held;
+    return s;
+  };
+  const share = new ClipboardShare(link, host);
+  share.setPermission('granted');
+  await settle();
+  host.text = 'copied meanwhile';
+  share.clipboardChanged();
+  release();
+  host.clipboard.readText = readText;
+  await until(() => take(FRAME.OFFER).some((f) => new TextDecoder().decode(decodeOffer(f.payload)!.inline) === 'copied meanwhile'), 'the change offered');
+});
+
 test("images, host to guest: a sync's PNG and text offered together (the text inline), the PNG answered under the agent's MOREs; unchanged: not again; the paste chord's File; one image held; capped; text only for an agent without CAP.IMAGE", async () => {
   const { link, sent, deliver, take } = fakeLink(IMAGES);
   const { host } = imageHost();

@@ -1993,11 +1993,6 @@ What the HOST track's reviews found and left (the reports: the branch `review/ho
   `data` and `map` while the test's worker holds sync access handles on them. With a step noted before each storage
   call in `entries` and `cacheRoot` it passed 91 runs of 91 (55 alone with the busy loops, 36 three at a time), so
   which call doesn't return is still not known: a `getFile()` racing the worker's open handles is the first suspect.
-- **A clipboard page test that fails under CI's load** (2026-11-20, `scripts/ci.sh` on INTRO loop 8's fixes,
-  which touch nothing of it; again 2026-11-21 on DOTCOM's copy changes, then 1 of 1 alone): `tests/page-clipboard-ui.test.ts` "a demo's machine starts each run paused…" at its last
-  step ("the agent's end got [], not 62 bytes": `guestReads` waits 10 s for the page's frames after the stub agent
-  opens). It passed 3 runs of 3 alone, and in the two `scripts/ci.sh` runs before. Either the wait is short under
-  load, or a frame is lost when the open races the machine's start: look at what the page sent, not only at the count.
 - **The fast lane stalls when started from an agent's shell in the cloud** (INTRO, 2026-11-20): `scripts/ci-fast.sh`
   run by the Bash tool directly stopped twice 67 tests into the JS step with every process idle (once for 31 min);
   started detached (`nohup … &`) it ran through both times. Most likely a test or a tool it starts reads the

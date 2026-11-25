@@ -270,11 +270,17 @@ export class ClipboardShare {
         void this.paste(got);
       }
     } finally {
-      this.reading = false;
+      this.readEnded();
     }
   }
 
-  /** `clipboardchange`: the host's clipboard changed; read now if the page has focus. */
+  /** A focus read ended: a `clipboardchange` during it (the read may have seen the clipboard before it) reads again. */
+  private readEnded() {
+    this.reading = false;
+    if (this.changed && this.host.changeEvents) void this.focused();
+  }
+
+  /** `clipboardchange`: the host's clipboard changed; read now if the page has focus (or once a read under way ends). */
   clipboardChanged() {
     this.changed = true;
     void this.focused();
@@ -384,12 +390,12 @@ export class ClipboardShare {
   }
 
   /** Offers content of hash `h` to the guest; resolves once the agent's ACK came, or `ACK_WAIT` passed. */
-  private async offer(h: string, parts: Omit<Offered, 'serial'>) {
+  private async offer(h: string, { text, image, html }: Omit<Offered, 'serial'>) {
     const serial = (this.serial = (this.serial + 1) >>> 0);
     // Requests for an older offer's text carry on (a guest program is reading it): their answers hold their own
     // bytes. An older image's stop: the page holds one image of its own.
-    if (parts.image) this.transfers.dropImages();
-    this.offered = { serial, ...parts };
+    if (image) this.transfers.dropImages();
+    this.offered = { serial, text, image, html };
     // The guest's clipboard is to hold this one: the guest's last copy is no longer what it has.
     this.known.toGuest = h;
     this.known.fromGuest = undefined;
@@ -401,16 +407,13 @@ export class ClipboardShare {
     });
     const done = status.then(() => undefined);
     this.offering = { hash: h, done };
-    const { text, image, html } = parts;
+    const inline = text && text.length <= INLINE ? text : undefined;
     const types = [
       ...(text ? [{ type: TEXT, size: text.length }] : []),
       ...(image ? [{ type: PNG, size: image.length }] : []),
       ...(html ? [{ type: HTML, size: html.length }] : []),
     ];
-    this.link.send(
-      FRAME.OFFER,
-      encodeOffer({ serial, types, inline: text && text.length <= INLINE ? text : undefined }),
-    );
+    this.link.send(FRAME.OFFER, encodeOffer({ serial, types, inline }));
     await status;
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a newer offer or a reset can change it across the await
     if (this.offering?.done === done) this.offering = undefined;
