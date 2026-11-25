@@ -522,7 +522,8 @@ test('Windows\' AltGr (a left Ctrl and a right Alt at one time) reaches the gues
   const timer = { set: (f: () => void) => ((pending = f), 1), clear: () => (pending = undefined) };
   const f = altGrFilter((e, down) => got.push(`${e.code}${down ? '+' : '-'}${e.repeat ? 'r' : ''}`), timer);
   let prevented = 0;
-  const ev = (code: string, timeStamp: number, repeat = false) => ({ code, timeStamp, repeat, preventDefault: () => prevented++ }) as unknown as KeyboardEvent;
+  const KEY: Record<string, string> = { ControlLeft: 'Control', AltRight: 'AltGraph', Digit2: '@', KeyC: 'c', KeyA: 'a' };
+  const ev = (code: string, timeStamp: number, repeat = false, key = KEY[code]) => ({ code, key, timeStamp, repeat, preventDefault: () => prevented++ }) as unknown as KeyboardEvent;
   // AltGr+2, held a while (Windows repeats both), released; Chrome 158 on Windows 10 put the Ctrl and the Alt 0.2 ms apart.
   f.key(1)(ev('ControlLeft', 100));
   f.key(1)(ev('AltRight', 100));
@@ -548,6 +549,13 @@ test('Windows\' AltGr (a left Ctrl and a right Alt at one time) reaches the gues
   f.key(0)(ev('AltRight', 2200));
   f.key(0)(ev('ControlLeft', 2210));
   assert.deepEqual(got, ['ControlLeft+', 'KeyC+', 'KeyC-', 'ControlLeft-', 'ControlLeft+', 'AltRight+', 'AltRight-', 'ControlLeft-']);
+  // A layout without AltGr (its right Alt is Alt; Windows adds no Ctrl): a left Ctrl just before it is a Ctrl.
+  got.length = 0;
+  f.key(1)(ev('ControlLeft', 2500));
+  f.key(1)(ev('AltRight', 2500.2, false, 'Alt'));
+  f.key(0)(ev('AltRight', 2600, false, 'Alt'));
+  f.key(0)(ev('ControlLeft', 2610));
+  assert.deepEqual(got, ['ControlLeft+', 'AltRight+', 'AltRight-', 'ControlLeft-']);
   // A release (a blur) drops a waiting Ctrl.
   got.length = 0;
   f.key(1)(ev('ControlLeft', 3000));

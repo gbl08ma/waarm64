@@ -246,9 +246,10 @@ export const ALTGR_MS = 50;
 /**
  * Windows' AltGr as the guest's: Windows sends AltGr as a left Ctrl and a right Alt, both down with one message time
  * (and both up, and both repeating; Chrome clears ctrlKey on the character itself), so the guest saw Ctrl+AltGr, which the third level doesn't take (AltGr+2 typed
- * no "@" on a Portuguese layout). A left Ctrl's press waits up to `ALTGR_MS` for the next key event: a right Alt's press
- * within that is AltGr, and the Ctrl goes nowhere, nor its repeats and release; anything else, or the wait's end, lets
- * it go on first. `next` takes the events that go on; `reset` (a release) drops a waiting Ctrl.
+ * no "@" on a Portuguese layout). The Ctrl comes first and says nothing of it (`Control`, AltGraph's state off), so a
+ * left Ctrl's press waits up to `ALTGR_MS` for the next key event: a right Alt's press within that whose key is
+ * `AltGraph` is AltGr, and the Ctrl goes nowhere, nor its repeats and release; anything else, or the wait's end, lets it
+ * go on first. `next` takes the events that go on; `reset` (a release) drops a waiting Ctrl.
  */
 export function altGrFilter(
   next: (e: KeyboardEvent, down: number) => void,
@@ -269,7 +270,13 @@ export function altGrFilter(
       if (waiting) {
         const w = waiting;
         timer.clear(w.t);
-        if (down && e.code === 'AltRight' && Math.abs(e.timeStamp - w.e.timeStamp) <= ALTGR_MS) {
+        // AltGr's right Alt says so (`AltGraph`; a layout without AltGr gets no Ctrl from Windows, and its right Alt is `Alt`).
+        if (
+          down &&
+          e.code === 'AltRight' &&
+          e.key === 'AltGraph' &&
+          Math.abs(e.timeStamp - w.e.timeStamp) <= ALTGR_MS
+        ) {
           waiting = undefined;
           fake = true;
         } else flush();
