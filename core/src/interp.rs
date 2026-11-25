@@ -145,7 +145,7 @@ pub(crate) fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
 
 /// Executes `insn`, fetched from `pc`, as [`step_bus`] does after the fetch:
 /// the PC is past it, or back on it if it didn't retire (except `Resync`).
-/// The JIT's per-instruction helpers call this too (`jit::jit_exec_flat`).
+/// The JIT's per-instruction helpers run [`exec_at_decoded`], the same with the `Op` given.
 #[inline(always)]
 pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R {
     // A direct call, not a closure: LLVM sizes a closure on its own, and once
@@ -153,6 +153,16 @@ pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R 
     // `exec` here, a call per instruction (the FP guest −28%: docs/cpu.md).
     cpu.pc = pc.wrapping_add(4);
     let r = exec(cpu, m, insn, pc);
+    pc_back(cpu, pc, r)
+}
+
+/// [`exec_at`] for an instruction its caller decoded already (`op` is
+/// `decode(insn)`), inline: the JIT's per-instruction helpers, which count it
+/// by its `Op` too (`jit::jit_exec_mmu`).
+#[inline(always)]
+pub(crate) fn exec_at_decoded(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64, op: Op) -> R {
+    cpu.pc = pc.wrapping_add(4);
+    let r = exec_op(cpu, m, insn, pc, op);
     pc_back(cpu, pc, r)
 }
 

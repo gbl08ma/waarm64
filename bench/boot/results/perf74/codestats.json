@@ -1,0 +1,49 @@
+{
+ "date": "2026-11-25T19:42:10.496Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/1ce9170d-8e91-4862-a3c3-90a3e7c89d86/scratchpad/mods-base",
+  "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/1ce9170d-8e91-4862-a3c3-90a3e7c89d86/scratchpad/mods-both"
+ ],
+ "results": {
+  "arm64": {
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/1ce9170d-8e91-4862-a3c3-90a3e7c89d86/scratchpad/mods-base": {
+    "functions": 6677,
+    "insns": 7709535,
+    "bytes": 29263768,
+    "slots": 102790,
+    "frame": 1438573
+   },
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/1ce9170d-8e91-4862-a3c3-90a3e7c89d86/scratchpad/mods-both": {
+    "functions": 6061,
+    "insns": 7648021,
+    "bytes": 29074540,
+    "slots": 93098,
+    "frame": 1380820
+   }
+  },
+  "x64": {
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/1ce9170d-8e91-4862-a3c3-90a3e7c89d86/scratchpad/mods-base": {
+    "functions": 6677,
+    "insns": 6044092,
+    "bytes": 26522828,
+    "slots": 90804,
+    "frame": 1257125
+   },
+   "/tmp/claude-501/-home-gabriel-guest-Development-waarm64/1ce9170d-8e91-4862-a3c3-90a3e7c89d86/scratchpad/mods-both": {
+    "functions": 6061,
+    "insns": 6048734,
+    "bytes": 26653076,
+    "slots": 81367,
+    "frame": 1248710
+   }
+  }
+ }
+}

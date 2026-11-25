@@ -453,6 +453,33 @@ test("with host calls, a callee's return into its caller is checked", () => {
   assert.throws(() => g.go(100n, 0x402100n), WebAssembly.RuntimeError);
 });
 
+// A forward region's member where the head's page has it is an entry of its function (docs/jit.md "Calls"), whatever
+// reached it inside: entered from outside it runs compiled, with the flags in the Cpu and the registers it starts with
+// loaded, not interpreted until it is compiled again as a head. H's flags reach M lazily (a `subs`, then `b`):
+//   0x402200 H: add x3, x3, #1; subs x5, x5, #1; b M
+//   0x40220c M: add x3, x3, x3; b.ne N
+//   0x402214    add x2, x2, #1; brk         0x40221c N: add x1, x1, #1; brk
+test("a region's member is an entry: run from outside, it isn't compiled again", () => {
+  const g = twoPages([0, 1, 64, 0, 0], 0n);
+  g.code(0x6200, [0x91000463, 0xf10004a5, 0x14000001, 0x8b030063, 0x54000061, 0x91000442, 0xd4200000, 0x91000421, 0xd4200000]);
+  const x = g.x;
+  [x[1], x[2], x[3], x[5]] = [0n, 0n, 0n, 1n];
+  assert.equal(g.go(100n, 0x402200n), 6n); // add, subs, b, add, b.ne (not taken), add: brk
+  assert.deepEqual([x[1], x[2], x[3]], [0n, 1n, 2n]);
+  const [regions, steps] = [g.stats()[0], g.stats()[4]];
+  assert.ok(regions > 0n, 'H compiled');
+  // At M from outside: Z clear in the Cpu, so b.ne is taken; X3 is the Cpu's.
+  [x[1], x[2], x[3], x[33]] = [0n, 0n, 5n, 0n];
+  assert.equal(g.go(100n, 0x40220cn), 3n); // add, b.ne, add: brk
+  assert.deepEqual([x[1], x[2], x[3]], [1n, 0n, 10n]);
+  // Z set: not taken.
+  [x[1], x[2], x[3], x[33]] = [0n, 0n, 7n, 0x4000_0000n];
+  assert.equal(g.go(100n, 0x40220cn), 3n);
+  assert.deepEqual([x[1], x[2], x[3]], [0n, 1n, 14n]);
+  assert.equal(g.stats()[0], regions, 'M ran in H\'s function: no region of its own');
+  assert.equal(g.stats()[4] - steps, 6n, 'both runs compiled');
+});
+
 test('guest calls are host calls: leaf, deep recursion and a return elsewhere', () => {
   const { dispatches: _d, jitSteps: _j, ...want } = calls(0xffff_ffff, 1, 0);
   assert.deepEqual([want.x3, want.x4, want.x6, want.x7, want.sp], [300n, 30_000n, 300n, 0n, 0xf000n]);

@@ -126,30 +126,24 @@ static counts (`bench/jit/codestats.ts`) beside the Mac's; the spin tests and th
 (`scripts/ci-jit.sh`) cover a new poll point or setter, each with its planted bug. Its follow-up, `acc`'s
 replacement, was built in loop 55 and reverted in loop 57 (docs/jit.md "Tried and lost: polled code without `acc`").
 
-## State (2026-11-25, after loop 73)
-
-**Resumed 2026-11-25 (the user), after a pause following loop 73; loop 74 takes "Next" below.** The out-of-context review of loop 73's two mechanisms (the sibling fill in
-`Mmu::miss`, the TLBI queue's `Collapsed`) is done (branch `review/mmu-tlbi-queue`, 0505820b, deleted since): its two findings (a mid-chunk
-ASID change left the old ASID published; `drain` held the queue's lock through its flushes) were fixed in the
-commit "PERF: loop 73's review fixed", outside the loops.
+## State (2026-11-25, after loop 74)
 
 **The rule since 2026-11-24 (the user): spend as little time in benchmarks and CI as the answers allow
-("Batching", above).** Loop 72 counted rows 8, 9, 10, 11, 13 and 18 in one pass with one diagnostic core and closed
-most as findings. Loop 73 took the three it ranked first (bench/boot/REPORT.md "PERF loop 73",
-`bench/boot/results/perf73/`): **the TLB's sibling fill and the collapsed TLBI queue's nG flush are built and kept
-within the floor** (a pages session: TLB misses 51.4 M → 40.8 M, flushes of everything 2,398 → 8, 8.6% fewer
-instructions in helpers; no time measure moved outside its noise on `node`, the pages session or the gates: small,
-tested, no memory, no speedup claimed), **and `JC` stays 65,536** (131,072 and 262,144 `open` on `node`; the gates'
-guests refill it tens of thousands of times a run, and loop 72's 1.6 M in `smp_user_jit_4`'s SQLite phase was one
-run's placement). Its commit passed `ci-fast.sh`, `ci.sh`, `ci-jit.sh` and `ci-debian.sh`. No export or state layout changed.
+("Batching", above).** Loop 74 took rows 10 and 11 (bench/boot/REPORT.md "PERF loop 74", `bench/boot/results/perf74/`):
+**every forward-region member where the head's page has it is an entry of its function now** (not only a call's
+continuation), and **the helpers decode their word once**. Both kept: `node` −1.42%, `smp` −3.14%, the gates −0.49%
+(`user`) and −2.07% (`boot`), Firefox's pages session 1.5% less CPU and cycles; wasm −1.7 to −5.6%, no memory; the
+helper's micro-benchmark −3.0% (~0.9 ns a call). The counts' bound for the page was ~0.5% in steps, but the build
+was the count (one line), and the regions no longer compiled again took wasm and compile time away, which no bound in
+steps counted. `bench/boot/results/perf74/diag.patch` applies to b4e00c00 (loop 74's base) and carries the counters
+of loops 72-74 but the TLBI queues'. `bench/mac-packages.sh` now also sends `tools/remote-chromium.ts`, which the GPU
+harnesses import since 157831d4 (every `bench/gpu/*-mac.sh` session failed without it).
 Loop 67's warm-up is not landed; the local branches `perf67-warmup` and `perf-smp-warm` stay unpushed;
 `../waarm64-base` is detached at 5d8f29ef (clean). The review branch `review/jit-warmup` on origin is moot: the
-supervisor may delete it.
-**Next, when resumed:** row 10, entries at a region's members (the largest bound left, 1.9%, and the least certain: its count
-first on today's tree, the pages session and the wasm's bytes its measure), with row 11 (the helper's second decode,
-S, the same files) beside it if the loop has room. Loop 73's lesson for bounds: a count times a unit cost near the
-pages session's ~1% floor came out under it twice; rank what is left by bounds well past the floor. `bench/boot/results/perf73/diag.patch` applies to loop 73's commit and carries
-the counters a later row may want (the TLB's, the queues', the jump cache's, the members').
+supervisor may delete it. An out-of-context review of loop 74's entries is due (a new way into every member).
+**Next:** row 12, probes a region's earlier block already made (re-count, bound). Loop 73's lesson for bounds still
+holds for what counts in steps (a count times a unit cost near the floor came out under it twice); loop 74's adds that
+a change which removes compiled work (regions, modules) can beat its bound in steps.
 `target/snapbench/pages.waarm64snap` loads into the current state layout; `target/archarm/desktop.qcow2` is
 ab-mac.sh's default disk. The ABI is 74.
 
@@ -179,9 +173,7 @@ every row:
 
 | # | Entry | Kind | Notes |
 |---|---|---|---|
-| 10 | **Next:** JIT: entries at a region's members (backlog "Entries at a region's members") | build | loop 72: 8-12% of the interpreted steps reported are at blocks installed as members (0.2-0.4% of the gates' steps, ~0.3% of a pages session's), 15% of the session's regions headed by a block already a member; bound 1.9% (1.2% the steps, 0.7% the round trips), half at best. M: `Region::entries` for members entered from outside (the head's page, no `loop`); the pages session and the wasm's bytes. The largest bound and the least certain |
-| 11 | JIT: the helper decodes its word twice (`jit::count`, then `interp::exec_at`; backlog) | build | 168 M instructions in helpers a pages session (loop 72), under 0.4% at 5 ns; S, by its own micro-benchmark, with other work in the file |
-| 12 | JIT: probes a region's earlier block already made, and the translation memo again (jit.md "Wider groups of accesses", "A TLB translation memo in wasm locals") | re-count, bound | groups are per block; "46% of probes land on the page of one of the function's last two probes" was counted at 16 blocks, the memo lost at M8 in the VM on `alpine_user_jit`, and the groups' "moved no time" is the VM's (its bounds checks tax every access). Count statically (the accstat analysis, `bench/boot/results/accstat/`), on the gates and the pages session, the probes dominated in their region by a probe of the same base and span, the base unchanged (SP's frame first); then an unsound bound that skips them (as `flagx` was); build the dominated-successor form only past ~1%. Check what a poll between the two may change in parallel SMP (another vCPU's TLBI) |
+| 12 | **Next:** JIT: probes a region's earlier block already made, and the translation memo again (jit.md "Wider groups of accesses", "A TLB translation memo in wasm locals") | re-count, bound | groups are per block; "46% of probes land on the page of one of the function's last two probes" was counted at 16 blocks, the memo lost at M8 in the VM on `alpine_user_jit`, and the groups' "moved no time" is the VM's (its bounds checks tax every access). Count statically (the accstat analysis, `bench/boot/results/accstat/`), on the gates and the pages session, the probes dominated in their region by a probe of the same base and span, the base unchanged (SP's frame first); then an unsound bound that skips them (as `flagx` was); build the dominated-successor form only past ~1%. Check what a poll between the two may change in parallel SMP (another vCPU's TLBI) |
 | 14 | Devices: `bench/io` on a persistent profile, then the overlay's flush per write request (web/overlay.ts:756, :789, `ORDERED`) | re-measure, build | `bench/run.ts` launches off the record, where an OPFS call is 210-300 µs and a flush free; on a profile a call is ~1 µs and each ordered flush ~0.17 ms (SNAPZ loop 5), so bench/io/REPORT.md ranked the blk path on a cost users on a profile don't have. First: a persistent-profile option for `--only io` (`bench/snapz/probe.ts` has the launch), `io_stats` with `ORDERED` on and off, the `scatter`/`gather` copies' share (a read into the guest's segment, if past a few percent). Then map entries kept to the guest's FLUSH with one data flush a group (bench/io/REPORT.md names it twice, never built; `tests/overlay.test.ts`'s crash replay moves); an image's import opened unordered with one flush at its end (web/stored.ts:101; check a half import is always discarded). The Mac too |
 | 15 | Devices: restore, merge and Import changes write one block per call (backlog "Platform and devices"; "Off the record" under Snapshots) | measure, build | a 4 GiB overlay ~10 minutes by the reviewer's estimate, unmeasured; runs of consecutive blocks given to `write` and `zero` at once. Measure, then build with row 14's profile option |
 | 16 | 3D: virgl sets the whole GL state at every draw (web/virgl-renderer.ts:2791-3135), with the backlog's program-cache key | count, build | some 60-100 WebGL calls a draw before the draw (the survey's reading), by design (graphics.md: nothing assumed bound). Count GL calls and `render-stats`' busy time per draw under `bench/gpu/firefox-load.ts` and `gtk4-load.ts`, on the Mac (`bench/gpu/ab-mac.sh`; SwiftShader hides call overhead). Then a VAO per vertex layout (M), a state shadow the renderer's own passes invalidate (L), the program by a state version; `scripts/ci-deqp.sh` gates it |
@@ -194,7 +186,7 @@ every row:
 | 24 | Host, per event: virgl uploads across backing entries join into a fresh buffer (web/virgl-renderer.ts:694; count the joins first), an import's serial 1 MiB reads from a server (web/stored.ts:105), frame ports taking batches (backlog "The network, per packet" P7), the checksum two bytes at a time (web/offload.ts:54), `Devices.poll`'s closures per request (web/devices.ts:887) | count, build | each by its own micro-benchmark; with other work in the file |
 | 25 | JIT, likely under the floor: late-compiled successors through a reserved table slot (`via_jc`, emit.rs:2220; relinking and rebinding lost: try `results/perf54/` `chain2.mjs` with a constant index first), SP's alignment guard folded into the tag compare (emit.rs:4297; five wasm ops a probe), `refresh` storing every vCPU's IRQ byte (parallel.rs:814) | count | x64 and arm64 static counts (`bench/jit/codestats.ts`) decide the second |
 
-Swept, measured or counted on the Mac recently, not to redo: the jump cache's size (loop 73: `JC` 131,072 and 262,144), the sibling fill over another page's entry (loop 73: it thrashes a copy between two pages of one index), loop 72's closed counts (the transfer cache at 65,536 entries and a per-ASID generation, `TLB_ENTRIES` 32,768 and 65,536, a last-level table cache, a fill of the neighbour's PTE, `NG_SLOTS`, a longer TLBI queue, the interpreter under live host frames, the helper histogram: nothing to inline, FlagM never runs), the repeated last emission (loop 71: kept), XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
+Swept, measured or counted on the Mac recently, not to redo: entries at every member of the head's page and the helper's one decode (loop 74: kept; left without entries: loop regions' members and other pages', ~0.3% of the page at most), the jump cache's size (loop 73: `JC` 131,072 and 262,144), the sibling fill over another page's entry (loop 73: it thrashes a copy between two pages of one index), loop 72's closed counts (the transfer cache at 65,536 entries and a per-ASID generation, `TLB_ENTRIES` 32,768 and 65,536, a last-level table cache, a fill of the neighbour's PTE, `NG_SLOTS`, a longer TLBI queue, the interpreter under live host frames, the helper histogram: nothing to inline, FlagM never runs), the repeated last emission (loop 71: kept), XZR's write sink (kept) and one probe for an LdO/StO pair (loop 70), the compile threshold (loop 69: 500/1000 to 4000/8000), region sizes 16/32/64 and 96/128/256 (loop 64), the decoded blocks' budget and slots (loops 1, 38), the block map's constants (loop
 41), the parallel chunk (loop 32), `BATCH_STEPS` (loop 65), `REGION_AFTER` (loop 66), the compile worker's warm-up (loops 67, 67b), `WARM` with `REPORT` (loop 68), the 320 MiB budget (loop 63), the idle wait's constants (loops 53, 58, 60), a
 function's size as such (2026-11-05, loop 13), the dispatcher's entries and the signature check (loop 54), lazy NZCV
 at a loop's head (loop 42), and the features off by default (I8MM, FCMA, FP16, FHM, BF16: host-op counts, which

@@ -8929,3 +8929,113 @@ pairs, 23 min), six pages sessions (22 min), the gates' paired run (10 min).
 CI: `ci-fast.sh` (246 s), `ci.sh` (733 s), `ci-jit.sh` (269 s) and `ci-debian.sh` (309 s: Debian through UEFI is
 the guest whose firmware fills global entries in the TTBR0 half, the queue's `low_global` branch); `tests/steps.txt`
 unmoved.
+
+## PERF loop 74: entries at every member a region's head page has, and the helper's one decode (2026-11-25)
+
+Queue rows 10 and 11 (docs/backlog.md "Entries at a region's members", "The helper decodes its word twice"). **Both
+are built and kept. Every member of a forward region where the head's page has it is now an entry of the region's
+function, not only a call's continuation: on the Mac `node` −1.42%, the 4-vCPU `smp` −3.14%, the gates −0.49% and
+−2.07%, Firefox's pages session 1.5% less CPU and cycles, for less wasm and no memory. The helpers decode their
+word once (~0.9 ns a call by its micro-benchmark).** Data: `bench/boot/results/perf74/` (README). The Mac: M4, macOS
+26.6.2, Chrome for Testing 158.0.8127.88; the counts' Node runs and the micro-benchmark on the dev VM (Node 26.7.0).
+
+**The counts first, on today's tree** (PERF loop 73's diagnostic core with six slots more, `diag.patch`; one run each),
+and with the same core built so that every member where the head's page has it is an entry (`WAARM64_ENTRIES_ALL`),
+which costs one line in `Region::entries` and so was counted as built rather than estimated (`summary.txt`):
+
+| | Alpine's boot | its userspace run | `smp_user_jit_4`'s guest | Firefox's pages session (Mac) |
+|---|---|---|---|---|
+| interpreted steps reported at a key with no function | 126.7 M → 119.5 M | 170.8 M → 157.5 M | 191.7 M → 168.7 M | 2,156 M → 2,054 M |
+| of those at a member | 11.1 M → 3.5 M | 20.9 M → 6.6 M | 33.6 M → 9.1 M | 185.1 M → 78.1 M |
+| at a member where the head's page has it, no loop | 7.39 M → 0.05 M | 13.55 M → 0.05 M | 24.0 M → 0.05 M | 108.8 M → 0.35 M |
+| at a member of a region with a loop; in another page | 2.7 M; 1.0 M | 5.0 M; 2.3 M | 5.5 M; 4.1 M | 43.4 M; 33.0 M |
+| regions; headed by a block already a member | 5,565; 939 → 5,123; 479 | 7,649; 1,579 → 6,871; 764 | 9,092; 1,856 → 8,117; 756 | 43,342; 6,532 → 40,824; 3,927 |
+| entries made | 3,442 → 14,442 | 4,202 → 18,391 | 4,669 → 20,038 | 22,413 → 113,964 |
+| wasm bytes | 18.36 M → 17.92 M (−2.4%) | 24.65 M → 23.71 M (−3.8%) | 27.17 M → 25.66 M (−5.6%) | 152.2 M → 149.6 M (−1.7%) |
+| `compileNs` (V8) | −5.9% | −11.6% | −10.2% | −3.3% |
+| `emitNs`; `planNs` | +0.2%; −2.6% | −2.9%; −4.8% | +1.3%; −7.1% | −1.4%; −1.7% |
+| all interpreted steps (`decSteps`) | −4.2% | −6.0% | −6.2% | −2.3% |
+| compiled block, then interpreted code | 4.40 M → 4.26 M | 6.12 M → 5.83 M | 9.47 M → 9.16 M | 138.9 M → 136.2 M |
+| static NZCV loads at a condition (`condMemory`) | +11.3% | +9.2% | +9.6% | +39% |
+
+The one-vCPU runs are deterministic and took the same steps in both (2,650,367,147 and 10,431,311,691). Today's
+share of the interpreted steps reported at members is loop 72's (pages 8.6% against 8.3%, the boot 8.8%, userspace
+12.2%), and the part an entry can take, where the head's page has the member outside a loop, is 5.0% of them in the
+pages session and 5.8-12.5% on the gates' guests. As a bound for the page
+the counts gave ~0.5%: 87 M interpreted steps fewer at 8.5 ns more each (0.74 s) and 2.6 M round trips at ~140 ns
+(0.37 s) of ~220 busy vCPU-seconds, under the session's ~1% floor. It was built anyway because the build was the
+count: entries make the regions compiled again (the 15% of the session's regions headed by a member) unnecessary, so
+the extension took wasm, compile time and modules *away* on every workload where the backlog expected it to cost
+them, which no bound in steps counts; entries per region went from 0.5-0.6 to 2.5-2.8. What it costs is the flags:
+an entry's way in is one more edge into its member, with NZCV in memory, so an edge that carried them lazily stores
+them now (`condMemory`, the conditions that load NZCV, +9-39% statically).
+
+**What was built** (`Region::entries`, core/src/jit/block.rs): every member where the head's page has it, in a
+region without a `loop`, is an entry (before: a member after a call, the call's continuation). The rest (the prologue's
+branch to an entry's member with its registers loaded and its flags in memory, the entry number in the jump and
+transfer caches' words, the checker hashing the whole region at an entry, the map's entries installed with the
+region) existed for the continuations and serves any member. Members of a region with a `loop` stay without (PERF
+loop 51: inside the wasm `loop`), and so do members in another page (their edges' unchecked mapping relies on entering
+at the head's page).
+
+**Time** (the Mac):
+
+| workload | arm | time against the base | cycles | instructions | pairs / rounds | verdict |
+|---|---|---|---|---|---|---|
+| `node` (`bench/ab-mac.sh`) | every member an entry | −1.42% [−2.42, −0.41] | −1.22% [−1.74, −0.69] | +0.50% [+0.47, +0.53] | 6 | `LOWER` |
+| `smp` (4 vCPUs, same run) | every member an entry | −3.14% [−6.03, −0.16] | −0.59% `open` | +1.63% `open` | 10 | `LOWER` |
+| Firefox's pages session (`bench/gpu/ab-mac.sh`, alternated) | every member an entry | starts and loads 68.6 / 68.4 / 67.3 → 67.7 / 66.5 / 65.6 s (medians −2.8%, one round overlapping); CPU 279.4 → 275.1 s (−1.5%), cycles 945.9 → 932.1 G (−1.5%), neither overlapping; busy MIPS 481 → 487 | | instructions +1.4% | 3 | CPU and cycles lower |
+| `user` (`WORKLOADS=user,boot`) | both changes | −0.49% [−0.90, −0.08] | −0.87% [−1.39, −0.34] | +1.55% [+1.36, +1.75] | 9 | `LOWER` |
+| `boot` | both changes | −2.07% [−3.57, −0.54] | −1.53% [−2.49, −0.57] | −0.08% `same` | 6 | `LOWER` |
+
+The pages session's other counters: modules 2,729 → 2,684, wasm 119 → 118 MB, `emitMs` 1,819 → 1,756, `planMs` 665
+→ 636, interpreted steps 3.49 → 3.40 G, the lock taken 17.5 → 17.1 M times. More instructions for fewer cycles: the
+flags stored on the way into members are cheap stores, and what goes is interpreted steps and dispatches. On `node`
+the wasm 47.69 → 47.26 MiB, modules 1,461 → 1,417, interpreted steps −3.9%, `emit` −2.7%, `compile` −3.8%.
+
+**Memory: none.** The verdict's footprint column averages a bimodal measure: in each pair the session that runs
+second reads ~520 MiB (`node`) or ~750 MiB (`smp`) more, in either arm (the first arm's idle pages are in it), and
+the random order put `new` second in 8 of `smp`'s 10 pairs. By position: `smp` first 1,749-1,837 (base) and
+1,809-1,818 MiB (new), second 2,551-2,636 and 2,522-2,662; `node` 1,125 against 1,115-1,121 first, 1,643-1,647
+against 1,640-1,646 second; the gates 954 and 854 → 954 and 851. An entry's key is mostly one the map held already
+(its member ran interpreted before it was compiled); what it adds is a word in its head's list of linkers.
+
+**Row 11, the helper's second decode** (`jit_exec_flat`/`jit_exec_mmu` decoded the word for the interpreter's
+`exec` and again for the helper histogram, `jit::count`): the word is decoded once and the `Op` passed to both
+(`interp::exec_at_decoded`). Its micro-benchmark (`helper.c`: 1 M iterations of 8 `LDSMAX`, which has no inline form,
+each a `jit_exec_mmu` call, with the MMU on; PERF loop 21's runner, Node on the dev VM, alternated, medians of five
+runs): **246.8 / 246.6 / 246.4 → 239.1 / 238.7 / 242.9 ms, −3.0%, the rounds apart**: ~0.9 ns a call of the ~30 ns
+the loop takes per `LDSMAX`. At the pages session's 168 M helper instructions that is ~0.15 s, ~0.07% of its busy
+time; the gates' run above carries it (with the entries). The helpers grew ~1 KB each (`jit_exec_mmu` 14,466 →
+15,508 bytes: the decode is inline in them now).
+
+**The code** (`codestats.json`: `bench/jit/codestats.ts` on the modules of Alpine's boot, dumped by each core, every
+function in TurboFan): 317 modules and 6,677 functions → 300 and 6,061. In all, arm64 7.71 M → 7.65 M instructions
+(−0.8%), 29.26 → 29.07 MB of code (−0.6%), frame memory operands −4.0%; x64 6.044 M → 6.049 M instructions (+0.1%),
+26.52 → 26.65 MB (+0.5%), frame memory operands −0.7%, stack slots −10%. Per function +9-11% (fewer functions, each
+with the entries' prologue and the members it no longer leaves to another function). Deterministic and realtime
+round-robin's code changes with the rule as parallel SMP's does (the same regions and entries); `tests/steps.txt`
+doesn't move.
+
+**Tests and planted bugs.** `a_member_a_branch_reaches_is_an_entry` (block.rs: a region whose members only branches
+reach has them all as entries, with their numbers and lengths in `Emitted::entries`); tests/jit.test.ts "a region's
+member is an entry: run from outside, it isn't compiled again" (a member that the head reaches by `b` with its flags
+lazy from a `subs`, entered by the PC from outside with NZCV in the `Cpu` both ways: it runs compiled, branches by the
+`Cpu`'s flags, with X3 from the `Cpu`, and no region is compiled for it); the existing tests' entries updated (a
+callee taken and what its `ret` returns to are entries too). Planted, each caught: entries only at continuations
+again (the JS test: a region compiled for the member), the entry's way in not taking the flags from memory (the JS
+test: the branch taken the wrong way), the head's-page condition dropped (`an_aliased_continuation_is_no_entry`),
+entries in a region with a `loop` (`a_call_not_taken_returns_to_an_entry`, `flags_cross_region_edges_lazily`). Row
+11 changes no behavior (the histogram's counts are the tests' already).
+
+Next, untried: an entry costs a member whose flags arrived lazily their store on that edge (the +0.5% instructions on
+`node`); a member whose every edge carries lazy flags and that nothing outside enters often could stay without, which
+needs the emission's flag states before the entries are chosen (they are chosen first, for the map and the
+imports). The members left without entries interpret 77 M steps in the pages session (loops 43 M, other pages 33 M),
+~0.3% of its busy time at most.
+
+The runs: two counts in Node (35 s each) and two counting pages sessions (225 s each); `node` and `smp` paired (6 and 10
+pairs), six pages sessions (22 min), the gates paired (9 and 6 pairs); the micro-benchmark (3 rounds of 5 runs each
+arm); the static counts (5 min). CI: `ci.sh` (726 s) and `ci-jit.sh` (274 s); `tests/steps.txt` unmoved. No export or
+state layout changed: the ABI stays 74. Also fixed on the way: `bench/mac-packages.sh` sends `tools/remote-chromium.ts`
+to the Mac, which `bench/gpu/guest-session.ts` imports since 157831d4 (every Mac pages session failed at its start).

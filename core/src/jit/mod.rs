@@ -2767,8 +2767,10 @@ pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
 pub unsafe extern "C" fn jit_exec_flat(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
     // SAFETY: guaranteed by the caller.
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
-    let r = interp::exec_at(&mut v.cpu, &mut Flat(mem), insn, pc);
-    count(&mut v.jit, insn);
+    // Decoded once, for the interpreter and the histogram.
+    let op = crate::decode::decode(insn);
+    let r = interp::exec_at_decoded(&mut v.cpu, &mut Flat(mem), insn, pc, op);
+    count(&mut v.jit, op);
     // SAFETY: guaranteed by the caller.
     let r = unsafe { finish(v, insn, r) };
     status(&mut v.jit, r)
@@ -2783,8 +2785,10 @@ pub unsafe extern "C" fn jit_exec_mmu(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
     // SAFETY: guaranteed by the caller.
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
     let mut m = Mmu::new(mem, Some(&mut v.tlb));
-    let r = interp::exec_at(&mut v.cpu, &mut m, insn, pc);
-    count(&mut v.jit, insn);
+    // Decoded once, for the interpreter and the histogram.
+    let op = crate::decode::decode(insn);
+    let r = interp::exec_at_decoded(&mut v.cpu, &mut m, insn, pc, op);
+    count(&mut v.jit, op);
     // SAFETY: guaranteed by the caller.
     let r = unsafe { finish(v, insn, r) };
     status(&mut v.jit, r)
@@ -2831,9 +2835,9 @@ unsafe fn finish(v: &mut Vcpu, insn: u32, r: Result<(), Exit>) -> Result<(), Exi
 }
 
 /// Counts a helper call by instruction class.
-fn count(j: &mut State, insn: u32) {
+fn count(j: &mut State, op: crate::decode::Op) {
     if let Some(j) = j.cache.as_deref_mut() {
-        j.table.helper_ops[crate::decode::decode(insn) as usize] += 1;
+        j.table.helper_ops[op as usize] += 1;
     }
 }
 

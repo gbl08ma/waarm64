@@ -1,0 +1,38 @@
+node pair 1: new 9384, base 9587 ms (1946 s left)
+node pair 2: new 9317, base 9417 ms (1892 s left)
+node pair 3: base 9427, new 9328 ms (1838 s left)
+node pair 4: base 9458, new 9344 ms (1784 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              4 -1.36% [-3.93%, +1.28%] open         -1.16% [-2.38%, +0.08%] open         +0.51% [+0.48%, +0.55%] HIGHER       -1.14% [-2.97%, +0.72%] open        
+node pair 5: base 9469, new 9308 ms (1730 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              5 -1.43% [-2.92%, +0.08%] open         -1.22% [-2.00%, -0.43%] LOWER        +0.51% [+0.47%, +0.54%] HIGHER       -1.18% [-2.22%, -0.13%] LOWER       
+node pair 6: base 9472, new 9340 ms (1676 s left)
+node: decided, no longer run: new
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              6 -1.42% [-2.42%, -0.41%] LOWER        -1.22% [-1.74%, -0.69%] LOWER        +0.50% [+0.47%, +0.53%] HIGHER       -1.17% [-1.87%, -0.46%] LOWER       
+smp pair 1: base 9585, new 9265 ms (1617 s left)
+smp pair 2: new 9258, base 9299 ms (1557 s left)
+smp pair 3: new 9351, base 9643 ms (1498 s left)
+smp pair 4: new 9211, base 9417 ms (1439 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              4 -2.25% [-8.63%, +4.57%] open         -1.20% [-9.49%, +7.86%] open         +1.07% [-6.20%, +8.90%] open         -1.18% [-9.80%, +8.27%] open        
+smp pair 5: base 9599, new 9597 ms (1379 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              5 -1.81% [-6.50%, +3.12%] open         -0.75% [-6.31%, +5.14%] open         +1.84% [-4.86%, +9.02%] open         -0.76% [-6.39%, +5.21%] open        
+smp pair 6: new 9301, base 9893 ms (1319 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              6 -2.52% [-7.63%, +2.88%] open         -0.70% [-4.48%, +3.22%] open         +1.93% [-2.65%, +6.73%] open         -0.66% [-4.51%, +3.36%] open        
+smp pair 7: new 9389, base 10097 ms (1259 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              7 -3.17% [-8.21%, +2.14%] open         -0.84% [-3.75%, +2.16%] open         +1.60% [-2.24%, +5.58%] open         -0.76% [-3.71%, +2.27%] open        
+smp pair 8: base 9804, new 9446 ms (1198 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              8 -3.23% [-7.27%, +0.98%] open         -1.14% [-3.84%, +1.64%] open         +1.11% [-2.69%, +5.06%] open         -1.05% [-3.75%, +1.73%] open        
+smp pair 9: new 9399, base 9675 ms (1138 s left)
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new              9 -3.19% [-6.56%, +0.30%] open         -0.93% [-3.36%, +1.55%] open         +1.30% [-1.98%, +4.70%] open         -0.85% [-3.27%, +1.64%] open        
+smp pair 10: new 9263, base 9516 ms (1079 s left)
+smp: decided, no longer run: new
+  arm          pairs wall                                 cycles                               instr                                cpu                                 
+  new             10 -3.14% [-6.03%, -0.16%] LOWER        -0.59% [-3.12%, +2.00%] open         +1.63% [-1.51%, +4.88%] open         -0.49% [-3.07%, +2.16%] open        

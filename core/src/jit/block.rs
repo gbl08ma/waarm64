@@ -286,12 +286,15 @@ impl Region {
         head.key & KEY_MMU != 0 && !follows(from) && !follows(head)
     }
 
-    /// The members a call in the region returns to, where the head's page has
-    /// them (its PA page, at their PA offset from the head): a
-    /// function's entries besides its head ([`emit::ENTRY_BIT`]), since a
-    /// return reaches them from outside too (after anything that unwound the
-    /// host calls: an exception, the chunk's end). None in a loop (its
-    /// members are inside the `loop`, which only its head enters).
+    /// The function's entries besides its head ([`emit::ENTRY_BIT`]): every
+    /// member where the head's page has it (its PA page, at its PA offset
+    /// from the head). Whatever reaches a member inside the region, it can be
+    /// entered from outside too: a return to a call's continuation after
+    /// anything that unwound the host calls (an exception, the chunk's end),
+    /// a branch or a chain from another function, the dispatcher after the
+    /// region ran out of steps; without an entry it would run interpreted
+    /// until compiled again as a head (docs/jit.md "Calls"). None in a loop
+    /// (its members are inside the `loop`, which only its head enters).
     pub fn entries(&self) -> Vec<usize> {
         if self.looped() {
             return vec![];
@@ -303,16 +306,9 @@ impl Region {
             (b.key ^ head.key) >> 12 == 0
                 && (b.key & !3).wrapping_sub(head.key & !3) == b.va.wrapping_sub(head.va)
         };
-        let mut v: Vec<usize> = (0..self.blocks.len())
-            .filter_map(|i| {
-                let a = call_after(&self.blocks[i].words)?;
-                self.target(i, a).filter(|&j| j > i)
-            })
+        (1..self.blocks.len())
             .filter(|&j| at_head(&self.blocks[j]))
-            .collect();
-        v.sort_unstable();
-        v.dedup();
-        v
+            .collect()
     }
 
     /// The members that member `i`'s static edges go to (a call's target
@@ -2472,6 +2468,40 @@ mod tests {
         );
     }
 
+    /// A member that only a branch reaches is an entry too (PERF loop 74):
+    /// a branch from another function, or the dispatcher after the region ran
+    /// out of steps, enters it there instead of in the interpreter. Its
+    /// flags come from memory on that way in, so the edge into it that
+    /// carried them lazily stores them now.
+    #[test]
+    fn a_member_a_branch_reaches_is_an_entry() {
+        // 0x100: subs x5, x5, #1; b 0x108
+        // 0x108: b.ne 0x114
+        // 0x10c: add x2, x2, #1; ret
+        // 0x114: add x1, x1, #1; ret (0x110: ret)
+        let words = [
+            0xf10004a5, 0x14000001, 0x54000061, 0x91000442, 0xd65f03c0, 0x91000421, 0xd65f03c0,
+        ];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = forward(&m, 0x100, 0x100, &|_, k| k);
+        let keys: Vec<u64> = r.blocks.iter().map(|b| b.key).collect();
+        assert_eq!(keys, [0x100, 0x108, 0x10c, 0x114]);
+        assert_eq!(r.entries(), [1, 2, 3]);
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            &Config::DEFAULT,
+            true,
+            crate::cpu::FEATURES,
+            None,
+        );
+        assert_eq!(
+            e.entries,
+            [vec![(0x108, 1, 1), (0x10c, 2, 2), (0x114, 3, 2)]]
+        );
+    }
+
     #[test]
     fn a_call_not_taken_returns_to_an_entry() {
         // 0x100: add x2, x2, #1; bl 0x204
@@ -2522,7 +2552,8 @@ mod tests {
         let r = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x200));
         assert_eq!(keys(&r), [0x100, 0x120, 0x124, 0x104]);
         assert_eq!(r.returns, [(0x124, 0x104)]);
-        assert_eq!(r.entries(), [2, 3]);
+        // Every member is an entry: the callee and what it returns to too.
+        assert_eq!(r.entries(), [1, 2, 3]);
         // Admitted, 0x200 (a `udf`: no words) leaves too.
         let r = forward(&m, 0x100, 0x100, &|_, k| k);
         assert_eq!(keys(&r), [0x100, 0x120, 0x124, 0x104]);
@@ -2558,7 +2589,7 @@ mod tests {
         let keys: Vec<u64> = r.blocks.iter().map(|b| b.key).collect();
         assert_eq!(keys, [0x100, 0x104, 0x108, 0x10c, 0x120, 0x110]);
         assert_eq!(r.returns, [(0x120, 0x110)]);
-        assert_eq!(r.entries(), [2, 5]);
+        assert_eq!(r.entries(), [1, 2, 3, 4, 5]);
         // `member` isn't asked again for a VA taken.
         assert_eq!(asked.get(), 5);
         // Were the callee compiled too, the call at 0x104 would call its

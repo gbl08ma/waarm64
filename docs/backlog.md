@@ -129,19 +129,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the FP checks (below), and sway
   itself on the page again (the user's manual check). Not on graphics' path any more: 3D goes through
   virgl (graphics.md "Decisions"); llvmpipe stays what guests without 3D fall back to.
-- **Entries at a region's members** (what is left of "transfers that still leave a function"; `bench/boot/REPORT.md`
-  "PERF loop 72"): a block installed as a region's member and entered from outside it runs interpreted until it is
-  compiled again as a head. Counted with 64-block regions: 8-12% of the interpreted steps reported are at such
-  members (0.4% of the boot's steps, 0.2% of the userspace run's, ~0.3% of a Firefox pages session's), and 15% of
-  that session's regions are headed by a block already a member (compiled twice). The bound for the page is 1.9% of
-  busy time (1.2% the steps, 0.7% their round trips through the dispatcher), half of it at best. A function's
-  entries exist (`Region::entries`: a call's continuations): extend them to the members entered from outside, where
-  the head's page has them and outside a `loop`; measure with the pages session and the wasm's bytes. The other
-  transfers that leave are counted there per 1000 steps (direct chains 24-34, the jump cache 3-7, by-VA links 4-19,
-  the transfer cache 2-24, host calls 8-21); following every callee stays under the floor ([jit.md](jit.md) "Calls").
-- **The helper decodes its word twice** (`jit::count` for the histogram, then the interpreter's own decode): 168 M
-  instructions a Firefox pages session, under 0.4% of busy time at 5 ns each. Pass the `Op` on, with other work in the
-  file; its own micro-benchmark judges it.
 - **The FP fast paths' lane ops** (2026-10-18: `bench/interp/REPORT.md` "M8: the FP fast paths' SIMD ops"). On
   the M4 the paths are bound by the SIMD pipes, not by their branches or reductions ([jit.md](jit.md) "What the
   checks cost"; one check for a run of instructions saved nothing: "Tried and not kept"). With every check forced

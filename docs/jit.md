@@ -16,7 +16,8 @@ the interpreter's own code.
   through the inline TLB, FP on exact fast paths, NEON as SIMD128, crypto), and **helper calls**
   into the core for everything else. The generic helpers `jit_exec_flat`/`jit_exec_mmu(vcpu,
   insn, pc) -> status` run one instruction through the interpreter's `exec` on the block's bus
-  (`interp::exec_at`, shared with the interpreter); narrower helpers exist for load/store slow
+  (`interp::exec_at_decoded`, `exec_at` with the word decoded once for both the interpreter and the helper
+  histogram: ~0.9 ns a call, PERF loop 74); narrower helpers exist for load/store slow
   paths and system instructions. Helpers return 0 (retired) or 1 (exit pending), and the code
   returns at once on 1.
 - **Faults and exits:** a helper records the exception in the per-vCPU JIT state
@@ -145,11 +146,11 @@ the interpreter's own code.
     block of the batch and the batch's other blocks that static edges reach from it, so each block
     of a batch is compiled **once**, as a head or as a member. The edges between members keep
     registers and lazy flags in locals instead of leaving one function for the next (a frame, the
-    write-backs, NZCV and the PC, a tail call). A loop head isn't taken. **A member has no
-    function of its own:** entered from elsewhere (a branch from outside, a return into it, the
-    dispatcher after its region ran out of steps) it is a block not compiled yet, counted from zero
-    again and compiled as a head (with what it reaches in *that* batch) at the threshold. So only
-    blocks with several hot entries are compiled more than once.
+    write-backs, NZCV and the PC, a tail call). A loop head isn't taken. **A member where the head's page has it is
+    an entry of the region's function** ("Calls" below, "Entries"): entered from elsewhere (a branch from outside, a
+    return into it, the dispatcher after its region ran out of steps) it runs there. A member in another page, and
+    any member of a region with a `loop`, has no function of its own: entered from elsewhere it is a block not compiled
+    yet, counted from zero again and compiled as a head (with what it reaches in *that* batch) at the threshold.
     - **Warm members** (`Config::warm`, **16**; 0 in JIT-stress, JIT-check and `jit_new`): a
       region also takes a successor in reach that has run that many dispatches but isn't compiled
       or in the batch (not a loop head). Without it, a successor that gets hot after its
@@ -442,23 +443,39 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   nested exits' code: dropped (bench/boot/REPORT.md "PERF loop 50"). Counted again with 64-block regions (PERF loop
   72): 10-14% of the host calls would go (the boot 4.0M of 39.9M, the userspace run 16.4M of 140.6M), 0.2-0.65% of the
   gates and 0.2-0.45% of a Firefox pages session at 2-4 ns each: the verdict stands.
-- **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
-  function (`Region::entries`; none in a region with a `loop`, whose members sit inside it: a loop region, and a
-  forward region with an edge back to its head, which is what a loop through a call is, `for (…) f(x);`: after anything
-  that unwound inside `f` its continuation runs interpreted until compiled again as a head. **Not changed** (PERF loop
-  51): counted, those continuations and the members after them run 0.01-0.07% of the steps interpreted (Alpine's
-  boots and userspace, deterministic and parallel; Firefox's pages session 0.023%), 150-300K dispatches a gate run,
-  under 0.5% of the boot's time at most; an entry inside a wasm `loop` needs a dispatch on every lap or the members
-  emitted again outside it: bench/boot/REPORT.md "PERF loop 51"), because a return also
-  reaches it from outside, at depth 0 after anything that unwound the host frames. Only a member where the head's
-  page has it is an entry (the head's PA page, at its PA offset from the head): entered by its own VA, the function
-  then has the head's mapping too, which the edges `Region::checked` leaves unchecked rely on. A continuation reached
-  through another VA page that maps the same PA page isn't one. A region with entries takes no hot word (asserted):
-  `emit::tier_up` runs before the entries' prologue. A block's word in the jump and
-  transfer caches holds its function's table index in the low 24 bits (`IDX_MASK`, asserted) and its entry number
-  above (`ENTRY_SHIFT`); a transfer passes the entry number above `ENTRY_BIT` (16) of the depth parameter, and the
-  prologue clears it and branches to that member. Without the entry, a continuation ran interpreted until compiled
-  again as a head (54% more dispatches in Firefox).
+- **Entries:** every member where the head's page has it (the head's PA page, at its PA offset from the head) is an
+  **entry** of the region's function (`Region::entries`), none in a region with a `loop`. A member is reached from
+  outside its region in many ways: a return to a call's continuation at depth 0 after anything that unwound the host
+  frames, a branch or a chain from another function, the transfer caches, the dispatcher after the region ran out of
+  steps. Entered by its own VA, the function then has the head's mapping too, which the edges `Region::checked`
+  leaves unchecked rely on; so a member in another page, or reached through another VA page that maps the same PA
+  page, isn't one. A block's word in the jump and transfer caches holds its function's table index in the low 24 bits
+  (`IDX_MASK`, asserted) and its entry number above (`ENTRY_SHIFT`); a transfer passes the entry number above
+  `ENTRY_BIT` (16) of the depth parameter, and the prologue clears it and branches to that member with the registers
+  it starts with loaded and its flags in memory (an entry's way in is one more edge into the member: an edge that
+  carried its flags lazily stores them now). A region with entries takes no hot word (asserted): `emit::tier_up` runs
+  before the entries' prologue (a head compiled alone has no members).
+  - **Every member, not only continuations** (PERF loop 74, bench/boot/REPORT.md): until then only a call's
+    continuation was an entry, and any other member entered from outside ran interpreted until it was compiled again
+    as a head. Counted with 64-block regions, such members ran 5-13% of the interpreted steps reported (Alpine's boot
+    7.4 M of 127 M, its userspace run 13.5 M of 171 M, `smp_user_jit_4` 24 M of 192 M, Firefox's pages session 109 M
+    of 2,156 M), and 15% of the session's regions were headed by a block already a member. With every member an
+    entry, entries per region go from 0.5-0.6 to 2.5-2.8, yet the regions compiled again fall 6-11% and with them the
+    wasm (boot −2.4%, userspace −3.8%, `smp_user_jit_4` −5.6%, the pages session −1.7%), V8's compile time (−3 to
+    −12%) and the interpreted steps (−2.3 to −6.2%). The flags the new ways in take from memory cost compiled code
+    0.5% more instructions on `node` (1.4% in the pages session); on the Mac `node` ran 1.4% faster and the 4-vCPU
+    `smp` workload 3.1%, and the pages session took 1.5% less CPU and cycles (its starts and loads −2.8%, the rounds
+    overlapping by one), no memory more.
+    Left without entries: members of regions with a loop (boot 2.6 M interpreted steps, the pages session 44 M) and
+    members in another page (0.8 M, 34 M).
+  - **Inside a `loop`, not changed** (PERF loop 51): after anything that unwound inside `f`, a loop through a call's
+    continuation (`for (…) f(x);`, a forward region with an edge back to its head) runs interpreted until compiled
+    again as a head. Counted, those continuations and the members after them run 0.01-0.07% of the steps interpreted
+    (Alpine's boots and userspace, deterministic and parallel; Firefox's pages session 0.023%), 150-300K dispatches a
+    gate run, under 0.5% of the boot's time at most; an entry inside a wasm `loop` needs a dispatch on every lap or
+    the members emitted again outside it (bench/boot/REPORT.md "PERF loop 51"). Without the continuations' entries
+    (before host calls had them), a continuation ran interpreted until compiled again as a head: 54% more dispatches
+    in Firefox.
 - **The stale-code checker** covers both new ways in: an entry at a member hashes the whole region (the members
   after it run too), and a host return into its caller is checked as an entry before the members run on (the
   callee may have rewritten them without an IC).
@@ -1972,14 +1989,6 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   small leaf functions (every path returns within 4 or 10 blocks, no calls), it changed nothing:
   few calls qualify. Unlimited, it made 80% more wasm (Alpine's boot 30% slower, churn 20%)
   and no phase faster. The patch is in `bench/boot/results/m8-xpage/`.
-- **Regions entered at more than one block** (a `br_table` on an entry index, v86's shape), so a
-  member entered from outside its region runs there instead of waiting in the interpreter to be
-  compiled again as a head: measured in October with 16-block regions, not built. Such blocks ran 0.01–0.04% of the
-  userspace phases' steps interpreted (6–16% of their few dispatches), about 1% of a phase at most, and
-  multi-entry would have put an entry parameter on every function (`bench/boot/REPORT.md` "M8: what a
-  region entered at more than one block could win"). Both moved since: functions have entries (a call's
-  continuations, [Calls](#calls)), and with 64-block regions such members run 0.2% of the userspace run's steps and
-  0.4% of the boot's interpreted (PERF loop 72): open again, in docs/backlog.md.
 - **A per-block compile threshold** (2026-10-25; `bench/interp/REPORT.md` "Compile by expected benefit against
   cost", the patch in `bench/interp/results/m8-cp/`): measured first, then screened against the floor and the
   pressure rule. Cost: a compiled guest instruction is ~94 wasm bytes and ~3.3 µs of the vCPU's time (the emit ~12.7

@@ -1,0 +1,84 @@
+== boot: 2,650,367,147 steps (2,650,367,147 with every entry)
+  interpreted steps reported at a key with no function      126,745,079     119,547,013
+  of those at a member                                       11,147,420       3,496,409  (8.8% -> 2.9%)
+    where the head's page has it, no loop                    7,386,352          54,601
+    in a region with a loop                                  2,711,108       2,639,913
+    elsewhere (another page)                                 1,049,960         801,895
+  regions; headed by a member; by one an entry could be  5,565; 939; 435 -> 5,123; 479; 0
+  members; where an entry could be; entries made        20,244; 15,201; 3,442 -> 19,429; 14,442; 14,442
+  compiled block, then interpreted code (round trips)        4,404,941       4,260,370
+  bytes                                                     18,364,693      17,917,548    -2.4%
+  modules                                                          310             292    -5.8%
+  blocks                                                         5,565           5,123    -7.9%
+  regionBlocks                                                  25,809          24,552    -4.9%
+  inline                                                       130,068         123,267    -5.2%
+  flagsStored                                                   15,623           9,757   -37.5%
+  condMemory                                                       618             688   +11.3%
+  emitNs                                                   229,533,696     229,946,624    +0.2%
+  planNs                                                    66,702,848      65,000,960    -2.6%
+  compileNs                                                 65,601,536      61,709,568    -5.9%
+  dispatches                                                 4,833,798       4,692,983    -2.9%
+  decSteps                                                 149,206,252     142,967,918    -4.2%
+== user: 10,431,311,691 steps (10,431,311,691 with every entry)
+  interpreted steps reported at a key with no function      170,799,302     157,529,100
+  of those at a member                                       20,880,030       6,605,075  (12.2% -> 4.2%)
+    where the head's page has it, no loop                   13,547,792          54,601
+    in a region with a loop                                  5,005,732       4,753,124
+    elsewhere (another page)                                 2,326,506       1,797,350
+  regions; headed by a member; by one an entry could be  7,649; 1,579; 773 -> 6,871; 764; 0
+  members; where an entry could be; entries made        26,476; 19,470; 4,202 -> 25,210; 18,391; 18,391
+  compiled block, then interpreted code (round trips)        6,116,335       5,827,370
+  bytes                                                     24,654,166      23,708,152    -3.8%
+  modules                                                          531             494    -7.0%
+  blocks                                                         7,649           6,871   -10.2%
+  regionBlocks                                                  34,125          32,081    -6.0%
+  inline                                                       177,719         165,311    -7.0%
+  flagsStored                                                   22,301          13,912   -37.6%
+  condMemory                                                       861             940    +9.2%
+  emitNs                                                   290,532,096     282,180,096    -2.9%
+  planNs                                                    87,205,888      82,981,376    -4.8%
+  compileNs                                                100,519,168      88,842,752   -11.6%
+  dispatches                                                 7,149,573       6,867,934    -3.9%
+  decSteps                                                 194,647,521     182,989,866    -6.0%
+== smp-user4: 31,645,487,708 steps (31,592,806,915 with every entry)
+  interpreted steps reported at a key with no function      191,717,205     168,730,098
+  of those at a member                                       33,609,763       9,066,829  (17.5% -> 5.4%)
+    where the head's page has it, no loop                   23,978,175          54,737
+    in a region with a loop                                  5,535,284       5,577,960
+    elsewhere (another page)                                 4,096,304       3,434,132
+  regions; headed by a member; by one an entry could be  9,092; 1,856; 1,075 -> 8,117; 756; 0
+  members; where an entry could be; entries made        28,775; 21,738; 4,669 -> 26,822; 20,038; 20,038
+  compiled block, then interpreted code (round trips)        9,471,791       9,164,860
+  bytes                                                     27,170,679      25,662,036    -5.6%
+  modules                                                          542             515    -5.0%
+  blocks                                                         9,092           8,117   -10.7%
+  regionBlocks                                                  37,867          34,939    -7.7%
+  inline                                                       199,737         182,662    -8.5%
+  flagsStored                                                   24,060          14,433   -40.0%
+  condMemory                                                       930           1,019    +9.6%
+  emitNs                                                   424,468,224     429,878,272    +1.3%
+  planNs                                                   108,827,136     101,120,768    -7.1%
+  compileNs                                                121,196,800     108,863,488   -10.2%
+  dispatches                                                12,286,159      12,031,209    -2.1%
+  decSteps                                                 308,232,585     289,152,077    -6.2%
+== pages: 97,238,623,973 steps (97,210,581,787 with every entry)
+  interpreted steps reported at a key with no function    2,156,112,150   2,054,011,123
+  of those at a member                                      185,112,483      78,077,904  (8.6% -> 3.8%)
+    where the head's page has it, no loop                  108,765,432         348,000
+    in a region with a loop                                 43,379,616      44,155,904
+    elsewhere (another page)                                32,967,435      33,574,000
+  regions; headed by a member; by one an entry could be  43,342; 6,532; 2,702 -> 40,824; 3,927; 0
+  members; where an entry could be; entries made        163,351; 120,606; 22,413 -> 157,460; 113,964; 113,964
+  compiled block, then interpreted code (round trips)      138,869,342     136,237,741
+  bytes                                                    152,158,489     149,577,883    -1.7%
+  modules                                                        2,554           2,512    -1.6%
+  blocks                                                        43,342          40,824    -5.8%
+  regionBlocks                                                 206,693         198,284    -4.1%
+  inline                                                     1,005,369         963,354    -4.2%
+  flagsStored                                                  152,837          98,316   -35.7%
+  condMemory                                                     3,501           4,865   +39.0%
+  emitNs                                                 1,749,505,024   1,725,062,912    -1.4%
+  planNs                                                   555,236,864     546,055,936    -1.7%
+  compileNs                                                397,452,288     384,494,336    -3.3%
+  dispatches                                               163,391,892     160,350,615    -1.9%
+  decSteps                                               3,840,567,259   3,753,404,486    -2.3%
