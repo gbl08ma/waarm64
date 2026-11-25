@@ -27,7 +27,7 @@
 // `deqp-now` line, ~2 s old) and, for a CASES list without patterns dealt in JOBS_BLOCK blocks, results.crashRunning
 // (the case each process was most likely in; the GPU may lose the context a few cases after the one that caused it).
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { traceHeader } from '../../web/virgl-trace.ts';
 import { MachineStopped, openSession } from './guest-session.ts';
 
@@ -103,7 +103,11 @@ log('info', results.info);
 // The case list, in the guest.
 if (process.env.CASES) {
   const cases = readFileSync(process.env.CASES, 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).join('\n');
-  await pasteSerial(`cat > /tmp/patterns.txt <<'EOF'\n${cases}\nEOF`);
+  // Gzipped through the terminal, as the results come back (its echo passes ~16 KB/s: dEQP-VK's whole pass list as
+  // text, 9 MB, outlasted the paste's wait on the Windows VM's Chrome).
+  const gz = gzipSync(`${cases}\n`, { level: 9 }).toString('base64').replace(/.{1,150}/g, '$&\n');
+  await pasteSerial(`base64 -d > /tmp/patterns.gz <<'EOF'\n${gz}EOF`);
+  await run('gunzip -c /tmp/patterns.gz > /tmp/patterns.txt; wc -l < /tmp/patterns.txt');
   // A name with `*` stands for the mustpass list's cases it matches (dEQP's case lists take no wildcards); each case once
   // (deqp-vk exits at once on a duplicate).
   await run(`while read -r p; do case "$p" in *'*'*) grep -E "^$(echo "$p" | sed 's/[.]/[.]/g; s/[*]/.*/g')$" /mnt/vdb/deqp/${api}-main.txt;; *) echo "$p";; esac; done < /tmp/patterns.txt | awk '!seen[$0]++' > /tmp/cases.txt`);
