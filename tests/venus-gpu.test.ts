@@ -142,6 +142,27 @@ test('?gpu=vkpipelines=sync makes them at once, as before', async () => {
   assert.deepEqual(log, ['made at once']);
 });
 
+test('a lost device\'s rejected error scopes are handled: no unhandled rejection a creation, nothing warned', async () => {
+  const { device } = fakeDevice();
+  (device as unknown as { popErrorScope: () => Promise<null> }).popErrorScope = () => Promise.reject(new Error('OperationError: the device was lost'));
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const gpu = new VenusGpu(device, memory, () => {}, () => [], { syncPipelines: true });
+  const wg = gpu.imports() as Record<string, (...a: number[]) => number | void>;
+  const b = new TextEncoder().encode('{"layout":0,"vertex":{"module":0}}');
+  new Uint8Array(memory.buffer).set(b);
+  const unhandled: unknown[] = [];
+  const on = (e: unknown) => unhandled.push(e);
+  process.on('unhandledRejection', on);
+  try {
+    for (let id = 2; id < 7; id++) wg.gpu_create(6, id, 0, b.length);
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  } finally {
+    process.off('unhandledRejection', on);
+  }
+  assert.deepEqual(unhandled, []);
+  assert.equal(gpu.stats.errors, 0);
+});
+
 test('a submit\'s parts are counted (VK3 L2b): its encoding, queue.submit, passes, draws, and the done of those with a pass', async () => {
   const { gpu, wg, put, settle } = setup();
   wg.gpu_encoder();

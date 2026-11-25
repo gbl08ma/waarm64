@@ -394,6 +394,19 @@ export class VenusGpu {
     device?.addEventListener('uncapturederror', (e) => this.warn(`WebGPU: ${e.error.message}`));
   }
 
+  /**
+   * The error scope pushed before a creation, popped: its error warned as `what` says. A lost device rejects the pop
+   * (`device.lost` says why, web/gpu-worker.ts): nothing to warn, and no rejection left unhandled at each creation.
+   */
+  private popWarn(d: GPUDevice, what: (e: GPUError) => string) {
+    d.popErrorScope().then(
+      (e) => {
+        if (e) this.warn(what(e));
+      },
+      () => {},
+    );
+  }
+
   private warn(m: string) {
     this.stats.errors++;
     const key = m.slice(0, 200);
@@ -2317,9 +2330,7 @@ override bit: u32 = 8u;
             kind === 6
               ? d.createRenderPipeline(j as GPURenderPipelineDescriptor)
               : d.createComputePipeline(j as GPUComputePipelineDescriptor);
-          void d.popErrorScope().then((e) => {
-            if (e) this.warn(`${what}: ${e.message} (${text})`);
-          });
+          this.popWarn(d, (e) => `${what}: ${e.message} (${text})`);
           return p;
         };
         const t0 = performance.now();
@@ -2373,9 +2384,7 @@ override bit: u32 = 8u;
             .filter((e) => writable.has(e.binding) && e.view !== undefined)
             .map((e) => this.get<View>(e.view).tex);
         this.groupWrites[id] = writes?.length ? writes : undefined;
-        void d.popErrorScope().then((e) => {
-          if (e) this.warn(`a bind group: ${e.message}`);
-        });
+        this.popWarn(d, (e) => `a bind group: ${e.message}`);
         this.stats.bindGroups++;
         return;
       }
@@ -3453,9 +3462,7 @@ ${vs}
     });
     const main = d.createComputePipeline({ layout: pl, compute: { module, entryPoint: 'wgx_main' } });
     const advance = d.createComputePipeline({ layout: pl, compute: { module, entryPoint: 'wgx_advance' } });
-    void d.popErrorScope().then((e) => {
-      if (e) this.warn(`transform feedback's pipelines: ${e.message.slice(0, 300)}`);
-    });
+    this.popWarn(d, (e) => `transform feedback's pipelines: ${e.message.slice(0, 300)}`);
     x.pipelines = { main, advance, layout, slots, captured };
     return x.pipelines;
   }
@@ -3735,9 +3742,7 @@ ${vs}
     });
     const constants = Object.fromEntries(Object.entries(v.constants).filter(([k]) => code.includes(`override ${k}:`)));
     const main = d.createComputePipeline({ layout: pl, compute: { module, entryPoint: 'wgv_main', constants } });
-    void d.popErrorScope().then((e) => {
-      if (e) this.warn(`a storing vertex stage's pre-pass: ${e.message.slice(0, 300)}`);
-    });
+    this.popWarn(d, (e) => `a storing vertex stage's pre-pass: ${e.message.slice(0, 300)}`);
     v.pipelines = { main, layout, slots: f.slots };
     return v.pipelines;
   }

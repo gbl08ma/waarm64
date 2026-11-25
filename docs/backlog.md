@@ -370,6 +370,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   proven ANGLE's: invariance's common_subexpression_3. Then a Windows/D3D11
   expectations file beside tests/deqp/ so a rerun shows only what's new. Context losses on D3D11 that only a draw
   reveals (HLSL that fails to compile for the draw's layout) still crash the machine (the entry on lost contexts).
+- **Hardware-decoded frames cost the GPU's fences** (Chrome on the Windows VM, headed so it offers hardware decoders
+  for H.264, VP9, AV1 and HEVC; headless offers none; 2026-11-25, `bench/gpu/chromium-video.ts`, the H.264 trailer in
+  the guest's Chromium): decoded in hardware, a picture is out in 14–19 ms (software: ~211 ms), but the fences' mean
+  wait went from 0.27 ms to 2.6–3.3 ms and the guest's page dropped 2 frames in 20 s (none in software, headed alike).
+  The likely cost is `copyTo` reading a GPU frame back, queued with the WebGL work in Chrome's GPU process; a frame
+  uploaded GPU to GPU into the planes' textures would avoid it (the planes stay the guest's resources: a read of them
+  would then need the texture's bytes).
 - **The published desktop demo image's Chromium doesn't start** ("libsimdutf.so.36: cannot open shared object file";
   images.md "The `simdutf36-compat` package"): an image rebuilt since starts it (2026-11-25); publishing one is the
   user's call.
@@ -401,8 +408,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   crashes the machine ([The browser lost the screen's WebGL context](ui:display:worker-messages.webglLost)), the guest's
   unsaved work with it. The renderer's objects are gone and can't be made again, but the machine needn't be: tell the
   guest (Venus answers `VK_ERROR_DEVICE_LOST`, virgl's contexts end, 3D off as `off3d` has it) and keep it running
-  with the 2D screen on a new context, so it can be saved or shut down. Beside it: after `device.lost` (only a warning,
-  web/gpu-worker.ts) the pending `popErrorScope` promises reject uncaught, five a frame.
+  with the 2D screen on a new context, so it can be saved or shut down.
 - **A WebGPU backend for virgl** (GLES 3.1: compute, storage buffers), only where `navigator.gpu` gives an adapter.
   It could share what Vulkan's renderer learned of WebGPU (graphics.md "Vulkan through Venus").
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
