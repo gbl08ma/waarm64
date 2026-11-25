@@ -7,14 +7,12 @@
 # Metal); `timing` a timing case's warning on a busy host. The pass lists stay SwiftShader's (tests/deqp/gles*.txt).
 
 # GLES2: {'CompatibilityWarning': 1, 'Fail': 8, 'Pass': 17024, 'QualityWarning': 2}; invariance's 6 pass since
-dEQP-GLES2.functional.flush_finish.flush CompatibilityWarning  # timing
 dEQP-GLES2.functional.polygon_offset.default_render_with_units Fail  # angle 42260109
 dEQP-GLES2.functional.polygon_offset.fixed16_render_with_units Fail  # angle 42260109
 dEQP-GLES2.functional.rasterization.interpolation.basic.lines QualityWarning  # line
 dEQP-GLES2.functional.rasterization.interpolation.projected.lines QualityWarning  # line
 
 # GLES3: {'Fail': 81, 'Pass': 44391, 'QualityWarning': 4}; invariance's 6 pass since
-dEQP-GLES3.functional.draw_buffers_indexed.random.max_implementation_draw_buffers.2 Fail  # ours
 dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_dst_x Fail  # angle 42261975
 dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_dst_y Fail  # angle 42261975
 dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_out_of_bounds_mag_reverse_src_x Fail  # angle 42261975
@@ -93,3 +91,8 @@ dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler3d_fragment 
 dEQP-GLES3.functional.shaders.texture_functions.texturesize.usampler3d_vertex Fail  # angle 40644748
 dEQP-GLES3.functional.shaders.texture_functions.texturesize.usamplercube_fragment Fail  # angle 40644748
 dEQP-GLES3.functional.shaders.texture_functions.texturesize.usamplercube_vertex Fail  # angle 40644748
+
+# Intermittent there (a different case of the group each run, passing again alone; 2026-11-25), and timing warnings.
+dEQP-GLES3.functional.draw_buffers_indexed.random.max_implementation_draw_buffers.* Fail  # intermittent
+dEQP-GLES2.functional.flush_finish.* CompatibilityWarning  # timing
+dEQP-GLES3.functional.flush_finish.* CompatibilityWarning  # timing

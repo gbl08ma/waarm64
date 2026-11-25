@@ -372,7 +372,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `deqp-run.ts` with `WAARM64_CDP` runs a list there (docs/devenv.md "Chrome on the Windows VM").
 - **dEQP's failures left on ANGLE's D3D11** (graphics.md "Findings"; 2026-11-25, NVIDIA, Chrome 158): GLES2 2 Fail,
   GLES3 75, each in `tests/deqp/d3d11-expected.txt` (`deqp-run.ts EXPECT=` shows what's new), all ANGLE's own D3D11
-  expectations but `draw_buffers_indexed.random.max_implementation_draw_buffers.2` (1, once). Context losses on D3D11
+  expectations. Intermittent there (one a full run, passing again in their groups): `draw_buffers_indexed.random`'s
+  max_implementation_draw_buffers (a different case each run: in the file as a pattern), and once each
+  `rasterization.fbo.rbo_multisample_4.primitives.triangles`, `texture.shadow.2d_array`'s nearest equal and
+  linear_mipmap_nearest greater_or_equal depth_component16, `fragment_ops.blend.fbo_srgb`'s
+  one_minus_constant_alpha_src_alpha. Context losses on D3D11
   that only a draw reveals (HLSL that fails to compile for the draw's layout) stop 3D (backlog "3D back after a lost
   graphics context").
 - **Hardware-decoded frames cost the GPU's fences** (Chrome on the Windows VM, headed so it offers hardware decoders
