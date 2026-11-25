@@ -55,6 +55,7 @@ export function installBenchHooks(
   };
   window.__waarm64Heap = () => void ask((id) => ({ type: 'heap', id })).then((a) => a && (window.__heap = a.heap));
   window.__waarm64StallGpu = (ms) => gpu({ type: 'stall', ms });
+  window.__waarm64LoseGpu = () => gpu({ type: 'lose' });
   window.__waarm64VkSkip = (paths) => gpu({ type: 'vkskip', skip: paths });
   window.__waarm64Grab = () => {
     const w = m.run?.gpu;

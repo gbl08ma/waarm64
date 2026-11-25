@@ -35,6 +35,8 @@ import { venusPipelines, type FromGpuWorker, type ToGpuWorker, type VulkanReport
 
 let ram: Uint8Array[] = [];
 let snapshotBytes = () => 0;
+/** The screen's context lost on purpose (the `lose` test hook), once there is one. */
+let loseContext: (() => void) | undefined;
 /** The Venus renderer's `skip`, once it runs (the `vkskip` bench hook). */
 let venusSkip: ((paths: string[]) => void) | undefined;
 let grab = (id: number) =>
@@ -57,6 +59,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   }
   if (e.data?.type === 'grab') return grab(e.data.id);
   if (e.data?.type === 'vkskip') return venusSkip?.(e.data.skip);
+  if (e.data.type === 'lose') return loseContext?.();
   if (e.data?.type === 'stall') {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, e.data.ms);
     return;
@@ -78,8 +81,16 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     post({ type: 'failed', reason: 'this browser has no WebGL2 here' });
     return;
   }
+  // A lost context (the GPU process gone, the device reset) takes every renderer object with it: 3D stops, the machine
+  // doesn't. The device turns 3D off (web/gpu.ts `hostLost`: no new contexts, a snapshot without the renderer's state),
+  // the page says so, and from here on `run` answers fences, reads and snapshots' questions and drops virgl's calls.
+  let lost = false;
+  loseContext = () => gl.getExtension('WEBGL_lose_context')?.loseContext();
   canvas.addEventListener('webglcontextlost', (ev) => {
     ev.preventDefault();
+    if (lost) return;
+    lost = true;
+    port.postMessage({ t: 'lost' });
     post({ type: 'lost' });
   });
   // The decoders first: the caps advertise what they found, and the renderer decodes with them.
@@ -133,7 +144,32 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     }
   };
   const poller = new QueryPoller(renderer, fenced, queryPoll ?? 'spin');
+  /** A call after the context was lost: true if handled here (answered or dropped), false for `run` to go on with it. */
+  const runLost = (c: WorkerCall): boolean => {
+    switch (c.t) {
+      case 'fence':
+      case 'ram':
+        return false;
+      case 'read':
+        port.postMessage({ t: 'read', id: c.id, bytes: null });
+        return true;
+      case 'refusal':
+        port.postMessage({ t: 'refusal', id: c.id, refused: toWire(new MsgError('display:gpu-worker.lost3d')) });
+        return true;
+      case 'save':
+        port.postMessage({ t: 'saved', id: c.id, refused: toWire(new MsgError('display:gpu-worker.lost3d')) });
+        return true;
+      case 'venus-init':
+        // Venus shows its frames through virgl's textures, which are gone.
+        fenced.release();
+        return true;
+      default:
+        // Venus's own calls go on (WebGPU may have kept its device; its frames won't show); virgl's are dropped.
+        return !VENUS_CALLS.has(c.t);
+    }
+  };
   const run = (c: WorkerCall) => {
+    if (lost && runLost(c)) return;
     if (c.t === 'venus-init') {
       venusBacklog = [];
       startVenus(c, knobs, gl, renderer, {

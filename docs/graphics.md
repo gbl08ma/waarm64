@@ -80,7 +80,11 @@ gfxstream driver is Vulkan only.
   table `web/virgl-formats.ts`) and draws the screen. Guest RAM is
   shared memory, so the renderer reads and writes the guest's pages in place.
 - Without WebGL2, or if the context or the caps can't be made (`failed`), the machine starts again as 2D. A lost
-  context on a 3D machine stops it with a message (every renderer object is gone with it); a 2D machine's WebGL2
+  context on a 3D machine stops 3D, not the machine ([The browser lost the 3D graphics. The machine keeps running without 3D, but its screen no longer updates. Save a snapshot or power it off.](ui:display:worker-messages.webglLost)):
+  every renderer object is gone with it, so the GPU worker answers fences, reads and snapshots' questions and drops
+  virgl's calls (Venus's go on), and the device turns 3D off as a restore that can't back it does (`off3d`: no new
+  context; a snapshot saves the machine without the renderer's state and its restore keeps 3D off) until the guest
+  starts again. The screen stops updating (backlog.md "3D back after a lost graphics context"). A 2D machine's WebGL2
   screen draws again when its context comes back.
 - **The switches:** the Machine menu's Graphics (3D or 2D, a restart applies it); on the query, `?gpu=2d`, `virgl`,
   `virgl-null` (the null renderer: streams walked and counted, nothing drawn, fences at once), `nopace` and `q<N>`

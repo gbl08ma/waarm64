@@ -1347,6 +1347,17 @@ export class Gpu {
     };
   }
 
+  /**
+   * The host lost its 3D (the browser took the WebGL context: web/gpu-worker.ts): 3D is off from now, as a restore
+   * that can't back it leaves it (`off3d`). No context can be made; the guest's calls still go (the host drops them and
+   * answers their fences); a snapshot saves the machine without the renderer's state, and its restore keeps 3D off.
+   * Until the guest starts again (`reset`).
+   */
+  hostLost() {
+    this.off3d ??= 'the browser lost its 3D context';
+    console.warn(`virtio-gpu: 3D is off: ${this.off3d}`);
+  }
+
   /** 3D in use: a context's resources, or a 3D resource. */
   private inUse3d() {
     return this.used.size > 0 || [...this.resources.values()].some((r) => r.three);

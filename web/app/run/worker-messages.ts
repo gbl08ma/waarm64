@@ -1,7 +1,7 @@
 // What the run's workers and display port say (web/app/protocol.ts `FromWorker`, web/gpu-present.ts `DisplayToPage`,
 // web/gpu-messages.ts `FromGpuWorker`), by message type: each table is a run's (web/app/run/runner.ts sets them,
 // dropped once the run is replaced: `Run.guard`).
-import { msg, MsgError, t, text } from '../../i18n.ts';
+import { msg, t, text } from '../../i18n.ts';
 import { fromWire } from '../../msg.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
 import type { FromGpuWorker } from '../../gpu-messages.ts';
@@ -192,7 +192,8 @@ export function gpuHandlers(
     },
     failed: (m) => failed(m.reason),
     stats: (m) => showGraphics('3d', m),
-    lost: () => x.crash(r, new MsgError('display:worker-messages.webglLost')),
+    // The machine runs on without 3D (web/gpu-worker.ts): said, not a crash.
+    lost: () => x.d.messages.notify(msg('display:worker-messages.webglLost'), 'error'),
     snapshotBytes: (m) => x.d.replies.bytes.answer(m.id, m.bytes),
     'render-stats': (m) => {
       (window.__renderStats ??= []).push(m);

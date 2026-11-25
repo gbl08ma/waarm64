@@ -117,7 +117,9 @@ Layered, cheapest first:
   query, `tests/page-query.ts`): for changes to the 2D presenter (`web/gpu-present.ts`) or the
   device's 2D display, and at the end of a milestone or a track. That is the canvas 2D screen here (SwiftShader's
   WebGL2 is software, which the presenter leaves to canvas 2D); `gpu=2d,gl2d` runs them on the WebGL2 one.
-- **`scripts/ci-graphics.sh`** (~3 min, two boots at a time) runs `page-machine`'s graphics test and `page-venus` (vkcube
+- **`scripts/ci-graphics.sh`** (~3 min, two boots at a time) runs `page-machine`'s graphics tests (the Machine menu's choice; a lost WebGL context, `WEBGL_lose_context` through
+  the `hooks` page's `__waarm64LoseGpu`, stops 3D and not the machine: the notice, the guest's uptime moving on, the
+  device's 3D off; planted: the page crashing it fails) and `page-venus` (vkcube
   through Venus on images/debian-vulkan/build.sh's Debian, reaching steady frames and living through a 6 s stall of the
   GPU worker's thread past Venus's watchdog (GD G3), its frames presented through a GLES
   sway into virgl and seen by grim, and with images/vkframes/build.sh's disk vkcube's frames compared with lavapipe's,

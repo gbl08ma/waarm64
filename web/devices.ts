@@ -664,6 +664,7 @@ export class Devices {
                 core: memory,
                 window: d.noWatch ? { ...window, watch: 0 } : window,
               });
+            host.onLost = () => b.gpu.hostLost();
             b.gpu.host = host;
           }
           if (!d.renderer && d.canvas)

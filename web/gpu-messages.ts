@@ -12,6 +12,9 @@ export type ToGpuWorker =
       type: 'stall';
       ms: number;
     }
+  | /** Test hook (`window.__waarm64LoseGpu`): the screen's WebGL context lost (`WEBGL_lose_context`), as the browser would. */ {
+      type: 'lose';
+    }
   | /** Bench hook (`window.__waarm64Grab`): the screen drawn now and read back, top row first, RGBA. */ {
       type: 'grab';
       id: number;

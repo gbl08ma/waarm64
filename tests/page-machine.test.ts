@@ -8,8 +8,10 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { unattendedQuery } from './debian-unattended.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
+import { t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -84,6 +86,35 @@ test('the Machine menu chooses 3D or 2D graphics, remembered, with the query ove
   await page.goto(`${base}/web/app/?autostart=1&machine=debian&gpu=virgl`);
   await graphics('3d');
   assert.equal(await page.locator('#machine-gpu').isDisabled(), true);
+  assert.deepEqual(errors, []);
+  await context.close();
+}));
+
+// A lost WebGL context (the GPU process gone, a device reset; here WEBGL_lose_context through the test hook) stops 3D,
+// not the machine (docs/graphics.md "3D"): the page says so, the guest runs on (its uptime moves), the device turns 3D
+// off (web/gpu.ts `hostLost`), and nothing throws.
+test('a lost 3D context stops 3D, not the machine: the page says so and the guest runs on', { skip: skipDebian }, () => withDebianLock(async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  const logs: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('console', (m) => logs.push(m.text()));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?autostart=1&${PAGE_QUERY}hooks&gpu=virgl&${unattendedQuery()}`);
+  // Running once the guest is at its login prompt (~35 s alone on 2 vCPUs, twice that under load).
+  await page.waitForFunction(() => document.body.dataset.graphics === '3d' && document.body.dataset.state === 'running', null, { timeout: 240_000, polling: 200 })
+    .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.graphics} ${document.body.dataset.state}: ${document.getElementById("message-text")?.textContent}; the terminal shows: ${document.querySelector(".xterm-rows")?.textContent?.slice(-1500)}`)} (${await status(page)})`); });
+  // The firmware and the kernel have drawn through the GPU worker by then; a while more on 3D.
+  await page.waitForTimeout(10_000);
+  await page.evaluate(() => window.__waarm64LoseGpu!());
+  const said = t('display:worker-messages.webglLost');
+  await page.waitForFunction((s) => document.body.innerText.includes(s), said, { timeout: 15_000, polling: 100 });
+  const before = await status(page);
+  await page.waitForTimeout(5_000);
+  assert.equal(await page.evaluate(() => document.body.dataset.state), 'running');
+  assert.notEqual(await status(page), before, 'the status (its uptime) moves on');
+  assert.ok(logs.some((l) => l.includes('virtio-gpu: 3D is off: the browser lost its 3D context')), logs.filter((l) => l.includes('virtio-gpu')).join('\n'));
   assert.deepEqual(errors, []);
   await context.close();
 }));

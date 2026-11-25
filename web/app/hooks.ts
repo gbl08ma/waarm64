@@ -29,6 +29,8 @@ declare global {
     __serialLog?: () => string;
     /** The GPU worker's thread blocked `ms` (tests/page-venus.test.ts). */
     __waarm64StallGpu?: (ms: number) => void;
+    /** The 3D screen's WebGL context lost, as the browser would (tests/page-machine.test.ts). */
+    __waarm64LoseGpu?: () => void;
     /** The Venus renderer's emulated work left out (bench/vulkan/t23.ts). */
     __waarm64VkSkip?: (paths: string[]) => void;
     /** The 3D screen as the page draws it (bench/vulkan/present.ts). */

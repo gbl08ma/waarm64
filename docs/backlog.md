@@ -402,13 +402,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`WEBGL_draw_instanced_base_vertex_base_instance`). Caps that follow each extension, where a workload needs one.
   Geometry and tessellation exist in neither WebGL2 nor WebGPU, so desktop GL above 3.1 isn't reachable on WebGL2
   (on WebGPU through compute, as Vulkan's renderer does: graphics.md "Vulkan through Venus"; only if a real workload needs it).
-- **A lost graphics context crashes a 3D machine** (graphics.md "3D"; a user's run, 2026-11-24: the screen slept and
-  the session locked under a Godot project on Venus, on Nvidia; Dawn's "Importing a semaphore with an invalid handle",
-  then `CONTEXT_LOST_WEBGL` and the WebGPU instance dropped 375 ms later; a lock and a sleeping screen for a couple of minutes don't reproduce it, so what took the device isn't known: a longer sleep, or the GPU process out of file descriptors after a long run, which would be a leak to find): the GPU worker posts `lost` and the page
-  crashes the machine ([The browser lost the screen's WebGL context](ui:display:worker-messages.webglLost)), the guest's
-  unsaved work with it. The renderer's objects are gone and can't be made again, but the machine needn't be: tell the
-  guest (Venus answers `VK_ERROR_DEVICE_LOST`, virgl's contexts end, 3D off as `off3d` has it) and keep it running
-  with the 2D screen on a new context, so it can be saved or shut down.
+- **3D back after a lost graphics context** (graphics.md "3D"): since 2026-11-25 a lost WebGL context stops 3D, not the
+  machine (the guest runs on, 3D off until it starts again, a snapshot saves it without the 3D state); a user's run
+  (2026-11-24, a Godot project on Venus, Nvidia, the screen asleep and the session locked: Dawn's "Importing a semaphore
+  with an invalid handle", then `CONTEXT_LOST_WEBGL` and the WebGPU instance 375 ms later; what took the device isn't
+  known: a longer sleep, or the GPU process out of file descriptors after a long run, a leak to find) and D3D11's
+  draw-time HLSL failures lose it. On `webglcontextrestored` virgl could come back without a restart:
+  the renderer's objects as records (`save` without reading contents back), made again in a fresh renderer on the
+  restored context (`load`), the resources' contents from their guest backing; what lived only on the GPU (render
+  targets, the last frame) is redrawn by a compositor's next frame. Chrome may not restore a context after a crash it
+  blames on the page, a loss our own program caused would come again unless that program is refused, and Venus's
+  device is gone with it (`VK_ERROR_DEVICE_LOST`, which few programs survive). The screen shows nothing new meanwhile:
+  a 2D screen on a new canvas would show the console.
 - **A WebGPU backend for virgl** (GLES 3.1: compute, storage buffers), only where `navigator.gpu` gives an adapter.
   It could share what Vulkan's renderer learned of WebGPU (graphics.md "Vulkan through Venus").
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in

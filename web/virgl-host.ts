@@ -96,6 +96,8 @@ export interface VirglHost {
   save?(): Promise<HostSave>;
   /** Why `save` would refuse now, or undefined, once every call before it has run (cheap: nothing is read back). */
   refusal?(): Promise<WireError | undefined>;
+  /** Set by the device: called once if the host loses its 3D (the browser took the WebGL context). */
+  onLost?: () => void;
 }
 
 /** The renderer's answer to a snapshot (the queries settled first: `pollQueries`). */
@@ -674,8 +676,13 @@ export function portHost(port: MessagePort): VirglHost {
       | { t: 'read'; id: number; bytes: Uint8Array | null }
       | ({ t: 'saved'; id: number } & HostSave)
       | { t: 'refusal'; id: number; refused?: WireError }
+      | { t: 'lost' }
     >,
   ) => {
+    if (e.data.t === 'lost') {
+      host.onLost?.();
+      return;
+    }
     if (e.data?.t === 'refusal') {
       refusals.get(e.data.id)?.(e.data.refused);
       refusals.delete(e.data.id);
@@ -707,7 +714,7 @@ export function portHost(port: MessagePort): VirglHost {
     sent.delete(id);
     done();
   };
-  return {
+  const host: VirglHost = {
     call(c) {
       // A submit's bytes are the device's own copy (web/gpu.ts slices them): transferred, not cloned.
       if (c.t === 'submit') port.postMessage(c, [c.words.buffer]);
@@ -739,4 +746,5 @@ export function portHost(port: MessagePort): VirglHost {
       return new Promise((resolve) => refusals.set(id, resolve));
     },
   };
+  return host;
 }
